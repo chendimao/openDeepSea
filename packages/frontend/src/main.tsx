@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
@@ -7,17 +7,31 @@ import { AppShell } from './components/AppShell';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { RoomPage } from './pages/RoomPage';
+import type { ThemeMode } from './lib/theme';
 import './index.css';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: 1 } },
 });
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+function getInitialTheme(): ThemeMode {
+  return localStorage.getItem('openclaw-room-theme') === 'dark' ? 'dark' : 'light';
+}
+
+function RootApp(): JSX.Element {
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.style.colorScheme = theme;
+    localStorage.setItem('openclaw-room-theme', theme);
+  }, [theme]);
+
+  return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <AppShell>
+        <AppShell theme={theme} onThemeChange={setTheme}>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/projects/:projectId" element={<ProjectPage />} />
@@ -25,8 +39,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AppShell>
-        <Toaster theme="dark" position="bottom-right" richColors />
+        <Toaster theme={theme} position="bottom-right" richColors />
       </BrowserRouter>
     </QueryClientProvider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <RootApp />
   </React.StrictMode>,
 );

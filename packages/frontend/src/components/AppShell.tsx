@@ -1,15 +1,24 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, FolderKanban, Home, Plus, Search, Settings } from 'lucide-react';
+import { Activity, FolderKanban, Home, Moon, Plus, Search, Settings, Sun } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn, truncate } from '../lib/utils';
 import { roomSocket } from '../lib/ws';
 import { LobsterMark } from './LobsterMark';
 import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
+import type { ThemeMode } from '../lib/theme';
 
-export function AppShell({ children }: { children: ReactNode }): JSX.Element {
+export function AppShell({
+  children,
+  theme,
+  onThemeChange,
+}: {
+  children: ReactNode;
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
+}): JSX.Element {
   const [commandOpen, setCommandOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const location = useLocation();
@@ -51,6 +60,8 @@ export function AppShell({ children }: { children: ReactNode }): JSX.Element {
             projects={projects}
             currentProject={currentProject}
             onOpenCommand={() => setCommandOpen(true)}
+            theme={theme}
+            onThemeChange={onThemeChange}
           />
         </aside>
         <main className="app-main">{children}</main>
@@ -156,11 +167,18 @@ function ProjectRail({
   projects,
   currentProject,
   onOpenCommand,
+  theme,
+  onThemeChange,
 }: {
   projects: Awaited<ReturnType<typeof api.listProjects>>;
   currentProject?: Awaited<ReturnType<typeof api.listProjects>>[number];
   onOpenCommand: () => void;
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
 }): JSX.Element {
+  const nextTheme = theme === 'light' ? 'dark' : 'light';
+  const ThemeIcon = theme === 'light' ? Moon : Sun;
+
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-[var(--color-border)] px-4 py-4">
@@ -242,6 +260,15 @@ function ProjectRail({
       </div>
 
       <div className="border-t border-[var(--color-border)] px-3 py-3">
+        <button
+          type="button"
+          aria-label={`切换到${nextTheme === 'dark' ? '暗色' : '亮色'}主题`}
+          onClick={() => onThemeChange(nextTheme)}
+          className="mb-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)] ease-ocean transition-colors"
+        >
+          <ThemeIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
+          {nextTheme === 'dark' ? '暗色' : '亮色'}
+        </button>
         <button
           type="button"
           aria-label="设置"

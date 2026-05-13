@@ -201,7 +201,7 @@ function AgentStrip({
           type="button"
           onClick={() => onConfig(a)}
           aria-label={`配置 ${a.agent_name}`}
-          className="ring-2 ring-[var(--color-bg)] rounded-full hover:scale-105 ease-ocean transition-transform"
+          className="ring-2 ring-[var(--color-avatar-ring)] rounded-full hover:scale-105 ease-ocean transition-transform"
           title={`${a.agent_name}${a.acp_enabled ? ` · ACP: ${a.acp_backend}` : ''}`}
         >
           <AgentAvatar name={a.agent_name} size={26} active={!!a.acp_enabled} />

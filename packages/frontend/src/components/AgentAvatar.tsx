@@ -41,7 +41,7 @@ export function AgentAvatar({
       </div>
       {active && (
         <span
-          className="absolute -right-0.5 -bottom-0.5 block h-2.5 w-2.5 rounded-full border-2 border-[var(--color-bg)]"
+          className="absolute -right-0.5 -bottom-0.5 block h-2.5 w-2.5 rounded-full border-2 border-[var(--color-avatar-ring)]"
           style={{ background: 'var(--color-success)' }}
         />
       )}

@@ -4,6 +4,40 @@
 
 @layer base {
   :root {
+    --color-bg: #f3f9fb;
+    --color-surface: #ffffff;
+    --color-surface-raised: #f8fcfd;
+    --color-border: #cfe2e7;
+    --color-border-strong: #9fc8d1;
+    --color-fg: #102026;
+    --color-fg-muted: #52666d;
+    --color-muted: #7a8d94;
+
+    --color-primary: #ff6848;
+    --color-primary-hover: #e6573a;
+    --color-primary-fg: #ffffff;
+
+    --color-accent: #168ea3;
+    --color-accent-hover: #0f7487;
+
+    --color-success: #0f9f6e;
+    --color-warning: #c87900;
+    --color-danger: #d94435;
+    --color-danger-hover: #c83b2e;
+
+    --color-overlay: rgba(16, 32, 38, 0.34);
+    --color-code-bg: #eef7f9;
+    --color-avatar-ring: #f3f9fb;
+    --color-scrollbar-thumb: #c2d9df;
+    --color-scrollbar-thumb-hover: #9fc8d1;
+    --shadow-raised: 0 1px 2px rgba(16, 32, 38, 0.08);
+    --shadow-dialog: 0 22px 70px rgba(16, 32, 38, 0.22);
+    --shadow-command: 0 24px 80px rgba(16, 32, 38, 0.18);
+    --shadow-mention: 0 18px 48px rgba(16, 32, 38, 0.16);
+    color-scheme: light;
+  }
+
+  [data-theme="dark"] {
     --color-bg: #0A0E1A;
     --color-surface: #0F1623;
     --color-surface-raised: #161E2E;
@@ -23,6 +57,17 @@
     --color-success: #10B981;
     --color-warning: #F59E0B;
     --color-danger: #EF4444;
+    --color-danger-hover: #f87171;
+
+    --color-overlay: rgba(10, 14, 26, 0.62);
+    --color-code-bg: #070b14;
+    --color-avatar-ring: #0A0E1A;
+    --color-scrollbar-thumb: #1F2937;
+    --color-scrollbar-thumb-hover: #2D3748;
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-dialog: 0 8px 32px rgba(0, 0, 0, 0.6);
+    --shadow-command: 0 24px 80px rgba(0, 0, 0, 0.48);
+    --shadow-mention: 0 18px 48px rgba(0, 0, 0, 0.36);
     color-scheme: dark;
   }
 
@@ -36,11 +81,11 @@
     font-feature-settings: "ss01", "cv11", "tnum";
   }
 
-  ::selection { background: rgba(255, 107, 71, 0.35); color: #fff; }
+  ::selection { background: rgba(255, 104, 72, 0.3); color: var(--color-fg); }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-thumb { background: #1F2937; border-radius: 8px; }
-  ::-webkit-scrollbar-thumb:hover { background: #2D3748; }
+  ::-webkit-scrollbar-thumb { background: var(--color-scrollbar-thumb); border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-scrollbar-thumb-hover); }
   ::-webkit-scrollbar-track { background: transparent; }
 }
 
@@ -74,7 +119,7 @@
   .app-rail {
     min-width: 0;
     border-right: 1px solid var(--color-border);
-    background: #0c1320;
+    background: var(--color-surface);
   }
 
   .app-main {
@@ -92,7 +137,7 @@
   .surface-2 {
     background: var(--color-surface-raised);
     border: 1px solid var(--color-border);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+    box-shadow: var(--shadow-raised);
   }
 
   .ease-ocean { transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
@@ -101,7 +146,7 @@
     position: fixed;
     inset: 0;
     z-index: 40;
-    background: rgba(10, 14, 26, 0.62);
+    background: var(--color-overlay);
     backdrop-filter: blur(6px);
   }
 
@@ -115,7 +160,7 @@
     transform: translateX(-50%);
     overflow: hidden;
     border-radius: 10px;
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+    box-shadow: var(--shadow-command);
   }
 
   .command-menu-input {
@@ -195,7 +240,7 @@
     width: min(320px, calc(100vw - 32px));
     overflow: hidden;
     border-radius: 8px;
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
+    box-shadow: var(--shadow-mention);
   }
 
   .message-content {
@@ -210,7 +255,7 @@
     overflow: hidden;
     border: 1px solid var(--color-border);
     border-radius: 8px;
-    background: #070b14;
+    background: var(--color-code-bg);
   }
 
   .code-block-header {
@@ -254,8 +299,14 @@
   }
   .fade-up { animation: fade-up 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
+  @keyframes modal-pop {
+    from { opacity: 0; transform: translate(-50%, -48%) scale(0.98); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+  .modal-pop { animation: modal-pop 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
   @media (prefers-reduced-motion: reduce) {
-    .heartbeat, .fade-up { animation: none !important; }
+    .heartbeat, .fade-up, .modal-pop { animation: none !important; }
     *, *::before, *::after { transition-duration: 0ms !important; }
   }
 
