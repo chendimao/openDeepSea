@@ -195,6 +195,7 @@ export async function respondAsAgent(args: {
   workflowRunId?: string | null;
   workflowStepId?: string | null;
   workflowStage?: WorkflowStage | null;
+  onRunCreated?: (run: AgentRun) => Promise<void> | void;
   onFinished?: (result: { run: AgentRun; message: Message; status: AgentRunStatus }) => Promise<void> | void;
 }): Promise<void> {
   const { agent, projectPath, roomId, prompt } = args;
@@ -215,6 +216,13 @@ export async function respondAsAgent(args: {
   });
   const controller = runRegistry.create(run.id);
   broadcastRun('agent_run:created', run);
+  if (args.onRunCreated) {
+    try {
+      await args.onRunCreated(run);
+    } catch (err) {
+      console.warn(`[agent-runs] onRunCreated callback failed for ${run.id}: ${(err as Error).message}`);
+    }
+  }
 
   // Create a placeholder agent message that will be filled by streaming chunks.
   const placeholder = messageRepo.create({

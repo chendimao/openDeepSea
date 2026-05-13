@@ -23,6 +23,9 @@ function workflowErrorStatus(error: Error): number {
   if (message.includes('not found')) return 404;
   if (
     message.includes('already has an active workflow') ||
+    message.includes('already has an active agent run') ||
+    message.includes('already has a running step') ||
+    message.includes('already running') ||
     message.includes('not awaiting approval') ||
     message.includes('no failed step') ||
     message.includes('no current stage')

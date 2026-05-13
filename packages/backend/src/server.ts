@@ -6,6 +6,7 @@ import { bindGatewayEvents } from './dispatcher.js';
 import { gatewayClient } from './openclaw/gateway.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { router } from './routes.js';
+import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
 import type { WsClientEvent } from './types.js';
 
@@ -38,6 +39,10 @@ bindGatewayEvents();
 const orphanedRuns = agentRunRepo.failActiveRuns('Backend restarted before agent run completed');
 if (orphanedRuns > 0) {
   console.warn(`[agent-runs] Marked ${orphanedRuns} orphaned active run(s) as failed`);
+}
+const orphanedSteps = workflowOrchestrator.recoverOrphanedSteps('Backend restarted before workflow step completed');
+if (orphanedSteps > 0) {
+  console.warn(`[workflows] Marked ${orphanedSteps} orphaned running step(s) as failed`);
 }
 
 // Try to connect to OpenClaw gateway in background; don't crash if unavailable.

@@ -23,7 +23,7 @@ import type {
 } from '../types.js';
 
 export const workflowOrchestrator = {
-  async start(taskId: string): Promise<WorkflowRun> {
+  start(taskId: string): WorkflowRun {
     const task = requireTask(taskId);
     const existing = workflowRepo.getActiveByTask(task.id);
     if (existing) throw new Error('task already has an active workflow');
@@ -36,15 +36,15 @@ export const workflowOrchestrator = {
       approval_required: true,
     });
     broadcastWorkflow('workflow:created', run);
-    await startAgentStage(run, task, 'analysis');
-    return run;
+    startAgentStage(run, task, 'analysis');
+    return latestRun(run.id);
   },
 
   detail(id: string) {
     return workflowRepo.detail(id);
   },
 
-  async approvePlan(id: string, approvedBy = 'user'): Promise<WorkflowRun> {
+  approvePlan(id: string, approvedBy = 'user'): WorkflowRun {
     const run = requireRun(id);
     if (run.status !== 'awaiting_approval') throw new Error('workflow is not awaiting approval');
     const updated = workflowRepo.updateRun(id, {
@@ -55,8 +55,8 @@ export const workflowOrchestrator = {
     });
     if (!updated) throw new Error('workflow not found');
     broadcastWorkflow('workflow:updated', updated);
-    await assignFromPlan(updated);
-    return updated;
+    assignFromPlan(updated);
+    return latestRun(updated.id);
   },
 
   async cancel(id: string): Promise<WorkflowRun> {
@@ -81,8 +81,17 @@ export const workflowOrchestrator = {
     return updated;
   },
 
-  async retryStep(id: string): Promise<WorkflowRun> {
+  retryStep(id: string): WorkflowRun {
     const run = requireRun(id);
+    if (run.status === 'running' || run.status === 'awaiting_approval') {
+      throw new Error('workflow is already running');
+    }
+    if (workflowRepo.listSteps(run.id).some((step) => step.status === 'running')) {
+      throw new Error('workflow already has a running step');
+    }
+    if (agentRunRepo.listActiveByWorkflow(run.id).length > 0) {
+      throw new Error('workflow already has an active agent run');
+    }
     const retryableStep = [...workflowRepo.listSteps(run.id)]
       .reverse()
       .find((step) => step.status === 'failed' || step.status === 'cancelled');
@@ -93,17 +102,39 @@ export const workflowOrchestrator = {
     if (!retryableStep) {
       if (!run.current_stage) throw new Error('workflow has no current stage');
       const task = requireTask(run.task_id);
-      if (run.current_stage === 'assignment') await assignFromPlan(updated);
-      else await startAgentStage(updated, task, run.current_stage);
-      return updated;
+      if (run.current_stage === 'assignment') assignFromPlan(updated);
+      else startAgentStage(updated, task, run.current_stage);
+      return latestRun(updated.id);
     }
-    if (retryableStep.stage === 'assignment') await assignFromPlan(updated);
+    const skippedStep = workflowRepo.updateStep(retryableStep.id, {
+      status: 'skipped',
+      error: retryableStep.error ?? 'Superseded by retry',
+    });
+    if (skippedStep) broadcastStep('workflow_step:updated', run.room_id, skippedStep);
+    if (retryableStep.stage === 'assignment') assignFromPlan(updated);
     else {
       const task = requireTask(retryableStep.task_id);
       if (retryableStep.stage === 'implementation') updateTaskStatus(task.id, 'todo');
-      await startAgentStage(updated, task, retryableStep.stage);
+      startAgentStage(updated, task, retryableStep.stage);
     }
-    return updated;
+    return latestRun(updated.id);
+  },
+
+  recoverOrphanedSteps(error: string): number {
+    let count = 0;
+    for (const step of workflowRepo.listRunningSteps()) {
+      const run = workflowRepo.getRun(step.workflow_run_id);
+      if (!run || run.status === 'cancelled' || run.status === 'completed') continue;
+      const failedStep = workflowRepo.updateStep(step.id, { status: 'failed', error });
+      if (failedStep) broadcastStep('workflow_step:updated', run.room_id, failedStep);
+      const task = taskRepo.get(step.task_id);
+      if (step.stage === 'implementation' && task?.status === 'in_progress') {
+        updateTaskStatus(step.task_id, 'failed');
+      }
+      block(run, error);
+      count++;
+    }
+    return count;
   },
 };
 
@@ -117,6 +148,10 @@ function requireRun(id: string): WorkflowRun {
   const run = workflowRepo.getRun(id);
   if (!run) throw new Error('workflow not found');
   return run;
+}
+
+function latestRun(id: string): WorkflowRun {
+  return requireRun(id);
 }
 
 function getContext(run: WorkflowRun): {
@@ -216,11 +251,26 @@ function markStepFailed(
   return updatedStep;
 }
 
-async function startAgentStage(run: WorkflowRun, task: Task, stage: WorkflowStage): Promise<void> {
+function failStageWithoutAgent(run: WorkflowRun, task: Task, stage: WorkflowStage, error: string): void {
+  const updatedRun = workflowRepo.updateRun(run.id, { status: 'blocked', current_stage: stage, error });
+  if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: task.id,
+    stage,
+    status: 'failed',
+    prompt: error,
+    sort_order: nextSortOrder(run.id),
+  });
+  const failedStep = workflowRepo.updateStep(step.id, { error }) ?? step;
+  broadcastStep('workflow_step:created', run.room_id, failedStep);
+}
+
+function startAgentStage(run: WorkflowRun, task: Task, stage: WorkflowStage): void {
   const context = getContext(run);
   const agent = selectAgent(stage, context.agents);
   if (!agent) {
-    block(run, `No available agent for workflow stage ${stage}`);
+    failStageWithoutAgent(run, task, stage, `No available agent for workflow stage ${stage}`);
     return;
   }
   const prompt = buildStagePrompt(stage, {
@@ -244,7 +294,7 @@ async function startAgentStage(run: WorkflowRun, task: Task, stage: WorkflowStag
   const updatedRun = workflowRepo.updateRun(run.id, { status: 'running', current_stage: stage, error: null });
   if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
 
-  await respondAsAgent({
+  void respondAsAgent({
     agent,
     projectPath: context.project.path,
     roomId: run.room_id,
@@ -253,9 +303,27 @@ async function startAgentStage(run: WorkflowRun, task: Task, stage: WorkflowStag
     workflowRunId: run.id,
     workflowStepId: step.id,
     workflowStage: stage,
+    onRunCreated: (agentRun) => {
+      const boundStep = workflowRepo.updateStep(step.id, { agent_run_id: agentRun.id });
+      if (boundStep) broadcastStep('workflow_step:updated', run.room_id, boundStep);
+    },
     onFinished: ({ run: agentRun, message, status }) =>
       safelyHandleAgentStageFinished(run.id, step.id, agentRun, message, status),
+  }).catch((err) => {
+    void safelyHandleAgentStageStartFailed(run.id, step.id, (err as Error).message);
   });
+}
+
+async function safelyHandleAgentStageStartFailed(
+  workflowRunId: string,
+  stepId: string,
+  error: string,
+): Promise<void> {
+  const run = workflowRepo.getRun(workflowRunId);
+  const step = workflowRepo.getStep(stepId);
+  if (!run || !step) return;
+  markStepFailed(run, step, error);
+  block(run, error);
 }
 
 async function safelyHandleAgentStageFinished(
@@ -332,32 +400,32 @@ async function handleAgentStageFinished(
       content: message.content,
     });
     broadcastArtifact(run.room_id, artifact);
-    await startAgentStage(run, requireTask(run.task_id), 'planning');
+    startAgentStage(run, requireTask(run.task_id), 'planning');
     return;
   }
 
   if (step.stage === 'planning') {
-    await finishPlanning(run, step, message.content);
+    finishPlanning(run, step, message.content);
     return;
   }
 
   if (step.stage === 'implementation') {
-    updateTaskStatus(step.task_id, 'done');
-    await continueImplementationOrReview(run);
+    updateTaskStatus(step.task_id, 'review');
+    continueImplementationOrReview(run);
     return;
   }
 
   if (step.stage === 'code_review') {
-    await finishReview(run, step, message.content);
+    finishReview(run, step, message.content);
     return;
   }
 
   if (step.stage === 'acceptance') {
-    await finishAcceptance(run, step, message.content);
+    finishAcceptance(run, step, message.content);
   }
 }
 
-async function finishPlanning(run: WorkflowRun, step: WorkflowStep, output: string): Promise<void> {
+function finishPlanning(run: WorkflowRun, step: WorkflowStep, output: string): void {
   try {
     const plan = parsePlanArtifact(output);
     const artifact = workflowRepo.createArtifact({
@@ -393,12 +461,12 @@ async function finishPlanning(run: WorkflowRun, step: WorkflowStep, output: stri
   }
 }
 
-async function assignFromPlan(run: WorkflowRun): Promise<void> {
+function assignFromPlan(run: WorkflowRun): void {
   const existingAssignment = workflowRepo
     .listSteps(run.id)
     .find((step) => step.stage === 'assignment' && step.status === 'completed');
   if (existingAssignment) {
-    await continueImplementationOrReview(run);
+    continueImplementationOrReview(run);
     return;
   }
   const artifacts = workflowRepo.listArtifacts(run.id);
@@ -444,7 +512,7 @@ async function assignFromPlan(run: WorkflowRun): Promise<void> {
     metadata: { taskCount: plan.tasks.length },
   });
   broadcastArtifact(run.room_id, artifact);
-  await continueImplementationOrReview(run);
+  continueImplementationOrReview(run);
 }
 
 function selectAgentForRole(role: WorkflowRole, agents: RoomAgent[]): RoomAgent | null {
@@ -454,7 +522,7 @@ function selectAgentForRole(role: WorkflowRole, agents: RoomAgent[]): RoomAgent 
   return candidates.find((agent) => agent.acp_enabled) ?? candidates[0] ?? null;
 }
 
-async function continueImplementationOrReview(run: WorkflowRun): Promise<void> {
+function continueImplementationOrReview(run: WorkflowRun): void {
   const children = taskRepo.listChildren(run.task_id);
   const nextChild = children.find((task) => task.status === 'todo' || task.status === 'in_progress');
   if (nextChild) {
@@ -462,17 +530,17 @@ async function continueImplementationOrReview(run: WorkflowRun): Promise<void> {
     const agents = roomAgentRepo.listByRoom(run.room_id);
     const agent = assigned ?? selectAgentForRole('executor', agents);
     if (!agent) {
-      block(run, 'No executor available for implementation');
+      failStageWithoutAgent(run, nextChild, 'implementation', 'No executor available for implementation');
       return;
     }
     updateTaskStatus(nextChild.id, 'in_progress');
-    await startAgentStageWithAgent(run, nextChild, 'implementation', agent);
+    startAgentStageWithAgent(run, nextChild, 'implementation', agent);
     return;
   }
-  await startAgentStage(run, requireTask(run.task_id), 'code_review');
+  startAgentStage(run, requireTask(run.task_id), 'code_review');
 }
 
-async function startAgentStageWithAgent(run: WorkflowRun, task: Task, stage: WorkflowStage, agent: RoomAgent): Promise<void> {
+function startAgentStageWithAgent(run: WorkflowRun, task: Task, stage: WorkflowStage, agent: RoomAgent): void {
   const context = getContext(run);
   const prompt = buildStagePrompt(stage, {
     projectName: context.project.name,
@@ -494,7 +562,7 @@ async function startAgentStageWithAgent(run: WorkflowRun, task: Task, stage: Wor
   broadcastStep('workflow_step:created', run.room_id, step);
   const updatedRun = workflowRepo.updateRun(run.id, { status: 'running', current_stage: stage, error: null });
   if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
-  await respondAsAgent({
+  void respondAsAgent({
     agent,
     projectPath: context.project.path,
     roomId: run.room_id,
@@ -503,12 +571,18 @@ async function startAgentStageWithAgent(run: WorkflowRun, task: Task, stage: Wor
     workflowRunId: run.id,
     workflowStepId: step.id,
     workflowStage: stage,
+    onRunCreated: (agentRun) => {
+      const boundStep = workflowRepo.updateStep(step.id, { agent_run_id: agentRun.id });
+      if (boundStep) broadcastStep('workflow_step:updated', run.room_id, boundStep);
+    },
     onFinished: ({ run: agentRun, message, status }) =>
       safelyHandleAgentStageFinished(run.id, step.id, agentRun, message, status),
+  }).catch((err) => {
+    void safelyHandleAgentStageStartFailed(run.id, step.id, (err as Error).message);
   });
 }
 
-async function finishReview(run: WorkflowRun, step: WorkflowStep, output: string): Promise<void> {
+function finishReview(run: WorkflowRun, step: WorkflowStep, output: string): void {
   const artifact = workflowRepo.createArtifact({
     task_id: run.task_id,
     workflow_run_id: run.id,
@@ -527,17 +601,19 @@ async function finishReview(run: WorkflowRun, step: WorkflowStep, output: string
     return;
   }
   if (verdict.verdict === 'changes_requested') {
+    markStepFailed(run, step, 'Code review requested changes');
     block(run, 'Code review requested changes');
     return;
   }
   if (verdict.verdict === 'failed') {
+    markStepFailed(run, step, 'Code review failed');
     block(run, 'Code review failed');
     return;
   }
-  await startAgentStage(run, requireTask(run.task_id), 'acceptance');
+  startAgentStage(run, requireTask(run.task_id), 'acceptance');
 }
 
-async function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string): Promise<void> {
+function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string): void {
   const artifact = workflowRepo.createArtifact({
     task_id: run.task_id,
     workflow_run_id: run.id,
@@ -562,10 +638,14 @@ async function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: st
     return;
   }
   if (verdict.verdict === 'pass') {
+    for (const child of taskRepo.listChildren(run.task_id).filter((task) => task.status === 'review')) {
+      updateTaskStatus(child.id, 'done');
+    }
     updateTaskStatus(run.task_id, 'done');
     const updated = workflowRepo.updateRun(run.id, { status: 'completed', current_stage: 'acceptance', error: null });
     if (updated) broadcastWorkflow('workflow:updated', updated);
   } else {
+    markStepFailed(run, step, 'Acceptance failed');
     updateTaskStatus(run.task_id, 'failed');
     const updated = workflowRepo.updateRun(run.id, {
       status: 'failed',

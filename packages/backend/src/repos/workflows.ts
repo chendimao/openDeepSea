@@ -141,6 +141,12 @@ export const workflowRepo = {
       .all(workflowRunId) as WorkflowStep[];
   },
 
+  listRunningSteps(): WorkflowStep[] {
+    return db
+      .prepare('SELECT * FROM workflow_steps WHERE status = ? ORDER BY created_at ASC')
+      .all('running') as WorkflowStep[];
+  },
+
   updateStep(
     id: string,
     patch: Partial<Pick<WorkflowStep, 'status' | 'room_agent_id' | 'agent_run_id' | 'prompt' | 'result' | 'result_message_id' | 'error'>>,
