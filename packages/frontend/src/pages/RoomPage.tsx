@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Hash, Send, Settings2, Trash2 } from 'lucide-react';
+import { ChevronLeft, Hash, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -10,6 +10,7 @@ import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
+import { CreateTaskDialog } from '../components/CreateTaskDialog';
 import { Button } from '../components/ui/Button';
 
 export function RoomPage() {
@@ -87,6 +88,7 @@ export function RoomPage() {
         </div>
         <div className="ml-auto flex items-center gap-2">
           <AgentStrip agents={agents} onConfig={setConfigAgent} />
+          <CreateTaskDialog roomId={roomId} agents={agents} />
           <AddAgentDialog roomId={roomId} />
         </div>
       </header>
