@@ -9,6 +9,9 @@ import type {
   Room,
   RoomAgent,
   Task,
+  WorkflowDetail,
+  WorkflowRole,
+  WorkflowRun,
 } from './types';
 
 const BASE = '/api';
@@ -75,6 +78,11 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(config),
     }),
+  setAgentWorkflowRole: (roomId: string, agentId: string, workflow_role: WorkflowRole | null) =>
+    request<RoomAgent>(`/rooms/${roomId}/agents/${agentId}/workflow-role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ workflow_role }),
+    }),
 
   listAcpSessions: (projectId: string, backend: AcpBackend) =>
     request<CliSession[]>(`/projects/${projectId}/acp-sessions?backend=${backend}`),
@@ -104,4 +112,17 @@ export const api = {
   updateTask: (id: string, patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'assigned_agent_id' | 'status'>>) =>
     request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
+
+  startWorkflow: (taskId: string) =>
+    request<WorkflowRun>(`/tasks/${taskId}/workflows`, { method: 'POST' }),
+  listTaskWorkflows: (taskId: string) =>
+    request<WorkflowRun[]>(`/tasks/${taskId}/workflows`),
+  getWorkflow: (id: string) =>
+    request<WorkflowDetail>(`/workflows/${id}`),
+  approveWorkflowPlan: (id: string) =>
+    request<WorkflowRun>(`/workflows/${id}/approve-plan`, { method: 'POST' }),
+  retryWorkflowStep: (id: string) =>
+    request<WorkflowRun>(`/workflows/${id}/retry-step`, { method: 'POST' }),
+  cancelWorkflow: (id: string) =>
+    request<WorkflowRun>(`/workflows/${id}/cancel`, { method: 'POST' }),
 };

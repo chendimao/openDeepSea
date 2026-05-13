@@ -1,4 +1,4 @@
-import type { AgentRun, Message, RoomAgent, Task } from './types';
+import type { AgentRun, Message, RoomAgent, Task, TaskArtifact, WorkflowRun, WorkflowStep } from './types';
 
 export type WsServerEvent =
   | { type: 'message:new'; roomId: string; message: Message }
@@ -7,6 +7,11 @@ export type WsServerEvent =
   | { type: 'agent_run:updated'; roomId: string; run: AgentRun }
   | { type: 'room:agent_joined'; roomId: string; agent: RoomAgent }
   | { type: 'room:agent_left'; roomId: string; roomAgentId: string }
+  | { type: 'workflow:created'; roomId: string; workflow: WorkflowRun }
+  | { type: 'workflow:updated'; roomId: string; workflow: WorkflowRun }
+  | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
+  | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
+  | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
   | { type: 'task:created'; task: Task }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:deleted'; taskId: string };
