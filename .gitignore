@@ -7,6 +7,7 @@ build/
 .env.local
 *.log
 .DS_Store
+.superpowers/
 data/
 *.db
 *.db-shm
