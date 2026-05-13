@@ -12,6 +12,12 @@ import type {
 } from '../types.js';
 
 const ACTIVE_STATUSES: WorkflowStatus[] = ['draft', 'running', 'awaiting_approval', 'blocked'];
+const WORKFLOW_TERMINAL_STATUSES: WorkflowStatus[] = ['completed', 'failed', 'cancelled'];
+const STEP_TERMINAL_STATUSES: WorkflowStepStatus[] = ['completed', 'failed', 'cancelled', 'skipped'];
+
+function hasPatchKey<T extends object>(patch: T, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, key);
+}
 
 export const workflowRepo = {
   createRun(input: {
@@ -72,18 +78,21 @@ export const workflowRepo = {
     const existing = this.getRun(id);
     if (!existing) return undefined;
     const status = patch.status ?? existing.status;
-    const completedAt = ['completed', 'failed', 'cancelled'].includes(status) ? now() : existing.completed_at;
+    const completedAt = WORKFLOW_TERMINAL_STATUSES.includes(status) ? existing.completed_at ?? now() : null;
     const approvedAt = patch.status === 'running' && existing.status === 'awaiting_approval' ? now() : existing.approved_at;
+    const currentStage = hasPatchKey(patch, 'current_stage') ? patch.current_stage ?? null : existing.current_stage;
+    const approvedBy = hasPatchKey(patch, 'approved_by') ? patch.approved_by ?? null : existing.approved_by;
+    const error = hasPatchKey(patch, 'error') ? patch.error ?? null : existing.error;
     db.prepare(
       `UPDATE workflow_runs
        SET status = ?, current_stage = ?, approved_at = ?, approved_by = ?, error = ?, updated_at = ?, completed_at = ?
        WHERE id = ?`,
     ).run(
       status,
-      patch.current_stage ?? existing.current_stage,
+      currentStage,
       approvedAt,
-      patch.approved_by ?? existing.approved_by,
-      patch.error ?? existing.error,
+      approvedBy,
+      error,
       now(),
       completedAt,
       id,
@@ -140,7 +149,13 @@ export const workflowRepo = {
     if (!existing) return undefined;
     const status = patch.status ?? existing.status;
     const startedAt = status === 'running' && !existing.started_at ? now() : existing.started_at;
-    const completedAt = ['completed', 'failed', 'cancelled', 'skipped'].includes(status) ? now() : existing.completed_at;
+    const completedAt = STEP_TERMINAL_STATUSES.includes(status) ? existing.completed_at ?? now() : null;
+    const roomAgentId = hasPatchKey(patch, 'room_agent_id') ? patch.room_agent_id ?? null : existing.room_agent_id;
+    const agentRunId = hasPatchKey(patch, 'agent_run_id') ? patch.agent_run_id ?? null : existing.agent_run_id;
+    const resultMessageId = hasPatchKey(patch, 'result_message_id')
+      ? patch.result_message_id ?? null
+      : existing.result_message_id;
+    const error = hasPatchKey(patch, 'error') ? patch.error ?? null : existing.error;
     db.prepare(
       `UPDATE workflow_steps
        SET status = ?, room_agent_id = ?, agent_run_id = ?, prompt = ?, result = ?,
@@ -148,12 +163,12 @@ export const workflowRepo = {
        WHERE id = ?`,
     ).run(
       status,
-      patch.room_agent_id ?? existing.room_agent_id,
-      patch.agent_run_id ?? existing.agent_run_id,
+      roomAgentId,
+      agentRunId,
       patch.prompt ?? existing.prompt,
       patch.result ?? existing.result,
-      patch.result_message_id ?? existing.result_message_id,
-      patch.error ?? existing.error,
+      resultMessageId,
+      error,
       startedAt,
       completedAt,
       now(),
