@@ -6,13 +6,13 @@ export interface SessionAdapter {
   listSessions(projectPath: string): Promise<CliSessionSummary[]>;
   /**
    * Spawn a CLI invocation that resumes a session and streams output.
-   * onChunk receives stdout chunks as they arrive.
+   * onChunk receives stdout/stderr chunks as they arrive.
    */
   invoke(args: {
     projectPath: string;
     sessionId: string | null;
     prompt: string;
-    onChunk: (chunk: string) => void;
+    onChunk: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void;
     signal?: AbortSignal;
   }): Promise<{ exitCode: number; sessionId: string | null; stderr: string }>;
 }

@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL ?? 'ws://127.0.0.1:18789';
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN ?? '';
+const CONNECT_TIMEOUT_MS = 5000;
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -38,6 +39,23 @@ class OpenClawGatewayClient {
     if (this.connecting) return this.connecting;
     this.connecting = new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(GATEWAY_URL);
+      let settled = false;
+      const settleResolve = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(connectTimer);
+        resolve();
+      };
+      const settleReject = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(connectTimer);
+        reject(err);
+      };
+      const connectTimer = setTimeout(() => {
+        ws.terminate();
+        settleReject(new Error(`gateway connect timeout: ${GATEWAY_URL}`));
+      }, CONNECT_TIMEOUT_MS);
       const onOpen = () => {
         const connectFrame = {
           type: 'connect',
@@ -53,7 +71,7 @@ class OpenClawGatewayClient {
           if (frame['type'] === 'hello-ok' || frame['type'] === 'connect-ok') {
             this.connected = true;
             this.ws = ws;
-            resolve();
+            settleResolve();
             return;
           }
           if (frame['type'] === 'res' && typeof frame['id'] === 'string') {
@@ -77,7 +95,7 @@ class OpenClawGatewayClient {
         }
       };
       const onError = (err: Error) => {
-        if (!this.connected) reject(err);
+        if (!this.connected) settleReject(err);
       };
       const onClose = () => {
         this.connected = false;
@@ -141,6 +159,14 @@ class OpenClawGatewayClient {
       agentId: args.agentId,
       sessionKey: args.sessionKey,
       message: { type: 'text', text: args.text },
+    });
+  }
+
+  async spawnSession(args: { agentId: string; sessionKey: string; cwd: string }): Promise<unknown> {
+    return this.request('sessions.spawn', {
+      agentId: args.agentId,
+      sessionKey: args.sessionKey,
+      cwd: args.cwd,
     });
   }
 

@@ -63,6 +63,28 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, created_at);
 
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL,
+  room_agent_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  backend TEXT NOT NULL,
+  status TEXT NOT NULL,
+  session_key TEXT,
+  acp_session_id TEXT,
+  prompt TEXT NOT NULL,
+  stdout TEXT NOT NULL DEFAULT '',
+  stderr TEXT NOT NULL DEFAULT '',
+  error TEXT,
+  started_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_room ON agent_runs(room_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,

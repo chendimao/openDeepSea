@@ -30,6 +30,26 @@ export interface RoomAgent {
   acp_session_label: string | null;
 }
 
+export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface AgentRun {
+  id: string;
+  room_id: string;
+  room_agent_id: string;
+  agent_id: string;
+  backend: 'openclaw' | AcpBackend;
+  status: AgentRunStatus;
+  session_key: string | null;
+  acp_session_id: string | null;
+  prompt: string;
+  stdout: string;
+  stderr: string;
+  error: string | null;
+  started_at: number;
+  updated_at: number;
+  completed_at: number | null;
+}
+
 export type MessageType = 'text' | 'task' | 'system' | 'code' | 'agent_stream';
 export type SenderType = 'user' | 'agent' | 'system';
 
@@ -76,6 +96,8 @@ export interface CliSessionSummary {
 export type WsServerEvent =
   | { type: 'message:new'; roomId: string; message: Message }
   | { type: 'message:stream'; roomId: string; messageId: string; chunk: string; done: boolean }
+  | { type: 'agent_run:created'; roomId: string; run: AgentRun }
+  | { type: 'agent_run:updated'; roomId: string; run: AgentRun }
   | { type: 'room:agent_joined'; roomId: string; agent: RoomAgent }
   | { type: 'room:agent_left'; roomId: string; roomAgentId: string }
   | { type: 'task:updated'; task: Task }
