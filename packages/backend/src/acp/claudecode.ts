@@ -98,7 +98,7 @@ function runStreaming(
   signal?: AbortSignal,
 ): Promise<{ exitCode: number; sessionId: string | null; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, env: process.env });
+    const child = spawn(cmd, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     let detectedSession: string | null = null;
     child.stdout.setEncoding('utf-8');
@@ -109,11 +109,13 @@ function runStreaming(
       if (m && m[1]) detectedSession = m[1];
       for (const obj of parseJsonLines(data)) {
         if (typeof obj['session_id'] === 'string') detectedSession = obj['session_id'];
+        if (typeof obj['thread_id'] === 'string') detectedSession = obj['thread_id'];
       }
     });
     child.stderr.on('data', (data: string) => {
-      stderr += data;
-      onChunk({ stream: 'stderr', text: data });
+      const filtered = filterStderr(data);
+      stderr += filtered;
+      if (filtered) onChunk({ stream: 'stderr', text: filtered });
     });
     child.on('error', (err) => {
       stderr += `\n[spawn error] ${(err as Error).message}`;
@@ -129,21 +131,28 @@ function runStreaming(
   });
 }
 
+function filterStderr(data: string): string {
+  return data
+    .split('\n')
+    .filter((line) => line.trim() !== 'Reading additional input from stdin...')
+    .join('\n');
+}
+
 function normalizeStdoutChunk(data: string): string {
   const lines = data.split('\n');
-  const normalized = lines.map((line) => {
-    if (!line.trim()) return line;
+  const normalized = lines.map((line, index) => {
+    if (!line.trim()) return index === lines.length - 1 ? '' : line;
     try {
       const obj = JSON.parse(line) as Record<string, unknown>;
-      if (obj['type'] === 'assistant' || obj['type'] === 'result') {
+      if (obj['type'] === 'assistant' || obj['type'] === 'result' || isCodexAgentMessage(obj)) {
         return extractText(obj) ?? line;
       }
-      return line;
+      return '';
     } catch {
       return line;
     }
   });
-  return normalized.join('\n');
+  return normalized.filter(Boolean).join('\n');
 }
 
 function parseJsonLines(data: string): Record<string, unknown>[] {
@@ -162,11 +171,22 @@ function parseJsonLines(data: string): Record<string, unknown>[] {
 function extractText(obj: Record<string, unknown>): string | null {
   if (typeof obj['result'] === 'string') return obj['result'];
   if (typeof obj['text'] === 'string') return obj['text'];
+  const item = obj['item'];
+  if (item && typeof item === 'object') {
+    const text = extractText(item as Record<string, unknown>);
+    if (text) return text;
+  }
   const message = obj['message'];
   if (message && typeof message === 'object') {
     return extractContentText((message as Record<string, unknown>)['content']);
   }
   return extractContentText(obj['content']);
+}
+
+function isCodexAgentMessage(obj: Record<string, unknown>): boolean {
+  if (obj['type'] !== 'item.completed') return false;
+  const item = obj['item'];
+  return !!item && typeof item === 'object' && (item as Record<string, unknown>)['type'] === 'agent_message';
 }
 
 function extractContentText(content: unknown): string | null {

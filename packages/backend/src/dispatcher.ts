@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { gatewayClient } from './openclaw/gateway.js';
@@ -11,6 +12,8 @@ import { wsHub } from './ws-hub.js';
 import type { AgentRun, AgentRunStatus, Message, RoomAgent } from './types.js';
 
 void _roomAgentRepo;
+
+const OPENCLAW_RESPONSE_TIMEOUT_MS = 120000;
 
 /**
  * Dispatch an incoming user message to all relevant agents in the room.
@@ -152,13 +155,22 @@ async function respondAsAgent(args: {
         agentId: agent.agent_id,
         sessionKey: sessionKey!,
       });
-      await gatewayClient.sendToAgent({
+      await gatewayClient.subscribeSessionEvents();
+      const result = await streamOpenClawResponse({
         agentId: agent.agent_id,
         sessionKey: sessionKey!,
-        text: prompt,
+        prompt,
+        signal: controller.signal,
+        onChunk: onStdout,
+        onError: onStderr,
       });
-      onStdout(`(message dispatched to OpenClaw agent ${agent.agent_name}; awaiting streamed response)`);
-      finishRun(run.id, controller.signal.aborted ? 'cancelled' : 'completed');
+      if (result.status === 'cancelled') {
+        finishRun(run.id, 'cancelled');
+      } else if (result.status === 'failed') {
+        finishRun(run.id, 'failed', result.error);
+      } else {
+        finishRun(run.id, 'completed');
+      }
     }
   } catch (err) {
     const status: AgentRunStatus = controller.signal.aborted ? 'cancelled' : 'failed';
@@ -200,6 +212,166 @@ async function ensureOpenClawSession(args: {
   }
 }
 
+async function streamOpenClawResponse(args: {
+  agentId: string;
+  sessionKey: string;
+  prompt: string;
+  signal: AbortSignal;
+  onChunk: (chunk: string) => void;
+  onError: (chunk: string) => void;
+}): Promise<{ status: 'completed' | 'failed' | 'cancelled'; error?: string }> {
+  let runId = '';
+  let lastSnapshot = '';
+  const normalizedSessionKey = args.sessionKey.toLowerCase();
+  const idempotencyKey = randomUUID();
+  const pendingEvents: GatewayStreamEvent[] = [];
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let unsubscribe: (() => void) | null = null;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+
+    const cleanup = (): void => {
+      if (timeout) clearTimeout(timeout);
+      timeout = null;
+      unsubscribe?.();
+      unsubscribe = null;
+      args.signal.removeEventListener('abort', onAbort);
+    };
+
+    const settle = (result: { status: 'completed' | 'failed' | 'cancelled'; error?: string }): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const onAbort = (): void => {
+      if (!runId) {
+        settle({ status: 'cancelled' });
+        return;
+      }
+      void gatewayClient
+        .abortChat({ sessionKey: args.sessionKey, runId })
+        .then(() => settle({ status: 'cancelled' }))
+        .catch((err) => {
+          args.onError(`\n[gateway abort error] ${(err as Error).message}`);
+          settle({ status: 'cancelled' });
+        });
+    };
+
+    timeout = setTimeout(() => {
+      settle({ status: 'failed', error: 'OpenClaw response timeout' });
+    }, OPENCLAW_RESPONSE_TIMEOUT_MS);
+
+    unsubscribe = gatewayClient.onEvent(({ event, payload }) => {
+      const p = asRecord(payload);
+      if (!p) return;
+      const eventSessionKey = extractSessionKey(p);
+      if (eventSessionKey.toLowerCase() !== normalizedSessionKey) return;
+
+      const payloadRunId = typeof p.runId === 'string' ? p.runId : '';
+      if (!runId) {
+        if (payloadRunId) pendingEvents.push({ event, payload: p });
+        return;
+      }
+      if (payloadRunId !== runId) return;
+
+      handleGatewayStreamEvent({ event, payload: p });
+    });
+
+    const handleGatewayStreamEvent = ({ event, payload: p }: GatewayStreamEvent): void => {
+      if (event === 'agent') {
+        const stream = typeof p.stream === 'string' ? p.stream : '';
+        const data = asRecord(p.data);
+
+        if (stream === 'lifecycle') {
+          const phase = typeof data?.phase === 'string' ? data.phase : '';
+          if (phase === 'end') settle({ status: 'completed' });
+          else if (phase === 'error') {
+            const error = extractGatewayText(data ?? p) || 'OpenClaw agent run failed';
+            settle({ status: 'failed', error });
+          } else if (phase === 'abort') {
+            settle({ status: 'cancelled' });
+          }
+        }
+        return;
+      }
+
+      if (event === 'chat') {
+        const state = typeof p.state === 'string' ? p.state : '';
+        if (state === 'delta') {
+          const text = extractGatewayText(p);
+          if (!text) return;
+          appendSnapshotDelta(text);
+        } else if (state === 'final') {
+          const text = extractGatewayText(p);
+          if (text) {
+            appendSnapshotDelta(text);
+          }
+          settle({ status: 'completed' });
+        } else if (state === 'error') {
+          const error = extractGatewayText(p) || 'OpenClaw chat failed';
+          settle({ status: 'failed', error });
+        }
+      }
+    };
+
+    const replayPendingEvents = (): void => {
+      if (!runId) return;
+      const events = pendingEvents.splice(0);
+      for (const item of events) {
+        const payloadRunId = typeof item.payload.runId === 'string' ? item.payload.runId : '';
+        if (payloadRunId === runId) handleGatewayStreamEvent(item);
+      }
+    };
+
+    args.signal.addEventListener('abort', onAbort, { once: true });
+
+    gatewayClient
+      .sendToAgent({
+        agentId: args.agentId,
+        sessionKey: args.sessionKey,
+        text: args.prompt,
+        idempotencyKey,
+      })
+      .then((res) => {
+        if (res.runId) runId = res.runId;
+        replayPendingEvents();
+        if (args.signal.aborted) {
+          onAbort();
+        } else if (!runId) {
+          settle({ status: 'failed', error: 'OpenClaw chat.send did not return runId' });
+        }
+      })
+      .catch(fail);
+  });
+
+  function appendSnapshotDelta(textOrSnapshot: string): void {
+    if (!textOrSnapshot) return;
+    if (textOrSnapshot.startsWith(lastSnapshot)) {
+      const delta = textOrSnapshot.slice(lastSnapshot.length);
+      if (delta) args.onChunk(delta);
+      lastSnapshot = textOrSnapshot;
+      return;
+    }
+    args.onChunk(textOrSnapshot);
+    lastSnapshot += textOrSnapshot;
+  }
+}
+
+interface GatewayStreamEvent {
+  event: string;
+  payload: Record<string, unknown>;
+}
+
 /** Forward gateway agent messages back into the appropriate room. */
 export function bindGatewayEvents(): void {
   gatewayClient.onEvent(({ event, payload }) => {
@@ -237,6 +409,10 @@ function isGatewayMessageEvent(event: string): boolean {
   ].includes(event);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
 function extractSessionKey(payload: Record<string, unknown>): string {
   if (typeof payload.sessionKey === 'string') return payload.sessionKey;
   if (typeof payload.session === 'string') return payload.session;
@@ -244,10 +420,18 @@ function extractSessionKey(payload: Record<string, unknown>): string {
   if (data && typeof data === 'object' && typeof (data as Record<string, unknown>).sessionKey === 'string') {
     return (data as Record<string, unknown>).sessionKey as string;
   }
+  const message = payload.message;
+  if (message && typeof message === 'object') {
+    const m = message as Record<string, unknown>;
+    if (typeof m.sessionKey === 'string') return m.sessionKey;
+  }
   return '';
 }
 
 function extractGatewayText(payload: Record<string, unknown>): string {
+  if (typeof payload.errorMessage === 'string') return payload.errorMessage;
+  if (typeof payload.error === 'string') return payload.error;
+
   const direct = payload.text ?? payload.content ?? payload.delta;
   if (typeof direct === 'string') return direct;
 
@@ -257,6 +441,17 @@ function extractGatewayText(payload: Record<string, unknown>): string {
     const m = message as Record<string, unknown>;
     if (typeof m.text === 'string') return m.text;
     if (typeof m.content === 'string') return m.content;
+    const content = m.content;
+    if (Array.isArray(content)) {
+      return content
+        .map((item) => {
+          if (!item || typeof item !== 'object') return '';
+          const block = item as Record<string, unknown>;
+          return typeof block.text === 'string' ? block.text : '';
+        })
+        .filter(Boolean)
+        .join('');
+    }
   }
 
   const data = payload.data;
@@ -265,6 +460,8 @@ function extractGatewayText(payload: Record<string, unknown>): string {
     if (typeof d.text === 'string') return d.text;
     if (typeof d.content === 'string') return d.content;
     if (typeof d.delta === 'string') return d.delta;
+    if (typeof d.errorMessage === 'string') return d.errorMessage;
+    if (typeof d.error === 'string') return d.error;
   }
 
   return '';

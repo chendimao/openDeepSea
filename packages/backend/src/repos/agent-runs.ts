@@ -46,6 +46,25 @@ export const agentRunRepo = {
       .all(roomId, limit) as AgentRun[];
   },
 
+  failActiveRuns(error: string): number {
+    const timestamp = now();
+    const result = db
+      .prepare(
+        `UPDATE agent_runs
+         SET status = 'failed',
+             error = COALESCE(error, ?),
+             stderr = CASE
+               WHEN stderr = '' THEN ?
+               ELSE stderr || ?
+             END,
+             updated_at = ?,
+             completed_at = ?
+         WHERE status IN ('running', 'queued')`,
+      )
+      .run(error, error, `\n${error}`, timestamp, timestamp);
+    return result.changes;
+  },
+
   appendStdout(id: string, chunk: string): AgentRun | undefined {
     db.prepare('UPDATE agent_runs SET stdout = stdout || ?, updated_at = ? WHERE id = ?').run(
       chunk,

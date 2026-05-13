@@ -135,7 +135,8 @@ class OpenClawGatewayClient {
     agentId: string;
     sessionKey: string;
     text: string;
-  }): Promise<unknown> {
+    idempotencyKey?: string;
+  }): Promise<{ runId?: string; status?: string }> {
     return this.request(
       'chat.send',
       {
@@ -143,10 +144,21 @@ class OpenClawGatewayClient {
         message: args.text,
         deliver: false,
         timeoutMs: 120000,
-        idempotencyKey: randomUUID(),
+        idempotencyKey: args.idempotencyKey ?? randomUUID(),
       },
       { timeoutMs: 125000 },
     );
+  }
+
+  async abortChat(args: { sessionKey: string; runId?: string }): Promise<unknown> {
+    return this.request('chat.abort', {
+      sessionKey: args.sessionKey,
+      ...(args.runId ? { runId: args.runId } : {}),
+    });
+  }
+
+  async subscribeSessionEvents(): Promise<unknown> {
+    return this.request('sessions.subscribe');
   }
 
   async spawnSession(args: { agentId: string; sessionKey: string }): Promise<unknown> {

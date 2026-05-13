@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { bindGatewayEvents } from './dispatcher.js';
 import { gatewayClient } from './openclaw/gateway.js';
+import { agentRunRepo } from './repos/agent-runs.js';
 import { router } from './routes.js';
 import { wsHub } from './ws-hub.js';
 import type { WsClientEvent } from './types.js';
@@ -33,6 +34,11 @@ wss.on('connection', (socket) => {
 });
 
 bindGatewayEvents();
+
+const orphanedRuns = agentRunRepo.failActiveRuns('Backend restarted before agent run completed');
+if (orphanedRuns > 0) {
+  console.warn(`[agent-runs] Marked ${orphanedRuns} orphaned active run(s) as failed`);
+}
 
 // Try to connect to OpenClaw gateway in background; don't crash if unavailable.
 gatewayClient

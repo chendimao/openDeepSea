@@ -115,8 +115,8 @@ export const codexAdapter: SessionAdapter = {
   },
 
   async invoke({ projectPath, sessionId, prompt, onChunk, signal }) {
-    const args: string[] = ['exec'];
-    if (sessionId) args.push('--resume', sessionId);
+    const args: string[] = ['exec', '--json'];
+    if (sessionId) args.push('resume', sessionId);
     args.push(prompt);
     return runStreaming('codex', args, projectPath, onChunk, signal);
   },
