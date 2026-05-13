@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { Project } from '../types.js';
+import type { MessageRoutingMode, Project } from '../types.js';
 
 export const projectRepo = {
   list(): Project[] {
@@ -21,9 +21,11 @@ export const projectRepo = {
     const id = nanoid(12);
     const ts = now();
     db.prepare(
-      `INSERT INTO projects (id, name, path, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(id, input.name, input.path, input.description ?? null, ts, ts);
+      `INSERT INTO projects (
+        id, name, path, description, message_routing_mode, fallback_agent_id, created_at, updated_at
+      )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(id, input.name, input.path, input.description ?? null, 'mentions_only', null, ts, ts);
     return this.get(id)!;
   },
 
@@ -34,6 +36,20 @@ export const projectRepo = {
     db.prepare(
       `UPDATE projects SET name = ?, description = ?, updated_at = ? WHERE id = ?`,
     ).run(next.name, next.description, next.updated_at, id);
+    return this.get(id);
+  },
+
+  updateRouting(
+    id: string,
+    patch: { message_routing_mode: MessageRoutingMode; fallback_agent_id: string | null },
+  ): Project | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    db.prepare(
+      `UPDATE projects
+       SET message_routing_mode = ?, fallback_agent_id = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(patch.message_routing_mode, patch.fallback_agent_id, now(), id);
     return this.get(id);
   },
 

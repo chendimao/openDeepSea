@@ -3,9 +3,13 @@ export interface Project {
   name: string;
   path: string;
   description: string | null;
+  message_routing_mode: MessageRoutingMode;
+  fallback_agent_id: string | null;
   created_at: number;
   updated_at: number;
 }
+
+export type MessageRoutingMode = 'mentions_only' | 'fallback_reply' | 'fallback_route';
 
 export interface Room {
   id: string;

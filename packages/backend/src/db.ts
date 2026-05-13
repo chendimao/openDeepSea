@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL,
   path TEXT NOT NULL UNIQUE,
   description TEXT,
+  message_routing_mode TEXT NOT NULL DEFAULT 'mentions_only',
+  fallback_agent_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -106,6 +108,15 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_room ON tasks(room_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 `);
+
+const projectColumns = db.prepare('PRAGMA table_info(projects)').all() as { name: string }[];
+const projectColumnNames = new Set(projectColumns.map((column) => column.name));
+if (!projectColumnNames.has('message_routing_mode')) {
+  db.exec("ALTER TABLE projects ADD COLUMN message_routing_mode TEXT NOT NULL DEFAULT 'mentions_only'");
+}
+if (!projectColumnNames.has('fallback_agent_id')) {
+  db.exec('ALTER TABLE projects ADD COLUMN fallback_agent_id TEXT');
+}
 
 export function now(): number {
   return Date.now();

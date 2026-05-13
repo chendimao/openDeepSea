@@ -3,6 +3,7 @@ import type {
   AgentRun,
   CliSession,
   Message,
+  MessageRoutingMode,
   OpenClawAgent,
   Project,
   Room,
@@ -37,6 +38,14 @@ export const api = {
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
+  updateProjectRouting: (
+    id: string,
+    input: { message_routing_mode: MessageRoutingMode; fallback_agent_id: string | null },
+  ) =>
+    request<Project>(`/projects/${id}/routing`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
   listRooms: (projectId: string) => request<Room[]>(`/projects/${projectId}/rooms`),

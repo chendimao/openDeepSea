@@ -77,6 +77,30 @@ router.patch('/projects/:id', (req, res) => {
   res.json(updated);
 });
 
+router.put('/projects/:id/routing', (req, res) => {
+  const schema = z
+    .object({
+      message_routing_mode: z.enum(['mentions_only', 'fallback_reply', 'fallback_route']),
+      fallback_agent_id: z.string().min(1).nullable().optional(),
+    })
+    .refine(
+      (value) =>
+        value.message_routing_mode === 'mentions_only' || Boolean(value.fallback_agent_id),
+      { message: 'fallback_agent_id is required unless message_routing_mode is mentions_only' },
+    );
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const updated = projectRepo.updateRouting(req.params.id, {
+    message_routing_mode: parsed.data.message_routing_mode,
+    fallback_agent_id:
+      parsed.data.message_routing_mode === 'mentions_only'
+        ? null
+        : parsed.data.fallback_agent_id ?? null,
+  });
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  res.json(updated);
+});
+
 router.delete('/projects/:id', (req, res) => {
   const ok = projectRepo.delete(req.params.id);
   res.status(ok ? 204 : 404).end();

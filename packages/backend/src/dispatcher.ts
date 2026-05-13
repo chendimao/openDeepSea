@@ -6,18 +6,16 @@ import { agentRunRepo } from './repos/agent-runs.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
-import { roomAgentRepo as _roomAgentRepo } from './repos/rooms.js';
 import { runRegistry } from './run-registry.js';
 import { wsHub } from './ws-hub.js';
 import type { AgentRun, AgentRunStatus, Message, RoomAgent } from './types.js';
 
-void _roomAgentRepo;
-
 const OPENCLAW_RESPONSE_TIMEOUT_MS = 120000;
 
 /**
- * Dispatch an incoming user message to all relevant agents in the room.
- * - Mentioned agents (or all agents when no mentions) are notified.
+ * Dispatch an incoming user message to the agents selected by project routing.
+ * - Mentioned agents are notified directly.
+ * - Messages without mentions either stay silent or go to the configured fallback agent.
  * - ACP-enabled agents call their CLI; others go through the OpenClaw gateway.
  */
 export async function dispatchUserMessage(args: {
@@ -31,32 +29,156 @@ export async function dispatchUserMessage(args: {
   const project = projectRepo.get(room.project_id);
   if (!project) return;
   const allAgents = roomAgentRepo.listByRoom(roomId);
-  const targets =
-    args.mentionedAgentRoomIds && args.mentionedAgentRoomIds.length > 0
-      ? allAgents.filter((a) => args.mentionedAgentRoomIds!.includes(a.id))
-      : allAgents;
+  const mentionedIds = new Set(args.mentionedAgentRoomIds ?? []);
+  const explicitlyMentionedAgents = allAgents.filter((agent) => mentionedIds.has(agent.id));
+  const routing = resolveInitialTargets({
+    allAgents,
+    explicitlyMentionedAgents,
+    fallbackAgentId: project.fallback_agent_id,
+    mode: project.message_routing_mode,
+    prompt: userMessage.content,
+  });
+  if (routing.targets.length === 0) return;
 
-  // Fan out concurrently
-  await Promise.all(
-    targets.map((agent) =>
+  const responses = await runTargets({
+    targets: routing.targets,
+    projectPath: project.path,
+    roomId,
+  });
+
+  const fallbackTarget = routing.targets[0];
+  const fallbackResponse = responses[0]?.content;
+  if (routing.after === 'route_from_fallback' && fallbackTarget && fallbackResponse) {
+    const selectedAgents = selectAgentsFromFallbackResponse(fallbackResponse, allAgents, fallbackTarget.agent);
+    if (selectedAgents.length === 0) return;
+    const handoffPrompt = buildFallbackHandoffPrompt({
+      userPrompt: userMessage.content,
+      fallbackAgentName: fallbackTarget.agent.agent_name,
+      fallbackResponse,
+    });
+    await runTargets({
+      targets: selectedAgents.map((agent) => ({ agent, prompt: handoffPrompt })),
+      projectPath: project.path,
+      roomId,
+    });
+  }
+}
+
+async function runTargets(args: {
+  targets: { agent: RoomAgent; prompt: string }[];
+  projectPath: string;
+  roomId: string;
+}): Promise<Array<Message | undefined>> {
+  return Promise.all(
+    args.targets.map((target) =>
       respondAsAgent({
-        agent,
-        projectPath: project.path,
-        roomId,
-        prompt: userMessage.content,
+        agent: target.agent,
+        projectPath: args.projectPath,
+        roomId: args.roomId,
+        prompt: target.prompt,
       }).catch((err) => {
         const errMsg = messageRepo.create({
-          room_id: roomId,
+          room_id: args.roomId,
           sender_type: 'system',
           sender_id: 'system',
           sender_name: 'System',
-          content: `Agent ${agent.agent_name} failed: ${(err as Error).message}`,
+          content: `Agent ${target.agent.agent_name} failed: ${(err as Error).message}`,
           message_type: 'system',
         });
-        wsHub.broadcast(roomId, { type: 'message:new', roomId, message: errMsg });
+        wsHub.broadcast(args.roomId, { type: 'message:new', roomId: args.roomId, message: errMsg });
+        return undefined;
       }),
     ),
   );
+}
+
+function resolveInitialTargets(args: {
+  allAgents: RoomAgent[];
+  explicitlyMentionedAgents: RoomAgent[];
+  fallbackAgentId: string | null;
+  mode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
+  prompt: string;
+}): { targets: { agent: RoomAgent; prompt: string }[]; after?: 'route_from_fallback' } {
+  if (args.explicitlyMentionedAgents.length > 0) {
+    return {
+      targets: args.explicitlyMentionedAgents.map((agent) => ({ agent, prompt: args.prompt })),
+    };
+  }
+  if (args.mode === 'mentions_only' || !args.fallbackAgentId) return { targets: [] };
+  const fallbackAgent = args.allAgents.find((agent) => agent.agent_id === args.fallbackAgentId);
+  if (!fallbackAgent) return { targets: [] };
+  const prompt =
+    args.mode === 'fallback_route'
+      ? buildFallbackRoutingPrompt(args.prompt, args.allAgents, fallbackAgent)
+      : args.prompt;
+  return {
+    targets: [{ agent: fallbackAgent, prompt }],
+    after: args.mode === 'fallback_route' ? 'route_from_fallback' : undefined,
+  };
+}
+
+function buildFallbackRoutingPrompt(
+  userPrompt: string,
+  allAgents: RoomAgent[],
+  fallbackAgent: RoomAgent,
+): string {
+  const agents = allAgents
+    .filter((agent) => agent.id !== fallbackAgent.id)
+    .map((agent) => {
+      const role = agent.agent_role?.trim() ? `职责：${agent.agent_role.trim()}` : '职责：未填写';
+      return `- @${agent.agent_name} (${agent.agent_id})：${role}`;
+    })
+    .join('\n');
+  const agentList = agents || '- 当前聊天室没有其他可路由的智能体。';
+
+  return [
+    '你是当前项目聊天室的兜底调度智能体。',
+    '请先判断用户消息是否需要其他智能体参与。',
+    '如果问题可以由你直接回答，请直接回答，并说明你没有转派。',
+    '如果需要转派，请在回复开头列出应当 @ 的智能体，格式为“建议协作：@AgentA @AgentB”，然后给出每个智能体应处理的具体事项。',
+    '系统会读取“建议协作”里的 @ 智能体并启动它们；不要伪造其他智能体的回复。',
+    '',
+    '可用智能体：',
+    agentList,
+    '',
+    '用户消息：',
+    userPrompt,
+  ].join('\n');
+}
+
+function selectAgentsFromFallbackResponse(
+  fallbackResponse: string,
+  allAgents: RoomAgent[],
+  fallbackAgent: RoomAgent,
+): RoomAgent[] {
+  const firstLines = fallbackResponse.split('\n').slice(0, 6).join('\n');
+  const mentionedNames = new Set(
+    Array.from(firstLines.matchAll(/@([\p{L}\p{N}_.-]+)/gu)).map((match) => match[1]),
+  );
+  if (mentionedNames.size === 0) return [];
+  const selected = allAgents.filter(
+    (agent) =>
+      agent.id !== fallbackAgent.id &&
+      (mentionedNames.has(agent.agent_name) || mentionedNames.has(agent.agent_id)),
+  );
+  return selected.filter((agent, index) => selected.findIndex((item) => item.id === agent.id) === index);
+}
+
+function buildFallbackHandoffPrompt(args: {
+  userPrompt: string;
+  fallbackAgentName: string;
+  fallbackResponse: string;
+}): string {
+  return [
+    `${args.fallbackAgentName} 已将这条用户消息分派给你协作处理。`,
+    '请只围绕你的职责给出回答、方案或执行建议；如果这是开发任务，请明确你负责的部分、改动边界和需要与其他智能体对齐的接口。',
+    '',
+    '用户原始消息：',
+    args.userPrompt,
+    '',
+    `${args.fallbackAgentName} 的调度说明：`,
+    args.fallbackResponse,
+  ].join('\n');
 }
 
 async function respondAsAgent(args: {
@@ -64,7 +186,7 @@ async function respondAsAgent(args: {
   projectPath: string;
   roomId: string;
   prompt: string;
-}): Promise<void> {
+}): Promise<Message | undefined> {
   const { agent, projectPath, roomId, prompt } = args;
   const backend = agent.acp_enabled && agent.acp_backend ? agent.acp_backend : 'openclaw';
   const sessionKey = backend === 'openclaw' ? `agent:${agent.agent_id}:room-${roomId}` : null;
@@ -188,6 +310,7 @@ async function respondAsAgent(args: {
       done: true,
     });
   }
+  return messageRepo.get(placeholder.id);
 
   function broadcastRun(type: 'agent_run:created' | 'agent_run:updated', updatedRun: AgentRun): void {
     wsHub.broadcast(roomId, { type, roomId, run: updatedRun });

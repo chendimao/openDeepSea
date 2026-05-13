@@ -12,6 +12,7 @@ import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
+import { ProjectRoutingDialog } from '../components/ProjectRoutingDialog';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { Button } from '../components/ui/Button';
@@ -145,12 +146,20 @@ export function RoomPage() {
           <span className="hidden sm:inline-flex">
             <CreateTaskDialog roomId={roomId} agents={agents} />
           </span>
+          {project && <ProjectRoutingDialog project={project} agents={agents} />}
           <AddAgentDialog roomId={roomId} />
         </div>
       </header>
 
       <div className="flex-1 min-h-0 flex max-lg:flex-col">
-        <ChatColumn messages={messages} agents={agents} agentRuns={agentRuns} roomId={roomId} />
+        <ChatColumn
+          messages={messages}
+          agents={agents}
+          agentRuns={agentRuns}
+          roomId={roomId}
+          routingMode={project?.message_routing_mode ?? 'mentions_only'}
+          fallbackAgentId={project?.fallback_agent_id ?? null}
+        />
         <TaskBoard
           tasks={tasks}
           agents={agents}
@@ -238,11 +247,15 @@ function ChatColumn({
   agents,
   agentRuns,
   roomId,
+  routingMode,
+  fallbackAgentId,
 }: {
   messages: Message[];
   agents: RoomAgent[];
   agentRuns: AgentRun[];
   roomId: string;
+  routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
+  fallbackAgentId: string | null;
 }) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -343,6 +356,9 @@ function ChatColumn({
         sending={send.isPending || createTaskFromCommand.isPending}
         agentCount={agents.length}
         agents={agents}
+        routingMode={routingMode}
+        fallbackAgentId={fallbackAgentId}
+        fallbackAgent={agents.find((agent) => agent.agent_id === fallbackAgentId)}
       />
     </div>
   );
@@ -448,6 +464,9 @@ function Composer({
   sending,
   agentCount,
   agents,
+  routingMode,
+  fallbackAgentId,
+  fallbackAgent,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -455,6 +474,9 @@ function Composer({
   sending: boolean;
   agentCount: number;
   agents: RoomAgent[];
+  routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
+  fallbackAgentId: string | null;
+  fallbackAgent?: RoomAgent;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
@@ -496,45 +518,65 @@ function Composer({
           setMention(null);
           onSend();
         }}
-        className="relative flex items-end gap-2"
+        className="relative space-y-2"
       >
         {mention && (
           <AgentMentionMenu agents={agents} query={mention.query} onSelect={selectAgent} />
         )}
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value, e.target.selectionStart)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape' && mention) {
-              e.preventDefault();
-              setMention(null);
-              return;
+        <div className="flex items-end gap-2">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => setValue(e.target.value, e.target.selectionStart)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && mention) {
+                e.preventDefault();
+                setMention(null);
+                return;
+              }
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                setMention(null);
+                onSend();
+              }
+            }}
+            onSelect={(e) => updateMention(value, e.currentTarget.selectionStart)}
+            placeholder={
+              agentCount === 0
+                ? '先邀请一个 agent 才能开始对话...'
+                : '发送消息、@agent 定向，或 /task 创建任务'
             }
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              setMention(null);
-              onSend();
-            }
-          }}
-          onSelect={(e) => updateMention(value, e.currentTarget.selectionStart)}
-          placeholder={
-            agentCount === 0
-              ? '先邀请一个 agent 才能开始对话…'
-              : '发送消息、@agent 定向，或 /task 创建任务'
-          }
-          rows={1}
-          className="min-h-[44px] max-h-[200px] min-w-0 flex-1 resize-none surface-1 rounded-lg px-3.5 py-2.5 text-[13.5px] outline-none focus:border-[var(--color-primary)] focus:glow-primary ease-ocean transition-all"
-          disabled={agentCount === 0}
-        />
-        <Button
-          type="submit"
-          disabled={!value.trim() || sending || agentCount === 0}
-          className="h-[44px] w-[84px] flex-shrink-0 px-0"
-        >
-          <Send className="h-3.5 w-3.5" /> 发送
-        </Button>
+            rows={1}
+            className="min-h-[44px] max-h-[200px] min-w-0 flex-1 resize-none surface-1 rounded-lg px-3.5 py-2.5 text-[13.5px] outline-none focus:border-[var(--color-primary)] focus:glow-primary ease-ocean transition-all"
+            disabled={agentCount === 0}
+          />
+          <Button
+            type="submit"
+            disabled={!value.trim() || sending || agentCount === 0}
+            className="h-[44px] w-[84px] flex-shrink-0 px-0"
+          >
+            <Send className="h-3.5 w-3.5" /> 发送
+          </Button>
+        </div>
+        <p className="px-1 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
+          {routingHint(routingMode, fallbackAgentId, fallbackAgent)}
+        </p>
       </form>
     </div>
   );
+}
+
+function routingHint(
+  mode: 'mentions_only' | 'fallback_reply' | 'fallback_route',
+  fallbackAgentId: string | null,
+  fallbackAgent?: RoomAgent,
+): string {
+  if (mode === 'mentions_only') return '当前策略：只有被 @ 的智能体会回复；无 @ 时不会触发回复。';
+  if (fallbackAgentId && !fallbackAgent) {
+    return `当前策略：无 @ 时交给 ${fallbackAgentId}；当前聊天室尚未邀请它，因此不会触发兜底。`;
+  }
+  if (mode === 'fallback_reply') {
+    return `当前策略：无 @ 时由 ${fallbackAgent?.agent_name ?? '兜底智能体'} 回复。`;
+  }
+  return `当前策略：无 @ 时由 ${fallbackAgent?.agent_name ?? '兜底智能体'} 分析并 @ 相关智能体协作。`;
 }
