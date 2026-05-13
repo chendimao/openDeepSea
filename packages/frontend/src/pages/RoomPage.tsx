@@ -12,12 +12,14 @@ import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
 import { TaskBoard } from '../components/TaskBoard';
+import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { Button } from '../components/ui/Button';
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
   const queryClient = useQueryClient();
   const [configAgent, setConfigAgent] = useState<RoomAgent | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
@@ -79,10 +81,12 @@ export function RoomPage() {
         queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
           prev ? prev.map((task) => (task.id === event.task.id ? event.task : task)) : [event.task],
         );
+        setSelectedTask((current) => (current?.id === event.task.id ? event.task : current));
       } else if (event.type === 'task:deleted') {
         queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
           prev?.filter((task) => task.id !== event.taskId),
         );
+        setSelectedTask((current) => (current?.id === event.taskId ? null : current));
       }
     });
     return () => {
@@ -122,7 +126,7 @@ export function RoomPage() {
         <TaskBoard
           tasks={tasks}
           agents={agents}
-          onSelectTask={() => undefined}
+          onSelectTask={setSelectedTask}
           onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
         />
       </div>
@@ -133,6 +137,13 @@ export function RoomPage() {
           projectId={projectId}
           roomId={roomId}
           onClose={() => setConfigAgent(null)}
+        />
+      )}
+      {selectedTask && (
+        <TaskDetailPanel
+          task={selectedTask}
+          agents={agents}
+          onClose={() => setSelectedTask(null)}
         />
       )}
     </div>
