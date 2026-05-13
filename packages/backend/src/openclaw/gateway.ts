@@ -149,12 +149,11 @@ class OpenClawGatewayClient {
     );
   }
 
-  async spawnSession(args: { agentId: string; sessionKey: string; cwd: string }): Promise<unknown> {
+  async spawnSession(args: { agentId: string; sessionKey: string }): Promise<unknown> {
     return this.request('sessions.create', {
       agentId: args.agentId,
       key: args.sessionKey,
       label: `OpenClaw Room ${args.agentId}`,
-      cwd: args.cwd,
     });
   }
 

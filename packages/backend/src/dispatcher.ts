@@ -151,7 +151,6 @@ async function respondAsAgent(args: {
       await ensureOpenClawSession({
         agentId: agent.agent_id,
         sessionKey: sessionKey!,
-        cwd: projectPath,
       });
       await gatewayClient.sendToAgent({
         agentId: agent.agent_id,
@@ -191,7 +190,6 @@ async function respondAsAgent(args: {
 async function ensureOpenClawSession(args: {
   agentId: string;
   sessionKey: string;
-  cwd: string;
 }): Promise<void> {
   try {
     await gatewayClient.spawnSession(args);
