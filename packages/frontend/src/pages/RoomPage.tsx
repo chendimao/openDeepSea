@@ -5,9 +5,10 @@ import { ChevronLeft, Hash, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { Message, RoomAgent, Task } from '../lib/types';
+import type { AgentRun, Message, RoomAgent, Task } from '../lib/types';
 import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
+import { AgentRunPanel } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
@@ -46,6 +47,11 @@ export function RoomPage() {
     queryFn: () => api.listRoomTasks(roomId),
     enabled: !!roomId,
   });
+  const { data: agentRuns = [] } = useQuery({
+    queryKey: ['agent-runs', roomId],
+    queryFn: () => api.listAgentRuns(roomId),
+    enabled: !!roomId,
+  });
 
   const updateTaskStatus = useMutation({
     mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
@@ -69,6 +75,13 @@ export function RoomPage() {
             m.id === event.messageId ? { ...m, content: m.content + event.chunk } : m,
           );
         });
+      } else if (
+        (event.type === 'agent_run:created' || event.type === 'agent_run:updated') &&
+        event.roomId === roomId
+      ) {
+        queryClient.setQueryData<AgentRun[] | undefined>(['agent-runs', roomId], (prev) =>
+          upsertAgentRun(prev, event.run),
+        );
       } else if (event.type === 'room:agent_joined' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       } else if (event.type === 'room:agent_left' && event.roomId === roomId) {
@@ -128,7 +141,7 @@ export function RoomPage() {
       </header>
 
       <div className="flex-1 min-h-0 flex">
-        <ChatColumn messages={messages} agents={agents} roomId={roomId} />
+        <ChatColumn messages={messages} agents={agents} agentRuns={agentRuns} roomId={roomId} />
         <TaskBoard
           tasks={tasks}
           agents={agents}
@@ -157,6 +170,13 @@ export function RoomPage() {
       )}
     </div>
   );
+}
+
+function upsertAgentRun(prev: AgentRun[] | undefined, run: AgentRun): AgentRun[] {
+  const list = prev ?? [];
+  return [run, ...list.filter((item) => item.id !== run.id)]
+    .sort((a, b) => b.started_at - a.started_at)
+    .slice(0, 50);
 }
 
 function AgentStrip({
@@ -192,10 +212,12 @@ function AgentStrip({
 function ChatColumn({
   messages,
   agents,
+  agentRuns,
   roomId,
 }: {
   messages: Message[];
   agents: RoomAgent[];
+  agentRuns: AgentRun[];
   roomId: string;
 }) {
   const [input, setInput] = useState('');
@@ -264,6 +286,7 @@ function ChatColumn({
         )}
       </div>
 
+      <AgentRunPanel roomId={roomId} runs={agentRuns} agents={agents} />
       <Composer
         value={input}
         onChange={setInput}

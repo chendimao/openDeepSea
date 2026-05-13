@@ -1,5 +1,6 @@
 import type {
   AcpBackend,
+  AgentRun,
   CliSession,
   Message,
   OpenClawAgent,
@@ -70,6 +71,9 @@ export const api = {
     request<CliSession[]>(`/projects/${projectId}/acp-sessions?backend=${backend}`),
 
   listMessages: (roomId: string) => request<Message[]>(`/rooms/${roomId}/messages`),
+  listAgentRuns: (roomId: string) => request<AgentRun[]>(`/rooms/${roomId}/agent-runs`),
+  cancelAgentRun: (id: string) =>
+    request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),
   sendMessage: (roomId: string, content: string, mentions?: string[]) =>
     request<Message>(`/rooms/${roomId}/messages`, {
       method: 'POST',

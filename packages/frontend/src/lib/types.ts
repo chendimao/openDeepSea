@@ -38,6 +38,26 @@ export interface RoomAgent {
   acp_session_label: string | null;
 }
 
+export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface AgentRun {
+  id: string;
+  room_id: string;
+  room_agent_id: string;
+  agent_id: string;
+  backend: 'openclaw' | AcpBackend;
+  status: AgentRunStatus;
+  session_key: string | null;
+  acp_session_id: string | null;
+  prompt: string;
+  stdout: string;
+  stderr: string;
+  error: string | null;
+  started_at: number;
+  updated_at: number;
+  completed_at: number | null;
+}
+
 export interface Message {
   id: string;
   room_id: string;
@@ -95,4 +115,12 @@ export const TASK_PRIORITY_LABEL: Record<Task['priority'], string> = {
   normal: '普通',
   high: '高',
   urgent: '紧急',
+};
+
+export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {
+  queued: '排队中',
+  running: '运行中',
+  completed: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
 };

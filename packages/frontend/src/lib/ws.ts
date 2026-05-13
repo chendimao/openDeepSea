@@ -1,8 +1,10 @@
-import type { Message, RoomAgent, Task } from './types';
+import type { AgentRun, Message, RoomAgent, Task } from './types';
 
 export type WsServerEvent =
   | { type: 'message:new'; roomId: string; message: Message }
   | { type: 'message:stream'; roomId: string; messageId: string; chunk: string; done: boolean }
+  | { type: 'agent_run:created'; roomId: string; run: AgentRun }
+  | { type: 'agent_run:updated'; roomId: string; run: AgentRun }
   | { type: 'room:agent_joined'; roomId: string; agent: RoomAgent }
   | { type: 'room:agent_left'; roomId: string; roomAgentId: string }
   | { type: 'task:created'; task: Task }

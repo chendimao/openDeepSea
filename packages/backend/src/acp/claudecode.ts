@@ -58,9 +58,9 @@ export const claudeCodeAdapter: SessionAdapter = {
           const c = firstUser.message.content;
           if (typeof c === 'string') firstUserMessage = c;
           else if (Array.isArray(c)) {
-            const txt = c.find((part) => typeof part === 'object' && part && (part as { type?: string }).type === 'text') as
-              | { text?: string }
-              | undefined;
+            const txt = c.find(
+              (part) => typeof part === 'object' && part && (part as { type?: string }).type === 'text',
+            ) as { text?: string } | undefined;
             firstUserMessage = txt?.text ?? '';
           }
         }
@@ -94,7 +94,7 @@ function runStreaming(
   cmd: string,
   args: string[],
   cwd: string,
-  onChunk: (chunk: string) => void,
+  onChunk: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void,
   signal?: AbortSignal,
 ): Promise<{ exitCode: number; sessionId: string | null; stderr: string }> {
   return new Promise((resolve) => {
@@ -104,15 +104,20 @@ function runStreaming(
     child.stdout.setEncoding('utf-8');
     child.stderr.setEncoding('utf-8');
     child.stdout.on('data', (data: string) => {
-      onChunk(data);
+      onChunk({ stream: 'stdout', text: normalizeStdoutChunk(data) });
       const m = data.match(/"session_id"\s*:\s*"([^"]+)"/);
       if (m && m[1]) detectedSession = m[1];
+      for (const obj of parseJsonLines(data)) {
+        if (typeof obj['session_id'] === 'string') detectedSession = obj['session_id'];
+      }
     });
     child.stderr.on('data', (data: string) => {
       stderr += data;
+      onChunk({ stream: 'stderr', text: data });
     });
     child.on('error', (err) => {
       stderr += `\n[spawn error] ${(err as Error).message}`;
+      onChunk({ stream: 'stderr', text: `\n[spawn error] ${(err as Error).message}` });
       resolve({ exitCode: -1, sessionId: detectedSession, stderr });
     });
     child.on('close', (code) => {
@@ -122,6 +127,59 @@ function runStreaming(
       child.kill('SIGTERM');
     });
   });
+}
+
+function normalizeStdoutChunk(data: string): string {
+  const lines = data.split('\n');
+  const normalized = lines.map((line) => {
+    if (!line.trim()) return line;
+    try {
+      const obj = JSON.parse(line) as Record<string, unknown>;
+      if (obj['type'] === 'assistant' || obj['type'] === 'result') {
+        return extractText(obj) ?? line;
+      }
+      return line;
+    } catch {
+      return line;
+    }
+  });
+  return normalized.join('\n');
+}
+
+function parseJsonLines(data: string): Record<string, unknown>[] {
+  return data
+    .split('\n')
+    .map((line) => {
+      try {
+        return JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean) as Record<string, unknown>[];
+}
+
+function extractText(obj: Record<string, unknown>): string | null {
+  if (typeof obj['result'] === 'string') return obj['result'];
+  if (typeof obj['text'] === 'string') return obj['text'];
+  const message = obj['message'];
+  if (message && typeof message === 'object') {
+    return extractContentText((message as Record<string, unknown>)['content']);
+  }
+  return extractContentText(obj['content']);
+}
+
+function extractContentText(content: unknown): string | null {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return null;
+  const parts = content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return '';
+      const p = part as Record<string, unknown>;
+      return p['type'] === 'text' && typeof p['text'] === 'string' ? p['text'] : '';
+    })
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join('\n') : null;
 }
 
 export { runStreaming };

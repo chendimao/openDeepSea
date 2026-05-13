@@ -3,10 +3,12 @@ import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { dispatchUserMessage } from './dispatcher.js';
 import { gatewayClient } from './openclaw/gateway.js';
+import { agentRunRepo } from './repos/agent-runs.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { taskRepo } from './repos/tasks.js';
+import { runRegistry } from './run-registry.js';
 import { wsHub } from './ws-hub.js';
 import type { AcpBackend } from './types.js';
 
@@ -176,6 +178,27 @@ router.get('/projects/:projectId/acp-sessions', async (req, res) => {
 // ---------- Messages ----------
 router.get('/rooms/:roomId/messages', (req, res) => {
   res.json(messageRepo.listByRoom(req.params.roomId));
+});
+
+router.get('/rooms/:roomId/agent-runs', (req, res) => {
+  res.json(agentRunRepo.listByRoom(req.params.roomId));
+});
+
+router.post('/agent-runs/:id/cancel', (req, res) => {
+  const run = agentRunRepo.get(req.params.id);
+  if (!run) return res.status(404).json({ error: 'not found' });
+  if (run.status !== 'running' && run.status !== 'queued') return res.json(run);
+  const cancelled = runRegistry.cancel(req.params.id);
+  if (!cancelled) return res.status(409).json({ error: 'run is not active' });
+  const updated = agentRunRepo.updateStatus(req.params.id, 'cancelled');
+  if (updated) {
+    wsHub.broadcast(updated.room_id, {
+      type: 'agent_run:updated',
+      roomId: updated.room_id,
+      run: updated,
+    });
+  }
+  res.json(updated);
 });
 
 router.post('/rooms/:roomId/messages', async (req, res) => {
