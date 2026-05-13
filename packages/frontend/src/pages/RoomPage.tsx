@@ -8,7 +8,7 @@ import { roomSocket, type WsServerEvent } from '../lib/ws';
 import type { AgentRun, Message, RoomAgent, Task } from '../lib/types';
 import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
-import { AgentRunPanel } from '../components/AgentRunPanel';
+import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
@@ -232,10 +232,18 @@ function ChatColumn({
     () => new Map(agents.map((a) => [a.agent_id, a])),
     [agents],
   );
+  const agentByRoomId = useMemo(
+    () => new Map(agents.map((a) => [a.id, a])),
+    [agents],
+  );
+  const runByMessageId = useMemo(
+    () => pairRunsWithAgentMessages(messages, agentRuns),
+    [messages, agentRuns],
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages.length]);
+  }, [messages.length, agentRuns.length]);
 
   const send = useMutation({
     mutationFn: ({
@@ -292,13 +300,22 @@ function ChatColumn({
             action={agents.length === 0 ? <AddAgentDialog roomId={roomId} /> : undefined}
           />
         ) : (
-          messages.map((m) => (
-            <MessageBubble key={m.id} message={m} agentMeta={agentMap.get(m.sender_id)} />
-          ))
+          messages.map((m) => {
+            const run = runByMessageId.get(m.id);
+            return (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                agentMeta={agentMap.get(m.sender_id)}
+                run={run}
+                runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
+                roomId={roomId}
+              />
+            );
+          })
         )}
       </div>
 
-      <AgentRunPanel roomId={roomId} runs={agentRuns} agents={agents} />
       <Composer
         value={input}
         onChange={setInput}
@@ -311,7 +328,40 @@ function ChatColumn({
   );
 }
 
-function MessageBubble({ message, agentMeta }: { message: Message; agentMeta?: RoomAgent }) {
+function pairRunsWithAgentMessages(messages: Message[], runs: AgentRun[]): Map<string, AgentRun> {
+  const result = new Map<string, AgentRun>();
+  const usedRunIds = new Set<string>();
+  const sortedRuns = [...runs].sort((a, b) => a.started_at - b.started_at);
+
+  for (const message of messages) {
+    if (message.sender_type !== 'agent' || message.message_type !== 'agent_stream') continue;
+    const run = sortedRuns.find((candidate) => {
+      if (usedRunIds.has(candidate.id)) return false;
+      if (candidate.agent_id !== message.sender_id) return false;
+      const distance = Math.abs(candidate.started_at - message.created_at);
+      return distance <= 5000;
+    });
+    if (!run) continue;
+    result.set(message.id, run);
+    usedRunIds.add(run.id);
+  }
+
+  return result;
+}
+
+function MessageBubble({
+  message,
+  agentMeta,
+  run,
+  runAgent,
+  roomId,
+}: {
+  message: Message;
+  agentMeta?: RoomAgent;
+  run?: AgentRun;
+  runAgent?: RoomAgent;
+  roomId: string;
+}) {
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
 
@@ -328,7 +378,7 @@ function MessageBubble({ message, agentMeta }: { message: Message; agentMeta?: R
       {!isUser && (
         <AgentAvatar name={message.sender_name ?? message.sender_id} size={32} active={!!agentMeta?.acp_enabled} />
       )}
-      <div className={cn('max-w-[680px] min-w-0 flex flex-col', isUser ? 'items-end' : 'items-start')}>
+      <div className={cn('max-w-[680px] min-w-0 flex flex-col', isUser ? 'items-end' : 'w-full items-start')}>
         <div className="flex items-center gap-2 mb-1">
           <span className="font-display text-[12.5px] font-semibold">
             {isUser ? '你' : message.sender_name ?? message.sender_id}
@@ -344,14 +394,27 @@ function MessageBubble({ message, agentMeta }: { message: Message; agentMeta?: R
         </div>
         <div
           className={cn(
-            'rounded-lg px-3.5 py-2.5 text-[13.5px] leading-relaxed',
+            'rounded-lg text-[13.5px] leading-relaxed',
             isUser
-              ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
-              : 'surface-2',
+              ? 'bg-[var(--color-primary)] px-3.5 py-2.5 text-[var(--color-primary-fg)]'
+              : 'surface-2 w-full',
             message.message_type === 'agent_stream' && !isUser && 'font-mono text-[12.5px]',
           )}
         >
-          <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+          {!isUser && run ? (
+            <div className="space-y-2.5">
+              <div className="px-3.5 pt-3">
+                <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+              </div>
+              <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-2.5 py-2.5">
+                <AgentRunStatusCard roomId={roomId} run={run} agent={runAgent} compact />
+              </div>
+            </div>
+          ) : (
+            <div className={!isUser ? 'px-3.5 py-2.5' : undefined}>
+              <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+            </div>
+          )}
         </div>
       </div>
     </div>

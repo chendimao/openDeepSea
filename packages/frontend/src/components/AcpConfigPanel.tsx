@@ -92,13 +92,15 @@ export function AcpConfigPanel({
               aria-checked={enabled}
               onClick={() => setEnabled((v) => !v)}
               className={cn(
-                'relative h-5 w-9 rounded-full ease-ocean transition-colors',
-                enabled ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-surface-raised)]',
+                'relative h-5 w-9 rounded-full border ease-ocean transition-colors',
+                enabled
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]'
+                  : 'border-[var(--color-border-strong)] bg-[var(--color-switch-off)]',
               )}
             >
               <span
                 className={cn(
-                  'absolute top-0.5 h-4 w-4 rounded-full bg-white ease-ocean transition-transform',
+                  'absolute top-0.5 h-4 w-4 rounded-full bg-[var(--color-switch-thumb)] shadow-[0_1px_3px_rgba(16,32,38,0.22)] ease-ocean transition-transform',
                   enabled ? 'translate-x-[18px]' : 'translate-x-[2px]',
                 )}
               />

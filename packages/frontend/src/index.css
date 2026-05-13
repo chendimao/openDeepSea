@@ -28,6 +28,8 @@
     --color-overlay: rgba(16, 32, 38, 0.34);
     --color-code-bg: #eef7f9;
     --color-avatar-ring: #f3f9fb;
+    --color-switch-off: #e5f1f4;
+    --color-switch-thumb: #ffffff;
     --color-scrollbar-thumb: #c2d9df;
     --color-scrollbar-thumb-hover: #9fc8d1;
     --shadow-raised: 0 1px 2px rgba(16, 32, 38, 0.08);
@@ -62,6 +64,8 @@
     --color-overlay: rgba(10, 14, 26, 0.62);
     --color-code-bg: #070b14;
     --color-avatar-ring: #0A0E1A;
+    --color-switch-off: #161E2E;
+    --color-switch-thumb: #ffffff;
     --color-scrollbar-thumb: #1F2937;
     --color-scrollbar-thumb-hover: #2D3748;
     --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
