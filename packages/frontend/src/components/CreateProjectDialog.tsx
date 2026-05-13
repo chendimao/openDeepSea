@@ -6,8 +6,18 @@ import { Button } from './ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { Input, Label, Textarea } from './ui/Input';
 
-export function CreateProjectDialog({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
+export function CreateProjectDialog({
+  children,
+  open,
+  onOpenChange,
+}: {
+  children?: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const dialogOpen = open ?? internalOpen;
+  const setDialogOpen = onOpenChange ?? setInternalOpen;
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
   const [description, setDescription] = useState('');
@@ -18,7 +28,7 @@ export function CreateProjectDialog({ children }: { children: ReactNode }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       toast.success('项目已添加');
-      setOpen(false);
+      setDialogOpen(false);
       setName('');
       setPath('');
       setDescription('');
@@ -27,8 +37,8 @@ export function CreateProjectDialog({ children }: { children: ReactNode }) {
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent
         title="添加本地项目"
         description="把已有的代码目录纳入 OpenClaw Room 管理"
@@ -69,7 +79,7 @@ export function CreateProjectDialog({ children }: { children: ReactNode }) {
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>
               取消
             </Button>
             <Button type="submit" disabled={create.isPending || !name.trim() || !path.trim()}>
