@@ -40,7 +40,7 @@ export function parsePlanArtifact(output: string): ParsedPlan {
 }
 
 function extractJson(output: string): string {
-  const fenced = output.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const fenced = output.match(/```json\s*([\s\S]*?)```/i);
   if (fenced?.[1]) return fenced[1].trim();
   const start = output.indexOf('{');
   const end = output.lastIndexOf('}');

@@ -32,6 +32,39 @@ test('parsePlanArtifact parses fenced JSON plan', () => {
   assert.equal(firstTask.priority, 'high');
 });
 
+test('parsePlanArtifact prefers JSON fenced plan after non-JSON fenced block', () => {
+  const plan = parsePlanArtifact(`
+先说明一个 TypeScript 示例：
+\`\`\`ts
+const task = { title: 'not a plan' };
+\`\`\`
+
+计划如下：
+\`\`\`json
+{
+  "summary": "修复计划解析",
+  "tasks": [
+    {
+      "title": "优先解析 JSON 代码块",
+      "description": "当输出中先出现非 JSON 代码块时，仍解析后续 JSON 计划",
+      "suggestedRole": "executor",
+      "priority": "normal",
+      "acceptance": ["正确解析 JSON fenced block"]
+    }
+  ],
+  "reviewFocus": ["解析顺序"],
+  "verification": ["npm run test -w @openclaw-room/backend"],
+  "risks": []
+}
+\`\`\`
+`);
+
+  const firstTask = plan.tasks[0];
+  assert.ok(firstTask);
+  assert.equal(plan.summary, '修复计划解析');
+  assert.equal(firstTask.title, '优先解析 JSON 代码块');
+});
+
 test('parsePlanArtifact rejects output without JSON', () => {
   assert.throws(() => parsePlanArtifact('这里只是一段普通文本'), /JSON object/);
 });
