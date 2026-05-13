@@ -1,15 +1,6 @@
-import { WebSocket } from 'ws';
-import { nanoid } from 'nanoid';
+import { execFile } from 'node:child_process';
 
-const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL ?? 'ws://127.0.0.1:18789';
-const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN ?? '';
-const CONNECT_TIMEOUT_MS = 5000;
-
-interface PendingRequest {
-  resolve: (value: unknown) => void;
-  reject: (err: Error) => void;
-  timer: NodeJS.Timeout;
-}
+const DEFAULT_TIMEOUT_MS = 30000;
 
 export interface OpenClawAgentInfo {
   id: string;
@@ -18,123 +9,74 @@ export interface OpenClawAgentInfo {
   workspace?: string;
 }
 
-class OpenClawGatewayClient {
-  private ws: WebSocket | null = null;
-  private connecting: Promise<void> | null = null;
-  private pending = new Map<string, PendingRequest>();
-  private connected = false;
-  private listeners = new Set<(event: { event: string; payload: unknown }) => void>();
+interface GatewayCallOptions {
+  expectFinal?: boolean;
+  timeoutMs?: number;
+}
 
+function formatGatewayError(stderr: string, errorMessage: string): string {
+  const text = stderr.trim() || errorMessage;
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const pairingLine = lines.find((line) => /pairing|required|approval|requestId/i.test(line));
+  const message = pairingLine ?? lines[0] ?? errorMessage;
+  const requestId = message.match(/requestId:\s*([^) \n]+)/i)?.[1];
+  if (requestId && /pairing|required|approval/i.test(message)) {
+    return `${message}。请在本机运行 openclaw devices approve ${requestId} 后重试。`;
+  }
+  return message;
+}
+
+class OpenClawGatewayClient {
   isConnected(): boolean {
-    return this.connected;
+    return false;
   }
 
-  onEvent(handler: (event: { event: string; payload: unknown }) => void): () => void {
-    this.listeners.add(handler);
-    return () => this.listeners.delete(handler);
+  onEvent(_handler: (event: { event: string; payload: unknown }) => void): () => void {
+    return () => undefined;
   }
 
   async connect(): Promise<void> {
-    if (this.connected) return;
-    if (this.connecting) return this.connecting;
-    this.connecting = new Promise<void>((resolve, reject) => {
-      const ws = new WebSocket(GATEWAY_URL);
-      let settled = false;
-      const settleResolve = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(connectTimer);
-        resolve();
-      };
-      const settleReject = (err: Error) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(connectTimer);
-        reject(err);
-      };
-      const connectTimer = setTimeout(() => {
-        ws.terminate();
-        settleReject(new Error(`gateway connect timeout: ${GATEWAY_URL}`));
-      }, CONNECT_TIMEOUT_MS);
-      const onOpen = () => {
-        const connectFrame = {
-          type: 'connect',
-          challenge: nanoid(16),
-          params: GATEWAY_TOKEN ? { auth: { token: GATEWAY_TOKEN } } : {},
-          role: 'client',
-        };
-        ws.send(JSON.stringify(connectFrame));
-      };
-      const onMessage = (data: WebSocket.RawData) => {
-        try {
-          const frame = JSON.parse(data.toString()) as Record<string, unknown>;
-          if (frame['type'] === 'hello-ok' || frame['type'] === 'connect-ok') {
-            this.connected = true;
-            this.ws = ws;
-            settleResolve();
-            return;
-          }
-          if (frame['type'] === 'res' && typeof frame['id'] === 'string') {
-            const id = frame['id'] as string;
-            const pend = this.pending.get(id);
-            if (pend) {
-              clearTimeout(pend.timer);
-              this.pending.delete(id);
-              if (frame['ok']) pend.resolve(frame['payload']);
-              else pend.reject(new Error(JSON.stringify(frame['error'] ?? 'gateway error')));
-            }
-            return;
-          }
-          if (frame['type'] === 'event') {
-            for (const l of this.listeners) {
-              l({ event: String(frame['event']), payload: frame['payload'] });
-            }
-          }
-        } catch {
-          // ignore malformed
-        }
-      };
-      const onError = (err: Error) => {
-        if (!this.connected) settleReject(err);
-      };
-      const onClose = () => {
-        this.connected = false;
-        this.ws = null;
-        for (const p of this.pending.values()) {
-          clearTimeout(p.timer);
-          p.reject(new Error('gateway connection closed'));
-        }
-        this.pending.clear();
-        this.connecting = null;
-      };
-      ws.on('open', onOpen);
-      ws.on('message', onMessage);
-      ws.on('error', onError);
-      ws.on('close', onClose);
-    });
-    try {
-      await this.connecting;
-    } finally {
-      this.connecting = null;
-    }
+    await this.request('health', {}, { timeoutMs: 10000 });
   }
 
-  async request<T = unknown>(method: string, params: Record<string, unknown> = {}, timeoutMs = 15000): Promise<T> {
-    if (!this.connected) await this.connect();
-    if (!this.ws) throw new Error('not connected');
-    const id = nanoid(12);
-    const frame = { type: 'req', id, method, params };
+  async request<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: GatewayCallOptions = {},
+  ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`gateway request timeout: ${method}`));
-      }, timeoutMs);
-      this.pending.set(id, {
-        resolve: (v) => resolve(v as T),
-        reject,
-        timer,
-      });
-      this.ws!.send(JSON.stringify(frame));
+      const args = [
+        'gateway',
+        'call',
+        method,
+        '--json',
+        '--timeout',
+        String(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+        '--params',
+        JSON.stringify(params),
+      ];
+      if (options.expectFinal) args.push('--expect-final');
+
+      execFile(
+        'openclaw',
+        args,
+        { timeout: (options.timeoutMs ?? DEFAULT_TIMEOUT_MS) + 2000, maxBuffer: 1024 * 1024 },
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(new Error(formatGatewayError(stderr, error.message)));
+            return;
+          }
+
+          try {
+            resolve(JSON.parse(stdout) as T);
+          } catch (parseError) {
+            reject(new Error(`Failed to parse OpenClaw gateway response: ${(parseError as Error).message}`));
+          }
+        },
+      );
     });
   }
 
@@ -156,22 +98,21 @@ class OpenClawGatewayClient {
     text: string;
   }): Promise<unknown> {
     return this.request('sessions.send', {
-      agentId: args.agentId,
-      sessionKey: args.sessionKey,
+      key: args.sessionKey,
       message: { type: 'text', text: args.text },
     });
   }
 
   async spawnSession(args: { agentId: string; sessionKey: string; cwd: string }): Promise<unknown> {
-    return this.request('sessions.spawn', {
+    return this.request('sessions.create', {
       agentId: args.agentId,
-      sessionKey: args.sessionKey,
-      cwd: args.cwd,
+      key: args.sessionKey,
+      label: `OpenClaw Room ${args.agentId}`,
     });
   }
 
   close(): void {
-    this.ws?.close();
+    // Short-lived official CLI calls own their connection lifecycle.
   }
 }
 
