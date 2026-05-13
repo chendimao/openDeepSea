@@ -54,6 +54,10 @@ export function RoomPage() {
     queryKey: ['agent-runs', roomId],
     queryFn: () => api.listAgentRuns(roomId),
     enabled: !!roomId,
+    refetchInterval: (query) => {
+      const runs = query.state.data as AgentRun[] | undefined;
+      return runs?.some((run) => run.status === 'running' || run.status === 'queued') ? 2000 : false;
+    },
   });
 
   const updateTaskStatus = useMutation({
@@ -74,9 +78,9 @@ export function RoomPage() {
       } else if (event.type === 'message:stream' && event.roomId === roomId) {
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) => {
           if (!prev) return prev;
-          return prev.map((m) =>
+          return dedupeMessages(prev.map((m) =>
             m.id === event.messageId ? { ...m, content: m.content + event.chunk } : m,
-          );
+          ));
         });
       } else if (
         (event.type === 'agent_run:created' || event.type === 'agent_run:updated') &&
@@ -179,7 +183,15 @@ export function RoomPage() {
 
 function upsertMessage(prev: Message[] | undefined, message: Message): Message[] {
   const list = prev ?? [];
-  return [...list.filter((item) => item.id !== message.id), message].sort(
+  return dedupeMessages([...list.filter((item) => item.id !== message.id), message]);
+}
+
+function dedupeMessages(messages: Message[]): Message[] {
+  const byId = new Map<string, Message>();
+  for (const message of messages) {
+    byId.set(message.id, message);
+  }
+  return [...byId.values()].sort(
     (a, b) => a.created_at - b.created_at,
   );
 }
@@ -247,6 +259,7 @@ function ChatColumn({
     () => pairRunsWithAgentMessages(messages, agentRuns),
     [messages, agentRuns],
   );
+  const visibleMessages = useMemo(() => dedupeMessages(messages), [messages]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -307,7 +320,7 @@ function ChatColumn({
             action={agents.length === 0 ? <AddAgentDialog roomId={roomId} /> : undefined}
           />
         ) : (
-          messages.map((m) => {
+          visibleMessages.map((m) => {
             const run = runByMessageId.get(m.id);
             return (
               <MessageBubble
