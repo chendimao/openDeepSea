@@ -32,11 +32,12 @@ wss.on('connection', (socket) => {
   socket.on('close', () => wsHub.removeSocket(socket));
 });
 
+bindGatewayEvents();
+
 // Try to connect to OpenClaw gateway in background; don't crash if unavailable.
 gatewayClient
   .connect()
   .then(() => {
-    bindGatewayEvents();
     console.log('[openclaw] Gateway connected');
   })
   .catch((err) => {

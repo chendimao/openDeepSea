@@ -205,15 +205,16 @@ async function ensureOpenClawSession(args: {
 /** Forward gateway agent messages back into the appropriate room. */
 export function bindGatewayEvents(): void {
   gatewayClient.onEvent(({ event, payload }) => {
-    if (event !== 'agent.message' && event !== 'sessions.message') return;
+    if (!isGatewayMessageEvent(event)) return;
     const p = payload as Record<string, unknown> | null;
     if (!p) return;
-    const sessionKey = String(p['sessionKey'] ?? '');
+    const sessionKey = extractSessionKey(p);
     const m = sessionKey.match(/^agent:[^:]+:room-([^:]+)$/);
     if (!m) return;
     const roomId = m[1];
-    const text = typeof p['text'] === 'string' ? (p['text'] as string) : JSON.stringify(p);
-    const agentId = String(p['agentId'] ?? 'unknown');
+    const text = extractGatewayText(p);
+    if (!text) return;
+    const agentId = String(p['agentId'] ?? p['agent'] ?? 'openclaw');
     const message = messageRepo.create({
       room_id: roomId!,
       sender_type: 'agent',
@@ -224,6 +225,51 @@ export function bindGatewayEvents(): void {
     });
     wsHub.broadcast(roomId!, { type: 'message:new', roomId: roomId!, message });
   });
+}
+
+function isGatewayMessageEvent(event: string): boolean {
+  return [
+    'agent.message',
+    'sessions.message',
+    'session.message',
+    'chat.message',
+    'message',
+    'chat.delta',
+    'session.delta',
+  ].includes(event);
+}
+
+function extractSessionKey(payload: Record<string, unknown>): string {
+  if (typeof payload.sessionKey === 'string') return payload.sessionKey;
+  if (typeof payload.session === 'string') return payload.session;
+  const data = payload.data;
+  if (data && typeof data === 'object' && typeof (data as Record<string, unknown>).sessionKey === 'string') {
+    return (data as Record<string, unknown>).sessionKey as string;
+  }
+  return '';
+}
+
+function extractGatewayText(payload: Record<string, unknown>): string {
+  const direct = payload.text ?? payload.content ?? payload.delta;
+  if (typeof direct === 'string') return direct;
+
+  const message = payload.message;
+  if (typeof message === 'string') return message;
+  if (message && typeof message === 'object') {
+    const m = message as Record<string, unknown>;
+    if (typeof m.text === 'string') return m.text;
+    if (typeof m.content === 'string') return m.content;
+  }
+
+  const data = payload.data;
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>;
+    if (typeof d.text === 'string') return d.text;
+    if (typeof d.content === 'string') return d.content;
+    if (typeof d.delta === 'string') return d.delta;
+  }
+
+  return '';
 }
 
 export function newRequestId(): string {
