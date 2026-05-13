@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from '../components/ui/Dialog';
 import { Input, Label, Textarea } from '../components/ui/Input';
 import { relativeTime } from '../lib/utils';
+import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 
 export function ProjectPage() {
   const { projectId = '' } = useParams();
@@ -26,11 +27,13 @@ export function ProjectPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="px-8 pt-8 pb-5 border-b border-[var(--color-border)]">
+      <header className="px-4 sm:px-8 pt-8 pb-5 border-b border-[var(--color-border)]">
         <div className="max-w-5xl mx-auto">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-display text-[22px] font-semibold tracking-tight">{project.name}</h1>
-            <span className="text-[12px] font-mono text-[var(--color-muted)]">{project.path}</span>
+            <span className="min-w-0 truncate text-[12px] font-mono text-[var(--color-muted)]">
+              {project.path}
+            </span>
           </div>
           {project.description && (
             <p className="mt-2 text-[13px] text-[var(--color-fg-muted)]">{project.description}</p>
@@ -44,7 +47,7 @@ export function ProjectPage() {
         </div>
       </header>
 
-      <section className="px-8 py-6">
+      <section className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-baseline gap-3 mb-4">
             <h2 className="font-display text-[14px] font-medium">聊天室</h2>
@@ -55,12 +58,14 @@ export function ProjectPage() {
           </div>
 
           {rooms.length === 0 ? (
-            <div className="surface-1 rounded-xl py-10 text-center">
-              <p className="text-[13px] text-[var(--color-fg-muted)] mb-3">还没有聊天室</p>
-              <CreateRoomDialog projectId={projectId} buttonText="创建第一个聊天室" />
-            </div>
+            <WorkspaceEmptyState
+              icon={<MessageSquarePlus className="h-9 w-9" strokeWidth={1.75} />}
+              title="还没有聊天室"
+              description="为项目创建一个协作主题，后续可以邀请 agent、发送消息并拆分任务。"
+              action={<CreateRoomDialog projectId={projectId} buttonText="创建第一个聊天室" />}
+            />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
               {rooms.map((r) => (
                 <RoomItem key={r.id} projectId={projectId} room={r} />
               ))}
@@ -84,11 +89,11 @@ function RoomItem({ projectId, room }: { projectId: string; room: { id: string; 
   });
 
   return (
-    <div className="group surface-1 rounded-xl p-4 hover:border-[var(--color-accent)] ease-ocean transition-all relative">
+    <div className="group surface-1 rounded-lg p-4 hover:border-[var(--color-accent)] ease-ocean transition-all relative">
       <Link to={`/projects/${projectId}/rooms/${room.id}`} className="block">
-        <div className="flex items-center gap-2 mb-1">
+        <div className="flex items-center gap-2 mb-1 pr-8">
           <Hash className="h-3.5 w-3.5 text-[var(--color-accent)]" strokeWidth={2} />
-          <h3 className="font-display text-[14px] font-semibold">{room.name}</h3>
+          <h3 className="font-display text-[14px] font-semibold truncate">{room.name}</h3>
         </div>
         {room.description && (
           <p className="text-[12px] text-[var(--color-fg-muted)] line-clamp-1 mt-1">{room.description}</p>

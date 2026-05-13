@@ -60,7 +60,7 @@ export function AcpConfigPanel({
   });
 
   return (
-    <div className="absolute right-0 top-0 h-full w-[380px] surface-1 border-l border-[var(--color-border)] flex flex-col fade-up">
+    <div className="workspace-drawer absolute right-0 top-0 z-30 h-full surface-1 border-l border-[var(--color-border)] flex flex-col fade-up">
       <header className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-2">
         <Bot className="h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
         <div className="min-w-0">

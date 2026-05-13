@@ -43,7 +43,7 @@ export function TaskBoard({
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
 
   return (
-    <aside className="w-[360px] flex-shrink-0 border-l border-[var(--color-border)] bg-[var(--color-bg)] min-h-0 flex flex-col">
+    <aside className="w-[360px] max-lg:w-full max-lg:max-h-[42vh] flex-shrink-0 border-l max-lg:border-l-0 max-lg:border-t border-[var(--color-border)] bg-[var(--color-bg)] min-h-0 flex flex-col">
       <header className="h-12 px-4 border-b border-[var(--color-border)] flex items-center gap-2">
         <CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
         <div className="font-display text-[13px] font-semibold">任务看板</div>

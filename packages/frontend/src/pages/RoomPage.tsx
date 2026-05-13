@@ -14,6 +14,9 @@ import { CreateTaskDialog } from '../components/CreateTaskDialog';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { Button } from '../components/ui/Button';
+import { AgentMentionMenu } from '../components/AgentMentionMenu';
+import { MessageContent } from '../components/MessageContent';
+import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -97,7 +100,7 @@ export function RoomPage() {
 
   return (
     <div className="h-full flex flex-col relative">
-      <header className="px-5 h-14 border-b border-[var(--color-border)] flex items-center gap-3 flex-shrink-0">
+      <header className="px-3 sm:px-5 h-14 border-b border-[var(--color-border)] flex items-center gap-3 flex-shrink-0">
         <Link
           to={`/projects/${projectId}`}
           className="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] ease-ocean"
@@ -110,11 +113,11 @@ export function RoomPage() {
           <div className="font-display text-[14px] font-semibold truncate">
             {room?.name ?? '...'}
           </div>
-          <div className="text-[11px] font-mono text-[var(--color-fg-muted)] truncate">
+          <div className="hidden sm:block text-[11px] font-mono text-[var(--color-fg-muted)] truncate">
             {project?.name} · {project?.path}
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex min-w-0 items-center gap-2">
           <AgentStrip
             agents={agents}
             onConfig={(agent) => {
@@ -122,12 +125,14 @@ export function RoomPage() {
               setConfigAgent(agent);
             }}
           />
-          <CreateTaskDialog roomId={roomId} agents={agents} />
+          <span className="hidden sm:inline-flex">
+            <CreateTaskDialog roomId={roomId} agents={agents} />
+          </span>
           <AddAgentDialog roomId={roomId} />
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex max-lg:flex-col">
         <ChatColumn messages={messages} agents={agents} roomId={roomId} />
         <TaskBoard
           tasks={tasks}
@@ -252,11 +257,18 @@ function ChatColumn({
 
   return (
     <div className="flex-1 min-w-0 flex flex-col">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
         {messages.length === 0 ? (
-          <div className="text-center text-[13px] text-[var(--color-fg-muted)] mt-20">
-            还没有消息. 邀请 agent 加入, 然后发布第一个任务吧 🦞
-          </div>
+          <WorkspaceEmptyState
+            icon={<Hash className="h-9 w-9" strokeWidth={1.75} />}
+            title="还没有消息"
+            description={
+              agents.length === 0
+                ? '先添加一个 agent，再开始对话或创建任务。'
+                : '发送第一条消息，或使用 /task 快速创建协作任务。'
+            }
+            action={agents.length === 0 ? <AddAgentDialog roomId={roomId} /> : undefined}
+          />
         ) : (
           messages.map((m) => (
             <MessageBubble key={m.id} message={m} agentMeta={agentMap.get(m.sender_id)} />
@@ -270,6 +282,7 @@ function ChatColumn({
         onSend={handleSend}
         sending={send.isPending || createTaskFromCommand.isPending}
         agentCount={agents.length}
+        agents={agents}
       />
     </div>
   );
@@ -308,14 +321,14 @@ function MessageBubble({ message, agentMeta }: { message: Message; agentMeta?: R
         </div>
         <div
           className={cn(
-            'rounded-xl px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words',
+            'rounded-lg px-3.5 py-2.5 text-[13.5px] leading-relaxed',
             isUser
               ? 'bg-[var(--color-primary)] text-[var(--color-primary-fg)]'
               : 'surface-2',
             message.message_type === 'agent_stream' && !isUser && 'font-mono text-[12.5px]',
           )}
         >
-          {message.content || (message.message_type === 'agent_stream' ? '…' : '')}
+          <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
         </div>
       </div>
     </div>
@@ -328,44 +341,90 @@ function Composer({
   onSend,
   sending,
   agentCount,
+  agents,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSend: () => void;
   sending: boolean;
   agentCount: number;
+  agents: RoomAgent[];
 }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+
+  useEffect(() => {
+    if (!value) setMention(null);
+  }, [value]);
+
+  const updateMention = (nextValue: string, selectionStart: number | null) => {
+    const cursor = selectionStart ?? nextValue.length;
+    const match = nextValue.slice(0, cursor).match(/@([\w.-]*)$/);
+    setMention(match ? { start: cursor - match[0].length, query: match[1] } : null);
+  };
+
+  const setValue = (nextValue: string, selectionStart: number | null) => {
+    onChange(nextValue);
+    updateMention(nextValue, selectionStart);
+  };
+
+  const selectAgent = (agent: RoomAgent) => {
+    if (!mention) return;
+    const textarea = textareaRef.current;
+    const cursor = textarea?.selectionStart ?? value.length;
+    const nextValue = `${value.slice(0, mention.start)}@${agent.agent_name} ${value.slice(cursor)}`;
+    onChange(nextValue);
+    setMention(null);
+    window.requestAnimationFrame(() => {
+      const nextCursor = mention.start + agent.agent_name.length + 2;
+      textarea?.focus();
+      textarea?.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
+
   return (
-    <div className="border-t border-[var(--color-border)] px-4 py-3 flex-shrink-0">
+    <div className="border-t border-[var(--color-border)] px-3 sm:px-4 py-3 flex-shrink-0">
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          setMention(null);
           onSend();
         }}
-        className="flex items-end gap-2"
+        className="relative flex items-end gap-2"
       >
+        {mention && (
+          <AgentMentionMenu agents={agents} query={mention.query} onSelect={selectAgent} />
+        )}
         <textarea
+          ref={textareaRef}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => setValue(e.target.value, e.target.selectionStart)}
           onKeyDown={(e) => {
+            if (e.key === 'Escape' && mention) {
+              e.preventDefault();
+              setMention(null);
+              return;
+            }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
+              setMention(null);
               onSend();
             }
           }}
+          onSelect={(e) => updateMention(value, e.currentTarget.selectionStart)}
           placeholder={
             agentCount === 0
               ? '先邀请一个 agent 才能开始对话…'
               : '发送消息、@agent 定向，或 /task 创建任务'
           }
           rows={1}
-          className="flex-1 resize-none surface-1 rounded-lg px-3.5 py-2.5 text-[13.5px] outline-none focus:border-[var(--color-primary)] focus:glow-primary ease-ocean transition-all min-h-[42px] max-h-[200px]"
+          className="min-h-[44px] max-h-[200px] min-w-0 flex-1 resize-none surface-1 rounded-lg px-3.5 py-2.5 text-[13.5px] outline-none focus:border-[var(--color-primary)] focus:glow-primary ease-ocean transition-all"
           disabled={agentCount === 0}
         />
         <Button
           type="submit"
           disabled={!value.trim() || sending || agentCount === 0}
-          className="h-[42px]"
+          className="h-[44px] w-[84px] flex-shrink-0 px-0"
         >
           <Send className="h-3.5 w-3.5" /> 发送
         </Button>

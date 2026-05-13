@@ -6,6 +6,7 @@ import { relativeTime } from '../lib/utils';
 import { Button } from '../components/ui/Button';
 import { CreateProjectDialog } from '../components/CreateProjectDialog';
 import { LobsterMark } from '../components/LobsterMark';
+import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 
 export function DashboardPage() {
   const { data: projects = [], isLoading } = useQuery({
@@ -15,21 +16,21 @@ export function DashboardPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <header className="px-8 pt-10 pb-6 border-b border-[var(--color-border)]">
+      <header className="px-4 sm:px-8 pt-8 sm:pt-10 pb-6 border-b border-[var(--color-border)]">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <LobsterMark className="h-9 w-9" />
             <div>
               <h1 className="font-display text-[24px] font-semibold tracking-tight">
                 深海指挥中心
               </h1>
               <p className="text-[13px] text-[var(--color-fg-muted)] mt-0.5">
-                管理项目, 协作智能体, 让代码自己游起来 🦞
+                管理本地项目、聊天室与智能体协作上下文
               </p>
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto max-sm:w-full">
               <CreateProjectDialog>
-                <Button variant="primary">
+                <Button variant="primary" className="max-sm:w-full">
                   <Plus className="h-4 w-4" /> 新建项目
                 </Button>
               </CreateProjectDialog>
@@ -38,7 +39,7 @@ export function DashboardPage() {
         </div>
       </header>
 
-      <section className="px-8 py-8">
+      <section className="px-4 sm:px-8 py-8">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-baseline gap-3 mb-5">
             <h2 className="font-display text-[15px] font-medium">所有项目</h2>
@@ -52,7 +53,7 @@ export function DashboardPage() {
           ) : projects.length === 0 ? (
             <EmptyState />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
               {projects.map((p) => (
                 <Link
                   key={p.id}
@@ -111,21 +112,19 @@ export function DashboardPage() {
   );
 }
 
-function EmptyState() {
+function EmptyState(): JSX.Element {
   return (
-    <div className="surface-1 rounded-2xl py-16 px-6 text-center">
-      <div className="mx-auto w-fit opacity-40 mb-4">
-        <LobsterMark className="h-16 w-16" />
-      </div>
-      <p className="font-display text-[15px] mb-2">还没有项目</p>
-      <p className="text-[13px] text-[var(--color-fg-muted)] mb-5">
-        把本地一个真实存在的代码目录加进来, 开启深海协作
-      </p>
-      <CreateProjectDialog>
-        <Button variant="primary">
-          <Plus className="h-4 w-4" /> 添加第一个项目
-        </Button>
-      </CreateProjectDialog>
-    </div>
+    <WorkspaceEmptyState
+      icon={<LobsterMark className="h-14 w-14" />}
+      title="还没有项目"
+      description="添加一个本地代码目录后，可以为它创建聊天室、分配 agent，并跟踪协作任务。"
+      action={
+        <CreateProjectDialog>
+          <Button variant="primary">
+            <Plus className="h-4 w-4" /> 添加第一个项目
+          </Button>
+        </CreateProjectDialog>
+      }
+    />
   );
 }
