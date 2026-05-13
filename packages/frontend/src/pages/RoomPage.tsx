@@ -5,12 +5,13 @@ import { ChevronLeft, Hash, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { Message, RoomAgent } from '../lib/types';
+import type { Message, RoomAgent, Task } from '../lib/types';
 import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
+import { TaskBoard } from '../components/TaskBoard';
 import { Button } from '../components/ui/Button';
 
 export function RoomPage() {
@@ -38,6 +39,17 @@ export function RoomPage() {
     queryFn: () => api.listRoomAgents(roomId),
     enabled: !!roomId,
   });
+  const { data: tasks = [] } = useQuery({
+    queryKey: ['room-tasks', roomId],
+    queryFn: () => api.listRoomTasks(roomId),
+    enabled: !!roomId,
+  });
+
+  const updateTaskStatus = useMutation({
+    mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
+      api.updateTask(task.id, { status }),
+    onError: (err) => toast.error((err as Error).message),
+  });
 
   // Subscribe to WS for this room
   useEffect(() => {
@@ -59,6 +71,18 @@ export function RoomPage() {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       } else if (event.type === 'room:agent_left' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      } else if (event.type === 'task:created' && event.task.room_id === roomId) {
+        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
+          prev ? [event.task, ...prev.filter((task) => task.id !== event.task.id)] : [event.task],
+        );
+      } else if (event.type === 'task:updated' && event.task.room_id === roomId) {
+        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
+          prev ? prev.map((task) => (task.id === event.task.id ? event.task : task)) : [event.task],
+        );
+      } else if (event.type === 'task:deleted') {
+        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
+          prev?.filter((task) => task.id !== event.taskId),
+        );
       }
     });
     return () => {
@@ -95,6 +119,12 @@ export function RoomPage() {
 
       <div className="flex-1 min-h-0 flex">
         <ChatColumn messages={messages} agents={agents} roomId={roomId} />
+        <TaskBoard
+          tasks={tasks}
+          agents={agents}
+          onSelectTask={() => undefined}
+          onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
+        />
       </div>
 
       {configAgent && (
