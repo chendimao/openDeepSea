@@ -115,7 +115,13 @@ export function RoomPage() {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <AgentStrip agents={agents} onConfig={setConfigAgent} />
+          <AgentStrip
+            agents={agents}
+            onConfig={(agent) => {
+              setSelectedTask(null);
+              setConfigAgent(agent);
+            }}
+          />
           <CreateTaskDialog roomId={roomId} agents={agents} />
           <AddAgentDialog roomId={roomId} />
         </div>
@@ -126,7 +132,10 @@ export function RoomPage() {
         <TaskBoard
           tasks={tasks}
           agents={agents}
-          onSelectTask={setSelectedTask}
+          onSelectTask={(task) => {
+            setConfigAgent(null);
+            setSelectedTask(task);
+          }}
           onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
         />
       </div>
