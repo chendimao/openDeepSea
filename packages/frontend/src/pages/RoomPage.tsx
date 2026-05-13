@@ -69,7 +69,7 @@ export function RoomPage() {
     const off = roomSocket.on((event: WsServerEvent) => {
       if (event.type === 'message:new' && event.roomId === roomId) {
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) =>
-          prev ? [...prev, event.message] : [event.message],
+          upsertMessage(prev, event.message),
         );
       } else if (event.type === 'message:stream' && event.roomId === roomId) {
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) => {
@@ -174,6 +174,13 @@ export function RoomPage() {
         />
       )}
     </div>
+  );
+}
+
+function upsertMessage(prev: Message[] | undefined, message: Message): Message[] {
+  const list = prev ?? [];
+  return [...list.filter((item) => item.id !== message.id), message].sort(
+    (a, b) => a.created_at - b.created_at,
   );
 }
 
