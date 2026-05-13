@@ -202,13 +202,44 @@ function ChatColumn({
   }, [messages.length]);
 
   const send = useMutation({
-    mutationFn: () => api.sendMessage(roomId, input.trim()),
+    mutationFn: ({
+      content,
+      mentions,
+    }: {
+      content: string;
+      mentions?: string[];
+    }) => api.sendMessage(roomId, content, mentions),
     onSuccess: () => {
       setInput('');
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
     },
     onError: (err) => toast.error((err as Error).message),
   });
+
+  const createTaskFromCommand = useMutation({
+    mutationFn: (title: string) => api.createTask(roomId, { title }),
+    onSuccess: () => {
+      setInput('');
+      queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
+      toast.success('任务已创建');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const handleSend = () => {
+    const content = input.trim();
+    if (!content) return;
+    const taskMatch = content.match(/^\/task\s+(.+)/);
+    if (taskMatch?.[1]?.trim()) {
+      createTaskFromCommand.mutate(taskMatch[1].trim());
+      return;
+    }
+    const mentionNames = Array.from(content.matchAll(/@([\w.-]+)/g)).map((m) => m[1]);
+    const mentions = agents
+      .filter((agent) => mentionNames.includes(agent.agent_name) || mentionNames.includes(agent.agent_id))
+      .map((agent) => agent.id);
+    send.mutate({ content, mentions: mentions.length > 0 ? mentions : undefined });
+  };
 
   return (
     <div className="flex-1 min-w-0 flex flex-col">
@@ -227,11 +258,8 @@ function ChatColumn({
       <Composer
         value={input}
         onChange={setInput}
-        onSend={() => {
-          if (!input.trim()) return;
-          send.mutate();
-        }}
-        sending={send.isPending}
+        onSend={handleSend}
+        sending={send.isPending || createTaskFromCommand.isPending}
         agentCount={agents.length}
       />
     </div>
@@ -319,7 +347,7 @@ function Composer({
           placeholder={
             agentCount === 0
               ? '先邀请一个 agent 才能开始对话…'
-              : '发布任务或消息 (Enter 发送, Shift+Enter 换行)'
+              : '发送消息、@agent 定向，或 /task 创建任务'
           }
           rows={1}
           className="flex-1 resize-none surface-1 rounded-lg px-3.5 py-2.5 text-[13.5px] outline-none focus:border-[var(--color-primary)] focus:glow-primary ease-ocean transition-all min-h-[42px] max-h-[200px]"
