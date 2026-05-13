@@ -55,6 +55,16 @@ export const agentRunRepo = {
       .all(roomId, limit) as AgentRun[];
   },
 
+  listActiveByWorkflow(workflowRunId: string): AgentRun[] {
+    return db
+      .prepare(
+        `SELECT * FROM agent_runs
+         WHERE workflow_run_id = ? AND status IN ('running', 'queued')
+         ORDER BY started_at DESC`,
+      )
+      .all(workflowRunId) as AgentRun[];
+  },
+
   failActiveRuns(error: string): number {
     const timestamp = now();
     const result = db

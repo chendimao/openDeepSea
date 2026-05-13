@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePlanArtifact } from './plan-parser.js';
+import { parseAcceptanceVerdict, parsePlanArtifact, parseReviewVerdict } from './plan-parser.js';
 
 test('parsePlanArtifact parses fenced JSON plan', () => {
   const plan = parsePlanArtifact(`
@@ -67,4 +67,30 @@ const task = { title: 'not a plan' };
 
 test('parsePlanArtifact rejects output without JSON', () => {
   assert.throws(() => parsePlanArtifact('这里只是一段普通文本'), /JSON object/);
+});
+
+test('parseReviewVerdict parses pass verdict', () => {
+  const verdict = parseReviewVerdict(`
+\`\`\`json
+{"verdict":"pass","findings":[],"requiredFixes":[],"riskLevel":"low"}
+\`\`\`
+`);
+
+  assert.equal(verdict.verdict, 'pass');
+  assert.equal(verdict.riskLevel, 'low');
+});
+
+test('parseReviewVerdict rejects malformed verdict', () => {
+  assert.throws(() => parseReviewVerdict('{"verdict":"looks_good"}'), /Invalid enum value|invalid_enum_value/);
+});
+
+test('parseAcceptanceVerdict parses failed verdict', () => {
+  const verdict = parseAcceptanceVerdict(`
+\`\`\`json
+{"verdict":"failed","acceptedCriteria":[],"failedCriteria":["缺少验证"],"notes":"需要补充验证"}
+\`\`\`
+`);
+
+  assert.equal(verdict.verdict, 'failed');
+  assert.deepEqual(verdict.failedCriteria, ['缺少验证']);
 });

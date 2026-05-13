@@ -17,6 +17,20 @@ const planSchema = z.object({
   risks: z.array(z.string()).default([]),
 });
 
+const reviewVerdictSchema = z.object({
+  verdict: z.enum(['pass', 'changes_requested', 'failed']),
+  findings: z.array(z.string()).default([]),
+  requiredFixes: z.array(z.string()).default([]),
+  riskLevel: z.enum(['low', 'medium', 'high']).default('medium'),
+});
+
+const acceptanceVerdictSchema = z.object({
+  verdict: z.enum(['pass', 'failed']),
+  acceptedCriteria: z.array(z.string()).default([]),
+  failedCriteria: z.array(z.string()).default([]),
+  notes: z.string().default(''),
+});
+
 export interface ParsedPlanTask {
   title: string;
   description: string;
@@ -33,10 +47,25 @@ export interface ParsedPlan {
   risks: string[];
 }
 
+export type ParsedReviewVerdict = z.infer<typeof reviewVerdictSchema>;
+export type ParsedAcceptanceVerdict = z.infer<typeof acceptanceVerdictSchema>;
+
 export function parsePlanArtifact(output: string): ParsedPlan {
   const jsonText = extractJson(output);
   const parsed = JSON.parse(jsonText) as unknown;
   return planSchema.parse(parsed);
+}
+
+export function parseReviewVerdict(output: string): ParsedReviewVerdict {
+  const jsonText = extractJson(output);
+  const parsed = JSON.parse(jsonText) as unknown;
+  return reviewVerdictSchema.parse(parsed);
+}
+
+export function parseAcceptanceVerdict(output: string): ParsedAcceptanceVerdict {
+  const jsonText = extractJson(output);
+  const parsed = JSON.parse(jsonText) as unknown;
+  return acceptanceVerdictSchema.parse(parsed);
 }
 
 function extractJson(output: string): string {

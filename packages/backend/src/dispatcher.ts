@@ -320,7 +320,11 @@ export async function respondAsAgent(args: {
     const finalMessage = messageRepo.get(placeholder.id);
     try {
       if (finalRun && finalMessage && args.onFinished) {
-        await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
+        try {
+          await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
+        } catch (err) {
+          console.warn(`[agent-runs] onFinished callback failed for ${finalRun.id}: ${(err as Error).message}`);
+        }
       }
     } finally {
       wsHub.broadcast(roomId, {
