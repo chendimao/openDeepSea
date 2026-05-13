@@ -10,11 +10,27 @@ import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { taskRepo } from './repos/tasks.js';
+import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
+import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
-import type { AcpBackend } from './types.js';
+import type { AcpBackend, WorkflowRole } from './types.js';
 
 export const router = Router();
+
+function workflowErrorStatus(error: Error): number {
+  const message = error.message.toLowerCase();
+  if (message.includes('not found')) return 404;
+  if (
+    message.includes('already has an active workflow') ||
+    message.includes('not awaiting approval') ||
+    message.includes('no failed step') ||
+    message.includes('no current stage')
+  ) {
+    return 409;
+  }
+  return 400;
+}
 
 // ---------- Health & Gateway ----------
 router.get('/health', async (_req, res) => {
@@ -190,6 +206,23 @@ router.put('/rooms/:roomId/agents/:agentId/acp', (req, res) => {
   res.json(updated);
 });
 
+router.patch('/rooms/:roomId/agents/:agentId/workflow-role', (req, res) => {
+  const schema = z.object({
+    workflow_role: z.enum(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor']).nullable(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const existing = roomAgentRepo.get(req.params.agentId);
+  if (!existing || existing.room_id !== req.params.roomId) return res.status(404).json({ error: 'not found' });
+  const updated = roomAgentRepo.setWorkflowRole(
+    req.params.agentId,
+    parsed.data.workflow_role as WorkflowRole | null,
+  );
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  wsHub.broadcast(updated.room_id, { type: 'room:agent_joined', roomId: updated.room_id, agent: updated });
+  res.json(updated);
+});
+
 // ---------- ACP sessions list ----------
 router.get('/projects/:projectId/acp-sessions', async (req, res) => {
   const project = projectRepo.get(req.params.projectId);
@@ -257,6 +290,57 @@ router.post('/rooms/:roomId/messages', async (req, res) => {
     mentionedAgentRoomIds: parsed.data.mentions,
   });
   res.status(201).json(userMsg);
+});
+
+// ---------- Workflows ----------
+router.post('/tasks/:id/workflows', async (req, res) => {
+  try {
+    const workflow = await workflowOrchestrator.start(req.params.id);
+    res.status(201).json(workflow);
+  } catch (err) {
+    const error = err as Error;
+    res.status(workflowErrorStatus(error)).json({ error: error.message });
+  }
+});
+
+router.get('/tasks/:id/workflows', (req, res) => {
+  res.json(workflowRepo.listByTask(req.params.id));
+});
+
+router.get('/workflows/:id', (req, res) => {
+  const detail = workflowOrchestrator.detail(req.params.id);
+  if (!detail) return res.status(404).json({ error: 'not found' });
+  res.json(detail);
+});
+
+router.post('/workflows/:id/approve-plan', async (req, res) => {
+  try {
+    const workflow = await workflowOrchestrator.approvePlan(req.params.id, 'user');
+    res.json(workflow);
+  } catch (err) {
+    const error = err as Error;
+    res.status(workflowErrorStatus(error)).json({ error: error.message });
+  }
+});
+
+router.post('/workflows/:id/retry-step', async (req, res) => {
+  try {
+    const workflow = await workflowOrchestrator.retryStep(req.params.id);
+    res.json(workflow);
+  } catch (err) {
+    const error = err as Error;
+    res.status(workflowErrorStatus(error)).json({ error: error.message });
+  }
+});
+
+router.post('/workflows/:id/cancel', async (req, res) => {
+  try {
+    const workflow = await workflowOrchestrator.cancel(req.params.id);
+    res.json(workflow);
+  } catch (err) {
+    const error = err as Error;
+    res.status(workflowErrorStatus(error)).json({ error: error.message });
+  }
 });
 
 // ---------- Tasks ----------
