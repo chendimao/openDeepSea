@@ -81,3 +81,18 @@ export interface OpenClawAgent {
   description?: string;
   workspace?: string;
 }
+
+export const TASK_STATUS_LABEL: Record<Task['status'], string> = {
+  todo: '待办',
+  in_progress: '进行中',
+  review: '待审查',
+  done: '已完成',
+  failed: '失败',
+};
+
+export const TASK_PRIORITY_LABEL: Record<Task['priority'], string> = {
+  low: '低',
+  normal: '普通',
+  high: '高',
+  urgent: '紧急',
+};

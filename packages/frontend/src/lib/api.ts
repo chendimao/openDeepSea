@@ -85,6 +85,7 @@ export const api = {
       description?: string;
       priority?: Task['priority'];
       assigned_agent_id?: string;
+      parent_task_id?: string;
     },
   ) => request<Task>(`/rooms/${roomId}/tasks`, { method: 'POST', body: JSON.stringify(input) }),
   updateTask: (id: string, patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'assigned_agent_id' | 'status'>>) =>
