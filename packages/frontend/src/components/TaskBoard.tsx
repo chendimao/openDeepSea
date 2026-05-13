@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Eye, Loader2 } from 'lucide-react';
-import type { RoomAgent, Task } from '../lib/types';
-import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '../lib/types';
+import type { RoomAgent, Task, WorkflowRun } from '../lib/types';
+import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL, WORKFLOW_STATUS_LABEL } from '../lib/types';
 import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 import { Button } from './ui/Button';
@@ -28,18 +28,23 @@ const PRIORITY_TONE: Record<Task['priority'], string> = {
   urgent: 'text-[var(--color-danger)]',
 };
 
+const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>(['draft', 'running', 'awaiting_approval', 'blocked']);
+
 export function TaskBoard({
   tasks,
   agents,
+  workflows,
   onSelectTask,
   onChangeStatus,
 }: {
   tasks: Task[];
   agents: RoomAgent[];
+  workflows?: WorkflowRun[];
   onSelectTask: (task: Task) => void;
   onChangeStatus: (task: Task, status: Task['status']) => void;
 }) {
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
+  const workflowByTaskId = createWorkflowByTaskId(workflows ?? []);
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
 
   return (
@@ -75,6 +80,7 @@ export function TaskBoard({
                       key={task.id}
                       task={task}
                       agent={task.assigned_agent_id ? agentMap.get(task.assigned_agent_id) : undefined}
+                      workflow={workflowByTaskId.get(task.id)}
                       onSelect={() => onSelectTask(task)}
                       onChangeStatus={(next) => onChangeStatus(task, next)}
                     />
@@ -92,11 +98,13 @@ export function TaskBoard({
 function TaskCard({
   task,
   agent,
+  workflow,
   onSelect,
   onChangeStatus,
 }: {
   task: Task;
   agent?: RoomAgent;
+  workflow?: WorkflowRun;
   onSelect: () => void;
   onChangeStatus: (status: Task['status']) => void;
 }) {
@@ -113,6 +121,11 @@ function TaskCard({
             {TASK_PRIORITY_LABEL[task.priority]}
           </span>
         </div>
+        {workflow && (
+          <div className="mt-2 inline-flex max-w-full rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-accent)]">
+            <span className="truncate">{WORKFLOW_STATUS_LABEL[workflow.status]}</span>
+          </div>
+        )}
         {task.description && (
           <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
             {task.description}
@@ -149,4 +162,18 @@ function TaskCard({
       </div>
     </article>
   );
+}
+
+function createWorkflowByTaskId(workflows: WorkflowRun[]): Map<string, WorkflowRun> {
+  const grouped = new Map<string, WorkflowRun[]>();
+  for (const workflow of workflows) {
+    grouped.set(workflow.task_id, [...(grouped.get(workflow.task_id) ?? []), workflow]);
+  }
+
+  const byTaskId = new Map<string, WorkflowRun>();
+  for (const [taskId, taskWorkflows] of grouped) {
+    const sorted = [...taskWorkflows].sort((a, b) => b.created_at - a.created_at);
+    byTaskId.set(taskId, sorted.find((workflow) => ACTIVE_WORKFLOW_STATUSES.has(workflow.status)) ?? sorted[0]);
+  }
+  return byTaskId;
 }

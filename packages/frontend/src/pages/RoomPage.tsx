@@ -51,6 +51,16 @@ export function RoomPage() {
     queryFn: () => api.listRoomTasks(roomId),
     enabled: !!roomId,
   });
+  const rootTasks = tasks.filter((task) => !task.parent_task_id);
+  const taskWorkflowKey = rootTasks.map((task) => task.id).join(',');
+  const { data: taskWorkflows = [] } = useQuery({
+    queryKey: ['room-workflows', roomId, taskWorkflowKey],
+    queryFn: async () => {
+      const all = await Promise.all(rootTasks.map((task) => api.listTaskWorkflows(task.id)));
+      return all.flat();
+    },
+    enabled: rootTasks.length > 0,
+  });
   const { data: agentRuns = [] } = useQuery({
     queryKey: ['agent-runs', roomId],
     queryFn: () => api.listAgentRuns(roomId),
@@ -100,6 +110,10 @@ export function RoomPage() {
       ) {
         queryClient.setQueryData<WorkflowRun[] | undefined>(
           ['task-workflows', event.workflow.task_id],
+          (prev) => upsertWorkflow(prev, event.workflow),
+        );
+        queryClient.setQueriesData<WorkflowRun[] | undefined>(
+          { queryKey: ['room-workflows', roomId] },
           (prev) => upsertWorkflow(prev, event.workflow),
         );
         queryClient.invalidateQueries({ queryKey: ['workflow', event.workflow.id] });
@@ -181,6 +195,7 @@ export function RoomPage() {
         <TaskBoard
           tasks={tasks}
           agents={agents}
+          workflows={taskWorkflows}
           onSelectTask={(task) => {
             setConfigAgent(null);
             setSelectedTask(task);
