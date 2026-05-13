@@ -1,0 +1,269 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { getAdapter } from './acp/index.js';
+import { dispatchUserMessage } from './dispatcher.js';
+import { gatewayClient } from './openclaw/gateway.js';
+import { messageRepo } from './repos/messages.js';
+import { projectRepo } from './repos/projects.js';
+import { roomAgentRepo, roomRepo } from './repos/rooms.js';
+import { taskRepo } from './repos/tasks.js';
+import { wsHub } from './ws-hub.js';
+import type { AcpBackend } from './types.js';
+
+export const router = Router();
+
+// ---------- Health & Gateway ----------
+router.get('/health', (_req, res) => {
+  res.json({ ok: true, gateway: gatewayClient.isConnected() });
+});
+
+router.get('/gateway/agents', async (_req, res) => {
+  try {
+    await gatewayClient.connect();
+    const agents = await gatewayClient.listAgents();
+    res.json({ agents, connected: true });
+  } catch (err) {
+    res.json({ agents: [], connected: false, error: (err as Error).message });
+  }
+});
+
+// ---------- Projects ----------
+router.get('/projects', (_req, res) => {
+  const projects = projectRepo.list();
+  const enriched = projects.map((p) => ({ ...p, stats: projectRepo.stats(p.id) }));
+  res.json(enriched);
+});
+
+router.post('/projects', (req, res) => {
+  const schema = z.object({
+    name: z.string().min(1),
+    path: z.string().min(1),
+    description: z.string().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const project = projectRepo.create(parsed.data);
+    res.status(201).json(project);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/projects/:id', (req, res) => {
+  const project = projectRepo.get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'not found' });
+  res.json({ ...project, stats: projectRepo.stats(project.id) });
+});
+
+router.patch('/projects/:id', (req, res) => {
+  const schema = z.object({
+    name: z.string().min(1).optional(),
+    description: z.string().nullable().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const updated = projectRepo.update(req.params.id, parsed.data);
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  res.json(updated);
+});
+
+router.delete('/projects/:id', (req, res) => {
+  const ok = projectRepo.delete(req.params.id);
+  res.status(ok ? 204 : 404).end();
+});
+
+// ---------- Rooms ----------
+router.get('/projects/:projectId/rooms', (req, res) => {
+  res.json(roomRepo.listByProject(req.params.projectId));
+});
+
+router.post('/projects/:projectId/rooms', (req, res) => {
+  const schema = z.object({ name: z.string().min(1), description: z.string().optional() });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const room = roomRepo.create({
+    project_id: req.params.projectId,
+    name: parsed.data.name,
+    description: parsed.data.description,
+  });
+  res.status(201).json(room);
+});
+
+router.get('/rooms/:id', (req, res) => {
+  const room = roomRepo.get(req.params.id);
+  if (!room) return res.status(404).json({ error: 'not found' });
+  res.json(room);
+});
+
+router.delete('/rooms/:id', (req, res) => {
+  const ok = roomRepo.delete(req.params.id);
+  res.status(ok ? 204 : 404).end();
+});
+
+// ---------- Room agents ----------
+router.get('/rooms/:roomId/agents', (req, res) => {
+  res.json(roomAgentRepo.listByRoom(req.params.roomId));
+});
+
+router.post('/rooms/:roomId/agents', (req, res) => {
+  const schema = z.object({
+    agent_id: z.string().min(1),
+    agent_name: z.string().min(1),
+    agent_role: z.string().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const agent = roomAgentRepo.add({
+      room_id: req.params.roomId,
+      ...parsed.data,
+    });
+    wsHub.broadcast(req.params.roomId, { type: 'room:agent_joined', roomId: req.params.roomId, agent });
+    res.status(201).json(agent);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.delete('/rooms/:roomId/agents/:agentId', (req, res) => {
+  const ok = roomAgentRepo.remove(req.params.agentId);
+  if (ok) {
+    wsHub.broadcast(req.params.roomId, {
+      type: 'room:agent_left',
+      roomId: req.params.roomId,
+      roomAgentId: req.params.agentId,
+    });
+  }
+  res.status(ok ? 204 : 404).end();
+});
+
+router.put('/rooms/:roomId/agents/:agentId/acp', (req, res) => {
+  const schema = z.object({
+    acp_enabled: z.boolean(),
+    acp_backend: z.enum(['claudecode', 'opencode', 'codex']).nullable(),
+    acp_session_id: z.string().nullable(),
+    acp_session_label: z.string().nullable().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const updated = roomAgentRepo.setAcp(req.params.agentId, {
+    acp_enabled: parsed.data.acp_enabled,
+    acp_backend: parsed.data.acp_backend,
+    acp_session_id: parsed.data.acp_session_id,
+    acp_session_label: parsed.data.acp_session_label ?? null,
+  });
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  res.json(updated);
+});
+
+// ---------- ACP sessions list ----------
+router.get('/projects/:projectId/acp-sessions', async (req, res) => {
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const backend = req.query.backend as AcpBackend | undefined;
+  if (!backend) return res.status(400).json({ error: 'backend query param required' });
+  if (!['claudecode', 'opencode', 'codex'].includes(backend))
+    return res.status(400).json({ error: 'invalid backend' });
+  try {
+    const sessions = await getAdapter(backend).listSessions(project.path);
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ---------- Messages ----------
+router.get('/rooms/:roomId/messages', (req, res) => {
+  res.json(messageRepo.listByRoom(req.params.roomId));
+});
+
+router.post('/rooms/:roomId/messages', async (req, res) => {
+  const schema = z.object({
+    content: z.string().min(1),
+    sender_id: z.string().default('user'),
+    sender_name: z.string().optional(),
+    mentions: z.array(z.string()).optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const userMsg = messageRepo.create({
+    room_id: req.params.roomId,
+    sender_type: 'user',
+    sender_id: parsed.data.sender_id,
+    sender_name: parsed.data.sender_name ?? 'You',
+    content: parsed.data.content,
+    message_type: 'text',
+  });
+  wsHub.broadcast(req.params.roomId, { type: 'message:new', roomId: req.params.roomId, message: userMsg });
+  // Fire-and-forget dispatch
+  void dispatchUserMessage({
+    roomId: req.params.roomId,
+    userMessage: userMsg,
+    mentionedAgentRoomIds: parsed.data.mentions,
+  });
+  res.status(201).json(userMsg);
+});
+
+// ---------- Tasks ----------
+router.get('/projects/:projectId/tasks', (req, res) => {
+  res.json(taskRepo.listByProject(req.params.projectId));
+});
+
+router.get('/rooms/:roomId/tasks', (req, res) => {
+  res.json(taskRepo.listByRoom(req.params.roomId));
+});
+
+router.post('/rooms/:roomId/tasks', (req, res) => {
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const schema = z.object({
+    title: z.string().min(1),
+    description: z.string().optional(),
+    priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+    assigned_agent_id: z.string().optional(),
+    parent_task_id: z.string().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const task = taskRepo.create({
+    room_id: req.params.roomId,
+    project_id: room.project_id,
+    ...parsed.data,
+  });
+  wsHub.broadcast(req.params.roomId, { type: 'task:created', task });
+  res.status(201).json(task);
+});
+
+router.patch('/tasks/:id', (req, res) => {
+  const schema = z.object({
+    title: z.string().min(1).optional(),
+    description: z.string().nullable().optional(),
+    priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+    assigned_agent_id: z.string().nullable().optional(),
+    status: z.enum(['todo', 'in_progress', 'review', 'done', 'failed']).optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  let task = taskRepo.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'not found' });
+  if (parsed.data.status) task = taskRepo.updateStatus(req.params.id, parsed.data.status);
+  const fieldPatch: Record<string, unknown> = {};
+  if (parsed.data.title !== undefined) fieldPatch['title'] = parsed.data.title;
+  if (parsed.data.description !== undefined) fieldPatch['description'] = parsed.data.description;
+  if (parsed.data.priority !== undefined) fieldPatch['priority'] = parsed.data.priority;
+  if (parsed.data.assigned_agent_id !== undefined)
+    fieldPatch['assigned_agent_id'] = parsed.data.assigned_agent_id;
+  if (Object.keys(fieldPatch).length > 0) {
+    task = taskRepo.update(req.params.id, fieldPatch as never);
+  }
+  if (task) wsHub.broadcast(task.room_id, { type: 'task:updated', task });
+  res.json(task);
+});
+
+router.delete('/tasks/:id', (req, res) => {
+  const t = taskRepo.get(req.params.id);
+  const ok = taskRepo.delete(req.params.id);
+  if (ok && t) wsHub.broadcast(t.room_id, { type: 'task:deleted', taskId: t.id });
+  res.status(ok ? 204 : 404).end();
+});

@@ -1,0 +1,131 @@
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
+import { ArrowUpRight, FolderOpen, MessageSquare, Plus } from 'lucide-react';
+import { api } from '../lib/api';
+import { relativeTime } from '../lib/utils';
+import { Button } from '../components/ui/Button';
+import { CreateProjectDialog } from '../components/CreateProjectDialog';
+import { LobsterMark } from '../components/LobsterMark';
+
+export function DashboardPage() {
+  const { data: projects = [], isLoading } = useQuery({
+    queryKey: ['projects'],
+    queryFn: api.listProjects,
+  });
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <header className="px-8 pt-10 pb-6 border-b border-[var(--color-border)]">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-center gap-3">
+            <LobsterMark className="h-9 w-9" />
+            <div>
+              <h1 className="font-display text-[24px] font-semibold tracking-tight">
+                深海指挥中心
+              </h1>
+              <p className="text-[13px] text-[var(--color-fg-muted)] mt-0.5">
+                管理项目, 协作智能体, 让代码自己游起来 🦞
+              </p>
+            </div>
+            <div className="ml-auto">
+              <CreateProjectDialog>
+                <Button variant="primary">
+                  <Plus className="h-4 w-4" /> 新建项目
+                </Button>
+              </CreateProjectDialog>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section className="px-8 py-8">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-baseline gap-3 mb-5">
+            <h2 className="font-display text-[15px] font-medium">所有项目</h2>
+            <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">
+              {projects.length} project{projects.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+
+          {isLoading ? (
+            <div className="text-[var(--color-fg-muted)] text-[13px]">加载中…</div>
+          ) : projects.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {projects.map((p) => (
+                <Link
+                  key={p.id}
+                  to={`/projects/${p.id}`}
+                  className="group fade-up surface-1 hover:border-[var(--color-accent)] rounded-xl p-5 ease-ocean transition-all hover:shadow-[0_0_0_3px_rgba(34,211,238,0.08)]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <FolderOpen className="h-4 w-4 text-[var(--color-accent)] flex-shrink-0" strokeWidth={1.75} />
+                        <h3 className="font-display text-[15px] font-semibold truncate">{p.name}</h3>
+                      </div>
+                      <p
+                        className="text-[11.5px] text-[var(--color-muted)] font-mono truncate"
+                        title={p.path}
+                      >
+                        {p.path}
+                      </p>
+                    </div>
+                    <ArrowUpRight className="h-4 w-4 text-[var(--color-muted)] group-hover:text-[var(--color-accent)] transition-colors" strokeWidth={1.5} />
+                  </div>
+
+                  {p.description && (
+                    <p className="text-[12.5px] text-[var(--color-fg-muted)] mt-3 line-clamp-2">
+                      {p.description}
+                    </p>
+                  )}
+
+                  <div className="mt-5 flex items-center gap-4 text-[11px] font-mono text-[var(--color-fg-muted)]">
+                    <span className="flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" strokeWidth={1.75} />
+                      {p.stats?.rooms ?? 0} 聊天室
+                    </span>
+                    <span>·</span>
+                    <span>
+                      {p.stats?.tasksDone ?? 0}/{p.stats?.tasks ?? 0} 任务
+                    </span>
+                    <span className="ml-auto">{relativeTime(p.updated_at)}</span>
+                  </div>
+
+                  {(p.stats?.tasks ?? 0) > 0 && (
+                    <div className="mt-3 h-1 rounded-full bg-[var(--color-surface-raised)] overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-success)]"
+                        style={{ width: `${((p.stats?.tasksDone ?? 0) / (p.stats?.tasks ?? 1)) * 100}%` }}
+                      />
+                    </div>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="surface-1 rounded-2xl py-16 px-6 text-center">
+      <div className="mx-auto w-fit opacity-40 mb-4">
+        <LobsterMark className="h-16 w-16" />
+      </div>
+      <p className="font-display text-[15px] mb-2">还没有项目</p>
+      <p className="text-[13px] text-[var(--color-fg-muted)] mb-5">
+        把本地一个真实存在的代码目录加进来, 开启深海协作
+      </p>
+      <CreateProjectDialog>
+        <Button variant="primary">
+          <Plus className="h-4 w-4" /> 添加第一个项目
+        </Button>
+      </CreateProjectDialog>
+    </div>
+  );
+}

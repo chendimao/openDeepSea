@@ -1,0 +1,72 @@
+import { nanoid } from 'nanoid';
+import { db, now } from '../db.js';
+import type { Task, TaskPriority, TaskStatus } from '../types.js';
+
+export const taskRepo = {
+  listByProject(projectId: string): Task[] {
+    return db
+      .prepare('SELECT * FROM tasks WHERE project_id = ? ORDER BY created_at DESC')
+      .all(projectId) as Task[];
+  },
+
+  listByRoom(roomId: string): Task[] {
+    return db
+      .prepare('SELECT * FROM tasks WHERE room_id = ? ORDER BY created_at DESC')
+      .all(roomId) as Task[];
+  },
+
+  get(id: string): Task | undefined {
+    return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task | undefined;
+  },
+
+  create(input: {
+    room_id: string;
+    project_id: string;
+    title: string;
+    description?: string;
+    priority?: TaskPriority;
+    assigned_agent_id?: string;
+    parent_task_id?: string;
+  }): Task {
+    const id = nanoid(12);
+    const ts = now();
+    db.prepare(
+      `INSERT INTO tasks (id, room_id, project_id, parent_task_id, title, description, status, priority, assigned_agent_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.room_id,
+      input.project_id,
+      input.parent_task_id ?? null,
+      input.title,
+      input.description ?? null,
+      input.priority ?? 'normal',
+      input.assigned_agent_id ?? null,
+      ts,
+      ts,
+    );
+    return this.get(id)!;
+  },
+
+  updateStatus(id: string, status: TaskStatus): Task | undefined {
+    const completed_at = status === 'done' ? now() : null;
+    db.prepare(
+      `UPDATE tasks SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?`,
+    ).run(status, now(), completed_at, id);
+    return this.get(id);
+  },
+
+  update(id: string, patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'assigned_agent_id'>>): Task | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    const next = { ...existing, ...patch };
+    db.prepare(
+      `UPDATE tasks SET title = ?, description = ?, priority = ?, assigned_agent_id = ?, updated_at = ? WHERE id = ?`,
+    ).run(next.title, next.description, next.priority, next.assigned_agent_id, now(), id);
+    return this.get(id);
+  },
+
+  delete(id: string): boolean {
+    return db.prepare('DELETE FROM tasks WHERE id = ?').run(id).changes > 0;
+  },
+};

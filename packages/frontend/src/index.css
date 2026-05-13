@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: #0A0E1A;
+    --color-surface: #0F1623;
+    --color-surface-raised: #161E2E;
+    --color-border: #1F2937;
+    --color-border-strong: #2D3748;
+    --color-fg: #E5E7EB;
+    --color-fg-muted: #9CA3AF;
+    --color-muted: #6B7280;
+
+    --color-primary: #FF6B47;
+    --color-primary-hover: #FF8466;
+    --color-primary-fg: #FFFFFF;
+
+    --color-accent: #22D3EE;
+    --color-accent-hover: #67E8F9;
+
+    --color-success: #10B981;
+    --color-warning: #F59E0B;
+    --color-danger: #EF4444;
+    color-scheme: dark;
+  }
+
+  html, body, #root {
+    height: 100%;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: 'Inter Tight', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "ss01", "cv11", "tnum";
+  }
+
+  ::selection { background: rgba(255, 107, 71, 0.35); color: #fff; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #1F2937; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2D3748; }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer utilities {
+  .font-mono, .font-display { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+  .glow-primary { box-shadow: 0 0 0 3px rgba(255, 107, 71, 0.18); }
+  .glow-accent  { box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18); }
+
+  .surface-1 {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+  }
+  .surface-2 {
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+
+  .ease-ocean { transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1); }
+
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.5); }
+    100% { box-shadow: 0 0 0 8px rgba(34, 211, 238, 0); }
+  }
+  .heartbeat { animation: pulse-ring 1.6s ease-out infinite; }
+
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade-up { animation: fade-up 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .heartbeat, .fade-up { animation: none !important; }
+    *, *::before, *::after { transition-duration: 0ms !important; }
+  }
+}
