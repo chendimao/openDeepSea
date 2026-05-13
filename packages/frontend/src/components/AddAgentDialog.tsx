@@ -17,7 +17,7 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
   const [manualOpen, setManualOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: gw, isLoading: gatewayLoading } = useQuery({
+  const { data: gw, error: gatewayError, isLoading: gatewayLoading } = useQuery({
     queryKey: ['gateway-agents'],
     queryFn: api.listGatewayAgents,
     enabled: open,
@@ -25,14 +25,15 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
 
   const hasOpenClawAgents = Boolean(gw?.connected && gw.agents.length > 0);
   const showManualFields = !hasOpenClawAgents || manualOpen;
+  const gatewayErrorMessage = gatewayError instanceof Error ? gatewayError.message : gw?.error;
 
   useEffect(() => {
-    if (!open || !gw?.connected || gw.agents.length === 0 || picked || agentId.trim()) return;
+    if (!open || manualOpen || !gw?.connected || gw.agents.length === 0 || picked || agentId.trim()) return;
     const first = gw.agents[0];
     setPicked(first.id);
     setAgentId(first.id);
     setAgentName(first.name ?? first.id);
-  }, [agentId, gw, open, picked]);
+  }, [agentId, gw, manualOpen, open, picked]);
 
   function resetForm() {
     setAgentId('');
@@ -91,7 +92,7 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
               </div>
             ) : !gw?.connected ? (
               <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                无法读取 OpenClaw agents，将使用手动输入。{gw?.error ? `错误: ${gw.error}` : ''}
+                无法读取 OpenClaw agents，将使用手动输入。{gatewayErrorMessage ? `错误: ${gatewayErrorMessage}` : ''}
               </div>
             ) : gw.agents.length === 0 ? (
               <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
