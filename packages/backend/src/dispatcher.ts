@@ -8,7 +8,7 @@ import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { runRegistry } from './run-registry.js';
 import { wsHub } from './ws-hub.js';
-import type { AgentRun, AgentRunStatus, Message, RoomAgent } from './types.js';
+import type { AgentRun, AgentRunStatus, Message, RoomAgent, WorkflowStage } from './types.js';
 
 const OPENCLAW_RESPONSE_TIMEOUT_MS = 120000;
 
@@ -70,12 +70,16 @@ async function runTargets(args: {
   roomId: string;
 }): Promise<Array<Message | undefined>> {
   return Promise.all(
-    args.targets.map((target) =>
-      respondAsAgent({
+    args.targets.map(async (target) => {
+      let finalMessage: Message | undefined;
+      await respondAsAgent({
         agent: target.agent,
         projectPath: args.projectPath,
         roomId: args.roomId,
         prompt: target.prompt,
+        onFinished: ({ message }) => {
+          finalMessage = message;
+        },
       }).catch((err) => {
         const errMsg = messageRepo.create({
           room_id: args.roomId,
@@ -86,9 +90,10 @@ async function runTargets(args: {
           message_type: 'system',
         });
         wsHub.broadcast(args.roomId, { type: 'message:new', roomId: args.roomId, message: errMsg });
-        return undefined;
-      }),
-    ),
+        finalMessage = undefined;
+      });
+      return finalMessage;
+    }),
   );
 }
 
@@ -181,12 +186,17 @@ function buildFallbackHandoffPrompt(args: {
   ].join('\n');
 }
 
-async function respondAsAgent(args: {
+export async function respondAsAgent(args: {
   agent: RoomAgent;
   projectPath: string;
   roomId: string;
   prompt: string;
-}): Promise<Message | undefined> {
+  taskId?: string | null;
+  workflowRunId?: string | null;
+  workflowStepId?: string | null;
+  workflowStage?: WorkflowStage | null;
+  onFinished?: (result: { run: AgentRun; message: Message; status: AgentRunStatus }) => Promise<void> | void;
+}): Promise<void> {
   const { agent, projectPath, roomId, prompt } = args;
   const backend = agent.acp_enabled && agent.acp_backend ? agent.acp_backend : 'openclaw';
   const sessionKey = backend === 'openclaw' ? `agent:${agent.agent_id}:room-${roomId}` : null;
@@ -197,6 +207,10 @@ async function respondAsAgent(args: {
     backend,
     session_key: sessionKey,
     acp_session_id: agent.acp_session_id,
+    task_id: args.taskId,
+    workflow_run_id: args.workflowRunId,
+    workflow_step_id: args.workflowStepId,
+    workflow_stage: args.workflowStage,
     prompt,
   });
   const controller = runRegistry.create(run.id);
@@ -302,15 +316,22 @@ async function respondAsAgent(args: {
     finishRun(run.id, status, status === 'failed' ? message : null);
   } finally {
     runRegistry.remove(run.id);
-    wsHub.broadcast(roomId, {
-      type: 'message:stream',
-      roomId,
-      messageId: placeholder.id,
-      chunk: '',
-      done: true,
-    });
+    const finalRun = agentRunRepo.get(run.id);
+    const finalMessage = messageRepo.get(placeholder.id);
+    try {
+      if (finalRun && finalMessage && args.onFinished) {
+        await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
+      }
+    } finally {
+      wsHub.broadcast(roomId, {
+        type: 'message:stream',
+        roomId,
+        messageId: placeholder.id,
+        chunk: '',
+        done: true,
+      });
+    }
   }
-  return messageRepo.get(placeholder.id);
 
   function broadcastRun(type: 'agent_run:created' | 'agent_run:updated', updatedRun: AgentRun): void {
     wsHub.broadcast(roomId, { type, roomId, run: updatedRun });
