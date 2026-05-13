@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { dispatchUserMessage } from './dispatcher.js';
+import { listOpenClawAgentsFromCli } from './openclaw/agents.js';
 import { gatewayClient } from './openclaw/gateway.js';
 import { getOpenClawGatewayStatus } from './openclaw/status.js';
 import { agentRunRepo } from './repos/agent-runs.js';
@@ -28,9 +29,8 @@ router.get('/health', async (_req, res) => {
 
 router.get('/gateway/agents', async (_req, res) => {
   try {
-    await gatewayClient.connect();
-    const agents = await gatewayClient.listAgents();
-    res.json({ agents, connected: true });
+    const agents = await listOpenClawAgentsFromCli();
+    res.json({ agents, connected: true, source: 'openclaw-config' });
   } catch (err) {
     res.json({ agents: [], connected: false, error: (err as Error).message });
   }
