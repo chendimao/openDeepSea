@@ -1,0 +1,216 @@
+import { nanoid } from 'nanoid';
+import { db, now } from '../db.js';
+import type {
+  TaskArtifact,
+  TaskArtifactType,
+  WorkflowDetail,
+  WorkflowRun,
+  WorkflowStage,
+  WorkflowStatus,
+  WorkflowStep,
+  WorkflowStepStatus,
+} from '../types.js';
+
+const ACTIVE_STATUSES: WorkflowStatus[] = ['draft', 'running', 'awaiting_approval', 'blocked'];
+
+export const workflowRepo = {
+  createRun(input: {
+    room_id: string;
+    project_id: string;
+    task_id: string;
+    status?: WorkflowStatus;
+    current_stage?: WorkflowStage | null;
+    approval_required?: boolean;
+    openclaw_flow_id?: string | null;
+  }): WorkflowRun {
+    const id = nanoid(14);
+    const ts = now();
+    db.prepare(
+      `INSERT INTO workflow_runs (
+        id, room_id, project_id, task_id, status, current_stage, approval_required,
+        openclaw_flow_id, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.room_id,
+      input.project_id,
+      input.task_id,
+      input.status ?? 'running',
+      input.current_stage ?? null,
+      input.approval_required === false ? 0 : 1,
+      input.openclaw_flow_id ?? null,
+      ts,
+      ts,
+    );
+    return this.getRun(id)!;
+  },
+
+  getRun(id: string): WorkflowRun | undefined {
+    return db.prepare('SELECT * FROM workflow_runs WHERE id = ?').get(id) as WorkflowRun | undefined;
+  },
+
+  getActiveByTask(taskId: string): WorkflowRun | undefined {
+    return db
+      .prepare(
+        `SELECT * FROM workflow_runs
+         WHERE task_id = ? AND status IN (${ACTIVE_STATUSES.map(() => '?').join(',')})
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(taskId, ...ACTIVE_STATUSES) as WorkflowRun | undefined;
+  },
+
+  listByTask(taskId: string): WorkflowRun[] {
+    return db
+      .prepare('SELECT * FROM workflow_runs WHERE task_id = ? ORDER BY created_at DESC')
+      .all(taskId) as WorkflowRun[];
+  },
+
+  updateRun(
+    id: string,
+    patch: Partial<Pick<WorkflowRun, 'status' | 'current_stage' | 'approved_by' | 'error'>>,
+  ): WorkflowRun | undefined {
+    const existing = this.getRun(id);
+    if (!existing) return undefined;
+    const status = patch.status ?? existing.status;
+    const completedAt = ['completed', 'failed', 'cancelled'].includes(status) ? now() : existing.completed_at;
+    const approvedAt = patch.status === 'running' && existing.status === 'awaiting_approval' ? now() : existing.approved_at;
+    db.prepare(
+      `UPDATE workflow_runs
+       SET status = ?, current_stage = ?, approved_at = ?, approved_by = ?, error = ?, updated_at = ?, completed_at = ?
+       WHERE id = ?`,
+    ).run(
+      status,
+      patch.current_stage ?? existing.current_stage,
+      approvedAt,
+      patch.approved_by ?? existing.approved_by,
+      patch.error ?? existing.error,
+      now(),
+      completedAt,
+      id,
+    );
+    return this.getRun(id);
+  },
+
+  createStep(input: {
+    workflow_run_id: string;
+    task_id: string;
+    stage: WorkflowStage;
+    status?: WorkflowStepStatus;
+    room_agent_id?: string | null;
+    prompt?: string;
+    sort_order: number;
+  }): WorkflowStep {
+    const id = nanoid(14);
+    const ts = now();
+    db.prepare(
+      `INSERT INTO workflow_steps (
+        id, workflow_run_id, task_id, stage, status, room_agent_id, prompt,
+        sort_order, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.workflow_run_id,
+      input.task_id,
+      input.stage,
+      input.status ?? 'pending',
+      input.room_agent_id ?? null,
+      input.prompt ?? '',
+      input.sort_order,
+      ts,
+      ts,
+    );
+    return this.getStep(id)!;
+  },
+
+  getStep(id: string): WorkflowStep | undefined {
+    return db.prepare('SELECT * FROM workflow_steps WHERE id = ?').get(id) as WorkflowStep | undefined;
+  },
+
+  listSteps(workflowRunId: string): WorkflowStep[] {
+    return db
+      .prepare('SELECT * FROM workflow_steps WHERE workflow_run_id = ? ORDER BY sort_order ASC, created_at ASC')
+      .all(workflowRunId) as WorkflowStep[];
+  },
+
+  updateStep(
+    id: string,
+    patch: Partial<Pick<WorkflowStep, 'status' | 'room_agent_id' | 'agent_run_id' | 'prompt' | 'result' | 'result_message_id' | 'error'>>,
+  ): WorkflowStep | undefined {
+    const existing = this.getStep(id);
+    if (!existing) return undefined;
+    const status = patch.status ?? existing.status;
+    const startedAt = status === 'running' && !existing.started_at ? now() : existing.started_at;
+    const completedAt = ['completed', 'failed', 'cancelled', 'skipped'].includes(status) ? now() : existing.completed_at;
+    db.prepare(
+      `UPDATE workflow_steps
+       SET status = ?, room_agent_id = ?, agent_run_id = ?, prompt = ?, result = ?,
+           result_message_id = ?, error = ?, started_at = ?, completed_at = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(
+      status,
+      patch.room_agent_id ?? existing.room_agent_id,
+      patch.agent_run_id ?? existing.agent_run_id,
+      patch.prompt ?? existing.prompt,
+      patch.result ?? existing.result,
+      patch.result_message_id ?? existing.result_message_id,
+      patch.error ?? existing.error,
+      startedAt,
+      completedAt,
+      now(),
+      id,
+    );
+    return this.getStep(id);
+  },
+
+  createArtifact(input: {
+    task_id: string;
+    workflow_run_id: string;
+    workflow_step_id?: string | null;
+    artifact_type: TaskArtifactType;
+    title: string;
+    content: string;
+    metadata?: Record<string, unknown> | null;
+  }): TaskArtifact {
+    const id = nanoid(14);
+    db.prepare(
+      `INSERT INTO task_artifacts (
+        id, task_id, workflow_run_id, workflow_step_id, artifact_type, title, content, metadata, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.task_id,
+      input.workflow_run_id,
+      input.workflow_step_id ?? null,
+      input.artifact_type,
+      input.title,
+      input.content,
+      input.metadata ? JSON.stringify(input.metadata) : null,
+      now(),
+    );
+    return this.getArtifact(id)!;
+  },
+
+  getArtifact(id: string): TaskArtifact | undefined {
+    return db.prepare('SELECT * FROM task_artifacts WHERE id = ?').get(id) as TaskArtifact | undefined;
+  },
+
+  listArtifacts(workflowRunId: string): TaskArtifact[] {
+    return db
+      .prepare('SELECT * FROM task_artifacts WHERE workflow_run_id = ? ORDER BY created_at ASC')
+      .all(workflowRunId) as TaskArtifact[];
+  },
+
+  detail(id: string): WorkflowDetail | undefined {
+    const run = this.getRun(id);
+    if (!run) return undefined;
+    return {
+      run,
+      steps: this.listSteps(id),
+      artifacts: this.listArtifacts(id),
+    };
+  },
+
+  blockRun(id: string, error: string): WorkflowRun | undefined {
+    return this.updateRun(id, { status: 'blocked', error });
+  },
+};

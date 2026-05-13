@@ -21,12 +21,19 @@ export interface Room {
 
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
 
+export type WorkflowRole = 'analyst' | 'planner' | 'coordinator' | 'executor' | 'reviewer' | 'acceptor';
+export type WorkflowStatus = 'draft' | 'running' | 'awaiting_approval' | 'blocked' | 'cancelled' | 'completed' | 'failed';
+export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
+export type WorkflowStepStatus = 'pending' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled' | 'skipped';
+export type TaskArtifactType = 'analysis' | 'plan' | 'assignment' | 'implementation_summary' | 'review' | 'acceptance';
+
 export interface RoomAgent {
   id: string;
   room_id: string;
   agent_id: string;
   agent_name: string;
   agent_role: string | null;
+  workflow_role: WorkflowRole | null;
   joined_at: number;
   acp_enabled: 0 | 1;
   acp_backend: AcpBackend | null;
@@ -45,6 +52,10 @@ export interface AgentRun {
   status: AgentRunStatus;
   session_key: string | null;
   acp_session_id: string | null;
+  task_id: string | null;
+  workflow_run_id: string | null;
+  workflow_step_id: string | null;
+  workflow_stage: WorkflowStage | null;
   prompt: string;
   stdout: string;
   stderr: string;
@@ -87,6 +98,61 @@ export interface Task {
   completed_at: number | null;
 }
 
+export interface WorkflowRun {
+  id: string;
+  room_id: string;
+  project_id: string;
+  task_id: string;
+  status: WorkflowStatus;
+  current_stage: WorkflowStage | null;
+  approval_required: 0 | 1;
+  approved_at: number | null;
+  approved_by: string | null;
+  openclaw_flow_id: string | null;
+  created_at: number;
+  updated_at: number;
+  completed_at: number | null;
+  error: string | null;
+}
+
+export interface WorkflowStep {
+  id: string;
+  workflow_run_id: string;
+  task_id: string;
+  stage: WorkflowStage;
+  status: WorkflowStepStatus;
+  room_agent_id: string | null;
+  agent_run_id: string | null;
+  prompt: string;
+  result: string;
+  result_message_id: string | null;
+  openclaw_child_task_id: string | null;
+  started_at: number | null;
+  completed_at: number | null;
+  error: string | null;
+  sort_order: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface TaskArtifact {
+  id: string;
+  task_id: string;
+  workflow_run_id: string;
+  workflow_step_id: string | null;
+  artifact_type: TaskArtifactType;
+  title: string;
+  content: string;
+  metadata: string | null;
+  created_at: number;
+}
+
+export interface WorkflowDetail {
+  run: WorkflowRun;
+  steps: WorkflowStep[];
+  artifacts: TaskArtifact[];
+}
+
 export interface CliSessionSummary {
   backend: AcpBackend;
   sessionId: string;
@@ -104,6 +170,11 @@ export type WsServerEvent =
   | { type: 'agent_run:updated'; roomId: string; run: AgentRun }
   | { type: 'room:agent_joined'; roomId: string; agent: RoomAgent }
   | { type: 'room:agent_left'; roomId: string; roomAgentId: string }
+  | { type: 'workflow:created'; roomId: string; workflow: WorkflowRun }
+  | { type: 'workflow:updated'; roomId: string; workflow: WorkflowRun }
+  | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
+  | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
+  | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:created'; task: Task }
   | { type: 'task:deleted'; taskId: string };

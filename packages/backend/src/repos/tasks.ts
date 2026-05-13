@@ -15,6 +15,18 @@ export const taskRepo = {
       .all(roomId) as Task[];
   },
 
+  listChildren(parentTaskId: string): Task[] {
+    return db
+      .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC')
+      .all(parentTaskId) as Task[];
+  },
+
+  listRootByRoom(roomId: string): Task[] {
+    return db
+      .prepare('SELECT * FROM tasks WHERE room_id = ? AND parent_task_id IS NULL ORDER BY created_at DESC')
+      .all(roomId) as Task[];
+  },
+
   get(id: string): Task | undefined {
     return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task | undefined;
   },

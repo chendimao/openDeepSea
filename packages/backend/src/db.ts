@@ -87,6 +87,72 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 CREATE INDEX IF NOT EXISTS idx_agent_runs_room ON agent_runs(room_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
 
+CREATE TABLE IF NOT EXISTS workflow_runs (
+  id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  current_stage TEXT,
+  approval_required INTEGER NOT NULL DEFAULT 1,
+  approved_at INTEGER,
+  approved_by TEXT,
+  openclaw_flow_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  error TEXT,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_task ON workflow_runs(task_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_room ON workflow_runs(room_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status);
+
+CREATE TABLE IF NOT EXISTS workflow_steps (
+  id TEXT PRIMARY KEY,
+  workflow_run_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  status TEXT NOT NULL,
+  room_agent_id TEXT,
+  agent_run_id TEXT,
+  prompt TEXT NOT NULL DEFAULT '',
+  result TEXT NOT NULL DEFAULT '',
+  result_message_id TEXT,
+  openclaw_child_task_id TEXT,
+  started_at INTEGER,
+  completed_at INTEGER,
+  error TEXT,
+  sort_order INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE SET NULL,
+  FOREIGN KEY (agent_run_id) REFERENCES agent_runs(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_steps_run ON workflow_steps(workflow_run_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_workflow_steps_status ON workflow_steps(status);
+
+CREATE TABLE IF NOT EXISTS task_artifacts (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  workflow_run_id TEXT NOT NULL,
+  workflow_step_id TEXT,
+  artifact_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  metadata TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (workflow_step_id) REFERENCES workflow_steps(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_artifacts_workflow ON task_artifacts(workflow_run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_task_artifacts_task ON task_artifacts(task_id, created_at);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
@@ -116,6 +182,27 @@ if (!projectColumnNames.has('message_routing_mode')) {
 }
 if (!projectColumnNames.has('fallback_agent_id')) {
   db.exec('ALTER TABLE projects ADD COLUMN fallback_agent_id TEXT');
+}
+
+const roomAgentColumns = db.prepare('PRAGMA table_info(room_agents)').all() as { name: string }[];
+const roomAgentColumnNames = new Set(roomAgentColumns.map((column) => column.name));
+if (!roomAgentColumnNames.has('workflow_role')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN workflow_role TEXT');
+}
+
+const agentRunColumns = db.prepare('PRAGMA table_info(agent_runs)').all() as { name: string }[];
+const agentRunColumnNames = new Set(agentRunColumns.map((column) => column.name));
+if (!agentRunColumnNames.has('task_id')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN task_id TEXT');
+}
+if (!agentRunColumnNames.has('workflow_run_id')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN workflow_run_id TEXT');
+}
+if (!agentRunColumnNames.has('workflow_step_id')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN workflow_step_id TEXT');
+}
+if (!agentRunColumnNames.has('workflow_stage')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN workflow_stage TEXT');
 }
 
 export function now(): number {

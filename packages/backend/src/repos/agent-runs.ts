@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { AcpBackend, AgentRun, AgentRunStatus } from '../types.js';
+import type { AcpBackend, AgentRun, AgentRunStatus, WorkflowStage } from '../types.js';
 
 export const agentRunRepo = {
   create(input: {
@@ -11,6 +11,10 @@ export const agentRunRepo = {
     status?: AgentRunStatus;
     session_key?: string | null;
     acp_session_id?: string | null;
+    task_id?: string | null;
+    workflow_run_id?: string | null;
+    workflow_step_id?: string | null;
+    workflow_stage?: WorkflowStage | null;
     prompt: string;
   }): AgentRun {
     const id = nanoid(16);
@@ -18,8 +22,9 @@ export const agentRunRepo = {
     db.prepare(
       `INSERT INTO agent_runs (
         id, room_id, room_agent_id, agent_id, backend, status, session_key, acp_session_id,
+        task_id, workflow_run_id, workflow_step_id, workflow_stage,
         prompt, started_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.room_id,
@@ -29,6 +34,10 @@ export const agentRunRepo = {
       input.status ?? 'running',
       input.session_key ?? null,
       input.acp_session_id ?? null,
+      input.task_id ?? null,
+      input.workflow_run_id ?? null,
+      input.workflow_step_id ?? null,
+      input.workflow_stage ?? null,
       input.prompt,
       timestamp,
       timestamp,

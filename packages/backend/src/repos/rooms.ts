@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { AcpBackend, Room, RoomAgent } from '../types.js';
+import type { AcpBackend, Room, RoomAgent, WorkflowRole } from '../types.js';
 
 export const roomRepo = {
   listByProject(projectId: string): Room[] {
@@ -74,6 +74,11 @@ export const roomAgentRepo = {
       config.acp_session_label,
       id,
     );
+    return this.get(id);
+  },
+
+  setWorkflowRole(id: string, workflowRole: WorkflowRole | null): RoomAgent | undefined {
+    db.prepare('UPDATE room_agents SET workflow_role = ? WHERE id = ?').run(workflowRole, id);
     return this.get(id);
   },
 };
