@@ -1,13 +1,16 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import type { RoomAgent, Task } from '../lib/types';
+import type { RoomAgent, Task, WorkflowDetail, WorkflowRun, WorkflowStatus } from '../lib/types';
 import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '../lib/types';
 import { relativeTime } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
+import { WorkflowTimeline } from './WorkflowTimeline';
 import { Button } from './ui/Button';
 import { Label } from './ui/Input';
+
+const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowStatus>(['draft', 'running', 'awaiting_approval', 'blocked']);
 
 export function TaskDetailPanel({
   task,
@@ -22,6 +25,22 @@ export function TaskDetailPanel({
   const assignedAgent = task.assigned_agent_id
     ? agents.find((agent) => agent.id === task.assigned_agent_id)
     : undefined;
+  const { data: workflows = [] } = useQuery({
+    queryKey: ['task-workflows', task.id],
+    queryFn: () => api.listTaskWorkflows(task.id),
+  });
+  const activeWorkflow = workflows.find((workflow) => ACTIVE_WORKFLOW_STATUSES.has(workflow.status)) ?? null;
+  const displayWorkflow = activeWorkflow ?? workflows[0] ?? null;
+  const { data: workflowDetail = null } = useQuery({
+    queryKey: ['workflow', displayWorkflow?.id],
+    queryFn: () => api.getWorkflow(displayWorkflow!.id),
+    enabled: !!displayWorkflow,
+  });
+
+  const refreshWorkflow = (workflow?: WorkflowRun) => {
+    queryClient.invalidateQueries({ queryKey: ['task-workflows', task.id] });
+    if (workflow?.id) queryClient.invalidateQueries({ queryKey: ['workflow', workflow.id] });
+  };
 
   const update = useMutation({
     mutationFn: (patch: Partial<Pick<Task, 'status' | 'priority' | 'assigned_agent_id'>>) =>
@@ -29,6 +48,42 @@ export function TaskDetailPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-tasks', task.room_id] });
       toast.success('任务已更新');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const startWorkflow = useMutation({
+    mutationFn: () => api.startWorkflow(task.id),
+    onSuccess: (workflow) => {
+      refreshWorkflow(workflow);
+      toast.success('开发闭环已启动');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const approvePlan = useMutation({
+    mutationFn: (workflowId: string) => api.approveWorkflowPlan(workflowId),
+    onSuccess: (workflow) => {
+      refreshWorkflow(workflow);
+      toast.success('计划已确认');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const retryWorkflow = useMutation({
+    mutationFn: (workflowId: string) => api.retryWorkflowStep(workflowId),
+    onSuccess: (workflow) => {
+      refreshWorkflow(workflow);
+      toast.success('已重试当前阶段');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const cancelWorkflow = useMutation({
+    mutationFn: (workflowId: string) => api.cancelWorkflow(workflowId),
+    onSuccess: (workflow) => {
+      refreshWorkflow(workflow);
+      toast.success('开发闭环已取消');
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -68,6 +123,25 @@ export function TaskDetailPanel({
           <div className="surface-2 rounded-lg px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap min-h-[76px]">
             {task.description || '暂无描述'}
           </div>
+        </section>
+
+        <section>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <Label className="mb-0">开发闭环</Label>
+            {!activeWorkflow && (
+              <Button size="sm" onClick={() => startWorkflow.mutate()} disabled={startWorkflow.isPending}>
+                {startWorkflow.isPending ? '启动中…' : '启动闭环'}
+              </Button>
+            )}
+          </div>
+          <WorkflowTimeline
+            detail={workflowDetail as WorkflowDetail | null}
+            agents={agents}
+            busy={approvePlan.isPending || retryWorkflow.isPending || cancelWorkflow.isPending}
+            onApprove={() => displayWorkflow && approvePlan.mutate(displayWorkflow.id)}
+            onRetry={() => displayWorkflow && retryWorkflow.mutate(displayWorkflow.id)}
+            onCancel={() => displayWorkflow && cancelWorkflow.mutate(displayWorkflow.id)}
+          />
         </section>
 
         <section className="grid grid-cols-2 gap-3">

@@ -5,7 +5,7 @@ import { ChevronLeft, Hash, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { AgentRun, Message, RoomAgent, Task } from '../lib/types';
+import type { AgentRun, Message, RoomAgent, Task, WorkflowRun } from '../lib/types';
 import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AgentRunStatusCard } from '../components/AgentRunPanel';
@@ -94,6 +94,24 @@ export function RoomPage() {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       } else if (event.type === 'room:agent_left' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      } else if (
+        (event.type === 'workflow:created' || event.type === 'workflow:updated') &&
+        event.roomId === roomId
+      ) {
+        queryClient.setQueryData<WorkflowRun[] | undefined>(
+          ['task-workflows', event.workflow.task_id],
+          (prev) => upsertWorkflow(prev, event.workflow),
+        );
+        queryClient.invalidateQueries({ queryKey: ['workflow', event.workflow.id] });
+      } else if (
+        (event.type === 'workflow_step:created' || event.type === 'workflow_step:updated') &&
+        event.roomId === roomId
+      ) {
+        queryClient.invalidateQueries({ queryKey: ['task-workflows', event.step.task_id] });
+        queryClient.invalidateQueries({ queryKey: ['workflow', event.step.workflow_run_id] });
+      } else if (event.type === 'workflow_artifact:created' && event.roomId === roomId) {
+        queryClient.invalidateQueries({ queryKey: ['task-workflows', event.artifact.task_id] });
+        queryClient.invalidateQueries({ queryKey: ['workflow', event.artifact.workflow_run_id] });
       } else if (event.type === 'task:created' && event.task.room_id === roomId) {
         queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
           prev ? [event.task, ...prev.filter((task) => task.id !== event.task.id)] : [event.task],
@@ -210,6 +228,12 @@ function upsertAgentRun(prev: AgentRun[] | undefined, run: AgentRun): AgentRun[]
   return [run, ...list.filter((item) => item.id !== run.id)]
     .sort((a, b) => b.started_at - a.started_at)
     .slice(0, 50);
+}
+
+function upsertWorkflow(prev: WorkflowRun[] | undefined, workflow: WorkflowRun): WorkflowRun[] {
+  const list = prev ?? [];
+  return [workflow, ...list.filter((item) => item.id !== workflow.id)]
+    .sort((a, b) => b.created_at - a.created_at);
 }
 
 function AgentStrip({
