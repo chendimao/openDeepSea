@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Code2, Sparkles, Terminal, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import type { AcpBackend, RoomAgent } from '../lib/types';
+import { WORKFLOW_ROLE_LABEL } from '../lib/types';
+import type { AcpBackend, RoomAgent, WorkflowRole } from '../lib/types';
 import { cn, relativeTime, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 
@@ -27,12 +28,14 @@ export function AcpConfigPanel({
   const [enabled, setEnabled] = useState<boolean>(!!agent.acp_enabled);
   const [backend, setBackend] = useState<AcpBackend | null>(agent.acp_backend);
   const [sessionId, setSessionId] = useState<string | null>(agent.acp_session_id);
+  const [workflowRole, setWorkflowRole] = useState<WorkflowRole | null>(agent.workflow_role);
   const queryClient = useQueryClient();
 
   useEffect(() => {
     setEnabled(!!agent.acp_enabled);
     setBackend(agent.acp_backend);
     setSessionId(agent.acp_session_id);
+    setWorkflowRole(agent.workflow_role);
   }, [agent]);
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
@@ -42,14 +45,15 @@ export function AcpConfigPanel({
   });
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const label = sessions.find((s) => s.sessionId === sessionId)?.title ?? null;
-      return api.setAgentAcp(roomId, agent.id, {
+      const updated = await api.setAgentAcp(roomId, agent.id, {
         acp_enabled: enabled,
         acp_backend: enabled ? backend : null,
         acp_session_id: enabled ? sessionId : null,
         acp_session_label: label,
       });
+      return api.setAgentWorkflowRole(roomId, updated.id, workflowRole);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
@@ -105,6 +109,31 @@ export function AcpConfigPanel({
                 )}
               />
             </button>
+          </div>
+        </section>
+
+        <section>
+          <label
+            htmlFor="agent-workflow-role"
+            className="block font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)] mb-2"
+          >
+            开发职责
+          </label>
+          <select
+            id="agent-workflow-role"
+            value={workflowRole ?? ''}
+            onChange={(e) => setWorkflowRole((e.target.value || null) as WorkflowRole | null)}
+            className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+          >
+            <option value="">不参与闭环</option>
+            {(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor'] as const).map((role) => (
+              <option key={role} value={role}>
+                {WORKFLOW_ROLE_LABEL[role]}
+              </option>
+            ))}
+          </select>
+          <div className="mt-2 text-[11.5px] text-[var(--color-fg-muted)]">
+            闭环启动后会按职责选择阶段执行者。
           </div>
         </section>
 
