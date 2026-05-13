@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { dispatchUserMessage } from './dispatcher.js';
 import { gatewayClient } from './openclaw/gateway.js';
+import { getOpenClawGatewayStatus } from './openclaw/status.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
@@ -13,8 +14,14 @@ import type { AcpBackend } from './types.js';
 export const router = Router();
 
 // ---------- Health & Gateway ----------
-router.get('/health', (_req, res) => {
-  res.json({ ok: true, gateway: gatewayClient.isConnected() });
+router.get('/health', async (_req, res) => {
+  const gatewayStatus = await getOpenClawGatewayStatus();
+  res.json({
+    ok: true,
+    gateway: gatewayStatus.ok,
+    gatewayStatus,
+    gatewayRpcConnected: gatewayClient.isConnected(),
+  });
 });
 
 router.get('/gateway/agents', async (_req, res) => {
