@@ -129,3 +129,17 @@ test('createTaskWithConversation rejects source message from another room', () =
     /source message room mismatch/,
   );
 });
+
+test('createTaskWithConversation rejects empty source message id', () => {
+  const { roomId } = insertProjectAndRoom();
+  assert.throws(
+    () =>
+      createTaskWithConversation({
+        roomId,
+        origin: 'manual',
+        sourceMessageId: '   ',
+        taskInput: { title: '空来源消息' },
+      }),
+    /source message id is empty/,
+  );
+});

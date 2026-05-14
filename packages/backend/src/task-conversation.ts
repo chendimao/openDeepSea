@@ -58,13 +58,19 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
   const title = input.taskInput.title.trim();
   if (!title) throw new Error('title is required');
 
-  if (input.sourceMessageId) {
-    const sourceMessage = messageRepo.get(input.sourceMessageId);
+  const normalizedSourceMessageId =
+    input.sourceMessageId === null || input.sourceMessageId === undefined ? null : input.sourceMessageId.trim();
+  if (input.sourceMessageId !== null && input.sourceMessageId !== undefined && !normalizedSourceMessageId) {
+    throw new Error('source message id is empty');
+  }
+
+  if (normalizedSourceMessageId) {
+    const sourceMessage = messageRepo.get(normalizedSourceMessageId);
     if (!sourceMessage) throw new Error('source message not found');
     if (sourceMessage.room_id !== input.roomId) throw new Error('source message room mismatch');
   }
 
-  const shouldCreateUserMessage = input.createUserMessage !== false && !input.sourceMessageId;
+  const shouldCreateUserMessage = input.createUserMessage !== false && !normalizedSourceMessageId;
   const interactionMode =
     input.taskInput.interaction_mode ?? settingsRepo.resolveForRoom(input.roomId)?.effective.interaction_mode ?? 'ask_user';
 
@@ -82,7 +88,7 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
         )
       : null;
 
-    const sourceMessageId = input.sourceMessageId ?? userMessage?.id ?? null;
+    const sourceMessageId = normalizedSourceMessageId ?? userMessage?.id ?? null;
     const task = taskRepo.create({
       room_id: input.roomId,
       project_id: room.project_id,

@@ -296,8 +296,24 @@ function block(run: WorkflowRun, error: string): void {
 }
 
 function updateTaskStatus(taskId: string, status: TaskStatus): Task | undefined {
+  const before = taskRepo.get(taskId);
   const task = taskRepo.updateStatus(taskId, status);
-  if (task) broadcastTask('task:updated', task);
+  if (task) {
+    broadcastTask('task:updated', task);
+    if (before && before.status !== task.status) {
+      try {
+        recordTaskEvent({
+          roomId: task.room_id,
+          taskId: task.id,
+          taskTitle: task.title,
+          eventType: 'task_status_changed',
+          content: `任务「${task.title}」状态变更为 ${task.status}`,
+        });
+      } catch (err) {
+        console.warn(`[workflow] failed to record task status event: ${(err as Error).message}`);
+      }
+    }
+  }
   return task;
 }
 
