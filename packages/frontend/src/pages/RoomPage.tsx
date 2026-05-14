@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronLeft, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { AgentRun, Message, RoomAgent, Task, WorkflowRun } from '../lib/types';
+import type { AgentRun, Message, MessageAttachmentMetadata, RoomAgent, Task, WorkflowRun } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
@@ -533,6 +533,7 @@ function MessageBubble({
   const isSystem = message.sender_type === 'system';
   const metadata = parseMessageMetadata(message.metadata);
   const attachments = metadata.attachments;
+  const hasContent = Boolean(message.content?.trim());
 
   if (isSystem) {
     return (
@@ -568,12 +569,18 @@ function MessageBubble({
               ? 'user-message px-3.5 py-2.5 text-[var(--color-primary-fg)]'
               : 'w-full',
             message.message_type === 'agent_stream' && !isUser && 'font-mono text-[12.5px]',
+            !hasContent && attachments.length > 0 && isUser && 'px-3.5 py-2.5',
           )}
         >
           {!isUser && run ? (
             <div className="space-y-2.5">
-              <div className="px-3.5 pt-3">
-                <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+              {hasContent && (
+                <div className="px-3.5 pt-3">
+                  <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+                </div>
+              )}
+              <div className={cn('px-3.5', hasContent ? 'pb-1' : 'pt-3 pb-1')}>
+                <MessageAttachments attachments={attachments} />
               </div>
               <div className="run-box-wrap px-2.5 py-2.5">
                 <AgentRunStatusCard
@@ -587,14 +594,60 @@ function MessageBubble({
               </div>
             </div>
           ) : (
-            <div className={!isUser ? 'px-3.5 py-2.5' : undefined}>
-              <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+            <div className={cn(!isUser && 'px-3.5 py-2.5', isUser && !hasContent && attachments.length > 0 && 'p-0')}>
+              {hasContent ? (
+                <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+              ) : message.message_type === 'agent_stream' ? (
+                <MessageContent content="…" />
+              ) : null}
+              <MessageAttachments attachments={attachments} />
             </div>
           )}
         </div>
       </div>
     </div>
   );
+}
+
+function MessageAttachments({ attachments }: { attachments: MessageAttachmentMetadata[] }) {
+  if (attachments.length === 0) return null;
+
+  return (
+    <div className="message-attachments">
+      {attachments.map((attachment) => (
+        <a
+          key={attachment.id}
+          href={attachment.url}
+          target="_blank"
+          rel="noreferrer"
+          className={cn('message-attachment-card', attachment.isImage && 'is-image')}
+        >
+          {attachment.isImage ? (
+            <img src={attachment.url} alt={attachment.name} loading="lazy" />
+          ) : (
+            <span className="message-attachment-icon" aria-hidden="true">
+              <FileText className="h-4 w-4" />
+            </span>
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[12px] font-medium text-[var(--color-fg)]">{attachment.name}</span>
+            <span className="block truncate text-[10.5px] font-mono text-[var(--color-fg-muted)]">
+              {formatAttachmentSize(attachment.size)} · {attachment.mimeType}
+            </span>
+          </span>
+          <Download className="h-3.5 w-3.5 text-[var(--color-fg-muted)]" aria-hidden="true" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function formatAttachmentSize(size: number): string {
+  if (!Number.isFinite(size) || size < 0) return '0 B';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size >= 10 * 1024 ? 0 : 1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function routingHint(
