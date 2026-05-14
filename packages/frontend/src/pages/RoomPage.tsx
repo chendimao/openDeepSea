@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
+import { CheckSquare, ChevronDown, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -400,9 +400,15 @@ function ChatColumn({
   });
 
   const createTaskFromCommand = useMutation({
-    mutationFn: (title: string) => api.createTask(roomId, { title }),
+    mutationFn: (title: string) =>
+      api.createTaskWithConversation(roomId, {
+        title,
+        origin: 'slash_command',
+        user_message: `/task ${title}`,
+      }),
     onSuccess: () => {
       setComposerResetKey((key) => key + 1);
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
       toast.success(t('room.taskCreated'));
     },
@@ -542,6 +548,18 @@ function MessageBubble({
   const metadata = parseMessageMetadata(message.metadata);
   const attachments = metadata.attachments;
   const hasContent = Boolean(message.content?.trim());
+  const isTaskEvent = isSystem && Boolean(metadata.event_type && metadata.task_id);
+
+  if (isTaskEvent) {
+    return (
+      <div className="flex justify-center py-1">
+        <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
+          <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
+          <span>{message.content}</span>
+        </div>
+      </div>
+    );
+  }
 
   if (isSystem) {
     return (

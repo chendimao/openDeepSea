@@ -300,6 +300,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority TEXT NOT NULL DEFAULT 'normal',
   interaction_mode TEXT NOT NULL DEFAULT 'ask_user',
   assigned_agent_id TEXT,
+  source_message_id TEXT,
+  created_from TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   completed_at INTEGER,
@@ -346,6 +348,12 @@ const taskColumns = db.prepare('PRAGMA table_info(tasks)').all() as { name: stri
 const taskColumnNames = new Set(taskColumns.map((column) => column.name));
 if (!taskColumnNames.has('interaction_mode')) {
   db.exec("ALTER TABLE tasks ADD COLUMN interaction_mode TEXT NOT NULL DEFAULT 'ask_user'");
+}
+if (!taskColumnNames.has('source_message_id')) {
+  db.exec('ALTER TABLE tasks ADD COLUMN source_message_id TEXT');
+}
+if (!taskColumnNames.has('created_from')) {
+  db.exec('ALTER TABLE tasks ADD COLUMN created_from TEXT');
 }
 
 db.exec(`

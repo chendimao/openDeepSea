@@ -113,6 +113,19 @@ export interface AgentRun {
 
 export type MessageType = 'text' | 'task' | 'system' | 'code' | 'agent_stream';
 export type SenderType = 'user' | 'agent' | 'system';
+export type TaskCreatedFrom = 'manual' | 'chat_plan' | 'slash_command' | 'workflow_assignment';
+export type TaskEventType =
+  | 'plan_proposed'
+  | 'task_created'
+  | 'task_updated'
+  | 'task_status_changed'
+  | 'workflow_started'
+  | 'workflow_stage_changed'
+  | 'workflow_plan_ready'
+  | 'workflow_assignment_created'
+  | 'workflow_blocked'
+  | 'workflow_completed'
+  | 'workflow_cancelled';
 
 export interface MessageAttachmentMetadata {
   id: string;
@@ -123,7 +136,16 @@ export interface MessageAttachmentMetadata {
   isImage: boolean;
 }
 
-export interface MessageMetadata {
+export interface MessageTaskEventMetadata {
+  task_id?: string;
+  task_title?: string;
+  workflow_run_id?: string;
+  workflow_step_id?: string;
+  event_type?: TaskEventType;
+  origin?: TaskCreatedFrom;
+}
+
+export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
 }
 
@@ -180,6 +202,8 @@ export interface Task {
   priority: TaskPriority;
   interaction_mode: TaskInteractionMode;
   assigned_agent_id: string | null;
+  source_message_id: string | null;
+  created_from: TaskCreatedFrom | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;

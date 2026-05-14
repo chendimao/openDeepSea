@@ -12,6 +12,7 @@ mkdirSync(projectTwoDir);
 process.env.OPENCLAW_ROOM_DB = join(tempDir, 'test.db');
 
 const { agentRunRepo } = await import('../repos/agent-runs.js');
+const { messageRepo } = await import('../repos/messages.js');
 const { projectRepo } = await import('../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../repos/rooms.js');
 const { taskRepo } = await import('../repos/tasks.js');
@@ -97,10 +98,54 @@ test('recoverOrphanedSteps marks running workflow steps as interrupted and block
   const updatedStep = workflowRepo.getStep(step.id);
   const updatedWorkflow = workflowRepo.getRun(workflow.id);
   const updatedTask = taskRepo.get(task.id);
+  const taskEventMessages = messageRepo.listByRoom(room.id).filter((message) => {
+    if (message.sender_type !== 'system' || message.message_type !== 'system' || !message.metadata) return false;
+    const metadata = JSON.parse(message.metadata) as Record<string, unknown>;
+    return metadata.event_type === 'task_status_changed' && metadata.task_id === task.id;
+  });
 
   assert.equal(count, 1);
   assert.equal(updatedStep?.status, 'interrupted');
   assert.equal(updatedStep?.error, 'Backend restarted before workflow step completed');
   assert.equal(updatedWorkflow?.status, 'blocked');
   assert.equal(updatedTask?.status, 'in_progress');
+  assert.equal(taskEventMessages.length, 0);
+});
+
+test('cancel workflow records task_status_changed when workflow updates task status', async () => {
+  const projectThreeDir = join(tempDir, 'project-three');
+  mkdirSync(projectThreeDir);
+  const project = projectRepo.create({ name: 'Test 3', path: projectThreeDir });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room 3' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Cancel workflow task status event',
+  });
+  taskRepo.updateStatus(task.id, 'in_progress');
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    current_stage: 'implementation',
+  });
+  workflowRepo.createStep({
+    workflow_run_id: workflow.id,
+    task_id: task.id,
+    stage: 'implementation',
+    status: 'running',
+    prompt: 'implement',
+    sort_order: 1,
+  });
+
+  await workflowOrchestrator.cancel(workflow.id);
+
+  const taskEventMessages = messageRepo.listByRoom(room.id).filter((message) => {
+    if (message.sender_type !== 'system' || message.message_type !== 'system' || !message.metadata) return false;
+    const metadata = JSON.parse(message.metadata) as Record<string, unknown>;
+    return metadata.event_type === 'task_status_changed' && metadata.task_id === task.id;
+  });
+
+  assert.equal(taskEventMessages.length, 1);
+  assert.match(taskEventMessages[0]?.content ?? '', /状态变更为 failed/);
 });

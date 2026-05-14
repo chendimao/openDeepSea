@@ -32,6 +32,19 @@ export type MemoryScope = 'project' | 'room' | 'agent' | 'task';
 export type MemoryType = 'decision' | 'fact' | 'preference' | 'lesson' | 'task_summary' | 'artifact_summary';
 export type MemorySourceType = 'manual' | 'message' | 'workflow' | 'task';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
+export type TaskCreatedFrom = 'manual' | 'chat_plan' | 'slash_command' | 'workflow_assignment';
+export type TaskEventType =
+  | 'plan_proposed'
+  | 'task_created'
+  | 'task_updated'
+  | 'task_status_changed'
+  | 'workflow_started'
+  | 'workflow_stage_changed'
+  | 'workflow_plan_ready'
+  | 'workflow_assignment_created'
+  | 'workflow_blocked'
+  | 'workflow_completed'
+  | 'workflow_cancelled';
 export type SettingsScope = 'system' | 'project' | 'room';
 
 export interface ProjectStats {
@@ -138,6 +151,12 @@ export interface MessageAttachmentMetadata {
 
 export interface MessageMetadata {
   attachments: MessageAttachmentMetadata[];
+  task_id?: string;
+  task_title?: string;
+  workflow_run_id?: string;
+  workflow_step_id?: string;
+  event_type?: TaskEventType;
+  origin?: TaskCreatedFrom;
 }
 
 export interface Message {
@@ -163,6 +182,8 @@ export interface Task {
   priority: 'low' | 'normal' | 'high' | 'urgent';
   interaction_mode: TaskInteractionMode;
   assigned_agent_id: string | null;
+  source_message_id: string | null;
+  created_from: TaskCreatedFrom | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;

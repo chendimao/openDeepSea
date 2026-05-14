@@ -213,6 +213,26 @@ export const api = {
       parent_task_id?: string;
     },
   ) => request<Task>(`/rooms/${roomId}/tasks`, { method: 'POST', body: JSON.stringify(input) }),
+  createTaskWithConversation: (
+    roomId: string,
+    input: {
+      title: string;
+      description?: string;
+      priority?: Task['priority'];
+      interaction_mode?: Task['interaction_mode'];
+      assigned_agent_id?: string;
+      parent_task_id?: string;
+      origin?: 'manual' | 'slash_command' | 'chat_plan';
+      sender_id?: string;
+      sender_name?: string;
+      user_message?: string;
+      source_message_id?: string | null;
+    },
+  ) =>
+    request<{ task: Task; userMessage: Message | null; systemMessage: Message }>(
+      `/rooms/${roomId}/tasks/conversation`,
+      { method: 'POST', body: JSON.stringify(input) },
+    ),
   updateTask: (
     id: string,
     patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id' | 'status'>>,

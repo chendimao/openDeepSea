@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { Task, TaskInteractionMode, TaskPriority, TaskStatus } from '../types.js';
+import type { Task, TaskCreatedFrom, TaskInteractionMode, TaskPriority, TaskStatus } from '../types.js';
 
 export const taskRepo = {
   listByProject(projectId: string): Task[] {
@@ -40,15 +40,17 @@ export const taskRepo = {
     interaction_mode?: TaskInteractionMode;
     assigned_agent_id?: string;
     parent_task_id?: string;
+    source_message_id?: string | null;
+    created_from?: TaskCreatedFrom | null;
   }): Task {
     const id = nanoid(12);
     const ts = now();
     db.prepare(
       `INSERT INTO tasks (
         id, room_id, project_id, parent_task_id, title, description, status,
-        priority, interaction_mode, assigned_agent_id, created_at, updated_at
+        priority, interaction_mode, assigned_agent_id, source_message_id, created_from, created_at, updated_at
       )
-       VALUES (?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.room_id,
@@ -59,6 +61,8 @@ export const taskRepo = {
       input.priority ?? 'normal',
       input.interaction_mode ?? 'ask_user',
       input.assigned_agent_id ?? null,
+      input.source_message_id ?? null,
+      input.created_from ?? null,
       ts,
       ts,
     );

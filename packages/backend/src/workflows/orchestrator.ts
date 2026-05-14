@@ -7,6 +7,7 @@ import { roomAgentRepo, roomRepo } from '../repos/rooms.js';
 import { taskRepo } from '../repos/tasks.js';
 import { workflowRepo } from '../repos/workflows.js';
 import { runRegistry } from '../run-registry.js';
+import { recordTaskEvent } from '../task-conversation.js';
 import { wsHub } from '../ws-hub.js';
 import {
   parseAcceptanceVerdict,
@@ -49,6 +50,12 @@ export const workflowOrchestrator = {
       approval_required: true,
     });
     broadcastWorkflow('workflow:created', run);
+    safelyRecordWorkflowEvent({
+      run,
+      task,
+      eventType: 'workflow_started',
+      content: `工作流已启动，进入 ${run.current_stage ?? 'analysis'} 阶段。`,
+    });
     startAgentStage(run, task, 'analysis');
     return latestRun(run.id);
   },
@@ -100,7 +107,8 @@ export const workflowOrchestrator = {
     });
     if (!updated) throw new Error('workflow not found');
     broadcastWorkflow('workflow:updated', updated);
-    startAgentStage(updated, requireTask(updated.task_id), 'planning');
+    const task = requireTask(updated.task_id);
+    startAgentStage(updated, task, 'planning');
     return latestRun(updated.id);
   },
 
@@ -123,6 +131,15 @@ export const workflowOrchestrator = {
     const updated = workflowRepo.updateRun(run.id, { status: 'cancelled', error: null });
     if (!updated) throw new Error('workflow not found');
     broadcastWorkflow('workflow:updated', updated);
+    const task = taskRepo.get(run.task_id);
+    if (task) {
+      safelyRecordWorkflowEvent({
+        run: updated,
+        task,
+        eventType: 'workflow_cancelled',
+        content: '工作流已取消。',
+      });
+    }
     return updated;
   },
 
@@ -266,12 +283,37 @@ function broadcastAgentRun(roomId: string, run: AgentRun): void {
 
 function block(run: WorkflowRun, error: string): void {
   const updated = workflowRepo.blockRun(run.id, error);
-  if (updated) broadcastWorkflow('workflow:updated', updated);
+  if (!updated) return;
+  broadcastWorkflow('workflow:updated', updated);
+  const task = taskRepo.get(updated.task_id);
+  if (!task) return;
+  safelyRecordWorkflowEvent({
+    run: updated,
+    task,
+    eventType: 'workflow_blocked',
+    content: `工作流已阻塞：${error}`,
+  });
 }
 
 function updateTaskStatus(taskId: string, status: TaskStatus): Task | undefined {
+  const before = taskRepo.get(taskId);
   const task = taskRepo.updateStatus(taskId, status);
-  if (task) broadcastTask('task:updated', task);
+  if (task) {
+    broadcastTask('task:updated', task);
+    if (before && before.status !== task.status) {
+      try {
+        recordTaskEvent({
+          roomId: task.room_id,
+          taskId: task.id,
+          taskTitle: task.title,
+          eventType: 'task_status_changed',
+          content: `任务「${task.title}」状态变更为 ${task.status}`,
+        });
+      } catch (err) {
+        console.warn(`[workflow] failed to record task status event: ${(err as Error).message}`);
+      }
+    }
+  }
   return task;
 }
 
@@ -299,7 +341,15 @@ function markStepFailed(
 
 function failStageWithoutAgent(run: WorkflowRun, task: Task, stage: WorkflowStage, error: string): void {
   const updatedRun = workflowRepo.updateRun(run.id, { status: 'blocked', current_stage: stage, error });
-  if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
+  if (updatedRun) {
+    broadcastWorkflow('workflow:updated', updatedRun);
+    safelyRecordWorkflowEvent({
+      run: updatedRun,
+      task,
+      eventType: 'workflow_blocked',
+      content: `任务「${task.title}」工作流已阻塞：${error}`,
+    });
+  }
   const step = workflowRepo.createStep({
     workflow_run_id: run.id,
     task_id: task.id,
@@ -315,6 +365,7 @@ function failStageWithoutAgent(run: WorkflowRun, task: Task, stage: WorkflowStag
 function handleAnalysisDecisions(run: WorkflowRun, step: WorkflowStep, output: string): void {
   const request = parseDecisionRequest(output);
   const blockingDecisions = request.decisions.filter((decision) => decision.blocking);
+  const task = requireTask(run.task_id);
   if (request.decisions.length > 0) {
     const artifact = workflowRepo.createArtifact({
       task_id: run.task_id,
@@ -329,11 +380,10 @@ function handleAnalysisDecisions(run: WorkflowRun, step: WorkflowStep, output: s
   }
 
   if (blockingDecisions.length === 0) {
-    startAgentStage(run, requireTask(run.task_id), 'planning');
+    startAgentStage(run, task, 'planning');
     return;
   }
 
-  const task = requireTask(run.task_id);
   if (task.interaction_mode === 'auto_recommended') {
     const response = buildRecommendedDecisionResponse(request.decisions);
     const artifact = workflowRepo.createArtifact({
@@ -471,6 +521,13 @@ function startAgentStage(
   broadcastStep('workflow_step:created', run.room_id, step);
   const updatedRun = workflowRepo.updateRun(run.id, { status: 'running', current_stage: stage, error: null });
   if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
+  safelyRecordWorkflowEvent({
+    run: updatedRun ?? run,
+    task,
+    eventType: 'workflow_stage_changed',
+    workflowStepId: step.id,
+    content: `工作流进入 ${stage} 阶段。`,
+  });
 
   void respondAsAgent({
     agent: resumeSessionId ? { ...agent, acp_session_id: resumeSessionId } : agent,
@@ -630,6 +687,14 @@ function finishPlanning(run: WorkflowRun, step: WorkflowStep, output: string): v
     if (updated) broadcastWorkflow('workflow:updated', updated);
     const waitingStep = workflowRepo.updateStep(step.id, { status: 'awaiting_approval' });
     if (waitingStep) broadcastStep('workflow_step:updated', run.room_id, waitingStep);
+    const task = requireTask(run.task_id);
+    safelyRecordWorkflowEvent({
+      run: updated ?? run,
+      task,
+      eventType: 'workflow_plan_ready',
+      workflowStepId: step.id,
+      content: '规划阶段已完成，等待审批。',
+    });
   } catch (err) {
     markStepFailed(run, step, (err as Error).message);
     const artifact = workflowRepo.createArtifact({
@@ -682,6 +747,7 @@ function assignFromPlan(run: WorkflowRun): void {
       description: `${item.description}\n\n验收点：\n${item.acceptance.map((point) => `- ${point}`).join('\n')}`,
       priority: item.priority,
       assigned_agent_id: assigned?.id,
+      created_from: 'workflow_assignment',
     });
     broadcastTask('task:created', child);
   }
@@ -696,6 +762,14 @@ function assignFromPlan(run: WorkflowRun): void {
     metadata: { taskCount: plan.tasks.length },
   });
   broadcastArtifact(run.room_id, artifact);
+  safelyRecordWorkflowEvent({
+    run,
+    task,
+    eventType: 'workflow_assignment_created',
+    workflowStepId: step.id,
+    origin: 'workflow_assignment',
+    content: `已根据计划为任务「${task.title}」创建 ${plan.tasks.length} 个子任务。`,
+  });
   continueImplementationOrReview(run);
 }
 
@@ -721,7 +795,8 @@ function continueImplementationOrReview(run: WorkflowRun): void {
     startAgentStageWithAgent(run, nextChild, 'implementation', agent);
     return;
   }
-  startAgentStage(run, requireTask(run.task_id), 'code_review');
+  const task = requireTask(run.task_id);
+  startAgentStage(run, task, 'code_review');
 }
 
 function startAgentStageWithAgent(
@@ -753,6 +828,13 @@ function startAgentStageWithAgent(
   broadcastStep('workflow_step:created', run.room_id, step);
   const updatedRun = workflowRepo.updateRun(run.id, { status: 'running', current_stage: stage, error: null });
   if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
+  safelyRecordWorkflowEvent({
+    run: updatedRun ?? run,
+    task,
+    eventType: 'workflow_stage_changed',
+    workflowStepId: step.id,
+    content: `工作流进入 ${stage} 阶段。`,
+  });
   void respondAsAgent({
     agent: resumeSessionId ? { ...agent, acp_session_id: resumeSessionId } : agent,
     projectPath: context.project.path,
@@ -806,7 +888,8 @@ function finishReview(run: WorkflowRun, step: WorkflowStep, output: string): voi
     block(run, 'Code review failed');
     return;
   }
-  startAgentStage(run, requireTask(run.task_id), 'acceptance');
+  const task = requireTask(run.task_id);
+  startAgentStage(run, task, 'acceptance');
 }
 
 function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string): void {
@@ -840,7 +923,17 @@ function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string):
     updateTaskStatus(run.task_id, 'done');
     rememberAcceptedTask(run, verdict);
     const updated = workflowRepo.updateRun(run.id, { status: 'completed', current_stage: 'acceptance', error: null });
-    if (updated) broadcastWorkflow('workflow:updated', updated);
+    if (updated) {
+      broadcastWorkflow('workflow:updated', updated);
+      const task = requireTask(run.task_id);
+      safelyRecordWorkflowEvent({
+        run: updated,
+        task,
+        eventType: 'workflow_completed',
+        workflowStepId: step.id,
+        content: '工作流已完成。',
+      });
+    }
   } else {
     markStepFailed(run, step, 'Acceptance failed');
     updateTaskStatus(run.task_id, 'failed');
@@ -850,6 +943,30 @@ function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string):
       error: 'Acceptance failed',
     });
     if (updated) broadcastWorkflow('workflow:updated', updated);
+  }
+}
+
+function safelyRecordWorkflowEvent(input: {
+  run: WorkflowRun;
+  task: Task;
+  eventType: 'workflow_started' | 'workflow_stage_changed' | 'workflow_plan_ready' | 'workflow_assignment_created' | 'workflow_blocked' | 'workflow_completed' | 'workflow_cancelled';
+  content: string;
+  workflowStepId?: string | null;
+  origin?: 'workflow_assignment';
+}): void {
+  try {
+    recordTaskEvent({
+      roomId: input.run.room_id,
+      taskId: input.task.id,
+      taskTitle: input.task.title,
+      workflowRunId: input.run.id,
+      workflowStepId: input.workflowStepId ?? null,
+      eventType: input.eventType,
+      origin: input.origin,
+      content: input.content,
+    });
+  } catch (err) {
+    console.warn(`[workflow] failed to record task event ${input.eventType}: ${(err as Error).message}`);
   }
 }
 
