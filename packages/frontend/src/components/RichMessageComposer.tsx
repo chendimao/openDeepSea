@@ -18,6 +18,7 @@ import {
   serializeComposerNodes,
   validatePendingFiles,
 } from '../lib/composerModel';
+import { useI18n } from '../lib/i18n';
 import type { RoomAgent } from '../lib/types';
 import { AgentMentionMenu } from './AgentMentionMenu';
 import { Button } from './ui/Button';
@@ -55,6 +56,7 @@ export function RichMessageComposer({
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [hasContent, setHasContent] = useState(false);
+  const { t } = useI18n();
   const isBusy = sending || disabled;
 
   const revokeAttachment = (attachment: AttachmentPreview) => {
@@ -136,7 +138,10 @@ export function RichMessageComposer({
     const files = Array.from(fileList);
     if (files.length === 0) return;
 
-    const error = validatePendingFiles(attachmentsRef.current.length, files);
+    const error = validatePendingFiles(attachmentsRef.current.length, files, {
+      maxFiles: (count) => t('composer.error.maxFiles', { count }),
+      fileTooLarge: (name, size) => t('composer.error.fileTooLarge', { name, size }),
+    });
     if (error) {
       toast.error(error);
       return;
@@ -199,7 +204,7 @@ export function RichMessageComposer({
     const content = serialized.content.trim();
 
     if (/^\/task\s+(.+)/.test(content) && attachmentsRef.current.length > 0) {
-      toast.error('/task 命令不能携带附件，请先移除附件');
+      toast.error(t('composer.taskNoAttachments'));
       return;
     }
 
@@ -285,7 +290,7 @@ export function RichMessageComposer({
         />
 
         {attachments.length > 0 && (
-          <div className="composer-attachments" aria-label="待发送附件">
+          <div className="composer-attachments" aria-label={t('composer.attachmentsAria')}>
             {attachments.map((attachment) => (
               <div className="composer-attachment" key={attachment.id}>
                 {attachment.previewUrl ? (
@@ -307,7 +312,7 @@ export function RichMessageComposer({
                   type="button"
                   className="composer-attachment-remove"
                   onClick={() => removeAttachment(attachment.id)}
-                  aria-label={`移除 ${attachment.file.name}`}
+                  aria-label={t('composer.removeAttachment', { name: attachment.file.name })}
                   disabled={isBusy}
                 >
                   <X className="h-3.5 w-3.5" strokeWidth={1.9} />
@@ -340,8 +345,8 @@ export function RichMessageComposer({
               className="composer-action-button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isBusy}
-              aria-label="选择附件"
-              title="选择附件"
+              aria-label={t('composer.selectAttachment')}
+              title={t('composer.selectAttachment')}
             >
               <Image className="h-4 w-4" strokeWidth={1.75} />
             </Button>
@@ -350,10 +355,10 @@ export function RichMessageComposer({
               size="sm"
               className="composer-action-button"
               disabled={sendDisabled}
-              aria-label="发送消息"
+              aria-label={t('composer.sendMessage')}
             >
               <Send className="h-4 w-4" strokeWidth={1.75} />
-              发送
+              {t('composer.send')}
             </Button>
           </div>
         </div>

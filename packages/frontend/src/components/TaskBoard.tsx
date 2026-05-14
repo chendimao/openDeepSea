@@ -51,7 +51,7 @@ export function TaskBoard({
   onSelectTask: (task: Task) => void;
   onChangeStatus: (task: Task, status: Task['status']) => void;
 }) {
-  const { taskStatusLabel } = useI18n();
+  const { t, taskStatusLabel } = useI18n();
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const workflowByTaskId = createWorkflowByTaskId(workflows ?? []);
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
@@ -60,7 +60,7 @@ export function TaskBoard({
     <aside className="workbench-panel task-board-panel">
       <header className="task-board-toolbar">
         <CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
-        <div className="font-display text-[13px] font-semibold">任务看板</div>
+        <div className="font-display text-[13px] font-semibold">{t('taskBoard.title')}</div>
         <span className="ml-auto text-[11px] font-mono text-[var(--color-fg-muted)]">
           {rootTasks.length}
         </span>
@@ -82,7 +82,7 @@ export function TaskBoard({
               <div className="p-2 space-y-2">
                 {columnTasks.length === 0 ? (
                   <div className="px-2 py-5 text-center text-[11.5px] text-[var(--color-muted)]">
-                    暂无任务
+                    {t('taskBoard.empty')}
                   </div>
                 ) : (
                   columnTasks.map((task) => (
@@ -121,7 +121,7 @@ function TaskCard({
   onSelect: () => void;
   onChangeStatus: (status: Task['status']) => void;
 }) {
-  const { formatRelativeTime, taskPriorityLabel, taskStatusLabel, workflowStatusLabel } = useI18n();
+  const { formatRelativeTime, t, taskPriorityLabel, taskStatusLabel, workflowStatusLabel } = useI18n();
   const nextStatus = NEXT_STATUS[task.status];
 
   return (
@@ -154,7 +154,7 @@ function TaskCard({
               </span>
             </>
           ) : (
-            <span className="text-[11px] text-[var(--color-muted)]">未指派</span>
+            <span className="text-[11px] text-[var(--color-muted)]">{t('common.unassigned')}</span>
           )}
           <span className="ml-auto text-[10px] font-mono text-[var(--color-muted)]">
             {formatRelativeTime(task.updated_at)}
@@ -170,7 +170,7 @@ function TaskCard({
         )}
         {task.status !== 'failed' && (
           <Button size="sm" variant="ghost" onClick={() => onChangeStatus('failed')}>
-            标记失败
+            {t('taskBoard.markFailed')}
           </Button>
         )}
       </div>

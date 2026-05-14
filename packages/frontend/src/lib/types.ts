@@ -269,19 +269,3 @@ export interface OpenClawAgent {
   description?: string;
   workspace?: string;
 }
-
-export const MEMORY_SCOPE_LABEL: Record<MemoryScope, string> = {
-  project: '项目',
-  room: '聊天室',
-  agent: '智能体',
-  task: '任务',
-};
-
-export const MEMORY_TYPE_LABEL: Record<MemoryType, string> = {
-  decision: '决策',
-  fact: '事实',
-  preference: '偏好',
-  lesson: '经验',
-  task_summary: '任务总结',
-  artifact_summary: '产物摘要',
-};

@@ -8,14 +8,14 @@ export function cn(...inputs: ClassValue[]): string {
 export function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const sec = Math.floor(diff / 1000);
-  if (sec < 60) return '刚刚';
+  if (sec < 60) return 'just now';
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}分钟前`;
+  if (min < 60) return `${min} min ago`;
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}小时前`;
+  if (hr < 24) return `${hr} hr ago`;
   const day = Math.floor(hr / 24);
-  if (day < 7) return `${day}天前`;
-  return new Date(ts).toLocaleDateString('zh-CN');
+  if (day < 7) return `${day} days ago`;
+  return new Date(ts).toLocaleDateString('en-US');
 }
 
 export function truncate(str: string, n: number): string {

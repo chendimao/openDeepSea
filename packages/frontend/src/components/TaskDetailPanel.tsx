@@ -30,7 +30,7 @@ export function TaskDetailPanel({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const { formatRelativeTime, interactionModeLabel, taskPriorityLabel, taskStatusLabel } = useI18n();
+  const { formatRelativeTime, interactionModeLabel, t, taskPriorityLabel, taskStatusLabel } = useI18n();
   const assignedAgent = task?.assigned_agent_id
     ? agents.find((agent) => agent.id === task.assigned_agent_id)
     : undefined;
@@ -58,7 +58,7 @@ export function TaskDetailPanel({
       api.updateTask(task!.id, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-tasks', task?.room_id] });
-      toast.success('任务已更新');
+      toast.success(t('taskDetail.updated'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -67,7 +67,7 @@ export function TaskDetailPanel({
     mutationFn: () => api.startWorkflow(task!.id),
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
-      toast.success('开发闭环已启动');
+      toast.success(t('taskDetail.workflowStarted'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -76,7 +76,7 @@ export function TaskDetailPanel({
     mutationFn: (workflowId: string) => api.approveWorkflowPlan(workflowId),
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
-      toast.success('计划已确认');
+      toast.success(t('taskDetail.planApproved'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -86,7 +86,7 @@ export function TaskDetailPanel({
       api.submitWorkflowDecisions(input.workflowId, input.answers),
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
-      toast.success('决策已提交');
+      toast.success(t('taskDetail.decisionSubmitted'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -95,7 +95,7 @@ export function TaskDetailPanel({
     mutationFn: (workflowId: string) => api.retryWorkflowStep(workflowId),
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
-      toast.success('已重试当前阶段');
+      toast.success(t('taskDetail.workflowRetried'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -104,7 +104,7 @@ export function TaskDetailPanel({
     mutationFn: (workflowId: string) => api.cancelWorkflow(workflowId),
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
-      toast.success('开发闭环已取消');
+      toast.success(t('taskDetail.workflowCancelled'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -115,15 +115,17 @@ export function TaskDetailPanel({
         <header className="inspector-header">
           <div className="min-w-0">
             <div className="font-display text-[14px] font-semibold">Workflow Inspector</div>
-            <div className="mt-1 text-[11px] font-mono text-[var(--color-fg-muted)]">等待任务选择</div>
+            <div className="mt-1 text-[11px] font-mono text-[var(--color-fg-muted)]">
+              {t('taskDetail.waitingSelection')}
+            </div>
           </div>
         </header>
         <div className="flex flex-1 items-center justify-center px-7 text-center">
           <div>
             <Box className="mx-auto h-8 w-8 text-[var(--color-muted)]" strokeWidth={1.6} />
-            <div className="mt-3 font-display text-[13px] font-semibold">暂无任务</div>
+            <div className="mt-3 font-display text-[13px] font-semibold">{t('taskDetail.noTask')}</div>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
-              创建或选择任务后，这里会显示开发闭环、计划和执行产物。
+              {t('taskDetail.emptyDescription')}
             </p>
           </div>
         </div>
@@ -144,7 +146,7 @@ export function TaskDetailPanel({
         </div>
         <button
           onClick={onClose}
-          aria-label="关闭"
+          aria-label={t('common.close')}
           type="button"
           className="ml-auto rounded-md p-1 text-[var(--color-fg-muted)] transition-colors ease-ocean hover:bg-white/45 hover:text-[var(--color-fg)]"
         >
@@ -154,19 +156,19 @@ export function TaskDetailPanel({
 
       <div className="inspector-content">
         <section className="inspector-section">
-          <Label>基础信息</Label>
+          <Label>{t('taskDetail.basicInfo')}</Label>
           <div className="glass-info-card space-y-3">
-            <InfoRow label="任务编号" value={`#${task.id.slice(0, 6)}`} />
-            <InfoRow label="状态" value={taskStatusLabel(task.status)} />
-            <InfoRow label="优先级" value={taskPriorityLabel(task.priority)} />
-            <InfoRow label="指派人" value={assignedAgent?.agent_name ?? '未指派'} />
+            <InfoRow label={t('taskDetail.taskId')} value={`#${task.id.slice(0, 6)}`} />
+            <InfoRow label={t('taskDetail.status')} value={taskStatusLabel(task.status)} />
+            <InfoRow label={t('taskDetail.priority')} value={taskPriorityLabel(task.priority)} />
+            <InfoRow label={t('taskDetail.assignee')} value={assignedAgent?.agent_name ?? t('common.unassigned')} />
           </div>
         </section>
 
         <section className="inspector-section">
-          <Label>描述</Label>
+          <Label>{t('taskDetail.description')}</Label>
           <div className="glass-info-card min-h-[76px] whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed">
-            {task.description || '暂无描述'}
+            {task.description || t('taskDetail.noDescription')}
           </div>
         </section>
 
@@ -183,10 +185,10 @@ export function TaskDetailPanel({
 
         <section className="inspector-section">
           <div className="mb-2 flex items-center justify-between gap-3">
-            <Label className="mb-0">开发闭环</Label>
+            <Label className="mb-0">{t('taskDetail.workflow')}</Label>
             {!activeWorkflow && (
               <Button size="sm" onClick={() => startWorkflow.mutate()} disabled={startWorkflow.isPending}>
-                {startWorkflow.isPending ? '启动中…' : '启动闭环'}
+                {startWorkflow.isPending ? t('taskDetail.starting') : t('taskDetail.startWorkflow')}
               </Button>
             )}
           </div>
@@ -205,7 +207,7 @@ export function TaskDetailPanel({
 
         <section className="inspector-section grid grid-cols-2 gap-3">
           <div>
-            <Label>状态</Label>
+            <Label>{t('taskDetail.status')}</Label>
             <select
               value={task.status}
               onChange={(e) => update.mutate({ status: e.target.value as Task['status'] })}
@@ -220,7 +222,7 @@ export function TaskDetailPanel({
             </select>
           </div>
           <div>
-            <Label>优先级</Label>
+            <Label>{t('taskDetail.priority')}</Label>
             <select
               value={task.priority}
               onChange={(e) => update.mutate({ priority: e.target.value as Task['priority'] })}
@@ -237,7 +239,7 @@ export function TaskDetailPanel({
         </section>
 
         <section className="inspector-section">
-          <Label>交互策略</Label>
+          <Label>{t('taskDetail.interactionMode')}</Label>
           <select
             value={task.interaction_mode}
             onChange={(e) => update.mutate({ interaction_mode: e.target.value as Task['interaction_mode'] })}
@@ -253,14 +255,14 @@ export function TaskDetailPanel({
         </section>
 
         <section className="inspector-section">
-          <Label>指派 Agent</Label>
+          <Label>{t('taskDetail.assignedAgent')}</Label>
           <select
             value={task.assigned_agent_id ?? ''}
             onChange={(e) => update.mutate({ assigned_agent_id: e.target.value || null })}
             className="glass-select"
             disabled={update.isPending}
           >
-            <option value="">未指派</option>
+            <option value="">{t('common.unassigned')}</option>
             {agents.map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.agent_name}
@@ -284,12 +286,12 @@ export function TaskDetailPanel({
 
         <section className="inspector-section grid grid-cols-2 gap-3 text-[11px] font-mono text-[var(--color-fg-muted)]">
           <div className="glass-info-card rounded-lg p-3">
-            <div className="text-[var(--color-muted)] mb-1">创建</div>
+            <div className="text-[var(--color-muted)] mb-1">{t('taskDetail.createdAt')}</div>
             <div>{formatRelativeTime(task.created_at)}</div>
           </div>
           <div className="glass-info-card rounded-lg p-3">
-            <div className="text-[var(--color-muted)] mb-1">完成</div>
-            <div>{task.completed_at ? formatRelativeTime(task.completed_at) : '未完成'}</div>
+            <div className="text-[var(--color-muted)] mb-1">{t('taskDetail.completedAt')}</div>
+            <div>{task.completed_at ? formatRelativeTime(task.completed_at) : t('taskDetail.notCompleted')}</div>
           </div>
         </section>
       </div>
@@ -298,7 +300,7 @@ export function TaskDetailPanel({
         {displayWorkflow && (
           <Button variant="secondary" onClick={() => retryWorkflow.mutate(displayWorkflow.id)} disabled={retryWorkflow.isPending}>
             <RotateCcw className="h-3.5 w-3.5" />
-            重试
+            {t('common.retry')}
           </Button>
         )}
         <Button
@@ -307,10 +309,10 @@ export function TaskDetailPanel({
           disabled={!displayWorkflow || cancelWorkflow.isPending}
         >
           <XCircle className="h-3.5 w-3.5" />
-          {cancelWorkflow.isPending ? '取消中…' : '取消'}
+          {cancelWorkflow.isPending ? t('taskDetail.canceling') : t('common.cancel')}
         </Button>
         <Button variant="danger" onClick={onClose}>
-          关闭
+          {t('common.close')}
         </Button>
       </footer>
     </aside>

@@ -285,34 +285,34 @@ function ThemeToggle({
     <div className="theme-toggle-stack mb-2" aria-label={t('theme.label')}>
       <div className="theme-toggle" role="group" aria-label={t('theme.style.label')}>
         {THEME_STYLES.map((option) => {
-          const Icon = styleIcons[option.value];
+          const Icon = styleIcons[option];
           return (
             <button
-              key={option.value}
+              key={option}
               type="button"
-              className={cn('theme-toggle-option', style === option.value && 'is-active')}
-              aria-pressed={style === option.value}
-              onClick={() => onThemeChange(createThemeMode(option.value, tone))}
+              className={cn('theme-toggle-option', style === option && 'is-active')}
+              aria-pressed={style === option}
+              onClick={() => onThemeChange(createThemeMode(option, tone))}
             >
               <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-              <span>{styleLabels[option.value]}</span>
+              <span>{styleLabels[option]}</span>
             </button>
           );
         })}
       </div>
       <div className="theme-toggle" role="group" aria-label={t('theme.tone.label')}>
         {THEME_TONES.map((option) => {
-          const Icon = toneIcons[option.value];
+          const Icon = toneIcons[option];
           return (
             <button
-              key={option.value}
+              key={option}
               type="button"
-              className={cn('theme-toggle-option', tone === option.value && 'is-active')}
-              aria-pressed={tone === option.value}
-              onClick={() => onThemeChange(createThemeMode(style, option.value))}
+              className={cn('theme-toggle-option', tone === option && 'is-active')}
+              aria-pressed={tone === option}
+              onClick={() => onThemeChange(createThemeMode(style, option))}
             >
               <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-              <span>{toneLabels[option.value]}</span>
+              <span>{toneLabels[option]}</span>
             </button>
           );
         })}

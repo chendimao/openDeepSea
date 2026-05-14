@@ -1,4 +1,5 @@
 import { Bot } from 'lucide-react';
+import { useI18n } from '../lib/i18n';
 import type { RoomAgent } from '../lib/types';
 import { cn } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
@@ -14,6 +15,7 @@ export function AgentMentionMenu({
   query,
   onSelect,
 }: AgentMentionMenuProps): JSX.Element | null {
+  const { t } = useI18n();
   const normalized = query.toLowerCase();
   const filtered = agents
     .filter((agent) => {
@@ -25,7 +27,7 @@ export function AgentMentionMenu({
   if (agents.length === 0) return null;
 
   return (
-    <div className="mention-menu surface-1" role="listbox" aria-label="选择 agent">
+    <div className="mention-menu surface-1" role="listbox" aria-label={t('mention.menuAria')}>
       <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-2.5 py-2 text-[11px] font-mono uppercase tracking-wider text-[var(--color-fg-muted)]">
         <Bot className="h-3.5 w-3.5" strokeWidth={1.75} />
         Agent
@@ -33,7 +35,7 @@ export function AgentMentionMenu({
       <div className="max-h-56 overflow-y-auto p-1">
         {filtered.length === 0 ? (
           <div className="px-3 py-4 text-center text-[12px] text-[var(--color-fg-muted)]">
-            没有匹配的 agent
+            {t('mention.empty')}
           </div>
         ) : (
           filtered.map((agent) => (

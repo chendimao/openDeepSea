@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Check, Copy, Eye, FileText } from 'lucide-react';
+import { useI18n } from '../lib/i18n';
 
 type MessagePart =
   | { type: 'text'; value: string }
@@ -34,6 +35,7 @@ function parseMessage(content: string): MessagePart[] {
 export function MessageContent({ content }: { content: string }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
+  const { t } = useI18n();
   const parts = parseMessage(content);
   const markdown = isMarkdownContent(content);
 
@@ -50,7 +52,7 @@ export function MessageContent({ content }: { content: string }): JSX.Element {
   return (
     <div className="message-content">
       {markdown && (
-        <div className="message-mode-switch" aria-label="Markdown 显示模式">
+        <div className="message-mode-switch" aria-label={t('message.markdownModeAria')}>
           <button
             type="button"
             onClick={() => setMode('preview')}
@@ -58,7 +60,7 @@ export function MessageContent({ content }: { content: string }): JSX.Element {
             aria-pressed={mode === 'preview'}
           >
             <Eye className="h-3.5 w-3.5" />
-            预览
+            {t('message.preview')}
           </button>
           <button
             type="button"
@@ -67,7 +69,7 @@ export function MessageContent({ content }: { content: string }): JSX.Element {
             aria-pressed={mode === 'source'}
           >
             <FileText className="h-3.5 w-3.5" />
-            原文
+            {t('message.source')}
           </button>
         </div>
       )}
@@ -93,6 +95,8 @@ export function MessageContent({ content }: { content: string }): JSX.Element {
               value={part.value}
               copied={copied}
               onCopy={() => void copyCode(part.value, index)}
+              copyLabel={t('message.copy')}
+              copiedLabel={t('message.copied')}
             />
           );
         })
@@ -120,6 +124,7 @@ function isMarkdownContent(content: string): boolean {
 }
 
 function MarkdownPreview({ content }: { content: string }): JSX.Element {
+  const { t } = useI18n();
   const parts = parseMessage(content);
   return (
     <div className="markdown-preview">
@@ -132,6 +137,8 @@ function MarkdownPreview({ content }: { content: string }): JSX.Element {
               value={part.value}
               copied={false}
               onCopy={() => void navigator.clipboard.writeText(part.value)}
+              copyLabel={t('message.copy')}
+              copiedLabel={t('message.copied')}
             />
           );
         }
@@ -233,11 +240,15 @@ function CodeBlock({
   value,
   copied,
   onCopy,
+  copyLabel,
+  copiedLabel,
 }: {
   language: string;
   value: string;
   copied: boolean;
   onCopy: () => void;
+  copyLabel: string;
+  copiedLabel: string;
 }): JSX.Element {
   return (
     <div className="code-block">
@@ -249,7 +260,7 @@ function CodeBlock({
           className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)] focus:outline-none focus:glow-accent ease-ocean transition-all"
         >
           {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-          {copied ? '已复制' : '复制'}
+          {copied ? copiedLabel : copyLabel}
         </button>
       </div>
       <pre className="code-block-pre"><code>{value}</code></pre>

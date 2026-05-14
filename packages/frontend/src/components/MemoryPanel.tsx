@@ -3,9 +3,8 @@ import { Edit3, Pin, PinOff, Plus, Save, Trash2, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 import {
-  MEMORY_SCOPE_LABEL,
-  MEMORY_TYPE_LABEL,
   type MemoryEntry,
   type MemoryInput,
   type MemoryScope,
@@ -54,6 +53,7 @@ export function MemoryPanel({
   compact = false,
 }: MemoryPanelProps) {
   const queryClient = useQueryClient();
+  const { memoryScopeLabel, memoryTypeLabel, t } = useI18n();
   const [editing, setEditing] = useState<MemoryEntry | null>(null);
   const [showForm, setShowForm] = useState(false);
   const filters = useMemo<MemoryQueryFilters>(
@@ -92,7 +92,7 @@ export function MemoryPanel({
   const createMutation = useMutation({
     mutationFn: (input: MemoryInput) => api.createMemory(projectId, input),
     onSuccess: () => {
-      toast.success('记忆已保存');
+      toast.success(t('memory.saved'));
       closeForm();
       invalidateMemories();
     },
@@ -103,7 +103,7 @@ export function MemoryPanel({
     mutationFn: ({ id, input }: { id: string; input: Pick<MemoryInput, 'memory_type' | 'title' | 'content' | 'pinned'> }) =>
       api.updateMemory(projectId, id, input),
     onSuccess: () => {
-      toast.success('记忆已更新');
+      toast.success(t('memory.updated'));
       closeForm();
       invalidateMemories();
     },
@@ -113,7 +113,7 @@ export function MemoryPanel({
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteMemory(projectId, id),
     onSuccess: () => {
-      toast.success('记忆已删除');
+      toast.success(t('memory.deleted'));
       invalidateMemories();
     },
     onError: (err) => toast.error((err as Error).message),
@@ -136,9 +136,9 @@ export function MemoryPanel({
     <section className={cn('space-y-3', compact && 'text-[12px]')}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-display text-[14px] font-semibold text-[var(--color-fg)]">记忆</h3>
+          <h3 className="font-display text-[14px] font-semibold text-[var(--color-fg)]">{t('memory.title')}</h3>
           <p className="mt-0.5 text-[11px] leading-4 text-[var(--color-fg-muted)]">
-            会注入后续智能体上下文
+            {t('memory.description')}
           </p>
         </div>
         <Button
@@ -151,7 +151,7 @@ export function MemoryPanel({
           }}
         >
           <Plus className="h-3.5 w-3.5" />
-          新增
+          {t('memory.add')}
         </Button>
       </div>
 
@@ -186,11 +186,11 @@ export function MemoryPanel({
       <div className="space-y-2">
         {isLoading ? (
           <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-4 text-[12px] text-[var(--color-fg-muted)]">
-            正在载入记忆…
+            {t('memory.loading')}
           </div>
         ) : memories.length === 0 ? (
           <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-4 text-[12px] leading-5 text-[var(--color-fg-muted)]">
-            暂无记忆
+            {t('memory.empty')}
           </div>
         ) : (
           memories.map((memory) => (
@@ -201,12 +201,12 @@ export function MemoryPanel({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <MemoryBadge>{MEMORY_SCOPE_LABEL[memory.scope]}</MemoryBadge>
-                    <MemoryBadge>{MEMORY_TYPE_LABEL[memory.memory_type]}</MemoryBadge>
+                    <MemoryBadge>{memoryScopeLabel(memory.scope)}</MemoryBadge>
+                    <MemoryBadge>{memoryTypeLabel(memory.memory_type)}</MemoryBadge>
                     {memory.pinned ? (
                       <span className="inline-flex h-5 items-center gap-1 rounded border border-[var(--color-accent)]/35 px-1.5 text-[10px] text-[var(--color-accent)]">
                         <Pin className="h-3 w-3" />
-                        置顶
+                        {t('memory.pinned')}
                       </span>
                     ) : null}
                   </div>
@@ -216,23 +216,23 @@ export function MemoryPanel({
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <IconButton
-                    label={memory.pinned ? '取消置顶记忆' : '置顶记忆'}
+                    label={memory.pinned ? t('memory.unpin') : t('memory.pin')}
                     disabled={pinMutation.isPending}
                     onClick={() => pinMutation.mutate(memory)}
                   >
                     {memory.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
                   </IconButton>
-                  <IconButton label="编辑记忆" onClick={() => {
+                  <IconButton label={t('memory.edit')} onClick={() => {
                     setShowForm(false);
                     setEditing(memory);
                   }}>
                     <Edit3 className="h-3.5 w-3.5" />
                   </IconButton>
                   <IconButton
-                    label="删除记忆"
+                    label={t('memory.delete')}
                     disabled={deleteMutation.isPending}
                     onClick={() => {
-                      if (window.confirm('删除这条记忆？')) deleteMutation.mutate(memory.id);
+                      if (window.confirm(t('memory.deleteConfirm'))) deleteMutation.mutate(memory.id);
                     }}
                     danger
                   >
@@ -270,6 +270,7 @@ function MemoryForm({
   onCancel: () => void;
   onSubmit: (input: MemoryInput) => void;
 }) {
+  const { memoryScopeLabel, memoryTypeLabel, t } = useI18n();
   const initialScope = normalizeScope(value?.scope ?? defaultScope, roomId, roomAgents, task);
   const [scope, setScope] = useState<MemoryScope>(initialScope);
   const [memoryType, setMemoryType] = useState<MemoryType>(value?.memory_type ?? 'fact');
@@ -311,7 +312,7 @@ function MemoryForm({
     >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div>
-          <Label>范围</Label>
+          <Label>{t('memory.scope.label')}</Label>
           <select
             className="glass-select"
             value={scope}
@@ -320,13 +321,13 @@ function MemoryForm({
           >
             {scopeOptions.map((option) => (
               <option key={option} value={option}>
-                {MEMORY_SCOPE_LABEL[option]}
+                {memoryScopeLabel(option)}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <Label>类型</Label>
+          <Label>{t('memory.type.label')}</Label>
           <select
             className="glass-select"
             value={memoryType}
@@ -334,7 +335,7 @@ function MemoryForm({
           >
             {MEMORY_TYPES.map((type) => (
               <option key={type} value={type}>
-                {MEMORY_TYPE_LABEL[type]}
+                {memoryTypeLabel(type)}
               </option>
             ))}
           </select>
@@ -343,7 +344,7 @@ function MemoryForm({
 
       {scope === 'agent' ? (
         <div>
-          <Label>智能体</Label>
+          <Label>{t('memory.agent')}</Label>
           <select
             className="glass-select"
             value={roomAgentId}
@@ -360,7 +361,7 @@ function MemoryForm({
       ) : null}
 
       <div>
-        <Label>标题</Label>
+        <Label>{t('memory.formTitle')}</Label>
         <Input
           value={title}
           onChange={(event) => setTitle(event.target.value)}
@@ -371,7 +372,7 @@ function MemoryForm({
 
       <div>
         <div className="mb-1 flex items-center justify-between gap-3">
-          <Label className="mb-0">内容</Label>
+          <Label className="mb-0">{t('memory.content')}</Label>
           <span className="font-mono text-[10.5px] text-[var(--color-fg-muted)]">
             {content.length}/{MEMORY_CONTENT_MAX_LENGTH}
           </span>
@@ -385,7 +386,7 @@ function MemoryForm({
         />
         {content.length >= MEMORY_CONTENT_MAX_LENGTH ? (
           <p className="mt-1 text-[11px] text-[var(--color-warning)]">
-            已达到记忆内容长度上限
+            {t('memory.maxLengthReached')}
           </p>
         ) : null}
       </div>
@@ -397,17 +398,17 @@ function MemoryForm({
           onChange={(event) => setPinned(event.target.checked)}
           className="h-4 w-4 accent-[var(--color-primary)]"
         />
-        置顶
+        {t('memory.pinned')}
       </label>
 
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={onCancel} disabled={busy}>
           <X className="h-4 w-4" />
-          取消
+          {t('common.cancel')}
         </Button>
         <Button type="submit" disabled={busy}>
           <Save className="h-4 w-4" />
-          {busy ? '保存中…' : '保存'}
+          {busy ? t('memory.saving') : t('common.save')}
         </Button>
       </div>
     </form>

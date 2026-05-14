@@ -3,10 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Loader2, Pencil, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
+import { cn } from '../lib/utils';
 import { Button } from './ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { Input, Label } from './ui/Input';
-import { cn } from '../lib/utils';
 
 export function AddAgentDialog({ roomId, children }: { roomId: string; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -16,6 +17,7 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
   const [picked, setPicked] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { t } = useI18n();
 
   const { data: gw, error: gatewayError, isLoading: gatewayLoading } = useQuery({
     queryKey: ['gateway-agents'],
@@ -54,10 +56,10 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
         agent_id: agentId,
         agent_name: agentName || agentId,
         agent_role: agentRole || undefined,
-      }),
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
-      toast.success('Agent 已加入群聊');
+      toast.success(t('addAgent.success'));
       setOpen(false);
       resetForm();
     },
@@ -69,11 +71,11 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
       <DialogTrigger asChild>
         {children ?? (
           <Button size="sm" variant="secondary">
-            <UserPlus className="h-3.5 w-3.5" /> 邀请 Agent
+            <UserPlus className="h-3.5 w-3.5" /> {t('addAgent.trigger')}
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent title="邀请 Agent 加入群聊" description="从本机 OpenClaw 配置中选择 Agent">
+      <DialogContent title={t('addAgent.title')} description={t('addAgent.description')}>
         <div className="space-y-4">
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -81,22 +83,24 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
               {gatewayLoading && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-fg-muted)]">
                   <Loader2 className="h-3 w-3 animate-spin" />
-                  读取中
+                  {t('addAgent.loadingShort')}
                 </span>
               )}
             </div>
 
             {!gw && gatewayLoading ? (
               <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                正在读取本机 OpenClaw agents 列表
+                {t('gateway.readingAgents')}
               </div>
             ) : !gw?.connected ? (
               <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                无法读取 OpenClaw agents，将使用手动输入。{gatewayErrorMessage ? `错误: ${gatewayErrorMessage}` : ''}
+                {gatewayErrorMessage
+                  ? t('addAgent.readFailedManualWithMessage', { message: gatewayErrorMessage })
+                  : t('addAgent.readFailedManual')}
               </div>
             ) : gw.agents.length === 0 ? (
               <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                本机 OpenClaw 配置中没有可用 agent，请手动输入 Agent ID。
+                {t('addAgent.noAgentsManual')}
               </div>
             ) : (
               <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -137,7 +141,7 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
           {hasOpenClawAgents && (
             <Button type="button" variant="ghost" size="sm" onClick={() => setManualOpen((value) => !value)}>
               <Pencil className="h-3.5 w-3.5" />
-              {manualOpen ? '收起手动输入' : '手动输入 Agent ID'}
+              {manualOpen ? t('addAgent.manualCollapse') : t('addAgent.manualOpen')}
             </Button>
           )}
 
@@ -156,14 +160,14 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
                 />
               </div>
               <div>
-                <Label>显示名称</Label>
+                <Label>{t('addAgent.displayName')}</Label>
                 <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Coder" />
               </div>
             </div>
           )}
 
           <div>
-            <Label>角色 (可选)</Label>
+            <Label>{t('addAgent.role')}</Label>
             <Input
               value={agentRole}
               onChange={(e) => setAgentRole(e.target.value)}
@@ -172,9 +176,9 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
           </div>
 
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="ghost" onClick={() => handleOpenChange(false)}>取消</Button>
+            <Button variant="ghost" onClick={() => handleOpenChange(false)}>{t('common.cancel')}</Button>
             <Button onClick={() => add.mutate()} disabled={!agentId.trim() || add.isPending}>
-              {add.isPending ? '邀请中…' : '邀请'}
+              {add.isPending ? t('addAgent.inviting') : t('addAgent.submit')}
             </Button>
           </div>
         </div>

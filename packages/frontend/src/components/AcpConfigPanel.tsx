@@ -8,10 +8,10 @@ import type { AcpBackend, RoomAgent, WorkflowRole } from '../lib/types';
 import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 
-const BACKENDS: { id: AcpBackend; label: string; sub: string; icon: typeof Code2 }[] = [
-  { id: 'claudecode', label: 'Claude Code', sub: 'Anthropic 官方 CLI', icon: Sparkles },
-  { id: 'opencode',  label: 'OpenCode',    sub: 'opencode-ai/opencode', icon: Terminal },
-  { id: 'codex',     label: 'Codex',       sub: 'OpenAI Codex CLI',     icon: Code2 },
+const BACKENDS: { id: AcpBackend; label: string; icon: typeof Code2 }[] = [
+  { id: 'claudecode', label: 'Claude Code', icon: Sparkles },
+  { id: 'opencode', label: 'OpenCode', icon: Terminal },
+  { id: 'codex', label: 'Codex', icon: Code2 },
 ];
 
 export function AcpConfigPanel({
@@ -30,7 +30,7 @@ export function AcpConfigPanel({
   const [sessionId, setSessionId] = useState<string | null>(agent.acp_session_id);
   const [workflowRole, setWorkflowRole] = useState<WorkflowRole | null>(agent.workflow_role);
   const queryClient = useQueryClient();
-  const { formatRelativeTime, workflowRoleLabel } = useI18n();
+  const { formatRelativeTime, t, workflowRoleLabel } = useI18n();
 
   useEffect(() => {
     setEnabled(!!agent.acp_enabled);
@@ -58,7 +58,7 @@ export function AcpConfigPanel({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
-      toast.success('ACP 配置已保存');
+      toast.success(t('acp.saved'));
       onClose();
     },
     onError: (err) => toast.error((err as Error).message),
@@ -74,7 +74,7 @@ export function AcpConfigPanel({
         </div>
         <button
           onClick={onClose}
-          aria-label="关闭"
+          aria-label={t('common.close')}
           type="button"
           className="ml-auto p-1 rounded text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface-raised)] ease-ocean"
         >
@@ -86,9 +86,9 @@ export function AcpConfigPanel({
         <section>
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-display text-[13px] font-medium">启用 ACP</div>
+              <div className="font-display text-[13px] font-medium">{t('acp.enableTitle')}</div>
               <div className="text-[11.5px] text-[var(--color-fg-muted)] mt-0.5">
-                让此 profile 通过本地 CLI 执行编码任务
+                {t('acp.enableDescription')}
               </div>
             </div>
             <button
@@ -118,7 +118,7 @@ export function AcpConfigPanel({
             htmlFor="agent-workflow-role"
             className="block font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)] mb-2"
           >
-            开发职责
+            {t('acp.workflowRole')}
           </label>
           <select
             id="agent-workflow-role"
@@ -126,7 +126,7 @@ export function AcpConfigPanel({
             onChange={(e) => setWorkflowRole((e.target.value || null) as WorkflowRole | null)}
             className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
           >
-            <option value="">不参与闭环</option>
+            <option value="">{t('acp.noWorkflowRole')}</option>
             {(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor'] as const).map((role) => (
               <option key={role} value={role}>
                 {workflowRoleLabel(role)}
@@ -134,7 +134,7 @@ export function AcpConfigPanel({
             ))}
           </select>
           <div className="mt-2 text-[11.5px] text-[var(--color-fg-muted)]">
-            闭环启动后会按职责选择阶段执行者。
+            {t('acp.workflowRoleHelp')}
           </div>
         </section>
 
@@ -142,7 +142,7 @@ export function AcpConfigPanel({
           <>
             <section>
               <div className="font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">
-                选择后端
+                {t('acp.backendLabel')}
               </div>
               <div className="space-y-2">
                 {BACKENDS.map((b) => {
@@ -166,7 +166,9 @@ export function AcpConfigPanel({
                       <Icon className="h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
                       <div className="min-w-0">
                         <div className="font-display text-[13px] font-medium">{b.label}</div>
-                        <div className="text-[11px] text-[var(--color-fg-muted)] font-mono">{b.sub}</div>
+                        <div className="text-[11px] text-[var(--color-fg-muted)] font-mono">
+                          {t(`acp.backend.${b.id}`)}
+                        </div>
                       </div>
                       {selected && (
                         <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]" />
@@ -194,19 +196,21 @@ export function AcpConfigPanel({
                     )}
                   >
                     <Sparkles className="h-3.5 w-3.5 text-[var(--color-accent)]" strokeWidth={1.75} />
-                    <span className="font-display text-[12.5px]">新建会话</span>
+                    <span className="font-display text-[12.5px]">{t('acp.newSession')}</span>
                     <span className="ml-auto text-[10.5px] font-mono text-[var(--color-fg-muted)]">
-                      新对话 / 新上下文
+                      {t('acp.newSessionDescription')}
                     </span>
                   </button>
 
                   {sessionsLoading && (
-                    <div className="text-[12px] text-[var(--color-fg-muted)] py-3">扫描本地 session…</div>
+                    <div className="text-[12px] text-[var(--color-fg-muted)] py-3">
+                      {t('acp.loadingSessions')}
+                    </div>
                   )}
 
                   {!sessionsLoading && sessions.length === 0 && (
                     <div className="text-[12px] text-[var(--color-fg-muted)] py-3">
-                      此项目下还没有 {backend} 的历史 session
+                      {t('acp.noSessions', { backend })}
                     </div>
                   )}
 
@@ -231,11 +235,11 @@ export function AcpConfigPanel({
                         </span>
                       </div>
                       <div className="text-[12.5px] text-[var(--color-fg)] mt-1 line-clamp-2">
-                        {truncate(s.title || s.firstUserMessage || '(空 session)', 100)}
+                        {truncate(s.title || s.firstUserMessage || t('acp.emptySession'), 100)}
                       </div>
                       {s.messageCount > 0 && (
                         <div className="text-[10.5px] font-mono text-[var(--color-muted)] mt-1">
-                          {s.messageCount} 条记录
+                          {t('acp.recordCount', { count: s.messageCount })}
                         </div>
                       )}
                     </button>
@@ -248,9 +252,9 @@ export function AcpConfigPanel({
       </div>
 
       <footer className="px-4 py-3 border-t border-[var(--color-border)] flex justify-end gap-2">
-        <Button variant="ghost" onClick={onClose}>取消</Button>
+        <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
         <Button onClick={() => save.mutate()} disabled={save.isPending}>
-          {save.isPending ? '保存中…' : '应用'}
+          {save.isPending ? t('acp.saving') : t('common.apply')}
         </Button>
       </footer>
     </div>

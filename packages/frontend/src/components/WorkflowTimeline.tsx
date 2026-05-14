@@ -22,11 +22,11 @@ export function WorkflowTimeline({
   onCancel: () => void;
   busy: boolean;
 }) {
-  const { formatRelativeTime, workflowStageLabel, workflowStatusLabel } = useI18n();
+  const { formatRelativeTime, t, workflowStageLabel, workflowStatusLabel } = useI18n();
   const decisionRequest = useMemo(() => (detail ? getLatestDecisionRequest(detail.artifacts) : null), [detail]);
 
   if (!detail) {
-    return <div className="text-[12px] text-[var(--color-fg-muted)]">尚未启动开发闭环</div>;
+    return <div className="text-[12px] text-[var(--color-fg-muted)]">{t('workflow.notStarted')}</div>;
   }
 
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
@@ -40,7 +40,7 @@ export function WorkflowTimeline({
 
   return (
     <div className="space-y-3">
-      <div className="workflow-stage-pills" aria-label="workflow stages">
+      <div className="workflow-stage-pills" aria-label={t('workflow.stagesAria')}>
         {(['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const).map((stage) => (
           <span
             key={stage}
@@ -98,19 +98,19 @@ export function WorkflowTimeline({
         {detail.run.status === 'awaiting_approval' && (
           <Button size="sm" onClick={onApprove} disabled={busy}>
             <CheckCircle2 className="h-3.5 w-3.5" />
-            确认计划
+            {t('workflow.approvePlan')}
           </Button>
         )}
         {canRetry && (
           <Button size="sm" variant="secondary" onClick={onRetry} disabled={busy}>
             <RotateCcw className="h-3.5 w-3.5" />
-            重试
+            {t('common.retry')}
           </Button>
         )}
         {['running', 'awaiting_decision', 'awaiting_approval', 'blocked'].includes(detail.run.status) && (
           <Button size="sm" variant="ghost" onClick={onCancel} disabled={busy}>
             <XCircle className="h-3.5 w-3.5" />
-            取消
+            {t('common.cancel')}
           </Button>
         )}
       </div>
@@ -146,6 +146,7 @@ function DecisionRequestPanel({
   onSubmit: (answers: Array<{ decisionId: string; optionId: string }>) => void;
   busy: boolean;
 }) {
+  const { t } = useI18n();
   const [answers, setAnswers] = useState<Record<string, string>>(() =>
     Object.fromEntries(request.decisions.map((decision) => [decision.id, decision.recommendedOptionId])),
   );
@@ -155,7 +156,7 @@ function DecisionRequestPanel({
     <div className="surface-2 rounded-lg p-3">
       <div className="mb-3 flex items-center gap-2">
         <PauseCircle className="h-3.5 w-3.5 text-[var(--color-warning)]" />
-        <div className="font-display text-[12.5px] font-semibold">待决策</div>
+        <div className="font-display text-[12.5px] font-semibold">{t('workflow.decisionsTitle')}</div>
       </div>
       <div className="space-y-4">
         {request.decisions.map((decision) => (
@@ -191,7 +192,7 @@ function DecisionRequestPanel({
                         {option.label}
                         {recommended && (
                           <span className="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-fg-muted)]">
-                            推荐
+                            {t('workflow.recommended')}
                           </span>
                         )}
                       </span>
@@ -217,7 +218,7 @@ function DecisionRequestPanel({
         disabled={busy || !complete}
       >
         <CheckCircle2 className="h-3.5 w-3.5" />
-        提交决策并继续
+        {t('workflow.submitDecision')}
       </Button>
     </div>
   );
@@ -236,7 +237,7 @@ function getLatestDecisionRequest(artifacts: TaskArtifact[]): DecisionRequest | 
 }
 
 function StepRow({ step, agentName }: { step: WorkflowStep; agentName?: string }) {
-  const { workflowStageLabel } = useI18n();
+  const { t, workflowStageLabel } = useI18n();
   return (
     <div className={cn('workflow-step-card', (step.status === 'failed' || step.status === 'interrupted') && 'is-failed')}>
       <div className="flex items-center gap-2">
@@ -245,7 +246,7 @@ function StepRow({ step, agentName }: { step: WorkflowStep; agentName?: string }
           {workflowStageLabel(step.stage)}
         </div>
         <span className="max-w-[45%] shrink-0 truncate text-[10.5px] font-mono text-[var(--color-muted)]">
-          {agentName ?? '系统'}
+          {agentName ?? t('workflow.systemAgent')}
         </span>
       </div>
       {step.result && (

@@ -3,15 +3,9 @@ export type ThemeTone = 'light' | 'dark';
 export type ThemeMode = `${ThemeStyle}-${ThemeTone}`;
 export type LegacyThemeMode = 'light' | 'dark' | 'console' | 'minimal';
 
-export const THEME_STYLES: Array<{ value: ThemeStyle; label: string }> = [
-  { value: 'apple', label: '苹果风' },
-  { value: 'minimal', label: '极简风' },
-];
+export const THEME_STYLES: ThemeStyle[] = ['apple', 'minimal'];
 
-export const THEME_TONES: Array<{ value: ThemeTone; label: string }> = [
-  { value: 'light', label: '亮色' },
-  { value: 'dark', label: '暗色' },
-];
+export const THEME_TONES: ThemeTone[] = ['light', 'dark'];
 
 const THEME_MODES = new Set<ThemeMode>([
   'apple-light',

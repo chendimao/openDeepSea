@@ -144,14 +144,21 @@ export function formatFileSize(size: number): string {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
-export function validatePendingFiles(existingCount: number, files: File[]): string | null {
+export function validatePendingFiles(
+  existingCount: number,
+  files: File[],
+  messages: {
+    maxFiles: (count: number) => string;
+    fileTooLarge: (name: string, size: string) => string;
+  },
+): string | null {
   if (existingCount + files.length > MAX_MESSAGE_FILES) {
-    return '单条消息最多允许 5 个文件';
+    return messages.maxFiles(MAX_MESSAGE_FILES);
   }
 
   for (const file of files) {
     if (file.size > MAX_MESSAGE_FILE_SIZE_BYTES) {
-      return `${file.name} 超过 10MB 限制`;
+      return messages.fileTooLarge(file.name, formatFileSize(MAX_MESSAGE_FILE_SIZE_BYTES));
     }
   }
 

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, RotateCcw, Save, Settings2, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { useI18n } from '../lib/i18n';
+import { useI18n, type MessageKey } from '../lib/i18n';
 import {
   type EffectiveSettings,
   type MessageRoutingMode,
@@ -11,7 +11,6 @@ import {
   type Room,
   type RoomAgent,
   type SettingsResolution,
-  type SettingsScope,
   type TaskInteractionMode,
 } from '../lib/types';
 import { cn } from '../lib/utils';
@@ -25,15 +24,15 @@ type SettingsPatch = {
   interaction_mode?: TaskInteractionMode | null;
 };
 
-const ROUTING_OPTIONS: Array<{ value: MessageRoutingMode; description: string }> = [
-  { value: 'mentions_only', description: '没有明确 @ 智能体时保持安静。' },
-  { value: 'fallback_reply', description: '没有 @ 时由兜底智能体直接回复。' },
-  { value: 'fallback_route', description: '没有 @ 时由兜底智能体先判断并分派协作对象。' },
+const ROUTING_OPTIONS: Array<{ value: MessageRoutingMode; descriptionKey: MessageKey }> = [
+  { value: 'mentions_only', descriptionKey: 'settings.routing.mentions_only.description' },
+  { value: 'fallback_reply', descriptionKey: 'settings.routing.fallback_reply.description' },
+  { value: 'fallback_route', descriptionKey: 'settings.routing.fallback_route.description' },
 ];
 
-const INTERACTION_OPTIONS: Array<{ value: TaskInteractionMode; description: string }> = [
-  { value: 'ask_user', description: '工作流遇到阻塞决策时暂停，等待人工选择。' },
-  { value: 'auto_recommended', description: '工作流使用推荐选项自动继续，适合低风险任务。' },
+const INTERACTION_OPTIONS: Array<{ value: TaskInteractionMode; descriptionKey: MessageKey }> = [
+  { value: 'ask_user', descriptionKey: 'settings.interaction.ask_user.description' },
+  { value: 'auto_recommended', descriptionKey: 'settings.interaction.auto_recommended.description' },
 ];
 
 const DEFAULT_SYSTEM_SETTINGS: EffectiveSettings = {
@@ -49,6 +48,7 @@ export function SystemSettingsDialog({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { t } = useI18n();
   const { data: settings = DEFAULT_SYSTEM_SETTINGS } = useQuery({
     queryKey: ['settings', 'system'],
     queryFn: api.getSystemSettings,
@@ -58,7 +58,7 @@ export function SystemSettingsDialog({
     mutationFn: api.updateSystemSettings,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      toast.success('系统设置已保存');
+      toast.success(t('settings.systemSaved'));
       setOpen(false);
     },
     onError: (err) => toast.error((err as Error).message),
@@ -68,8 +68,8 @@ export function SystemSettingsDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
-        title="系统设置"
-        description="配置全局默认行为。项目和群聊可以对重复设置项单独覆盖。"
+        title={t('settings.systemTitle')}
+        description={t('settings.systemDescription')}
         className="max-h-[88vh] w-[min(94vw,760px)] overflow-y-auto"
       >
         <SystemSettingsForm
@@ -92,6 +92,7 @@ export function ProjectSettingsDialog({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { t } = useI18n();
   const { data: settings } = useQuery({
     queryKey: ['settings', 'project', project.id],
     queryFn: () => api.getProjectSettings(project.id),
@@ -101,7 +102,7 @@ export function ProjectSettingsDialog({
     mutationFn: (patch: SettingsPatch) => api.updateProjectSettings(project.id, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      toast.success('项目设置已保存');
+      toast.success(t('settings.projectSaved'));
       setOpen(false);
     },
     onError: (err) => toast.error((err as Error).message),
@@ -111,7 +112,7 @@ export function ProjectSettingsDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
-        title="项目设置"
+        title={t('settings.projectTitle')}
         description={project.name}
         className="max-h-[88vh] w-[min(94vw,780px)] overflow-y-auto"
       >
@@ -140,6 +141,7 @@ export function RoomSettingsDialog({
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
+  const { t } = useI18n();
   const { data: settings } = useQuery({
     queryKey: ['settings', 'room', room.id],
     queryFn: () => api.getRoomSettings(room.id),
@@ -149,7 +151,7 @@ export function RoomSettingsDialog({
     mutationFn: (patch: SettingsPatch) => api.updateRoomSettings(room.id, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      toast.success('群聊设置已保存');
+      toast.success(t('settings.roomSaved'));
       setOpen(false);
     },
     onError: (err) => toast.error((err as Error).message),
@@ -166,7 +168,7 @@ export function RoomSettingsDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
-        title="群聊设置"
+        title={t('settings.roomTitle')}
         description={`${project.name} / ${room.name}`}
         className="max-h-[88vh] w-[min(94vw,780px)] overflow-y-auto"
       >
@@ -199,6 +201,7 @@ function SystemSettingsForm({
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode>(value.message_routing_mode);
   const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? '');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
+  const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
 
   return (
@@ -216,11 +219,11 @@ function SystemSettingsForm({
           }
         >
           <Save className="h-3.5 w-3.5" />
-          保存系统设置
+          {t('settings.saveSystem')}
         </Button>
       }
     >
-      <SettingGroup title="默认消息路由" icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
+      <SettingGroup title={t('settings.defaultRouting')} icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
         <RoutingSection
           mode={routingMode}
           fallbackAgentId={fallbackAgentId}
@@ -232,7 +235,7 @@ function SystemSettingsForm({
           onFallbackAgentChange={setFallbackAgentId}
         />
       </SettingGroup>
-      <SettingGroup title="默认交互策略" icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
+      <SettingGroup title={t('settings.defaultInteraction')} icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
         <InteractionSection
           mode={interactionMode}
           inheritedLabel={null}
@@ -258,7 +261,7 @@ function ProjectSettingsForm({
 }): JSX.Element {
   const system = settings?.system ?? DEFAULT_SYSTEM_SETTINGS;
   const own = settings?.project;
-  const { interactionModeLabel, routingModeLabel } = useI18n();
+  const { interactionModeLabel, routingModeLabel, t } = useI18n();
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
     own?.message_routing_mode ?? 'inherit',
   );
@@ -283,29 +286,29 @@ function ProjectSettingsForm({
           }
         >
           <Save className="h-3.5 w-3.5" />
-          保存项目设置
+          {t('settings.saveProject')}
         </Button>
       }
     >
-      <SettingGroup title="项目信息" icon={<Settings2 className="h-4 w-4" strokeWidth={1.75} />}>
-        <ReadonlyField label="项目路径" value={project.path} />
-        {project.description && <ReadonlyField label="项目描述" value={project.description} />}
+      <SettingGroup title={t('settings.projectInfo')} icon={<Settings2 className="h-4 w-4" strokeWidth={1.75} />}>
+        <ReadonlyField label={t('settings.projectPath')} value={project.path} />
+        {project.description && <ReadonlyField label={t('settings.projectDescription')} value={project.description} />}
       </SettingGroup>
       <InheritanceSummary settings={settings} scope="project" />
-      <SettingGroup title="项目消息路由" icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
+      <SettingGroup title={t('settings.projectRouting')} icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
         <RoutingSection
           mode={routingMode}
           fallbackAgentId={fallbackAgentId || system.fallback_agent_id || ''}
           fallbackOptions={[]}
-          inheritedLabel={`继承系统: ${routingModeLabel(system.message_routing_mode)}`}
+          inheritedLabel={t('settings.inheritedSystem', { value: routingModeLabel(system.message_routing_mode) })}
           onModeChange={setRoutingMode}
           onFallbackAgentChange={setFallbackAgentId}
         />
       </SettingGroup>
-      <SettingGroup title="项目交互策略" icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
+      <SettingGroup title={t('settings.projectInteraction')} icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
         <InteractionSection
           mode={interactionMode}
-          inheritedLabel={`继承系统: ${interactionModeLabel(system.interaction_mode)}`}
+          inheritedLabel={t('settings.inheritedSystem', { value: interactionModeLabel(system.interaction_mode) })}
           onModeChange={setInteractionMode}
         />
       </SettingGroup>
@@ -337,7 +340,7 @@ function RoomSettingsForm({
 }): JSX.Element {
   const inherited = settings ? inheritedForRoom(settings) : DEFAULT_SYSTEM_SETTINGS;
   const own = settings?.room;
-  const { interactionModeLabel, routingModeLabel } = useI18n();
+  const { interactionModeLabel, routingModeLabel, t } = useI18n();
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
     own?.message_routing_mode ?? 'inherit',
   );
@@ -362,29 +365,29 @@ function RoomSettingsForm({
           }
         >
           <Save className="h-3.5 w-3.5" />
-          保存群聊设置
+          {t('settings.saveRoom')}
         </Button>
       }
     >
-      <SettingGroup title="群聊信息" icon={<Settings2 className="h-4 w-4" strokeWidth={1.75} />}>
-        <ReadonlyField label="群聊名称" value={room.name} />
-        {room.description && <ReadonlyField label="群聊描述" value={room.description} />}
+      <SettingGroup title={t('settings.roomInfo')} icon={<Settings2 className="h-4 w-4" strokeWidth={1.75} />}>
+        <ReadonlyField label={t('settings.roomName')} value={room.name} />
+        {room.description && <ReadonlyField label={t('settings.roomDescription')} value={room.description} />}
       </SettingGroup>
       <InheritanceSummary settings={settings} scope="room" />
-      <SettingGroup title="群聊消息路由" icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
+      <SettingGroup title={t('settings.roomRouting')} icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
         <RoutingSection
           mode={routingMode}
           fallbackAgentId={fallbackAgentId || inherited.fallback_agent_id || ''}
           fallbackOptions={fallbackOptions}
-          inheritedLabel={`继承上级: ${routingModeLabel(inherited.message_routing_mode)}`}
+          inheritedLabel={t('settings.inheritedParent', { value: routingModeLabel(inherited.message_routing_mode) })}
           onModeChange={setRoutingMode}
           onFallbackAgentChange={setFallbackAgentId}
         />
       </SettingGroup>
-      <SettingGroup title="群聊交互策略" icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
+      <SettingGroup title={t('settings.roomInteraction')} icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
         <InteractionSection
           mode={interactionMode}
-          inheritedLabel={`继承上级: ${interactionModeLabel(inherited.interaction_mode)}`}
+          inheritedLabel={t('settings.inheritedParent', { value: interactionModeLabel(inherited.interaction_mode) })}
           onModeChange={setInteractionMode}
         />
       </SettingGroup>
@@ -453,7 +456,7 @@ function RoutingSection({
   onModeChange: (mode: MessageRoutingMode | 'inherit') => void;
   onFallbackAgentChange: (agentId: string) => void;
 }): JSX.Element {
-  const { routingModeLabel } = useI18n();
+  const { routingModeLabel, t } = useI18n();
   const requiresFallback = mode !== 'inherit' && mode !== 'mentions_only';
   return (
     <>
@@ -461,7 +464,7 @@ function RoutingSection({
         {inheritedLabel && (
           <OptionButton
             active={mode === 'inherit'}
-            title="继承上级设置"
+            title={t('settings.inheritParentSettings')}
             description={inheritedLabel}
             onClick={() => onModeChange('inherit')}
           />
@@ -471,23 +474,25 @@ function RoutingSection({
             key={option.value}
             active={mode === option.value}
             title={routingModeLabel(option.value)}
-            description={option.description}
+            description={t(option.descriptionKey)}
             onClick={() => onModeChange(option.value)}
           />
         ))}
       </div>
       {requiresFallback && (
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
-          <Label>兜底智能体</Label>
+          <Label>{t('settings.fallbackAgent')}</Label>
           {fallbackOptions.length > 0 ? (
             <select
               value={fallbackAgentId}
               onChange={(event) => onFallbackAgentChange(event.target.value)}
               className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none transition-all focus:border-[var(--color-primary)] focus:glow-primary"
             >
-              {!fallbackAgentId && <option value="">选择兜底智能体</option>}
+              {!fallbackAgentId && <option value="">{t('settings.selectFallbackAgent')}</option>}
               {fallbackAgentId && !fallbackOptions.some((agent) => agent.agent_id === fallbackAgentId) && (
-                <option value={fallbackAgentId}>{fallbackAgentId}（继承或当前不可见）</option>
+                <option value={fallbackAgentId}>
+                  {t('settings.fallbackCurrentInvisible', { agentId: fallbackAgentId })}
+                </option>
               )}
               {fallbackOptions.map((agent) => (
                 <option key={agent.agent_id} value={agent.agent_id}>
@@ -499,7 +504,7 @@ function RoutingSection({
             <Input
               value={fallbackAgentId}
               onChange={(event) => onFallbackAgentChange(event.target.value)}
-              placeholder="输入 agent_id"
+              placeholder={t('settings.fallbackPlaceholder')}
               className="font-mono"
             />
           )}
@@ -518,25 +523,25 @@ function InteractionSection({
   inheritedLabel: string | null;
   onModeChange: (mode: TaskInteractionMode | 'inherit') => void;
 }): JSX.Element {
-  const { interactionModeLabel } = useI18n();
+  const { interactionModeLabel, t } = useI18n();
   return (
     <div className="grid gap-2 md:grid-cols-2">
       {inheritedLabel && (
         <OptionButton
           active={mode === 'inherit'}
-          title="继承上级设置"
+          title={t('settings.inheritParentSettings')}
           description={inheritedLabel}
           onClick={() => onModeChange('inherit')}
         />
       )}
       {INTERACTION_OPTIONS.map((option) => (
         <OptionButton
-          key={option.value}
-          active={mode === option.value}
-          title={interactionModeLabel(option.value)}
-          description={option.description}
-          onClick={() => onModeChange(option.value)}
-        />
+        key={option.value}
+        active={mode === option.value}
+        title={interactionModeLabel(option.value)}
+        description={t(option.descriptionKey)}
+        onClick={() => onModeChange(option.value)}
+      />
       ))}
     </div>
   );
@@ -580,10 +585,11 @@ function ReadonlyField({ label, value }: { label: string; value: string }): JSX.
 }
 
 function ResetInheritanceButton({ onClick }: { onClick: () => void }): JSX.Element {
+  const { t } = useI18n();
   return (
     <Button type="button" variant="ghost" onClick={onClick}>
       <RotateCcw className="h-3.5 w-3.5" />
-      重置重复项为继承
+      {t('settings.resetInheritance')}
     </Button>
   );
 }
@@ -595,38 +601,43 @@ function InheritanceSummary({
   settings?: SettingsResolution;
   scope: 'project' | 'room';
 }): JSX.Element | null {
-  const { interactionModeLabel, routingModeLabel } = useI18n();
+  const { interactionModeLabel, routingModeLabel, settingsScopeLabel, t } = useI18n();
   if (!settings) return null;
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 text-[12px] text-[var(--color-fg-muted)]">
-      <div className="font-display text-[13px] font-semibold text-[var(--color-fg)]">重复设置项生效状态</div>
+      <div className="font-display text-[13px] font-semibold text-[var(--color-fg)]">
+        {t('settings.inheritanceTitle')}
+      </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <SummaryItem
-          label="消息路由"
+          label={t('settings.messageRouting')}
           value={routingModeLabel(settings.effective.message_routing_mode)}
-          source={scopeLabel(settings.sources.message_routing)}
+          source={settingsScopeLabel(settings.sources.message_routing)}
         />
         <SummaryItem
-          label="交互策略"
+          label={t('settings.interactionPolicy')}
           value={interactionModeLabel(settings.effective.interaction_mode)}
-          source={scopeLabel(settings.sources.interaction_mode)}
+          source={settingsScopeLabel(settings.sources.interaction_mode)}
         />
       </div>
       <p className="mt-2 leading-relaxed">
         {scope === 'room'
-          ? '群聊覆盖项目和系统；未覆盖的设置继续向上继承。'
-          : '项目覆盖系统；未覆盖的设置继续使用系统默认值。'}
+          ? t('settings.roomInheritanceDescription')
+          : t('settings.projectInheritanceDescription')}
       </p>
     </div>
   );
 }
 
 function SummaryItem({ label, value, source }: { label: string; value: string; source: string }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
       <div className="text-[11px] text-[var(--color-fg-muted)]">{label}</div>
       <div className="mt-1 text-[13px] font-medium text-[var(--color-fg)]">{value}</div>
-      <div className="mt-1 font-mono text-[10.5px] text-[var(--color-muted)]">来源：{source}</div>
+      <div className="mt-1 font-mono text-[10.5px] text-[var(--color-muted)]">
+        {t('settings.source', { source })}
+      </div>
     </div>
   );
 }
@@ -641,10 +652,4 @@ function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
       : settings.system.fallback_agent_id,
     interaction_mode: settings.project?.interaction_mode ?? settings.system.interaction_mode,
   };
-}
-
-function scopeLabel(scope: SettingsScope): string {
-  if (scope === 'room') return '群聊级';
-  if (scope === 'project') return '项目级';
-  return '系统级';
 }

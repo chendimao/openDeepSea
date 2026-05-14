@@ -23,14 +23,14 @@ export function AgentRunStatusCard({
   retrying?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const { agentRunStatusLabel, formatRelativeTime } = useI18n();
+  const { agentRunStatusLabel, formatRelativeTime, t } = useI18n();
   const cancel = useMutation({
     mutationFn: (id: string) => api.cancelAgentRun(id),
     onSuccess: (run) => {
       queryClient.setQueryData<AgentRun[] | undefined>(['agent-runs', roomId], (prev) =>
         upsertRun(prev, run),
       );
-      toast.success('执行已取消');
+      toast.success(t('agentRun.cancelled'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -55,7 +55,7 @@ export function AgentRunStatusCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
             <span className="font-display text-[12px] font-semibold text-[var(--color-fg)]">
-              执行状态
+              {t('agentRun.statusTitle')}
             </span>
             <span className="rounded-[5px] bg-white/58 px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-fg-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.72)]">
               ACP:{run.backend}
@@ -79,8 +79,8 @@ export function AgentRunStatusCard({
             size="sm"
             onClick={() => cancel.mutate(run.id)}
             disabled={cancel.isPending}
-            aria-label="取消执行"
-            title="取消执行"
+            aria-label={t('agentRun.cancelExecution')}
+            title={t('agentRun.cancelExecution')}
           >
             <Ban className="h-3.5 w-3.5" />
           </Button>
@@ -92,11 +92,11 @@ export function AgentRunStatusCard({
             size="sm"
             onClick={() => onRetryWorkflow?.(run.workflow_run_id!)}
             disabled={retrying}
-            aria-label="重试当前阶段"
-            title="重试当前阶段"
+            aria-label={t('agentRun.retryStage')}
+            title={t('agentRun.retryStage')}
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            {!compact && <span>重试</span>}
+            {!compact && <span>{t('common.retry')}</span>}
           </Button>
         )}
       </div>
