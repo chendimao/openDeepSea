@@ -59,7 +59,7 @@ export function CreateTaskDialog({
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent title="新建任务" description="把聊天室里的协作事项沉淀为可追踪任务">
+      <DialogContent title="新建任务" description="把群聊里的协作事项沉淀为可追踪任务">
         <form
           onSubmit={(e) => {
             e.preventDefault();

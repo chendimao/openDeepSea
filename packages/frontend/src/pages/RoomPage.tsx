@@ -710,7 +710,7 @@ function routingHint(
 ): string {
   if (mode === 'mentions_only') return '当前策略：只有被 @ 的智能体会回复；无 @ 时不会触发回复。';
   if (fallbackAgentId && !fallbackAgent) {
-    return `当前策略：无 @ 时交给 ${fallbackAgentId}；当前聊天室尚未邀请它，因此不会触发兜底。`;
+    return `当前策略：无 @ 时交给 ${fallbackAgentId}；当前群聊尚未邀请它，因此不会触发兜底。`;
   }
   if (mode === 'fallback_reply') {
     return `当前策略：无 @ 时由 ${fallbackAgent?.agent_name ?? '兜底智能体'} 回复。`;

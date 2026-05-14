@@ -41,7 +41,7 @@ export function CreateProjectDialog({
       {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent
         title="添加本地项目"
-        description="把已有的代码目录纳入 OpenClaw Room 管理"
+        description="把已有的代码目录纳入深海指挥中心管理"
       >
         <form
           onSubmit={(e) => {

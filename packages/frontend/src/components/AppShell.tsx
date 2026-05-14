@@ -4,11 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
   BriefcaseBusiness,
-  CirclePlus,
   FolderKanban,
   GitBranch,
   Home,
   Moon,
+  Plus,
   Search,
   Settings,
   SquareCheck,
@@ -66,9 +66,6 @@ export function AppShell({
     <div className="h-screen w-screen overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]">
       <div className="liquid-backdrop" aria-hidden="true" />
       <div className="app-grid h-full">
-        <aside className="app-dock-shell" aria-label="主导航">
-          <DockNav projects={projects} />
-        </aside>
         <aside className="app-sidebar" aria-label="项目工作区">
           <ProjectSidebar
             projects={projects}
@@ -94,75 +91,6 @@ export function AppShell({
   );
 }
 
-function DockNav({ projects }: { projects: Awaited<ReturnType<typeof api.listProjects>> }): JSX.Element {
-  const location = useLocation();
-  const projectId = getProjectId(location.pathname);
-
-  return (
-    <div className="liquid-dock">
-      <div className="flex justify-center pb-3">
-        <div className="dock-logo">
-          <LobsterMark className="h-6 w-6" />
-        </div>
-      </div>
-
-      <nav className="flex flex-1 flex-col items-center gap-2" aria-label="OpenClaw 导航">
-        <DockLink to="/" active={location.pathname === '/'} label="Home" icon={Home} exact />
-        <DockLink
-          to={projectId ? `/projects/${projectId}` : projects[0] ? `/projects/${projects[0].id}` : '/'}
-          active={location.pathname.includes('/rooms/')}
-          label="Rooms"
-          icon={BriefcaseBusiness}
-        />
-        <DockLink to="/" active={false} label="Tasks" icon={SquareCheck} inactive />
-        <DockLink to="/" active={false} label="Routes" icon={GitBranch} inactive />
-        <DockLink to="/" active={false} label="Agent" icon={Bot} inactive />
-      </nav>
-
-      <div className="flex flex-col items-center gap-2 pt-3">
-        <SystemSettingsDialog>
-          <button type="button" aria-label="Settings" className="dock-item">
-            <Settings className="h-[17px] w-[17px]" strokeWidth={1.65} />
-          </button>
-        </SystemSettingsDialog>
-        <CreateProjectDialog>
-          <button type="button" aria-label="Add" className="dock-item dock-item-add">
-            <CirclePlus className="h-[18px] w-[18px]" strokeWidth={1.8} />
-          </button>
-        </CreateProjectDialog>
-      </div>
-    </div>
-  );
-}
-
-function DockLink({
-  to,
-  active,
-  label,
-  icon: Icon,
-  exact = false,
-  inactive = false,
-}: {
-  to: string;
-  active: boolean;
-  label: string;
-  icon: typeof Home;
-  exact?: boolean;
-  inactive?: boolean;
-}): JSX.Element {
-  return (
-    <NavLink
-      to={to}
-      end={exact}
-      aria-label={label}
-      title={label}
-      className={({ isActive }) => cn('dock-item', ((isActive && !inactive) || active) && 'is-active')}
-    >
-      <Icon className="h-[17px] w-[17px]" strokeWidth={1.65} />
-    </NavLink>
-  );
-}
-
 function ProjectSidebar({
   projects,
   currentProject,
@@ -184,13 +112,25 @@ function ProjectSidebar({
       <div className="px-5 pb-5 pt-5">
         <div className="flex items-center gap-3">
           <div className="liquid-logo-small">
-            <LobsterMark className="h-5 w-5" />
+            <LobsterMark className="h-6 w-6" />
           </div>
-          <div>
-            <div className="font-display text-[15px] font-semibold leading-tight">OpenClaw Room</div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-display text-[16px] font-semibold leading-tight">深海指挥中心</div>
             <div className="mt-0.5 font-mono text-[11px] text-[var(--color-fg-muted)]">
-              workspace console
+              local agent console
             </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <CreateProjectDialog>
+              <button type="button" aria-label="新增项目" className="sidebar-icon-button">
+                <Plus className="h-3.5 w-3.5" strokeWidth={1.9} />
+              </button>
+            </CreateProjectDialog>
+            <SystemSettingsDialog>
+              <button type="button" aria-label="系统设置" className="sidebar-icon-button">
+                <Settings className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </button>
+            </SystemSettingsDialog>
           </div>
         </div>
         <button
@@ -213,14 +153,6 @@ function ProjectSidebar({
         <SidebarLink to="/" active={!!currentProject} icon={SquareCheck} label="任务" />
         <SidebarLink to="/" icon={BriefcaseBusiness} label="工作流" inactive />
         <SidebarLink to="/" icon={FolderKanban} label="文件" inactive />
-        <button
-          type="button"
-          onClick={onOpenCommand}
-          className="sidebar-link"
-        >
-          <Settings className="h-4 w-4" strokeWidth={1.65} />
-          <span>设置</span>
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
@@ -241,7 +173,7 @@ function ProjectSidebar({
               </span>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <RailMetric label="聊天室" value={currentProject.stats?.rooms ?? 0} />
+              <RailMetric label="群聊" value={currentProject.stats?.rooms ?? 0} />
               <RailMetric label="任务" value={currentProject.stats?.tasks ?? 0} />
               <RailMetric label="进行中" value={currentProject.stats?.tasksInProgress ?? 0} />
               <RailMetric label="已完成" value={currentProject.stats?.tasksDone ?? 0} />

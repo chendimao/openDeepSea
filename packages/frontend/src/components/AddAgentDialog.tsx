@@ -57,7 +57,7 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
-      toast.success('Agent 已加入聊天室');
+      toast.success('Agent 已加入群聊');
       setOpen(false);
       resetForm();
     },
@@ -73,7 +73,7 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent title="邀请 Agent 加入聊天室" description="从本机 OpenClaw 配置中选择 Agent">
+      <DialogContent title="邀请 Agent 加入群聊" description="从本机 OpenClaw 配置中选择 Agent">
         <div className="space-y-4">
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-2">

@@ -87,7 +87,7 @@ export function ProjectRoutingDialog({
       </DialogTrigger>
       <DialogContent
         title="项目消息路由"
-        description="控制聊天室里的智能体何时响应用户消息，避免无 @ 时所有智能体同时回复。"
+        description="控制群聊里的智能体何时响应用户消息，避免无 @ 时所有智能体同时回复。"
         className="w-[min(94vw,620px)]"
       >
         <div className="space-y-4">
@@ -130,11 +130,11 @@ export function ProjectRoutingDialog({
               >
                 {fallbackAgentId && !selectedFallbackInRoom && (
                   <option value={fallbackAgentId}>
-                    {fallbackAgentId}（当前聊天室未邀请）
+                    {fallbackAgentId}（当前群聊未邀请）
                   </option>
                 )}
                 {fallbackOptions.length === 0 && !fallbackAgentId ? (
-                  <option value="">当前聊天室没有可选智能体</option>
+                  <option value="">当前群聊没有可选智能体</option>
                 ) : (
                   fallbackOptions.map((agent) => (
                     <option key={agent.agent_id} value={agent.agent_id}>
@@ -144,7 +144,7 @@ export function ProjectRoutingDialog({
                 )}
               </select>
               <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
-                该设置按项目保存；其他聊天室需要先邀请同一个 agent ID 才会触发兜底。
+                该设置按项目保存；其他群聊需要先邀请同一个 agent ID 才会触发兜底。
               </p>
             </div>
           )}

@@ -25,7 +25,7 @@ export function DashboardPage() {
                 深海指挥中心
               </h1>
               <p className="text-[13px] text-[var(--color-fg-muted)] mt-0.5">
-                管理本地项目、聊天室与智能体协作上下文
+                管理本地项目、群聊与智能体协作上下文
               </p>
             </div>
             <div className="ml-auto max-sm:w-full">
@@ -85,7 +85,7 @@ export function DashboardPage() {
                   <div className="mt-5 flex items-center gap-4 text-[11px] font-mono text-[var(--color-fg-muted)]">
                     <span className="flex items-center gap-1">
                       <MessageSquare className="h-3 w-3" strokeWidth={1.75} />
-                      {p.stats?.rooms ?? 0} 聊天室
+                      {p.stats?.rooms ?? 0} 群聊
                     </span>
                     <span>·</span>
                     <span>
@@ -117,7 +117,7 @@ function EmptyState(): JSX.Element {
     <WorkspaceEmptyState
       icon={<LobsterMark className="h-14 w-14" />}
       title="还没有项目"
-      description="添加一个本地代码目录后，可以为它创建聊天室、分配 agent，并跟踪协作任务。"
+      description="添加一个本地代码目录后，可以为它创建群聊、分配 agent，并跟踪协作任务。"
       action={
         <CreateProjectDialog>
           <Button variant="primary">

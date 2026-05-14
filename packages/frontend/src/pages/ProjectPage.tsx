@@ -48,7 +48,7 @@ export function ProjectPage() {
             <p className="mt-2 text-[13px] text-[var(--color-fg-muted)]">{project.description}</p>
           )}
           <div className="mt-4 flex items-center gap-5 text-[12px] font-mono text-[var(--color-fg-muted)]">
-            <span>聊天室 {project.stats?.rooms ?? 0}</span>
+            <span>群聊 {project.stats?.rooms ?? 0}</span>
             <span>任务 {project.stats?.tasks ?? 0}</span>
             <span>已完成 {project.stats?.tasksDone ?? 0}</span>
             <span>进行中 {project.stats?.tasksInProgress ?? 0}</span>
@@ -59,7 +59,7 @@ export function ProjectPage() {
       <section className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-baseline gap-3 mb-4">
-            <h2 className="font-display text-[14px] font-medium">聊天室</h2>
+            <h2 className="font-display text-[14px] font-medium">群聊</h2>
             <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">{rooms.length}</span>
             <div className="ml-auto">
               <CreateRoomDialog projectId={projectId} />
@@ -69,9 +69,9 @@ export function ProjectPage() {
           {rooms.length === 0 ? (
             <WorkspaceEmptyState
               icon={<MessageSquarePlus className="h-9 w-9" strokeWidth={1.75} />}
-              title="还没有聊天室"
+              title="还没有群聊"
               description="为项目创建一个协作主题，后续可以邀请 agent、发送消息并拆分任务。"
-              action={<CreateRoomDialog projectId={projectId} buttonText="创建第一个聊天室" />}
+              action={<CreateRoomDialog projectId={projectId} buttonText="创建第一个群聊" />}
             />
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -112,7 +112,7 @@ function RoomItem({ projectId, room }: { projectId: string; room: { id: string; 
       <button
         onClick={() => del.mutate()}
         className="absolute right-2 top-2 p-1.5 rounded-md text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-danger)] hover:bg-[var(--color-surface-raised)] ease-ocean"
-        aria-label="删除聊天室"
+        aria-label="删除群聊"
         type="button"
       >
         <Trash2 className="h-3.5 w-3.5" />
@@ -121,7 +121,7 @@ function RoomItem({ projectId, room }: { projectId: string; room: { id: string; 
   );
 }
 
-function CreateRoomDialog({ projectId, buttonText = '新建聊天室' }: { projectId: string; buttonText?: string }) {
+function CreateRoomDialog({ projectId, buttonText = '新建群聊' }: { projectId: string; buttonText?: string }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -132,7 +132,7 @@ function CreateRoomDialog({ projectId, buttonText = '新建聊天室' }: { proje
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-      toast.success('聊天室已创建');
+      toast.success('群聊已创建');
       setOpen(false);
       setName('');
       setDescription('');
@@ -143,11 +143,11 @@ function CreateRoomDialog({ projectId, buttonText = '新建聊天室' }: { proje
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="primary" size="sm">
-          {buttonText === '新建聊天室' ? <Plus className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
+          {buttonText === '新建群聊' ? <Plus className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
           {buttonText}
         </Button>
       </DialogTrigger>
-      <DialogContent title="新建聊天室" description="为这个项目开启一个新的协作主题">
+      <DialogContent title="新建群聊" description="为这个项目开启一个新的协作主题">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -157,7 +157,7 @@ function CreateRoomDialog({ projectId, buttonText = '新建聊天室' }: { proje
           className="space-y-4"
         >
           <div>
-            <Label>聊天室名称</Label>
+            <Label>群聊名称</Label>
             <Input
               autoFocus
               placeholder="auth-refactor / bug-fixing / discussion"
@@ -169,7 +169,7 @@ function CreateRoomDialog({ projectId, buttonText = '新建聊天室' }: { proje
           <div>
             <Label>主题描述 (可选)</Label>
             <Textarea
-              placeholder="这个聊天室的目标是..."
+              placeholder="这个群聊的目标是..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
