@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronLeft, FileText, MessageSquare, Plus, Send, Settings2, Users } from 'lucide-react';
+import { ChevronDown, ChevronLeft, FileText, MessageSquare, Plus, Save, Send, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -16,6 +16,7 @@ import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { Button } from '../components/ui/Button';
 import { AgentMentionMenu } from '../components/AgentMentionMenu';
+import { MemoryPanel } from '../components/MemoryPanel';
 import { MessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
@@ -247,6 +248,7 @@ export function RoomPage() {
             messages={messages}
             agents={agents}
             agentRuns={agentRuns}
+            projectId={project?.id}
             roomId={roomId}
             routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
             fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
@@ -254,20 +256,36 @@ export function RoomPage() {
             retryingWorkflowId={retryWorkflow.variables}
           />
         </section>
-        <TaskBoard
-          tasks={tasks}
-          agents={agents}
-          workflows={taskWorkflows}
-          selectedTaskId={inspectorTask?.id ?? null}
-          onSelectTask={(task) => {
-            setConfigAgent(null);
-            setSelectedTask(task);
-          }}
-          onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
-        />
+        <div className="flex min-h-0 flex-col gap-2 [&>.task-board-panel]:min-h-0 [&>.task-board-panel]:flex-1">
+          <TaskBoard
+            tasks={tasks}
+            agents={agents}
+            workflows={taskWorkflows}
+            selectedTaskId={inspectorTask?.id ?? null}
+            onSelectTask={(task) => {
+              setConfigAgent(null);
+              setSelectedTask(task);
+            }}
+            onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
+          />
+          {project ? (
+            <aside className="workbench-panel max-h-[34vh] shrink-0 overflow-hidden" aria-label="聊天室记忆">
+              <div className="min-h-0 overflow-y-auto p-4">
+                <MemoryPanel
+                  projectId={project.id}
+                  roomId={roomId}
+                  roomAgents={agents}
+                  defaultScope="room"
+                  compact
+                />
+              </div>
+            </aside>
+          ) : null}
+        </div>
         <TaskDetailPanel
           task={inspectorTask}
           agents={agents}
+          projectId={project?.id ?? projectId}
           onClose={() => setSelectedTask(null)}
         />
       </div>
@@ -346,6 +364,7 @@ function ChatColumn({
   messages,
   agents,
   agentRuns,
+  projectId,
   roomId,
   routingMode,
   fallbackAgentId,
@@ -355,6 +374,7 @@ function ChatColumn({
   messages: Message[];
   agents: RoomAgent[];
   agentRuns: AgentRun[];
+  projectId?: string;
   roomId: string;
   routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
   fallbackAgentId: string | null;
@@ -403,6 +423,24 @@ function ChatColumn({
       setInput('');
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
       toast.success('任务已创建');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const saveMessageMemory = useMutation({
+    mutationFn: (message: Message) =>
+      api.createMemory(projectId!, {
+        scope: 'room',
+        memory_type: message.sender_type === 'agent' ? 'lesson' : 'fact',
+        title: createMessageMemoryTitle(message.content),
+        content: message.content.trim(),
+        room_id: roomId,
+        source_type: 'message',
+        source_id: message.id,
+      }),
+    onSuccess: () => {
+      toast.success('已保存为记忆');
+      queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -467,6 +505,9 @@ function ChatColumn({
                 run={run}
                 runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
                 roomId={roomId}
+                projectId={projectId}
+                savingMemory={saveMessageMemory.isPending && saveMessageMemory.variables?.id === m.id}
+                onSaveMemory={(message) => saveMessageMemory.mutate(message)}
                 onRetryWorkflow={onRetryWorkflow}
                 retryingWorkflowId={retryingWorkflowId}
               />
@@ -517,6 +558,9 @@ function MessageBubble({
   run,
   runAgent,
   roomId,
+  projectId,
+  savingMemory,
+  onSaveMemory,
   onRetryWorkflow,
   retryingWorkflowId,
 }: {
@@ -525,11 +569,15 @@ function MessageBubble({
   run?: AgentRun;
   runAgent?: RoomAgent;
   roomId: string;
+  projectId?: string;
+  savingMemory: boolean;
+  onSaveMemory: (message: Message) => void;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
 }) {
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
+  const canSaveMemory = Boolean(projectId && message.content.trim());
 
   if (isSystem) {
     return (
@@ -557,6 +605,20 @@ function MessageBubble({
           <span className="text-[10.5px] font-mono text-[var(--color-muted)]">
             {relativeTime(message.created_at)}
           </span>
+          {canSaveMemory ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-6 px-1.5 text-[11px]"
+              title="保存为记忆"
+              onClick={() => onSaveMemory(message)}
+              disabled={savingMemory}
+            >
+              <Save className="h-3 w-3" />
+              存记忆
+            </Button>
+          ) : null}
         </div>
         <div
           className={cn(
@@ -592,6 +654,12 @@ function MessageBubble({
       </div>
     </div>
   );
+}
+
+function createMessageMemoryTitle(content: string): string {
+  const normalized = content.trim().replace(/\s+/g, ' ');
+  if (!normalized) return '聊天记忆';
+  return normalized.length > 80 ? `${normalized.slice(0, 80)}…` : normalized;
 }
 
 function Composer({
