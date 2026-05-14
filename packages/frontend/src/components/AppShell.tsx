@@ -329,7 +329,7 @@ function LanguageToggle(): JSX.Element {
   ];
 
   return (
-    <div className="theme-toggle mb-2" aria-label={t('language.label')}>
+    <div className="theme-toggle mb-2" role="group" aria-label={t('language.label')}>
       {options.map((option) => (
         <button
           key={option.value}
