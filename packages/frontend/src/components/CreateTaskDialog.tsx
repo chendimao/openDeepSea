@@ -3,8 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckSquare, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 import type { RoomAgent, Task } from '../lib/types';
-import { TASK_INTERACTION_MODE_LABEL, TASK_PRIORITY_LABEL } from '../lib/types';
 import { Button } from './ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { Input, Label, Textarea } from './ui/Input';
@@ -27,6 +27,7 @@ export function CreateTaskDialog({
   const [interactionMode, setInteractionMode] = useState<Task['interaction_mode'] | 'inherit'>('inherit');
   const [assignedAgentId, setAssignedAgentId] = useState('');
   const queryClient = useQueryClient();
+  const { interactionModeLabel, taskPriorityLabel } = useI18n();
 
   const create = useMutation({
     mutationFn: () =>
@@ -95,7 +96,7 @@ export function CreateTaskDialog({
               >
                 {(['low', 'normal', 'high', 'urgent'] as const).map((p) => (
                   <option key={p} value={p}>
-                    {TASK_PRIORITY_LABEL[p]}
+                    {taskPriorityLabel(p)}
                   </option>
                 ))}
               </select>
@@ -126,7 +127,7 @@ export function CreateTaskDialog({
               <option value="inherit">使用当前设置默认值</option>
               {(['ask_user', 'auto_recommended'] as const).map((mode) => (
                 <option key={mode} value={mode}>
-                  {TASK_INTERACTION_MODE_LABEL[mode]}
+                  {interactionModeLabel(mode)}
                 </option>
               ))}
             </select>

@@ -270,32 +270,6 @@ export interface OpenClawAgent {
   workspace?: string;
 }
 
-export const TASK_STATUS_LABEL: Record<Task['status'], string> = {
-  todo: '待办',
-  in_progress: '进行中',
-  review: '待审查',
-  done: '已完成',
-  failed: '失败',
-};
-
-export const TASK_PRIORITY_LABEL: Record<Task['priority'], string> = {
-  low: '低',
-  normal: '普通',
-  high: '高',
-  urgent: '紧急',
-};
-
-export const TASK_INTERACTION_MODE_LABEL: Record<TaskInteractionMode, string> = {
-  ask_user: '需要决策时询问我',
-  auto_recommended: '使用推荐选项自动继续',
-};
-
-export const MESSAGE_ROUTING_MODE_LABEL: Record<MessageRoutingMode, string> = {
-  mentions_only: '只响应 @',
-  fallback_reply: '兜底回复',
-  fallback_route: '兜底调度',
-};
-
 export const MEMORY_SCOPE_LABEL: Record<MemoryScope, string> = {
   project: '项目',
   room: '聊天室',
@@ -310,42 +284,4 @@ export const MEMORY_TYPE_LABEL: Record<MemoryType, string> = {
   lesson: '经验',
   task_summary: '任务总结',
   artifact_summary: '产物摘要',
-};
-
-export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {
-  queued: '排队中',
-  running: '运行中',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-  interrupted: '已中断',
-};
-
-export const WORKFLOW_ROLE_LABEL: Record<WorkflowRole, string> = {
-  analyst: '分析',
-  planner: '规划',
-  coordinator: '协调',
-  executor: '执行',
-  reviewer: '代码审查',
-  acceptor: '功能验收',
-};
-
-export const WORKFLOW_STATUS_LABEL: Record<WorkflowStatus, string> = {
-  draft: '未启动',
-  running: '运行中',
-  awaiting_decision: '等待决策',
-  awaiting_approval: '等待确认',
-  blocked: '阻塞',
-  cancelled: '已取消',
-  completed: '已完成',
-  failed: '失败',
-};
-
-export const WORKFLOW_STAGE_LABEL: Record<WorkflowStage, string> = {
-  analysis: '分析',
-  planning: '计划',
-  assignment: '分配',
-  implementation: '执行',
-  code_review: '代码审查',
-  acceptance: '功能验收',
 };

@@ -3,9 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, RotateCcw, Save, Settings2, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 import {
-  MESSAGE_ROUTING_MODE_LABEL,
-  TASK_INTERACTION_MODE_LABEL,
   type EffectiveSettings,
   type MessageRoutingMode,
   type Project,
@@ -259,6 +258,7 @@ function ProjectSettingsForm({
 }): JSX.Element {
   const system = settings?.system ?? DEFAULT_SYSTEM_SETTINGS;
   const own = settings?.project;
+  const { interactionModeLabel, routingModeLabel } = useI18n();
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
     own?.message_routing_mode ?? 'inherit',
   );
@@ -297,7 +297,7 @@ function ProjectSettingsForm({
           mode={routingMode}
           fallbackAgentId={fallbackAgentId || system.fallback_agent_id || ''}
           fallbackOptions={[]}
-          inheritedLabel={`继承系统: ${MESSAGE_ROUTING_MODE_LABEL[system.message_routing_mode]}`}
+          inheritedLabel={`继承系统: ${routingModeLabel(system.message_routing_mode)}`}
           onModeChange={setRoutingMode}
           onFallbackAgentChange={setFallbackAgentId}
         />
@@ -305,7 +305,7 @@ function ProjectSettingsForm({
       <SettingGroup title="项目交互策略" icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
         <InteractionSection
           mode={interactionMode}
-          inheritedLabel={`继承系统: ${TASK_INTERACTION_MODE_LABEL[system.interaction_mode]}`}
+          inheritedLabel={`继承系统: ${interactionModeLabel(system.interaction_mode)}`}
           onModeChange={setInteractionMode}
         />
       </SettingGroup>
@@ -337,6 +337,7 @@ function RoomSettingsForm({
 }): JSX.Element {
   const inherited = settings ? inheritedForRoom(settings) : DEFAULT_SYSTEM_SETTINGS;
   const own = settings?.room;
+  const { interactionModeLabel, routingModeLabel } = useI18n();
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
     own?.message_routing_mode ?? 'inherit',
   );
@@ -375,7 +376,7 @@ function RoomSettingsForm({
           mode={routingMode}
           fallbackAgentId={fallbackAgentId || inherited.fallback_agent_id || ''}
           fallbackOptions={fallbackOptions}
-          inheritedLabel={`继承上级: ${MESSAGE_ROUTING_MODE_LABEL[inherited.message_routing_mode]}`}
+          inheritedLabel={`继承上级: ${routingModeLabel(inherited.message_routing_mode)}`}
           onModeChange={setRoutingMode}
           onFallbackAgentChange={setFallbackAgentId}
         />
@@ -383,7 +384,7 @@ function RoomSettingsForm({
       <SettingGroup title="群聊交互策略" icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
         <InteractionSection
           mode={interactionMode}
-          inheritedLabel={`继承上级: ${TASK_INTERACTION_MODE_LABEL[inherited.interaction_mode]}`}
+          inheritedLabel={`继承上级: ${interactionModeLabel(inherited.interaction_mode)}`}
           onModeChange={setInteractionMode}
         />
       </SettingGroup>
@@ -452,6 +453,7 @@ function RoutingSection({
   onModeChange: (mode: MessageRoutingMode | 'inherit') => void;
   onFallbackAgentChange: (agentId: string) => void;
 }): JSX.Element {
+  const { routingModeLabel } = useI18n();
   const requiresFallback = mode !== 'inherit' && mode !== 'mentions_only';
   return (
     <>
@@ -468,7 +470,7 @@ function RoutingSection({
           <OptionButton
             key={option.value}
             active={mode === option.value}
-            title={MESSAGE_ROUTING_MODE_LABEL[option.value]}
+            title={routingModeLabel(option.value)}
             description={option.description}
             onClick={() => onModeChange(option.value)}
           />
@@ -516,6 +518,7 @@ function InteractionSection({
   inheritedLabel: string | null;
   onModeChange: (mode: TaskInteractionMode | 'inherit') => void;
 }): JSX.Element {
+  const { interactionModeLabel } = useI18n();
   return (
     <div className="grid gap-2 md:grid-cols-2">
       {inheritedLabel && (
@@ -530,7 +533,7 @@ function InteractionSection({
         <OptionButton
           key={option.value}
           active={mode === option.value}
-          title={TASK_INTERACTION_MODE_LABEL[option.value]}
+          title={interactionModeLabel(option.value)}
           description={option.description}
           onClick={() => onModeChange(option.value)}
         />
@@ -592,6 +595,7 @@ function InheritanceSummary({
   settings?: SettingsResolution;
   scope: 'project' | 'room';
 }): JSX.Element | null {
+  const { interactionModeLabel, routingModeLabel } = useI18n();
   if (!settings) return null;
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 text-[12px] text-[var(--color-fg-muted)]">
@@ -599,12 +603,12 @@ function InheritanceSummary({
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <SummaryItem
           label="消息路由"
-          value={MESSAGE_ROUTING_MODE_LABEL[settings.effective.message_routing_mode]}
+          value={routingModeLabel(settings.effective.message_routing_mode)}
           source={scopeLabel(settings.sources.message_routing)}
         />
         <SummaryItem
           label="交互策略"
-          value={TASK_INTERACTION_MODE_LABEL[settings.effective.interaction_mode]}
+          value={interactionModeLabel(settings.effective.interaction_mode)}
           source={scopeLabel(settings.sources.interaction_mode)}
         />
       </div>

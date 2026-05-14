@@ -2,13 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, FolderOpen, MessageSquare, Plus } from 'lucide-react';
 import { api } from '../lib/api';
-import { relativeTime } from '../lib/utils';
+import { useI18n } from '../lib/i18n';
 import { Button } from '../components/ui/Button';
 import { CreateProjectDialog } from '../components/CreateProjectDialog';
 import { LobsterMark } from '../components/LobsterMark';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 
 export function DashboardPage() {
+  const { formatRelativeTime } = useI18n();
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -91,7 +92,7 @@ export function DashboardPage() {
                     <span>
                       {p.stats?.tasksDone ?? 0}/{p.stats?.tasks ?? 0} 任务
                     </span>
-                    <span className="ml-auto">{relativeTime(p.updated_at)}</span>
+                    <span className="ml-auto">{formatRelativeTime(p.updated_at)}</span>
                   </div>
 
                   {(p.stats?.tasks ?? 0) > 0 && (

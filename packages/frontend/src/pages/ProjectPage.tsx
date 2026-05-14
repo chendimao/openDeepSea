@@ -7,7 +7,7 @@ import { api } from '../lib/api';
 import { Button } from '../components/ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from '../components/ui/Dialog';
 import { Input, Label, Textarea } from '../components/ui/Input';
-import { relativeTime } from '../lib/utils';
+import { useI18n } from '../lib/i18n';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { ProjectSettingsDialog } from '../components/SettingsDialogs';
 
@@ -88,6 +88,7 @@ export function ProjectPage() {
 
 function RoomItem({ projectId, room }: { projectId: string; room: { id: string; name: string; description: string | null; created_at: number } }) {
   const queryClient = useQueryClient();
+  const { formatRelativeTime } = useI18n();
   const del = useMutation({
     mutationFn: () => api.deleteRoom(room.id),
     onSuccess: () => {
@@ -107,7 +108,7 @@ function RoomItem({ projectId, room }: { projectId: string; room: { id: string; 
         {room.description && (
           <p className="text-[12px] text-[var(--color-fg-muted)] line-clamp-1 mt-1">{room.description}</p>
         )}
-        <p className="text-[11px] font-mono text-[var(--color-muted)] mt-3">{relativeTime(room.created_at)}</p>
+        <p className="text-[11px] font-mono text-[var(--color-muted)] mt-3">{formatRelativeTime(room.created_at)}</p>
       </Link>
       <button
         onClick={() => del.mutate()}

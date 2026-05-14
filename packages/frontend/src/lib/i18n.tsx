@@ -1,4 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import type {
+  AgentRunStatus,
+  MessageRoutingMode,
+  Task,
+  TaskInteractionMode,
+  WorkflowRole,
+  WorkflowStage,
+  WorkflowStatus,
+} from './types';
 
 export type Locale = 'zh' | 'en';
 
@@ -71,6 +80,46 @@ const zhMessages = {
   'common.retry': '重试',
   'common.refresh': '刷新',
   'common.error': '错误',
+  'task.status.todo': '待办',
+  'task.status.in_progress': '进行中',
+  'task.status.review': '待审查',
+  'task.status.done': '已完成',
+  'task.status.failed': '失败',
+  'task.priority.low': '低',
+  'task.priority.normal': '普通',
+  'task.priority.high': '高',
+  'task.priority.urgent': '紧急',
+  'task.interaction.ask_user': '需要决策时询问我',
+  'task.interaction.auto_recommended': '使用推荐选项自动继续',
+  'routing.mentions_only': '只响应 @',
+  'routing.fallback_reply': '兜底回复',
+  'routing.fallback_route': '兜底调度',
+  'agentRun.status.queued': '排队中',
+  'agentRun.status.running': '运行中',
+  'agentRun.status.completed': '已完成',
+  'agentRun.status.failed': '失败',
+  'agentRun.status.cancelled': '已取消',
+  'agentRun.status.interrupted': '已中断',
+  'workflow.role.analyst': '分析',
+  'workflow.role.planner': '规划',
+  'workflow.role.coordinator': '协调',
+  'workflow.role.executor': '执行',
+  'workflow.role.reviewer': '代码审查',
+  'workflow.role.acceptor': '功能验收',
+  'workflow.status.draft': '未启动',
+  'workflow.status.running': '运行中',
+  'workflow.status.awaiting_decision': '等待决策',
+  'workflow.status.awaiting_approval': '等待确认',
+  'workflow.status.blocked': '阻塞',
+  'workflow.status.cancelled': '已取消',
+  'workflow.status.completed': '已完成',
+  'workflow.status.failed': '失败',
+  'workflow.stage.analysis': '分析',
+  'workflow.stage.planning': '计划',
+  'workflow.stage.assignment': '分配',
+  'workflow.stage.implementation': '执行',
+  'workflow.stage.code_review': '代码审查',
+  'workflow.stage.acceptance': '功能验收',
   'time.justNow': '刚刚',
   'time.minutesAgo': '{count}分钟前',
   'time.hoursAgo': '{count}小时前',
@@ -144,6 +193,46 @@ const enMessages: Record<keyof typeof zhMessages, string> = {
   'common.retry': 'Retry',
   'common.refresh': 'Refresh',
   'common.error': 'Error',
+  'task.status.todo': 'To do',
+  'task.status.in_progress': 'In progress',
+  'task.status.review': 'Review',
+  'task.status.done': 'Done',
+  'task.status.failed': 'Failed',
+  'task.priority.low': 'Low',
+  'task.priority.normal': 'Normal',
+  'task.priority.high': 'High',
+  'task.priority.urgent': 'Urgent',
+  'task.interaction.ask_user': 'Ask me when decisions are needed',
+  'task.interaction.auto_recommended': 'Auto-continue with recommended choices',
+  'routing.mentions_only': 'Mentions only',
+  'routing.fallback_reply': 'Fallback reply',
+  'routing.fallback_route': 'Fallback routing',
+  'agentRun.status.queued': 'Queued',
+  'agentRun.status.running': 'Running',
+  'agentRun.status.completed': 'Completed',
+  'agentRun.status.failed': 'Failed',
+  'agentRun.status.cancelled': 'Cancelled',
+  'agentRun.status.interrupted': 'Interrupted',
+  'workflow.role.analyst': 'Analysis',
+  'workflow.role.planner': 'Planning',
+  'workflow.role.coordinator': 'Coordination',
+  'workflow.role.executor': 'Execution',
+  'workflow.role.reviewer': 'Code review',
+  'workflow.role.acceptor': 'Acceptance',
+  'workflow.status.draft': 'Not started',
+  'workflow.status.running': 'Running',
+  'workflow.status.awaiting_decision': 'Awaiting decision',
+  'workflow.status.awaiting_approval': 'Awaiting approval',
+  'workflow.status.blocked': 'Blocked',
+  'workflow.status.cancelled': 'Cancelled',
+  'workflow.status.completed': 'Completed',
+  'workflow.status.failed': 'Failed',
+  'workflow.stage.analysis': 'Analysis',
+  'workflow.stage.planning': 'Planning',
+  'workflow.stage.assignment': 'Assignment',
+  'workflow.stage.implementation': 'Implementation',
+  'workflow.stage.code_review': 'Code review',
+  'workflow.stage.acceptance': 'Acceptance',
   'time.justNow': 'just now',
   'time.minutesAgo': '{count} min ago',
   'time.hoursAgo': '{count} hr ago',
@@ -164,6 +253,14 @@ type I18nContextValue = {
   setLocale: (locale: Locale) => void;
   t: (key: MessageKey, params?: Params) => string;
   formatRelativeTime: (timestamp: number) => string;
+  taskStatusLabel: (status: Task['status']) => string;
+  taskPriorityLabel: (priority: Task['priority']) => string;
+  interactionModeLabel: (mode: TaskInteractionMode) => string;
+  routingModeLabel: (mode: MessageRoutingMode) => string;
+  agentRunStatusLabel: (status: AgentRunStatus) => string;
+  workflowRoleLabel: (role: WorkflowRole) => string;
+  workflowStatusLabel: (status: WorkflowStatus) => string;
+  workflowStageLabel: (stage: WorkflowStage) => string;
 };
 
 const I18nContext = createContext<I18nContextValue | null>(null);
@@ -199,6 +296,14 @@ export function I18nProvider({ children }: { children: ReactNode }): JSX.Element
       setLocale,
       t: translate,
       formatRelativeTime: (timestamp: number) => formatRelativeTimeForLocale(timestamp, locale, translate),
+      taskStatusLabel: (status) => translate(`task.status.${status}` as MessageKey),
+      taskPriorityLabel: (priority) => translate(`task.priority.${priority}` as MessageKey),
+      interactionModeLabel: (mode) => translate(`task.interaction.${mode}` as MessageKey),
+      routingModeLabel: (mode) => translate(`routing.${mode}` as MessageKey),
+      agentRunStatusLabel: (status) => translate(`agentRun.status.${status}` as MessageKey),
+      workflowRoleLabel: (role) => translate(`workflow.role.${role}` as MessageKey),
+      workflowStatusLabel: (status) => translate(`workflow.status.${status}` as MessageKey),
+      workflowStageLabel: (stage) => translate(`workflow.stage.${stage}` as MessageKey),
     };
   }, [locale]);
 

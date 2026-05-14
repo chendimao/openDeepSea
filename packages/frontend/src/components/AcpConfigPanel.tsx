@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Code2, Sparkles, Terminal, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { WORKFLOW_ROLE_LABEL } from '../lib/types';
+import { useI18n } from '../lib/i18n';
 import type { AcpBackend, RoomAgent, WorkflowRole } from '../lib/types';
-import { cn, relativeTime, truncate } from '../lib/utils';
+import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 
 const BACKENDS: { id: AcpBackend; label: string; sub: string; icon: typeof Code2 }[] = [
@@ -30,6 +30,7 @@ export function AcpConfigPanel({
   const [sessionId, setSessionId] = useState<string | null>(agent.acp_session_id);
   const [workflowRole, setWorkflowRole] = useState<WorkflowRole | null>(agent.workflow_role);
   const queryClient = useQueryClient();
+  const { formatRelativeTime, workflowRoleLabel } = useI18n();
 
   useEffect(() => {
     setEnabled(!!agent.acp_enabled);
@@ -128,7 +129,7 @@ export function AcpConfigPanel({
             <option value="">不参与闭环</option>
             {(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor'] as const).map((role) => (
               <option key={role} value={role}>
-                {WORKFLOW_ROLE_LABEL[role]}
+                {workflowRoleLabel(role)}
               </option>
             ))}
           </select>
@@ -226,7 +227,7 @@ export function AcpConfigPanel({
                           {s.sessionId.slice(0, 10)}
                         </span>
                         <span className="text-[10.5px] font-mono text-[var(--color-fg-muted)] ml-auto">
-                          {relativeTime(s.lastActivity)}
+                          {formatRelativeTime(s.lastActivity)}
                         </span>
                       </div>
                       <div className="text-[12.5px] text-[var(--color-fg)] mt-1 line-clamp-2">

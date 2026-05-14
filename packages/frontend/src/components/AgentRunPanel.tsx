@@ -2,9 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ban, CircleAlert, CircleCheck, LoaderCircle, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 import type { AgentRun, RoomAgent } from '../lib/types';
-import { AGENT_RUN_STATUS_LABEL } from '../lib/types';
-import { cn, relativeTime, truncate } from '../lib/utils';
+import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 
 export function AgentRunStatusCard({
@@ -23,6 +23,7 @@ export function AgentRunStatusCard({
   retrying?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const { agentRunStatusLabel, formatRelativeTime } = useI18n();
   const cancel = useMutation({
     mutationFn: (id: string) => api.cancelAgentRun(id),
     onSuccess: (run) => {
@@ -60,14 +61,14 @@ export function AgentRunStatusCard({
               ACP:{run.backend}
             </span>
             <span className={cn('text-[10px] font-mono', statusClass(run.status))}>
-              {AGENT_RUN_STATUS_LABEL[run.status]}
+              {agentRunStatusLabel(run.status)}
             </span>
           </div>
           <div className="mt-1 text-[11px] text-[var(--color-fg-muted)] truncate">
             {truncate(run.prompt, 120)}
           </div>
           <div className="mt-1 font-mono text-[10.5px] text-[var(--color-muted)]">
-            {agent?.agent_name ?? run.agent_id} · {relativeTime(run.started_at)}
+            {agent?.agent_name ?? run.agent_id} · {formatRelativeTime(run.started_at)}
             {run.acp_session_id ? ` · session ${truncate(run.acp_session_id, 12)}` : ''}
           </div>
         </div>

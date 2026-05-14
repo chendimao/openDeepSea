@@ -2,9 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Box, ChevronRight, RotateCcw, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 import type { RoomAgent, Task, WorkflowDetail, WorkflowRun, WorkflowStatus } from '../lib/types';
-import { TASK_INTERACTION_MODE_LABEL, TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '../lib/types';
-import { relativeTime } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 import { MemoryPanel } from './MemoryPanel';
 import { WorkflowTimeline } from './WorkflowTimeline';
@@ -31,6 +30,7 @@ export function TaskDetailPanel({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { formatRelativeTime, interactionModeLabel, taskPriorityLabel, taskStatusLabel } = useI18n();
   const assignedAgent = task?.assigned_agent_id
     ? agents.find((agent) => agent.id === task.assigned_agent_id)
     : undefined;
@@ -137,9 +137,9 @@ export function TaskDetailPanel({
         <div className="min-w-0">
           <div className="truncate font-display text-[14px] font-semibold leading-snug">{task.title}</div>
           <div className="mt-1 flex items-center gap-2 text-[11px] font-mono text-[var(--color-fg-muted)]">
-            <span>{TASK_STATUS_LABEL[task.status]}</span>
+            <span>{taskStatusLabel(task.status)}</span>
             <span>·</span>
-            <span>{TASK_PRIORITY_LABEL[task.priority]}</span>
+            <span>{taskPriorityLabel(task.priority)}</span>
           </div>
         </div>
         <button
@@ -157,8 +157,8 @@ export function TaskDetailPanel({
           <Label>基础信息</Label>
           <div className="glass-info-card space-y-3">
             <InfoRow label="任务编号" value={`#${task.id.slice(0, 6)}`} />
-            <InfoRow label="状态" value={TASK_STATUS_LABEL[task.status]} />
-            <InfoRow label="优先级" value={TASK_PRIORITY_LABEL[task.priority]} />
+            <InfoRow label="状态" value={taskStatusLabel(task.status)} />
+            <InfoRow label="优先级" value={taskPriorityLabel(task.priority)} />
             <InfoRow label="指派人" value={assignedAgent?.agent_name ?? '未指派'} />
           </div>
         </section>
@@ -214,7 +214,7 @@ export function TaskDetailPanel({
             >
               {(['todo', 'in_progress', 'review', 'done', 'failed'] as const).map((status) => (
                 <option key={status} value={status}>
-                  {TASK_STATUS_LABEL[status]}
+                  {taskStatusLabel(status)}
                 </option>
               ))}
             </select>
@@ -229,7 +229,7 @@ export function TaskDetailPanel({
             >
               {(['low', 'normal', 'high', 'urgent'] as const).map((priority) => (
                 <option key={priority} value={priority}>
-                  {TASK_PRIORITY_LABEL[priority]}
+                  {taskPriorityLabel(priority)}
                 </option>
               ))}
             </select>
@@ -246,7 +246,7 @@ export function TaskDetailPanel({
           >
             {(['ask_user', 'auto_recommended'] as const).map((mode) => (
               <option key={mode} value={mode}>
-                {TASK_INTERACTION_MODE_LABEL[mode]}
+                {interactionModeLabel(mode)}
               </option>
             ))}
           </select>
@@ -285,11 +285,11 @@ export function TaskDetailPanel({
         <section className="inspector-section grid grid-cols-2 gap-3 text-[11px] font-mono text-[var(--color-fg-muted)]">
           <div className="glass-info-card rounded-lg p-3">
             <div className="text-[var(--color-muted)] mb-1">创建</div>
-            <div>{relativeTime(task.created_at)}</div>
+            <div>{formatRelativeTime(task.created_at)}</div>
           </div>
           <div className="glass-info-card rounded-lg p-3">
             <div className="text-[var(--color-muted)] mb-1">完成</div>
-            <div>{task.completed_at ? relativeTime(task.completed_at) : '未完成'}</div>
+            <div>{task.completed_at ? formatRelativeTime(task.completed_at) : '未完成'}</div>
           </div>
         </section>
       </div>

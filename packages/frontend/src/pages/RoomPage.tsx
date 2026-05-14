@@ -7,7 +7,8 @@ import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
 import type { AgentRun, Message, MessageAttachmentMetadata, RoomAgent, Task, WorkflowRun } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
-import { cn, relativeTime } from '../lib/utils';
+import { useI18n } from '../lib/i18n';
+import { cn } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
@@ -530,6 +531,7 @@ function MessageBubble({
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
 }) {
+  const { formatRelativeTime } = useI18n();
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
   const metadata = parseMessageMetadata(message.metadata);
@@ -560,7 +562,7 @@ function MessageBubble({
             </span>
           )}
           <span className="text-[10.5px] font-mono text-[var(--color-muted)]">
-            {relativeTime(message.created_at)}
+            {formatRelativeTime(message.created_at)}
           </span>
         </div>
         <div

@@ -1,8 +1,8 @@
 import { AlertTriangle, CheckCircle2, Circle, Loader2, PauseCircle, RotateCcw, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useI18n } from '../lib/i18n';
 import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowStep } from '../lib/types';
-import { WORKFLOW_STAGE_LABEL, WORKFLOW_STATUS_LABEL } from '../lib/types';
-import { cn, relativeTime, truncate } from '../lib/utils';
+import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 
 export function WorkflowTimeline({
@@ -22,6 +22,7 @@ export function WorkflowTimeline({
   onCancel: () => void;
   busy: boolean;
 }) {
+  const { formatRelativeTime, workflowStageLabel, workflowStatusLabel } = useI18n();
   const decisionRequest = useMemo(() => (detail ? getLatestDecisionRequest(detail.artifacts) : null), [detail]);
 
   if (!detail) {
@@ -49,7 +50,7 @@ export function WorkflowTimeline({
               detail.steps.some((step) => step.stage === stage && step.status === 'completed') && 'is-done',
             )}
           >
-            {stage === 'code_review' ? 'review' : stage}
+            {workflowStageLabel(stage)}
           </span>
         ))}
       </div>
@@ -58,10 +59,10 @@ export function WorkflowTimeline({
         <div className="flex items-center gap-2">
           <WorkflowStatusIcon status={detail.run.status} />
           <div className="font-display text-[12.5px] font-semibold">
-            {WORKFLOW_STATUS_LABEL[detail.run.status]}
+            {workflowStatusLabel(detail.run.status)}
           </div>
           <span className="ml-auto text-[10.5px] font-mono text-[var(--color-muted)]">
-            {relativeTime(detail.run.updated_at)}
+            {formatRelativeTime(detail.run.updated_at)}
           </span>
         </div>
         {detail.run.error && (
@@ -235,12 +236,13 @@ function getLatestDecisionRequest(artifacts: TaskArtifact[]): DecisionRequest | 
 }
 
 function StepRow({ step, agentName }: { step: WorkflowStep; agentName?: string }) {
+  const { workflowStageLabel } = useI18n();
   return (
     <div className={cn('workflow-step-card', (step.status === 'failed' || step.status === 'interrupted') && 'is-failed')}>
       <div className="flex items-center gap-2">
         <WorkflowStatusIcon status={step.status} />
         <div className="min-w-0 flex-1 truncate font-display text-[12px] font-medium">
-          {WORKFLOW_STAGE_LABEL[step.stage]}
+          {workflowStageLabel(step.stage)}
         </div>
         <span className="max-w-[45%] shrink-0 truncate text-[10.5px] font-mono text-[var(--color-muted)]">
           {agentName ?? '系统'}

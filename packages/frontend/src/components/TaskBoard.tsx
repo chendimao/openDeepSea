@@ -1,7 +1,7 @@
 import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Eye, Loader2 } from 'lucide-react';
 import type { RoomAgent, Task, WorkflowRun } from '../lib/types';
-import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL, WORKFLOW_STATUS_LABEL } from '../lib/types';
-import { cn, relativeTime } from '../lib/utils';
+import { useI18n } from '../lib/i18n';
+import { cn } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 import { Button } from './ui/Button';
 
@@ -51,6 +51,7 @@ export function TaskBoard({
   onSelectTask: (task: Task) => void;
   onChangeStatus: (task: Task, status: Task['status']) => void;
 }) {
+  const { taskStatusLabel } = useI18n();
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const workflowByTaskId = createWorkflowByTaskId(workflows ?? []);
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
@@ -73,7 +74,7 @@ export function TaskBoard({
             <section key={status} className="task-column">
               <div className="task-column-header">
                 <Icon className="h-3.5 w-3.5 text-[var(--color-accent)]" strokeWidth={1.75} />
-                <h3 className="font-display text-[12px] font-medium">{TASK_STATUS_LABEL[status]}</h3>
+                <h3 className="font-display text-[12px] font-medium">{taskStatusLabel(status)}</h3>
                 <span className="ml-auto text-[10.5px] font-mono text-[var(--color-muted)]">
                   {columnTasks.length}
                 </span>
@@ -120,6 +121,7 @@ function TaskCard({
   onSelect: () => void;
   onChangeStatus: (status: Task['status']) => void;
 }) {
+  const { formatRelativeTime, taskPriorityLabel, taskStatusLabel, workflowStatusLabel } = useI18n();
   const nextStatus = NEXT_STATUS[task.status];
 
   return (
@@ -130,12 +132,12 @@ function TaskCard({
             {task.title}
           </h4>
           <span className={cn('text-[10px] font-mono flex-shrink-0', PRIORITY_TONE[task.priority])}>
-            {TASK_PRIORITY_LABEL[task.priority]}
+            {taskPriorityLabel(task.priority)}
           </span>
         </div>
         {workflow && (
           <div className="mt-2 inline-flex max-w-full rounded-[5px] bg-white/52 px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.64)]">
-            <span className="truncate">{WORKFLOW_STATUS_LABEL[workflow.status]}</span>
+            <span className="truncate">{workflowStatusLabel(workflow.status)}</span>
           </div>
         )}
         {task.description && (
@@ -155,7 +157,7 @@ function TaskCard({
             <span className="text-[11px] text-[var(--color-muted)]">未指派</span>
           )}
           <span className="ml-auto text-[10px] font-mono text-[var(--color-muted)]">
-            {relativeTime(task.updated_at)}
+            {formatRelativeTime(task.updated_at)}
           </span>
         </div>
       </button>
@@ -163,7 +165,7 @@ function TaskCard({
         {nextStatus && (
           <Button size="sm" variant="secondary" onClick={() => onChangeStatus(nextStatus)}>
             <ArrowRight className="h-3.5 w-3.5" />
-            {TASK_STATUS_LABEL[nextStatus]}
+            {taskStatusLabel(nextStatus)}
           </Button>
         )}
         {task.status !== 'failed' && (
