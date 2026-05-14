@@ -59,6 +59,8 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
       priority: 'normal',
       interaction_mode: 'ask_user',
       assigned_agent_id: null,
+      source_message_id: null,
+      created_from: null,
       created_at: 1,
       updated_at: 1,
       completed_at: null,

@@ -202,8 +202,8 @@ export interface Task {
   priority: TaskPriority;
   interaction_mode: TaskInteractionMode;
   assigned_agent_id: string | null;
-  source_message_id?: string | null;
-  created_from?: TaskCreatedFrom | null;
+  source_message_id: string | null;
+  created_from: TaskCreatedFrom | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;
