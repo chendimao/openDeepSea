@@ -39,6 +39,12 @@ async function request(path: string, init: RequestInit = {}) {
   }
 }
 
+async function listMemories(projectId: string, query = ''): Promise<Array<{ id: string }>> {
+  const res = await request(`/api/projects/${projectId}/memories${query}`);
+  assert.equal(res.status, 200);
+  return await res.json() as Array<{ id: string }>;
+}
+
 test('memory routes create, list, update, and delete project memory', async () => {
   const project = projectRepo.create({ name: 'API Memory', path: projectDir });
   const room = roomRepo.create({ project_id: project.id, name: 'API Room' });
@@ -101,6 +107,7 @@ test('memory routes reject scope relations before creating memory', async () => 
     }),
   });
   assert.equal(invalidProject.status, 400);
+  assert.deepEqual(await listMemories(project.id), []);
 
   const invalidRoom = await request(`/api/projects/${project.id}/memories`, {
     method: 'POST',
@@ -114,6 +121,7 @@ test('memory routes reject scope relations before creating memory', async () => 
     }),
   });
   assert.equal(invalidRoom.status, 400);
+  assert.deepEqual(await listMemories(project.id), []);
 
   const invalidAgent = await request(`/api/projects/${project.id}/memories`, {
     method: 'POST',
@@ -126,6 +134,7 @@ test('memory routes reject scope relations before creating memory', async () => 
     }),
   });
   assert.equal(invalidAgent.status, 400);
+  assert.deepEqual(await listMemories(project.id), []);
 
   const invalidTask = await request(`/api/projects/${project.id}/memories`, {
     method: 'POST',
@@ -140,6 +149,7 @@ test('memory routes reject scope relations before creating memory', async () => 
     }),
   });
   assert.equal(invalidTask.status, 400);
+  assert.deepEqual(await listMemories(project.id), []);
 });
 
 test('memory routes reject agent and task room mismatches', async () => {
@@ -161,6 +171,7 @@ test('memory routes reject agent and task room mismatches', async () => {
     }),
   });
   assert.equal(agentMismatch.status, 400);
+  assert.deepEqual(await listMemories(project.id), []);
 
   const taskMismatch = await request(`/api/projects/${project.id}/memories`, {
     method: 'POST',
@@ -174,6 +185,7 @@ test('memory routes reject agent and task room mismatches', async () => {
     }),
   });
   assert.equal(taskMismatch.status, 400);
+  assert.deepEqual(await listMemories(project.id), []);
 });
 
 test('memory routes derive room ownership for agent and task scoped memories', async () => {
@@ -209,4 +221,49 @@ test('memory routes derive room ownership for agent and task scoped memories', a
   assert.equal(taskRes.status, 201);
   const taskMemory = await taskRes.json() as { room_id: string };
   assert.equal(taskMemory.room_id, room.id);
+});
+
+test('memory routes return stable errors for invalid filters and source conflicts', async () => {
+  const firstProject = projectRepo.create({ name: 'API Memory Stable Error', path: createProjectPath('stable-error') });
+  const secondProject = projectRepo.create({
+    name: 'API Memory Other Stable Error',
+    path: createProjectPath('stable-error-other'),
+  });
+  const firstRoom = roomRepo.create({ project_id: firstProject.id, name: 'Stable Error Room' });
+  const secondRoom = roomRepo.create({ project_id: secondProject.id, name: 'Other Stable Error Room' });
+  const task = taskRepo.create({ project_id: firstProject.id, room_id: firstRoom.id, title: 'Stable error task' });
+
+  const invalidFilter = await request(`/api/projects/${firstProject.id}/memories?roomId=${secondRoom.id}`);
+  assert.equal(invalidFilter.status, 400);
+  assert.deepEqual(await invalidFilter.json(), { error: 'invalid memory filters' });
+
+  const firstCreate = await request(`/api/projects/${firstProject.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'task',
+      memory_type: 'task_summary',
+      title: 'Stable conflict',
+      content: 'First memory with source id.',
+      task_id: task.id,
+      source_type: 'workflow',
+      source_id: 'workflow-duplicate',
+    }),
+  });
+  assert.equal(firstCreate.status, 201);
+
+  const conflict = await request(`/api/projects/${firstProject.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'task',
+      memory_type: 'task_summary',
+      title: 'Stable conflict again',
+      content: 'Second memory with duplicate source id.',
+      task_id: task.id,
+      source_type: 'workflow',
+      source_id: 'workflow-duplicate',
+    }),
+  });
+  assert.equal(conflict.status, 409);
+  assert.deepEqual(await conflict.json(), { error: 'memory source already exists' });
+  assert.equal((await listMemories(firstProject.id, `?taskId=${task.id}`)).length, 1);
 });

@@ -137,6 +137,36 @@ function validateMemoryScope(input: {
   return { ok: true, room_id: task.room_id };
 }
 
+function isMemoryConflictError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return message.includes('unique constraint') || message.includes('idx_memory_task_source');
+}
+
+function isMemoryValidationError(error: Error): boolean {
+  const message = error.message;
+  return (
+    message === 'project_id is invalid' ||
+    message === 'room_id does not belong to project_id' ||
+    message === 'room_agent_id does not belong to project_id' ||
+    message === 'room_agent_id does not belong to room_id' ||
+    message === 'task_id does not belong to project_id' ||
+    message === 'task_id does not belong to room_id' ||
+    message === 'project scope cannot include room_id, room_agent_id, or task_id' ||
+    message === 'room scope requires room_id' ||
+    message === 'room scope cannot include room_agent_id or task_id' ||
+    message === 'agent scope requires room_id' ||
+    message === 'agent scope requires room_agent_id' ||
+    message === 'agent scope cannot include task_id' ||
+    message === 'task scope requires room_id' ||
+    message === 'task scope requires task_id' ||
+    message === 'task scope cannot include room_agent_id'
+  );
+}
+
+function logUnexpectedMemoryError(context: string, error: unknown): void {
+  console.warn(`[memory-api] ${context}`, error);
+}
+
 // ---------- Settings ----------
 router.get('/settings/system', (_req, res) => {
   res.json(settingsRepo.getSystem());
@@ -227,7 +257,9 @@ router.get('/projects/:projectId/memories', (req, res) => {
       taskId: typeof req.query.taskId === 'string' ? req.query.taskId : undefined,
     }));
   } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
+    const error = err as Error;
+    if (!isMemoryValidationError(error)) logUnexpectedMemoryError('list failed', error);
+    res.status(400).json({ error: 'invalid memory filters' });
   }
 });
 
@@ -258,7 +290,15 @@ router.post('/projects/:projectId/memories', (req, res) => {
     });
     res.status(201).json(memory);
   } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
+    const error = err as Error;
+    if (isMemoryConflictError(error)) {
+      return res.status(409).json({ error: 'memory source already exists' });
+    }
+    if (isMemoryValidationError(error)) {
+      return res.status(400).json({ error: 'invalid memory scope' });
+    }
+    logUnexpectedMemoryError('create failed', error);
+    res.status(500).json({ error: 'failed to create memory' });
   }
 });
 
