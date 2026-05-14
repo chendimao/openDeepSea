@@ -325,7 +325,15 @@ function markStepFailed(
 
 function failStageWithoutAgent(run: WorkflowRun, task: Task, stage: WorkflowStage, error: string): void {
   const updatedRun = workflowRepo.updateRun(run.id, { status: 'blocked', current_stage: stage, error });
-  if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
+  if (updatedRun) {
+    broadcastWorkflow('workflow:updated', updatedRun);
+    safelyRecordWorkflowEvent({
+      run: updatedRun,
+      task,
+      eventType: 'workflow_blocked',
+      content: `任务「${task.title}」工作流已阻塞：${error}`,
+    });
+  }
   const step = workflowRepo.createStep({
     workflow_run_id: run.id,
     task_id: task.id,
@@ -726,14 +734,6 @@ function assignFromPlan(run: WorkflowRun): void {
       created_from: 'workflow_assignment',
     });
     broadcastTask('task:created', child);
-    safelyRecordWorkflowEvent({
-      run,
-      task: child,
-      eventType: 'workflow_assignment_created',
-      workflowStepId: step.id,
-      origin: 'workflow_assignment',
-      content: `已从工作流计划创建子任务：${child.title}`,
-    });
   }
 
   const artifact = workflowRepo.createArtifact({
@@ -746,6 +746,14 @@ function assignFromPlan(run: WorkflowRun): void {
     metadata: { taskCount: plan.tasks.length },
   });
   broadcastArtifact(run.room_id, artifact);
+  safelyRecordWorkflowEvent({
+    run,
+    task,
+    eventType: 'workflow_assignment_created',
+    workflowStepId: step.id,
+    origin: 'workflow_assignment',
+    content: `已根据计划为任务「${task.title}」创建 ${plan.tasks.length} 个子任务。`,
+  });
   continueImplementationOrReview(run);
 }
 
