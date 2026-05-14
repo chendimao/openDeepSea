@@ -1,5 +1,7 @@
 import type { MessageAttachmentMetadata, MessageMetadata } from './types';
 
+const allowedAttachmentUrlPrefix = '/uploads/messages/';
+
 function createEmptyMessageMetadata(): MessageMetadata {
   return { attachments: [] };
 }
@@ -33,6 +35,7 @@ function sanitizeMessageAttachmentMetadata(value: unknown): MessageAttachmentMet
     !Number.isFinite(value.size) ||
     value.size < 0 ||
     typeof value.url !== 'string' ||
+    !value.url.startsWith(allowedAttachmentUrlPrefix) ||
     typeof value.isImage !== 'boolean'
   ) {
     return null;
