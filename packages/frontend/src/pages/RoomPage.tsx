@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Hash, Send, Settings2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, FileText, MessageSquare, Plus, Send, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -57,6 +57,7 @@ export function RoomPage() {
     enabled: !!roomId,
   });
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
+  const inspectorTask = selectedTask ?? rootTasks[0] ?? null;
   const taskWorkflowKey = rootTasks.map((task) => task.id).join(',');
   const { data: taskWorkflows = [] } = useQuery({
     queryKey: ['room-workflows', roomId, taskWorkflowKey],
@@ -166,24 +167,43 @@ export function RoomPage() {
   }, [roomId, queryClient]);
 
   return (
-    <div className="h-full flex flex-col relative">
-      <header className="px-3 sm:px-5 h-14 border-b border-[var(--color-border)] flex items-center gap-3 flex-shrink-0">
-        <Link
-          to={`/projects/${projectId}`}
-          className="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] ease-ocean"
-          aria-label="返回项目"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Link>
-        <Hash className="h-4 w-4 text-[var(--color-accent)]" strokeWidth={2} />
-        <div className="min-w-0">
-          <div className="font-display text-[14px] font-semibold truncate">
-            {room?.name ?? '...'}
-          </div>
-          <div className="hidden sm:block text-[11px] font-mono text-[var(--color-fg-muted)] truncate">
-            {project?.name} · {project?.path}
+    <div className="workspace-root">
+      <header className="workspace-toolbar">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link
+            to={`/projects/${projectId}`}
+            className="toolbar-back"
+            aria-label="返回项目"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Link>
+          <div className="min-w-0">
+            <div className="font-display text-[15px] font-semibold leading-tight">
+              {room?.name ?? '开发闭环看板'}
+            </div>
+            <div className="mt-1 hidden truncate font-mono text-[11px] text-[var(--color-fg-muted)] sm:block">
+              {project?.name ?? '开发闭环看板'} · {project?.path ?? '/Users/chendimao/www/openclaw-room'}
+            </div>
           </div>
         </div>
+
+        <div className="toolbar-tabs" aria-label="工作区视图">
+          <button className="toolbar-tab is-active" type="button">
+            聊天 <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
+          </button>
+          <button className="toolbar-tab is-active" type="button">
+            任务 <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
+          </button>
+          <button className="toolbar-tab" type="button">
+            工作流 <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
+          </button>
+          <button className="toolbar-tab" type="button">
+            文件 <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
+          </button>
+          <button className="toolbar-tab" type="button">Agent</button>
+          <button className="toolbar-tab" type="button">设置</button>
+        </div>
+
         <div className="ml-auto flex min-w-0 items-center gap-2">
           <AgentStrip
             agents={agents}
@@ -193,44 +213,62 @@ export function RoomPage() {
             }}
           />
           <span className="hidden sm:inline-flex">
-            <CreateTaskDialog roomId={roomId} agents={agents} />
+            <CreateTaskDialog roomId={roomId} agents={agents}>
+              <button type="button" className="glass-button glass-button-primary">
+                <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
+                新建任务
+              </button>
+            </CreateTaskDialog>
           </span>
           {project && room && (
             <RoomSettingsDialog project={project} room={room} agents={agents}>
               <button
                 type="button"
                 aria-label="群聊设置"
-                className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md surface-2 px-2.5 text-[12px] font-medium text-[var(--color-fg)] hover:border-[var(--color-border-strong)] ease-ocean transition-all"
+                className="glass-button"
               >
                 <Settings2 className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">设置</span>
               </button>
             </RoomSettingsDialog>
           )}
-          <AddAgentDialog roomId={roomId} />
+          <AddAgentDialog roomId={roomId}>
+            <button type="button" className="glass-button">
+              <Users className="h-3.5 w-3.5" strokeWidth={1.8} />
+              邀请 Agent
+            </button>
+          </AddAgentDialog>
         </div>
       </header>
 
-      <div className="flex-1 min-h-0 flex max-lg:flex-col">
-        <ChatColumn
-          messages={messages}
-          agents={agents}
-          agentRuns={agentRuns}
-          roomId={roomId}
-          routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
-          fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
-          onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
-          retryingWorkflowId={retryWorkflow.variables}
-        />
+      <div className="workspace-grid">
+        <section className="workbench-panel chat-workspace" aria-label="AI Agent 协作流">
+          <ChatColumn
+            messages={messages}
+            agents={agents}
+            agentRuns={agentRuns}
+            roomId={roomId}
+            routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
+            fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
+            onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
+            retryingWorkflowId={retryWorkflow.variables}
+          />
+        </section>
         <TaskBoard
           tasks={tasks}
           agents={agents}
           workflows={taskWorkflows}
+          selectedTaskId={inspectorTask?.id ?? null}
           onSelectTask={(task) => {
             setConfigAgent(null);
             setSelectedTask(task);
           }}
           onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
+        />
+        <TaskDetailPanel
+          task={inspectorTask}
+          agents={agents}
+          onClose={() => setSelectedTask(null)}
         />
       </div>
 
@@ -240,13 +278,6 @@ export function RoomPage() {
           projectId={projectId}
           roomId={roomId}
           onClose={() => setConfigAgent(null)}
-        />
-      )}
-      {selectedTask && (
-        <TaskDetailPanel
-          task={selectedTask}
-          agents={agents}
-          onClose={() => setSelectedTask(null)}
         />
       )}
     </div>
@@ -291,14 +322,14 @@ function AgentStrip({
   if (agents.length === 0)
     return <span className="text-[12px] text-[var(--color-fg-muted)]">暂无 agent</span>;
   return (
-    <div className="flex items-center -space-x-2 mr-2">
+    <div className="mr-2 flex items-center -space-x-2">
       {agents.slice(0, 6).map((a) => (
         <button
           key={a.id}
           type="button"
           onClick={() => onConfig(a)}
           aria-label={`配置 ${a.agent_name}`}
-          className="ring-2 ring-[var(--color-avatar-ring)] rounded-full hover:scale-105 ease-ocean transition-transform"
+          className="rounded-full ring-2 ring-white/80 transition-transform ease-ocean hover:scale-105"
           title={`${a.agent_name}${a.acp_enabled ? ` · ACP: ${a.acp_backend}` : ''}`}
         >
           <AgentAvatar name={a.agent_name} size={26} active={!!a.acp_enabled} />
@@ -392,11 +423,31 @@ function ChatColumn({
   };
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 space-y-4">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="chat-stream-header">
+        <div className="segmented-control">
+          <button className="is-active" type="button">
+            <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.7} />
+            Agent Stream
+          </button>
+          <button type="button">
+            <Users className="h-3.5 w-3.5" strokeWidth={1.7} />
+            Runs
+          </button>
+          <button type="button">
+            <FileText className="h-3.5 w-3.5" strokeWidth={1.7} />
+            stderr
+          </button>
+        </div>
+        <button type="button" className="icon-glass-button" aria-label="新建任务">
+          <Plus className="h-4 w-4" strokeWidth={1.8} />
+        </button>
+      </div>
+
+      <div ref={scrollRef} className="chat-scroll flex-1 space-y-4 overflow-y-auto px-5 py-5">
         {messages.length === 0 ? (
           <WorkspaceEmptyState
-            icon={<Hash className="h-9 w-9" strokeWidth={1.75} />}
+            icon={<MessageSquare className="h-9 w-9" strokeWidth={1.75} />}
             title="还没有消息"
             description={
               agents.length === 0
@@ -493,7 +544,7 @@ function MessageBubble({
       {!isUser && (
         <AgentAvatar name={message.sender_name ?? message.sender_id} size={32} active={!!agentMeta?.acp_enabled} />
       )}
-      <div className={cn('max-w-[680px] min-w-0 flex flex-col', isUser ? 'items-end' : 'w-full items-start')}>
+      <div className={cn('min-w-0 max-w-[760px] flex flex-col', isUser ? 'items-end' : 'w-full items-start')}>
         <div className="flex items-center gap-2 mb-1">
           <span className="font-display text-[12.5px] font-semibold">
             {isUser ? '你' : message.sender_name ?? message.sender_id}
@@ -509,10 +560,10 @@ function MessageBubble({
         </div>
         <div
           className={cn(
-            'rounded-lg text-[13.5px] leading-relaxed',
+            'message-bubble text-[13.5px] leading-relaxed',
             isUser
-              ? 'bg-[var(--color-primary)] px-3.5 py-2.5 text-[var(--color-primary-fg)]'
-              : 'surface-2 w-full',
+              ? 'user-message px-3.5 py-2.5 text-[var(--color-primary-fg)]'
+              : 'w-full',
             message.message_type === 'agent_stream' && !isUser && 'font-mono text-[12.5px]',
           )}
         >
@@ -521,7 +572,7 @@ function MessageBubble({
               <div className="px-3.5 pt-3">
                 <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
               </div>
-              <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-2.5 py-2.5">
+              <div className="run-box-wrap px-2.5 py-2.5">
                 <AgentRunStatusCard
                   roomId={roomId}
                   run={run}
@@ -597,7 +648,7 @@ function Composer({
   };
 
   return (
-    <div className="border-t border-[var(--color-border)] px-3 sm:px-4 py-3 flex-shrink-0">
+    <div className="composer-shell flex-shrink-0 px-4 py-3">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -609,7 +660,7 @@ function Composer({
         {mention && (
           <AgentMentionMenu agents={agents} query={mention.query} onSelect={selectAgent} />
         )}
-        <div className="flex items-end gap-2">
+        <div className="composer-box flex items-end gap-2">
           <textarea
             ref={textareaRef}
             value={value}
@@ -633,13 +684,13 @@ function Composer({
                 : '发送消息、@agent 定向，或 /task 创建任务'
             }
             rows={1}
-            className="min-h-[44px] max-h-[200px] min-w-0 flex-1 resize-none surface-1 rounded-lg px-3.5 py-2.5 text-[13.5px] outline-none focus:border-[var(--color-primary)] focus:glow-primary ease-ocean transition-all"
+            className="min-h-[44px] max-h-[200px] min-w-0 flex-1 resize-none bg-transparent px-3.5 py-2.5 text-[13.5px] outline-none placeholder:text-[var(--color-muted)]"
             disabled={agentCount === 0}
           />
           <Button
             type="submit"
             disabled={!value.trim() || sending || agentCount === 0}
-            className="h-[44px] w-[84px] flex-shrink-0 px-0"
+            className="h-[40px] w-[78px] flex-shrink-0 px-0"
           >
             <Send className="h-3.5 w-3.5" /> 发送
           </Button>
