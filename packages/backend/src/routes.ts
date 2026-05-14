@@ -13,6 +13,7 @@ import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskRepo } from './repos/tasks.js';
+import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
 import { buildAttachmentMetadata, cleanupUploadedFiles, messageUpload } from './uploads.js';
@@ -676,6 +677,23 @@ function parseMultipartMentions(rawMentions?: string): string[] | undefined {
   return parsed;
 }
 
+const taskCreateSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional(),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+  interaction_mode: z.enum(['ask_user', 'auto_recommended']).optional(),
+  assigned_agent_id: z.string().optional(),
+  parent_task_id: z.string().optional(),
+});
+
+const conversationTaskCreateSchema = taskCreateSchema.extend({
+  origin: z.enum(['manual', 'slash_command', 'chat_plan']).default('manual'),
+  sender_id: z.string().default('user'),
+  sender_name: z.string().optional(),
+  user_message: z.string().optional(),
+  source_message_id: z.string().nullable().optional(),
+});
+
 // ---------- Workflows ----------
 router.post('/tasks/:id/workflows', async (req, res) => {
   try {
@@ -756,18 +774,39 @@ router.get('/rooms/:roomId/tasks', (req, res) => {
   res.json(taskRepo.listByRoom(req.params.roomId));
 });
 
+router.post('/rooms/:roomId/tasks/conversation', (req, res) => {
+  const parsed = conversationTaskCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const result = createTaskWithConversation({
+      roomId: req.params.roomId,
+      actor: {
+        sender_id: parsed.data.sender_id,
+        sender_name: parsed.data.sender_name,
+      },
+      origin: parsed.data.origin,
+      sourceMessageId: parsed.data.source_message_id ?? null,
+      userFacingContent: parsed.data.user_message,
+      taskInput: {
+        title: parsed.data.title,
+        description: parsed.data.description,
+        priority: parsed.data.priority,
+        interaction_mode: parsed.data.interaction_mode,
+        assigned_agent_id: parsed.data.assigned_agent_id,
+        parent_task_id: parsed.data.parent_task_id,
+      },
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    const message = (err as Error).message;
+    res.status(message === 'room not found' ? 404 : 400).json({ error: message });
+  }
+});
+
 router.post('/rooms/:roomId/tasks', (req, res) => {
   const room = roomRepo.get(req.params.roomId);
   if (!room) return res.status(404).json({ error: 'room not found' });
-  const schema = z.object({
-    title: z.string().min(1),
-    description: z.string().optional(),
-    priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
-    interaction_mode: z.enum(['ask_user', 'auto_recommended']).optional(),
-    assigned_agent_id: z.string().optional(),
-    parent_task_id: z.string().optional(),
-  });
-  const parsed = schema.safeParse(req.body);
+  const parsed = taskCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const task = taskRepo.create({
     room_id: req.params.roomId,
@@ -775,6 +814,7 @@ router.post('/rooms/:roomId/tasks', (req, res) => {
     ...parsed.data,
     interaction_mode:
       parsed.data.interaction_mode ?? settingsRepo.resolveForRoom(req.params.roomId)?.effective.interaction_mode,
+    created_from: parsed.data.parent_task_id ? 'workflow_assignment' : null,
   });
   wsHub.broadcast(req.params.roomId, { type: 'task:created', task });
   res.status(201).json(task);
@@ -793,6 +833,7 @@ router.patch('/tasks/:id', (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   let task = taskRepo.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'not found' });
+  const before = task;
   if (parsed.data.status) task = taskRepo.updateStatus(req.params.id, parsed.data.status);
   const fieldPatch: Record<string, unknown> = {};
   if (parsed.data.title !== undefined) fieldPatch['title'] = parsed.data.title;
@@ -805,6 +846,15 @@ router.patch('/tasks/:id', (req, res) => {
     task = taskRepo.update(req.params.id, fieldPatch as never);
   }
   if (task) wsHub.broadcast(task.room_id, { type: 'task:updated', task });
+  if (task && parsed.data.status && before.status !== task.status) {
+    recordTaskEvent({
+      roomId: task.room_id,
+      taskId: task.id,
+      taskTitle: task.title,
+      eventType: 'task_status_changed',
+      content: `任务「${task.title}」状态变更为 ${task.status}`,
+    });
+  }
   res.json(task);
 });
 
