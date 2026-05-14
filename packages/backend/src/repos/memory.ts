@@ -3,38 +3,95 @@ import { db, now } from '../db.js';
 import type { MemoryEntry, MemoryScope, MemorySourceType, MemoryType } from '../types.js';
 
 export interface MemoryListFilters {
-  projectId?: string;
+  projectId: string;
   roomId?: string;
   roomAgentId?: string;
   taskId?: string;
   limit?: number;
 }
 
+function requireProject(id: string): void {
+  const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(id) as { id: string } | undefined;
+  if (!project) {
+    throw new Error('project_id is invalid');
+  }
+}
+
+function validateOwnership(input: {
+  project_id: string;
+  room_id?: string | null;
+  room_agent_id?: string | null;
+  task_id?: string | null;
+}): void {
+  requireProject(input.project_id);
+
+  if (input.room_id) {
+    const room = db
+      .prepare('SELECT id, project_id FROM rooms WHERE id = ?')
+      .get(input.room_id) as { id: string; project_id: string } | undefined;
+    if (!room || room.project_id !== input.project_id) {
+      throw new Error('room_id does not belong to project_id');
+    }
+  }
+
+  if (input.room_agent_id) {
+    const agent = db
+      .prepare(
+        `SELECT room_agents.id, room_agents.room_id, rooms.project_id
+         FROM room_agents
+         JOIN rooms ON rooms.id = room_agents.room_id
+         WHERE room_agents.id = ?`,
+      )
+      .get(input.room_agent_id) as { id: string; room_id: string; project_id: string } | undefined;
+    if (!agent || agent.project_id !== input.project_id) {
+      throw new Error('room_agent_id does not belong to project_id');
+    }
+    if (input.room_id && agent.room_id !== input.room_id) {
+      throw new Error('room_agent_id does not belong to room_id');
+    }
+  }
+
+  if (input.task_id) {
+    const task = db
+      .prepare('SELECT id, project_id, room_id FROM tasks WHERE id = ?')
+      .get(input.task_id) as { id: string; project_id: string; room_id: string } | undefined;
+    if (!task || task.project_id !== input.project_id) {
+      throw new Error('task_id does not belong to project_id');
+    }
+    if (input.room_id && task.room_id !== input.room_id) {
+      throw new Error('task_id does not belong to room_id');
+    }
+  }
+}
+
 export const memoryRepo = {
   list(filters: MemoryListFilters): MemoryEntry[] {
-    const clauses: string[] = [];
-    const params: Array<string | number> = [];
-    if (filters.projectId) {
-      clauses.push('project_id = ?');
-      params.push(filters.projectId);
-    }
+    validateOwnership({
+      project_id: filters.projectId,
+      room_id: filters.roomId,
+      room_agent_id: filters.roomAgentId,
+      task_id: filters.taskId,
+    });
+
+    const scopeClauses: string[] = ["scope = 'project'"];
+    const params: Array<string | number> = [filters.projectId];
     if (filters.roomId) {
-      clauses.push('(room_id = ? OR scope = ?)');
-      params.push(filters.roomId, 'project');
+      scopeClauses.push("(scope = 'room' AND room_id = ?)");
+      params.push(filters.roomId);
     }
     if (filters.roomAgentId) {
-      clauses.push('(room_agent_id = ? OR room_agent_id IS NULL)');
+      scopeClauses.push("(scope = 'agent' AND room_agent_id = ?)");
       params.push(filters.roomAgentId);
     }
     if (filters.taskId) {
-      clauses.push('(task_id = ? OR task_id IS NULL)');
+      scopeClauses.push("(scope = 'task' AND task_id = ?)");
       params.push(filters.taskId);
     }
-    const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     const limit = Math.max(1, Math.min(filters.limit ?? 100, 200));
     return db
       .prepare(
-        `SELECT * FROM memory_entries ${where}
+        `SELECT * FROM memory_entries
+         WHERE project_id = ? AND (${scopeClauses.join(' OR ')})
          ORDER BY pinned DESC, updated_at DESC
          LIMIT ?`,
       )
@@ -48,6 +105,13 @@ export const memoryRepo = {
     taskId?: string | null;
     limit?: number;
   }): MemoryEntry[] {
+    validateOwnership({
+      project_id: args.projectId,
+      room_id: args.roomId,
+      room_agent_id: args.roomAgentId,
+      task_id: args.taskId,
+    });
+
     const limit = Math.max(1, Math.min(args.limit ?? 12, 30));
     return db
       .prepare(
@@ -56,8 +120,8 @@ export const memoryRepo = {
            AND (
              scope = 'project'
              OR (scope = 'room' AND room_id = ?)
-             OR (? IS NOT NULL AND room_agent_id = ?)
-             OR (? IS NOT NULL AND task_id = ?)
+             OR (? IS NOT NULL AND scope = 'agent' AND room_agent_id = ?)
+             OR (? IS NOT NULL AND scope = 'task' AND task_id = ?)
            )
          ORDER BY pinned DESC, updated_at DESC
          LIMIT ?`,
@@ -90,6 +154,8 @@ export const memoryRepo = {
     source_id?: string | null;
     pinned?: boolean;
   }): MemoryEntry {
+    validateOwnership(input);
+
     const id = nanoid(16);
     const ts = now();
     db.prepare(
@@ -145,12 +211,14 @@ export const memoryRepo = {
     content: string;
     source_id: string;
   }): MemoryEntry {
+    validateOwnership(input);
+
     const existing = db
       .prepare(
         `SELECT * FROM memory_entries
-         WHERE task_id = ? AND source_type = 'workflow' AND source_id = ?`,
+         WHERE project_id = ? AND room_id = ? AND task_id = ? AND source_type = 'workflow' AND source_id = ?`,
       )
-      .get(input.task_id, input.source_id) as MemoryEntry | undefined;
+      .get(input.project_id, input.room_id, input.task_id, input.source_id) as MemoryEntry | undefined;
     if (existing) {
       return this.update(existing.id, {
         title: input.title,

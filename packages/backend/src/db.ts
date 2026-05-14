@@ -169,19 +169,21 @@ CREATE TABLE IF NOT EXISTS memory_entries (
   room_id TEXT,
   room_agent_id TEXT,
   task_id TEXT,
-  scope TEXT NOT NULL,
-  memory_type TEXT NOT NULL,
+  scope TEXT NOT NULL CHECK (scope IN ('project', 'room', 'agent', 'task')),
+  memory_type TEXT NOT NULL CHECK (
+    memory_type IN ('decision', 'fact', 'preference', 'lesson', 'task_summary', 'artifact_summary')
+  ),
   title TEXT NOT NULL,
   content TEXT NOT NULL,
-  source_type TEXT NOT NULL DEFAULT 'manual',
+  source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN ('manual', 'message', 'workflow', 'task')),
   source_id TEXT,
-  pinned INTEGER NOT NULL DEFAULT 0,
+  pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
-  FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE SET NULL,
-  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE SET NULL
+  FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_memory_project ON memory_entries(project_id, pinned, updated_at);
 CREATE INDEX IF NOT EXISTS idx_memory_room ON memory_entries(room_id, pinned, updated_at);

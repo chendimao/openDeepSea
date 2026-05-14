@@ -185,6 +185,138 @@ test('memoryRepo lists, gets, updates, and deletes memories', () => {
   assert.equal(memoryRepo.delete(roomMemory.id), false);
 });
 
+test('memoryRepo rejects cross-project room, agent, and task ownership', () => {
+  const first = createMemoryFixture('Ownership Memory A');
+  const second = createMemoryFixture('Ownership Memory B');
+
+  assert.throws(
+    () =>
+      memoryRepo.create({
+        project_id: first.project.id,
+        room_id: second.room.id,
+        scope: 'room',
+        memory_type: 'fact',
+        title: 'Invalid room',
+        content: 'The room belongs to another project.',
+      }),
+    /room_id does not belong to project_id/,
+  );
+
+  assert.throws(
+    () =>
+      memoryRepo.create({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        room_agent_id: second.agent.id,
+        scope: 'agent',
+        memory_type: 'preference',
+        title: 'Invalid agent',
+        content: 'The agent belongs to another project.',
+      }),
+    /room_agent_id does not belong to project_id/,
+  );
+
+  assert.throws(
+    () =>
+      memoryRepo.create({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        task_id: second.task.id,
+        scope: 'task',
+        memory_type: 'task_summary',
+        title: 'Invalid task',
+        content: 'The task belongs to another project.',
+      }),
+    /task_id does not belong to project_id/,
+  );
+
+  assert.throws(
+    () =>
+      memoryRepo.upsertTaskSummary({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        task_id: second.task.id,
+        title: 'Invalid summary',
+        content: 'The task summary belongs to another project.',
+        source_id: 'workflow-cross-project',
+      }),
+    /task_id does not belong to project_id/,
+  );
+});
+
+test('memoryRepo list requires project ownership for room, agent, and task filters', () => {
+  const first = createMemoryFixture('List Boundary Memory A');
+  const second = createMemoryFixture('List Boundary Memory B');
+
+  const firstProjectMemory = memoryRepo.create({
+    project_id: first.project.id,
+    scope: 'project',
+    memory_type: 'decision',
+    title: 'First project memory',
+    content: 'This must stay inside the first project.',
+  });
+  memoryRepo.create({
+    project_id: second.project.id,
+    scope: 'project',
+    memory_type: 'decision',
+    title: 'Second project memory',
+    content: 'This must stay inside the second project.',
+  });
+
+  assert.deepEqual(memoryRepo.list({ projectId: first.project.id }).map((entry) => entry.id), [firstProjectMemory.id]);
+  assert.throws(
+    () => memoryRepo.list({ projectId: first.project.id, roomId: second.room.id }),
+    /room_id does not belong to project_id/,
+  );
+  assert.throws(
+    () => memoryRepo.list({ projectId: first.project.id, roomAgentId: second.agent.id }),
+    /room_agent_id does not belong to project_id/,
+  );
+  assert.throws(
+    () => memoryRepo.list({ projectId: first.project.id, taskId: second.task.id }),
+    /task_id does not belong to project_id/,
+  );
+});
+
+test('memoryRepo does not widen agent or task memories after owner deletion', () => {
+  const { project, room, agent, task } = createMemoryFixture('Cascade Boundary Memory');
+  const roomMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    scope: 'room',
+    memory_type: 'fact',
+    title: 'Room memory remains',
+    content: 'Room scoped memory should remain visible.',
+  });
+  const agentMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    room_agent_id: agent.id,
+    scope: 'agent',
+    memory_type: 'preference',
+    title: 'Agent memory cascades',
+    content: 'Agent scoped memory should be deleted with the agent.',
+  });
+  const taskMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    task_id: task.id,
+    scope: 'task',
+    memory_type: 'task_summary',
+    title: 'Task memory cascades',
+    content: 'Task scoped memory should be deleted with the task.',
+  });
+
+  assert.equal(roomAgentRepo.remove(agent.id), true);
+  assert.equal(taskRepo.delete(task.id), true);
+
+  assert.equal(memoryRepo.get(agentMemory.id), undefined);
+  assert.equal(memoryRepo.get(taskMemory.id), undefined);
+  assert.deepEqual(memoryRepo.list({ projectId: project.id, roomId: room.id }).map((entry) => entry.id), [
+    roomMemory.id,
+  ]);
+});
+
 test('memoryRepo upserts one automatic task summary per task and source', () => {
   const { project, room, task } = createMemoryFixture('Auto Summary Memory');
 
