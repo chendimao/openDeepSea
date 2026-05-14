@@ -384,7 +384,7 @@ function ChatColumn({
       createTaskFromCommand.mutate(taskMatch[1].trim());
       return;
     }
-    const mentionNames = Array.from(content.matchAll(/@([\w.-]+)/g)).map((m) => m[1]);
+    const mentionNames = Array.from(content.matchAll(/@([\p{L}\p{N}_.-]+)/gu)).map((m) => m[1]);
     const mentions = agents
       .filter((agent) => mentionNames.includes(agent.agent_name) || mentionNames.includes(agent.agent_id))
       .map((agent) => agent.id);
@@ -573,7 +573,7 @@ function Composer({
 
   const updateMention = (nextValue: string, selectionStart: number | null) => {
     const cursor = selectionStart ?? nextValue.length;
-    const match = nextValue.slice(0, cursor).match(/@([\w.-]*)$/);
+    const match = nextValue.slice(0, cursor).match(/@([\p{L}\p{N}_.-]*)$/u);
     setMention(match ? { start: cursor - match[0].length, query: match[1] } : null);
   };
 

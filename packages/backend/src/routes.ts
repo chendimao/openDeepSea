@@ -5,6 +5,7 @@ import { dispatchUserMessage } from './dispatcher.js';
 import { listOpenClawAgentsFromCli } from './openclaw/agents.js';
 import { gatewayClient } from './openclaw/gateway.js';
 import { getOpenClawGatewayStatus } from './openclaw/status.js';
+import { resolveMentionedAgentRoomIds } from './mentions.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
@@ -360,11 +361,17 @@ router.post('/rooms/:roomId/messages', async (req, res) => {
     message_type: 'text',
   });
   wsHub.broadcast(req.params.roomId, { type: 'message:new', roomId: req.params.roomId, message: userMsg });
+  const agents = roomAgentRepo.listByRoom(req.params.roomId);
+  const mentionedAgentRoomIds = resolveMentionedAgentRoomIds({
+    content: parsed.data.content,
+    agents,
+    explicitRoomAgentIds: parsed.data.mentions,
+  });
   // Fire-and-forget dispatch
   void dispatchUserMessage({
     roomId: req.params.roomId,
     userMessage: userMsg,
-    mentionedAgentRoomIds: parsed.data.mentions,
+    mentionedAgentRoomIds,
   });
   res.status(201).json(userMsg);
 });

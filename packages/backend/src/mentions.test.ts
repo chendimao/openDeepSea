@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { extractMentionTokens, resolveMentionedAgentRoomIds } from './mentions.js';
+import type { RoomAgent } from './types.js';
+
+function agent(input: Partial<RoomAgent> & Pick<RoomAgent, 'id' | 'agent_id' | 'agent_name'>): RoomAgent {
+  return {
+    room_id: 'room-1',
+    agent_role: null,
+    workflow_role: null,
+    joined_at: 0,
+    acp_enabled: 0,
+    acp_backend: null,
+    acp_session_id: null,
+    acp_session_label: null,
+    ...input,
+  };
+}
+
+test('extractMentionTokens supports Chinese agent names', () => {
+  assert.deepEqual(extractMentionTokens('@智能体 帮我看一下'), ['智能体']);
+});
+
+test('resolveMentionedAgentRoomIds resolves Chinese names from content', () => {
+  const ids = resolveMentionedAgentRoomIds({
+    content: '请 @智能体 回复',
+    agents: [agent({ id: 'room-agent-1', agent_id: 'coder', agent_name: '智能体' })],
+  });
+
+  assert.deepEqual(ids, ['room-agent-1']);
+});
+
+test('resolveMentionedAgentRoomIds merges explicit ids and parsed mentions', () => {
+  const ids = resolveMentionedAgentRoomIds({
+    content: '@planner please review',
+    explicitRoomAgentIds: ['explicit-room-agent'],
+    agents: [agent({ id: 'parsed-room-agent', agent_id: 'planner', agent_name: '规划师' })],
+  });
+
+  assert.deepEqual(ids, ['explicit-room-agent', 'parsed-room-agent']);
+});
