@@ -1,5 +1,7 @@
 import { respondAsAgent } from '../dispatcher.js';
+import { formatMemoryContext } from '../memory/context.js';
 import { agentRunRepo } from '../repos/agent-runs.js';
+import { memoryRepo } from '../repos/memory.js';
 import { projectRepo } from '../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../repos/rooms.js';
 import { taskRepo } from '../repos/tasks.js';
@@ -451,6 +453,12 @@ function startAgentStage(
     task,
     agents: context.agents,
     artifacts: context.artifacts,
+    memoryContext: formatMemoryContext(memoryRepo.listForRoomContext({
+      projectId: context.project.id,
+      roomId: context.room.id,
+      roomAgentId: agent.id,
+      taskId: task.id,
+    })),
   });
   const step = workflowRepo.createStep({
     workflow_run_id: run.id,
@@ -732,6 +740,12 @@ function startAgentStageWithAgent(
     task,
     agents: context.agents,
     artifacts: context.artifacts,
+    memoryContext: formatMemoryContext(memoryRepo.listForRoomContext({
+      projectId: context.project.id,
+      roomId: context.room.id,
+      roomAgentId: agent.id,
+      taskId: task.id,
+    })),
   });
   const step = workflowRepo.createStep({
     workflow_run_id: run.id,
@@ -830,6 +844,21 @@ function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string):
       updateTaskStatus(child.id, 'done');
     }
     updateTaskStatus(run.task_id, 'done');
+    const completedTask = requireTask(run.task_id);
+    memoryRepo.upsertTaskSummary({
+      project_id: run.project_id,
+      room_id: run.room_id,
+      task_id: run.task_id,
+      title: `任务完成：${completedTask.title}`,
+      content: [
+        `任务：${completedTask.title}`,
+        '验收结论：通过',
+        '',
+        '验收摘要：',
+        output,
+      ].join('\n'),
+      source_id: run.id,
+    });
     const updated = workflowRepo.updateRun(run.id, { status: 'completed', current_stage: 'acceptance', error: null });
     if (updated) broadcastWorkflow('workflow:updated', updated);
   } else {
