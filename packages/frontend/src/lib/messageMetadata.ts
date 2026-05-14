@@ -1,6 +1,20 @@
-import type { MessageAttachmentMetadata, MessageMetadata } from './types';
+import type { MessageAttachmentMetadata, MessageMetadata, TaskCreatedFrom, TaskEventType } from './types';
 
 const allowedAttachmentUrlPrefix = '/uploads/messages/';
+const taskEventTypes = new Set<TaskEventType>([
+  'plan_proposed',
+  'task_created',
+  'task_updated',
+  'task_status_changed',
+  'workflow_started',
+  'workflow_stage_changed',
+  'workflow_plan_ready',
+  'workflow_assignment_created',
+  'workflow_blocked',
+  'workflow_completed',
+  'workflow_cancelled',
+]);
+const taskOrigins = new Set<TaskCreatedFrom>(['manual', 'chat_plan', 'slash_command', 'workflow_assignment']);
 
 function createEmptyMessageMetadata(): MessageMetadata {
   return { attachments: [] };
@@ -19,10 +33,37 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
         .filter((attachment): attachment is MessageAttachmentMetadata => attachment !== null)
       : [];
 
-    return { attachments };
+    const taskEvent = sanitizeTaskEventMetadata(parsed);
+    return { attachments, ...taskEvent };
   } catch {
     return createEmptyMessageMetadata();
   }
+}
+
+function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
+  const eventType = typeof value.event_type === 'string' && isTaskEventType(value.event_type)
+    ? value.event_type
+    : undefined;
+  const origin = typeof value.origin === 'string' && isTaskOrigin(value.origin)
+    ? value.origin
+    : undefined;
+
+  return {
+    task_id: typeof value.task_id === 'string' ? value.task_id : undefined,
+    task_title: typeof value.task_title === 'string' ? value.task_title : undefined,
+    workflow_run_id: typeof value.workflow_run_id === 'string' ? value.workflow_run_id : undefined,
+    workflow_step_id: typeof value.workflow_step_id === 'string' ? value.workflow_step_id : undefined,
+    event_type: eventType,
+    origin,
+  };
+}
+
+function isTaskEventType(value: string): value is TaskEventType {
+  return taskEventTypes.has(value as TaskEventType);
+}
+
+function isTaskOrigin(value: string): value is TaskCreatedFrom {
+  return taskOrigins.has(value as TaskCreatedFrom);
 }
 
 function sanitizeMessageAttachmentMetadata(value: unknown): MessageAttachmentMetadata | null {

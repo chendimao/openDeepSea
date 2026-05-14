@@ -30,15 +30,18 @@ export function CreateTaskDialog({
 
   const create = useMutation({
     mutationFn: () =>
-      api.createTask(roomId, {
+      api.createTaskWithConversation(roomId, {
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
         interaction_mode: interactionMode === 'inherit' ? undefined : interactionMode,
         assigned_agent_id: assignedAgentId || undefined,
+        origin: 'manual',
+        user_message: `创建任务：${title.trim()}`,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       toast.success('任务已创建');
       setOpen(false);
       setTitle(initialTitle);
