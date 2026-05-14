@@ -13,6 +13,7 @@ import { ProjectSettingsDialog } from '../components/SettingsDialogs';
 
 export function ProjectPage() {
   const { projectId = '' } = useParams();
+  const { t } = useI18n();
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => api.getProject(projectId),
@@ -24,7 +25,7 @@ export function ProjectPage() {
     enabled: !!projectId,
   });
 
-  if (!project) return <div className="p-8 text-[var(--color-fg-muted)]">加载项目…</div>;
+  if (!project) return <div className="p-8 text-[var(--color-fg-muted)]">{t('project.loading')}</div>;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -37,9 +38,9 @@ export function ProjectPage() {
             </span>
             <div className="ml-auto">
               <ProjectSettingsDialog project={project}>
-                <Button variant="secondary" size="sm" aria-label="项目设置">
+                <Button variant="secondary" size="sm" aria-label={t('project.settings')}>
                   <Settings2 className="h-3.5 w-3.5" />
-                  项目设置
+                  {t('project.settings')}
                 </Button>
               </ProjectSettingsDialog>
             </div>
@@ -48,10 +49,10 @@ export function ProjectPage() {
             <p className="mt-2 text-[13px] text-[var(--color-fg-muted)]">{project.description}</p>
           )}
           <div className="mt-4 flex items-center gap-5 text-[12px] font-mono text-[var(--color-fg-muted)]">
-            <span>群聊 {project.stats?.rooms ?? 0}</span>
-            <span>任务 {project.stats?.tasks ?? 0}</span>
-            <span>已完成 {project.stats?.tasksDone ?? 0}</span>
-            <span>进行中 {project.stats?.tasksInProgress ?? 0}</span>
+            <span>{t('project.stats.rooms', { count: project.stats?.rooms ?? 0 })}</span>
+            <span>{t('project.stats.tasks', { count: project.stats?.tasks ?? 0 })}</span>
+            <span>{t('project.stats.done', { count: project.stats?.tasksDone ?? 0 })}</span>
+            <span>{t('project.stats.inProgress', { count: project.stats?.tasksInProgress ?? 0 })}</span>
           </div>
         </div>
       </header>
@@ -59,7 +60,7 @@ export function ProjectPage() {
       <section className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-baseline gap-3 mb-4">
-            <h2 className="font-display text-[14px] font-medium">群聊</h2>
+            <h2 className="font-display text-[14px] font-medium">{t('project.rooms')}</h2>
             <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">{rooms.length}</span>
             <div className="ml-auto">
               <CreateRoomDialog projectId={projectId} />
@@ -69,9 +70,9 @@ export function ProjectPage() {
           {rooms.length === 0 ? (
             <WorkspaceEmptyState
               icon={<MessageSquarePlus className="h-9 w-9" strokeWidth={1.75} />}
-              title="还没有群聊"
-              description="为项目创建一个协作主题，后续可以邀请 agent、发送消息并拆分任务。"
-              action={<CreateRoomDialog projectId={projectId} buttonText="创建第一个群聊" />}
+              title={t('project.emptyRoomsTitle')}
+              description={t('project.emptyRoomsDescription')}
+              action={<CreateRoomDialog projectId={projectId} buttonText={t('project.createFirstRoom')} buttonIcon="message" />}
             />
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -88,13 +89,13 @@ export function ProjectPage() {
 
 function RoomItem({ projectId, room }: { projectId: string; room: { id: string; name: string; description: string | null; created_at: number } }) {
   const queryClient = useQueryClient();
-  const { formatRelativeTime } = useI18n();
+  const { t, formatRelativeTime } = useI18n();
   const del = useMutation({
     mutationFn: () => api.deleteRoom(room.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-      toast.success('已删除');
+      toast.success(t('project.roomDeleted'));
     },
   });
 
@@ -113,7 +114,7 @@ function RoomItem({ projectId, room }: { projectId: string; room: { id: string; 
       <button
         onClick={() => del.mutate()}
         className="absolute right-2 top-2 p-1.5 rounded-md text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-danger)] hover:bg-[var(--color-surface-raised)] ease-ocean"
-        aria-label="删除群聊"
+        aria-label={t('project.deleteRoom')}
         type="button"
       >
         <Trash2 className="h-3.5 w-3.5" />
@@ -122,18 +123,28 @@ function RoomItem({ projectId, room }: { projectId: string; room: { id: string; 
   );
 }
 
-function CreateRoomDialog({ projectId, buttonText = '新建群聊' }: { projectId: string; buttonText?: string }) {
+function CreateRoomDialog({
+  projectId,
+  buttonText,
+  buttonIcon = 'plus',
+}: {
+  projectId: string;
+  buttonText?: string;
+  buttonIcon?: 'plus' | 'message';
+}) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const queryClient = useQueryClient();
+  const { t } = useI18n();
+  const resolvedButtonText = buttonText ?? t('project.newRoom');
 
   const create = useMutation({
     mutationFn: () => api.createRoom(projectId, { name, description: description || undefined }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-      toast.success('群聊已创建');
+      toast.success(t('project.roomCreated'));
       setOpen(false);
       setName('');
       setDescription('');
@@ -144,11 +155,11 @@ function CreateRoomDialog({ projectId, buttonText = '新建群聊' }: { projectI
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="primary" size="sm">
-          {buttonText === '新建群聊' ? <Plus className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
-          {buttonText}
+          {buttonIcon === 'plus' ? <Plus className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
+          {resolvedButtonText}
         </Button>
       </DialogTrigger>
-      <DialogContent title="新建群聊" description="为这个项目开启一个新的协作主题">
+      <DialogContent title={t('project.newRoom')} description={t('project.newRoomDescription')}>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -158,7 +169,7 @@ function CreateRoomDialog({ projectId, buttonText = '新建群聊' }: { projectI
           className="space-y-4"
         >
           <div>
-            <Label>群聊名称</Label>
+            <Label>{t('project.roomName')}</Label>
             <Input
               autoFocus
               placeholder="auth-refactor / bug-fixing / discussion"
@@ -168,17 +179,17 @@ function CreateRoomDialog({ projectId, buttonText = '新建群聊' }: { projectI
             />
           </div>
           <div>
-            <Label>主题描述 (可选)</Label>
+            <Label>{t('project.roomDescription')}</Label>
             <Textarea
-              placeholder="这个群聊的目标是..."
+              placeholder={t('project.roomDescriptionPlaceholder')}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>取消</Button>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
             <Button type="submit" disabled={create.isPending || !name.trim()}>
-              {create.isPending ? '创建中…' : '创建'}
+              {create.isPending ? t('project.creating') : t('common.create')}
             </Button>
           </div>
         </form>

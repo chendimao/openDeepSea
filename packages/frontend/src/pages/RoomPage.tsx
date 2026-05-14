@@ -26,6 +26,7 @@ export function RoomPage() {
   const queryClient = useQueryClient();
   const [configAgent, setConfigAgent] = useState<RoomAgent | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const { t } = useI18n();
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
@@ -90,7 +91,7 @@ export function RoomPage() {
       queryClient.invalidateQueries({ queryKey: ['workflow', workflow.id] });
       queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
-      toast.success('已重试当前阶段');
+      toast.success(t('room.retryStageDone'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -173,35 +174,35 @@ export function RoomPage() {
           <Link
             to={`/projects/${projectId}`}
             className="toolbar-back"
-            aria-label="返回项目"
+            aria-label={t('room.backToProject')}
           >
             <ChevronLeft className="h-4 w-4" />
           </Link>
           <div className="min-w-0">
             <div className="font-display text-[15px] font-semibold leading-tight">
-              {room?.name ?? '开发闭环看板'}
+              {room?.name ?? t('room.defaultName')}
             </div>
             <div className="mt-1 hidden truncate font-mono text-[11px] text-[var(--color-fg-muted)] sm:block">
-              {project?.name ?? '开发闭环看板'} · {project?.path ?? '/Users/chendimao/www/openclaw-room'}
+              {project?.name ?? t('room.defaultName')} · {project?.path ?? '/Users/chendimao/www/openclaw-room'}
             </div>
           </div>
         </div>
 
-        <div className="toolbar-tabs" aria-label="工作区视图">
+        <div className="toolbar-tabs" aria-label={t('room.viewLabel')}>
           <button className="toolbar-tab is-active" type="button">
-            聊天 <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
+            {t('room.tab.chat')} <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
           </button>
           <button className="toolbar-tab is-active" type="button">
-            任务 <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
+            {t('room.tab.tasks')} <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
           </button>
           <button className="toolbar-tab" type="button">
-            工作流 <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
+            {t('room.tab.workflow')} <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
           </button>
           <button className="toolbar-tab" type="button">
-            文件 <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
+            {t('room.tab.files')} <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
           </button>
-          <button className="toolbar-tab" type="button">Agent</button>
-          <button className="toolbar-tab" type="button">设置</button>
+          <button className="toolbar-tab" type="button">{t('room.tab.agent')}</button>
+          <button className="toolbar-tab" type="button">{t('room.tab.settings')}</button>
         </div>
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
@@ -216,7 +217,7 @@ export function RoomPage() {
             <CreateTaskDialog roomId={roomId} agents={agents}>
               <button type="button" className="glass-button glass-button-primary">
                 <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
-                新建任务
+                {t('room.newTask')}
               </button>
             </CreateTaskDialog>
           </span>
@@ -224,25 +225,25 @@ export function RoomPage() {
             <RoomSettingsDialog project={project} room={room} agents={agents}>
               <button
                 type="button"
-                aria-label="群聊设置"
+                aria-label={t('room.roomSettings')}
                 className="glass-button"
               >
                 <Settings2 className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">设置</span>
+                <span className="hidden sm:inline">{t('room.tab.settings')}</span>
               </button>
             </RoomSettingsDialog>
           )}
           <AddAgentDialog roomId={roomId}>
             <button type="button" className="glass-button">
               <Users className="h-3.5 w-3.5" strokeWidth={1.8} />
-              邀请 Agent
+              {t('room.inviteAgent')}
             </button>
           </AddAgentDialog>
         </div>
       </header>
 
       <div className="workspace-grid">
-        <section className="workbench-panel chat-workspace" aria-label="AI Agent 协作流">
+        <section className="workbench-panel chat-workspace" aria-label={t('room.chatAria')}>
           <ChatColumn
             messages={messages}
             agents={agents}
@@ -323,8 +324,10 @@ function AgentStrip({
   agents: RoomAgent[];
   onConfig: (a: RoomAgent) => void;
 }) {
+  const { t } = useI18n();
+
   if (agents.length === 0)
-    return <span className="text-[12px] text-[var(--color-fg-muted)]">暂无 agent</span>;
+    return <span className="text-[12px] text-[var(--color-fg-muted)]">{t('room.noAgents')}</span>;
   return (
     <div className="mr-2 flex items-center -space-x-2">
       {agents.slice(0, 6).map((a) => (
@@ -332,7 +335,7 @@ function AgentStrip({
           key={a.id}
           type="button"
           onClick={() => onConfig(a)}
-          aria-label={`配置 ${a.agent_name}`}
+          aria-label={t('room.configureAgent', { name: a.agent_name })}
           className="rounded-full ring-2 ring-white/80 transition-transform ease-ocean hover:scale-105"
           title={`${a.agent_name}${a.acp_enabled ? ` · ACP: ${a.acp_backend}` : ''}`}
         >
@@ -368,6 +371,7 @@ function ChatColumn({
   const [composerResetKey, setComposerResetKey] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  const { t } = useI18n();
   const agentMap = useMemo(
     () => new Map(agents.map((a) => [a.agent_id, a])),
     [agents],
@@ -400,7 +404,7 @@ function ChatColumn({
     onSuccess: () => {
       setComposerResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
-      toast.success('任务已创建');
+      toast.success(t('room.taskCreated'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -412,7 +416,7 @@ function ChatColumn({
     const taskMatch = content.match(/^\/task\s+(.+)/);
     if (taskMatch?.[1]?.trim()) {
       if (files && files.length > 0) {
-        toast.error('/task 命令不能携带附件，请先移除附件');
+        toast.error(t('room.taskCommandNoAttachments'));
         return;
       }
       createTaskFromCommand.mutate(taskMatch[1].trim());
@@ -438,7 +442,7 @@ function ChatColumn({
             stderr
           </button>
         </div>
-        <button type="button" className="icon-glass-button" aria-label="新建任务">
+        <button type="button" className="icon-glass-button" aria-label={t('room.newTask')}>
           <Plus className="h-4 w-4" strokeWidth={1.8} />
         </button>
       </div>
@@ -447,11 +451,11 @@ function ChatColumn({
         {messages.length === 0 ? (
           <WorkspaceEmptyState
             icon={<MessageSquare className="h-9 w-9" strokeWidth={1.75} />}
-            title="还没有消息"
+            title={t('room.emptyMessagesTitle')}
             description={
               agents.length === 0
-                ? '先添加一个 agent，再开始对话或创建任务。'
-                : '发送第一条消息，或使用 /task 快速创建协作任务。'
+                ? t('room.emptyMessagesNoAgents')
+                : t('room.emptyMessagesWithAgents')
             }
             action={agents.length === 0 ? <AddAgentDialog roomId={roomId} /> : undefined}
           />
@@ -481,12 +485,13 @@ function ChatColumn({
         disabled={agents.length === 0}
         agents={agents}
         placeholder={
-          agents.length === 0 ? '先邀请一个 agent 才能开始对话...' : '发送消息、@agent 定向，或 /task 创建任务'
+          agents.length === 0 ? t('room.composerNoAgents') : t('room.composerReady')
         }
         routingHint={routingHint(
           routingMode,
           fallbackAgentId,
           agents.find((agent) => agent.agent_id === fallbackAgentId),
+          t,
         )}
       />
     </div>
@@ -531,7 +536,7 @@ function MessageBubble({
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
 }) {
-  const { formatRelativeTime } = useI18n();
+  const { t, formatRelativeTime } = useI18n();
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
   const metadata = parseMessageMetadata(message.metadata);
@@ -554,7 +559,7 @@ function MessageBubble({
       <div className={cn('min-w-0 max-w-[760px] flex flex-col', isUser ? 'items-end' : 'w-full items-start')}>
         <div className="flex items-center gap-2 mb-1">
           <span className="font-display text-[12.5px] font-semibold">
-            {isUser ? '你' : message.sender_name ?? message.sender_id}
+            {isUser ? t('room.currentUser') : message.sender_name ?? message.sender_id}
           </span>
           {agentMeta?.acp_enabled && agentMeta.acp_backend && (
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--color-surface-raised)] text-[var(--color-accent)] border border-[var(--color-border)]">
@@ -656,14 +661,16 @@ function formatAttachmentSize(size: number): string {
 function routingHint(
   mode: 'mentions_only' | 'fallback_reply' | 'fallback_route',
   fallbackAgentId: string | null,
-  fallbackAgent?: RoomAgent,
+  fallbackAgent: RoomAgent | undefined,
+  t: ReturnType<typeof useI18n>['t'],
 ): string {
-  if (mode === 'mentions_only') return '当前策略：只有被 @ 的智能体会回复；无 @ 时不会触发回复。';
+  if (mode === 'mentions_only') return t('room.routing.mentionsOnly');
   if (fallbackAgentId && !fallbackAgent) {
-    return `当前策略：无 @ 时交给 ${fallbackAgentId}；当前群聊尚未邀请它，因此不会触发兜底。`;
+    return t('room.routing.fallbackMissing', { agentId: fallbackAgentId });
   }
+  const agentName = fallbackAgent?.agent_name ?? t('room.routing.fallbackAgent');
   if (mode === 'fallback_reply') {
-    return `当前策略：无 @ 时由 ${fallbackAgent?.agent_name ?? '兜底智能体'} 回复。`;
+    return t('room.routing.fallbackReply', { agentName });
   }
-  return `当前策略：无 @ 时由 ${fallbackAgent?.agent_name ?? '兜底智能体'} 分析并 @ 相关智能体协作。`;
+  return t('room.routing.fallbackRoute', { agentName });
 }

@@ -9,7 +9,7 @@ import { LobsterMark } from '../components/LobsterMark';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 
 export function DashboardPage() {
-  const { formatRelativeTime } = useI18n();
+  const { t, formatRelativeTime } = useI18n();
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -23,16 +23,16 @@ export function DashboardPage() {
             <LobsterMark className="h-9 w-9" />
             <div>
               <h1 className="font-display text-[24px] font-semibold tracking-tight">
-                深海指挥中心
+                {t('app.name')}
               </h1>
               <p className="text-[13px] text-[var(--color-fg-muted)] mt-0.5">
-                管理本地项目、群聊与智能体协作上下文
+                {t('app.tagline')}
               </p>
             </div>
             <div className="ml-auto max-sm:w-full">
               <CreateProjectDialog>
                 <Button variant="primary" className="max-sm:w-full">
-                  <Plus className="h-4 w-4" /> 新建项目
+                  <Plus className="h-4 w-4" /> {t('dashboard.newProject')}
                 </Button>
               </CreateProjectDialog>
             </div>
@@ -43,14 +43,14 @@ export function DashboardPage() {
       <section className="px-4 sm:px-8 py-8">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-baseline gap-3 mb-5">
-            <h2 className="font-display text-[15px] font-medium">所有项目</h2>
+            <h2 className="font-display text-[15px] font-medium">{t('dashboard.allProjects')}</h2>
             <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">
-              {projects.length} project{projects.length !== 1 ? 's' : ''}
+              {t('dashboard.projectCount', { count: projects.length })}
             </span>
           </div>
 
           {isLoading ? (
-            <div className="text-[var(--color-fg-muted)] text-[13px]">加载中…</div>
+            <div className="text-[var(--color-fg-muted)] text-[13px]">{t('dashboard.loading')}</div>
           ) : projects.length === 0 ? (
             <EmptyState />
           ) : (
@@ -86,11 +86,13 @@ export function DashboardPage() {
                   <div className="mt-5 flex items-center gap-4 text-[11px] font-mono text-[var(--color-fg-muted)]">
                     <span className="flex items-center gap-1">
                       <MessageSquare className="h-3 w-3" strokeWidth={1.75} />
-                      {p.stats?.rooms ?? 0} 群聊
+                      {t('project.stats.rooms', { count: p.stats?.rooms ?? 0 })}
                     </span>
                     <span>·</span>
                     <span>
-                      {p.stats?.tasksDone ?? 0}/{p.stats?.tasks ?? 0} 任务
+                      {t('project.stats.tasks', {
+                        count: `${p.stats?.tasksDone ?? 0}/${p.stats?.tasks ?? 0}`,
+                      })}
                     </span>
                     <span className="ml-auto">{formatRelativeTime(p.updated_at)}</span>
                   </div>
@@ -114,15 +116,17 @@ export function DashboardPage() {
 }
 
 function EmptyState(): JSX.Element {
+  const { t } = useI18n();
+
   return (
     <WorkspaceEmptyState
       icon={<LobsterMark className="h-14 w-14" />}
-      title="还没有项目"
-      description="添加一个本地代码目录后，可以为它创建群聊、分配 agent，并跟踪协作任务。"
+      title={t('dashboard.emptyTitle')}
+      description={t('dashboard.emptyDescription')}
       action={
         <CreateProjectDialog>
           <Button variant="primary">
-            <Plus className="h-4 w-4" /> 添加第一个项目
+            <Plus className="h-4 w-4" /> {t('dashboard.addFirstProject')}
           </Button>
         </CreateProjectDialog>
       }
