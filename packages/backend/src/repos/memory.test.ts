@@ -13,6 +13,7 @@ const { projectRepo } = await import('./projects.js');
 const { roomAgentRepo, roomRepo } = await import('./rooms.js');
 const { taskRepo } = await import('./tasks.js');
 const { memoryRepo } = await import('./memory.js');
+const { db, now } = await import('../db.js');
 
 function createMemoryFixture(name: string) {
   const dir = mkdtempSync(join(tmpdir(), `openclaw-room-memory-${name}-`));
@@ -22,6 +23,37 @@ function createMemoryFixture(name: string) {
   const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: `${name} task` });
 
   return { project, room, agent, task };
+}
+
+let directSqlMemoryCounter = 0;
+
+function insertMemoryDirect(input: {
+  project_id: string;
+  room_id?: string | null;
+  room_agent_id?: string | null;
+  task_id?: string | null;
+  scope: 'project' | 'room' | 'agent' | 'task';
+}) {
+  const ts = now();
+  directSqlMemoryCounter += 1;
+  const id = `direct-sql-memory-${directSqlMemoryCounter}`;
+  db.prepare(
+    `INSERT INTO memory_entries (
+      id, project_id, room_id, room_agent_id, task_id, scope, memory_type, title,
+      content, source_type, source_id, pinned, created_at, updated_at
+    )
+     VALUES (?, ?, ?, ?, ?, ?, 'fact', 'Direct SQL memory', 'Inserted outside the repository.', 'manual', NULL, 0, ?, ?)`,
+  ).run(
+    id,
+    input.project_id,
+    input.room_id ?? null,
+    input.room_agent_id ?? null,
+    input.task_id ?? null,
+    input.scope,
+    ts,
+    ts,
+  );
+  return id;
 }
 
 test('memoryRepo stores and filters project, room, agent, and task memories for prompt context', () => {
@@ -341,6 +373,85 @@ test('memoryRepo recalls valid agent and task scope memories for room context', 
   assert.deepEqual(
     entries.map((entry) => entry.id).sort(),
     [agentMemory.id, taskMemory.id].sort(),
+  );
+});
+
+test('memory_entries triggers reject direct SQL ownership mismatches', () => {
+  const first = createMemoryFixture('Direct SQL Boundary A');
+  const second = createMemoryFixture('Direct SQL Boundary B');
+  const otherRoom = roomRepo.create({ project_id: first.project.id, name: 'Direct SQL Other Room' });
+  const otherTask = taskRepo.create({
+    project_id: first.project.id,
+    room_id: otherRoom.id,
+    title: 'Direct SQL other task',
+  });
+
+  assert.throws(
+    () =>
+      insertMemoryDirect({
+        project_id: first.project.id,
+        room_id: second.room.id,
+        scope: 'room',
+      }),
+    /memory room_id does not belong to project_id/,
+  );
+
+  assert.throws(
+    () =>
+      insertMemoryDirect({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        room_agent_id: second.agent.id,
+        scope: 'agent',
+      }),
+    /memory room_agent_id does not belong to project_id/,
+  );
+
+  assert.throws(
+    () =>
+      insertMemoryDirect({
+        project_id: first.project.id,
+        room_id: otherRoom.id,
+        room_agent_id: first.agent.id,
+        scope: 'agent',
+      }),
+    /memory room_agent_id does not belong to room_id/,
+  );
+
+  assert.throws(
+    () =>
+      insertMemoryDirect({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        task_id: second.task.id,
+        scope: 'task',
+      }),
+    /memory task_id does not belong to project_id/,
+  );
+
+  assert.throws(
+    () =>
+      insertMemoryDirect({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        task_id: otherTask.id,
+        scope: 'task',
+      }),
+    /memory task_id does not belong to room_id/,
+  );
+
+  const directRoomMemoryId = insertMemoryDirect({
+    project_id: first.project.id,
+    room_id: first.room.id,
+    scope: 'room',
+  });
+
+  assert.throws(
+    () =>
+      db
+        .prepare('UPDATE memory_entries SET project_id = ?, updated_at = ? WHERE id = ?')
+        .run(second.project.id, now(), directRoomMemoryId),
+    /memory room_id does not belong to project_id/,
   );
 });
 

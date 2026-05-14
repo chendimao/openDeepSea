@@ -199,6 +199,90 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_task_source
   ON memory_entries(task_id, source_type, source_id)
   WHERE task_id IS NOT NULL AND source_id IS NOT NULL;
 
+CREATE TRIGGER IF NOT EXISTS trg_memory_entries_validate_insert
+BEFORE INSERT ON memory_entries
+BEGIN
+  SELECT RAISE(ABORT, 'memory room_id does not belong to project_id')
+  WHERE NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM rooms
+      WHERE rooms.id = NEW.room_id AND rooms.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory room_agent_id does not belong to project_id')
+  WHERE NEW.room_agent_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM room_agents
+      JOIN rooms ON rooms.id = room_agents.room_id
+      WHERE room_agents.id = NEW.room_agent_id AND rooms.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory room_agent_id does not belong to room_id')
+  WHERE NEW.room_agent_id IS NOT NULL
+    AND NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM room_agents
+      WHERE room_agents.id = NEW.room_agent_id AND room_agents.room_id = NEW.room_id
+    );
+
+  SELECT RAISE(ABORT, 'memory task_id does not belong to project_id')
+  WHERE NEW.task_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = NEW.task_id AND tasks.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory task_id does not belong to room_id')
+  WHERE NEW.task_id IS NOT NULL
+    AND NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = NEW.task_id AND tasks.room_id = NEW.room_id
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_entries_validate_update
+BEFORE UPDATE OF project_id, room_id, room_agent_id, task_id, scope ON memory_entries
+BEGIN
+  SELECT RAISE(ABORT, 'memory room_id does not belong to project_id')
+  WHERE NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM rooms
+      WHERE rooms.id = NEW.room_id AND rooms.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory room_agent_id does not belong to project_id')
+  WHERE NEW.room_agent_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM room_agents
+      JOIN rooms ON rooms.id = room_agents.room_id
+      WHERE room_agents.id = NEW.room_agent_id AND rooms.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory room_agent_id does not belong to room_id')
+  WHERE NEW.room_agent_id IS NOT NULL
+    AND NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM room_agents
+      WHERE room_agents.id = NEW.room_agent_id AND room_agents.room_id = NEW.room_id
+    );
+
+  SELECT RAISE(ABORT, 'memory task_id does not belong to project_id')
+  WHERE NEW.task_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = NEW.task_id AND tasks.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory task_id does not belong to room_id')
+  WHERE NEW.task_id IS NOT NULL
+    AND NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = NEW.task_id AND tasks.room_id = NEW.room_id
+    );
+END;
+
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
