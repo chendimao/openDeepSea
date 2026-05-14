@@ -1,31 +1,87 @@
+import { useId } from 'react';
+
 export function LobsterMark({ className = 'h-6 w-6' }: { className?: string }) {
+  const reactId = useId().replace(/:/g, '');
+  const shellId = `${reactId}-lobster-shell`;
+  const clawId = `${reactId}-lobster-claw`;
+  const circuitId = `${reactId}-lobster-circuit`;
+  const glowId = `${reactId}-lobster-glow`;
+
   return (
     <svg
       viewBox="0 0 64 64"
       fill="none"
-      stroke="currentColor"
-      strokeWidth={2.4}
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={`text-[var(--color-primary)] ${className}`}
+      className={className}
       aria-label="深海指挥中心"
     >
+      <defs>
+        <linearGradient id={shellId} x1="19" y1="15" x2="45" y2="53" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FF3B30" />
+          <stop offset="0.52" stopColor="#FF7A45" />
+          <stop offset="1" stopColor="#FFB340" />
+        </linearGradient>
+        <linearGradient id={clawId} x1="8" y1="10" x2="56" y2="24" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FF5A36" />
+          <stop offset="0.56" stopColor="#FF7A45" />
+          <stop offset="1" stopColor="#FFB340" />
+        </linearGradient>
+        <linearGradient id={circuitId} x1="19" y1="17" x2="45" y2="51" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#BDF4FF" />
+          <stop offset="0.48" stopColor="#12D7FF" />
+          <stop offset="1" stopColor="#0A84FF" />
+        </linearGradient>
+        <filter id={glowId} x="-16" y="-14" width="96" height="96" colorInterpolationFilters="sRGB">
+          <feGaussianBlur stdDeviation="2.4" result="blur" />
+          <feColorMatrix
+            in="blur"
+            type="matrix"
+            values="0 0 0 0 1 0 0 0 0 0.36 0 0 0 0 0.13 0 0 0 0.42 0"
+          />
+          <feBlend in="SourceGraphic" mode="screen" />
+        </filter>
+      </defs>
+
       <path
-        d="M14 34C18.8 24.8 25 20.2 32 20.2C39 20.2 45.2 24.8 50 34C45.2 43.2 39 47.8 32 47.8C25 47.8 18.8 43.2 14 34Z"
-        fill="currentColor"
-        fillOpacity={0.09}
+        d="M32 10.4V54.8"
+        stroke={`url(#${circuitId})`}
+        strokeWidth="1.35"
+        strokeDasharray="3 4"
+        opacity="0.76"
       />
-      <path d="M10 35.2C15.5 24.6 22.8 19.3 32 19.3C41.2 19.3 48.5 24.6 54 35.2" />
-      <path d="M14.6 41.2C19.6 46.6 25.4 49.3 32 49.3C38.6 49.3 44.4 46.6 49.4 41.2" />
-      <path d="M32 12.5V53.5" />
-      <path d="M22 20.8L15.4 13.4C13.8 11.6 10.8 12.5 10.4 14.9L9.6 20.2L18.9 25.2" />
-      <path d="M42 20.8L48.6 13.4C50.2 11.6 53.2 12.5 53.6 14.9L54.4 20.2L45.1 25.2" />
-      <path d="M21.2 32.2C17.7 33.4 14.7 35.7 12.2 39.1" />
-      <path d="M42.8 32.2C46.3 33.4 49.3 35.7 51.8 39.1" />
-      <path d="M25.7 46.9L20.2 55" />
-      <path d="M38.3 46.9L43.8 55" />
-      <circle cx="27.8" cy="28.7" r="1.4" fill="currentColor" strokeWidth={0} />
-      <circle cx="36.2" cy="28.7" r="1.4" fill="currentColor" strokeWidth={0} />
+      <path
+        d="M18.1 33.7C22.4 23.9 27.1 18.9 32 18.9C36.9 18.9 41.6 23.9 45.9 33.7C41.6 44.2 36.9 49.4 32 49.4C27.1 49.4 22.4 44.2 18.1 33.7Z"
+        fill={`url(#${shellId})`}
+        fillOpacity="0.18"
+        stroke={`url(#${shellId})`}
+        strokeWidth="3"
+        filter={`url(#${glowId})`}
+      />
+      <path
+        d="M24.4 23.9L16.8 14.4C14.8 11.9 10.9 12.9 10.3 16.1L9.2 22.8L20.8 28.2"
+        stroke={`url(#${clawId})`}
+        strokeWidth="3.2"
+        filter={`url(#${glowId})`}
+      />
+      <path
+        d="M39.6 23.9L47.2 14.4C49.2 11.9 53.1 12.9 53.7 16.1L54.8 22.8L43.2 28.2"
+        stroke={`url(#${clawId})`}
+        strokeWidth="3.2"
+        filter={`url(#${glowId})`}
+      />
+      <path d="M22.5 34.2L12.8 39.9" stroke={`url(#${circuitId})`} strokeWidth="2.35" opacity="0.95" />
+      <path d="M41.5 34.2L51.2 39.9" stroke={`url(#${circuitId})`} strokeWidth="2.35" opacity="0.95" />
+      <path d="M25.3 45.8L19.1 55.3" stroke={`url(#${circuitId})`} strokeWidth="2.35" />
+      <path d="M38.7 45.8L44.9 55.3" stroke={`url(#${circuitId})`} strokeWidth="2.35" />
+      <path d="M27.1 28.5H36.9" stroke="#FFF6EA" strokeWidth="1.45" opacity="0.92" />
+      <path d="M25.1 36.4H38.9" stroke={`url(#${circuitId})`} strokeWidth="1.45" opacity="0.86" />
+      <path d="M29.2 41.7H34.8" stroke={`url(#${circuitId})`} strokeWidth="1.35" opacity="0.78" />
+      <circle cx="27" cy="26.7" r="2.05" fill="#12D7FF" />
+      <circle cx="37" cy="26.7" r="2.05" fill="#12D7FF" />
+      <circle cx="32" cy="49.2" r="2.2" fill="#0A84FF" />
+      <circle cx="9.2" cy="22.8" r="1.6" fill="#12D7FF" />
+      <circle cx="54.8" cy="22.8" r="1.6" fill="#12D7FF" />
     </svg>
   );
 }
