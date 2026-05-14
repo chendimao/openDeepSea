@@ -7,7 +7,7 @@ import { AppShell } from './components/AppShell';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { RoomPage } from './pages/RoomPage';
-import type { ThemeMode } from './lib/theme';
+import { isThemeMode, type ThemeMode } from './lib/theme';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -15,7 +15,8 @@ const queryClient = new QueryClient({
 });
 
 function getInitialTheme(): ThemeMode {
-  return localStorage.getItem('openclaw-room-theme') === 'dark' ? 'dark' : 'light';
+  const storedTheme = localStorage.getItem('openclaw-room-theme');
+  return isThemeMode(storedTheme) ? storedTheme : 'light';
 }
 
 function RootApp(): JSX.Element {
@@ -24,9 +25,11 @@ function RootApp(): JSX.Element {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.classList.toggle('dark', theme === 'dark');
-    document.documentElement.style.colorScheme = theme;
+    document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'light';
     localStorage.setItem('openclaw-room-theme', theme);
   }, [theme]);
+
+  const toasterTheme = theme === 'dark' ? 'dark' : 'light';
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -39,7 +42,7 @@ function RootApp(): JSX.Element {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AppShell>
-        <Toaster theme={theme} position="bottom-right" richColors />
+        <Toaster theme={toasterTheme} position="bottom-right" richColors />
       </BrowserRouter>
     </QueryClientProvider>
   );
