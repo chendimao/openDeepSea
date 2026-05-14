@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendMemoryContext, formatMemoryContext } from './context.js';
+import {
+  appendMemoryContext,
+  appendMemoryContextSafely,
+  formatMemoryContext,
+  MAX_MEMORY_CONTEXT_CHARS,
+  MAX_MEMORY_ENTRY_CHARS,
+} from './context.js';
 import type { MemoryEntry } from '../types.js';
 
 function memory(overrides: Partial<MemoryEntry>): MemoryEntry {
@@ -61,4 +67,36 @@ test('appendMemoryContext prepends memory before current request', () => {
 
   assert.match(output, /^项目\/聊天室记忆：/);
   assert.match(output, /当前请求：\n用户问题$/);
+});
+
+test('formatMemoryContext truncates long entries and total memory context', () => {
+  const output = formatMemoryContext(
+    Array.from({ length: 8 }, (_, index) =>
+      memory({
+        id: `mem-${index}`,
+        title: `Long memory ${index}`,
+        content: `${index}`.repeat(MAX_MEMORY_ENTRY_CHARS * 2),
+      }),
+    ),
+  );
+
+  assert.ok(output.length <= MAX_MEMORY_CONTEXT_CHARS);
+  assert.match(output, /\.\.\.已截断/);
+});
+
+test('appendMemoryContextSafely falls back to original prompt when memory loading fails', () => {
+  const warnings: string[] = [];
+  const output = appendMemoryContextSafely({
+    prompt: '原始请求',
+    loadEntries: () => {
+      throw new Error('memory table unavailable');
+    },
+    warn: (message) => warnings.push(message),
+  });
+
+  assert.equal(output, '原始请求');
+  assert.equal(warnings.length, 1);
+  const warning = warnings[0];
+  assert.ok(warning);
+  assert.match(warning, /failed to load memory context/);
 });
