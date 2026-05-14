@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import {
   MAX_MESSAGE_FILES,
   MAX_MESSAGE_FILE_SIZE_BYTES,
   buildAttachmentMetadata,
+  cleanupUploadedFiles,
+  ensureMessageUploadDir,
+  messageUploadDir,
   safeUploadFileName,
 } from './uploads.js';
 
@@ -39,4 +46,28 @@ test('buildAttachmentMetadata maps multer file to message attachment metadata', 
   assert.equal(metadata.size, 128);
   assert.equal(metadata.url, '/uploads/messages/stored.png');
   assert.equal(metadata.isImage, true);
+});
+
+test('cleanupUploadedFiles only unlinks files under messageUploadDir', async () => {
+  await ensureMessageUploadDir();
+  const insideName = safeUploadFileName('inside.txt');
+  const insidePath = join(messageUploadDir, insideName);
+  await writeFile(insidePath, 'inside');
+
+  const outsideDir = await mkdtemp(join(tmpdir(), 'uploads-cleanup-outside-'));
+  const outsidePath = join(outsideDir, 'outside.txt');
+  await writeFile(outsidePath, 'outside');
+
+  try {
+    await cleanupUploadedFiles([
+      { path: insidePath } as Express.Multer.File,
+      { path: outsidePath } as Express.Multer.File,
+    ]);
+
+    await assert.rejects(access(insidePath, constants.F_OK));
+    await access(outsidePath, constants.F_OK);
+  } finally {
+    await rm(insidePath, { force: true });
+    await rm(outsideDir, { recursive: true, force: true });
+  }
 });

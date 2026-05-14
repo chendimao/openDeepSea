@@ -1,6 +1,6 @@
 import multer from 'multer';
 import { mkdir, unlink } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nanoid } from 'nanoid';
 import type { MessageAttachmentMetadata } from './types.js';
@@ -24,8 +24,13 @@ export async function ensureMessageUploadDir(): Promise<void> {
 
 export const messageUpload = multer({
   storage: multer.diskStorage({
-    destination: (_req, _file, callback) => {
-      callback(null, messageUploadDir);
+    destination: async (_req, _file, callback) => {
+      try {
+        await ensureMessageUploadDir();
+        callback(null, messageUploadDir);
+      } catch (err) {
+        callback(err as Error, messageUploadDir);
+      }
     },
     filename: (_req, file, callback) => {
       callback(null, safeUploadFileName(file.originalname));
@@ -50,5 +55,15 @@ export function buildAttachmentMetadata(file: Express.Multer.File): MessageAttac
 }
 
 export async function cleanupUploadedFiles(files: Express.Multer.File[]): Promise<void> {
-  await Promise.allSettled(files.map((file) => unlink(file.path)));
+  const uploadRoot = resolve(messageUploadDir);
+  await Promise.allSettled(
+    files.map((file) => {
+      const targetPath = typeof file.path === 'string' ? resolve(file.path) : '';
+      const isInsideUploadRoot = targetPath === uploadRoot || targetPath.startsWith(`${uploadRoot}${sep}`);
+      if (!isInsideUploadRoot) {
+        return Promise.resolve();
+      }
+      return unlink(targetPath);
+    })
+  );
 }
