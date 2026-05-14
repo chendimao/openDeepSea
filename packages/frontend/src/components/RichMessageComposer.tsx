@@ -260,7 +260,9 @@ export function RichMessageComposer({
       <div
         className="rich-composer-box composer-box"
         onDragOver={(event) => {
-          if (!isBusy && event.dataTransfer.types.includes('Files')) event.preventDefault();
+          if (!event.dataTransfer.types.includes('Files')) return;
+          event.preventDefault();
+          event.stopPropagation();
         }}
         onDrop={handleDrop}
       >
