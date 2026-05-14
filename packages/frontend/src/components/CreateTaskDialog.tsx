@@ -4,7 +4,7 @@ import { CheckSquare, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import type { RoomAgent, Task } from '../lib/types';
-import { TASK_PRIORITY_LABEL } from '../lib/types';
+import { TASK_INTERACTION_MODE_LABEL, TASK_PRIORITY_LABEL } from '../lib/types';
 import { Button } from './ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { Input, Label, Textarea } from './ui/Input';
@@ -24,6 +24,7 @@ export function CreateTaskDialog({
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('normal');
+  const [interactionMode, setInteractionMode] = useState<Task['interaction_mode']>('ask_user');
   const [assignedAgentId, setAssignedAgentId] = useState('');
   const queryClient = useQueryClient();
 
@@ -33,6 +34,7 @@ export function CreateTaskDialog({
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
+        interaction_mode: interactionMode,
         assigned_agent_id: assignedAgentId || undefined,
       }),
     onSuccess: () => {
@@ -42,6 +44,7 @@ export function CreateTaskDialog({
       setTitle(initialTitle);
       setDescription('');
       setPriority('normal');
+      setInteractionMode('ask_user');
       setAssignedAgentId('');
     },
     onError: (err) => toast.error((err as Error).message),
@@ -112,6 +115,20 @@ export function CreateTaskDialog({
                 ))}
               </select>
             </div>
+          </div>
+          <div>
+            <Label>交互策略</Label>
+            <select
+              value={interactionMode}
+              onChange={(e) => setInteractionMode(e.target.value as Task['interaction_mode'])}
+              className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+            >
+              {(['ask_user', 'auto_recommended'] as const).map((mode) => (
+                <option key={mode} value={mode}>
+                  {TASK_INTERACTION_MODE_LABEL[mode]}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>

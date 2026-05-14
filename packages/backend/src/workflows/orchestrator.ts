@@ -6,7 +6,14 @@ import { taskRepo } from '../repos/tasks.js';
 import { workflowRepo } from '../repos/workflows.js';
 import { runRegistry } from '../run-registry.js';
 import { wsHub } from '../ws-hub.js';
-import { parseAcceptanceVerdict, parsePlanArtifact, parseReviewVerdict } from './plan-parser.js';
+import {
+  parseAcceptanceVerdict,
+  parseDecisionRequest,
+  parsePlanArtifact,
+  parseReviewVerdict,
+  type ParsedDecisionItem,
+  type ParsedDecisionRequest,
+} from './plan-parser.js';
 import { buildStagePrompt } from './prompts.js';
 import type {
   AgentRun,
@@ -56,6 +63,38 @@ export const workflowOrchestrator = {
     if (!updated) throw new Error('workflow not found');
     broadcastWorkflow('workflow:updated', updated);
     assignFromPlan(updated);
+    return latestRun(updated.id);
+  },
+
+  submitDecisions(
+    id: string,
+    answers: Array<{ decisionId: string; optionId: string }>,
+    decidedBy = 'user',
+  ): WorkflowRun {
+    const run = requireRun(id);
+    if (run.status !== 'awaiting_decision') throw new Error('workflow is not awaiting decision');
+    const requestArtifact = latestDecisionRequestArtifact(run.id);
+    if (!requestArtifact) throw new Error('workflow has no decision request');
+    const request = parseDecisionMetadata(requestArtifact.metadata);
+    const response = buildDecisionResponse(request.decisions, answers, decidedBy);
+    const artifact = workflowRepo.createArtifact({
+      task_id: run.task_id,
+      workflow_run_id: run.id,
+      workflow_step_id: requestArtifact.workflow_step_id,
+      artifact_type: 'decision_response',
+      title: '用户决策',
+      content: formatDecisionResponse(response),
+      metadata: response,
+    });
+    broadcastArtifact(run.room_id, artifact);
+    const updated = workflowRepo.updateRun(id, {
+      status: 'running',
+      current_stage: 'planning',
+      error: null,
+    });
+    if (!updated) throw new Error('workflow not found');
+    broadcastWorkflow('workflow:updated', updated);
+    startAgentStage(updated, requireTask(updated.task_id), 'planning');
     return latestRun(updated.id);
   },
 
@@ -266,6 +305,132 @@ function failStageWithoutAgent(run: WorkflowRun, task: Task, stage: WorkflowStag
   broadcastStep('workflow_step:created', run.room_id, failedStep);
 }
 
+function handleAnalysisDecisions(run: WorkflowRun, step: WorkflowStep, output: string): void {
+  const request = parseDecisionRequest(output);
+  const blockingDecisions = request.decisions.filter((decision) => decision.blocking);
+  if (request.decisions.length > 0) {
+    const artifact = workflowRepo.createArtifact({
+      task_id: run.task_id,
+      workflow_run_id: run.id,
+      workflow_step_id: step.id,
+      artifact_type: 'decision_request',
+      title: '待决策问题',
+      content: formatDecisionRequest(request),
+      metadata: request,
+    });
+    broadcastArtifact(run.room_id, artifact);
+  }
+
+  if (blockingDecisions.length === 0) {
+    startAgentStage(run, requireTask(run.task_id), 'planning');
+    return;
+  }
+
+  const task = requireTask(run.task_id);
+  if (task.interaction_mode === 'auto_recommended') {
+    const response = buildRecommendedDecisionResponse(request.decisions);
+    const artifact = workflowRepo.createArtifact({
+      task_id: run.task_id,
+      workflow_run_id: run.id,
+      workflow_step_id: step.id,
+      artifact_type: 'decision_response',
+      title: '系统推荐决策',
+      content: formatDecisionResponse(response),
+      metadata: response,
+    });
+    broadcastArtifact(run.room_id, artifact);
+    startAgentStage(run, task, 'planning');
+    return;
+  }
+
+  const updated = workflowRepo.updateRun(run.id, {
+    status: 'awaiting_decision',
+    current_stage: 'analysis',
+    error: null,
+  });
+  if (updated) broadcastWorkflow('workflow:updated', updated);
+  const waitingStep = workflowRepo.updateStep(step.id, { status: 'awaiting_approval' });
+  if (waitingStep) broadcastStep('workflow_step:updated', run.room_id, waitingStep);
+}
+
+function latestDecisionRequestArtifact(workflowRunId: string): TaskArtifact | undefined {
+  return [...workflowRepo.listArtifacts(workflowRunId)]
+    .reverse()
+    .find((artifact) => artifact.artifact_type === 'decision_request');
+}
+
+function parseDecisionMetadata(metadata: string | null): ParsedDecisionRequest {
+  if (!metadata) throw new Error('decision request is missing metadata');
+  return parseDecisionRequest(metadata);
+}
+
+function buildRecommendedDecisionResponse(decisions: ParsedDecisionItem[]): {
+  decidedBy: string;
+  answers: Array<{ decisionId: string; optionId: string; question: string; label: string; description: string }>;
+} {
+  return buildDecisionResponse(
+    decisions,
+    decisions.map((decision) => ({
+      decisionId: decision.id,
+      optionId: decision.recommendedOptionId,
+    })),
+    'system:auto_recommended',
+  );
+}
+
+function buildDecisionResponse(
+  decisions: ParsedDecisionItem[],
+  answers: Array<{ decisionId: string; optionId: string }>,
+  decidedBy: string,
+): {
+  decidedBy: string;
+  answers: Array<{ decisionId: string; optionId: string; question: string; label: string; description: string }>;
+} {
+  const answerByDecision = new Map(answers.map((answer) => [answer.decisionId, answer.optionId]));
+  const normalized = decisions.map((decision) => {
+    const optionId = answerByDecision.get(decision.id);
+    if (!optionId) throw new Error(`missing answer for decision ${decision.id}`);
+    const option = decision.options.find((item) => item.id === optionId);
+    if (!option) throw new Error(`invalid option ${optionId} for decision ${decision.id}`);
+    return {
+      decisionId: decision.id,
+      optionId: option.id,
+      question: decision.question,
+      label: option.label,
+      description: option.description,
+    };
+  });
+  return { decidedBy, answers: normalized };
+}
+
+function formatDecisionRequest(request: ParsedDecisionRequest): string {
+  if (request.decisions.length === 0) return '没有需要用户决策的问题。';
+  return request.decisions
+    .map((decision, index) => {
+      const options = decision.options
+        .map((option) => {
+          const suffix = option.id === decision.recommendedOptionId ? '（推荐）' : '';
+          return `- ${option.label}${suffix}：${option.description}`;
+        })
+        .join('\n');
+      return `${index + 1}. ${decision.question}\n原因：${decision.reason || '未说明'}\n${options}`;
+    })
+    .join('\n\n');
+}
+
+function formatDecisionResponse(response: {
+  decidedBy: string;
+  answers: Array<{ question: string; label: string; description: string }>;
+}): string {
+  return [
+    `决策来源：${response.decidedBy}`,
+    '',
+    ...response.answers.map((answer, index) =>
+      `${index + 1}. ${answer.question}\n选择：${answer.label}\n说明：${answer.description || '无'}`,
+    ),
+  ].join('\n');
+}
+
 function startAgentStage(run: WorkflowRun, task: Task, stage: WorkflowStage): void {
   const context = getContext(run);
   const agent = selectAgent(stage, context.agents);
@@ -400,7 +565,7 @@ async function handleAgentStageFinished(
       content: message.content,
     });
     broadcastArtifact(run.room_id, artifact);
-    startAgentStage(run, requireTask(run.task_id), 'planning');
+    handleAnalysisDecisions(run, step, message.content);
     return;
   }
 

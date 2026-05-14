@@ -3,14 +3,20 @@ import { Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import type { RoomAgent, Task, WorkflowDetail, WorkflowRun, WorkflowStatus } from '../lib/types';
-import { TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '../lib/types';
+import { TASK_INTERACTION_MODE_LABEL, TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '../lib/types';
 import { relativeTime } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { Button } from './ui/Button';
 import { Label } from './ui/Input';
 
-const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowStatus>(['draft', 'running', 'awaiting_approval', 'blocked']);
+const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowStatus>([
+  'draft',
+  'running',
+  'awaiting_decision',
+  'awaiting_approval',
+  'blocked',
+]);
 
 export function TaskDetailPanel({
   task,
@@ -43,7 +49,7 @@ export function TaskDetailPanel({
   };
 
   const update = useMutation({
-    mutationFn: (patch: Partial<Pick<Task, 'status' | 'priority' | 'assigned_agent_id'>>) =>
+    mutationFn: (patch: Partial<Pick<Task, 'status' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>>) =>
       api.updateTask(task.id, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-tasks', task.room_id] });
@@ -66,6 +72,16 @@ export function TaskDetailPanel({
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
       toast.success('计划已确认');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const submitDecisions = useMutation({
+    mutationFn: (input: { workflowId: string; answers: Array<{ decisionId: string; optionId: string }> }) =>
+      api.submitWorkflowDecisions(input.workflowId, input.answers),
+    onSuccess: (workflow) => {
+      refreshWorkflow(workflow);
+      toast.success('决策已提交');
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -137,8 +153,11 @@ export function TaskDetailPanel({
           <WorkflowTimeline
             detail={workflowDetail as WorkflowDetail | null}
             agents={agents}
-            busy={approvePlan.isPending || retryWorkflow.isPending || cancelWorkflow.isPending}
+            busy={approvePlan.isPending || submitDecisions.isPending || retryWorkflow.isPending || cancelWorkflow.isPending}
             onApprove={() => displayWorkflow && approvePlan.mutate(displayWorkflow.id)}
+            onSubmitDecisions={(answers) =>
+              displayWorkflow && submitDecisions.mutate({ workflowId: displayWorkflow.id, answers })
+            }
             onRetry={() => displayWorkflow && retryWorkflow.mutate(displayWorkflow.id)}
             onCancel={() => displayWorkflow && cancelWorkflow.mutate(displayWorkflow.id)}
           />
@@ -175,6 +194,22 @@ export function TaskDetailPanel({
               ))}
             </select>
           </div>
+        </section>
+
+        <section>
+          <Label>交互策略</Label>
+          <select
+            value={task.interaction_mode}
+            onChange={(e) => update.mutate({ interaction_mode: e.target.value as Task['interaction_mode'] })}
+            className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+            disabled={update.isPending}
+          >
+            {(['ask_user', 'auto_recommended'] as const).map((mode) => (
+              <option key={mode} value={mode}>
+                {TASK_INTERACTION_MODE_LABEL[mode]}
+              </option>
+            ))}
+          </select>
         </section>
 
         <section>

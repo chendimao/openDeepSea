@@ -105,11 +105,15 @@ export const api = {
       title: string;
       description?: string;
       priority?: Task['priority'];
+      interaction_mode?: Task['interaction_mode'];
       assigned_agent_id?: string;
       parent_task_id?: string;
     },
   ) => request<Task>(`/rooms/${roomId}/tasks`, { method: 'POST', body: JSON.stringify(input) }),
-  updateTask: (id: string, patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'assigned_agent_id' | 'status'>>) =>
+  updateTask: (
+    id: string,
+    patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id' | 'status'>>,
+  ) =>
     request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
@@ -121,6 +125,14 @@ export const api = {
     request<WorkflowDetail>(`/workflows/${id}`),
   approveWorkflowPlan: (id: string) =>
     request<WorkflowRun>(`/workflows/${id}/approve-plan`, { method: 'POST' }),
+  submitWorkflowDecisions: (
+    id: string,
+    answers: Array<{ decisionId: string; optionId: string }>,
+  ) =>
+    request<WorkflowRun>(`/workflows/${id}/decisions`, {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    }),
   retryWorkflowStep: (id: string) =>
     request<WorkflowRun>(`/workflows/${id}/retry-step`, { method: 'POST' }),
   cancelWorkflow: (id: string) =>

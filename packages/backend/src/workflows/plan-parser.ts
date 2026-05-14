@@ -1,6 +1,29 @@
 import { z } from 'zod';
 import type { TaskPriority, WorkflowRole } from '../types.js';
 
+const decisionOptionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().default(''),
+});
+
+const decisionItemSchema = z
+  .object({
+    id: z.string().min(1),
+    question: z.string().min(1),
+    reason: z.string().default(''),
+    blocking: z.boolean().default(true),
+    recommendedOptionId: z.string().min(1),
+    options: z.array(decisionOptionSchema).min(1),
+  })
+  .refine((item) => item.options.some((option) => option.id === item.recommendedOptionId), {
+    message: 'recommendedOptionId must match one option id',
+  });
+
+const decisionRequestSchema = z.object({
+  decisions: z.array(decisionItemSchema).default([]),
+});
+
 const planTaskSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
@@ -47,8 +70,21 @@ export interface ParsedPlan {
   risks: string[];
 }
 
+export type ParsedDecisionOption = z.infer<typeof decisionOptionSchema>;
+export type ParsedDecisionItem = z.infer<typeof decisionItemSchema>;
+export type ParsedDecisionRequest = z.infer<typeof decisionRequestSchema>;
 export type ParsedReviewVerdict = z.infer<typeof reviewVerdictSchema>;
 export type ParsedAcceptanceVerdict = z.infer<typeof acceptanceVerdictSchema>;
+
+export function parseDecisionRequest(output: string): ParsedDecisionRequest {
+  try {
+    const jsonText = extractJsonByKey(output, 'decisions');
+    const parsed = JSON.parse(jsonText) as unknown;
+    return decisionRequestSchema.parse(parsed);
+  } catch {
+    return { decisions: [] };
+  }
+}
 
 export function parsePlanArtifact(output: string): ParsedPlan {
   const jsonText = extractJson(output);
@@ -75,4 +111,44 @@ function extractJson(output: string): string {
   const end = output.lastIndexOf('}');
   if (start >= 0 && end > start) return output.slice(start, end + 1);
   throw new Error('Planner output did not contain a JSON object');
+}
+
+function extractJsonByKey(output: string, key: string): string {
+  const fencedBlocks = Array.from(output.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)).map((match) => match[1]?.trim() ?? '');
+  for (const block of fencedBlocks) {
+    if (!block.includes(`"${key}"`)) continue;
+    JSON.parse(block);
+    return block;
+  }
+  const keyIndex = output.indexOf(`"${key}"`);
+  if (keyIndex < 0) throw new Error(`Output did not contain ${key}`);
+  let start = keyIndex;
+  while (start >= 0 && output[start] !== '{') start--;
+  if (start < 0) throw new Error(`Output did not contain ${key} object`);
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < output.length; index++) {
+    const char = output[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === '{') depth++;
+    if (char === '}') {
+      depth--;
+      if (depth === 0) return output.slice(start, index + 1);
+    }
+  }
+  throw new Error(`Output did not contain complete ${key} object`);
 }

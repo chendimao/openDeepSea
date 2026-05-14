@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   description TEXT,
   status TEXT NOT NULL DEFAULT 'todo',
   priority TEXT NOT NULL DEFAULT 'normal',
+  interaction_mode TEXT NOT NULL DEFAULT 'ask_user',
   assigned_agent_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -203,6 +204,12 @@ if (!agentRunColumnNames.has('workflow_step_id')) {
 }
 if (!agentRunColumnNames.has('workflow_stage')) {
   db.exec('ALTER TABLE agent_runs ADD COLUMN workflow_stage TEXT');
+}
+
+const taskColumns = db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];
+const taskColumnNames = new Set(taskColumns.map((column) => column.name));
+if (!taskColumnNames.has('interaction_mode')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN interaction_mode TEXT NOT NULL DEFAULT 'ask_user'");
 }
 
 export function now(): number {

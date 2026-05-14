@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { Task, TaskPriority, TaskStatus } from '../types.js';
+import type { Task, TaskInteractionMode, TaskPriority, TaskStatus } from '../types.js';
 
 export const taskRepo = {
   listByProject(projectId: string): Task[] {
@@ -37,14 +37,18 @@ export const taskRepo = {
     title: string;
     description?: string;
     priority?: TaskPriority;
+    interaction_mode?: TaskInteractionMode;
     assigned_agent_id?: string;
     parent_task_id?: string;
   }): Task {
     const id = nanoid(12);
     const ts = now();
     db.prepare(
-      `INSERT INTO tasks (id, room_id, project_id, parent_task_id, title, description, status, priority, assigned_agent_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?)`,
+      `INSERT INTO tasks (
+        id, room_id, project_id, parent_task_id, title, description, status,
+        priority, interaction_mode, assigned_agent_id, created_at, updated_at
+      )
+       VALUES (?, ?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.room_id,
@@ -53,6 +57,7 @@ export const taskRepo = {
       input.title,
       input.description ?? null,
       input.priority ?? 'normal',
+      input.interaction_mode ?? 'ask_user',
       input.assigned_agent_id ?? null,
       ts,
       ts,
@@ -68,13 +73,18 @@ export const taskRepo = {
     return this.get(id);
   },
 
-  update(id: string, patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'assigned_agent_id'>>): Task | undefined {
+  update(
+    id: string,
+    patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>>,
+  ): Task | undefined {
     const existing = this.get(id);
     if (!existing) return undefined;
     const next = { ...existing, ...patch };
     db.prepare(
-      `UPDATE tasks SET title = ?, description = ?, priority = ?, assigned_agent_id = ?, updated_at = ? WHERE id = ?`,
-    ).run(next.title, next.description, next.priority, next.assigned_agent_id, now(), id);
+      `UPDATE tasks
+       SET title = ?, description = ?, priority = ?, interaction_mode = ?, assigned_agent_id = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(next.title, next.description, next.priority, next.interaction_mode, next.assigned_agent_id, now(), id);
     return this.get(id);
   },
 

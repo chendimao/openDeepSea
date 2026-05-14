@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAcceptanceVerdict, parsePlanArtifact, parseReviewVerdict } from './plan-parser.js';
+import { parseAcceptanceVerdict, parseDecisionRequest, parsePlanArtifact, parseReviewVerdict } from './plan-parser.js';
 
 test('parsePlanArtifact parses fenced JSON plan', () => {
   const plan = parsePlanArtifact(`
@@ -67,6 +67,44 @@ const task = { title: 'not a plan' };
 
 test('parsePlanArtifact rejects output without JSON', () => {
   assert.throws(() => parsePlanArtifact('这里只是一段普通文本'), /JSON object/);
+});
+
+test('parseDecisionRequest parses blocking decisions', () => {
+  const request = parseDecisionRequest(`
+需要确认的问题如下。
+\`\`\`json
+{
+  "decisions": [
+    {
+      "id": "file-scope",
+      "question": "文件支持范围是否只做图片，还是所有文件？",
+      "reason": "影响上传、校验和 Agent 上下文。",
+      "blocking": true,
+      "recommendedOptionId": "images-only",
+      "options": [
+        {"id":"images-only","label":"仅支持图片","description":"先控制范围。"},
+        {"id":"all-files","label":"支持所有文件","description":"覆盖更多场景。"}
+      ]
+    }
+  ]
+}
+\`\`\`
+`);
+
+  assert.equal(request.decisions.length, 1);
+  assert.equal(request.decisions[0]?.recommendedOptionId, 'images-only');
+});
+
+test('parseDecisionRequest returns empty decisions when no decision block exists', () => {
+  const request = parseDecisionRequest('没有需要确认的问题。');
+
+  assert.deepEqual(request.decisions, []);
+});
+
+test('parseDecisionRequest ignores invalid decision blocks', () => {
+  const request = parseDecisionRequest('```json\n{"decisions":[{"id":"x"}]}\n```');
+
+  assert.deepEqual(request.decisions, []);
 });
 
 test('parseReviewVerdict parses pass verdict', () => {

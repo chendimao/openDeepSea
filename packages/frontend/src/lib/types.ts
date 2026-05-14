@@ -1,9 +1,26 @@
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
 export type WorkflowRole = 'analyst' | 'planner' | 'coordinator' | 'executor' | 'reviewer' | 'acceptor';
-export type WorkflowStatus = 'draft' | 'running' | 'awaiting_approval' | 'blocked' | 'cancelled' | 'completed' | 'failed';
+export type WorkflowStatus =
+  | 'draft'
+  | 'running'
+  | 'awaiting_decision'
+  | 'awaiting_approval'
+  | 'blocked'
+  | 'cancelled'
+  | 'completed'
+  | 'failed';
 export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
 export type WorkflowStepStatus = 'pending' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled' | 'skipped';
-export type TaskArtifactType = 'analysis' | 'plan' | 'assignment' | 'implementation_summary' | 'review' | 'acceptance';
+export type TaskArtifactType =
+  | 'analysis'
+  | 'decision_request'
+  | 'decision_response'
+  | 'plan'
+  | 'assignment'
+  | 'implementation_summary'
+  | 'review'
+  | 'acceptance';
+export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
 
 export interface ProjectStats {
   rooms: number;
@@ -93,6 +110,7 @@ export interface Task {
   description: string | null;
   status: 'todo' | 'in_progress' | 'review' | 'done' | 'failed';
   priority: 'low' | 'normal' | 'high' | 'urgent';
+  interaction_mode: TaskInteractionMode;
   assigned_agent_id: string | null;
   created_at: number;
   updated_at: number;
@@ -186,6 +204,11 @@ export const TASK_PRIORITY_LABEL: Record<Task['priority'], string> = {
   urgent: '紧急',
 };
 
+export const TASK_INTERACTION_MODE_LABEL: Record<TaskInteractionMode, string> = {
+  ask_user: '需要决策时询问我',
+  auto_recommended: '使用推荐选项自动继续',
+};
+
 export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {
   queued: '排队中',
   running: '运行中',
@@ -206,6 +229,7 @@ export const WORKFLOW_ROLE_LABEL: Record<WorkflowRole, string> = {
 export const WORKFLOW_STATUS_LABEL: Record<WorkflowStatus, string> = {
   draft: '未启动',
   running: '运行中',
+  awaiting_decision: '等待决策',
   awaiting_approval: '等待确认',
   blocked: '阻塞',
   cancelled: '已取消',

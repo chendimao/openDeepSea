@@ -28,7 +28,13 @@ const PRIORITY_TONE: Record<Task['priority'], string> = {
   urgent: 'text-[var(--color-danger)]',
 };
 
-const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>(['draft', 'running', 'awaiting_approval', 'blocked']);
+const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>([
+  'draft',
+  'running',
+  'awaiting_decision',
+  'awaiting_approval',
+  'blocked',
+]);
 
 export function TaskBoard({
   tasks,

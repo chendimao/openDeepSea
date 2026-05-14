@@ -326,6 +326,26 @@ router.post('/workflows/:id/approve-plan', async (req, res) => {
   }
 });
 
+router.post('/workflows/:id/decisions', async (req, res) => {
+  const schema = z.object({
+    answers: z.array(
+      z.object({
+        decisionId: z.string().min(1),
+        optionId: z.string().min(1),
+      }),
+    ),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const workflow = await workflowOrchestrator.submitDecisions(req.params.id, parsed.data.answers, 'user');
+    res.json(workflow);
+  } catch (err) {
+    const error = err as Error;
+    res.status(workflowErrorStatus(error)).json({ error: error.message });
+  }
+});
+
 router.post('/workflows/:id/retry-step', async (req, res) => {
   try {
     const workflow = await workflowOrchestrator.retryStep(req.params.id);
@@ -362,6 +382,7 @@ router.post('/rooms/:roomId/tasks', (req, res) => {
     title: z.string().min(1),
     description: z.string().optional(),
     priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+    interaction_mode: z.enum(['ask_user', 'auto_recommended']).optional(),
     assigned_agent_id: z.string().optional(),
     parent_task_id: z.string().optional(),
   });
@@ -381,6 +402,7 @@ router.patch('/tasks/:id', (req, res) => {
     title: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
     priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+    interaction_mode: z.enum(['ask_user', 'auto_recommended']).optional(),
     assigned_agent_id: z.string().nullable().optional(),
     status: z.enum(['todo', 'in_progress', 'review', 'done', 'failed']).optional(),
   });
@@ -393,6 +415,7 @@ router.patch('/tasks/:id', (req, res) => {
   if (parsed.data.title !== undefined) fieldPatch['title'] = parsed.data.title;
   if (parsed.data.description !== undefined) fieldPatch['description'] = parsed.data.description;
   if (parsed.data.priority !== undefined) fieldPatch['priority'] = parsed.data.priority;
+  if (parsed.data.interaction_mode !== undefined) fieldPatch['interaction_mode'] = parsed.data.interaction_mode;
   if (parsed.data.assigned_agent_id !== undefined)
     fieldPatch['assigned_agent_id'] = parsed.data.assigned_agent_id;
   if (Object.keys(fieldPatch).length > 0) {

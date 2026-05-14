@@ -11,7 +11,7 @@ import type {
   WorkflowStepStatus,
 } from '../types.js';
 
-const ACTIVE_STATUSES: WorkflowStatus[] = ['draft', 'running', 'awaiting_approval', 'blocked'];
+const ACTIVE_STATUSES: WorkflowStatus[] = ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked'];
 const WORKFLOW_TERMINAL_STATUSES: WorkflowStatus[] = ['completed', 'failed', 'cancelled'];
 const STEP_TERMINAL_STATUSES: WorkflowStepStatus[] = ['completed', 'failed', 'cancelled', 'skipped'];
 

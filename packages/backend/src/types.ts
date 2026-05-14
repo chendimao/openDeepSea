@@ -22,10 +22,26 @@ export interface Room {
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
 
 export type WorkflowRole = 'analyst' | 'planner' | 'coordinator' | 'executor' | 'reviewer' | 'acceptor';
-export type WorkflowStatus = 'draft' | 'running' | 'awaiting_approval' | 'blocked' | 'cancelled' | 'completed' | 'failed';
+export type WorkflowStatus =
+  | 'draft'
+  | 'running'
+  | 'awaiting_decision'
+  | 'awaiting_approval'
+  | 'blocked'
+  | 'cancelled'
+  | 'completed'
+  | 'failed';
 export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
 export type WorkflowStepStatus = 'pending' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled' | 'skipped';
-export type TaskArtifactType = 'analysis' | 'plan' | 'assignment' | 'implementation_summary' | 'review' | 'acceptance';
+export type TaskArtifactType =
+  | 'analysis'
+  | 'decision_request'
+  | 'decision_response'
+  | 'plan'
+  | 'assignment'
+  | 'implementation_summary'
+  | 'review'
+  | 'acceptance';
 
 export interface RoomAgent {
   id: string;
@@ -82,6 +98,7 @@ export interface Message {
 
 export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'done' | 'failed';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
 
 export interface Task {
   id: string;
@@ -92,6 +109,7 @@ export interface Task {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  interaction_mode: TaskInteractionMode;
   assigned_agent_id: string | null;
   created_at: number;
   updated_at: number;
