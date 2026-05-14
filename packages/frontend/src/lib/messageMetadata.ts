@@ -62,9 +62,14 @@ function sanitizeAttachmentUrl(url: string): string | null {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
     if (parsed.search || parsed.hash) return null;
     if (!parsed.pathname.startsWith(allowedAttachmentUrlPrefix)) return null;
+    const decodedPathname = safeDecodeURIComponent(parsed.pathname);
+    if (decodedPathname.includes('/../') || decodedPathname.endsWith('/..')) return null;
     const hasTraversal = parsed.pathname
       .split('/')
-      .some((segment) => safeDecodeURIComponent(segment) === '..');
+      .some((segment) => {
+        const decoded = safeDecodeURIComponent(segment);
+        return decoded === '..' || decoded.includes('/') || decoded.includes('\\');
+      });
     if (hasTraversal) return null;
     return parsed.pathname;
   } catch {
