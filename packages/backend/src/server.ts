@@ -23,6 +23,10 @@ app.use(messageUploadRoute, express.static(messageUploadDir, {
   fallthrough: false,
   immutable: true,
   maxAge: '7d',
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', 'attachment');
+  },
 }));
 app.use('/api', router);
 

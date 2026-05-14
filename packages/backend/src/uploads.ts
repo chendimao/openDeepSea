@@ -12,6 +12,16 @@ export const MAX_MESSAGE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const messageUploadDir = join(__dirname, '..', 'data', 'uploads', 'messages');
 export const messageUploadRoute = '/uploads/messages';
 
+const allowedMessageUploadMimeTypes = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'text/plain',
+  'application/octet-stream',
+]);
+
 export function safeUploadFileName(originalName: string): string {
   const extension = extname(originalName).slice(1).toLowerCase();
   const safeExtension = /^[a-z0-9]{1,12}$/i.test(extension) ? extension : 'bin';
@@ -40,7 +50,14 @@ export const messageUpload = multer({
     files: MAX_MESSAGE_FILES,
     fileSize: MAX_MESSAGE_FILE_SIZE_BYTES,
   },
+  fileFilter: (_req, file, callback) => {
+    callback(null, isAllowedMessageUploadMimeType(file.mimetype));
+  },
 });
+
+export function isAllowedMessageUploadMimeType(mimeType: string | undefined): boolean {
+  return allowedMessageUploadMimeTypes.has(mimeType || 'application/octet-stream');
+}
 
 export function buildAttachmentMetadata(file: Express.Multer.File): MessageAttachmentMetadata {
   const mimeType = file.mimetype || 'application/octet-stream';
