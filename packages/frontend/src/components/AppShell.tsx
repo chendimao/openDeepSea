@@ -8,7 +8,6 @@ import {
   GitBranch,
   Home,
   Loader2,
-  MonitorCog,
   Moon,
   PanelTop,
   Plus,
@@ -16,6 +15,7 @@ import {
   Search,
   Server,
   Settings,
+  Sparkles,
   SquareCheck,
   Sun,
   Wifi,
@@ -29,7 +29,16 @@ import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
 import { SystemSettingsDialog } from './SettingsDialogs';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
-import type { ThemeMode } from '../lib/theme';
+import {
+  createThemeMode,
+  getThemeStyle,
+  getThemeTone,
+  THEME_STYLES,
+  THEME_TONES,
+  type ThemeMode,
+  type ThemeStyle,
+  type ThemeTone,
+} from '../lib/theme';
 
 export function AppShell({
   children,
@@ -132,7 +141,7 @@ function ProjectSidebar({
           <div className="min-w-0 flex-1">
             <div className="truncate font-display text-[16px] font-semibold leading-tight">深海指挥中心</div>
             <div className="mt-0.5 font-mono text-[11px] text-[var(--color-fg-muted)]">
-              local agent console
+              local agent workspace
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -247,30 +256,53 @@ function ThemeToggle({
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
 }): JSX.Element {
-  const options: Array<{ value: ThemeMode; label: string; icon: typeof Sun }> = [
-    { value: 'apple-light', label: '苹果亮色', icon: Sun },
-    { value: 'apple-dark', label: '苹果暗色', icon: Moon },
-    { value: 'minimal-light', label: '极简亮色', icon: PanelTop },
-    { value: 'minimal-dark', label: '极简暗色', icon: MonitorCog },
-  ];
+  const style = getThemeStyle(theme);
+  const tone = getThemeTone(theme);
+  const styleIcons: Record<ThemeStyle, typeof Sun> = {
+    apple: Sparkles,
+    minimal: PanelTop,
+  };
+  const toneIcons: Record<ThemeTone, typeof Sun> = {
+    light: Sun,
+    dark: Moon,
+  };
 
   return (
-    <div className="theme-toggle mb-2" aria-label="主题样式">
-      {options.map((option) => {
-        const Icon = option.icon;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            className={cn('theme-toggle-option', theme === option.value && 'is-active')}
-            aria-pressed={theme === option.value}
-            onClick={() => onThemeChange(option.value)}
-          >
-            <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-            <span>{option.label}</span>
-          </button>
-        );
-      })}
+    <div className="theme-toggle-stack mb-2" aria-label="主题样式">
+      <div className="theme-toggle" aria-label="主题风格">
+        {THEME_STYLES.map((option) => {
+          const Icon = styleIcons[option.value];
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={cn('theme-toggle-option', style === option.value && 'is-active')}
+              aria-pressed={style === option.value}
+              onClick={() => onThemeChange(createThemeMode(option.value, tone))}
+            >
+              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="theme-toggle" aria-label="明暗模式">
+        {THEME_TONES.map((option) => {
+          const Icon = toneIcons[option.value];
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={cn('theme-toggle-option', tone === option.value && 'is-active')}
+              aria-pressed={tone === option.value}
+              onClick={() => onThemeChange(createThemeMode(style, option.value))}
+            >
+              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
