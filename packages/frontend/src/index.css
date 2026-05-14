@@ -515,6 +515,96 @@
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.76), 0 12px 34px rgba(67, 91, 121, 0.10);
     backdrop-filter: blur(32px) saturate(1.5);
   }
+  .rich-composer-box {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+  }
+  .rich-composer-editor {
+    display: flex;
+    min-height: 44px;
+    max-height: 152px;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    align-items: center;
+    gap: 4px;
+    overflow-y: auto;
+    border-radius: 10px;
+    background: transparent;
+    padding: 6px 7px;
+    color: var(--color-fg);
+    font-size: 13px;
+    line-height: 1.55;
+    outline: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .rich-composer-editor:focus-visible {
+    box-shadow: inset 0 0 0 1px rgba(10,132,255,0.28);
+  }
+  .rich-composer-editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--color-muted);
+    pointer-events: none;
+  }
+  .composer-mention-token {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    border-radius: 999px;
+    background: rgba(10,132,255,0.13);
+    box-shadow: inset 0 0 0 1px rgba(10,132,255,0.24);
+    color: var(--color-primary);
+    font-weight: 600;
+    line-height: 1.35;
+    padding: 2px 7px;
+    white-space: nowrap;
+  }
+  .composer-attachments {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+    gap: 8px;
+  }
+  .composer-attachment {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 9px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.46);
+    padding: 7px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.68);
+  }
+  .composer-attachment img,
+  .composer-attachment-file {
+    height: 38px;
+    width: 38px;
+    flex: 0 0 auto;
+    border-radius: 7px;
+    object-fit: cover;
+    background: rgba(10,132,255,0.10);
+  }
+  .composer-attachment-file {
+    display: grid;
+    place-items: center;
+    color: var(--color-primary);
+  }
+  .composer-attachment-remove {
+    display: grid;
+    height: 26px;
+    width: 26px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 7px;
+    color: var(--color-fg-muted);
+    transition: background 160ms cubic-bezier(0.16, 1, 0.3, 1), color 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .composer-attachment-remove:hover {
+    background: rgba(217,68,53,0.10);
+    color: var(--color-danger);
+  }
   .task-column {
     overflow: hidden;
     border-radius: 13px;
