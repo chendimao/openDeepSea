@@ -183,7 +183,7 @@ export function RoomPage() {
               {room?.name ?? t('room.defaultName')}
             </div>
             <div className="mt-1 hidden truncate font-mono text-[11px] text-[var(--color-fg-muted)] sm:block">
-              {project?.name ?? t('room.defaultName')} · {project?.path ?? '/Users/chendimao/www/openclaw-room'}
+              {project?.name ?? t('room.defaultName')} · {project?.path ?? t('room.projectPathUnknown')}
             </div>
           </div>
         </div>
@@ -431,15 +431,15 @@ function ChatColumn({
         <div className="segmented-control">
           <button className="is-active" type="button">
             <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.7} />
-            Agent Stream
+            {t('room.stream.agent')}
           </button>
           <button type="button">
             <Users className="h-3.5 w-3.5" strokeWidth={1.7} />
-            Runs
+            {t('room.stream.runs')}
           </button>
           <button type="button">
             <FileText className="h-3.5 w-3.5" strokeWidth={1.7} />
-            stderr
+            {t('room.stream.stderr')}
           </button>
         </div>
         <button type="button" className="icon-glass-button" aria-label={t('room.newTask')}>

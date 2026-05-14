@@ -172,7 +172,7 @@ function CreateRoomDialog({
             <Label>{t('project.roomName')}</Label>
             <Input
               autoFocus
-              placeholder="auth-refactor / bug-fixing / discussion"
+              placeholder={t('project.roomNamePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="font-mono"
