@@ -104,8 +104,8 @@ export function RichMessageComposer({
   }, [attachments]);
 
   useEffect(() => {
-    if (sending) setMentionQuery(null);
-  }, [sending]);
+    if (isBusy) setMentionQuery(null);
+  }, [isBusy]);
 
   useEffect(() => {
     return () => {
@@ -236,12 +236,16 @@ export function RichMessageComposer({
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
     if (isBusy) return;
 
     const files = Array.from(event.dataTransfer.files);
     if (files.length === 0) return;
 
-    event.preventDefault();
     addFiles(files);
   };
 
