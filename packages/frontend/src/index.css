@@ -593,8 +593,8 @@
   }
   .composer-attachment-remove {
     display: grid;
-    height: 26px;
-    width: 26px;
+    min-height: 38px;
+    width: 38px;
     flex: 0 0 auto;
     place-items: center;
     border-radius: 7px;
@@ -604,6 +604,11 @@
   .composer-attachment-remove:hover {
     background: rgba(217,68,53,0.10);
     color: var(--color-danger);
+  }
+  .composer-action-button {
+    min-height: 40px;
+    padding-left: 12px;
+    padding-right: 12px;
   }
   .task-column {
     overflow: hidden;

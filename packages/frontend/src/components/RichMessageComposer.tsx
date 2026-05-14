@@ -37,6 +37,7 @@ interface AttachmentPreview extends PendingAttachment {
 }
 
 const mentionQueryPattern = /@([\p{L}\p{N}_.-]*)$/u;
+const boundedMentionPattern = /@([\p{L}\p{N}_.-]+)([\s,.;:!?，。；：！？、])$/u;
 
 export function RichMessageComposer({
   agents,
@@ -130,6 +131,8 @@ export function RichMessageComposer({
   }, [renderNodes, resetKey]);
 
   const addFiles = (fileList: FileList | File[]) => {
+    if (isBusy) return;
+
     const files = Array.from(fileList);
     if (files.length === 0) return;
 
@@ -164,6 +167,9 @@ export function RichMessageComposer({
 
   const handleInput = () => {
     const editor = editorRef.current;
+    if (!editor) return;
+
+    normalizeBoundedMentionAtCursor(editor, agents);
     setHasContent(!!editor && readPlainText(editor).trim().length > 0);
     updateMentionQuery();
   };
@@ -176,9 +182,7 @@ export function RichMessageComposer({
     const range = selection.getRangeAt(0);
     if (!editor.contains(range.commonAncestorContainer)) return;
 
-    replaceMentionQueryWithText(editor, range, agent);
-    renderNodes(normalizeTypedMentions(readNodesFromEditor(editor), agents));
-    placeCursorAtEnd(editor);
+    insertMentionAtCurrentQuery(editor, range, agent);
     setMentionQuery(null);
     setHasContent(readPlainText(editor).trim().length > 0);
   };
@@ -220,6 +224,8 @@ export function RichMessageComposer({
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    if (isBusy) return;
+
     const files = Array.from(event.clipboardData.files);
     if (files.length === 0) return;
 
@@ -228,6 +234,8 @@ export function RichMessageComposer({
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (isBusy) return;
+
     const files = Array.from(event.dataTransfer.files);
     if (files.length === 0) return;
 
@@ -246,7 +254,7 @@ export function RichMessageComposer({
       <div
         className="rich-composer-box composer-box"
         onDragOver={(event) => {
-          if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+          if (!isBusy && event.dataTransfer.types.includes('Files')) event.preventDefault();
         }}
         onDrop={handleDrop}
       >
@@ -321,6 +329,7 @@ export function RichMessageComposer({
               type="button"
               variant="ghost"
               size="sm"
+              className="composer-action-button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isBusy}
               aria-label="选择附件"
@@ -328,7 +337,13 @@ export function RichMessageComposer({
             >
               <Image className="h-4 w-4" strokeWidth={1.75} />
             </Button>
-            <Button type="submit" size="sm" disabled={sendDisabled} aria-label="发送消息">
+            <Button
+              type="submit"
+              size="sm"
+              className="composer-action-button"
+              disabled={sendDisabled}
+              aria-label="发送消息"
+            >
               <Send className="h-4 w-4" strokeWidth={1.75} />
               发送
             </Button>
@@ -344,19 +359,27 @@ function renderNode(node: ComposerNode): Node[] {
     return node.text ? [document.createTextNode(node.text)] : [];
   }
 
+  return [createMentionElement(node.roomAgentId, node.agentName)];
+}
+
+function createMentionElement(roomAgentId: string, agentName: string): HTMLSpanElement {
   const token = document.createElement('span');
   token.className = 'composer-mention-token';
   token.contentEditable = 'false';
-  token.dataset.roomAgentId = node.roomAgentId;
-  token.dataset.agentName = node.agentName;
-  token.textContent = `@${node.agentName}`;
-  return [token];
+  token.dataset.roomAgentId = roomAgentId;
+  token.dataset.agentName = agentName;
+  token.textContent = `@${agentName}`;
+  return token;
 }
 
 function readNodesFromEditor(editor: HTMLDivElement): ComposerNode[] {
   const nodes: ComposerNode[] = [];
+  readChildNodes(editor, nodes, true);
+  return nodes.length > 0 ? nodes : createEmptyComposerNodes();
+}
 
-  editor.childNodes.forEach((child) => {
+function readChildNodes(parent: Node, nodes: ComposerNode[], appendBlockBreak: boolean) {
+  parent.childNodes.forEach((child) => {
     if (child.nodeType === Node.TEXT_NODE) {
       nodes.push({ type: 'text', text: child.textContent ?? '' });
       return;
@@ -369,12 +392,21 @@ function readNodesFromEditor(editor: HTMLDivElement): ComposerNode[] {
         nodes.push({ type: 'mention', roomAgentId, agentName });
         return;
       }
+
+      if (child.tagName === 'BR') {
+        nodes.push({ type: 'text', text: '\n' });
+        return;
+      }
+
+      const isBlock = isBlockishElement(child);
+      const lengthBefore = textLengthFromNodes(nodes);
+      readChildNodes(child, nodes, isBlock);
+      if (isBlock && appendBlockBreak && textLengthFromNodes(nodes) > lengthBefore) {
+        nodes.push({ type: 'text', text: '\n' });
+      }
+      return;
     }
-
-    nodes.push({ type: 'text', text: child.textContent ?? '' });
   });
-
-  return nodes.length > 0 ? nodes : createEmptyComposerNodes();
 }
 
 function readPlainText(editor: HTMLDivElement): string {
@@ -390,32 +422,157 @@ function getTextBeforeCursor(editor: HTMLDivElement, range: Range): string {
   return before.toString();
 }
 
-function replaceMentionQueryWithText(editor: HTMLDivElement, range: Range, agent: RoomAgent) {
-  const textBeforeCursor = getTextBeforeCursor(editor, range);
-  const match = textBeforeCursor.match(mentionQueryPattern);
+function insertMentionAtCurrentQuery(editor: HTMLDivElement, range: Range, agent: RoomAgent) {
+  const match = getMentionQueryOffsets(editor, range);
   if (!match) return;
 
-  const tokenLength = match[0].length;
-  const replaceRange = range.cloneRange();
-  let startNode: Node = range.endContainer;
-  let startOffset = range.endOffset;
-
-  while (tokenLength > startOffset && startNode.previousSibling) {
-    startNode = startNode.previousSibling;
-    startOffset += startNode.textContent?.length ?? 0;
-  }
-
-  replaceRange.setStart(startNode, Math.max(0, startOffset - tokenLength));
-  replaceRange.deleteContents();
-  replaceRange.insertNode(document.createTextNode(`@${agent.agent_name} `));
+  replaceTextRangeWithMention(editor, match.start, match.end, agent);
 }
 
-function placeCursorAtEnd(editor: HTMLDivElement) {
+function normalizeBoundedMentionAtCursor(editor: HTMLDivElement, agents: RoomAgent[]) {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0 || !editor.contains(selection.anchorNode)) return;
+
+  const range = selection.getRangeAt(0);
+  if (!range.collapsed) return;
+
+  const cursorOffset = getLinearOffset(editor, range);
+  const beforeCursor = getEditorLinearText(editor).slice(0, cursorOffset);
+  const match = beforeCursor.match(boundedMentionPattern);
+  if (!match || match.index === undefined) return;
+
+  const normalized = normalizeTypedMentions([{ type: 'text', text: `@${match[1]}` }], agents);
+  const mention = normalized.length === 1 && normalized[0].type === 'mention' ? normalized[0] : null;
+  if (!mention) return;
+
+  const delimiter = match[2];
+  replaceTextRangeWithMention(editor, match.index, match.index + match[0].length, {
+    id: mention.roomAgentId,
+    agent_name: mention.agentName,
+  }, delimiter);
+}
+
+function getMentionQueryOffsets(editor: HTMLDivElement, range: Range): { start: number; end: number } | null {
+  const cursorOffset = getLinearOffset(editor, range);
+  const textBeforeCursor = getEditorLinearText(editor).slice(0, cursorOffset);
+  const match = textBeforeCursor.match(mentionQueryPattern);
+  if (!match || match.index === undefined) return null;
+
+  return {
+    start: match.index,
+    end: cursorOffset,
+  };
+}
+
+function replaceTextRangeWithMention(
+  editor: HTMLDivElement,
+  start: number,
+  end: number,
+  agent: Pick<RoomAgent, 'id' | 'agent_name'>,
+  trailingText = ' ',
+) {
+  const startPoint = mapLinearOffsetToDomPoint(editor, start);
+  const endPoint = mapLinearOffsetToDomPoint(editor, end);
+  if (!startPoint || !endPoint) return;
+
+  const replaceRange = document.createRange();
+  replaceRange.setStart(startPoint.node, startPoint.offset);
+  replaceRange.setEnd(endPoint.node, endPoint.offset);
+  replaceRange.deleteContents();
+
+  const token = createMentionElement(agent.id, agent.agent_name);
+  const trailing = document.createTextNode(trailingText);
+  replaceRange.insertNode(trailing);
+  replaceRange.insertNode(token);
+  placeCursorAfter(trailing);
+  editor.focus();
+}
+
+function placeCursorAfter(node: Node) {
   const range = document.createRange();
-  range.selectNodeContents(editor);
-  range.collapse(false);
+  range.setStartAfter(node);
+  range.collapse(true);
   const selection = window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
-  editor.focus();
+}
+
+function getLinearOffset(editor: HTMLDivElement, range: Range): number {
+  const before = range.cloneRange();
+  before.selectNodeContents(editor);
+  before.setEnd(range.endContainer, range.endOffset);
+  return before.toString().length;
+}
+
+function getEditorLinearText(editor: HTMLDivElement): string {
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  return range.toString();
+}
+
+function mapLinearOffsetToDomPoint(editor: HTMLDivElement, targetOffset: number): { node: Node; offset: number } | null {
+  const walker = editor.ownerDocument.createTreeWalker(editor, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+    acceptNode(node) {
+      if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+      if (node instanceof HTMLElement && node.tagName === 'BR') return NodeFilter.FILTER_ACCEPT;
+      return NodeFilter.FILTER_SKIP;
+    },
+  });
+
+  let offset = 0;
+  let current = walker.nextNode();
+  while (current) {
+    const length = current.nodeType === Node.TEXT_NODE ? current.textContent?.length ?? 0 : 1;
+    if (targetOffset <= offset + length) {
+      if (current.nodeType === Node.TEXT_NODE) {
+        return { node: current, offset: Math.max(0, targetOffset - offset) };
+      }
+      return { node: current.parentNode ?? editor, offset: getNodeIndex(current) };
+    }
+
+    offset += length;
+    current = walker.nextNode();
+  }
+
+  return { node: editor, offset: editor.childNodes.length };
+}
+
+function isBlockishElement(element: HTMLElement): boolean {
+  return [
+    'ADDRESS',
+    'ARTICLE',
+    'ASIDE',
+    'BLOCKQUOTE',
+    'DIV',
+    'FIGURE',
+    'FOOTER',
+    'H1',
+    'H2',
+    'H3',
+    'H4',
+    'H5',
+    'H6',
+    'HEADER',
+    'LI',
+    'MAIN',
+    'OL',
+    'P',
+    'PRE',
+    'SECTION',
+    'UL',
+  ].includes(element.tagName);
+}
+
+function textLengthFromNodes(nodes: ComposerNode[]): number {
+  return nodes.reduce((total, node) => total + (node.type === 'mention' ? node.agentName.length + 1 : node.text.length), 0);
+}
+
+function getNodeIndex(node: Node): number {
+  let index = 0;
+  let sibling = node.previousSibling;
+  while (sibling) {
+    index += 1;
+    sibling = sibling.previousSibling;
+  }
+  return index;
 }
