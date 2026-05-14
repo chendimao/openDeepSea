@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AppShell } from './components/AppShell';
+import { I18nProvider } from './lib/i18n';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { RoomPage } from './pages/RoomPage';
@@ -32,19 +33,21 @@ function RootApp(): JSX.Element {
   const toasterTheme = theme === 'dark' ? 'dark' : 'light';
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppShell theme={theme} onThemeChange={setTheme}>
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/projects/:projectId" element={<ProjectPage />} />
-            <Route path="/projects/:projectId/rooms/:roomId" element={<RoomPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </AppShell>
-        <Toaster theme={toasterTheme} position="bottom-right" richColors />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AppShell theme={theme} onThemeChange={setTheme}>
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/projects/:projectId" element={<ProjectPage />} />
+              <Route path="/projects/:projectId/rooms/:roomId" element={<RoomPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </AppShell>
+          <Toaster theme={toasterTheme} position="bottom-right" richColors />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </I18nProvider>
   );
 }
 
