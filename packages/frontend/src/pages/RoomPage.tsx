@@ -1,28 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronLeft, FileText, MessageSquare, Plus, Save, Send, Settings2, Users } from 'lucide-react';
+import { ChevronDown, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { AgentRun, Message, RoomAgent, Task, WorkflowRun } from '../lib/types';
+import type { AgentRun, Message, MessageAttachmentMetadata, RoomAgent, Task, WorkflowRun } from '../lib/types';
+import { parseMessageMetadata } from '../lib/messageMetadata';
 import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
+import { RichMessageComposer } from '../components/RichMessageComposer';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
-import { Button } from '../components/ui/Button';
-import { AgentMentionMenu } from '../components/AgentMentionMenu';
-import { MemoryPanel } from '../components/MemoryPanel';
 import { MessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
-
-const MEMORY_CONTENT_MAX_LENGTH = 12000;
-const TRUNCATED_MEMORY_SUFFIX = '\n\n[内容已截断]';
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -61,7 +57,6 @@ export function RoomPage() {
     enabled: !!roomId,
   });
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
-  const inspectorTask = selectedTask ?? rootTasks[0] ?? null;
   const taskWorkflowKey = rootTasks.map((task) => task.id).join(',');
   const { data: taskWorkflows = [] } = useQuery({
     queryKey: ['room-workflows', roomId, taskWorkflowKey],
@@ -251,7 +246,6 @@ export function RoomPage() {
             messages={messages}
             agents={agents}
             agentRuns={agentRuns}
-            projectId={project?.id}
             roomId={roomId}
             routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
             fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
@@ -259,38 +253,26 @@ export function RoomPage() {
             retryingWorkflowId={retryWorkflow.variables}
           />
         </section>
-        <div className="flex min-h-0 flex-col gap-2 [&>.task-board-panel]:min-h-0 [&>.task-board-panel]:flex-1">
+        {selectedTask ? (
+          <TaskDetailPanel
+            task={selectedTask}
+            agents={agents}
+            projectId={projectId}
+            onClose={() => setSelectedTask(null)}
+          />
+        ) : (
           <TaskBoard
             tasks={tasks}
             agents={agents}
             workflows={taskWorkflows}
-            selectedTaskId={inspectorTask?.id ?? null}
+            selectedTaskId={null}
             onSelectTask={(task) => {
               setConfigAgent(null);
               setSelectedTask(task);
             }}
             onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
           />
-          {project ? (
-            <aside className="workbench-panel max-h-[34vh] shrink-0 overflow-hidden" aria-label="聊天室记忆">
-              <div className="min-h-0 overflow-y-auto p-4">
-                <MemoryPanel
-                  projectId={project.id}
-                  roomId={roomId}
-                  roomAgents={agents}
-                  defaultScope="room"
-                  compact
-                />
-              </div>
-            </aside>
-          ) : null}
-        </div>
-        <TaskDetailPanel
-          task={inspectorTask}
-          agents={agents}
-          projectId={project?.id ?? projectId}
-          onClose={() => setSelectedTask(null)}
-        />
+        )}
       </div>
 
       {configAgent && (
@@ -367,7 +349,6 @@ function ChatColumn({
   messages,
   agents,
   agentRuns,
-  projectId,
   roomId,
   routingMode,
   fallbackAgentId,
@@ -377,14 +358,13 @@ function ChatColumn({
   messages: Message[];
   agents: RoomAgent[];
   agentRuns: AgentRun[];
-  projectId?: string;
   roomId: string;
   routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
   fallbackAgentId: string | null;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
 }) {
-  const [input, setInput] = useState('');
+  const [composerResetKey, setComposerResetKey] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const agentMap = useMemo(
@@ -406,15 +386,9 @@ function ChatColumn({
   }, [messages.length, agentRuns.length]);
 
   const send = useMutation({
-    mutationFn: ({
-      content,
-      mentions,
-    }: {
-      content: string;
-      mentions?: string[];
-    }) => api.sendMessage(roomId, content, mentions),
+    mutationFn: (input: { content: string; mentions?: string[]; files?: File[] }) => api.sendMessage(roomId, input),
     onSuccess: () => {
-      setInput('');
+      setComposerResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
     },
     onError: (err) => toast.error((err as Error).message),
@@ -423,58 +397,27 @@ function ChatColumn({
   const createTaskFromCommand = useMutation({
     mutationFn: (title: string) => api.createTask(roomId, { title }),
     onSuccess: () => {
-      setInput('');
+      setComposerResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
       toast.success('任务已创建');
     },
     onError: (err) => toast.error((err as Error).message),
   });
 
-  const saveMessageMemory = useMutation({
-    mutationFn: (message: Message) => {
-      const content = createMessageMemoryContent(message.content);
-      return api.createMemory(projectId!, {
-        scope: 'room',
-        memory_type: message.sender_type === 'agent' ? 'lesson' : 'fact',
-        title: createMessageMemoryTitle(content),
-        content,
-        room_id: roomId,
-        source_type: 'message',
-        source_id: message.id,
-      });
-    },
-    onSuccess: () => {
-      toast.success('已保存为记忆');
-      queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
-    },
-    onError: (err) => {
-      if (isConflictError(err)) {
-        toast.info('这条消息已保存为记忆');
-        queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
-        return;
-      }
-      toast.error((err as Error).message);
-    },
-    onMutate: (message) => {
-      if (message.content.trim().length > MEMORY_CONTENT_MAX_LENGTH) {
-        toast.info('消息较长，已截断后保存');
-      }
-    },
-  });
-
-  const handleSend = () => {
-    const content = input.trim();
-    if (!content) return;
+  const handleSend = (input: { content: string; mentions?: string[]; files?: File[] }) => {
+    const content = input.content.trim();
+    const files = input.files;
+    if (!content && (!files || files.length === 0)) return;
     const taskMatch = content.match(/^\/task\s+(.+)/);
     if (taskMatch?.[1]?.trim()) {
+      if (files && files.length > 0) {
+        toast.error('/task 命令不能携带附件，请先移除附件');
+        return;
+      }
       createTaskFromCommand.mutate(taskMatch[1].trim());
       return;
     }
-    const mentionNames = Array.from(content.matchAll(/@([\p{L}\p{N}_.-]+)/gu)).map((m) => m[1]);
-    const mentions = agents
-      .filter((agent) => mentionNames.includes(agent.agent_name) || mentionNames.includes(agent.agent_id))
-      .map((agent) => agent.id);
-    send.mutate({ content, mentions: mentions.length > 0 ? mentions : undefined });
+    send.mutate({ content, mentions: input.mentions, files });
   };
 
   return (
@@ -522,9 +465,6 @@ function ChatColumn({
                 run={run}
                 runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
                 roomId={roomId}
-                projectId={projectId}
-                savingMemory={saveMessageMemory.isPending && saveMessageMemory.variables?.id === m.id}
-                onSaveMemory={(message) => saveMessageMemory.mutate(message)}
                 onRetryWorkflow={onRetryWorkflow}
                 retryingWorkflowId={retryingWorkflowId}
               />
@@ -533,16 +473,20 @@ function ChatColumn({
         )}
       </div>
 
-      <Composer
-        value={input}
-        onChange={setInput}
+      <RichMessageComposer
+        resetKey={composerResetKey}
         onSend={handleSend}
         sending={send.isPending || createTaskFromCommand.isPending}
-        agentCount={agents.length}
+        disabled={agents.length === 0}
         agents={agents}
-        routingMode={routingMode}
-        fallbackAgentId={fallbackAgentId}
-        fallbackAgent={agents.find((agent) => agent.agent_id === fallbackAgentId)}
+        placeholder={
+          agents.length === 0 ? '先邀请一个 agent 才能开始对话...' : '发送消息、@agent 定向，或 /task 创建任务'
+        }
+        routingHint={routingHint(
+          routingMode,
+          fallbackAgentId,
+          agents.find((agent) => agent.agent_id === fallbackAgentId),
+        )}
       />
     </div>
   );
@@ -575,9 +519,6 @@ function MessageBubble({
   run,
   runAgent,
   roomId,
-  projectId,
-  savingMemory,
-  onSaveMemory,
   onRetryWorkflow,
   retryingWorkflowId,
 }: {
@@ -586,15 +527,14 @@ function MessageBubble({
   run?: AgentRun;
   runAgent?: RoomAgent;
   roomId: string;
-  projectId?: string;
-  savingMemory: boolean;
-  onSaveMemory: (message: Message) => void;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
 }) {
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
-  const canSaveMemory = Boolean(projectId && message.content.trim());
+  const metadata = parseMessageMetadata(message.metadata);
+  const attachments = metadata.attachments;
+  const hasContent = Boolean(message.content?.trim());
 
   if (isSystem) {
     return (
@@ -622,20 +562,6 @@ function MessageBubble({
           <span className="text-[10.5px] font-mono text-[var(--color-muted)]">
             {relativeTime(message.created_at)}
           </span>
-          {canSaveMemory ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-6 px-1.5 text-[11px]"
-              title="保存为记忆"
-              onClick={() => onSaveMemory(message)}
-              disabled={savingMemory}
-            >
-              <Save className="h-3 w-3" />
-              {savingMemory ? '保存中' : '存记忆'}
-            </Button>
-          ) : null}
         </div>
         <div
           className={cn(
@@ -644,12 +570,18 @@ function MessageBubble({
               ? 'user-message px-3.5 py-2.5 text-[var(--color-primary-fg)]'
               : 'w-full',
             message.message_type === 'agent_stream' && !isUser && 'font-mono text-[12.5px]',
+            !hasContent && attachments.length > 0 && isUser && 'px-3.5 py-2.5',
           )}
         >
           {!isUser && run ? (
             <div className="space-y-2.5">
-              <div className="px-3.5 pt-3">
-                <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+              {hasContent && (
+                <div className="px-3.5 pt-3">
+                  <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+                </div>
+              )}
+              <div className={cn('px-3.5', hasContent ? 'pb-1' : 'pt-3 pb-1')}>
+                <MessageAttachments attachments={attachments} />
               </div>
               <div className="run-box-wrap px-2.5 py-2.5">
                 <AgentRunStatusCard
@@ -663,8 +595,13 @@ function MessageBubble({
               </div>
             </div>
           ) : (
-            <div className={!isUser ? 'px-3.5 py-2.5' : undefined}>
-              <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+            <div className={cn(!isUser && 'px-3.5 py-2.5', isUser && !hasContent && attachments.length > 0 && 'p-0')}>
+              {hasContent ? (
+                <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+              ) : message.message_type === 'agent_stream' ? (
+                <MessageContent content="…" />
+              ) : null}
+              <MessageAttachments attachments={attachments} />
             </div>
           )}
         </div>
@@ -673,129 +610,45 @@ function MessageBubble({
   );
 }
 
-function createMessageMemoryTitle(content: string): string {
-  const normalized = content.trim().replace(/\s+/g, ' ');
-  if (!normalized) return '聊天记忆';
-  return normalized.length > 80 ? `${normalized.slice(0, 80)}…` : normalized;
-}
-
-function createMessageMemoryContent(content: string): string {
-  const normalized = content.trim();
-  if (normalized.length <= MEMORY_CONTENT_MAX_LENGTH) return normalized;
-  return `${normalized.slice(0, MEMORY_CONTENT_MAX_LENGTH - TRUNCATED_MEMORY_SUFFIX.length)}${TRUNCATED_MEMORY_SUFFIX}`;
-}
-
-function isConflictError(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith('409:');
-}
-
-function Composer({
-  value,
-  onChange,
-  onSend,
-  sending,
-  agentCount,
-  agents,
-  routingMode,
-  fallbackAgentId,
-  fallbackAgent,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  onSend: () => void;
-  sending: boolean;
-  agentCount: number;
-  agents: RoomAgent[];
-  routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
-  fallbackAgentId: string | null;
-  fallbackAgent?: RoomAgent;
-}) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
-
-  useEffect(() => {
-    if (!value) setMention(null);
-  }, [value]);
-
-  const updateMention = (nextValue: string, selectionStart: number | null) => {
-    const cursor = selectionStart ?? nextValue.length;
-    const match = nextValue.slice(0, cursor).match(/@([\p{L}\p{N}_.-]*)$/u);
-    setMention(match ? { start: cursor - match[0].length, query: match[1] } : null);
-  };
-
-  const setValue = (nextValue: string, selectionStart: number | null) => {
-    onChange(nextValue);
-    updateMention(nextValue, selectionStart);
-  };
-
-  const selectAgent = (agent: RoomAgent) => {
-    if (!mention) return;
-    const textarea = textareaRef.current;
-    const cursor = textarea?.selectionStart ?? value.length;
-    const nextValue = `${value.slice(0, mention.start)}@${agent.agent_name} ${value.slice(cursor)}`;
-    onChange(nextValue);
-    setMention(null);
-    window.requestAnimationFrame(() => {
-      const nextCursor = mention.start + agent.agent_name.length + 2;
-      textarea?.focus();
-      textarea?.setSelectionRange(nextCursor, nextCursor);
-    });
-  };
+function MessageAttachments({ attachments }: { attachments: MessageAttachmentMetadata[] }) {
+  if (attachments.length === 0) return null;
 
   return (
-    <div className="composer-shell flex-shrink-0 px-4 py-3">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          setMention(null);
-          onSend();
-        }}
-        className="relative space-y-2"
-      >
-        {mention && (
-          <AgentMentionMenu agents={agents} query={mention.query} onSelect={selectAgent} />
-        )}
-        <div className="composer-box flex items-end gap-2">
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value, e.target.selectionStart)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape' && mention) {
-                e.preventDefault();
-                setMention(null);
-                return;
-              }
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                setMention(null);
-                onSend();
-              }
-            }}
-            onSelect={(e) => updateMention(value, e.currentTarget.selectionStart)}
-            placeholder={
-              agentCount === 0
-                ? '先邀请一个 agent 才能开始对话...'
-                : '发送消息、@agent 定向，或 /task 创建任务'
-            }
-            rows={1}
-            className="min-h-[44px] max-h-[200px] min-w-0 flex-1 resize-none bg-transparent px-3.5 py-2.5 text-[13.5px] outline-none placeholder:text-[var(--color-muted)]"
-            disabled={agentCount === 0}
-          />
-          <Button
-            type="submit"
-            disabled={!value.trim() || sending || agentCount === 0}
-            className="h-[40px] w-[78px] flex-shrink-0 px-0"
-          >
-            <Send className="h-3.5 w-3.5" /> 发送
-          </Button>
-        </div>
-        <p className="px-1 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
-          {routingHint(routingMode, fallbackAgentId, fallbackAgent)}
-        </p>
-      </form>
+    <div className="message-attachments">
+      {attachments.map((attachment) => (
+        <a
+          key={attachment.id}
+          href={attachment.url}
+          target="_blank"
+          rel="noreferrer"
+          className={cn('message-attachment-card', attachment.isImage && 'is-image')}
+        >
+          {attachment.isImage ? (
+            <img src={attachment.url} alt={attachment.name} loading="lazy" />
+          ) : (
+            <span className="message-attachment-icon" aria-hidden="true">
+              <FileText className="h-4 w-4" />
+            </span>
+          )}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[12px] font-medium text-[var(--color-fg)]">{attachment.name}</span>
+            <span className="block truncate text-[10.5px] font-mono text-[var(--color-fg-muted)]">
+              {formatAttachmentSize(attachment.size)} · {attachment.mimeType}
+            </span>
+          </span>
+          <Download className="h-3.5 w-3.5 text-[var(--color-fg-muted)]" aria-hidden="true" />
+        </a>
+      ))}
     </div>
   );
+}
+
+function formatAttachmentSize(size: number): string {
+  if (!Number.isFinite(size) || size < 0) return '0 B';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(size >= 10 * 1024 ? 0 : 1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 function routingHint(

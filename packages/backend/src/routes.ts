@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { dispatchUserMessage } from './dispatcher.js';
@@ -15,9 +15,10 @@ import { settingsRepo } from './repos/settings.js';
 import { taskRepo } from './repos/tasks.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
+import { buildAttachmentMetadata, cleanupUploadedFiles, messageUpload } from './uploads.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
-import type { AcpBackend, MemoryScope, MessageRoutingMode, TaskInteractionMode, WorkflowRole } from './types.js';
+import type { AcpBackend, MemoryScope, MessageMetadata, MessageRoutingMode, TaskInteractionMode, WorkflowRole } from './types.js';
 
 export const router = Router();
 
@@ -524,38 +525,156 @@ router.post('/agent-runs/:id/cancel', (req, res) => {
   res.json(updated);
 });
 
-router.post('/rooms/:roomId/messages', async (req, res) => {
-  const schema = z.object({
-    content: z.string().min(1),
-    sender_id: z.string().default('user'),
-    sender_name: z.string().optional(),
-    mentions: z.array(z.string()).optional(),
+const jsonMessageSchema = z.object({
+  content: z.string().min(1),
+  sender_id: z.string().default('user'),
+  sender_name: z.string().optional(),
+  mentions: z.array(z.string()).optional(),
+});
+
+const multipartMessageSchema = z.object({
+  content: z.string().default(''),
+  sender_id: z.string().default('user'),
+  sender_name: z.string().optional(),
+  mentions: z.string().optional(),
+});
+
+router.post('/rooms/:roomId/messages', (req, res, next) => {
+  if (req.is('multipart/form-data')) {
+    messageUpload.array('files', 5)(req, res, (err) => {
+      if (err) {
+        next(err);
+        return;
+      }
+      void handleMultipartMessage(req, res).catch(next);
+    });
+    return;
+  }
+  void handleJsonMessage(req, res).catch(next);
+});
+
+async function handleJsonMessage(req: Request, res: Response): Promise<void> {
+  const roomId = Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId;
+  if (!roomId) {
+    res.status(400).json({ error: 'roomId is required' });
+    return;
+  }
+
+  const parsed = jsonMessageSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const userMsg = createAndDispatchUserMessage({
+    roomId,
+    senderId: parsed.data.sender_id,
+    senderName: parsed.data.sender_name,
+    content: parsed.data.content,
+    mentions: parsed.data.mentions,
   });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  res.status(201).json(userMsg);
+}
+
+async function handleMultipartMessage(req: Request, res: Response): Promise<void> {
+  const files = (Array.isArray(req.files) ? req.files : []) as Express.Multer.File[];
+  try {
+    const roomId = Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId;
+    if (!roomId) {
+      await cleanupUploadedFiles(files);
+      res.status(400).json({ error: 'roomId is required' });
+      return;
+    }
+    const parsed = multipartMessageSchema.safeParse(req.body);
+    if (!parsed.success) {
+      await cleanupUploadedFiles(files);
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+
+    const content = parsed.data.content.trim();
+    if (content.length === 0 && files.length === 0) {
+      await cleanupUploadedFiles(files);
+      res.status(400).json({ error: 'content or files is required' });
+      return;
+    }
+
+    let mentions: string[] | undefined;
+    try {
+      mentions = parseMultipartMentions(parsed.data.mentions);
+    } catch (err) {
+      await cleanupUploadedFiles(files);
+      res.status(400).json({ error: (err as Error).message });
+      return;
+    }
+
+    const metadata: MessageMetadata | undefined = files.length > 0
+      ? { attachments: files.map((file) => buildAttachmentMetadata(file)) }
+      : undefined;
+    const userMsg = createAndDispatchUserMessage({
+      roomId,
+      senderId: parsed.data.sender_id,
+      senderName: parsed.data.sender_name,
+      content,
+      mentions,
+      metadata,
+    });
+    res.status(201).json(userMsg);
+  } catch (err) {
+    await cleanupUploadedFiles(files);
+    throw err;
+  }
+}
+
+function createAndDispatchUserMessage(input: {
+  roomId: string;
+  senderId: string;
+  senderName?: string;
+  content: string;
+  mentions?: string[];
+  metadata?: MessageMetadata;
+}) {
   const userMsg = messageRepo.create({
-    room_id: req.params.roomId,
+    room_id: input.roomId,
     sender_type: 'user',
-    sender_id: parsed.data.sender_id,
-    sender_name: parsed.data.sender_name ?? 'You',
-    content: parsed.data.content,
+    sender_id: input.senderId,
+    sender_name: input.senderName ?? 'You',
+    content: input.content,
     message_type: 'text',
+    metadata: input.metadata as Record<string, unknown> | undefined,
   });
-  wsHub.broadcast(req.params.roomId, { type: 'message:new', roomId: req.params.roomId, message: userMsg });
-  const agents = roomAgentRepo.listByRoom(req.params.roomId);
+  wsHub.broadcast(input.roomId, { type: 'message:new', roomId: input.roomId, message: userMsg });
+  const agents = roomAgentRepo.listByRoom(input.roomId);
   const mentionedAgentRoomIds = resolveMentionedAgentRoomIds({
-    content: parsed.data.content,
+    content: input.content,
     agents,
-    explicitRoomAgentIds: parsed.data.mentions,
+    explicitRoomAgentIds: input.mentions,
   });
   // Fire-and-forget dispatch
   void dispatchUserMessage({
-    roomId: req.params.roomId,
+    roomId: input.roomId,
     userMessage: userMsg,
     mentionedAgentRoomIds,
   });
-  res.status(201).json(userMsg);
-});
+  return userMsg;
+}
+
+function parseMultipartMentions(rawMentions?: string): string[] | undefined {
+  if (rawMentions === undefined) return undefined;
+  const trimmed = rawMentions.trim();
+  if (!trimmed) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error('mentions must be a JSON array');
+  }
+
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
+    throw new Error('mentions must be a JSON array of strings');
+  }
+  return parsed;
+}
 
 // ---------- Workflows ----------
 router.post('/tasks/:id/workflows', async (req, res) => {
@@ -694,4 +813,21 @@ router.delete('/tasks/:id', (req, res) => {
   const ok = taskRepo.delete(req.params.id);
   if (ok && t) wsHub.broadcast(t.room_id, { type: 'task:deleted', taskId: t.id });
   res.status(ok ? 204 : 404).end();
+});
+
+router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  const multerCode =
+    typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string'
+      ? err.code
+      : null;
+
+  if (multerCode === 'LIMIT_FILE_SIZE') {
+    res.status(413).json({ error: 'file too large' });
+    return;
+  }
+  if (multerCode === 'LIMIT_FILE_COUNT' || multerCode === 'LIMIT_UNEXPECTED_FILE') {
+    res.status(400).json({ error: 'too many files' });
+    return;
+  }
+  next(err);
 });

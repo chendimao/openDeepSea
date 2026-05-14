@@ -114,6 +114,19 @@ export interface AgentRun {
 export type MessageType = 'text' | 'task' | 'system' | 'code' | 'agent_stream';
 export type SenderType = 'user' | 'agent' | 'system';
 
+export interface MessageAttachmentMetadata {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  url: string;
+  isImage: boolean;
+}
+
+export interface MessageMetadata {
+  attachments?: MessageAttachmentMetadata[];
+}
+
 export interface Message {
   id: string;
   room_id: string;

@@ -8,12 +8,16 @@ import {
   GitBranch,
   Home,
   Loader2,
+  MonitorCog,
+  Moon,
+  PanelTop,
   Plus,
   RefreshCw,
   Search,
   Server,
   Settings,
   SquareCheck,
+  Sun,
   Wifi,
   WifiOff,
 } from 'lucide-react';
@@ -74,6 +78,8 @@ export function AppShell({
           <ProjectSidebar
             projects={projects}
             currentProject={currentProject}
+            theme={theme}
+            onThemeChange={onThemeChange}
             onOpenCommand={() => setCommandOpen(true)}
           />
         </aside>
@@ -96,10 +102,14 @@ export function AppShell({
 function ProjectSidebar({
   projects,
   currentProject,
+  theme,
+  onThemeChange,
   onOpenCommand,
 }: {
   projects: Awaited<ReturnType<typeof api.listProjects>>;
   currentProject?: Awaited<ReturnType<typeof api.listProjects>>[number];
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
   onOpenCommand: () => void;
 }): JSX.Element {
   const {
@@ -219,12 +229,48 @@ function ProjectSidebar({
       </div>
 
       <div className="px-5 pb-4">
+        <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
         <OpenClawGatewayDialog
           health={health}
           healthError={healthError}
           healthLoading={healthLoading}
         />
       </div>
+    </div>
+  );
+}
+
+function ThemeToggle({
+  theme,
+  onThemeChange,
+}: {
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
+}): JSX.Element {
+  const options: Array<{ value: ThemeMode; label: string; icon: typeof Sun }> = [
+    { value: 'apple-light', label: '苹果亮色', icon: Sun },
+    { value: 'apple-dark', label: '苹果暗色', icon: Moon },
+    { value: 'minimal-light', label: '极简亮色', icon: PanelTop },
+    { value: 'minimal-dark', label: '极简暗色', icon: MonitorCog },
+  ];
+
+  return (
+    <div className="theme-toggle mb-2" aria-label="主题样式">
+      {options.map((option) => {
+        const Icon = option.icon;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={cn('theme-toggle-option', theme === option.value && 'is-active')}
+            aria-pressed={theme === option.value}
+            onClick={() => onThemeChange(option.value)}
+          >
+            <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <span>{option.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }

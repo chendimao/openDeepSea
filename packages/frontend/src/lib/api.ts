@@ -30,12 +30,14 @@ export interface OpenClawGatewayStatus {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const isFormData = init.body instanceof FormData;
+  const headers = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(init.headers ?? {}),
+  };
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
+    headers,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
@@ -176,11 +178,27 @@ export const api = {
   listAgentRuns: (roomId: string) => request<AgentRun[]>(`/rooms/${roomId}/agent-runs`),
   cancelAgentRun: (id: string) =>
     request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),
-  sendMessage: (roomId: string, content: string, mentions?: string[]) =>
-    request<Message>(`/rooms/${roomId}/messages`, {
+  sendMessage: (
+    roomId: string,
+    input: { content: string; mentions?: string[]; files?: File[] },
+  ) => {
+    if (input.files && input.files.length > 0) {
+      const form = new FormData();
+      form.append('content', input.content);
+      if (input.mentions && input.mentions.length > 0) {
+        form.append('mentions', JSON.stringify(input.mentions));
+      }
+      input.files.forEach((file) => form.append('files', file));
+      return request<Message>(`/rooms/${roomId}/messages`, {
+        method: 'POST',
+        body: form,
+      });
+    }
+    return request<Message>(`/rooms/${roomId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content, mentions }),
-    }),
+      body: JSON.stringify({ content: input.content, mentions: input.mentions }),
+    });
+  },
 
   listProjectTasks: (projectId: string) => request<Task[]>(`/projects/${projectId}/tasks`),
   listRoomTasks: (roomId: string) => request<Task[]>(`/rooms/${roomId}/tasks`),
