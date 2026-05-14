@@ -40,12 +40,14 @@ export function TaskBoard({
   tasks,
   agents,
   workflows,
+  selectedTaskId,
   onSelectTask,
   onChangeStatus,
 }: {
   tasks: Task[];
   agents: RoomAgent[];
   workflows?: WorkflowRun[];
+  selectedTaskId?: string | null;
   onSelectTask: (task: Task) => void;
   onChangeStatus: (task: Task, status: Task['status']) => void;
 }) {
@@ -54,21 +56,22 @@ export function TaskBoard({
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
 
   return (
-    <aside className="w-[360px] max-lg:w-full max-lg:max-h-[42vh] flex-shrink-0 border-l max-lg:border-l-0 max-lg:border-t border-[var(--color-border)] bg-[var(--color-bg)] min-h-0 flex flex-col">
-      <header className="h-12 px-4 border-b border-[var(--color-border)] flex items-center gap-2">
+    <aside className="workbench-panel task-board-panel">
+      <header className="task-board-toolbar">
         <CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
         <div className="font-display text-[13px] font-semibold">任务看板</div>
         <span className="ml-auto text-[11px] font-mono text-[var(--color-fg-muted)]">
           {rootTasks.length}
         </span>
       </header>
-      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         {TASK_COLUMNS.map((status) => {
           const columnTasks = rootTasks.filter((task) => task.status === status);
           const Icon = STATUS_ICON[status];
+          if (status !== 'failed' && status !== 'done' && columnTasks.length === 0) return null;
           return (
-            <section key={status} className="surface-1 rounded-lg">
-              <div className="px-3 py-2 border-b border-[var(--color-border)] flex items-center gap-2">
+            <section key={status} className="task-column">
+              <div className="task-column-header">
                 <Icon className="h-3.5 w-3.5 text-[var(--color-accent)]" strokeWidth={1.75} />
                 <h3 className="font-display text-[12px] font-medium">{TASK_STATUS_LABEL[status]}</h3>
                 <span className="ml-auto text-[10.5px] font-mono text-[var(--color-muted)]">
@@ -87,6 +90,7 @@ export function TaskBoard({
                       task={task}
                       agent={task.assigned_agent_id ? agentMap.get(task.assigned_agent_id) : undefined}
                       workflow={workflowByTaskId.get(task.id)}
+                      selected={selectedTaskId === task.id}
                       onSelect={() => onSelectTask(task)}
                       onChangeStatus={(next) => onChangeStatus(task, next)}
                     />
@@ -105,19 +109,21 @@ function TaskCard({
   task,
   agent,
   workflow,
+  selected,
   onSelect,
   onChangeStatus,
 }: {
   task: Task;
   agent?: RoomAgent;
   workflow?: WorkflowRun;
+  selected?: boolean;
   onSelect: () => void;
   onChangeStatus: (status: Task['status']) => void;
 }) {
   const nextStatus = NEXT_STATUS[task.status];
 
   return (
-    <article className="surface-2 rounded-lg p-3 hover:border-[var(--color-border-strong)] ease-ocean transition-colors">
+    <article className={cn('task-card', selected && 'is-selected')}>
       <button type="button" onClick={onSelect} className="block w-full text-left">
         <div className="flex items-start gap-2">
           <h4 className="min-w-0 flex-1 font-display text-[12.5px] font-semibold leading-snug">
@@ -128,7 +134,7 @@ function TaskCard({
           </span>
         </div>
         {workflow && (
-          <div className="mt-2 inline-flex max-w-full rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-accent)]">
+          <div className="mt-2 inline-flex max-w-full rounded-[5px] bg-white/52 px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.64)]">
             <span className="truncate">{WORKFLOW_STATUS_LABEL[workflow.status]}</span>
           </div>
         )}

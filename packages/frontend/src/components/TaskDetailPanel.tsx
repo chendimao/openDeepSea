@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2, X } from 'lucide-react';
+import { Box, ChevronRight, RotateCcw, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import type { RoomAgent, Task, WorkflowDetail, WorkflowRun, WorkflowStatus } from '../lib/types';
@@ -23,17 +23,18 @@ export function TaskDetailPanel({
   agents,
   onClose,
 }: {
-  task: Task;
+  task: Task | null;
   agents: RoomAgent[];
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const assignedAgent = task.assigned_agent_id
+  const assignedAgent = task?.assigned_agent_id
     ? agents.find((agent) => agent.id === task.assigned_agent_id)
     : undefined;
   const { data: workflows = [] } = useQuery({
-    queryKey: ['task-workflows', task.id],
-    queryFn: () => api.listTaskWorkflows(task.id),
+    queryKey: ['task-workflows', task?.id],
+    queryFn: () => api.listTaskWorkflows(task!.id),
+    enabled: !!task,
   });
   const activeWorkflow = workflows.find((workflow) => ACTIVE_WORKFLOW_STATUSES.has(workflow.status)) ?? null;
   const displayWorkflow = activeWorkflow ?? workflows[0] ?? null;
@@ -44,22 +45,23 @@ export function TaskDetailPanel({
   });
 
   const refreshWorkflow = (workflow?: WorkflowRun) => {
+    if (!task) return;
     queryClient.invalidateQueries({ queryKey: ['task-workflows', task.id] });
     if (workflow?.id) queryClient.invalidateQueries({ queryKey: ['workflow', workflow.id] });
   };
 
   const update = useMutation({
     mutationFn: (patch: Partial<Pick<Task, 'status' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>>) =>
-      api.updateTask(task.id, patch),
+      api.updateTask(task!.id, patch),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['room-tasks', task.room_id] });
+      queryClient.invalidateQueries({ queryKey: ['room-tasks', task?.room_id] });
       toast.success('任务已更新');
     },
     onError: (err) => toast.error((err as Error).message),
   });
 
   const startWorkflow = useMutation({
-    mutationFn: () => api.startWorkflow(task.id),
+    mutationFn: () => api.startWorkflow(task!.id),
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
       toast.success('开发闭环已启动');
@@ -104,44 +106,68 @@ export function TaskDetailPanel({
     onError: (err) => toast.error((err as Error).message),
   });
 
-  const remove = useMutation({
-    mutationFn: () => api.deleteTask(task.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['room-tasks', task.room_id] });
-      toast.success('任务已删除');
-      onClose();
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
+  if (!task) {
+    return (
+      <aside className="inspector-panel">
+        <header className="inspector-header">
+          <div className="min-w-0">
+            <div className="font-display text-[14px] font-semibold">Workflow Inspector</div>
+            <div className="mt-1 text-[11px] font-mono text-[var(--color-fg-muted)]">等待任务选择</div>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center px-7 text-center">
+          <div>
+            <Box className="mx-auto h-8 w-8 text-[var(--color-muted)]" strokeWidth={1.6} />
+            <div className="mt-3 font-display text-[13px] font-semibold">暂无任务</div>
+            <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+              创建或选择任务后，这里会显示开发闭环、计划和执行产物。
+            </p>
+          </div>
+        </div>
+      </aside>
+    );
+  }
 
   return (
-    <div className="absolute right-0 top-0 z-10 h-full w-[380px] surface-1 border-l border-[var(--color-border)] flex flex-col fade-up">
-      <header className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-2">
+    <aside className="inspector-panel fade-up">
+      <header className="inspector-header">
         <div className="min-w-0">
-          <div className="font-display text-[14px] font-semibold truncate">{task.title}</div>
-          <div className="text-[11px] font-mono text-[var(--color-fg-muted)]">
-            {TASK_STATUS_LABEL[task.status]} · {TASK_PRIORITY_LABEL[task.priority]}
+          <div className="truncate font-display text-[14px] font-semibold leading-snug">{task.title}</div>
+          <div className="mt-1 flex items-center gap-2 text-[11px] font-mono text-[var(--color-fg-muted)]">
+            <span>{TASK_STATUS_LABEL[task.status]}</span>
+            <span>·</span>
+            <span>{TASK_PRIORITY_LABEL[task.priority]}</span>
           </div>
         </div>
         <button
           onClick={onClose}
           aria-label="关闭"
           type="button"
-          className="ml-auto p-1 rounded text-[var(--color-fg-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface-raised)] ease-ocean"
+          className="ml-auto rounded-md p-1 text-[var(--color-fg-muted)] transition-colors ease-ocean hover:bg-white/45 hover:text-[var(--color-fg)]"
         >
-          <X className="h-4 w-4" />
+          <XCircle className="h-4 w-4" />
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
-        <section>
+      <div className="inspector-content">
+        <section className="inspector-section">
+          <Label>基础信息</Label>
+          <div className="glass-info-card space-y-3">
+            <InfoRow label="任务编号" value={`#${task.id.slice(0, 6)}`} />
+            <InfoRow label="状态" value={TASK_STATUS_LABEL[task.status]} />
+            <InfoRow label="优先级" value={TASK_PRIORITY_LABEL[task.priority]} />
+            <InfoRow label="指派人" value={assignedAgent?.agent_name ?? '未指派'} />
+          </div>
+        </section>
+
+        <section className="inspector-section">
           <Label>描述</Label>
-          <div className="surface-2 rounded-lg px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap min-h-[76px]">
+          <div className="glass-info-card min-h-[76px] whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed">
             {task.description || '暂无描述'}
           </div>
         </section>
 
-        <section>
+        <section className="inspector-section">
           <div className="mb-2 flex items-center justify-between gap-3">
             <Label className="mb-0">开发闭环</Label>
             {!activeWorkflow && (
@@ -163,13 +189,13 @@ export function TaskDetailPanel({
           />
         </section>
 
-        <section className="grid grid-cols-2 gap-3">
+        <section className="inspector-section grid grid-cols-2 gap-3">
           <div>
             <Label>状态</Label>
             <select
               value={task.status}
               onChange={(e) => update.mutate({ status: e.target.value as Task['status'] })}
-              className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+              className="glass-select"
               disabled={update.isPending}
             >
               {(['todo', 'in_progress', 'review', 'done', 'failed'] as const).map((status) => (
@@ -184,7 +210,7 @@ export function TaskDetailPanel({
             <select
               value={task.priority}
               onChange={(e) => update.mutate({ priority: e.target.value as Task['priority'] })}
-              className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+              className="glass-select"
               disabled={update.isPending}
             >
               {(['low', 'normal', 'high', 'urgent'] as const).map((priority) => (
@@ -196,12 +222,12 @@ export function TaskDetailPanel({
           </div>
         </section>
 
-        <section>
+        <section className="inspector-section">
           <Label>交互策略</Label>
           <select
             value={task.interaction_mode}
             onChange={(e) => update.mutate({ interaction_mode: e.target.value as Task['interaction_mode'] })}
-            className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+            className="glass-select"
             disabled={update.isPending}
           >
             {(['ask_user', 'auto_recommended'] as const).map((mode) => (
@@ -212,12 +238,12 @@ export function TaskDetailPanel({
           </select>
         </section>
 
-        <section>
+        <section className="inspector-section">
           <Label>指派 Agent</Label>
           <select
             value={task.assigned_agent_id ?? ''}
             onChange={(e) => update.mutate({ assigned_agent_id: e.target.value || null })}
-            className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+            className="glass-select"
             disabled={update.isPending}
           >
             <option value="">未指派</option>
@@ -228,7 +254,7 @@ export function TaskDetailPanel({
             ))}
           </select>
           {assignedAgent && (
-            <div className="mt-3 surface-2 rounded-lg p-3 flex items-center gap-2">
+            <div className="mt-3 flex items-center gap-2 rounded-lg bg-white/45 p-3 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.65)]">
               <AgentAvatar name={assignedAgent.agent_name} size={28} active={!!assignedAgent.acp_enabled} />
               <div className="min-w-0">
                 <div className="font-display text-[12.5px] font-semibold truncate">
@@ -242,27 +268,47 @@ export function TaskDetailPanel({
           )}
         </section>
 
-        <section className="grid grid-cols-2 gap-3 text-[11px] font-mono text-[var(--color-fg-muted)]">
-          <div className="surface-2 rounded-lg p-3">
+        <section className="inspector-section grid grid-cols-2 gap-3 text-[11px] font-mono text-[var(--color-fg-muted)]">
+          <div className="glass-info-card rounded-lg p-3">
             <div className="text-[var(--color-muted)] mb-1">创建</div>
             <div>{relativeTime(task.created_at)}</div>
           </div>
-          <div className="surface-2 rounded-lg p-3">
+          <div className="glass-info-card rounded-lg p-3">
             <div className="text-[var(--color-muted)] mb-1">完成</div>
             <div>{task.completed_at ? relativeTime(task.completed_at) : '未完成'}</div>
           </div>
         </section>
       </div>
 
-      <footer className="px-4 py-3 border-t border-[var(--color-border)] flex justify-between gap-2">
-        <Button variant="ghost" onClick={() => remove.mutate()} disabled={remove.isPending}>
-          <Trash2 className="h-3.5 w-3.5" />
-          {remove.isPending ? '删除中…' : '删除'}
+      <footer className="inspector-footer">
+        {displayWorkflow && (
+          <Button variant="secondary" onClick={() => retryWorkflow.mutate(displayWorkflow.id)} disabled={retryWorkflow.isPending}>
+            <RotateCcw className="h-3.5 w-3.5" />
+            重试
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          onClick={() => displayWorkflow && cancelWorkflow.mutate(displayWorkflow.id)}
+          disabled={!displayWorkflow || cancelWorkflow.isPending}
+        >
+          <XCircle className="h-3.5 w-3.5" />
+          {cancelWorkflow.isPending ? '取消中…' : '取消'}
         </Button>
-        <Button variant="secondary" onClick={onClose}>
+        <Button variant="danger" onClick={onClose}>
           关闭
         </Button>
       </footer>
+    </aside>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="flex items-center gap-3 text-[12px]">
+      <span className="w-16 shrink-0 text-[var(--color-fg-muted)]">{label}</span>
+      <ChevronRight className="h-3 w-3 text-[var(--color-muted)]" strokeWidth={1.8} />
+      <span className="min-w-0 truncate font-medium text-[var(--color-fg)]">{value}</span>
     </div>
   );
 }

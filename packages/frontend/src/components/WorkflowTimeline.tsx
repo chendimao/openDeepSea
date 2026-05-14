@@ -39,7 +39,22 @@ export function WorkflowTimeline({
 
   return (
     <div className="space-y-3">
-      <div className="surface-2 rounded-lg p-3">
+      <div className="workflow-stage-pills" aria-label="workflow stages">
+        {(['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const).map((stage) => (
+          <span
+            key={stage}
+            className={cn(
+              'stage-pill',
+              detail.run.current_stage === stage && 'is-current',
+              detail.steps.some((step) => step.stage === stage && step.status === 'completed') && 'is-done',
+            )}
+          >
+            {stage === 'code_review' ? 'review' : stage}
+          </span>
+        ))}
+      </div>
+
+      <div className="glass-info-card p-3">
         <div className="flex items-center gap-2">
           <WorkflowStatusIcon status={detail.run.status} />
           <div className="font-display text-[12.5px] font-semibold">
@@ -56,7 +71,7 @@ export function WorkflowTimeline({
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className="workflow-timeline space-y-2">
         {detail.steps.map((step) => (
           <StepRow
             key={step.id}
@@ -221,7 +236,7 @@ function getLatestDecisionRequest(artifacts: TaskArtifact[]): DecisionRequest | 
 
 function StepRow({ step, agentName }: { step: WorkflowStep; agentName?: string }) {
   return (
-    <div className="surface-2 rounded-lg p-3">
+    <div className={cn('workflow-step-card', (step.status === 'failed' || step.status === 'interrupted') && 'is-failed')}>
       <div className="flex items-center gap-2">
         <WorkflowStatusIcon status={step.status} />
         <div className="min-w-0 flex-1 truncate font-display text-[12px] font-medium">
@@ -247,7 +262,7 @@ function StepRow({ step, agentName }: { step: WorkflowStep; agentName?: string }
 
 function ArtifactPreview({ artifact }: { artifact: TaskArtifact }) {
   return (
-    <details className="surface-2 rounded-lg p-3">
+    <details className="disclosure-card">
       <summary className="cursor-pointer break-words font-display text-[12px] font-medium">
         {artifact.title}
       </summary>

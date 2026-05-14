@@ -44,7 +44,8 @@ export function AgentRunStatusCard({
   return (
     <section
       className={cn(
-        'rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]',
+        'agent-run-console',
+        (run.status === 'failed' || run.status === 'interrupted') && 'is-failed',
         compact ? 'px-3 py-2' : 'px-3 py-2.5',
       )}
     >
@@ -55,8 +56,8 @@ export function AgentRunStatusCard({
             <span className="font-display text-[12px] font-semibold text-[var(--color-fg)]">
               执行状态
             </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-fg-muted)]">
-              {run.backend}
+            <span className="rounded-[5px] bg-white/58 px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-fg-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.72)]">
+              ACP:{run.backend}
             </span>
             <span className={cn('text-[10px] font-mono', statusClass(run.status))}>
               {AGENT_RUN_STATUS_LABEL[run.status]}
