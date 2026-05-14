@@ -28,6 +28,9 @@ export type TaskArtifactType =
   | 'implementation_summary'
   | 'review'
   | 'acceptance';
+export type MemoryScope = 'project' | 'room' | 'agent' | 'task';
+export type MemoryType = 'decision' | 'fact' | 'preference' | 'lesson' | 'task_summary' | 'artifact_summary';
+export type MemorySourceType = 'manual' | 'message' | 'workflow' | 'task';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
 export type SettingsScope = 'system' | 'project' | 'room';
 
@@ -201,6 +204,36 @@ export interface TaskArtifact {
   created_at: number;
 }
 
+export interface MemoryEntry {
+  id: string;
+  project_id: string;
+  room_id: string | null;
+  room_agent_id: string | null;
+  task_id: string | null;
+  scope: MemoryScope;
+  memory_type: MemoryType;
+  title: string;
+  content: string;
+  source_type: MemorySourceType;
+  source_id: string | null;
+  pinned: 0 | 1;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MemoryInput {
+  scope: MemoryScope;
+  memory_type: MemoryType;
+  title: string;
+  content: string;
+  room_id?: string | null;
+  room_agent_id?: string | null;
+  task_id?: string | null;
+  source_type?: MemorySourceType;
+  source_id?: string | null;
+  pinned?: boolean;
+}
+
 export interface WorkflowDetail {
   run: WorkflowRun;
   steps: WorkflowStep[];
@@ -248,6 +281,22 @@ export const MESSAGE_ROUTING_MODE_LABEL: Record<MessageRoutingMode, string> = {
   mentions_only: '只响应 @',
   fallback_reply: '兜底回复',
   fallback_route: '兜底调度',
+};
+
+export const MEMORY_SCOPE_LABEL: Record<MemoryScope, string> = {
+  project: '项目',
+  room: '聊天室',
+  agent: '智能体',
+  task: '任务',
+};
+
+export const MEMORY_TYPE_LABEL: Record<MemoryType, string> = {
+  decision: '决策',
+  fact: '事实',
+  preference: '偏好',
+  lesson: '经验',
+  task_summary: '任务总结',
+  artifact_summary: '产物摘要',
 };
 
 export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {

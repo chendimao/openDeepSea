@@ -2,6 +2,8 @@ import type {
   AcpBackend,
   AgentRun,
   CliSession,
+  MemoryEntry,
+  MemoryInput,
   Message,
   MessageRoutingMode,
   OpenClawAgent,
@@ -82,6 +84,31 @@ export const api = {
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
+  listMemories: (
+    projectId: string,
+    filters: { roomId?: string; roomAgentId?: string; taskId?: string } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (filters.roomId) params.set('roomId', filters.roomId);
+    if (filters.roomAgentId) params.set('roomAgentId', filters.roomAgentId);
+    if (filters.taskId) params.set('taskId', filters.taskId);
+    const query = params.toString();
+    return request<MemoryEntry[]>(`/projects/${projectId}/memories${query ? `?${query}` : ''}`);
+  },
+  createMemory: (projectId: string, input: MemoryInput) =>
+    request<MemoryEntry>(`/projects/${projectId}/memories`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateMemory: (
+    id: string,
+    input: Partial<Pick<MemoryInput, 'memory_type' | 'title' | 'content' | 'pinned'>>,
+  ) =>
+    request<MemoryEntry>(`/memories/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteMemory: (id: string) => request<void>(`/memories/${id}`, { method: 'DELETE' }),
   updateProjectRouting: (
     id: string,
     input: { message_routing_mode: MessageRoutingMode; fallback_agent_id: string | null },
