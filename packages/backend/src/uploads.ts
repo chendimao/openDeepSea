@@ -54,8 +54,15 @@ export function buildAttachmentMetadata(file: Express.Multer.File): MessageAttac
   };
 }
 
-export async function cleanupUploadedFiles(files: Express.Multer.File[]): Promise<void> {
-  const uploadRoot = resolve(messageUploadDir);
+export async function cleanupUploadedFilesInDir(
+  files: Express.Multer.File[] | undefined,
+  rootDir: string
+): Promise<void> {
+  if (!files?.length) {
+    return;
+  }
+
+  const uploadRoot = resolve(rootDir);
   await Promise.allSettled(
     files.map((file) => {
       const targetPath = typeof file.path === 'string' ? resolve(file.path) : '';
@@ -66,4 +73,8 @@ export async function cleanupUploadedFiles(files: Express.Multer.File[]): Promis
       return unlink(targetPath);
     })
   );
+}
+
+export async function cleanupUploadedFiles(files: Express.Multer.File[] | undefined): Promise<void> {
+  await cleanupUploadedFilesInDir(files, messageUploadDir);
 }

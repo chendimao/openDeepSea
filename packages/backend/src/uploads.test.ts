@@ -8,9 +8,7 @@ import {
   MAX_MESSAGE_FILES,
   MAX_MESSAGE_FILE_SIZE_BYTES,
   buildAttachmentMetadata,
-  cleanupUploadedFiles,
-  ensureMessageUploadDir,
-  messageUploadDir,
+  cleanupUploadedFilesInDir,
   safeUploadFileName,
 } from './uploads.js';
 
@@ -48,26 +46,28 @@ test('buildAttachmentMetadata maps multer file to message attachment metadata', 
   assert.equal(metadata.isImage, true);
 });
 
-test('cleanupUploadedFiles only unlinks files under messageUploadDir', async () => {
-  await ensureMessageUploadDir();
-  const insideName = safeUploadFileName('inside.txt');
-  const insidePath = join(messageUploadDir, insideName);
+test('cleanupUploadedFilesInDir only unlinks files under provided rootDir', async () => {
+  const tmpRoot = await mkdtemp(join(tmpdir(), 'openclaw-upload-test-'));
+  const insidePath = join(tmpRoot, 'inside.txt');
   await writeFile(insidePath, 'inside');
 
-  const outsideDir = await mkdtemp(join(tmpdir(), 'uploads-cleanup-outside-'));
+  const outsideDir = await mkdtemp(join(tmpdir(), 'openclaw-upload-outside-'));
   const outsidePath = join(outsideDir, 'outside.txt');
   await writeFile(outsidePath, 'outside');
 
   try {
-    await cleanupUploadedFiles([
+    await cleanupUploadedFilesInDir(
+      [
       { path: insidePath } as Express.Multer.File,
       { path: outsidePath } as Express.Multer.File,
-    ]);
+      ],
+      tmpRoot
+    );
 
     await assert.rejects(access(insidePath, constants.F_OK));
     await access(outsidePath, constants.F_OK);
   } finally {
-    await rm(insidePath, { force: true });
+    await rm(tmpRoot, { recursive: true, force: true });
     await rm(outsideDir, { recursive: true, force: true });
   }
 });
