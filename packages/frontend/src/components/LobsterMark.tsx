@@ -1,6 +1,8 @@
 import { useId } from 'react';
+import { useI18n } from '../lib/i18n';
 
 export function LobsterMark({ className = 'h-6 w-6' }: { className?: string }) {
+  const { t } = useI18n();
   const reactId = useId().replace(/:/g, '');
   const shellId = `${reactId}-lobster-shell`;
   const clawId = `${reactId}-lobster-claw`;
@@ -14,7 +16,7 @@ export function LobsterMark({ className = 'h-6 w-6' }: { className?: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
-      aria-label="深海指挥中心"
+      aria-label={t('app.name')}
     >
       <defs>
         <linearGradient id={shellId} x1="19" y1="15" x2="45" y2="53" gradientUnits="userSpaceOnUse">

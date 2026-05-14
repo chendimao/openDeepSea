@@ -22,6 +22,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { useI18n, type Locale } from '../lib/i18n';
 import { cn, truncate } from '../lib/utils';
 import { roomSocket } from '../lib/ws';
 import { LobsterMark } from './LobsterMark';
@@ -52,6 +53,7 @@ export function AppShell({
   const [commandOpen, setCommandOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const location = useLocation();
+  const { t } = useI18n();
   const projectId = getProjectId(location.pathname);
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -83,7 +85,7 @@ export function AppShell({
     <div className="h-screen w-screen overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]">
       <div className="liquid-backdrop" aria-hidden="true" />
       <div className="app-grid h-full">
-        <aside className="app-sidebar" aria-label="项目工作区">
+        <aside className="app-sidebar" aria-label={t('shell.sidebar.aria')}>
           <ProjectSidebar
             projects={projects}
             currentProject={currentProject}
@@ -121,6 +123,7 @@ function ProjectSidebar({
   onThemeChange: (theme: ThemeMode) => void;
   onOpenCommand: () => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const {
     data: health,
     error: healthError,
@@ -139,19 +142,19 @@ function ProjectSidebar({
             <LobsterMark className="h-6 w-6" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate font-display text-[16px] font-semibold leading-tight">深海指挥中心</div>
+            <div className="truncate font-display text-[16px] font-semibold leading-tight">{t('app.name')}</div>
             <div className="mt-0.5 font-mono text-[11px] text-[var(--color-fg-muted)]">
-              local agent workspace
+              {t('shell.subtitle')}
             </div>
           </div>
           <div className="flex items-center gap-1.5">
             <CreateProjectDialog>
-              <button type="button" aria-label="新增项目" className="sidebar-icon-button">
+              <button type="button" aria-label={t('shell.newProject')} className="sidebar-icon-button">
                 <Plus className="h-3.5 w-3.5" strokeWidth={1.9} />
               </button>
             </CreateProjectDialog>
             <SystemSettingsDialog>
-              <button type="button" aria-label="系统设置" className="sidebar-icon-button">
+              <button type="button" aria-label={t('shell.systemSettings')} className="sidebar-icon-button">
                 <Settings className="h-3.5 w-3.5" strokeWidth={1.75} />
               </button>
             </SystemSettingsDialog>
@@ -163,7 +166,7 @@ function ProjectSidebar({
           className="glass-search mt-5"
         >
           <Search className="h-3.5 w-3.5" strokeWidth={1.75} />
-          <span>搜索 / 快速命令</span>
+          <span>{t('shell.searchCommand')}</span>
           <span className="ml-auto rounded-[5px] bg-white/56 px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.72)]">
             ⌘K
           </span>
@@ -171,16 +174,16 @@ function ProjectSidebar({
       </div>
 
       <div className="sidebar-nav px-4">
-        <SidebarLink to="/" active={!currentProject} icon={Home} label="开发" exact />
-        <SidebarLink to={currentProject ? `/projects/${currentProject.id}` : '/'} icon={GitBranch} label="路线" />
+        <SidebarLink to="/" active={!currentProject} icon={Home} label={t('shell.nav.development')} exact />
+        <SidebarLink to={currentProject ? `/projects/${currentProject.id}` : '/'} icon={GitBranch} label={t('shell.nav.roadmap')} />
         <SidebarLink to="/" icon={Bot} label="Agent" inactive />
-        <SidebarLink to="/" active={!!currentProject} icon={SquareCheck} label="任务" />
-        <SidebarLink to="/" icon={BriefcaseBusiness} label="工作流" inactive />
-        <SidebarLink to="/" icon={FolderKanban} label="文件" inactive />
+        <SidebarLink to="/" active={!!currentProject} icon={SquareCheck} label={t('shell.nav.tasks')} />
+        <SidebarLink to="/" icon={BriefcaseBusiness} label={t('shell.nav.workflow')} inactive />
+        <SidebarLink to="/" icon={FolderKanban} label={t('shell.nav.files')} inactive />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
-        <div className="mb-3 text-[10.5px] font-medium text-[var(--color-muted)]">当前项目</div>
+        <div className="mb-3 text-[10.5px] font-medium text-[var(--color-muted)]">{t('shell.currentProject')}</div>
         {currentProject ? (
           <div className="glass-project-card">
             <div className="flex items-start gap-2">
@@ -197,24 +200,24 @@ function ProjectSidebar({
               </span>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <RailMetric label="群聊" value={currentProject.stats?.rooms ?? 0} />
-              <RailMetric label="任务" value={currentProject.stats?.tasks ?? 0} />
-              <RailMetric label="进行中" value={currentProject.stats?.tasksInProgress ?? 0} />
-              <RailMetric label="已完成" value={currentProject.stats?.tasksDone ?? 0} />
+              <RailMetric label={t('shell.metric.rooms')} value={currentProject.stats?.rooms ?? 0} />
+              <RailMetric label={t('shell.metric.tasks')} value={currentProject.stats?.tasks ?? 0} />
+              <RailMetric label={t('shell.metric.inProgress')} value={currentProject.stats?.tasksInProgress ?? 0} />
+              <RailMetric label={t('shell.metric.done')} value={currentProject.stats?.tasksDone ?? 0} />
             </div>
           </div>
         ) : (
           <div className="glass-project-card text-center">
             <FolderKanban className="mx-auto h-6 w-6 text-[var(--color-primary)]" strokeWidth={1.75} />
-            <div className="mt-3 font-display text-[13px] font-medium">选择项目</div>
+            <div className="mt-3 font-display text-[13px] font-medium">{t('shell.selectProject')}</div>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
-              打开项目后显示工作区摘要。
+              {t('shell.selectProjectDescription')}
             </p>
           </div>
         )}
 
         <div className="mt-6">
-          <div className="mb-2 text-[10.5px] font-medium text-[var(--color-muted)]">最近项目</div>
+          <div className="mb-2 text-[10.5px] font-medium text-[var(--color-muted)]">{t('shell.recentProjects')}</div>
           <div className="space-y-1.5">
             {projects.slice(0, 8).map((project) => (
               <NavLink
@@ -230,7 +233,7 @@ function ProjectSidebar({
             ))}
             {projects.length === 0 && (
               <div className="px-2.5 py-4 text-[12px] text-[var(--color-fg-muted)]">
-                暂无项目
+                {t('shell.noProjects')}
               </div>
             )}
           </div>
@@ -239,6 +242,7 @@ function ProjectSidebar({
 
       <div className="px-5 pb-4">
         <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
+        <LanguageToggle />
         <OpenClawGatewayDialog
           health={health}
           healthError={healthError}
@@ -256,6 +260,7 @@ function ThemeToggle({
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
 }): JSX.Element {
+  const { t } = useI18n();
   const style = getThemeStyle(theme);
   const tone = getThemeTone(theme);
   const styleIcons: Record<ThemeStyle, typeof Sun> = {
@@ -266,10 +271,18 @@ function ThemeToggle({
     light: Sun,
     dark: Moon,
   };
+  const styleLabels: Record<ThemeStyle, string> = {
+    apple: t('theme.style.apple'),
+    minimal: t('theme.style.minimal'),
+  };
+  const toneLabels: Record<ThemeTone, string> = {
+    light: t('theme.tone.light'),
+    dark: t('theme.tone.dark'),
+  };
 
   return (
-    <div className="theme-toggle-stack mb-2" aria-label="主题样式">
-      <div className="theme-toggle" aria-label="主题风格">
+    <div className="theme-toggle-stack mb-2" aria-label={t('theme.label')}>
+      <div className="theme-toggle" aria-label={t('theme.style.label')}>
         {THEME_STYLES.map((option) => {
           const Icon = styleIcons[option.value];
           return (
@@ -281,12 +294,12 @@ function ThemeToggle({
               onClick={() => onThemeChange(createThemeMode(option.value, tone))}
             >
               <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-              <span>{option.label}</span>
+              <span>{styleLabels[option.value]}</span>
             </button>
           );
         })}
       </div>
-      <div className="theme-toggle" aria-label="明暗模式">
+      <div className="theme-toggle" aria-label={t('theme.tone.label')}>
         {THEME_TONES.map((option) => {
           const Icon = toneIcons[option.value];
           return (
@@ -298,11 +311,35 @@ function ThemeToggle({
               onClick={() => onThemeChange(createThemeMode(style, option.value))}
             >
               <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-              <span>{option.label}</span>
+              <span>{toneLabels[option.value]}</span>
             </button>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function LanguageToggle(): JSX.Element {
+  const { locale, setLocale, t } = useI18n();
+  const options: Array<{ value: Locale; label: string }> = [
+    { value: 'zh', label: t('language.zh') },
+    { value: 'en', label: t('language.en') },
+  ];
+
+  return (
+    <div className="theme-toggle mb-2" aria-label={t('language.label')}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={cn('theme-toggle-option', locale === option.value && 'is-active')}
+          aria-pressed={locale === option.value}
+          onClick={() => setLocale(option.value)}
+        >
+          <span>{option.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -316,6 +353,7 @@ function OpenClawGatewayDialog({
   healthError: unknown;
   healthLoading: boolean;
 }): JSX.Element {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const {
     data: gatewayAgents,
@@ -330,12 +368,12 @@ function OpenClawGatewayDialog({
   const connected = Boolean(health?.gatewayStatus?.running);
   const rpcConnected = Boolean(health?.gatewayStatus?.rpcOk || health?.gatewayRpcConnected);
   const statusLabel = healthLoading
-    ? '检查中'
+    ? t('gateway.checking')
     : connected
       ? rpcConnected
-        ? '网关在线'
-        : '网关运行中'
-      : '网关离线';
+        ? t('gateway.online')
+        : t('gateway.running')
+      : t('gateway.offline');
   const statusClass = healthLoading ? 'is-loading' : connected ? 'is-online' : 'is-offline';
   const StatusIcon = healthLoading ? Loader2 : connected ? Wifi : WifiOff;
   const healthMessage = healthError instanceof Error
@@ -353,20 +391,28 @@ function OpenClawGatewayDialog({
             strokeWidth={1.75}
           />
           <span className="min-w-0 flex-1 text-left">
-            <span className="block truncate text-[12px] font-medium">OpenClaw 网关</span>
+            <span className="block truncate text-[12px] font-medium">{t('gateway.label')}</span>
             <span className="block truncate font-mono text-[10.5px] text-[var(--color-fg-muted)]">{statusLabel}</span>
           </span>
         </button>
       </DialogTrigger>
       <DialogContent
-        title="本机 OpenClaw"
-        description="网关运行状态与本机可用 Agent 信息"
+        title={t('gateway.dialogTitle')}
+        description={t('gateway.dialogDescription')}
         className="max-h-[86vh] w-[min(94vw,620px)] overflow-y-auto"
       >
         <div className="space-y-4">
           <div className="gateway-summary-grid">
-            <GatewayStat label="服务状态" value={healthLoading ? '检查中' : connected ? '运行中' : '未连接'} tone={connected ? 'online' : 'offline'} />
-            <GatewayStat label="RPC" value={rpcConnected ? '已连接' : '未连接'} tone={rpcConnected ? 'online' : 'offline'} />
+            <GatewayStat
+              label={t('gateway.serviceStatus')}
+              value={healthLoading ? t('gateway.checking') : connected ? t('gateway.runningValue') : t('gateway.disconnected')}
+              tone={connected ? 'online' : 'offline'}
+            />
+            <GatewayStat
+              label="RPC"
+              value={rpcConnected ? t('gateway.connected') : t('gateway.disconnected')}
+              tone={rpcConnected ? 'online' : 'offline'}
+            />
             <GatewayStat label="PID" value={health?.gatewayStatus?.pid ? String(health.gatewayStatus.pid) : '-'} />
             <GatewayStat label="Capability" value={health?.gatewayStatus?.capability ?? '-'} />
           </div>
@@ -381,12 +427,12 @@ function OpenClawGatewayDialog({
             <div className="mb-2 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-[12px] font-medium">
                 <Server className="h-3.5 w-3.5 text-[var(--color-primary)]" strokeWidth={1.75} />
-                OpenClaw Agents
+                {t('gateway.openClawAgents')}
               </div>
               <button
                 type="button"
                 className="sidebar-icon-button"
-                aria-label="刷新 OpenClaw 信息"
+                aria-label={t('gateway.refresh')}
                 onClick={() => void refetch()}
               >
                 <RefreshCw className={cn('h-3.5 w-3.5', agentsLoading && 'animate-spin')} strokeWidth={1.75} />
@@ -395,15 +441,15 @@ function OpenClawGatewayDialog({
 
             {!gatewayAgents && agentsLoading ? (
               <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                正在读取本机 OpenClaw agents 列表
+                {t('gateway.readingAgents')}
               </div>
             ) : !gatewayAgents?.connected ? (
               <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                无法读取本机 OpenClaw agents。{agentsMessage ? `错误: ${agentsMessage}` : ''}
+                {agentsMessage ? t('gateway.readAgentsFailedWithMessage', { message: agentsMessage }) : t('gateway.readAgentsFailed')}
               </div>
             ) : gatewayAgents.agents.length === 0 ? (
               <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                当前本机 OpenClaw 配置中没有可用 Agent。
+                {t('gateway.noAgents')}
               </div>
             ) : (
               <div className="space-y-1.5">
