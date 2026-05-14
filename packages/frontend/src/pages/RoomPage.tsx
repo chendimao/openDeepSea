@@ -546,9 +546,9 @@ function MessageBubble({
   if (isTaskEvent) {
     return (
       <div className="flex justify-center py-1">
-        <div className="task-event-row" title={metadata.task_title ?? metadata.task_id}>
+        <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
-          <span className="truncate">{message.content}</span>
+          <span>{message.content}</span>
         </div>
       </div>
     );
