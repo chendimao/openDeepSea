@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
 import type { AgentRun, Message, RoomAgent, Task, WorkflowRun } from '../lib/types';
+import { parseMessageMetadata } from '../lib/messageMetadata';
 import { cn, relativeTime } from '../lib/utils';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AgentRunStatusCard } from '../components/AgentRunPanel';
@@ -391,7 +392,7 @@ function ChatColumn({
     }: {
       content: string;
       mentions?: string[];
-    }) => api.sendMessage(roomId, content, mentions),
+    }) => api.sendMessage(roomId, { content, mentions }),
     onSuccess: () => {
       setInput('');
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
@@ -532,6 +533,8 @@ function MessageBubble({
 }) {
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
+  const metadata = parseMessageMetadata(message.metadata);
+  const attachments = metadata.attachments;
 
   if (isSystem) {
     return (
