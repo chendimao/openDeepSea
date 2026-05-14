@@ -64,6 +64,53 @@ function validateOwnership(input: {
   }
 }
 
+function validateScopeRelations(input: {
+  scope: MemoryScope;
+  room_id?: string | null;
+  room_agent_id?: string | null;
+  task_id?: string | null;
+}): void {
+  if (input.scope === 'project') {
+    if (input.room_id || input.room_agent_id || input.task_id) {
+      throw new Error('project scope cannot include room_id, room_agent_id, or task_id');
+    }
+    return;
+  }
+
+  if (input.scope === 'room') {
+    if (!input.room_id) {
+      throw new Error('room scope requires room_id');
+    }
+    if (input.room_agent_id || input.task_id) {
+      throw new Error('room scope cannot include room_agent_id or task_id');
+    }
+    return;
+  }
+
+  if (input.scope === 'agent') {
+    if (!input.room_id) {
+      throw new Error('agent scope requires room_id');
+    }
+    if (!input.room_agent_id) {
+      throw new Error('agent scope requires room_agent_id');
+    }
+    if (input.task_id) {
+      throw new Error('agent scope cannot include task_id');
+    }
+    return;
+  }
+
+  if (!input.room_id) {
+    throw new Error('task scope requires room_id');
+  }
+  if (!input.task_id) {
+    throw new Error('task scope requires task_id');
+  }
+  if (input.room_agent_id) {
+    throw new Error('task scope cannot include room_agent_id');
+  }
+}
+
 export const memoryRepo = {
   list(filters: MemoryListFilters): MemoryEntry[] {
     validateOwnership({
@@ -154,6 +201,7 @@ export const memoryRepo = {
     source_id?: string | null;
     pinned?: boolean;
   }): MemoryEntry {
+    validateScopeRelations(input);
     validateOwnership(input);
 
     const id = nanoid(16);

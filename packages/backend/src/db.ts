@@ -183,7 +183,13 @@ CREATE TABLE IF NOT EXISTS memory_entries (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
   FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE CASCADE,
-  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  CHECK (
+    (scope = 'project' AND room_id IS NULL AND room_agent_id IS NULL AND task_id IS NULL)
+    OR (scope = 'room' AND room_id IS NOT NULL AND room_agent_id IS NULL AND task_id IS NULL)
+    OR (scope = 'agent' AND room_id IS NOT NULL AND room_agent_id IS NOT NULL AND task_id IS NULL)
+    OR (scope = 'task' AND room_id IS NOT NULL AND room_agent_id IS NULL AND task_id IS NOT NULL)
+  )
 );
 CREATE INDEX IF NOT EXISTS idx_memory_project ON memory_entries(project_id, pinned, updated_at);
 CREATE INDEX IF NOT EXISTS idx_memory_room ON memory_entries(room_id, pinned, updated_at);

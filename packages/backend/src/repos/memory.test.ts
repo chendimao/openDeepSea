@@ -244,6 +244,106 @@ test('memoryRepo rejects cross-project room, agent, and task ownership', () => {
   );
 });
 
+test('memoryRepo rejects invalid scope foreign key combinations', () => {
+  const first = createMemoryFixture('Scope Boundary Memory A');
+  const secondRoom = roomRepo.create({ project_id: first.project.id, name: 'Scope Boundary Other Room' });
+  const secondTask = taskRepo.create({
+    project_id: first.project.id,
+    room_id: secondRoom.id,
+    title: 'Scope Boundary other task',
+  });
+
+  assert.throws(
+    () =>
+      memoryRepo.create({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        scope: 'project',
+        memory_type: 'decision',
+        title: 'Invalid project scope',
+        content: 'Project scope must not carry room references.',
+      }),
+    /project scope cannot include room_id, room_agent_id, or task_id/,
+  );
+
+  assert.throws(
+    () =>
+      memoryRepo.create({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        task_id: first.task.id,
+        scope: 'room',
+        memory_type: 'fact',
+        title: 'Invalid room scope',
+        content: 'Room scope must not carry task references.',
+      }),
+    /room scope cannot include room_agent_id or task_id/,
+  );
+
+  assert.throws(
+    () =>
+      memoryRepo.create({
+        project_id: first.project.id,
+        room_id: secondRoom.id,
+        room_agent_id: first.agent.id,
+        scope: 'agent',
+        memory_type: 'preference',
+        title: 'Invalid agent room',
+        content: 'Agent scope room must match the agent room.',
+      }),
+    /room_agent_id does not belong to room_id/,
+  );
+
+  assert.throws(
+    () =>
+      memoryRepo.create({
+        project_id: first.project.id,
+        room_id: first.room.id,
+        task_id: secondTask.id,
+        scope: 'task',
+        memory_type: 'task_summary',
+        title: 'Invalid task room',
+        content: 'Task scope room must match the task room.',
+      }),
+    /task_id does not belong to room_id/,
+  );
+});
+
+test('memoryRepo recalls valid agent and task scope memories for room context', () => {
+  const { project, room, agent, task } = createMemoryFixture('Valid Scope Recall Memory');
+
+  const agentMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    room_agent_id: agent.id,
+    scope: 'agent',
+    memory_type: 'preference',
+    title: 'Valid agent memory',
+    content: 'Agent scope includes its room and agent.',
+  });
+  const taskMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    task_id: task.id,
+    scope: 'task',
+    memory_type: 'task_summary',
+    title: 'Valid task memory',
+    content: 'Task scope includes its room and task.',
+  });
+
+  const entries = memoryRepo.listForRoomContext({
+    projectId: project.id,
+    roomId: room.id,
+    roomAgentId: agent.id,
+    taskId: task.id,
+  });
+
+  assert.deepEqual(
+    entries.map((entry) => entry.id).sort(),
+    [agentMemory.id, taskMemory.id].sort(),
+  );
+});
+
 test('memoryRepo list requires project ownership for room, agent, and task filters', () => {
   const first = createMemoryFixture('List Boundary Memory A');
   const second = createMemoryFixture('List Boundary Memory B');
