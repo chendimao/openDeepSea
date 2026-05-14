@@ -421,7 +421,7 @@
   }
   .workspace-grid {
     display: grid;
-    grid-template-columns: minmax(420px, 1fr) 360px 380px;
+    grid-template-columns: minmax(420px, 1fr) minmax(340px, 400px);
     gap: 8px;
     min-height: 0;
     flex: 1;
@@ -886,7 +886,7 @@
       padding: 0 7px;
     }
     .workspace-grid {
-      grid-template-columns: minmax(300px, 1fr) 270px 330px;
+      grid-template-columns: minmax(300px, 1fr) minmax(320px, 360px);
     }
     .task-card {
       padding: 10px;

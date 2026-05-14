@@ -57,7 +57,6 @@ export function RoomPage() {
     enabled: !!roomId,
   });
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
-  const inspectorTask = selectedTask ?? rootTasks[0] ?? null;
   const taskWorkflowKey = rootTasks.map((task) => task.id).join(',');
   const { data: taskWorkflows = [] } = useQuery({
     queryKey: ['room-workflows', roomId, taskWorkflowKey],
@@ -254,22 +253,25 @@ export function RoomPage() {
             retryingWorkflowId={retryWorkflow.variables}
           />
         </section>
-        <TaskBoard
-          tasks={tasks}
-          agents={agents}
-          workflows={taskWorkflows}
-          selectedTaskId={inspectorTask?.id ?? null}
-          onSelectTask={(task) => {
-            setConfigAgent(null);
-            setSelectedTask(task);
-          }}
-          onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
-        />
-        <TaskDetailPanel
-          task={inspectorTask}
-          agents={agents}
-          onClose={() => setSelectedTask(null)}
-        />
+        {selectedTask ? (
+          <TaskDetailPanel
+            task={selectedTask}
+            agents={agents}
+            onClose={() => setSelectedTask(null)}
+          />
+        ) : (
+          <TaskBoard
+            tasks={tasks}
+            agents={agents}
+            workflows={taskWorkflows}
+            selectedTaskId={null}
+            onSelectTask={(task) => {
+              setConfigAgent(null);
+              setSelectedTask(task);
+            }}
+            onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
+          />
+        )}
       </div>
 
       {configAgent && (
