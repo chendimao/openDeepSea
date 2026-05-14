@@ -198,8 +198,8 @@ export function RichMessageComposer({
     const serialized = serializeComposerNodes(nodes);
     const content = serialized.content.trim();
 
-    if (content.startsWith('/task') && attachmentsRef.current.length > 0) {
-      toast.error('/task 消息暂不支持附件');
+    if (/^\/task\s+(.+)/.test(content) && attachmentsRef.current.length > 0) {
+      toast.error('/task 命令不能携带附件，请先移除附件');
       return;
     }
 
