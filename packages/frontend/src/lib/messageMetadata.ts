@@ -35,19 +35,49 @@ function sanitizeMessageAttachmentMetadata(value: unknown): MessageAttachmentMet
     !Number.isFinite(value.size) ||
     value.size < 0 ||
     typeof value.url !== 'string' ||
-    !value.url.startsWith(allowedAttachmentUrlPrefix) ||
     typeof value.isImage !== 'boolean'
   ) {
     return null;
   }
+  const safeUrl = sanitizeAttachmentUrl(value.url);
+  if (!safeUrl) return null;
+
   return {
     id: value.id,
     name: value.name,
     mimeType: value.mimeType,
     size: value.size,
-    url: value.url,
+    url: safeUrl,
     isImage: value.isImage,
   };
+}
+
+function sanitizeAttachmentUrl(url: string): string | null {
+  if (!url.startsWith(allowedAttachmentUrlPrefix)) return null;
+
+  try {
+    const origin = globalThis.location?.origin ?? 'http://localhost';
+    const parsed = new URL(url, origin);
+    if (parsed.origin !== origin) return null;
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    if (parsed.search || parsed.hash) return null;
+    if (!parsed.pathname.startsWith(allowedAttachmentUrlPrefix)) return null;
+    const hasTraversal = parsed.pathname
+      .split('/')
+      .some((segment) => safeDecodeURIComponent(segment) === '..');
+    if (hasTraversal) return null;
+    return parsed.pathname;
+  } catch {
+    return null;
+  }
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
