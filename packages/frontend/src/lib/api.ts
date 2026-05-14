@@ -101,14 +101,16 @@ export const api = {
       body: JSON.stringify(input),
     }),
   updateMemory: (
+    projectId: string,
     id: string,
     input: Partial<Pick<MemoryInput, 'memory_type' | 'title' | 'content' | 'pinned'>>,
   ) =>
-    request<MemoryEntry>(`/memories/${id}`, {
+    request<MemoryEntry>(`/projects/${projectId}/memories/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
-  deleteMemory: (id: string) => request<void>(`/memories/${id}`, { method: 'DELETE' }),
+  deleteMemory: (projectId: string, id: string) =>
+    request<void>(`/projects/${projectId}/memories/${id}`, { method: 'DELETE' }),
   updateProjectRouting: (
     id: string,
     input: { message_routing_mode: MessageRoutingMode; fallback_agent_id: string | null },

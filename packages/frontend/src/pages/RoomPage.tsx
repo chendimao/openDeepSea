@@ -21,6 +21,9 @@ import { MessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
 
+const MEMORY_CONTENT_MAX_LENGTH = 12000;
+const TRUNCATED_MEMORY_SUFFIX = '\n\n[内容已截断]';
+
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
   const queryClient = useQueryClient();
@@ -428,16 +431,18 @@ function ChatColumn({
   });
 
   const saveMessageMemory = useMutation({
-    mutationFn: (message: Message) =>
-      api.createMemory(projectId!, {
+    mutationFn: (message: Message) => {
+      const content = createMessageMemoryContent(message.content);
+      return api.createMemory(projectId!, {
         scope: 'room',
         memory_type: message.sender_type === 'agent' ? 'lesson' : 'fact',
-        title: createMessageMemoryTitle(message.content),
-        content: message.content.trim(),
+        title: createMessageMemoryTitle(content),
+        content,
         room_id: roomId,
         source_type: 'message',
         source_id: message.id,
-      }),
+      });
+    },
     onSuccess: () => {
       toast.success('已保存为记忆');
       queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
@@ -449,6 +454,11 @@ function ChatColumn({
         return;
       }
       toast.error((err as Error).message);
+    },
+    onMutate: (message) => {
+      if (message.content.trim().length > MEMORY_CONTENT_MAX_LENGTH) {
+        toast.info('消息较长，已截断后保存');
+      }
     },
   });
 
@@ -667,6 +677,12 @@ function createMessageMemoryTitle(content: string): string {
   const normalized = content.trim().replace(/\s+/g, ' ');
   if (!normalized) return '聊天记忆';
   return normalized.length > 80 ? `${normalized.slice(0, 80)}…` : normalized;
+}
+
+function createMessageMemoryContent(content: string): string {
+  const normalized = content.trim();
+  if (normalized.length <= MEMORY_CONTENT_MAX_LENGTH) return normalized;
+  return `${normalized.slice(0, MEMORY_CONTENT_MAX_LENGTH - TRUNCATED_MEMORY_SUFFIX.length)}${TRUNCATED_MEMORY_SUFFIX}`;
 }
 
 function isConflictError(error: unknown): boolean {

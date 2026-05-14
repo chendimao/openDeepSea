@@ -72,7 +72,7 @@ test('memory routes create, list, update, and delete project memory', async () =
   const listed = await listRes.json() as Array<{ id: string }>;
   assert.deepEqual(listed.map((entry) => entry.id), [created.id]);
 
-  const patchRes = await request(`/api/memories/${created.id}`, {
+  const patchRes = await request(`/api/projects/${project.id}/memories/${created.id}`, {
     method: 'PATCH',
     body: JSON.stringify({
       memory_type: 'lesson',
@@ -86,7 +86,7 @@ test('memory routes create, list, update, and delete project memory', async () =
   assert.equal(patched.memory_type, 'lesson');
   assert.equal(patched.pinned, 0);
 
-  const deleteRes = await request(`/api/memories/${created.id}`, { method: 'DELETE' });
+  const deleteRes = await request(`/api/projects/${project.id}/memories/${created.id}`, { method: 'DELETE' });
   assert.equal(deleteRes.status, 204);
 });
 
@@ -304,4 +304,62 @@ test('memory routes reject duplicate room message memories by source', async () 
   assert.equal(conflict.status, 409);
   assert.deepEqual(await conflict.json(), { error: 'memory source already exists' });
   assert.equal((await listMemories(project.id, `?roomId=${room.id}`)).length, 1);
+});
+
+test('memory routes prevent cross-project scoped patch and delete', async () => {
+  const firstProject = projectRepo.create({
+    name: 'API Memory Scoped Mutation',
+    path: createProjectPath('scoped-mutation'),
+  });
+  const secondProject = projectRepo.create({
+    name: 'API Memory Other Scoped Mutation',
+    path: createProjectPath('scoped-mutation-other'),
+  });
+
+  const createRes = await request(`/api/projects/${firstProject.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'project',
+      memory_type: 'fact',
+      title: 'Scoped memory',
+      content: 'Only the owning project can update or delete this memory.',
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const created = await createRes.json() as { id: string };
+
+  const crossPatch = await request(`/api/projects/${secondProject.id}/memories/${created.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      title: 'Cross project update',
+    }),
+  });
+  assert.equal(crossPatch.status, 404);
+  assert.deepEqual(await crossPatch.json(), { error: 'not found' });
+
+  const ownerListAfterPatch = await listMemories(firstProject.id);
+  assert.equal(ownerListAfterPatch[0]?.id, created.id);
+
+  const crossDelete = await request(`/api/projects/${secondProject.id}/memories/${created.id}`, {
+    method: 'DELETE',
+  });
+  assert.equal(crossDelete.status, 404);
+
+  assert.equal((await listMemories(firstProject.id)).length, 1);
+
+  const ownerPatch = await request(`/api/projects/${firstProject.id}/memories/${created.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      title: 'Owner update',
+    }),
+  });
+  assert.equal(ownerPatch.status, 200);
+  const patched = await ownerPatch.json() as { title: string };
+  assert.equal(patched.title, 'Owner update');
+
+  const ownerDelete = await request(`/api/projects/${firstProject.id}/memories/${created.id}`, {
+    method: 'DELETE',
+  });
+  assert.equal(ownerDelete.status, 204);
+  assert.deepEqual(await listMemories(firstProject.id), []);
 });

@@ -25,6 +25,7 @@ const MEMORY_TYPES: MemoryType[] = [
   'task_summary',
   'artifact_summary',
 ];
+const MEMORY_CONTENT_MAX_LENGTH = 12000;
 const EMPTY_ROOM_AGENTS: RoomAgent[] = [];
 
 interface MemoryPanelProps {
@@ -100,7 +101,7 @@ export function MemoryPanel({
 
   const updateMutation = useMutation({
     mutationFn: ({ id, input }: { id: string; input: Pick<MemoryInput, 'memory_type' | 'title' | 'content' | 'pinned'> }) =>
-      api.updateMemory(id, input),
+      api.updateMemory(projectId, id, input),
     onSuccess: () => {
       toast.success('记忆已更新');
       closeForm();
@@ -110,7 +111,7 @@ export function MemoryPanel({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: api.deleteMemory,
+    mutationFn: (id: string) => api.deleteMemory(projectId, id),
     onSuccess: () => {
       toast.success('记忆已删除');
       invalidateMemories();
@@ -120,7 +121,7 @@ export function MemoryPanel({
 
   const pinMutation = useMutation({
     mutationFn: (memory: MemoryEntry) =>
-      api.updateMemory(memory.id, {
+      api.updateMemory(projectId, memory.id, {
         pinned: !memory.pinned,
       }),
     onSuccess: () => {
@@ -369,13 +370,24 @@ function MemoryForm({
       </div>
 
       <div>
-        <Label>内容</Label>
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <Label className="mb-0">内容</Label>
+          <span className="font-mono text-[10.5px] text-[var(--color-fg-muted)]">
+            {content.length}/{MEMORY_CONTENT_MAX_LENGTH}
+          </span>
+        </div>
         <Textarea
           className="min-h-[104px]"
           value={content}
           onChange={(event) => setContent(event.target.value)}
+          maxLength={MEMORY_CONTENT_MAX_LENGTH}
           required
         />
+        {content.length >= MEMORY_CONTENT_MAX_LENGTH ? (
+          <p className="mt-1 text-[11px] text-[var(--color-warning)]">
+            已达到记忆内容长度上限
+          </p>
+        ) : null}
       </div>
 
       <label className="flex min-h-8 items-center gap-2 text-[12px] text-[var(--color-fg-muted)]">

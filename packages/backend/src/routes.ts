@@ -302,7 +302,7 @@ router.post('/projects/:projectId/memories', (req, res) => {
   }
 });
 
-router.patch('/memories/:id', (req, res) => {
+router.patch('/projects/:projectId/memories/:id', (req, res) => {
   const schema = memoryInputSchema.pick({
     memory_type: true,
     title: true,
@@ -311,14 +311,26 @@ router.patch('/memories/:id', (req, res) => {
   }).partial();
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const memory = memoryRepo.get(req.params.id);
+  if (!memory || memory.project_id !== req.params.projectId) return res.status(404).json({ error: 'not found' });
   const updated = memoryRepo.update(req.params.id, parsed.data);
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(updated);
 });
 
-router.delete('/memories/:id', (req, res) => {
+router.delete('/projects/:projectId/memories/:id', (req, res) => {
+  const memory = memoryRepo.get(req.params.id);
+  if (!memory || memory.project_id !== req.params.projectId) return res.status(404).end();
   const ok = memoryRepo.delete(req.params.id);
   res.status(ok ? 204 : 404).end();
+});
+
+router.patch('/memories/:id', (_req, res) => {
+  res.status(410).json({ error: 'project-scoped memory route required' });
+});
+
+router.delete('/memories/:id', (_req, res) => {
+  res.status(410).json({ error: 'project-scoped memory route required' });
 });
 
 router.patch('/projects/:id', (req, res) => {
