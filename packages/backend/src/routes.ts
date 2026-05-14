@@ -814,7 +814,6 @@ router.post('/rooms/:roomId/tasks', (req, res) => {
     ...parsed.data,
     interaction_mode:
       parsed.data.interaction_mode ?? settingsRepo.resolveForRoom(req.params.roomId)?.effective.interaction_mode,
-    created_from: parsed.data.parent_task_id ? 'workflow_assignment' : null,
   });
   wsHub.broadcast(req.params.roomId, { type: 'task:created', task });
   res.status(201).json(task);
@@ -847,13 +846,21 @@ router.patch('/tasks/:id', (req, res) => {
   }
   if (task) wsHub.broadcast(task.room_id, { type: 'task:updated', task });
   if (task && parsed.data.status && before.status !== task.status) {
-    recordTaskEvent({
-      roomId: task.room_id,
-      taskId: task.id,
-      taskTitle: task.title,
-      eventType: 'task_status_changed',
-      content: `任务「${task.title}」状态变更为 ${task.status}`,
-    });
+    try {
+      recordTaskEvent({
+        roomId: task.room_id,
+        taskId: task.id,
+        taskTitle: task.title,
+        eventType: 'task_status_changed',
+        content: `任务「${task.title}」状态变更为 ${task.status}`,
+      });
+    } catch (error) {
+      console.warn('Failed to record task status event', {
+        taskId: task.id,
+        roomId: task.room_id,
+        error,
+      });
+    }
   }
   res.json(task);
 });
