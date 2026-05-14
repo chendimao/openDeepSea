@@ -8,6 +8,7 @@ interface PromptContext {
   agents: RoomAgent[];
   artifacts: TaskArtifact[];
   childTasks?: Task[];
+  memoryContext?: string;
 }
 
 export function buildStagePrompt(stage: WorkflowStage, context: PromptContext): string {
@@ -44,6 +45,8 @@ function baseContext(context: PromptContext): string {
     '',
     '可用智能体：',
     formatAgents(context.agents),
+    '',
+    context.memoryContext || '项目/聊天室记忆：暂无相关记忆。',
   ].join('\n');
 }
 

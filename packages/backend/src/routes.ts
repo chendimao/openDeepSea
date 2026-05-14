@@ -7,6 +7,7 @@ import { gatewayClient } from './openclaw/gateway.js';
 import { getOpenClawGatewayStatus } from './openclaw/status.js';
 import { resolveMentionedAgentRoomIds } from './mentions.js';
 import { agentRunRepo } from './repos/agent-runs.js';
+import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
@@ -16,7 +17,7 @@ import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
-import type { AcpBackend, MessageRoutingMode, TaskInteractionMode, WorkflowRole } from './types.js';
+import type { AcpBackend, MemoryScope, MessageRoutingMode, TaskInteractionMode, WorkflowRole } from './types.js';
 
 export const router = Router();
 
@@ -71,6 +72,100 @@ const settingsPatchSchema = z
       Boolean(value.fallback_agent_id),
     { message: 'fallback_agent_id is required unless message_routing_mode is mentions_only' },
   );
+
+const memoryInputSchema = z.object({
+  scope: z.enum(['project', 'room', 'agent', 'task']),
+  memory_type: z.enum(['decision', 'fact', 'preference', 'lesson', 'task_summary', 'artifact_summary']),
+  title: z.string().min(1).max(160),
+  content: z.string().min(1).max(12000),
+  room_id: z.string().nullable().optional(),
+  room_agent_id: z.string().nullable().optional(),
+  task_id: z.string().nullable().optional(),
+  source_type: z.enum(['manual', 'message', 'workflow', 'task']).optional(),
+  source_id: z.string().nullable().optional(),
+  pinned: z.boolean().optional(),
+});
+
+function validateMemoryScope(input: {
+  projectId: string;
+  scope: MemoryScope;
+  room_id?: string | null;
+  room_agent_id?: string | null;
+  task_id?: string | null;
+}): { ok: true; room_id: string | null } | { ok: false; status: number; error: string } {
+  if (!projectRepo.get(input.projectId)) return { ok: false, status: 404, error: 'project not found' };
+
+  if (input.scope === 'project') {
+    if (input.room_id || input.room_agent_id || input.task_id) {
+      return { ok: false, status: 400, error: 'project scope cannot include narrow foreign keys' };
+    }
+    return { ok: true, room_id: null };
+  }
+
+  if (input.scope === 'room') {
+    if (!input.room_id) return { ok: false, status: 400, error: 'room_id is required' };
+    if (input.room_agent_id || input.task_id) {
+      return { ok: false, status: 400, error: 'room scope can only include room_id' };
+    }
+    const room = roomRepo.get(input.room_id);
+    if (!room || room.project_id !== input.projectId) return { ok: false, status: 400, error: 'room_id is invalid' };
+    return { ok: true, room_id: room.id };
+  }
+
+  if (input.scope === 'agent') {
+    if (!input.room_agent_id) return { ok: false, status: 400, error: 'room_agent_id is required' };
+    if (input.task_id) return { ok: false, status: 400, error: 'agent scope cannot include task_id' };
+    const agent = roomAgentRepo.get(input.room_agent_id);
+    if (!agent) return { ok: false, status: 400, error: 'room_agent_id is invalid' };
+    const agentRoom = roomRepo.get(agent.room_id);
+    if (!agentRoom || agentRoom.project_id !== input.projectId) {
+      return { ok: false, status: 400, error: 'room_agent_id is invalid' };
+    }
+    if (input.room_id && input.room_id !== agent.room_id) {
+      return { ok: false, status: 400, error: 'room_agent_id does not belong to room_id' };
+    }
+    return { ok: true, room_id: agent.room_id };
+  }
+
+  if (!input.task_id) return { ok: false, status: 400, error: 'task_id is required' };
+  if (input.room_agent_id) return { ok: false, status: 400, error: 'task scope cannot include room_agent_id' };
+  const task = taskRepo.get(input.task_id);
+  if (!task || task.project_id !== input.projectId) return { ok: false, status: 400, error: 'task_id is invalid' };
+  if (input.room_id && input.room_id !== task.room_id) {
+    return { ok: false, status: 400, error: 'task_id does not belong to room_id' };
+  }
+  return { ok: true, room_id: task.room_id };
+}
+
+function isMemoryConflictError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return message.includes('unique constraint') || message.includes('idx_memory_task_source');
+}
+
+function isMemoryValidationError(error: Error): boolean {
+  const message = error.message;
+  return (
+    message === 'project_id is invalid' ||
+    message === 'room_id does not belong to project_id' ||
+    message === 'room_agent_id does not belong to project_id' ||
+    message === 'room_agent_id does not belong to room_id' ||
+    message === 'task_id does not belong to project_id' ||
+    message === 'task_id does not belong to room_id' ||
+    message === 'project scope cannot include room_id, room_agent_id, or task_id' ||
+    message === 'room scope requires room_id' ||
+    message === 'room scope cannot include room_agent_id or task_id' ||
+    message === 'agent scope requires room_id' ||
+    message === 'agent scope requires room_agent_id' ||
+    message === 'agent scope cannot include task_id' ||
+    message === 'task scope requires room_id' ||
+    message === 'task scope requires task_id' ||
+    message === 'task scope cannot include room_agent_id'
+  );
+}
+
+function logUnexpectedMemoryError(context: string, error: unknown): void {
+  console.warn(`[memory-api] ${context}`, error);
+}
 
 // ---------- Settings ----------
 router.get('/settings/system', (_req, res) => {
@@ -150,6 +245,92 @@ router.get('/projects/:id', (req, res) => {
   const project = projectRepo.get(req.params.id);
   if (!project) return res.status(404).json({ error: 'not found' });
   res.json({ ...project, stats: projectRepo.stats(project.id) });
+});
+
+router.get('/projects/:projectId/memories', (req, res) => {
+  if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
+  try {
+    res.json(memoryRepo.list({
+      projectId: req.params.projectId,
+      roomId: typeof req.query.roomId === 'string' ? req.query.roomId : undefined,
+      roomAgentId: typeof req.query.roomAgentId === 'string' ? req.query.roomAgentId : undefined,
+      taskId: typeof req.query.taskId === 'string' ? req.query.taskId : undefined,
+    }));
+  } catch (err) {
+    const error = err as Error;
+    if (!isMemoryValidationError(error)) logUnexpectedMemoryError('list failed', error);
+    res.status(400).json({ error: 'invalid memory filters' });
+  }
+});
+
+router.post('/projects/:projectId/memories', (req, res) => {
+  const parsed = memoryInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const scopeCheck = validateMemoryScope({
+    projectId: req.params.projectId,
+    scope: parsed.data.scope,
+    room_id: parsed.data.room_id,
+    room_agent_id: parsed.data.room_agent_id,
+    task_id: parsed.data.task_id,
+  });
+  if (!scopeCheck.ok) return res.status(scopeCheck.status).json({ error: scopeCheck.error });
+  try {
+    const memory = memoryRepo.create({
+      project_id: req.params.projectId,
+      room_id: scopeCheck.room_id,
+      room_agent_id: parsed.data.room_agent_id ?? null,
+      task_id: parsed.data.task_id ?? null,
+      scope: parsed.data.scope,
+      memory_type: parsed.data.memory_type,
+      title: parsed.data.title,
+      content: parsed.data.content,
+      source_type: parsed.data.source_type ?? 'manual',
+      source_id: parsed.data.source_id ?? null,
+      pinned: parsed.data.pinned ?? false,
+    });
+    res.status(201).json(memory);
+  } catch (err) {
+    const error = err as Error;
+    if (isMemoryConflictError(error)) {
+      return res.status(409).json({ error: 'memory source already exists' });
+    }
+    if (isMemoryValidationError(error)) {
+      return res.status(400).json({ error: 'invalid memory scope' });
+    }
+    logUnexpectedMemoryError('create failed', error);
+    res.status(500).json({ error: 'failed to create memory' });
+  }
+});
+
+router.patch('/projects/:projectId/memories/:id', (req, res) => {
+  const schema = memoryInputSchema.pick({
+    memory_type: true,
+    title: true,
+    content: true,
+    pinned: true,
+  }).partial();
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const memory = memoryRepo.get(req.params.id);
+  if (!memory || memory.project_id !== req.params.projectId) return res.status(404).json({ error: 'not found' });
+  const updated = memoryRepo.update(req.params.id, parsed.data);
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  res.json(updated);
+});
+
+router.delete('/projects/:projectId/memories/:id', (req, res) => {
+  const memory = memoryRepo.get(req.params.id);
+  if (!memory || memory.project_id !== req.params.projectId) return res.status(404).end();
+  const ok = memoryRepo.delete(req.params.id);
+  res.status(ok ? 204 : 404).end();
+});
+
+router.patch('/memories/:id', (_req, res) => {
+  res.status(410).json({ error: 'project-scoped memory route required' });
+});
+
+router.delete('/memories/:id', (_req, res) => {
+  res.status(410).json({ error: 'project-scoped memory route required' });
 });
 
 router.patch('/projects/:id', (req, res) => {

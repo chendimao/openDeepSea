@@ -6,6 +6,7 @@ import type { RoomAgent, Task, WorkflowDetail, WorkflowRun, WorkflowStatus } fro
 import { TASK_INTERACTION_MODE_LABEL, TASK_PRIORITY_LABEL, TASK_STATUS_LABEL } from '../lib/types';
 import { relativeTime } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
+import { MemoryPanel } from './MemoryPanel';
 import { WorkflowTimeline } from './WorkflowTimeline';
 import { Button } from './ui/Button';
 import { Label } from './ui/Input';
@@ -21,10 +22,12 @@ const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowStatus>([
 export function TaskDetailPanel({
   task,
   agents,
+  projectId,
   onClose,
 }: {
   task: Task | null;
   agents: RoomAgent[];
+  projectId: string;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -165,6 +168,17 @@ export function TaskDetailPanel({
           <div className="glass-info-card min-h-[76px] whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed">
             {task.description || '暂无描述'}
           </div>
+        </section>
+
+        <section className="inspector-section">
+          <MemoryPanel
+            projectId={projectId}
+            roomId={task.room_id}
+            roomAgents={agents}
+            task={task}
+            defaultScope="task"
+            compact
+          />
         </section>
 
         <section className="inspector-section">

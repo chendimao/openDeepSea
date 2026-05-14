@@ -52,6 +52,27 @@ export type TaskArtifactType =
   | 'review'
   | 'acceptance';
 
+export type MemoryScope = 'project' | 'room' | 'agent' | 'task';
+export type MemoryType = 'decision' | 'fact' | 'preference' | 'lesson' | 'task_summary' | 'artifact_summary';
+export type MemorySourceType = 'manual' | 'message' | 'workflow' | 'task';
+
+export interface MemoryEntry {
+  id: string;
+  project_id: string;
+  room_id: string | null;
+  room_agent_id: string | null;
+  task_id: string | null;
+  scope: MemoryScope;
+  memory_type: MemoryType;
+  title: string;
+  content: string;
+  source_type: MemorySourceType;
+  source_id: string | null;
+  pinned: 0 | 1;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface RoomAgent {
   id: string;
   room_id: string;

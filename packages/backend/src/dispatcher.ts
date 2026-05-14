@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
+import { appendMemoryContextSafely } from './memory/context.js';
 import { gatewayClient } from './openclaw/gateway.js';
 import { agentRunRepo } from './repos/agent-runs.js';
+import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
@@ -203,7 +205,21 @@ export async function respondAsAgent(args: {
   onRunCreated?: (run: AgentRun) => Promise<void> | void;
   onFinished?: (result: { run: AgentRun; message: Message; status: AgentRunStatus }) => Promise<void> | void;
 }): Promise<void> {
-  const { agent, projectPath, roomId, prompt } = args;
+  const { agent, projectPath, roomId } = args;
+  const room = roomRepo.get(roomId);
+  const prompt =
+    room && !args.workflowRunId
+      ? appendMemoryContextSafely({
+          prompt: args.prompt,
+          loadEntries: () => memoryRepo.listForRoomContext({
+            projectId: room.project_id,
+            roomId,
+            roomAgentId: agent.id,
+            taskId: args.taskId,
+          }),
+          warn: (message) => console.warn(message),
+        })
+      : args.prompt;
   const backend = agent.acp_enabled && agent.acp_backend ? agent.acp_backend : 'openclaw';
   const sessionKey = backend === 'openclaw' ? `agent:${agent.agent_id}:room-${roomId}` : null;
   const run = agentRunRepo.create({
