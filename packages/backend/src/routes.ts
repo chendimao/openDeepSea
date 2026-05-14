@@ -691,7 +691,7 @@ const conversationTaskCreateSchema = taskCreateSchema.extend({
   sender_id: z.string().default('user'),
   sender_name: z.string().optional(),
   user_message: z.string().optional(),
-  source_message_id: z.string().min(1).nullable().optional(),
+  source_message_id: z.string().trim().min(1).nullable().optional(),
 });
 
 // ---------- Workflows ----------
