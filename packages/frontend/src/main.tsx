@@ -7,7 +7,6 @@ import { AppShell } from './components/AppShell';
 import { DashboardPage } from './pages/DashboardPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { RoomPage } from './pages/RoomPage';
-import { SettingsPage } from './pages/SettingsPage';
 import type { ThemeMode } from './lib/theme';
 import './index.css';
 
@@ -35,7 +34,6 @@ function RootApp(): JSX.Element {
         <AppShell theme={theme} onThemeChange={setTheme}>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/projects/:projectId" element={<ProjectPage />} />
             <Route path="/projects/:projectId/rooms/:roomId" element={<RoomPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -8,6 +8,7 @@ import { roomSocket } from '../lib/ws';
 import { LobsterMark } from './LobsterMark';
 import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
+import { SystemSettingsDialog } from './SettingsDialogs';
 import type { ThemeMode } from '../lib/theme';
 
 export function AppShell({
@@ -269,21 +270,16 @@ function ProjectRail({
           <ThemeIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
           {nextTheme === 'dark' ? '暗色' : '亮色'}
         </button>
-        <NavLink
-          to="/settings"
-          aria-label="设置"
-          className={({ isActive }) =>
-            cn(
-              'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[12px] ease-ocean transition-colors',
-              isActive
-                ? 'bg-[var(--color-surface-raised)] text-[var(--color-fg)]'
-                : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)]',
-            )
-          }
-        >
-          <Settings className="h-3.5 w-3.5" strokeWidth={1.75} />
-          设置
-        </NavLink>
+        <SystemSettingsDialog>
+          <button
+            type="button"
+            aria-label="系统设置"
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[12px] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)] ease-ocean transition-colors"
+          >
+            <Settings className="h-3.5 w-3.5" strokeWidth={1.75} />
+            设置
+          </button>
+        </SystemSettingsDialog>
       </div>
     </div>
   );

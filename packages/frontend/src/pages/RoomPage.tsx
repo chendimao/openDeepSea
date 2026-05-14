@@ -18,6 +18,7 @@ import { Button } from '../components/ui/Button';
 import { AgentMentionMenu } from '../components/AgentMentionMenu';
 import { MessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
+import { RoomSettingsDialog } from '../components/SettingsDialogs';
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -194,14 +195,18 @@ export function RoomPage() {
           <span className="hidden sm:inline-flex">
             <CreateTaskDialog roomId={roomId} agents={agents} />
           </span>
-          <Link
-            to={`/settings?project=${projectId}&room=${roomId}`}
-            aria-label="群聊设置"
-            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md surface-2 px-2.5 text-[12px] font-medium text-[var(--color-fg)] hover:border-[var(--color-border-strong)] ease-ocean transition-all"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">设置</span>
-          </Link>
+          {project && room && (
+            <RoomSettingsDialog project={project} room={room} agents={agents}>
+              <button
+                type="button"
+                aria-label="群聊设置"
+                className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md surface-2 px-2.5 text-[12px] font-medium text-[var(--color-fg)] hover:border-[var(--color-border-strong)] ease-ocean transition-all"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">设置</span>
+              </button>
+            </RoomSettingsDialog>
+          )}
           <AddAgentDialog roomId={roomId} />
         </div>
       </header>

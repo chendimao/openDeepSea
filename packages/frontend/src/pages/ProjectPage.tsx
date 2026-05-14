@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hash, MessageSquarePlus, Plus, Trash2 } from 'lucide-react';
+import { Hash, MessageSquarePlus, Plus, Settings2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/Button';
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogTrigger } from '../components/ui/Dialog';
 import { Input, Label, Textarea } from '../components/ui/Input';
 import { relativeTime } from '../lib/utils';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
+import { ProjectSettingsDialog } from '../components/SettingsDialogs';
 
 export function ProjectPage() {
   const { projectId = '' } = useParams();
@@ -34,6 +35,14 @@ export function ProjectPage() {
             <span className="min-w-0 truncate text-[12px] font-mono text-[var(--color-muted)]">
               {project.path}
             </span>
+            <div className="ml-auto">
+              <ProjectSettingsDialog project={project}>
+                <Button variant="secondary" size="sm" aria-label="项目设置">
+                  <Settings2 className="h-3.5 w-3.5" />
+                  项目设置
+                </Button>
+              </ProjectSettingsDialog>
+            </div>
           </div>
           {project.description && (
             <p className="mt-2 text-[13px] text-[var(--color-fg-muted)]">{project.description}</p>
