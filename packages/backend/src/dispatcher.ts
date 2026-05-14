@@ -274,6 +274,12 @@ export async function respondAsAgent(args: {
           if (chunk.stream === 'stdout') onStdout(chunk.text);
           else onStderr(chunk.text);
         },
+        onSession: (sessionId) => {
+          const updated = agentRunRepo.updateStatus(run.id, 'running', {
+            acp_session_id: sessionId,
+          });
+          if (updated) broadcastRun('agent_run:updated', updated);
+        },
         signal: controller.signal,
       });
       if (result.sessionId) {

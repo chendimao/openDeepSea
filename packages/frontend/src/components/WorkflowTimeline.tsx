@@ -30,7 +30,9 @@ export function WorkflowTimeline({
 
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const artifacts = [...detail.artifacts].reverse();
-  const hasRetryableStep = detail.steps.some((step) => step.status === 'failed' || step.status === 'cancelled');
+  const hasRetryableStep = detail.steps.some(
+    (step) => step.status === 'failed' || step.status === 'cancelled' || step.status === 'interrupted',
+  );
   const canRetry =
     detail.run.status === 'blocked' ||
     ((detail.run.status === 'failed' || detail.run.status === 'cancelled') && hasRetryableStep);
@@ -262,6 +264,6 @@ function WorkflowStatusIcon({ status }: { status: string }) {
   if (status === 'awaiting_decision' || status === 'awaiting_approval')
     return <PauseCircle className="h-3.5 w-3.5 text-[var(--color-warning)]" />;
   if (status === 'blocked' || status === 'failed') return <AlertTriangle className="h-3.5 w-3.5 text-[var(--color-danger)]" />;
-  if (status === 'cancelled') return <XCircle className="h-3.5 w-3.5 text-[var(--color-muted)]" />;
+  if (status === 'cancelled' || status === 'interrupted') return <XCircle className="h-3.5 w-3.5 text-[var(--color-muted)]" />;
   return <Circle className={cn('h-3.5 w-3.5 text-[var(--color-muted)]')} />;
 }

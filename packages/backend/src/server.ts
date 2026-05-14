@@ -2,9 +2,11 @@ import cors from 'cors';
 import express from 'express';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
+import { getAdapter } from './acp/index.js';
 import { bindGatewayEvents } from './dispatcher.js';
 import { gatewayClient } from './openclaw/gateway.js';
 import { agentRunRepo } from './repos/agent-runs.js';
+import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
@@ -36,14 +38,11 @@ wss.on('connection', (socket) => {
 
 bindGatewayEvents();
 
-const orphanedRuns = agentRunRepo.failActiveRuns('Backend restarted before agent run completed');
-if (orphanedRuns > 0) {
-  console.warn(`[agent-runs] Marked ${orphanedRuns} orphaned active run(s) as failed`);
-}
 const orphanedSteps = workflowOrchestrator.recoverOrphanedSteps('Backend restarted before workflow step completed');
 if (orphanedSteps > 0) {
   console.warn(`[workflows] Marked ${orphanedSteps} orphaned running step(s) as failed`);
 }
+void recoverInterruptedAgentRuns();
 
 // Try to connect to OpenClaw gateway in background; don't crash if unavailable.
 gatewayClient
@@ -58,3 +57,48 @@ gatewayClient
 httpServer.listen(PORT, () => {
   console.log(`[server] OpenClaw Room backend listening on :${PORT}`);
 });
+
+async function recoverInterruptedAgentRuns(): Promise<void> {
+  const activeRuns = agentRunRepo.listActive();
+  if (activeRuns.length === 0) return;
+
+  let interrupted = 0;
+  for (const run of activeRuns) {
+    const reason = await buildInterruptedRunReason(run);
+    const updated = agentRunRepo.interruptRun(run.id, reason);
+    if (updated) {
+      wsHub.broadcast(updated.room_id, {
+        type: 'agent_run:updated',
+        roomId: updated.room_id,
+        run: updated,
+      });
+      interrupted++;
+    }
+  }
+  if (interrupted > 0) {
+    console.warn(`[agent-runs] Marked ${interrupted} orphaned active run(s) as interrupted`);
+  }
+}
+
+async function buildInterruptedRunReason(run: { backend: string; acp_session_id: string | null; workflow_run_id: string | null }): Promise<string> {
+  const base = 'Backend restarted before agent run completed';
+  if (!run.acp_session_id || !['claudecode', 'opencode', 'codex'].includes(run.backend)) {
+    return `${base}; no resumable ACP session id was recorded.`;
+  }
+  if (!run.workflow_run_id) return `${base}; ACP session ${run.acp_session_id} can be resumed manually.`;
+
+  const detail = workflowOrchestrator.detail(run.workflow_run_id);
+  if (!detail) return `${base}; ACP session ${run.acp_session_id} can be resumed manually.`;
+  const project = projectRepo.get(detail.run.project_id);
+  if (!project) return `${base}; ACP session ${run.acp_session_id} can be resumed manually.`;
+
+  try {
+    const sessions = await getAdapter(run.backend as 'claudecode' | 'opencode' | 'codex').listSessions(project.path);
+    const hasSession = sessions.some((session) => session.sessionId === run.acp_session_id);
+    return hasSession
+      ? `${base}; ACP session ${run.acp_session_id} still exists and the workflow can retry from it.`
+      : `${base}; ACP session ${run.acp_session_id} was not found, retry will start a fresh invocation.`;
+  } catch (err) {
+    return `${base}; ACP session lookup failed: ${(err as Error).message}`;
+  }
+}

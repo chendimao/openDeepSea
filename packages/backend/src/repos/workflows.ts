@@ -13,7 +13,7 @@ import type {
 
 const ACTIVE_STATUSES: WorkflowStatus[] = ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked'];
 const WORKFLOW_TERMINAL_STATUSES: WorkflowStatus[] = ['completed', 'failed', 'cancelled'];
-const STEP_TERMINAL_STATUSES: WorkflowStepStatus[] = ['completed', 'failed', 'cancelled', 'skipped'];
+const STEP_TERMINAL_STATUSES: WorkflowStepStatus[] = ['completed', 'failed', 'cancelled', 'interrupted', 'skipped'];
 
 function hasPatchKey<T extends object>(patch: T, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(patch, key);

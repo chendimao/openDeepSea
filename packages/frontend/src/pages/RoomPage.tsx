@@ -81,6 +81,18 @@ export function RoomPage() {
     onError: (err) => toast.error((err as Error).message),
   });
 
+  const retryWorkflow = useMutation({
+    mutationFn: (workflowId: string) => api.retryWorkflowStep(workflowId),
+    onSuccess: (workflow) => {
+      queryClient.invalidateQueries({ queryKey: ['task-workflows', workflow.task_id] });
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflow.id] });
+      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
+      toast.success('已重试当前阶段');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
   // Subscribe to WS for this room
   useEffect(() => {
     if (!roomId) return;
@@ -202,6 +214,8 @@ export function RoomPage() {
           roomId={roomId}
           routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
           fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
+          onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
+          retryingWorkflowId={retryWorkflow.variables}
         />
         <TaskBoard
           tasks={tasks}
@@ -299,6 +313,8 @@ function ChatColumn({
   roomId,
   routingMode,
   fallbackAgentId,
+  onRetryWorkflow,
+  retryingWorkflowId,
 }: {
   messages: Message[];
   agents: RoomAgent[];
@@ -306,6 +322,8 @@ function ChatColumn({
   roomId: string;
   routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
   fallbackAgentId: string | null;
+  onRetryWorkflow: (workflowId: string) => void;
+  retryingWorkflowId?: string;
 }) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -393,6 +411,8 @@ function ChatColumn({
                 run={run}
                 runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
                 roomId={roomId}
+                onRetryWorkflow={onRetryWorkflow}
+                retryingWorkflowId={retryingWorkflowId}
               />
             );
           })
@@ -441,12 +461,16 @@ function MessageBubble({
   run,
   runAgent,
   roomId,
+  onRetryWorkflow,
+  retryingWorkflowId,
 }: {
   message: Message;
   agentMeta?: RoomAgent;
   run?: AgentRun;
   runAgent?: RoomAgent;
   roomId: string;
+  onRetryWorkflow: (workflowId: string) => void;
+  retryingWorkflowId?: string;
 }) {
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
@@ -493,7 +517,14 @@ function MessageBubble({
                 <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
               </div>
               <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-2.5 py-2.5">
-                <AgentRunStatusCard roomId={roomId} run={run} agent={runAgent} compact />
+                <AgentRunStatusCard
+                  roomId={roomId}
+                  run={run}
+                  agent={runAgent}
+                  compact
+                  onRetryWorkflow={onRetryWorkflow}
+                  retrying={retryingWorkflowId === run.workflow_run_id}
+                />
               </div>
             </div>
           ) : (

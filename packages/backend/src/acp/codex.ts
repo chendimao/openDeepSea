@@ -114,10 +114,10 @@ export const codexAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, onChunk, signal }) {
+  async invoke({ projectPath, sessionId, prompt, onChunk, onSession, signal }) {
     const args: string[] = ['exec', '--json'];
     if (sessionId) args.push('resume', sessionId);
     args.push(prompt);
-    return runStreaming('codex', args, projectPath, onChunk, signal);
+    return runStreaming('codex', args, projectPath, onChunk, signal, onSession);
   },
 };

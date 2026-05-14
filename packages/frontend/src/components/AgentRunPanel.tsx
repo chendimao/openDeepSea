@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Ban, CircleAlert, CircleCheck, LoaderCircle, Terminal } from 'lucide-react';
+import { Ban, CircleAlert, CircleCheck, LoaderCircle, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import type { AgentRun, RoomAgent } from '../lib/types';
@@ -12,11 +12,15 @@ export function AgentRunStatusCard({
   run,
   agent,
   compact = false,
+  onRetryWorkflow,
+  retrying = false,
 }: {
   roomId: string;
   run: AgentRun;
   agent?: RoomAgent;
   compact?: boolean;
+  onRetryWorkflow?: (workflowRunId: string) => void;
+  retrying?: boolean;
 }) {
   const queryClient = useQueryClient();
   const cancel = useMutation({
@@ -31,6 +35,11 @@ export function AgentRunStatusCard({
   });
 
   const hasDiagnostics = Boolean(run.stderr || run.error);
+  const canRetry = Boolean(
+    run.workflow_run_id &&
+      onRetryWorkflow &&
+      (run.status === 'failed' || run.status === 'cancelled' || run.status === 'interrupted'),
+  );
 
   return (
     <section
@@ -74,6 +83,20 @@ export function AgentRunStatusCard({
             <Ban className="h-3.5 w-3.5" />
           </Button>
         )}
+        {canRetry && run.workflow_run_id && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => onRetryWorkflow?.(run.workflow_run_id!)}
+            disabled={retrying}
+            aria-label="重试当前阶段"
+            title="重试当前阶段"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {!compact && <span>重试</span>}
+          </Button>
+        )}
       </div>
 
       {hasDiagnostics && (
@@ -103,12 +126,15 @@ function RunStatusIcon({ status }: { status: AgentRun['status'] }) {
   if (status === 'completed') {
     return <CircleCheck className="mt-0.5 h-3.5 w-3.5 text-[var(--color-success)]" />;
   }
+  if (status === 'cancelled' || status === 'interrupted') {
+    return <CircleAlert className="mt-0.5 h-3.5 w-3.5 text-[var(--color-muted)]" />;
+  }
   return <CircleAlert className="mt-0.5 h-3.5 w-3.5 text-[var(--color-danger)]" />;
 }
 
 function statusClass(status: AgentRun['status']): string {
   if (status === 'running') return 'text-[var(--color-accent)]';
   if (status === 'completed') return 'text-[var(--color-success)]';
-  if (status === 'cancelled') return 'text-[var(--color-fg-muted)]';
+  if (status === 'cancelled' || status === 'interrupted') return 'text-[var(--color-fg-muted)]';
   return 'text-[var(--color-danger)]';
 }

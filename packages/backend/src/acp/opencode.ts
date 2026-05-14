@@ -66,10 +66,10 @@ export const openCodeAdapter: SessionAdapter = {
     }
   },
 
-  async invoke({ projectPath, sessionId, prompt, onChunk, signal }) {
+  async invoke({ projectPath, sessionId, prompt, onChunk, onSession, signal }) {
     const args: string[] = ['run'];
     if (sessionId) args.push('--session', sessionId);
     args.push(prompt);
-    return runStreaming('opencode', args, projectPath, onChunk, signal);
+    return runStreaming('opencode', args, projectPath, onChunk, signal, onSession);
   },
 };

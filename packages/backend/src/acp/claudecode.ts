@@ -82,11 +82,11 @@ export const claudeCodeAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, onChunk, signal }) {
+  async invoke({ projectPath, sessionId, prompt, onChunk, onSession, signal }) {
     const args = ['--print', '--output-format', 'stream-json', '--verbose'];
     if (sessionId) args.push('--resume', sessionId);
     args.push(prompt);
-    return runStreaming('claude', args, projectPath, onChunk, signal);
+    return runStreaming('claude', args, projectPath, onChunk, signal, onSession);
   },
 };
 
@@ -96,6 +96,7 @@ function runStreaming(
   cwd: string,
   onChunk: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void,
   signal?: AbortSignal,
+  onSession?: (sessionId: string) => void,
 ): Promise<{ exitCode: number; sessionId: string | null; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -106,10 +107,10 @@ function runStreaming(
     child.stdout.on('data', (data: string) => {
       onChunk({ stream: 'stdout', text: normalizeStdoutChunk(data) });
       const m = data.match(/"session_id"\s*:\s*"([^"]+)"/);
-      if (m && m[1]) detectedSession = m[1];
+      if (m && m[1]) detectedSession = rememberSession(m[1], detectedSession, onSession);
       for (const obj of parseJsonLines(data)) {
-        if (typeof obj['session_id'] === 'string') detectedSession = obj['session_id'];
-        if (typeof obj['thread_id'] === 'string') detectedSession = obj['thread_id'];
+        if (typeof obj['session_id'] === 'string') detectedSession = rememberSession(obj['session_id'], detectedSession, onSession);
+        if (typeof obj['thread_id'] === 'string') detectedSession = rememberSession(obj['thread_id'], detectedSession, onSession);
       }
     });
     child.stderr.on('data', (data: string) => {
@@ -129,6 +130,15 @@ function runStreaming(
       child.kill('SIGTERM');
     });
   });
+}
+
+function rememberSession(
+  sessionId: string,
+  current: string | null,
+  onSession: ((sessionId: string) => void) | undefined,
+): string {
+  if (sessionId !== current) onSession?.(sessionId);
+  return sessionId;
 }
 
 function filterStderr(data: string): string {

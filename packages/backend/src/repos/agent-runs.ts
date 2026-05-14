@@ -65,23 +65,31 @@ export const agentRunRepo = {
       .all(workflowRunId) as AgentRun[];
   },
 
-  failActiveRuns(error: string): number {
-    const timestamp = now();
-    const result = db
+  listActive(): AgentRun[] {
+    return db
       .prepare(
-        `UPDATE agent_runs
-         SET status = 'failed',
-             error = COALESCE(error, ?),
-             stderr = CASE
-               WHEN stderr = '' THEN ?
-               ELSE stderr || ?
-             END,
-             updated_at = ?,
-             completed_at = ?
-         WHERE status IN ('running', 'queued')`,
+        `SELECT * FROM agent_runs
+         WHERE status IN ('running', 'queued')
+         ORDER BY started_at ASC`,
       )
-      .run(error, error, `\n${error}`, timestamp, timestamp);
-    return result.changes;
+      .all() as AgentRun[];
+  },
+
+  interruptRun(id: string, error: string): AgentRun | undefined {
+    const timestamp = now();
+    db.prepare(
+      `UPDATE agent_runs
+       SET status = 'interrupted',
+           error = COALESCE(error, ?),
+           stderr = CASE
+             WHEN stderr = '' THEN ?
+             ELSE stderr || ?
+           END,
+           updated_at = ?,
+           completed_at = ?
+       WHERE id = ?`,
+    ).run(error, error, `\n${error}`, timestamp, timestamp, id);
+    return this.get(id);
   },
 
   appendStdout(id: string, chunk: string): AgentRun | undefined {

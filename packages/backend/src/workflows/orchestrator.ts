@@ -133,7 +133,7 @@ export const workflowOrchestrator = {
     }
     const retryableStep = [...workflowRepo.listSteps(run.id)]
       .reverse()
-      .find((step) => step.status === 'failed' || step.status === 'cancelled');
+      .find((step) => step.status === 'failed' || step.status === 'cancelled' || step.status === 'interrupted');
     if (!retryableStep && run.status !== 'blocked') throw new Error('workflow has no failed step to retry');
     const updated = workflowRepo.updateRun(run.id, { status: 'running', error: null });
     if (!updated) throw new Error('workflow not found');
@@ -154,7 +154,12 @@ export const workflowOrchestrator = {
     else {
       const task = requireTask(retryableStep.task_id);
       if (retryableStep.stage === 'implementation') updateTaskStatus(task.id, 'todo');
-      startAgentStage(updated, task, retryableStep.stage);
+      const retryAgent = retryableStep.room_agent_id ? roomAgentRepo.get(retryableStep.room_agent_id) : null;
+      if (retryAgent) {
+        startAgentStageWithAgent(updated, task, retryableStep.stage, retryAgent, getRetrySessionId(retryableStep));
+      } else {
+        startAgentStage(updated, task, retryableStep.stage, getRetrySessionId(retryableStep));
+      }
     }
     return latestRun(updated.id);
   },
@@ -164,12 +169,8 @@ export const workflowOrchestrator = {
     for (const step of workflowRepo.listRunningSteps()) {
       const run = workflowRepo.getRun(step.workflow_run_id);
       if (!run || run.status === 'cancelled' || run.status === 'completed') continue;
-      const failedStep = workflowRepo.updateStep(step.id, { status: 'failed', error });
-      if (failedStep) broadcastStep('workflow_step:updated', run.room_id, failedStep);
-      const task = taskRepo.get(step.task_id);
-      if (step.stage === 'implementation' && task?.status === 'in_progress') {
-        updateTaskStatus(step.task_id, 'failed');
-      }
+      const interruptedStep = workflowRepo.updateStep(step.id, { status: 'interrupted', error });
+      if (interruptedStep) broadcastStep('workflow_step:updated', run.room_id, interruptedStep);
       block(run, error);
       count++;
     }
@@ -431,7 +432,12 @@ function formatDecisionResponse(response: {
   ].join('\n');
 }
 
-function startAgentStage(run: WorkflowRun, task: Task, stage: WorkflowStage): void {
+function startAgentStage(
+  run: WorkflowRun,
+  task: Task,
+  stage: WorkflowStage,
+  resumeSessionId?: string | null,
+): void {
   const context = getContext(run);
   const agent = selectAgent(stage, context.agents);
   if (!agent) {
@@ -460,7 +466,7 @@ function startAgentStage(run: WorkflowRun, task: Task, stage: WorkflowStage): vo
   if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
 
   void respondAsAgent({
-    agent,
+    agent: resumeSessionId ? { ...agent, acp_session_id: resumeSessionId } : agent,
     projectPath: context.project.path,
     roomId: run.room_id,
     prompt,
@@ -519,7 +525,13 @@ async function handleAgentStageFinished(
   const run = workflowRepo.getRun(workflowRunId);
   const step = workflowRepo.getStep(stepId);
   if (!run || !step) return;
-  if (step.status === 'completed' || step.status === 'failed' || step.status === 'cancelled' || step.status === 'skipped') {
+  if (
+    step.status === 'completed' ||
+    step.status === 'failed' ||
+    step.status === 'cancelled' ||
+    step.status === 'interrupted' ||
+    step.status === 'skipped'
+  ) {
     return;
   }
   if (run.status === 'cancelled') {
@@ -705,7 +717,13 @@ function continueImplementationOrReview(run: WorkflowRun): void {
   startAgentStage(run, requireTask(run.task_id), 'code_review');
 }
 
-function startAgentStageWithAgent(run: WorkflowRun, task: Task, stage: WorkflowStage, agent: RoomAgent): void {
+function startAgentStageWithAgent(
+  run: WorkflowRun,
+  task: Task,
+  stage: WorkflowStage,
+  agent: RoomAgent,
+  resumeSessionId?: string | null,
+): void {
   const context = getContext(run);
   const prompt = buildStagePrompt(stage, {
     projectName: context.project.name,
@@ -728,7 +746,7 @@ function startAgentStageWithAgent(run: WorkflowRun, task: Task, stage: WorkflowS
   const updatedRun = workflowRepo.updateRun(run.id, { status: 'running', current_stage: stage, error: null });
   if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
   void respondAsAgent({
-    agent,
+    agent: resumeSessionId ? { ...agent, acp_session_id: resumeSessionId } : agent,
     projectPath: context.project.path,
     roomId: run.room_id,
     prompt,
@@ -745,6 +763,11 @@ function startAgentStageWithAgent(run: WorkflowRun, task: Task, stage: WorkflowS
   }).catch((err) => {
     void safelyHandleAgentStageStartFailed(run.id, step.id, (err as Error).message);
   });
+}
+
+function getRetrySessionId(step: WorkflowStep): string | null {
+  if (!step.agent_run_id) return null;
+  return agentRunRepo.get(step.agent_run_id)?.acp_session_id ?? null;
 }
 
 function finishReview(run: WorkflowRun, step: WorkflowStep, output: string): void {

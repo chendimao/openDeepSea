@@ -13,6 +13,7 @@ export interface SessionAdapter {
     sessionId: string | null;
     prompt: string;
     onChunk: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void;
+    onSession?: (sessionId: string) => void;
     signal?: AbortSignal;
   }): Promise<{ exitCode: number; sessionId: string | null; stderr: string }>;
 }

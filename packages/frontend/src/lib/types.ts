@@ -10,7 +10,15 @@ export type WorkflowStatus =
   | 'completed'
   | 'failed';
 export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
-export type WorkflowStepStatus = 'pending' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled' | 'skipped';
+export type WorkflowStepStatus =
+  | 'pending'
+  | 'running'
+  | 'awaiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted'
+  | 'skipped';
 export type TaskArtifactType =
   | 'analysis'
   | 'decision_request'
@@ -92,7 +100,7 @@ export interface RoomAgent {
   acp_session_label: string | null;
 }
 
-export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface AgentRun {
   id: string;
@@ -248,6 +256,7 @@ export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
+  interrupted: '已中断',
 };
 
 export const WORKFLOW_ROLE_LABEL: Record<WorkflowRole, string> = {
