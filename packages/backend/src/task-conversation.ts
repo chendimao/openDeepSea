@@ -1,3 +1,4 @@
+import { db } from './db.js';
 import { messageRepo } from './repos/messages.js';
 import { roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
@@ -39,56 +40,7 @@ export interface CreateTaskWithConversationResult {
   systemMessage: Message;
 }
 
-export function createTaskWithConversation(input: CreateTaskWithConversationInput): CreateTaskWithConversationResult {
-  const room = roomRepo.get(input.roomId);
-  if (!room) throw new Error('room not found');
-
-  const title = input.taskInput.title.trim();
-  if (!title) throw new Error('title is required');
-
-  const shouldCreateUserMessage = input.createUserMessage !== false && !input.sourceMessageId;
-  const userMessage = shouldCreateUserMessage
-    ? createUserIntentMessage({
-        roomId: input.roomId,
-        senderId: input.actor?.sender_id ?? 'user',
-        senderName: input.actor?.sender_name ?? 'You',
-        content: input.userFacingContent ?? `创建任务：${title}`,
-        origin: input.origin,
-      })
-    : null;
-
-  const sourceMessageId = input.sourceMessageId ?? userMessage?.id ?? null;
-  const interactionMode =
-    input.taskInput.interaction_mode ?? settingsRepo.resolveForRoom(input.roomId)?.effective.interaction_mode ?? 'ask_user';
-
-  const task = taskRepo.create({
-    room_id: input.roomId,
-    project_id: room.project_id,
-    parent_task_id: input.taskInput.parent_task_id ?? undefined,
-    title,
-    description: input.taskInput.description ?? undefined,
-    priority: input.taskInput.priority,
-    interaction_mode: interactionMode,
-    assigned_agent_id: input.taskInput.assigned_agent_id ?? undefined,
-    source_message_id: sourceMessageId,
-    created_from: input.origin,
-  });
-
-  wsHub.broadcast(input.roomId, { type: 'task:created', task });
-
-  const systemMessage = recordTaskEvent({
-    roomId: input.roomId,
-    taskId: task.id,
-    taskTitle: task.title,
-    eventType: 'task_created',
-    origin: input.origin,
-    content: buildTaskCreatedMessage(task),
-  });
-
-  return { task, userMessage, systemMessage };
-}
-
-export function recordTaskEvent(input: {
+interface RecordTaskEventInput {
   roomId: string;
   taskId: string;
   taskTitle?: string;
@@ -97,7 +49,82 @@ export function recordTaskEvent(input: {
   eventType: TaskEventType;
   origin?: TaskCreatedFrom;
   content: string;
-}): Message {
+}
+
+export function createTaskWithConversation(input: CreateTaskWithConversationInput): CreateTaskWithConversationResult {
+  const room = roomRepo.get(input.roomId);
+  if (!room) throw new Error('room not found');
+
+  const title = input.taskInput.title.trim();
+  if (!title) throw new Error('title is required');
+
+  if (input.sourceMessageId) {
+    const sourceMessage = messageRepo.get(input.sourceMessageId);
+    if (!sourceMessage) throw new Error('source message not found');
+    if (sourceMessage.room_id !== input.roomId) throw new Error('source message room mismatch');
+  }
+
+  const shouldCreateUserMessage = input.createUserMessage !== false && !input.sourceMessageId;
+  const interactionMode =
+    input.taskInput.interaction_mode ?? settingsRepo.resolveForRoom(input.roomId)?.effective.interaction_mode ?? 'ask_user';
+
+  const runCreate = db.transaction(() => {
+    const userMessage = shouldCreateUserMessage
+      ? createUserIntentMessage(
+          {
+            roomId: input.roomId,
+            senderId: input.actor?.sender_id ?? 'user',
+            senderName: input.actor?.sender_name ?? 'You',
+            content: input.userFacingContent ?? `创建任务：${title}`,
+            origin: input.origin,
+          },
+          { broadcast: false },
+        )
+      : null;
+
+    const sourceMessageId = input.sourceMessageId ?? userMessage?.id ?? null;
+    const task = taskRepo.create({
+      room_id: input.roomId,
+      project_id: room.project_id,
+      parent_task_id: input.taskInput.parent_task_id ?? undefined,
+      title,
+      description: input.taskInput.description ?? undefined,
+      priority: input.taskInput.priority,
+      interaction_mode: interactionMode,
+      assigned_agent_id: input.taskInput.assigned_agent_id ?? undefined,
+      source_message_id: sourceMessageId,
+      created_from: input.origin,
+    });
+
+    const systemMessage = createTaskEventMessage({
+      roomId: input.roomId,
+      taskId: task.id,
+      taskTitle: task.title,
+      eventType: 'task_created',
+      origin: input.origin,
+      content: buildTaskCreatedMessage(task),
+    });
+
+    return { task, userMessage, systemMessage };
+  });
+  const result = runCreate();
+
+  if (result.userMessage) {
+    broadcastMessageCreated(input.roomId, result.userMessage);
+  }
+  wsHub.broadcast(input.roomId, { type: 'task:created', task: result.task });
+  broadcastMessageCreated(input.roomId, result.systemMessage);
+
+  return result;
+}
+
+export function recordTaskEvent(input: RecordTaskEventInput): Message {
+  const message = createTaskEventMessage(input);
+  broadcastMessageCreated(input.roomId, message);
+  return message;
+}
+
+function createTaskEventMessage(input: RecordTaskEventInput): Message {
   const metadata: MessageMetadata = {
     task_id: input.taskId,
     task_title: input.taskTitle,
@@ -106,7 +133,7 @@ export function recordTaskEvent(input: {
     event_type: input.eventType,
     origin: input.origin,
   };
-  const message = messageRepo.create({
+  return messageRepo.create({
     room_id: input.roomId,
     sender_type: 'system',
     sender_id: 'system',
@@ -115,8 +142,6 @@ export function recordTaskEvent(input: {
     message_type: 'system',
     metadata: metadata as Record<string, unknown>,
   });
-  wsHub.broadcast(input.roomId, { type: 'message:new', roomId: input.roomId, message });
-  return message;
 }
 
 function createUserIntentMessage(input: {
@@ -125,6 +150,8 @@ function createUserIntentMessage(input: {
   senderName: string;
   content: string;
   origin: TaskCreatedFrom;
+}, options?: {
+  broadcast?: boolean;
 }): Message {
   const message = messageRepo.create({
     room_id: input.roomId,
@@ -135,8 +162,14 @@ function createUserIntentMessage(input: {
     message_type: 'text',
     metadata: { origin: input.origin },
   });
-  wsHub.broadcast(input.roomId, { type: 'message:new', roomId: input.roomId, message });
+  if (options?.broadcast !== false) {
+    broadcastMessageCreated(input.roomId, message);
+  }
   return message;
+}
+
+function broadcastMessageCreated(roomId: string, message: Message): void {
+  wsHub.broadcast(roomId, { type: 'message:new', roomId, message });
 }
 
 function buildTaskCreatedMessage(task: Task): string {
