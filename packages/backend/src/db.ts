@@ -25,6 +25,16 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+  scope TEXT NOT NULL,
+  scope_id TEXT NOT NULL,
+  message_routing_mode TEXT,
+  fallback_agent_id TEXT,
+  interaction_mode TEXT,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (scope, scope_id)
+);
+
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
@@ -211,6 +221,21 @@ const taskColumnNames = new Set(taskColumns.map((column) => column.name));
 if (!taskColumnNames.has('interaction_mode')) {
   db.exec("ALTER TABLE tasks ADD COLUMN interaction_mode TEXT NOT NULL DEFAULT 'ask_user'");
 }
+
+db.exec(`
+INSERT OR IGNORE INTO settings (
+  scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, updated_at
+)
+SELECT
+  'project',
+  id,
+  message_routing_mode,
+  fallback_agent_id,
+  NULL,
+  updated_at
+FROM projects
+WHERE message_routing_mode <> 'mentions_only' OR fallback_agent_id IS NOT NULL
+`);
 
 export function now(): number {
   return Date.now();

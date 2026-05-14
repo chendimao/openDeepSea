@@ -6,6 +6,7 @@ import { agentRunRepo } from './repos/agent-runs.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
+import { settingsRepo } from './repos/settings.js';
 import { runRegistry } from './run-registry.js';
 import { wsHub } from './ws-hub.js';
 import type { AgentRun, AgentRunStatus, Message, RoomAgent, WorkflowStage } from './types.js';
@@ -31,11 +32,15 @@ export async function dispatchUserMessage(args: {
   const allAgents = roomAgentRepo.listByRoom(roomId);
   const mentionedIds = new Set(args.mentionedAgentRoomIds ?? []);
   const explicitlyMentionedAgents = allAgents.filter((agent) => mentionedIds.has(agent.id));
+  const settings = settingsRepo.resolveForRoom(roomId)?.effective ?? {
+    message_routing_mode: project.message_routing_mode,
+    fallback_agent_id: project.fallback_agent_id,
+  };
   const routing = resolveInitialTargets({
     allAgents,
     explicitlyMentionedAgents,
-    fallbackAgentId: project.fallback_agent_id,
-    mode: project.message_routing_mode,
+    fallbackAgentId: settings.fallback_agent_id,
+    mode: settings.message_routing_mode,
     prompt: userMessage.content,
   });
   if (routing.targets.length === 0) return;

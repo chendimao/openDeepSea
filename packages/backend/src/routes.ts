@@ -9,12 +9,13 @@ import { agentRunRepo } from './repos/agent-runs.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
+import { settingsRepo } from './repos/settings.js';
 import { taskRepo } from './repos/tasks.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
-import type { AcpBackend, WorkflowRole } from './types.js';
+import type { AcpBackend, MessageRoutingMode, TaskInteractionMode, WorkflowRole } from './types.js';
 
 export const router = Router();
 
@@ -53,6 +54,72 @@ router.get('/gateway/agents', async (_req, res) => {
   } catch (err) {
     res.json({ agents: [], connected: false, error: (err as Error).message });
   }
+});
+
+const settingsPatchSchema = z
+  .object({
+    message_routing_mode: z.enum(['mentions_only', 'fallback_reply', 'fallback_route']).nullable().optional(),
+    fallback_agent_id: z.string().min(1).nullable().optional(),
+    interaction_mode: z.enum(['ask_user', 'auto_recommended']).nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.message_routing_mode === undefined ||
+      value.message_routing_mode === null ||
+      value.message_routing_mode === 'mentions_only' ||
+      Boolean(value.fallback_agent_id),
+    { message: 'fallback_agent_id is required unless message_routing_mode is mentions_only' },
+  );
+
+// ---------- Settings ----------
+router.get('/settings/system', (_req, res) => {
+  res.json(settingsRepo.getSystem());
+});
+
+router.patch('/settings/system', (req, res) => {
+  const parsed = settingsPatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  res.json(settingsRepo.updateSystem({
+    message_routing_mode: parsed.data.message_routing_mode ?? undefined,
+    fallback_agent_id: parsed.data.fallback_agent_id,
+    interaction_mode: parsed.data.interaction_mode ?? undefined,
+  }));
+});
+
+router.get('/projects/:projectId/settings', (req, res) => {
+  const resolution = settingsRepo.resolveForProject(req.params.projectId);
+  if (!resolution) return res.status(404).json({ error: 'not found' });
+  res.json(resolution);
+});
+
+router.patch('/projects/:projectId/settings', (req, res) => {
+  const parsed = settingsPatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const updated = settingsRepo.updateProject(req.params.projectId, parsed.data as {
+    message_routing_mode?: MessageRoutingMode | null;
+    fallback_agent_id?: string | null;
+    interaction_mode?: TaskInteractionMode | null;
+  });
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  res.json(settingsRepo.resolveForProject(req.params.projectId));
+});
+
+router.get('/rooms/:roomId/settings', (req, res) => {
+  const resolution = settingsRepo.resolveForRoom(req.params.roomId);
+  if (!resolution) return res.status(404).json({ error: 'not found' });
+  res.json(resolution);
+});
+
+router.patch('/rooms/:roomId/settings', (req, res) => {
+  const parsed = settingsPatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const updated = settingsRepo.updateRoom(req.params.roomId, parsed.data as {
+    message_routing_mode?: MessageRoutingMode | null;
+    fallback_agent_id?: string | null;
+    interaction_mode?: TaskInteractionMode | null;
+  });
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  res.json(settingsRepo.resolveForRoom(req.params.roomId));
 });
 
 // ---------- Projects ----------
@@ -117,6 +184,13 @@ router.put('/projects/:id/routing', (req, res) => {
         : parsed.data.fallback_agent_id ?? null,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
+  settingsRepo.updateProject(req.params.id, {
+    message_routing_mode: parsed.data.message_routing_mode,
+    fallback_agent_id:
+      parsed.data.message_routing_mode === 'mentions_only'
+        ? null
+        : parsed.data.fallback_agent_id ?? null,
+  });
   res.json(updated);
 });
 
@@ -392,6 +466,8 @@ router.post('/rooms/:roomId/tasks', (req, res) => {
     room_id: req.params.roomId,
     project_id: room.project_id,
     ...parsed.data,
+    interaction_mode:
+      parsed.data.interaction_mode ?? settingsRepo.resolveForRoom(req.params.roomId)?.effective.interaction_mode,
   });
   wsHub.broadcast(req.params.roomId, { type: 'task:created', task });
   res.status(201).json(task);

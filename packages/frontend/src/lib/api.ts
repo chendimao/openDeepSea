@@ -8,7 +8,9 @@ import type {
   Project,
   Room,
   RoomAgent,
+  SettingsResolution,
   Task,
+  TaskInteractionMode,
   WorkflowDetail,
   WorkflowRole,
   WorkflowRun,
@@ -36,6 +38,45 @@ export const api = {
   health: () => request<{ ok: boolean; gateway: boolean }>('/health'),
   listGatewayAgents: () =>
     request<{ agents: OpenClawAgent[]; connected: boolean; error?: string }>('/gateway/agents'),
+
+  getSystemSettings: () => request<SettingsResolution['system']>('/settings/system'),
+  updateSystemSettings: (input: {
+    message_routing_mode?: MessageRoutingMode;
+    fallback_agent_id?: string | null;
+    interaction_mode?: TaskInteractionMode;
+  }) =>
+    request<SettingsResolution['system']>('/settings/system', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  getProjectSettings: (projectId: string) =>
+    request<SettingsResolution>(`/projects/${projectId}/settings`),
+  updateProjectSettings: (
+    projectId: string,
+    input: {
+      message_routing_mode?: MessageRoutingMode | null;
+      fallback_agent_id?: string | null;
+      interaction_mode?: TaskInteractionMode | null;
+    },
+  ) =>
+    request<SettingsResolution>(`/projects/${projectId}/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  getRoomSettings: (roomId: string) =>
+    request<SettingsResolution>(`/rooms/${roomId}/settings`),
+  updateRoomSettings: (
+    roomId: string,
+    input: {
+      message_routing_mode?: MessageRoutingMode | null;
+      fallback_agent_id?: string | null;
+      interaction_mode?: TaskInteractionMode | null;
+    },
+  ) =>
+    request<SettingsResolution>(`/rooms/${roomId}/settings`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
 
   listProjects: () => request<Project[]>('/projects'),
   createProject: (input: { name: string; path: string; description?: string }) =>

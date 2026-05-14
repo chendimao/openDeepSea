@@ -10,6 +10,7 @@ export interface Project {
 }
 
 export type MessageRoutingMode = 'mentions_only' | 'fallback_reply' | 'fallback_route';
+export type SettingsScope = 'system' | 'project' | 'room';
 
 export interface Room {
   id: string;
@@ -32,7 +33,15 @@ export type WorkflowStatus =
   | 'completed'
   | 'failed';
 export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
-export type WorkflowStepStatus = 'pending' | 'running' | 'awaiting_approval' | 'completed' | 'failed' | 'cancelled' | 'skipped';
+export type WorkflowStepStatus =
+  | 'pending'
+  | 'running'
+  | 'awaiting_approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted'
+  | 'skipped';
 export type TaskArtifactType =
   | 'analysis'
   | 'decision_request'
@@ -57,7 +66,7 @@ export interface RoomAgent {
   acp_session_label: string | null;
 }
 
-export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface AgentRun {
   id: string;
@@ -99,6 +108,32 @@ export interface Message {
 export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'done' | 'failed';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
+
+export interface ScopedSettings {
+  scope: SettingsScope;
+  scope_id: string;
+  message_routing_mode: MessageRoutingMode | null;
+  fallback_agent_id: string | null;
+  interaction_mode: TaskInteractionMode | null;
+  updated_at: number;
+}
+
+export interface EffectiveSettings {
+  message_routing_mode: MessageRoutingMode;
+  fallback_agent_id: string | null;
+  interaction_mode: TaskInteractionMode;
+}
+
+export interface SettingsResolution {
+  system: EffectiveSettings;
+  project: ScopedSettings | null;
+  room: ScopedSettings | null;
+  effective: EffectiveSettings;
+  sources: {
+    message_routing: SettingsScope;
+    interaction_mode: SettingsScope;
+  };
+}
 
 export interface Task {
   id: string;

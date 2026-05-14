@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Hash, Send } from 'lucide-react';
+import { ChevronLeft, Hash, Send, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -12,7 +12,6 @@ import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
-import { ProjectRoutingDialog } from '../components/ProjectRoutingDialog';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { Button } from '../components/ui/Button';
@@ -44,6 +43,11 @@ export function RoomPage() {
   const { data: agents = [] } = useQuery({
     queryKey: ['room-agents', roomId],
     queryFn: () => api.listRoomAgents(roomId),
+    enabled: !!roomId,
+  });
+  const { data: settings } = useQuery({
+    queryKey: ['settings', 'room', roomId],
+    queryFn: () => api.getRoomSettings(roomId),
     enabled: !!roomId,
   });
   const { data: tasks = [] } = useQuery({
@@ -178,7 +182,14 @@ export function RoomPage() {
           <span className="hidden sm:inline-flex">
             <CreateTaskDialog roomId={roomId} agents={agents} />
           </span>
-          {project && <ProjectRoutingDialog project={project} agents={agents} />}
+          <Link
+            to={`/settings?project=${projectId}&room=${roomId}`}
+            aria-label="群聊设置"
+            className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md surface-2 px-2.5 text-[12px] font-medium text-[var(--color-fg)] hover:border-[var(--color-border-strong)] ease-ocean transition-all"
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">设置</span>
+          </Link>
           <AddAgentDialog roomId={roomId} />
         </div>
       </header>
@@ -189,8 +200,8 @@ export function RoomPage() {
           agents={agents}
           agentRuns={agentRuns}
           roomId={roomId}
-          routingMode={project?.message_routing_mode ?? 'mentions_only'}
-          fallbackAgentId={project?.fallback_agent_id ?? null}
+          routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
+          fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
         />
         <TaskBoard
           tasks={tasks}

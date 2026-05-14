@@ -21,6 +21,7 @@ export type TaskArtifactType =
   | 'review'
   | 'acceptance';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
+export type SettingsScope = 'system' | 'project' | 'room';
 
 export interface ProjectStats {
   rooms: number;
@@ -42,6 +43,32 @@ export interface Project {
 }
 
 export type MessageRoutingMode = 'mentions_only' | 'fallback_reply' | 'fallback_route';
+
+export interface ScopedSettings {
+  scope: SettingsScope;
+  scope_id: string;
+  message_routing_mode: MessageRoutingMode | null;
+  fallback_agent_id: string | null;
+  interaction_mode: TaskInteractionMode | null;
+  updated_at: number;
+}
+
+export interface EffectiveSettings {
+  message_routing_mode: MessageRoutingMode;
+  fallback_agent_id: string | null;
+  interaction_mode: TaskInteractionMode;
+}
+
+export interface SettingsResolution {
+  system: EffectiveSettings;
+  project: ScopedSettings | null;
+  room: ScopedSettings | null;
+  effective: EffectiveSettings;
+  sources: {
+    message_routing: SettingsScope;
+    interaction_mode: SettingsScope;
+  };
+}
 
 export interface Room {
   id: string;
@@ -207,6 +234,12 @@ export const TASK_PRIORITY_LABEL: Record<Task['priority'], string> = {
 export const TASK_INTERACTION_MODE_LABEL: Record<TaskInteractionMode, string> = {
   ask_user: '需要决策时询问我',
   auto_recommended: '使用推荐选项自动继续',
+};
+
+export const MESSAGE_ROUTING_MODE_LABEL: Record<MessageRoutingMode, string> = {
+  mentions_only: '只响应 @',
+  fallback_reply: '兜底回复',
+  fallback_route: '兜底调度',
 };
 
 export const AGENT_RUN_STATUS_LABEL: Record<AgentRunStatus, string> = {

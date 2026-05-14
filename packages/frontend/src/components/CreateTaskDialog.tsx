@@ -24,7 +24,7 @@ export function CreateTaskDialog({
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<Task['priority']>('normal');
-  const [interactionMode, setInteractionMode] = useState<Task['interaction_mode']>('ask_user');
+  const [interactionMode, setInteractionMode] = useState<Task['interaction_mode'] | 'inherit'>('inherit');
   const [assignedAgentId, setAssignedAgentId] = useState('');
   const queryClient = useQueryClient();
 
@@ -34,7 +34,7 @@ export function CreateTaskDialog({
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
-        interaction_mode: interactionMode,
+        interaction_mode: interactionMode === 'inherit' ? undefined : interactionMode,
         assigned_agent_id: assignedAgentId || undefined,
       }),
     onSuccess: () => {
@@ -44,7 +44,7 @@ export function CreateTaskDialog({
       setTitle(initialTitle);
       setDescription('');
       setPriority('normal');
-      setInteractionMode('ask_user');
+      setInteractionMode('inherit');
       setAssignedAgentId('');
     },
     onError: (err) => toast.error((err as Error).message),
@@ -120,9 +120,10 @@ export function CreateTaskDialog({
             <Label>交互策略</Label>
             <select
               value={interactionMode}
-              onChange={(e) => setInteractionMode(e.target.value as Task['interaction_mode'])}
+              onChange={(e) => setInteractionMode(e.target.value as Task['interaction_mode'] | 'inherit')}
               className="surface-1 h-10 w-full rounded-lg px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
             >
+              <option value="inherit">使用当前设置默认值</option>
               {(['ask_user', 'auto_recommended'] as const).map((mode) => (
                 <option key={mode} value={mode}>
                   {TASK_INTERACTION_MODE_LABEL[mode]}
