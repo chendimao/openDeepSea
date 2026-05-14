@@ -82,7 +82,7 @@ export function RichMessageComposer({
   }, [agents, renderNodes]);
 
   const updateMentionQuery = useCallback(() => {
-    if (sending) {
+    if (isBusy) {
       setMentionQuery(null);
       return;
     }
@@ -97,7 +97,7 @@ export function RichMessageComposer({
     const textBeforeCursor = getTextBeforeCursor(editor, selection.getRangeAt(0));
     const match = textBeforeCursor.match(mentionQueryPattern);
     setMentionQuery(match ? match[1] : null);
-  }, [sending]);
+  }, [isBusy]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -175,6 +175,8 @@ export function RichMessageComposer({
   };
 
   const handleSelectAgent = (agent: RoomAgent) => {
+    if (isBusy) return;
+
     const editor = editorRef.current;
     const selection = window.getSelection();
     if (!editor || !selection || selection.rangeCount === 0) return;
@@ -247,7 +249,7 @@ export function RichMessageComposer({
 
   return (
     <form className="relative" onSubmit={handleSubmit}>
-      {mentionQuery !== null && !sending && (
+      {mentionQuery !== null && !isBusy && (
         <AgentMentionMenu agents={agents} query={mentionQuery} onSelect={handleSelectAgent} />
       )}
 
@@ -385,26 +387,27 @@ function readChildNodes(parent: Node, nodes: ComposerNode[], appendBlockBreak: b
       return;
     }
 
-    if (child instanceof HTMLElement && child.classList.contains('composer-mention-token')) {
+    if (!(child instanceof HTMLElement)) return;
+
+    if (child.classList.contains('composer-mention-token')) {
       const roomAgentId = child.dataset.roomAgentId;
       const agentName = child.dataset.agentName;
       if (roomAgentId && agentName) {
         nodes.push({ type: 'mention', roomAgentId, agentName });
-        return;
-      }
-
-      if (child.tagName === 'BR') {
-        nodes.push({ type: 'text', text: '\n' });
-        return;
-      }
-
-      const isBlock = isBlockishElement(child);
-      const lengthBefore = textLengthFromNodes(nodes);
-      readChildNodes(child, nodes, isBlock);
-      if (isBlock && appendBlockBreak && textLengthFromNodes(nodes) > lengthBefore) {
-        nodes.push({ type: 'text', text: '\n' });
       }
       return;
+    }
+
+    if (child.tagName === 'BR') {
+      nodes.push({ type: 'text', text: '\n' });
+      return;
+    }
+
+    const isBlock = isBlockishElement(child);
+    const lengthBefore = textLengthFromNodes(nodes);
+    readChildNodes(child, nodes, isBlock);
+    if (isBlock && appendBlockBreak && textLengthFromNodes(nodes) > lengthBefore) {
+      nodes.push({ type: 'text', text: '\n' });
     }
   });
 }
@@ -511,30 +514,64 @@ function getEditorLinearText(editor: HTMLDivElement): string {
 }
 
 function mapLinearOffsetToDomPoint(editor: HTMLDivElement, targetOffset: number): { node: Node; offset: number } | null {
-  const walker = editor.ownerDocument.createTreeWalker(editor, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
-    acceptNode(node) {
-      if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
-      if (node instanceof HTMLElement && node.tagName === 'BR') return NodeFilter.FILTER_ACCEPT;
-      return NodeFilter.FILTER_SKIP;
-    },
-  });
-
-  let offset = 0;
-  let current = walker.nextNode();
-  while (current) {
-    const length = current.nodeType === Node.TEXT_NODE ? current.textContent?.length ?? 0 : 1;
-    if (targetOffset <= offset + length) {
-      if (current.nodeType === Node.TEXT_NODE) {
-        return { node: current, offset: Math.max(0, targetOffset - offset) };
-      }
-      return { node: current.parentNode ?? editor, offset: getNodeIndex(current) };
-    }
-
-    offset += length;
-    current = walker.nextNode();
-  }
+  const result = findDomPointForOffset(editor, targetOffset, { value: 0 });
+  if (result) return result;
 
   return { node: editor, offset: editor.childNodes.length };
+}
+
+function findDomPointForOffset(
+  parent: Node,
+  targetOffset: number,
+  currentOffset: { value: number },
+): { node: Node; offset: number } | null {
+  for (const child of Array.from(parent.childNodes)) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const length = child.textContent?.length ?? 0;
+      if (targetOffset <= currentOffset.value + length) {
+        return { node: child, offset: Math.max(0, targetOffset - currentOffset.value) };
+      }
+      currentOffset.value += length;
+      continue;
+    }
+
+    if (!(child instanceof HTMLElement)) continue;
+
+    if (child.classList.contains('composer-mention-token')) {
+      const length = child.textContent?.length ?? 0;
+      const parentNode = child.parentNode ?? parent;
+      const chipIndex = getNodeIndex(child);
+
+      if (targetOffset <= currentOffset.value) {
+        return { node: parentNode, offset: chipIndex };
+      }
+
+      if (targetOffset < currentOffset.value + length) {
+        const midpoint = currentOffset.value + length / 2;
+        return { node: parentNode, offset: targetOffset < midpoint ? chipIndex : chipIndex + 1 };
+      }
+
+      if (targetOffset === currentOffset.value + length) {
+        return { node: parentNode, offset: chipIndex + 1 };
+      }
+
+      currentOffset.value += length;
+      continue;
+    }
+
+    if (child.tagName === 'BR') {
+      if (targetOffset <= currentOffset.value + 1) {
+        return { node: child.parentNode ?? parent, offset: getNodeIndex(child) };
+      }
+      currentOffset.value += 1;
+      continue;
+    }
+
+    const nested = findDomPointForOffset(child, targetOffset, currentOffset);
+    if (nested) return nested;
+  }
+
+  return null;
 }
 
 function isBlockishElement(element: HTMLElement): boolean {
