@@ -20,6 +20,7 @@ import {
   Sun,
   Wifi,
   WifiOff,
+  type LucideIcon,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n, type Locale } from '../lib/i18n';
@@ -263,11 +264,11 @@ function ThemeToggle({
   const { t } = useI18n();
   const style = getThemeStyle(theme);
   const tone = getThemeTone(theme);
-  const styleIcons: Record<ThemeStyle, typeof Sun> = {
+  const styleIcons: Record<ThemeStyle, LucideIcon> = {
     apple: Sparkles,
     minimal: PanelTop,
   };
-  const toneIcons: Record<ThemeTone, typeof Sun> = {
+  const toneIcons: Record<ThemeTone, LucideIcon> = {
     light: Sun,
     dark: Moon,
   };
@@ -282,7 +283,7 @@ function ThemeToggle({
 
   return (
     <div className="theme-toggle-stack mb-2" aria-label={t('theme.label')}>
-      <div className="theme-toggle" aria-label={t('theme.style.label')}>
+      <div className="theme-toggle" role="group" aria-label={t('theme.style.label')}>
         {THEME_STYLES.map((option) => {
           const Icon = styleIcons[option.value];
           return (
@@ -299,7 +300,7 @@ function ThemeToggle({
           );
         })}
       </div>
-      <div className="theme-toggle" aria-label={t('theme.tone.label')}>
+      <div className="theme-toggle" role="group" aria-label={t('theme.tone.label')}>
         {THEME_TONES.map((option) => {
           const Icon = toneIcons[option.value];
           return (
