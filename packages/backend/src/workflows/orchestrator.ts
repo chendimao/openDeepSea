@@ -13,6 +13,7 @@ import {
   parseDecisionRequest,
   parsePlanArtifact,
   parseReviewVerdict,
+  type ParsedAcceptanceVerdict,
   type ParsedDecisionItem,
   type ParsedDecisionRequest,
 } from './plan-parser.js';
@@ -30,6 +31,9 @@ import type {
   WorkflowStage,
   WorkflowStep,
 } from '../types.js';
+
+const MAX_TASK_SUMMARY_MEMORY_CHARS = 4000;
+const MAX_TASK_SUMMARY_NOTES_CHARS = 2000;
 
 export const workflowOrchestrator = {
   start(taskId: string): WorkflowRun {
@@ -453,12 +457,7 @@ function startAgentStage(
     task,
     agents: context.agents,
     artifacts: context.artifacts,
-    memoryContext: formatMemoryContext(memoryRepo.listForRoomContext({
-      projectId: context.project.id,
-      roomId: context.room.id,
-      roomAgentId: agent.id,
-      taskId: task.id,
-    })),
+    memoryContext: buildWorkflowMemoryContext(context.project.id, context.room.id, agent.id, task.id),
   });
   const step = workflowRepo.createStep({
     workflow_run_id: run.id,
@@ -740,12 +739,7 @@ function startAgentStageWithAgent(
     task,
     agents: context.agents,
     artifacts: context.artifacts,
-    memoryContext: formatMemoryContext(memoryRepo.listForRoomContext({
-      projectId: context.project.id,
-      roomId: context.room.id,
-      roomAgentId: agent.id,
-      taskId: task.id,
-    })),
+    memoryContext: buildWorkflowMemoryContext(context.project.id, context.room.id, agent.id, task.id),
   });
   const step = workflowRepo.createStep({
     workflow_run_id: run.id,
@@ -844,21 +838,7 @@ function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string):
       updateTaskStatus(child.id, 'done');
     }
     updateTaskStatus(run.task_id, 'done');
-    const completedTask = requireTask(run.task_id);
-    memoryRepo.upsertTaskSummary({
-      project_id: run.project_id,
-      room_id: run.room_id,
-      task_id: run.task_id,
-      title: `任务完成：${completedTask.title}`,
-      content: [
-        `任务：${completedTask.title}`,
-        '验收结论：通过',
-        '',
-        '验收摘要：',
-        output,
-      ].join('\n'),
-      source_id: run.id,
-    });
+    rememberAcceptedTask(run, verdict);
     const updated = workflowRepo.updateRun(run.id, { status: 'completed', current_stage: 'acceptance', error: null });
     if (updated) broadcastWorkflow('workflow:updated', updated);
   } else {
@@ -871,4 +851,66 @@ function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string):
     });
     if (updated) broadcastWorkflow('workflow:updated', updated);
   }
+}
+
+export function buildWorkflowMemoryContext(
+  projectId: string,
+  roomId: string,
+  roomAgentId: string,
+  taskId: string,
+): string {
+  try {
+    return formatMemoryContext(memoryRepo.listForRoomContext({
+      projectId,
+      roomId,
+      roomAgentId,
+      taskId,
+    }));
+  } catch (err) {
+    console.warn(`[memory] failed to load workflow memory context: ${(err as Error).message}`);
+    return '';
+  }
+}
+
+export function rememberAcceptedTask(run: WorkflowRun, verdict: ParsedAcceptanceVerdict): void {
+  try {
+    const completedTask = requireTask(run.task_id);
+    memoryRepo.upsertTaskSummary({
+      project_id: run.project_id,
+      room_id: run.room_id,
+      task_id: run.task_id,
+      title: `任务完成：${completedTask.title}`,
+      content: buildTaskSummaryMemoryContent(completedTask.title, verdict),
+      source_id: run.id,
+    });
+  } catch (err) {
+    console.warn(`[memory] failed to save workflow task summary: ${(err as Error).message}`);
+  }
+}
+
+export function buildTaskSummaryMemoryContent(taskTitle: string, verdict: ParsedAcceptanceVerdict): string {
+  const sections = [
+    `任务：${taskTitle}`,
+    `验收结论：${verdict.verdict === 'pass' ? '通过' : '未通过'}`,
+  ];
+  if (verdict.notes.trim()) {
+    sections.push('', '验收说明：', truncateText(verdict.notes.trim(), MAX_TASK_SUMMARY_NOTES_CHARS));
+  }
+  if (verdict.acceptedCriteria.length > 0) {
+    sections.push('', '通过标准：', ...verdict.acceptedCriteria.map((item) => `- ${item}`));
+  }
+  if (verdict.failedCriteria.length > 0) {
+    sections.push('', '未通过标准：', ...verdict.failedCriteria.map((item) => `- ${item}`));
+  }
+  return truncateTaskSummaryMemory(sections.join('\n'));
+}
+
+function truncateTaskSummaryMemory(content: string): string {
+  return truncateText(content, MAX_TASK_SUMMARY_MEMORY_CHARS);
+}
+
+function truncateText(content: string, maxChars: number): string {
+  const marker = '...已截断';
+  if (content.length <= maxChars) return content;
+  return `${content.slice(0, maxChars - marker.length)}${marker}`;
 }

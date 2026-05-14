@@ -1,9 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { buildTaskSummaryMemoryContent } from './orchestrator.js';
 import { buildStagePrompt } from './prompts.js';
 
 test('buildStagePrompt includes memory context when provided', () => {
   const prompt = buildStagePrompt('analysis', {
+    ...basePromptContext(),
+    memoryContext: '项目/聊天室记忆：\n1. [决策；project] Use explicit memory\nInject it.',
+  });
+
+  assert.match(prompt, /项目\/聊天室记忆：/);
+  assert.match(prompt, /Use explicit memory/);
+});
+
+test('buildStagePrompt uses empty memory placeholder when no memory context is provided', () => {
+  const prompt = buildStagePrompt('analysis', basePromptContext());
+
+  assert.match(prompt, /项目\/聊天室记忆：暂无相关记忆。/);
+});
+
+test('buildTaskSummaryMemoryContent summarizes parsed acceptance verdict and truncates long notes', () => {
+  const content = buildTaskSummaryMemoryContent('Build memory', {
+    verdict: 'pass',
+    acceptedCriteria: ['prompt includes memory', 'summary is saved'],
+    failedCriteria: [],
+    notes: 'Accepted. '.repeat(600),
+  });
+
+  assert.ok(content.length <= 4000);
+  assert.match(content, /任务：Build memory/);
+  assert.match(content, /验收结论：通过/);
+  assert.match(content, /验收说明：/);
+  assert.match(content, /通过标准：/);
+  assert.match(content, /- prompt includes memory/);
+  assert.doesNotMatch(content, /```json/);
+  assert.match(content, /\.\.\.已截断/);
+});
+
+function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
+  return {
     projectName: 'Memory Project',
     projectPath: '/tmp/memory-project',
     room: {
@@ -30,9 +65,5 @@ test('buildStagePrompt includes memory context when provided', () => {
     },
     agents: [],
     artifacts: [],
-    memoryContext: '项目/聊天室记忆：\n1. [决策；project] Use explicit memory\nInject it.',
-  });
-
-  assert.match(prompt, /项目\/聊天室记忆：/);
-  assert.match(prompt, /Use explicit memory/);
-});
+  };
+}
