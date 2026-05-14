@@ -25,10 +25,12 @@ const MEMORY_TYPES: MemoryType[] = [
   'task_summary',
   'artifact_summary',
 ];
+const EMPTY_ROOM_AGENTS: RoomAgent[] = [];
 
 interface MemoryPanelProps {
   projectId: string;
   roomId?: string;
+  roomAgentId?: string;
   roomAgents?: RoomAgent[];
   task?: Task;
   defaultScope?: MemoryScope;
@@ -37,13 +39,15 @@ interface MemoryPanelProps {
 
 interface MemoryQueryFilters {
   roomId?: string;
+  roomAgentIds: string[];
   taskId?: string;
 }
 
 export function MemoryPanel({
   projectId,
   roomId,
-  roomAgents = [],
+  roomAgentId,
+  roomAgents = EMPTY_ROOM_AGENTS,
   task,
   defaultScope = roomId ? 'room' : 'project',
   compact = false,
@@ -54,14 +58,27 @@ export function MemoryPanel({
   const filters = useMemo<MemoryQueryFilters>(
     () => ({
       roomId,
+      roomAgentIds: roomAgentId ? [roomAgentId] : roomAgents.map((agent) => agent.id).sort(),
       taskId: task?.id,
     }),
-    [roomId, task?.id],
+    [roomAgentId, roomId, roomAgents, task?.id],
   );
 
   const { data: memories = [], isLoading } = useQuery({
     queryKey: ['memories', projectId, filters],
-    queryFn: () => api.listMemories(projectId, filters),
+    queryFn: async () => {
+      const baseFilters = { roomId: filters.roomId, taskId: filters.taskId };
+      const memoryGroups = await Promise.all([
+        api.listMemories(projectId, baseFilters),
+        ...filters.roomAgentIds.map((roomAgentId) =>
+          api.listMemories(projectId, {
+            ...baseFilters,
+            roomAgentId,
+          }),
+        ),
+      ]);
+      return mergeMemories(memoryGroups.flat());
+    },
     enabled: Boolean(projectId),
   });
 
@@ -428,6 +445,17 @@ function normalizeScope(
   if (scope === 'agent' && roomId && roomAgents.length > 0) return 'agent';
   if (scope === 'room' && roomId) return 'room';
   return 'project';
+}
+
+function mergeMemories(memories: MemoryEntry[]): MemoryEntry[] {
+  const byId = new Map<string, MemoryEntry>();
+  for (const memory of memories) {
+    byId.set(memory.id, memory);
+  }
+  return Array.from(byId.values()).sort((a, b) => {
+    if (a.pinned !== b.pinned) return b.pinned - a.pinned;
+    return b.updated_at - a.updated_at;
+  });
 }
 
 function MemoryBadge({ children }: { children: React.ReactNode }) {
