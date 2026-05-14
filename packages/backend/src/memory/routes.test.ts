@@ -267,3 +267,41 @@ test('memory routes return stable errors for invalid filters and source conflict
   assert.deepEqual(await conflict.json(), { error: 'memory source already exists' });
   assert.equal((await listMemories(firstProject.id, `?taskId=${task.id}`)).length, 1);
 });
+
+test('memory routes reject duplicate room message memories by source', async () => {
+  const project = projectRepo.create({
+    name: 'API Memory Room Message Conflict',
+    path: createProjectPath('room-message-conflict'),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room Message Conflict Room' });
+
+  const firstCreate = await request(`/api/projects/${project.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'room',
+      memory_type: 'lesson',
+      title: 'Message memory',
+      content: 'Remember this room message once.',
+      room_id: room.id,
+      source_type: 'message',
+      source_id: 'message-duplicate',
+    }),
+  });
+  assert.equal(firstCreate.status, 201);
+
+  const conflict = await request(`/api/projects/${project.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'room',
+      memory_type: 'lesson',
+      title: 'Message memory again',
+      content: 'The same message should not create another memory.',
+      room_id: room.id,
+      source_type: 'message',
+      source_id: 'message-duplicate',
+    }),
+  });
+  assert.equal(conflict.status, 409);
+  assert.deepEqual(await conflict.json(), { error: 'memory source already exists' });
+  assert.equal((await listMemories(project.id, `?roomId=${room.id}`)).length, 1);
+});

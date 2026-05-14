@@ -442,7 +442,14 @@ function ChatColumn({
       toast.success('已保存为记忆');
       queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
     },
-    onError: (err) => toast.error((err as Error).message),
+    onError: (err) => {
+      if (isConflictError(err)) {
+        toast.info('这条消息已保存为记忆');
+        queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
+        return;
+      }
+      toast.error((err as Error).message);
+    },
   });
 
   const handleSend = () => {
@@ -616,7 +623,7 @@ function MessageBubble({
               disabled={savingMemory}
             >
               <Save className="h-3 w-3" />
-              存记忆
+              {savingMemory ? '保存中' : '存记忆'}
             </Button>
           ) : null}
         </div>
@@ -660,6 +667,10 @@ function createMessageMemoryTitle(content: string): string {
   const normalized = content.trim().replace(/\s+/g, ' ');
   if (!normalized) return '聊天记忆';
   return normalized.length > 80 ? `${normalized.slice(0, 80)}…` : normalized;
+}
+
+function isConflictError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith('409:');
 }
 
 function Composer({

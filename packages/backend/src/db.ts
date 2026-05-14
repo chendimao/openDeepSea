@@ -198,6 +198,12 @@ CREATE INDEX IF NOT EXISTS idx_memory_task ON memory_entries(task_id, updated_at
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_task_source
   ON memory_entries(task_id, source_type, source_id)
   WHERE task_id IS NOT NULL AND source_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_room_source
+  ON memory_entries(room_id, source_type, source_id)
+  WHERE scope = 'room' AND room_id IS NOT NULL AND source_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_project_source
+  ON memory_entries(project_id, source_type, source_id)
+  WHERE scope = 'project' AND source_id IS NOT NULL;
 
 CREATE TRIGGER IF NOT EXISTS trg_memory_entries_validate_insert
 BEFORE INSERT ON memory_entries
