@@ -7,12 +7,15 @@ import {
   FolderKanban,
   GitBranch,
   Home,
-  Moon,
+  Loader2,
   Plus,
+  RefreshCw,
   Search,
+  Server,
   Settings,
   SquareCheck,
-  Sun,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { cn, truncate } from '../lib/utils';
@@ -21,6 +24,7 @@ import { LobsterMark } from './LobsterMark';
 import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
 import { SystemSettingsDialog } from './SettingsDialogs';
+import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import type { ThemeMode } from '../lib/theme';
 
 export function AppShell({
@@ -71,8 +75,6 @@ export function AppShell({
             projects={projects}
             currentProject={currentProject}
             onOpenCommand={() => setCommandOpen(true)}
-            theme={theme}
-            onThemeChange={onThemeChange}
           />
         </aside>
         <main className="app-main">{children}</main>
@@ -95,17 +97,20 @@ function ProjectSidebar({
   projects,
   currentProject,
   onOpenCommand,
-  theme,
-  onThemeChange,
 }: {
   projects: Awaited<ReturnType<typeof api.listProjects>>;
   currentProject?: Awaited<ReturnType<typeof api.listProjects>>[number];
   onOpenCommand: () => void;
-  theme: ThemeMode;
-  onThemeChange: (theme: ThemeMode) => void;
 }): JSX.Element {
-  const nextTheme = theme === 'light' ? 'dark' : 'light';
-  const ThemeIcon = theme === 'light' ? Moon : Sun;
+  const {
+    data: health,
+    error: healthError,
+    isLoading: healthLoading,
+  } = useQuery({
+    queryKey: ['health'],
+    queryFn: api.health,
+    refetchInterval: 10_000,
+  });
 
   return (
     <div className="glass-sidebar flex h-full flex-col">
@@ -214,17 +219,154 @@ function ProjectSidebar({
       </div>
 
       <div className="px-5 pb-4">
-        <button
-          type="button"
-          aria-label={`切换到${nextTheme === 'dark' ? '暗色' : '亮色'}主题`}
-          onClick={() => onThemeChange(nextTheme)}
-          className="theme-toggle"
-        >
-          <ThemeIcon className="h-3.5 w-3.5" strokeWidth={1.75} />
-          <span>{nextTheme === 'dark' ? '暗色模式' : '亮色模式'}</span>
-          <span className="ml-auto h-5 w-5 rounded-full bg-white/80 shadow-[inset_0_0_0_1px_rgba(15,23,42,0.08)]" />
-        </button>
+        <OpenClawGatewayDialog
+          health={health}
+          healthError={healthError}
+          healthLoading={healthLoading}
+        />
       </div>
+    </div>
+  );
+}
+
+function OpenClawGatewayDialog({
+  health,
+  healthError,
+  healthLoading,
+}: {
+  health?: Awaited<ReturnType<typeof api.health>>;
+  healthError: unknown;
+  healthLoading: boolean;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const {
+    data: gatewayAgents,
+    error: agentsError,
+    isLoading: agentsLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ['gateway-agents'],
+    queryFn: api.listGatewayAgents,
+    enabled: open,
+  });
+  const connected = Boolean(health?.gatewayStatus?.running);
+  const rpcConnected = Boolean(health?.gatewayStatus?.rpcOk || health?.gatewayRpcConnected);
+  const statusLabel = healthLoading
+    ? '检查中'
+    : connected
+      ? rpcConnected
+        ? '网关在线'
+        : '网关运行中'
+      : '网关离线';
+  const statusClass = healthLoading ? 'is-loading' : connected ? 'is-online' : 'is-offline';
+  const StatusIcon = healthLoading ? Loader2 : connected ? Wifi : WifiOff;
+  const healthMessage = healthError instanceof Error
+    ? healthError.message
+    : health?.gatewayStatus?.error;
+  const agentsMessage = agentsError instanceof Error ? agentsError.message : gatewayAgents?.error;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button type="button" className={cn('gateway-status-button', statusClass)}>
+          <span className="gateway-status-light" />
+          <StatusIcon
+            className={cn('h-3.5 w-3.5', healthLoading && 'animate-spin')}
+            strokeWidth={1.75}
+          />
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-[12px] font-medium">OpenClaw 网关</span>
+            <span className="block truncate font-mono text-[10.5px] text-[var(--color-fg-muted)]">{statusLabel}</span>
+          </span>
+        </button>
+      </DialogTrigger>
+      <DialogContent
+        title="本机 OpenClaw"
+        description="网关运行状态与本机可用 Agent 信息"
+        className="max-h-[86vh] w-[min(94vw,620px)] overflow-y-auto"
+      >
+        <div className="space-y-4">
+          <div className="gateway-summary-grid">
+            <GatewayStat label="服务状态" value={healthLoading ? '检查中' : connected ? '运行中' : '未连接'} tone={connected ? 'online' : 'offline'} />
+            <GatewayStat label="RPC" value={rpcConnected ? '已连接' : '未连接'} tone={rpcConnected ? 'online' : 'offline'} />
+            <GatewayStat label="PID" value={health?.gatewayStatus?.pid ? String(health.gatewayStatus.pid) : '-'} />
+            <GatewayStat label="Capability" value={health?.gatewayStatus?.capability ?? '-'} />
+          </div>
+
+          {healthMessage && (
+            <div className="gateway-error-box">
+              {healthMessage}
+            </div>
+          )}
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-[12px] font-medium">
+                <Server className="h-3.5 w-3.5 text-[var(--color-primary)]" strokeWidth={1.75} />
+                OpenClaw Agents
+              </div>
+              <button
+                type="button"
+                className="sidebar-icon-button"
+                aria-label="刷新 OpenClaw 信息"
+                onClick={() => void refetch()}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', agentsLoading && 'animate-spin')} strokeWidth={1.75} />
+              </button>
+            </div>
+
+            {!gatewayAgents && agentsLoading ? (
+              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
+                正在读取本机 OpenClaw agents 列表
+              </div>
+            ) : !gatewayAgents?.connected ? (
+              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
+                无法读取本机 OpenClaw agents。{agentsMessage ? `错误: ${agentsMessage}` : ''}
+              </div>
+            ) : gatewayAgents.agents.length === 0 ? (
+              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
+                当前本机 OpenClaw 配置中没有可用 Agent。
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {gatewayAgents.agents.map((agent) => (
+                  <div key={agent.id} className="gateway-agent-row">
+                    <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" strokeWidth={1.75} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-display text-[13px] font-medium">{agent.name ?? agent.id}</span>
+                        <span className="shrink-0 font-mono text-[11px] text-[var(--color-fg-muted)]">{agent.id}</span>
+                      </div>
+                      {(agent.description || agent.workspace) && (
+                        <div className="mt-0.5 truncate text-[11px] text-[var(--color-fg-muted)]">
+                          {agent.description ?? agent.workspace}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GatewayStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'online' | 'offline';
+}): JSX.Element {
+  return (
+    <div className={cn('gateway-stat', tone === 'online' && 'is-online', tone === 'offline' && 'is-offline')}>
+      <div className="text-[10.5px] text-[var(--color-fg-muted)]">{label}</div>
+      <div className="mt-1 truncate font-mono text-[12px] text-[var(--color-fg)]" title={value}>{value}</div>
     </div>
   );
 }

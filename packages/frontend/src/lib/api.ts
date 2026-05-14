@@ -18,6 +18,15 @@ import type {
 
 const BASE = '/api';
 
+export interface OpenClawGatewayStatus {
+  ok: boolean;
+  running: boolean;
+  pid: number | null;
+  rpcOk: boolean;
+  capability: string | null;
+  error?: string;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...init,
@@ -35,7 +44,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  health: () => request<{ ok: boolean; gateway: boolean }>('/health'),
+  health: () =>
+    request<{
+      ok: boolean;
+      gateway: boolean;
+      gatewayStatus: OpenClawGatewayStatus;
+      gatewayRpcConnected: boolean;
+    }>('/health'),
   listGatewayAgents: () =>
     request<{ agents: OpenClawAgent[]; connected: boolean; error?: string }>('/gateway/agents'),
 
