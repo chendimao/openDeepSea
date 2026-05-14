@@ -9,6 +9,7 @@ import {
   MAX_MESSAGE_FILE_SIZE_BYTES,
   buildAttachmentMetadata,
   cleanupUploadedFilesInDir,
+  isAllowedMessageUploadMimeType,
   safeUploadFileName,
 } from './uploads.js';
 
@@ -27,6 +28,16 @@ test('safeUploadFileName sanitizes traversal-like names', () => {
 test('safeUploadFileName falls back to bin extension for unsupported extension', () => {
   const generated = safeUploadFileName('payload.verylongextension');
   assert.match(generated, /^\d+-[A-Za-z0-9_-]{12}\.bin$/);
+});
+
+test('message upload MIME allowlist rejects active content', () => {
+  assert.equal(isAllowedMessageUploadMimeType('image/png'), true);
+  assert.equal(isAllowedMessageUploadMimeType('image/jpeg'), true);
+  assert.equal(isAllowedMessageUploadMimeType('application/pdf'), true);
+  assert.equal(isAllowedMessageUploadMimeType('text/plain'), true);
+  assert.equal(isAllowedMessageUploadMimeType('text/html'), false);
+  assert.equal(isAllowedMessageUploadMimeType('image/svg+xml'), false);
+  assert.equal(isAllowedMessageUploadMimeType('application/javascript'), false);
 });
 
 test('buildAttachmentMetadata maps multer file to message attachment metadata', () => {
