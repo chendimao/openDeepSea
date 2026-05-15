@@ -4,6 +4,7 @@ import type {
   CliSession,
   MemoryEntry,
   MemoryInput,
+  MemorySearchResult,
   Message,
   MessageRoutingMode,
   OpenClawAgent,
@@ -113,6 +114,19 @@ export const api = {
     if (filters.includeArchived) params.set('includeArchived', '1');
     const query = params.toString();
     return request<MemoryEntry[]>(`/projects/${projectId}/memories${query ? `?${query}` : ''}`);
+  },
+  searchMemories: (
+    projectId: string,
+    filters: { query?: string; roomId?: string; scope?: 'project' | 'room' | 'task'; limit?: number; includeArchived?: boolean } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (filters.query) params.set('query', filters.query);
+    if (filters.roomId) params.set('roomId', filters.roomId);
+    if (filters.scope) params.set('scope', filters.scope);
+    if (filters.limit) params.set('limit', String(filters.limit));
+    if (filters.includeArchived) params.set('includeArchived', '1');
+    const query = params.toString();
+    return request<MemorySearchResult[]>(`/projects/${projectId}/memories/search${query ? `?${query}` : ''}`);
   },
   createMemory: (projectId: string, input: MemoryInput) =>
     request<MemoryEntry>(`/projects/${projectId}/memories`, {

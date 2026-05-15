@@ -1,5 +1,5 @@
 import { type FormEvent, useMemo, useState } from 'react';
-import { Archive, ArchiveRestore, Edit3, Pin, PinOff, Plus, Save, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, Edit3, Pin, PinOff, Plus, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
@@ -7,6 +7,7 @@ import { useI18n } from '../lib/i18n';
 import {
   type MemoryEntry,
   type MemoryInput,
+  type MemorySearchResult,
   type MemoryScope,
   type MemoryType,
   type RoomAgent,
@@ -43,6 +44,8 @@ interface MemoryQueryFilters {
   taskId?: string;
 }
 
+type MemoryTab = 'context' | 'project' | 'search';
+
 export function MemoryPanel({
   projectId,
   roomId,
@@ -53,9 +56,11 @@ export function MemoryPanel({
   compact = false,
 }: MemoryPanelProps) {
   const queryClient = useQueryClient();
-  const { memoryScopeLabel, memoryTypeLabel, t } = useI18n();
+  const { t } = useI18n();
   const [editing, setEditing] = useState<MemoryEntry | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [activeTab, setActiveTab] = useState<MemoryTab>('context');
+  const [searchQuery, setSearchQuery] = useState('');
   const filters = useMemo<MemoryQueryFilters>(
     () => ({
       roomId,
@@ -79,6 +84,31 @@ export function MemoryPanel({
       return mergeMemories(result);
     },
     enabled: Boolean(projectId),
+  });
+
+  const { data: projectMemories = [], isLoading: isProjectLoading } = useQuery({
+    queryKey: ['memories', projectId, 'project-only', showArchived],
+    queryFn: async () => {
+      const result = await api.searchMemories(projectId, {
+        scope: 'project',
+        limit: 100,
+        includeArchived: showArchived,
+      });
+      return mergeMemories(result);
+    },
+    enabled: Boolean(projectId) && activeTab === 'project',
+  });
+
+  const trimmedSearchQuery = searchQuery.trim();
+  const { data: searchResults = [], isLoading: isSearchLoading } = useQuery({
+    queryKey: ['memories', projectId, 'search', trimmedSearchQuery, showArchived],
+    queryFn: () =>
+      api.searchMemories(projectId, {
+        query: trimmedSearchQuery,
+        limit: 20,
+        includeArchived: showArchived,
+      }),
+    enabled: Boolean(projectId) && activeTab === 'search' && trimmedSearchQuery.length > 0,
   });
 
   const invalidateMemories = () => queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
@@ -138,7 +168,27 @@ export function MemoryPanel({
     onError: (err) => toast.error((err as Error).message),
   });
 
+  const promoteMutation = useMutation({
+    mutationFn: (memory: MemoryEntry) =>
+      api.createMemory(projectId, {
+        scope: 'project',
+        memory_type: memory.memory_type,
+        title: memory.title,
+        content: memory.content,
+        source_type: 'manual',
+        source_id: null,
+        pinned: false,
+      }),
+    onSuccess: () => {
+      toast.success(t('memory.promoted'));
+      invalidateMemories();
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
   const busy = createMutation.isPending || updateMutation.isPending;
+  const displayedMemories = activeTab === 'project' ? projectMemories : memories;
+  const displayedLoading = activeTab === 'project' ? isProjectLoading : isLoading;
 
   return (
     <section className={cn('space-y-3', compact && 'text-[12px]')}>
@@ -174,6 +224,22 @@ export function MemoryPanel({
         </div>
       </div>
 
+      <div className="grid grid-cols-3 gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-subtle)] p-1">
+        {(['context', 'project', 'search'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            className={cn(
+              'h-8 rounded px-2 text-[12px] font-medium text-[var(--color-fg-muted)] transition-colors',
+              activeTab === tab && 'bg-[var(--color-surface)] text-[var(--color-fg)] shadow-sm',
+            )}
+            onClick={() => setActiveTab(tab)}
+          >
+            {t(`memory.tab.${tab}`)}
+          </button>
+        ))}
+      </div>
+
       {(showForm || editing) && (
         <MemoryForm
           key={editing?.id ?? 'new-memory'}
@@ -202,17 +268,116 @@ export function MemoryPanel({
         />
       )}
 
-      <div className="space-y-2">
-        {isLoading ? (
-          <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-4 text-[12px] text-[var(--color-fg-muted)]">
-            {t('memory.loading')}
+      {activeTab === 'search' ? (
+        <div className="space-y-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-fg-muted)]" />
+            <Input
+              className="pl-8"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={t('memory.search.placeholder')}
+              aria-label={t('memory.search.placeholder')}
+            />
           </div>
-        ) : memories.length === 0 ? (
-          <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-4 text-[12px] leading-5 text-[var(--color-fg-muted)]">
-            {t('memory.empty')}
-          </div>
-        ) : (
-          memories.map((memory) => (
+          {trimmedSearchQuery.length === 0 ? (
+            <EmptyMemoryState>{t('memory.search.hint')}</EmptyMemoryState>
+          ) : (
+            <MemoryList
+              memories={searchResults}
+              loading={isSearchLoading}
+              emptyText={t('memory.search.empty')}
+              activeTab={activeTab}
+              currentRoomId={roomId}
+              pinPending={pinMutation.isPending}
+              archivePending={archiveMutation.isPending}
+              deletePending={deleteMutation.isPending}
+              promotePending={promoteMutation.isPending}
+              onPin={(memory) => pinMutation.mutate(memory)}
+              onArchive={(memory) => archiveMutation.mutate(memory)}
+              onEdit={(memory) => {
+                setShowForm(false);
+                setEditing(memory);
+              }}
+              onDelete={(memory) => {
+                if (window.confirm(t('memory.deleteConfirm'))) deleteMutation.mutate(memory.id);
+              }}
+              onPromote={(memory) => promoteMutation.mutate(memory)}
+            />
+          )}
+        </div>
+      ) : (
+        <MemoryList
+          memories={displayedMemories}
+          loading={displayedLoading}
+          emptyText={activeTab === 'project' ? t('memory.empty.project') : t('memory.empty')}
+          activeTab={activeTab}
+          currentRoomId={roomId}
+          pinPending={pinMutation.isPending}
+          archivePending={archiveMutation.isPending}
+          deletePending={deleteMutation.isPending}
+          promotePending={promoteMutation.isPending}
+          onPin={(memory) => pinMutation.mutate(memory)}
+          onArchive={(memory) => archiveMutation.mutate(memory)}
+          onEdit={(memory) => {
+            setShowForm(false);
+            setEditing(memory);
+          }}
+          onDelete={(memory) => {
+            if (window.confirm(t('memory.deleteConfirm'))) deleteMutation.mutate(memory.id);
+          }}
+          onPromote={(memory) => promoteMutation.mutate(memory)}
+        />
+      )}
+    </section>
+  );
+}
+
+function MemoryList({
+  memories,
+  loading,
+  emptyText,
+  activeTab,
+  currentRoomId,
+  pinPending,
+  archivePending,
+  deletePending,
+  promotePending,
+  onPin,
+  onArchive,
+  onEdit,
+  onDelete,
+  onPromote,
+}: {
+  memories: Array<MemoryEntry | MemorySearchResult>;
+  loading: boolean;
+  emptyText: string;
+  activeTab: MemoryTab;
+  currentRoomId?: string;
+  pinPending: boolean;
+  archivePending: boolean;
+  deletePending: boolean;
+  promotePending: boolean;
+  onPin: (memory: MemoryEntry) => void;
+  onArchive: (memory: MemoryEntry) => void;
+  onEdit: (memory: MemoryEntry) => void;
+  onDelete: (memory: MemoryEntry) => void;
+  onPromote: (memory: MemoryEntry) => void;
+}) {
+  const { memoryScopeLabel, memoryTypeLabel, t } = useI18n();
+  return (
+    <div className="space-y-2">
+      {loading ? (
+        <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-4 text-[12px] text-[var(--color-fg-muted)]">
+          {t('memory.loading')}
+        </div>
+      ) : memories.length === 0 ? (
+        <EmptyMemoryState>{emptyText}</EmptyMemoryState>
+      ) : (
+        memories.map((memory) => {
+          const canPromote = activeTab === 'search' && memory.scope === 'room' && memory.room_id !== currentRoomId;
+          const sourceLabel = getMemorySourceLabel(memory);
+          return (
             <article
               key={memory.id}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[0_8px_24px_rgba(15,23,42,0.04)]"
@@ -222,6 +387,7 @@ export function MemoryPanel({
                   <div className="flex flex-wrap items-center gap-1.5">
                     <MemoryBadge>{memoryScopeLabel(memory.scope)}</MemoryBadge>
                     <MemoryBadge>{memoryTypeLabel(memory.memory_type)}</MemoryBadge>
+                    {sourceLabel ? <MemoryBadge>{sourceLabel}</MemoryBadge> : null}
                     {memory.pinned ? (
                       <span className="inline-flex h-5 items-center gap-1 rounded border border-[var(--color-accent)]/35 px-1.5 text-[10px] text-[var(--color-accent)]">
                         <Pin className="h-3 w-3" />
@@ -234,32 +400,36 @@ export function MemoryPanel({
                   </h4>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
+                  {canPromote ? (
+                    <IconButton
+                      label={t('memory.promote')}
+                      disabled={promotePending}
+                      onClick={() => onPromote(memory)}
+                    >
+                      <Upload className="h-3.5 w-3.5" />
+                    </IconButton>
+                  ) : null}
                   <IconButton
                     label={memory.pinned ? t('memory.unpin') : t('memory.pin')}
-                    disabled={pinMutation.isPending}
-                    onClick={() => pinMutation.mutate(memory)}
+                    disabled={pinPending}
+                    onClick={() => onPin(memory)}
                   >
                     {memory.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
                   </IconButton>
                   <IconButton
                     label={memory.archived ? t('memory.unarchive') : t('memory.archive')}
-                    disabled={archiveMutation.isPending}
-                    onClick={() => archiveMutation.mutate(memory)}
+                    disabled={archivePending}
+                    onClick={() => onArchive(memory)}
                   >
                     {memory.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
                   </IconButton>
-                  <IconButton label={t('memory.edit')} onClick={() => {
-                    setShowForm(false);
-                    setEditing(memory);
-                  }}>
+                  <IconButton label={t('memory.edit')} onClick={() => onEdit(memory)}>
                     <Edit3 className="h-3.5 w-3.5" />
                   </IconButton>
                   <IconButton
                     label={t('memory.delete')}
-                    disabled={deleteMutation.isPending}
-                    onClick={() => {
-                      if (window.confirm(t('memory.deleteConfirm'))) deleteMutation.mutate(memory.id);
-                    }}
+                    disabled={deletePending}
+                    onClick={() => onDelete(memory)}
                     danger
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -270,10 +440,18 @@ export function MemoryPanel({
                 {memory.content}
               </p>
             </article>
-          ))
-        )}
-      </div>
-    </section>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+function EmptyMemoryState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-4 text-[12px] leading-5 text-[var(--color-fg-muted)]">
+      {children}
+    </div>
   );
 }
 
@@ -495,6 +673,11 @@ function mergeMemories(memories: MemoryEntry[]): MemoryEntry[] {
     if (a.pinned !== b.pinned) return b.pinned - a.pinned;
     return b.updated_at - a.updated_at;
   });
+}
+
+function getMemorySourceLabel(memory: MemoryEntry | MemorySearchResult): string | null {
+  if (!('room_name' in memory) || !memory.room_name) return null;
+  return memory.room_name;
 }
 
 function MemoryBadge({ children }: { children: React.ReactNode }) {

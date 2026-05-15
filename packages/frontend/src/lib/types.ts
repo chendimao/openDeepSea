@@ -257,6 +257,10 @@ export interface MemoryEntry {
   updated_at: number;
 }
 
+export interface MemorySearchResult extends MemoryEntry {
+  room_name: string | null;
+}
+
 export interface MemoryInput {
   scope: MemoryScope;
   memory_type: MemoryType;

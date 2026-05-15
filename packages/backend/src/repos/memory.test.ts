@@ -217,6 +217,64 @@ test('memoryRepo lists, gets, updates, and deletes memories', () => {
   assert.equal(memoryRepo.delete(roomMemory.id), false);
 });
 
+test('memoryRepo searches project memories with room source labels and filters', () => {
+  const { project, room } = createMemoryFixture('Search Memory');
+  const otherRoom = roomRepo.create({ project_id: project.id, name: 'Search Other Room' });
+  const otherProject = createMemoryFixture('Search Other Project');
+
+  const projectMemory = memoryRepo.create({
+    project_id: project.id,
+    scope: 'project',
+    memory_type: 'decision',
+    title: 'SQLite search strategy',
+    content: 'Use LIKE for the first cross-room memory search implementation.',
+    pinned: true,
+  });
+  const roomMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    scope: 'room',
+    memory_type: 'lesson',
+    title: 'Room search lesson',
+    content: 'Cross-room search results should include the source room name.',
+  });
+  const otherRoomMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: otherRoom.id,
+    scope: 'room',
+    memory_type: 'fact',
+    title: 'Other room search fact',
+    content: 'Filtering by room_id keeps this result separate.',
+  });
+  memoryRepo.create({
+    project_id: otherProject.project.id,
+    room_id: otherProject.room.id,
+    scope: 'room',
+    memory_type: 'fact',
+    title: 'Foreign search fact',
+    content: 'This belongs to a different project.',
+  });
+
+  const allResults = memoryRepo.search({ projectId: project.id, query: 'search' });
+  assert.deepEqual(
+    allResults.map((entry) => entry.id),
+    [projectMemory.id, otherRoomMemory.id, roomMemory.id],
+  );
+  assert.equal(allResults.find((entry) => entry.id === roomMemory.id)?.room_name, room.name);
+  assert.equal(allResults.find((entry) => entry.id === projectMemory.id)?.room_name, null);
+
+  const projectOnly = memoryRepo.search({ projectId: project.id, scope: 'project' });
+  assert.deepEqual(projectOnly.map((entry) => entry.id), [projectMemory.id]);
+
+  const roomOnly = memoryRepo.search({ projectId: project.id, roomId: room.id });
+  assert.deepEqual(roomOnly.map((entry) => entry.id), [roomMemory.id]);
+
+  assert.throws(
+    () => memoryRepo.search({ projectId: project.id, roomId: otherProject.room.id }),
+    /room_id does not belong to project_id/,
+  );
+});
+
 test('memoryRepo rejects cross-project room, agent, and task ownership', () => {
   const first = createMemoryFixture('Ownership Memory A');
   const second = createMemoryFixture('Ownership Memory B');

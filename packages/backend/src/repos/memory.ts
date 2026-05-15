@@ -12,6 +12,19 @@ export interface MemoryListFilters {
   limit?: number;
 }
 
+export interface MemorySearchFilters {
+  projectId: string;
+  query?: string;
+  roomId?: string;
+  scope?: Extract<MemoryScope, 'project' | 'room' | 'task'>;
+  includeArchived?: boolean;
+  limit?: number;
+}
+
+export type MemorySearchResult = MemoryEntry & {
+  room_name: string | null;
+};
+
 function requireProject(id: string): void {
   const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(id) as { id: string } | undefined;
   if (!project) {
@@ -223,6 +236,48 @@ export const memoryRepo = {
 
   get(id: string): MemoryEntry | undefined {
     return db.prepare('SELECT * FROM memory_entries WHERE id = ?').get(id) as MemoryEntry | undefined;
+  },
+
+  search(filters: MemorySearchFilters): MemorySearchResult[] {
+    requireProject(filters.projectId);
+    if (filters.roomId) {
+      validateOwnership({
+        project_id: filters.projectId,
+        room_id: filters.roomId,
+      });
+    }
+
+    const clauses = ['memory_entries.project_id = ?'];
+    const params: Array<string | number> = [filters.projectId];
+    const query = filters.query?.trim();
+    if (query) {
+      const pattern = `%${query}%`;
+      clauses.push('(memory_entries.title LIKE ? OR memory_entries.content LIKE ?)');
+      params.push(pattern, pattern);
+    }
+    if (filters.roomId) {
+      clauses.push('memory_entries.room_id = ?');
+      params.push(filters.roomId);
+    }
+    if (filters.scope) {
+      clauses.push('memory_entries.scope = ?');
+      params.push(filters.scope);
+    }
+    if (!filters.includeArchived) {
+      clauses.push('memory_entries.archived = 0');
+    }
+
+    const limit = Math.max(1, Math.min(filters.limit ?? 20, 100));
+    return db
+      .prepare(
+        `SELECT memory_entries.*, rooms.name AS room_name
+         FROM memory_entries
+         LEFT JOIN rooms ON rooms.id = memory_entries.room_id
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY memory_entries.pinned DESC, memory_entries.updated_at DESC
+         LIMIT ?`,
+      )
+      .all(...params, limit) as MemorySearchResult[];
   },
 
   create(input: {

@@ -249,6 +249,33 @@ router.get('/projects/:id', (req, res) => {
   res.json({ ...project, stats: projectRepo.stats(project.id) });
 });
 
+router.get('/projects/:projectId/memories/search', (req, res) => {
+  const schema = z.object({
+    query: z.string().optional(),
+    roomId: z.string().optional(),
+    scope: z.enum(['project', 'room', 'task']).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    includeArchived: z.enum(['1', 'true']).optional(),
+  });
+  const parsed = schema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    res.json(memoryRepo.search({
+      projectId: req.params.projectId,
+      query: parsed.data.query,
+      roomId: parsed.data.roomId,
+      scope: parsed.data.scope,
+      limit: parsed.data.limit,
+      includeArchived: Boolean(parsed.data.includeArchived),
+    }));
+  } catch (err) {
+    const error = err as Error;
+    if (error.message === 'project_id is invalid') return res.status(404).json({ error: 'project not found' });
+    if (!isMemoryValidationError(error)) logUnexpectedMemoryError('search failed', error);
+    res.status(400).json({ error: 'invalid memory filters' });
+  }
+});
+
 router.get('/projects/:projectId/memories', (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
   try {

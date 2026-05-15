@@ -90,6 +90,97 @@ test('memory routes create, list, update, and delete project memory', async () =
   assert.equal(deleteRes.status, 204);
 });
 
+test('memory routes search memories across rooms with source names', async () => {
+  const project = projectRepo.create({ name: 'API Memory Search', path: createProjectPath('search') });
+  const firstRoom = roomRepo.create({ project_id: project.id, name: 'Search First Room' });
+  const secondRoom = roomRepo.create({ project_id: project.id, name: 'Search Second Room' });
+  const otherProject = projectRepo.create({
+    name: 'API Memory Search Other',
+    path: createProjectPath('search-other'),
+  });
+  const otherRoom = roomRepo.create({ project_id: otherProject.id, name: 'Search Foreign Room' });
+
+  const projectCreate = await request(`/api/projects/${project.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'project',
+      memory_type: 'decision',
+      title: 'Search decision',
+      content: 'Project memory search should include project-level entries.',
+      pinned: true,
+    }),
+  });
+  assert.equal(projectCreate.status, 201);
+  const projectMemory = await projectCreate.json() as { id: string };
+
+  const firstRoomCreate = await request(`/api/projects/${project.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'room',
+      memory_type: 'fact',
+      title: 'Search room fact',
+      content: 'Search results include the room source name.',
+      room_id: firstRoom.id,
+    }),
+  });
+  assert.equal(firstRoomCreate.status, 201);
+  const firstRoomMemory = await firstRoomCreate.json() as { id: string };
+
+  const secondRoomCreate = await request(`/api/projects/${project.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'room',
+      memory_type: 'lesson',
+      title: 'Other room search lesson',
+      content: 'Filtering by room id should isolate this entry.',
+      room_id: secondRoom.id,
+    }),
+  });
+  assert.equal(secondRoomCreate.status, 201);
+  const secondRoomMemory = await secondRoomCreate.json() as { id: string };
+
+  const foreignCreate = await request(`/api/projects/${otherProject.id}/memories`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scope: 'room',
+      memory_type: 'fact',
+      title: 'Foreign search fact',
+      content: 'This belongs to another project.',
+      room_id: otherRoom.id,
+    }),
+  });
+  assert.equal(foreignCreate.status, 201);
+
+  const searchRes = await request(`/api/projects/${project.id}/memories/search?query=search`);
+  assert.equal(searchRes.status, 200);
+  const searchResults = await searchRes.json() as Array<{ id: string; room_name: string | null }>;
+  assert.deepEqual(searchResults.map((entry) => entry.id), [
+    projectMemory.id,
+    secondRoomMemory.id,
+    firstRoomMemory.id,
+  ]);
+  assert.equal(searchResults.find((entry) => entry.id === firstRoomMemory.id)?.room_name, firstRoom.name);
+  assert.equal(searchResults.find((entry) => entry.id === projectMemory.id)?.room_name, null);
+
+  const roomFilterRes = await request(`/api/projects/${project.id}/memories/search?roomId=${firstRoom.id}`);
+  assert.equal(roomFilterRes.status, 200);
+  const roomFilter = await roomFilterRes.json() as Array<{ id: string }>;
+  assert.deepEqual(roomFilter.map((entry) => entry.id), [firstRoomMemory.id]);
+
+  const projectScopeRes = await request(`/api/projects/${project.id}/memories/search?scope=project`);
+  assert.equal(projectScopeRes.status, 200);
+  const projectScope = await projectScopeRes.json() as Array<{ id: string }>;
+  assert.deepEqual(projectScope.map((entry) => entry.id), [projectMemory.id]);
+
+  const invalidRoom = await request(`/api/projects/${project.id}/memories/search?roomId=${otherRoom.id}`);
+  assert.equal(invalidRoom.status, 400);
+  assert.deepEqual(await invalidRoom.json(), { error: 'invalid memory filters' });
+
+  const missingProject = await request('/api/projects/missing-project/memories/search?query=search');
+  assert.equal(missingProject.status, 404);
+  assert.deepEqual(await missingProject.json(), { error: 'project not found' });
+});
+
 test('memory routes reject scope relations before creating memory', async () => {
   const project = projectRepo.create({ name: 'API Memory Scope', path: createProjectPath('scope') });
   const room = roomRepo.create({ project_id: project.id, name: 'Scope Room' });

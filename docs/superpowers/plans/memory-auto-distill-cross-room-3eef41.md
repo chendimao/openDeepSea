@@ -15,7 +15,7 @@
 
 ### Part A: 自动沉淀
 
-#### A1. 回复级轻量提炼
+#### A1. 回复级轻量提炼（已完成：`5c429be`）
 
 **触发时机**：`respondAsAgent` 的 `finally` 块中，agent run 完成后异步调用
 
@@ -33,7 +33,7 @@
 - 可通过 room 或 project 级配置开关 `auto_distill_enabled`
 - LLM 提炼 prompt 明确指示仅提取新信息、不重复已有记忆
 
-#### A2. 任务级深度提炼
+#### A2. 任务级深度提炼（已完成：`0bb9319`）
 
 **触发时机**：`rememberAcceptedTask` 中扩展
 
@@ -45,7 +45,7 @@
 
 ### Part B: 跨聊天室记忆共享
 
-#### B1. 跨聊天室检索 API
+#### B1. 跨聊天室检索 API（已完成：本次补齐）
 
 新增 REST 端点：
 
@@ -62,19 +62,30 @@ GET /projects/:projectId/memories/search
 2. 支持按 `room_id`、`scope` 过滤
 3. 返回结果附带 `room_name`（JOIN rooms 表），让前端知道记忆来源
 
-#### B2. project 级记忆自动提升
+#### B2. project 级记忆自动提升（已完成：`5c429be` / `0bb9319`）
 
 **在 A1/A2 提炼过程中**：
 - LLM prompt 要求对每条候选记忆判断适用范围
 - 若 LLM 判断为"项目通用"（如架构决策、技术选型），自动写入 `scope = 'project'`
 - project 级记忆已被 `listForRoomContext` 自动注入所有聊天室
 
-#### B3. 前端跨聊天室记忆面板
+#### B3. 前端跨聊天室记忆面板（已完成：本次补齐）
 
 1. MemoryPanel 增加"项目记忆"tab，展示所有 `scope = 'project'` 的记忆
 2. 增加搜索框，调用 B1 的搜索 API，展示来自其他聊天室的记忆
 3. 搜索结果标注来源聊天室名称
 4. 允许用户将其他聊天室的 room 级记忆"提升"为 project 级
+
+---
+
+## 执行状态（2026-05-15）
+
+- [x] A1 回复级轻量提炼：`packages/backend/src/memory/distill.ts` 与 `packages/backend/src/dispatcher.ts` 已在 `5c429be` 接入。
+- [x] A2 任务级深度提炼：`packages/backend/src/workflows/orchestrator.ts` 已在 `0bb9319` 接入。
+- [x] B1 跨聊天室检索 API：本次补齐 `memoryRepo.search()` 与 `GET /projects/:projectId/memories/search`，返回 `room_name`。
+- [x] B2 project 级记忆自动提升：提炼 prompt 与写入逻辑已支持 `scope = 'project'`。
+- [x] B3 前端跨聊天室记忆面板：本次补齐项目记忆 tab、跨聊天室搜索、来源聊天室标注、room 级记忆提升为 project 级。
+- [ ] 配置开关 `auto_distill_enabled`：原计划标记为可选，本轮未实现；后续如要控制 LLM 成本，可单独加入 settings schema、UI 与运行时判断。
 
 ---
 
