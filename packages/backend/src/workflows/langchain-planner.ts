@@ -4,7 +4,7 @@ export interface LangChainPlannerConfig {
 }
 
 export function getLangChainPlannerConfig(
-  env: Pick<NodeJS.ProcessEnv, 'LANGCHAIN_PLANNER_MODEL' | 'OPENAI_API_KEY'> = process.env,
+  env: Partial<Pick<NodeJS.ProcessEnv, 'LANGCHAIN_PLANNER_MODEL' | 'OPENAI_API_KEY'>> = process.env,
 ): LangChainPlannerConfig {
   const model = env.LANGCHAIN_PLANNER_MODEL?.trim() || '';
   const hasApiKey = Boolean(env.OPENAI_API_KEY?.trim());
