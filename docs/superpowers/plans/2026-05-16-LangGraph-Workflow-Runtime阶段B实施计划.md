@@ -98,7 +98,7 @@ PATH="$(dirname $(mise which node)):$PATH" <command>
 - Create: `packages/backend/src/workflows/graph/runtime-config.ts`
 - Create: `packages/backend/src/workflows/graph/runtime-config.test.ts`
 
-- [ ] **Step 1: Write failing runtime config test**
+- [x] **Step 1: Write failing runtime config test**
 
 Create `packages/backend/src/workflows/graph/runtime-config.test.ts`:
 
@@ -119,7 +119,7 @@ test('getLangGraphWorkflowConfig enables graph runtime with explicit flag', () =
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -129,7 +129,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because `runtime-config.ts` does not exist.
 
-- [ ] **Step 3: Install dependency**
+- [x] **Step 3: Install dependency**
 
 Run from repo root:
 
@@ -139,7 +139,7 @@ PATH="$(dirname $(mise which node)):$PATH" npm install -w @openclaw-room/backend
 
 Expected: `packages/backend/package.json` and `package-lock.json` update; install exits 0.
 
-- [ ] **Step 4: Implement runtime config**
+- [x] **Step 4: Implement runtime config**
 
 Create `packages/backend/src/workflows/graph/runtime-config.ts`:
 
@@ -159,7 +159,7 @@ export function getLangGraphWorkflowConfig(
 }
 ```
 
-- [ ] **Step 5: Run config test**
+- [x] **Step 5: Run config test**
 
 Run:
 
@@ -169,7 +169,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 6: Document runtime flag**
+- [x] **Step 6: Document runtime flag**
 
 Modify `README.md` optional workflow configuration section:
 
@@ -185,7 +185,7 @@ LANGGRAPH_WORKFLOW_ENABLED=1
 When disabled, the existing workflow orchestrator remains the runtime.
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/backend/package.json package-lock.json README.md packages/backend/src/workflows/graph/runtime-config.ts packages/backend/src/workflows/graph/runtime-config.test.ts
