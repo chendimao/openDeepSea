@@ -85,6 +85,7 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
     },
     onError: (err) => toast.error((err as Error).message),
   });
+  const addingAny = add.isPending || addTemplate.isPending;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -122,35 +123,40 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
               </div>
             ) : (
               <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                {templateData.templates.map((template) => (
-                  <button
-                    key={template.id}
-                    type="button"
-                    disabled={addTemplate.isPending}
-                    onClick={() => addTemplate.mutate(template.id)}
-                    className={cn(
-                      'w-full surface-1 rounded-md px-3 py-2 text-left ease-ocean transition-all flex items-start gap-2',
-                      'hover:border-[var(--color-border-strong)] focus-visible:outline-none focus-visible:border-[var(--color-primary)]',
-                      'disabled:cursor-not-allowed disabled:opacity-60',
-                    )}
-                  >
-                    <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" strokeWidth={1.75} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-display text-[13px]">{template.name}</span>
-                        <span className="shrink-0 font-mono text-[11px] text-[var(--color-fg-muted)]">
-                          {template.acp_backend}
-                        </span>
+                {templateData.templates.map((template) => {
+                  const isCurrentTemplatePending = addTemplate.isPending && addTemplate.variables === template.id;
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      disabled={addingAny}
+                      aria-busy={isCurrentTemplatePending}
+                      aria-label={`${template.name}${isCurrentTemplatePending ? ` ${t('addAgent.inviting')}` : ''}`}
+                      onClick={() => addTemplate.mutate(template.id)}
+                      className={cn(
+                        'w-full surface-1 rounded-md px-3 py-2 text-left ease-ocean transition-all flex items-start gap-2',
+                        'hover:border-[var(--color-border-strong)] focus-visible:outline-none focus-visible:border-[var(--color-primary)]',
+                        'disabled:cursor-not-allowed disabled:opacity-60',
+                      )}
+                    >
+                      <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" strokeWidth={1.75} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate font-display text-[13px]">{template.name}</span>
+                          <span className="shrink-0 font-mono text-[11px] text-[var(--color-fg-muted)]">
+                            {template.acp_backend}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-[11px] text-[var(--color-fg-muted)]">
+                          {template.description}
+                        </div>
                       </div>
-                      <div className="mt-0.5 truncate text-[11px] text-[var(--color-fg-muted)]">
-                        {template.description}
-                      </div>
-                    </div>
-                    {addTemplate.isPending && addTemplate.variables === template.id && (
-                      <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-fg-muted)]" />
-                    )}
-                  </button>
-                ))}
+                      {isCurrentTemplatePending && (
+                        <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-fg-muted)]" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -254,8 +260,10 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
           </div>
 
           <div className="flex justify-end gap-2 pt-1">
-            <Button variant="ghost" onClick={() => handleOpenChange(false)}>{t('common.cancel')}</Button>
-            <Button onClick={() => add.mutate()} disabled={!agentId.trim() || add.isPending}>
+            <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={addingAny}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={() => add.mutate()} disabled={!agentId.trim() || addingAny}>
               {add.isPending ? t('addAgent.inviting') : t('addAgent.submit')}
             </Button>
           </div>
