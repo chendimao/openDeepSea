@@ -68,10 +68,11 @@ export const openCodeAdapter: SessionAdapter = {
     }
   },
 
-  async invoke({ projectPath, sessionId, prompt, acpPermissionMode, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, onChunk, onSession, signal }) {
     const args = buildOpenCodeArgs({
       sessionId,
       prompt,
+      filePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       model: process.env.OPENCLAW_OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL,
     });
@@ -82,6 +83,7 @@ export const openCodeAdapter: SessionAdapter = {
 export function buildOpenCodeArgs(args: {
   sessionId: string | null;
   prompt: string;
+  filePaths?: string[];
   permissionMode: AcpPermissionMode;
   model: string;
 }): string[] {
@@ -91,6 +93,21 @@ export function buildOpenCodeArgs(args: {
   if (args.permissionMode === 'bypass') {
     cliArgs.push('--dangerously-skip-permissions');
   }
+  for (const filePath of normalizeFilePaths(args.filePaths ?? [])) {
+    cliArgs.push('--file', filePath);
+  }
   cliArgs.push(args.prompt);
   return cliArgs;
+}
+
+function normalizeFilePaths(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of paths) {
+    const path = raw.trim();
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    normalized.push(path);
+  }
+  return normalized;
 }

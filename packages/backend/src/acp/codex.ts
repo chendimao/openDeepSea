@@ -114,10 +114,11 @@ export const codexAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
     const args = buildCodexExecArgs({
       sessionId,
       prompt,
+      imagePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
@@ -128,6 +129,7 @@ export const codexAdapter: SessionAdapter = {
 export function buildCodexExecArgs(args: {
   sessionId: string | null;
   prompt: string;
+  imagePaths?: string[];
   permissionMode: AcpPermissionMode;
   writableDirs: string[];
 }): string[] {
@@ -144,6 +146,9 @@ export function buildCodexExecArgs(args: {
     }
   }
 
+  for (const imagePath of normalizeWritableDirs(args.imagePaths ?? [])) {
+    cliArgs.push('--image', imagePath);
+  }
   if (args.sessionId) cliArgs.push('resume', args.sessionId);
   cliArgs.push(args.prompt);
   return cliArgs;

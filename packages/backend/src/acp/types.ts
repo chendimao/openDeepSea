@@ -22,6 +22,7 @@ export interface SessionAdapter {
     projectPath: string;
     sessionId: string | null;
     prompt: string;
+    imagePaths?: string[];
     acpPermissionMode?: AcpPermissionMode | null;
     acpWritableDirs?: string[] | null;
     onChunk: (chunk: AcpStreamChunk) => void;

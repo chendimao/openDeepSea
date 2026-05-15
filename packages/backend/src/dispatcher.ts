@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { resolve, sep } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { appendMemoryContextSafely } from './memory/context.js';
@@ -41,13 +41,18 @@ export async function dispatchUserMessage(args: {
     message_routing_mode: project.message_routing_mode,
     fallback_agent_id: project.fallback_agent_id,
   };
-  const promptWithAttachments = buildPromptWithMessageAttachments(userMessage.content, userMessage);
+  const messageAttachments = getResolvedMessageAttachments(userMessage);
+  const promptWithAttachments = buildPromptWithResolvedMessageAttachments(userMessage.content, messageAttachments);
+  const imagePaths = messageAttachments
+    .filter((attachment) => attachment.metadata.isImage && attachment.localPath)
+    .map((attachment) => attachment.localPath!);
   const routing = resolveInitialTargets({
     allAgents,
     explicitlyMentionedAgents,
     fallbackAgentId: settings.fallback_agent_id,
     mode: settings.message_routing_mode,
     prompt: promptWithAttachments,
+    imagePaths,
   });
   if (routing.targets.length === 0) return;
 
@@ -55,6 +60,7 @@ export async function dispatchUserMessage(args: {
     targets: routing.targets,
     projectPath: project.path,
     roomId,
+    imagePaths,
   });
 
   const fallbackTarget = routing.targets[0];
@@ -71,16 +77,34 @@ export async function dispatchUserMessage(args: {
       targets: selectedAgents.map((agent) => ({ agent, prompt: handoffPrompt })),
       projectPath: project.path,
       roomId,
+      imagePaths,
     });
   }
 }
 
 export function buildPromptWithMessageAttachments(userPrompt: string, userMessage: Message): string {
-  const attachments = parseMessageAttachments(userMessage.metadata);
+  return buildPromptWithResolvedMessageAttachments(userPrompt, getResolvedMessageAttachments(userMessage));
+}
+
+interface ResolvedMessageAttachment {
+  metadata: MessageAttachmentMetadata;
+  localPath: string | null;
+}
+
+function getResolvedMessageAttachments(userMessage: Message): ResolvedMessageAttachment[] {
+  return parseMessageAttachments(userMessage.metadata).map((attachment) => ({
+    metadata: attachment,
+    localPath: resolveMessageAttachmentLocalPath(attachment),
+  }));
+}
+
+function buildPromptWithResolvedMessageAttachments(
+  userPrompt: string,
+  attachments: ResolvedMessageAttachment[],
+): string {
   if (attachments.length === 0) return userPrompt;
 
-  const attachmentLines = attachments.map((attachment, index) => {
-    const localPath = resolveMessageAttachmentLocalPath(attachment);
+  const attachmentLines = attachments.map(({ metadata: attachment, localPath }, index) => {
     const kind = attachment.isImage ? 'image' : 'file';
     const pathDetail = localPath ? `; localPath=${localPath}` : '; localPath=unavailable';
     const url = localPath ? attachment.url : 'unavailable';
@@ -99,7 +123,7 @@ export function buildPromptWithMessageAttachments(userPrompt: string, userMessag
     '',
     '---',
     '消息附件：',
-    '请结合以下附件回答；如果需要查看图片或文件，请读取对应的 localPath。',
+    '请结合以下附件回答。图片附件会优先通过 ACP adapter 传入；如果当前 ACP 不支持图片参数，或需要查看文件，请读取对应的 localPath。',
     ...attachmentLines,
   ].join('\n');
 }
@@ -145,6 +169,7 @@ async function runTargets(args: {
   targets: { agent: RoomAgent; prompt: string }[];
   projectPath: string;
   roomId: string;
+  imagePaths?: string[];
 }): Promise<Array<Message | undefined>> {
   return Promise.all(
     args.targets.map(async (target) => {
@@ -154,6 +179,7 @@ async function runTargets(args: {
         projectPath: args.projectPath,
         roomId: args.roomId,
         prompt: target.prompt,
+        imagePaths: args.imagePaths,
         onFinished: ({ message }) => {
           finalMessage = message;
         },
@@ -180,6 +206,7 @@ function resolveInitialTargets(args: {
   fallbackAgentId: string | null;
   mode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
   prompt: string;
+  imagePaths?: string[];
 }): { targets: { agent: RoomAgent; prompt: string }[]; after?: 'route_from_fallback' } {
   if (args.explicitlyMentionedAgents.length > 0) {
     return {
@@ -268,6 +295,7 @@ export async function respondAsAgent(args: {
   projectPath: string;
   roomId: string;
   prompt: string;
+  imagePaths?: string[];
   taskId?: string | null;
   workflowRunId?: string | null;
   workflowStepId?: string | null;
@@ -364,8 +392,9 @@ export async function respondAsAgent(args: {
         projectPath,
         sessionId: agent.acp_session_id,
         prompt,
+        imagePaths: args.imagePaths,
         acpPermissionMode: agent.acp_permission_mode,
-        acpWritableDirs: [projectPath],
+        acpWritableDirs: uniqueNonEmpty([projectPath, ...imageUploadDirs(args.imagePaths ?? [])]),
         onChunk: (chunk) => {
           if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);
           else if (chunk.stream === 'stdout') onStdout(chunk.text);
@@ -471,6 +500,22 @@ export async function respondAsAgent(args: {
     const updated = agentRunRepo.updateStatus(id, status, { error: error ?? null });
     if (updated) broadcastRun('agent_run:updated', updated);
   }
+}
+
+function imageUploadDirs(imagePaths: string[]): string[] {
+  return imagePaths.map((imagePath) => dirname(imagePath));
+}
+
+function uniqueNonEmpty(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of values) {
+    const value = raw.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
 }
 
 function formatActivityChunk(chunk: string): string {

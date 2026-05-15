@@ -1,7 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { adapters } from './acp/index.js';
+import { db } from './db.js';
+import { messageRepo } from './repos/messages.js';
+import { projectRepo } from './repos/projects.js';
+import { roomAgentRepo, roomRepo } from './repos/rooms.js';
+import { settingsRepo } from './repos/settings.js';
 import { messageUploadDir } from './uploads.js';
-import { buildPromptWithMessageAttachments, isOpenClawSessionAlreadyPresentError } from './dispatcher.js';
+import { buildPromptWithMessageAttachments, dispatchUserMessage, isOpenClawSessionAlreadyPresentError } from './dispatcher.js';
+import type { SessionAdapter } from './acp/types.js';
 import type { Message, MessageMetadata } from './types.js';
 
 test('detects OpenClaw session already exists errors as reusable', () => {
@@ -62,6 +72,65 @@ test('buildPromptWithMessageAttachments marks unsafe attachment paths unavailabl
   assert.match(prompt, /用户发送了一条仅包含附件的消息。/);
   assert.match(prompt, /localPath=unavailable/);
   assert.doesNotMatch(prompt, /\.\.\/secret/);
+});
+
+test('dispatchUserMessage passes uploaded image paths to ACP adapters', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-dispatch-test-'));
+  const project = projectRepo.create({ name: `dispatch-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'codex-agent', agent_name: 'CodexAgent' });
+  roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'codex-agent',
+  });
+
+  const captured: { imagePaths?: string[] } = {};
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      captured.imagePaths = args.imagePaths;
+      return { exitCode: 1, sessionId: null, stderr: 'stubbed failure' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const message = messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: '看这张图',
+      message_type: 'text',
+      metadata: {
+        attachments: [
+          {
+            id: 'att-1',
+            name: 'screen.png',
+            mimeType: 'image/png',
+            size: 128,
+            url: '/uploads/messages/stored.png',
+            isImage: true,
+          },
+        ],
+      },
+    });
+
+    await dispatchUserMessage({ roomId: room.id, userMessage: message });
+
+    assert.deepEqual(captured.imagePaths, [join(messageUploadDir, 'stored.png')]);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
 });
 
 function createMessage(metadata: MessageMetadata): Message {

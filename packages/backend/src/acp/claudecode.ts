@@ -82,10 +82,11 @@ export const claudeCodeAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
     const args = buildClaudeCodeArgs({
       sessionId,
       prompt,
+      imagePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
@@ -96,6 +97,7 @@ export const claudeCodeAdapter: SessionAdapter = {
 export function buildClaudeCodeArgs(args: {
   sessionId: string | null;
   prompt: string;
+  imagePaths?: string[];
   permissionMode: 'bypass' | 'workspace-write' | 'read-only';
   writableDirs: string[];
 }): string[] {
@@ -111,8 +113,20 @@ export function buildClaudeCodeArgs(args: {
     cliArgs.push('--permission-mode', 'plan');
   }
   if (args.sessionId) cliArgs.push('--resume', args.sessionId);
-  cliArgs.push(args.prompt);
+  cliArgs.push(buildClaudeCodePrompt(args.prompt, args.imagePaths ?? []));
   return cliArgs;
+}
+
+export function buildClaudeCodePrompt(prompt: string, imagePaths: string[]): string {
+  const normalized = normalizeWritableDirs(imagePaths);
+  if (normalized.length === 0) return prompt;
+  return [
+    prompt,
+    '',
+    'Claude Code 图片附件：',
+    '请直接分析以下本地图片路径；如果需要确认文件存在，可读取这些路径。',
+    ...normalized.map((imagePath, index) => `${index + 1}. ${imagePath}`),
+  ].join('\n');
 }
 
 function normalizeWritableDirs(dirs: string[]): string[] {

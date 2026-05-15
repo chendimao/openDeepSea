@@ -7,6 +7,7 @@ test('buildOpenCodeArgs maps bypass to dangerously skip permissions', () => {
     buildOpenCodeArgs({
       sessionId: null,
       prompt: 'hello',
+      filePaths: [],
       permissionMode: 'bypass',
       model: 'openai/gpt-5.1-codex',
     }),
@@ -19,9 +20,35 @@ test('buildOpenCodeArgs leaves non-bypass modes to opencode defaults', () => {
     buildOpenCodeArgs({
       sessionId: 'session-1',
       prompt: 'continue',
+      filePaths: [],
       permissionMode: 'workspace-write',
       model: 'openai/gpt-5.1-codex',
     }),
     ['run', '--session', 'session-1', '--format', 'json', '--model', 'openai/gpt-5.1-codex', 'continue'],
+  );
+});
+
+test('buildOpenCodeArgs attaches files before the prompt', () => {
+  assert.deepEqual(
+    buildOpenCodeArgs({
+      sessionId: null,
+      prompt: 'look',
+      filePaths: ['/tmp/screen.png', '/tmp/screen.png', '', '/tmp/diagram.webp'],
+      permissionMode: 'bypass',
+      model: 'openai/gpt-5.1-codex',
+    }),
+    [
+      'run',
+      '--format',
+      'json',
+      '--model',
+      'openai/gpt-5.1-codex',
+      '--dangerously-skip-permissions',
+      '--file',
+      '/tmp/screen.png',
+      '--file',
+      '/tmp/diagram.webp',
+      'look',
+    ],
   );
 });
