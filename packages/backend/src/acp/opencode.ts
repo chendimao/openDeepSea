@@ -7,6 +7,7 @@ import type { SessionAdapter } from './types.js';
 import { runStreaming } from './claudecode.js';
 
 const DB_PATH = join(homedir(), '.local', 'share', 'opencode', 'opencode.db');
+const DEFAULT_OPENCODE_MODEL = 'gwenapi/gpt-5.5';
 
 interface OpenCodeRow {
   id: string;
@@ -69,6 +70,7 @@ export const openCodeAdapter: SessionAdapter = {
   async invoke({ projectPath, sessionId, prompt, onChunk, onSession, signal }) {
     const args: string[] = ['run'];
     if (sessionId) args.push('--session', sessionId);
+    args.push('--model', process.env.OPENCLAW_OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL);
     args.push(prompt);
     return runStreaming('opencode', args, projectPath, onChunk, signal, onSession);
   },
