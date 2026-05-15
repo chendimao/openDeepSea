@@ -24,10 +24,20 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
     queryFn: api.listGatewayAgents,
     enabled: open,
   });
+  const {
+    data: templateData,
+    error: templateError,
+    isLoading: templatesLoading,
+  } = useQuery({
+    queryKey: ['agent-templates'],
+    queryFn: api.listAgentTemplates,
+    enabled: open,
+  });
 
   const hasOpenClawAgents = Boolean(gw?.connected && gw.agents.length > 0);
   const showManualFields = !hasOpenClawAgents || manualOpen;
   const gatewayErrorMessage = gatewayError instanceof Error ? gatewayError.message : gw?.error;
+  const templateErrorMessage = templateError instanceof Error ? templateError.message : undefined;
 
   useEffect(() => {
     if (!open || manualOpen || !gw?.connected || gw.agents.length === 0 || picked || agentId.trim()) return;
@@ -65,6 +75,16 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
     },
     onError: (err) => toast.error((err as Error).message),
   });
+  const addTemplate = useMutation({
+    mutationFn: (templateId: string) => api.addRoomAgentFromTemplate(roomId, templateId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      toast.success(t('addAgent.success'));
+      setOpen(false);
+      resetForm();
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -77,6 +97,64 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
       </DialogTrigger>
       <DialogContent title={t('addAgent.title')} description={t('addAgent.description')}>
         <div className="space-y-4">
+          <div>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <Label className="mb-0">{t('addAgent.builtInTemplates')}</Label>
+              {templatesLoading && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-fg-muted)]">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t('addAgent.loadingShort')}
+                </span>
+              )}
+            </div>
+
+            {!templateData && templatesLoading ? (
+              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
+                {t('addAgent.templatesLoading')}
+              </div>
+            ) : templateErrorMessage ? (
+              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
+                {t('addAgent.templatesFailedWithMessage', { message: templateErrorMessage })}
+              </div>
+            ) : !templateData || templateData.templates.length === 0 ? (
+              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
+                {t('addAgent.templatesEmpty')}
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {templateData.templates.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    disabled={addTemplate.isPending}
+                    onClick={() => addTemplate.mutate(template.id)}
+                    className={cn(
+                      'w-full surface-1 rounded-md px-3 py-2 text-left ease-ocean transition-all flex items-start gap-2',
+                      'hover:border-[var(--color-border-strong)] focus-visible:outline-none focus-visible:border-[var(--color-primary)]',
+                      'disabled:cursor-not-allowed disabled:opacity-60',
+                    )}
+                  >
+                    <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" strokeWidth={1.75} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-display text-[13px]">{template.name}</span>
+                        <span className="shrink-0 font-mono text-[11px] text-[var(--color-fg-muted)]">
+                          {template.acp_backend}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 truncate text-[11px] text-[var(--color-fg-muted)]">
+                        {template.description}
+                      </div>
+                    </div>
+                    {addTemplate.isPending && addTemplate.variables === template.id && (
+                      <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-fg-muted)]" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <Label className="mb-0">OpenClaw Agents</Label>

@@ -113,6 +113,8 @@ export interface RoomAgent {
   agent_name: string;
   agent_role: string | null;
   workflow_role: WorkflowRole | null;
+  capabilities: string[];
+  default_runtime: 'acp' | 'openclaw' | 'none';
   joined_at: number;
   acp_enabled: 0 | 1;
   acp_backend: AcpBackend | null;
@@ -294,6 +296,16 @@ export interface CliSession {
   messageCount: number;
   lastActivity: number;
   firstUserMessage?: string;
+}
+
+export interface BuiltInAgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  workflow_role: WorkflowRole;
+  acp_enabled: true;
+  acp_backend: AcpBackend;
+  capabilities: string[];
 }
 
 export interface OpenClawAgent {

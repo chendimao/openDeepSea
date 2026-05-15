@@ -316,6 +316,9 @@ function OpenClawGatewayDialog({
               {healthMessage}
             </div>
           )}
+          <div className="surface-1 rounded-md px-3 py-2 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+            {t('gateway.optionalDescription')}
+          </div>
 
           <div>
             <div className="mb-2 flex items-center justify-between gap-2">

@@ -1,6 +1,7 @@
 import type {
   AcpBackend,
   AgentRun,
+  BuiltInAgentTemplate,
   CliSession,
   MemoryEntry,
   MemoryInput,
@@ -58,6 +59,8 @@ export const api = {
     }>('/health'),
   listGatewayAgents: () =>
     request<{ agents: OpenClawAgent[]; connected: boolean; error?: string }>('/gateway/agents'),
+  listAgentTemplates: () =>
+    request<{ templates: BuiltInAgentTemplate[] }>('/agent-templates'),
 
   getSystemSettings: () => request<SettingsResolution['system']>('/settings/system'),
   updateSystemSettings: (input: {
@@ -173,6 +176,11 @@ export const api = {
     roomId: string,
     input: { agent_id: string; agent_name: string; agent_role?: string },
   ) => request<RoomAgent>(`/rooms/${roomId}/agents`, { method: 'POST', body: JSON.stringify(input) }),
+  addRoomAgentFromTemplate: (roomId: string, template_id: string) =>
+    request<RoomAgent>(`/rooms/${roomId}/agents/from-template`, {
+      method: 'POST',
+      body: JSON.stringify({ template_id }),
+    }),
   removeRoomAgent: (roomId: string, agentId: string) =>
     request<void>(`/rooms/${roomId}/agents/${agentId}`, { method: 'DELETE' }),
   setAgentAcp: (
