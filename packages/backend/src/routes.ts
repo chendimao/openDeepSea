@@ -252,11 +252,16 @@ router.get('/projects/:id', (req, res) => {
 router.get('/projects/:projectId/memories', (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
   try {
+    const roomAgentIds = typeof req.query.roomAgentIds === 'string'
+      ? req.query.roomAgentIds.split(',').filter(Boolean)
+      : undefined;
     res.json(memoryRepo.list({
       projectId: req.params.projectId,
       roomId: typeof req.query.roomId === 'string' ? req.query.roomId : undefined,
       roomAgentId: typeof req.query.roomAgentId === 'string' ? req.query.roomAgentId : undefined,
+      roomAgentIds,
       taskId: typeof req.query.taskId === 'string' ? req.query.taskId : undefined,
+      includeArchived: req.query.includeArchived === '1',
     }));
   } catch (err) {
     const error = err as Error;
@@ -316,6 +321,15 @@ router.patch('/projects/:projectId/memories/:id', (req, res) => {
   const memory = memoryRepo.get(req.params.id);
   if (!memory || memory.project_id !== req.params.projectId) return res.status(404).json({ error: 'not found' });
   const updated = memoryRepo.update(req.params.id, parsed.data);
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  res.json(updated);
+});
+
+router.patch('/projects/:projectId/memories/:id/archive', (req, res) => {
+  const memory = memoryRepo.get(req.params.id);
+  if (!memory || memory.project_id !== req.params.projectId) return res.status(404).json({ error: 'not found' });
+  const archived = req.body.archived !== false;
+  const updated = memoryRepo.archive(req.params.id, archived);
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(updated);
 });

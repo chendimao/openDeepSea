@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Ban, CircleAlert, CircleCheck, LoaderCircle, RotateCcw } from 'lucide-react';
+import { Ban, CircleAlert, CircleCheck, LoaderCircle, RotateCcw, ScrollText } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -35,6 +35,7 @@ export function AgentRunStatusCard({
     onError: (err) => toast.error((err as Error).message),
   });
 
+  const hasActivity = Boolean(run.activity_log?.trim());
   const hasDiagnostics = Boolean(run.stderr || run.error);
   const canRetry = Boolean(
     run.workflow_run_id &&
@@ -101,10 +102,22 @@ export function AgentRunStatusCard({
         )}
       </div>
 
+      {hasActivity && (
+        <details className="mt-2">
+          <summary className="flex cursor-pointer items-center gap-1.5 text-[11px] font-mono text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]">
+            <ScrollText className="h-3.5 w-3.5" />
+            {t('agentRun.activityLog')}
+          </summary>
+          <pre className="mt-2 max-h-[160px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--color-code-bg)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+            {run.activity_log}
+          </pre>
+        </details>
+      )}
+
       {hasDiagnostics && (
         <details className="mt-2">
           <summary className="cursor-pointer text-[11px] font-mono text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]">
-            stderr / error
+            {t('agentRun.diagnostics')}
           </summary>
           <pre className="mt-2 max-h-[120px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--color-code-bg)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
             {[run.error, run.stderr].filter(Boolean).join('\n')}

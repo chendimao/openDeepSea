@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { appendMemoryContextSafely } from './memory/context.js';
+import { distillFromConversation } from './memory/distill.js';
 import { gatewayClient } from './openclaw/gateway.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { memoryRepo } from './repos/memory.js';
@@ -217,6 +218,7 @@ export async function respondAsAgent(args: {
             roomAgentId: agent.id,
             taskId: args.taskId,
           }),
+          maxChars: agent.memory_max_context_chars,
           warn: (message) => console.warn(message),
         })
       : args.prompt;
@@ -279,6 +281,13 @@ export async function respondAsAgent(args: {
     if (updated) broadcastRun('agent_run:updated', updated);
   };
 
+  const onActivity = (chunk: string): void => {
+    const text = formatActivityChunk(chunk);
+    if (!text) return;
+    const updated = agentRunRepo.appendActivity(run.id, text);
+    if (updated) broadcastRun('agent_run:updated', updated);
+  };
+
   try {
     if (agent.acp_enabled && agent.acp_backend) {
       const adapter = getAdapter(agent.acp_backend);
@@ -287,7 +296,8 @@ export async function respondAsAgent(args: {
         sessionId: agent.acp_session_id,
         prompt,
         onChunk: (chunk) => {
-          if (chunk.stream === 'stdout') onStdout(chunk.text);
+          if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);
+          else if (chunk.stream === 'stdout') onStdout(chunk.text);
           else onStderr(chunk.text);
         },
         onSession: (sessionId) => {
@@ -369,6 +379,14 @@ export async function respondAsAgent(args: {
         chunk: '',
         done: true,
       });
+      // Async memory distillation after reply completes (non-workflow only)
+      if (room && !args.workflowRunId && finalRun?.status === 'completed') {
+        distillFromConversation({
+          projectId: room.project_id,
+          roomId,
+          triggerMessageId: placeholder.id,
+        }).catch((err) => console.warn(`[distill] async distill error: ${(err as Error).message}`));
+      }
     }
   }
 
@@ -380,6 +398,12 @@ export async function respondAsAgent(args: {
     const updated = agentRunRepo.updateStatus(id, status, { error: error ?? null });
     if (updated) broadcastRun('agent_run:updated', updated);
   }
+}
+
+function formatActivityChunk(chunk: string): string {
+  const text = chunk.trim();
+  if (!text) return '';
+  return text.endsWith('\n') ? text : `${text}\n`;
 }
 
 async function ensureOpenClawSession(args: {

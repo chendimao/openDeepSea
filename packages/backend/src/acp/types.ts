@@ -1,5 +1,14 @@
 import type { AcpBackend, CliSessionSummary } from '../types.js';
 
+export type AcpStreamChannel = 'answer' | 'activity';
+
+export interface AcpStreamChunk {
+  stream: 'stdout' | 'stderr';
+  text: string;
+  channel?: AcpStreamChannel;
+  rawType?: string;
+}
+
 export interface SessionAdapter {
   backend: AcpBackend;
   /** List sessions whose cwd matches the given project path. */
@@ -7,12 +16,13 @@ export interface SessionAdapter {
   /**
    * Spawn a CLI invocation that resumes a session and streams output.
    * onChunk receives stdout/stderr chunks as they arrive.
+   * stdout chunks may be separated into final answer text and visible activity summaries.
    */
   invoke(args: {
     projectPath: string;
     sessionId: string | null;
     prompt: string;
-    onChunk: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void;
+    onChunk: (chunk: AcpStreamChunk) => void;
     onSession?: (sessionId: string) => void;
     signal?: AbortSignal;
   }): Promise<{ exitCode: number; sessionId: string | null; stderr: string }>;

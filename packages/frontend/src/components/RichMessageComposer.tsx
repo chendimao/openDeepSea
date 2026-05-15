@@ -53,6 +53,8 @@ export function RichMessageComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef<AttachmentPreview[]>([]);
   const didMountRef = useRef(false);
+  const lastEditorRangeRef = useRef<Range | null>(null);
+  const suppressNextBlurRef = useRef(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<AttachmentPreview[]>([]);
   const [hasContent, setHasContent] = useState(false);
@@ -90,13 +92,14 @@ export function RichMessageComposer({
     }
 
     const editor = editorRef.current;
-    const selection = window.getSelection();
-    if (!editor || !selection || selection.rangeCount === 0 || !editor.contains(selection.anchorNode)) {
+    const range = editor ? getActiveEditorRange(editor) : null;
+    if (!editor || !range) {
       setMentionQuery(null);
       return;
     }
 
-    const textBeforeCursor = getTextBeforeCursor(editor, selection.getRangeAt(0));
+    lastEditorRangeRef.current = range.cloneRange();
+    const textBeforeCursor = getTextBeforeCursor(editor, range);
     const match = textBeforeCursor.match(mentionQueryPattern);
     setMentionQuery(match ? match[1] : null);
   }, [isBusy]);
@@ -129,6 +132,7 @@ export function RichMessageComposer({
     attachmentsRef.current = [];
     setAttachments([]);
     setMentionQuery(null);
+    lastEditorRangeRef.current = null;
     renderNodes(createEmptyComposerNodes());
   }, [renderNodes, resetKey]);
 
@@ -183,13 +187,27 @@ export function RichMessageComposer({
     if (isBusy) return;
 
     const editor = editorRef.current;
-    const selection = window.getSelection();
-    if (!editor || !selection || selection.rangeCount === 0) return;
+    if (!editor) return;
 
-    const range = selection.getRangeAt(0);
-    if (!editor.contains(range.commonAncestorContainer)) return;
+    suppressNextBlurRef.current = true;
+    const range = getActiveEditorRange(editor) ?? getSavedEditorRange(editor, lastEditorRangeRef.current);
+    if (!range) {
+      suppressNextBlurRef.current = false;
+      return;
+    }
 
-    insertMentionAtCurrentQuery(editor, range, agent);
+    const nextRange = insertMentionAtCurrentQuery(editor, range, agent);
+    if (!nextRange) {
+      suppressNextBlurRef.current = false;
+      return;
+    }
+
+    lastEditorRangeRef.current = nextRange.cloneRange();
+    restoreEditorRange(editor, nextRange);
+    requestAnimationFrame(() => {
+      restoreEditorRange(editor, nextRange);
+      lastEditorRangeRef.current = nextRange.cloneRange();
+    });
     setMentionQuery(null);
     setHasContent(readPlainText(editor).trim().length > 0);
   };
@@ -278,11 +296,31 @@ export function RichMessageComposer({
           contentEditable={!isBusy}
           data-placeholder={placeholder}
           onBlur={() => {
+            if (suppressNextBlurRef.current) {
+              suppressNextBlurRef.current = false;
+              requestAnimationFrame(() => {
+                const editor = editorRef.current;
+                const range = editor ? getSavedEditorRange(editor, lastEditorRangeRef.current) : null;
+                if (editor && range) restoreEditorRange(editor, range);
+              });
+              return;
+            }
+
             normalizeEditor();
             setMentionQuery(null);
           }}
           onInput={handleInput}
           onKeyDown={handleKeyDown}
+          onMouseDown={(event) => {
+            if (isBusy || event.target !== event.currentTarget) return;
+
+            requestAnimationFrame(() => {
+              const editor = editorRef.current;
+              if (!editor || getActiveEditorRange(editor)) return;
+              const range = placeCursorAtEnd(editor);
+              lastEditorRangeRef.current = range.cloneRange();
+            });
+          }}
           onPaste={handlePaste}
           onSelect={updateMentionQuery}
           role="textbox"
@@ -436,11 +474,11 @@ function getTextBeforeCursor(editor: HTMLDivElement, range: Range): string {
   return before.toString();
 }
 
-function insertMentionAtCurrentQuery(editor: HTMLDivElement, range: Range, agent: RoomAgent) {
+function insertMentionAtCurrentQuery(editor: HTMLDivElement, range: Range, agent: RoomAgent): Range | null {
   const match = getMentionQueryOffsets(editor, range);
-  if (!match) return;
+  if (!match) return null;
 
-  replaceTextRangeWithMention(editor, match.start, match.end, agent);
+  return replaceTextRangeWithMention(editor, match.start, match.end, agent);
 }
 
 function normalizeBoundedMentionAtCursor(editor: HTMLDivElement, agents: RoomAgent[]) {
@@ -484,10 +522,10 @@ function replaceTextRangeWithMention(
   end: number,
   agent: Pick<RoomAgent, 'id' | 'agent_name'>,
   trailingText = ' ',
-) {
+): Range | null {
   const startPoint = mapLinearOffsetToDomPoint(editor, start);
   const endPoint = mapLinearOffsetToDomPoint(editor, end);
-  if (!startPoint || !endPoint) return;
+  if (!startPoint || !endPoint) return null;
 
   const replaceRange = document.createRange();
   replaceRange.setStart(startPoint.node, startPoint.offset);
@@ -498,17 +536,49 @@ function replaceTextRangeWithMention(
   const trailing = document.createTextNode(trailingText);
   replaceRange.insertNode(trailing);
   replaceRange.insertNode(token);
-  placeCursorAfter(trailing);
-  editor.focus();
+  return placeCursorInText(trailing, trailing.textContent?.length ?? 0);
 }
 
-function placeCursorAfter(node: Node) {
+function placeCursorInText(node: Text, offset: number): Range {
   const range = document.createRange();
-  range.setStartAfter(node);
+  range.setStart(node, Math.min(offset, node.length));
   range.collapse(true);
+  restoreRange(range);
+  return range;
+}
+
+function restoreEditorRange(editor: HTMLDivElement, range: Range) {
+  editor.focus({ preventScroll: true });
+  restoreRange(range);
+}
+
+function restoreRange(range: Range) {
   const selection = window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
+}
+
+function getActiveEditorRange(editor: HTMLDivElement): Range | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+
+  const range = selection.getRangeAt(0);
+  return editor.contains(range.commonAncestorContainer) ? range : null;
+}
+
+function getSavedEditorRange(editor: HTMLDivElement, range: Range | null): Range | null {
+  if (!range || !editor.contains(range.commonAncestorContainer)) return null;
+  return range.cloneRange();
+}
+
+function placeCursorAtEnd(editor: HTMLDivElement): Range {
+  editor.focus({ preventScroll: true });
+
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  restoreRange(range);
+  return range;
 }
 
 function getLinearOffset(editor: HTMLDivElement, range: Range): number {

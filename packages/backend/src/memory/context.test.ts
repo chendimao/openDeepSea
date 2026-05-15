@@ -24,6 +24,7 @@ function memory(overrides: Partial<MemoryEntry>): MemoryEntry {
     source_type: 'manual',
     source_id: null,
     pinned: 0,
+    archived: 0,
     created_at: 1,
     updated_at: 1,
     ...overrides,

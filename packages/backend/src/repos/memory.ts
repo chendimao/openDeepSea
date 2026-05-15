@@ -6,7 +6,9 @@ export interface MemoryListFilters {
   projectId: string;
   roomId?: string;
   roomAgentId?: string;
+  roomAgentIds?: string[];
   taskId?: string;
+  includeArchived?: boolean;
   limit?: number;
 }
 
@@ -130,15 +132,21 @@ export const memoryRepo = {
       scopeClauses.push("(scope = 'agent' AND room_agent_id = ?)");
       params.push(filters.roomAgentId);
     }
+    if (filters.roomAgentIds && filters.roomAgentIds.length > 0) {
+      const placeholders = filters.roomAgentIds.map(() => '?').join(', ');
+      scopeClauses.push(`(scope = 'agent' AND room_agent_id IN (${placeholders}))`);
+      params.push(...filters.roomAgentIds);
+    }
     if (filters.taskId) {
       scopeClauses.push("(scope = 'task' AND task_id = ?)");
       params.push(filters.taskId);
     }
+    const archivedClause = filters.includeArchived ? '' : ' AND archived = 0';
     const limit = Math.max(1, Math.min(filters.limit ?? 100, 200));
     return db
       .prepare(
         `SELECT * FROM memory_entries
-         WHERE project_id = ? AND (${scopeClauses.join(' OR ')})
+         WHERE project_id = ? AND (${scopeClauses.join(' OR ')})${archivedClause}
          ORDER BY pinned DESC, updated_at DESC
          LIMIT ?`,
       )
@@ -151,6 +159,7 @@ export const memoryRepo = {
     roomAgentId?: string | null;
     taskId?: string | null;
     limit?: number;
+    maxChars?: number | null;
   }): MemoryEntry[] {
     validateOwnership({
       project_id: args.projectId,
@@ -159,29 +168,57 @@ export const memoryRepo = {
       task_id: args.taskId,
     });
 
-    const limit = Math.max(1, Math.min(args.limit ?? 12, 30));
-    return db
+    const totalLimit = Math.max(1, Math.min(args.limit ?? 12, 30));
+    const scopeQuota = Math.max(1, Math.ceil(totalLimit / 4));
+
+    const projectEntries = db
       .prepare(
         `SELECT * FROM memory_entries
-         WHERE project_id = ?
-           AND (
-             scope = 'project'
-             OR (scope = 'room' AND room_id = ?)
-             OR (? IS NOT NULL AND scope = 'agent' AND room_agent_id = ?)
-             OR (? IS NOT NULL AND scope = 'task' AND task_id = ?)
-           )
+         WHERE project_id = ? AND scope = 'project' AND archived = 0
          ORDER BY pinned DESC, updated_at DESC
          LIMIT ?`,
       )
-      .all(
-        args.projectId,
-        args.roomId,
-        args.roomAgentId ?? null,
-        args.roomAgentId ?? null,
-        args.taskId ?? null,
-        args.taskId ?? null,
-        limit,
-      ) as MemoryEntry[];
+      .all(args.projectId, scopeQuota) as MemoryEntry[];
+
+    const roomEntries = db
+      .prepare(
+        `SELECT * FROM memory_entries
+         WHERE project_id = ? AND scope = 'room' AND room_id = ? AND archived = 0
+         ORDER BY pinned DESC, updated_at DESC
+         LIMIT ?`,
+      )
+      .all(args.projectId, args.roomId, scopeQuota) as MemoryEntry[];
+
+    let agentEntries: MemoryEntry[] = [];
+    if (args.roomAgentId) {
+      agentEntries = db
+        .prepare(
+          `SELECT * FROM memory_entries
+           WHERE project_id = ? AND scope = 'agent' AND room_agent_id = ? AND archived = 0
+           ORDER BY pinned DESC, updated_at DESC
+           LIMIT ?`,
+        )
+        .all(args.projectId, args.roomAgentId, scopeQuota) as MemoryEntry[];
+    }
+
+    let taskEntries: MemoryEntry[] = [];
+    if (args.taskId) {
+      taskEntries = db
+        .prepare(
+          `SELECT * FROM memory_entries
+           WHERE project_id = ? AND scope = 'task' AND task_id = ? AND archived = 0
+           ORDER BY pinned DESC, updated_at DESC
+           LIMIT ?`,
+        )
+        .all(args.projectId, args.taskId, scopeQuota) as MemoryEntry[];
+    }
+
+    const merged = [...projectEntries, ...taskEntries, ...agentEntries, ...roomEntries];
+    merged.sort((a, b) => {
+      if (a.pinned !== b.pinned) return b.pinned - a.pinned;
+      return b.updated_at - a.updated_at;
+    });
+    return merged.slice(0, totalLimit);
   },
 
   get(id: string): MemoryEntry | undefined {
@@ -285,6 +322,15 @@ export const memoryRepo = {
       source_type: 'workflow',
       source_id: input.source_id,
     });
+  },
+
+  archive(id: string, archived: boolean): MemoryEntry | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    const ts = now();
+    db.prepare('UPDATE memory_entries SET archived = ?, updated_at = ? WHERE id = ?')
+      .run(archived ? 1 : 0, ts, id);
+    return this.get(id);
   },
 
   delete(id: string): boolean {

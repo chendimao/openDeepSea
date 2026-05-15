@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckSquare, ChevronDown, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -14,6 +14,7 @@ import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
+import { MemoryPanel } from '../components/MemoryPanel';
 import { RichMessageComposer } from '../components/RichMessageComposer';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
@@ -26,6 +27,7 @@ export function RoomPage() {
   const queryClient = useQueryClient();
   const [configAgent, setConfigAgent] = useState<RoomAgent | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const { t } = useI18n();
 
   const { data: project } = useQuery({
@@ -233,6 +235,17 @@ export function RoomPage() {
               </button>
             </RoomSettingsDialog>
           )}
+          <button
+            type="button"
+            className={cn('glass-button', showMemoryPanel && 'glass-button-primary')}
+            onClick={() => {
+              setShowMemoryPanel((v) => !v);
+              if (!showMemoryPanel) { setConfigAgent(null); setSelectedTask(null); }
+            }}
+          >
+            <Brain className="h-3.5 w-3.5" strokeWidth={1.8} />
+            <span className="hidden sm:inline">{t('memory.tab')}</span>
+          </button>
           <AddAgentDialog roomId={roomId}>
             <button type="button" className="glass-button">
               <Users className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -249,13 +262,22 @@ export function RoomPage() {
             agents={agents}
             agentRuns={agentRuns}
             roomId={roomId}
+            projectId={projectId}
             routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
             fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
             onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
             retryingWorkflowId={retryWorkflow.variables}
           />
         </section>
-        {selectedTask ? (
+        {showMemoryPanel ? (
+          <aside className="workbench-panel inspector-panel overflow-y-auto p-4">
+            <MemoryPanel
+              projectId={projectId}
+              roomId={roomId}
+              roomAgents={agents}
+            />
+          </aside>
+        ) : selectedTask ? (
           <TaskDetailPanel
             task={selectedTask}
             agents={agents}
@@ -354,6 +376,7 @@ function ChatColumn({
   agents,
   agentRuns,
   roomId,
+  projectId,
   routingMode,
   fallbackAgentId,
   onRetryWorkflow,
@@ -363,6 +386,7 @@ function ChatColumn({
   agents: RoomAgent[];
   agentRuns: AgentRun[];
   roomId: string;
+  projectId: string;
   routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
   fallbackAgentId: string | null;
   onRetryWorkflow: (workflowId: string) => void;
@@ -476,6 +500,7 @@ function ChatColumn({
                 run={run}
                 runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
                 roomId={roomId}
+                projectId={projectId}
                 onRetryWorkflow={onRetryWorkflow}
                 retryingWorkflowId={retryingWorkflowId}
               />
@@ -531,6 +556,7 @@ function MessageBubble({
   run,
   runAgent,
   roomId,
+  projectId,
   onRetryWorkflow,
   retryingWorkflowId,
 }: {
@@ -539,10 +565,29 @@ function MessageBubble({
   run?: AgentRun;
   runAgent?: RoomAgent;
   roomId: string;
+  projectId: string;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
 }) {
   const { t, formatRelativeTime } = useI18n();
+  const queryClient = useQueryClient();
+  const saveAsMemory = useMutation({
+    mutationFn: () =>
+      api.createMemory(projectId, {
+        scope: 'room',
+        memory_type: 'fact',
+        title: `${message.sender_name ?? message.sender_id}: ${(message.content ?? '').slice(0, 80)}`,
+        content: message.content ?? '',
+        room_id: roomId,
+        source_type: 'message',
+        source_id: message.id,
+      }),
+    onSuccess: () => {
+      toast.success(t('memory.savedFromMessage'));
+      queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
   const metadata = parseMessageMetadata(message.metadata);
@@ -575,7 +620,7 @@ function MessageBubble({
         <AgentAvatar name={message.sender_name ?? message.sender_id} size={32} active={!!agentMeta?.acp_enabled} />
       )}
       <div className={cn('min-w-0 max-w-[760px] flex flex-col', isUser ? 'items-end' : 'w-full items-start')}>
-        <div className="flex items-center gap-2 mb-1">
+        <div className="group flex items-center gap-2 mb-1">
           <span className="font-display text-[12.5px] font-semibold">
             {isUser ? t('room.currentUser') : message.sender_name ?? message.sender_id}
           </span>
@@ -587,6 +632,17 @@ function MessageBubble({
           <span className="text-[10.5px] font-mono text-[var(--color-muted)]">
             {formatRelativeTime(message.created_at)}
           </span>
+          {hasContent && (
+            <button
+              type="button"
+              className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 p-0.5 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-fg-muted)] hover:text-[var(--color-accent)]"
+              title={t('memory.saveAsMemory')}
+              disabled={saveAsMemory.isPending}
+              onClick={() => saveAsMemory.mutate()}
+            >
+              <BookmarkPlus className="h-3.5 w-3.5" strokeWidth={1.8} />
+            </button>
+          )}
         </div>
         <div
           className={cn(

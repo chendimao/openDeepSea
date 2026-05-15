@@ -134,6 +134,7 @@ export interface AgentRun {
   prompt: string;
   stdout: string;
   stderr: string;
+  activity_log: string;
   error: string | null;
   started_at: number;
   updated_at: number;
@@ -251,6 +252,7 @@ export interface MemoryEntry {
   source_type: MemorySourceType;
   source_id: string | null;
   pinned: 0 | 1;
+  archived: 0 | 1;
   created_at: number;
   updated_at: number;
 }

@@ -110,10 +110,19 @@ export const agentRunRepo = {
     return this.get(id);
   },
 
+  appendActivity(id: string, chunk: string): AgentRun | undefined {
+    db.prepare('UPDATE agent_runs SET activity_log = activity_log || ?, updated_at = ? WHERE id = ?').run(
+      chunk,
+      now(),
+      id,
+    );
+    return this.get(id);
+  },
+
   updateStatus(
     id: string,
     status: AgentRunStatus,
-    patch: Partial<Pick<AgentRun, 'session_key' | 'acp_session_id' | 'error' | 'stdout' | 'stderr'>> = {},
+    patch: Partial<Pick<AgentRun, 'session_key' | 'acp_session_id' | 'error' | 'stdout' | 'stderr' | 'activity_log'>> = {},
   ): AgentRun | undefined {
     const completedAt = status === 'running' || status === 'queued' ? null : now();
     db.prepare(
@@ -124,6 +133,7 @@ export const agentRunRepo = {
            error = COALESCE(?, error),
            stdout = COALESCE(?, stdout),
            stderr = COALESCE(?, stderr),
+           activity_log = COALESCE(?, activity_log),
            updated_at = ?,
            completed_at = ?
        WHERE id = ?`,
@@ -134,6 +144,7 @@ export const agentRunRepo = {
       patch.error ?? null,
       patch.stdout ?? null,
       patch.stderr ?? null,
+      patch.activity_log ?? null,
       now(),
       completedAt,
       id,

@@ -103,12 +103,14 @@ export const api = {
   getProject: (id: string) => request<Project>(`/projects/${id}`),
   listMemories: (
     projectId: string,
-    filters: { roomId?: string; roomAgentId?: string; taskId?: string } = {},
+    filters: { roomId?: string; roomAgentId?: string; roomAgentIds?: string[]; taskId?: string; includeArchived?: boolean } = {},
   ) => {
     const params = new URLSearchParams();
     if (filters.roomId) params.set('roomId', filters.roomId);
     if (filters.roomAgentId) params.set('roomAgentId', filters.roomAgentId);
+    if (filters.roomAgentIds && filters.roomAgentIds.length > 0) params.set('roomAgentIds', filters.roomAgentIds.join(','));
     if (filters.taskId) params.set('taskId', filters.taskId);
+    if (filters.includeArchived) params.set('includeArchived', '1');
     const query = params.toString();
     return request<MemoryEntry[]>(`/projects/${projectId}/memories${query ? `?${query}` : ''}`);
   },
@@ -125,6 +127,11 @@ export const api = {
     request<MemoryEntry>(`/projects/${projectId}/memories/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
+    }),
+  archiveMemory: (projectId: string, id: string, archived: boolean) =>
+    request<MemoryEntry>(`/projects/${projectId}/memories/${id}/archive`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived }),
     }),
   deleteMemory: (projectId: string, id: string) =>
     request<void>(`/projects/${projectId}/memories/${id}`, { method: 'DELETE' }),

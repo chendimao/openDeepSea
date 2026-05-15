@@ -3,7 +3,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CliSessionSummary } from '../types.js';
-import type { SessionAdapter } from './types.js';
+import type { AcpStreamChunk, SessionAdapter } from './types.js';
 
 /** Encode an absolute path the way Claude Code stores project dirs. */
 function encodeProjectPath(p: string): string {
@@ -94,7 +94,7 @@ function runStreaming(
   cmd: string,
   args: string[],
   cwd: string,
-  onChunk: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void,
+  onChunk: (chunk: AcpStreamChunk) => void,
   signal?: AbortSignal,
   onSession?: (sessionId: string) => void,
 ): Promise<{ exitCode: number; sessionId: string | null; stderr: string }> {
@@ -102,10 +102,15 @@ function runStreaming(
     const child = spawn(cmd, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr = '';
     let detectedSession: string | null = null;
+    let stdoutBuffer = '';
     child.stdout.setEncoding('utf-8');
     child.stderr.setEncoding('utf-8');
     child.stdout.on('data', (data: string) => {
-      onChunk({ stream: 'stdout', text: normalizeStdoutChunk(data) });
+      const parsed = takeCompleteLines(stdoutBuffer + data);
+      stdoutBuffer = parsed.rest;
+      for (const chunk of normalizeStdoutChunk(parsed.complete)) {
+        onChunk({ stream: 'stdout', ...chunk });
+      }
       const m = data.match(/"session_id"\s*:\s*"([^"]+)"/);
       if (m && m[1]) detectedSession = rememberSession(m[1], detectedSession, onSession);
       for (const obj of parseJsonLines(data)) {
@@ -124,12 +129,27 @@ function runStreaming(
       resolve({ exitCode: -1, sessionId: detectedSession, stderr });
     });
     child.on('close', (code) => {
+      if (stdoutBuffer) {
+        for (const chunk of normalizeStdoutChunk(stdoutBuffer)) {
+          onChunk({ stream: 'stdout', ...chunk });
+        }
+        stdoutBuffer = '';
+      }
       resolve({ exitCode: code ?? 0, sessionId: detectedSession, stderr });
     });
     signal?.addEventListener('abort', () => {
       child.kill('SIGTERM');
     });
   });
+}
+
+function takeCompleteLines(data: string): { complete: string; rest: string } {
+  const lastNewline = data.lastIndexOf('\n');
+  if (lastNewline === -1) return { complete: '', rest: data };
+  return {
+    complete: data.slice(0, lastNewline + 1),
+    rest: data.slice(lastNewline + 1),
+  };
 }
 
 function rememberSession(
@@ -148,21 +168,51 @@ function filterStderr(data: string): string {
     .join('\n');
 }
 
-function normalizeStdoutChunk(data: string): string {
+function normalizeStdoutChunk(data: string): Array<{
+  channel: 'answer' | 'activity';
+  text: string;
+  rawType?: string;
+}> {
   const lines = data.split('\n');
   const normalized = lines.map((line, index) => {
     if (!line.trim()) return index === lines.length - 1 ? '' : line;
     try {
       const obj = JSON.parse(line) as Record<string, unknown>;
       if (obj['type'] === 'assistant' || obj['type'] === 'result' || isCodexAgentMessage(obj)) {
-        return extractText(obj) ?? line;
+        const text = extractText(obj);
+        if (!text) {
+          const activity = extractActivityText(obj);
+          return activity
+            ? {
+                channel: 'activity' as const,
+                text: activity,
+                rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
+              }
+            : '';
+        }
+        return {
+          channel: 'answer' as const,
+          text,
+          rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
+        };
       }
-      return '';
+      const activity = extractActivityText(obj);
+      return activity
+        ? {
+            channel: 'activity' as const,
+            text: activity,
+            rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
+          }
+        : '';
     } catch {
-      return line;
+      return { channel: 'answer' as const, text: line };
     }
   });
-  return normalized.filter(Boolean).join('\n');
+  return normalized.filter(Boolean) as Array<{
+    channel: 'answer' | 'activity';
+    text: string;
+    rawType?: string;
+  }>;
 }
 
 function parseJsonLines(data: string): Record<string, unknown>[] {
@@ -191,6 +241,137 @@ function extractText(obj: Record<string, unknown>): string | null {
     return extractContentText((message as Record<string, unknown>)['content']);
   }
   return extractContentText(obj['content']);
+}
+
+function extractActivityText(obj: Record<string, unknown>): string | null {
+  const type = typeof obj['type'] === 'string' ? obj['type'] : '';
+  if (type === 'system') return null;
+
+  if (type === 'user') {
+    const message = asRecord(obj['message']);
+    const content = message ? message['content'] : obj['content'];
+    const summary = extractToolResultSummary(content);
+    return summary ? `工具结果：${summary}` : null;
+  }
+
+  if (type === 'item.started' || type === 'item.completed') {
+    const item = asRecord(obj['item']);
+    if (!item) return null;
+    return extractItemActivity(item, type === 'item.started' ? '开始' : '完成');
+  }
+
+  if (type === 'assistant') {
+    const message = asRecord(obj['message']);
+    const content = message ? message['content'] : obj['content'];
+    return extractAssistantActivity(content);
+  }
+
+  return null;
+}
+
+function extractItemActivity(item: Record<string, unknown>, phase: '开始' | '完成'): string | null {
+  const itemType = typeof item['type'] === 'string' ? item['type'] : '';
+  if (itemType === 'reasoning') {
+    const summary = extractReasoningSummary(item);
+    return summary ? `推理摘要：${summary}` : `推理${phase}`;
+  }
+  if (itemType === 'function_call') {
+    const name = typeof item['name'] === 'string' ? item['name'] : 'tool';
+    const args = summarizeJsonText(item['arguments']);
+    return args ? `${phase}工具：${name} ${args}` : `${phase}工具：${name}`;
+  }
+  if (itemType === 'function_call_output') {
+    const summary = summarizeJsonText(item['output']);
+    return summary ? `工具输出：${summary}` : `工具输出${phase}`;
+  }
+  if (itemType === 'command_execution' || itemType === 'local_shell_call') {
+    const command = summarizeCommand(item);
+    return command ? `${phase}命令：${command}` : `${phase}命令执行`;
+  }
+  return null;
+}
+
+function extractAssistantActivity(content: unknown): string | null {
+  if (!Array.isArray(content)) return null;
+  const parts = content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return '';
+      const p = part as Record<string, unknown>;
+      const type = typeof p['type'] === 'string' ? p['type'] : '';
+      if (type === 'tool_use') {
+        const name = typeof p['name'] === 'string' ? p['name'] : 'tool';
+        const input = summarizeJsonText(p['input']);
+        return input ? `调用工具：${name} ${input}` : `调用工具：${name}`;
+      }
+      if (type === 'thinking' || type === 'reasoning') {
+        const summary = extractReasoningSummary(p);
+        return summary ? `推理摘要：${summary}` : '';
+      }
+      return '';
+    })
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join('\n') : null;
+}
+
+function extractReasoningSummary(obj: Record<string, unknown>): string | null {
+  const summary = obj['summary'];
+  if (typeof summary === 'string') return oneLine(summary);
+  if (Array.isArray(summary)) {
+    const text = summary
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (!item || typeof item !== 'object') return '';
+        const record = item as Record<string, unknown>;
+        return typeof record['text'] === 'string' ? record['text'] : '';
+      })
+      .filter(Boolean)
+      .join(' ');
+    return text ? oneLine(text) : null;
+  }
+  if (typeof obj['text'] === 'string' && obj['is_summary'] === true) return oneLine(obj['text']);
+  return null;
+}
+
+function extractToolResultSummary(content: unknown): string | null {
+  if (!Array.isArray(content)) return null;
+  const parts = content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return '';
+      const p = part as Record<string, unknown>;
+      const type = typeof p['type'] === 'string' ? p['type'] : '';
+      if (type !== 'tool_result') return '';
+      if (typeof p['content'] === 'string') return oneLine(p['content']);
+      return summarizeJsonText(p['content']);
+    })
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join('\n') : null;
+}
+
+function summarizeCommand(item: Record<string, unknown>): string | null {
+  const command = item['command'];
+  if (Array.isArray(command)) return oneLine(command.map(String).join(' '), 160);
+  if (typeof command === 'string') return oneLine(command, 160);
+  const cmd = typeof item['cmd'] === 'string' ? item['cmd'] : '';
+  return cmd ? oneLine(cmd, 160) : null;
+}
+
+function summarizeJsonText(value: unknown): string {
+  if (typeof value === 'string') return oneLine(value, 180);
+  if (value === null || value === undefined) return '';
+  try {
+    return oneLine(JSON.stringify(value), 180);
+  } catch {
+    return '';
+  }
+}
+
+function oneLine(value: string, maxLength = 220): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
 }
 
 function isCodexAgentMessage(obj: Record<string, unknown>): boolean {

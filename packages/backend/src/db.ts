@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   prompt TEXT NOT NULL,
   stdout TEXT NOT NULL DEFAULT '',
   stderr TEXT NOT NULL DEFAULT '',
+  activity_log TEXT NOT NULL DEFAULT '',
   error TEXT,
   started_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -178,6 +179,7 @@ CREATE TABLE IF NOT EXISTS memory_entries (
   source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN ('manual', 'message', 'workflow', 'task')),
   source_id TEXT,
   pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+  archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
@@ -343,6 +345,9 @@ if (!agentRunColumnNames.has('workflow_step_id')) {
 if (!agentRunColumnNames.has('workflow_stage')) {
   db.exec('ALTER TABLE agent_runs ADD COLUMN workflow_stage TEXT');
 }
+if (!agentRunColumnNames.has('activity_log')) {
+  db.exec("ALTER TABLE agent_runs ADD COLUMN activity_log TEXT NOT NULL DEFAULT ''");
+}
 
 const taskColumns = db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];
 const taskColumnNames = new Set(taskColumns.map((column) => column.name));
@@ -354,6 +359,16 @@ if (!taskColumnNames.has('source_message_id')) {
 }
 if (!taskColumnNames.has('created_from')) {
   db.exec('ALTER TABLE tasks ADD COLUMN created_from TEXT');
+}
+
+const memoryColumns = db.prepare('PRAGMA table_info(memory_entries)').all() as { name: string }[];
+const memoryColumnNames = new Set(memoryColumns.map((column) => column.name));
+if (!memoryColumnNames.has('archived')) {
+  db.exec('ALTER TABLE memory_entries ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+}
+
+if (!roomAgentColumnNames.has('memory_max_context_chars')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN memory_max_context_chars INTEGER');
 }
 
 db.exec(`

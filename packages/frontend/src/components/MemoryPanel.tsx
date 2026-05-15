@@ -1,5 +1,5 @@
 import { type FormEvent, useMemo, useState } from 'react';
-import { Edit3, Pin, PinOff, Plus, Save, Trash2, X } from 'lucide-react';
+import { Archive, ArchiveRestore, Edit3, Pin, PinOff, Plus, Save, Trash2, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
@@ -65,20 +65,18 @@ export function MemoryPanel({
     [roomAgentId, roomId, roomAgents, task?.id],
   );
 
+  const [showArchived, setShowArchived] = useState(false);
+
   const { data: memories = [], isLoading } = useQuery({
-    queryKey: ['memories', projectId, filters],
+    queryKey: ['memories', projectId, filters, showArchived],
     queryFn: async () => {
-      const baseFilters = { roomId: filters.roomId, taskId: filters.taskId };
-      const memoryGroups = await Promise.all([
-        api.listMemories(projectId, baseFilters),
-        ...filters.roomAgentIds.map((roomAgentId) =>
-          api.listMemories(projectId, {
-            ...baseFilters,
-            roomAgentId,
-          }),
-        ),
-      ]);
-      return mergeMemories(memoryGroups.flat());
+      const result = await api.listMemories(projectId, {
+        roomId: filters.roomId,
+        roomAgentIds: filters.roomAgentIds.length > 0 ? filters.roomAgentIds : undefined,
+        taskId: filters.taskId,
+        includeArchived: showArchived,
+      });
+      return mergeMemories(result);
     },
     enabled: Boolean(projectId),
   });
@@ -130,6 +128,16 @@ export function MemoryPanel({
     onError: (err) => toast.error((err as Error).message),
   });
 
+  const archiveMutation = useMutation({
+    mutationFn: (memory: MemoryEntry) =>
+      api.archiveMemory(projectId, memory.id, !memory.archived),
+    onSuccess: () => {
+      toast.success(t('memory.archived'));
+      invalidateMemories();
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
   const busy = createMutation.isPending || updateMutation.isPending;
 
   return (
@@ -141,18 +149,29 @@ export function MemoryPanel({
             {t('memory.description')}
           </p>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            setEditing(null);
-            setShowForm((value) => !value);
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {t('memory.add')}
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowArchived((v) => !v)}
+            title={t('memory.showArchived')}
+          >
+            <Archive className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setEditing(null);
+              setShowForm((value) => !value);
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t('memory.add')}
+          </Button>
+        </div>
       </div>
 
       {(showForm || editing) && (
@@ -221,6 +240,13 @@ export function MemoryPanel({
                     onClick={() => pinMutation.mutate(memory)}
                   >
                     {memory.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                  </IconButton>
+                  <IconButton
+                    label={memory.archived ? t('memory.unarchive') : t('memory.archive')}
+                    disabled={archiveMutation.isPending}
+                    onClick={() => archiveMutation.mutate(memory)}
+                  >
+                    {memory.archived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
                   </IconButton>
                   <IconButton label={t('memory.edit')} onClick={() => {
                     setShowForm(false);

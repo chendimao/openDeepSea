@@ -613,14 +613,10 @@
     padding: 10px;
   }
   .rich-composer-editor {
-    display: flex;
+    display: block;
     min-height: 44px;
     max-height: 152px;
     min-width: 0;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    align-items: center;
-    gap: 4px;
     overflow-y: auto;
     border-radius: 10px;
     background: transparent;

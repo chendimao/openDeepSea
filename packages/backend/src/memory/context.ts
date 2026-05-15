@@ -16,18 +16,19 @@ const TYPE_LABEL: Record<MemoryEntry['memory_type'], string> = {
 
 const TRUNCATED_MARKER = '...已截断';
 
-export function formatMemoryContext(entries: MemoryEntry[]): string {
+export function formatMemoryContext(entries: MemoryEntry[], maxChars?: number | null): string {
   if (entries.length === 0) return '';
+  const contextLimit = maxChars && maxChars > 0 ? maxChars : MAX_MEMORY_CONTEXT_CHARS;
   const lines = entries.map((entry, index) => {
     const pin = entry.pinned ? '；置顶' : '';
     const body = truncateText(`${entry.title}\n${entry.content}`, MAX_MEMORY_ENTRY_CHARS);
     return `${index + 1}. [${TYPE_LABEL[entry.memory_type]}；${entry.scope}${pin}] ${body}`;
   });
-  return truncateText(['项目/聊天室记忆：', MEMORY_CONTEXT_TRUST_NOTICE, ...lines].join('\n'), MAX_MEMORY_CONTEXT_CHARS);
+  return truncateText(['项目/聊天室记忆：', MEMORY_CONTEXT_TRUST_NOTICE, ...lines].join('\n'), contextLimit);
 }
 
-export function appendMemoryContext(prompt: string, entries: MemoryEntry[]): string {
-  const memory = formatMemoryContext(entries);
+export function appendMemoryContext(prompt: string, entries: MemoryEntry[], maxChars?: number | null): string {
+  const memory = formatMemoryContext(entries, maxChars);
   if (!memory) return prompt;
   return [memory, '', '当前请求：', prompt].join('\n');
 }
@@ -35,10 +36,11 @@ export function appendMemoryContext(prompt: string, entries: MemoryEntry[]): str
 export function appendMemoryContextSafely(args: {
   prompt: string;
   loadEntries: () => MemoryEntry[];
+  maxChars?: number | null;
   warn?: (message: string) => void;
 }): string {
   try {
-    return appendMemoryContext(args.prompt, args.loadEntries());
+    return appendMemoryContext(args.prompt, args.loadEntries(), args.maxChars);
   } catch (err) {
     args.warn?.(`[memory] failed to load memory context: ${(err as Error).message}`);
     return args.prompt;
