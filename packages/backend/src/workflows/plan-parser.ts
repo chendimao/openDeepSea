@@ -128,12 +128,8 @@ export function parsePlanArtifact(output: string): ParsedPlan {
   const parsed = JSON.parse(jsonText) as unknown;
   const modernPlan = langChainPlanSchema.safeParse(parsed);
   if (modernPlan.success) return normalizeLangChainPlan(modernPlan.data);
-  try {
-    return normalizeLegacyPlan(planSchema.parse(parsed));
-  } catch (legacyError) {
-    if (hasModernPlanShape(parsed)) throw modernPlan.error;
-    throw legacyError;
-  }
+  if (hasModernPlanShape(parsed)) throw modernPlan.error;
+  return normalizeLegacyPlan(planSchema.parse(parsed));
 }
 
 export function parseReviewVerdict(output: string): ParsedReviewVerdict {

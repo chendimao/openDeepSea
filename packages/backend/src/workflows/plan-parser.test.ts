@@ -26,10 +26,16 @@ test('parsePlanArtifact parses fenced JSON plan', () => {
 
   const firstTask = plan.tasks[0];
   assert.ok(firstTask);
+  assert.equal(plan.goal, null);
   assert.equal(plan.summary, '实现登录修复');
+  assert.deepEqual(plan.assumptions, []);
   assert.equal(plan.tasks.length, 1);
   assert.equal(firstTask.suggestedRole, 'executor');
   assert.equal(firstTask.priority, 'high');
+  assert.deepEqual(firstTask.scopeRead, []);
+  assert.deepEqual(firstTask.scopeWrite, []);
+  assert.deepEqual(firstTask.dependsOn, []);
+  assert.equal(plan.needsApproval, true);
 });
 
 test('parsePlanArtifact prefers JSON fenced plan after non-JSON fenced block', () => {
@@ -125,6 +131,40 @@ test('parsePlanArtifact rejects modern steps missing acceptance', () => {
       "assigneeRole": "executor"
     }
   ],
+  "risks": [],
+  "verification": [],
+  "needsApproval": false
+}
+`),
+    /acceptance/i,
+  );
+});
+
+test('parsePlanArtifact rejects invalid modern steps even when legacy tasks are valid', () => {
+  assert.throws(
+    () =>
+      parsePlanArtifact(`
+{
+  "goal": "交付 LangChain 结构化计划解析",
+  "summary": "定义现代计划结构并兼容旧格式",
+  "assumptions": [],
+  "steps": [
+    {
+      "title": "实现现代计划解析",
+      "intent": "解析 LangChain planner 输出并映射到任务模型",
+      "assigneeRole": "executor"
+    }
+  ],
+  "tasks": [
+    {
+      "title": "legacy fallback should not win",
+      "description": "这个 legacy task 有效，但不能接住 invalid modern shape",
+      "suggestedRole": "executor",
+      "priority": "normal",
+      "acceptance": ["legacy task is valid"]
+    }
+  ],
+  "reviewFocus": [],
   "risks": [],
   "verification": [],
   "needsApproval": false
