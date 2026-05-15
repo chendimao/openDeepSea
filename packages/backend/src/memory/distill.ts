@@ -112,10 +112,11 @@ async function callDistillLLM(prompt: string, roomId: string): Promise<string> {
   try {
     await gatewayClient.connect();
     const agents = await gatewayClient.listAgents();
-    if (agents.length === 0) {
+    const agent = agents[0];
+    if (!agent) {
       throw new Error('No agents available for distillation');
     }
-    const agentId = agents[0].id;
+    const agentId = agent.id;
     await gatewayClient.spawnSession({ agentId, sessionKey }).catch(() => {
       // session may already exist
     });
