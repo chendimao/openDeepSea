@@ -1,13 +1,12 @@
 import { gatewayClient } from '../openclaw/gateway.js';
 import { memoryRepo } from '../repos/memory.js';
 import { messageRepo } from '../repos/messages.js';
-import { roomRepo } from '../repos/rooms.js';
 import type { MemoryScope, MemoryType, Message } from '../types.js';
 
 const DISTILL_SESSION_PREFIX = 'system:distill:room-';
-const DISTILL_AGENT_ID = '__system_distiller';
 const MAX_CONTEXT_MESSAGES = 12;
 const MAX_TASK_MESSAGES = 50;
+const DISTILL_RESPONSE_TIMEOUT_MS = 120_000;
 
 interface CandidateMemory {
   scope: MemoryScope;
@@ -120,20 +119,186 @@ async function callDistillLLM(prompt: string, roomId: string): Promise<string> {
     await gatewayClient.spawnSession({ agentId, sessionKey }).catch(() => {
       // session may already exist
     });
-    const result = await gatewayClient.sendToAgent({
-      agentId,
-      sessionKey,
-      text: prompt,
-    });
-    // The gateway returns the response - we need to wait for it
-    // For simplicity, we'll collect the response from the run result
-    return typeof result === 'object' && result && 'status' in result
-      ? JSON.stringify(result)
-      : '';
+    return await collectDistillResponse({ agentId, sessionKey, prompt });
   } catch (err) {
     console.warn(`[distill] LLM call failed: ${(err as Error).message}`);
     return '';
   }
+}
+
+async function collectDistillResponse(args: {
+  agentId: string;
+  sessionKey: string;
+  prompt: string;
+}): Promise<string> {
+  let runId = '';
+  let lastSnapshot = '';
+  let output = '';
+  const normalizedSessionKey = args.sessionKey.toLowerCase();
+  const pendingEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let unsubscribe: (() => void) | null = null;
+
+    const cleanup = (): void => {
+      if (timeout) clearTimeout(timeout);
+      timeout = null;
+      unsubscribe?.();
+      unsubscribe = null;
+    };
+
+    const settle = (value: string): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const fail = (error: unknown): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const appendSnapshotDelta = (textOrSnapshot: string): void => {
+      if (!textOrSnapshot) return;
+      if (textOrSnapshot.startsWith(lastSnapshot)) {
+        output += textOrSnapshot.slice(lastSnapshot.length);
+        lastSnapshot = textOrSnapshot;
+        return;
+      }
+      output += textOrSnapshot;
+      lastSnapshot += textOrSnapshot;
+    };
+
+    const handleGatewayEvent = ({ event, payload }: { event: string; payload: Record<string, unknown> }): void => {
+      if (event === 'agent') {
+        const stream = typeof payload.stream === 'string' ? payload.stream : '';
+        const data = asRecord(payload.data);
+        if (stream !== 'lifecycle') return;
+
+        const phase = typeof data?.phase === 'string' ? data.phase : '';
+        if (phase === 'end') settle(output);
+        else if (phase === 'error') fail(new Error(extractGatewayText(data ?? payload) || 'OpenClaw distill agent failed'));
+        else if (phase === 'abort') settle('');
+        return;
+      }
+
+      if (event !== 'chat') return;
+      const state = typeof payload.state === 'string' ? payload.state : '';
+      if (state === 'delta') {
+        appendSnapshotDelta(extractGatewayText(payload));
+      } else if (state === 'final') {
+        appendSnapshotDelta(extractGatewayText(payload));
+        settle(output);
+      } else if (state === 'error') {
+        fail(new Error(extractGatewayText(payload) || 'OpenClaw distill chat failed'));
+      }
+    };
+
+    const replayPendingEvents = (): void => {
+      if (!runId) return;
+      const events = pendingEvents.splice(0);
+      for (const item of events) {
+        const payloadRunId = typeof item.payload.runId === 'string' ? item.payload.runId : '';
+        if (payloadRunId === runId) handleGatewayEvent(item);
+      }
+    };
+
+    timeout = setTimeout(() => {
+      settle(output);
+    }, DISTILL_RESPONSE_TIMEOUT_MS);
+
+    unsubscribe = gatewayClient.onEvent(({ event, payload }) => {
+      const p = asRecord(payload);
+      if (!p) return;
+      const eventSessionKey = extractSessionKey(p);
+      if (eventSessionKey.toLowerCase() !== normalizedSessionKey) return;
+
+      const payloadRunId = typeof p.runId === 'string' ? p.runId : '';
+      if (!runId) {
+        if (payloadRunId) pendingEvents.push({ event, payload: p });
+        return;
+      }
+      if (payloadRunId !== runId) return;
+
+      handleGatewayEvent({ event, payload: p });
+    });
+
+    gatewayClient
+      .sendToAgent({
+        agentId: args.agentId,
+        sessionKey: args.sessionKey,
+        text: args.prompt,
+      })
+      .then((res) => {
+        if (res.runId) runId = res.runId;
+        replayPendingEvents();
+        if (!runId) settle('');
+      })
+      .catch(fail);
+  });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function extractSessionKey(payload: Record<string, unknown>): string {
+  if (typeof payload.sessionKey === 'string') return payload.sessionKey;
+  if (typeof payload.session === 'string') return payload.session;
+  const data = payload.data;
+  if (data && typeof data === 'object' && typeof (data as Record<string, unknown>).sessionKey === 'string') {
+    return (data as Record<string, unknown>).sessionKey as string;
+  }
+  const message = payload.message;
+  if (message && typeof message === 'object') {
+    const m = message as Record<string, unknown>;
+    if (typeof m.sessionKey === 'string') return m.sessionKey;
+  }
+  return '';
+}
+
+function extractGatewayText(payload: Record<string, unknown>): string {
+  if (typeof payload.errorMessage === 'string') return payload.errorMessage;
+  if (typeof payload.error === 'string') return payload.error;
+
+  const direct = payload.text ?? payload.content ?? payload.delta;
+  if (typeof direct === 'string') return direct;
+
+  const message = payload.message;
+  if (typeof message === 'string') return message;
+  if (message && typeof message === 'object') {
+    const m = message as Record<string, unknown>;
+    if (typeof m.text === 'string') return m.text;
+    if (typeof m.content === 'string') return m.content;
+    const content = m.content;
+    if (Array.isArray(content)) {
+      return content
+        .map((item) => {
+          if (!item || typeof item !== 'object') return '';
+          const block = item as Record<string, unknown>;
+          return typeof block.text === 'string' ? block.text : '';
+        })
+        .filter(Boolean)
+        .join('');
+    }
+  }
+
+  const data = payload.data;
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>;
+    if (typeof d.text === 'string') return d.text;
+    if (typeof d.content === 'string') return d.content;
+    if (typeof d.delta === 'string') return d.delta;
+    if (typeof d.errorMessage === 'string') return d.errorMessage;
+    if (typeof d.error === 'string') return d.error;
+  }
+
+  return '';
 }
 
 /**
