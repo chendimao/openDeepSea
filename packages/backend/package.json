@@ -11,10 +11,13 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@langchain/core": "^1.1.46",
+    "@langchain/openai": "^1.4.5",
     "@types/multer": "^2.1.0",
     "better-sqlite3": "^11.5.0",
     "cors": "^2.8.5",
     "express": "^4.21.1",
+    "langchain": "^1.4.0",
     "multer": "^2.1.1",
     "nanoid": "^5.0.7",
     "openclaw": "2026.5.7",
