@@ -24,6 +24,21 @@ export interface PlannerInvoker {
   invoke(messages: PlannerMessage[]): Promise<string>;
 }
 
+export interface LangChainPlannerOptions {
+  maxAttempts?: number;
+}
+
+export class LangChainPlannerError extends Error {
+  constructor(
+    message: string,
+    readonly rawOutput: string,
+    readonly cause: unknown,
+  ) {
+    super(message);
+    this.name = 'LangChainPlannerError';
+  }
+}
+
 export function getLangChainPlannerConfig(
   env: Partial<Pick<NodeJS.ProcessEnv, 'LANGCHAIN_PLANNER_MODEL' | 'OPENAI_API_KEY'>> = process.env,
 ): LangChainPlannerConfig {
@@ -38,9 +53,24 @@ export function getLangChainPlannerConfig(
 export async function generateLangChainPlan(
   input: LangChainPlannerInput,
   invoker: PlannerInvoker = createDefaultPlannerInvoker(),
+  options: LangChainPlannerOptions = {},
 ): Promise<ParsedPlan> {
-  const output = await invoker.invoke(buildPlannerMessages(input));
-  return parsePlanArtifact(output);
+  const maxAttempts = Math.max(1, options.maxAttempts ?? 2);
+  const messages = buildPlannerMessages(input);
+  let lastOutput = '';
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      lastOutput = await invoker.invoke(messages);
+      return parsePlanArtifact(lastOutput);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  const detail = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new LangChainPlannerError(`LangChain Planner failed after ${maxAttempts} attempts: ${detail}`, lastOutput, lastError);
 }
 
 export function buildPlannerMessages(input: LangChainPlannerInput): PlannerMessage[] {

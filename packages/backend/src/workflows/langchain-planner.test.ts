@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractPlannerText, generateLangChainPlan, getLangChainPlannerConfig } from './langchain-planner.js';
+import {
+  LangChainPlannerError,
+  extractPlannerText,
+  generateLangChainPlan,
+  getLangChainPlannerConfig,
+} from './langchain-planner.js';
 import type { Room, RoomAgent, Task } from '../types.js';
 
 test('getLangChainPlannerConfig returns disabled config when no model is configured', () => {
@@ -90,6 +95,48 @@ test('generateLangChainPlan validates model output into ParsedPlan', async () =>
   assert.equal(plan.tasks[0]?.suggestedRole, 'executor');
 });
 
+test('generateLangChainPlan retries once after invalid model output', async () => {
+  let attempts = 0;
+  const plan = await generateLangChainPlan(
+    basePlannerInput(),
+    {
+      async invoke() {
+        attempts += 1;
+        if (attempts === 1) return '{"goal":"missing required modern fields","steps":[]}';
+        return validPlannerOutput();
+      },
+    },
+    { maxAttempts: 2 },
+  );
+
+  assert.equal(attempts, 2);
+  assert.equal(plan.tasks.length, 1);
+});
+
+test('generateLangChainPlan reports final raw output when retries fail', async () => {
+  let attempts = 0;
+  await assert.rejects(
+    () =>
+      generateLangChainPlan(
+        basePlannerInput(),
+        {
+          async invoke() {
+            attempts += 1;
+            return attempts === 1 ? '{"goal":"first invalid","steps":[]}' : '{"goal":"second invalid","steps":[]}';
+          },
+        },
+        { maxAttempts: 2 },
+      ),
+    (err) => {
+      assert.ok(err instanceof LangChainPlannerError);
+      assert.equal(err.rawOutput, '{"goal":"second invalid","steps":[]}');
+      assert.match(err.message, /failed after 2 attempts/i);
+      return true;
+    },
+  );
+  assert.equal(attempts, 2);
+});
+
 test('extractPlannerText concatenates text content blocks', () => {
   const text = extractPlannerText([
     { type: 'text', text: '```json\n' },
@@ -99,6 +146,49 @@ test('extractPlannerText concatenates text content blocks', () => {
 
   assert.equal(text, '```json\n{"goal":"Ship"}{"type":"unknown","value":"fallback"}');
 });
+
+function basePlannerInput() {
+  return {
+    projectName: 'OpenDeepSea',
+    projectPath: '/repo/openDeepSea',
+    room: fakeRoom(),
+    task: fakeTask(),
+    agents: [fakeAgent()],
+    memories: [],
+    recentMessages: [],
+  };
+}
+
+function validPlannerOutput(): string {
+  return `\`\`\`json
+{
+  "goal": "Implement LangChain planner service",
+  "summary": "Create a testable planner service.",
+  "assumptions": ["Use fake invoker in tests."],
+  "steps": [
+    {
+      "title": "Implement planner service",
+      "intent": "Add service API that formats context and parses model output.",
+      "assigneeRole": "executor",
+      "preferredBackend": "codex",
+      "scopeRead": ["packages/backend/src/workflows/langchain-planner.ts"],
+      "scopeWrite": ["packages/backend/src/workflows/langchain-planner.ts"],
+      "acceptance": ["Service returns ParsedPlan."],
+      "dependsOn": []
+    }
+  ],
+  "risks": [],
+  "verification": [
+    {
+      "command": "node --import tsx --test src/workflows/langchain-planner.test.ts",
+      "reason": "Verify planner service behavior.",
+      "required": true
+    }
+  ],
+  "needsApproval": false
+}
+\`\`\``;
+}
 
 function fakeRoom(overrides: Partial<Room> = {}): Room {
   return {

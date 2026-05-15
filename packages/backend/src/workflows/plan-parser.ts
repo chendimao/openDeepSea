@@ -54,20 +54,20 @@ const langChainPlanStepSchema = z.object({
   intent: z.string().min(1),
   assigneeRole: workflowRoleSchema,
   preferredBackend: acpBackendSchema.optional(),
-  scopeRead: z.array(z.string()).default([]),
-  scopeWrite: z.array(z.string()).default([]),
+  scopeRead: z.array(z.string()),
+  scopeWrite: z.array(z.string()),
   acceptance: z.array(z.string().min(1)).min(1),
-  dependsOn: z.array(z.string()).default([]),
+  dependsOn: z.array(z.string()),
 });
 
 const langChainPlanSchema = z.object({
   goal: z.string().min(1),
   summary: z.string().min(1),
-  assumptions: z.array(z.string()).default([]),
+  assumptions: z.array(z.string()),
   steps: z.array(langChainPlanStepSchema).min(1),
-  risks: z.array(z.string()).default([]),
-  verification: z.array(verificationCommandSchema).default([]),
-  needsApproval: z.boolean().default(true),
+  risks: z.array(z.string()),
+  verification: z.array(verificationCommandSchema),
+  needsApproval: z.boolean(),
 });
 
 const reviewVerdictSchema = z.object({

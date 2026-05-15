@@ -23,6 +23,7 @@ import {
   type ParsedPlan,
 } from './plan-parser.js';
 import {
+  LangChainPlannerError,
   generateLangChainPlan,
   getLangChainPlannerConfig,
   type LangChainPlannerConfig,
@@ -619,6 +620,17 @@ function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
       if (!latest || !latestStep || shouldSkipAsyncWorkflowCompletion(latest, latestStep)) return;
       const error = (err as Error).message;
       markStepFailed(latest, latestStep, error);
+      if (err instanceof LangChainPlannerError && err.rawOutput) {
+        const artifact = workflowRepo.createArtifact({
+          task_id: latest.task_id,
+          workflow_run_id: latest.id,
+          workflow_step_id: latestStep.id,
+          artifact_type: 'plan',
+          title: '未解析计划',
+          content: err.rawOutput,
+        });
+        broadcastArtifact(latest.room_id, artifact);
+      }
       block(latest, error);
     });
 }

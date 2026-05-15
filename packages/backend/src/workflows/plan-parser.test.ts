@@ -140,6 +140,59 @@ test('parsePlanArtifact rejects modern steps missing acceptance', () => {
   );
 });
 
+test('parsePlanArtifact rejects modern steps missing required scope fields', () => {
+  assert.throws(
+    () =>
+      parsePlanArtifact(`
+{
+  "goal": "交付 LangChain 结构化计划解析",
+  "summary": "定义现代计划结构并兼容旧格式",
+  "assumptions": [],
+  "steps": [
+    {
+      "title": "实现现代计划解析",
+      "intent": "解析 LangChain planner 输出并映射到任务模型",
+      "assigneeRole": "executor",
+      "scopeRead": ["packages/backend/src/workflows/plan-parser.ts"],
+      "acceptance": ["现代 steps 被归一化为 tasks"],
+      "dependsOn": []
+    }
+  ],
+  "risks": [],
+  "verification": [],
+  "needsApproval": false
+}
+`),
+    /scopeWrite/i,
+  );
+});
+
+test('parsePlanArtifact rejects modern plan missing required root fields', () => {
+  assert.throws(
+    () =>
+      parsePlanArtifact(`
+{
+  "goal": "交付 LangChain 结构化计划解析",
+  "summary": "定义现代计划结构并兼容旧格式",
+  "steps": [
+    {
+      "title": "实现现代计划解析",
+      "intent": "解析 LangChain planner 输出并映射到任务模型",
+      "assigneeRole": "executor",
+      "scopeRead": ["packages/backend/src/workflows/plan-parser.ts"],
+      "scopeWrite": ["packages/backend/src/workflows/plan-parser.ts"],
+      "acceptance": ["现代 steps 被归一化为 tasks"],
+      "dependsOn": []
+    }
+  ],
+  "risks": [],
+  "verification": []
+}
+`),
+    /assumptions/i,
+  );
+});
+
 test('parsePlanArtifact rejects invalid modern steps even when legacy tasks are valid', () => {
   assert.throws(
     () =>
