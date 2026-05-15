@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildClaudeCodeArgs, buildClaudeCodePrompt, normalizeStdoutChunk } from './claudecode.js';
+import { buildClaudeCodeArgs, buildClaudeCodePrompt, createStdoutNormalizer, normalizeStdoutChunk } from './claudecode.js';
 
 test('buildClaudeCodeArgs maps bypass to bypassPermissions', () => {
   assert.deepEqual(
@@ -136,4 +136,43 @@ test('normalizeStdoutChunk ignores OpenCode user echo text events without assist
   });
 
   assert.deepEqual(normalizeStdoutChunk(`${userEcho}\n`), []);
+});
+
+test('OpenCode updated text snapshots stream only appended delta', () => {
+  const normalize = createStdoutNormalizer();
+  const first = JSON.stringify({
+    type: 'message.part.updated',
+    data: {
+      part: {
+        id: 'part-1',
+        type: 'text',
+        text: '第一行\n',
+      },
+    },
+  });
+  const second = JSON.stringify({
+    type: 'message.part.updated',
+    data: {
+      part: {
+        id: 'part-1',
+        type: 'text',
+        text: '第一行\n第二行',
+      },
+    },
+  });
+
+  assert.deepEqual(normalize(`${first}\n`), [
+    {
+      channel: 'answer',
+      text: '第一行\n',
+      rawType: 'message.part.updated',
+    },
+  ]);
+  assert.deepEqual(normalize(`${second}\n`), [
+    {
+      channel: 'answer',
+      text: '第二行',
+      rawType: 'message.part.updated',
+    },
+  ]);
 });

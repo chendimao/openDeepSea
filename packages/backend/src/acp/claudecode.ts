@@ -154,12 +154,13 @@ function runStreaming(
     let stderr = '';
     let detectedSession: string | null = null;
     let stdoutBuffer = '';
+    const normalizeStdout = createStdoutNormalizer();
     child.stdout.setEncoding('utf-8');
     child.stderr.setEncoding('utf-8');
     child.stdout.on('data', (data: string) => {
       const parsed = takeCompleteLines(stdoutBuffer + data);
       stdoutBuffer = parsed.rest;
-      for (const chunk of normalizeStdoutChunk(parsed.complete)) {
+      for (const chunk of normalizeStdout(parsed.complete)) {
         onChunk({ stream: 'stdout', ...chunk });
       }
       const m = data.match(/"session_id"\s*:\s*"([^"]+)"/);
@@ -181,7 +182,7 @@ function runStreaming(
     });
     child.on('close', (code) => {
       if (stdoutBuffer) {
-        for (const chunk of normalizeStdoutChunk(stdoutBuffer)) {
+        for (const chunk of normalizeStdout(stdoutBuffer)) {
           onChunk({ stream: 'stdout', ...chunk });
         }
         stdoutBuffer = '';
@@ -224,6 +225,26 @@ export function normalizeStdoutChunk(data: string): Array<{
   text: string;
   rawType?: string;
 }> {
+  return createStdoutNormalizer()(data);
+}
+
+export function createStdoutNormalizer(): (data: string) => Array<{
+  channel: 'answer' | 'activity';
+  text: string;
+  rawType?: string;
+}> {
+  const snapshots = new Map<string, string>();
+  return (data: string) => normalizeStdoutChunkWithSnapshots(data, snapshots);
+}
+
+function normalizeStdoutChunkWithSnapshots(
+  data: string,
+  snapshots: Map<string, string>,
+): Array<{
+  channel: 'answer' | 'activity';
+  text: string;
+  rawType?: string;
+}> {
   const lines = data.split('\n');
   const normalized = lines.map((line, index) => {
     if (!line.trim()) return index === lines.length - 1 ? '' : line;
@@ -243,7 +264,7 @@ export function normalizeStdoutChunk(data: string): Array<{
         }
         return {
           channel: 'answer' as const,
-          text,
+          text: toOpenCodeTextDelta(obj, text, snapshots),
           rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
         };
       }
@@ -264,6 +285,17 @@ export function normalizeStdoutChunk(data: string): Array<{
     text: string;
     rawType?: string;
   }>;
+}
+
+function toOpenCodeTextDelta(obj: Record<string, unknown>, text: string, snapshots: Map<string, string>): string {
+  const type = typeof obj['type'] === 'string' ? obj['type'] : '';
+  if (type !== 'message.part.updated') return text;
+  const part = getOpenCodeTextPart(obj);
+  const partId = typeof part?.['id'] === 'string' ? part.id : null;
+  if (!partId) return text;
+  const previous = snapshots.get(partId) ?? '';
+  snapshots.set(partId, text);
+  return text.startsWith(previous) ? text.slice(previous.length) : text;
 }
 
 function parseJsonLines(data: string): Record<string, unknown>[] {
@@ -445,14 +477,18 @@ function isOpenCodeTextEvent(obj: Record<string, unknown>): boolean {
   const type = typeof obj['type'] === 'string' ? obj['type'] : '';
   if (type !== 'text' && type !== 'message.part.updated') return false;
 
-  const data = asRecord(obj['data']) ?? asRecord(obj['properties']) ?? asRecord(obj['payload']) ?? obj;
-  const part = asRecord(data['part']) ?? data;
+  const part = getOpenCodeTextPart(obj);
   if (part['type'] !== 'text' || typeof part['text'] !== 'string') return false;
   const metadata = asRecord(part['metadata']);
   const openai = metadata ? asRecord(metadata['openai']) : null;
   if (openai?.['phase'] === 'final_answer') return true;
   if (openai?.['phase'] !== undefined) return false;
-  return !!asRecord(part['time']);
+  return type === 'message.part.updated' || !!asRecord(part['time']);
+}
+
+function getOpenCodeTextPart(obj: Record<string, unknown>): Record<string, unknown> {
+  const data = asRecord(obj['data']) ?? asRecord(obj['properties']) ?? asRecord(obj['payload']) ?? obj;
+  return asRecord(data['part']) ?? data;
 }
 
 function extractContentText(content: unknown): string | null {
