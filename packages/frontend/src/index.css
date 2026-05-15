@@ -185,6 +185,33 @@
   ::-webkit-scrollbar-track { background: transparent; }
 }
 
+@layer components {
+  .prompt-area-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    vertical-align: baseline;
+    margin: 0 1px;
+    background-color: var(--secondary, rgba(10,132,255,0.13));
+    color: var(--foreground, var(--color-primary));
+  }
+  .prompt-area-md-marker {
+    font-size: 0;
+    display: inline;
+  }
+  .prompt-area-chip--inline {
+    padding: 0;
+    border-radius: 0;
+    margin: 0;
+    font-weight: 700;
+  }
+}
+
 @layer utilities {
   .font-display { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif; }
   .font-mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -612,12 +639,15 @@
     gap: 10px;
     padding: 10px;
   }
-  .rich-composer-editor {
+  .rich-composer-box .prompt-area-editor {
     display: block;
     min-height: 44px;
     max-height: 152px;
     min-width: 0;
+    width: 100%;
+    resize: none;
     overflow-y: auto;
+    border: 0;
     border-radius: 10px;
     background: transparent;
     padding: 6px 7px;
@@ -628,26 +658,67 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  .rich-composer-editor:focus-visible {
+  .rich-composer-box {
+    --background: var(--color-surface);
+    --foreground: var(--color-fg);
+    --secondary: rgba(10,132,255,0.13);
+    --muted-foreground: var(--color-muted);
+    --prompt-area-surface: var(--color-surface);
+  }
+  .rich-composer-box .prompt-area-editor:focus-visible {
     box-shadow: inset 0 0 0 1px rgba(10,132,255,0.28);
   }
-  .rich-composer-editor:empty::before {
-    content: attr(data-placeholder);
+  .rich-composer-box .prompt-area-editor + .pointer-events-none {
+    top: 6px;
+    left: 7px;
     color: var(--color-muted);
-    pointer-events: none;
+    font-size: 13px;
+    line-height: 1.55;
   }
-  .composer-mention-token {
-    display: inline-flex;
-    max-width: 100%;
-    align-items: center;
+  .prompt-area-placeholder-frame {
+    animation: prompt-area-placeholder-in 300ms ease-out;
+  }
+  @keyframes prompt-area-placeholder-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .rich-composer-box .prompt-area-chip {
     border-radius: 999px;
     background: rgba(10,132,255,0.13);
     box-shadow: inset 0 0 0 1px rgba(10,132,255,0.24);
     color: var(--color-primary);
+    font-size: 12.5px;
     font-weight: 600;
     line-height: 1.35;
     padding: 2px 7px;
-    white-space: nowrap;
+  }
+  .rich-composer-box .prompt-area-chip--inline {
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
+  }
+  .rich-composer-box [role="listbox"] {
+    border: 1px solid rgba(255,255,255,0.58);
+    border-radius: 8px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-mention);
+    backdrop-filter: blur(24px) saturate(1.35);
+  }
+  .rich-composer-box [role="option"] {
+    color: var(--color-fg-muted);
+    font-size: 12.5px;
+  }
+  .rich-composer-box [role="option"]:hover,
+  .rich-composer-box [role="option"][aria-selected="true"] {
+    background: var(--color-surface-raised);
+    color: var(--color-primary);
   }
   .composer-attachments {
     display: grid;
@@ -1467,7 +1538,9 @@
   [data-theme="minimal-light"] .command-menu,
   [data-theme="minimal-dark"] .command-menu,
   [data-theme="minimal-light"] .mention-menu,
-  [data-theme="minimal-dark"] .mention-menu {
+  [data-theme="minimal-dark"] .mention-menu,
+  [data-theme="minimal-light"] .rich-composer-box [role="listbox"],
+  [data-theme="minimal-dark"] .rich-composer-box [role="listbox"] {
     border: 1px solid var(--color-border);
     border-radius: 4px;
     background: var(--color-surface);
