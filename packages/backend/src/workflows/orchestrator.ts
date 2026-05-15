@@ -1,5 +1,6 @@
 import { respondAsAgent } from '../dispatcher.js';
 import { formatMemoryContext } from '../memory/context.js';
+import { distillFromTask } from '../memory/distill.js';
 import { agentRunRepo } from '../repos/agent-runs.js';
 import { memoryRepo } from '../repos/memory.js';
 import { projectRepo } from '../repos/projects.js';
@@ -1000,6 +1001,15 @@ export function rememberAcceptedTask(run: WorkflowRun, verdict: ParsedAcceptance
       content: buildTaskSummaryMemoryContent(completedTask.title, verdict),
       source_id: run.id,
     });
+    // Async deep distillation from full task conversation
+    distillFromTask({
+      projectId: run.project_id,
+      roomId: run.room_id,
+      taskId: run.task_id,
+      taskTitle: completedTask.title,
+      taskSummary: buildTaskSummaryMemoryContent(completedTask.title, verdict),
+      sourceId: run.id,
+    }).catch((err) => console.warn(`[distill] task distill error: ${(err as Error).message}`));
   } catch (err) {
     console.warn(`[memory] failed to save workflow task summary: ${(err as Error).message}`);
   }
