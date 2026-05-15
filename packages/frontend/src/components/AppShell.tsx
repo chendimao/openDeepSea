@@ -8,22 +8,17 @@ import {
   GitBranch,
   Home,
   Loader2,
-  Moon,
-  PanelTop,
   Plus,
   RefreshCw,
   Search,
   Server,
   Settings,
-  Sparkles,
   SquareCheck,
-  Sun,
   Wifi,
   WifiOff,
-  type LucideIcon,
 } from 'lucide-react';
 import { api } from '../lib/api';
-import { useI18n, type Locale } from '../lib/i18n';
+import { useI18n } from '../lib/i18n';
 import { cn, truncate } from '../lib/utils';
 import { roomSocket } from '../lib/ws';
 import { LobsterMark } from './LobsterMark';
@@ -31,16 +26,7 @@ import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
 import { SystemSettingsDialog } from './SettingsDialogs';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
-import {
-  createThemeMode,
-  getThemeStyle,
-  getThemeTone,
-  THEME_STYLES,
-  THEME_TONES,
-  type ThemeMode,
-  type ThemeStyle,
-  type ThemeTone,
-} from '../lib/theme';
+import { type ThemeMode } from '../lib/theme';
 
 export function AppShell({
   children,
@@ -154,7 +140,7 @@ function ProjectSidebar({
                 <Plus className="h-3.5 w-3.5" strokeWidth={1.9} />
               </button>
             </CreateProjectDialog>
-            <SystemSettingsDialog>
+            <SystemSettingsDialog theme={theme} onThemeChange={onThemeChange}>
               <button type="button" aria-label={t('shell.systemSettings')} className="sidebar-icon-button">
                 <Settings className="h-3.5 w-3.5" strokeWidth={1.75} />
               </button>
@@ -242,105 +228,12 @@ function ProjectSidebar({
       </div>
 
       <div className="px-5 pb-4">
-        <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
-        <LanguageToggle />
         <OpenClawGatewayDialog
           health={health}
           healthError={healthError}
           healthLoading={healthLoading}
         />
       </div>
-    </div>
-  );
-}
-
-function ThemeToggle({
-  theme,
-  onThemeChange,
-}: {
-  theme: ThemeMode;
-  onThemeChange: (theme: ThemeMode) => void;
-}): JSX.Element {
-  const { t } = useI18n();
-  const style = getThemeStyle(theme);
-  const tone = getThemeTone(theme);
-  const styleIcons: Record<ThemeStyle, LucideIcon> = {
-    apple: Sparkles,
-    minimal: PanelTop,
-  };
-  const toneIcons: Record<ThemeTone, LucideIcon> = {
-    light: Sun,
-    dark: Moon,
-  };
-  const styleLabels: Record<ThemeStyle, string> = {
-    apple: t('theme.style.apple'),
-    minimal: t('theme.style.minimal'),
-  };
-  const toneLabels: Record<ThemeTone, string> = {
-    light: t('theme.tone.light'),
-    dark: t('theme.tone.dark'),
-  };
-
-  return (
-    <div className="theme-toggle-stack mb-2" aria-label={t('theme.label')}>
-      <div className="theme-toggle" role="group" aria-label={t('theme.style.label')}>
-        {THEME_STYLES.map((option) => {
-          const Icon = styleIcons[option];
-          return (
-            <button
-              key={option}
-              type="button"
-              className={cn('theme-toggle-option', style === option && 'is-active')}
-              aria-pressed={style === option}
-              onClick={() => onThemeChange(createThemeMode(option, tone))}
-            >
-              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-              <span>{styleLabels[option]}</span>
-            </button>
-          );
-        })}
-      </div>
-      <div className="theme-toggle" role="group" aria-label={t('theme.tone.label')}>
-        {THEME_TONES.map((option) => {
-          const Icon = toneIcons[option];
-          return (
-            <button
-              key={option}
-              type="button"
-              className={cn('theme-toggle-option', tone === option && 'is-active')}
-              aria-pressed={tone === option}
-              onClick={() => onThemeChange(createThemeMode(style, option))}
-            >
-              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-              <span>{toneLabels[option]}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function LanguageToggle(): JSX.Element {
-  const { locale, setLocale, t } = useI18n();
-  const options: Array<{ value: Locale; label: string }> = [
-    { value: 'zh', label: t('language.zh') },
-    { value: 'en', label: t('language.en') },
-  ];
-
-  return (
-    <div className="theme-toggle mb-2" role="group" aria-label={t('language.label')}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          className={cn('theme-toggle-option', locale === option.value && 'is-active')}
-          aria-pressed={locale === option.value}
-          onClick={() => setLocale(option.value)}
-        >
-          <span>{option.label}</span>
-        </button>
-      ))}
     </div>
   );
 }

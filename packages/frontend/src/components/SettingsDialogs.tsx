@@ -1,9 +1,32 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, RotateCcw, Save, Settings2, ShieldCheck } from 'lucide-react';
+import {
+  Bot,
+  Globe2,
+  Moon,
+  PanelTop,
+  RotateCcw,
+  Save,
+  Settings2,
+  ShieldCheck,
+  Sparkles,
+  Sun,
+  SwatchBook,
+  type LucideIcon,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { useI18n, type MessageKey } from '../lib/i18n';
+import { useI18n, type Locale, type MessageKey } from '../lib/i18n';
+import {
+  createThemeMode,
+  getThemeStyle,
+  getThemeTone,
+  THEME_STYLES,
+  THEME_TONES,
+  type ThemeMode,
+  type ThemeStyle,
+  type ThemeTone,
+} from '../lib/theme';
 import {
   type EffectiveSettings,
   type MessageRoutingMode,
@@ -43,8 +66,12 @@ const DEFAULT_SYSTEM_SETTINGS: EffectiveSettings = {
 
 export function SystemSettingsDialog({
   children,
+  theme,
+  onThemeChange,
 }: {
   children: ReactNode;
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
@@ -74,8 +101,10 @@ export function SystemSettingsDialog({
       >
         <SystemSettingsForm
           key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}`}
+          theme={theme}
           value={settings}
           isSaving={save.isPending}
+          onThemeChange={onThemeChange}
           onSave={(patch) => save.mutate(patch)}
         />
       </DialogContent>
@@ -186,12 +215,16 @@ export function RoomSettingsDialog({
 }
 
 function SystemSettingsForm({
+  theme,
   value,
   isSaving,
+  onThemeChange,
   onSave,
 }: {
+  theme: ThemeMode;
   value: EffectiveSettings;
   isSaving: boolean;
+  onThemeChange: (theme: ThemeMode) => void;
   onSave: (patch: {
     message_routing_mode: MessageRoutingMode;
     fallback_agent_id: string | null;
@@ -223,7 +256,13 @@ function SystemSettingsForm({
         </Button>
       }
     >
-      <SettingGroup title={t('settings.defaultRouting')} icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
+      <SettingGroup title={t('settings.appearance')} icon={<SwatchBook className="h-4 w-4" strokeWidth={1.75} />}>
+        <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
+      </SettingGroup>
+      <SettingGroup title={t('settings.language')} icon={<Globe2 className="h-4 w-4" strokeWidth={1.75} />}>
+        <LanguageSection />
+      </SettingGroup>
+      <SettingGroup title={t('settings.collaborationDefaults')} icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
         <RoutingSection
           mode={routingMode}
           fallbackAgentId={fallbackAgentId}
@@ -234,8 +273,6 @@ function SystemSettingsForm({
           }}
           onFallbackAgentChange={setFallbackAgentId}
         />
-      </SettingGroup>
-      <SettingGroup title={t('settings.defaultInteraction')} icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
         <InteractionSection
           mode={interactionMode}
           inheritedLabel={null}
@@ -245,6 +282,116 @@ function SystemSettingsForm({
         />
       </SettingGroup>
     </SettingsDialogBody>
+  );
+}
+
+function AppearanceSection({
+  theme,
+  onThemeChange,
+}: {
+  theme: ThemeMode;
+  onThemeChange: (theme: ThemeMode) => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const style = getThemeStyle(theme);
+  const tone = getThemeTone(theme);
+  const styleIcons: Record<ThemeStyle, LucideIcon> = {
+    apple: Sparkles,
+    minimal: PanelTop,
+  };
+  const toneIcons: Record<ThemeTone, LucideIcon> = {
+    light: Sun,
+    dark: Moon,
+  };
+  const styleLabels: Record<ThemeStyle, string> = {
+    apple: t('theme.style.apple'),
+    minimal: t('theme.style.minimal'),
+  };
+  const toneLabels: Record<ThemeTone, string> = {
+    light: t('theme.tone.light'),
+    dark: t('theme.tone.dark'),
+  };
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      <SegmentedSetting
+        label={t('theme.style.label')}
+        ariaLabel={t('theme.style.label')}
+        options={THEME_STYLES.map((option) => ({
+          value: option,
+          label: styleLabels[option],
+          icon: styleIcons[option],
+        }))}
+        value={style}
+        onChange={(nextStyle) => onThemeChange(createThemeMode(nextStyle, tone))}
+      />
+      <SegmentedSetting
+        label={t('theme.tone.label')}
+        ariaLabel={t('theme.tone.label')}
+        options={THEME_TONES.map((option) => ({
+          value: option,
+          label: toneLabels[option],
+          icon: toneIcons[option],
+        }))}
+        value={tone}
+        onChange={(nextTone) => onThemeChange(createThemeMode(style, nextTone))}
+      />
+    </div>
+  );
+}
+
+function LanguageSection(): JSX.Element {
+  const { locale, setLocale, t } = useI18n();
+  const options: Array<{ value: Locale; label: string }> = [
+    { value: 'zh', label: t('language.zh') },
+    { value: 'en', label: t('language.en') },
+  ];
+
+  return (
+    <SegmentedSetting
+      label={t('language.label')}
+      ariaLabel={t('language.label')}
+      options={options}
+      value={locale}
+      onChange={setLocale}
+    />
+  );
+}
+
+function SegmentedSetting<T extends string>({
+  label,
+  ariaLabel,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  ariaLabel: string;
+  options: Array<{ value: T; label: string; icon?: LucideIcon }>;
+  value: T;
+  onChange: (value: T) => void;
+}): JSX.Element {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="theme-toggle mt-1.5" role="group" aria-label={ariaLabel}>
+        {options.map((option) => {
+          const Icon = option.icon;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className={cn('theme-toggle-option', value === option.value && 'is-active')}
+              aria-pressed={value === option.value}
+              onClick={() => onChange(option.value)}
+            >
+              {Icon && <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />}
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
