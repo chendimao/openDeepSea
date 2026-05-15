@@ -67,7 +67,7 @@ const langChainPlanSchema = z.object({
   steps: z.array(langChainPlanStepSchema).min(1),
   risks: z.array(z.string()).default([]),
   verification: z.array(verificationCommandSchema).default([]),
-  needsApproval: z.boolean().default(false),
+  needsApproval: z.boolean().default(true),
 });
 
 const reviewVerdictSchema = z.object({

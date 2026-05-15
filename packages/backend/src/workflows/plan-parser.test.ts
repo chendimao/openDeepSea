@@ -98,6 +98,7 @@ test('parsePlanArtifact parses modern LangChain planner shape', () => {
   assert.equal(plan.goal, '交付 LangChain 结构化计划解析');
   assert.equal(plan.summary, '定义现代计划结构并兼容旧格式');
   assert.deepEqual(plan.assumptions, ['现有 legacy plan 仍需支持']);
+  assert.equal(plan.tasks.length, 1);
   assert.equal(firstTask.title, '实现现代计划解析');
   assert.equal(firstTask.description, '解析 LangChain planner 输出并映射到任务模型');
   assert.equal(firstTask.suggestedRole, 'executor');
