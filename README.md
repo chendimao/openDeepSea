@@ -35,6 +35,16 @@ LANGCHAIN_PLANNER_MODEL=gpt-4.1-mini
 OPENAI_API_KEY=<your-api-key>
 ```
 
+### Optional: LangGraph Workflow Runtime
+
+LangGraph runtime is disabled by default during phase B migration. Enable it explicitly:
+
+```bash
+LANGGRAPH_WORKFLOW_ENABLED=1
+```
+
+When disabled, the existing workflow orchestrator remains the runtime.
+
 ## 快速开始
 
 ```bash
