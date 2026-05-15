@@ -64,7 +64,7 @@ const DEFAULT_SYSTEM_SETTINGS: EffectiveSettings = {
   interaction_mode: 'ask_user',
 };
 
-type SystemSettingsCategory = 'appearance' | 'language' | 'collaboration';
+type SystemSettingsCategory = 'general' | 'chat';
 
 export function SystemSettingsDialog({
   children,
@@ -236,7 +236,7 @@ function SystemSettingsForm({
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode>(value.message_routing_mode);
   const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? '');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
-  const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('appearance');
+  const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('general');
   const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
   const categories: Array<{
@@ -246,21 +246,15 @@ function SystemSettingsForm({
     icon: LucideIcon;
   }> = [
     {
-      value: 'appearance',
-      title: t('settings.appearance'),
-      description: t('settings.appearanceDescription'),
-      icon: SwatchBook,
+      value: 'general',
+      title: t('settings.generalSettings'),
+      description: t('settings.generalSettingsDescription'),
+      icon: Settings2,
     },
     {
-      value: 'language',
-      title: t('settings.language'),
-      description: t('settings.languageDescription'),
-      icon: Globe2,
-    },
-    {
-      value: 'collaboration',
-      title: t('settings.collaborationDefaults'),
-      description: t('settings.collaborationDefaultsDescription'),
+      value: 'chat',
+      title: t('settings.chatSettings'),
+      description: t('settings.chatSettingsDescription'),
       icon: Bot,
     },
   ];
@@ -330,10 +324,31 @@ function SystemSettingsForm({
               </p>
             </div>
           </div>
-          {activeCategory === 'appearance' && <AppearanceSection theme={theme} onThemeChange={onThemeChange} />}
-          {activeCategory === 'language' && <LanguageSection />}
-          {activeCategory === 'collaboration' && (
+          {activeCategory === 'general' && (
+            <div className="space-y-4">
+              <SubSettingSection
+                title={t('settings.appearance')}
+                description={t('settings.appearanceDescription')}
+                icon={<SwatchBook className="h-4 w-4" strokeWidth={1.75} />}
+              >
+                <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
+              </SubSettingSection>
+              <SubSettingSection
+                title={t('settings.language')}
+                description={t('settings.languageDescription')}
+                icon={<Globe2 className="h-4 w-4" strokeWidth={1.75} />}
+              >
+                <LanguageSection />
+              </SubSettingSection>
+            </div>
+          )}
+          {activeCategory === 'chat' && (
             <div className="space-y-3">
+              <SubSettingSection
+                title={t('settings.collaborationDefaults')}
+                description={t('settings.collaborationDefaultsDescription')}
+                icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}
+              >
               <RoutingSection
                 mode={routingMode}
                 fallbackAgentId={fallbackAgentId}
@@ -351,11 +366,37 @@ function SystemSettingsForm({
                   if (mode !== 'inherit') setInteractionMode(mode);
                 }}
               />
+              </SubSettingSection>
             </div>
           )}
         </section>
       </div>
     </SettingsDialogBody>
+  );
+}
+
+function SubSettingSection({
+  title,
+  description,
+  icon,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <section className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
+      <div className="mb-3 flex items-start gap-2.5">
+        <span className="mt-0.5 flex-shrink-0 text-[var(--color-accent)]">{icon}</span>
+        <div>
+          <h4 className="text-[13px] font-semibold text-[var(--color-fg)]">{title}</h4>
+          <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">{description}</p>
+        </div>
+      </div>
+      {children}
+    </section>
   );
 }
 
