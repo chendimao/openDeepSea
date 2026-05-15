@@ -411,3 +411,10 @@ Planner 分配任务时优先按 `workflow_role` 和 `capabilities` 匹配。
 - Planner 默认使用哪个 ACP backend 作为模型调用来源；可以先使用 Codex，也可以直接使用 LangChain provider。
 - 内置 Agent 模板是否项目级共享，还是每个房间单独创建。
 - 验证命令 allowlist 放在项目设置、仓库配置文件，还是系统设置中。
+
+## 阶段 A 实施记录
+
+- LangChain Planner 已作为可选 planning path 接入。
+- 未配置 `LANGCHAIN_PLANNER_MODEL` 或 `OPENAI_API_KEY` 时，系统回退到现有 ACP planning stage。
+- 内置 ACP agent 模板已支持无 OpenClaw Gateway 的 agent 创建。
+- 阶段 B 仍保留为后续 LangGraph runtime 迁移工作。
