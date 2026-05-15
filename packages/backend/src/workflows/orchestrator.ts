@@ -1,9 +1,9 @@
 import { respondAsAgent } from '../dispatcher.js';
+import { db, now } from '../db.js';
 import { formatMemoryContext } from '../memory/context.js';
 import { distillFromTask } from '../memory/distill.js';
 import { agentRunRepo } from '../repos/agent-runs.js';
 import { memoryRepo } from '../repos/memory.js';
-import { messageRepo } from '../repos/messages.js';
 import { projectRepo } from '../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../repos/rooms.js';
 import { settingsRepo } from '../repos/settings.js';
@@ -44,6 +44,10 @@ import type {
 
 const MAX_TASK_SUMMARY_MEMORY_CHARS = 4000;
 const MAX_TASK_SUMMARY_NOTES_CHARS = 2000;
+const PLANNER_RECENT_MESSAGE_LIMIT = 20;
+const PLANNER_RECENT_MESSAGE_MAX_CHARS = 1000;
+const PLANNER_RECENT_MESSAGES_TOTAL_MAX_CHARS = 8000;
+const TRUNCATED_MARKER = '...';
 
 export const workflowOrchestrator = {
   start(taskId: string): WorkflowRun {
@@ -603,7 +607,7 @@ function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
     .then((plan) => {
       const latest = workflowRepo.getRun(run.id);
       const latestStep = workflowRepo.getStep(step.id);
-      if (!latest || !latestStep || latest.status === 'cancelled' || isTerminalStep(latestStep)) return;
+      if (!latest || !latestStep || shouldSkipAsyncWorkflowCompletion(latest, latestStep)) return;
       const output = formatParsedPlanArtifact(plan);
       const completedStep = workflowRepo.updateStep(latestStep.id, { status: 'completed', result: output });
       if (completedStep) broadcastStep('workflow_step:updated', latest.room_id, completedStep);
@@ -612,7 +616,7 @@ function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
     .catch((err) => {
       const latest = workflowRepo.getRun(run.id);
       const latestStep = workflowRepo.getStep(step.id);
-      if (!latest || !latestStep || latest.status === 'cancelled' || isTerminalStep(latestStep)) return;
+      if (!latest || !latestStep || shouldSkipAsyncWorkflowCompletion(latest, latestStep)) return;
       const error = (err as Error).message;
       markStepFailed(latest, latestStep, error);
       block(latest, error);
@@ -621,13 +625,52 @@ function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
 
 function buildPlannerRecentMessages(roomId: string): string[] {
   try {
-    return messageRepo
-      .listByRoom(roomId, 20)
-      .map((message) => `${message.sender_type}:${message.sender_name ?? message.sender_id}: ${message.content}`);
+    const messages = db
+      .prepare('SELECT * FROM messages WHERE room_id = ? ORDER BY created_at DESC LIMIT ?')
+      .all(roomId, PLANNER_RECENT_MESSAGE_LIMIT) as Message[];
+    return formatRecentMessagesForPlanner(messages.reverse(), {
+      limit: PLANNER_RECENT_MESSAGE_LIMIT,
+      maxMessageChars: PLANNER_RECENT_MESSAGE_MAX_CHARS,
+      maxTotalChars: PLANNER_RECENT_MESSAGES_TOTAL_MAX_CHARS,
+    });
   } catch (err) {
     console.warn(`[workflow] failed to load planner recent messages: ${(err as Error).message}`);
     return [];
   }
+}
+
+export function formatRecentMessagesForPlanner(
+  messages: Message[],
+  options: { limit?: number; maxMessageChars?: number; maxTotalChars?: number } = {},
+): string[] {
+  const limit = Math.max(0, options.limit ?? PLANNER_RECENT_MESSAGE_LIMIT);
+  if (limit === 0) return [];
+  const maxMessageChars = Math.max(1, options.maxMessageChars ?? PLANNER_RECENT_MESSAGE_MAX_CHARS);
+  const maxTotalChars = Math.max(1, options.maxTotalChars ?? PLANNER_RECENT_MESSAGES_TOTAL_MAX_CHARS);
+  const latestMessages = messages.slice(-limit);
+  const formatted: string[] = [];
+  let totalChars = 0;
+
+  for (const message of latestMessages) {
+    const sender = message.sender_name ?? message.sender_id;
+    const content = truncatePlannerText(message.content, maxMessageChars);
+    const line = `${message.sender_type}:${sender}: ${content}`;
+    const separatorChars = formatted.length > 0 ? 1 : 0;
+    if (totalChars + separatorChars + line.length > maxTotalChars) {
+      const remaining = maxTotalChars - totalChars - separatorChars;
+      if (remaining <= TRUNCATED_MARKER.length) break;
+      formatted.push(truncatePlannerText(line, remaining));
+      break;
+    }
+    formatted.push(line);
+    totalChars += separatorChars + line.length;
+  }
+
+  return formatted;
+}
+
+export function shouldSkipAsyncWorkflowCompletion(run: WorkflowRun, step: WorkflowStep): boolean {
+  return run.status === 'cancelled' || run.status === 'completed' || run.status === 'failed' || isTerminalStep(step);
 }
 
 function isTerminalStep(step: WorkflowStep): boolean {
@@ -638,6 +681,12 @@ function isTerminalStep(step: WorkflowStep): boolean {
     step.status === 'interrupted' ||
     step.status === 'skipped'
   );
+}
+
+function truncatePlannerText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  if (maxChars <= TRUNCATED_MARKER.length) return TRUNCATED_MARKER.slice(0, maxChars);
+  return `${text.slice(0, maxChars - TRUNCATED_MARKER.length)}${TRUNCATED_MARKER}`;
 }
 
 async function safelyHandleAgentStageStartFailed(
@@ -770,6 +819,31 @@ function finishPlanning(run: WorkflowRun, step: WorkflowStep, output: string): v
       metadata: JSON.parse(JSON.stringify(plan)) as Record<string, unknown>,
     });
     broadcastArtifact(run.room_id, artifact);
+    const task = requireTask(run.task_id);
+    if (!plan.needsApproval) {
+      const completedStep = workflowRepo.updateStep(step.id, { status: 'completed', result: output });
+      if (completedStep) broadcastStep('workflow_step:updated', run.room_id, completedStep);
+      const updated = workflowRepo.updateRun(run.id, {
+        status: 'running',
+        current_stage: 'assignment',
+        error: null,
+      });
+      const approvedAt = now();
+      db.prepare('UPDATE workflow_runs SET approval_required = 0, approved_at = ?, approved_by = ?, updated_at = ? WHERE id = ?')
+        .run(approvedAt, 'system:langchain_planner', approvedAt, run.id);
+      const autoApprovedRun = workflowRepo.getRun(run.id) ?? updated ?? run;
+      broadcastWorkflow('workflow:updated', autoApprovedRun);
+      safelyRecordWorkflowEvent({
+        run: autoApprovedRun,
+        task,
+        eventType: 'workflow_plan_ready',
+        workflowStepId: step.id,
+        content: '规划阶段已完成，无需审批，自动进入 assignment 阶段。',
+      });
+      assignFromPlan(autoApprovedRun);
+      return;
+    }
+
     const updated = workflowRepo.updateRun(run.id, {
       status: 'awaiting_approval',
       current_stage: 'planning',
@@ -778,7 +852,6 @@ function finishPlanning(run: WorkflowRun, step: WorkflowStep, output: string): v
     if (updated) broadcastWorkflow('workflow:updated', updated);
     const waitingStep = workflowRepo.updateStep(step.id, { status: 'awaiting_approval' });
     if (waitingStep) broadcastStep('workflow_step:updated', run.room_id, waitingStep);
-    const task = requireTask(run.task_id);
     safelyRecordWorkflowEvent({
       run: updated ?? run,
       task,
