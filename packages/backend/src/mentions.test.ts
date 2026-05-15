@@ -13,6 +13,8 @@ function agent(input: Partial<RoomAgent> & Pick<RoomAgent, 'id' | 'agent_id' | '
     acp_backend: null,
     acp_session_id: null,
     acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
     memory_max_context_chars: null,
     ...input,
   };

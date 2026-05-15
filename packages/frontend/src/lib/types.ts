@@ -1,4 +1,5 @@
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
+export type AcpPermissionMode = 'bypass' | 'workspace-write' | 'read-only';
 export type WorkflowRole = 'analyst' | 'planner' | 'coordinator' | 'executor' | 'reviewer' | 'acceptor';
 export type WorkflowStatus =
   | 'draft'
@@ -114,6 +115,8 @@ export interface RoomAgent {
   acp_backend: AcpBackend | null;
   acp_session_id: string | null;
   acp_session_label: string | null;
+  acp_permission_mode: AcpPermissionMode;
+  acp_writable_dirs: string[];
 }
 
 export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';

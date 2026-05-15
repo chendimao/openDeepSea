@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CliSessionSummary } from '../types.js';
+import type { AcpPermissionMode } from '../types.js';
 import type { SessionAdapter } from './types.js';
 import { runStreaming } from './claudecode.js';
 
@@ -67,11 +68,29 @@ export const openCodeAdapter: SessionAdapter = {
     }
   },
 
-  async invoke({ projectPath, sessionId, prompt, onChunk, onSession, signal }) {
-    const args: string[] = ['run'];
-    if (sessionId) args.push('--session', sessionId);
-    args.push('--model', process.env.OPENCLAW_OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL);
-    args.push(prompt);
+  async invoke({ projectPath, sessionId, prompt, acpPermissionMode, onChunk, onSession, signal }) {
+    const args = buildOpenCodeArgs({
+      sessionId,
+      prompt,
+      permissionMode: acpPermissionMode ?? 'bypass',
+      model: process.env.OPENCLAW_OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL,
+    });
     return runStreaming('opencode', args, projectPath, onChunk, signal, onSession);
   },
 };
+
+export function buildOpenCodeArgs(args: {
+  sessionId: string | null;
+  prompt: string;
+  permissionMode: AcpPermissionMode;
+  model: string;
+}): string[] {
+  const cliArgs: string[] = ['run'];
+  if (args.sessionId) cliArgs.push('--session', args.sessionId);
+  cliArgs.push('--format', 'json', '--model', args.model);
+  if (args.permissionMode === 'bypass') {
+    cliArgs.push('--dangerously-skip-permissions');
+  }
+  cliArgs.push(args.prompt);
+  return cliArgs;
+}

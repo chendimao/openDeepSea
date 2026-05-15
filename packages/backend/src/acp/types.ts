@@ -1,4 +1,4 @@
-import type { AcpBackend, CliSessionSummary } from '../types.js';
+import type { AcpBackend, AcpPermissionMode, CliSessionSummary } from '../types.js';
 
 export type AcpStreamChannel = 'answer' | 'activity';
 
@@ -22,6 +22,8 @@ export interface SessionAdapter {
     projectPath: string;
     sessionId: string | null;
     prompt: string;
+    acpPermissionMode?: AcpPermissionMode | null;
+    acpWritableDirs?: string[] | null;
     onChunk: (chunk: AcpStreamChunk) => void;
     onSession?: (sessionId: string) => void;
     signal?: AbortSignal;

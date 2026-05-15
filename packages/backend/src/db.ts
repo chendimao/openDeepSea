@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS room_agents (
   acp_backend TEXT,
   acp_session_id TEXT,
   acp_session_label TEXT,
+  acp_permission_mode TEXT NOT NULL DEFAULT 'bypass',
+  acp_writable_dirs TEXT NOT NULL DEFAULT '[]',
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
   UNIQUE (room_id, agent_id)
 );
@@ -329,6 +331,12 @@ const roomAgentColumns = db.prepare('PRAGMA table_info(room_agents)').all() as {
 const roomAgentColumnNames = new Set(roomAgentColumns.map((column) => column.name));
 if (!roomAgentColumnNames.has('workflow_role')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN workflow_role TEXT');
+}
+if (!roomAgentColumnNames.has('acp_permission_mode')) {
+  db.exec("ALTER TABLE room_agents ADD COLUMN acp_permission_mode TEXT NOT NULL DEFAULT 'bypass'");
+}
+if (!roomAgentColumnNames.has('acp_writable_dirs')) {
+  db.exec("ALTER TABLE room_agents ADD COLUMN acp_writable_dirs TEXT NOT NULL DEFAULT '[]'");
 }
 
 const agentRunColumns = db.prepare('PRAGMA table_info(agent_runs)').all() as { name: string }[];

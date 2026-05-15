@@ -295,6 +295,8 @@ export async function respondAsAgent(args: {
         projectPath,
         sessionId: agent.acp_session_id,
         prompt,
+        acpPermissionMode: agent.acp_permission_mode,
+        acpWritableDirs: agent.acp_writable_dirs,
         onChunk: (chunk) => {
           if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);
           else if (chunk.stream === 'stdout') onStdout(chunk.text);
@@ -321,6 +323,8 @@ export async function respondAsAgent(args: {
           acp_backend: agent.acp_backend,
           acp_session_id: result.sessionId,
           acp_session_label: agent.acp_session_label,
+          acp_permission_mode: agent.acp_permission_mode,
+          acp_writable_dirs: agent.acp_writable_dirs,
         });
       }
       if (controller.signal.aborted) {

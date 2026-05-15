@@ -82,13 +82,50 @@ export const claudeCodeAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, onChunk, onSession, signal }) {
-    const args = ['--print', '--output-format', 'stream-json', '--verbose'];
-    if (sessionId) args.push('--resume', sessionId);
-    args.push(prompt);
+  async invoke({ projectPath, sessionId, prompt, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+    const args = buildClaudeCodeArgs({
+      sessionId,
+      prompt,
+      permissionMode: acpPermissionMode ?? 'bypass',
+      writableDirs: acpWritableDirs ?? [],
+    });
     return runStreaming('claude', args, projectPath, onChunk, signal, onSession);
   },
 };
+
+export function buildClaudeCodeArgs(args: {
+  sessionId: string | null;
+  prompt: string;
+  permissionMode: 'bypass' | 'workspace-write' | 'read-only';
+  writableDirs: string[];
+}): string[] {
+  const cliArgs = ['--print', '--output-format', 'stream-json', '--verbose'];
+  if (args.permissionMode === 'bypass') {
+    cliArgs.push('--permission-mode', 'bypassPermissions');
+  } else if (args.permissionMode === 'workspace-write') {
+    cliArgs.push('--permission-mode', 'acceptEdits');
+    for (const dir of normalizeWritableDirs(args.writableDirs)) {
+      cliArgs.push('--add-dir', dir);
+    }
+  } else {
+    cliArgs.push('--permission-mode', 'plan');
+  }
+  if (args.sessionId) cliArgs.push('--resume', args.sessionId);
+  cliArgs.push(args.prompt);
+  return cliArgs;
+}
+
+function normalizeWritableDirs(dirs: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of dirs) {
+    const dir = raw.trim();
+    if (!dir || seen.has(dir)) continue;
+    seen.add(dir);
+    normalized.push(dir);
+  }
+  return normalized;
+}
 
 function runStreaming(
   cmd: string,
@@ -178,7 +215,7 @@ function normalizeStdoutChunk(data: string): Array<{
     if (!line.trim()) return index === lines.length - 1 ? '' : line;
     try {
       const obj = JSON.parse(line) as Record<string, unknown>;
-      if (obj['type'] === 'assistant' || obj['type'] === 'result' || isCodexAgentMessage(obj)) {
+      if (obj['type'] === 'assistant' || obj['type'] === 'result' || isCodexAgentMessage(obj) || isOpenCodeTextEvent(obj)) {
         const text = extractText(obj);
         if (!text) {
           const activity = extractActivityText(obj);
@@ -231,6 +268,16 @@ function parseJsonLines(data: string): Record<string, unknown>[] {
 function extractText(obj: Record<string, unknown>): string | null {
   if (typeof obj['result'] === 'string') return obj['result'];
   if (typeof obj['text'] === 'string') return obj['text'];
+  const data = obj['data'];
+  if (data && typeof data === 'object') {
+    const text = extractText(data as Record<string, unknown>);
+    if (text) return text;
+  }
+  const part = obj['part'];
+  if (part && typeof part === 'object') {
+    const text = extractText(part as Record<string, unknown>);
+    if (text) return text;
+  }
   const item = obj['item'];
   if (item && typeof item === 'object') {
     const text = extractText(item as Record<string, unknown>);
@@ -378,6 +425,17 @@ function isCodexAgentMessage(obj: Record<string, unknown>): boolean {
   if (obj['type'] !== 'item.completed') return false;
   const item = obj['item'];
   return !!item && typeof item === 'object' && (item as Record<string, unknown>)['type'] === 'agent_message';
+}
+
+function isOpenCodeTextEvent(obj: Record<string, unknown>): boolean {
+  const type = typeof obj['type'] === 'string' ? obj['type'] : '';
+  if (type !== 'message.part.updated') return false;
+
+  const data = asRecord(obj['data']) ?? asRecord(obj['properties']) ?? asRecord(obj['payload']) ?? obj;
+  const part = asRecord(data['part']) ?? data;
+  const metadata = asRecord(part['metadata']);
+  const openai = metadata ? asRecord(metadata['openai']) : null;
+  return part['type'] === 'text' && openai?.['phase'] === 'final_answer';
 }
 
 function extractContentText(content: unknown): string | null {

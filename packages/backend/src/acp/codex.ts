@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { CliSessionSummary } from '../types.js';
+import type { AcpPermissionMode, CliSessionSummary } from '../types.js';
 import type { SessionAdapter } from './types.js';
 import { runStreaming } from './claudecode.js';
 
@@ -114,10 +114,49 @@ export const codexAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, onChunk, onSession, signal }) {
-    const args: string[] = ['exec', '--json'];
-    if (sessionId) args.push('resume', sessionId);
-    args.push(prompt);
+  async invoke({ projectPath, sessionId, prompt, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+    const args = buildCodexExecArgs({
+      sessionId,
+      prompt,
+      permissionMode: acpPermissionMode ?? 'bypass',
+      writableDirs: acpWritableDirs ?? [],
+    });
     return runStreaming('codex', args, projectPath, onChunk, signal, onSession);
   },
 };
+
+export function buildCodexExecArgs(args: {
+  sessionId: string | null;
+  prompt: string;
+  permissionMode: AcpPermissionMode;
+  writableDirs: string[];
+}): string[] {
+  const cliArgs: string[] = ['exec', '--json'];
+
+  if (args.permissionMode === 'bypass') {
+    cliArgs.push('--dangerously-bypass-approvals-and-sandbox');
+  } else {
+    cliArgs.push('--sandbox', args.permissionMode);
+    if (args.permissionMode === 'workspace-write') {
+      for (const dir of normalizeWritableDirs(args.writableDirs)) {
+        cliArgs.push('--add-dir', dir);
+      }
+    }
+  }
+
+  if (args.sessionId) cliArgs.push('resume', args.sessionId);
+  cliArgs.push(args.prompt);
+  return cliArgs;
+}
+
+function normalizeWritableDirs(dirs: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of dirs) {
+    const dir = raw.trim();
+    if (!dir || seen.has(dir)) continue;
+    seen.add(dir);
+    normalized.push(dir);
+  }
+  return normalized;
+}

@@ -180,6 +180,8 @@ export const api = {
       acp_backend: AcpBackend | null;
       acp_session_id: string | null;
       acp_session_label?: string | null;
+      acp_permission_mode?: 'bypass' | 'workspace-write' | 'read-only';
+      acp_writable_dirs?: string[];
     },
   ) =>
     request<RoomAgent>(`/rooms/${roomId}/agents/${agentId}/acp`, {

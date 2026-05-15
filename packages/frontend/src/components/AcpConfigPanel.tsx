@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Code2, Sparkles, Terminal, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { useI18n } from '../lib/i18n';
-import type { AcpBackend, RoomAgent, WorkflowRole } from '../lib/types';
+import { type MessageKey, useI18n } from '../lib/i18n';
+import type { AcpBackend, AcpPermissionMode, RoomAgent, WorkflowRole } from '../lib/types';
 import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 
@@ -12,6 +12,14 @@ const BACKENDS: { id: AcpBackend; label: string; icon: typeof Code2 }[] = [
   { id: 'claudecode', label: 'Claude Code', icon: Sparkles },
   { id: 'opencode', label: 'OpenCode', icon: Terminal },
   { id: 'codex', label: 'Codex', icon: Code2 },
+];
+
+type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
+
+const CODEX_PERMISSION_MODES: { id: AcpPermissionMode; titleKey: MessageKey; descriptionKey: MessageKey }[] = [
+  { id: 'bypass', titleKey: 'acp.permission.bypass', descriptionKey: 'acp.permission.bypassHelp' },
+  { id: 'workspace-write', titleKey: 'acp.permission.workspaceWrite', descriptionKey: 'acp.permission.workspaceWriteHelp' },
+  { id: 'read-only', titleKey: 'acp.permission.readOnly', descriptionKey: 'acp.permission.readOnlyHelp' },
 ];
 
 export function AcpConfigPanel({
@@ -29,6 +37,8 @@ export function AcpConfigPanel({
   const [backend, setBackend] = useState<AcpBackend | null>(agent.acp_backend);
   const [sessionId, setSessionId] = useState<string | null>(agent.acp_session_id);
   const [workflowRole, setWorkflowRole] = useState<WorkflowRole | null>(agent.workflow_role);
+  const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(agent.acp_permission_mode ?? 'bypass');
+  const [writableDirsText, setWritableDirsText] = useState((agent.acp_writable_dirs ?? []).join('\n'));
   const queryClient = useQueryClient();
   const { formatRelativeTime, t, workflowRoleLabel } = useI18n();
 
@@ -37,6 +47,8 @@ export function AcpConfigPanel({
     setBackend(agent.acp_backend);
     setSessionId(agent.acp_session_id);
     setWorkflowRole(agent.workflow_role);
+    setPermissionMode(agent.acp_permission_mode ?? 'bypass');
+    setWritableDirsText((agent.acp_writable_dirs ?? []).join('\n'));
   }, [agent]);
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
@@ -53,6 +65,8 @@ export function AcpConfigPanel({
         acp_backend: enabled ? backend : null,
         acp_session_id: enabled ? sessionId : null,
         acp_session_label: label,
+        acp_permission_mode: permissionMode,
+        acp_writable_dirs: parseWritableDirs(writableDirsText),
       });
       return api.setAgentWorkflowRole(roomId, updated.id, workflowRole);
     },
@@ -180,6 +194,68 @@ export function AcpConfigPanel({
             </section>
 
             {backend && (
+              <>
+              <section>
+                <div className="font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">
+                  {t('acp.permissionLabel')}
+                </div>
+                <div className="space-y-2">
+                  {CODEX_PERMISSION_MODES.map((mode) => {
+                    const selected = permissionMode === mode.id;
+                    return (
+                      <button
+                        type="button"
+                        key={mode.id}
+                        onClick={() => setPermissionMode(mode.id)}
+                        className={cn(
+                          'w-full surface-1 rounded-lg px-3 py-2.5 text-left ease-ocean transition-all',
+                          selected
+                            ? 'border-[var(--color-primary)] glow-primary'
+                            : 'hover:border-[var(--color-border-strong)]',
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-display text-[13px] font-medium">{t(mode.titleKey)}</span>
+                          {selected && (
+                            <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--color-primary)]" />
+                          )}
+                        </div>
+                        <div className="mt-1 text-[11.5px] text-[var(--color-fg-muted)]">
+                          {permissionModeDescription(t, backend, mode.id, mode.descriptionKey)}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {permissionMode === 'workspace-write' && (backend === 'codex' || backend === 'claudecode') && (
+                  <div className="mt-3">
+                    <label
+                      htmlFor="acp-writable-dirs"
+                      className="block font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)] mb-2"
+                    >
+                      {t('acp.writableDirs')}
+                    </label>
+                    <textarea
+                      id="acp-writable-dirs"
+                      value={writableDirsText}
+                      onChange={(e) => setWritableDirsText(e.target.value)}
+                      placeholder="/Users/chendimao/WWW/another-project"
+                      className="surface-1 min-h-24 w-full rounded-lg px-3 py-2 text-[12px] font-mono outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+                    />
+                    <div className="mt-2 text-[11.5px] text-[var(--color-fg-muted)]">
+                      {t(backend === 'claudecode' ? 'acp.writableDirsHelp.claudecode' : 'acp.writableDirsHelp.codex')}
+                    </div>
+                  </div>
+                )}
+
+                {permissionMode === 'workspace-write' && backend === 'opencode' && (
+                  <div className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-[11.5px] text-[var(--color-fg-muted)]">
+                    {t('acp.writableDirsHelp.opencode')}
+                  </div>
+                )}
+              </section>
+
               <section>
                 <div className="font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">
                   Session ({sessions.length})
@@ -246,6 +322,7 @@ export function AcpConfigPanel({
                   ))}
                 </div>
               </section>
+              </>
             )}
           </>
         )}
@@ -259,4 +336,34 @@ export function AcpConfigPanel({
       </footer>
     </div>
   );
+}
+
+function parseWritableDirs(value: string): string[] {
+  const seen = new Set<string>();
+  const dirs: string[] = [];
+  for (const line of value.split('\n')) {
+    const dir = line.trim();
+    if (!dir || seen.has(dir)) continue;
+    seen.add(dir);
+    dirs.push(dir);
+  }
+  return dirs;
+}
+
+function permissionModeDescription(
+  t: Translate,
+  backend: AcpBackend,
+  mode: AcpPermissionMode,
+  fallbackKey: MessageKey,
+): string {
+  if (backend === 'claudecode') {
+    if (mode === 'bypass') return t('acp.permission.bypassHelp.claudecode');
+    if (mode === 'workspace-write') return t('acp.permission.workspaceWriteHelp.claudecode');
+    return t('acp.permission.readOnlyHelp.claudecode');
+  }
+  if (backend === 'opencode') {
+    if (mode === 'bypass') return t('acp.permission.bypassHelp.opencode');
+    return t('acp.permission.limitedHelp.opencode');
+  }
+  return t(fallbackKey);
 }

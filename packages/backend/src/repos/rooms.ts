@@ -1,6 +1,35 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { AcpBackend, Room, RoomAgent, WorkflowRole } from '../types.js';
+import type { AcpBackend, AcpPermissionMode, Room, RoomAgent, WorkflowRole } from '../types.js';
+
+type RoomAgentRow = Omit<RoomAgent, 'acp_writable_dirs' | 'acp_permission_mode'> & {
+  acp_permission_mode?: string | null;
+  acp_writable_dirs?: string | null;
+};
+
+const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
+
+function parseWritableDirs(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeRoomAgent(row: RoomAgentRow): RoomAgent {
+  const mode = row.acp_permission_mode;
+  return {
+    ...row,
+    acp_permission_mode: mode && ACP_PERMISSION_MODES.has(mode as AcpPermissionMode)
+      ? (mode as AcpPermissionMode)
+      : 'bypass',
+    acp_writable_dirs: parseWritableDirs(row.acp_writable_dirs),
+  };
+}
 
 export const roomRepo = {
   listByProject(projectId: string): Room[] {
@@ -29,13 +58,15 @@ export const roomRepo = {
 
 export const roomAgentRepo = {
   listByRoom(roomId: string): RoomAgent[] {
-    return db
+    const rows = db
       .prepare('SELECT * FROM room_agents WHERE room_id = ? ORDER BY joined_at ASC')
-      .all(roomId) as RoomAgent[];
+      .all(roomId) as RoomAgentRow[];
+    return rows.map(normalizeRoomAgent);
   },
 
   get(id: string): RoomAgent | undefined {
-    return db.prepare('SELECT * FROM room_agents WHERE id = ?').get(id) as RoomAgent | undefined;
+    const row = db.prepare('SELECT * FROM room_agents WHERE id = ?').get(id) as RoomAgentRow | undefined;
+    return row ? normalizeRoomAgent(row) : undefined;
   },
 
   add(input: {
@@ -63,15 +94,22 @@ export const roomAgentRepo = {
       acp_backend: AcpBackend | null;
       acp_session_id: string | null;
       acp_session_label: string | null;
+      acp_permission_mode?: AcpPermissionMode | null;
+      acp_writable_dirs?: string[] | null;
     },
   ): RoomAgent | undefined {
     db.prepare(
-      `UPDATE room_agents SET acp_enabled = ?, acp_backend = ?, acp_session_id = ?, acp_session_label = ? WHERE id = ?`,
+      `UPDATE room_agents
+       SET acp_enabled = ?, acp_backend = ?, acp_session_id = ?, acp_session_label = ?,
+           acp_permission_mode = ?, acp_writable_dirs = ?
+       WHERE id = ?`,
     ).run(
       config.acp_enabled ? 1 : 0,
       config.acp_backend,
       config.acp_session_id,
       config.acp_session_label,
+      config.acp_permission_mode ?? 'bypass',
+      JSON.stringify(config.acp_writable_dirs ?? []),
       id,
     );
     return this.get(id);
