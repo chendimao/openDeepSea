@@ -1,15 +1,18 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { AcpBackend, AcpPermissionMode, Room, RoomAgent, WorkflowRole } from '../types.js';
+import type { AcpBackend, AcpPermissionMode, AgentDefaultRuntime, Room, RoomAgent, WorkflowRole } from '../types.js';
 
-type RoomAgentRow = Omit<RoomAgent, 'acp_writable_dirs' | 'acp_permission_mode'> & {
+type RoomAgentRow = Omit<RoomAgent, 'acp_writable_dirs' | 'acp_permission_mode' | 'capabilities' | 'default_runtime'> & {
   acp_permission_mode?: string | null;
   acp_writable_dirs?: string | null;
+  capabilities?: string | null;
+  default_runtime?: string | null;
 };
 
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
+const DEFAULT_RUNTIMES = new Set<AgentDefaultRuntime>(['acp', 'openclaw', 'none']);
 
-function parseWritableDirs(value: string | null | undefined): string[] {
+function parseStringArray(value: string | null | undefined): string[] {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -22,12 +25,17 @@ function parseWritableDirs(value: string | null | undefined): string[] {
 
 function normalizeRoomAgent(row: RoomAgentRow): RoomAgent {
   const mode = row.acp_permission_mode;
+  const runtime = row.default_runtime;
   return {
     ...row,
     acp_permission_mode: mode && ACP_PERMISSION_MODES.has(mode as AcpPermissionMode)
       ? (mode as AcpPermissionMode)
       : 'bypass',
-    acp_writable_dirs: parseWritableDirs(row.acp_writable_dirs),
+    acp_writable_dirs: parseStringArray(row.acp_writable_dirs),
+    capabilities: parseStringArray(row.capabilities),
+    default_runtime: runtime && DEFAULT_RUNTIMES.has(runtime as AgentDefaultRuntime)
+      ? (runtime as AgentDefaultRuntime)
+      : 'openclaw',
   };
 }
 
@@ -117,6 +125,15 @@ export const roomAgentRepo = {
 
   setWorkflowRole(id: string, workflowRole: WorkflowRole | null): RoomAgent | undefined {
     db.prepare('UPDATE room_agents SET workflow_role = ? WHERE id = ?').run(workflowRole, id);
+    return this.get(id);
+  },
+
+  setCapabilitiesAndRuntime(
+    id: string,
+    input: { capabilities: string[]; default_runtime: AgentDefaultRuntime },
+  ): RoomAgent | undefined {
+    db.prepare('UPDATE room_agents SET capabilities = ?, default_runtime = ? WHERE id = ?')
+      .run(JSON.stringify(input.capabilities), input.default_runtime, id);
     return this.get(id);
   },
 };

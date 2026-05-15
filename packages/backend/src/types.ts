@@ -22,6 +22,7 @@ export interface Room {
 
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
 export type AcpPermissionMode = 'bypass' | 'workspace-write' | 'read-only';
+export type AgentDefaultRuntime = 'acp' | 'openclaw' | 'none';
 
 export type WorkflowRole = 'analyst' | 'planner' | 'coordinator' | 'executor' | 'reviewer' | 'acceptor';
 export type WorkflowStatus =
@@ -89,6 +90,8 @@ export interface RoomAgent {
   acp_session_label: string | null;
   acp_permission_mode: AcpPermissionMode;
   acp_writable_dirs: string[];
+  capabilities: string[];
+  default_runtime: AgentDefaultRuntime;
   memory_max_context_chars: number | null;
 }
 

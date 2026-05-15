@@ -1,6 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
+import { listBuiltInAgentTemplates } from './agent-templates.js';
 import { dispatchUserMessage } from './dispatcher.js';
 import { listOpenClawAgentsFromCli } from './openclaw/agents.js';
 import { gatewayClient } from './openclaw/gateway.js';
@@ -58,6 +59,10 @@ router.get('/gateway/agents', async (_req, res) => {
   } catch (err) {
     res.json({ agents: [], connected: false, error: (err as Error).message });
   }
+});
+
+router.get('/agent-templates', (_req, res) => {
+  res.json({ templates: listBuiltInAgentTemplates() });
 });
 
 const settingsPatchSchema = z
@@ -476,6 +481,44 @@ router.post('/rooms/:roomId/agents', (req, res) => {
     });
     wsHub.broadcast(req.params.roomId, { type: 'room:agent_joined', roomId: req.params.roomId, agent });
     res.status(201).json(agent);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/rooms/:roomId/agents/from-template', (req, res) => {
+  const schema = z.object({
+    template_id: z.string().min(1),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const template = listBuiltInAgentTemplates().find((item) => item.id === parsed.data.template_id);
+  if (!template) return res.status(404).json({ error: 'template not found' });
+
+  try {
+    const agent = roomAgentRepo.add({
+      room_id: req.params.roomId,
+      agent_id: template.id,
+      agent_name: template.name,
+      agent_role: template.description,
+    });
+    const withRole = roomAgentRepo.setWorkflowRole(agent.id, template.workflow_role) ?? agent;
+    const withAcp = roomAgentRepo.setAcp(withRole.id, {
+      acp_enabled: template.acp_enabled,
+      acp_backend: template.acp_backend,
+      acp_session_id: null,
+      acp_session_label: null,
+      acp_permission_mode: 'bypass',
+      acp_writable_dirs: [],
+    }) ?? withRole;
+    const result = roomAgentRepo.setCapabilitiesAndRuntime(withAcp.id, {
+      capabilities: template.capabilities,
+      default_runtime: 'acp',
+    }) ?? withAcp;
+
+    wsHub.broadcast(result.room_id, { type: 'room:agent_joined', roomId: result.room_id, agent: result });
+    res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
