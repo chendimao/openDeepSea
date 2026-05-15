@@ -318,6 +318,7 @@ export function RoomPage() {
         <AcpConfigPanel
           agent={configAgent}
           projectId={projectId}
+          projectPath={project?.path ?? ''}
           roomId={roomId}
           onClose={() => setConfigAgent(null)}
         />

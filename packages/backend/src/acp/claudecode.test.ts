@@ -14,13 +14,13 @@ test('buildClaudeCodeArgs maps bypass to bypassPermissions', () => {
   );
 });
 
-test('buildClaudeCodeArgs maps workspace-write to acceptEdits with add-dir', () => {
+test('buildClaudeCodeArgs maps workspace-write to acceptEdits with the current project directory', () => {
   assert.deepEqual(
     buildClaudeCodeArgs({
       sessionId: 'session-1',
       prompt: 'continue',
       permissionMode: 'workspace-write',
-      writableDirs: ['/tmp/a', ' /tmp/b ', '/tmp/a'],
+      writableDirs: ['/Users/chendimao/WWW/openclaw-room'],
     }),
     [
       '--print',
@@ -30,9 +30,7 @@ test('buildClaudeCodeArgs maps workspace-write to acceptEdits with add-dir', () 
       '--permission-mode',
       'acceptEdits',
       '--add-dir',
-      '/tmp/a',
-      '--add-dir',
-      '/tmp/b',
+      '/Users/chendimao/WWW/openclaw-room',
       '--resume',
       'session-1',
       'continue',

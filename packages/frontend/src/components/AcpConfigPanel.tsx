@@ -25,11 +25,13 @@ const CODEX_PERMISSION_MODES: { id: AcpPermissionMode; titleKey: MessageKey; des
 export function AcpConfigPanel({
   agent,
   projectId,
+  projectPath,
   roomId,
   onClose,
 }: {
   agent: RoomAgent;
   projectId: string;
+  projectPath: string;
   roomId: string;
   onClose: () => void;
 }) {
@@ -38,7 +40,6 @@ export function AcpConfigPanel({
   const [sessionId, setSessionId] = useState<string | null>(agent.acp_session_id);
   const [workflowRole, setWorkflowRole] = useState<WorkflowRole | null>(agent.workflow_role);
   const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(agent.acp_permission_mode ?? 'bypass');
-  const [writableDirsText, setWritableDirsText] = useState((agent.acp_writable_dirs ?? []).join('\n'));
   const queryClient = useQueryClient();
   const { formatRelativeTime, t, workflowRoleLabel } = useI18n();
 
@@ -48,7 +49,6 @@ export function AcpConfigPanel({
     setSessionId(agent.acp_session_id);
     setWorkflowRole(agent.workflow_role);
     setPermissionMode(agent.acp_permission_mode ?? 'bypass');
-    setWritableDirsText((agent.acp_writable_dirs ?? []).join('\n'));
   }, [agent]);
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
@@ -66,7 +66,6 @@ export function AcpConfigPanel({
         acp_session_id: enabled ? sessionId : null,
         acp_session_label: label,
         acp_permission_mode: permissionMode,
-        acp_writable_dirs: parseWritableDirs(writableDirsText),
       });
       return api.setAgentWorkflowRole(roomId, updated.id, workflowRole);
     },
@@ -229,22 +228,15 @@ export function AcpConfigPanel({
                 </div>
 
                 {permissionMode === 'workspace-write' && (backend === 'codex' || backend === 'claudecode') && (
-                  <div className="mt-3">
-                    <label
-                      htmlFor="acp-writable-dirs"
-                      className="block font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)] mb-2"
-                    >
-                      {t('acp.writableDirs')}
-                    </label>
-                    <textarea
-                      id="acp-writable-dirs"
-                      value={writableDirsText}
-                      onChange={(e) => setWritableDirsText(e.target.value)}
-                      placeholder="/Users/chendimao/WWW/another-project"
-                      className="surface-1 min-h-24 w-full rounded-lg px-3 py-2 text-[12px] font-mono outline-none focus:border-[var(--color-primary)] focus:glow-primary"
-                    />
+                  <div className="mt-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2">
+                    <div className="font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)]">
+                      {t('acp.currentProjectDir')}
+                    </div>
+                    <div className="mt-1 break-all font-mono text-[11.5px] text-[var(--color-fg)]">
+                      {projectPath || t('acp.currentProjectDirUnknown')}
+                    </div>
                     <div className="mt-2 text-[11.5px] text-[var(--color-fg-muted)]">
-                      {t(backend === 'claudecode' ? 'acp.writableDirsHelp.claudecode' : 'acp.writableDirsHelp.codex')}
+                      {t(backend === 'claudecode' ? 'acp.currentProjectDirHelp.claudecode' : 'acp.currentProjectDirHelp.codex')}
                     </div>
                   </div>
                 )}
@@ -336,18 +328,6 @@ export function AcpConfigPanel({
       </footer>
     </div>
   );
-}
-
-function parseWritableDirs(value: string): string[] {
-  const seen = new Set<string>();
-  const dirs: string[] = [];
-  for (const line of value.split('\n')) {
-    const dir = line.trim();
-    if (!dir || seen.has(dir)) continue;
-    seen.add(dir);
-    dirs.push(dir);
-  }
-  return dirs;
 }
 
 function permissionModeDescription(

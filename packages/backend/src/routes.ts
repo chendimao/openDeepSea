@@ -496,21 +496,16 @@ router.put('/rooms/:roomId/agents/:agentId/acp', (req, res) => {
     acp_session_id: z.string().nullable(),
     acp_session_label: z.string().nullable().optional(),
     acp_permission_mode: z.enum(['bypass', 'workspace-write', 'read-only']).optional(),
-    acp_writable_dirs: z.array(z.string().trim().min(1).max(1024)).max(20).optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const writableDirs = [...new Set(parsed.data.acp_writable_dirs ?? [])];
-  if (writableDirs.some((dir) => dir.includes('\0'))) {
-    return res.status(400).json({ error: 'acp_writable_dirs cannot contain NUL bytes' });
-  }
   const updated = roomAgentRepo.setAcp(req.params.agentId, {
     acp_enabled: parsed.data.acp_enabled,
     acp_backend: parsed.data.acp_backend,
     acp_session_id: parsed.data.acp_session_id,
     acp_session_label: parsed.data.acp_session_label ?? null,
     acp_permission_mode: parsed.data.acp_permission_mode ?? 'bypass',
-    acp_writable_dirs: writableDirs,
+    acp_writable_dirs: [],
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(updated);

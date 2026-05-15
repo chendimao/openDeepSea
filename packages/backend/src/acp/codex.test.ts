@@ -14,13 +14,13 @@ test('buildCodexExecArgs defaults to bypassing approvals and sandbox', () => {
   );
 });
 
-test('buildCodexExecArgs supports workspace-write with extra writable directories', () => {
+test('buildCodexExecArgs supports workspace-write with the current project directory', () => {
   assert.deepEqual(
     buildCodexExecArgs({
       sessionId: 'abc123',
       prompt: 'continue',
       permissionMode: 'workspace-write',
-      writableDirs: ['/tmp/a', '  /tmp/b  ', '/tmp/a', ''],
+      writableDirs: ['/Users/chendimao/WWW/openclaw-room'],
     }),
     [
       'exec',
@@ -28,9 +28,7 @@ test('buildCodexExecArgs supports workspace-write with extra writable directorie
       '--sandbox',
       'workspace-write',
       '--add-dir',
-      '/tmp/a',
-      '--add-dir',
-      '/tmp/b',
+      '/Users/chendimao/WWW/openclaw-room',
       'resume',
       'abc123',
       'continue',
