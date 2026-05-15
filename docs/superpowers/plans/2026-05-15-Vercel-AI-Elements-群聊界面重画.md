@@ -33,7 +33,7 @@
 - Modify: `packages/frontend/package.json`
 - Create: `packages/frontend/src/components/ai-elements/Conversation.tsx`
 
-- [ ] **Step 1: 安装依赖**
+- [x] **Step 1: 安装依赖**
 
 Run:
 
@@ -43,7 +43,7 @@ npm install use-stick-to-bottom -w @openclaw-room/frontend
 
 Expected: `packages/frontend/package.json` 和根 `package-lock.json` 更新。
 
-- [ ] **Step 2: 创建 Conversation 组件**
+- [x] **Step 2: 创建 Conversation 组件**
 
 Create `packages/frontend/src/components/ai-elements/Conversation.tsx`:
 
@@ -113,7 +113,7 @@ export function ConversationScrollButton({
 }
 ```
 
-- [ ] **Step 3: 运行构建检查**
+- [x] **Step 3: 运行构建检查**
 
 Run:
 
@@ -123,7 +123,7 @@ npm run build
 
 Expected: Build passes.
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add package.json packages/frontend/package.json package-lock.json packages/frontend/src/components/ai-elements/Conversation.tsx
@@ -136,7 +136,7 @@ git commit -m "feat(frontend): 增加AI对话滚动容器"
 - Create: `packages/frontend/src/components/ai-elements/Message.tsx`
 - Create: `packages/frontend/src/components/ai-elements/PromptInput.tsx`
 
-- [ ] **Step 1: 创建 Message 组件**
+- [x] **Step 1: 创建 Message 组件**
 
 Create `packages/frontend/src/components/ai-elements/Message.tsx`:
 
@@ -231,7 +231,7 @@ export function MessageRunPanel({
 }
 ```
 
-- [ ] **Step 2: 创建 PromptInput 组件**
+- [x] **Step 2: 创建 PromptInput 组件**
 
 Create `packages/frontend/src/components/ai-elements/PromptInput.tsx`:
 
@@ -290,7 +290,7 @@ export function PromptInputActions({
 }
 ```
 
-- [ ] **Step 3: 运行构建检查**
+- [x] **Step 3: 运行构建检查**
 
 Run:
 
@@ -300,7 +300,7 @@ npm run build
 
 Expected: Build passes.
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add packages/frontend/src/components/ai-elements/Message.tsx packages/frontend/src/components/ai-elements/PromptInput.tsx
@@ -312,7 +312,7 @@ git commit -m "feat(frontend): 增加AI消息与输入框组件"
 **Files:**
 - Modify: `packages/frontend/src/pages/RoomPage.tsx`
 
-- [ ] **Step 1: 更新 imports**
+- [x] **Step 1: 更新 imports**
 
 Add imports:
 
@@ -334,7 +334,7 @@ import {
 } from '../components/ai-elements/Message';
 ```
 
-- [ ] **Step 2: 替换 ChatColumn 滚动区域**
+- [x] **Step 2: 替换 ChatColumn 滚动区域**
 
 Replace the current `chat-scroll` block with:
 
@@ -379,7 +379,7 @@ Replace the current `chat-scroll` block with:
 
 Then remove `scrollRef` and the `useEffect` that calls `scrollTo`.
 
-- [ ] **Step 3: 重画 MessageBubble**
+- [x] **Step 3: 重画 MessageBubble**
 
 Update `MessageBubble` to use `AiMessageRow`, `AiMessageHeader`, `AiMessageMeta`, `AiMessageBadge`, `AiMessageActions`, `AiMessageBody`, and `AiMessageRunPanel` while preserving:
 
@@ -391,7 +391,7 @@ Update `MessageBubble` to use `AiMessageRow`, `AiMessageHeader`, `AiMessageMeta`
 - `MessageContent`
 - `MessageAttachments`
 
-- [ ] **Step 4: 运行构建检查**
+- [x] **Step 4: 运行构建检查**
 
 Run:
 
@@ -401,7 +401,7 @@ npm run build
 
 Expected: Build passes.
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add packages/frontend/src/pages/RoomPage.tsx
@@ -413,7 +413,7 @@ git commit -m "feat(frontend): 接入AI群聊消息区"
 **Files:**
 - Modify: `packages/frontend/src/components/RichMessageComposer.tsx`
 
-- [ ] **Step 1: 更新 imports**
+- [x] **Step 1: 更新 imports**
 
 Add imports:
 
@@ -427,7 +427,7 @@ import {
 } from './ai-elements/PromptInput';
 ```
 
-- [ ] **Step 2: 替换 form 内部结构**
+- [x] **Step 2: 替换 form 内部结构**
 
 Keep the `<form>` and all handlers. Inside it:
 
@@ -436,7 +436,7 @@ Keep the `<form>` and all handlers. Inside it:
 - Render routing hint and buttons inside `PromptInputToolbar`.
 - Keep the existing hidden file input and button callbacks.
 
-- [ ] **Step 3: 运行构建检查**
+- [x] **Step 3: 运行构建检查**
 
 Run:
 
@@ -446,7 +446,7 @@ npm run build
 
 Expected: Build passes.
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add packages/frontend/src/components/RichMessageComposer.tsx
@@ -458,7 +458,7 @@ git commit -m "feat(frontend): 重画群聊输入框外壳"
 **Files:**
 - Modify: `packages/frontend/src/index.css`
 
-- [ ] **Step 1: 新增 `.ai-*` 样式**
+- [x] **Step 1: 新增 `.ai-*` 样式**
 
 Add CSS near existing chat styles:
 
@@ -476,7 +476,7 @@ Add CSS near existing chat styles:
 
 Continue with styles for message rows, run panel, attachment cards, prompt shell, toolbar, and responsive behavior.
 
-- [ ] **Step 2: 清理旧类依赖**
+- [x] **Step 2: 清理旧类依赖**
 
 After styles are added, search:
 
@@ -486,7 +486,7 @@ rg -n "chat-scroll|message-bubble|run-box-wrap|composer-box|composer-shell" pack
 
 Expected: Only intentionally retained compatibility classes remain.
 
-- [ ] **Step 3: 最终构建验证**
+- [x] **Step 3: 最终构建验证**
 
 Run:
 
@@ -496,7 +496,7 @@ npm run build
 
 Expected: Build passes. Vite chunk warning is acceptable if unchanged from baseline.
 
-- [ ] **Step 4: 代码审查**
+- [x] **Step 4: 代码审查**
 
 Review:
 
@@ -513,7 +513,7 @@ Check:
 - No untracked brainstorm files are staged.
 - `packages/frontend/tsconfig.tsbuildinfo` is not committed.
 
-- [ ] **Step 5: 提交最终样式**
+- [x] **Step 5: 提交最终样式**
 
 ```bash
 git add packages/frontend/src/index.css

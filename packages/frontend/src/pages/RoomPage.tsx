@@ -521,7 +521,7 @@ function ChatColumn({
             })
           )}
         </ConversationContent>
-        <ConversationScrollButton label="Scroll to bottom" />
+        <ConversationScrollButton label={t('room.scrollToBottom')} />
       </Conversation>
 
       <RichMessageComposer
