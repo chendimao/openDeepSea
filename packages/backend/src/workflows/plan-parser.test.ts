@@ -65,6 +65,74 @@ const task = { title: 'not a plan' };
   assert.equal(firstTask.title, '优先解析 JSON 代码块');
 });
 
+test('parsePlanArtifact parses modern LangChain planner shape', () => {
+  const plan = parsePlanArtifact(`
+\`\`\`json
+{
+  "goal": "交付 LangChain 结构化计划解析",
+  "summary": "定义现代计划结构并兼容旧格式",
+  "assumptions": ["现有 legacy plan 仍需支持"],
+  "steps": [
+    {
+      "title": "实现现代计划解析",
+      "intent": "解析 LangChain planner 输出并映射到任务模型",
+      "assigneeRole": "executor",
+      "preferredBackend": "codex",
+      "scopeRead": ["packages/backend/src/workflows/plan-parser.ts"],
+      "scopeWrite": ["packages/backend/src/workflows/plan-parser.ts"],
+      "acceptance": ["现代 steps 被归一化为 tasks"],
+      "dependsOn": []
+    }
+  ],
+  "risks": ["schema 变更影响旧计划解析"],
+  "verification": [
+    {"command": "node --import tsx --test src/workflows/plan-parser.test.ts", "reason": "覆盖解析器行为"}
+  ],
+  "needsApproval": false
+}
+\`\`\`
+`);
+
+  const firstTask = plan.tasks[0];
+  assert.ok(firstTask);
+  assert.equal(plan.goal, '交付 LangChain 结构化计划解析');
+  assert.equal(plan.summary, '定义现代计划结构并兼容旧格式');
+  assert.deepEqual(plan.assumptions, ['现有 legacy plan 仍需支持']);
+  assert.equal(firstTask.title, '实现现代计划解析');
+  assert.equal(firstTask.description, '解析 LangChain planner 输出并映射到任务模型');
+  assert.equal(firstTask.suggestedRole, 'executor');
+  assert.equal(firstTask.priority, 'normal');
+  assert.equal(firstTask.preferredBackend, 'codex');
+  assert.deepEqual(firstTask.scopeWrite, ['packages/backend/src/workflows/plan-parser.ts']);
+  assert.deepEqual(firstTask.dependsOn, []);
+  assert.deepEqual(plan.verification, ['node --import tsx --test src/workflows/plan-parser.test.ts']);
+  assert.equal(plan.needsApproval, false);
+});
+
+test('parsePlanArtifact rejects modern steps missing acceptance', () => {
+  assert.throws(
+    () =>
+      parsePlanArtifact(`
+{
+  "goal": "交付 LangChain 结构化计划解析",
+  "summary": "定义现代计划结构并兼容旧格式",
+  "assumptions": [],
+  "steps": [
+    {
+      "title": "实现现代计划解析",
+      "intent": "解析 LangChain planner 输出并映射到任务模型",
+      "assigneeRole": "executor"
+    }
+  ],
+  "risks": [],
+  "verification": [],
+  "needsApproval": false
+}
+`),
+    /acceptance/i,
+  );
+});
+
 test('parsePlanArtifact rejects output without JSON', () => {
   assert.throws(() => parsePlanArtifact('这里只是一段普通文本'), /JSON object/);
 });

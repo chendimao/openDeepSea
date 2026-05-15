@@ -1,5 +1,14 @@
 import { z } from 'zod';
-import type { TaskPriority, WorkflowRole } from '../types.js';
+import type { AcpBackend, TaskPriority, WorkflowRole } from '../types.js';
+
+export const workflowRoleSchema = z.enum(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor']);
+export const acpBackendSchema = z.enum(['claudecode', 'opencode', 'codex']);
+
+export const verificationCommandSchema = z.object({
+  command: z.string().min(1),
+  reason: z.string().default(''),
+  required: z.boolean().default(true),
+});
 
 const decisionOptionSchema = z.object({
   id: z.string().min(1),
@@ -27,7 +36,7 @@ const decisionRequestSchema = z.object({
 const planTaskSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
-  suggestedRole: z.enum(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor']).default('executor'),
+  suggestedRole: workflowRoleSchema.default('executor'),
   priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
   acceptance: z.array(z.string()).default([]),
 });
@@ -38,6 +47,27 @@ const planSchema = z.object({
   reviewFocus: z.array(z.string()).default([]),
   verification: z.array(z.string()).default([]),
   risks: z.array(z.string()).default([]),
+});
+
+const langChainPlanStepSchema = z.object({
+  title: z.string().min(1),
+  intent: z.string().min(1),
+  assigneeRole: workflowRoleSchema,
+  preferredBackend: acpBackendSchema.optional(),
+  scopeRead: z.array(z.string()).default([]),
+  scopeWrite: z.array(z.string()).default([]),
+  acceptance: z.array(z.string().min(1)).min(1),
+  dependsOn: z.array(z.string()).default([]),
+});
+
+const langChainPlanSchema = z.object({
+  goal: z.string().min(1),
+  summary: z.string().min(1),
+  assumptions: z.array(z.string()).default([]),
+  steps: z.array(langChainPlanStepSchema).min(1),
+  risks: z.array(z.string()).default([]),
+  verification: z.array(verificationCommandSchema).default([]),
+  needsApproval: z.boolean().default(false),
 });
 
 const reviewVerdictSchema = z.object({
@@ -60,14 +90,21 @@ export interface ParsedPlanTask {
   suggestedRole: WorkflowRole;
   priority: TaskPriority;
   acceptance: string[];
+  scopeRead: string[];
+  scopeWrite: string[];
+  preferredBackend?: AcpBackend;
+  dependsOn: string[];
 }
 
 export interface ParsedPlan {
+  goal: string | null;
   summary: string;
+  assumptions: string[];
   tasks: ParsedPlanTask[];
   reviewFocus: string[];
   verification: string[];
   risks: string[];
+  needsApproval: boolean;
 }
 
 export type ParsedDecisionOption = z.infer<typeof decisionOptionSchema>;
@@ -89,7 +126,14 @@ export function parseDecisionRequest(output: string): ParsedDecisionRequest {
 export function parsePlanArtifact(output: string): ParsedPlan {
   const jsonText = extractJson(output);
   const parsed = JSON.parse(jsonText) as unknown;
-  return planSchema.parse(parsed);
+  const modernPlan = langChainPlanSchema.safeParse(parsed);
+  if (modernPlan.success) return normalizeLangChainPlan(modernPlan.data);
+  try {
+    return normalizeLegacyPlan(planSchema.parse(parsed));
+  } catch (legacyError) {
+    if (hasModernPlanShape(parsed)) throw modernPlan.error;
+    throw legacyError;
+  }
 }
 
 export function parseReviewVerdict(output: string): ParsedReviewVerdict {
@@ -102,6 +146,54 @@ export function parseAcceptanceVerdict(output: string): ParsedAcceptanceVerdict 
   const jsonText = extractJson(output);
   const parsed = JSON.parse(jsonText) as unknown;
   return acceptanceVerdictSchema.parse(parsed);
+}
+
+function normalizeLangChainPlan(plan: z.infer<typeof langChainPlanSchema>): ParsedPlan {
+  return {
+    goal: plan.goal,
+    summary: plan.summary,
+    assumptions: plan.assumptions,
+    tasks: plan.steps.map((step) => {
+      const task: ParsedPlanTask = {
+        title: step.title,
+        description: step.intent,
+        suggestedRole: step.assigneeRole,
+        priority: 'normal',
+        acceptance: step.acceptance,
+        scopeRead: step.scopeRead,
+        scopeWrite: step.scopeWrite,
+        dependsOn: step.dependsOn,
+      };
+      if (step.preferredBackend) task.preferredBackend = step.preferredBackend;
+      return task;
+    }),
+    reviewFocus: [],
+    verification: plan.verification.map((command) => command.command),
+    risks: plan.risks,
+    needsApproval: plan.needsApproval,
+  };
+}
+
+function normalizeLegacyPlan(plan: z.infer<typeof planSchema>): ParsedPlan {
+  return {
+    goal: null,
+    summary: plan.summary,
+    assumptions: [],
+    tasks: plan.tasks.map((task) => ({
+      ...task,
+      scopeRead: [],
+      scopeWrite: [],
+      dependsOn: [],
+    })),
+    reviewFocus: plan.reviewFocus,
+    verification: plan.verification,
+    risks: plan.risks,
+    needsApproval: true,
+  };
+}
+
+function hasModernPlanShape(parsed: unknown): boolean {
+  return typeof parsed === 'object' && parsed !== null && 'steps' in parsed;
 }
 
 function extractJson(output: string): string {
