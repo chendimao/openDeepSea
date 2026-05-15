@@ -110,6 +110,8 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   task_id TEXT NOT NULL,
   status TEXT NOT NULL,
   current_stage TEXT,
+  graph_version TEXT,
+  graph_state TEXT,
   approval_required INTEGER NOT NULL DEFAULT 1,
   approved_at INTEGER,
   approved_by TEXT,
@@ -131,8 +133,12 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   workflow_run_id TEXT NOT NULL,
   task_id TEXT NOT NULL,
   stage TEXT NOT NULL,
+  node_name TEXT,
   status TEXT NOT NULL,
   room_agent_id TEXT,
+  assigned_room_agent_id TEXT,
+  scope_read TEXT NOT NULL DEFAULT '[]',
+  scope_write TEXT NOT NULL DEFAULT '[]',
   agent_run_id TEXT,
   prompt TEXT NOT NULL DEFAULT '',
   result TEXT NOT NULL DEFAULT '',
@@ -364,6 +370,30 @@ if (!agentRunColumnNames.has('workflow_stage')) {
 }
 if (!agentRunColumnNames.has('activity_log')) {
   db.exec("ALTER TABLE agent_runs ADD COLUMN activity_log TEXT NOT NULL DEFAULT ''");
+}
+
+const workflowRunColumns = db.prepare('PRAGMA table_info(workflow_runs)').all() as { name: string }[];
+const workflowRunColumnNames = new Set(workflowRunColumns.map((column) => column.name));
+if (!workflowRunColumnNames.has('graph_version')) {
+  db.exec('ALTER TABLE workflow_runs ADD COLUMN graph_version TEXT');
+}
+if (!workflowRunColumnNames.has('graph_state')) {
+  db.exec('ALTER TABLE workflow_runs ADD COLUMN graph_state TEXT');
+}
+
+const workflowStepColumns = db.prepare('PRAGMA table_info(workflow_steps)').all() as { name: string }[];
+const workflowStepColumnNames = new Set(workflowStepColumns.map((column) => column.name));
+if (!workflowStepColumnNames.has('node_name')) {
+  db.exec('ALTER TABLE workflow_steps ADD COLUMN node_name TEXT');
+}
+if (!workflowStepColumnNames.has('scope_read')) {
+  db.exec("ALTER TABLE workflow_steps ADD COLUMN scope_read TEXT NOT NULL DEFAULT '[]'");
+}
+if (!workflowStepColumnNames.has('scope_write')) {
+  db.exec("ALTER TABLE workflow_steps ADD COLUMN scope_write TEXT NOT NULL DEFAULT '[]'");
+}
+if (!workflowStepColumnNames.has('assigned_room_agent_id')) {
+  db.exec('ALTER TABLE workflow_steps ADD COLUMN assigned_room_agent_id TEXT');
 }
 
 const taskColumns = db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];

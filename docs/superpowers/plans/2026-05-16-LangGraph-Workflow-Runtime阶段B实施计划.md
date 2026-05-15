@@ -201,7 +201,7 @@ git commit -m "feat(workflows): 添加 LangGraph 运行时配置"
 - Create: `packages/backend/src/workflows/graph/state.ts`
 - Create: `packages/backend/src/workflows/graph/state.test.ts`
 
-- [ ] **Step 1: Write failing state persistence test**
+- [x] **Step 1: Write failing state persistence test**
 
 Create `packages/backend/src/workflows/graph/state.test.ts`:
 
@@ -265,7 +265,7 @@ test('workflowRepo persists workflow step node and scope metadata', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -275,7 +275,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because graph fields/types do not exist.
 
-- [ ] **Step 3: Add DB columns and migrations**
+- [x] **Step 3: Add DB columns and migrations**
 
 Modify `packages/backend/src/db.ts`:
 
@@ -314,7 +314,7 @@ if (!workflowStepColumnNames.has('assigned_room_agent_id')) {
 }
 ```
 
-- [ ] **Step 4: Extend types**
+- [x] **Step 4: Extend types**
 
 Modify `packages/backend/src/types.ts`:
 
@@ -344,7 +344,7 @@ export interface WorkflowStep {
 }
 ```
 
-- [ ] **Step 5: Implement graph state schema helpers**
+- [x] **Step 5: Implement graph state schema helpers**
 
 Create `packages/backend/src/workflows/graph/state.ts`:
 
@@ -422,7 +422,7 @@ export function parseGraphState(value: string | null): AgentWorkflowState | null
 }
 ```
 
-- [ ] **Step 6: Extend workflow repo**
+- [x] **Step 6: Extend workflow repo**
 
 Modify `packages/backend/src/repos/workflows.ts`:
 
@@ -447,7 +447,7 @@ function parseStringArray(value: string | null | undefined): string[] {
 }
 ```
 
-- [ ] **Step 7: Run graph state tests**
+- [x] **Step 7: Run graph state tests**
 
 Run:
 
@@ -457,7 +457,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/backend/src/db.ts packages/backend/src/types.ts packages/backend/src/repos/workflows.ts packages/backend/src/workflows/graph/state.ts packages/backend/src/workflows/graph/state.test.ts
