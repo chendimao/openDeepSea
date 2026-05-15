@@ -64,6 +64,8 @@ const DEFAULT_SYSTEM_SETTINGS: EffectiveSettings = {
   interaction_mode: 'ask_user',
 };
 
+type SystemSettingsCategory = 'appearance' | 'language' | 'collaboration';
+
 export function SystemSettingsDialog({
   children,
   theme,
@@ -97,7 +99,7 @@ export function SystemSettingsDialog({
       <DialogContent
         title={t('settings.systemTitle')}
         description={t('settings.systemDescription')}
-        className="max-h-[88vh] w-[min(94vw,760px)] overflow-y-auto"
+        className="max-h-[88vh] w-[min(94vw,900px)] overflow-y-auto"
       >
         <SystemSettingsForm
           key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}`}
@@ -234,8 +236,36 @@ function SystemSettingsForm({
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode>(value.message_routing_mode);
   const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? '');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
+  const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('appearance');
   const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
+  const categories: Array<{
+    value: SystemSettingsCategory;
+    title: string;
+    description: string;
+    icon: LucideIcon;
+  }> = [
+    {
+      value: 'appearance',
+      title: t('settings.appearance'),
+      description: t('settings.appearanceDescription'),
+      icon: SwatchBook,
+    },
+    {
+      value: 'language',
+      title: t('settings.language'),
+      description: t('settings.languageDescription'),
+      icon: Globe2,
+    },
+    {
+      value: 'collaboration',
+      title: t('settings.collaborationDefaults'),
+      description: t('settings.collaborationDefaultsDescription'),
+      icon: Bot,
+    },
+  ];
+  const activeCategoryMeta = categories.find((category) => category.value === activeCategory) ?? categories[0];
+  const ActiveCategoryIcon = activeCategoryMeta.icon;
 
   return (
     <SettingsDialogBody
@@ -256,31 +286,75 @@ function SystemSettingsForm({
         </Button>
       }
     >
-      <SettingGroup title={t('settings.appearance')} icon={<SwatchBook className="h-4 w-4" strokeWidth={1.75} />}>
-        <AppearanceSection theme={theme} onThemeChange={onThemeChange} />
-      </SettingGroup>
-      <SettingGroup title={t('settings.language')} icon={<Globe2 className="h-4 w-4" strokeWidth={1.75} />}>
-        <LanguageSection />
-      </SettingGroup>
-      <SettingGroup title={t('settings.collaborationDefaults')} icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
-        <RoutingSection
-          mode={routingMode}
-          fallbackAgentId={fallbackAgentId}
-          fallbackOptions={[]}
-          inheritedLabel={null}
-          onModeChange={(mode) => {
-            if (mode !== 'inherit') setRoutingMode(mode);
-          }}
-          onFallbackAgentChange={setFallbackAgentId}
-        />
-        <InteractionSection
-          mode={interactionMode}
-          inheritedLabel={null}
-          onModeChange={(mode) => {
-            if (mode !== 'inherit') setInteractionMode(mode);
-          }}
-        />
-      </SettingGroup>
+      <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
+        <nav
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5"
+          aria-label={t('settings.categoryNavigation')}
+        >
+          {categories.map((category) => {
+            const Icon = category.icon;
+            return (
+              <button
+                key={category.value}
+                type="button"
+                className={cn(
+                  'flex min-h-[54px] w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ease-ocean',
+                  activeCategory === category.value
+                    ? 'bg-[var(--color-surface-raised)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-border-strong)]'
+                    : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)]',
+                )}
+                aria-current={activeCategory === category.value ? 'page' : undefined}
+                onClick={() => setActiveCategory(category.value)}
+              >
+                <Icon className="h-4 w-4 flex-shrink-0 text-[var(--color-accent)]" strokeWidth={1.75} />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-semibold leading-tight">{category.title}</span>
+                  <span className="mt-1 block text-[11px] leading-snug text-[var(--color-fg-muted)]">
+                    {category.description}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <div className="mb-4 flex items-start gap-2.5">
+            <ActiveCategoryIcon className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
+            <div>
+              <h3 className="font-display text-[14px] font-semibold text-[var(--color-fg)]">
+                {activeCategoryMeta.title}
+              </h3>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+                {activeCategoryMeta.description}
+              </p>
+            </div>
+          </div>
+          {activeCategory === 'appearance' && <AppearanceSection theme={theme} onThemeChange={onThemeChange} />}
+          {activeCategory === 'language' && <LanguageSection />}
+          {activeCategory === 'collaboration' && (
+            <div className="space-y-3">
+              <RoutingSection
+                mode={routingMode}
+                fallbackAgentId={fallbackAgentId}
+                fallbackOptions={[]}
+                inheritedLabel={null}
+                onModeChange={(mode) => {
+                  if (mode !== 'inherit') setRoutingMode(mode);
+                }}
+                onFallbackAgentChange={setFallbackAgentId}
+              />
+              <InteractionSection
+                mode={interactionMode}
+                inheritedLabel={null}
+                onModeChange={(mode) => {
+                  if (mode !== 'inherit') setInteractionMode(mode);
+                }}
+              />
+            </div>
+          )}
+        </section>
+      </div>
     </SettingsDialogBody>
   );
 }
@@ -374,19 +448,28 @@ function SegmentedSetting<T extends string>({
   return (
     <div>
       <Label>{label}</Label>
-      <div className="theme-toggle mt-1.5" role="group" aria-label={ariaLabel}>
+      <div
+        className="mt-1.5 flex min-h-10 w-full items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-1"
+        role="group"
+        aria-label={ariaLabel}
+      >
         {options.map((option) => {
           const Icon = option.icon;
           return (
             <button
               key={option.value}
               type="button"
-              className={cn('theme-toggle-option', value === option.value && 'is-active')}
+              className={cn(
+                'inline-flex h-8 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2.5 text-[12.5px] font-medium leading-none transition-colors ease-ocean',
+                value === option.value
+                  ? 'bg-[var(--color-surface)] text-[var(--color-primary)] shadow-[inset_0_0_0_1px_var(--color-border-strong)]'
+                  : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-fg)]',
+              )}
               aria-pressed={value === option.value}
               onClick={() => onChange(option.value)}
             >
-              {Icon && <Icon className="h-3.5 w-3.5" strokeWidth={1.75} />}
-              <span>{option.label}</span>
+              {Icon && <Icon className="h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.75} />}
+              <span className="truncate">{option.label}</span>
             </button>
           );
         })}
