@@ -275,6 +275,62 @@ test('memoryRepo searches project memories with room source labels and filters',
   );
 });
 
+test('memoryRepo finds relevant memories from other rooms for the current prompt', () => {
+  const { project, room } = createMemoryFixture('Relevant Memory');
+  const otherRoom = roomRepo.create({ project_id: project.id, name: 'Relevant Other Room' });
+  const foreign = createMemoryFixture('Relevant Foreign Project');
+
+  const currentRoomMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    scope: 'room',
+    memory_type: 'fact',
+    title: 'Current room Vite note',
+    content: 'This should already be part of direct room context.',
+  });
+  const otherRoomMemory = memoryRepo.create({
+    project_id: project.id,
+    room_id: otherRoom.id,
+    scope: 'room',
+    memory_type: 'lesson',
+    title: 'Vite chunk warning lesson',
+    content: 'When Vite build reports a large chunk warning, split vendor dependencies with manualChunks.',
+  });
+  const projectMemory = memoryRepo.create({
+    project_id: project.id,
+    scope: 'project',
+    memory_type: 'lesson',
+    title: 'Project Vite chunk warning lesson',
+    content: 'Project memories are already included in direct room context.',
+  });
+  memoryRepo.create({
+    project_id: project.id,
+    room_id: otherRoom.id,
+    scope: 'room',
+    memory_type: 'fact',
+    title: 'Unrelated color palette',
+    content: 'Use subdued interface colors for dense dashboards.',
+  });
+  memoryRepo.create({
+    project_id: foreign.project.id,
+    room_id: foreign.room.id,
+    scope: 'room',
+    memory_type: 'lesson',
+    title: 'Foreign Vite chunk lesson',
+    content: 'This belongs to another project and must not leak.',
+  });
+
+  const results = memoryRepo.listRelevantForPrompt({
+    projectId: project.id,
+    roomId: room.id,
+    prompt: '参考之前 Vite 大 chunk warning 的开发经验',
+  });
+
+  assert.deepEqual(results.map((entry) => entry.id), [otherRoomMemory.id]);
+  assert.ok(!results.some((entry) => entry.id === currentRoomMemory.id));
+  assert.ok(!results.some((entry) => entry.id === projectMemory.id));
+});
+
 test('memoryRepo rejects cross-project room, agent, and task ownership', () => {
   const first = createMemoryFixture('Ownership Memory A');
   const second = createMemoryFixture('Ownership Memory B');

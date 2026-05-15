@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { isMemorySourceConflictError, memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
@@ -64,8 +65,9 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
     throw new Error('source message id is empty');
   }
 
+  let sourceMessage: Message | undefined;
   if (normalizedSourceMessageId) {
-    const sourceMessage = messageRepo.get(normalizedSourceMessageId);
+    sourceMessage = messageRepo.get(normalizedSourceMessageId);
     if (!sourceMessage) throw new Error('source message not found');
     if (sourceMessage.room_id !== input.roomId) throw new Error('source message room mismatch');
   }
@@ -102,6 +104,14 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
       created_from: input.origin,
     });
 
+    createTaskCreationMemorySafely({
+      projectId: room.project_id,
+      roomId: input.roomId,
+      task,
+      origin: input.origin,
+      sourceMessageContent: sourceMessage?.content ?? userMessage?.content ?? null,
+    });
+
     const systemMessage = createTaskEventMessage({
       roomId: input.roomId,
       taskId: task.id,
@@ -122,6 +132,36 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
   broadcastMessageCreated(input.roomId, result.systemMessage);
 
   return result;
+}
+
+export function createTaskCreationMemorySafely(input: {
+  projectId: string;
+  roomId: string;
+  task: Task;
+  origin: TaskCreatedFrom;
+  sourceMessageContent: string | null;
+}): void {
+  try {
+    memoryRepo.create({
+      project_id: input.projectId,
+      room_id: input.roomId,
+      task_id: input.task.id,
+      scope: 'task',
+      memory_type: 'task_summary',
+      title: `任务创建：${input.task.title}`,
+      content: buildTaskCreationMemoryContent({
+        title: input.task.title,
+        description: input.task.description,
+        origin: input.origin,
+        sourceMessageContent: input.sourceMessageContent,
+      }),
+      source_type: 'task',
+      source_id: `created:${input.task.id}`,
+    });
+  } catch (err) {
+    if (isMemorySourceConflictError(err)) return;
+    throw err;
+  }
 }
 
 export function recordTaskEvent(input: RecordTaskEventInput): Message {
@@ -183,4 +223,20 @@ function buildTaskCreatedMessage(task: Task): string {
   parts.push(`优先级 ${task.priority}`);
   parts.push(task.assigned_agent_id ? `已指派 ${task.assigned_agent_id}` : '未指派');
   return parts.join('，');
+}
+
+function buildTaskCreationMemoryContent(input: {
+  title: string;
+  description: string | null;
+  origin: TaskCreatedFrom;
+  sourceMessageContent: string | null;
+}): string {
+  const lines = [`任务：${input.title}`, `来源：${input.origin}`];
+  if (input.description?.trim()) {
+    lines.push(`描述：${input.description.trim()}`);
+  }
+  if (input.sourceMessageContent?.trim()) {
+    lines.push(`来源消息：${input.sourceMessageContent.trim().slice(0, 1000)}`);
+  }
+  return lines.join('\n');
 }

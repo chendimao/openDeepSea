@@ -219,7 +219,7 @@ function filterStderr(data: string): string {
     .join('\n');
 }
 
-function normalizeStdoutChunk(data: string): Array<{
+export function normalizeStdoutChunk(data: string): Array<{
   channel: 'answer' | 'activity';
   text: string;
   rawType?: string;
@@ -443,7 +443,7 @@ function isCodexAgentMessage(obj: Record<string, unknown>): boolean {
 
 function isOpenCodeTextEvent(obj: Record<string, unknown>): boolean {
   const type = typeof obj['type'] === 'string' ? obj['type'] : '';
-  if (type !== 'message.part.updated') return false;
+  if (type !== 'text' && type !== 'message.part.updated') return false;
 
   const data = asRecord(obj['data']) ?? asRecord(obj['properties']) ?? asRecord(obj['payload']) ?? obj;
   const part = asRecord(data['part']) ?? data;

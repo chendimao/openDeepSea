@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildClaudeCodeArgs, buildClaudeCodePrompt } from './claudecode.js';
+import { buildClaudeCodeArgs, buildClaudeCodePrompt, normalizeStdoutChunk } from './claudecode.js';
 
 test('buildClaudeCodeArgs maps bypass to bypassPermissions', () => {
   assert.deepEqual(
@@ -65,4 +65,35 @@ test('buildClaudeCodePrompt appends local image paths for Claude Code', () => {
   assert.match(prompt, /Claude Code 图片附件：/);
   assert.match(prompt, /1\. \/tmp\/screen\.png/);
   assert.match(prompt, /2\. \/tmp\/diagram\.webp/);
+});
+
+test('normalizeStdoutChunk reads OpenCode text events from current and legacy shapes', () => {
+  const current = JSON.stringify({
+    type: 'text',
+    text: 'current final answer',
+    metadata: { openai: { phase: 'final_answer' } },
+  });
+  const legacy = JSON.stringify({
+    type: 'message.part.updated',
+    data: {
+      part: {
+        type: 'text',
+        text: 'legacy final answer',
+        metadata: { openai: { phase: 'final_answer' } },
+      },
+    },
+  });
+
+  assert.deepEqual(normalizeStdoutChunk(`${current}\n${legacy}\n`), [
+    {
+      channel: 'answer',
+      text: 'current final answer',
+      rawType: 'text',
+    },
+    {
+      channel: 'answer',
+      text: 'legacy final answer',
+      rawType: 'message.part.updated',
+    },
+  ]);
 });

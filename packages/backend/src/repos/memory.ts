@@ -21,9 +21,22 @@ export interface MemorySearchFilters {
   limit?: number;
 }
 
+export interface MemoryRelevantFilters {
+  projectId: string;
+  roomId: string;
+  prompt: string;
+  limit?: number;
+}
+
 export type MemorySearchResult = MemoryEntry & {
   room_name: string | null;
 };
+
+export function isMemorySourceConflictError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return message.includes('unique constraint') || message.includes('idx_memory');
+}
 
 function requireProject(id: string): void {
   const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(id) as { id: string } | undefined;
@@ -280,6 +293,53 @@ export const memoryRepo = {
       .all(...params, limit) as MemorySearchResult[];
   },
 
+  listRelevantForPrompt(filters: MemoryRelevantFilters): MemoryEntry[] {
+    validateOwnership({
+      project_id: filters.projectId,
+      room_id: filters.roomId,
+    });
+
+    const terms = extractMemorySearchTerms(filters.prompt).slice(0, 12);
+    if (terms.length === 0) return [];
+
+    const clauses = [
+      'project_id = ?',
+      'archived = 0',
+      "(scope IN ('room', 'task') AND room_id IS NOT NULL AND room_id <> ?)",
+    ];
+    const params: Array<string | number> = [filters.projectId, filters.roomId];
+    const termClauses = terms.map(() => '(title LIKE ? OR content LIKE ?)');
+    clauses.push(`(${termClauses.join(' OR ')})`);
+    for (const term of terms) {
+      const pattern = `%${term}%`;
+      params.push(pattern, pattern);
+    }
+
+    const candidates = db
+      .prepare(
+        `SELECT * FROM memory_entries
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY pinned DESC, updated_at DESC
+         LIMIT 100`,
+      )
+      .all(...params) as MemoryEntry[];
+
+    const limit = Math.max(1, Math.min(filters.limit ?? 6, 20));
+    return candidates
+      .map((entry) => ({
+        entry,
+        score: scoreMemoryRelevance(entry, terms),
+      }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        if (a.entry.pinned !== b.entry.pinned) return b.entry.pinned - a.entry.pinned;
+        return b.entry.updated_at - a.entry.updated_at;
+      })
+      .slice(0, limit)
+      .map((item) => item.entry);
+  },
+
   create(input: {
     project_id: string;
     room_id?: string | null;
@@ -392,3 +452,35 @@ export const memoryRepo = {
     return db.prepare('DELETE FROM memory_entries WHERE id = ?').run(id).changes > 0;
   },
 };
+
+function extractMemorySearchTerms(text: string): string[] {
+  const terms = new Set<string>();
+  for (const match of text.toLowerCase().matchAll(/[a-z0-9][a-z0-9_-]{2,}/g)) {
+    terms.add(match[0]);
+  }
+  for (const match of text.matchAll(/[\p{Script=Han}]{2,}/gu)) {
+    const value = match[0];
+    for (let index = 0; index <= value.length - 2; index += 1) {
+      terms.add(value.slice(index, index + 2));
+    }
+  }
+  return Array.from(terms).filter((term) => !MEMORY_STOP_TERMS.has(term));
+}
+
+function scoreMemoryRelevance(entry: MemoryEntry, terms: string[]): number {
+  const haystack = `${entry.title}\n${entry.content}`.toLowerCase();
+  return terms.reduce((score, term) => score + (haystack.includes(term.toLowerCase()) ? 1 : 0), 0);
+}
+
+const MEMORY_STOP_TERMS = new Set([
+  '这个',
+  '那个',
+  '什么',
+  '如何',
+  '处理',
+  '参考',
+  '之前',
+  '开发',
+  '经验',
+  '记忆',
+]);

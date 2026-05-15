@@ -9,7 +9,9 @@ let projectDir: string;
 
 let db: typeof import('./db.js').db;
 let createTaskWithConversation: typeof import('./task-conversation.js').createTaskWithConversation;
+let createTaskCreationMemorySafely: typeof import('./task-conversation.js').createTaskCreationMemorySafely;
 let recordTaskEvent: typeof import('./task-conversation.js').recordTaskEvent;
+let memoryRepo: typeof import('./repos/memory.js').memoryRepo;
 
 test.before(async () => {
   tempRootDir = await mkdtemp(join(tmpdir(), 'openclaw-room-task-conversation-'));
@@ -18,7 +20,8 @@ test.before(async () => {
   process.env.OPENCLAW_ROOM_DB = join(tempRootDir, 'test.db');
 
   ({ db } = await import('./db.js'));
-  ({ createTaskWithConversation, recordTaskEvent } = await import('./task-conversation.js'));
+  ({ createTaskCreationMemorySafely, createTaskWithConversation, recordTaskEvent } = await import('./task-conversation.js'));
+  ({ memoryRepo } = await import('./repos/memory.js'));
 });
 
 test.after(async () => {
@@ -73,6 +76,69 @@ test('createTaskWithConversation creates user message, task, and system task eve
   assert.equal(metadata.task_id, result.task.id);
   assert.equal(metadata.task_title, result.task.title);
   assert.equal(metadata.origin, 'manual');
+});
+
+test('createTaskWithConversation stores task creation memory with task background', () => {
+  const { projectId, roomId } = insertProjectAndRoom();
+  const source = insertStandaloneMessage(roomId);
+  const result = createTaskWithConversation({
+    roomId,
+    origin: 'manual',
+    sourceMessageId: source.id,
+    taskInput: {
+      title: '优化构建速度',
+      description: '记录 Vite 大 chunk 警告并拆分依赖。',
+      priority: 'high',
+    },
+  });
+
+  const memories = memoryRepo.list({
+    projectId,
+    roomId,
+    taskId: result.task.id,
+  });
+  const taskMemory = memories.find((memory) => memory.source_type === 'task' && memory.source_id === `created:${result.task.id}`);
+
+  assert.ok(taskMemory);
+  assert.equal(taskMemory.scope, 'task');
+  assert.equal(taskMemory.memory_type, 'task_summary');
+  assert.equal(taskMemory.title, '任务创建：优化构建速度');
+  assert.match(taskMemory.content, /任务：优化构建速度/);
+  assert.match(taskMemory.content, /描述：记录 Vite 大 chunk 警告并拆分依赖。/);
+  assert.match(taskMemory.content, /来源：manual/);
+  assert.match(taskMemory.content, /来源消息：existing message/);
+});
+
+test('createTaskCreationMemorySafely ignores duplicate task creation memory source', () => {
+  const { projectId, roomId } = insertProjectAndRoom();
+  const taskId = 'duplicate-memory-task';
+  const ts = Date.now();
+  db.prepare(
+    `INSERT INTO tasks (
+      id, project_id, room_id, parent_task_id, title, description, status, priority,
+      interaction_mode, assigned_agent_id, source_message_id, created_from, created_at, updated_at
+    )
+     VALUES (?, ?, ?, NULL, 'existing task', NULL, 'todo', 'normal', 'ask_user', NULL, NULL, 'manual', ?, ?)`,
+  ).run(taskId, projectId, roomId, ts, ts);
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as import('./types.js').Task;
+
+  createTaskCreationMemorySafely({
+    projectId,
+    roomId,
+    task,
+    origin: 'manual',
+    sourceMessageContent: 'first source message',
+  });
+
+  assert.doesNotThrow(() =>
+    createTaskCreationMemorySafely({
+      projectId,
+      roomId,
+      task,
+      origin: 'manual',
+      sourceMessageContent: 'duplicate source message',
+    }),
+  );
 });
 
 test('recordTaskEvent persists workflow metadata on a system message', () => {
