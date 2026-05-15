@@ -473,7 +473,7 @@ git commit -m "feat(workflows): 持久化 LangGraph 工作流状态"
 - Create: `packages/backend/src/workflows/graph/runtime.ts`
 - Create: `packages/backend/src/workflows/graph/runtime.test.ts`
 
-- [ ] **Step 1: Write failing graph shell test**
+- [x] **Step 1: Write failing graph shell test**
 
 Create `packages/backend/src/workflows/graph/runtime.test.ts`:
 
@@ -541,7 +541,7 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -551,7 +551,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because graph runtime modules do not exist.
 
-- [ ] **Step 3: Implement graph tools**
+- [x] **Step 3: Implement graph tools**
 
 Create `packages/backend/src/workflows/graph/tools.ts`.
 
@@ -615,7 +615,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}) {
 }
 ```
 
-- [ ] **Step 4: Implement context and planning nodes**
+- [x] **Step 4: Implement context and planning nodes**
 
 Create `packages/backend/src/workflows/graph/nodes.ts`.
 
@@ -627,7 +627,7 @@ Implement initially:
 
 Use `formatParsedPlanArtifact` from `../orchestrator.js` for plan artifact content to keep UI compatibility.
 
-- [ ] **Step 5: Implement router**
+- [x] **Step 5: Implement router**
 
 Create `packages/backend/src/workflows/graph/router.ts`:
 
@@ -644,7 +644,7 @@ export function routeAfterApproval(state: AgentWorkflowState): 'dispatch' | type
 
 For Task 3, `dispatch` can route to `END` until implemented.
 
-- [ ] **Step 6: Implement runtime shell**
+- [x] **Step 6: Implement runtime shell**
 
 Create `packages/backend/src/workflows/graph/runtime.ts`:
 
@@ -695,7 +695,7 @@ new StateGraph(State)
 
 `startGraphWorkflow(taskId, deps)` creates `workflow_run` with `graph_version='phase-b-v1'`, creates initial `AgentWorkflowState`, invokes graph with `configurable.thread_id = run.id`, stores final state in `workflow_runs.graph_state`, and returns latest run.
 
-- [ ] **Step 7: Run graph shell test**
+- [x] **Step 7: Run graph shell test**
 
 Run:
 
@@ -705,7 +705,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/backend/src/workflows/graph/tools.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/router.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/runtime.test.ts
