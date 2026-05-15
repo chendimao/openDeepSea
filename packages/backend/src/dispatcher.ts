@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { appendMemoryContextSafely } from './memory/context.js';
@@ -11,8 +12,9 @@ import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { runRegistry } from './run-registry.js';
+import { messageUploadDir, messageUploadRoute } from './uploads.js';
 import { wsHub } from './ws-hub.js';
-import type { AgentRun, AgentRunStatus, Message, RoomAgent, WorkflowStage } from './types.js';
+import type { AgentRun, AgentRunStatus, Message, MessageAttachmentMetadata, RoomAgent, WorkflowStage } from './types.js';
 
 const OPENCLAW_RESPONSE_TIMEOUT_MS = 120000;
 
@@ -39,12 +41,13 @@ export async function dispatchUserMessage(args: {
     message_routing_mode: project.message_routing_mode,
     fallback_agent_id: project.fallback_agent_id,
   };
+  const promptWithAttachments = buildPromptWithMessageAttachments(userMessage.content, userMessage);
   const routing = resolveInitialTargets({
     allAgents,
     explicitlyMentionedAgents,
     fallbackAgentId: settings.fallback_agent_id,
     mode: settings.message_routing_mode,
-    prompt: userMessage.content,
+    prompt: promptWithAttachments,
   });
   if (routing.targets.length === 0) return;
 
@@ -60,7 +63,7 @@ export async function dispatchUserMessage(args: {
     const selectedAgents = selectAgentsFromFallbackResponse(fallbackResponse, allAgents, fallbackTarget.agent);
     if (selectedAgents.length === 0) return;
     const handoffPrompt = buildFallbackHandoffPrompt({
-      userPrompt: userMessage.content,
+      userPrompt: promptWithAttachments,
       fallbackAgentName: fallbackTarget.agent.agent_name,
       fallbackResponse,
     });
@@ -70,6 +73,72 @@ export async function dispatchUserMessage(args: {
       roomId,
     });
   }
+}
+
+export function buildPromptWithMessageAttachments(userPrompt: string, userMessage: Message): string {
+  const attachments = parseMessageAttachments(userMessage.metadata);
+  if (attachments.length === 0) return userPrompt;
+
+  const attachmentLines = attachments.map((attachment, index) => {
+    const localPath = resolveMessageAttachmentLocalPath(attachment);
+    const kind = attachment.isImage ? 'image' : 'file';
+    const pathDetail = localPath ? `; localPath=${localPath}` : '; localPath=unavailable';
+    const url = localPath ? attachment.url : 'unavailable';
+    return [
+      `${index + 1}. ${attachment.name}`,
+      `mimeType=${attachment.mimeType}`,
+      `size=${attachment.size}`,
+      `kind=${kind}`,
+      `url=${url}${pathDetail}`,
+    ].join(' | ');
+  });
+
+  const content = userPrompt.trim() || '用户发送了一条仅包含附件的消息。';
+  return [
+    content,
+    '',
+    '---',
+    '消息附件：',
+    '请结合以下附件回答；如果需要查看图片或文件，请读取对应的 localPath。',
+    ...attachmentLines,
+  ].join('\n');
+}
+
+function parseMessageAttachments(metadata: string | null): MessageAttachmentMetadata[] {
+  if (!metadata) return [];
+  try {
+    const parsed = JSON.parse(metadata) as unknown;
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as { attachments?: unknown }).attachments)) {
+      return [];
+    }
+    return (parsed as { attachments: unknown[] }).attachments.filter(isMessageAttachmentMetadata);
+  } catch {
+    return [];
+  }
+}
+
+function isMessageAttachmentMetadata(value: unknown): value is MessageAttachmentMetadata {
+  if (!value || typeof value !== 'object') return false;
+  const attachment = value as Record<string, unknown>;
+  return (
+    typeof attachment.id === 'string' &&
+    typeof attachment.name === 'string' &&
+    typeof attachment.mimeType === 'string' &&
+    typeof attachment.size === 'number' &&
+    typeof attachment.url === 'string' &&
+    typeof attachment.isImage === 'boolean'
+  );
+}
+
+function resolveMessageAttachmentLocalPath(attachment: MessageAttachmentMetadata): string | null {
+  if (!attachment.url.startsWith(`${messageUploadRoute}/`)) return null;
+  const relativePath = attachment.url.slice(messageUploadRoute.length + 1);
+  if (!relativePath || relativePath.includes('/') || relativePath.includes('\\')) return null;
+
+  const uploadRoot = resolve(messageUploadDir);
+  const filePath = resolve(uploadRoot, relativePath);
+  if (filePath !== uploadRoot && filePath.startsWith(`${uploadRoot}${sep}`)) return filePath;
+  return null;
 }
 
 async function runTargets(args: {
