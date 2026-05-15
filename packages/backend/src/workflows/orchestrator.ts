@@ -620,7 +620,7 @@ function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
       if (!latest || !latestStep || shouldSkipAsyncWorkflowCompletion(latest, latestStep)) return;
       const error = (err as Error).message;
       markStepFailed(latest, latestStep, error);
-      if (err instanceof LangChainPlannerError && err.rawOutput) {
+      if (err instanceof LangChainPlannerError) {
         const artifact = workflowRepo.createArtifact({
           task_id: latest.task_id,
           workflow_run_id: latest.id,

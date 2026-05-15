@@ -137,6 +137,24 @@ test('generateLangChainPlan reports final raw output when retries fail', async (
   assert.equal(attempts, 2);
 });
 
+test('generateLangChainPlan retries after invoker errors', async () => {
+  let attempts = 0;
+  const plan = await generateLangChainPlan(
+    basePlannerInput(),
+    {
+      async invoke() {
+        attempts += 1;
+        if (attempts === 1) throw new Error('temporary planner transport error');
+        return validPlannerOutput();
+      },
+    },
+    { maxAttempts: 2 },
+  );
+
+  assert.equal(attempts, 2);
+  assert.equal(plan.tasks.length, 1);
+});
+
 test('extractPlannerText concatenates text content blocks', () => {
   const text = extractPlannerText([
     { type: 'text', text: '```json\n' },
