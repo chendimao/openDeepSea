@@ -605,6 +605,7 @@
   }
   .ai-conversation-content {
     display: flex;
+    width: 100%;
     min-height: 100%;
     flex-direction: column;
     gap: 14px;
@@ -631,6 +632,7 @@
   }
   .ai-message-row {
     display: flex;
+    width: 100%;
     min-width: 0;
     gap: 10px;
   }
@@ -667,6 +669,7 @@
     width: min(780px, calc(100% - 42px));
   }
   .ai-message-row--user .ai-message-card {
+    margin-left: auto;
     max-width: min(640px, 82%);
     background: linear-gradient(180deg, rgba(10,132,255,0.98), rgba(0,113,227,0.94));
     color: var(--color-primary-fg);
