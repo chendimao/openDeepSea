@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateLangChainPlan, getLangChainPlannerConfig } from './langchain-planner.js';
+import { extractPlannerText, generateLangChainPlan, getLangChainPlannerConfig } from './langchain-planner.js';
 import type { Room, RoomAgent, Task } from '../types.js';
 
 test('getLangChainPlannerConfig returns disabled config when no model is configured', () => {
@@ -20,12 +20,40 @@ test('generateLangChainPlan validates model output into ParsedPlan', async () =>
       projectPath: '/repo/openDeepSea',
       room: fakeRoom(),
       task: fakeTask(),
-      agents: [fakeAgent()],
+      agents: [
+        fakeAgent({
+          acp_session_id: 'session-1',
+          acp_session_label: 'Planner session',
+          acp_writable_dirs: ['/repo/openDeepSea/secret-write-dir'],
+        }),
+      ],
       memories: ['Prefer minimal scoped changes.'],
       recentMessages: ['User asked for Task 3 implementation.'],
     },
     {
-      async invoke() {
+      async invoke(messages) {
+        assert.equal(messages.length, 2);
+
+        const systemContent = String(messages[0]?.content);
+        assert.match(systemContent, /goal/);
+        assert.match(systemContent, /summary/);
+        assert.match(systemContent, /assumptions/);
+        assert.match(systemContent, /steps/);
+        assert.match(systemContent, /risks/);
+        assert.match(systemContent, /verification/);
+        assert.match(systemContent, /needsApproval/);
+        assert.match(systemContent, /analyst, planner, coordinator, executor, reviewer, acceptor/);
+        assert.match(systemContent, /claudecode, opencode, codex/);
+
+        const humanContent = String(messages[1]?.content);
+        assert.match(humanContent, /OpenDeepSea/);
+        assert.match(humanContent, /Task 3/);
+        assert.match(humanContent, /Codex/);
+        assert.match(humanContent, /Prefer minimal scoped changes/);
+        assert.match(humanContent, /User asked for Task 3 implementation/);
+        assert.doesNotMatch(humanContent, /session-1/);
+        assert.doesNotMatch(humanContent, /\/repo\/openDeepSea\/secret-write-dir/);
+
         return `\`\`\`json
 {
   "goal": "Implement LangChain planner service",
@@ -60,6 +88,16 @@ test('generateLangChainPlan validates model output into ParsedPlan', async () =>
 
   assert.equal(plan.tasks.length, 1);
   assert.equal(plan.tasks[0]?.suggestedRole, 'executor');
+});
+
+test('extractPlannerText concatenates text content blocks', () => {
+  const text = extractPlannerText([
+    { type: 'text', text: '```json\n' },
+    { type: 'text', text: '{"goal":"Ship"}' },
+    { type: 'unknown', value: 'fallback' },
+  ]);
+
+  assert.equal(text, '```json\n{"goal":"Ship"}{"type":"unknown","value":"fallback"}');
 });
 
 function fakeRoom(overrides: Partial<Room> = {}): Room {

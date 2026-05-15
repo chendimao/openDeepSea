@@ -1,4 +1,4 @@
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage, type MessageContent } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
 import { parsePlanArtifact, type ParsedPlan } from './plan-parser.js';
 import type { Room, RoomAgent, Task } from '../types.js';
@@ -49,7 +49,11 @@ export function buildPlannerMessages(input: LangChainPlannerInput): PlannerMessa
       [
         'You are the LangChain planning service for OpenClaw Room.',
         'Return only a fenced JSON object using the modern plan schema.',
+        'The root object must include goal, summary, assumptions, steps, risks, verification, and needsApproval.',
         'Each step must include title, intent, assigneeRole, scopeRead, scopeWrite, acceptance, and dependsOn.',
+        'Each step may include optional preferredBackend.',
+        'Valid assigneeRole values: analyst, planner, coordinator, executor, reviewer, acceptor.',
+        'Valid preferredBackend values: claudecode, opencode, codex.',
         'Use needsApproval=false only when the plan can proceed without a user decision.',
       ].join('\n'),
     ),
@@ -67,9 +71,14 @@ export function createDefaultPlannerInvoker(): PlannerInvoker {
   return {
     async invoke(messages) {
       const response = await model.invoke(messages);
-      return typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+      return extractPlannerText(response.content);
     },
   };
+}
+
+export function extractPlannerText(content: MessageContent): string {
+  if (typeof content === 'string') return content;
+  return content.map(formatContentBlock).join('');
 }
 
 function formatPlannerInput(input: LangChainPlannerInput): string {
@@ -109,4 +118,11 @@ function formatAgent(agent: RoomAgent): Record<string, unknown> {
     acp_backend: agent.acp_backend,
     agent_role: agent.agent_role,
   };
+}
+
+function formatContentBlock(block: unknown): string {
+  if (typeof block === 'string') return block;
+  if (typeof block !== 'object' || block === null) return String(block);
+  if ('text' in block && typeof block.text === 'string') return block.text;
+  return JSON.stringify(block);
 }
