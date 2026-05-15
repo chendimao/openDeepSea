@@ -417,10 +417,14 @@ async function ensureOpenClawSession(args: {
   try {
     await gatewayClient.spawnSession(args);
   } catch (err) {
-    const message = (err as Error).message.toLowerCase();
-    if (message.includes('already') && message.includes('exist')) return;
+    if (isOpenClawSessionAlreadyPresentError(err)) return;
     throw err;
   }
+}
+
+export function isOpenClawSessionAlreadyPresentError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /already/i.test(message) && /(exist|in use)/i.test(message);
 }
 
 async function streamOpenClawResponse(args: {
