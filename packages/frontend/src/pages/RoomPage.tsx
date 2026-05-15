@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
@@ -21,6 +21,21 @@ import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { MessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
+import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+  ConversationScrollButton,
+} from '../components/ai-elements/Conversation';
+import {
+  MessageActions as AiMessageActions,
+  MessageBadge as AiMessageBadge,
+  MessageBody as AiMessageBody,
+  MessageHeader as AiMessageHeader,
+  MessageMeta as AiMessageMeta,
+  MessageRow as AiMessageRow,
+  MessageRunPanel as AiMessageRunPanel,
+} from '../components/ai-elements/Message';
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -393,7 +408,6 @@ function ChatColumn({
   retryingWorkflowId?: string;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const { t } = useI18n();
   const agentMap = useMemo(
@@ -409,10 +423,6 @@ function ChatColumn({
     [messages, agentRuns],
   );
   const visibleMessages = useMemo(() => dedupeMessages(messages), [messages]);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages.length, agentRuns.length]);
 
   const send = useMutation({
     mutationFn: (input: { content: string; mentions?: string[]; files?: File[] }) => api.sendMessage(roomId, input),
@@ -477,37 +487,42 @@ function ChatColumn({
         </button>
       </div>
 
-      <div ref={scrollRef} className="chat-scroll flex-1 space-y-4 overflow-y-auto px-5 py-5">
-        {messages.length === 0 ? (
-          <WorkspaceEmptyState
-            icon={<MessageSquare className="h-9 w-9" strokeWidth={1.75} />}
-            title={t('room.emptyMessagesTitle')}
-            description={
-              agents.length === 0
-                ? t('room.emptyMessagesNoAgents')
-                : t('room.emptyMessagesWithAgents')
-            }
-            action={agents.length === 0 ? <AddAgentDialog roomId={roomId} /> : undefined}
-          />
-        ) : (
-          visibleMessages.map((m) => {
-            const run = runByMessageId.get(m.id);
-            return (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                agentMeta={agentMap.get(m.sender_id)}
-                run={run}
-                runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
-                roomId={roomId}
-                projectId={projectId}
-                onRetryWorkflow={onRetryWorkflow}
-                retryingWorkflowId={retryingWorkflowId}
+      <Conversation className="flex-1">
+        <ConversationContent>
+          {messages.length === 0 ? (
+            <ConversationEmptyState>
+              <WorkspaceEmptyState
+                icon={<MessageSquare className="h-9 w-9" strokeWidth={1.75} />}
+                title={t('room.emptyMessagesTitle')}
+                description={
+                  agents.length === 0
+                    ? t('room.emptyMessagesNoAgents')
+                    : t('room.emptyMessagesWithAgents')
+                }
+                action={agents.length === 0 ? <AddAgentDialog roomId={roomId} /> : undefined}
               />
-            );
-          })
-        )}
-      </div>
+            </ConversationEmptyState>
+          ) : (
+            visibleMessages.map((m) => {
+              const run = runByMessageId.get(m.id);
+              return (
+                <MessageBubble
+                  key={m.id}
+                  message={m}
+                  agentMeta={agentMap.get(m.sender_id)}
+                  run={run}
+                  runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
+                  roomId={roomId}
+                  projectId={projectId}
+                  onRetryWorkflow={onRetryWorkflow}
+                  retryingWorkflowId={retryingWorkflowId}
+                />
+              );
+            })
+          )}
+        </ConversationContent>
+        <ConversationScrollButton label={t('room.scrollToBottom')} />
+      </Conversation>
 
       <RichMessageComposer
         resetKey={composerResetKey}
@@ -597,97 +612,77 @@ function MessageBubble({
 
   if (isTaskEvent) {
     return (
-      <div className="flex justify-center py-1">
+      <AiMessageRow variant="event">
         <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
           <span>{message.content}</span>
         </div>
-      </div>
+      </AiMessageRow>
     );
   }
 
   if (isSystem) {
     return (
-      <div className="text-center text-[11.5px] text-[var(--color-fg-muted)] font-mono py-1">
+      <AiMessageRow variant="system">
         {message.content}
-      </div>
+      </AiMessageRow>
     );
   }
 
   return (
-    <div className={cn('flex gap-3 fade-up', isUser ? 'flex-row-reverse' : 'flex-row')}>
+    <AiMessageRow variant={isUser ? 'user' : 'agent'} className="fade-up">
       {!isUser && (
         <AgentAvatar name={message.sender_name ?? message.sender_id} size={32} active={!!agentMeta?.acp_enabled} />
       )}
-      <div className={cn('min-w-0 max-w-[760px] flex flex-col', isUser ? 'items-end' : 'w-full items-start')}>
-        <div className="group flex items-center gap-2 mb-1">
-          <span className="font-display text-[12.5px] font-semibold">
-            {isUser ? t('room.currentUser') : message.sender_name ?? message.sender_id}
-          </span>
-          {agentMeta?.acp_enabled && agentMeta.acp_backend && (
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--color-surface-raised)] text-[var(--color-accent)] border border-[var(--color-border)]">
-              ACP:{agentMeta.acp_backend}
+      <div className="ai-message-card group">
+        <AiMessageHeader>
+          <AiMessageMeta>
+            <span className="ai-message-sender">
+              {isUser ? t('room.currentUser') : message.sender_name ?? message.sender_id}
             </span>
+            <span className="ai-message-time">
+              {formatRelativeTime(message.created_at)}
+            </span>
+          </AiMessageMeta>
+          {agentMeta?.acp_enabled && agentMeta.acp_backend && (
+            <AiMessageBadge>ACP:{agentMeta.acp_backend}</AiMessageBadge>
           )}
-          <span className="text-[10.5px] font-mono text-[var(--color-muted)]">
-            {formatRelativeTime(message.created_at)}
-          </span>
           {hasContent && (
-            <button
-              type="button"
-              className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 p-0.5 rounded hover:bg-[var(--color-surface-raised)] text-[var(--color-fg-muted)] hover:text-[var(--color-accent)]"
-              title={t('memory.saveAsMemory')}
-              disabled={saveAsMemory.isPending}
-              onClick={() => saveAsMemory.mutate()}
-            >
-              <BookmarkPlus className="h-3.5 w-3.5" strokeWidth={1.8} />
-            </button>
+            <AiMessageActions>
+              <button
+                type="button"
+                className="ai-message-action"
+                title={t('memory.saveAsMemory')}
+                disabled={saveAsMemory.isPending}
+                onClick={() => saveAsMemory.mutate()}
+              >
+                <BookmarkPlus className="h-3.5 w-3.5" strokeWidth={1.8} />
+              </button>
+            </AiMessageActions>
           )}
-        </div>
-        <div
-          className={cn(
-            'message-bubble text-[13.5px] leading-relaxed',
-            isUser
-              ? 'user-message px-3.5 py-2.5 text-[var(--color-primary-fg)]'
-              : 'w-full',
-            message.message_type === 'agent_stream' && !isUser && 'font-mono text-[12.5px]',
-            !hasContent && attachments.length > 0 && isUser && 'px-3.5 py-2.5',
-          )}
-        >
-          {!isUser && run ? (
-            <div className="space-y-2.5">
-              {hasContent && (
-                <div className="px-3.5 pt-3">
-                  <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
-                </div>
-              )}
-              <div className={cn('px-3.5', hasContent ? 'pb-1' : 'pt-3 pb-1')}>
-                <MessageAttachments attachments={attachments} />
-              </div>
-              <div className="run-box-wrap px-2.5 py-2.5">
-                <AgentRunStatusCard
-                  roomId={roomId}
-                  run={run}
-                  agent={runAgent}
-                  compact
-                  onRetryWorkflow={onRetryWorkflow}
-                  retrying={retryingWorkflowId === run.workflow_run_id}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className={cn(!isUser && 'px-3.5 py-2.5', isUser && !hasContent && attachments.length > 0 && 'p-0')}>
-              {hasContent ? (
-                <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
-              ) : message.message_type === 'agent_stream' ? (
-                <MessageContent content="…" />
-              ) : null}
-              <MessageAttachments attachments={attachments} />
-            </div>
-          )}
-        </div>
+        </AiMessageHeader>
+        <AiMessageBody stream={message.message_type === 'agent_stream' && !isUser}>
+          {hasContent ? (
+            <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+          ) : message.message_type === 'agent_stream' ? (
+            <MessageContent content="…" />
+          ) : null}
+          <MessageAttachments attachments={attachments} />
+        </AiMessageBody>
+        {!isUser && run && (
+          <AiMessageRunPanel>
+            <AgentRunStatusCard
+              roomId={roomId}
+              run={run}
+              agent={runAgent}
+              compact
+              onRetryWorkflow={onRetryWorkflow}
+              retrying={retryingWorkflowId === run.workflow_run_id}
+            />
+          </AiMessageRunPanel>
+        )}
       </div>
-    </div>
+    </AiMessageRow>
   );
 }
 

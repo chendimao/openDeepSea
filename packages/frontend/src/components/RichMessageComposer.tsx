@@ -12,6 +12,13 @@ import type { RoomAgent } from '../lib/types';
 import { PromptArea } from './prompt-area/prompt-area';
 import { getChipsByTrigger, isSegmentsEmpty, segmentsToPlainText } from './prompt-area/segment-helpers';
 import type { PromptAreaHandle, Segment, TriggerConfig, TriggerSuggestion } from './prompt-area/types';
+import {
+  PromptInputActions,
+  PromptInputAttachmentShelf,
+  PromptInputHint,
+  PromptInputShell,
+  PromptInputToolbar,
+} from './ai-elements/PromptInput';
 import { Button } from './ui/Button';
 
 interface RichMessageComposerProps {
@@ -170,7 +177,7 @@ export function RichMessageComposer({
 
   return (
     <form
-      className="rich-composer-box composer-box relative"
+      className="rich-composer-box relative"
       onSubmit={handleSubmit}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return;
@@ -179,59 +186,58 @@ export function RichMessageComposer({
       }}
       onDrop={handleFileDrop}
     >
-      <PromptArea
-        ref={promptAreaRef}
-        value={segments}
-        onChange={setSegments}
-        triggers={[agentTrigger]}
-        placeholder={placeholder}
-        disabled={isBusy}
-        minHeight={44}
-        maxHeight={152}
-        autoGrow
-        markdown
-        aria-label={placeholder}
-        onSubmit={() => handleSubmit()}
-        onImagePaste={(file) => addFiles([file])}
-      />
-      {attachments.length > 0 && (
-        <div className="composer-attachments" aria-label={t('composer.attachmentsAria')}>
-          {attachments.map((attachment) => (
-            <div className="composer-attachment" key={attachment.id}>
-              {attachment.previewUrl ? (
-                <img src={attachment.previewUrl} alt={attachment.file.name} />
-              ) : (
-                <div className="composer-attachment-file">
-                  <Paperclip className="h-4 w-4" strokeWidth={1.75} />
+      <PromptInputShell>
+        <PromptArea
+          ref={promptAreaRef}
+          value={segments}
+          onChange={setSegments}
+          triggers={[agentTrigger]}
+          placeholder={placeholder}
+          disabled={isBusy}
+          minHeight={44}
+          maxHeight={152}
+          autoGrow
+          markdown
+          aria-label={placeholder}
+          onSubmit={() => handleSubmit()}
+          onImagePaste={(file) => addFiles([file])}
+        />
+        {attachments.length > 0 && (
+          <PromptInputAttachmentShelf aria-label={t('composer.attachmentsAria')}>
+            {attachments.map((attachment) => (
+              <div className="composer-attachment" key={attachment.id}>
+                {attachment.previewUrl ? (
+                  <img src={attachment.previewUrl} alt={attachment.file.name} />
+                ) : (
+                  <div className="composer-attachment-file">
+                    <Paperclip className="h-4 w-4" strokeWidth={1.75} />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12px] font-medium text-[var(--color-fg)]">
+                    {attachment.file.name}
+                  </div>
+                  <div className="text-[11px] text-[var(--color-muted)]">
+                    {formatFileSize(attachment.file.size)}
+                  </div>
                 </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[12px] font-medium text-[var(--color-fg)]">
-                  {attachment.file.name}
-                </div>
-                <div className="text-[11px] text-[var(--color-muted)]">
-                  {formatFileSize(attachment.file.size)}
-                </div>
+                <button
+                  type="button"
+                  className="composer-attachment-remove"
+                  onClick={() => removeAttachment(attachment.id)}
+                  aria-label={t('composer.removeAttachment', { name: attachment.file.name })}
+                  disabled={isBusy}
+                >
+                  <X className="h-3.5 w-3.5" strokeWidth={1.9} />
+                </button>
               </div>
-              <button
-                type="button"
-                className="composer-attachment-remove"
-                onClick={() => removeAttachment(attachment.id)}
-                aria-label={t('composer.removeAttachment', { name: attachment.file.name })}
-                disabled={isBusy}
-              >
-                <X className="h-3.5 w-3.5" strokeWidth={1.9} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </PromptInputAttachmentShelf>
+        )}
 
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 truncate text-[11.5px] text-[var(--color-fg-muted)]">
-          {routingHint}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <PromptInputToolbar>
+          <PromptInputHint>{routingHint}</PromptInputHint>
+          <PromptInputActions>
           <input
             ref={fileInputRef}
             type="file"
@@ -265,8 +271,9 @@ export function RichMessageComposer({
             <Send className="h-4 w-4" strokeWidth={1.75} />
             {t('composer.send')}
           </Button>
-        </div>
-      </div>
+          </PromptInputActions>
+        </PromptInputToolbar>
+      </PromptInputShell>
     </form>
   );
 }
