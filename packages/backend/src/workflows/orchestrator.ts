@@ -3,6 +3,7 @@ import { formatMemoryContext } from '../memory/context.js';
 import { distillFromTask } from '../memory/distill.js';
 import { agentRunRepo } from '../repos/agent-runs.js';
 import { memoryRepo } from '../repos/memory.js';
+import { messageRepo } from '../repos/messages.js';
 import { projectRepo } from '../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../repos/rooms.js';
 import { settingsRepo } from '../repos/settings.js';
@@ -19,7 +20,13 @@ import {
   type ParsedAcceptanceVerdict,
   type ParsedDecisionItem,
   type ParsedDecisionRequest,
+  type ParsedPlan,
 } from './plan-parser.js';
+import {
+  generateLangChainPlan,
+  getLangChainPlannerConfig,
+  type LangChainPlannerConfig,
+} from './langchain-planner.js';
 import { buildStagePrompt } from './prompts.js';
 import type {
   AgentRun,
@@ -259,6 +266,10 @@ function selectAgent(stage: WorkflowStage, agents: RoomAgent[]): RoomAgent | nul
   return null;
 }
 
+export function shouldUseLangChainPlanner(stage: WorkflowStage, config: LangChainPlannerConfig): boolean {
+  return stage === 'planning' && config.enabled;
+}
+
 function nextSortOrder(runId: string): number {
   return workflowRepo.listSteps(runId).length + 1;
 }
@@ -496,6 +507,12 @@ function startAgentStage(
   stage: WorkflowStage,
   resumeSessionId?: string | null,
 ): void {
+  const plannerConfig = getLangChainPlannerConfig();
+  if (shouldUseLangChainPlanner(stage, plannerConfig)) {
+    startLangChainPlanningStage(run, task);
+    return;
+  }
+
   const context = getContext(run);
   const agent = selectAgent(stage, context.agents);
   if (!agent) {
@@ -549,6 +566,78 @@ function startAgentStage(
   }).catch((err) => {
     void safelyHandleAgentStageStartFailed(run.id, step.id, (err as Error).message);
   });
+}
+
+function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
+  const context = getContext(run);
+  const prompt = 'LangChain planner service will generate the structured planning artifact.';
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: task.id,
+    stage: 'planning',
+    status: 'running',
+    prompt,
+    sort_order: nextSortOrder(run.id),
+  });
+  broadcastStep('workflow_step:created', run.room_id, step);
+  const updatedRun = workflowRepo.updateRun(run.id, { status: 'running', current_stage: 'planning', error: null });
+  if (updatedRun) broadcastWorkflow('workflow:updated', updatedRun);
+  safelyRecordWorkflowEvent({
+    run: updatedRun ?? run,
+    task,
+    eventType: 'workflow_stage_changed',
+    workflowStepId: step.id,
+    content: '工作流进入 planning 阶段。',
+  });
+
+  const memoryContext = buildPlannerMemoryContext(context.project.id, context.room.id, task.id);
+  void generateLangChainPlan({
+    projectName: context.project.name,
+    projectPath: context.project.path,
+    room: context.room,
+    task,
+    agents: context.agents,
+    memories: memoryContext ? [memoryContext] : [],
+    recentMessages: buildPlannerRecentMessages(context.room.id),
+  })
+    .then((plan) => {
+      const latest = workflowRepo.getRun(run.id);
+      const latestStep = workflowRepo.getStep(step.id);
+      if (!latest || !latestStep || latest.status === 'cancelled' || isTerminalStep(latestStep)) return;
+      const output = formatParsedPlanArtifact(plan);
+      const completedStep = workflowRepo.updateStep(latestStep.id, { status: 'completed', result: output });
+      if (completedStep) broadcastStep('workflow_step:updated', latest.room_id, completedStep);
+      finishPlanning(latest, completedStep ?? latestStep, output);
+    })
+    .catch((err) => {
+      const latest = workflowRepo.getRun(run.id);
+      const latestStep = workflowRepo.getStep(step.id);
+      if (!latest || !latestStep || latest.status === 'cancelled' || isTerminalStep(latestStep)) return;
+      const error = (err as Error).message;
+      markStepFailed(latest, latestStep, error);
+      block(latest, error);
+    });
+}
+
+function buildPlannerRecentMessages(roomId: string): string[] {
+  try {
+    return messageRepo
+      .listByRoom(roomId, 20)
+      .map((message) => `${message.sender_type}:${message.sender_name ?? message.sender_id}: ${message.content}`);
+  } catch (err) {
+    console.warn(`[workflow] failed to load planner recent messages: ${(err as Error).message}`);
+    return [];
+  }
+}
+
+function isTerminalStep(step: WorkflowStep): boolean {
+  return (
+    step.status === 'completed' ||
+    step.status === 'failed' ||
+    step.status === 'cancelled' ||
+    step.status === 'interrupted' ||
+    step.status === 'skipped'
+  );
 }
 
 async function safelyHandleAgentStageStartFailed(
@@ -989,6 +1078,45 @@ export function buildWorkflowMemoryContext(
     console.warn(`[memory] failed to load workflow memory context: ${(err as Error).message}`);
     return '';
   }
+}
+
+export function buildPlannerMemoryContext(projectId: string, roomId: string, taskId: string): string {
+  try {
+    return formatMemoryContext(memoryRepo.listForRoomContext({
+      projectId,
+      roomId,
+      taskId,
+    }));
+  } catch (err) {
+    console.warn(`[memory] failed to load planner memory context: ${(err as Error).message}`);
+    return '';
+  }
+}
+
+export function formatParsedPlanArtifact(plan: ParsedPlan): string {
+  const artifact = {
+    goal: plan.goal ?? plan.summary,
+    summary: plan.summary,
+    assumptions: plan.assumptions,
+    steps: plan.tasks.map((task) => ({
+      title: task.title,
+      intent: task.description,
+      assigneeRole: task.suggestedRole,
+      ...(task.preferredBackend ? { preferredBackend: task.preferredBackend } : {}),
+      scopeRead: task.scopeRead,
+      scopeWrite: task.scopeWrite,
+      acceptance: task.acceptance,
+      dependsOn: task.dependsOn,
+    })),
+    risks: plan.risks,
+    verification: plan.verification.map((command) => ({
+      command,
+      reason: '',
+      required: true,
+    })),
+    needsApproval: plan.needsApproval,
+  };
+  return `\`\`\`json\n${JSON.stringify(artifact, null, 2)}\n\`\`\``;
 }
 
 export function rememberAcceptedTask(run: WorkflowRun, verdict: ParsedAcceptanceVerdict): void {
