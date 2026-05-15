@@ -5,6 +5,7 @@ import { agentRunRepo } from '../repos/agent-runs.js';
 import { memoryRepo } from '../repos/memory.js';
 import { projectRepo } from '../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../repos/rooms.js';
+import { settingsRepo } from '../repos/settings.js';
 import { taskRepo } from '../repos/tasks.js';
 import { workflowRepo } from '../repos/workflows.js';
 import { runRegistry } from '../run-registry.js';
@@ -1001,6 +1002,9 @@ export function rememberAcceptedTask(run: WorkflowRun, verdict: ParsedAcceptance
       content: buildTaskSummaryMemoryContent(completedTask.title, verdict),
       source_id: run.id,
     });
+    const autoDistillEnabled = settingsRepo.resolveForRoom(run.room_id)?.effective.auto_distill_enabled ?? true;
+    if (!autoDistillEnabled) return;
+
     // Async deep distillation from full task conversation
     distillFromTask({
       projectId: run.project_id,

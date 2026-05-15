@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
-import { buildTaskSummaryMemoryContent } from './orchestrator.js';
+
+process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-memory-')), 'test.db');
+
+const { gatewayClient } = await import('../openclaw/gateway.js');
+const { memoryRepo } = await import('../repos/memory.js');
+const { messageRepo } = await import('../repos/messages.js');
+const { projectRepo } = await import('../repos/projects.js');
+const { roomRepo } = await import('../repos/rooms.js');
+const { settingsRepo } = await import('../repos/settings.js');
+const { taskRepo } = await import('../repos/tasks.js');
+const { workflowRepo } = await import('../repos/workflows.js');
+const { buildTaskSummaryMemoryContent, rememberAcceptedTask } = await import('./orchestrator.js');
 import { buildStagePrompt } from './prompts.js';
 
 test('buildStagePrompt includes memory context when provided', () => {
@@ -35,6 +49,73 @@ test('buildTaskSummaryMemoryContent summarizes parsed acceptance verdict and tru
   assert.match(content, /- prompt includes memory/);
   assert.doesNotMatch(content, /```json/);
   assert.match(content, /\.\.\.已截断/);
+});
+
+test('rememberAcceptedTask saves task summary but skips LLM distill when auto distill is disabled', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-memory-project-'));
+  const project = projectRepo.create({ name: 'Workflow Memory', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Workflow Room' });
+  const task = taskRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    title: 'Build audit trail',
+    description: 'Add memory distill audit trail',
+  });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '请实现自动沉淀审计流水线。',
+  });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: 'Planner',
+    content: '计划新增 memory_distill_runs 表。',
+  });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'reviewer',
+    sender_name: 'Reviewer',
+    content: '验收通过，后续沉淀审计记录。',
+  });
+  const run = workflowRepo.createRun({
+    project_id: project.id,
+    room_id: room.id,
+    task_id: task.id,
+    status: 'completed',
+    current_stage: 'acceptance',
+  });
+
+  settingsRepo.updateProject(project.id, { auto_distill_enabled: false });
+
+  const originalConnect = gatewayClient.connect.bind(gatewayClient);
+  let llmCalls = 0;
+  gatewayClient.connect = async () => {
+    llmCalls += 1;
+    throw new Error('distill should be disabled');
+  };
+
+  try {
+    rememberAcceptedTask(run, {
+      verdict: 'pass',
+      acceptedCriteria: ['summary saved'],
+      failedCriteria: [],
+      notes: 'Accepted.',
+    });
+  } finally {
+    gatewayClient.connect = originalConnect;
+  }
+
+  assert.equal(llmCalls, 0);
+  const memories = memoryRepo.list({ projectId: project.id, roomId: room.id, taskId: task.id });
+  assert.equal(memories.length, 1);
+  assert.equal(memories[0]?.memory_type, 'task_summary');
+  assert.equal(memories[0]?.source_type, 'workflow');
+  assert.equal(memories[0]?.source_id, run.id);
 });
 
 function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
