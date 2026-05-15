@@ -34,6 +34,29 @@ export const verificationResultSchema = z.object({
   stderr: z.string(),
 });
 
+export const parsedPlanTaskSchema = z.object({
+  title: z.string(),
+  description: z.string(),
+  suggestedRole: z.enum(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor']),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']),
+  acceptance: z.array(z.string()),
+  scopeRead: z.array(z.string()),
+  scopeWrite: z.array(z.string()),
+  preferredBackend: z.enum(['claudecode', 'opencode', 'codex']).optional(),
+  dependsOn: z.array(z.string()),
+});
+
+export const parsedPlanSchema = z.object({
+  goal: z.string().nullable(),
+  summary: z.string(),
+  assumptions: z.array(z.string()),
+  tasks: z.array(parsedPlanTaskSchema),
+  reviewFocus: z.array(z.string()),
+  verification: z.array(z.string()),
+  risks: z.array(z.string()),
+  needsApproval: z.boolean(),
+});
+
 export const agentWorkflowStateSchema = z.object({
   workflowRunId: z.string(),
   projectId: z.string(),
@@ -41,7 +64,7 @@ export const agentWorkflowStateSchema = z.object({
   taskId: z.string(),
   userGoal: z.string(),
   projectPath: z.string(),
-  plan: z.unknown().nullable(),
+  plan: parsedPlanSchema.nullable(),
   currentNode: workflowGraphNodeNameSchema.nullable(),
   currentStepId: z.string().nullable(),
   activeAgentRunId: z.string().nullable(),
