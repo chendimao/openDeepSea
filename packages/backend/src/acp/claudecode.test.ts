@@ -97,3 +97,43 @@ test('normalizeStdoutChunk reads OpenCode text events from current and legacy sh
     },
   ]);
 });
+
+test('normalizeStdoutChunk reads OpenCode plain text events without OpenAI metadata', () => {
+  const current = JSON.stringify({
+    type: 'text',
+    text: 'plain final answer',
+    time: { start: 1, end: 2 },
+  });
+  const legacy = JSON.stringify({
+    type: 'message.part.updated',
+    data: {
+      part: {
+        type: 'text',
+        text: 'plain legacy answer',
+        time: { start: 3, end: 4 },
+      },
+    },
+  });
+
+  assert.deepEqual(normalizeStdoutChunk(`${current}\n${legacy}\n`), [
+    {
+      channel: 'answer',
+      text: 'plain final answer',
+      rawType: 'text',
+    },
+    {
+      channel: 'answer',
+      text: 'plain legacy answer',
+      rawType: 'message.part.updated',
+    },
+  ]);
+});
+
+test('normalizeStdoutChunk ignores OpenCode user echo text events without assistant signals', () => {
+  const userEcho = JSON.stringify({
+    type: 'text',
+    text: '"@数据处理工程师 hi"',
+  });
+
+  assert.deepEqual(normalizeStdoutChunk(`${userEcho}\n`), []);
+});

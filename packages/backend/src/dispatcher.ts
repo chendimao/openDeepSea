@@ -433,7 +433,15 @@ export async function respondAsAgent(args: {
       if (controller.signal.aborted) {
         finishRun(run.id, 'cancelled');
       } else if (result.exitCode === 0) {
-        finishRun(run.id, 'completed');
+        const currentRun = agentRunRepo.get(run.id);
+        if (!currentRun?.stdout) {
+          const error = `${agent.acp_backend} completed without output`;
+          onStdout(`\n[${agent.acp_backend} error] ${error}`);
+          onStderr(error);
+          finishRun(run.id, 'failed', error);
+        } else {
+          finishRun(run.id, 'completed');
+        }
       } else {
         const error = result.stderr || `Process exited with code ${result.exitCode}`;
         finishRun(run.id, 'failed', error);

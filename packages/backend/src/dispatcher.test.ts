@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { adapters } from './acp/index.js';
 import { db } from './db.js';
+import { agentRunRepo } from './repos/agent-runs.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
@@ -129,6 +130,58 @@ test('dispatchUserMessage passes uploaded image paths to ACP adapters', async ()
     assert.deepEqual(captured.imagePaths, [join(messageUploadDir, 'stored.png')]);
   } finally {
     adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('dispatchUserMessage marks empty successful ACP output as failed', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-empty-acp-test-'));
+  const project = projectRepo.create({ name: `empty-acp-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'opencode-agent', agent_name: 'OpenCodeAgent' });
+  roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'opencode',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'opencode-agent',
+  });
+
+  const originalAdapter = adapters.opencode;
+  adapters.opencode = {
+    ...originalAdapter,
+    async invoke() {
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const message = messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: 'hi',
+      message_type: 'text',
+    });
+
+    await dispatchUserMessage({ roomId: room.id, userMessage: message });
+
+    const [run] = agentRunRepo.listByRoom(room.id, 1);
+    const agentMessages = messageRepo.listByRoom(room.id).filter((item) => item.sender_type === 'agent');
+
+    assert.ok(run);
+    assert.equal(run.status, 'failed');
+    assert.match(run.error ?? '', /completed without output/i);
+    assert.match(run.stderr, /completed without output/i);
+    assert.match(agentMessages.at(-1)?.content ?? '', /opencode error.*completed without output/i);
+  } finally {
+    adapters.opencode = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });

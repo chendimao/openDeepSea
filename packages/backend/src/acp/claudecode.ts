@@ -447,9 +447,12 @@ function isOpenCodeTextEvent(obj: Record<string, unknown>): boolean {
 
   const data = asRecord(obj['data']) ?? asRecord(obj['properties']) ?? asRecord(obj['payload']) ?? obj;
   const part = asRecord(data['part']) ?? data;
+  if (part['type'] !== 'text' || typeof part['text'] !== 'string') return false;
   const metadata = asRecord(part['metadata']);
   const openai = metadata ? asRecord(metadata['openai']) : null;
-  return part['type'] === 'text' && openai?.['phase'] === 'final_answer';
+  if (openai?.['phase'] === 'final_answer') return true;
+  if (openai?.['phase'] !== undefined) return false;
+  return !!asRecord(part['time']);
 }
 
 function extractContentText(content: unknown): string | null {
