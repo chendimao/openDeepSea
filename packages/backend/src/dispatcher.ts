@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { dirname, resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
-import { appendMemoryContextSafely } from './memory/context.js';
+import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation } from './memory/distill.js';
 import { gatewayClient } from './openclaw/gateway.js';
 import { agentRunRepo } from './repos/agent-runs.js';
@@ -307,13 +307,18 @@ export async function respondAsAgent(args: {
   const room = roomRepo.get(roomId);
   const prompt =
     room && !args.workflowRunId
-      ? appendMemoryContextSafely({
+      ? appendMemoryContextForPromptSafely({
           prompt: args.prompt,
-          loadEntries: () => memoryRepo.listForRoomContext({
+          loadContextEntries: () => memoryRepo.listForRoomContext({
             projectId: room.project_id,
             roomId,
             roomAgentId: agent.id,
             taskId: args.taskId,
+          }),
+          loadRelevantEntries: () => memoryRepo.listRelevantForPrompt({
+            projectId: room.project_id,
+            roomId,
+            prompt: args.prompt,
           }),
           maxChars: agent.memory_max_context_chars,
           warn: (message) => console.warn(message),
@@ -482,7 +487,10 @@ export async function respondAsAgent(args: {
         done: true,
       });
       // Async memory distillation after reply completes (non-workflow only)
-      if (room && !args.workflowRunId && finalRun?.status === 'completed') {
+      const autoDistillEnabled = room
+        ? settingsRepo.resolveForRoom(roomId)?.effective.auto_distill_enabled ?? true
+        : false;
+      if (room && !args.workflowRunId && finalRun?.status === 'completed' && autoDistillEnabled) {
         distillFromConversation({
           projectId: room.project_id,
           roomId,

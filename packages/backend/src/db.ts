@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS settings (
   message_routing_mode TEXT,
   fallback_agent_id TEXT,
   interaction_mode TEXT,
+  auto_distill_enabled INTEGER CHECK (auto_distill_enabled IN (0, 1)),
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (scope, scope_id)
 );
@@ -375,19 +376,26 @@ if (!memoryColumnNames.has('archived')) {
   db.exec('ALTER TABLE memory_entries ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
 }
 
+const settingsColumns = db.prepare('PRAGMA table_info(settings)').all() as { name: string }[];
+const settingsColumnNames = new Set(settingsColumns.map((column) => column.name));
+if (!settingsColumnNames.has('auto_distill_enabled')) {
+  db.exec('ALTER TABLE settings ADD COLUMN auto_distill_enabled INTEGER CHECK (auto_distill_enabled IN (0, 1))');
+}
+
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN memory_max_context_chars INTEGER');
 }
 
 db.exec(`
 INSERT OR IGNORE INTO settings (
-  scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, updated_at
+  scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, auto_distill_enabled, updated_at
 )
 SELECT
   'project',
   id,
   message_routing_mode,
   fallback_agent_id,
+  NULL,
   NULL,
   updated_at
 FROM projects

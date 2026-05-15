@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   appendMemoryContext,
+  appendMemoryContextForPromptSafely,
   appendMemoryContextSafely,
   formatMemoryContext,
   MAX_MEMORY_CONTEXT_CHARS,
@@ -105,4 +106,33 @@ test('appendMemoryContextSafely falls back to original prompt when memory loadin
   const warning = warnings[0];
   assert.ok(warning);
   assert.match(warning, /failed to load memory context/);
+});
+
+test('appendMemoryContextForPromptSafely merges direct and cross-room relevant memories', () => {
+  const output = appendMemoryContextForPromptSafely({
+    prompt: '如何处理 Vite 大 chunk warning？',
+    loadContextEntries: () => [
+      memory({
+        id: 'room-memory',
+        scope: 'room',
+        title: '当前聊天室规则',
+        content: '先跑定向测试。',
+      }),
+    ],
+    loadRelevantEntries: () => [
+      memory({
+        id: 'other-room-memory',
+        room_id: 'room-b',
+        scope: 'room',
+        memory_type: 'lesson',
+        title: 'Vite chunk warning lesson',
+        content: '在另一个聊天室里，使用 manualChunks 拆分 vendor 依赖。',
+      }),
+    ],
+  });
+
+  assert.match(output, /当前聊天室规则/);
+  assert.match(output, /Vite chunk warning lesson/);
+  assert.match(output, /manualChunks/);
+  assert.match(output, /当前请求：\n如何处理 Vite 大 chunk warning？$/);
 });

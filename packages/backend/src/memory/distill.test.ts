@@ -16,7 +16,7 @@ const { projectRepo } = await import('../repos/projects.js');
 const { roomRepo } = await import('../repos/rooms.js');
 const { distillFromConversation } = await import('./distill.js');
 
-test('distillFromConversation stores candidates from gateway final text', async () => {
+test('distillFromConversation stores all candidates from gateway final text', async () => {
   const project = projectRepo.create({ name: 'Distill Memory', path: projectDir });
   const room = roomRepo.create({ project_id: project.id, name: 'Distill Room' });
   messageRepo.create({
@@ -67,6 +67,18 @@ test('distillFromConversation stores candidates from gateway final text', async 
               title: '提交说明偏好',
               content: '用户希望所有提交说明都用中文动词开头。',
             },
+            {
+              scope: 'project',
+              memory_type: 'lesson',
+              title: '验证命令经验',
+              content: '提交前需要运行后端测试和整仓构建。',
+            },
+            {
+              scope: 'room',
+              memory_type: 'fact',
+              title: '聊天室职责',
+              content: '这个聊天室负责记忆功能开发。',
+            },
           ]),
         },
       });
@@ -89,10 +101,12 @@ test('distillFromConversation stores candidates from gateway final text', async 
   }
 
   const memories = memoryRepo.list({ projectId: project.id, roomId: room.id });
-  assert.equal(memories.length, 1);
-  assert.equal(memories[0]?.scope, 'project');
-  assert.equal(memories[0]?.memory_type, 'preference');
-  assert.equal(memories[0]?.title, '提交说明偏好');
-  assert.equal(memories[0]?.source_type, 'message');
-  assert.equal(memories[0]?.source_id, reply.id);
+  assert.equal(memories.length, 3);
+  assert.deepEqual(new Set(memories.map((memory) => memory.title)), new Set(['提交说明偏好', '验证命令经验', '聊天室职责']));
+  assert.deepEqual(new Set(memories.map((memory) => memory.scope)), new Set(['project', 'room']));
+  assert.ok(memories.every((memory) => memory.source_type === 'message'));
+  assert.deepEqual(
+    memories.map((memory) => memory.source_id).sort(),
+    [`${reply.id}#distill-1`, `${reply.id}#distill-2`, `${reply.id}#distill-3`],
+  );
 });

@@ -75,6 +75,7 @@ export interface ScopedSettings {
   message_routing_mode: MessageRoutingMode | null;
   fallback_agent_id: string | null;
   interaction_mode: TaskInteractionMode | null;
+  auto_distill_enabled: 0 | 1 | null;
   updated_at: number;
 }
 
@@ -82,6 +83,7 @@ export interface EffectiveSettings {
   message_routing_mode: MessageRoutingMode;
   fallback_agent_id: string | null;
   interaction_mode: TaskInteractionMode;
+  auto_distill_enabled: boolean;
 }
 
 export interface SettingsResolution {
@@ -92,6 +94,7 @@ export interface SettingsResolution {
   sources: {
     message_routing: SettingsScope;
     interaction_mode: SettingsScope;
+    auto_distill: SettingsScope;
   };
 }
 

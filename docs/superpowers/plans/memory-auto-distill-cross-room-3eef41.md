@@ -85,7 +85,19 @@ GET /projects/:projectId/memories/search
 - [x] B1 跨聊天室检索 API：本次补齐 `memoryRepo.search()` 与 `GET /projects/:projectId/memories/search`，返回 `room_name`。
 - [x] B2 project 级记忆自动提升：提炼 prompt 与写入逻辑已支持 `scope = 'project'`。
 - [x] B3 前端跨聊天室记忆面板：本次补齐项目记忆 tab、跨聊天室搜索、来源聊天室标注、room 级记忆提升为 project 级。
-- [ ] 配置开关 `auto_distill_enabled`：原计划标记为可选，本轮未实现；后续如要控制 LLM 成本，可单独加入 settings schema、UI 与运行时判断。
+- [x] A 阶段可靠性补齐：`2026-05-15-项目记忆自动沉淀与跨聊天室注入.md` 已补齐多候选保存、手动任务创建记忆、跨聊天室相关记忆自动注入、`auto_distill_enabled` 后端设置。
+- [ ] B 阶段审计流水线：后续新增 `memory_distill_runs`，记录每次自动提取的触发来源、候选、保存/跳过原因，并在前端提供审核入口。
+
+## B 阶段计划入口
+
+目标是在 A 阶段稳定自动沉淀后，补一个可审计流水线：
+
+1. 新增 `memory_distill_runs` 表，字段包括 `id`、`project_id`、`room_id`、`source_type`、`source_id`、`status`、`prompt_excerpt`、`raw_output`、`created_count`、`skipped_count`、`error`、`created_at`、`completed_at`。
+2. 自动沉淀开始时创建 run，LLM 返回后记录原始输出和候选解析数量。
+3. 每条候选保存失败时记录跳过原因，避免只在 `console.debug` 中丢失。
+4. 前端 MemoryPanel 增加“自动沉淀记录”入口，展示最近 runs、候选条目、保存/跳过状态。
+5. 用户可从候选中手动创建、编辑、归档或提升记忆。
+6. B 阶段完成前继续保留 A 阶段的直接入库行为，审计表先作为旁路观测，不阻塞 agent 回复。
 
 ---
 

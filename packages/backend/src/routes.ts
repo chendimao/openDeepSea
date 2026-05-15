@@ -65,6 +65,7 @@ const settingsPatchSchema = z
     message_routing_mode: z.enum(['mentions_only', 'fallback_reply', 'fallback_route']).nullable().optional(),
     fallback_agent_id: z.string().min(1).nullable().optional(),
     interaction_mode: z.enum(['ask_user', 'auto_recommended']).nullable().optional(),
+    auto_distill_enabled: z.boolean().nullable().optional(),
   })
   .refine(
     (value) =>
@@ -181,6 +182,7 @@ router.patch('/settings/system', (req, res) => {
     message_routing_mode: parsed.data.message_routing_mode ?? undefined,
     fallback_agent_id: parsed.data.fallback_agent_id,
     interaction_mode: parsed.data.interaction_mode ?? undefined,
+    auto_distill_enabled: parsed.data.auto_distill_enabled ?? undefined,
   }));
 });
 
@@ -197,6 +199,7 @@ router.patch('/projects/:projectId/settings', (req, res) => {
     message_routing_mode?: MessageRoutingMode | null;
     fallback_agent_id?: string | null;
     interaction_mode?: TaskInteractionMode | null;
+    auto_distill_enabled?: boolean | null;
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForProject(req.params.projectId));
@@ -215,6 +218,7 @@ router.patch('/rooms/:roomId/settings', (req, res) => {
     message_routing_mode?: MessageRoutingMode | null;
     fallback_agent_id?: string | null;
     interaction_mode?: TaskInteractionMode | null;
+    auto_distill_enabled?: boolean | null;
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForRoom(req.params.roomId));

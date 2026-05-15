@@ -64,6 +64,7 @@ export const api = {
     message_routing_mode?: MessageRoutingMode;
     fallback_agent_id?: string | null;
     interaction_mode?: TaskInteractionMode;
+    auto_distill_enabled?: boolean;
   }) =>
     request<SettingsResolution['system']>('/settings/system', {
       method: 'PATCH',
@@ -77,6 +78,7 @@ export const api = {
       message_routing_mode?: MessageRoutingMode | null;
       fallback_agent_id?: string | null;
       interaction_mode?: TaskInteractionMode | null;
+      auto_distill_enabled?: boolean | null;
     },
   ) =>
     request<SettingsResolution>(`/projects/${projectId}/settings`, {
@@ -91,6 +93,7 @@ export const api = {
       message_routing_mode?: MessageRoutingMode | null;
       fallback_agent_id?: string | null;
       interaction_mode?: TaskInteractionMode | null;
+      auto_distill_enabled?: boolean | null;
     },
   ) =>
     request<SettingsResolution>(`/rooms/${roomId}/settings`, {

@@ -106,6 +106,10 @@ function parseCandidates(raw: string): CandidateMemory[] {
   }
 }
 
+function buildDistillSourceId(sourceId: string, index: number): string {
+  return `${sourceId}#distill-${index + 1}`;
+}
+
 async function callDistillLLM(prompt: string, roomId: string): Promise<string> {
   const sessionKey = `${DISTILL_SESSION_PREFIX}${roomId}`;
   try {
@@ -327,7 +331,7 @@ export async function distillFromConversation(args: {
     if (!response) return;
 
     const candidates = parseCandidates(response);
-    for (const candidate of candidates) {
+    for (const [index, candidate] of candidates.entries()) {
       try {
         memoryRepo.create({
           project_id: projectId,
@@ -337,7 +341,7 @@ export async function distillFromConversation(args: {
           title: candidate.title.slice(0, 100),
           content: candidate.content.slice(0, 1200),
           source_type: 'message',
-          source_id: triggerMessageId,
+          source_id: buildDistillSourceId(triggerMessageId, index),
         });
       } catch (err) {
         // Likely duplicate - skip
@@ -379,7 +383,7 @@ export async function distillFromTask(args: {
     if (!response) return;
 
     const candidates = parseCandidates(response);
-    for (const candidate of candidates) {
+    for (const [index, candidate] of candidates.entries()) {
       try {
         memoryRepo.create({
           project_id: projectId,
@@ -390,7 +394,7 @@ export async function distillFromTask(args: {
           title: candidate.title.slice(0, 100),
           content: candidate.content.slice(0, 1200),
           source_type: 'workflow',
-          source_id: sourceId,
+          source_id: buildDistillSourceId(sourceId, index),
         });
       } catch (err) {
         console.debug(`[distill] skipped task candidate: ${(err as Error).message}`);

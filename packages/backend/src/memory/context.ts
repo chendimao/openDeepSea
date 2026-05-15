@@ -47,6 +47,28 @@ export function appendMemoryContextSafely(args: {
   }
 }
 
+export function appendMemoryContextForPromptSafely(args: {
+  prompt: string;
+  loadContextEntries: () => MemoryEntry[];
+  loadRelevantEntries: () => MemoryEntry[];
+  maxChars?: number | null;
+  warn?: (message: string) => void;
+}): string {
+  try {
+    const byId = new Map<string, MemoryEntry>();
+    for (const entry of args.loadContextEntries()) {
+      byId.set(entry.id, entry);
+    }
+    for (const entry of args.loadRelevantEntries()) {
+      byId.set(entry.id, entry);
+    }
+    return appendMemoryContext(args.prompt, Array.from(byId.values()), args.maxChars);
+  } catch (err) {
+    args.warn?.(`[memory] failed to load memory context: ${(err as Error).message}`);
+    return args.prompt;
+  }
+}
+
 function truncateText(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   return `${text.slice(0, Math.max(0, maxChars - TRUNCATED_MARKER.length))}${TRUNCATED_MARKER}`;

@@ -45,6 +45,7 @@ type SettingsPatch = {
   message_routing_mode?: MessageRoutingMode | null;
   fallback_agent_id?: string | null;
   interaction_mode?: TaskInteractionMode | null;
+  auto_distill_enabled?: boolean | null;
 };
 
 const ROUTING_OPTIONS: Array<{ value: MessageRoutingMode; descriptionKey: MessageKey }> = [
@@ -62,6 +63,7 @@ const DEFAULT_SYSTEM_SETTINGS: EffectiveSettings = {
   message_routing_mode: 'mentions_only',
   fallback_agent_id: null,
   interaction_mode: 'ask_user',
+  auto_distill_enabled: true,
 };
 
 type SystemSettingsCategory = 'general' | 'chat';
@@ -102,7 +104,7 @@ export function SystemSettingsDialog({
         className="max-h-[88vh] w-[min(94vw,900px)] overflow-y-auto"
       >
         <SystemSettingsForm
-          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}`}
+          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}`}
           theme={theme}
           value={settings}
           isSaving={save.isPending}
@@ -231,11 +233,13 @@ function SystemSettingsForm({
     message_routing_mode: MessageRoutingMode;
     fallback_agent_id: string | null;
     interaction_mode: TaskInteractionMode;
+    auto_distill_enabled: boolean;
   }) => void;
 }): JSX.Element {
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode>(value.message_routing_mode);
   const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? '');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
+  const [autoDistillEnabled, setAutoDistillEnabled] = useState(value.auto_distill_enabled);
   const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('general');
   const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
@@ -272,6 +276,7 @@ function SystemSettingsForm({
               message_routing_mode: routingMode,
               fallback_agent_id: requiresFallback ? fallbackAgentId.trim() : null,
               interaction_mode: interactionMode,
+              auto_distill_enabled: autoDistillEnabled,
             })
           }
         >
@@ -349,23 +354,30 @@ function SystemSettingsForm({
                 description={t('settings.collaborationDefaultsDescription')}
                 icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}
               >
-              <RoutingSection
-                mode={routingMode}
-                fallbackAgentId={fallbackAgentId}
-                fallbackOptions={[]}
-                inheritedLabel={null}
-                onModeChange={(mode) => {
-                  if (mode !== 'inherit') setRoutingMode(mode);
-                }}
-                onFallbackAgentChange={setFallbackAgentId}
-              />
-              <InteractionSection
-                mode={interactionMode}
-                inheritedLabel={null}
-                onModeChange={(mode) => {
-                  if (mode !== 'inherit') setInteractionMode(mode);
-                }}
-              />
+                <RoutingSection
+                  mode={routingMode}
+                  fallbackAgentId={fallbackAgentId}
+                  fallbackOptions={[]}
+                  inheritedLabel={null}
+                  onModeChange={(mode) => {
+                    if (mode !== 'inherit') setRoutingMode(mode);
+                  }}
+                  onFallbackAgentChange={setFallbackAgentId}
+                />
+                <InteractionSection
+                  mode={interactionMode}
+                  inheritedLabel={null}
+                  onModeChange={(mode) => {
+                    if (mode !== 'inherit') setInteractionMode(mode);
+                  }}
+                />
+                <AutoDistillSection
+                  mode={autoDistillEnabled}
+                  inheritedLabel={null}
+                  onModeChange={(mode) => {
+                    if (mode !== 'inherit') setAutoDistillEnabled(mode);
+                  }}
+                />
               </SubSettingSection>
             </div>
           )}
@@ -540,6 +552,11 @@ function ProjectSettingsForm({
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode | 'inherit'>(
     own?.interaction_mode ?? 'inherit',
   );
+  const [autoDistillEnabled, setAutoDistillEnabled] = useState<boolean | 'inherit'>(
+    own?.auto_distill_enabled === null || own?.auto_distill_enabled === undefined
+      ? 'inherit'
+      : Boolean(own.auto_distill_enabled),
+  );
   const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
 
   return (
@@ -553,6 +570,7 @@ function ProjectSettingsForm({
               message_routing_mode: routingMode === 'inherit' ? null : routingMode,
               fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : fallbackAgentId.trim(),
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
+              auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
             })
           }
         >
@@ -582,13 +600,19 @@ function ProjectSettingsForm({
           inheritedLabel={t('settings.inheritedSystem', { value: interactionModeLabel(system.interaction_mode) })}
           onModeChange={setInteractionMode}
         />
+        <AutoDistillSection
+          mode={autoDistillEnabled}
+          inheritedLabel={t('settings.inheritedSystem', { value: autoDistillLabel(system.auto_distill_enabled, t) })}
+          onModeChange={setAutoDistillEnabled}
+        />
       </SettingGroup>
-      {(routingMode !== 'inherit' || interactionMode !== 'inherit') && (
+      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit') && (
         <ResetInheritanceButton
           onClick={() => {
             setRoutingMode('inherit');
             setFallbackAgentId('');
             setInteractionMode('inherit');
+            setAutoDistillEnabled('inherit');
           }}
         />
       )}
@@ -619,6 +643,11 @@ function RoomSettingsForm({
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode | 'inherit'>(
     own?.interaction_mode ?? 'inherit',
   );
+  const [autoDistillEnabled, setAutoDistillEnabled] = useState<boolean | 'inherit'>(
+    own?.auto_distill_enabled === null || own?.auto_distill_enabled === undefined
+      ? 'inherit'
+      : Boolean(own.auto_distill_enabled),
+  );
   const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
 
   return (
@@ -632,6 +661,7 @@ function RoomSettingsForm({
               message_routing_mode: routingMode === 'inherit' ? null : routingMode,
               fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : fallbackAgentId.trim(),
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
+              auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
             })
           }
         >
@@ -661,13 +691,19 @@ function RoomSettingsForm({
           inheritedLabel={t('settings.inheritedParent', { value: interactionModeLabel(inherited.interaction_mode) })}
           onModeChange={setInteractionMode}
         />
+        <AutoDistillSection
+          mode={autoDistillEnabled}
+          inheritedLabel={t('settings.inheritedParent', { value: autoDistillLabel(inherited.auto_distill_enabled, t) })}
+          onModeChange={setAutoDistillEnabled}
+        />
       </SettingGroup>
-      {(routingMode !== 'inherit' || interactionMode !== 'inherit') && (
+      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit') && (
         <ResetInheritanceButton
           onClick={() => {
             setRoutingMode('inherit');
             setFallbackAgentId('');
             setInteractionMode('inherit');
+            setAutoDistillEnabled('inherit');
           }}
         />
       )}
@@ -818,6 +854,42 @@ function InteractionSection({
   );
 }
 
+function AutoDistillSection({
+  mode,
+  inheritedLabel,
+  onModeChange,
+}: {
+  mode: boolean | 'inherit';
+  inheritedLabel: string | null;
+  onModeChange: (mode: boolean | 'inherit') => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className={cn('grid gap-2', inheritedLabel ? 'md:grid-cols-3' : 'md:grid-cols-2')}>
+      {inheritedLabel && (
+        <OptionButton
+          active={mode === 'inherit'}
+          title={t('settings.inheritParentSettings')}
+          description={inheritedLabel}
+          onClick={() => onModeChange('inherit')}
+        />
+      )}
+      <OptionButton
+        active={mode === true}
+        title={t('settings.autoDistill.on')}
+        description={t('settings.autoDistill.on.description')}
+        onClick={() => onModeChange(true)}
+      />
+      <OptionButton
+        active={mode === false}
+        title={t('settings.autoDistill.off')}
+        description={t('settings.autoDistill.off.description')}
+        onClick={() => onModeChange(false)}
+      />
+    </div>
+  );
+}
+
 function OptionButton({
   active,
   title,
@@ -890,6 +962,11 @@ function InheritanceSummary({
           value={interactionModeLabel(settings.effective.interaction_mode)}
           source={settingsScopeLabel(settings.sources.interaction_mode)}
         />
+        <SummaryItem
+          label={t('settings.autoDistill')}
+          value={autoDistillLabel(settings.effective.auto_distill_enabled, t)}
+          source={settingsScopeLabel(settings.sources.auto_distill)}
+        />
       </div>
       <p className="mt-2 leading-relaxed">
         {scope === 'room'
@@ -922,5 +999,16 @@ function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
         : settings.project.fallback_agent_id
       : settings.system.fallback_agent_id,
     interaction_mode: settings.project?.interaction_mode ?? settings.system.interaction_mode,
+    auto_distill_enabled:
+      settings.project?.auto_distill_enabled === null || settings.project?.auto_distill_enabled === undefined
+        ? settings.system.auto_distill_enabled
+        : Boolean(settings.project.auto_distill_enabled),
   };
+}
+
+function autoDistillLabel(
+  enabled: boolean,
+  t: (key: MessageKey, vars?: Record<string, string>) => string,
+): string {
+  return enabled ? t('settings.autoDistill.on') : t('settings.autoDistill.off');
 }
