@@ -58,7 +58,7 @@
 - Modify: `package-lock.json`
 - Modify: `README.md`
 
-- [ ] **Step 1: Add failing dependency expectation test**
+- [x] **Step 1: Add failing dependency expectation test**
 
 Create a lightweight test that verifies planner configuration can be read without importing LangChain yet.
 
@@ -80,7 +80,7 @@ test('getLangChainPlannerConfig returns disabled config when no model is configu
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -90,7 +90,7 @@ node --import tsx --test src/workflows/langchain-planner.test.ts
 
 Expected: FAIL because `./langchain-planner.js` does not exist.
 
-- [ ] **Step 3: Add dependencies**
+- [x] **Step 3: Add dependencies**
 
 Run from repo root:
 
@@ -100,7 +100,7 @@ npm install -w @openclaw-room/backend langchain @langchain/openai @langchain/cor
 
 Expected: `packages/backend/package.json` contains `langchain`, `@langchain/openai`, and `@langchain/core`; `package-lock.json` updates; install exits 0.
 
-- [ ] **Step 4: Create minimal planner config module**
+- [x] **Step 4: Create minimal planner config module**
 
 Create `packages/backend/src/workflows/langchain-planner.ts`:
 
@@ -122,7 +122,7 @@ export function getLangChainPlannerConfig(
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run:
 
@@ -132,7 +132,7 @@ node --import tsx --test src/workflows/langchain-planner.test.ts
 
 Expected: PASS, 1 test.
 
-- [ ] **Step 6: Document configuration**
+- [x] **Step 6: Document configuration**
 
 Modify `README.md`, add a short optional configuration block under prerequisites or quick start:
 
@@ -147,7 +147,7 @@ OPENAI_API_KEY=<your-api-key>
 ```
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/backend/package.json package-lock.json packages/backend/src/workflows/langchain-planner.ts packages/backend/src/workflows/langchain-planner.test.ts README.md
@@ -160,7 +160,7 @@ git commit -m "feat(workflows): 添加 LangChain Planner 配置"
 - Modify: `packages/backend/src/workflows/plan-parser.ts`
 - Modify: `packages/backend/src/workflows/plan-parser.test.ts`
 
-- [ ] **Step 1: Write failing tests for new plan schema**
+- [x] **Step 1: Write failing tests for new plan schema**
 
 Append to `packages/backend/src/workflows/plan-parser.test.ts`:
 
@@ -211,7 +211,7 @@ test('parsePlanArtifact rejects LangChain plan steps without acceptance criteria
 });
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -221,7 +221,7 @@ node --import tsx --test src/workflows/plan-parser.test.ts
 
 Expected: FAIL because `ParsedPlanTask` lacks `scopeWrite` and parser does not accept `steps`.
 
-- [ ] **Step 3: Extend parser types and schemas**
+- [x] **Step 3: Extend parser types and schemas**
 
 Modify `packages/backend/src/workflows/plan-parser.ts`:
 
@@ -345,7 +345,7 @@ function normalizeLegacyPlan(plan: z.infer<typeof planSchema>): ParsedPlan {
 }
 ```
 
-- [ ] **Step 4: Run parser tests**
+- [x] **Step 4: Run parser tests**
 
 Run:
 
@@ -355,7 +355,7 @@ node --import tsx --test src/workflows/plan-parser.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/backend/src/workflows/plan-parser.ts packages/backend/src/workflows/plan-parser.test.ts
@@ -368,7 +368,7 @@ git commit -m "feat(workflows): 支持 LangChain 结构化计划"
 - Modify: `packages/backend/src/workflows/langchain-planner.ts`
 - Modify: `packages/backend/src/workflows/langchain-planner.test.ts`
 
-- [ ] **Step 1: Write failing service test**
+- [x] **Step 1: Write failing service test**
 
 Append to `packages/backend/src/workflows/langchain-planner.test.ts`:
 
@@ -458,7 +458,7 @@ function fakeAgent(patch: Partial<RoomAgent>): RoomAgent {
 }
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -468,7 +468,7 @@ node --import tsx --test src/workflows/langchain-planner.test.ts
 
 Expected: FAIL because `generateLangChainPlan` is not exported.
 
-- [ ] **Step 3: Implement service interfaces and prompt construction**
+- [x] **Step 3: Implement service interfaces and prompt construction**
 
 Modify `packages/backend/src/workflows/langchain-planner.ts`:
 
@@ -557,7 +557,7 @@ function formatAgent(agent: RoomAgent): string {
 }
 ```
 
-- [ ] **Step 4: Run service tests**
+- [x] **Step 4: Run service tests**
 
 Run:
 
@@ -567,7 +567,7 @@ node --import tsx --test src/workflows/langchain-planner.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/backend/src/workflows/langchain-planner.ts packages/backend/src/workflows/langchain-planner.test.ts
@@ -581,7 +581,7 @@ git commit -m "feat(workflows): 实现 LangChain Planner 服务"
 - Modify: `packages/backend/src/workflows/prompts.ts`
 - Create or Modify: `packages/backend/src/workflows/orchestrator.test.ts`
 
-- [ ] **Step 1: Write failing orchestrator-level helper test**
+- [x] **Step 1: Write failing orchestrator-level helper test**
 
 If `packages/backend/src/workflows/orchestrator.test.ts` does not exist, create it. Add:
 
@@ -597,7 +597,7 @@ test('shouldUseLangChainPlanner requires planning stage and enabled config', () 
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -607,7 +607,7 @@ node --import tsx --test src/workflows/orchestrator.test.ts
 
 Expected: FAIL because `shouldUseLangChainPlanner` is not exported.
 
-- [ ] **Step 3: Export planner decision helper**
+- [x] **Step 3: Export planner decision helper**
 
 Modify `packages/backend/src/workflows/orchestrator.ts` imports:
 
@@ -629,7 +629,7 @@ export function shouldUseLangChainPlanner(stage: WorkflowStage, config: LangChai
 }
 ```
 
-- [ ] **Step 4: Run helper test**
+- [x] **Step 4: Run helper test**
 
 Run:
 
@@ -639,7 +639,7 @@ node --import tsx --test src/workflows/orchestrator.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Add async LangChain planning path**
+- [x] **Step 5: Add async LangChain planning path**
 
 Modify `startAgentStage` before selecting agent:
 
@@ -737,7 +737,7 @@ function formatParsedPlanArtifact(plan: ParsedPlan): string {
 
 Also import `type ParsedPlan` from `plan-parser.js`.
 
-- [ ] **Step 6: Update planning prompt for ACP fallback**
+- [x] **Step 6: Update planning prompt for ACP fallback**
 
 Modify `buildPlanningPrompt` in `packages/backend/src/workflows/prompts.ts` so ACP fallback emits the same modern shape:
 
@@ -747,7 +747,7 @@ Modify `buildPlanningPrompt` in `packages/backend/src/workflows/prompts.ts` so A
 'assigneeRole 只能是 analyst、planner、coordinator、executor、reviewer、acceptor。',
 ```
 
-- [ ] **Step 7: Run workflow tests**
+- [x] **Step 7: Run workflow tests**
 
 Run:
 
@@ -757,7 +757,7 @@ node --import tsx --test src/workflows/plan-parser.test.ts src/workflows/langcha
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/backend/src/workflows/orchestrator.ts packages/backend/src/workflows/prompts.ts packages/backend/src/workflows/orchestrator.test.ts
@@ -775,7 +775,7 @@ git commit -m "feat(workflows): 接入 LangChain 规划阶段"
 - Create: `packages/backend/src/agent-templates.ts`
 - Create: `packages/backend/src/agent-templates.test.ts`
 
-- [ ] **Step 1: Write failing template tests**
+- [x] **Step 1: Write failing template tests**
 
 Create `packages/backend/src/agent-templates.test.ts`:
 
@@ -797,7 +797,7 @@ test('listBuiltInAgentTemplates includes planner executor reviewer acceptor', ()
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -807,7 +807,7 @@ node --import tsx --test src/agent-templates.test.ts
 
 Expected: FAIL because module does not exist.
 
-- [ ] **Step 3: Create templates module**
+- [x] **Step 3: Create templates module**
 
 Create `packages/backend/src/agent-templates.ts`:
 
@@ -875,7 +875,7 @@ export function listBuiltInAgentTemplates(): BuiltInAgentTemplate[] {
 }
 ```
 
-- [ ] **Step 4: Add DB fields for capabilities and default runtime**
+- [x] **Step 4: Add DB fields for capabilities and default runtime**
 
 Modify `packages/backend/src/db.ts` room_agents schema and migrations:
 
@@ -895,7 +895,7 @@ if (!roomAgentColumnNames.has('default_runtime')) {
 }
 ```
 
-- [ ] **Step 5: Update types and repo mapping**
+- [x] **Step 5: Update types and repo mapping**
 
 Modify `packages/backend/src/types.ts`:
 
@@ -1003,7 +1003,7 @@ function fakeAgent(patch: Partial<RoomAgent>): RoomAgent {
 }
 ```
 
-- [ ] **Step 6: Add routes**
+- [x] **Step 6: Add routes**
 
 Modify `packages/backend/src/routes.ts`:
 
@@ -1053,7 +1053,7 @@ router.post('/rooms/:roomId/agents/from-template', (req, res) => {
 });
 ```
 
-- [ ] **Step 7: Run backend tests**
+- [x] **Step 7: Run backend tests**
 
 Run:
 
@@ -1063,7 +1063,7 @@ npm run test -w @openclaw-room/backend
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/backend/src/db.ts packages/backend/src/types.ts packages/backend/src/repos/rooms.ts packages/backend/src/routes.ts packages/backend/src/workflows/langchain-planner.test.ts packages/backend/src/agent-templates.ts packages/backend/src/agent-templates.test.ts
@@ -1079,7 +1079,7 @@ git commit -m "feat(agents): 添加 ACP-only 内置智能体模板"
 - Modify: `packages/frontend/src/components/AppShell.tsx`
 - Modify: `packages/frontend/src/lib/i18n.tsx`
 
-- [ ] **Step 1: Update frontend types**
+- [x] **Step 1: Update frontend types**
 
 Modify `packages/frontend/src/lib/types.ts`:
 
@@ -1102,7 +1102,7 @@ capabilities: string[];
 default_runtime: 'acp' | 'openclaw' | 'none';
 ```
 
-- [ ] **Step 2: Update API client**
+- [x] **Step 2: Update API client**
 
 Modify `packages/frontend/src/lib/api.ts` imports and API:
 
@@ -1121,7 +1121,7 @@ addRoomAgentFromTemplate: (roomId: string, template_id: string) =>
   }),
 ```
 
-- [ ] **Step 3: Update AddAgentDialog to show templates first**
+- [x] **Step 3: Update AddAgentDialog to show templates first**
 
 Modify `packages/frontend/src/components/AddAgentDialog.tsx`:
 
@@ -1187,7 +1187,7 @@ Render templates above OpenClaw agents:
 </div>
 ```
 
-- [ ] **Step 4: Update OpenClaw Gateway messaging**
+- [x] **Step 4: Update OpenClaw Gateway messaging**
 
 Modify `packages/frontend/src/components/AppShell.tsx` text usage so offline state is described as optional integration. Add i18n keys in `packages/frontend/src/lib/i18n.tsx`:
 
@@ -1197,7 +1197,7 @@ Modify `packages/frontend/src/components/AppShell.tsx` text usage so offline sta
 
 Render this sentence in the gateway dialog near `healthMessage`.
 
-- [ ] **Step 5: Run frontend build**
+- [x] **Step 5: Run frontend build**
 
 Run:
 
@@ -1207,7 +1207,7 @@ npm run build -w @openclaw-room/frontend
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/frontend/src/lib/types.ts packages/frontend/src/lib/api.ts packages/frontend/src/components/AddAgentDialog.tsx packages/frontend/src/components/AppShell.tsx packages/frontend/src/lib/i18n.tsx
