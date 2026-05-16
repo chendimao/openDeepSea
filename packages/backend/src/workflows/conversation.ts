@@ -265,16 +265,20 @@ function findWorkflowStartedBySourceMessage(
   sourceMessageId?: string,
 ): WorkflowRun | null {
   if (!sourceMessageId) return null;
-  for (const message of messageRepo.listByRoom(roomId, 500)) {
-    const metadata = parseMetadata(message.metadata);
-    if (
-      metadata?.event_type === 'workflow_started' &&
-      metadata.task_id === taskId &&
-      metadata.workflow_source_message_id === sourceMessageId &&
-      typeof metadata.workflow_run_id === 'string'
-    ) {
-      return workflowRepo.getRun(metadata.workflow_run_id) ?? null;
-    }
+  const message = db.prepare(
+    `SELECT * FROM messages
+     WHERE room_id = ?
+       AND metadata IS NOT NULL
+       AND json_valid(metadata)
+       AND json_extract(metadata, '$.event_type') = 'workflow_started'
+       AND json_extract(metadata, '$.task_id') = ?
+       AND json_extract(metadata, '$.workflow_source_message_id') = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT 1`,
+  ).get(roomId, taskId, sourceMessageId) as Message | undefined;
+  const metadata = parseMetadata(message?.metadata ?? null);
+  if (metadata && typeof metadata.workflow_run_id === 'string') {
+    return workflowRepo.getRun(metadata.workflow_run_id) ?? null;
   }
   return null;
 }

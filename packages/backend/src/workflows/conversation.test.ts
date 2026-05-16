@@ -287,6 +287,65 @@ test('startWorkflowWithConversation replays same source message as the original 
   );
 });
 
+test('startWorkflowWithConversation replays source message after a long room history', () => {
+  const { room, project } = createRoomWithProject('Source Replay Long History');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Replay source command with long history',
+  });
+  for (let index = 0; index < 501; index += 1) {
+    messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: `filler ${index}`,
+      message_type: 'text',
+    });
+  }
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: `/start-task ${task.id}`,
+    message_type: 'text',
+  });
+  const enqueued: string[] = [];
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: (runId) => {
+      enqueued.push(runId);
+    },
+  });
+
+  const first = startWorkflowWithConversation({
+    roomId: room.id,
+    taskId: task.id,
+    source: 'chat_command',
+    sourceMessageId: sourceMessage.id,
+    content: sourceMessage.content,
+  });
+  const messagesAfterFirst = messageRepo.listByRoom(room.id, 1000);
+
+  const replayed = startWorkflowWithConversation({
+    roomId: room.id,
+    taskId: task.id,
+    source: 'chat_command',
+    sourceMessageId: sourceMessage.id,
+    content: sourceMessage.content,
+  });
+
+  assert.equal(replayed.id, first.id);
+  assert.equal(workflowRepo.listByTask(task.id).length, 1);
+  assert.deepEqual(enqueued, [first.id]);
+  assert.equal(messageRepo.listByRoom(room.id, 1000).length, messagesAfterFirst.length);
+  assert.equal(
+    messageRepo.listByRoom(room.id, 1000).some((message) => /已有运行中的工作流/.test(message.content)),
+    false,
+  );
+});
+
 test('startWorkflowWithConversation rejects graph-disabled start without writing messages', () => {
   const { room, project } = createRoomWithProject('Graph Disabled');
   const task = taskRepo.create({
