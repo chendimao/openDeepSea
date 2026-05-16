@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import type { TriggerSuggestion } from './types'
+import { computeTriggerPopoverPosition } from './trigger-popover-position'
 
 type TriggerPopoverProps = {
   suggestions: TriggerSuggestion[]
@@ -33,10 +35,34 @@ export function TriggerPopover({
 }: TriggerPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const selectedRef = useRef<HTMLButtonElement>(null)
+  const [measuredHeight, setMeasuredHeight] = useState<number | undefined>(undefined)
+
+  useLayoutEffect(() => {
+    setMeasuredHeight(undefined)
+  }, [triggerRect, suggestions.length, loading, error, emptyMessage])
+
+  useLayoutEffect(() => {
+    const popover = popoverRef.current
+    if (!popover) return
+    const nextHeight = popover.offsetHeight
+    if (nextHeight > 0 && Math.abs(nextHeight - (measuredHeight ?? 0)) > 1) {
+      setMeasuredHeight(nextHeight)
+    }
+  }, [measuredHeight, suggestions.length, loading, error, emptyMessage])
 
   // Scroll selected item into view
   useEffect(() => {
-    selectedRef.current?.scrollIntoView({ block: 'nearest' })
+    const selected = selectedRef.current
+    const popover = popoverRef.current
+    if (!selected || !popover) return
+
+    const selectedTop = selected.offsetTop
+    const selectedBottom = selectedTop + selected.offsetHeight
+    if (selectedTop < popover.scrollTop) {
+      popover.scrollTop = selectedTop
+    } else if (selectedBottom > popover.scrollTop + popover.clientHeight) {
+      popover.scrollTop = selectedBottom - popover.clientHeight
+    }
   }, [selectedIndex])
 
   // Click outside to dismiss
@@ -55,22 +81,28 @@ export function TriggerPopover({
   if (suggestions.length === 0 && !loading && !error && !emptyMessage) return null
 
   // Position the popover below the trigger character, clamped to viewport
-  const popoverMaxWidth = Math.min(320, window.innerWidth - 16)
-  const left = Math.min(triggerRect.left, window.innerWidth - popoverMaxWidth - 8)
+  const position = computeTriggerPopoverPosition({
+    triggerRect,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    estimatedHeight: 240,
+    measuredHeight,
+  })
   const style: React.CSSProperties = {
     position: 'fixed',
-    left: `${Math.max(8, left)}px`,
-    top: `${triggerRect.bottom + 4}px`,
+    left: `${position.left}px`,
+    top: `${position.top}px`,
     zIndex: 50,
-    maxWidth: `${popoverMaxWidth}px`,
+    maxWidth: `${position.maxWidth}px`,
   }
 
-  return (
+  return createPortal(
     <div
       ref={popoverRef}
       className={cn(
         'max-h-[240px] min-w-[200px] overflow-y-auto',
-        'bg-popover rounded-xl border p-2 shadow-md',
+        'rounded-lg border border-white/60 bg-[var(--color-surface)] p-2 shadow-[var(--shadow-mention)]',
+        'text-[var(--color-fg)] backdrop-blur-2xl',
         'animate-in fade-in-0 zoom-in-95',
       )}
       style={style}
@@ -103,9 +135,9 @@ export function TriggerPopover({
             role="option"
             aria-selected={index === selectedIndex}
             className={cn(
-              'text-foreground flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm',
-              'hover:bg-accent cursor-pointer transition-colors',
-              index === selectedIndex && 'bg-accent',
+              'flex w-full cursor-pointer items-start gap-2 rounded-md px-3 py-2 text-left text-[12.5px]',
+              'text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-primary)]',
+              index === selectedIndex && 'bg-[var(--color-surface-raised)] text-[var(--color-primary)]',
             )}
             onMouseDown={(e) => {
               e.preventDefault() // Prevent blur on the editor
@@ -123,6 +155,7 @@ export function TriggerPopover({
           </button>
         ))
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }
