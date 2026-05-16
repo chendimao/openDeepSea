@@ -1,5 +1,6 @@
 import { serializeGraphState, type AgentWorkflowState } from './state.js';
 import type { GraphTools } from './tools.js';
+import { runVerificationCommand } from './verification.js';
 import { formatParsedPlanArtifact } from '../orchestrator.js';
 import { parseAcceptanceVerdict, parseReviewVerdict } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
@@ -553,20 +554,69 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
     async verifyNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
+      const commands = state.plan?.verification ?? [];
       const step = tools.createGraphStep({
         workflow_run_id: context.run.id,
         task_id: context.task.id,
-        stage: 'implementation',
+        stage: 'code_review',
         node_name: 'verify',
-        status: 'completed',
-        prompt: 'verification placeholder (Task 7 pending)',
+        status: 'running',
+        prompt: commands.length > 0 ? commands.join('\n') : 'no verification commands',
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+
+      const results = commands.length > 0
+        ? await Promise.all(commands.map(async (command) => runVerificationCommand(command, context.project.path)))
+        : [{
+          command: '(none)',
+          status: 'skipped' as const,
+          exitCode: null,
+          stdout: '',
+          stderr: 'No verification commands configured',
+        }];
+
+      const failedRequired = results.find((result) => result.status !== 'passed');
+      const blocked = Boolean(failedRequired);
+      const summary = results.map((result) => (
+        `- ${result.command}: ${result.status} (exitCode=${result.exitCode ?? 'null'})`
+      )).join('\n');
+
+      const artifact = tools.createArtifact({
+        task_id: context.task.id,
+        workflow_run_id: context.run.id,
+        workflow_step_id: step.id,
+        artifact_type: 'implementation_summary',
+        title: '验证结果',
+        content: summary,
+        metadata: {
+          results,
+        },
+      });
+      tools.broadcastArtifactCreated(context.room.id, artifact);
+
+      const updatedStep = tools.updateGraphStep(step.id, {
+        status: blocked ? 'failed' : 'completed',
+        result: summary,
+        error: blocked ? `Verification failed: ${failedRequired?.command}` : null,
+      });
+      if (updatedStep) tools.broadcastStepUpdated(context.room.id, updatedStep);
+
+      if (blocked) {
+        const updatedRun = tools.updateRun(context.run.id, {
+          status: 'blocked',
+          error: `Verification failed: ${failedRequired?.command}`,
+        });
+        if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+      }
+
       const nextState: AgentWorkflowState = {
         ...state,
         currentNode: 'verify',
         currentStepId: step.id,
+        verificationResults: results,
+        status: blocked ? 'blocked' : state.status,
+        error: blocked ? `Verification failed: ${failedRequired?.command}` : null,
       };
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
       return nextState;

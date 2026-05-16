@@ -61,7 +61,10 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
     .addConditionalEdges('execute', routeAfterExecute)
     .addConditionalEdges('review', routeAfterReview)
     .addConditionalEdges('repair_decision', routeAfterRepairDecision)
-    .addEdge('verify', 'acceptance')
+    .addConditionalEdges('verify', (state) => {
+      if (state.status === 'blocked' || state.status === 'cancelled' || state.status === 'failed') return END;
+      return 'acceptance';
+    })
     .addEdge('acceptance', END)
     .compile({ checkpointer: new MemorySaver() });
 }

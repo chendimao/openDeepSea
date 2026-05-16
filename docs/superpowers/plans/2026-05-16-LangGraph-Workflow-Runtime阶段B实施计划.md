@@ -1044,7 +1044,7 @@ git commit -m "feat(workflows): 实现 LangGraph 审查修复与验收"
 - Modify: `packages/backend/src/workflows/graph/runtime.ts`
 - Modify: `packages/backend/src/workflows/graph/state.ts`
 
-- [ ] **Step 1: Write failing allowlist tests**
+- [x] **Step 1: Write failing allowlist tests**
 
 Create `packages/backend/src/workflows/graph/verification.test.ts`:
 
@@ -1065,7 +1065,7 @@ test('verification allowlist rejects shell chaining and destructive commands', (
 });
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -1075,7 +1075,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because module does not exist.
 
-- [ ] **Step 3: Implement allowlist and runner**
+- [x] **Step 3: Implement allowlist and runner**
 
 Create `packages/backend/src/workflows/graph/verification.ts`:
 
@@ -1119,7 +1119,7 @@ export async function runVerificationCommand(command: string, cwd: string): Prom
 }
 ```
 
-- [ ] **Step 4: Implement verify node**
+- [x] **Step 4: Implement verify node**
 
 `verifyNode` behavior:
 
@@ -1132,7 +1132,7 @@ export async function runVerificationCommand(command: string, cwd: string): Prom
 
 For minimal phase B behavior: required failed command sets workflow `blocked`, non-required failed command continues to acceptance.
 
-- [ ] **Step 5: Run verification tests**
+- [x] **Step 5: Run verification tests**
 
 Run:
 
@@ -1142,7 +1142,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/backend/src/workflows/graph/verification.ts packages/backend/src/workflows/graph/verification.test.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/state.ts
