@@ -299,7 +299,7 @@ export function RoomPage() {
           />
         </section>
         {showMemoryPanel ? (
-          <aside className="workbench-panel inspector-panel overflow-y-auto p-4">
+          <aside className="workbench-panel inspector-panel memory-panel-shell p-4">
             <MemoryPanel
               projectId={projectId}
               roomId={roomId}
