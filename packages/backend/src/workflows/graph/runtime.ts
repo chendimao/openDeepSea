@@ -87,14 +87,41 @@ export async function startGraphWorkflow(taskId: string, deps: GraphRuntimeDeps 
   workflowRepo.updateGraphState(run.id, serializeGraphState(initialState));
 
   const graph = buildRuntimeGraph(deps);
-  const finalState = await graph.invoke(initialState, {
-    configurable: {
-      thread_id: run.id,
-    },
-  });
+  let finalState: AgentWorkflowState;
+  try {
+    finalState = await graph.invoke(initialState, {
+      configurable: {
+        thread_id: run.id,
+      },
+    }) as AgentWorkflowState;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    const failedState = blockGraphWorkflowRun(run.id, initialState, error);
+    workflowRepo.updateGraphState(run.id, serializeGraphState(failedState));
+    throw err;
+  }
 
-  workflowRepo.updateGraphState(run.id, serializeGraphState(finalState as AgentWorkflowState));
+  workflowRepo.updateGraphState(run.id, serializeGraphState(finalState));
   const latest = workflowRepo.getRun(run.id);
   if (!latest) throw new Error('workflow not found');
   return latest;
+}
+
+function blockGraphWorkflowRun(runId: string, state: AgentWorkflowState, error: string): AgentWorkflowState {
+  const run = workflowRepo.updateRun(runId, {
+    status: 'blocked',
+    error,
+  });
+  for (const step of workflowRepo.listSteps(runId).filter((item) => item.status === 'running')) {
+    workflowRepo.updateStep(step.id, {
+      status: 'failed',
+      error,
+    });
+  }
+  return {
+    ...state,
+    workflowRunId: run?.id ?? runId,
+    status: 'blocked',
+    error,
+  };
 }

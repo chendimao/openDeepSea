@@ -59,3 +59,35 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   assert.ok(detail?.steps.some((step) => step.node_name === 'context'));
   assert.ok(detail?.steps.some((step) => step.node_name === 'planning'));
 });
+
+test('startGraphWorkflow blocks workflow and fails running graph step when planner fails', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-failure-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Failure', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Failure Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Planner fails',
+    description: 'Planner failure should not leave a running graph step.',
+  });
+
+  await assert.rejects(
+    () => startGraphWorkflow(task.id, {
+      planner: async () => {
+        throw new Error('planner unavailable');
+      },
+    }),
+    /planner unavailable/,
+  );
+
+  const run = workflowRepo.listByTask(task.id)[0];
+  assert.equal(run?.status, 'blocked');
+  assert.match(run?.error ?? '', /planner unavailable/);
+
+  const detail = run ? workflowRepo.detail(run.id) : undefined;
+  assert.ok(detail?.run.graph_state?.includes('"status":"blocked"'));
+  assert.ok(detail?.run.graph_state?.includes('planner unavailable'));
+  assert.equal(detail?.steps.some((step) => step.status === 'running'), false);
+  assert.ok(detail?.steps.some((step) => step.node_name === 'planning' && step.status === 'failed'));
+});
