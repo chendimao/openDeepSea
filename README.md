@@ -27,7 +27,7 @@ OpenDeepSea 是一个本地优先的项目管理系统，让多个 ACP agent 在
 
 ## 兼容说明
 
-仓库内仍保留部分历史 package name、localStorage key、数据库字段和类型 union，用于迁移兼容；这些名称不代表当前需要外部 Gateway 运行时。
+仓库内仍保留部分历史 package name、localStorage key、数据库字段和类型 union，用于迁移兼容；这些名称不代表当前需要外部编排服务运行时。
 
 ### Optional: LangChain Planner
 

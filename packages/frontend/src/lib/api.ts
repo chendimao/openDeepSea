@@ -162,7 +162,16 @@ export const api = {
   listRoomAgents: (roomId: string) => request<RoomAgent[]>(`/rooms/${roomId}/agents`),
   addRoomAgent: (
     roomId: string,
-    input: { agent_id: string; agent_name: string; agent_role?: string },
+    input: {
+      agent_id: string;
+      agent_name: string;
+      agent_role?: string;
+      acp_enabled?: boolean;
+      acp_backend?: AcpBackend | null;
+      acp_session_id?: string | null;
+      acp_session_label?: string | null;
+      acp_permission_mode?: 'bypass' | 'workspace-write' | 'read-only';
+    },
   ) => request<RoomAgent>(`/rooms/${roomId}/agents`, { method: 'POST', body: JSON.stringify(input) }),
   addRoomAgentFromTemplate: (roomId: string, template_id: string) =>
     request<RoomAgent>(`/rooms/${roomId}/agents/from-template`, {

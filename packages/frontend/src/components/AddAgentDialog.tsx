@@ -50,25 +50,17 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
   }
 
   const add = useMutation({
-    mutationFn: async () => {
-      const agent = await api.addRoomAgent(roomId, {
+    mutationFn: () =>
+      api.addRoomAgent(roomId, {
         agent_id: agentId,
         agent_name: agentName || agentId,
         agent_role: agentRole || undefined,
-      });
-      try {
-        return await api.setAgentAcp(roomId, agent.id, {
-          acp_enabled: true,
-          acp_backend: acpBackend,
-          acp_session_id: null,
-          acp_session_label: null,
-          acp_permission_mode: 'bypass',
-        });
-      } catch (err) {
-        await api.removeRoomAgent(roomId, agent.id).catch(() => undefined);
-        throw err;
-      }
-    },
+        acp_enabled: true,
+        acp_backend: acpBackend,
+        acp_session_id: null,
+        acp_session_label: null,
+        acp_permission_mode: 'bypass',
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       toast.success(t('addAgent.success'));

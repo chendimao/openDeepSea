@@ -486,16 +486,33 @@ router.post('/rooms/:roomId/agents', (req, res) => {
     agent_id: z.string().min(1),
     agent_name: z.string().min(1),
     agent_role: z.string().optional(),
+    acp_enabled: z.boolean().optional(),
+    acp_backend: z.enum(['claudecode', 'opencode', 'codex']).nullable().optional(),
+    acp_session_id: z.string().nullable().optional(),
+    acp_session_label: z.string().nullable().optional(),
+    acp_permission_mode: z.enum(['bypass', 'workspace-write', 'read-only']).optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
     const agent = roomAgentRepo.add({
       room_id: req.params.roomId,
-      ...parsed.data,
+      agent_id: parsed.data.agent_id,
+      agent_name: parsed.data.agent_name,
+      agent_role: parsed.data.agent_role,
     });
-    wsHub.broadcast(req.params.roomId, { type: 'room:agent_joined', roomId: req.params.roomId, agent });
-    res.status(201).json(agent);
+    const result = parsed.data.acp_enabled === undefined
+      ? agent
+      : roomAgentRepo.setAcp(agent.id, {
+        acp_enabled: parsed.data.acp_enabled,
+        acp_backend: parsed.data.acp_backend ?? null,
+        acp_session_id: parsed.data.acp_session_id ?? null,
+        acp_session_label: parsed.data.acp_session_label ?? null,
+        acp_permission_mode: parsed.data.acp_permission_mode ?? 'bypass',
+        acp_writable_dirs: [],
+      }) ?? agent;
+    wsHub.broadcast(req.params.roomId, { type: 'room:agent_joined', roomId: req.params.roomId, agent: result });
+    res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
