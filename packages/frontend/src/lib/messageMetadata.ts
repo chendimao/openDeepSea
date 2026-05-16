@@ -13,6 +13,8 @@ const taskEventTypes = new Set<TaskEventType>([
   'workflow_blocked',
   'workflow_completed',
   'workflow_cancelled',
+  'workflow_failed',
+  'workflow_memory_written',
 ]);
 const taskOrigins = new Set<TaskCreatedFrom>(['manual', 'chat_plan', 'slash_command', 'workflow_assignment']);
 

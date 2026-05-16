@@ -159,14 +159,6 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           childTaskIds: existingChildTaskIds,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
-        if (existingStep) {
-          recordEventSafely(tools, context, {
-            eventType: 'workflow_stage_changed',
-            workflowStepId: existingStep.id,
-            content: `任务「${context.task.title}」已完成分配，继续执行。`,
-            metadata: { graph_node: 'dispatch', workflow_stage: 'assignment', replayed: true },
-          });
-        }
         return nextState;
       }
 

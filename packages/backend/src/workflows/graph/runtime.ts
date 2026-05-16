@@ -358,6 +358,9 @@ function handleBackgroundGraphWorkflowError(runId: string, err: unknown): void {
   const latest = workflowRepo.getRun(runId) ?? run;
   const task = taskRepo.get(latest.task_id);
   if (!task) return;
+  const failedStep = workflowRepo.listSteps(runId)
+    .filter((step) => step.status === 'failed' || step.status === 'running')
+    .at(-1);
   try {
     recordTaskEvent({
       roomId: latest.room_id,
@@ -366,6 +369,12 @@ function handleBackgroundGraphWorkflowError(runId: string, err: unknown): void {
       workflowRunId: latest.id,
       eventType: 'workflow_failed',
       content: `工作流后台推进失败：${error}`,
+      metadata: {
+        graph_node: failedStep?.node_name ?? (parsed.ok ? parsed.state?.currentNode ?? 'unknown' : 'unknown'),
+        workflow_stage: latest.current_stage,
+        workflow_step_id: failedStep?.id,
+        error,
+      },
     });
   } catch (recordErr) {
     console.warn(`[graph-runtime] failed to record background failure: ${(recordErr as Error).message}`);

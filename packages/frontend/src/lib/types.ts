@@ -56,7 +56,9 @@ export type TaskEventType =
   | 'workflow_assignment_created'
   | 'workflow_blocked'
   | 'workflow_completed'
-  | 'workflow_cancelled';
+  | 'workflow_cancelled'
+  | 'workflow_failed'
+  | 'workflow_memory_written';
 export type SettingsScope = 'system' | 'project' | 'room';
 
 export interface ProjectStats {

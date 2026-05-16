@@ -361,6 +361,14 @@ test('graph approval records accepted event before continuing', async () => {
     );
   assert.ok(approvalEvent);
   assert.equal(approvalEvent.workflow_step_id, undefined);
+  assert.equal(
+    readWorkflowEvents(room.id, run.id).filter((event) =>
+      event.event_type === 'workflow_stage_changed' &&
+      event.task_id === task.id &&
+      event.approval_status === 'accepted',
+    ).length,
+    1,
+  );
 });
 
 test('background graph continuation failure records workflow_failed event', async () => {
@@ -387,6 +395,9 @@ test('background graph continuation failure records workflow_failed event', asyn
   const failureEvent = readWorkflowEvents(room.id, run.id)
     .find((event) => event.event_type === 'workflow_failed' && event.task_id === task.id);
   assert.ok(failureEvent);
+  assert.equal(failureEvent.graph_node, 'planning');
+  assert.equal(failureEvent.workflow_stage, 'planning');
+  assert.equal(failureEvent.error, 'background planner unavailable');
 });
 
 test('graph cancellation records workflow_cancelled event', async () => {

@@ -219,13 +219,13 @@ export function recordTaskEvent(input: RecordTaskEventInput, options?: { broadca
 
 function createTaskEventMessage(input: RecordTaskEventInput): Message {
   const metadata: MessageMetadata = {
+    ...(input.metadata ?? {}),
     task_id: input.taskId,
     task_title: input.taskTitle,
     workflow_run_id: input.workflowRunId ?? undefined,
     workflow_step_id: input.workflowStepId ?? undefined,
     event_type: input.eventType,
     origin: input.origin,
-    ...(input.metadata ?? {}),
   };
   return messageRepo.create({
     room_id: input.roomId,

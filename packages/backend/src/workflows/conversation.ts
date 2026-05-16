@@ -151,20 +151,11 @@ export function approveWorkflowPlanWithConversation(input: ApproveWorkflowPlanWi
       metadata: { workflow_run_id: run.id, task_id: task.id, source: input.source },
     });
     const approved = approvePlan(run.id, input.senderId ?? 'user');
-    const event = recordTaskEvent({
-      roomId: input.roomId,
-      taskId: task.id,
-      taskTitle: task.title,
-      workflowRunId: approved.id,
-      eventType: 'workflow_stage_changed',
-      content: `已批准任务「${task.title}」的执行计划，继续分配和执行。`,
-    }, { broadcast: false });
-    return { approved, userMessage, event };
+    return { approved, userMessage };
   })();
   const { approved } = approval;
   broadcastMessage(input.roomId, approval.userMessage);
   wsHub.broadcast(approved.room_id, { type: 'workflow:updated', roomId: approved.room_id, workflow: approved });
-  broadcastMessage(input.roomId, approval.event);
   enqueue(approved.id);
   return approved;
 }
