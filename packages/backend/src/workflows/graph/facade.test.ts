@@ -18,7 +18,7 @@ const { parseGraphState, serializeGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
 
 test.afterEach(() => {
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '0';
   setWorkflowOrchestratorGraphDeps({});
 });
 
@@ -56,7 +56,7 @@ test('workflowOrchestrator.start delegates to graph runtime when enabled', async
 });
 
 test('workflowOrchestrator.start uses legacy runtime when graph disabled', async () => {
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '0';
   const task = createTask('graph-facade-disabled', 'Facade legacy workflow');
 
   const run = await workflowOrchestrator.start(task.id);

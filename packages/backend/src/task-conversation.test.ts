@@ -33,7 +33,7 @@ test.before(async () => {
 });
 
 test.afterEach(() => {
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '0';
   setWorkflowConversationDeps({});
 });
 

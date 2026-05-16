@@ -353,7 +353,7 @@ test('startWorkflowWithConversation rejects graph-disabled start without writing
     project_id: project.id,
     title: 'Graph disabled start',
   });
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '0';
   const before = messageRepo.listByRoom(room.id, 20).length;
 
   assert.throws(

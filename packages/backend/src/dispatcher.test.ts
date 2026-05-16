@@ -30,7 +30,7 @@ app.use(express.json());
 app.use('/api', router);
 
 test.afterEach(() => {
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '0';
   setWorkflowConversationDeps({});
 });
 
