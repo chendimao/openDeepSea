@@ -1559,13 +1559,13 @@ Skip commit if there are no changes.
 
 ## Phase B Self-Review Checklist
 
-- [ ] LangGraph runtime behind `LANGGRAPH_WORKFLOW_ENABLED` feature flag.
-- [ ] Feature flag disabled时，现有 orchestrator 行为保持不变。
-- [ ] `workflow_runs.graph_state` 和 `workflow_steps.node_name/scope_*` 可落库和恢复。
-- [ ] Graph 节点不暴露通用 shell tool。
-- [ ] ACP 执行仍通过现有 adapters。
-- [ ] 人工审批可以暂停和继续。
-- [ ] Review changes_requested 可以进入 bounded repair loop。
-- [ ] Verification command 只允许 allowlist。
-- [ ] 后端重启 recovery 可中断 running graph step 和 active agent run。
-- [ ] 无 OpenClaw Gateway 时，ACP-only agents 可完成 graph runtime 闭环。
+- [x] LangGraph runtime behind `LANGGRAPH_WORKFLOW_ENABLED` feature flag.
+- [x] Feature flag disabled时，现有 orchestrator 行为保持不变。
+- [x] `workflow_runs.graph_state` 和 `workflow_steps.node_name/scope_*` 可落库和恢复。
+- [x] Graph 节点不暴露通用 shell tool。
+- [x] ACP 执行仍通过现有 adapters。
+- [x] 人工审批可以暂停和继续。
+- [x] Review changes_requested 可以进入 bounded repair loop。
+- [x] Verification command 只允许 allowlist。
+- [x] 后端重启 recovery 可中断 running graph step 和 active agent run。
+- [x] 无 OpenClaw Gateway 时，ACP-only agents 可完成 graph runtime 闭环。
