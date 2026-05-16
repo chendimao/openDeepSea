@@ -5,7 +5,7 @@ import { taskRepo } from '../../repos/tasks.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import type { WorkflowRun } from '../../types.js';
 import { createGraphNodes } from './nodes.js';
-import { routeAfterApproval, routeAfterRepairDecision, routeAfterReview } from './router.js';
+import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
 import { emptyAgentWorkflowState, serializeGraphState, type AgentWorkflowState } from './state.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 
@@ -22,6 +22,7 @@ const GraphState = Annotation.Root({
   activeAgentRunId: Annotation<string | null>(),
   childTaskIds: Annotation<string[]>(),
   reviewFindings: Annotation<string[]>(),
+  reviewVerdict: Annotation<AgentWorkflowState['reviewVerdict']>(),
   verificationResults: Annotation<AgentWorkflowState['verificationResults']>(),
   repairAttempts: Annotation<number>(),
   approval: Annotation<AgentWorkflowState['approval']>(),
@@ -57,7 +58,7 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
     .addEdge('planning', 'approval_gate')
     .addConditionalEdges('approval_gate', routeAfterApproval)
     .addEdge('dispatch', 'execute')
-    .addEdge('execute', 'review')
+    .addConditionalEdges('execute', routeAfterExecute)
     .addConditionalEdges('review', routeAfterReview)
     .addConditionalEdges('repair_decision', routeAfterRepairDecision)
     .addEdge('verify', 'acceptance')

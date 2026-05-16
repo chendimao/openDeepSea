@@ -494,6 +494,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
           reviewFindings: verdict.findings,
+          reviewVerdict: 'failed',
           status: 'blocked',
           error: 'Code review failed',
         };
@@ -507,6 +508,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         currentStepId: step.id,
         activeAgentRunId: runResult.run.id,
         reviewFindings: verdict.findings,
+        reviewVerdict: verdict.verdict,
         error: verdict.verdict === 'changes_requested' ? 'Code review requested changes' : null,
       };
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
@@ -516,10 +518,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
     async repairDecisionNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
       if (state.repairAttempts < 2) {
+        for (const child of tools.listChildTasks(context.task.id).filter((item) =>
+          state.childTaskIds.includes(item.id) && item.status === 'review',
+        )) {
+          const resetChild = tools.updateTaskStatus(child.id, 'todo');
+          if (resetChild) tools.broadcastTaskUpdated(resetChild);
+        }
         const nextState: AgentWorkflowState = {
           ...state,
           currentNode: 'execute',
           repairAttempts: state.repairAttempts + 1,
+          reviewVerdict: null,
           error: null,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
@@ -645,7 +654,8 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         });
         if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
-        tools.updateTaskStatus(context.task.id, 'failed');
+        const failedParent = tools.updateTaskStatus(context.task.id, 'failed');
+        if (failedParent) tools.broadcastTaskUpdated(failedParent);
         const failedRun = tools.updateRun(context.run.id, {
           status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
           current_stage: 'acceptance',
@@ -677,7 +687,8 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         });
         if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
-        tools.updateTaskStatus(context.task.id, 'failed');
+        const failedParent = tools.updateTaskStatus(context.task.id, 'failed');
+        if (failedParent) tools.broadcastTaskUpdated(failedParent);
         const failedRun = tools.updateRun(context.run.id, {
           status: 'failed',
           current_stage: 'acceptance',

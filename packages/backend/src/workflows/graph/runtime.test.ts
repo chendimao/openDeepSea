@@ -200,6 +200,7 @@ test('dispatch node is idempotent when replayed with existing child task ids', a
     activeAgentRunId: null,
     childTaskIds: [],
     reviewFindings: [],
+    reviewVerdict: null,
     verificationResults: [],
     repairAttempts: 0,
     approval: 'not_required' as const,

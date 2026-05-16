@@ -131,6 +131,7 @@ test('review pass routes to acceptance and completes workflow on acceptance pass
     activeAgentRunId: null,
     childTaskIds: [childTask.id],
     reviewFindings: [],
+    reviewVerdict: null,
     verificationResults: [],
     repairAttempts: 0,
     approval: 'not_required',
@@ -164,6 +165,12 @@ test('review changes_requested routes back to execute with bounded repair attemp
     agent_name: 'Reviewer Review Repair',
   });
   roomAgentRepo.setWorkflowRole(reviewer.id, 'reviewer');
+  const executor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'executor-review-repair',
+    agent_name: 'Executor Review Repair',
+  });
+  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
 
   const parentTask = taskRepo.create({
     room_id: room.id,
@@ -171,6 +178,16 @@ test('review changes_requested routes back to execute with bounded repair attemp
     title: 'Parent review repair task',
     description: 'Parent workflow task',
   });
+  const childTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Child review repair task',
+    description: 'Implementation child task',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  taskRepo.updateStatus(childTask.id, 'review');
   const run = workflowRepo.createRun({
     room_id: room.id,
     project_id: project.id,
@@ -181,6 +198,7 @@ test('review changes_requested routes back to execute with bounded repair attemp
   });
 
   let reviewRound = 0;
+  let executeCalls = 0;
   const tools = createGraphTools({
     runAcpAgent: async (input) => {
       const runRow = agentRunRepo.create({
@@ -195,13 +213,17 @@ test('review changes_requested routes back to execute with bounded repair attemp
         prompt: input.prompt,
       });
       const completedRun = agentRunRepo.updateStatus(runRow.id, 'completed') ?? runRow;
-      reviewRound += 1;
+      const isExecute = input.workflowStage === 'implementation';
+      if (isExecute) executeCalls += 1;
+      else reviewRound += 1;
       const message = messageRepo.create({
         room_id: room.id,
         sender_type: 'agent',
         sender_id: input.agent.agent_id,
         sender_name: input.agent.agent_name,
-        content: reviewRound === 1
+        content: isExecute
+          ? 'repair applied'
+          : reviewRound === 1
           ? '{"verdict":"changes_requested","findings":["fix naming"],"requiredFixes":["rename var"],"riskLevel":"medium"}'
           : '{"verdict":"pass","findings":[],"requiredFixes":[],"riskLevel":"low"}',
         message_type: 'agent_stream',
@@ -226,7 +248,16 @@ test('review changes_requested routes back to execute with bounded repair attemp
       goal: parentTask.title,
       summary: 'Repair loop',
       assumptions: [],
-      tasks: [],
+      tasks: [{
+        title: childTask.title,
+        description: childTask.description ?? '',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['repair passes'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
       reviewFocus: ['quality'],
       verification: [],
       risks: [],
@@ -235,8 +266,9 @@ test('review changes_requested routes back to execute with bounded repair attemp
     currentNode: 'execute',
     currentStepId: null,
     activeAgentRunId: null,
-    childTaskIds: [],
+    childTaskIds: [childTask.id],
     reviewFindings: [],
+    reviewVerdict: null,
     verificationResults: [],
     repairAttempts: 0,
     approval: 'not_required',
@@ -251,6 +283,16 @@ test('review changes_requested routes back to execute with bounded repair attemp
   assert.equal(repairedOnce.repairAttempts, 1);
   assert.equal(routeAfterRepairDecision(repairedOnce), 'execute');
   assert.equal(repairedOnce.currentNode, 'execute');
+  assert.equal(taskRepo.get(childTask.id)?.status, 'todo');
+
+  const executedAgain = await nodes.executeNode(repairedOnce);
+  assert.equal(executeCalls, 1);
+  assert.equal(taskRepo.get(childTask.id)?.status, 'review');
+
+  const reviewedAgain = await nodes.reviewNode(executedAgain);
+  assert.equal(reviewRound, 2);
+  assert.equal(reviewedAgain.reviewVerdict, 'pass');
+  assert.equal(routeAfterReview(reviewedAgain), 'verify');
 
   const repairedTwice = await nodes.repairDecisionNode(repairedOnce);
   assert.equal(repairedTwice.repairAttempts, 2);
