@@ -315,7 +315,7 @@ test('recoverGraphWorkflow marks graph running steps interrupted, blocks runs, a
   const updatedBadStateAgentRun = agentRunRepo.get(badStateAgentRun.id);
   const nextGraphState = parseGraphState(updatedRun?.graph_state ?? null);
 
-  assert.equal(count, 3);
+  assert.equal(count, 4);
   assert.equal(updatedStep?.status, 'interrupted');
   assert.equal(updatedStep?.error, 'Backend restarted before graph node completed');
   assert.equal(updatedAgentRun?.status, 'interrupted');
@@ -326,8 +326,8 @@ test('recoverGraphWorkflow marks graph running steps interrupted, blocks runs, a
   assert.equal(updatedOtherStepAgentRun?.workflow_step_id, sameWorkflowOtherStep.id);
   assert.equal(updatedOtherStepAgentRun?.acp_session_id, 'retry-session-graph-2');
 
-  assert.equal(updatedLegacyStep?.status, 'running');
-  assert.equal(updatedLegacyRun?.status, 'running');
+  assert.equal(updatedLegacyStep?.status, 'interrupted');
+  assert.equal(updatedLegacyRun?.status, 'blocked');
 
   assert.equal(updatedBadStateStep?.status, 'interrupted');
   assert.equal(updatedBadStateStep?.error, 'Backend restarted before graph node completed');

@@ -1324,6 +1324,10 @@ git add packages/backend/src/workflows/orchestrator.ts packages/backend/src/work
 git commit -m "feat(workflows): 将编排入口代理到 LangGraph"
 ```
 
+- [x] **Review fix: tighten graph facade semantics**
+
+修复 Task 9 review：approval resume 继续按 router 驱动到 execute/合法终态；cancel 调用 `runRegistry.cancel` 并返回最新 graph_state；retry 恢复 failed child task 后继续 execute；recovery 不再遗留 graph run 的 `node_name` 为空 running step。
+
 ## Task 10: Frontend Types and Workflow Metadata Display
 
 **Files:**

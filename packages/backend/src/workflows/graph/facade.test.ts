@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { AgentRun, Message, Task, WorkflowRun } from '../../types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-facade-')), 'test.db');
 
@@ -11,6 +12,7 @@ const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
+const { runRegistry } = await import('../../run-registry.js');
 const { parseGraphState, serializeGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
 
@@ -133,25 +135,52 @@ test('workflowOrchestrator.recoverOrphanedSteps recovers graph steps before lega
 
   const count = workflowOrchestrator.recoverOrphanedSteps('Backend restarted during facade recovery');
 
-  assert.equal(count, 2);
+  assert.equal(count, 3);
   assert.equal(workflowRepo.getStep(graphStep.id)?.status, 'interrupted');
   assert.equal(workflowRepo.getRun(graphRun.id)?.status, 'blocked');
-  assert.equal(workflowRepo.getStep(graphLegacyShapedStep.id)?.status, 'running');
+  assert.equal(workflowRepo.getStep(graphLegacyShapedStep.id)?.status, 'interrupted');
   assert.equal(workflowRepo.getStep(legacyStep.id)?.status, 'interrupted');
   assert.equal(workflowRepo.getRun(legacyRun.id)?.status, 'blocked');
+  assert.equal(workflowRepo.listRunningSteps().some((step) => step.workflow_run_id === graphRun.id), false);
 });
 
 test('workflowOrchestrator.approvePlan delegates graph approval to runtime continuation', async () => {
   const task = createTask('graph-facade-approve', 'Facade graph approval');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
   const run = createAwaitingGraphRun(task);
+  const agentRuns: AgentRun[] = [];
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      agentRuns.push(agentRun);
+      return {
+        run: { ...agentRun, stdout: 'implementation completed' },
+        message: fakeMessage(task.room_id, 'implementation completed'),
+        status: 'completed',
+      };
+    },
+  });
 
   const approved = await workflowOrchestrator.approvePlan(run.id, 'tester');
 
   assert.equal(approved.graph_version, 'phase-b-v1');
-  assert.equal(approved.status, 'running');
   assert.equal(approved.approved_by, 'tester');
   assert.equal(approved.current_stage, 'implementation');
   assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'));
+  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'execute'));
+  assert.equal(agentRuns[0]?.room_agent_id, executor.id);
+  assert.ok(['running', 'blocked', 'failed', 'cancelled', 'completed'].includes(approved.status));
 });
 
 test('workflowOrchestrator.cancel delegates graph cancellation to runtime', async () => {
@@ -182,14 +211,77 @@ test('workflowOrchestrator.cancel delegates graph cancellation to runtime', asyn
     workflow_stage: 'implementation',
     prompt: 'running graph work',
   });
+  const controller = runRegistry.create(agentRun.id);
 
   const cancelled = await workflowOrchestrator.cancel(run.id);
-  const cancelledState = parseGraphState(workflowRepo.getRun(run.id)?.graph_state ?? null);
+  const cancelledState = parseGraphState(cancelled.graph_state);
 
   assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelledState?.status, 'cancelled');
   assert.equal(workflowRepo.getStep(step.id)?.status, 'cancelled');
   assert.equal(agentRunRepo.get(agentRun.id)?.status, 'cancelled');
-  assert.equal(cancelledState?.status, 'cancelled');
+  assert.equal(controller.signal.aborted, true);
+});
+
+test('workflowOrchestrator.retryStep restores failed graph child task and resumes execute', async () => {
+  const task = createTask('graph-facade-retry', 'Facade graph retry');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Failed child task',
+    description: 'Retry should restore this task.',
+    assigned_agent_id: executor.id,
+  });
+  taskRepo.updateStatus(child.id, 'failed');
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'execute',
+    childTaskIds: [child.id],
+    error: 'Agent run failed',
+  });
+  const failedStep = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: child.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'failed',
+    assigned_room_agent_id: executor.id,
+    room_agent_id: executor.id,
+    prompt: 'failed graph work',
+    sort_order: 1,
+  });
+  let executed = false;
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      executed = true;
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: 'retry implementation completed' },
+        message: fakeMessage(task.room_id, 'retry implementation completed'),
+        status: 'completed',
+      };
+    },
+  });
+
+  await workflowOrchestrator.retryStep(run.id);
+
+  assert.equal(workflowRepo.getStep(failedStep.id)?.status, 'skipped');
+  assert.equal(taskRepo.get(child.id)?.status, 'review');
+  assert.equal(executed, true);
+  assert.ok(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length >= 2);
 });
 
 function createTask(projectSuffix: string, title: string) {
@@ -206,8 +298,13 @@ function createTask(projectSuffix: string, title: string) {
 }
 
 function createAwaitingGraphRun(
-  task: ReturnType<typeof taskRepo.create>,
-  overrides: { status?: 'running' | 'awaiting_approval'; currentNode?: 'approval' | 'execute' } = {},
+  task: Task,
+  overrides: {
+    status?: WorkflowRun['status'];
+    currentNode?: 'approval' | 'execute';
+    childTaskIds?: string[];
+    error?: string | null;
+  } = {},
 ) {
   const state = {
     workflowRunId: 'pending',
@@ -239,14 +336,14 @@ function createAwaitingGraphRun(
     currentNode: overrides.currentNode ?? 'approval' as const,
     currentStepId: null,
     activeAgentRunId: null,
-    childTaskIds: [],
+    childTaskIds: overrides.childTaskIds ?? [],
     reviewFindings: [],
     reviewVerdict: null,
     verificationResults: [],
     repairAttempts: 0,
     approval: 'pending' as const,
     status: overrides.status ?? 'awaiting_approval' as const,
-    error: null,
+    error: overrides.error ?? null,
   };
   const run = workflowRepo.createRun({
     room_id: task.room_id,
@@ -259,4 +356,27 @@ function createAwaitingGraphRun(
   });
   workflowRepo.updateGraphState(run.id, serializeGraphState({ ...state, workflowRunId: run.id }));
   return workflowRepo.getRun(run.id)!;
+}
+
+function addWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor') {
+  const agent = roomAgentRepo.add({
+    room_id: roomId,
+    agent_id: `${role}-${Date.now()}-${Math.random()}`,
+    agent_name: `${role} Agent`,
+  });
+  return roomAgentRepo.setWorkflowRole(agent.id, role) ?? agent;
+}
+
+function fakeMessage(roomId: string, content: string): Message {
+  return {
+    id: `message-${Date.now()}-${Math.random()}`,
+    room_id: roomId,
+    sender_type: 'agent',
+    sender_id: 'agent',
+    sender_name: 'Agent',
+    content,
+    message_type: 'text',
+    metadata: null,
+    created_at: Date.now(),
+  };
 }

@@ -4,6 +4,7 @@ import { projectRepo } from '../../repos/projects.js';
 import { roomRepo } from '../../repos/rooms.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowRepo } from '../../repos/workflows.js';
+import { runRegistry } from '../../run-registry.js';
 import type { WorkflowRun } from '../../types.js';
 import { createGraphNodes } from './nodes.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
@@ -161,13 +162,24 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
     throw new Error('workflow is already running');
   }
   const state = requireGraphState(run);
+  const tools = createGraphTools(deps);
   const retryState: AgentWorkflowState = {
     ...state,
+    currentNode: retryCurrentNode(state),
+    currentStepId: null,
     status: 'running',
     error: null,
     activeAgentRunId: null,
   };
-  for (const step of workflowRepo.listSteps(run.id).filter((item) => item.status === 'running')) {
+  for (const child of taskRepo.listChildren(run.task_id).filter((item) =>
+    state.childTaskIds.includes(item.id) && (item.status === 'failed' || item.status === 'in_progress'),
+  )) {
+    const resetChild = taskRepo.updateStatus(child.id, 'todo');
+    if (resetChild) tools.broadcastTaskUpdated(resetChild);
+  }
+  for (const step of workflowRepo.listSteps(run.id).filter((item) =>
+    item.node_name && (item.status === 'running' || item.status === 'failed' || item.status === 'cancelled' || item.status === 'interrupted'),
+  )) {
     workflowRepo.updateStep(step.id, {
       status: 'skipped',
       error: step.error ?? 'Superseded by retry',
@@ -190,6 +202,7 @@ export async function cancelGraphWorkflow(id: string): Promise<WorkflowRun> {
   const run = requireGraphRun(id);
   const tools = createGraphTools();
   for (const agentRun of tools.listActiveAgentRunsByWorkflow(run.id)) {
+    runRegistry.cancel(agentRun.id);
     const cancelledRun = agentRunRepo.updateStatus(agentRun.id, 'cancelled', { error: 'Workflow cancelled' });
     if (cancelledRun) tools.broadcastAgentRunUpdated(run.room_id, cancelledRun);
   }
@@ -213,8 +226,10 @@ export async function cancelGraphWorkflow(id: string): Promise<WorkflowRun> {
       error: null,
     }));
   }
-  tools.broadcastWorkflowUpdated(updated);
-  return updated;
+  const latest = workflowRepo.getRun(run.id);
+  if (!latest) throw new Error('workflow not found');
+  tools.broadcastWorkflowUpdated(latest);
+  return latest;
 }
 
 function blockGraphWorkflowRun(runId: string, state: AgentWorkflowState, error: string): AgentWorkflowState {
@@ -240,8 +255,8 @@ export function recoverGraphWorkflow(error: string): number {
   const tools = createGraphTools();
   let count = 0;
   for (const step of tools.listRunningSteps()) {
-    if (!step.node_name) continue;
     const run = tools.getRun(step.workflow_run_id);
+    if (!step.node_name && !run?.graph_version) continue;
     if (!run || run.status === 'cancelled' || run.status === 'completed') continue;
 
     for (const activeRun of tools.listActiveAgentRunsByWorkflow(run.id)) {
@@ -258,7 +273,7 @@ export function recoverGraphWorkflow(error: string): number {
       if (parsedState) {
         const nextState = {
           ...parsedState,
-          currentNode: step.node_name,
+          currentNode: step.node_name ?? parsedState.currentNode,
           currentStepId: step.id,
           status: 'blocked' as const,
           error,
@@ -288,6 +303,14 @@ function requireGraphState(run: WorkflowRun): AgentWorkflowState {
   return state;
 }
 
+function retryCurrentNode(state: AgentWorkflowState): AgentWorkflowState['currentNode'] {
+  if (state.currentNode === 'execute') return 'dispatch';
+  if (state.currentNode === 'review') return 'execute';
+  if (state.currentNode === 'verify') return 'review';
+  if (state.currentNode === 'acceptance') return 'verify';
+  return state.currentNode;
+}
+
 async function resumeGraphWorkflowFromState(
   state: AgentWorkflowState,
   deps: GraphRuntimeDeps,
@@ -295,59 +318,74 @@ async function resumeGraphWorkflowFromState(
   const tools = createGraphTools(deps);
   const nodes = createGraphNodes(tools);
   let nextState = state;
-  let guard = 0;
+  let nextNode = nextNodeAfter(nextState);
 
-  while (guard < 20) {
-    guard += 1;
-    if (nextState.status === 'awaiting_approval' || nextState.status === 'blocked' || nextState.status === 'cancelled' || nextState.status === 'failed' || nextState.status === 'completed') {
+  for (let iteration = 0; iteration < 20; iteration += 1) {
+    if (!nextNode || isTerminalResumeState(nextState)) {
       return nextState;
     }
 
-    if (nextState.currentNode === 'approval') {
-      return nodes.dispatchNode(nextState);
-    } else if (nextState.currentNode === 'dispatch') {
-      nextState = await nodes.executeNode(nextState);
-    } else if (nextState.currentNode === 'execute') {
-      nextState = await nodes.executeNode(nextState);
-      if (routeAfterExecute(nextState) !== 'review') return nextState;
-      nextState = await nodes.reviewNode(nextState);
-    } else if (nextState.currentNode === 'review') {
-      nextState = await nodes.reviewNode(nextState);
-    } else if (nextState.currentNode === 'repair_decision') {
-      nextState = await nodes.executeNode(nextState);
-    } else if (nextState.currentNode === 'verify') {
-      nextState = await nodes.verifyNode(nextState);
-    } else if (nextState.currentNode === 'acceptance') {
-      nextState = await nodes.acceptanceNode(nextState);
-    } else if (nextState.currentNode === 'memory') {
-      return nextState;
-    } else {
+    if (nextNode === 'context') {
       nextState = await nodes.contextNode(nextState);
-    }
-
-    if (nextState.currentNode === 'execute' && routeAfterExecute(nextState) === 'review') {
+    } else if (nextNode === 'planning') {
+      nextState = await nodes.planningNode(nextState);
+    } else if (nextNode === 'approval') {
+      nextState = await nodes.approvalNode(nextState);
+    } else if (nextNode === 'dispatch') {
+      nextState = await nodes.dispatchNode(nextState);
+    } else if (nextNode === 'execute') {
+      nextState = await nodes.executeNode(nextState);
+    } else if (nextNode === 'review') {
       nextState = await nodes.reviewNode(nextState);
-    }
-    if (nextState.currentNode === 'review') {
-      const nextRoute = routeAfterReview(nextState);
-      if (nextRoute === 'repair_decision') nextState = await nodes.repairDecisionNode(nextState);
-      else if (nextRoute === 'verify') nextState = await nodes.verifyNode(nextState);
-      else return nextState;
-    }
-    if (nextState.currentNode === 'repair_decision') {
-      if (routeAfterRepairDecision(nextState) === 'execute') continue;
-      return nextState;
-    }
-    if (nextState.currentNode === 'verify') {
-      if (nextState.status === 'blocked' || nextState.status === 'cancelled' || nextState.status === 'failed') return nextState;
+    } else if (nextNode === 'repair_decision') {
+      nextState = await nodes.repairDecisionNode(nextState);
+    } else if (nextNode === 'verify') {
+      nextState = await nodes.verifyNode(nextState);
+    } else if (nextNode === 'acceptance') {
       nextState = await nodes.acceptanceNode(nextState);
+    } else if (nextNode === 'memory') {
+      nextState = await nodes.memoryNode(nextState);
     }
-    if (nextState.currentNode === 'acceptance') {
-      if (nextState.status === 'completed') nextState = await nodes.memoryNode(nextState);
-      return nextState;
-    }
-    if (routeAfterApproval(nextState) === END || nextState.currentNode === 'memory') return nextState;
+    nextNode = nextNodeAfter(nextState);
   }
 
   throw new Error('graph retry exceeded resume limit');
+}
+
+function isTerminalResumeState(state: AgentWorkflowState): boolean {
+  return (
+    state.status === 'awaiting_approval' ||
+    state.status === 'awaiting_decision' ||
+    state.status === 'blocked' ||
+    state.status === 'cancelled' ||
+    state.status === 'failed' ||
+    state.status === 'completed'
+  );
+}
+
+function nextNodeAfter(state: AgentWorkflowState): AgentWorkflowState['currentNode'] | null {
+  if (isTerminalResumeState(state)) return null;
+  if (!state.currentNode) return 'context';
+  if (state.currentNode === 'context') return 'planning';
+  if (state.currentNode === 'planning') return 'approval';
+  if (state.currentNode === 'approval') {
+    const route = routeAfterApproval(state);
+    return route === END ? null : route;
+  }
+  if (state.currentNode === 'dispatch') return 'execute';
+  if (state.currentNode === 'execute') {
+    const route = routeAfterExecute(state);
+    return route === END ? null : route;
+  }
+  if (state.currentNode === 'review') {
+    const route = routeAfterReview(state);
+    return route === END ? null : route;
+  }
+  if (state.currentNode === 'repair_decision') {
+    const route = routeAfterRepairDecision(state);
+    return route === END ? null : route;
+  }
+  if (state.currentNode === 'verify') return 'acceptance';
+  if (state.currentNode === 'acceptance') return state.status === 'completed' ? 'memory' : null;
+  return null;
 }
