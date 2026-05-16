@@ -59,11 +59,17 @@ export function buildModelChatMessages(input: ModelChatInput): Array<SystemMessa
 }
 
 export async function invokeConfiguredModelText(messages: Array<SystemMessage | HumanMessage>): Promise<string> {
-  const config = getRuntimeLangChainPlannerConfig();
-  if (!config.enabled || !config.model || !config.apiKey) return '';
-  const model = new ChatOpenAI(buildChatOpenAIFields(config));
-  const response = await model.invoke(messages);
-  return extractPlannerText(response.content).trim();
+  try {
+    const config = getRuntimeLangChainPlannerConfig();
+    if (!config.enabled || !config.model || !config.apiKey) return '';
+    const model = new ChatOpenAI(buildChatOpenAIFields(config));
+    const response = await model.invoke(messages);
+    return extractPlannerText(response.content).trim();
+  } catch (err) {
+    const error = new Error(sanitizeModelErrorMessage(err));
+    error.cause = err;
+    throw error;
+  }
 }
 
 function createDefaultModelChatInvoker(): ModelChatInvoker {
@@ -76,4 +82,19 @@ function createDefaultModelChatInvoker(): ModelChatInvoker {
       return invokeConfiguredModelText(messages);
     },
   };
+}
+
+const SECRET_PATTERNS: Array<[RegExp, string]> = [
+  [/\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/=-]+/gi, '[REDACTED_CREDENTIAL]'],
+  [/\b(Bearer)\s+sk-[A-Za-z0-9._-]+/gi, '$1 [REDACTED]'],
+  [/\b(api[_-]?key|api[_-]?token|access[_-]?token|openai[_-]?api[_-]?key)\s*[:=]\s*["']?[^"',\s)]+/gi, '[REDACTED_CREDENTIAL]'],
+  [/\bsk-[A-Za-z0-9._-]+/g, '[REDACTED]'],
+];
+
+export function sanitizeModelErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  return SECRET_PATTERNS.reduce(
+    (message, [pattern, replacement]) => message.replace(pattern, replacement),
+    raw,
+  );
 }

@@ -1,6 +1,7 @@
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
-import { invokeConfiguredModelText } from '../chat-model.js';
+import { invokeConfiguredModelText, sanitizeModelErrorMessage } from '../chat-model.js';
 import { memoryRepo } from '../repos/memory.js';
+import { isMemorySourceConflictError } from '../repos/memory.js';
 import { messageRepo } from '../repos/messages.js';
 import type { MemoryScope, MemoryType, Message } from '../types.js';
 
@@ -112,11 +113,26 @@ function buildDistillSourceId(sourceId: string, index: number): string {
 }
 
 async function callDistillLLM(prompt: string, modelInvoker?: MemoryDistillModelInvoker): Promise<string> {
-  if (modelInvoker) return modelInvoker(prompt);
-  return invokeConfiguredModelText([
-    new SystemMessage('你是记忆提取助手，只返回 JSON。'),
-    new HumanMessage(prompt),
-  ]);
+  try {
+    if (modelInvoker) return modelInvoker(prompt);
+    return invokeConfiguredModelText([
+      new SystemMessage('你是记忆提取助手，只返回 JSON。'),
+      new HumanMessage(prompt),
+    ]);
+  } catch (err) {
+    const error = new Error(sanitizeModelErrorMessage(err));
+    error.cause = err;
+    throw error;
+  }
+}
+
+function logMemoryCreateError(context: 'conversation' | 'task', err: unknown): void {
+  if (isMemorySourceConflictError(err)) {
+    console.debug(`[distill] skipped ${context} candidate: duplicate memory source`);
+    return;
+  }
+  const message = sanitizeModelErrorMessage(err);
+  console.warn(`[distill] failed to store ${context} candidate: ${message}`);
 }
 
 /**
@@ -159,12 +175,11 @@ export async function distillFromConversation(args: {
           source_id: buildDistillSourceId(triggerMessageId, index),
         });
       } catch (err) {
-        // Likely duplicate - skip
-        console.debug(`[distill] skipped candidate: ${(err as Error).message}`);
+        logMemoryCreateError('conversation', err);
       }
     }
   } catch (err) {
-    console.warn(`[distill] conversation distill failed: ${(err as Error).message}`);
+    console.warn(`[distill] conversation distill failed: ${sanitizeModelErrorMessage(err)}`);
   }
 }
 
@@ -213,10 +228,10 @@ export async function distillFromTask(args: {
           source_id: buildDistillSourceId(sourceId, index),
         });
       } catch (err) {
-        console.debug(`[distill] skipped task candidate: ${(err as Error).message}`);
+        logMemoryCreateError('task', err);
       }
     }
   } catch (err) {
-    console.warn(`[distill] task distill failed: ${(err as Error).message}`);
+    console.warn(`[distill] task distill failed: ${sanitizeModelErrorMessage(err)}`);
   }
 }

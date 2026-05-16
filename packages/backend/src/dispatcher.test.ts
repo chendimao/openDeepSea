@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-dispatch-')), 'test.db');
+
 import { adapters } from './acp/index.js';
-import { db } from './db.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
