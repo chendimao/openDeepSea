@@ -53,6 +53,11 @@ export const parsedPlanSchema = z.object({
   tasks: z.array(parsedPlanTaskSchema),
   reviewFocus: z.array(z.string()),
   verification: z.array(z.string()),
+  verificationCommands: z.array(z.object({
+    command: z.string(),
+    reason: z.string(),
+    required: z.boolean(),
+  })).default([]),
   risks: z.array(z.string()),
   needsApproval: z.boolean(),
 });

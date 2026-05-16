@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { VerificationResult } from './state.js';
 
 const SHELL_META_PATTERN = /[;&|`$<>]/;
@@ -17,6 +20,22 @@ export function isAllowedVerificationCommand(command: string): boolean {
   if (SHELL_META_PATTERN.test(trimmed)) return false;
   if (DESTRUCTIVE_PATTERN.test(trimmed)) return false;
   return ALLOWED_COMMANDS.has(trimmed);
+}
+
+export function getVerificationCwd(start = process.cwd()): string {
+  let current = start;
+  for (;;) {
+    if (
+      existsSync(join(current, 'package.json')) &&
+      existsSync(join(current, 'packages', 'backend', 'package.json'))
+    ) {
+      return current;
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 }
 
 export async function runVerificationCommand(command: string, cwd: string): Promise<VerificationResult> {

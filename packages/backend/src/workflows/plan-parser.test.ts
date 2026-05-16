@@ -113,6 +113,11 @@ test('parsePlanArtifact parses modern LangChain planner shape', () => {
   assert.deepEqual(firstTask.scopeWrite, ['packages/backend/src/workflows/plan-parser.ts']);
   assert.deepEqual(firstTask.dependsOn, []);
   assert.deepEqual(plan.verification, ['node --import tsx --test src/workflows/plan-parser.test.ts']);
+  assert.deepEqual(plan.verificationCommands, [{
+    command: 'node --import tsx --test src/workflows/plan-parser.test.ts',
+    reason: '覆盖解析器行为',
+    required: true,
+  }]);
   assert.equal(plan.needsApproval, false);
 });
 

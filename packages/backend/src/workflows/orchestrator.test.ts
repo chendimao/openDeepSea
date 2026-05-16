@@ -34,6 +34,7 @@ test('formatParsedPlanArtifact emits modern fenced JSON and preserves needsAppro
     ],
     reviewFocus: [],
     verification: ['npm run build'],
+    verificationCommands: [{ command: 'npm run build', reason: '', required: true }],
     risks: ['Planner output can be malformed.'],
     needsApproval: false,
   });

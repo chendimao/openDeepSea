@@ -1,6 +1,6 @@
 import { serializeGraphState, type AgentWorkflowState } from './state.js';
 import type { GraphTools } from './tools.js';
-import { runVerificationCommand } from './verification.js';
+import { getVerificationCwd, runVerificationCommand } from './verification.js';
 import { formatParsedPlanArtifact } from '../orchestrator.js';
 import { parseAcceptanceVerdict, parseReviewVerdict } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
@@ -554,20 +554,23 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
     async verifyNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
-      const commands = state.plan?.verification ?? [];
+      const commands = state.plan?.verificationCommands?.length
+        ? state.plan.verificationCommands
+        : (state.plan?.verification ?? []).map((command) => ({ command, reason: '', required: true }));
       const step = tools.createGraphStep({
         workflow_run_id: context.run.id,
         task_id: context.task.id,
         stage: 'code_review',
         node_name: 'verify',
         status: 'running',
-        prompt: commands.length > 0 ? commands.join('\n') : 'no verification commands',
+        prompt: commands.length > 0 ? commands.map((command) => command.command).join('\n') : 'no verification commands',
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
 
+      const verificationCwd = getVerificationCwd();
       const results = commands.length > 0
-        ? await Promise.all(commands.map(async (command) => runVerificationCommand(command, context.project.path)))
+        ? await Promise.all(commands.map(async (command) => runVerificationCommand(command.command, verificationCwd)))
         : [{
           command: '(none)',
           status: 'skipped' as const,
@@ -576,7 +579,10 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           stderr: 'No verification commands configured',
         }];
 
-      const failedRequired = results.find((result) => result.status !== 'passed');
+      const failedRequired = results.find((result, index) => {
+        if (commands.length === 0) return false;
+        return commands[index]?.required !== false && result.status !== 'passed';
+      });
       const blocked = Boolean(failedRequired);
       const summary = results.map((result) => (
         `- ${result.command}: ${result.status} (exitCode=${result.exitCode ?? 'null'})`

@@ -96,6 +96,12 @@ export interface ParsedPlanTask {
   dependsOn: string[];
 }
 
+export interface ParsedVerificationCommand {
+  command: string;
+  reason: string;
+  required: boolean;
+}
+
 export interface ParsedPlan {
   goal: string | null;
   summary: string;
@@ -103,6 +109,7 @@ export interface ParsedPlan {
   tasks: ParsedPlanTask[];
   reviewFocus: string[];
   verification: string[];
+  verificationCommands: ParsedVerificationCommand[];
   risks: string[];
   needsApproval: boolean;
 }
@@ -165,6 +172,11 @@ function normalizeLangChainPlan(plan: z.infer<typeof langChainPlanSchema>): Pars
     }),
     reviewFocus: [],
     verification: plan.verification.map((command) => command.command),
+    verificationCommands: plan.verification.map((command) => ({
+      command: command.command,
+      reason: command.reason,
+      required: command.required,
+    })),
     risks: plan.risks,
     needsApproval: plan.needsApproval,
   };
@@ -183,6 +195,11 @@ function normalizeLegacyPlan(plan: z.infer<typeof planSchema>): ParsedPlan {
     })),
     reviewFocus: plan.reviewFocus,
     verification: plan.verification,
+    verificationCommands: plan.verification.map((command) => ({
+      command,
+      reason: '',
+      required: true,
+    })),
     risks: plan.risks,
     needsApproval: true,
   };
