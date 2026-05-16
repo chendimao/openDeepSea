@@ -12,6 +12,7 @@ const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
+const { memoryRepo } = await import('../../repos/memory.js');
 const { runRegistry } = await import('../../run-registry.js');
 const { parseGraphState, serializeGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
@@ -181,6 +182,69 @@ test('workflowOrchestrator.approvePlan delegates graph approval to runtime conti
   assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'execute'));
   assert.equal(agentRuns[0]?.room_agent_id, executor.id);
   assert.ok(['running', 'blocked', 'failed', 'cancelled', 'completed'].includes(approved.status));
+});
+
+test('workflowOrchestrator.approvePlan resumes through acceptance and memory on successful path', async () => {
+  const task = createTask('graph-facade-approve-memory', 'Facade graph approval memory path');
+  addWorkflowAgent(task.room_id, 'executor');
+  addWorkflowAgent(task.room_id, 'reviewer');
+  addWorkflowAgent(task.room_id, 'acceptor');
+  const run = createAwaitingGraphRun(task);
+  const stageCalls: string[] = [];
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      const stage = input.workflowStage ?? 'unknown';
+      stageCalls.push(stage);
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const output = stage === 'code_review'
+        ? JSON.stringify({ verdict: 'pass', findings: [] })
+        : stage === 'acceptance'
+          ? JSON.stringify({
+            verdict: 'pass',
+            acceptedCriteria: ['Graph runtime completed all steps'],
+            failedCriteria: [],
+            notes: 'All checks passed',
+          })
+          : 'implementation completed';
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(task.room_id, output),
+        status: 'completed',
+      };
+    },
+  });
+
+  const approved = await workflowOrchestrator.approvePlan(run.id, 'tester');
+  const approvedState = parseGraphState(approved.graph_state);
+  const taskMemories = memoryRepo.list({
+    projectId: task.project_id,
+    roomId: task.room_id,
+    taskId: task.id,
+  });
+  const taskSummary = taskMemories.find((memory) => memory.memory_type === 'task_summary');
+
+  assert.equal(approved.status, 'completed');
+  assert.equal(approvedState?.status, 'completed');
+  assert.equal(approvedState?.currentNode, 'memory');
+  assert.deepEqual(stageCalls.slice(0, 3), ['implementation', 'code_review', 'acceptance']);
+  assert.equal(stageCalls.includes('acceptance'), true);
+  assert.equal(taskSummary?.memory_type, 'task_summary');
+  assert.equal(taskSummary?.source_id, approved.id);
+  assert.equal(taskSummary?.task_id, task.id);
+  assert.match(taskSummary?.content ?? '', /Graph runtime completed all steps/);
+  assert.equal(workflowRepo.listSteps(approved.id).some((step) => step.node_name === 'acceptance'), true);
+  assert.equal(workflowRepo.listSteps(approved.id).some((step) => step.node_name === 'memory'), false);
 });
 
 test('workflowOrchestrator.cancel delegates graph cancellation to runtime', async () => {

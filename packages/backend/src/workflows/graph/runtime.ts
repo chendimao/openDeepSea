@@ -362,8 +362,7 @@ function isTerminalResumeState(state: AgentWorkflowState): boolean {
     state.status === 'awaiting_decision' ||
     state.status === 'blocked' ||
     state.status === 'cancelled' ||
-    state.status === 'failed' ||
-    state.status === 'completed'
+    state.status === 'failed'
   );
 }
 
@@ -395,5 +394,6 @@ function nextNodeAfter(
   }
   if (node === 'verify') return 'acceptance';
   if (node === 'acceptance') return state.status === 'completed' ? 'memory' : null;
+  if (node === 'memory') return null;
   return null;
 }
