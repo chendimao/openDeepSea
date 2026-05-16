@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
 import type { AcpBackend, AcpPermissionMode, AgentDefaultRuntime, Room, RoomAgent, WorkflowRole } from '../types.js';
+import { agentRepo } from './agents.js';
 
 type RoomAgentRow = Omit<RoomAgent, 'acp_writable_dirs' | 'acp_permission_mode' | 'capabilities' | 'default_runtime'> & {
   acp_permission_mode?: string | null;
@@ -67,13 +68,13 @@ export const roomRepo = {
 export const roomAgentRepo = {
   listByRoom(roomId: string): RoomAgent[] {
     const rows = db
-      .prepare('SELECT * FROM room_agents WHERE room_id = ? ORDER BY joined_at ASC')
+      .prepare(`${roomAgentSelectSql()} WHERE room_agents.room_id = ? ORDER BY room_agents.joined_at ASC`)
       .all(roomId) as RoomAgentRow[];
     return rows.map(normalizeRoomAgent);
   },
 
   get(id: string): RoomAgent | undefined {
-    const row = db.prepare('SELECT * FROM room_agents WHERE id = ?').get(id) as RoomAgentRow | undefined;
+    const row = db.prepare(`${roomAgentSelectSql()} WHERE room_agents.id = ?`).get(id) as RoomAgentRow | undefined;
     return row ? normalizeRoomAgent(row) : undefined;
   },
 
@@ -85,10 +86,53 @@ export const roomAgentRepo = {
   }): RoomAgent {
     const id = nanoid(12);
     db.prepare(
-      `INSERT INTO room_agents (id, room_id, agent_id, agent_name, agent_role, joined_at, default_runtime)
-       VALUES (?, ?, ?, ?, ?, ?, 'none')`,
+      `INSERT INTO room_agents (id, room_id, global_agent_id, agent_id, agent_name, agent_role, joined_at, default_runtime)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, 'none')`,
     ).run(id, input.room_id, input.agent_id, input.agent_name, input.agent_role ?? null, now());
     return this.get(id)!;
+  },
+
+  addFromGlobalAgent(input: { room_id: string; global_agent_id: string }): RoomAgent {
+    const agent = agentRepo.get(input.global_agent_id);
+    if (!agent) throw new Error('global agent not found');
+
+    const id = nanoid(12);
+    db.prepare(
+      `INSERT INTO room_agents (
+        id, room_id, global_agent_id, agent_id, agent_name, agent_role, joined_at,
+        acp_enabled, acp_backend, acp_permission_mode, default_runtime
+      )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      input.room_id,
+      agent.id,
+      agent.agent_id,
+      agent.name,
+      agent.description,
+      now(),
+      agent.default_acp_backend ? 1 : 0,
+      agent.default_acp_backend,
+      agent.default_acp_permission_mode,
+      agent.default_acp_backend ? 'acp' : 'none',
+    );
+    return this.get(id)!;
+  },
+
+  ensureGlobalAgent(id: string): RoomAgent | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    if (existing.global_agent_id) return existing;
+
+    const agent = agentRepo.createOrReuseFromRoomAgent({
+      agent_id: existing.agent_id,
+      agent_name: existing.agent_name,
+      agent_role: existing.agent_role,
+      acp_backend: existing.acp_backend,
+      acp_permission_mode: existing.acp_permission_mode,
+    });
+    db.prepare('UPDATE room_agents SET global_agent_id = ? WHERE id = ?').run(agent.id, id);
+    return this.get(id);
   },
 
   remove(id: string): boolean {
@@ -137,3 +181,18 @@ export const roomAgentRepo = {
     return this.get(id);
   },
 };
+
+function roomAgentSelectSql(): string {
+  return `
+    SELECT
+      room_agents.*,
+      COALESCE(agents.agent_id, room_agents.agent_id) AS agent_id,
+      COALESCE(agents.name, room_agents.agent_name) AS agent_name,
+      agents.preferred_user_name AS preferred_user_name,
+      agents.personality AS personality,
+      agents.rules AS rules,
+      COALESCE(agents.responsibilities, room_agents.agent_role) AS responsibilities
+    FROM room_agents
+    LEFT JOIN agents ON agents.id = room_agents.global_agent_id
+  `;
+}

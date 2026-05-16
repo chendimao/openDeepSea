@@ -6,7 +6,14 @@ import { getAdapter } from './acp/index.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
-import { ensureMessageUploadDir, messageUploadDir, messageUploadRoute } from './uploads.js';
+import {
+  ensureMessageUploadDir,
+  ensureProjectFileUploadRoot,
+  messageUploadDir,
+  messageUploadRoute,
+  projectFileUploadRoot,
+  projectFileUploadRoute,
+} from './uploads.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
 import type { WsClientEvent } from './types.js';
@@ -17,7 +24,17 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '4mb' }));
 await ensureMessageUploadDir();
+await ensureProjectFileUploadRoot();
 app.use(messageUploadRoute, express.static(messageUploadDir, {
+  fallthrough: false,
+  immutable: true,
+  maxAge: '7d',
+  setHeaders: (res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', 'attachment');
+  },
+}));
+app.use(projectFileUploadRoute, express.static(projectFileUploadRoot, {
   fallthrough: false,
   immutable: true,
   maxAge: '7d',

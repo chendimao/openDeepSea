@@ -49,9 +49,26 @@ CREATE TABLE IF NOT EXISTS rooms (
 );
 CREATE INDEX IF NOT EXISTS idx_rooms_project ON rooms(project_id);
 
+CREATE TABLE IF NOT EXISTS agents (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT,
+  preferred_user_name TEXT,
+  personality TEXT,
+  rules TEXT,
+  responsibilities TEXT,
+  default_acp_backend TEXT,
+  default_acp_permission_mode TEXT NOT NULL DEFAULT 'bypass',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agents_updated ON agents(updated_at);
+
 CREATE TABLE IF NOT EXISTS room_agents (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
+  global_agent_id TEXT,
   agent_id TEXT NOT NULL,
   agent_name TEXT NOT NULL,
   agent_role TEXT,
@@ -65,6 +82,7 @@ CREATE TABLE IF NOT EXISTS room_agents (
   capabilities TEXT NOT NULL DEFAULT '[]',
   default_runtime TEXT NOT NULL DEFAULT 'none',
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  FOREIGN KEY (global_agent_id) REFERENCES agents(id) ON DELETE RESTRICT,
   UNIQUE (room_id, agent_id)
 );
 CREATE INDEX IF NOT EXISTS idx_room_agents_room ON room_agents(room_id);
@@ -82,6 +100,40 @@ CREATE TABLE IF NOT EXISTS messages (
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, created_at);
+
+CREATE TABLE IF NOT EXISTS files (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  stored_name TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  uploaded_by_id TEXT,
+  uploaded_by_name TEXT,
+  created_at INTEGER NOT NULL,
+  deleted_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_files_project_created ON files(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_files_project_deleted ON files(project_id, deleted_at);
+
+CREATE TABLE IF NOT EXISTS message_file_refs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  room_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  file_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+  UNIQUE (message_id, file_id)
+);
+CREATE INDEX IF NOT EXISTS idx_message_file_refs_file ON message_file_refs(file_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_message_file_refs_room ON message_file_refs(room_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
@@ -356,6 +408,10 @@ if (!roomAgentColumnNames.has('capabilities')) {
 if (!roomAgentColumnNames.has('default_runtime')) {
   db.exec("ALTER TABLE room_agents ADD COLUMN default_runtime TEXT NOT NULL DEFAULT 'none'");
 }
+if (!roomAgentColumnNames.has('global_agent_id')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN global_agent_id TEXT');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_room_agents_global_agent ON room_agents(global_agent_id)');
 
 const agentRunColumns = db.prepare('PRAGMA table_info(agent_runs)').all() as { name: string }[];
 const agentRunColumnNames = new Set(agentRunColumns.map((column) => column.name));

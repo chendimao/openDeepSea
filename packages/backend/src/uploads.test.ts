@@ -8,8 +8,11 @@ import {
   MAX_MESSAGE_FILES,
   MAX_MESSAGE_FILE_SIZE_BYTES,
   buildAttachmentMetadata,
+  buildProjectFileRecordInput,
+  buildProjectFileUploadDir,
   cleanupUploadedFilesInDir,
   isAllowedMessageUploadMimeType,
+  projectFileUploadRoot,
   safeUploadFileName,
 } from './uploads.js';
 
@@ -55,6 +58,36 @@ test('buildAttachmentMetadata maps multer file to message attachment metadata', 
   assert.equal(metadata.size, 128);
   assert.equal(metadata.url, '/uploads/messages/stored.png');
   assert.equal(metadata.isImage, true);
+});
+
+test('project file upload path is scoped by project id', () => {
+  const uploadDir = buildProjectFileUploadDir('project-1');
+
+  assert.equal(uploadDir.startsWith(projectFileUploadRoot), true);
+  assert.equal(uploadDir.endsWith('project-1'), true);
+});
+
+test('buildProjectFileRecordInput maps multer file to project file input', () => {
+  const input = buildProjectFileRecordInput('project-1', {
+    originalname: 'screen.png',
+    mimetype: 'image/png',
+    size: 128,
+    filename: 'stored.png',
+    path: join(projectFileUploadRoot, 'project-1', 'stored.png'),
+  } as Express.Multer.File, {
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+
+  assert.equal(input.project_id, 'project-1');
+  assert.equal(input.original_name, 'screen.png');
+  assert.equal(input.stored_name, 'stored.png');
+  assert.equal(input.mime_type, 'image/png');
+  assert.equal(input.size, 128);
+  assert.equal(input.url, '/uploads/files/project-1/stored.png');
+  assert.equal(input.storage_path, join(projectFileUploadRoot, 'project-1', 'stored.png'));
+  assert.equal(input.uploaded_by_id, 'user');
+  assert.equal(input.uploaded_by_name, 'You');
 });
 
 test('cleanupUploadedFilesInDir only unlinks files under provided rootDir', async () => {

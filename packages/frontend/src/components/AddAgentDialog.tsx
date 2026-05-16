@@ -1,30 +1,36 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Loader2, Pencil, UserPlus } from 'lucide-react';
+import { Bot, Check, Loader2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
-import type { AcpBackend } from '../lib/types';
+import type { Agent } from '../lib/types';
 import { cn } from '../lib/utils';
 import { Button } from './ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { Input, Label } from './ui/Input';
 
-const ACP_BACKENDS: { id: AcpBackend; label: string }[] = [
-  { id: 'codex', label: 'Codex' },
-  { id: 'claudecode', label: 'Claude Code' },
-  { id: 'opencode', label: 'OpenCode' },
-];
-
-export function AddAgentDialog({ roomId, children }: { roomId: string; children?: ReactNode }) {
+export function AddAgentDialog({
+  roomId,
+  roomAgentGlobalIds = [],
+  roomAgentIds = [],
+  children,
+}: {
+  roomId: string;
+  roomAgentGlobalIds?: string[];
+  roomAgentIds?: string[];
+  children?: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
-  const [agentId, setAgentId] = useState('');
-  const [agentName, setAgentName] = useState('');
-  const [agentRole, setAgentRole] = useState('');
-  const [acpBackend, setAcpBackend] = useState<AcpBackend>('codex');
+  const [search, setSearch] = useState('');
   const queryClient = useQueryClient();
   const { t } = useI18n();
 
+  const { data: agents = [], isLoading: agentsLoading } = useQuery({
+    queryKey: ['agents'],
+    queryFn: api.listAgents,
+    enabled: open,
+  });
   const {
     data: templateData,
     error: templateError,
@@ -36,12 +42,16 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
   });
 
   const templateErrorMessage = templateError instanceof Error ? templateError.message : undefined;
+  const joinedGlobalIds = new Set(roomAgentGlobalIds.filter(Boolean));
+  const joinedAgentIds = new Set(roomAgentIds.filter(Boolean));
+  const filteredAgents = agents.filter((agent) => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return true;
+    return `${agent.name} ${agent.agent_id} ${agent.description ?? ''}`.toLowerCase().includes(needle);
+  });
 
   function resetForm() {
-    setAgentId('');
-    setAgentName('');
-    setAgentRole('');
-    setAcpBackend('codex');
+    setSearch('');
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -50,16 +60,9 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
   }
 
   const add = useMutation({
-    mutationFn: () =>
+    mutationFn: (agent: Agent) =>
       api.addRoomAgent(roomId, {
-        agent_id: agentId,
-        agent_name: agentName || agentId,
-        agent_role: agentRole || undefined,
-        acp_enabled: true,
-        acp_backend: acpBackend,
-        acp_session_id: null,
-        acp_session_label: null,
-        acp_permission_mode: 'bypass',
+        global_agent_id: agent.id,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
@@ -92,6 +95,70 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
       </DialogTrigger>
       <DialogContent title={t('addAgent.title')} description={t('addAgent.description')}>
         <div className="space-y-4">
+          <div>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <Label className="mb-0">全局智能体库</Label>
+              {agentsLoading && (
+                <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-fg-muted)]">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t('addAgent.loadingShort')}
+                </span>
+              )}
+            </div>
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索智能体名称或 ID"
+              className="mb-2"
+            />
+            <div className="max-h-60 space-y-1.5 overflow-y-auto pr-1">
+              {!agentsLoading && filteredAgents.length === 0 ? (
+                <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
+                  暂无可拉入的智能体。可以先到左侧“智能体”页面创建。
+                </div>
+              ) : (
+                filteredAgents.map((agent) => {
+                  const joined = joinedGlobalIds.has(agent.id) || joinedAgentIds.has(agent.agent_id);
+                  const pending = add.isPending && add.variables?.id === agent.id;
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      disabled={addingAny || joined}
+                      onClick={() => add.mutate(agent)}
+                      className={cn(
+                        'w-full surface-1 rounded-md px-3 py-2 text-left ease-ocean transition-all flex items-start gap-2',
+                        'hover:border-[var(--color-border-strong)] focus-visible:outline-none focus-visible:border-[var(--color-primary)]',
+                        'disabled:cursor-not-allowed disabled:opacity-60',
+                      )}
+                    >
+                      <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" strokeWidth={1.75} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate font-display text-[13px]">{agent.name}</span>
+                          <span className="shrink-0 font-mono text-[11px] text-[var(--color-fg-muted)]">
+                            {agent.agent_id}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 line-clamp-2 text-[11px] text-[var(--color-fg-muted)]">
+                          {agent.responsibilities || agent.description || '未设置主要工作'}
+                        </div>
+                      </div>
+                      {joined ? (
+                        <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-[var(--color-success)]">
+                          <Check className="h-3 w-3" />
+                          已加入
+                        </span>
+                      ) : pending ? (
+                        <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-[var(--color-fg-muted)]" />
+                      ) : null}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <Label className="mb-0">{t('addAgent.builtInTemplates')}</Label>
@@ -155,57 +222,9 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
             )}
           </div>
 
-          <div>
-            <div className="mb-1.5 flex items-center gap-2">
-              <Pencil className="h-3.5 w-3.5 text-[var(--color-primary)]" strokeWidth={1.75} />
-              <Label className="mb-0">{t('addAgent.manualAcp')}</Label>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <Label>Agent ID</Label>
-                <Input
-                  value={agentId}
-                  onChange={(e) => setAgentId(e.target.value)}
-                  placeholder="main / coder / qa"
-                  className="font-mono"
-                />
-              </div>
-              <div>
-                <Label>{t('addAgent.displayName')}</Label>
-                <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Coder" />
-              </div>
-              <div className="col-span-2">
-                <Label>{t('addAgent.acpBackend')}</Label>
-                <select
-                  value={acpBackend}
-                  onChange={(e) => setAcpBackend(e.target.value as AcpBackend)}
-                  className="surface-1 h-10 w-full rounded-lg px-3 font-mono text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
-                >
-                  {ACP_BACKENDS.map((backend) => (
-                    <option key={backend.id} value={backend.id}>
-                      {backend.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <Label>{t('addAgent.role')}</Label>
-            <Input
-              value={agentRole}
-              onChange={(e) => setAgentRole(e.target.value)}
-              placeholder="architect / coder / reviewer"
-            />
-          </div>
-
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="ghost" onClick={() => handleOpenChange(false)} disabled={addingAny}>
               {t('common.cancel')}
-            </Button>
-            <Button onClick={() => add.mutate()} disabled={!agentId.trim() || addingAny}>
-              {add.isPending ? t('addAgent.inviting') : t('addAgent.submit')}
             </Button>
           </div>
         </div>

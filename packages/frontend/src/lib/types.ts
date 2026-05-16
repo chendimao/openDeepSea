@@ -61,6 +61,40 @@ export type TaskEventType =
   | 'workflow_memory_written';
 export type SettingsScope = 'system' | 'project' | 'room';
 
+export interface AgentReference {
+  room_id: string;
+  room_name: string;
+}
+
+export interface Agent {
+  id: string;
+  agent_id: string;
+  name: string;
+  description: string | null;
+  preferred_user_name: string | null;
+  personality: string | null;
+  rules: string | null;
+  responsibilities: string | null;
+  default_acp_backend: AcpBackend | null;
+  default_acp_permission_mode: AcpPermissionMode;
+  created_at: number;
+  updated_at: number;
+  reference_count: number;
+  references?: AgentReference[];
+}
+
+export type AgentInput = {
+  agent_id: string;
+  name: string;
+  description?: string | null;
+  preferred_user_name?: string | null;
+  personality?: string | null;
+  rules?: string | null;
+  responsibilities?: string | null;
+  default_acp_backend?: AcpBackend | null;
+  default_acp_permission_mode?: AcpPermissionMode | null;
+};
+
 export interface ProjectStats {
   rooms: number;
   tasks: number;
@@ -129,9 +163,14 @@ export interface Room {
 export interface RoomAgent {
   id: string;
   room_id: string;
+  global_agent_id: string | null;
   agent_id: string;
   agent_name: string;
   agent_role: string | null;
+  preferred_user_name: string | null;
+  personality: string | null;
+  rules: string | null;
+  responsibilities: string | null;
   workflow_role: WorkflowRole | null;
   capabilities: string[];
   default_runtime: 'acp' | 'openclaw' | 'none';
@@ -171,11 +210,32 @@ export interface AgentRun {
 
 export interface MessageAttachmentMetadata {
   id: string;
+  fileId?: string;
   name: string;
   mimeType: string;
   size: number;
   url: string;
   isImage: boolean;
+  deleted?: boolean;
+}
+
+export interface ProjectFile {
+  id: string;
+  project_id: string;
+  original_name: string;
+  stored_name: string;
+  mime_type: string;
+  size: number;
+  url: string;
+  storage_path?: string;
+  uploaded_by_id: string | null;
+  uploaded_by_name: string | null;
+  created_at: number;
+  deleted_at: number | null;
+  reference_count: number;
+  last_referenced_at: number | null;
+  last_referenced_room_id: string | null;
+  last_referenced_room_name: string | null;
 }
 
 export interface MessageMetadata {

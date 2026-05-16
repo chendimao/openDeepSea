@@ -148,7 +148,7 @@ function ProjectSidebar({
       <div className="sidebar-nav px-4">
         <SidebarLink to="/" active={!currentProject} icon={Home} label={t('shell.nav.development')} exact />
         <SidebarLink to={currentProject ? `/projects/${currentProject.id}` : '/'} icon={GitBranch} label={t('shell.nav.roadmap')} />
-        <SidebarLink to="/" icon={Bot} label="Agent" inactive />
+        <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} />
         <SidebarLink to="/" active={!!currentProject} icon={SquareCheck} label={t('shell.nav.tasks')} />
         <SidebarLink to="/" icon={BriefcaseBusiness} label={t('shell.nav.workflow')} inactive />
         <SidebarLink to="/" icon={FolderKanban} label={t('shell.nav.files')} inactive />

@@ -14,13 +14,14 @@ const { adapters } = await import('./acp/index.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { memoryRepo } = await import('./repos/memory.js');
 const { messageRepo } = await import('./repos/messages.js');
+const { agentRepo } = await import('./repos/agents.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { settingsRepo } = await import('./repos/settings.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { messageUploadDir } = await import('./uploads.js');
-const { buildPromptWithMessageAttachments, dispatchUserMessage } = await import('./dispatcher.js');
+const { buildAgentIdentityPrompt, buildPromptWithMessageAttachments, dispatchUserMessage } = await import('./dispatcher.js');
 const { router } = await import('./routes.js');
 const { setWorkflowConversationDeps } = await import('./workflows/conversation.js');
 const express = (await import('express')).default;
@@ -277,6 +278,56 @@ test('buildPromptWithMessageAttachments marks unsafe attachment paths unavailabl
   assert.match(prompt, /用户发送了一条仅包含附件的消息。/);
   assert.match(prompt, /localPath=unavailable/);
   assert.doesNotMatch(prompt, /\.\.\/secret/);
+});
+
+test('buildPromptWithMessageAttachments resolves project file attachment paths', () => {
+  const message = createMessage({
+    attachments: [
+      {
+        id: 'file-1',
+        fileId: 'file-1',
+        name: 'brief.pdf',
+        mimeType: 'application/pdf',
+        size: 12,
+        url: '/uploads/files/project-1/stored.pdf',
+        isImage: false,
+      },
+    ],
+  });
+
+  const prompt = buildPromptWithMessageAttachments('read this', message);
+
+  assert.match(prompt, /brief\.pdf/);
+  assert.match(prompt, /localPath=.*uploads.*files.*project-1.*stored\.pdf/);
+});
+
+test('buildAgentIdentityPrompt renders global personality and rules before the user prompt', () => {
+  const globalAgent = agentRepo.create({
+    agent_id: 'frontend-lead',
+    name: '前端执行官',
+    preferred_user_name: '陈工',
+    personality: '严谨、直接。',
+    responsibilities: '前端实现和 UI 验收。',
+    rules: '完成前必须验证。',
+    default_acp_backend: 'codex',
+  });
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-identity-prompt-'));
+  const project = projectRepo.create({ name: `identity-prompt-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Identity Room' });
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({
+    room_id: room.id,
+    global_agent_id: globalAgent.id,
+  });
+
+  const prompt = buildAgentIdentityPrompt(roomAgent, '请实现页面');
+
+  assert.match(prompt, /你的智能体身份：/);
+  assert.match(prompt, /名称：前端执行官/);
+  assert.match(prompt, /用户称呼：陈工/);
+  assert.match(prompt, /性格：严谨、直接。/);
+  assert.match(prompt, /主要工作：前端实现和 UI 验收。/);
+  assert.match(prompt, /必须遵守的规则：\n完成前必须验证。/);
+  assert.match(prompt, /当前用户请求：\n请实现页面/);
 });
 
 test('dispatchUserMessage passes uploaded image paths to ACP adapters', async () => {

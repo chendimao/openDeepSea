@@ -1,5 +1,7 @@
 import type {
   AcpBackend,
+  Agent,
+  AgentInput,
   AgentRun,
   BuiltInAgentTemplate,
   CliSession,
@@ -8,6 +10,7 @@ import type {
   MemorySearchResult,
   Message,
   MessageRoutingMode,
+  ProjectFile,
   Project,
   Room,
   RoomAgent,
@@ -46,6 +49,15 @@ export const api = {
     }>('/health'),
   listAgentTemplates: () =>
     request<{ templates: BuiltInAgentTemplate[] }>('/agent-templates'),
+
+  listAgents: () => request<Agent[]>('/agents'),
+  getAgent: (id: string) => request<Agent>(`/agents/${id}`),
+  createAgent: (input: AgentInput) =>
+    request<Agent>('/agents', { method: 'POST', body: JSON.stringify(input) }),
+  updateAgent: (id: string, input: Partial<AgentInput>) =>
+    request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  deleteAgent: (id: string) =>
+    request<void>(`/agents/${id}`, { method: 'DELETE' }),
 
   getSystemSettings: () => request<SettingsResolution['system']>('/settings/system'),
   updateSystemSettings: (input: {
@@ -101,6 +113,17 @@ export const api = {
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
+  listProjectFiles: (projectId: string) => request<ProjectFile[]>(`/projects/${projectId}/files`),
+  uploadProjectFiles: (projectId: string, files: File[]) => {
+    const form = new FormData();
+    files.forEach((file) => form.append('files', file));
+    return request<ProjectFile[]>(`/projects/${projectId}/files`, {
+      method: 'POST',
+      body: form,
+    });
+  },
+  deleteProjectFile: (fileId: string) =>
+    request<void>(`/files/${fileId}`, { method: 'DELETE' }),
   listMemories: (
     projectId: string,
     filters: { roomId?: string; roomAgentId?: string; roomAgentIds?: string[]; taskId?: string; includeArchived?: boolean } = {},
@@ -168,8 +191,9 @@ export const api = {
   addRoomAgent: (
     roomId: string,
     input: {
-      agent_id: string;
-      agent_name: string;
+      global_agent_id?: string;
+      agent_id?: string;
+      agent_name?: string;
       agent_role?: string;
       acp_enabled?: boolean;
       acp_backend?: AcpBackend | null;
@@ -215,13 +239,16 @@ export const api = {
     request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),
   sendMessage: (
     roomId: string,
-    input: { content: string; mentions?: string[]; files?: File[] },
+    input: { content: string; mentions?: string[]; files?: File[]; fileIds?: string[] },
   ) => {
     if (input.files && input.files.length > 0) {
       const form = new FormData();
       form.append('content', input.content);
       if (input.mentions && input.mentions.length > 0) {
         form.append('mentions', JSON.stringify(input.mentions));
+      }
+      if (input.fileIds && input.fileIds.length > 0) {
+        form.append('fileIds', JSON.stringify(input.fileIds));
       }
       input.files.forEach((file) => form.append('files', file));
       return request<Message>(`/rooms/${roomId}/messages`, {
@@ -231,7 +258,7 @@ export const api = {
     }
     return request<Message>(`/rooms/${roomId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content: input.content, mentions: input.mentions }),
+      body: JSON.stringify({ content: input.content, mentions: input.mentions, fileIds: input.fileIds }),
     });
   },
 

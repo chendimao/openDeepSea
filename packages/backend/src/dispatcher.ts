@@ -11,7 +11,7 @@ import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { runRegistry } from './run-registry.js';
-import { messageUploadDir, messageUploadRoute } from './uploads.js';
+import { messageUploadDir, messageUploadRoute, projectFileUploadRoot, projectFileUploadRoute } from './uploads.js';
 import { wsHub } from './ws-hub.js';
 import type { AgentRun, AgentRunStatus, Message, MessageAttachmentMetadata, RoomAgent, WorkflowStage } from './types.js';
 
@@ -219,11 +219,29 @@ function isMessageAttachmentMetadata(value: unknown): value is MessageAttachment
 }
 
 function resolveMessageAttachmentLocalPath(attachment: MessageAttachmentMetadata): string | null {
-  if (!attachment.url.startsWith(`${messageUploadRoute}/`)) return null;
-  const relativePath = attachment.url.slice(messageUploadRoute.length + 1);
-  if (!relativePath || relativePath.includes('/') || relativePath.includes('\\')) return null;
+  if (attachment.url.startsWith(`${messageUploadRoute}/`)) {
+    const relativePath = attachment.url.slice(messageUploadRoute.length + 1);
+    if (!relativePath || relativePath.includes('/') || relativePath.includes('\\')) return null;
+    return resolveUploadLocalPath(messageUploadDir, relativePath);
+  }
 
-  const uploadRoot = resolve(messageUploadDir);
+  if (attachment.url.startsWith(`${projectFileUploadRoute}/`)) {
+    const relativePath = attachment.url.slice(projectFileUploadRoute.length + 1);
+    const parts = relativePath.split('/');
+    if (
+      parts.length !== 2 ||
+      parts.some((part) => !part || part.includes('\\') || part === '.' || part === '..')
+    ) {
+      return null;
+    }
+    return resolveUploadLocalPath(projectFileUploadRoot, parts.map(decodeURIComponent).join('/'));
+  }
+
+  return null;
+}
+
+function resolveUploadLocalPath(rootDir: string, relativePath: string): string | null {
+  const uploadRoot = resolve(rootDir);
   const filePath = resolve(uploadRoot, relativePath);
   if (filePath !== uploadRoot && filePath.startsWith(`${uploadRoot}${sep}`)) return filePath;
   return null;
@@ -356,13 +374,34 @@ function buildFallbackHandoffPrompt(args: {
   ].join('\n');
 }
 
+export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): string {
+  const identityLines = [
+    `- 名称：${agent.agent_name}`,
+    agent.preferred_user_name ? `- 用户称呼：${agent.preferred_user_name}` : null,
+    agent.personality ? `- 性格：${agent.personality}` : null,
+    agent.responsibilities ? `- 主要工作：${agent.responsibilities}` : null,
+    agent.rules ? `- 必须遵守的规则：\n${agent.rules}` : null,
+  ].filter((line): line is string => Boolean(line));
+
+  if (identityLines.length <= 1) return prompt;
+
+  return [
+    '你的智能体身份：',
+    ...identityLines,
+    '',
+    '当前用户请求：',
+    prompt,
+  ].join('\n');
+}
+
 export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const { agent, projectPath, roomId } = args;
   const room = roomRepo.get(roomId);
+  const promptWithIdentity = buildAgentIdentityPrompt(agent, args.prompt);
   const prompt =
     room && !args.workflowRunId
       ? appendMemoryContextForPromptSafely({
-          prompt: args.prompt,
+          prompt: promptWithIdentity,
           loadContextEntries: () => memoryRepo.listForRoomContext({
             projectId: room.project_id,
             roomId,
@@ -372,12 +411,12 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           loadRelevantEntries: () => memoryRepo.listRelevantForPrompt({
             projectId: room.project_id,
             roomId,
-            prompt: args.prompt,
+            prompt: promptWithIdentity,
           }),
           maxChars: agent.memory_max_context_chars,
           warn: (message) => console.warn(message),
         })
-      : args.prompt;
+      : promptWithIdentity;
   const backend = agent.acp_enabled && agent.acp_backend ? agent.acp_backend : null;
   if (!backend) {
     throw new Error(`Agent ${agent.agent_name} has no ACP backend configured`);

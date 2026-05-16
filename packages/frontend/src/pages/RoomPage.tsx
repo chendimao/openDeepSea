@@ -274,7 +274,11 @@ export function RoomPage() {
             <Brain className="h-3.5 w-3.5" strokeWidth={1.8} />
             <span className="hidden sm:inline">{t('memory.tab')}</span>
           </button>
-          <AddAgentDialog roomId={roomId}>
+          <AddAgentDialog
+            roomId={roomId}
+            roomAgentGlobalIds={agents.map((agent) => agent.global_agent_id ?? '')}
+            roomAgentIds={agents.map((agent) => agent.agent_id)}
+          >
             <button type="button" className="glass-button">
               <Users className="h-3.5 w-3.5" strokeWidth={1.8} />
               {t('room.inviteAgent')}
@@ -512,7 +516,17 @@ function ChatColumn({
                       : t('room.emptyMessagesNoAgents')
                     : t('room.emptyMessagesWithAgents')
                 }
-                action={agents.length === 0 && !modelChatReady ? <AddAgentDialog roomId={roomId} /> : undefined}
+                action={
+                  agents.length === 0 && !modelChatReady
+                    ? (
+                      <AddAgentDialog
+                        roomId={roomId}
+                        roomAgentGlobalIds={agents.map((agent) => agent.global_agent_id ?? '')}
+                        roomAgentIds={agents.map((agent) => agent.agent_id)}
+                      />
+                    )
+                    : undefined
+                }
               />
             </ConversationEmptyState>
           ) : (

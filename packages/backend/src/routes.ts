@@ -1,10 +1,14 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
+import { unlink } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
 import { dispatchUserMessage } from './dispatcher.js';
 import { resolveMentionedAgentRoomIds } from './mentions.js';
 import { agentRunRepo } from './repos/agent-runs.js';
+import { agentRepo } from './repos/agents.js';
+import { fileRepo } from './repos/files.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
@@ -15,7 +19,18 @@ import { pickDirectory } from './system-dialogs.js';
 import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
-import { buildAttachmentMetadata, cleanupUploadedFiles, messageUpload } from './uploads.js';
+import {
+  MAX_MESSAGE_FILES,
+  buildAttachmentMetadata,
+  buildAttachmentMetadataFromProjectFile,
+  buildProjectFileRecordInput,
+  cleanupProjectUploadedFiles,
+  cleanupUploadedFiles,
+  messageUpload,
+  projectFileUpload,
+  projectFileUploadRoot,
+  roomProjectFileUpload,
+} from './uploads.js';
 import {
   approveWorkflowPlanWithConversation,
   startWorkflowWithConversation,
@@ -23,7 +38,7 @@ import {
 import { getLangGraphWorkflowConfig } from './workflows/graph/runtime-config.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
-import type { AcpBackend, MemoryScope, MessageMetadata, MessageRoutingMode, TaskInteractionMode, WorkflowRole } from './types.js';
+import type { AcpBackend, MemoryScope, MessageMetadata, MessageRoutingMode, ProjectFile, TaskInteractionMode, WorkflowRole } from './types.js';
 
 export const router = Router();
 
@@ -67,6 +82,20 @@ const nullableTrimmedStringSchema = z.union([z.string(), z.null()]).optional().t
   return trimmed || null;
 });
 
+const agentInputSchema = z.object({
+  agent_id: z.string().min(1),
+  name: z.string().min(1),
+  description: nullableTrimmedStringSchema,
+  preferred_user_name: nullableTrimmedStringSchema,
+  personality: nullableTrimmedStringSchema,
+  rules: nullableTrimmedStringSchema,
+  responsibilities: nullableTrimmedStringSchema,
+  default_acp_backend: z.enum(['claudecode', 'opencode', 'codex']).nullable().optional(),
+  default_acp_permission_mode: z.enum(['bypass', 'workspace-write', 'read-only']).nullable().optional(),
+});
+
+const agentPatchSchema = agentInputSchema.partial();
+
 const settingsPatchSchema = z
   .object(settingsPatchShape)
   .refine(
@@ -93,6 +122,57 @@ const systemSettingsPatchSchema = z
       Boolean(value.fallback_agent_id),
     { message: 'fallback_agent_id is required unless message_routing_mode is mentions_only' },
   );
+
+// ---------- Global agents ----------
+router.get('/agents', (_req, res) => {
+  res.json(agentRepo.list());
+});
+
+router.post('/agents', (req, res) => {
+  const parsed = agentInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const agent = agentRepo.create({
+      agent_id: parsed.data.agent_id,
+      name: parsed.data.name,
+      description: parsed.data.description,
+      preferred_user_name: parsed.data.preferred_user_name,
+      personality: parsed.data.personality,
+      rules: parsed.data.rules,
+      responsibilities: parsed.data.responsibilities,
+      default_acp_backend: parsed.data.default_acp_backend ?? null,
+      default_acp_permission_mode: parsed.data.default_acp_permission_mode ?? 'bypass',
+    });
+    res.status(201).json(agent);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/agents/:agentId', (req, res) => {
+  const agent = agentRepo.get(req.params.agentId);
+  if (!agent) return res.status(404).json({ error: 'not found' });
+  res.json(agent);
+});
+
+router.patch('/agents/:agentId', (req, res) => {
+  const parsed = agentPatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const updated = agentRepo.update(req.params.agentId, parsed.data);
+    if (!updated) return res.status(404).json({ error: 'not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.delete('/agents/:agentId', (req, res) => {
+  const result = agentRepo.delete(req.params.agentId);
+  if (result.ok) return res.status(204).end();
+  if (result.reason === 'not_found') return res.status(404).json({ error: 'not found' });
+  return res.status(409).json({ error: 'agent is in use', references: result.references });
+});
 
 const memoryInputSchema = z.object({
   scope: z.enum(['project', 'room', 'agent', 'task']),
@@ -281,6 +361,72 @@ router.get('/projects/:id', (req, res) => {
   if (!project) return res.status(404).json({ error: 'not found' });
   res.json({ ...project, stats: projectRepo.stats(project.id) });
 });
+
+router.get('/projects/:projectId/files', (req, res) => {
+  if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
+  res.json(fileRepo.listByProject(req.params.projectId));
+});
+
+router.post('/projects/:projectId/files', (req, res, next) => {
+  if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
+  projectFileUpload.array('files', MAX_MESSAGE_FILES)(req, res, (err) => {
+    if (err) {
+      next(err);
+      return;
+    }
+    void handleProjectFilesUpload(req, res).catch(next);
+  });
+});
+
+router.delete('/files/:fileId', async (req, res, next) => {
+  try {
+    const file = fileRepo.get(req.params.fileId);
+    if (!file) return res.status(404).json({ error: 'not found' });
+    const deleted = fileRepo.softDelete(file.id);
+    if (!deleted) return res.status(404).json({ error: 'not found' });
+    await unlinkProjectFileSafely(file);
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+async function handleProjectFilesUpload(req: Request, res: Response): Promise<void> {
+  const files = (Array.isArray(req.files) ? req.files : []) as Express.Multer.File[];
+  if (files.length === 0) {
+    res.status(400).json({ error: 'files is required' });
+    return;
+  }
+
+  const projectId = Array.isArray(req.params.projectId) ? req.params.projectId[0] : req.params.projectId;
+  if (!projectId) {
+    await cleanupProjectUploadedFiles(files);
+    res.status(400).json({ error: 'projectId is required' });
+    return;
+  }
+
+  const uploaded = files.map((file) => fileRepo.create(buildProjectFileRecordInput(
+    projectId,
+    file,
+    {
+      uploaded_by_id: typeof req.body.uploaded_by_id === 'string' ? req.body.uploaded_by_id : null,
+      uploaded_by_name: typeof req.body.uploaded_by_name === 'string' ? req.body.uploaded_by_name : null,
+    },
+  )));
+  res.status(201).json(uploaded);
+}
+
+async function unlinkProjectFileSafely(file: ProjectFile): Promise<void> {
+  const uploadRoot = resolve(projectFileUploadRoot);
+  const targetPath = resolve(file.storage_path);
+  const isInsideUploadRoot = targetPath !== uploadRoot && targetPath.startsWith(`${uploadRoot}${sep}`);
+  if (!isInsideUploadRoot) return;
+  try {
+    await unlink(targetPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+}
 
 router.get('/projects/:projectId/memories/search', (req, res) => {
   const schema = z.object({
@@ -492,8 +638,9 @@ router.get('/rooms/:roomId/agents', (req, res) => {
 
 router.post('/rooms/:roomId/agents', (req, res) => {
   const schema = z.object({
-    agent_id: z.string().min(1),
-    agent_name: z.string().min(1),
+    global_agent_id: z.string().min(1).optional(),
+    agent_id: z.string().min(1).optional(),
+    agent_name: z.string().min(1).optional(),
     agent_role: z.string().optional(),
     acp_enabled: z.boolean().optional(),
     acp_backend: z.enum(['claudecode', 'opencode', 'codex']).nullable().optional(),
@@ -503,13 +650,25 @@ router.post('/rooms/:roomId/agents', (req, res) => {
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!parsed.data.global_agent_id && !parsed.data.agent_id) {
+    return res.status(400).json({ error: 'agent_id is required' });
+  }
   try {
-    const agent = roomAgentRepo.add({
-      room_id: req.params.roomId,
-      agent_id: parsed.data.agent_id,
-      agent_name: parsed.data.agent_name,
-      agent_role: parsed.data.agent_role,
-    });
+    const agent = parsed.data.global_agent_id
+      ? roomAgentRepo.addFromGlobalAgent({
+        room_id: req.params.roomId,
+        global_agent_id: parsed.data.global_agent_id,
+      })
+      : roomAgentRepo.addFromGlobalAgent({
+        room_id: req.params.roomId,
+        global_agent_id: agentRepo.createOrReuseFromRoomAgent({
+          agent_id: parsed.data.agent_id ?? '',
+          agent_name: parsed.data.agent_name ?? parsed.data.agent_id ?? '',
+          agent_role: parsed.data.agent_role,
+          acp_backend: parsed.data.acp_backend ?? null,
+          acp_permission_mode: parsed.data.acp_permission_mode ?? 'bypass',
+        }).id,
+      });
     const result = parsed.data.acp_enabled === undefined
       ? agent
       : roomAgentRepo.setAcp(agent.id, {
@@ -538,11 +697,16 @@ router.post('/rooms/:roomId/agents/from-template', (req, res) => {
   if (!template) return res.status(404).json({ error: 'template not found' });
 
   try {
-    const agent = roomAgentRepo.add({
-      room_id: req.params.roomId,
+    const globalAgent = agentRepo.createOrReuseFromRoomAgent({
       agent_id: template.id,
       agent_name: template.name,
       agent_role: template.description,
+      acp_backend: template.acp_backend,
+      acp_permission_mode: 'bypass',
+    });
+    const agent = roomAgentRepo.addFromGlobalAgent({
+      room_id: req.params.roomId,
+      global_agent_id: globalAgent.id,
     });
     const withRole = roomAgentRepo.setWorkflowRole(agent.id, template.workflow_role) ?? agent;
     const withAcp = roomAgentRepo.setAcp(withRole.id, {
@@ -659,10 +823,11 @@ router.post('/agent-runs/:id/cancel', (req, res) => {
 });
 
 const jsonMessageSchema = z.object({
-  content: z.string().min(1),
+  content: z.string().default(''),
   sender_id: z.string().default('user'),
   sender_name: z.string().optional(),
   mentions: z.array(z.string()).optional(),
+  fileIds: z.array(z.string()).optional(),
 });
 
 const multipartMessageSchema = z.object({
@@ -670,11 +835,15 @@ const multipartMessageSchema = z.object({
   sender_id: z.string().default('user'),
   sender_name: z.string().optional(),
   mentions: z.string().optional(),
+  fileIds: z.string().optional(),
 });
 
 router.post('/rooms/:roomId/messages', (req, res, next) => {
   if (req.is('multipart/form-data')) {
-    messageUpload.array('files', 5)(req, res, (err) => {
+    const room = roomRepo.get(req.params.roomId);
+    if (!room) return res.status(404).json({ error: 'room not found' });
+    (req as Request & { projectIdForUpload?: string }).projectIdForUpload = room.project_id;
+    roomProjectFileUpload.array('files', MAX_MESSAGE_FILES)(req, res, (err) => {
       if (err) {
         next(err);
         return;
@@ -698,13 +867,36 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
+  const content = parsed.data.content.trim();
+  const fileIds = dedupeIds(parsed.data.fileIds ?? []);
+  if (content.length === 0 && fileIds.length === 0) {
+    res.status(400).json({ error: 'content or files is required' });
+    return;
+  }
+
+  const room = roomRepo.get(roomId);
+  if (!room) {
+    res.status(404).json({ error: 'room not found' });
+    return;
+  }
+  const referencedFiles = resolveActiveProjectFiles(room.project_id, fileIds);
+  if (referencedFiles.length !== fileIds.length) {
+    res.status(400).json({ error: 'invalid fileIds' });
+    return;
+  }
+
+  const metadata: MessageMetadata | undefined = referencedFiles.length > 0
+    ? { attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile) }
+    : undefined;
   const userMsg = createAndDispatchUserMessage({
     roomId,
     senderId: parsed.data.sender_id,
     senderName: parsed.data.sender_name,
-    content: parsed.data.content,
+    content,
     mentions: parsed.data.mentions,
+    metadata,
   });
+  recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
   if (userMsg.commandError) {
     res.status(userMsg.commandError.status).json({ error: userMsg.commandError.message });
     return;
@@ -717,21 +909,43 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
   try {
     const roomId = Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId;
     if (!roomId) {
-      await cleanupUploadedFiles(files);
+      await cleanupProjectUploadedFiles(files);
       res.status(400).json({ error: 'roomId is required' });
+      return;
+    }
+    const room = roomRepo.get(roomId);
+    if (!room) {
+      await cleanupProjectUploadedFiles(files);
+      res.status(404).json({ error: 'room not found' });
       return;
     }
     const parsed = multipartMessageSchema.safeParse(req.body);
     if (!parsed.success) {
-      await cleanupUploadedFiles(files);
+      await cleanupProjectUploadedFiles(files);
       res.status(400).json({ error: parsed.error.flatten() });
       return;
     }
 
     const content = parsed.data.content.trim();
-    if (content.length === 0 && files.length === 0) {
-      await cleanupUploadedFiles(files);
+    let fileIds: string[];
+    try {
+      fileIds = parseMultipartFileIds(parsed.data.fileIds);
+    } catch (err) {
+      await cleanupProjectUploadedFiles(files);
+      res.status(400).json({ error: (err as Error).message });
+      return;
+    }
+
+    if (content.length === 0 && files.length === 0 && fileIds.length === 0) {
+      await cleanupProjectUploadedFiles(files);
       res.status(400).json({ error: 'content or files is required' });
+      return;
+    }
+
+    const uniqueFileIds = dedupeIds(fileIds);
+    if (files.length + uniqueFileIds.length > MAX_MESSAGE_FILES) {
+      await cleanupProjectUploadedFiles(files);
+      res.status(400).json({ error: 'too many files' });
       return;
     }
 
@@ -739,13 +953,28 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
     try {
       mentions = parseMultipartMentions(parsed.data.mentions);
     } catch (err) {
-      await cleanupUploadedFiles(files);
+      await cleanupProjectUploadedFiles(files);
       res.status(400).json({ error: (err as Error).message });
       return;
     }
 
-    const metadata: MessageMetadata | undefined = files.length > 0
-      ? { attachments: files.map((file) => buildAttachmentMetadata(file)) }
+    const uploadedFiles = files.map((file) => fileRepo.create(buildProjectFileRecordInput(
+      room.project_id,
+      file,
+      {
+        uploaded_by_id: parsed.data.sender_id,
+        uploaded_by_name: parsed.data.sender_name ?? 'You',
+      },
+    )));
+    const referencedFiles = resolveActiveProjectFiles(room.project_id, uniqueFileIds);
+    if (referencedFiles.length !== uniqueFileIds.length) {
+      await cleanupProjectUploadedFiles(files);
+      res.status(400).json({ error: 'invalid fileIds' });
+      return;
+    }
+    const messageFiles = [...uploadedFiles, ...referencedFiles];
+    const metadata: MessageMetadata | undefined = messageFiles.length > 0
+      ? { attachments: messageFiles.map(buildAttachmentMetadataFromProjectFile) }
       : undefined;
     const userMsg = createAndDispatchUserMessage({
       roomId,
@@ -755,15 +984,33 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       mentions,
       metadata,
     });
+    recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
     if (userMsg.commandError) {
       res.status(userMsg.commandError.status).json({ error: userMsg.commandError.message });
       return;
     }
     res.status(201).json(userMsg);
   } catch (err) {
-    await cleanupUploadedFiles(files);
+    await cleanupProjectUploadedFiles(files);
     throw err;
   }
+}
+
+function resolveActiveProjectFiles(projectId: string, fileIds: string[]): ProjectFile[] {
+  if (fileIds.length === 0) return [];
+  const files = fileRepo.listActiveByIds(projectId, fileIds);
+  const byId = new Map(files.map((file) => [file.id, file]));
+  return fileIds.map((id) => byId.get(id)).filter((file): file is ProjectFile => Boolean(file));
+}
+
+function recordMessageFileRefs(projectId: string, roomId: string, messageId: string, files: ProjectFile[]): void {
+  if (files.length === 0) return;
+  fileRepo.addMessageRefs({
+    project_id: projectId,
+    room_id: roomId,
+    message_id: messageId,
+    file_ids: files.map((file) => file.id),
+  });
 }
 
 function createAndDispatchUserMessage(input: {
@@ -878,6 +1125,28 @@ function parseMultipartMentions(rawMentions?: string): string[] | undefined {
     throw new Error('mentions must be a JSON array of strings');
   }
   return parsed;
+}
+
+function parseMultipartFileIds(rawFileIds?: string): string[] {
+  if (rawFileIds === undefined) return [];
+  const trimmed = rawFileIds.trim();
+  if (!trimmed) return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error('fileIds must be a JSON array');
+  }
+
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
+    throw new Error('fileIds must be a JSON array of strings');
+  }
+  return parsed;
+}
+
+function dedupeIds(ids: string[]): string[] {
+  return [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
 }
 
 const taskCreateSchema = z.object({

@@ -6,7 +6,12 @@ import type { RoomAgent } from './types.js';
 function agent(input: Partial<RoomAgent> & Pick<RoomAgent, 'id' | 'agent_id' | 'agent_name'>): RoomAgent {
   return {
     room_id: 'room-1',
+    global_agent_id: null,
     agent_role: null,
+    preferred_user_name: null,
+    personality: null,
+    rules: null,
+    responsibilities: null,
     workflow_role: null,
     joined_at: 0,
     acp_enabled: 0,
