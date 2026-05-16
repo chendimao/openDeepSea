@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS settings (
   fallback_agent_id TEXT,
   interaction_mode TEXT,
   auto_distill_enabled INTEGER CHECK (auto_distill_enabled IN (0, 1)),
+  langchain_planner_model TEXT,
+  openai_api_key TEXT,
+  openai_base_url TEXT,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (scope, scope_id)
 );
@@ -418,6 +421,15 @@ const settingsColumns = db.prepare('PRAGMA table_info(settings)').all() as { nam
 const settingsColumnNames = new Set(settingsColumns.map((column) => column.name));
 if (!settingsColumnNames.has('auto_distill_enabled')) {
   db.exec('ALTER TABLE settings ADD COLUMN auto_distill_enabled INTEGER CHECK (auto_distill_enabled IN (0, 1))');
+}
+if (!settingsColumnNames.has('langchain_planner_model')) {
+  db.exec('ALTER TABLE settings ADD COLUMN langchain_planner_model TEXT');
+}
+if (!settingsColumnNames.has('openai_api_key')) {
+  db.exec('ALTER TABLE settings ADD COLUMN openai_api_key TEXT');
+}
+if (!settingsColumnNames.has('openai_base_url')) {
+  db.exec('ALTER TABLE settings ADD COLUMN openai_base_url TEXT');
 }
 
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {

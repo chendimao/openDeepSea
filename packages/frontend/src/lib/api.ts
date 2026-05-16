@@ -68,6 +68,9 @@ export const api = {
     fallback_agent_id?: string | null;
     interaction_mode?: TaskInteractionMode;
     auto_distill_enabled?: boolean;
+    langchain_planner_model?: string | null;
+    openai_base_url?: string | null;
+    openai_api_key?: string | null;
   }) =>
     request<SettingsResolution['system']>('/settings/system', {
       method: 'PATCH',

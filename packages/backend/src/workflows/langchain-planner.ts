@@ -1,11 +1,14 @@
 import { HumanMessage, SystemMessage, type MessageContent } from '@langchain/core/messages';
-import { ChatOpenAI } from '@langchain/openai';
+import { ChatOpenAI, type ChatOpenAIFields } from '@langchain/openai';
 import { parsePlanArtifact, type ParsedPlan } from './plan-parser.js';
-import type { Room, RoomAgent, Task } from '../types.js';
+import { settingsRepo } from '../repos/settings.js';
+import type { LangChainPlannerSettings, Room, RoomAgent, Task } from '../types.js';
 
 export interface LangChainPlannerConfig {
   enabled: boolean;
   model: string | null;
+  apiKey: string | null;
+  baseURL: string | null;
 }
 
 export interface LangChainPlannerInput {
@@ -39,15 +42,27 @@ export class LangChainPlannerError extends Error {
   }
 }
 
+type PlannerEnv = Partial<Pick<NodeJS.ProcessEnv, 'LANGCHAIN_PLANNER_MODEL' | 'OPENAI_API_KEY' | 'OPENAI_BASE_URL'>>;
+
 export function getLangChainPlannerConfig(
-  env: Partial<Pick<NodeJS.ProcessEnv, 'LANGCHAIN_PLANNER_MODEL' | 'OPENAI_API_KEY'>> = process.env,
+  env: PlannerEnv = process.env,
+  stored: Partial<LangChainPlannerSettings> = {},
 ): LangChainPlannerConfig {
-  const model = env.LANGCHAIN_PLANNER_MODEL?.trim() || '';
-  const hasApiKey = Boolean(env.OPENAI_API_KEY?.trim());
+  const model = firstNonEmpty(env.LANGCHAIN_PLANNER_MODEL, stored.langchain_planner_model);
+  const apiKey = firstNonEmpty(env.OPENAI_API_KEY, stored.openai_api_key);
+  const baseURL = normalizeOpenAIBaseURL(firstNonEmpty(env.OPENAI_BASE_URL, stored.openai_base_url));
   return {
-    enabled: Boolean(model && hasApiKey),
-    model: model || null,
+    enabled: Boolean(model && apiKey),
+    model,
+    apiKey,
+    baseURL,
   };
+}
+
+export function getRuntimeLangChainPlannerConfig(
+  env: PlannerEnv = process.env,
+): LangChainPlannerConfig {
+  return getLangChainPlannerConfig(env, settingsRepo.getLangChainPlannerSettings());
 }
 
 export async function generateLangChainPlan(
@@ -92,18 +107,46 @@ export function buildPlannerMessages(input: LangChainPlannerInput): PlannerMessa
 }
 
 export function createDefaultPlannerInvoker(): PlannerInvoker {
-  const config = getLangChainPlannerConfig();
-  if (!config.enabled || !config.model) {
+  const config = getRuntimeLangChainPlannerConfig();
+  if (!config.enabled || !config.model || !config.apiKey) {
     throw new Error('LangChain Planner is not configured');
   }
 
-  const model = new ChatOpenAI({ model: config.model, temperature: 0 });
+  const model = new ChatOpenAI(buildChatOpenAIFields(config));
   return {
     async invoke(messages) {
       const response = await model.invoke(messages);
       return extractPlannerText(response.content);
     },
   };
+}
+
+export function buildChatOpenAIFields(config: LangChainPlannerConfig): ChatOpenAIFields {
+  if (!config.model || !config.apiKey) {
+    throw new Error('LangChain Planner is not configured');
+  }
+  return {
+    model: config.model,
+    temperature: 0,
+    apiKey: config.apiKey,
+    ...(config.baseURL ? { configuration: { baseURL: config.baseURL } } : {}),
+  };
+}
+
+export function normalizeOpenAIBaseURL(baseURL: string | null): string | null {
+  if (!baseURL) return null;
+  const trimmed = baseURL.trim().replace(/\/+$/, '');
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.pathname === '' || parsed.pathname === '/') {
+      parsed.pathname = '/v1';
+      return parsed.toString().replace(/\/$/, '');
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
 }
 
 export function extractPlannerText(content: MessageContent): string {
@@ -155,4 +198,12 @@ function formatContentBlock(block: unknown): string {
   if (typeof block !== 'object' || block === null) return String(block);
   if ('text' in block && typeof block.text === 'string') return block.text;
   return JSON.stringify(block);
+}
+
+function firstNonEmpty(...values: Array<string | null | undefined>): string | null {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
 }

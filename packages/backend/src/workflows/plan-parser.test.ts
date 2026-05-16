@@ -121,6 +121,49 @@ test('parsePlanArtifact parses modern LangChain planner shape', () => {
   assert.equal(plan.needsApproval, false);
 });
 
+test('parsePlanArtifact normalizes common loose model metadata shapes', () => {
+  const plan = parsePlanArtifact(`
+\`\`\`json
+{
+  "goal": "验证真实模型配置",
+  "summary": "允许非关键元数据采用常见宽松形态",
+  "assumptions": [{"item": "模型可能返回对象形式的假设"}],
+  "steps": [
+    {
+      "title": "检查设置保存",
+      "intent": "确认模型配置页面保存后 planner 可用",
+      "assigneeRole": "executor",
+      "scopeRead": ["packages/backend/src/workflows/plan-parser.ts"],
+      "scopeWrite": [],
+      "acceptance": ["workflow 进入等待确认状态"],
+      "dependsOn": []
+    }
+  ],
+  "risks": [
+    {"risk": "模型输出格式漂移", "mitigation": "归一化非关键元数据"},
+    {"description": "endpoint 兼容性"}
+  ],
+  "verification": [
+    "npm run build",
+    {"command": "npm run test -w @openclaw-room/backend", "reason": "覆盖解析器", "required": false}
+  ],
+  "needsApproval": true
+}
+\`\`\`
+`);
+
+  assert.deepEqual(plan.assumptions, ['item: 模型可能返回对象形式的假设']);
+  assert.deepEqual(plan.risks, [
+    'risk: 模型输出格式漂移; mitigation: 归一化非关键元数据',
+    'description: endpoint 兼容性',
+  ]);
+  assert.deepEqual(plan.verification, ['npm run build', 'npm run test -w @openclaw-room/backend']);
+  assert.deepEqual(plan.verificationCommands, [
+    { command: 'npm run build', reason: '', required: true },
+    { command: 'npm run test -w @openclaw-room/backend', reason: '覆盖解析器', required: false },
+  ]);
+});
+
 test('parsePlanArtifact rejects modern steps missing acceptance', () => {
   assert.throws(
     () =>

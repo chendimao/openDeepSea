@@ -25,7 +25,7 @@ import {
 import {
   LangChainPlannerError,
   generateLangChainPlan,
-  getLangChainPlannerConfig,
+  getRuntimeLangChainPlannerConfig,
   type LangChainPlannerConfig,
 } from './langchain-planner.js';
 import { getLangGraphWorkflowConfig } from './graph/runtime-config.js';
@@ -535,7 +535,7 @@ function startAgentStage(
   stage: WorkflowStage,
   resumeSessionId?: string | null,
 ): void {
-  const plannerConfig = getLangChainPlannerConfig();
+  const plannerConfig = getRuntimeLangChainPlannerConfig();
   if (shouldUseLangChainPlanner(stage, plannerConfig)) {
     startLangChainPlanningStage(run, task);
     return;

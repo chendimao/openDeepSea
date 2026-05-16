@@ -9,9 +9,33 @@ import {
 import type { Message, WorkflowRun, WorkflowStep } from '../types.js';
 
 test('shouldUseLangChainPlanner only enables LangChain for planning stage with enabled config', () => {
-  assert.equal(shouldUseLangChainPlanner('planning', { enabled: true, model: 'gpt-4.1-mini' }), true);
-  assert.equal(shouldUseLangChainPlanner('analysis', { enabled: true, model: 'gpt-4.1-mini' }), false);
-  assert.equal(shouldUseLangChainPlanner('planning', { enabled: false, model: null }), false);
+  assert.equal(
+    shouldUseLangChainPlanner('planning', {
+      enabled: true,
+      model: 'gpt-4.1-mini',
+      apiKey: 'sk-test',
+      baseURL: null,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldUseLangChainPlanner('analysis', {
+      enabled: true,
+      model: 'gpt-4.1-mini',
+      apiKey: 'sk-test',
+      baseURL: null,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldUseLangChainPlanner('planning', {
+      enabled: false,
+      model: null,
+      apiKey: null,
+      baseURL: null,
+    }),
+    false,
+  );
 });
 
 test('formatParsedPlanArtifact emits modern fenced JSON and preserves needsApproval=false', () => {

@@ -65,12 +65,37 @@ router.get('/agent-templates', (_req, res) => {
   res.json({ templates: listBuiltInAgentTemplates() });
 });
 
+const settingsPatchShape = {
+  message_routing_mode: z.enum(['mentions_only', 'fallback_reply', 'fallback_route']).nullable().optional(),
+  fallback_agent_id: z.string().min(1).nullable().optional(),
+  interaction_mode: z.enum(['ask_user', 'auto_recommended']).nullable().optional(),
+  auto_distill_enabled: z.boolean().nullable().optional(),
+};
+
+const nullableTrimmedStringSchema = z.union([z.string(), z.null()]).optional().transform((value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+});
+
 const settingsPatchSchema = z
+  .object(settingsPatchShape)
+  .refine(
+    (value) =>
+      value.message_routing_mode === undefined ||
+      value.message_routing_mode === null ||
+      value.message_routing_mode === 'mentions_only' ||
+      Boolean(value.fallback_agent_id),
+    { message: 'fallback_agent_id is required unless message_routing_mode is mentions_only' },
+  );
+
+const systemSettingsPatchSchema = z
   .object({
-    message_routing_mode: z.enum(['mentions_only', 'fallback_reply', 'fallback_route']).nullable().optional(),
-    fallback_agent_id: z.string().min(1).nullable().optional(),
-    interaction_mode: z.enum(['ask_user', 'auto_recommended']).nullable().optional(),
-    auto_distill_enabled: z.boolean().nullable().optional(),
+    ...settingsPatchShape,
+    langchain_planner_model: nullableTrimmedStringSchema,
+    openai_api_key: nullableTrimmedStringSchema,
+    openai_base_url: nullableTrimmedStringSchema,
   })
   .refine(
     (value) =>
@@ -181,13 +206,16 @@ router.get('/settings/system', (_req, res) => {
 });
 
 router.patch('/settings/system', (req, res) => {
-  const parsed = settingsPatchSchema.safeParse(req.body);
+  const parsed = systemSettingsPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   res.json(settingsRepo.updateSystem({
     message_routing_mode: parsed.data.message_routing_mode ?? undefined,
     fallback_agent_id: parsed.data.fallback_agent_id,
     interaction_mode: parsed.data.interaction_mode ?? undefined,
     auto_distill_enabled: parsed.data.auto_distill_enabled ?? undefined,
+    langchain_planner_model: parsed.data.langchain_planner_model,
+    openai_api_key: parsed.data.openai_api_key,
+    openai_base_url: parsed.data.openai_base_url,
   }));
 });
 
@@ -200,11 +228,11 @@ router.get('/projects/:projectId/settings', (req, res) => {
 router.patch('/projects/:projectId/settings', (req, res) => {
   const parsed = settingsPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const updated = settingsRepo.updateProject(req.params.projectId, parsed.data as {
-    message_routing_mode?: MessageRoutingMode | null;
-    fallback_agent_id?: string | null;
-    interaction_mode?: TaskInteractionMode | null;
-    auto_distill_enabled?: boolean | null;
+  const updated = settingsRepo.updateProject(req.params.projectId, {
+    message_routing_mode: parsed.data.message_routing_mode,
+    fallback_agent_id: parsed.data.fallback_agent_id,
+    interaction_mode: parsed.data.interaction_mode,
+    auto_distill_enabled: parsed.data.auto_distill_enabled,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForProject(req.params.projectId));
@@ -219,11 +247,11 @@ router.get('/rooms/:roomId/settings', (req, res) => {
 router.patch('/rooms/:roomId/settings', (req, res) => {
   const parsed = settingsPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const updated = settingsRepo.updateRoom(req.params.roomId, parsed.data as {
-    message_routing_mode?: MessageRoutingMode | null;
-    fallback_agent_id?: string | null;
-    interaction_mode?: TaskInteractionMode | null;
-    auto_distill_enabled?: boolean | null;
+  const updated = settingsRepo.updateRoom(req.params.roomId, {
+    message_routing_mode: parsed.data.message_routing_mode,
+    fallback_agent_id: parsed.data.fallback_agent_id,
+    interaction_mode: parsed.data.interaction_mode,
+    auto_distill_enabled: parsed.data.auto_distill_enabled,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForRoom(req.params.roomId));

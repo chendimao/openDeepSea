@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LangChainPlannerError,
+  buildChatOpenAIFields,
   extractPlannerText,
   generateLangChainPlan,
   getLangChainPlannerConfig,
+  normalizeOpenAIBaseURL,
 } from './langchain-planner.js';
 import type { Room, RoomAgent, Task } from '../types.js';
 
@@ -16,6 +18,61 @@ test('getLangChainPlannerConfig returns disabled config when no model is configu
 
   assert.equal(config.enabled, false);
   assert.equal(config.model, null);
+  assert.equal(config.apiKey, null);
+  assert.equal(config.baseURL, null);
+});
+
+test('getLangChainPlannerConfig falls back to database settings and lets env override them', () => {
+  const dbSettings = {
+    langchain_planner_model: ' db-model ',
+    openai_api_key: ' db-key ',
+    openai_base_url: ' https://db.example ',
+  };
+
+  const fallback = getLangChainPlannerConfig({}, dbSettings);
+  assert.equal(fallback.enabled, true);
+  assert.equal(fallback.model, 'db-model');
+  assert.equal(fallback.apiKey, 'db-key');
+  assert.equal(fallback.baseURL, 'https://db.example/v1');
+
+  const overridden = getLangChainPlannerConfig(
+    {
+      LANGCHAIN_PLANNER_MODEL: ' env-model ',
+      OPENAI_API_KEY: ' env-key ',
+      OPENAI_BASE_URL: ' https://env.example/v1 ',
+    },
+    dbSettings,
+  );
+  assert.equal(overridden.enabled, true);
+  assert.equal(overridden.model, 'env-model');
+  assert.equal(overridden.apiKey, 'env-key');
+  assert.equal(overridden.baseURL, 'https://env.example/v1');
+});
+
+test('buildChatOpenAIFields passes api key and baseURL to ChatOpenAI configuration', () => {
+  assert.deepEqual(
+    buildChatOpenAIFields({
+      enabled: true,
+      model: 'gpt-4.1',
+      apiKey: 'sk-test',
+      baseURL: 'https://openai.example/v1',
+    }),
+    {
+      model: 'gpt-4.1',
+      temperature: 0,
+      apiKey: 'sk-test',
+      configuration: {
+        baseURL: 'https://openai.example/v1',
+      },
+    },
+  );
+});
+
+test('normalizeOpenAIBaseURL appends /v1 for root OpenAI-compatible hosts', () => {
+  assert.equal(normalizeOpenAIBaseURL('https://yuzapi.fun'), 'https://yuzapi.fun/v1');
+  assert.equal(normalizeOpenAIBaseURL('https://yuzapi.fun/'), 'https://yuzapi.fun/v1');
+  assert.equal(normalizeOpenAIBaseURL('https://yuzapi.fun/v1'), 'https://yuzapi.fun/v1');
+  assert.equal(normalizeOpenAIBaseURL('https://proxy.example/openai'), 'https://proxy.example/openai');
 });
 
 test('generateLangChainPlan validates model output into ParsedPlan', async () => {

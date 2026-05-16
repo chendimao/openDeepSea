@@ -1502,7 +1502,7 @@ Expected:
 - Frontend build passes.
 - Vite may print existing chunk size warning only.
 
-- [ ] **Step 3: Browser smoke test**
+- [x] **Step 3: Browser smoke test**
 
 With dev server running:
 
@@ -1516,7 +1516,15 @@ With dev server running:
 
 Expected: No OpenClaw Gateway dependency is required.
 
-Status（2026-05-16 Task 12 总审查修复）：未执行。当前环境缺少真实 planner/LLM 配置 `LANGCHAIN_PLANNER_MODEL` 和 `OPENAI_API_KEY`，不能完成浏览器端真实 workflow smoke；不得标记为完成。
+Status（2026-05-16 模型配置补测）：已执行。新增系统设置中的“模型 / AI”配置页后，通过真实浏览器在独立 dev 实例保存 planner model、OpenAI-compatible Base URL 与 API key；后端仅返回 `openai_api_key_set=true` 与掩码预览，不返回明文 key。
+
+真实 workflow smoke 结果：
+
+- 使用 `LANGGRAPH_WORKFLOW_ENABLED=1`、临时 SQLite DB、前端 `127.0.0.1:5174`、后端 `127.0.0.1:7331`。
+- 通过浏览器确认模型配置页可见并保存成功。
+- 使用真实 OpenAI-compatible planner 调用生成计划，workflow `graph_version=phase-b-v1`。
+- 已完成 graph 节点：`context`、`planning`、`dispatch`，并进入 `execute`。
+- 最终 workflow 到达 `blocked`：后续 `code_review` 阶段失败，属于 ACP 执行 / 审查链路 smoke 后段问题；模型配置与 LangChain planner 链路已验证可用。
 
 - [x] **Step 4: Request code review**
 

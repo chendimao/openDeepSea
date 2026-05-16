@@ -34,6 +34,7 @@ import {
   type Room,
   type RoomAgent,
   type SettingsResolution,
+  type SystemSettings,
   type TaskInteractionMode,
 } from '../lib/types';
 import { cn } from '../lib/utils';
@@ -59,14 +60,18 @@ const INTERACTION_OPTIONS: Array<{ value: TaskInteractionMode; descriptionKey: M
   { value: 'auto_recommended', descriptionKey: 'settings.interaction.auto_recommended.description' },
 ];
 
-const DEFAULT_SYSTEM_SETTINGS: EffectiveSettings = {
+const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   message_routing_mode: 'mentions_only',
   fallback_agent_id: null,
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
+  langchain_planner_model: null,
+  openai_base_url: null,
+  openai_api_key_set: false,
+  openai_api_key_preview: null,
 };
 
-type SystemSettingsCategory = 'general' | 'chat';
+type SystemSettingsCategory = 'general' | 'chat' | 'model';
 
 export function SystemSettingsDialog({
   children,
@@ -104,7 +109,7 @@ export function SystemSettingsDialog({
         className="max-h-[88vh] w-[min(94vw,900px)] overflow-y-auto"
       >
         <SystemSettingsForm
-          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}`}
+          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.langchain_planner_model ?? ''}:${settings.openai_base_url ?? ''}:${settings.openai_api_key_set}:${settings.openai_api_key_preview ?? ''}`}
           theme={theme}
           value={settings}
           isSaving={save.isPending}
@@ -226,7 +231,7 @@ function SystemSettingsForm({
   onSave,
 }: {
   theme: ThemeMode;
-  value: EffectiveSettings;
+  value: SystemSettings;
   isSaving: boolean;
   onThemeChange: (theme: ThemeMode) => void;
   onSave: (patch: {
@@ -234,12 +239,19 @@ function SystemSettingsForm({
     fallback_agent_id: string | null;
     interaction_mode: TaskInteractionMode;
     auto_distill_enabled: boolean;
+    langchain_planner_model: string | null;
+    openai_base_url: string | null;
+    openai_api_key?: string | null;
   }) => void;
 }): JSX.Element {
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode>(value.message_routing_mode);
   const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? '');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
   const [autoDistillEnabled, setAutoDistillEnabled] = useState(value.auto_distill_enabled);
+  const [plannerModel, setPlannerModel] = useState(value.langchain_planner_model ?? '');
+  const [openaiBaseUrl, setOpenaiBaseUrl] = useState(value.openai_base_url ?? '');
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
+  const [clearOpenaiApiKey, setClearOpenaiApiKey] = useState(false);
   const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('general');
   const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
@@ -261,6 +273,12 @@ function SystemSettingsForm({
       description: t('settings.chatSettingsDescription'),
       icon: Bot,
     },
+    {
+      value: 'model',
+      title: t('settings.modelSettings'),
+      description: t('settings.modelSettingsDescription'),
+      icon: Sparkles,
+    },
   ];
   const activeCategoryMeta = categories.find((category) => category.value === activeCategory) ?? categories[0];
   const ActiveCategoryIcon = activeCategoryMeta.icon;
@@ -271,14 +289,23 @@ function SystemSettingsForm({
         <Button
           type="button"
           disabled={isSaving || (requiresFallback && !fallbackAgentId.trim())}
-          onClick={() =>
-            onSave({
+          onClick={() => {
+            const patch: Parameters<typeof onSave>[0] = {
               message_routing_mode: routingMode,
               fallback_agent_id: requiresFallback ? fallbackAgentId.trim() : null,
               interaction_mode: interactionMode,
               auto_distill_enabled: autoDistillEnabled,
-            })
-          }
+              langchain_planner_model: trimmedOrNull(plannerModel),
+              openai_base_url: trimmedOrNull(openaiBaseUrl),
+            };
+            const nextApiKey = openaiApiKey.trim();
+            if (clearOpenaiApiKey) {
+              patch.openai_api_key = null;
+            } else if (nextApiKey) {
+              patch.openai_api_key = nextApiKey;
+            }
+            onSave(patch);
+          }}
         >
           <Save className="h-3.5 w-3.5" />
           {t('settings.saveSystem')}
@@ -376,6 +403,34 @@ function SystemSettingsForm({
                   inheritedLabel={null}
                   onModeChange={(mode) => {
                     if (mode !== 'inherit') setAutoDistillEnabled(mode);
+                  }}
+                />
+              </SubSettingSection>
+            </div>
+          )}
+          {activeCategory === 'model' && (
+            <div className="space-y-3">
+              <SubSettingSection
+                title={t('settings.modelProvider')}
+                description={t('settings.modelProviderDescription')}
+                icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />}
+              >
+                <ModelSettingsSection
+                  plannerModel={plannerModel}
+                  openaiBaseUrl={openaiBaseUrl}
+                  openaiApiKey={openaiApiKey}
+                  openaiApiKeySet={value.openai_api_key_set}
+                  openaiApiKeyPreview={value.openai_api_key_preview}
+                  clearOpenaiApiKey={clearOpenaiApiKey}
+                  onPlannerModelChange={setPlannerModel}
+                  onOpenaiBaseUrlChange={setOpenaiBaseUrl}
+                  onOpenaiApiKeyChange={(nextValue) => {
+                    setOpenaiApiKey(nextValue);
+                    if (nextValue.trim()) setClearOpenaiApiKey(false);
+                  }}
+                  onClearOpenaiApiKeyChange={(nextValue) => {
+                    setClearOpenaiApiKey(nextValue);
+                    if (nextValue) setOpenaiApiKey('');
                   }}
                 />
               </SubSettingSection>
@@ -482,6 +537,100 @@ function LanguageSection(): JSX.Element {
       value={locale}
       onChange={setLocale}
     />
+  );
+}
+
+function ModelSettingsSection({
+  plannerModel,
+  openaiBaseUrl,
+  openaiApiKey,
+  openaiApiKeySet,
+  openaiApiKeyPreview,
+  clearOpenaiApiKey,
+  onPlannerModelChange,
+  onOpenaiBaseUrlChange,
+  onOpenaiApiKeyChange,
+  onClearOpenaiApiKeyChange,
+}: {
+  plannerModel: string;
+  openaiBaseUrl: string;
+  openaiApiKey: string;
+  openaiApiKeySet: boolean;
+  openaiApiKeyPreview: string | null;
+  clearOpenaiApiKey: boolean;
+  onPlannerModelChange: (value: string) => void;
+  onOpenaiBaseUrlChange: (value: string) => void;
+  onOpenaiApiKeyChange: (value: string) => void;
+  onClearOpenaiApiKeyChange: (value: boolean) => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const apiKeyStatus = openaiApiKeySet
+    ? t('settings.openaiApiKeySaved', { preview: openaiApiKeyPreview ?? '' })
+    : t('settings.openaiApiKeyNotSaved');
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label
+          htmlFor="system-planner-model"
+          className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]"
+        >
+          {t('settings.plannerModel')}
+        </label>
+        <Input
+          id="system-planner-model"
+          value={plannerModel}
+          onChange={(event) => onPlannerModelChange(event.target.value)}
+          placeholder={t('settings.plannerModelPlaceholder')}
+          className="font-mono"
+        />
+      </div>
+      <div>
+        <label
+          htmlFor="system-openai-base-url"
+          className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]"
+        >
+          {t('settings.openaiBaseUrl')}
+        </label>
+        <Input
+          id="system-openai-base-url"
+          value={openaiBaseUrl}
+          onChange={(event) => onOpenaiBaseUrlChange(event.target.value)}
+          placeholder={t('settings.openaiBaseUrlPlaceholder')}
+          className="font-mono"
+        />
+      </div>
+      <div>
+        <label
+          htmlFor="system-openai-api-key"
+          className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]"
+        >
+          {t('settings.openaiApiKey')}
+        </label>
+        <Input
+          id="system-openai-api-key"
+          type="password"
+          value={openaiApiKey}
+          onChange={(event) => onOpenaiApiKeyChange(event.target.value)}
+          placeholder={t('settings.openaiApiKeyPlaceholder')}
+          className="font-mono"
+          disabled={clearOpenaiApiKey}
+          autoComplete="new-password"
+        />
+        <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">{apiKeyStatus}</p>
+        {openaiApiKeySet && (
+          <label className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[12px] text-[var(--color-fg-muted)]">
+            <input
+              type="checkbox"
+              checked={clearOpenaiApiKey}
+              onChange={(event) => onClearOpenaiApiKeyChange(event.target.checked)}
+              className="h-3.5 w-3.5 accent-[var(--color-primary)]"
+            />
+            <span>{t('settings.clearOpenaiApiKey')}</span>
+          </label>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1004,6 +1153,11 @@ function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
         ? settings.system.auto_distill_enabled
         : Boolean(settings.project.auto_distill_enabled),
   };
+}
+
+function trimmedOrNull(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
 }
 
 function autoDistillLabel(

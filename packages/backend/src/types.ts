@@ -202,8 +202,21 @@ export interface EffectiveSettings {
   auto_distill_enabled: boolean;
 }
 
+export interface SystemSettings extends EffectiveSettings {
+  langchain_planner_model: string | null;
+  openai_base_url: string | null;
+  openai_api_key_set: boolean;
+  openai_api_key_preview: string | null;
+}
+
+export interface LangChainPlannerSettings {
+  langchain_planner_model: string | null;
+  openai_api_key: string | null;
+  openai_base_url: string | null;
+}
+
 export interface SettingsResolution {
-  system: EffectiveSettings;
+  system: SystemSettings;
   project: ScopedSettings | null;
   room: ScopedSettings | null;
   effective: EffectiveSettings;

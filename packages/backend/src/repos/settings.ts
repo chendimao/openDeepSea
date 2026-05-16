@@ -1,10 +1,12 @@
 import { db, now } from '../db.js';
 import type {
   EffectiveSettings,
+  LangChainPlannerSettings,
   MessageRoutingMode,
   ScopedSettings,
   SettingsResolution,
   SettingsScope,
+  SystemSettings,
   TaskInteractionMode,
 } from '../types.js';
 import { projectRepo } from './projects.js';
@@ -18,6 +20,12 @@ const DEFAULT_SETTINGS: EffectiveSettings = {
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
 };
+
+interface SystemSettingsRow extends ScopedSettings {
+  langchain_planner_model: string | null;
+  openai_api_key: string | null;
+  openai_base_url: string | null;
+}
 
 function emptyScoped(scope: SettingsScope, scopeId: string): ScopedSettings {
   return {
@@ -33,8 +41,39 @@ function emptyScoped(scope: SettingsScope, scopeId: string): ScopedSettings {
 
 function getScoped(scope: SettingsScope, scopeId: string): ScopedSettings | null {
   return db
-    .prepare('SELECT * FROM settings WHERE scope = ? AND scope_id = ?')
+    .prepare(
+      `SELECT
+        scope,
+        scope_id,
+        message_routing_mode,
+        fallback_agent_id,
+        interaction_mode,
+        auto_distill_enabled,
+        updated_at
+      FROM settings
+      WHERE scope = ? AND scope_id = ?`,
+    )
     .get(scope, scopeId) as ScopedSettings | undefined ?? null;
+}
+
+function getSystemRow(): SystemSettingsRow | null {
+  return db
+    .prepare(
+      `SELECT
+        scope,
+        scope_id,
+        message_routing_mode,
+        fallback_agent_id,
+        interaction_mode,
+        auto_distill_enabled,
+        langchain_planner_model,
+        openai_api_key,
+        openai_base_url,
+        updated_at
+      FROM settings
+      WHERE scope = 'system' AND scope_id = ?`,
+    )
+    .get(SYSTEM_SCOPE_ID) as SystemSettingsRow | undefined ?? null;
 }
 
 function upsertScoped(
@@ -83,7 +122,20 @@ function upsertScoped(
   return getScoped(scope, scopeId)!;
 }
 
-function normalizeSystem(settings: ScopedSettings | null): EffectiveSettings {
+function apiKeyPreview(apiKey: string | null | undefined): string | null {
+  const trimmed = apiKey?.trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith('sk-') ? `sk-...${trimmed.slice(-4)}` : `...${trimmed.slice(-4)}`;
+}
+
+function normalizedOptionalString(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
+  const openaiApiKey = normalizedOptionalString(settings?.openai_api_key);
+  const openaiApiKeyPreview = apiKeyPreview(openaiApiKey);
   return {
     message_routing_mode: settings?.message_routing_mode ?? DEFAULT_SETTINGS.message_routing_mode,
     fallback_agent_id: settings?.message_routing_mode === 'mentions_only' ? null : settings?.fallback_agent_id ?? null,
@@ -91,12 +143,16 @@ function normalizeSystem(settings: ScopedSettings | null): EffectiveSettings {
     auto_distill_enabled: settings?.auto_distill_enabled === null || settings?.auto_distill_enabled === undefined
       ? DEFAULT_SETTINGS.auto_distill_enabled
       : Boolean(settings.auto_distill_enabled),
+    langchain_planner_model: normalizedOptionalString(settings?.langchain_planner_model),
+    openai_base_url: normalizedOptionalString(settings?.openai_base_url),
+    openai_api_key_set: Boolean(openaiApiKey),
+    openai_api_key_preview: openaiApiKeyPreview,
   };
 }
 
 export const settingsRepo = {
-  getSystem(): EffectiveSettings {
-    return normalizeSystem(getScoped('system', SYSTEM_SCOPE_ID));
+  getSystem(): SystemSettings {
+    return normalizeSystem(getSystemRow());
   },
 
   updateSystem(patch: {
@@ -104,8 +160,86 @@ export const settingsRepo = {
     fallback_agent_id?: string | null;
     interaction_mode?: TaskInteractionMode;
     auto_distill_enabled?: boolean;
-  }): EffectiveSettings {
-    return normalizeSystem(upsertScoped('system', SYSTEM_SCOPE_ID, patch));
+    langchain_planner_model?: string | null;
+    openai_api_key?: string | null;
+    openai_base_url?: string | null;
+  }): SystemSettings {
+    const existing = getSystemRow();
+    const routingMode =
+      patch.message_routing_mode === undefined ? existing?.message_routing_mode ?? null : patch.message_routing_mode;
+    const interactionMode =
+      patch.interaction_mode === undefined ? existing?.interaction_mode ?? null : patch.interaction_mode;
+    const autoDistillEnabled =
+      patch.auto_distill_enabled === undefined
+        ? existing?.auto_distill_enabled ?? null
+        : patch.auto_distill_enabled
+          ? 1
+          : 0;
+    const fallbackAgentId =
+      routingMode === null || routingMode === 'mentions_only'
+        ? null
+        : patch.fallback_agent_id === undefined
+          ? existing?.fallback_agent_id ?? null
+          : patch.fallback_agent_id;
+    const plannerModel =
+      patch.langchain_planner_model === undefined
+        ? normalizedOptionalString(existing?.langchain_planner_model)
+        : normalizedOptionalString(patch.langchain_planner_model);
+    const openaiApiKey =
+      patch.openai_api_key === undefined
+        ? normalizedOptionalString(existing?.openai_api_key)
+        : normalizedOptionalString(patch.openai_api_key);
+    const openaiBaseUrl =
+      patch.openai_base_url === undefined
+        ? normalizedOptionalString(existing?.openai_base_url)
+        : normalizedOptionalString(patch.openai_base_url);
+    const updatedAt = now();
+
+    db.prepare(
+      `INSERT INTO settings (
+        scope,
+        scope_id,
+        message_routing_mode,
+        fallback_agent_id,
+        interaction_mode,
+        auto_distill_enabled,
+        langchain_planner_model,
+        openai_api_key,
+        openai_base_url,
+        updated_at
+      )
+       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(scope, scope_id) DO UPDATE SET
+         message_routing_mode = excluded.message_routing_mode,
+         fallback_agent_id = excluded.fallback_agent_id,
+         interaction_mode = excluded.interaction_mode,
+         auto_distill_enabled = excluded.auto_distill_enabled,
+         langchain_planner_model = excluded.langchain_planner_model,
+         openai_api_key = excluded.openai_api_key,
+         openai_base_url = excluded.openai_base_url,
+         updated_at = excluded.updated_at`,
+    ).run(
+      SYSTEM_SCOPE_ID,
+      routingMode,
+      fallbackAgentId,
+      interactionMode,
+      autoDistillEnabled,
+      plannerModel,
+      openaiApiKey,
+      openaiBaseUrl,
+      updatedAt,
+    );
+
+    return normalizeSystem(getSystemRow());
+  },
+
+  getLangChainPlannerSettings(): LangChainPlannerSettings {
+    const settings = getSystemRow();
+    return {
+      langchain_planner_model: normalizedOptionalString(settings?.langchain_planner_model),
+      openai_api_key: normalizedOptionalString(settings?.openai_api_key),
+      openai_base_url: normalizedOptionalString(settings?.openai_base_url),
+    };
   },
 
   getProject(projectId: string): ScopedSettings | null {

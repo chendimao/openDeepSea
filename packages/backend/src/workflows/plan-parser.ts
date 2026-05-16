@@ -10,6 +10,12 @@ export const verificationCommandSchema = z.object({
   required: z.boolean().default(true),
 });
 
+const planTextSchema = z.preprocess(formatPlanTextValue, z.string().min(1));
+const flexibleVerificationCommandSchema = z.preprocess(
+  (value) => (typeof value === 'string' ? { command: value } : value),
+  verificationCommandSchema,
+);
+
 const decisionOptionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -44,9 +50,9 @@ const planTaskSchema = z.object({
 const planSchema = z.object({
   summary: z.string().min(1),
   tasks: z.array(planTaskSchema).min(1),
-  reviewFocus: z.array(z.string()).default([]),
-  verification: z.array(z.string()).default([]),
-  risks: z.array(z.string()).default([]),
+  reviewFocus: z.array(planTextSchema).default([]),
+  verification: z.array(planTextSchema).default([]),
+  risks: z.array(planTextSchema).default([]),
 });
 
 const langChainPlanStepSchema = z.object({
@@ -63,10 +69,10 @@ const langChainPlanStepSchema = z.object({
 const langChainPlanSchema = z.object({
   goal: z.string().min(1),
   summary: z.string().min(1),
-  assumptions: z.array(z.string()),
+  assumptions: z.array(planTextSchema),
   steps: z.array(langChainPlanStepSchema).min(1),
-  risks: z.array(z.string()),
-  verification: z.array(verificationCommandSchema),
+  risks: z.array(planTextSchema),
+  verification: z.array(flexibleVerificationCommandSchema),
   needsApproval: z.boolean(),
 });
 
@@ -256,4 +262,21 @@ function extractJsonByKey(output: string, key: string): string {
     }
   }
   throw new Error(`Output did not contain complete ${key} object`);
+}
+
+function formatPlanTextValue(value: unknown): unknown {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value !== 'object' || value === null) return value;
+
+  const entries = Object.entries(value)
+    .filter(([, item]) => typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean')
+    .map(([key, item]) => `${key}: ${String(item)}`);
+  if (entries.length > 0) return entries.join('; ');
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
