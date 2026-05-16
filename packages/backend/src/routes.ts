@@ -750,6 +750,9 @@ function createAndDispatchUserMessage(input: {
     metadata: input.metadata as Record<string, unknown> | undefined,
   });
   wsHub.broadcast(input.roomId, { type: 'message:new', roomId: input.roomId, message: userMsg });
+  if (handleChatCommand(input.roomId, userMsg)) {
+    return userMsg;
+  }
   const agents = roomAgentRepo.listByRoom(input.roomId);
   const mentionedAgentRoomIds = resolveMentionedAgentRoomIds({
     content: input.content,
@@ -763,6 +766,48 @@ function createAndDispatchUserMessage(input: {
     mentionedAgentRoomIds,
   });
   return userMsg;
+}
+
+function handleChatCommand(roomId: string, userMessage: ReturnType<typeof messageRepo.create>): boolean {
+  const taskTitle = parseTaskCommand(userMessage.content);
+  if (taskTitle) {
+    createTaskWithConversation({
+      roomId,
+      origin: 'slash_command',
+      createUserMessage: false,
+      sourceMessageId: userMessage.id,
+      taskInput: { title: taskTitle },
+    });
+    return true;
+  }
+
+  const taskId = parseStartTaskCommand(userMessage.content);
+  if (taskId) {
+    startWorkflowWithConversation({
+      roomId,
+      taskId,
+      source: 'chat_command',
+      sourceMessageId: userMessage.id,
+      content: userMessage.content,
+    });
+    return true;
+  }
+
+  return false;
+}
+
+function parseTaskCommand(content: string): string | null {
+  const match = content.match(/^\/task\s+(.+)$/i);
+  const title = match?.[1]?.trim();
+  return title || null;
+}
+
+function parseStartTaskCommand(content: string): string | null {
+  const slashMatch = content.match(/^\/start-task\s+(\S+)$/i);
+  if (slashMatch?.[1]) return slashMatch[1].trim();
+
+  const chineseMatch = content.match(/^开始任务\s*#?(\S+)$/);
+  return chineseMatch?.[1]?.trim() || null;
 }
 
 function parseMultipartMentions(rawMentions?: string): string[] | undefined {

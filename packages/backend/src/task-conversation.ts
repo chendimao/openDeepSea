@@ -13,6 +13,7 @@ import type {
   TaskInteractionMode,
   TaskPriority,
 } from './types.js';
+import { startWorkflowWithConversation } from './workflows/conversation.js';
 import { wsHub } from './ws-hub.js';
 
 export interface CreateTaskWithConversationInput {
@@ -133,8 +134,32 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
   }
   wsHub.broadcast(input.roomId, { type: 'task:created', task: result.task });
   broadcastMessageCreated(input.roomId, result.systemMessage);
+  maybeAutoStartTaskWorkflow(input.roomId, result.task);
 
   return result;
+}
+
+function maybeAutoStartTaskWorkflow(roomId: string, task: Task): void {
+  if (task.interaction_mode !== 'auto_recommended') return;
+  try {
+    startWorkflowWithConversation({
+      roomId,
+      taskId: task.id,
+      source: 'auto_start',
+    });
+  } catch (err) {
+    const message = createTaskEventMessage({
+      roomId,
+      taskId: task.id,
+      taskTitle: task.title,
+      eventType: 'workflow_failed',
+      content: `自动启动工作流失败：${(err as Error).message}`,
+      metadata: {
+        workflow_source: 'auto_start',
+      },
+    });
+    broadcastMessageCreated(roomId, message);
+  }
 }
 
 function findTaskCreationBySourceMessage(roomId: string, sourceMessageId: string): CreateTaskWithConversationResult | null {

@@ -17,8 +17,22 @@ const { messageRepo } = await import('./repos/messages.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { settingsRepo } = await import('./repos/settings.js');
+const { taskRepo } = await import('./repos/tasks.js');
+const { workflowRepo } = await import('./repos/workflows.js');
 const { messageUploadDir } = await import('./uploads.js');
 const { buildPromptWithMessageAttachments, dispatchUserMessage } = await import('./dispatcher.js');
+const { router } = await import('./routes.js');
+const { setWorkflowConversationDeps } = await import('./workflows/conversation.js');
+const express = (await import('express')).default;
+
+const app = express();
+app.use(express.json());
+app.use('/api', router);
+
+test.afterEach(() => {
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  setWorkflowConversationDeps({});
+});
 
 test('buildPromptWithMessageAttachments appends readable attachment context', () => {
   const message = createMessage({
@@ -75,6 +89,144 @@ test('dispatchUserMessage reports non-ACP agent as not executable without Gatewa
       'expected readable system message for non-ACP agent',
     );
   } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('message route handles /task command after persisting user message without ACP dispatch', async () => {
+  const { projectPath, room } = await createRoutedRoom('task-command');
+  const { restore, calls } = installCountingCodexAdapter();
+
+  try {
+    const res = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: '/task Fix command route',
+        sender_id: 'user',
+        sender_name: 'You',
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const userMessage = await res.json() as Message;
+    assert.equal(userMessage.content, '/task Fix command route');
+    await delay(30);
+    assert.equal(calls.count, 0);
+
+    const tasks = taskRepo.listByRoom(room.id);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0]?.title, 'Fix command route');
+    assert.equal(tasks[0]?.created_from, 'slash_command');
+    assert.equal(tasks[0]?.source_message_id, userMessage.id);
+
+    const messages = messageRepo.listByRoom(room.id, 20);
+    assert.equal(messages[0]?.id, userMessage.id);
+    assert.ok(messages.some((message) => {
+      const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
+      return metadata.event_type === 'task_created' && metadata.task_id === tasks[0]?.id;
+    }));
+  } finally {
+    restore();
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('message route handles /start-task command after persisting user message without ACP dispatch', async () => {
+  const { project, projectPath, room } = await createRoutedRoom('start-task-command');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Start from slash',
+  });
+  const { restore, calls } = installCountingCodexAdapter();
+  const enqueued: string[] = [];
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: (runId) => {
+      enqueued.push(runId);
+    },
+  });
+
+  try {
+    const res = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: `/start-task ${task.id}`,
+        sender_id: 'user',
+        sender_name: 'You',
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const userMessage = await res.json() as Message;
+    await delay(30);
+    assert.equal(calls.count, 0);
+
+    const runs = workflowRepo.listByTask(task.id);
+    assert.equal(runs.length, 1);
+    assert.deepEqual(enqueued, [runs[0]?.id]);
+    const messages = messageRepo.listByRoom(room.id, 20);
+    assert.equal(messages[0]?.id, userMessage.id);
+    assert.ok(messages.some((message) => {
+      const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
+      return (
+        metadata.event_type === 'workflow_started' &&
+        metadata.task_id === task.id &&
+        metadata.workflow_source === 'chat_command' &&
+        metadata.workflow_source_message_id === userMessage.id
+      );
+    }));
+  } finally {
+    restore();
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('message route handles Chinese start command after persisting user message without ACP dispatch', async () => {
+  const { project, projectPath, room } = await createRoutedRoom('cn-start-task-command');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Start from Chinese command',
+  });
+  const { restore, calls } = installCountingCodexAdapter();
+  const enqueued: string[] = [];
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: (runId) => {
+      enqueued.push(runId);
+    },
+  });
+
+  try {
+    const res = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: `开始任务 #${task.id}`,
+        sender_id: 'user',
+        sender_name: 'You',
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const userMessage = await res.json() as Message;
+    await delay(30);
+    assert.equal(calls.count, 0);
+
+    const runs = workflowRepo.listByTask(task.id);
+    assert.equal(runs.length, 1);
+    assert.deepEqual(enqueued, [runs[0]?.id]);
+    assert.ok(messageRepo.listByRoom(room.id, 20).some((message) => {
+      const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
+      return (
+        metadata.event_type === 'workflow_started' &&
+        metadata.task_id === task.id &&
+        metadata.workflow_source === 'chat_command' &&
+        metadata.workflow_source_message_id === userMessage.id
+      );
+    }));
+  } finally {
+    restore();
     await rm(projectPath, { recursive: true, force: true });
   }
 });
@@ -401,6 +553,62 @@ function createMessage(metadata: MessageMetadata): Message {
     metadata: JSON.stringify(metadata),
     created_at: Date.now(),
   };
+}
+
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
+  const server = app.listen(0);
+  try {
+    const address = server.address();
+    assert(address && typeof address === 'object');
+    return await fetch(`http://127.0.0.1:${address.port}${path}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+    });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+async function createRoutedRoom(name: string) {
+  const projectPath = await mkdtemp(join(tmpdir(), `openclaw-room-${name}-`));
+  const project = projectRepo.create({ name: `${name}-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: `${name}-agent`, agent_name: 'CommandAgent' });
+  roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: agent.agent_id,
+  });
+  return { project, projectPath, room, agent };
+}
+
+function installCountingCodexAdapter(): { calls: { count: number }; restore: () => void } {
+  const calls = { count: 0 };
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke() {
+      calls.count += 1;
+      return { exitCode: 0, sessionId: null, stdout: 'unexpected ACP dispatch', stderr: '' };
+    },
+  } satisfies SessionAdapter;
+  return {
+    calls,
+    restore: () => {
+      adapters.codex = originalAdapter;
+    },
+  };
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function escapeRegExp(value: string): string {

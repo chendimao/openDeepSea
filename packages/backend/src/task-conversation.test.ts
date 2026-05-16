@@ -12,6 +12,10 @@ let createTaskWithConversation: typeof import('./task-conversation.js').createTa
 let createTaskCreationMemorySafely: typeof import('./task-conversation.js').createTaskCreationMemorySafely;
 let recordTaskEvent: typeof import('./task-conversation.js').recordTaskEvent;
 let memoryRepo: typeof import('./repos/memory.js').memoryRepo;
+let messageRepo: typeof import('./repos/messages.js').messageRepo;
+let settingsRepo: typeof import('./repos/settings.js').settingsRepo;
+let workflowRepo: typeof import('./repos/workflows.js').workflowRepo;
+let setWorkflowConversationDeps: typeof import('./workflows/conversation.js').setWorkflowConversationDeps;
 
 test.before(async () => {
   tempRootDir = await mkdtemp(join(tmpdir(), 'openclaw-room-task-conversation-'));
@@ -22,6 +26,15 @@ test.before(async () => {
   ({ db } = await import('./db.js'));
   ({ createTaskCreationMemorySafely, createTaskWithConversation, recordTaskEvent } = await import('./task-conversation.js'));
   ({ memoryRepo } = await import('./repos/memory.js'));
+  ({ messageRepo } = await import('./repos/messages.js'));
+  ({ settingsRepo } = await import('./repos/settings.js'));
+  ({ workflowRepo } = await import('./repos/workflows.js'));
+  ({ setWorkflowConversationDeps } = await import('./workflows/conversation.js'));
+});
+
+test.afterEach(() => {
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  setWorkflowConversationDeps({});
 });
 
 test.after(async () => {
@@ -144,6 +157,103 @@ test('createTaskWithConversation replays existing task for the same source messa
   assert.equal(replayed.systemMessage.id, first.systemMessage.id);
   assert.equal(taskCountAfterReplay.count, taskCountAfterFirst.count);
   assert.equal(messageCountAfterReplay.count, messageCountAfterFirst.count);
+});
+
+test('/task source message replay returns existing task', () => {
+  const { roomId } = insertProjectAndRoom();
+  const userMessage = messageRepo.create({
+    room_id: roomId,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '/task Fix idempotency',
+    message_type: 'text',
+  });
+  const input = {
+    roomId,
+    origin: 'slash_command' as const,
+    sourceMessageId: userMessage.id,
+    createUserMessage: false,
+    taskInput: { title: 'Fix idempotency' },
+  };
+  const first = createTaskWithConversation(input);
+  const second = createTaskWithConversation(input);
+
+  assert.equal(second.task.id, first.task.id);
+});
+
+test('createTaskWithConversation auto-starts auto_recommended tasks after task creation', () => {
+  const { roomId } = insertProjectAndRoom();
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  const enqueued: string[] = [];
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: (runId) => {
+      enqueued.push(runId);
+    },
+  });
+
+  const result = createTaskWithConversation({
+    roomId,
+    origin: 'slash_command',
+    taskInput: { title: '自动启动任务', interaction_mode: 'auto_recommended' },
+  });
+
+  const runs = workflowRepo.listByTask(result.task.id);
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0]?.status, 'running');
+  assert.deepEqual(enqueued, [runs[0]?.id]);
+  const messages = messageRepo.listByRoom(roomId, 20);
+  const workflowStarted = messages.find((message) => {
+    const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
+    return metadata.event_type === 'workflow_started' && metadata.task_id === result.task.id;
+  });
+  assert.ok(workflowStarted);
+  const metadata = JSON.parse(workflowStarted.metadata ?? '{}') as Record<string, unknown>;
+  assert.equal(metadata.workflow_source, 'auto_start');
+});
+
+test('createTaskWithConversation writes system message when auto-start fails without throwing', () => {
+  const { roomId } = insertProjectAndRoom();
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  setWorkflowConversationDeps({
+    createGraphWorkflowRun: () => {
+      throw new Error('auto-start exploded');
+    },
+  });
+
+  const result = createTaskWithConversation({
+    roomId,
+    origin: 'slash_command',
+    taskInput: { title: '自动启动失败任务', interaction_mode: 'auto_recommended' },
+  });
+
+  assert.equal(workflowRepo.listByTask(result.task.id).length, 0);
+  const messages = messageRepo.listByRoom(roomId, 20);
+  assert.ok(messages.some((message) =>
+    message.sender_type === 'system' && /自动启动工作流失败.*auto-start exploded/.test(message.content),
+  ));
+});
+
+test('createTaskWithConversation keeps ask_user tasks waiting for user start', () => {
+  const { roomId } = insertProjectAndRoom();
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  settingsRepo.updateRoom(roomId, { interaction_mode: 'ask_user' });
+  const enqueued: string[] = [];
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: (runId) => {
+      enqueued.push(runId);
+    },
+  });
+
+  const result = createTaskWithConversation({
+    roomId,
+    origin: 'slash_command',
+    taskInput: { title: '等待手动启动任务' },
+  });
+
+  assert.equal(result.task.interaction_mode, 'ask_user');
+  assert.equal(workflowRepo.listByTask(result.task.id).length, 0);
+  assert.deepEqual(enqueued, []);
 });
 
 test('createTaskCreationMemorySafely ignores duplicate task creation memory source', () => {
