@@ -119,11 +119,17 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
   const steps = detail.steps;
   const artifacts = detail.artifacts;
   const nodeNames = steps.map((step) => step.node_name);
+  const planningStep = requireStep(steps, 'planning');
+  const dispatchStep = requireStep(steps, 'dispatch');
   const executeStep = requireStep(steps, 'execute');
   const reviewStep = requireStep(steps, 'review');
   const verifyStep = requireStep(steps, 'verify');
   const acceptanceStep = requireStep(steps, 'acceptance');
+  const planArtifact = requireArtifact(artifacts, 'plan');
+  const assignmentArtifact = requireArtifact(artifacts, 'assignment');
+  const reviewArtifact = requireArtifact(artifacts, 'review');
   const verificationArtifact = artifacts.find((artifact) => artifact.workflow_step_id === verifyStep.id);
+  const acceptanceArtifact = requireArtifact(artifacts, 'acceptance');
   const verificationMetadata = verificationArtifact?.metadata ? JSON.parse(verificationArtifact.metadata) as {
     results?: Array<{ command: string; status: string }>;
   } : null;
@@ -133,17 +139,20 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
   assert.equal(taskRepo.get(task.id)?.status, 'done');
   assertOrderedSubsequence(nodeNames, ['context', 'planning', 'dispatch', 'execute', 'review', 'verify', 'acceptance']);
   assert.equal(verifyStep.status, 'completed');
+  assert.match(verifyStep.result, /\(none\): skipped/);
   assert.ok(verificationArtifact);
   assert.equal(verificationArtifact.artifact_type, 'implementation_summary');
   assert.match(verificationArtifact.content, /\(none\): skipped/);
   assert.equal(verificationMetadata?.results?.[0]?.status, 'skipped');
   assert.equal(verificationMetadata?.results?.[0]?.command, '(none)');
-  assert.ok(artifacts.some((artifact) => artifact.artifact_type === 'plan'));
-  assert.ok(artifacts.some((artifact) => artifact.artifact_type === 'assignment'));
-  assert.ok(artifacts.some((artifact) => artifact.artifact_type === 'review'));
-  assert.ok(artifacts.some((artifact) => artifact.artifact_type === 'acceptance'));
+  assert.equal(planArtifact.workflow_step_id, planningStep.id);
+  assert.equal(assignmentArtifact.workflow_step_id, dispatchStep.id);
+  assert.equal(reviewArtifact.workflow_step_id, reviewStep.id);
+  assert.equal(acceptanceArtifact.workflow_step_id, acceptanceStep.id);
   assert.equal(graphState?.status, 'completed');
   assert.equal(graphState?.currentNode, 'memory');
+  assert.equal(graphState?.verificationResults[0]?.status, 'skipped');
+  assert.equal(graphState?.verificationResults[0]?.command, '(none)');
   assert.equal(childTasks.length, 1);
   assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
   assert.equal(childTasks[0]?.status, 'done');
@@ -239,6 +248,15 @@ function requireStep(steps: WorkflowStep[], nodeName: string): WorkflowStep {
   const step = steps.find((item) => item.node_name === nodeName);
   assert.ok(step, `missing ${nodeName} step`);
   return step;
+}
+
+function requireArtifact(
+  artifacts: Array<{ artifact_type: string; workflow_step_id: string | null }>,
+  artifactType: string,
+) {
+  const artifact = artifacts.find((item) => item.artifact_type === artifactType);
+  assert.ok(artifact, `missing ${artifactType} artifact`);
+  return artifact;
 }
 
 function assertOrderedSubsequence(actual: Array<string | null>, expected: string[]): void {
