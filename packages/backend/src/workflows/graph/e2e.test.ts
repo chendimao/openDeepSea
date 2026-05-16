@@ -398,6 +398,10 @@ test('background graph continuation failure records workflow_failed event', asyn
   assert.equal(failureEvent.graph_node, 'planning');
   assert.equal(failureEvent.workflow_stage, 'planning');
   assert.equal(failureEvent.error, 'background planner unavailable');
+  assert.equal(
+    failureEvent.workflow_step_id,
+    workflowRepo.listSteps(run.id).find((step) => step.node_name === 'planning')?.id,
+  );
 });
 
 test('graph cancellation records workflow_cancelled event', async () => {

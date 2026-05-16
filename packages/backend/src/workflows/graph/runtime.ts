@@ -367,12 +367,12 @@ function handleBackgroundGraphWorkflowError(runId: string, err: unknown): void {
       taskId: task.id,
       taskTitle: task.title,
       workflowRunId: latest.id,
+      workflowStepId: failedStep?.id,
       eventType: 'workflow_failed',
       content: `工作流后台推进失败：${error}`,
       metadata: {
         graph_node: failedStep?.node_name ?? (parsed.ok ? parsed.state?.currentNode ?? 'unknown' : 'unknown'),
         workflow_stage: latest.current_stage,
-        workflow_step_id: failedStep?.id,
         error,
       },
     });
