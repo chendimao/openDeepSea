@@ -4,9 +4,11 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isAllowedVerificationCommand } from './verification.js';
+import type { MessageMetadata } from '../../types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-verification-')), 'test.db');
 
+const { messageRepo } = await import('../../repos/messages.js');
 const { projectRepo } = await import('../../repos/projects.js');
 const { roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
@@ -80,5 +82,27 @@ test('verify node records skipped result and continues when no commands are conf
   assert.equal(state.error, null);
   assert.equal(state.verificationResults[0]?.status, 'skipped');
   assert.equal(workflowRepo.getRun(run.id)?.status, 'running');
-  assert.equal(workflowRepo.listSteps(run.id).find((step) => step.node_name === 'verify')?.status, 'completed');
+  const verifyStep = workflowRepo.listSteps(run.id).find((step) => step.node_name === 'verify');
+  assert.equal(verifyStep?.status, 'completed');
+  const event = messageRepo.listByRoom(room.id, 100)
+    .map((message) => parseJsonMetadata(message.metadata))
+    .find((metadata) =>
+      metadata?.event_type === 'workflow_stage_changed' &&
+      metadata.task_id === task.id &&
+      metadata.workflow_run_id === run.id &&
+      metadata.workflow_step_id === verifyStep?.id,
+    );
+  assert.ok(event);
 });
+
+function parseJsonMetadata(value: string | null): MessageMetadata | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as MessageMetadata
+      : null;
+  } catch {
+    return null;
+  }
+}

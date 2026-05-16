@@ -79,6 +79,7 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
 
 export async function startGraphWorkflow(taskId: string, deps: GraphRuntimeDeps = {}): Promise<WorkflowRun> {
   const run = createGraphWorkflowRun(taskId);
+  recordWorkflowStartedEvent(run);
   return continueGraphWorkflow(run.id, deps);
 }
 
@@ -163,6 +164,27 @@ export function approveGraphWorkflowPlan(id: string, approvedBy = 'user'): Workf
   });
   if (!updated) throw new Error('workflow not found');
   workflowRepo.updateGraphState(run.id, serializeGraphState(approvedState));
+  const task = taskRepo.get(run.task_id);
+  if (task) {
+    try {
+      recordTaskEvent({
+        roomId: run.room_id,
+        taskId: task.id,
+        taskTitle: task.title,
+        workflowRunId: run.id,
+        eventType: 'workflow_stage_changed',
+        content: `已批准任务「${task.title}」的执行计划，继续分配和执行。`,
+        metadata: {
+          graph_node: 'approval',
+          workflow_stage: 'planning',
+          approval_status: 'accepted',
+          approved_by: approvedBy,
+        },
+      });
+    } catch (err) {
+      console.warn(`[graph-runtime] failed to record approval event: ${(err as Error).message}`);
+    }
+  }
   return workflowRepo.getRun(run.id) ?? updated;
 }
 
@@ -258,6 +280,25 @@ export async function cancelGraphWorkflow(id: string): Promise<WorkflowRun> {
   const latest = workflowRepo.getRun(run.id);
   if (!latest) throw new Error('workflow not found');
   tools.broadcastWorkflowUpdated(latest);
+  const task = taskRepo.get(latest.task_id);
+  if (task) {
+    try {
+      recordTaskEvent({
+        roomId: latest.room_id,
+        taskId: task.id,
+        taskTitle: task.title,
+        workflowRunId: latest.id,
+        eventType: 'workflow_cancelled',
+        content: `任务「${task.title}」的工作流已取消。`,
+        metadata: {
+          graph_node: 'cancel',
+          workflow_stage: latest.current_stage,
+        },
+      });
+    } catch (err) {
+      console.warn(`[graph-runtime] failed to record cancellation event: ${(err as Error).message}`);
+    }
+  }
   return latest;
 }
 
@@ -283,6 +324,27 @@ function blockGraphWorkflowRun(
     status: 'blocked',
     error,
   };
+}
+
+function recordWorkflowStartedEvent(run: WorkflowRun): void {
+  const task = taskRepo.get(run.task_id);
+  if (!task) return;
+  try {
+    recordTaskEvent({
+      roomId: run.room_id,
+      taskId: task.id,
+      taskTitle: task.title,
+      workflowRunId: run.id,
+      eventType: 'workflow_started',
+      content: `工作流已启动，进入 ${run.current_stage ?? 'planning'} 阶段。`,
+      metadata: {
+        graph_node: 'start',
+        workflow_stage: run.current_stage ?? 'planning',
+      },
+    });
+  } catch (err) {
+    console.warn(`[graph-runtime] failed to record workflow start: ${(err as Error).message}`);
+  }
 }
 
 function handleBackgroundGraphWorkflowError(runId: string, err: unknown): void {

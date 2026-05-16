@@ -4,6 +4,7 @@ import { getVerificationCwd, runVerificationCommand } from './verification.js';
 import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orchestrator.js';
 import { parseAcceptanceVerdict, parseReviewVerdict } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
+import type { Task, TaskEventType } from '../../types.js';
 
 export interface GraphRuntimeNodes {
   contextNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
@@ -36,6 +37,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         currentStepId: step.id,
       };
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        workflowStepId: step.id,
+        content: `工作流已读取任务「${context.task.title}」的上下文。`,
+        metadata: { graph_node: 'context', workflow_stage: 'analysis' },
+      });
       return nextState;
     },
 
@@ -48,6 +55,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         node_name: 'planning',
         status: 'running',
         sort_order: tools.nextStepSortOrder(context.run.id),
+      });
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        workflowStepId: step.id,
+        content: `工作流进入 planning 阶段，正在为任务「${context.task.title}」生成计划。`,
+        metadata: { graph_node: 'planning', workflow_stage: 'planning', status: 'running' },
       });
 
       const plan = await tools.generatePlan({
@@ -74,6 +87,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         status: 'completed',
         result: output,
       });
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_plan_ready',
+        workflowStepId: step.id,
+        content: `任务「${context.task.title}」的执行计划已生成。`,
+        metadata: {
+          graph_node: 'planning',
+          workflow_stage: 'planning',
+          task_count: plan.tasks.length,
+          needs_approval: plan.needsApproval,
+        },
+      });
 
       const nextState: AgentWorkflowState = {
         ...state,
@@ -98,6 +122,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         status: needsApproval ? 'awaiting_approval' : 'running',
       });
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        content: needsApproval
+          ? `任务「${context.task.title}」的计划等待批准。`
+          : `任务「${context.task.title}」无需批准，继续进入分配阶段。`,
+        metadata: {
+          graph_node: 'approval',
+          workflow_stage: 'planning',
+          approval_status: needsApproval ? 'pending' : 'not_required',
+        },
+      });
       return nextState;
     },
 
@@ -124,6 +159,14 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           childTaskIds: existingChildTaskIds,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        if (existingStep) {
+          recordEventSafely(tools, context, {
+            eventType: 'workflow_stage_changed',
+            workflowStepId: existingStep.id,
+            content: `任务「${context.task.title}」已完成分配，继续执行。`,
+            metadata: { graph_node: 'dispatch', workflow_stage: 'assignment', replayed: true },
+          });
+        }
         return nextState;
       }
 
@@ -181,6 +224,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         eventType: 'workflow_assignment_created',
         origin: 'workflow_assignment',
         content: `已根据计划为任务「${context.task.title}」创建 ${childTaskIds.length} 个子任务。`,
+        metadata: {
+          graph_node: 'dispatch',
+          workflow_stage: 'assignment',
+          child_task_ids: childTaskIds,
+        },
+      });
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        workflowStepId: step.id,
+        content: `任务「${context.task.title}」已完成分配，创建 ${childTaskIds.length} 个子任务。`,
+        metadata: { graph_node: 'dispatch', workflow_stage: 'assignment', child_task_ids: childTaskIds },
       });
       const updatedRun = tools.updateRun(context.run.id, {
         status: 'running',
@@ -240,6 +294,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_blocked',
+          task: nextChild,
+          content: `子任务「${nextChild.title}」没有可用执行智能体，工作流已阻塞。`,
+          metadata: { graph_node: 'execute', workflow_stage: 'implementation', error },
+        });
         return nextState;
       }
 
@@ -279,6 +339,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        task: nextChild,
+        workflowStepId: step.id,
+        content: `子任务「${nextChild.title}」进入 implementation 阶段。`,
+        metadata: {
+          graph_node: 'execute',
+          workflow_stage: 'implementation',
+          room_agent_id: executor.id,
+        },
+      });
 
       const updatedRun = tools.updateRun(context.run.id, {
         status: 'running',
@@ -325,6 +396,20 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        recordEventSafely(tools, context, {
+          eventType: runResult.status === 'cancelled' ? 'workflow_cancelled' : 'workflow_blocked',
+          task: nextChild,
+          workflowStepId: step.id,
+          content: runResult.status === 'cancelled'
+            ? `子任务「${nextChild.title}」执行已取消。`
+            : `子任务「${nextChild.title}」执行失败：${error}`,
+          metadata: {
+            graph_node: 'execute',
+            workflow_stage: 'implementation',
+            agent_run_id: runResult.run.id,
+            error,
+          },
+        });
         return nextState;
       }
 
@@ -339,6 +424,18 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const reviewedChild = tools.updateTaskStatus(nextChild.id, 'review');
       if (reviewedChild) tools.broadcastTaskUpdated(reviewedChild);
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        task: nextChild,
+        workflowStepId: step.id,
+        content: `子任务「${nextChild.title}」的 implementation 阶段已完成，进入 review。`,
+        metadata: {
+          graph_node: 'execute',
+          workflow_stage: 'implementation',
+          agent_run_id: runResult.run.id,
+          status: 'completed',
+        },
+      });
 
       const nextState: AgentWorkflowState = {
         ...state,
@@ -369,6 +466,11 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_blocked',
+          content: `任务「${context.task.title}」没有可用审查智能体，工作流已阻塞。`,
+          metadata: { graph_node: 'review', workflow_stage: 'code_review', error },
+        });
         return nextState;
       }
 
@@ -394,6 +496,16 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        workflowStepId: step.id,
+        content: `任务「${context.task.title}」进入 code_review 阶段。`,
+        metadata: {
+          graph_node: 'review',
+          workflow_stage: 'code_review',
+          room_agent_id: reviewer.id,
+        },
+      });
       const updatedRun = tools.updateRun(context.run.id, {
         status: 'running',
         error: null,
@@ -445,6 +557,19 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        recordEventSafely(tools, context, {
+          eventType: runResult.status === 'cancelled' ? 'workflow_cancelled' : 'workflow_blocked',
+          workflowStepId: step.id,
+          content: runResult.status === 'cancelled'
+            ? `任务「${context.task.title}」代码审查已取消。`
+            : `任务「${context.task.title}」代码审查失败：${error}`,
+          metadata: {
+            graph_node: 'review',
+            workflow_stage: 'code_review',
+            agent_run_id: runResult.run.id,
+            error,
+          },
+        });
         return nextState;
       }
 
@@ -475,6 +600,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_blocked',
+          workflowStepId: step.id,
+          content: `任务「${context.task.title}」代码审查结果无法解析，工作流已阻塞。`,
+          metadata: { graph_node: 'review', workflow_stage: 'code_review', agent_run_id: runResult.run.id, error },
+        });
         return nextState;
       }
 
@@ -506,8 +637,33 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error: 'Code review failed',
         };
         tools.updateGraphState(context.run.id, serializeGraphState(blockedState));
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_blocked',
+          workflowStepId: step.id,
+          content: `任务「${context.task.title}」代码审查未通过。`,
+          metadata: {
+            graph_node: 'review',
+            workflow_stage: 'code_review',
+            agent_run_id: runResult.run.id,
+            review_verdict: verdict.verdict,
+          },
+        });
         return blockedState;
       }
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        workflowStepId: step.id,
+        content: verdict.verdict === 'changes_requested'
+          ? `任务「${context.task.title}」代码审查要求修改。`
+          : `任务「${context.task.title}」代码审查已通过。`,
+        metadata: {
+          graph_node: 'review',
+          workflow_stage: 'code_review',
+          agent_run_id: runResult.run.id,
+          review_verdict: verdict.verdict,
+          findings_count: verdict.findings.length,
+        },
+      });
 
       const nextState: AgentWorkflowState = {
         ...state,
@@ -539,6 +695,15 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error: null,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_stage_changed',
+          content: `任务「${context.task.title}」根据审查意见回到 implementation 阶段。`,
+          metadata: {
+            graph_node: 'repair_decision',
+            workflow_stage: 'implementation',
+            repair_attempts: nextState.repairAttempts,
+          },
+        });
         return nextState;
       }
 
@@ -555,6 +720,16 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         error,
       };
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_blocked',
+        content: `任务「${context.task.title}」修复次数达到上限，工作流已阻塞。`,
+        metadata: {
+          graph_node: 'repair_decision',
+          workflow_stage: 'code_review',
+          repair_attempts: state.repairAttempts,
+          error,
+        },
+      });
       return nextState;
     },
 
@@ -573,6 +748,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        workflowStepId: step.id,
+        content: `任务「${context.task.title}」进入 verify 阶段。`,
+        metadata: {
+          graph_node: 'verify',
+          workflow_stage: 'code_review',
+          command_count: commands.length,
+          status: 'running',
+        },
+      });
 
       const verificationCwd = getVerificationCwd();
       const results = commands.length > 0
@@ -621,6 +807,20 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         });
         if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
       }
+      recordEventSafely(tools, context, {
+        eventType: blocked ? 'workflow_blocked' : 'workflow_stage_changed',
+        workflowStepId: step.id,
+        content: blocked
+          ? `任务「${context.task.title}」验证失败：${failedRequired?.command}`
+          : `任务「${context.task.title}」验证已完成。`,
+        metadata: {
+          graph_node: 'verify',
+          workflow_stage: 'code_review',
+          results_count: results.length,
+          failed_command: failedRequired?.command,
+          status: blocked ? 'failed' : 'completed',
+        },
+      });
 
       const nextState: AgentWorkflowState = {
         ...state,
@@ -653,6 +853,11 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_failed',
+          content: `任务「${context.task.title}」没有可用验收智能体，工作流已失败。`,
+          metadata: { graph_node: 'acceptance', workflow_stage: 'acceptance', error },
+        });
         return nextState;
       }
 
@@ -678,6 +883,16 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_stage_changed',
+        workflowStepId: step.id,
+        content: `任务「${context.task.title}」进入 acceptance 阶段。`,
+        metadata: {
+          graph_node: 'acceptance',
+          workflow_stage: 'acceptance',
+          room_agent_id: acceptor.id,
+        },
+      });
       const updatedRun = tools.updateRun(context.run.id, {
         status: 'running',
         current_stage: 'acceptance',
@@ -733,6 +948,19 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(failedState));
+        recordEventSafely(tools, context, {
+          eventType: runResult.status === 'cancelled' ? 'workflow_cancelled' : 'workflow_failed',
+          workflowStepId: step.id,
+          content: runResult.status === 'cancelled'
+            ? `任务「${context.task.title}」验收已取消。`
+            : `任务「${context.task.title}」验收执行失败：${error}`,
+          metadata: {
+            graph_node: 'acceptance',
+            workflow_stage: 'acceptance',
+            agent_run_id: runResult.run.id,
+            error,
+          },
+        });
         return failedState;
       }
 
@@ -766,6 +994,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(failedState));
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_failed',
+          workflowStepId: step.id,
+          content: `任务「${context.task.title}」验收结果无法解析，工作流已失败。`,
+          metadata: { graph_node: 'acceptance', workflow_stage: 'acceptance', agent_run_id: runResult.run.id, error },
+        });
         return failedState;
       }
 
@@ -800,6 +1034,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error: null,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_completed',
+          workflowStepId: step.id,
+          content: `任务「${context.task.title}」已通过验收。`,
+          metadata: {
+            graph_node: 'acceptance',
+            workflow_stage: 'acceptance',
+            agent_run_id: runResult.run.id,
+            acceptance_verdict: verdict.verdict,
+          },
+        });
         return nextState;
       }
 
@@ -820,6 +1065,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         error: 'Acceptance failed',
       };
       tools.updateGraphState(context.run.id, serializeGraphState(failedState));
+      recordEventSafely(tools, context, {
+        eventType: 'workflow_failed',
+        workflowStepId: step.id,
+        content: `任务「${context.task.title}」验收未通过。`,
+        metadata: {
+          graph_node: 'acceptance',
+          workflow_stage: 'acceptance',
+          agent_run_id: runResult.run.id,
+          acceptance_verdict: verdict.verdict,
+        },
+      });
       return failedState;
     },
 
@@ -831,17 +1087,32 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       if (!acceptanceArtifact) {
         console.warn(`[graph-memory] skipped task summary: missing acceptance artifact for run ${context.run.id}`);
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_memory_written',
+          content: `任务「${context.task.title}」没有验收产物，跳过记忆写入。`,
+          metadata: { graph_node: 'memory', workflow_stage: 'acceptance', status: 'skipped' },
+        });
       } else {
         try {
           const verdict = parseAcceptanceVerdict(acceptanceArtifact.content);
           const taskSummary = buildTaskSummaryMemoryContent(context.task.title, verdict);
-          tools.upsertTaskSummaryMemory({
+          const memory = tools.upsertTaskSummaryMemory({
             project_id: context.run.project_id,
             room_id: context.run.room_id,
             task_id: context.run.task_id,
             title: `任务完成：${context.task.title}`,
             content: taskSummary,
             source_id: context.run.id,
+          });
+          recordEventSafely(tools, context, {
+            eventType: 'workflow_memory_written',
+            content: `任务「${context.task.title}」的完成摘要已写入记忆。`,
+            metadata: {
+              graph_node: 'memory',
+              workflow_stage: 'acceptance',
+              memory_id: memory.id,
+              memory_type: memory.memory_type,
+            },
           });
           const autoDistillEnabled = tools.resolveRoomSettings(context.room.id)?.effective.auto_distill_enabled ?? true;
           if (autoDistillEnabled) {
@@ -856,6 +1127,16 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           }
         } catch (err) {
           console.warn(`[graph-memory] failed to parse/write task summary: ${(err as Error).message}`);
+          recordEventSafely(tools, context, {
+            eventType: 'workflow_memory_written',
+            content: `任务「${context.task.title}」的记忆写入失败：${(err as Error).message}`,
+            metadata: {
+              graph_node: 'memory',
+              workflow_stage: 'acceptance',
+              status: 'failed',
+              error: (err as Error).message,
+            },
+          });
         }
       }
 
@@ -876,4 +1157,36 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       return nextState;
     },
   };
+}
+
+function recordEventSafely(
+  tools: GraphTools,
+  context: {
+    room: { id: string };
+    task: Task;
+    run: { id: string };
+  },
+  input: {
+    eventType: TaskEventType;
+    content: string;
+    workflowStepId?: string | null;
+    task?: Task;
+    metadata?: Record<string, unknown>;
+  },
+): void {
+  const eventTask = input.task ?? context.task;
+  try {
+    tools.recordWorkflowEvent({
+      roomId: context.room.id,
+      taskId: eventTask.id,
+      taskTitle: eventTask.title,
+      workflowRunId: context.run.id,
+      workflowStepId: input.workflowStepId ?? null,
+      eventType: input.eventType,
+      content: input.content,
+      metadata: input.metadata,
+    });
+  } catch (err) {
+    console.warn(`[graph-events] failed to record ${input.eventType}: ${(err as Error).message}`);
+  }
 }

@@ -165,6 +165,7 @@ export interface MessageTaskEventMetadata {
   workflow_step_id?: string;
   event_type?: TaskEventType;
   origin?: TaskCreatedFrom;
+  [key: string]: unknown;
 }
 
 export interface MessageMetadata extends MessageTaskEventMetadata {

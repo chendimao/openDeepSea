@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { MessageMetadata } from '../../types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-review-')), 'test.db');
 
@@ -134,6 +135,8 @@ test('review pass routes to acceptance and completes workflow on acceptance pass
 
   assert.ok(reviewArtifact);
   assert.ok(acceptanceArtifact);
+  assertWorkflowEvent(room.id, run.id, 'workflow_stage_changed', parentTask.id);
+  assertWorkflowEvent(room.id, run.id, 'workflow_completed', parentTask.id);
   assert.equal(taskRepo.get(childTask.id)?.status, 'done');
   assert.equal(taskRepo.get(parentTask.id)?.status, 'done');
   assert.equal(workflowRepo.getRun(run.id)?.status, 'completed');
@@ -280,6 +283,35 @@ test('review changes_requested routes back to execute with bounded repair attemp
   assert.equal(blockedState.status, 'blocked');
   assert.match(blockedState.error ?? '', /max repair attempts/);
 });
+
+function assertWorkflowEvent(
+  roomId: string,
+  workflowRunId: string,
+  eventType: MessageMetadata['event_type'],
+  taskId: string,
+): void {
+  const events = messageRepo.listByRoom(roomId, 100)
+    .map((message) => parseJsonMetadata(message.metadata))
+    .filter((metadata): metadata is MessageMetadata =>
+      metadata !== null && Boolean(metadata.event_type) && metadata.workflow_run_id === workflowRunId,
+    );
+  assert.ok(
+    events.some((event) => event.event_type === eventType && event.task_id === taskId),
+    `missing ${eventType} for task ${taskId}; got ${events.map((event) => event.event_type).join(', ')}`,
+  );
+}
+
+function parseJsonMetadata(value: string | null): MessageMetadata | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as MessageMetadata
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor') {
   const agent = roomAgentRepo.add({

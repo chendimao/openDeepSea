@@ -3,19 +3,27 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Message, RoomAgent, WorkflowStage, WorkflowStep } from '../../types.js';
+import type { Message, MessageMetadata, RoomAgent, TaskEventType, WorkflowStage, WorkflowStep } from '../../types.js';
 import type { RespondAsAgentInput } from '../../dispatcher.js';
+import type { AgentWorkflowState } from './state.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-e2e-')), 'test.db');
 
 const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { memoryRepo } = await import('../../repos/memory.js');
+const { messageRepo } = await import('../../repos/messages.js');
 const { projectRepo } = await import('../../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
-const { parseGraphState } = await import('./state.js');
+const { parseGraphState, serializeGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
+const {
+  approveGraphWorkflowPlan,
+  createGraphWorkflowRun,
+  enqueueGraphWorkflow,
+  startGraphWorkflow,
+} = await import('./runtime.js');
 
 const originalLangGraphWorkflowEnabled = process.env.LANGGRAPH_WORKFLOW_ENABLED;
 const projectPathsToCleanup: string[] = [];
@@ -109,6 +117,7 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
   const detail = workflowRepo.detail(run.id);
   assert.ok(detail);
   const graphState = parseGraphState(run.graph_state);
+  const events = readWorkflowEvents(room.id, run.id);
   const childTasks = taskRepo.listChildren(task.id);
   const taskMemories = memoryRepo.list({
     projectId: project.id,
@@ -153,6 +162,16 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
   assert.equal(graphState?.currentNode, 'memory');
   assert.equal(graphState?.verificationResults[0]?.status, 'skipped');
   assert.equal(graphState?.verificationResults[0]?.command, '(none)');
+  assertWorkflowEvent(events, 'workflow_started', task.id);
+  assertWorkflowEvent(events, 'workflow_stage_changed', task.id, planningStep.id);
+  assertWorkflowEvent(events, 'workflow_plan_ready', task.id, planningStep.id);
+  assertWorkflowEvent(events, 'workflow_assignment_created', task.id, dispatchStep.id);
+  assertWorkflowEvent(events, 'workflow_stage_changed', childTasks[0]?.id ?? '', executeStep.id);
+  assertWorkflowEvent(events, 'workflow_stage_changed', task.id, reviewStep.id);
+  assertWorkflowEvent(events, 'workflow_stage_changed', task.id, verifyStep.id);
+  assertWorkflowEvent(events, 'workflow_stage_changed', task.id, acceptanceStep.id);
+  assertWorkflowEvent(events, 'workflow_completed', task.id, acceptanceStep.id);
+  assertWorkflowEvent(events, 'workflow_memory_written', task.id);
   assert.equal(childTasks.length, 1);
   assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
   assert.equal(childTasks[0]?.status, 'done');
@@ -311,6 +330,219 @@ test('graph runtime executes every planned child before review', async () => {
   assert.equal(implementationCalls.every((call) => call.agentId === executor.id), true);
   assert.equal(agentCalls.some((call) => call.stage === 'code_review' && call.agentId === reviewer.id), true);
 });
+
+test('graph approval records accepted event before continuing', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-approval-event-'));
+  projectPathsToCleanup.push(projectPath);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Approval Event', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Approval Event Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Approve event workflow',
+  });
+  const run = createAwaitingApprovalRun({
+    roomId: room.id,
+    projectId: project.id,
+    projectPath,
+    taskId: task.id,
+    taskTitle: task.title,
+  });
+
+  const approved = approveGraphWorkflowPlan(run.id, 'tester');
+
+  assert.equal(approved.status, 'running');
+  const approvalEvent = readWorkflowEvents(room.id, run.id)
+    .find((event) =>
+      event.event_type === 'workflow_stage_changed' &&
+      event.task_id === task.id &&
+      event.approval_status === 'accepted',
+    );
+  assert.ok(approvalEvent);
+  assert.equal(approvalEvent.workflow_step_id, undefined);
+});
+
+test('background graph continuation failure records workflow_failed event', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-background-failure-'));
+  projectPathsToCleanup.push(projectPath);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Background Failure', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Background Failure Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Background failure workflow',
+  });
+  const run = createGraphWorkflowRun(task.id);
+
+  enqueueGraphWorkflow(run.id, {
+    planner: async () => {
+      throw new Error('background planner unavailable');
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(workflowRepo.getRun(run.id)?.status, 'blocked');
+  const failureEvent = readWorkflowEvents(room.id, run.id)
+    .find((event) => event.event_type === 'workflow_failed' && event.task_id === task.id);
+  assert.ok(failureEvent);
+});
+
+test('graph cancellation records workflow_cancelled event', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-cancel-event-'));
+  projectPathsToCleanup.push(projectPath);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Cancel Event', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Cancel Event Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Cancel event workflow',
+  });
+  const run = createAwaitingApprovalRun({
+    roomId: room.id,
+    projectId: project.id,
+    projectPath,
+    taskId: task.id,
+    taskTitle: task.title,
+    status: 'running',
+    currentNode: 'execute',
+  });
+
+  const cancelled = await workflowOrchestrator.cancel(run.id);
+
+  assert.equal(cancelled.status, 'cancelled');
+  assertWorkflowEvent(readWorkflowEvents(room.id, run.id), 'workflow_cancelled', task.id);
+});
+
+test('direct graph start records workflow_started event', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-start-event-'));
+  projectPathsToCleanup.push(projectPath);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Start Event', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Start Event Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Start event workflow',
+  });
+
+  const run = await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Plan pauses for approval.',
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: true,
+    }),
+  });
+
+  assert.equal(run.status, 'awaiting_approval');
+  assertWorkflowEvent(readWorkflowEvents(room.id, run.id), 'workflow_started', task.id);
+});
+
+function readWorkflowEvents(roomId: string, workflowRunId: string): MessageMetadata[] {
+  return messageRepo.listByRoom(roomId, 200)
+    .map((message) => parseJsonMetadata(message.metadata))
+    .filter((metadata): metadata is MessageMetadata =>
+      metadata !== null && Boolean(metadata.event_type) && metadata.workflow_run_id === workflowRunId,
+    );
+}
+
+function createAwaitingApprovalRun(input: {
+  roomId: string;
+  projectId: string;
+  projectPath: string;
+  taskId: string;
+  taskTitle: string;
+  status?: 'running' | 'awaiting_approval';
+  currentNode?: 'approval' | 'execute';
+}) {
+  const state: AgentWorkflowState = {
+    workflowRunId: 'pending',
+    projectId: input.projectId,
+    roomId: input.roomId,
+    taskId: input.taskId,
+    userGoal: input.taskTitle,
+    projectPath: input.projectPath,
+    plan: {
+      goal: input.taskTitle,
+      summary: 'Approval event plan.',
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: true,
+    },
+    currentNode: input.currentNode ?? 'approval',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'pending',
+    status: input.status ?? 'awaiting_approval',
+    error: null,
+  };
+  const run = workflowRepo.createRun({
+    room_id: input.roomId,
+    project_id: input.projectId,
+    task_id: input.taskId,
+    status: input.status ?? 'awaiting_approval',
+    current_stage: 'planning',
+    graph_version: 'phase-b-v1',
+    graph_state: serializeGraphState(state),
+  });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({ ...state, workflowRunId: run.id }));
+  return workflowRepo.getRun(run.id)!;
+}
+
+function parseJsonMetadata(value: string | null): MessageMetadata | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as MessageMetadata
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function assertWorkflowEvent(
+  events: MessageMetadata[],
+  eventType: TaskEventType,
+  taskId: string,
+  workflowStepId?: string | null,
+): void {
+  assert.ok(taskId, `missing task id for ${eventType}`);
+  const event = events.find((item) =>
+    item.event_type === eventType &&
+    item.task_id === taskId &&
+    (workflowStepId === undefined || item.workflow_step_id === workflowStepId),
+  );
+  assert.ok(
+    event,
+    `missing ${eventType} event for task ${taskId}${workflowStepId ? ` and step ${workflowStepId}` : ''}; got ${
+      events.map((item) => `${item.event_type}:${item.task_id}:${item.workflow_step_id ?? 'none'}`).join(', ')
+    }`,
+  );
+  assert.equal(event.event_type, eventType);
+  assert.equal(event.task_id, taskId);
+  assert.equal(typeof event.workflow_run_id, 'string');
+  if (workflowStepId !== undefined && workflowStepId !== null) {
+    assert.equal(event.workflow_step_id, workflowStepId);
+  }
+}
 
 interface AgentCall {
   stage: WorkflowStage;

@@ -76,6 +76,7 @@ export interface GraphTools {
     eventType: TaskEventType;
     origin?: TaskCreatedFrom;
     content: string;
+    metadata?: Record<string, unknown>;
   }) => void;
   updateRun: typeof workflowRepo.updateRun;
   updateGraphState: typeof workflowRepo.updateGraphState;
@@ -172,6 +173,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
         eventType: input.eventType,
         origin: input.origin,
         content: input.content,
+        metadata: input.metadata,
       });
     },
     updateRun: workflowRepo.updateRun.bind(workflowRepo),
