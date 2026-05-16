@@ -1,4 +1,5 @@
 import { END } from '@langchain/langgraph';
+import { taskRepo } from '../../repos/tasks.js';
 import type { AgentWorkflowState } from './state.js';
 
 export function routeAfterApproval(state: AgentWorkflowState): 'dispatch' | typeof END {
@@ -7,8 +8,12 @@ export function routeAfterApproval(state: AgentWorkflowState): 'dispatch' | type
   return 'dispatch';
 }
 
-export function routeAfterExecute(state: AgentWorkflowState): 'review' | typeof END {
+export function routeAfterExecute(state: AgentWorkflowState): 'execute' | 'review' | typeof END {
   if (state.status === 'blocked' || state.status === 'cancelled' || state.status === 'failed') return END;
+  const hasRunnableChild = state.childTaskIds
+    .map((id) => taskRepo.get(id))
+    .some((task) => task?.status === 'todo' || task?.status === 'in_progress');
+  if (hasRunnableChild) return 'execute';
   return 'review';
 }
 

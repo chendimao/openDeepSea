@@ -287,6 +287,64 @@ test('workflowOrchestrator.cancel delegates graph cancellation to runtime', asyn
   assert.equal(controller.signal.aborted, true);
 });
 
+test('workflowOrchestrator.cancel cancels graph workflow with invalid graph_state', async () => {
+  const task = createTask('graph-facade-cancel-invalid-state', 'Facade invalid graph state cancellation');
+  const run = createAwaitingGraphRun(task, { status: 'running', currentNode: 'execute' });
+  workflowRepo.updateGraphState(run.id, '{"invalid": ');
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: task.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    prompt: 'running graph work with invalid state',
+    sort_order: 1,
+  });
+  const agent = roomAgentRepo.add({
+    room_id: task.room_id,
+    agent_id: 'cancel-invalid-state-agent',
+    agent_name: 'Cancel Invalid State Agent',
+  });
+  const agentRun = agentRunRepo.create({
+    room_id: task.room_id,
+    room_agent_id: agent.id,
+    agent_id: agent.agent_id,
+    backend: 'codex',
+    task_id: task.id,
+    workflow_run_id: run.id,
+    workflow_step_id: step.id,
+    workflow_stage: 'implementation',
+    prompt: 'running graph work with invalid state',
+  });
+  const controller = runRegistry.create(agentRun.id);
+
+  const cancelled = await workflowOrchestrator.cancel(run.id);
+
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.graph_state, '{"invalid": ');
+  assert.equal(workflowRepo.getStep(step.id)?.status, 'cancelled');
+  assert.equal(agentRunRepo.get(agentRun.id)?.status, 'cancelled');
+  assert.equal(controller.signal.aborted, true);
+});
+
+test('workflowOrchestrator.approvePlan rejects invalid graph_state before mutating run state', async () => {
+  const task = createTask('graph-facade-approve-invalid-state', 'Facade invalid graph state approval');
+  const run = createAwaitingGraphRun(task);
+  workflowRepo.updateGraphState(run.id, '{"invalid": ');
+
+  await assert.rejects(
+    () => workflowOrchestrator.approvePlan(run.id, 'tester'),
+    /graph state is invalid/,
+  );
+
+  const latest = workflowRepo.getRun(run.id);
+  assert.equal(latest?.status, 'blocked');
+  assert.equal(latest?.approved_by, null);
+  assert.match(latest?.error ?? '', /graph state is invalid/);
+  assert.equal(latest?.graph_state, '{"invalid": ');
+  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'), false);
+});
+
 test('workflowOrchestrator.retryStep restores failed graph child task and resumes execute', async () => {
   const task = createTask('graph-facade-retry', 'Facade graph retry');
   const executor = addWorkflowAgent(task.room_id, 'executor');
@@ -346,6 +404,51 @@ test('workflowOrchestrator.retryStep restores failed graph child task and resume
   assert.equal(taskRepo.get(child.id)?.status, 'review');
   assert.equal(executed, true);
   assert.ok(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length >= 2);
+});
+
+test('workflowOrchestrator.retryStep rejects invalid graph_state before resetting child or step state', async () => {
+  const task = createTask('graph-facade-retry-invalid-state', 'Facade invalid graph state retry');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Invalid state retry child task',
+    description: 'Retry should not mutate this task before graph state parses.',
+    assigned_agent_id: executor.id,
+  });
+  taskRepo.updateStatus(child.id, 'failed');
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'execute',
+    childTaskIds: [child.id],
+    error: 'Agent run failed',
+  });
+  const failedStep = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: child.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'failed',
+    assigned_room_agent_id: executor.id,
+    room_agent_id: executor.id,
+    prompt: 'failed graph work with invalid state',
+    sort_order: 1,
+  });
+  workflowRepo.updateGraphState(run.id, '{"invalid": ');
+
+  await assert.rejects(
+    () => workflowOrchestrator.retryStep(run.id),
+    /graph state is invalid/,
+  );
+
+  const latest = workflowRepo.getRun(run.id);
+  assert.equal(latest?.status, 'blocked');
+  assert.match(latest?.error ?? '', /graph state is invalid/);
+  assert.equal(latest?.graph_state, '{"invalid": ');
+  assert.equal(taskRepo.get(child.id)?.status, 'failed');
+  assert.equal(workflowRepo.getStep(failedStep.id)?.status, 'failed');
+  assert.equal(agentRunRepo.listActiveByWorkflow(run.id).length, 0);
 });
 
 test('workflowOrchestrator.retryStep resumes repair decision through execute before review', async () => {

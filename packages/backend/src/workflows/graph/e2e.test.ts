@@ -195,6 +195,123 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
   assert.match(taskSummary?.content ?? '', new RegExp(acceptanceCriterion));
 });
 
+test('graph runtime executes every planned child before review', async () => {
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-e2e-multi-child-'));
+  projectPathsToCleanup.push(projectPath);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph E2E Multi Child', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph E2E Multi Child Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  const acceptor = addAcpWorkflowAgent(room.id, 'acceptor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Complete multi-child graph runtime loop',
+    description: 'Verify graph runtime executes every planned child task before review.',
+  });
+  const agentCalls: AgentCall[] = [];
+  const reviewSnapshots: Array<Array<{ id: string; status: string }>> = [];
+
+  setWorkflowOrchestratorGraphDeps({
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Exercise all child implementation tasks before review.',
+      assumptions: [],
+      tasks: [
+        {
+          title: 'Implement first graph child',
+          description: 'Produce first implementation output.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['First child is implemented'],
+          scopeRead: ['packages/backend/src/workflows/graph/runtime.ts'],
+          scopeWrite: ['packages/backend/src/workflows/graph/e2e.test.ts'],
+          dependsOn: [],
+        },
+        {
+          title: 'Implement second graph child',
+          description: 'Produce second implementation output.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Second child is implemented'],
+          scopeRead: ['packages/backend/src/workflows/graph/router.ts'],
+          scopeWrite: ['packages/backend/src/workflows/graph/e2e.test.ts'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: ['review only after all implementation children are ready'],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => {
+      if (!input.workflowStage) throw new Error('workflowStage is required for graph E2E fake agent');
+      if (!input.workflowStepId) throw new Error('workflowStepId is required for graph E2E fake agent');
+      if (!input.taskId) throw new Error('taskId is required for graph E2E fake agent');
+      agentCalls.push({
+        stage: input.workflowStage,
+        role: input.agent.workflow_role,
+        agentId: input.agent.id,
+        workflowStepId: input.workflowStepId,
+        taskId: input.taskId,
+      });
+      if (input.workflowStage === 'code_review') {
+        const snapshot = taskRepo.listChildren(task.id).map((child) => ({ id: child.id, status: child.status }));
+        reviewSnapshots.push(snapshot);
+        assert.equal(
+          snapshot.some((child) => child.status === 'todo' || child.status === 'in_progress'),
+          false,
+          `review started before all children were implemented: ${JSON.stringify(snapshot)}`,
+        );
+      }
+      const output = outputForStage(input.workflowStage);
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(input, output),
+        status: 'completed',
+      };
+    },
+  });
+
+  const run = await workflowOrchestrator.start(task.id);
+  const childTasks = taskRepo.listChildren(task.id);
+  const implementationCalls = agentCalls.filter((call) => call.stage === 'implementation');
+  const reviewCallIndex = agentCalls.findIndex((call) => call.stage === 'code_review');
+  const secondImplementationCallIndex = agentCalls.findIndex((call, index) =>
+    index > 0 && call.stage === 'implementation',
+  );
+
+  assert.equal(run.status, 'completed');
+  assert.equal(taskRepo.get(task.id)?.status, 'done');
+  assert.equal(childTasks.length, 2);
+  assert.deepEqual(childTasks.map((child) => child.status), ['done', 'done']);
+  assert.equal(implementationCalls.length, 2);
+  assert.deepEqual(
+    implementationCalls.map((call) => call.taskId),
+    childTasks.map((child) => child.id),
+  );
+  assert.ok(reviewCallIndex > secondImplementationCallIndex);
+  assert.equal(reviewSnapshots.length, 1);
+  assert.equal(agentCalls.at(-1)?.agentId, acceptor.id);
+  assert.equal(implementationCalls.every((call) => call.agentId === executor.id), true);
+  assert.equal(agentCalls.some((call) => call.stage === 'code_review' && call.agentId === reviewer.id), true);
+});
+
 interface AgentCall {
   stage: WorkflowStage;
   role: RoomAgent['workflow_role'];

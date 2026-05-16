@@ -1160,7 +1160,7 @@ git commit -m "feat(workflows): 增加 LangGraph 验证节点"
 - [x] Task 8 completed
 - [x] Task 8 review-fix（2026-05-16）：修复 memory 缺少 acceptance artifact 时误写成功记忆；修复 recovery 中断同 workflow 全部 active agent run；修复坏 graph_state 不阻断后续 run 恢复；补充对应回归测试覆盖。
 
-- [ ] **Step 1: Write failing memory node test**
+- [x] **Step 1: Write failing memory node test**
 
 Create `packages/backend/src/workflows/graph/recovery.test.ts`:
 
@@ -1172,7 +1172,7 @@ test('memory node stores accepted task summary and completes graph state', async
 });
 ```
 
-- [ ] **Step 2: Write failing recovery test**
+- [x] **Step 2: Write failing recovery test**
 
 Append:
 
@@ -1184,7 +1184,7 @@ test('recoverGraphWorkflow marks running graph steps interrupted and keeps retry
 });
 ```
 
-- [ ] **Step 3: Run tests to verify failure**
+- [x] **Step 3: Run tests to verify failure**
 
 Run:
 
@@ -1194,7 +1194,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because memory/recovery graph behavior is missing.
 
-- [ ] **Step 4: Implement memory node**
+- [x] **Step 4: Implement memory node**
 
 `memoryNode` behavior:
 
@@ -1202,7 +1202,7 @@ Expected: FAIL because memory/recovery graph behavior is missing.
 - If extraction is too invasive, call `memoryRepo.upsertTaskSummary`/existing equivalent directly using same content rules from current orchestrator.
 - Persist graph state `status='completed'`, `currentNode='memory'`.
 
-- [ ] **Step 5: Implement recovery runtime**
+- [x] **Step 5: Implement recovery runtime**
 
 In `runtime.ts`, export:
 
@@ -1219,7 +1219,7 @@ Behavior:
 - Parse `graph_state`, set `status='blocked'`, `error`.
 - Return count.
 
-- [ ] **Step 6: Run recovery tests**
+- [x] **Step 6: Run recovery tests**
 
 Run:
 
@@ -1229,7 +1229,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/tools.ts packages/backend/src/workflows/graph/recovery.test.ts
@@ -1478,7 +1478,7 @@ git commit -m "test(workflows): 覆盖 LangGraph 端到端闭环"
 **Files:**
 - Modify only if verification exposes defects.
 
-- [ ] **Step 1: Run backend tests**
+- [x] **Step 1: Run backend tests**
 
 Run:
 
@@ -1488,7 +1488,7 @@ PATH="$(dirname $(mise which node)):$PATH" npm run test -w @openclaw-room/backen
 
 Expected: PASS.
 
-- [ ] **Step 2: Run root build**
+- [x] **Step 2: Run root build**
 
 Run:
 
@@ -1516,7 +1516,9 @@ With dev server running:
 
 Expected: No OpenClaw Gateway dependency is required.
 
-- [ ] **Step 4: Request code review**
+Status（2026-05-16 Task 12 总审查修复）：未执行。当前环境缺少真实 planner/LLM 配置 `LANGCHAIN_PLANNER_MODEL` 和 `OPENAI_API_KEY`，不能完成浏览器端真实 workflow smoke；不得标记为完成。
+
+- [x] **Step 4: Request code review**
 
 Use `superpowers:requesting-code-review` for the whole phase B range:
 
@@ -1524,11 +1526,11 @@ Use `superpowers:requesting-code-review` for the whole phase B range:
 - Head SHA: current HEAD.
 - Focus: graph state persistence, recovery, feature flag fallback, ACP execution behavior, allowlist safety, UI compatibility.
 
-- [ ] **Step 5: Fix review findings**
+- [x] **Step 5: Fix review findings**
 
 Address Critical and Important findings. Re-run targeted tests for every fix.
 
-- [ ] **Step 6: Completion verification**
+- [x] **Step 6: Completion verification**
 
 Use `superpowers:verification-before-completion` and re-run:
 
@@ -1538,12 +1540,20 @@ PATH="$(dirname $(mise which node)):$PATH" npm run build
 git status --short --branch
 ```
 
-- [ ] **Step 7: Commit final fixes if any**
+- [x] **Step 7: Commit final fixes if any**
 
 ```bash
 git add <changed-files>
 git commit -m "fix(workflows): 收尾 LangGraph 阶段 B 验证问题"
 ```
+
+Task 12 总审查修复记录（2026-05-16）：
+
+- [x] 修复多 child task 串行闭环：`routeAfterExecute` 在仍有 `todo`/`in_progress` child 时继续回到 `execute`，不提前进入总 review。
+- [x] 增加 E2E 多 child 覆盖：planner 输出两个 implementation task，断言 implementation ACP 调用两次，review 不会在第二个 child 仍待执行时启动，最终两个 child 均 `done`。
+- [x] 修复 cancel 损坏 `graph_state` 容错：active agent run 与 running step 仍取消，保留原损坏 graph_state 并返回最新 cancelled run。
+- [x] 修复 approve/retry 损坏 `graph_state` 容错：先安全解析，失败时将 run 置为 `blocked` 并写入受控错误 `graph state is invalid`；retry 不重置 child/step/agent 状态后才失败。
+- [x] 已执行后端 graph 定向测试、graph 全量测试、backend workspace 测试与根构建验证。
 
 Skip commit if there are no changes.
 

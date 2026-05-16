@@ -135,7 +135,7 @@ export async function approveGraphWorkflow(
 ): Promise<WorkflowRun> {
   const run = requireGraphRun(id);
   if (run.status !== 'awaiting_approval') throw new Error('workflow is not awaiting approval');
-  const state = requireGraphState(run);
+  const state = requireGraphStateOrBlock(run);
   const approvedState: AgentWorkflowState = {
     ...state,
     approval: 'approved',
@@ -164,7 +164,7 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
   if (agentRunRepo.listActiveByWorkflow(run.id).length > 0) {
     throw new Error('workflow already has an active agent run');
   }
-  const state = requireGraphState(run);
+  const state = requireGraphStateOrBlock(run);
   const tools = createGraphTools(deps);
   const retryState: AgentWorkflowState = {
     ...state,
@@ -221,10 +221,10 @@ export async function cancelGraphWorkflow(id: string): Promise<WorkflowRun> {
     error: null,
   });
   if (!updated) throw new Error('workflow not found');
-  const state = parseGraphState(run.graph_state);
-  if (state) {
+  const state = tryParseGraphState(run);
+  if (state.ok && state.state) {
     workflowRepo.updateGraphState(run.id, serializeGraphState({
-      ...state,
+      ...state.state,
       status: 'cancelled',
       error: null,
     }));
@@ -304,6 +304,38 @@ function requireGraphState(run: WorkflowRun): AgentWorkflowState {
   const state = parseGraphState(run.graph_state);
   if (!state) throw new Error('workflow has no graph state');
   return state;
+}
+
+function requireGraphStateOrBlock(run: WorkflowRun): AgentWorkflowState {
+  const state = tryParseGraphState(run);
+  if (!state.ok) {
+    const error = `graph state is invalid: ${state.error}`;
+    workflowRepo.updateRun(run.id, {
+      status: 'blocked',
+      error,
+    });
+    throw new Error(error);
+  }
+  if (!state.state) {
+    const error = 'graph state is invalid: workflow has no graph state';
+    workflowRepo.updateRun(run.id, {
+      status: 'blocked',
+      error,
+    });
+    throw new Error(error);
+  }
+  return state.state;
+}
+
+function tryParseGraphState(run: WorkflowRun): { ok: true; state: AgentWorkflowState | null } | { ok: false; error: string } {
+  try {
+    return { ok: true, state: parseGraphState(run.graph_state) };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 function retryCurrentNode(state: AgentWorkflowState): AgentWorkflowState['currentNode'] {
