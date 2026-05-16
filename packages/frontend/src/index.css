@@ -1908,6 +1908,9 @@
       min-height: 0;
       overflow: hidden;
     }
+    .memory-panel-shell {
+      overflow-y: auto;
+    }
   }
 
   @media (max-width: 767px) {
