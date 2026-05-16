@@ -21,6 +21,7 @@ const { emptyAgentWorkflowState, serializeGraphState } = await import('./graph/s
 
 test.afterEach(() => {
   setWorkflowConversationDeps({});
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
 });
 
 test('startWorkflowWithConversation rejects cross-room task without writing a message', () => {
@@ -134,6 +135,178 @@ test('approveWorkflowPlanWithConversation records approval and returns before la
     event.event_type === 'workflow_stage_changed' && event.workflow_run_id === run.id,
   ));
   assert.equal(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'execute'), false);
+});
+
+test('startWorkflowWithConversation rolls back intent message when graph run creation fails', () => {
+  const { room, project } = createRoomWithProject('Start Rollback');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Rollback start intent',
+  });
+  setWorkflowConversationDeps({
+    createGraphWorkflowRun: () => {
+      throw new Error('graph create exploded');
+    },
+  });
+
+  const before = messageRepo.listByRoom(room.id, 20).length;
+
+  assert.throws(
+    () => startWorkflowWithConversation({ roomId: room.id, taskId: task.id, source: 'task_button' }),
+    /graph create exploded/,
+  );
+  assert.equal(messageRepo.listByRoom(room.id, 20).length, before);
+  assert.equal(workflowRepo.listByTask(task.id).length, 0);
+});
+
+test('approveWorkflowPlanWithConversation validates graph state before writing approval message', () => {
+  const { room, project } = createRoomWithProject('Approve Rollback');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Rollback approval intent',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    graph_version: 'phase-b-v1',
+    graph_state: '{"invalid"',
+  });
+  const before = messageRepo.listByRoom(room.id, 20).length;
+
+  assert.throws(
+    () => approveWorkflowPlanWithConversation({ roomId: room.id, workflowId: run.id, source: 'approval_button' }),
+    /graph state is invalid/,
+  );
+  assert.equal(messageRepo.listByRoom(room.id, 20).length, before);
+  assert.equal(workflowRepo.getRun(run.id)?.status, 'blocked');
+});
+
+test('approveWorkflowPlanWithConversation rolls back intent message when approval update fails', () => {
+  const { room, project } = createRoomWithProject('Approve Update Rollback');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Rollback approval update',
+  });
+  const pendingState = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    graph_version: 'phase-b-v1',
+    graph_state: serializeGraphState({
+      ...pendingState,
+      workflowRunId: 'pending',
+      currentNode: 'approval',
+      status: 'awaiting_approval',
+      approval: 'pending',
+    }),
+  });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...pendingState,
+    workflowRunId: run.id,
+    currentNode: 'approval',
+    status: 'awaiting_approval',
+    approval: 'pending',
+  }));
+  setWorkflowConversationDeps({
+    approveGraphWorkflowPlan: () => {
+      throw new Error('approval update exploded');
+    },
+  });
+  const before = messageRepo.listByRoom(room.id, 20).length;
+
+  assert.throws(
+    () => approveWorkflowPlanWithConversation({ roomId: room.id, workflowId: run.id, source: 'approval_button' }),
+    /approval update exploded/,
+  );
+  assert.equal(messageRepo.listByRoom(room.id, 20).length, before);
+  assert.equal(workflowRepo.getRun(run.id)?.status, 'awaiting_approval');
+});
+
+test('startWorkflowWithConversation replays same source message as the original workflow run', () => {
+  const { room, project } = createRoomWithProject('Source Replay');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Replay source command',
+  });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: `/start-task ${task.id}`,
+    message_type: 'text',
+  });
+  const enqueued: string[] = [];
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: (runId) => {
+      enqueued.push(runId);
+    },
+  });
+
+  const first = startWorkflowWithConversation({
+    roomId: room.id,
+    taskId: task.id,
+    source: 'chat_command',
+    sourceMessageId: sourceMessage.id,
+    content: sourceMessage.content,
+  });
+  const messagesAfterFirst = messageRepo.listByRoom(room.id, 20);
+
+  const replayed = startWorkflowWithConversation({
+    roomId: room.id,
+    taskId: task.id,
+    source: 'chat_command',
+    sourceMessageId: sourceMessage.id,
+    content: sourceMessage.content,
+  });
+
+  assert.equal(replayed.id, first.id);
+  assert.equal(workflowRepo.listByTask(task.id).length, 1);
+  assert.deepEqual(enqueued, [first.id]);
+  assert.equal(messageRepo.listByRoom(room.id, 20).length, messagesAfterFirst.length);
+  assert.equal(
+    messageRepo.listByRoom(room.id, 20).some((message) => /已有运行中的工作流/.test(message.content)),
+    false,
+  );
+});
+
+test('startWorkflowWithConversation rejects graph-disabled start without writing messages', () => {
+  const { room, project } = createRoomWithProject('Graph Disabled');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Graph disabled start',
+  });
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  const before = messageRepo.listByRoom(room.id, 20).length;
+
+  assert.throws(
+    () => startWorkflowWithConversation({ roomId: room.id, taskId: task.id, source: 'task_button' }),
+    (err) => {
+      assert.equal((err as { status?: number }).status, 400);
+      assert.match((err as Error).message, /LangGraph workflow is not enabled/);
+      return true;
+    },
+  );
+  assert.equal(messageRepo.listByRoom(room.id, 20).length, before);
+  assert.equal(workflowRepo.listByTask(task.id).length, 0);
 });
 
 function createRoomWithProject(name: string) {

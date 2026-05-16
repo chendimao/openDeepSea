@@ -146,8 +146,7 @@ export async function continueGraphWorkflow(runId: string, deps: GraphRuntimeDep
 }
 
 export function approveGraphWorkflowPlan(id: string, approvedBy = 'user'): WorkflowRun {
-  const run = requireGraphRun(id);
-  if (run.status !== 'awaiting_approval') throw new Error('workflow is not awaiting approval');
+  const run = validateGraphWorkflowApproval(id);
   const state = requireGraphStateOrBlock(run);
   const approvedState: AgentWorkflowState = {
     ...state,
@@ -163,6 +162,13 @@ export function approveGraphWorkflowPlan(id: string, approvedBy = 'user'): Workf
   if (!updated) throw new Error('workflow not found');
   workflowRepo.updateGraphState(run.id, serializeGraphState(approvedState));
   return workflowRepo.getRun(run.id) ?? updated;
+}
+
+export function validateGraphWorkflowApproval(id: string): WorkflowRun {
+  const run = requireGraphRun(id);
+  if (run.status !== 'awaiting_approval') throw new Error('workflow is not awaiting approval');
+  requireGraphStateOrBlock(run);
+  return run;
 }
 
 export async function approveGraphWorkflow(

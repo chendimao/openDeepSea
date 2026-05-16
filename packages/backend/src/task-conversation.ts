@@ -50,6 +50,7 @@ interface RecordTaskEventInput {
   eventType: TaskEventType;
   origin?: TaskCreatedFrom;
   content: string;
+  metadata?: Record<string, unknown>;
 }
 
 export function createTaskWithConversation(input: CreateTaskWithConversationInput): CreateTaskWithConversationResult {
@@ -164,9 +165,11 @@ export function createTaskCreationMemorySafely(input: {
   }
 }
 
-export function recordTaskEvent(input: RecordTaskEventInput): Message {
+export function recordTaskEvent(input: RecordTaskEventInput, options?: { broadcast?: boolean }): Message {
   const message = createTaskEventMessage(input);
-  broadcastMessageCreated(input.roomId, message);
+  if (options?.broadcast !== false) {
+    broadcastMessageCreated(input.roomId, message);
+  }
   return message;
 }
 
@@ -178,6 +181,7 @@ function createTaskEventMessage(input: RecordTaskEventInput): Message {
     workflow_step_id: input.workflowStepId ?? undefined,
     event_type: input.eventType,
     origin: input.origin,
+    ...(input.metadata ?? {}),
   };
   return messageRepo.create({
     room_id: input.roomId,
