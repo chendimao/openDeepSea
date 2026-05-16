@@ -1469,6 +1469,9 @@ git add packages/backend/src/workflows/graph/e2e.test.ts docs/superpowers/specs/
 git commit -m "test(workflows): 覆盖 LangGraph 端到端闭环"
 ```
 
+审查修复记录：
+- [x] 强化 E2E 对 verify 节点、ACP 调用序列、子任务归属和 task summary memory 内容的断言。
+
 ## Task 12: Final Verification and Review
 
 **Files:**

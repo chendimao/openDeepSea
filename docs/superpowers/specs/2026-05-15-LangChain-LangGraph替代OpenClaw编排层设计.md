@@ -417,11 +417,12 @@ Planner 分配任务时优先按 `workflow_role` 和 `capabilities` 匹配。
 - LangChain Planner 已作为可选 planning path 接入。
 - 未配置 `LANGCHAIN_PLANNER_MODEL` 或 `OPENAI_API_KEY` 时，系统回退到现有 ACP planning stage。
 - 内置 ACP agent 模板已支持无 OpenClaw Gateway 的 agent 创建。
-- 阶段 B 仍保留为后续 LangGraph runtime 迁移工作。
+- 在阶段 A 完成时，阶段 B 仍保留为后续 LangGraph runtime 迁移工作。
 
-## 阶段 B 实施计划记录
+## 阶段 B 实施计划记录（2026-05-16）
 
 - 阶段 B 计划采用 feature flag `LANGGRAPH_WORKFLOW_ENABLED` 保守启用，默认仍保持现有 orchestrator 入口兼容。
 - LangGraph runtime 先复刻串行开发闭环，不开放自动并行写入，也不引入通用 shell tool。
 - `workflow_runs.graph_state` 作为 graph state 快照，现有 workflow runs、steps、artifacts、tasks 和 memory tables 继续作为 UI 与审计来源。
 - 验证命令通过 allowlist 执行；无验证命令时记录 skipped 结果，避免测试和运行时依赖 OpenClaw Gateway。
+- Task 11 端到端验证已强化对 verify 节点、ACP 角色调用序列、子任务归属与 task summary memory 内容的断言，覆盖无 OpenClaw Gateway 的 ACP-only 闭环。

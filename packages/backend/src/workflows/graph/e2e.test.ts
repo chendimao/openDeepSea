@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Message, RoomAgent, WorkflowStage } from '../../types.js';
+import type { Message, RoomAgent, WorkflowStage, WorkflowStep } from '../../types.js';
 import type { RespondAsAgentInput } from '../../dispatcher.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-e2e-')), 'test.db');
@@ -17,14 +17,27 @@ const { workflowRepo } = await import('../../repos/workflows.js');
 const { parseGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
 
+const originalLangGraphWorkflowEnabled = process.env.LANGGRAPH_WORKFLOW_ENABLED;
+const projectPathsToCleanup: string[] = [];
+const acceptanceNotes = 'Graph runtime completed all steps';
+const acceptanceCriterion = 'Implementation output is reviewed and accepted';
+
 test.afterEach(() => {
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '';
+  if (originalLangGraphWorkflowEnabled === undefined) {
+    delete process.env.LANGGRAPH_WORKFLOW_ENABLED;
+  } else {
+    process.env.LANGGRAPH_WORKFLOW_ENABLED = originalLangGraphWorkflowEnabled;
+  }
   setWorkflowOrchestratorGraphDeps({});
+  for (const projectPath of projectPathsToCleanup.splice(0)) {
+    rmSync(projectPath, { recursive: true, force: true });
+  }
 });
 
 test('graph runtime completes ACP-only development loop without OpenClaw gateway', async () => {
   process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-e2e-project-'));
+  projectPathsToCleanup.push(projectPath);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph E2E', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Graph E2E Room' });
@@ -37,8 +50,7 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
     title: 'Complete graph runtime loop',
     description: 'Verify graph runtime can complete without OpenClaw Gateway.',
   });
-  const calledRoles: Array<RoomAgent['workflow_role']> = [];
-  const calledStages: WorkflowStage[] = [];
+  const agentCalls: AgentCall[] = [];
 
   setWorkflowOrchestratorGraphDeps({
     planner: async () => ({
@@ -50,7 +62,7 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
         description: 'Produce implementation output for review and acceptance.',
         suggestedRole: 'executor',
         priority: 'normal',
-        acceptance: ['Implementation output is reviewed and accepted'],
+        acceptance: [acceptanceCriterion],
         scopeRead: ['packages/backend/src/workflows/graph/runtime.ts'],
         scopeWrite: ['packages/backend/src/workflows/graph/e2e.test.ts'],
         dependsOn: [],
@@ -63,8 +75,15 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
     }),
     runAcpAgent: async (input) => {
       if (!input.workflowStage) throw new Error('workflowStage is required for graph E2E fake agent');
-      calledRoles.push(input.agent.workflow_role);
-      calledStages.push(input.workflowStage);
+      if (!input.workflowStepId) throw new Error('workflowStepId is required for graph E2E fake agent');
+      if (!input.taskId) throw new Error('taskId is required for graph E2E fake agent');
+      agentCalls.push({
+        stage: input.workflowStage,
+        role: input.agent.workflow_role,
+        agentId: input.agent.id,
+        workflowStepId: input.workflowStepId,
+        taskId: input.taskId,
+      });
       const output = outputForStage(input.workflowStage);
       const agentRun = agentRunRepo.create({
         room_id: input.roomId,
@@ -88,28 +107,92 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
 
   const run = await workflowOrchestrator.start(task.id);
   const detail = workflowRepo.detail(run.id);
+  assert.ok(detail);
   const graphState = parseGraphState(run.graph_state);
+  const childTasks = taskRepo.listChildren(task.id);
   const taskMemories = memoryRepo.list({
     projectId: project.id,
     roomId: room.id,
     taskId: task.id,
   });
+  const taskSummary = taskMemories.find((memory) => memory.memory_type === 'task_summary' && memory.source_id === run.id);
+  const steps = detail.steps;
+  const artifacts = detail.artifacts;
+  const nodeNames = steps.map((step) => step.node_name);
+  const executeStep = requireStep(steps, 'execute');
+  const reviewStep = requireStep(steps, 'review');
+  const verifyStep = requireStep(steps, 'verify');
+  const acceptanceStep = requireStep(steps, 'acceptance');
+  const verificationArtifact = artifacts.find((artifact) => artifact.workflow_step_id === verifyStep.id);
+  const verificationMetadata = verificationArtifact?.metadata ? JSON.parse(verificationArtifact.metadata) as {
+    results?: Array<{ command: string; status: string }>;
+  } : null;
 
   assert.equal(run.status, 'completed');
   assert.equal(run.graph_version, 'phase-b-v1');
   assert.equal(taskRepo.get(task.id)?.status, 'done');
-  assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'plan'));
-  assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'assignment'));
-  assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'review'));
-  assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'acceptance'));
+  assertOrderedSubsequence(nodeNames, ['context', 'planning', 'dispatch', 'execute', 'review', 'verify', 'acceptance']);
+  assert.equal(verifyStep.status, 'completed');
+  assert.ok(verificationArtifact);
+  assert.equal(verificationArtifact.artifact_type, 'implementation_summary');
+  assert.match(verificationArtifact.content, /\(none\): skipped/);
+  assert.equal(verificationMetadata?.results?.[0]?.status, 'skipped');
+  assert.equal(verificationMetadata?.results?.[0]?.command, '(none)');
+  assert.ok(artifacts.some((artifact) => artifact.artifact_type === 'plan'));
+  assert.ok(artifacts.some((artifact) => artifact.artifact_type === 'assignment'));
+  assert.ok(artifacts.some((artifact) => artifact.artifact_type === 'review'));
+  assert.ok(artifacts.some((artifact) => artifact.artifact_type === 'acceptance'));
   assert.equal(graphState?.status, 'completed');
   assert.equal(graphState?.currentNode, 'memory');
-  assert.equal(calledRoles.includes(executor.workflow_role), true);
-  assert.equal(calledRoles.includes(reviewer.workflow_role), true);
-  assert.equal(calledRoles.includes(acceptor.workflow_role), true);
-  assert.deepEqual(calledStages, ['implementation', 'code_review', 'acceptance']);
-  assert.ok(taskMemories.some((memory) => memory.memory_type === 'task_summary' && memory.source_id === run.id));
+  assert.equal(childTasks.length, 1);
+  assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
+  assert.equal(childTasks[0]?.status, 'done');
+  assert.deepEqual(agentCalls, [
+    {
+      stage: 'implementation',
+      role: 'executor',
+      agentId: executor.id,
+      workflowStepId: executeStep.id,
+      taskId: childTasks[0]?.id,
+    },
+    {
+      stage: 'code_review',
+      role: 'reviewer',
+      agentId: reviewer.id,
+      workflowStepId: reviewStep.id,
+      taskId: task.id,
+    },
+    {
+      stage: 'acceptance',
+      role: 'acceptor',
+      agentId: acceptor.id,
+      workflowStepId: acceptanceStep.id,
+      taskId: task.id,
+    },
+  ]);
+  assert.equal(executeStep.stage, 'implementation');
+  assert.equal(executeStep.room_agent_id, executor.id);
+  assert.equal(executeStep.assigned_room_agent_id, executor.id);
+  assert.equal(reviewStep.stage, 'code_review');
+  assert.equal(reviewStep.room_agent_id, reviewer.id);
+  assert.equal(reviewStep.assigned_room_agent_id, reviewer.id);
+  assert.equal(acceptanceStep.stage, 'acceptance');
+  assert.equal(acceptanceStep.room_agent_id, acceptor.id);
+  assert.equal(acceptanceStep.assigned_room_agent_id, acceptor.id);
+  assert.equal(taskSummary?.title, `任务完成：${task.title}`);
+  assert.equal(taskSummary?.source_id, run.id);
+  assert.equal(taskSummary?.task_id, task.id);
+  assert.match(taskSummary?.content ?? '', new RegExp(acceptanceNotes));
+  assert.match(taskSummary?.content ?? '', new RegExp(acceptanceCriterion));
 });
+
+interface AgentCall {
+  stage: WorkflowStage;
+  role: RoomAgent['workflow_role'];
+  agentId: string;
+  workflowStepId: string;
+  taskId: string;
+}
 
 function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor'): RoomAgent {
   const agent = roomAgentRepo.add({
@@ -144,12 +227,30 @@ function outputForStage(stage: WorkflowStage): string {
   if (stage === 'acceptance') {
     return JSON.stringify({
       verdict: 'pass',
-      acceptedCriteria: ['Implementation output is reviewed and accepted'],
+      acceptedCriteria: [acceptanceCriterion],
       failedCriteria: [],
-      notes: 'Graph runtime completed all steps',
+      notes: acceptanceNotes,
     });
   }
   throw new Error(`unexpected ACP stage: ${stage}`);
+}
+
+function requireStep(steps: WorkflowStep[], nodeName: string): WorkflowStep {
+  const step = steps.find((item) => item.node_name === nodeName);
+  assert.ok(step, `missing ${nodeName} step`);
+  return step;
+}
+
+function assertOrderedSubsequence(actual: Array<string | null>, expected: string[]): void {
+  let cursor = 0;
+  for (const item of actual) {
+    if (item === expected[cursor]) cursor += 1;
+  }
+  assert.equal(
+    cursor,
+    expected.length,
+    `expected node order ${expected.join(' -> ')} within ${actual.join(' -> ')}`,
+  );
 }
 
 function fakeMessage(input: RespondAsAgentInput, content: string): Message {
