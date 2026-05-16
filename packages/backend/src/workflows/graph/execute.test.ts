@@ -166,3 +166,117 @@ test('execute node starts assigned ACP agent and records completed implementatio
   assert.equal(nextState.currentStepId, step?.id ?? null);
   assert.equal(nextState.activeAgentRunId, fakeRunId);
 });
+
+test('execute node fails workflow step and child task when ACP agent fails', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-fail-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Fail', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Fail Room' });
+  const executor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'executor-fail',
+    agent_name: 'Executor Fail',
+  });
+  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parent fail task',
+    description: 'Parent workflow task',
+  });
+  const childTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Child fail task',
+    description: 'Implementation child task',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const tools = createGraphTools({
+    runAcpAgent: async (input) => {
+      const runRow = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: executor.id,
+        agent_id: executor.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const failedRun = agentRunRepo.updateStatus(runRow.id, 'failed', {
+        error: 'implementation failed',
+        stdout: 'partial output',
+      }) ?? runRow;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: executor.agent_id,
+        sender_name: executor.agent_name,
+        content: 'partial output',
+        message_type: 'agent_stream',
+      });
+      return {
+        run: failedRun,
+        message,
+        status: 'failed',
+      };
+    },
+  });
+  const nodes = createGraphNodes(tools);
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Execute one child task',
+      assumptions: [],
+      tasks: [{
+        title: childTask.title,
+        description: childTask.description ?? '',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Do not move child to review on failure'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [childTask.id],
+    reviewFindings: [],
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  const step = workflowRepo.listSteps(run.id).find((item) => item.node_name === 'execute');
+  assert.equal(step?.status, 'failed');
+  assert.equal(taskRepo.get(childTask.id)?.status, 'failed');
+  assert.equal(workflowRepo.getRun(run.id)?.status, 'blocked');
+  assert.equal(nextState.status, 'blocked');
+  assert.match(nextState.error ?? '', /implementation failed/);
+});

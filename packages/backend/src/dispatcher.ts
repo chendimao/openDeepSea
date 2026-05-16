@@ -529,10 +529,8 @@ export async function runAgentOnce(input: RespondAsAgentInput): Promise<{
     void respondAsAgent({
       ...input,
       onFinished: async (result) => {
-        if (input.onFinished) {
-          await input.onFinished(result);
-        }
         resolve(result);
+        if (input.onFinished) await input.onFinished(result);
       },
     }).catch(reject);
   });

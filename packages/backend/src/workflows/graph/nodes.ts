@@ -198,7 +198,8 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const pendingChildren = state.childTaskIds
         .map((id) => childTasks.find((task) => task.id === id))
         .filter((task): task is NonNullable<typeof task> => Boolean(task));
-      const nextChild = [...pendingChildren, ...childTasks]
+      const executionCandidates = state.childTaskIds.length > 0 ? pendingChildren : childTasks;
+      const nextChild = executionCandidates
         .find((child) => child.status === 'todo' || child.status === 'in_progress');
       if (!nextChild) {
         const nextState: AgentWorkflowState = {
@@ -284,6 +285,36 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         workflowStepId: step.id,
         workflowStage: 'implementation',
       });
+
+      if (runResult.status !== 'completed') {
+        const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');
+        const failedStep = tools.updateGraphStep(step.id, {
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
+          agent_run_id: runResult.run.id,
+          result: runResult.run.stdout || runResult.message.content,
+          result_message_id: runResult.message.id,
+          error,
+        });
+        if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+        const failedChild = tools.updateTaskStatus(nextChild.id, 'failed');
+        if (failedChild) tools.broadcastTaskUpdated(failedChild);
+        const blockedRun = tools.updateRun(context.run.id, {
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'blocked',
+          current_stage: 'implementation',
+          error,
+        });
+        if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'execute',
+          currentStepId: step.id,
+          activeAgentRunId: runResult.run.id,
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'blocked',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
 
       const completedStep = tools.updateGraphStep(step.id, {
         status: 'completed',
