@@ -1157,6 +1157,8 @@ git commit -m "feat(workflows): 增加 LangGraph 验证节点"
 - Modify: `packages/backend/src/workflows/graph/tools.ts`
 - Create: `packages/backend/src/workflows/graph/recovery.test.ts`
 
+- [x] Task 8 completed
+
 - [ ] **Step 1: Write failing memory node test**
 
 Create `packages/backend/src/workflows/graph/recovery.test.ts`:

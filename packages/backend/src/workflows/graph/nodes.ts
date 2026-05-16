@@ -1,7 +1,7 @@
 import { serializeGraphState, type AgentWorkflowState } from './state.js';
 import type { GraphTools } from './tools.js';
 import { getVerificationCwd, runVerificationCommand } from './verification.js';
-import { formatParsedPlanArtifact } from '../orchestrator.js';
+import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orchestrator.js';
 import { parseAcceptanceVerdict, parseReviewVerdict } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
 
@@ -15,6 +15,7 @@ export interface GraphRuntimeNodes {
   repairDecisionNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
   verifyNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
   acceptanceNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
+  memoryNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
 }
 
 export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
@@ -815,6 +816,50 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       };
       tools.updateGraphState(context.run.id, serializeGraphState(failedState));
       return failedState;
+    },
+
+    async memoryNode(state) {
+      const context = tools.readWorkflowContext(state.workflowRunId);
+      const acceptanceArtifact = [...tools.listArtifacts(context.run.id)]
+        .reverse()
+        .find((artifact) => artifact.artifact_type === 'acceptance');
+
+      try {
+        const verdict = acceptanceArtifact
+          ? parseAcceptanceVerdict(acceptanceArtifact.content)
+          : {
+            verdict: 'pass' as const,
+            acceptedCriteria: [],
+            failedCriteria: [],
+            notes: 'Graph memory node completed without acceptance artifact.',
+          };
+        tools.upsertTaskSummaryMemory({
+          project_id: context.run.project_id,
+          room_id: context.run.room_id,
+          task_id: context.run.task_id,
+          title: `任务完成：${context.task.title}`,
+          content: buildTaskSummaryMemoryContent(context.task.title, verdict),
+          source_id: context.run.id,
+        });
+      } catch (err) {
+        console.warn(`[graph-memory] failed to write task summary: ${(err as Error).message}`);
+      }
+
+      const updatedRun = tools.updateRun(context.run.id, {
+        status: 'completed',
+        current_stage: 'acceptance',
+        error: null,
+      });
+      if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+
+      const nextState: AgentWorkflowState = {
+        ...state,
+        currentNode: 'memory',
+        status: 'completed',
+        error: null,
+      };
+      tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      return nextState;
     },
   };
 }

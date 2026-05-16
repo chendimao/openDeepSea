@@ -53,6 +53,7 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
     .addNode('repair_decision', nodes.repairDecisionNode)
     .addNode('verify', nodes.verifyNode)
     .addNode('acceptance', nodes.acceptanceNode)
+    .addNode('memory', nodes.memoryNode)
     .addEdge(START, 'context')
     .addEdge('context', 'planning')
     .addEdge('planning', 'approval_gate')
@@ -65,7 +66,11 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
       if (state.status === 'blocked' || state.status === 'cancelled' || state.status === 'failed') return END;
       return 'acceptance';
     })
-    .addEdge('acceptance', END)
+    .addConditionalEdges('acceptance', (state) => {
+      if (state.status === 'completed') return 'memory';
+      return END;
+    })
+    .addEdge('memory', END)
     .compile({ checkpointer: new MemorySaver() });
 }
 
@@ -138,4 +143,40 @@ function blockGraphWorkflowRun(runId: string, state: AgentWorkflowState, error: 
     status: 'blocked',
     error,
   };
+}
+
+export function recoverGraphWorkflow(error: string): number {
+  const tools = createGraphTools();
+  let count = 0;
+  for (const step of tools.listRunningSteps()) {
+    if (!step.node_name) continue;
+    const run = tools.getRun(step.workflow_run_id);
+    if (!run || run.status === 'cancelled' || run.status === 'completed') continue;
+
+    for (const activeRun of tools.listActiveAgentRunsByWorkflow(run.id)) {
+      if (activeRun.workflow_step_id && activeRun.workflow_step_id !== step.id) continue;
+      const interruptedRun = tools.interruptAgentRun(activeRun.id, error);
+      if (interruptedRun) tools.broadcastAgentRunUpdated(run.room_id, interruptedRun);
+    }
+
+    const interruptedStep = tools.updateGraphStep(step.id, { status: 'interrupted', error });
+    if (interruptedStep) tools.broadcastStepUpdated(run.room_id, interruptedStep);
+
+    const parsedState = tools.parseGraphState(run.graph_state);
+    const nextState = parsedState
+      ? {
+        ...parsedState,
+        currentNode: step.node_name,
+        currentStepId: step.id,
+        status: 'blocked' as const,
+        error,
+      }
+      : null;
+
+    const blockedRun = tools.updateRun(run.id, { status: 'blocked', error });
+    if (nextState) tools.updateGraphState(run.id, serializeGraphState(nextState));
+    if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
+    count += 1;
+  }
+  return count;
 }

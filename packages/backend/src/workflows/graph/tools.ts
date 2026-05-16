@@ -1,5 +1,6 @@
 import { formatMemoryContext } from '../../memory/context.js';
 import { runAgentOnce, type RespondAsAgentInput } from '../../dispatcher.js';
+import { agentRunRepo } from '../../repos/agent-runs.js';
 import { memoryRepo } from '../../repos/memory.js';
 import { messageRepo } from '../../repos/messages.js';
 import { projectRepo } from '../../repos/projects.js';
@@ -24,6 +25,7 @@ import { wsHub } from '../../ws-hub.js';
 import { generateLangChainPlan, type LangChainPlannerInput } from '../langchain-planner.js';
 import type { ParsedPlan } from '../plan-parser.js';
 import { formatRecentMessagesForPlanner } from '../orchestrator.js';
+import { parseGraphState } from './state.js';
 
 export interface GraphRuntimeDeps {
   planner?: (input: LangChainPlannerInput) => Promise<ParsedPlan>;
@@ -81,6 +83,14 @@ export interface GraphTools {
     message: Message;
     status: AgentRunStatus;
   }>;
+  upsertTaskSummaryMemory: typeof memoryRepo.upsertTaskSummary;
+  listActiveAgentRunsByWorkflow: typeof agentRunRepo.listActiveByWorkflow;
+  interruptAgentRun: typeof agentRunRepo.interruptRun;
+  parseGraphState: typeof parseGraphState;
+  listRunningSteps: typeof workflowRepo.listRunningSteps;
+  getRun: typeof workflowRepo.getRun;
+  getStep: typeof workflowRepo.getStep;
+  broadcastAgentRunUpdated: (roomId: string, run: AgentRun) => void;
 }
 
 export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
@@ -171,5 +181,15 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
       return null;
     },
     runAcpAgent,
+    upsertTaskSummaryMemory: memoryRepo.upsertTaskSummary.bind(memoryRepo),
+    listActiveAgentRunsByWorkflow: agentRunRepo.listActiveByWorkflow.bind(agentRunRepo),
+    interruptAgentRun: agentRunRepo.interruptRun.bind(agentRunRepo),
+    parseGraphState,
+    listRunningSteps: workflowRepo.listRunningSteps.bind(workflowRepo),
+    getRun: workflowRepo.getRun.bind(workflowRepo),
+    getStep: workflowRepo.getStep.bind(workflowRepo),
+    broadcastAgentRunUpdated(roomId: string, run: AgentRun) {
+      wsHub.broadcast(roomId, { type: 'agent_run:updated', roomId, run });
+    },
   };
 }
