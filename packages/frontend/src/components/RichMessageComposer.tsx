@@ -173,6 +173,7 @@ export function RichMessageComposer({
   return (
     <form
       className="rich-composer-box relative"
+      data-testid="chat-composer"
       onSubmit={handleSubmit}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return;

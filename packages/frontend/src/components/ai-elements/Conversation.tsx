@@ -21,8 +21,27 @@ export function Conversation({ className, ...props }: ConversationProps): JSX.El
 
 export type ConversationContentProps = ComponentProps<typeof StickToBottom.Content>;
 
-export function ConversationContent({ className, ...props }: ConversationContentProps): JSX.Element {
-  return <StickToBottom.Content className={cn('ai-conversation-content', className)} {...props} />;
+export function ConversationContent({
+  className,
+  scrollClassName,
+  children,
+  ...props
+}: ConversationContentProps): JSX.Element {
+  const context = useStickToBottomContext();
+
+  return (
+    <div
+      ref={context.scrollRef}
+      className={cn('ai-conversation-scroll', scrollClassName)}
+      data-testid="chat-scroll-container"
+    >
+      <div className={cn('ai-conversation-content', className)} ref={context.contentRef} {...props}>
+        {typeof children === 'function'
+          ? (children as (context: ReturnType<typeof useStickToBottomContext>) => ReactNode)(context)
+          : children}
+      </div>
+    </div>
+  );
 }
 
 export function ConversationEmptyState({

@@ -61,7 +61,7 @@ export function TaskBoard({
   const rootTasks = tasks.filter((task) => !task.parent_task_id);
 
   return (
-    <aside className="workbench-panel task-board-panel">
+    <aside className="workbench-panel task-board-panel" data-testid="task-panel">
       <header className="task-board-toolbar">
         <CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
         <div className="font-display text-[13px] font-semibold">{t('taskBoard.title')}</div>

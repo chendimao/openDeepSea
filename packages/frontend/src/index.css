@@ -168,13 +168,20 @@
   }
 
   html, body, #root {
-    height: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
     background: var(--color-bg);
     color: var(--color-fg);
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     font-feature-settings: "ss01", "cv11", "tnum";
+  }
+
+  #root > .h-screen {
+    height: 100dvh;
+    min-height: 0;
   }
 
   ::selection { background: rgba(10, 132, 255, 0.24); color: var(--color-fg); }
@@ -242,7 +249,8 @@
   .app-grid {
     display: grid;
     grid-template-columns: 288px minmax(0, 1fr);
-    min-height: 100%;
+    height: 100%;
+    min-height: 0;
     position: relative;
     z-index: 1;
     gap: 10px;
@@ -256,6 +264,7 @@
 
   .app-main {
     min-width: 0;
+    min-height: 0;
     overflow: hidden;
     padding: 8px 0 0;
   }
@@ -386,6 +395,7 @@
     position: relative;
     display: flex;
     height: 100%;
+    min-height: 0;
     min-width: 0;
     flex-direction: column;
     overflow: hidden;
@@ -471,8 +481,10 @@
   .workspace-grid {
     display: grid;
     grid-template-columns: minmax(420px, 1fr) minmax(340px, 400px);
+    grid-template-rows: minmax(0, 1fr);
     gap: 8px;
     min-height: 0;
+    overflow: hidden;
     flex: 1;
     padding: 8px;
   }
@@ -533,6 +545,14 @@
       linear-gradient(rgba(255,255,255,0.16) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255,255,255,0.13) 1px, transparent 1px);
     background-size: 24px 24px;
+  }
+  .ai-conversation-scroll {
+    height: 100%;
+    width: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable both-edges;
   }
   .ai-conversation-content {
     display: flex;
@@ -732,6 +752,7 @@
   }
   .rich-composer-box {
     display: flex;
+    flex-shrink: 0;
     flex-direction: column;
     padding: 10px;
   }
@@ -1865,10 +1886,11 @@
     }
     .workspace-grid {
       grid-template-columns: minmax(0, 1fr);
-      overflow-y: auto;
+      grid-template-rows: minmax(0, 1fr) minmax(0, clamp(180px, 36dvh, 360px));
+      overflow: hidden;
     }
     .chat-workspace {
-      min-height: 58vh;
+      min-height: 0;
     }
     .ai-message-card,
     .ai-message-row--agent .ai-message-card,
@@ -1878,7 +1900,8 @@
     }
     .task-board-panel,
     .inspector-panel {
-      min-height: 42vh;
+      min-height: 0;
+      overflow: hidden;
     }
   }
 

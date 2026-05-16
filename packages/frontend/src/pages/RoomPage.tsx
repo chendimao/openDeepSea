@@ -198,7 +198,7 @@ export function RoomPage() {
   }, [roomId, queryClient]);
 
   return (
-    <div className="workspace-root">
+    <div className="workspace-root" data-testid="room-page">
       <header className="workspace-toolbar">
         <div className="flex min-w-0 items-center gap-3">
           <Link
@@ -477,7 +477,7 @@ function ChatColumn({
   };
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div className="chat-stream-header">
         <div className="segmented-control">
           <button className="is-active" type="button">

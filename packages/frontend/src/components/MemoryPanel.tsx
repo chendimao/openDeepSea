@@ -191,7 +191,7 @@ export function MemoryPanel({
   const displayedLoading = activeTab === 'project' ? isProjectLoading : isLoading;
 
   return (
-    <section className={cn('space-y-3', compact && 'text-[12px]')}>
+    <section className={cn('min-h-0 space-y-3', compact && 'text-[12px]')} data-testid="memory-panel">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="font-display text-[14px] font-semibold text-[var(--color-fg)]">{t('memory.title')}</h3>
