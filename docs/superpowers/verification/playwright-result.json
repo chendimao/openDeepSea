@@ -1,0 +1,75 @@
+{
+  "runId": 1778942778346,
+  "frontend": "http://localhost:5175",
+  "backend": "http://localhost:7331",
+  "projectPath": "/var/folders/j7/794gswcd6qb8g8fxdn7hj2pc0000gn/T/opendeepsea-browser-1778942778346-pUZRC8",
+  "screenshots": [
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-dashboard.png",
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-model-settings.png",
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-room-initial.png",
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-acp-chat-reply.png",
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-slash-task-visible.png",
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-manual-start-workflow.png",
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-auto-workflow.png",
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-memory-panel.png",
+    "/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/screenshots/1778942778346-mobile-chat-viewport.png"
+  ],
+  "checks": [
+    {
+      "name": "model settings saved via backend bootstrap without logging key",
+      "value": true
+    },
+    {
+      "name": "ACP templates created",
+      "value": "Planner:codex:planner, Backend Executor:codex:executor, Reviewer:codex:reviewer, Acceptor:codex:acceptor"
+    },
+    {
+      "name": "model settings page verified",
+      "value": true
+    },
+    {
+      "name": "room test ids visible",
+      "value": true
+    },
+    {
+      "name": "ACP chat message completed",
+      "value": true
+    },
+    {
+      "name": "post-chat memory poll completed",
+      "value": "count=0"
+    },
+    {
+      "name": "/task creates exactly one task visible in list",
+      "value": true
+    },
+    {
+      "name": "ask_user task waits for manual start and writes chat record",
+      "value": true
+    },
+    {
+      "name": "automatic memory written for manual task creation",
+      "value": true
+    },
+    {
+      "name": "manual task start creates workflow and chat record",
+      "value": "running"
+    },
+    {
+      "name": "auto_recommended task auto-starts workflow",
+      "value": "running"
+    },
+    {
+      "name": "memory panel visible",
+      "value": true
+    },
+    {
+      "name": "mobile chat composer visible and scroll container owns overflow",
+      "value": "{\"scrollHeight\":1262,\"clientHeight\":187,\"scrollTop\":1075,\"overflow\":\"auto\"}"
+    }
+  ],
+  "ids": {
+    "projectId": "ck8farEjmRZf",
+    "roomId": "PHvrM3XbLrZd"
+  }
+}

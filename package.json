@@ -2,7 +2,7 @@
   "name": "openclaw-room",
   "version": "0.1.0",
   "private": true,
-  "description": "OpenClaw Room - 基于 OpenClaw 的多智能体协作项目管理系统",
+  "description": "OpenDeepSea - 本地优先的 ACP 多智能体协作项目管理系统",
   "workspaces": [
     "packages/*"
   ],
@@ -14,6 +14,7 @@
     "start": "npm run start -w @openclaw-room/backend"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "concurrently": "^9.0.1"
   },
   "engines": {
