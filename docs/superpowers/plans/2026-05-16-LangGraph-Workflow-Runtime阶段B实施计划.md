@@ -720,7 +720,7 @@ git commit -m "feat(workflows): 建立 LangGraph 工作流骨架"
 - Modify: `packages/backend/src/workflows/graph/router.ts`
 - Modify: `packages/backend/src/workflows/graph/runtime.test.ts`
 
-- [ ] **Step 1: Add failing dispatch test**
+- [x] **Step 1: Add failing dispatch test**
 
 Append to `runtime.test.ts`:
 
@@ -741,7 +741,7 @@ assert.equal(taskRepo.listChildren(task.id).length, 1);
 assert.equal(taskRepo.listChildren(task.id)[0]?.assigned_agent_id, executor.id);
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -751,7 +751,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because dispatch node is not implemented.
 
-- [ ] **Step 3: Implement dispatch tools**
+- [x] **Step 3: Implement dispatch tools**
 
 Add to `createGraphTools`:
 
@@ -769,7 +769,7 @@ recordWorkflowEvent(input) {
 
 Keep broadcast helpers internal and typed.
 
-- [ ] **Step 4: Implement dispatch node**
+- [x] **Step 4: Implement dispatch node**
 
 In `nodes.ts`, implement `dispatchNode`:
 
@@ -782,7 +782,7 @@ In `nodes.ts`, implement `dispatchNode`:
 - Update run to `status='running'`, `current_stage='implementation'`.
 - Persist state with `childTaskIds` and `currentNode='dispatch'`.
 
-- [ ] **Step 5: Update graph edges**
+- [x] **Step 5: Update graph edges**
 
 In `runtime.ts`, add node and edge:
 
@@ -793,7 +793,7 @@ In `runtime.ts`, add node and edge:
 
 For this task only, route `execute` to `END` with a placeholder node that stores current stage. The real execute node is Task 5.
 
-- [ ] **Step 6: Run dispatch test**
+- [x] **Step 6: Run dispatch test**
 
 Run:
 
@@ -803,7 +803,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/backend/src/workflows/graph/tools.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/router.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/runtime.test.ts

@@ -5,7 +5,9 @@ import { projectRepo } from '../../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowRepo } from '../../repos/workflows.js';
-import type { RoomAgent, WorkflowRole } from '../../types.js';
+import { recordTaskEvent } from '../../task-conversation.js';
+import type { RoomAgent, Task, TaskCreatedFrom, TaskEventType, WorkflowRole } from '../../types.js';
+import { wsHub } from '../../ws-hub.js';
 import { generateLangChainPlan, type LangChainPlannerInput } from '../langchain-planner.js';
 import type { ParsedPlan } from '../plan-parser.js';
 import { formatRecentMessagesForPlanner } from '../orchestrator.js';
@@ -31,6 +33,18 @@ export interface GraphTools {
   createGraphStep: typeof workflowRepo.createStep;
   updateGraphStep: typeof workflowRepo.updateStep;
   createArtifact: typeof workflowRepo.createArtifact;
+  createChildTask: typeof taskRepo.create;
+  broadcastTaskCreated: (task: Task) => void;
+  recordWorkflowEvent: (input: {
+    roomId: string;
+    taskId: string;
+    taskTitle?: string;
+    workflowRunId: string;
+    workflowStepId?: string | null;
+    eventType: TaskEventType;
+    origin?: TaskCreatedFrom;
+    content: string;
+  }) => void;
   updateRun: typeof workflowRepo.updateRun;
   updateGraphState: typeof workflowRepo.updateGraphState;
   nextStepSortOrder: (workflowRunId: string) => number;
@@ -77,6 +91,22 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     createGraphStep: workflowRepo.createStep.bind(workflowRepo),
     updateGraphStep: workflowRepo.updateStep.bind(workflowRepo),
     createArtifact: workflowRepo.createArtifact.bind(workflowRepo),
+    createChildTask: taskRepo.create.bind(taskRepo),
+    broadcastTaskCreated(task: Task) {
+      wsHub.broadcast(task.room_id, { type: 'task:created', task });
+    },
+    recordWorkflowEvent(input) {
+      recordTaskEvent({
+        roomId: input.roomId,
+        taskId: input.taskId,
+        taskTitle: input.taskTitle,
+        workflowRunId: input.workflowRunId,
+        workflowStepId: input.workflowStepId ?? null,
+        eventType: input.eventType,
+        origin: input.origin,
+        content: input.content,
+      });
+    },
     updateRun: workflowRepo.updateRun.bind(workflowRepo),
     updateGraphState: workflowRepo.updateGraphState.bind(workflowRepo),
     nextStepSortOrder(workflowRunId: string) {
@@ -84,7 +114,9 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     },
     selectAgentForRole(role: WorkflowRole, agents: RoomAgent[]) {
       const exact = agents.filter((agent) => agent.workflow_role === role);
-      return exact.find((agent) => agent.acp_enabled) ?? exact[0] ?? null;
+      if (exact.length > 0) return exact.find((agent) => agent.acp_enabled) ?? exact[0] ?? null;
+      if (role !== 'executor') return this.selectAgentForRole('executor', agents);
+      return null;
     },
   };
 }

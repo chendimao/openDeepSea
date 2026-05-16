@@ -10,6 +10,7 @@ const { projectRepo } = await import('../../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
+const { parseGraphState } = await import('./state.js');
 const { startGraphWorkflow } = await import('./runtime.js');
 
 test('startGraphWorkflow runs context and planning nodes into awaiting approval', async () => {
@@ -90,4 +91,55 @@ test('startGraphWorkflow blocks workflow and fails running graph step when plann
   assert.ok(detail?.run.graph_state?.includes('planner unavailable'));
   assert.equal(detail?.steps.some((step) => step.status === 'running'), false);
   assert.ok(detail?.steps.some((step) => step.node_name === 'planning' && step.status === 'failed'));
+});
+
+test('graph dispatch creates child tasks and assignment artifact after no-approval plan', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-dispatch-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Dispatch', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Dispatch Room' });
+  const executor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'executor',
+    agent_name: 'Executor',
+  });
+  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Dispatch with graph',
+    description: 'Create child tasks from no-approval plan.',
+  });
+
+  const run = await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: 'Dispatch with graph',
+      summary: 'Create one child task',
+      assumptions: [],
+      tasks: [{
+        title: 'Implement dispatch',
+        description: 'Create child task and assignment artifact',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Child task is assigned'],
+        scopeRead: ['packages/backend/src/workflows/graph/runtime.ts'],
+        scopeWrite: ['packages/backend/src/workflows/graph/nodes.ts'],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      risks: [],
+      needsApproval: false,
+    }),
+  });
+
+  const detail = workflowRepo.detail(run.id);
+  const childTasks = taskRepo.listChildren(task.id);
+  const graphState = parseGraphState(detail?.run.graph_state ?? null);
+
+  assert.equal(detail?.run.current_stage, 'implementation');
+  assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'assignment'));
+  assert.equal(childTasks.length, 1);
+  assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
+  assert.equal(graphState?.childTaskIds.length, 1);
 });

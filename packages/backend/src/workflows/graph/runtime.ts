@@ -47,11 +47,13 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
     .addNode('planning', nodes.planningNode)
     .addNode('approval_gate', nodes.approvalNode)
     .addNode('dispatch', nodes.dispatchNode)
+    .addNode('execute', nodes.executeNode)
     .addEdge(START, 'context')
     .addEdge('context', 'planning')
     .addEdge('planning', 'approval_gate')
     .addConditionalEdges('approval_gate', routeAfterApproval)
-    .addEdge('dispatch', END)
+    .addEdge('dispatch', 'execute')
+    .addEdge('execute', END)
     .compile({ checkpointer: new MemorySaver() });
 }
 
