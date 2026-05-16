@@ -10,10 +10,14 @@ const { projectRepo } = await import('../../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
+const { agentRunRepo } = await import('../../repos/agent-runs.js');
+const { messageRepo } = await import('../../repos/messages.js');
 const { createGraphNodes } = await import('./nodes.js');
 const { parseGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
 const { startGraphWorkflow } = await import('./runtime.js');
+import type { RespondAsAgentInput } from '../../dispatcher.js';
+import type { RoomAgent, WorkflowStage } from '../../types.js';
 
 test('startGraphWorkflow runs context and planning nodes into awaiting approval', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-${Date.now()}`);
@@ -101,12 +105,7 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Dispatch', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Graph Dispatch Room' });
-  const executor = roomAgentRepo.add({
-    room_id: room.id,
-    agent_id: 'executor',
-    agent_name: 'Executor',
-  });
-  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -135,17 +134,77 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
       risks: [],
       needsApproval: false,
     }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
 
   const detail = workflowRepo.detail(run.id);
   const childTasks = taskRepo.listChildren(task.id);
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
 
-  assert.equal(detail?.run.current_stage, 'implementation');
+  assert.ok(['implementation', 'review', 'verification', 'acceptance'].includes(detail?.run.current_stage ?? ''));
   assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'assignment'));
   assert.equal(childTasks.length, 1);
   assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
   assert.equal(graphState?.childTaskIds.length, 1);
+});
+
+test('no-approval graph blocks instead of selecting non-ACP executor', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-non-acp-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Non ACP', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Non ACP Room' });
+  const executor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'legacy-executor',
+    agent_name: 'Legacy Executor',
+  });
+  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Dispatch without ACP executor',
+    description: 'Do not select legacy executors for ACP-only graph workflows.',
+  });
+
+  let calls = 0;
+  const run = await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: 'Dispatch without ACP executor',
+      summary: 'Create one child task',
+      assumptions: [],
+      tasks: [{
+        title: 'Implement without legacy executor',
+        description: 'This should block before agent execution',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['No non-ACP agent is invoked'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async () => {
+      calls += 1;
+      throw new Error('non-ACP executor should not run');
+    },
+  });
+
+  const detail = workflowRepo.detail(run.id);
+  const childTasks = taskRepo.listChildren(task.id);
+  const graphState = parseGraphState(detail?.run.graph_state ?? null);
+
+  assert.equal(calls, 0);
+  assert.equal(detail?.run.status, 'blocked');
+  assert.match(detail?.run.error ?? '', /No executor available/);
+  assert.equal(childTasks.length, 1);
+  assert.equal(childTasks[0]?.assigned_agent_id, null);
+  assert.equal(graphState?.status, 'blocked');
+  assert.match(graphState?.error ?? '', /No executor available/);
 });
 
 test('dispatch node is idempotent when replayed with existing child task ids', async () => {
@@ -220,3 +279,68 @@ test('dispatch node is idempotent when replayed with existing child task ids', a
   assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'dispatch').length, 1);
   assert.equal(workflowRepo.listArtifacts(run.id).filter((artifact) => artifact.artifact_type === 'assignment').length, 1);
 });
+
+function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor'): RoomAgent {
+  const agent = roomAgentRepo.add({
+    room_id: roomId,
+    agent_id: `acp-${role}-${Date.now()}-${Math.random()}`,
+    agent_name: `ACP ${role}`,
+  });
+  const withRole = roomAgentRepo.setWorkflowRole(agent.id, role);
+  if (!withRole) throw new Error(`failed to assign ${role} role`);
+  const withAcp = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [],
+  });
+  if (!withAcp) throw new Error(`failed to enable ACP for ${role}`);
+  return withAcp;
+}
+
+function createCompletedAgentRun(roomId: string, input: RespondAsAgentInput) {
+  const content = outputForStage(input.workflowStage);
+  const run = agentRunRepo.create({
+    room_id: roomId,
+    room_agent_id: input.agent.id,
+    agent_id: input.agent.agent_id,
+    backend: input.agent.acp_backend ?? 'codex',
+    task_id: input.taskId ?? null,
+    workflow_run_id: input.workflowRunId ?? null,
+    workflow_step_id: input.workflowStepId ?? null,
+    workflow_stage: input.workflowStage ?? null,
+    prompt: input.prompt,
+  });
+  const completedRun = agentRunRepo.updateStatus(run.id, 'completed', { stdout: content }) ?? run;
+  const message = messageRepo.create({
+    room_id: roomId,
+    sender_type: 'agent',
+    sender_id: input.agent.agent_id,
+    sender_name: input.agent.agent_name,
+    content,
+    message_type: 'agent_stream',
+  });
+  return Promise.resolve({ run: completedRun, message, status: 'completed' as const });
+}
+
+function outputForStage(stage: WorkflowStage | null | undefined): string {
+  if (stage === 'code_review') {
+    return JSON.stringify({
+      verdict: 'pass',
+      findings: [],
+      requiredFixes: [],
+      riskLevel: 'low',
+    });
+  }
+  if (stage === 'acceptance') {
+    return JSON.stringify({
+      verdict: 'pass',
+      acceptedCriteria: ['Workflow completed'],
+      failedCriteria: [],
+      notes: 'Accepted.',
+    });
+  }
+  return 'implementation output from ACP-only executor';
+}

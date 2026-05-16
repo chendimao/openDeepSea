@@ -21,24 +21,9 @@ test('review pass routes to acceptance and completes workflow on acceptance pass
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Review Pass', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Graph Review Room' });
-  const executor = roomAgentRepo.add({
-    room_id: room.id,
-    agent_id: 'executor-review-pass',
-    agent_name: 'Executor Review Pass',
-  });
-  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
-  const reviewer = roomAgentRepo.add({
-    room_id: room.id,
-    agent_id: 'reviewer-review-pass',
-    agent_name: 'Reviewer Review Pass',
-  });
-  roomAgentRepo.setWorkflowRole(reviewer.id, 'reviewer');
-  const acceptor = roomAgentRepo.add({
-    room_id: room.id,
-    agent_id: 'acceptor-review-pass',
-    agent_name: 'Acceptor Review Pass',
-  });
-  roomAgentRepo.setWorkflowRole(acceptor.id, 'acceptor');
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  addAcpWorkflowAgent(room.id, 'reviewer');
+  addAcpWorkflowAgent(room.id, 'acceptor');
 
   const parentTask = taskRepo.create({
     room_id: room.id,
@@ -160,18 +145,8 @@ test('review changes_requested routes back to execute with bounded repair attemp
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Review Repair', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Graph Review Repair Room' });
-  const reviewer = roomAgentRepo.add({
-    room_id: room.id,
-    agent_id: 'reviewer-review-repair',
-    agent_name: 'Reviewer Review Repair',
-  });
-  roomAgentRepo.setWorkflowRole(reviewer.id, 'reviewer');
-  const executor = roomAgentRepo.add({
-    room_id: room.id,
-    agent_id: 'executor-review-repair',
-    agent_name: 'Executor Review Repair',
-  });
-  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  addAcpWorkflowAgent(room.id, 'reviewer');
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
 
   const parentTask = taskRepo.create({
     room_id: room.id,
@@ -305,3 +280,23 @@ test('review changes_requested routes back to execute with bounded repair attemp
   assert.equal(blockedState.status, 'blocked');
   assert.match(blockedState.error ?? '', /max repair attempts/);
 });
+
+function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor') {
+  const agent = roomAgentRepo.add({
+    room_id: roomId,
+    agent_id: `${role}-${Date.now()}-${Math.random()}`,
+    agent_name: `${role} Agent`,
+  });
+  const withRole = roomAgentRepo.setWorkflowRole(agent.id, role);
+  if (!withRole) throw new Error(`failed to assign ${role} role`);
+  const withAcp = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [],
+  });
+  if (!withAcp) throw new Error(`failed to enable ACP for ${role}`);
+  return withAcp;
+}

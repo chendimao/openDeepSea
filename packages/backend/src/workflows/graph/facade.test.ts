@@ -690,7 +690,18 @@ function addWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'accep
     agent_id: `${role}-${Date.now()}-${Math.random()}`,
     agent_name: `${role} Agent`,
   });
-  return roomAgentRepo.setWorkflowRole(agent.id, role) ?? agent;
+  const withRole = roomAgentRepo.setWorkflowRole(agent.id, role);
+  if (!withRole) throw new Error(`failed to assign ${role} role`);
+  const withAcp = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [],
+  });
+  if (!withAcp) throw new Error(`failed to enable ACP for ${role}`);
+  return withAcp;
 }
 
 function fakeMessage(roomId: string, content: string): Message {

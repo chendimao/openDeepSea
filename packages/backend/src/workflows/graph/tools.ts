@@ -175,9 +175,10 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
       return workflowRepo.listSteps(workflowRunId).length + 1;
     },
     selectAgentForRole(role: WorkflowRole, agents: RoomAgent[]) {
-      const exact = agents.filter((agent) => agent.workflow_role === role);
-      if (exact.length > 0) return exact.find((agent) => agent.acp_enabled) ?? exact[0] ?? null;
-      if (role !== 'executor') return this.selectAgentForRole('executor', agents);
+      const executableAgents = agents.filter((agent) => agent.acp_enabled && agent.acp_backend);
+      const exact = executableAgents.filter((agent) => agent.workflow_role === role);
+      if (exact.length > 0) return exact[0] ?? null;
+      if (role !== 'executor') return this.selectAgentForRole('executor', executableAgents);
       return null;
     },
     runAcpAgent,
