@@ -7,17 +7,18 @@ import { join } from 'node:path';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-dispatch-')), 'test.db');
 
-import { adapters } from './acp/index.js';
-import { agentRunRepo } from './repos/agent-runs.js';
-import { memoryRepo } from './repos/memory.js';
-import { messageRepo } from './repos/messages.js';
-import { projectRepo } from './repos/projects.js';
-import { roomAgentRepo, roomRepo } from './repos/rooms.js';
-import { settingsRepo } from './repos/settings.js';
-import { messageUploadDir } from './uploads.js';
-import { buildPromptWithMessageAttachments, dispatchUserMessage } from './dispatcher.js';
 import type { SessionAdapter } from './acp/types.js';
 import type { Message, MessageMetadata } from './types.js';
+
+const { adapters } = await import('./acp/index.js');
+const { agentRunRepo } = await import('./repos/agent-runs.js');
+const { memoryRepo } = await import('./repos/memory.js');
+const { messageRepo } = await import('./repos/messages.js');
+const { projectRepo } = await import('./repos/projects.js');
+const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
+const { settingsRepo } = await import('./repos/settings.js');
+const { messageUploadDir } = await import('./uploads.js');
+const { buildPromptWithMessageAttachments, dispatchUserMessage } = await import('./dispatcher.js');
 
 test('buildPromptWithMessageAttachments appends readable attachment context', () => {
   const message = createMessage({
