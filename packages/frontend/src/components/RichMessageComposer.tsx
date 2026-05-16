@@ -11,7 +11,8 @@ import { useI18n } from '../lib/i18n';
 import type { RoomAgent } from '../lib/types';
 import { PromptArea } from './prompt-area/prompt-area';
 import { getChipsByTrigger, isSegmentsEmpty, segmentsToPlainText } from './prompt-area/segment-helpers';
-import type { PromptAreaHandle, Segment, TriggerConfig, TriggerSuggestion } from './prompt-area/types';
+import type { PromptAreaHandle, Segment } from './prompt-area/types';
+import { AGENT_TRIGGER, buildComposerTriggers } from './RichMessageComposer.triggers';
 import {
   PromptInputActions,
   PromptInputAttachmentShelf,
@@ -35,8 +36,6 @@ interface AttachmentPreview extends PendingAttachment {
   previewUrl: string | null;
 }
 
-const AGENT_TRIGGER = '@';
-
 export function RichMessageComposer({
   agents,
   sending,
@@ -56,14 +55,16 @@ export function RichMessageComposer({
   const isBusy = sending || disabled;
   const hasContent = !isSegmentsEmpty(segments);
 
-  const agentTrigger = useMemo<TriggerConfig>(() => ({
-    char: AGENT_TRIGGER,
-    position: 'any',
-    mode: 'dropdown',
-    accessibilityLabel: t('mention.menuAria'),
-    onSearch: (query) => searchAgents(agents, query),
-    onSelect: (suggestion) => suggestion.label,
-    emptyMessage: t('mention.empty'),
+  const triggers = useMemo(() => buildComposerTriggers({
+    agents,
+    labels: {
+      mentionMenuAria: t('mention.menuAria'),
+      mentionEmpty: t('mention.empty'),
+      commandMenuAria: t('composer.command.menuAria'),
+      taskCommandDescription: t('composer.command.task.description'),
+      startTaskCommandDescription: t('composer.command.startTask.description'),
+      commandEmpty: t('composer.command.empty'),
+    },
   }), [agents, t]);
 
   const revokeAttachment = (attachment: AttachmentPreview) => {
@@ -187,7 +188,7 @@ export function RichMessageComposer({
           ref={promptAreaRef}
           value={segments}
           onChange={setSegments}
-          triggers={[agentTrigger]}
+          triggers={triggers}
           placeholder={placeholder}
           disabled={isBusy}
           minHeight={44}
@@ -284,19 +285,4 @@ function findTypedMentionRoomAgentIds(content: string, agents: RoomAgent[]): str
   }
 
   return ids;
-}
-
-function searchAgents(agents: RoomAgent[], query: string): TriggerSuggestion[] {
-  const normalized = query.toLowerCase();
-  return agents
-    .filter((agent) => {
-      const haystack = `${agent.agent_name} ${agent.agent_id}`.toLowerCase();
-      return haystack.includes(normalized);
-    })
-    .slice(0, 6)
-    .map((agent) => ({
-      value: agent.id,
-      label: agent.agent_name,
-      data: agent,
-    }));
 }

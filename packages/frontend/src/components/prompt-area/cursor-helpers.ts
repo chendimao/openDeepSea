@@ -100,6 +100,26 @@ export function createRangeAtOffset(editor: HTMLElement, targetOffset: number): 
   return range
 }
 
+/**
+ * Create a non-collapsed Range between two plain-text offsets.
+ * Useful for measuring visible text because collapsed caret ranges can report
+ * a zero rect in contentEditable implementations.
+ */
+export function createRangeBetweenOffsets(
+  editor: HTMLElement,
+  startOffset: number,
+  endOffset: number,
+): Range | null {
+  const start = findDOMPosition(editor, startOffset)
+  const end = findDOMPosition(editor, endOffset)
+  if (!start || !end) return null
+
+  const range = document.createRange()
+  range.setStart(start.node, start.offset)
+  range.setEnd(end.node, end.offset)
+  return range
+}
+
 export function setCursorAtOffset(editor: HTMLElement, targetOffset: number): void {
   const sel = window.getSelection()
   if (!sel) return

@@ -53,6 +53,7 @@ import {
   getCursorOffset,
   setCursorAtOffset,
   createRangeAtOffset,
+  createRangeBetweenOffsets,
   getSelectionOffsets,
   setSelectionAtOffsets,
 } from './cursor-helpers'
@@ -303,9 +304,11 @@ export function usePromptArea({
       setSelectedSuggestionIndex(0)
 
       // Position the popover at the trigger character, not the cursor.
-      // Build a range at detected.startOffset so the dropdown anchors to
-      // the trigger char even when the cursor has moved past it.
-      const triggerRange = createRangeAtOffset(editor, detected.startOffset)
+      // Measure the actual trigger glyph; collapsed caret ranges can report
+      // a zero rect and leave the dropdown without a usable anchor.
+      const triggerRange =
+        createRangeBetweenOffsets(editor, detected.startOffset, detected.startOffset + 1) ??
+        createRangeAtOffset(editor, detected.startOffset)
       if (triggerRange) {
         const rect = triggerRange.getBoundingClientRect()
         // A zero rect means the range couldn't be mapped (e.g. after DOM
