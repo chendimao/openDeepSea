@@ -252,6 +252,7 @@
   .app-grid {
     display: grid;
     grid-template-columns: 288px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
     position: relative;
@@ -262,6 +263,7 @@
 
   .app-sidebar {
     min-width: 0;
+    min-height: 0;
     padding: 8px 0 0 10px;
   }
 
