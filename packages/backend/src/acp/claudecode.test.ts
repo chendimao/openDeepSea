@@ -176,3 +176,64 @@ test('OpenCode updated text snapshots stream only appended delta', () => {
     },
   ]);
 });
+
+test('structured answer snapshots do not duplicate final replies', () => {
+  const normalize = createStdoutNormalizer();
+  const assistant = JSON.stringify({
+    type: 'assistant',
+    message: {
+      content: [{ type: 'text', text: '第一段回复' }],
+    },
+  });
+  const duplicateResult = JSON.stringify({
+    type: 'result',
+    result: '第一段回复',
+  });
+  const extendedResult = JSON.stringify({
+    type: 'result',
+    result: '第一段回复\n第二段回复',
+  });
+
+  assert.deepEqual(normalize(`${assistant}\n`), [
+    {
+      channel: 'answer',
+      text: '第一段回复',
+      rawType: 'assistant',
+    },
+  ]);
+  assert.deepEqual(normalize(`${duplicateResult}\n`), []);
+  assert.deepEqual(normalize(`${extendedResult}\n`), [
+    {
+      channel: 'answer',
+      text: '\n第二段回复',
+      rawType: 'result',
+    },
+  ]);
+});
+
+test('Codex agent message snapshots are treated as full-answer snapshots', () => {
+  const normalize = createStdoutNormalizer();
+  const first = JSON.stringify({
+    type: 'item.completed',
+    item: {
+      type: 'agent_message',
+      text: 'Codex 最终回复',
+    },
+  });
+  const duplicate = JSON.stringify({
+    type: 'item.completed',
+    item: {
+      type: 'agent_message',
+      text: 'Codex 最终回复',
+    },
+  });
+
+  assert.deepEqual(normalize(`${first}\n`), [
+    {
+      channel: 'answer',
+      text: 'Codex 最终回复',
+      rawType: 'item.completed',
+    },
+  ]);
+  assert.deepEqual(normalize(`${duplicate}\n`), []);
+});

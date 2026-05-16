@@ -262,9 +262,11 @@ function normalizeStdoutChunkWithSnapshots(
               }
             : '';
         }
+        const delta = toAnswerTextDelta(obj, text, snapshots);
+        if (!delta) return '';
         return {
           channel: 'answer' as const,
-          text: toOpenCodeTextDelta(obj, text, snapshots),
+          text: delta,
           rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
         };
       }
@@ -287,15 +289,26 @@ function normalizeStdoutChunkWithSnapshots(
   }>;
 }
 
-function toOpenCodeTextDelta(obj: Record<string, unknown>, text: string, snapshots: Map<string, string>): string {
+function toAnswerTextDelta(obj: Record<string, unknown>, text: string, snapshots: Map<string, string>): string {
   const type = typeof obj['type'] === 'string' ? obj['type'] : '';
-  if (type !== 'message.part.updated') return text;
-  const part = getOpenCodeTextPart(obj);
-  const partId = typeof part?.['id'] === 'string' ? part.id : null;
-  if (!partId) return text;
-  const previous = snapshots.get(partId) ?? '';
-  snapshots.set(partId, text);
+  if (type === 'message.part.updated') {
+    const part = getOpenCodeTextPart(obj);
+    const partId = typeof part?.['id'] === 'string' ? part.id : null;
+    return partId ? toSnapshotDelta(`opencode:${partId}`, text, snapshots) : text;
+  }
+  if (!isFullAnswerSnapshot(obj)) return text;
+  return toSnapshotDelta('answer', text, snapshots);
+}
+
+function toSnapshotDelta(key: string, text: string, snapshots: Map<string, string>): string {
+  const previous = snapshots.get(key) ?? '';
+  snapshots.set(key, text);
   return text.startsWith(previous) ? text.slice(previous.length) : text;
+}
+
+function isFullAnswerSnapshot(obj: Record<string, unknown>): boolean {
+  const type = typeof obj['type'] === 'string' ? obj['type'] : '';
+  return type === 'assistant' || type === 'result' || isCodexAgentMessage(obj);
 }
 
 function parseJsonLines(data: string): Record<string, unknown>[] {
