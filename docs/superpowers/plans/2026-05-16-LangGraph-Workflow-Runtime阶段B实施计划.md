@@ -1328,6 +1328,10 @@ git commit -m "feat(workflows): 将编排入口代理到 LangGraph"
 
 修复 Task 9 review：approval resume 继续按 router 驱动到 execute/合法终态；cancel 调用 `runRegistry.cancel` 并返回最新 graph_state；retry 恢复 failed child task 后继续 execute；recovery 不再遗留 graph run 的 `node_name` 为空 running step。
 
+- [x] **Review fix 2: separate resume target node from completed node**
+
+修复 Task 9 第二轮 review：resume loop 显式维护 `nodeToRun` 并基于刚执行节点路由，覆盖 `repair_decision -> execute -> review`；retry 从 review/acceptance 回退后重新执行 execute；graph retry 遇到 active agent run 时拒绝。
+
 ## Task 10: Frontend Types and Workflow Metadata Display
 
 **Files:**

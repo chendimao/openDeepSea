@@ -161,6 +161,9 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
   if (run.status === 'running' || run.status === 'awaiting_approval') {
     throw new Error('workflow is already running');
   }
+  if (agentRunRepo.listActiveByWorkflow(run.id).length > 0) {
+    throw new Error('workflow already has an active agent run');
+  }
   const state = requireGraphState(run);
   const tools = createGraphTools(deps);
   const retryState: AgentWorkflowState = {
@@ -305,9 +308,10 @@ function requireGraphState(run: WorkflowRun): AgentWorkflowState {
 
 function retryCurrentNode(state: AgentWorkflowState): AgentWorkflowState['currentNode'] {
   if (state.currentNode === 'execute') return 'dispatch';
-  if (state.currentNode === 'review') return 'execute';
-  if (state.currentNode === 'verify') return 'review';
-  if (state.currentNode === 'acceptance') return 'verify';
+  if (state.currentNode === 'review') return 'dispatch';
+  if (state.currentNode === 'repair_decision') return 'review';
+  if (state.currentNode === 'verify') return 'dispatch';
+  if (state.currentNode === 'acceptance') return 'dispatch';
   return state.currentNode;
 }
 
@@ -318,35 +322,35 @@ async function resumeGraphWorkflowFromState(
   const tools = createGraphTools(deps);
   const nodes = createGraphNodes(tools);
   let nextState = state;
-  let nextNode = nextNodeAfter(nextState);
+  let nodeToRun = nextNodeAfter(null, nextState);
 
   for (let iteration = 0; iteration < 20; iteration += 1) {
-    if (!nextNode || isTerminalResumeState(nextState)) {
+    if (!nodeToRun || isTerminalResumeState(nextState)) {
       return nextState;
     }
 
-    if (nextNode === 'context') {
+    if (nodeToRun === 'context') {
       nextState = await nodes.contextNode(nextState);
-    } else if (nextNode === 'planning') {
+    } else if (nodeToRun === 'planning') {
       nextState = await nodes.planningNode(nextState);
-    } else if (nextNode === 'approval') {
+    } else if (nodeToRun === 'approval') {
       nextState = await nodes.approvalNode(nextState);
-    } else if (nextNode === 'dispatch') {
+    } else if (nodeToRun === 'dispatch') {
       nextState = await nodes.dispatchNode(nextState);
-    } else if (nextNode === 'execute') {
+    } else if (nodeToRun === 'execute') {
       nextState = await nodes.executeNode(nextState);
-    } else if (nextNode === 'review') {
+    } else if (nodeToRun === 'review') {
       nextState = await nodes.reviewNode(nextState);
-    } else if (nextNode === 'repair_decision') {
+    } else if (nodeToRun === 'repair_decision') {
       nextState = await nodes.repairDecisionNode(nextState);
-    } else if (nextNode === 'verify') {
+    } else if (nodeToRun === 'verify') {
       nextState = await nodes.verifyNode(nextState);
-    } else if (nextNode === 'acceptance') {
+    } else if (nodeToRun === 'acceptance') {
       nextState = await nodes.acceptanceNode(nextState);
-    } else if (nextNode === 'memory') {
+    } else if (nodeToRun === 'memory') {
       nextState = await nodes.memoryNode(nextState);
     }
-    nextNode = nextNodeAfter(nextState);
+    nodeToRun = nextNodeAfter(nodeToRun, nextState);
   }
 
   throw new Error('graph retry exceeded resume limit');
@@ -363,29 +367,33 @@ function isTerminalResumeState(state: AgentWorkflowState): boolean {
   );
 }
 
-function nextNodeAfter(state: AgentWorkflowState): AgentWorkflowState['currentNode'] | null {
+function nextNodeAfter(
+  nodeJustRun: AgentWorkflowState['currentNode'] | null,
+  state: AgentWorkflowState,
+): AgentWorkflowState['currentNode'] | null {
   if (isTerminalResumeState(state)) return null;
-  if (!state.currentNode) return 'context';
-  if (state.currentNode === 'context') return 'planning';
-  if (state.currentNode === 'planning') return 'approval';
-  if (state.currentNode === 'approval') {
+  const node = nodeJustRun ?? state.currentNode;
+  if (!node) return 'context';
+  if (node === 'context') return 'planning';
+  if (node === 'planning') return 'approval';
+  if (node === 'approval') {
     const route = routeAfterApproval(state);
     return route === END ? null : route;
   }
-  if (state.currentNode === 'dispatch') return 'execute';
-  if (state.currentNode === 'execute') {
+  if (node === 'dispatch') return 'execute';
+  if (node === 'execute') {
     const route = routeAfterExecute(state);
     return route === END ? null : route;
   }
-  if (state.currentNode === 'review') {
+  if (node === 'review') {
     const route = routeAfterReview(state);
     return route === END ? null : route;
   }
-  if (state.currentNode === 'repair_decision') {
+  if (node === 'repair_decision') {
     const route = routeAfterRepairDecision(state);
     return route === END ? null : route;
   }
-  if (state.currentNode === 'verify') return 'acceptance';
-  if (state.currentNode === 'acceptance') return state.status === 'completed' ? 'memory' : null;
+  if (node === 'verify') return 'acceptance';
+  if (node === 'acceptance') return state.status === 'completed' ? 'memory' : null;
   return null;
 }

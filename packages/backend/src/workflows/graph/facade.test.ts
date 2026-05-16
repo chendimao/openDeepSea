@@ -284,6 +284,164 @@ test('workflowOrchestrator.retryStep restores failed graph child task and resume
   assert.ok(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length >= 2);
 });
 
+test('workflowOrchestrator.retryStep resumes repair decision through execute before review', async () => {
+  const task = createTask('graph-facade-repair-resume', 'Facade graph repair resume');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  addWorkflowAgent(task.room_id, 'reviewer');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Repair child task',
+    description: 'Repair retry should execute this child again.',
+    assigned_agent_id: executor.id,
+  });
+  taskRepo.updateStatus(child.id, 'review');
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'repair_decision',
+    childTaskIds: [child.id],
+    reviewVerdict: 'changes_requested',
+    error: 'Code review requested changes',
+  });
+  const executionOrder: string[] = [];
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      executionOrder.push(input.workflowStage ?? 'unknown');
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const content = input.workflowStage === 'code_review'
+        ? JSON.stringify({ verdict: 'pass', findings: [] })
+        : 'repair implementation completed';
+      return {
+        run: { ...agentRun, stdout: content },
+        message: fakeMessage(task.room_id, content),
+        status: 'completed',
+      };
+    },
+  });
+
+  await workflowOrchestrator.retryStep(run.id);
+  const steps = workflowRepo.listSteps(run.id);
+
+  assert.equal(taskRepo.get(child.id)?.status, 'review');
+  assert.equal(steps.some((step) => step.node_name === 'execute'), true);
+  assert.equal(steps.some((step) => step.node_name === 'review'), true);
+  assert.deepEqual(executionOrder.slice(0, 2), ['implementation', 'code_review']);
+});
+
+test('workflowOrchestrator.retryStep from review re-runs execute before review', async () => {
+  const task = createTask('graph-facade-review-retry', 'Facade graph review retry');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  addWorkflowAgent(task.room_id, 'reviewer');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Review retry child task',
+    description: 'Retry from review should execute first.',
+    assigned_agent_id: executor.id,
+  });
+  taskRepo.updateStatus(child.id, 'failed');
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'review',
+    childTaskIds: [child.id],
+    reviewVerdict: 'failed',
+    error: 'Code review failed',
+  });
+  const executionOrder: string[] = [];
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      executionOrder.push(input.workflowStage ?? 'unknown');
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const content = input.workflowStage === 'code_review'
+        ? JSON.stringify({ verdict: 'pass', findings: [] })
+        : 'review retry implementation completed';
+      return {
+        run: { ...agentRun, stdout: content },
+        message: fakeMessage(task.room_id, content),
+        status: 'completed',
+      };
+    },
+  });
+
+  await workflowOrchestrator.retryStep(run.id);
+
+  assert.equal(taskRepo.get(child.id)?.status, 'review');
+  assert.deepEqual(executionOrder.slice(0, 2), ['implementation', 'code_review']);
+});
+
+test('workflowOrchestrator.retryStep rejects graph retry while an agent run is active', async () => {
+  const task = createTask('graph-facade-active-retry', 'Facade graph active retry');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Active child task',
+    description: 'Retry should reject active work.',
+    assigned_agent_id: executor.id,
+  });
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'execute',
+    childTaskIds: [child.id],
+    error: 'Agent still active',
+  });
+  workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: child.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    assigned_room_agent_id: executor.id,
+    room_agent_id: executor.id,
+    prompt: 'active graph work',
+    sort_order: 1,
+  });
+  agentRunRepo.create({
+    room_id: task.room_id,
+    room_agent_id: executor.id,
+    agent_id: executor.agent_id,
+    backend: 'codex',
+    task_id: child.id,
+    workflow_run_id: run.id,
+    workflow_stage: 'implementation',
+    prompt: 'active graph work',
+  });
+  const before = agentRunRepo.listActiveByWorkflow(run.id).length;
+
+  await assert.rejects(
+    () => workflowOrchestrator.retryStep(run.id),
+    /workflow already has an active agent run/,
+  );
+
+  assert.equal(agentRunRepo.listActiveByWorkflow(run.id).length, before);
+  assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 1);
+});
+
 function createTask(projectSuffix: string, title: string) {
   const projectPath = join(tmpdir(), `${projectSuffix}-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -301,9 +459,10 @@ function createAwaitingGraphRun(
   task: Task,
   overrides: {
     status?: WorkflowRun['status'];
-    currentNode?: 'approval' | 'execute';
+    currentNode?: 'approval' | 'execute' | 'review' | 'repair_decision' | 'acceptance';
     childTaskIds?: string[];
     error?: string | null;
+    reviewVerdict?: 'pass' | 'changes_requested' | 'failed' | null;
   } = {},
 ) {
   const state = {
@@ -338,7 +497,7 @@ function createAwaitingGraphRun(
     activeAgentRunId: null,
     childTaskIds: overrides.childTaskIds ?? [],
     reviewFindings: [],
-    reviewVerdict: null,
+    reviewVerdict: overrides.reviewVerdict ?? null,
     verificationResults: [],
     repairAttempts: 0,
     approval: 'pending' as const,
