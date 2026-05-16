@@ -11,6 +11,17 @@ export type WorkflowStatus =
   | 'completed'
   | 'failed';
 export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
+export type GraphNodeName =
+  | 'context'
+  | 'planning'
+  | 'approval'
+  | 'dispatch'
+  | 'execute'
+  | 'review'
+  | 'repair_decision'
+  | 'verify'
+  | 'acceptance'
+  | 'memory';
 export type WorkflowStepStatus =
   | 'pending'
   | 'running'
@@ -209,6 +220,8 @@ export interface WorkflowRun {
   approved_at: number | null;
   approved_by: string | null;
   openclaw_flow_id: string | null;
+  graph_version: string | null;
+  graph_state: string | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;
@@ -220,9 +233,13 @@ export interface WorkflowStep {
   workflow_run_id: string;
   task_id: string;
   stage: WorkflowStage;
+  node_name: GraphNodeName | null;
   status: WorkflowStepStatus;
   room_agent_id: string | null;
+  assigned_room_agent_id: string | null;
   agent_run_id: string | null;
+  scope_read: string[];
+  scope_write: string[];
   prompt: string;
   result: string;
   result_message_id: string | null;

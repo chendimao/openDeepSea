@@ -238,6 +238,7 @@ function getLatestDecisionRequest(artifacts: TaskArtifact[]): DecisionRequest | 
 
 function StepRow({ step, agentName }: { step: WorkflowStep; agentName?: string }) {
   const { t, workflowStageLabel } = useI18n();
+  const scopeWriteText = step.scope_write.join(', ');
   return (
     <div className={cn('workflow-step-card', (step.status === 'failed' || step.status === 'interrupted') && 'is-failed')}>
       <div className="flex items-center gap-2">
@@ -249,6 +250,20 @@ function StepRow({ step, agentName }: { step: WorkflowStep; agentName?: string }
           {agentName ?? t('workflow.systemAgent')}
         </span>
       </div>
+      {(step.node_name || step.scope_write.length > 0) && (
+        <div className="mt-1 space-y-1">
+          {step.node_name && (
+            <div className="truncate font-mono text-[10.5px] text-[var(--color-fg-muted)]">
+              {t('workflow.graphNode', { node: step.node_name })}
+            </div>
+          )}
+          {step.scope_write.length > 0 && (
+            <div className="truncate text-[10.5px] text-[var(--color-fg-muted)]" title={scopeWriteText}>
+              {t('workflow.scopeWrite', { scope: scopeWriteText })}
+            </div>
+          )}
+        </div>
+      )}
       {step.result && (
         <div className="mt-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
           {truncate(step.result, 220)}

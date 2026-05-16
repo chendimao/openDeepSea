@@ -1339,7 +1339,7 @@ git commit -m "feat(workflows): 将编排入口代理到 LangGraph"
 - Modify: `packages/frontend/src/components/WorkflowTimeline.tsx`
 - Modify: `packages/frontend/src/lib/i18n.tsx`
 
-- [ ] **Step 1: Update frontend types**
+- [x] **Step 1: Update frontend types**
 
 Modify `packages/frontend/src/lib/types.ts`:
 
@@ -1369,7 +1369,7 @@ export interface WorkflowStep {
 }
 ```
 
-- [ ] **Step 2: Render graph metadata lightly**
+- [x] **Step 2: Render graph metadata lightly**
 
 Modify `WorkflowTimeline.tsx`:
 
@@ -1377,7 +1377,7 @@ Modify `WorkflowTimeline.tsx`:
 - If `scope_write.length > 0`, show collapsed or small text `scopeWrite: ...`.
 - Do not redesign timeline.
 
-- [ ] **Step 3: Add i18n keys**
+- [x] **Step 3: Add i18n keys**
 
 Add zh/en keys:
 
@@ -1388,7 +1388,7 @@ Add zh/en keys:
 
 and English equivalents.
 
-- [ ] **Step 4: Run frontend build**
+- [x] **Step 4: Run frontend build**
 
 Run:
 
@@ -1398,7 +1398,7 @@ PATH="$(dirname $(mise which node)):$PATH" npm run build -w @openclaw-room/front
 
 Expected: PASS, existing Vite chunk warning only.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/frontend/src/lib/types.ts packages/frontend/src/components/WorkflowTimeline.tsx packages/frontend/src/lib/i18n.tsx
