@@ -116,8 +116,10 @@ export function createGraphWorkflowRun(taskId: string): WorkflowRun {
 }
 
 export function enqueueGraphWorkflow(runId: string, deps: GraphRuntimeDeps = {}): void {
-  void continueGraphWorkflow(runId, deps).catch((err) => {
-    handleBackgroundGraphWorkflowError(runId, err);
+  setImmediate(() => {
+    void continueGraphWorkflow(runId, deps).catch((err) => {
+      handleBackgroundGraphWorkflowError(runId, err);
+    });
   });
 }
 

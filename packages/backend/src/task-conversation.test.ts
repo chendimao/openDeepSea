@@ -109,6 +109,43 @@ test('createTaskWithConversation stores task creation memory with task backgroun
   assert.match(taskMemory.content, /来源消息：existing message/);
 });
 
+test('createTaskWithConversation replays existing task for the same source message', () => {
+  const { roomId } = insertProjectAndRoom();
+  const source = insertStandaloneMessage(roomId);
+
+  const first = createTaskWithConversation({
+    roomId,
+    origin: 'slash_command',
+    sourceMessageId: source.id,
+    taskInput: { title: '从命令创建任务' },
+  });
+  const taskCountAfterFirst = db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE room_id = ?').get(roomId) as {
+    count: number;
+  };
+  const messageCountAfterFirst = db.prepare('SELECT COUNT(*) AS count FROM messages WHERE room_id = ?').get(roomId) as {
+    count: number;
+  };
+
+  const replayed = createTaskWithConversation({
+    roomId,
+    origin: 'slash_command',
+    sourceMessageId: source.id,
+    taskInput: { title: '从命令创建任务' },
+  });
+
+  const taskCountAfterReplay = db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE room_id = ?').get(roomId) as {
+    count: number;
+  };
+  const messageCountAfterReplay = db.prepare('SELECT COUNT(*) AS count FROM messages WHERE room_id = ?').get(roomId) as {
+    count: number;
+  };
+  assert.equal(replayed.task.id, first.task.id);
+  assert.equal(replayed.userMessage, null);
+  assert.equal(replayed.systemMessage.id, first.systemMessage.id);
+  assert.equal(taskCountAfterReplay.count, taskCountAfterFirst.count);
+  assert.equal(messageCountAfterReplay.count, messageCountAfterFirst.count);
+});
+
 test('createTaskCreationMemorySafely ignores duplicate task creation memory source', () => {
   const { projectId, roomId } = insertProjectAndRoom();
   const taskId = 'duplicate-memory-task';

@@ -31,6 +31,12 @@ export const taskRepo = {
     return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task | undefined;
   },
 
+  getBySourceMessage(roomId: string, sourceMessageId: string): Task | undefined {
+    return db
+      .prepare('SELECT * FROM tasks WHERE room_id = ? AND source_message_id = ? ORDER BY created_at ASC LIMIT 1')
+      .get(roomId, sourceMessageId) as Task | undefined;
+  },
+
   create(input: {
     room_id: string;
     project_id: string;

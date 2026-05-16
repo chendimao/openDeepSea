@@ -15,9 +15,40 @@ const { messageRepo } = await import('../../repos/messages.js');
 const { createGraphNodes } = await import('./nodes.js');
 const { parseGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
-const { startGraphWorkflow } = await import('./runtime.js');
+const { createGraphWorkflowRun, enqueueGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
 import type { RespondAsAgentInput } from '../../dispatcher.js';
 import type { RoomAgent, WorkflowStage } from '../../types.js';
+
+test('enqueueGraphWorkflow defers graph node execution until after the current turn', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-enqueue-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Enqueue', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Enqueue Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Enqueue without synchronous steps',
+  });
+  const run = createGraphWorkflowRun(task.id);
+
+  enqueueGraphWorkflow(run.id, {
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Deferred planning',
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: true,
+    }),
+  });
+
+  assert.equal(workflowRepo.listSteps(run.id).length, 0);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'context'));
+});
 
 test('startGraphWorkflow runs context and planning nodes into awaiting approval', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-${Date.now()}`);

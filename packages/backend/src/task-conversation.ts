@@ -71,6 +71,8 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
     sourceMessage = messageRepo.get(normalizedSourceMessageId);
     if (!sourceMessage) throw new Error('source message not found');
     if (sourceMessage.room_id !== input.roomId) throw new Error('source message room mismatch');
+    const replayed = findTaskCreationBySourceMessage(input.roomId, normalizedSourceMessageId);
+    if (replayed) return replayed;
   }
 
   const shouldCreateUserMessage = input.createUserMessage !== false && !normalizedSourceMessageId;
@@ -133,6 +135,23 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
   broadcastMessageCreated(input.roomId, result.systemMessage);
 
   return result;
+}
+
+function findTaskCreationBySourceMessage(roomId: string, sourceMessageId: string): CreateTaskWithConversationResult | null {
+  const task = taskRepo.getBySourceMessage(roomId, sourceMessageId);
+  if (!task) return null;
+  const systemMessage = db.prepare(
+    `SELECT * FROM messages
+     WHERE room_id = ?
+       AND metadata IS NOT NULL
+       AND json_valid(metadata)
+       AND json_extract(metadata, '$.event_type') = 'task_created'
+       AND json_extract(metadata, '$.task_id') = ?
+     ORDER BY created_at ASC, id ASC
+     LIMIT 1`,
+  ).get(roomId, task.id) as Message | undefined;
+  if (!systemMessage) return null;
+  return { task, userMessage: null, systemMessage };
 }
 
 export function createTaskCreationMemorySafely(input: {
