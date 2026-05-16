@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { adapters } from './acp/index.js';
 import { db } from './db.js';
 import { agentRunRepo } from './repos/agent-runs.js';
+import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
@@ -206,6 +207,148 @@ test('dispatchUserMessage marks empty successful ACP output as failed', async ()
   }
 });
 
+test('dispatchUserMessage triggers model distill after completed ACP reply when enabled', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-acp-distill-test-'));
+  const project = projectRepo.create({ name: `acp-distill-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'codex-distill', agent_name: 'CodexDistill' });
+  roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: agent.agent_id,
+    auto_distill_enabled: true,
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({ stream: 'stdout', text: 'Codex ACP 可以回复。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const message = messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: '请确认 Codex ACP 是否可用。',
+      message_type: 'text',
+    });
+
+    await dispatchUserMessage({
+      roomId: room.id,
+      userMessage: message,
+      distillModelInvoker: async (prompt) => {
+        assert.match(prompt, /Codex ACP 可以回复/);
+        return JSON.stringify([
+          { scope: 'room', memory_type: 'fact', title: 'ACP 可用', content: 'Codex ACP 可以回复。' },
+        ]);
+      },
+    });
+    await waitFor(() => memoryRepo.list({ projectId: project.id, roomId: room.id }).length > 0);
+
+    const memories = memoryRepo.list({ projectId: project.id, roomId: room.id });
+    const agentReply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === agent.agent_id);
+    assert.ok(agentReply);
+    assert.ok(
+      memories.some((item) => item.source_id?.startsWith(`${agentReply.id}#distill-`)),
+      'expected distill memory to use final agent reply as triggerMessageId',
+    );
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('dispatchUserMessage does not let disabled or missing model distill block ACP reply', async () => {
+  const restoreModelEnv = clearModelEnv();
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-acp-no-distill-test-'));
+  const project = projectRepo.create({ name: `acp-no-distill-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const disabledAgent = roomAgentRepo.add({ room_id: room.id, agent_id: 'disabled-distill', agent_name: 'DisabledDistill' });
+  const missingModelAgent = roomAgentRepo.add({ room_id: room.id, agent_id: 'missing-model-distill', agent_name: 'MissingModelDistill' });
+  for (const agent of [disabledAgent, missingModelAgent]) {
+    roomAgentRepo.setAcp(agent.id, {
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: null,
+      acp_session_label: null,
+      acp_permission_mode: 'bypass',
+      acp_writable_dirs: [],
+    });
+  }
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({ stream: 'stdout', text: 'ACP reply completed.' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    settingsRepo.updateProject(project.id, {
+      message_routing_mode: 'fallback_reply',
+      fallback_agent_id: disabledAgent.agent_id,
+      auto_distill_enabled: false,
+    });
+    const disabledMessage = messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: 'disabled distill should still reply',
+      message_type: 'text',
+    });
+
+    await dispatchUserMessage({ roomId: room.id, userMessage: disabledMessage });
+
+    const repliesAfterDisabled = messageRepo.listByRoom(room.id).filter((item) => item.sender_id === disabledAgent.agent_id);
+    assert.equal(repliesAfterDisabled.at(-1)?.content, 'ACP reply completed.');
+    assert.equal(memoryRepo.list({ projectId: project.id, roomId: room.id }).length, 0);
+
+    settingsRepo.updateProject(project.id, {
+      message_routing_mode: 'fallback_reply',
+      fallback_agent_id: missingModelAgent.agent_id,
+      auto_distill_enabled: true,
+    });
+    settingsRepo.updateSystem({
+      langchain_planner_model: null,
+      openai_api_key: null,
+      openai_base_url: null,
+    });
+    const missingModelMessage = messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: 'missing model distill should still reply',
+      message_type: 'text',
+    });
+
+    await dispatchUserMessage({ roomId: room.id, userMessage: missingModelMessage });
+
+    const repliesAfterMissingModel = messageRepo.listByRoom(room.id)
+      .filter((item) => item.sender_id === missingModelAgent.agent_id);
+    assert.equal(repliesAfterMissingModel.at(-1)?.content, 'ACP reply completed.');
+    assert.equal(memoryRepo.list({ projectId: project.id, roomId: room.id }).length, 0);
+  } finally {
+    adapters.codex = originalAdapter;
+    restoreModelEnv();
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('dispatchUserMessage replies with configured model when no agent target is available', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-test-'));
   const project = projectRepo.create({ name: `model-chat-${Date.now()}`, path: projectPath });
@@ -258,4 +401,30 @@ function createMessage(metadata: MessageMetadata): Message {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function waitFor(assertion: () => boolean, timeoutMs = 1000): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (assertion()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.ok(assertion(), 'condition did not become true before timeout');
+}
+
+function clearModelEnv(): () => void {
+  const original = {
+    LANGCHAIN_PLANNER_MODEL: process.env.LANGCHAIN_PLANNER_MODEL,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+  };
+  delete process.env.LANGCHAIN_PLANNER_MODEL;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_BASE_URL;
+  return () => {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
 }

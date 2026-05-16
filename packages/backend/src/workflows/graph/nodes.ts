@@ -834,14 +834,26 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       } else {
         try {
           const verdict = parseAcceptanceVerdict(acceptanceArtifact.content);
+          const taskSummary = buildTaskSummaryMemoryContent(context.task.title, verdict);
           tools.upsertTaskSummaryMemory({
             project_id: context.run.project_id,
             room_id: context.run.room_id,
             task_id: context.run.task_id,
             title: `任务完成：${context.task.title}`,
-            content: buildTaskSummaryMemoryContent(context.task.title, verdict),
+            content: taskSummary,
             source_id: context.run.id,
           });
+          const autoDistillEnabled = tools.resolveRoomSettings(context.room.id)?.effective.auto_distill_enabled ?? true;
+          if (autoDistillEnabled) {
+            tools.distillTask({
+              projectId: context.project.id,
+              roomId: context.room.id,
+              taskId: context.task.id,
+              taskTitle: context.task.title,
+              taskSummary,
+              sourceId: context.run.id,
+            }).catch((err) => console.warn(`[distill] graph task distill error: ${(err as Error).message}`));
+          }
         } catch (err) {
           console.warn(`[graph-memory] failed to parse/write task summary: ${(err as Error).message}`);
         }

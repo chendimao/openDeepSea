@@ -14,6 +14,8 @@ const { settingsRepo } = await import('../repos/settings.js');
 const { taskRepo } = await import('../repos/tasks.js');
 const { workflowRepo } = await import('../repos/workflows.js');
 const { buildTaskSummaryMemoryContent, rememberAcceptedTask } = await import('./orchestrator.js');
+const { createGraphNodes } = await import('./graph/nodes.js');
+const { createGraphTools } = await import('./graph/tools.js');
 import { buildStagePrompt } from './prompts.js';
 
 test('buildStagePrompt includes memory context when provided', () => {
@@ -105,6 +107,57 @@ test('rememberAcceptedTask saves task summary but skips LLM distill when auto di
   assert.equal(memories[0]?.source_id, run.id);
 });
 
+test('graph memory node distills accepted task only when auto distill is enabled', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-memory-distill-project-'));
+  const project = projectRepo.create({ name: 'Graph Memory Distill', path: projectPath });
+  const disabledRoom = roomRepo.create({ project_id: project.id, name: 'Graph Distill Disabled Room' });
+  const enabledRoom = roomRepo.create({ project_id: project.id, name: 'Graph Distill Enabled Room' });
+  const distillCalls: Array<{ taskId: string; sourceId: string; taskSummary: string }> = [];
+
+  settingsRepo.updateRoom(disabledRoom.id, { auto_distill_enabled: false });
+  settingsRepo.updateRoom(enabledRoom.id, { auto_distill_enabled: true });
+
+  const disabled = createAcceptedGraphRun({
+    projectId: project.id,
+    roomId: disabledRoom.id,
+    title: 'Disabled graph distill task',
+  });
+  const enabled = createAcceptedGraphRun({
+    projectId: project.id,
+    roomId: enabledRoom.id,
+    title: 'Enabled graph distill task',
+  });
+  const tools = createGraphTools();
+  tools.distillTask = async (input) => {
+    distillCalls.push({
+      taskId: input.taskId,
+      sourceId: input.sourceId,
+      taskSummary: input.taskSummary,
+    });
+  };
+
+  await createGraphNodes(tools).memoryNode(baseGraphState({
+    runId: disabled.run.id,
+    projectId: project.id,
+    roomId: disabledRoom.id,
+    taskId: disabled.task.id,
+    taskTitle: disabled.task.title,
+    projectPath,
+  }));
+  await createGraphNodes(tools).memoryNode(baseGraphState({
+    runId: enabled.run.id,
+    projectId: project.id,
+    roomId: enabledRoom.id,
+    taskId: enabled.task.id,
+    taskTitle: enabled.task.title,
+    projectPath,
+  }));
+
+  assert.deepEqual(distillCalls.map((call) => call.taskId), [enabled.task.id]);
+  assert.equal(distillCalls[0]?.sourceId, enabled.run.id);
+  assert.match(distillCalls[0]?.taskSummary ?? '', /summary for Enabled graph distill task/);
+});
+
 function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
   return {
     projectName: 'Memory Project',
@@ -135,5 +188,69 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
     },
     agents: [],
     artifacts: [],
+  };
+}
+
+function createAcceptedGraphRun(input: {
+  projectId: string;
+  roomId: string;
+  title: string;
+}) {
+  const task = taskRepo.create({
+    project_id: input.projectId,
+    room_id: input.roomId,
+    title: input.title,
+    description: 'Exercise graph memory distill.',
+  });
+  const run = workflowRepo.createRun({
+    project_id: input.projectId,
+    room_id: input.roomId,
+    task_id: task.id,
+    status: 'running',
+    current_stage: 'acceptance',
+    graph_version: 'phase-b-v1',
+  });
+  workflowRepo.createArtifact({
+    task_id: task.id,
+    workflow_run_id: run.id,
+    artifact_type: 'acceptance',
+    title: '功能验收',
+    content: JSON.stringify({
+      verdict: 'pass',
+      acceptedCriteria: [`summary for ${input.title}`],
+      failedCriteria: [],
+      notes: 'Accepted.',
+    }),
+  });
+  return { task, run };
+}
+
+function baseGraphState(input: {
+  runId: string;
+  projectId: string;
+  roomId: string;
+  taskId: string;
+  taskTitle: string;
+  projectPath: string;
+}) {
+  return {
+    workflowRunId: input.runId,
+    projectId: input.projectId,
+    roomId: input.roomId,
+    taskId: input.taskId,
+    userGoal: input.taskTitle,
+    projectPath: input.projectPath,
+    plan: null,
+    currentNode: 'acceptance' as const,
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [],
+    reviewFindings: [],
+    reviewVerdict: 'pass' as const,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required' as const,
+    status: 'completed' as const,
+    error: null,
   };
 }

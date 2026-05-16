@@ -1,10 +1,12 @@
 import { formatMemoryContext } from '../../memory/context.js';
+import { distillFromTask } from '../../memory/distill.js';
 import { runAgentOnce, type RespondAsAgentInput } from '../../dispatcher.js';
 import { agentRunRepo } from '../../repos/agent-runs.js';
 import { memoryRepo } from '../../repos/memory.js';
 import { messageRepo } from '../../repos/messages.js';
 import { projectRepo } from '../../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
+import { settingsRepo } from '../../repos/settings.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { recordTaskEvent } from '../../task-conversation.js';
@@ -20,6 +22,7 @@ import type {
   WorkflowRole,
   WorkflowRun,
   WorkflowStep,
+  SettingsResolution,
 } from '../../types.js';
 import { wsHub } from '../../ws-hub.js';
 import { generateLangChainPlan, type LangChainPlannerInput } from '../langchain-planner.js';
@@ -84,6 +87,8 @@ export interface GraphTools {
     status: AgentRunStatus;
   }>;
   upsertTaskSummaryMemory: typeof memoryRepo.upsertTaskSummary;
+  resolveRoomSettings: (roomId: string) => SettingsResolution | null;
+  distillTask: typeof distillFromTask;
   listActiveAgentRunsByWorkflow: typeof agentRunRepo.listActiveByWorkflow;
   interruptAgentRun: typeof agentRunRepo.interruptRun;
   parseGraphState: typeof parseGraphState;
@@ -183,6 +188,8 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     },
     runAcpAgent,
     upsertTaskSummaryMemory: memoryRepo.upsertTaskSummary.bind(memoryRepo),
+    resolveRoomSettings: settingsRepo.resolveForRoom.bind(settingsRepo),
+    distillTask: distillFromTask,
     listActiveAgentRunsByWorkflow: agentRunRepo.listActiveByWorkflow.bind(agentRunRepo),
     interruptAgentRun: agentRunRepo.interruptRun.bind(agentRunRepo),
     parseGraphState,

@@ -1,3 +1,5 @@
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { invokeConfiguredModelText } from '../chat-model.js';
 import { memoryRepo } from '../repos/memory.js';
 import { messageRepo } from '../repos/messages.js';
 import type { MemoryScope, MemoryType, Message } from '../types.js';
@@ -11,6 +13,8 @@ interface CandidateMemory {
   title: string;
   content: string;
 }
+
+export type MemoryDistillModelInvoker = (prompt: string) => Promise<string>;
 
 const REPLY_DISTILL_PROMPT = `你是记忆提取助手。请从以下对话中提取值得长期记住的信息。
 
@@ -107,8 +111,12 @@ function buildDistillSourceId(sourceId: string, index: number): string {
   return `${sourceId}#distill-${index + 1}`;
 }
 
-async function callDistillLLM(_prompt: string, _roomId: string): Promise<string> {
-  return '';
+async function callDistillLLM(prompt: string, modelInvoker?: MemoryDistillModelInvoker): Promise<string> {
+  if (modelInvoker) return modelInvoker(prompt);
+  return invokeConfiguredModelText([
+    new SystemMessage('你是记忆提取助手，只返回 JSON。'),
+    new HumanMessage(prompt),
+  ]);
 }
 
 /**
@@ -119,8 +127,9 @@ export async function distillFromConversation(args: {
   projectId: string;
   roomId: string;
   triggerMessageId: string;
+  modelInvoker?: MemoryDistillModelInvoker;
 }): Promise<void> {
-  const { projectId, roomId, triggerMessageId } = args;
+  const { projectId, roomId, triggerMessageId, modelInvoker } = args;
   try {
     const messages = messageRepo.listByRoom(roomId, MAX_CONTEXT_MESSAGES * 2);
     const recent = messages.slice(-MAX_CONTEXT_MESSAGES);
@@ -133,7 +142,7 @@ export async function distillFromConversation(args: {
       .replace('{existingMemories}', existingMemories)
       .replace('{conversation}', conversation);
 
-    const response = await callDistillLLM(prompt, roomId);
+    const response = await callDistillLLM(prompt, modelInvoker);
     if (!response) return;
 
     const candidates = parseCandidates(response);
@@ -170,8 +179,9 @@ export async function distillFromTask(args: {
   taskTitle: string;
   taskSummary: string;
   sourceId: string;
+  modelInvoker?: MemoryDistillModelInvoker;
 }): Promise<void> {
-  const { projectId, roomId, taskId, taskTitle, taskSummary, sourceId } = args;
+  const { projectId, roomId, taskId, taskTitle, taskSummary, sourceId, modelInvoker } = args;
   try {
     const messages = messageRepo.listByRoom(roomId, MAX_TASK_MESSAGES * 2);
     if (messages.length < 3) return;
@@ -185,7 +195,7 @@ export async function distillFromTask(args: {
       .replace('{existingMemories}', existingMemories)
       .replace('{conversation}', conversation);
 
-    const response = await callDistillLLM(prompt, roomId);
+    const response = await callDistillLLM(prompt, modelInvoker);
     if (!response) return;
 
     const candidates = parseCandidates(response);

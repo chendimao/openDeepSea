@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
-import { distillFromConversation } from './memory/distill.js';
+import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
@@ -26,6 +26,7 @@ export async function dispatchUserMessage(args: {
   userMessage: Message;
   mentionedAgentRoomIds?: string[];
   modelChatInvoker?: ModelChatInvoker;
+  distillModelInvoker?: MemoryDistillModelInvoker;
 }): Promise<void> {
   const { roomId, userMessage } = args;
   const room = roomRepo.get(roomId);
@@ -67,6 +68,7 @@ export async function dispatchUserMessage(args: {
     projectPath: project.path,
     roomId,
     imagePaths,
+    distillModelInvoker: args.distillModelInvoker,
   });
 
   const fallbackTarget = routing.targets[0];
@@ -84,6 +86,7 @@ export async function dispatchUserMessage(args: {
       projectPath: project.path,
       roomId,
       imagePaths,
+      distillModelInvoker: args.distillModelInvoker,
     });
   }
 }
@@ -142,6 +145,7 @@ export interface RespondAsAgentInput {
   workflowRunId?: string | null;
   workflowStepId?: string | null;
   workflowStage?: WorkflowStage | null;
+  distillModelInvoker?: MemoryDistillModelInvoker;
   onRunCreated?: (run: AgentRun) => Promise<void> | void;
   onFinished?: (result: { run: AgentRun; message: Message; status: AgentRunStatus }) => Promise<void> | void;
 }
@@ -230,6 +234,7 @@ async function runTargets(args: {
   projectPath: string;
   roomId: string;
   imagePaths?: string[];
+  distillModelInvoker?: MemoryDistillModelInvoker;
 }): Promise<Array<Message | undefined>> {
   return Promise.all(
     args.targets.map(async (target) => {
@@ -240,6 +245,7 @@ async function runTargets(args: {
         roomId: args.roomId,
         prompt: target.prompt,
         imagePaths: args.imagePaths,
+        distillModelInvoker: args.distillModelInvoker,
         onFinished: ({ message }) => {
           finalMessage = message;
         },
@@ -529,6 +535,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           projectId: room.project_id,
           roomId,
           triggerMessageId: placeholder.id,
+          modelInvoker: args.distillModelInvoker,
         }).catch((err) => console.warn(`[distill] async distill error: ${(err as Error).message}`));
       }
     }

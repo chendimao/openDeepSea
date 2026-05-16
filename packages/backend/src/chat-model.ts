@@ -42,7 +42,7 @@ export function buildModelChatMessages(input: ModelChatInput): Array<SystemMessa
 
   return [
     new SystemMessage([
-      '你是 OpenClaw Room 的通用聊天助手。',
+      '你是 OpenDeepSea 的通用聊天助手。',
       '当聊天室没有可用 agent 或没有触发 agent 路由时，你负责直接回答用户。',
       '回答要简洁、具体、可执行；如果用户提出开发任务，可以给出下一步建议，但不要声称已经修改文件。',
       `当前项目：${input.project.name}`,
@@ -58,16 +58,22 @@ export function buildModelChatMessages(input: ModelChatInput): Array<SystemMessa
   ];
 }
 
+export async function invokeConfiguredModelText(messages: Array<SystemMessage | HumanMessage>): Promise<string> {
+  const config = getRuntimeLangChainPlannerConfig();
+  if (!config.enabled || !config.model || !config.apiKey) return '';
+  const model = new ChatOpenAI(buildChatOpenAIFields(config));
+  const response = await model.invoke(messages);
+  return extractPlannerText(response.content).trim();
+}
+
 function createDefaultModelChatInvoker(): ModelChatInvoker {
   const config = getRuntimeLangChainPlannerConfig();
   if (!config.enabled || !config.model || !config.apiKey) {
     throw new Error('Model chat is not configured');
   }
-  const model = new ChatOpenAI(buildChatOpenAIFields(config));
   return {
     async invoke(messages) {
-      const response = await model.invoke(messages);
-      return response.content;
+      return invokeConfiguredModelText(messages);
     },
   };
 }
