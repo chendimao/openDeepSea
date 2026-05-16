@@ -58,7 +58,7 @@ test('buildPromptWithMessageAttachments appends readable attachment context', ()
   assert.match(prompt, new RegExp(`localPath=${escapeRegExp(messageUploadDir)}/stored\\.png`));
 });
 
-test('dispatchUserMessage reports non-ACP agent as not executable without Gateway', async () => {
+test('dispatchUserMessage reports non-ACP agent as not executable', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-no-gateway-test-'));
   const project = projectRepo.create({ name: `no-gateway-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });

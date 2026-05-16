@@ -92,7 +92,7 @@ export function buildPlannerMessages(input: LangChainPlannerInput): PlannerMessa
   return [
     new SystemMessage(
       [
-        'You are the LangChain planning service for OpenClaw Room.',
+        'You are the LangChain planning service for OpenDeepSea.',
         'Return only a fenced JSON object using the modern plan schema.',
         'The root object must include goal, summary, assumptions, steps, risks, verification, and needsApproval.',
         'Each step must include title, intent, assigneeRole, scopeRead, scopeWrite, acceptance, and dependsOn.',

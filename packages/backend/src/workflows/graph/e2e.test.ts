@@ -42,7 +42,7 @@ test.afterEach(() => {
   }
 });
 
-test('graph runtime completes ACP-only development loop without OpenClaw gateway', async () => {
+test('graph runtime completes ACP-only development loop', async () => {
   process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-e2e-project-'));
   projectPathsToCleanup.push(projectPath);
@@ -56,7 +56,7 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
     room_id: room.id,
     project_id: project.id,
     title: 'Complete graph runtime loop',
-    description: 'Verify graph runtime can complete without OpenClaw Gateway.',
+    description: 'Verify graph runtime can complete with ACP-only agents.',
   });
   const agentCalls: AgentCall[] = [];
 
@@ -64,7 +64,7 @@ test('graph runtime completes ACP-only development loop without OpenClaw gateway
     planner: async () => ({
       goal: task.title,
       summary: 'Exercise the no-approval graph runtime loop.',
-      assumptions: ['OpenClaw Gateway is not required for ACP-only agents.'],
+      assumptions: ['ACP-only agents are sufficient for the graph runtime.'],
       tasks: [{
         title: 'Implement graph loop output',
         description: 'Produce implementation output for review and acceptance.',

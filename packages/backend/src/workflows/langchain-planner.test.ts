@@ -6,6 +6,7 @@ import {
   extractPlannerText,
   generateLangChainPlan,
   getLangChainPlannerConfig,
+  buildPlannerMessages,
   normalizeOpenAIBaseURL,
 } from './langchain-planner.js';
 import type { Room, RoomAgent, Task } from '../types.js';
@@ -73,6 +74,23 @@ test('normalizeOpenAIBaseURL appends /v1 for root OpenAI-compatible hosts', () =
   assert.equal(normalizeOpenAIBaseURL('https://yuzapi.fun/'), 'https://yuzapi.fun/v1');
   assert.equal(normalizeOpenAIBaseURL('https://yuzapi.fun/v1'), 'https://yuzapi.fun/v1');
   assert.equal(normalizeOpenAIBaseURL('https://proxy.example/openai'), 'https://proxy.example/openai');
+});
+
+test('buildPlannerMessages uses current product name in system prompt', () => {
+  const [systemMessage] = buildPlannerMessages({
+    projectName: 'OpenDeepSea',
+    projectPath: '/repo/openDeepSea',
+    room: fakeRoom(),
+    task: fakeTask(),
+    agents: [],
+    memories: [],
+    recentMessages: [],
+  });
+
+  assert.ok(systemMessage);
+  const systemContent = String(systemMessage.content);
+  assert.match(systemContent, /OpenDeepSea/);
+  assert.equal(systemContent.includes(`Open${'Claw'} Room`), false);
 });
 
 test('generateLangChainPlan validates model output into ParsedPlan', async () => {
