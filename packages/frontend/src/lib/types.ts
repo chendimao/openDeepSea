@@ -333,10 +333,3 @@ export interface BuiltInAgentTemplate {
   acp_backend: AcpBackend;
   capabilities: string[];
 }
-
-export interface OpenClawAgent {
-  id: string;
-  name?: string;
-  description?: string;
-  workspace?: string;
-}

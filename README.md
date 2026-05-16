@@ -1,30 +1,33 @@
-# OpenClaw Room 🦞
+# OpenDeepSea
 
-> 基于 OpenClaw 的多智能体协作项目管理系统 — Deep Ocean Command Center
+> 本地优先的 ACP 多智能体协作项目管理系统
 
 ## 概述
 
-OpenClaw Room 是一个本地优先的项目管理系统，让 OpenClaw 的多个智能体 (profiles) 在聊天室中协作完成开发任务。每个智能体可独立配置 ACP 后端 (Claude Code / OpenCode / Codex)，复用各 CLI 的本地 session 上下文继续开发。
+OpenDeepSea 是一个本地优先的项目管理系统，让多个 ACP agent 在聊天室中协作完成开发任务。每个智能体可绑定 Claude Code、OpenCode 或 Codex 等 ACP 后端，复用各 CLI 的本地 session 上下文继续开发。
 
 ## 核心功能
 
 - 📁 **项目管理** — 添加本地项目，追踪任务进度
-- 💬 **聊天室协作** — 拉入 OpenClaw agents 协作完成任务
-- 🤖 **多 agent 调度** — 通过 OpenClaw Gateway 路由消息
-- ⚙️ **ACP 编码** — 每个 profile 可绑定 Claude Code/OpenCode/Codex，继承本地 CLI session
+- 💬 **聊天室协作** — 邀请 ACP agents 协作完成任务
+- 🤖 **多 agent 调度** — 基于房间消息、@ 提及与任务流转调度 agent
+- ⚙️ **ACP 编码** — 每个 agent 可绑定 Claude Code/OpenCode/Codex，继承本地 CLI session
 - 📋 **任务看板** — Kanban 风格任务流转
 
 ## 技术栈
 
 - **前端**: React 18 + TypeScript + Vite + TailwindCSS v4 + shadcn/ui
 - **后端**: Node.js + Express + ws (WebSocket) + better-sqlite3
-- **集成**: OpenClaw Gateway (ws://127.0.0.1:18789) + ACP CLI 子进程
+- **集成**: ACP CLI 子进程 + OpenAI-compatible 模型配置
 
 ## 前置要求
 
 - Node.js >= 20
-- 本地已安装并运行 OpenClaw Gateway
-- 可选: Claude Code / OpenCode / Codex CLI (用于 ACP 功能)
+- 可选: Claude Code / OpenCode / Codex CLI (用于 ACP agent)
+
+## 兼容说明
+
+仓库内仍保留部分历史 package name、localStorage key、数据库字段和类型 union，用于迁移兼容；这些名称不代表当前需要外部 Gateway 运行时。
 
 ### Optional: LangChain Planner
 
@@ -61,7 +64,7 @@ npm run dev
 ## 目录结构
 
 ```
-openclaw-room/
+openDeepSea/
 ├── packages/
 │   ├── backend/        # Express + SQLite + WS 服务
 │   └── frontend/       # React + Vite Web 客户端

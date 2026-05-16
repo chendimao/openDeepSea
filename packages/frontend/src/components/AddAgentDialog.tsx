@@ -1,29 +1,30 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Loader2, Pencil, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
+import type { AcpBackend } from '../lib/types';
 import { cn } from '../lib/utils';
 import { Button } from './ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { Input, Label } from './ui/Input';
+
+const ACP_BACKENDS: { id: AcpBackend; label: string }[] = [
+  { id: 'codex', label: 'Codex' },
+  { id: 'claudecode', label: 'Claude Code' },
+  { id: 'opencode', label: 'OpenCode' },
+];
 
 export function AddAgentDialog({ roomId, children }: { roomId: string; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [agentId, setAgentId] = useState('');
   const [agentName, setAgentName] = useState('');
   const [agentRole, setAgentRole] = useState('');
-  const [picked, setPicked] = useState<string | null>(null);
-  const [manualOpen, setManualOpen] = useState(false);
+  const [acpBackend, setAcpBackend] = useState<AcpBackend>('codex');
   const queryClient = useQueryClient();
   const { t } = useI18n();
 
-  const { data: gw, error: gatewayError, isLoading: gatewayLoading } = useQuery({
-    queryKey: ['gateway-agents'],
-    queryFn: api.listGatewayAgents,
-    enabled: open,
-  });
   const {
     data: templateData,
     error: templateError,
@@ -34,25 +35,13 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
     enabled: open,
   });
 
-  const hasOpenClawAgents = Boolean(gw?.connected && gw.agents.length > 0);
-  const showManualFields = !hasOpenClawAgents || manualOpen;
-  const gatewayErrorMessage = gatewayError instanceof Error ? gatewayError.message : gw?.error;
   const templateErrorMessage = templateError instanceof Error ? templateError.message : undefined;
-
-  useEffect(() => {
-    if (!open || manualOpen || !gw?.connected || gw.agents.length === 0 || picked || agentId.trim()) return;
-    const first = gw.agents[0];
-    setPicked(first.id);
-    setAgentId(first.id);
-    setAgentName(first.name ?? first.id);
-  }, [agentId, gw, manualOpen, open, picked]);
 
   function resetForm() {
     setAgentId('');
     setAgentName('');
     setAgentRole('');
-    setPicked(null);
-    setManualOpen(false);
+    setAcpBackend('codex');
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -61,12 +50,25 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
   }
 
   const add = useMutation({
-    mutationFn: () =>
-      api.addRoomAgent(roomId, {
+    mutationFn: async () => {
+      const agent = await api.addRoomAgent(roomId, {
         agent_id: agentId,
         agent_name: agentName || agentId,
         agent_role: agentRole || undefined,
-    }),
+      });
+      try {
+        return await api.setAgentAcp(roomId, agent.id, {
+          acp_enabled: true,
+          acp_backend: acpBackend,
+          acp_session_id: null,
+          acp_session_label: null,
+          acp_permission_mode: 'bypass',
+        });
+      } catch (err) {
+        await api.removeRoomAgent(roomId, agent.id).catch(() => undefined);
+        throw err;
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       toast.success(t('addAgent.success'));
@@ -162,83 +164,16 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
           </div>
 
           <div>
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-              <Label className="mb-0">OpenClaw Agents</Label>
-              {gatewayLoading && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-fg-muted)]">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  {t('addAgent.loadingShort')}
-                </span>
-              )}
+            <div className="mb-1.5 flex items-center gap-2">
+              <Pencil className="h-3.5 w-3.5 text-[var(--color-primary)]" strokeWidth={1.75} />
+              <Label className="mb-0">{t('addAgent.manualAcp')}</Label>
             </div>
-
-            {!gw && gatewayLoading ? (
-              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                {t('gateway.readingAgents')}
-              </div>
-            ) : !gw?.connected ? (
-              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                {gatewayErrorMessage
-                  ? t('addAgent.readFailedManualWithMessage', { message: gatewayErrorMessage })
-                  : t('addAgent.readFailedManual')}
-              </div>
-            ) : gw.agents.length === 0 ? (
-              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                {t('addAgent.noAgentsManual')}
-              </div>
-            ) : (
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                {gw.agents.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    aria-pressed={picked === a.id}
-                    onClick={() => {
-                      setPicked(a.id);
-                      setAgentId(a.id);
-                      setAgentName(a.name ?? a.id);
-                    }}
-                    className={cn(
-                      'w-full surface-1 rounded-md px-3 py-2 text-left ease-ocean transition-all flex items-start gap-2',
-                      'hover:border-[var(--color-border-strong)] focus-visible:outline-none focus-visible:border-[var(--color-primary)]',
-                      picked === a.id ? 'border-[var(--color-primary)] glow-primary' : '',
-                    )}
-                  >
-                    <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" strokeWidth={1.75} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-display text-[13px]">{a.name ?? a.id}</span>
-                        <span className="shrink-0 font-mono text-[11px] text-[var(--color-fg-muted)]">{a.id}</span>
-                      </div>
-                      {(a.description || a.workspace) && (
-                        <div className="mt-0.5 truncate text-[11px] text-[var(--color-fg-muted)]">
-                          {a.description ?? a.workspace}
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {hasOpenClawAgents && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setManualOpen((value) => !value)}>
-              <Pencil className="h-3.5 w-3.5" />
-              {manualOpen ? t('addAgent.manualCollapse') : t('addAgent.manualOpen')}
-            </Button>
-          )}
-
-          {showManualFields && (
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label>Agent ID</Label>
                 <Input
                   value={agentId}
-                  onChange={(e) => {
-                    setPicked(null);
-                    setAgentId(e.target.value);
-                  }}
+                  onChange={(e) => setAgentId(e.target.value)}
                   placeholder="main / coder / qa"
                   className="font-mono"
                 />
@@ -247,8 +182,22 @@ export function AddAgentDialog({ roomId, children }: { roomId: string; children?
                 <Label>{t('addAgent.displayName')}</Label>
                 <Input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Coder" />
               </div>
+              <div className="col-span-2">
+                <Label>{t('addAgent.acpBackend')}</Label>
+                <select
+                  value={acpBackend}
+                  onChange={(e) => setAcpBackend(e.target.value as AcpBackend)}
+                  className="surface-1 h-10 w-full rounded-lg px-3 font-mono text-[13px] outline-none focus:border-[var(--color-primary)] focus:glow-primary"
+                >
+                  {ACP_BACKENDS.map((backend) => (
+                    <option key={backend.id} value={backend.id}>
+                      {backend.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-          )}
+          </div>
 
           <div>
             <Label>{t('addAgent.role')}</Label>

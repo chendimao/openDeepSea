@@ -8,7 +8,6 @@ import type {
   MemorySearchResult,
   Message,
   MessageRoutingMode,
-  OpenClawAgent,
   Project,
   Room,
   RoomAgent,
@@ -21,15 +20,6 @@ import type {
 } from './types';
 
 const BASE = '/api';
-
-export interface OpenClawGatewayStatus {
-  ok: boolean;
-  running: boolean;
-  pid: number | null;
-  rpcOk: boolean;
-  capability: string | null;
-  error?: string;
-}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isFormData = init.body instanceof FormData;
@@ -53,12 +43,7 @@ export const api = {
   health: () =>
     request<{
       ok: boolean;
-      gateway: boolean;
-      gatewayStatus: OpenClawGatewayStatus;
-      gatewayRpcConnected: boolean;
     }>('/health'),
-  listGatewayAgents: () =>
-    request<{ agents: OpenClawAgent[]; connected: boolean; error?: string }>('/gateway/agents'),
   listAgentTemplates: () =>
     request<{ templates: BuiltInAgentTemplate[] }>('/agent-templates'),
 

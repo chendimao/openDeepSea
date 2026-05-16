@@ -2,9 +2,9 @@
 
 ## 项目结构与模块组织
 
-本仓库是 OpenClaw Room 的私有 npm workspace，用于本地优先的多智能体项目管理。
+本仓库是 OpenDeepSea 的私有 npm workspace，用于本地优先的 ACP 多智能体项目管理。
 
-- `packages/backend/`：Node.js、Express、WebSocket、SQLite 与 OpenClaw Gateway 集成。
+- `packages/backend/`：Node.js、Express、WebSocket、SQLite 与 ACP 子进程集成。
 - `packages/backend/src/repos/`：项目、房间、任务、消息等 SQLite 仓储模块。
 - `packages/backend/src/acp/`：Codex、Claude Code、OpenCode 的 ACP provider 适配层。
 - `packages/frontend/`：React 18、TypeScript、Vite Web 客户端。
@@ -39,7 +39,9 @@
 
 当前 checkout 不包含 Git 历史，因此无法推断项目既有提交格式。请使用简洁的 Conventional Commits，例如 `feat(frontend): add room filters` 或 `fix(backend): validate room subscriptions`。
 
-Pull Request 应包含变更摘要、已执行的验证、关联 issue 或任务；涉及可见 UI 变化时附截图。若依赖本地服务，也要说明，尤其是 OpenClaw Gateway：`ws://127.0.0.1:18789`。
+Pull Request 应包含变更摘要、已执行的验证、关联 issue 或任务；涉及可见 UI 变化时附截图。若依赖本地服务或 ACP CLI，也要说明。
+
+历史 package name、localStorage key、数据库字段和类型 union 可继续保留作迁移兼容；不要把这些内部兼容名称重新包装成用户可见运行时依赖。
 
 ## 安全与配置提示
 

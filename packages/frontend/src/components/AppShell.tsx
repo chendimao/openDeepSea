@@ -7,15 +7,10 @@ import {
   FolderKanban,
   GitBranch,
   Home,
-  Loader2,
   Plus,
-  RefreshCw,
   Search,
-  Server,
   Settings,
   SquareCheck,
-  Wifi,
-  WifiOff,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -25,7 +20,6 @@ import { LobsterMark } from './LobsterMark';
 import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
 import { SystemSettingsDialog } from './SettingsDialogs';
-import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { type ThemeMode } from '../lib/theme';
 
 export function AppShell({
@@ -111,15 +105,6 @@ function ProjectSidebar({
   onOpenCommand: () => void;
 }): JSX.Element {
   const { t } = useI18n();
-  const {
-    data: health,
-    error: healthError,
-    isLoading: healthLoading,
-  } = useQuery({
-    queryKey: ['health'],
-    queryFn: api.health,
-    refetchInterval: 10_000,
-  });
 
   return (
     <div className="glass-sidebar flex h-full flex-col">
@@ -226,168 +211,6 @@ function ProjectSidebar({
           </div>
         </div>
       </div>
-
-      <div className="px-5 pb-4">
-        <OpenClawGatewayDialog
-          health={health}
-          healthError={healthError}
-          healthLoading={healthLoading}
-        />
-      </div>
-    </div>
-  );
-}
-
-function OpenClawGatewayDialog({
-  health,
-  healthError,
-  healthLoading,
-}: {
-  health?: Awaited<ReturnType<typeof api.health>>;
-  healthError: unknown;
-  healthLoading: boolean;
-}): JSX.Element {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const {
-    data: gatewayAgents,
-    error: agentsError,
-    isLoading: agentsLoading,
-    refetch,
-  } = useQuery({
-    queryKey: ['gateway-agents'],
-    queryFn: api.listGatewayAgents,
-    enabled: open,
-  });
-  const connected = Boolean(health?.gatewayStatus?.running);
-  const rpcConnected = Boolean(health?.gatewayStatus?.rpcOk || health?.gatewayRpcConnected);
-  const statusLabel = healthLoading
-    ? t('gateway.checking')
-    : connected
-      ? rpcConnected
-        ? t('gateway.online')
-        : t('gateway.running')
-      : t('gateway.offline');
-  const statusClass = healthLoading ? 'is-loading' : connected ? 'is-online' : 'is-offline';
-  const StatusIcon = healthLoading ? Loader2 : connected ? Wifi : WifiOff;
-  const healthMessage = healthError instanceof Error
-    ? healthError.message
-    : health?.gatewayStatus?.error;
-  const agentsMessage = agentsError instanceof Error ? agentsError.message : gatewayAgents?.error;
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button type="button" className={cn('gateway-status-button', statusClass)}>
-          <span className="gateway-status-light" />
-          <StatusIcon
-            className={cn('h-3.5 w-3.5', healthLoading && 'animate-spin')}
-            strokeWidth={1.75}
-          />
-          <span className="min-w-0 flex-1 text-left">
-            <span className="block truncate text-[12px] font-medium">{t('gateway.label')}</span>
-            <span className="block truncate font-mono text-[10.5px] text-[var(--color-fg-muted)]">{statusLabel}</span>
-          </span>
-        </button>
-      </DialogTrigger>
-      <DialogContent
-        title={t('gateway.dialogTitle')}
-        description={t('gateway.dialogDescription')}
-        className="max-h-[86vh] w-[min(94vw,620px)] overflow-y-auto"
-      >
-        <div className="space-y-4">
-          <div className="gateway-summary-grid">
-            <GatewayStat
-              label={t('gateway.serviceStatus')}
-              value={healthLoading ? t('gateway.checking') : connected ? t('gateway.runningValue') : t('gateway.disconnected')}
-              tone={connected ? 'online' : 'offline'}
-            />
-            <GatewayStat
-              label="RPC"
-              value={rpcConnected ? t('gateway.connected') : t('gateway.disconnected')}
-              tone={rpcConnected ? 'online' : 'offline'}
-            />
-            <GatewayStat label="PID" value={health?.gatewayStatus?.pid ? String(health.gatewayStatus.pid) : '-'} />
-            <GatewayStat label="Capability" value={health?.gatewayStatus?.capability ?? '-'} />
-          </div>
-
-          {healthMessage && (
-            <div className="gateway-error-box">
-              {healthMessage}
-            </div>
-          )}
-          <div className="surface-1 rounded-md px-3 py-2 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
-            {t('gateway.optionalDescription')}
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-[12px] font-medium">
-                <Server className="h-3.5 w-3.5 text-[var(--color-primary)]" strokeWidth={1.75} />
-                {t('gateway.openClawAgents')}
-              </div>
-              <button
-                type="button"
-                className="sidebar-icon-button"
-                aria-label={t('gateway.refresh')}
-                onClick={() => void refetch()}
-              >
-                <RefreshCw className={cn('h-3.5 w-3.5', agentsLoading && 'animate-spin')} strokeWidth={1.75} />
-              </button>
-            </div>
-
-            {!gatewayAgents && agentsLoading ? (
-              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                {t('gateway.readingAgents')}
-              </div>
-            ) : !gatewayAgents?.connected ? (
-              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                {agentsMessage ? t('gateway.readAgentsFailedWithMessage', { message: agentsMessage }) : t('gateway.readAgentsFailed')}
-              </div>
-            ) : gatewayAgents.agents.length === 0 ? (
-              <div className="surface-1 rounded-md px-3 py-3 text-[12px] text-[var(--color-fg-muted)]">
-                {t('gateway.noAgents')}
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {gatewayAgents.agents.map((agent) => (
-                  <div key={agent.id} className="gateway-agent-row">
-                    <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" strokeWidth={1.75} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-display text-[13px] font-medium">{agent.name ?? agent.id}</span>
-                        <span className="shrink-0 font-mono text-[11px] text-[var(--color-fg-muted)]">{agent.id}</span>
-                      </div>
-                      {(agent.description || agent.workspace) && (
-                        <div className="mt-0.5 truncate text-[11px] text-[var(--color-fg-muted)]">
-                          {agent.description ?? agent.workspace}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function GatewayStat({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: 'online' | 'offline';
-}): JSX.Element {
-  return (
-    <div className={cn('gateway-stat', tone === 'online' && 'is-online', tone === 'offline' && 'is-offline')}>
-      <div className="text-[10.5px] text-[var(--color-fg-muted)]">{label}</div>
-      <div className="mt-1 truncate font-mono text-[12px] text-[var(--color-fg)]" title={value}>{value}</div>
     </div>
   );
 }
