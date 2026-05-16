@@ -6,3 +6,14 @@ export function routeAfterApproval(state: AgentWorkflowState): 'dispatch' | type
   if (state.approval === 'rejected') return END;
   return 'dispatch';
 }
+
+export function routeAfterReview(state: AgentWorkflowState): 'verify' | 'repair_decision' | typeof END {
+  if (state.status === 'blocked' || state.status === 'cancelled' || state.status === 'failed') return END;
+  if (state.error === 'Code review requested changes') return 'repair_decision';
+  return 'verify';
+}
+
+export function routeAfterRepairDecision(state: AgentWorkflowState): 'execute' | typeof END {
+  if (state.status === 'blocked' || state.status === 'cancelled' || state.status === 'failed') return END;
+  return 'execute';
+}

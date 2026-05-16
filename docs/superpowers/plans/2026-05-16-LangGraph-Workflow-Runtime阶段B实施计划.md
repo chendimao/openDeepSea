@@ -924,7 +924,7 @@ git commit -m "feat(workflows): 用 LangGraph 执行 ACP 步骤"
 - Modify: `packages/backend/src/workflows/graph/runtime.ts`
 - Create: `packages/backend/src/workflows/graph/review.test.ts`
 
-- [ ] **Step 1: Write failing review pass test**
+- [x] **Step 1: Write failing review pass test**
 
 Create `packages/backend/src/workflows/graph/review.test.ts`:
 
@@ -938,7 +938,7 @@ test('review pass routes to acceptance and completes workflow on acceptance pass
 });
 ```
 
-- [ ] **Step 2: Write failing repair loop test**
+- [x] **Step 2: Write failing repair loop test**
 
 Append:
 
@@ -952,7 +952,7 @@ test('review changes_requested routes back to execute with bounded repair attemp
 
 Expected max attempts in phase B: `2`.
 
-- [ ] **Step 3: Run tests to verify failure**
+- [x] **Step 3: Run tests to verify failure**
 
 Run:
 
@@ -962,7 +962,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because review/acceptance nodes are not implemented.
 
-- [ ] **Step 4: Implement review node**
+- [x] **Step 4: Implement review node**
 
 `reviewNode` behavior:
 
@@ -977,7 +977,7 @@ Expected: FAIL because review/acceptance nodes are not implemented.
 - If `changes_requested`, route to repair decision.
 - If `failed`, block workflow.
 
-- [ ] **Step 5: Implement repair decision route**
+- [x] **Step 5: Implement repair decision route**
 
 In `router.ts`:
 
@@ -991,7 +991,7 @@ In `nodes.ts`, `repairDecisionNode`:
 - If `repairAttempts < 2`, increment and return to execute.
 - Else set workflow blocked with error `Code review requested changes after max repair attempts`.
 
-- [ ] **Step 6: Implement acceptance node**
+- [x] **Step 6: Implement acceptance node**
 
 `acceptanceNode` behavior:
 
@@ -1004,7 +1004,7 @@ In `nodes.ts`, `repairDecisionNode`:
 - If pass: mark child review tasks done, parent task done, workflow completed.
 - If failed: mark parent failed, workflow failed.
 
-- [ ] **Step 7: Update graph edges**
+- [x] **Step 7: Update graph edges**
 
 Graph route:
 
@@ -1018,7 +1018,7 @@ acceptance -> memory
 
 `verify` remains placeholder until Task 7.
 
-- [ ] **Step 8: Run review tests**
+- [x] **Step 8: Run review tests**
 
 Run:
 
@@ -1028,7 +1028,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/router.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/review.test.ts

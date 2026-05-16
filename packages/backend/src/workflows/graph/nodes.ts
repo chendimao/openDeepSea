@@ -1,6 +1,7 @@
 import { serializeGraphState, type AgentWorkflowState } from './state.js';
 import type { GraphTools } from './tools.js';
 import { formatParsedPlanArtifact } from '../orchestrator.js';
+import { parseAcceptanceVerdict, parseReviewVerdict } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
 
 export interface GraphRuntimeNodes {
@@ -9,6 +10,10 @@ export interface GraphRuntimeNodes {
   approvalNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
   dispatchNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
   executeNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
+  reviewNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
+  repairDecisionNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
+  verifyNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
+  acceptanceNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
 }
 
 export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
@@ -337,6 +342,412 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       };
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
       return nextState;
+    },
+
+    async reviewNode(state) {
+      const context = tools.readWorkflowContext(state.workflowRunId);
+      const reviewer = tools.selectAgentForRole('reviewer', context.agents)
+        ?? tools.selectAgentForRole('executor', context.agents);
+      if (!reviewer) {
+        const error = 'No reviewer available for code review';
+        const updatedRun = tools.updateRun(context.run.id, {
+          status: 'blocked',
+          error,
+        });
+        if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'review',
+          status: 'blocked',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      const prompt = buildStagePrompt('code_review', {
+        projectName: context.project.name,
+        projectPath: context.project.path,
+        room: context.room,
+        task: context.task,
+        agents: context.agents,
+        artifacts: context.artifacts,
+        childTasks: tools.listChildTasks(context.task.id),
+        memoryContext: context.memories,
+      });
+      const step = tools.createGraphStep({
+        workflow_run_id: context.run.id,
+        task_id: context.task.id,
+        stage: 'code_review',
+        node_name: 'review',
+        status: 'running',
+        room_agent_id: reviewer.id,
+        assigned_room_agent_id: reviewer.id,
+        prompt,
+        sort_order: tools.nextStepSortOrder(context.run.id),
+      });
+      tools.broadcastStepCreated(context.room.id, step);
+      const updatedRun = tools.updateRun(context.run.id, {
+        status: 'running',
+        error: null,
+      });
+      if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+
+      const runResult = await tools.runAcpAgent({
+        agent: reviewer,
+        projectPath: context.project.path,
+        roomId: context.room.id,
+        prompt,
+        taskId: context.task.id,
+        workflowRunId: context.run.id,
+        workflowStepId: step.id,
+        workflowStage: 'code_review',
+      });
+      const output = runResult.run.stdout || runResult.message.content;
+      const artifact = tools.createArtifact({
+        task_id: context.task.id,
+        workflow_run_id: context.run.id,
+        workflow_step_id: step.id,
+        artifact_type: 'review',
+        title: '代码审查',
+        content: output,
+      });
+      tools.broadcastArtifactCreated(context.room.id, artifact);
+
+      if (runResult.status !== 'completed') {
+        const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Code review failed');
+        const failedStep = tools.updateGraphStep(step.id, {
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
+          agent_run_id: runResult.run.id,
+          result: output,
+          result_message_id: runResult.message.id,
+          error,
+        });
+        if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+        const blockedRun = tools.updateRun(context.run.id, {
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'blocked',
+          error,
+        });
+        if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'review',
+          currentStepId: step.id,
+          activeAgentRunId: runResult.run.id,
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'blocked',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      let verdict: ReturnType<typeof parseReviewVerdict>;
+      try {
+        verdict = parseReviewVerdict(output);
+      } catch (err) {
+        const error = `Code review output is not valid JSON verdict: ${(err as Error).message}`;
+        const failedStep = tools.updateGraphStep(step.id, {
+          status: 'failed',
+          agent_run_id: runResult.run.id,
+          result: output,
+          result_message_id: runResult.message.id,
+          error,
+        });
+        if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+        const blockedRun = tools.updateRun(context.run.id, {
+          status: 'blocked',
+          error,
+        });
+        if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'review',
+          currentStepId: step.id,
+          activeAgentRunId: runResult.run.id,
+          status: 'blocked',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      const finalStatus = verdict.verdict === 'failed' ? 'failed' : 'completed';
+      const finalError = verdict.verdict === 'failed' ? 'Code review failed' : null;
+      const completedStep = tools.updateGraphStep(step.id, {
+        status: finalStatus,
+        agent_run_id: runResult.run.id,
+        result: output,
+        result_message_id: runResult.message.id,
+        error: finalError,
+      });
+      if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+
+      if (verdict.verdict === 'failed') {
+        const blockedRun = tools.updateRun(context.run.id, {
+          status: 'blocked',
+          error: 'Code review failed',
+        });
+        if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
+        const blockedState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'review',
+          currentStepId: step.id,
+          activeAgentRunId: runResult.run.id,
+          reviewFindings: verdict.findings,
+          status: 'blocked',
+          error: 'Code review failed',
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(blockedState));
+        return blockedState;
+      }
+
+      const nextState: AgentWorkflowState = {
+        ...state,
+        currentNode: 'review',
+        currentStepId: step.id,
+        activeAgentRunId: runResult.run.id,
+        reviewFindings: verdict.findings,
+        error: verdict.verdict === 'changes_requested' ? 'Code review requested changes' : null,
+      };
+      tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      return nextState;
+    },
+
+    async repairDecisionNode(state) {
+      const context = tools.readWorkflowContext(state.workflowRunId);
+      if (state.repairAttempts < 2) {
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'execute',
+          repairAttempts: state.repairAttempts + 1,
+          error: null,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      const error = 'Code review requested changes after max repair attempts';
+      const updatedRun = tools.updateRun(context.run.id, {
+        status: 'blocked',
+        error,
+      });
+      if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+      const nextState: AgentWorkflowState = {
+        ...state,
+        currentNode: 'repair_decision',
+        status: 'blocked',
+        error,
+      };
+      tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      return nextState;
+    },
+
+    async verifyNode(state) {
+      const context = tools.readWorkflowContext(state.workflowRunId);
+      const step = tools.createGraphStep({
+        workflow_run_id: context.run.id,
+        task_id: context.task.id,
+        stage: 'implementation',
+        node_name: 'verify',
+        status: 'completed',
+        prompt: 'verification placeholder (Task 7 pending)',
+        sort_order: tools.nextStepSortOrder(context.run.id),
+      });
+      tools.broadcastStepCreated(context.room.id, step);
+      const nextState: AgentWorkflowState = {
+        ...state,
+        currentNode: 'verify',
+        currentStepId: step.id,
+      };
+      tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      return nextState;
+    },
+
+    async acceptanceNode(state) {
+      const context = tools.readWorkflowContext(state.workflowRunId);
+      const acceptor = tools.selectAgentForRole('acceptor', context.agents)
+        ?? tools.selectAgentForRole('reviewer', context.agents);
+      if (!acceptor) {
+        const error = 'No acceptor available for acceptance';
+        const updatedRun = tools.updateRun(context.run.id, {
+          status: 'failed',
+          current_stage: 'acceptance',
+          error,
+        });
+        if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'acceptance',
+          status: 'failed',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      const prompt = buildStagePrompt('acceptance', {
+        projectName: context.project.name,
+        projectPath: context.project.path,
+        room: context.room,
+        task: context.task,
+        agents: context.agents,
+        artifacts: context.artifacts,
+        childTasks: tools.listChildTasks(context.task.id),
+        memoryContext: context.memories,
+      });
+      const step = tools.createGraphStep({
+        workflow_run_id: context.run.id,
+        task_id: context.task.id,
+        stage: 'acceptance',
+        node_name: 'acceptance',
+        status: 'running',
+        room_agent_id: acceptor.id,
+        assigned_room_agent_id: acceptor.id,
+        prompt,
+        sort_order: tools.nextStepSortOrder(context.run.id),
+      });
+      tools.broadcastStepCreated(context.room.id, step);
+      const updatedRun = tools.updateRun(context.run.id, {
+        status: 'running',
+        current_stage: 'acceptance',
+        error: null,
+      });
+      if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+
+      const runResult = await tools.runAcpAgent({
+        agent: acceptor,
+        projectPath: context.project.path,
+        roomId: context.room.id,
+        prompt,
+        taskId: context.task.id,
+        workflowRunId: context.run.id,
+        workflowStepId: step.id,
+        workflowStage: 'acceptance',
+      });
+      const output = runResult.run.stdout || runResult.message.content;
+      const artifact = tools.createArtifact({
+        task_id: context.task.id,
+        workflow_run_id: context.run.id,
+        workflow_step_id: step.id,
+        artifact_type: 'acceptance',
+        title: '功能验收',
+        content: output,
+      });
+      tools.broadcastArtifactCreated(context.room.id, artifact);
+
+      if (runResult.status !== 'completed') {
+        const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Acceptance failed');
+        const failedStep = tools.updateGraphStep(step.id, {
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
+          agent_run_id: runResult.run.id,
+          result: output,
+          result_message_id: runResult.message.id,
+          error,
+        });
+        if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+        tools.updateTaskStatus(context.task.id, 'failed');
+        const failedRun = tools.updateRun(context.run.id, {
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
+          current_stage: 'acceptance',
+          error,
+        });
+        if (failedRun) tools.broadcastWorkflowUpdated(failedRun);
+        const failedState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'acceptance',
+          currentStepId: step.id,
+          activeAgentRunId: runResult.run.id,
+          status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(failedState));
+        return failedState;
+      }
+
+      let verdict: ReturnType<typeof parseAcceptanceVerdict>;
+      try {
+        verdict = parseAcceptanceVerdict(output);
+      } catch (err) {
+        const error = `Acceptance output is not valid JSON verdict: ${(err as Error).message}`;
+        const failedStep = tools.updateGraphStep(step.id, {
+          status: 'failed',
+          agent_run_id: runResult.run.id,
+          result: output,
+          result_message_id: runResult.message.id,
+          error,
+        });
+        if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+        tools.updateTaskStatus(context.task.id, 'failed');
+        const failedRun = tools.updateRun(context.run.id, {
+          status: 'failed',
+          current_stage: 'acceptance',
+          error,
+        });
+        if (failedRun) tools.broadcastWorkflowUpdated(failedRun);
+        const failedState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'acceptance',
+          currentStepId: step.id,
+          activeAgentRunId: runResult.run.id,
+          status: 'failed',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(failedState));
+        return failedState;
+      }
+
+      const completedStep = tools.updateGraphStep(step.id, {
+        status: verdict.verdict === 'pass' ? 'completed' : 'failed',
+        agent_run_id: runResult.run.id,
+        result: output,
+        result_message_id: runResult.message.id,
+        error: verdict.verdict === 'pass' ? null : 'Acceptance failed',
+      });
+      if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+
+      if (verdict.verdict === 'pass') {
+        for (const child of tools.listChildTasks(context.task.id).filter((item) => item.status === 'review')) {
+          const updatedChild = tools.updateTaskStatus(child.id, 'done');
+          if (updatedChild) tools.broadcastTaskUpdated(updatedChild);
+        }
+        const doneParent = tools.updateTaskStatus(context.task.id, 'done');
+        if (doneParent) tools.broadcastTaskUpdated(doneParent);
+        const doneRun = tools.updateRun(context.run.id, {
+          status: 'completed',
+          current_stage: 'acceptance',
+          error: null,
+        });
+        if (doneRun) tools.broadcastWorkflowUpdated(doneRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'acceptance',
+          currentStepId: step.id,
+          activeAgentRunId: runResult.run.id,
+          status: 'completed',
+          error: null,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      const failedParent = tools.updateTaskStatus(context.task.id, 'failed');
+      if (failedParent) tools.broadcastTaskUpdated(failedParent);
+      const failedRun = tools.updateRun(context.run.id, {
+        status: 'failed',
+        current_stage: 'acceptance',
+        error: 'Acceptance failed',
+      });
+      if (failedRun) tools.broadcastWorkflowUpdated(failedRun);
+      const failedState: AgentWorkflowState = {
+        ...state,
+        currentNode: 'acceptance',
+        currentStepId: step.id,
+        activeAgentRunId: runResult.run.id,
+        status: 'failed',
+        error: 'Acceptance failed',
+      };
+      tools.updateGraphState(context.run.id, serializeGraphState(failedState));
+      return failedState;
     },
   };
 }

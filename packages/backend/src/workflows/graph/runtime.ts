@@ -5,7 +5,7 @@ import { taskRepo } from '../../repos/tasks.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import type { WorkflowRun } from '../../types.js';
 import { createGraphNodes } from './nodes.js';
-import { routeAfterApproval } from './router.js';
+import { routeAfterApproval, routeAfterRepairDecision, routeAfterReview } from './router.js';
 import { emptyAgentWorkflowState, serializeGraphState, type AgentWorkflowState } from './state.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 
@@ -48,12 +48,20 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
     .addNode('approval_gate', nodes.approvalNode)
     .addNode('dispatch', nodes.dispatchNode)
     .addNode('execute', nodes.executeNode)
+    .addNode('review', nodes.reviewNode)
+    .addNode('repair_decision', nodes.repairDecisionNode)
+    .addNode('verify', nodes.verifyNode)
+    .addNode('acceptance', nodes.acceptanceNode)
     .addEdge(START, 'context')
     .addEdge('context', 'planning')
     .addEdge('planning', 'approval_gate')
     .addConditionalEdges('approval_gate', routeAfterApproval)
     .addEdge('dispatch', 'execute')
-    .addEdge('execute', END)
+    .addEdge('execute', 'review')
+    .addConditionalEdges('review', routeAfterReview)
+    .addConditionalEdges('repair_decision', routeAfterRepairDecision)
+    .addEdge('verify', 'acceptance')
+    .addEdge('acceptance', END)
     .compile({ checkpointer: new MemorySaver() });
 }
 
