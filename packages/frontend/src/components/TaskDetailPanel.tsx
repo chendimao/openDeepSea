@@ -49,6 +49,9 @@ export function TaskDetailPanel({
 
   const refreshWorkflow = (workflow?: WorkflowRun) => {
     if (!task) return;
+    queryClient.invalidateQueries({ queryKey: ['messages', task.room_id] });
+    queryClient.invalidateQueries({ queryKey: ['room-tasks', task.room_id] });
+    queryClient.invalidateQueries({ queryKey: ['room-workflows', task.room_id] });
     queryClient.invalidateQueries({ queryKey: ['task-workflows', task.id] });
     if (workflow?.id) queryClient.invalidateQueries({ queryKey: ['workflow', workflow.id] });
   };
@@ -64,7 +67,10 @@ export function TaskDetailPanel({
   });
 
   const startWorkflow = useMutation({
-    mutationFn: () => api.startWorkflow(task!.id),
+    mutationFn: () =>
+      api.startWorkflowWithConversation(task!.room_id, task!.id, {
+        content: t('workflow.startIntent', { title: task!.title }),
+      }),
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
       toast.success(t('taskDetail.workflowStarted'));
@@ -73,7 +79,10 @@ export function TaskDetailPanel({
   });
 
   const approvePlan = useMutation({
-    mutationFn: (workflowId: string) => api.approveWorkflowPlan(workflowId),
+    mutationFn: (workflowId: string) =>
+      api.approveWorkflowPlanWithConversation(task!.room_id, workflowId, {
+        content: t('workflow.approveIntent', { title: task!.title }),
+      }),
     onSuccess: (workflow) => {
       refreshWorkflow(workflow);
       toast.success(t('taskDetail.planApproved'));

@@ -114,6 +114,18 @@ export function RoomPage() {
     onError: (err) => toast.error((err as Error).message),
   });
 
+  const startWorkflow = useMutation({
+    mutationFn: (task: Task) =>
+      api.startWorkflowWithConversation(task.room_id, task.id, {
+        content: t('workflow.startIntent', { title: task.title }),
+      }),
+    onSuccess: (workflow) => {
+      invalidateWorkflowConversationQueries(queryClient, workflow.room_id, workflow.task_id, workflow.id);
+      toast.success(t('taskDetail.workflowStarted'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
   // Subscribe to WS for this room
   useEffect(() => {
     if (!roomId) return;
@@ -312,6 +324,8 @@ export function RoomPage() {
               setSelectedTask(task);
             }}
             onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
+            onStartWorkflow={(task) => startWorkflow.mutate(task)}
+            startingTaskId={startWorkflow.isPending ? startWorkflow.variables?.id : null}
           />
         )}
       </div>
@@ -355,6 +369,19 @@ function upsertWorkflow(prev: WorkflowRun[] | undefined, workflow: WorkflowRun):
   const list = prev ?? [];
   return [workflow, ...list.filter((item) => item.id !== workflow.id)]
     .sort((a, b) => b.created_at - a.created_at);
+}
+
+function invalidateWorkflowConversationQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  roomId: string,
+  taskId: string,
+  workflowId: string,
+) {
+  queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+  queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
+  queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
+  queryClient.invalidateQueries({ queryKey: ['task-workflows', taskId] });
+  queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
 }
 
 function AgentStrip({
@@ -439,35 +466,10 @@ function ChatColumn({
     onError: (err) => toast.error((err as Error).message),
   });
 
-  const createTaskFromCommand = useMutation({
-    mutationFn: (title: string) =>
-      api.createTaskWithConversation(roomId, {
-        title,
-        origin: 'slash_command',
-        user_message: `/task ${title}`,
-      }),
-    onSuccess: () => {
-      setComposerResetKey((key) => key + 1);
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
-      toast.success(t('room.taskCreated'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
   const handleSend = (input: { content: string; mentions?: string[]; files?: File[] }) => {
     const content = input.content.trim();
     const files = input.files;
     if (!content && (!files || files.length === 0)) return;
-    const taskMatch = content.match(/^\/task\s+(.+)/);
-    if (taskMatch?.[1]?.trim()) {
-      if (files && files.length > 0) {
-        toast.error(t('room.taskCommandNoAttachments'));
-        return;
-      }
-      createTaskFromCommand.mutate(taskMatch[1].trim());
-      return;
-    }
     send.mutate({ content, mentions: input.mentions, files });
   };
 
@@ -535,7 +537,7 @@ function ChatColumn({
       <RichMessageComposer
         resetKey={composerResetKey}
         onSend={handleSend}
-        sending={send.isPending || createTaskFromCommand.isPending}
+        sending={send.isPending}
         disabled={!canSendChat}
         agents={agents}
         placeholder={

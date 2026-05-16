@@ -272,12 +272,41 @@ export const api = {
 
   startWorkflow: (taskId: string) =>
     request<WorkflowRun>(`/tasks/${taskId}/workflows`, { method: 'POST' }),
+  startWorkflowWithConversation: (
+    roomId: string,
+    taskId: string,
+    input: {
+      content?: string;
+      sender_id?: string;
+      sender_name?: string;
+      source_message_id?: string;
+      source?: 'chat_command' | 'task_button' | 'auto_start';
+    } = {},
+  ) =>
+    request<WorkflowRun>(`/rooms/${roomId}/tasks/${taskId}/workflows/start-with-conversation`, {
+      method: 'POST',
+      body: JSON.stringify({ ...input, source: input.source ?? 'task_button' }),
+    }),
   listTaskWorkflows: (taskId: string) =>
     request<WorkflowRun[]>(`/tasks/${taskId}/workflows`),
   getWorkflow: (id: string) =>
     request<WorkflowDetail>(`/workflows/${id}`),
   approveWorkflowPlan: (id: string) =>
     request<WorkflowRun>(`/workflows/${id}/approve-plan`, { method: 'POST' }),
+  approveWorkflowPlanWithConversation: (
+    roomId: string,
+    workflowId: string,
+    input: {
+      content?: string;
+      sender_id?: string;
+      sender_name?: string;
+      source?: 'approval_button';
+    } = {},
+  ) =>
+    request<WorkflowRun>(`/rooms/${roomId}/workflows/${workflowId}/approve-plan-with-conversation`, {
+      method: 'POST',
+      body: JSON.stringify({ ...input, source: input.source ?? 'approval_button' }),
+    }),
   submitWorkflowDecisions: (
     id: string,
     answers: Array<{ decisionId: string; optionId: string }>,

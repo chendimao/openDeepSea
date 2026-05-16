@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Eye, Loader2 } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Eye, Loader2, Play } from 'lucide-react';
 import type { RoomAgent, Task, WorkflowRun } from '../lib/types';
 import { useI18n } from '../lib/i18n';
 import { cn } from '../lib/utils';
@@ -43,6 +43,8 @@ export function TaskBoard({
   selectedTaskId,
   onSelectTask,
   onChangeStatus,
+  onStartWorkflow,
+  startingTaskId,
 }: {
   tasks: Task[];
   agents: RoomAgent[];
@@ -50,6 +52,8 @@ export function TaskBoard({
   selectedTaskId?: string | null;
   onSelectTask: (task: Task) => void;
   onChangeStatus: (task: Task, status: Task['status']) => void;
+  onStartWorkflow?: (task: Task) => void;
+  startingTaskId?: string | null;
 }) {
   const { t, taskStatusLabel } = useI18n();
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
@@ -94,6 +98,8 @@ export function TaskBoard({
                       selected={selectedTaskId === task.id}
                       onSelect={() => onSelectTask(task)}
                       onChangeStatus={(next) => onChangeStatus(task, next)}
+                      onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(task) : undefined}
+                      startingWorkflow={startingTaskId === task.id}
                     />
                   ))
                 )}
@@ -113,6 +119,8 @@ function TaskCard({
   selected,
   onSelect,
   onChangeStatus,
+  onStartWorkflow,
+  startingWorkflow,
 }: {
   task: Task;
   agent?: RoomAgent;
@@ -120,9 +128,13 @@ function TaskCard({
   selected?: boolean;
   onSelect: () => void;
   onChangeStatus: (status: Task['status']) => void;
+  onStartWorkflow?: () => void;
+  startingWorkflow?: boolean;
 }) {
   const { formatRelativeTime, t, taskPriorityLabel, taskStatusLabel, workflowStatusLabel } = useI18n();
   const nextStatus = NEXT_STATUS[task.status];
+  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
+  const canStartWorkflow = !hasActiveWorkflow && task.status !== 'done';
 
   return (
     <article className={cn('task-card', selected && 'is-selected')}>
@@ -161,7 +173,24 @@ function TaskCard({
           </span>
         </div>
       </button>
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {canStartWorkflow && onStartWorkflow && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onStartWorkflow}
+            disabled={startingWorkflow}
+            title={t('taskBoard.startWorkflow')}
+            aria-label={t('taskBoard.startWorkflow')}
+            className="w-7 px-0"
+          >
+            {startingWorkflow ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        )}
         {nextStatus && (
           <Button size="sm" variant="secondary" onClick={() => onChangeStatus(nextStatus)}>
             <ArrowRight className="h-3.5 w-3.5" />
