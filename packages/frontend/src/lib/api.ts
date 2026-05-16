@@ -93,6 +93,11 @@ export const api = {
     }),
 
   listProjects: () => request<Project[]>('/projects'),
+  pickDirectory: () =>
+    request<{ canceled: true; path?: undefined } | { canceled: false; path: string }>(
+      '/system/pick-directory',
+      { method: 'POST' },
+    ),
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),

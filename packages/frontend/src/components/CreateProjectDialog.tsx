@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { FolderOpen, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -38,6 +39,14 @@ export function CreateProjectDialog({
     onError: (err) => toast.error((err as Error).message),
   });
 
+  const pickFolder = useMutation({
+    mutationFn: api.pickDirectory,
+    onSuccess: (result) => {
+      if (!result.canceled) setPath(result.path);
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
   return (
     <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
       {children && <DialogTrigger asChild>{children}</DialogTrigger>}
@@ -65,12 +74,33 @@ export function CreateProjectDialog({
           </div>
           <div>
             <Label>{t('createProject.path')}</Label>
-            <Input
-              placeholder="/Users/you/code/my-awesome-app"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              className="font-mono"
-            />
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div
+                className="min-h-9 flex-1 rounded-md surface-1 px-3 py-2 text-[13px] font-mono text-[var(--color-fg)]"
+                title={path || t('createProject.noPathSelected')}
+                aria-live="polite"
+              >
+                {path ? (
+                  <span className="break-all">{path}</span>
+                ) : (
+                  <span className="font-sans text-[var(--color-muted)]">{t('createProject.noPathSelected')}</span>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => pickFolder.mutate()}
+                disabled={pickFolder.isPending || create.isPending}
+                className="shrink-0"
+              >
+                {pickFolder.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FolderOpen className="h-3.5 w-3.5" />
+                )}
+                {pickFolder.isPending ? t('createProject.selectingFolder') : t('createProject.selectFolder')}
+              </Button>
+            </div>
           </div>
           <div>
             <Label>{t('createProject.projectDescription')}</Label>

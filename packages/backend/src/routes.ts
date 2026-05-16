@@ -11,6 +11,7 @@ import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskRepo } from './repos/tasks.js';
+import { pickDirectory } from './system-dialogs.js';
 import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
@@ -245,6 +246,14 @@ router.patch('/rooms/:roomId/settings', (req, res) => {
 });
 
 // ---------- Projects ----------
+router.post('/system/pick-directory', async (_req, res) => {
+  try {
+    res.json(await pickDirectory());
+  } catch (err) {
+    res.status(500).json({ error: `Unable to open folder picker: ${(err as Error).message}` });
+  }
+});
+
 router.get('/projects', (_req, res) => {
   const projects = projectRepo.list();
   const enriched = projects.map((p) => ({ ...p, stats: projectRepo.stats(p.id) }));
