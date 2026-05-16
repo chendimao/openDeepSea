@@ -10,7 +10,9 @@ const { projectRepo } = await import('../../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
+const { createGraphNodes } = await import('./nodes.js');
 const { parseGraphState } = await import('./state.js');
+const { createGraphTools } = await import('./tools.js');
 const { startGraphWorkflow } = await import('./runtime.js');
 
 test('startGraphWorkflow runs context and planning nodes into awaiting approval', async () => {
@@ -142,4 +144,75 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
   assert.equal(childTasks.length, 1);
   assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
   assert.equal(graphState?.childTaskIds.length, 1);
+});
+
+test('dispatch node is idempotent when replayed with existing child task ids', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-dispatch-idempotent-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Dispatch Idempotent', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Dispatch Idempotent Room' });
+  const executor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'executor-idempotent',
+    agent_name: 'Executor Idempotent',
+  });
+  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Dispatch idempotently',
+    description: 'Replay dispatch without duplicate child tasks.',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    graph_version: 'phase-b-v1',
+  });
+  const state = {
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+    plan: {
+      goal: 'Dispatch idempotently',
+      summary: 'Create one child task once',
+      assumptions: [],
+      tasks: [{
+        title: 'Implement once',
+        description: 'Create exactly one child task',
+        suggestedRole: 'executor' as const,
+        priority: 'normal' as const,
+        acceptance: ['Only one child task exists'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'approval' as const,
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [],
+    reviewFindings: [],
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required' as const,
+    status: 'running' as const,
+    error: null,
+  };
+  const nodes = createGraphNodes(createGraphTools());
+
+  const first = await nodes.dispatchNode(state);
+  const second = await nodes.dispatchNode(first);
+
+  assert.equal(taskRepo.listChildren(task.id).length, 1);
+  assert.deepEqual(second.childTaskIds, first.childTaskIds);
+  assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'dispatch').length, 1);
+  assert.equal(workflowRepo.listArtifacts(run.id).filter((artifact) => artifact.artifact_type === 'assignment').length, 1);
 });

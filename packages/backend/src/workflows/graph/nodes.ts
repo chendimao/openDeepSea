@@ -97,6 +97,28 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const context = tools.readWorkflowContext(state.workflowRunId);
       if (!state.plan) throw new Error('dispatch requires plan');
 
+      const existingStep = tools.listSteps(context.run.id)
+        .find((step) => step.node_name === 'dispatch' && step.status === 'completed');
+      const existingChildTaskIds = state.childTaskIds.length > 0
+        ? state.childTaskIds
+        : tools.listChildTasks(context.task.id).map((task) => task.id);
+      if (existingStep || existingChildTaskIds.length > 0) {
+        const updatedRun = tools.updateRun(context.run.id, {
+          status: 'running',
+          current_stage: 'implementation',
+          error: null,
+        });
+        if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'dispatch',
+          currentStepId: existingStep?.id ?? state.currentStepId,
+          childTaskIds: existingChildTaskIds,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
       const scopeRead = Array.from(new Set(state.plan.tasks.flatMap((item) => item.scopeRead)));
       const scopeWrite = Array.from(new Set(state.plan.tasks.flatMap((item) => item.scopeWrite)));
       const step = tools.createGraphStep({
@@ -109,6 +131,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         scope_write: scopeWrite,
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
+      tools.broadcastStepCreated(context.room.id, step);
 
       const childTaskIds: string[] = [];
       for (const planTask of state.plan.tasks) {
@@ -128,7 +151,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       }
 
       const artifactContent = `已根据计划创建 ${childTaskIds.length} 个子任务。`;
-      tools.createArtifact({
+      const artifact = tools.createArtifact({
         task_id: context.task.id,
         workflow_run_id: context.run.id,
         workflow_step_id: step.id,
@@ -140,6 +163,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           childTaskIds,
         },
       });
+      tools.broadcastArtifactCreated(context.room.id, artifact);
       tools.recordWorkflowEvent({
         roomId: context.room.id,
         taskId: context.task.id,
@@ -150,11 +174,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         origin: 'workflow_assignment',
         content: `已根据计划为任务「${context.task.title}」创建 ${childTaskIds.length} 个子任务。`,
       });
-      tools.updateRun(context.run.id, {
+      const updatedRun = tools.updateRun(context.run.id, {
         status: 'running',
         current_stage: 'implementation',
         error: null,
       });
+      if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
 
       const nextState: AgentWorkflowState = {
         ...state,

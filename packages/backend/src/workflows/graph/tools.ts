@@ -6,7 +6,7 @@ import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { recordTaskEvent } from '../../task-conversation.js';
-import type { RoomAgent, Task, TaskCreatedFrom, TaskEventType, WorkflowRole } from '../../types.js';
+import type { RoomAgent, Task, TaskArtifact, TaskCreatedFrom, TaskEventType, WorkflowRole, WorkflowRun, WorkflowStep } from '../../types.js';
 import { wsHub } from '../../ws-hub.js';
 import { generateLangChainPlan, type LangChainPlannerInput } from '../langchain-planner.js';
 import type { ParsedPlan } from '../plan-parser.js';
@@ -34,6 +34,13 @@ export interface GraphTools {
   updateGraphStep: typeof workflowRepo.updateStep;
   createArtifact: typeof workflowRepo.createArtifact;
   createChildTask: typeof taskRepo.create;
+  listChildTasks: typeof taskRepo.listChildren;
+  listSteps: typeof workflowRepo.listSteps;
+  listArtifacts: typeof workflowRepo.listArtifacts;
+  broadcastWorkflowUpdated: (workflow: WorkflowRun) => void;
+  broadcastStepCreated: (roomId: string, step: WorkflowStep) => void;
+  broadcastStepUpdated: (roomId: string, step: WorkflowStep) => void;
+  broadcastArtifactCreated: (roomId: string, artifact: TaskArtifact) => void;
   broadcastTaskCreated: (task: Task) => void;
   recordWorkflowEvent: (input: {
     roomId: string;
@@ -92,6 +99,21 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     updateGraphStep: workflowRepo.updateStep.bind(workflowRepo),
     createArtifact: workflowRepo.createArtifact.bind(workflowRepo),
     createChildTask: taskRepo.create.bind(taskRepo),
+    listChildTasks: taskRepo.listChildren.bind(taskRepo),
+    listSteps: workflowRepo.listSteps.bind(workflowRepo),
+    listArtifacts: workflowRepo.listArtifacts.bind(workflowRepo),
+    broadcastWorkflowUpdated(workflow: WorkflowRun) {
+      wsHub.broadcast(workflow.room_id, { type: 'workflow:updated', roomId: workflow.room_id, workflow });
+    },
+    broadcastStepCreated(roomId: string, step: WorkflowStep) {
+      wsHub.broadcast(roomId, { type: 'workflow_step:created', roomId, step });
+    },
+    broadcastStepUpdated(roomId: string, step: WorkflowStep) {
+      wsHub.broadcast(roomId, { type: 'workflow_step:updated', roomId, step });
+    },
+    broadcastArtifactCreated(roomId: string, artifact: TaskArtifact) {
+      wsHub.broadcast(roomId, { type: 'workflow_artifact:created', roomId, artifact });
+    },
     broadcastTaskCreated(task: Task) {
       wsHub.broadcast(task.room_id, { type: 'task:created', task });
     },
