@@ -679,6 +679,10 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     content: parsed.data.content,
     mentions: parsed.data.mentions,
   });
+  if (userMsg.commandError) {
+    res.status(userMsg.commandError.status).json({ error: userMsg.commandError.message });
+    return;
+  }
   res.status(201).json(userMsg);
 }
 
@@ -725,6 +729,10 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       mentions,
       metadata,
     });
+    if (userMsg.commandError) {
+      res.status(userMsg.commandError.status).json({ error: userMsg.commandError.message });
+      return;
+    }
     res.status(201).json(userMsg);
   } catch (err) {
     await cleanupUploadedFiles(files);
@@ -739,7 +747,7 @@ function createAndDispatchUserMessage(input: {
   content: string;
   mentions?: string[];
   metadata?: MessageMetadata;
-}) {
+}): ReturnType<typeof messageRepo.create> & { commandError?: { status: number; message: string } } {
   const userMsg = messageRepo.create({
     room_id: input.roomId,
     sender_type: 'user',
@@ -750,7 +758,11 @@ function createAndDispatchUserMessage(input: {
     metadata: input.metadata as Record<string, unknown> | undefined,
   });
   wsHub.broadcast(input.roomId, { type: 'message:new', roomId: input.roomId, message: userMsg });
-  if (handleChatCommand(input.roomId, userMsg)) {
+  const commandResult = handleChatCommand(input.roomId, userMsg);
+  if (commandResult.handled) {
+    if (commandResult.error) {
+      return { ...userMsg, commandError: commandResult.error };
+    }
     return userMsg;
   }
   const agents = roomAgentRepo.listByRoom(input.roomId);
@@ -768,32 +780,46 @@ function createAndDispatchUserMessage(input: {
   return userMsg;
 }
 
-function handleChatCommand(roomId: string, userMessage: ReturnType<typeof messageRepo.create>): boolean {
-  const taskTitle = parseTaskCommand(userMessage.content);
-  if (taskTitle) {
-    createTaskWithConversation({
-      roomId,
-      origin: 'slash_command',
-      createUserMessage: false,
-      sourceMessageId: userMessage.id,
-      taskInput: { title: taskTitle },
-    });
-    return true;
+function handleChatCommand(
+  roomId: string,
+  userMessage: ReturnType<typeof messageRepo.create>,
+): { handled: false } | { handled: true; error?: { status: number; message: string } } {
+  try {
+    const taskTitle = parseTaskCommand(userMessage.content);
+    if (taskTitle) {
+      createTaskWithConversation({
+        roomId,
+        origin: 'slash_command',
+        createUserMessage: false,
+        sourceMessageId: userMessage.id,
+        taskInput: { title: taskTitle },
+      });
+      return { handled: true };
+    }
+
+    const taskId = parseStartTaskCommand(userMessage.content);
+    if (taskId) {
+      startWorkflowWithConversation({
+        roomId,
+        taskId,
+        source: 'chat_command',
+        sourceMessageId: userMessage.id,
+        content: userMessage.content,
+      });
+      return { handled: true };
+    }
+  } catch (err) {
+    const error = err as Error & { status?: number };
+    return {
+      handled: true,
+      error: {
+        status: error.status ?? workflowErrorStatus(error),
+        message: error.message,
+      },
+    };
   }
 
-  const taskId = parseStartTaskCommand(userMessage.content);
-  if (taskId) {
-    startWorkflowWithConversation({
-      roomId,
-      taskId,
-      source: 'chat_command',
-      sourceMessageId: userMessage.id,
-      content: userMessage.content,
-    });
-    return true;
-  }
-
-  return false;
+  return { handled: false };
 }
 
 function parseTaskCommand(content: string): string | null {

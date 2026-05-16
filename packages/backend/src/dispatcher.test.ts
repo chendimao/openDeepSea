@@ -231,6 +231,33 @@ test('message route handles Chinese start command after persisting user message 
   }
 });
 
+test('message route returns JSON error when start command target is missing', async () => {
+  const { projectPath, room } = await createRoutedRoom('start-task-command-missing');
+  const { restore, calls } = installCountingCodexAdapter();
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+
+  try {
+    const res = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: '/start-task missing-task',
+        sender_id: 'user',
+        sender_name: 'You',
+      }),
+    });
+
+    assert.equal(res.status, 404);
+    assert.match(res.headers.get('content-type') ?? '', /application\/json/);
+    assert.deepEqual(await res.json(), { error: 'task not found' });
+    await delay(30);
+    assert.equal(calls.count, 0);
+    assert.equal(messageRepo.listByRoom(room.id, 20).filter((message) => message.sender_type === 'user').length, 1);
+  } finally {
+    restore();
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('buildPromptWithMessageAttachments marks unsafe attachment paths unavailable', () => {
   const message = createMessage({
     attachments: [
