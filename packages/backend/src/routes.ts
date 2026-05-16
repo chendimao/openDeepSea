@@ -3,9 +3,6 @@ import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
 import { dispatchUserMessage } from './dispatcher.js';
-import { listOpenClawAgentsFromCli } from './openclaw/agents.js';
-import { gatewayClient } from './openclaw/gateway.js';
-import { getOpenClawGatewayStatus } from './openclaw/status.js';
 import { resolveMentionedAgentRoomIds } from './mentions.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { memoryRepo } from './repos/memory.js';
@@ -41,24 +38,9 @@ function workflowErrorStatus(error: Error): number {
   return 400;
 }
 
-// ---------- Health & Gateway ----------
-router.get('/health', async (_req, res) => {
-  const gatewayStatus = await getOpenClawGatewayStatus();
-  res.json({
-    ok: true,
-    gateway: gatewayStatus.ok,
-    gatewayStatus,
-    gatewayRpcConnected: gatewayClient.isConnected(),
-  });
-});
-
-router.get('/gateway/agents', async (_req, res) => {
-  try {
-    const agents = await listOpenClawAgentsFromCli();
-    res.json({ agents, connected: true, source: 'openclaw-config' });
-  } catch (err) {
-    res.json({ agents: [], connected: false, error: (err as Error).message });
-  }
+// ---------- Health ----------
+router.get('/health', (_req, res) => {
+  res.json({ ok: true, time: Date.now() });
 });
 
 router.get('/agent-templates', (_req, res) => {

@@ -3,8 +3,6 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { getAdapter } from './acp/index.js';
-import { bindGatewayEvents } from './dispatcher.js';
-import { gatewayClient } from './openclaw/gateway.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
@@ -47,26 +45,14 @@ wss.on('connection', (socket) => {
   socket.on('close', () => wsHub.removeSocket(socket));
 });
 
-bindGatewayEvents();
-
 const orphanedSteps = workflowOrchestrator.recoverOrphanedSteps('Backend restarted before workflow step completed');
 if (orphanedSteps > 0) {
   console.warn(`[workflows] Marked ${orphanedSteps} orphaned running step(s) as failed`);
 }
 void recoverInterruptedAgentRuns();
 
-// Try to connect to OpenClaw gateway in background; don't crash if unavailable.
-gatewayClient
-  .connect()
-  .then(() => {
-    console.log('[openclaw] Gateway connected');
-  })
-  .catch((err) => {
-    console.warn(`[openclaw] Gateway not connected: ${(err as Error).message}`);
-  });
-
 httpServer.listen(PORT, () => {
-  console.log(`[server] OpenClaw Room backend listening on :${PORT}`);
+  console.log(`[server] backend listening on :${PORT}`);
 });
 
 async function recoverInterruptedAgentRuns(): Promise<void> {

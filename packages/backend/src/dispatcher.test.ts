@@ -11,24 +11,9 @@ import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { messageUploadDir } from './uploads.js';
-import { buildPromptWithMessageAttachments, dispatchUserMessage, isOpenClawSessionAlreadyPresentError } from './dispatcher.js';
+import { buildPromptWithMessageAttachments, dispatchUserMessage } from './dispatcher.js';
 import type { SessionAdapter } from './acp/types.js';
 import type { Message, MessageMetadata } from './types.js';
-
-test('detects OpenClaw session already exists errors as reusable', () => {
-  assert.equal(isOpenClawSessionAlreadyPresentError(new Error('session already exists')), true);
-});
-
-test('detects OpenClaw label already in use errors as reusable', () => {
-  assert.equal(
-    isOpenClawSessionAlreadyPresentError(new Error('label already in use: OpenClaw Room pm')),
-    true,
-  );
-});
-
-test('does not treat unrelated gateway errors as reusable sessions', () => {
-  assert.equal(isOpenClawSessionAlreadyPresentError(new Error('Gateway connect timeout')), false);
-});
 
 test('buildPromptWithMessageAttachments appends readable attachment context', () => {
   const message = createMessage({
@@ -52,6 +37,41 @@ test('buildPromptWithMessageAttachments appends readable attachment context', ()
   assert.match(prompt, /mimeType=image\/png/);
   assert.match(prompt, /kind=image/);
   assert.match(prompt, new RegExp(`localPath=${escapeRegExp(messageUploadDir)}/stored\\.png`));
+});
+
+test('dispatchUserMessage reports non-ACP agent as not executable without Gateway', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-no-gateway-test-'));
+  const project = projectRepo.create({ name: `no-gateway-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'legacy',
+    agent_name: 'LegacyAgent',
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: `@${agent.agent_name} hello`,
+    message_type: 'text',
+  });
+
+  try {
+    await dispatchUserMessage({
+      roomId: room.id,
+      userMessage,
+      mentionedAgentRoomIds: [agent.id],
+    });
+
+    const messages = messageRepo.listByRoom(room.id, 20);
+    assert.ok(
+      messages.some((message) => message.content.includes('no ACP backend configured')),
+      'expected readable system message for non-ACP agent',
+    );
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
 });
 
 test('buildPromptWithMessageAttachments marks unsafe attachment paths unavailable', () => {
