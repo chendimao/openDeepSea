@@ -154,7 +154,6 @@ export function recoverGraphWorkflow(error: string): number {
     if (!run || run.status === 'cancelled' || run.status === 'completed') continue;
 
     for (const activeRun of tools.listActiveAgentRunsByWorkflow(run.id)) {
-      if (activeRun.workflow_step_id && activeRun.workflow_step_id !== step.id) continue;
       const interruptedRun = tools.interruptAgentRun(activeRun.id, error);
       if (interruptedRun) tools.broadcastAgentRunUpdated(run.room_id, interruptedRun);
     }
@@ -162,19 +161,23 @@ export function recoverGraphWorkflow(error: string): number {
     const interruptedStep = tools.updateGraphStep(step.id, { status: 'interrupted', error });
     if (interruptedStep) tools.broadcastStepUpdated(run.room_id, interruptedStep);
 
-    const parsedState = tools.parseGraphState(run.graph_state);
-    const nextState = parsedState
-      ? {
-        ...parsedState,
-        currentNode: step.node_name,
-        currentStepId: step.id,
-        status: 'blocked' as const,
-        error,
-      }
-      : null;
-
     const blockedRun = tools.updateRun(run.id, { status: 'blocked', error });
-    if (nextState) tools.updateGraphState(run.id, serializeGraphState(nextState));
+    try {
+      const parsedState = tools.parseGraphState(run.graph_state);
+      if (parsedState) {
+        const nextState = {
+          ...parsedState,
+          currentNode: step.node_name,
+          currentStepId: step.id,
+          status: 'blocked' as const,
+          error,
+        };
+        tools.updateGraphState(run.id, serializeGraphState(nextState));
+      }
+    } catch (err) {
+      console.warn(`[graph-recovery] invalid graph_state for run ${run.id}: ${(err as Error).message}`);
+    }
+
     if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
     count += 1;
   }

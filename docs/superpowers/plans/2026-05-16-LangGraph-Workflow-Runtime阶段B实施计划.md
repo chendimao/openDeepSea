@@ -1158,6 +1158,7 @@ git commit -m "feat(workflows): 增加 LangGraph 验证节点"
 - Create: `packages/backend/src/workflows/graph/recovery.test.ts`
 
 - [x] Task 8 completed
+- [x] Task 8 review-fix（2026-05-16）：修复 memory 缺少 acceptance artifact 时误写成功记忆；修复 recovery 中断同 workflow 全部 active agent run；修复坏 graph_state 不阻断后续 run 恢复；补充对应回归测试覆盖。
 
 - [ ] **Step 1: Write failing memory node test**
 

@@ -824,25 +824,22 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         .reverse()
         .find((artifact) => artifact.artifact_type === 'acceptance');
 
-      try {
-        const verdict = acceptanceArtifact
-          ? parseAcceptanceVerdict(acceptanceArtifact.content)
-          : {
-            verdict: 'pass' as const,
-            acceptedCriteria: [],
-            failedCriteria: [],
-            notes: 'Graph memory node completed without acceptance artifact.',
-          };
-        tools.upsertTaskSummaryMemory({
-          project_id: context.run.project_id,
-          room_id: context.run.room_id,
-          task_id: context.run.task_id,
-          title: `任务完成：${context.task.title}`,
-          content: buildTaskSummaryMemoryContent(context.task.title, verdict),
-          source_id: context.run.id,
-        });
-      } catch (err) {
-        console.warn(`[graph-memory] failed to write task summary: ${(err as Error).message}`);
+      if (!acceptanceArtifact) {
+        console.warn(`[graph-memory] skipped task summary: missing acceptance artifact for run ${context.run.id}`);
+      } else {
+        try {
+          const verdict = parseAcceptanceVerdict(acceptanceArtifact.content);
+          tools.upsertTaskSummaryMemory({
+            project_id: context.run.project_id,
+            room_id: context.run.room_id,
+            task_id: context.run.task_id,
+            title: `任务完成：${context.task.title}`,
+            content: buildTaskSummaryMemoryContent(context.task.title, verdict),
+            source_id: context.run.id,
+          });
+        } catch (err) {
+          console.warn(`[graph-memory] failed to parse/write task summary: ${(err as Error).message}`);
+        }
       }
 
       const updatedRun = tools.updateRun(context.run.id, {
