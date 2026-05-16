@@ -9,6 +9,7 @@ import type { WorkflowRole } from './types.js';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-agent-templates-')), 'test.db');
 
 const { projectRepo } = await import('./repos/projects.js');
+const { roomAgentRepo } = await import('./repos/rooms.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
@@ -98,4 +99,22 @@ test('agent template route rejects unknown templates and mirrors missing room er
     body: JSON.stringify({ template_id: 'planner' }),
   });
   assert.equal(missingRoomRes.status, 400);
+});
+
+test('manual room agents default to no runtime', () => {
+  const projectPath = join(tmpdir(), `openclaw-room-manual-agent-project-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({
+    name: 'Manual Agent Project',
+    path: projectPath,
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Manual Agent Room' });
+
+  const agent = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'manual',
+    agent_name: 'Manual',
+  });
+
+  assert.equal(agent.default_runtime, 'none');
 });

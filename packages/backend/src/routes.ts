@@ -15,6 +15,10 @@ import { createTaskWithConversation, recordTaskEvent } from './task-conversation
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
 import { buildAttachmentMetadata, cleanupUploadedFiles, messageUpload } from './uploads.js';
+import {
+  approveWorkflowPlanWithConversation,
+  startWorkflowWithConversation,
+} from './workflows/conversation.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
 import type { AcpBackend, MemoryScope, MessageMetadata, MessageRoutingMode, TaskInteractionMode, WorkflowRole } from './types.js';
@@ -795,6 +799,21 @@ const conversationTaskCreateSchema = taskCreateSchema.extend({
   source_message_id: z.string().trim().min(1).nullable().optional(),
 });
 
+const workflowStartConversationSchema = z.object({
+  content: z.string().optional(),
+  sender_id: z.string().optional(),
+  sender_name: z.string().optional(),
+  source_message_id: z.string().trim().min(1).optional(),
+  source: z.enum(['chat_command', 'task_button', 'auto_start']),
+});
+
+const workflowApprovalConversationSchema = z.object({
+  content: z.string().optional(),
+  sender_id: z.string().optional(),
+  sender_name: z.string().optional(),
+  source: z.enum(['approval_button']).default('approval_button'),
+});
+
 // ---------- Workflows ----------
 router.post('/tasks/:id/workflows', async (req, res) => {
   try {
@@ -803,6 +822,26 @@ router.post('/tasks/:id/workflows', async (req, res) => {
   } catch (err) {
     const error = err as Error;
     res.status(workflowErrorStatus(error)).json({ error: error.message });
+  }
+});
+
+router.post('/rooms/:roomId/tasks/:taskId/workflows/start-with-conversation', (req, res) => {
+  const parsed = workflowStartConversationSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const workflow = startWorkflowWithConversation({
+      roomId: req.params.roomId,
+      taskId: req.params.taskId,
+      content: parsed.data.content,
+      senderId: parsed.data.sender_id,
+      senderName: parsed.data.sender_name,
+      sourceMessageId: parsed.data.source_message_id,
+      source: parsed.data.source,
+    });
+    res.status(202).json(workflow);
+  } catch (err) {
+    const error = err as Error & { status?: number };
+    res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
   }
 });
 
@@ -823,6 +862,25 @@ router.post('/workflows/:id/approve-plan', async (req, res) => {
   } catch (err) {
     const error = err as Error;
     res.status(workflowErrorStatus(error)).json({ error: error.message });
+  }
+});
+
+router.post('/rooms/:roomId/workflows/:workflowId/approve-plan-with-conversation', (req, res) => {
+  const parsed = workflowApprovalConversationSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const workflow = approveWorkflowPlanWithConversation({
+      roomId: req.params.roomId,
+      workflowId: req.params.workflowId,
+      content: parsed.data.content,
+      senderId: parsed.data.sender_id,
+      senderName: parsed.data.sender_name,
+      source: parsed.data.source,
+    });
+    res.status(202).json(workflow);
+  } catch (err) {
+    const error = err as Error & { status?: number };
+    res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
   }
 });
 

@@ -5,6 +5,7 @@ import { roomRepo } from '../../repos/rooms.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { runRegistry } from '../../run-registry.js';
+import { recordTaskEvent } from '../../task-conversation.js';
 import type { WorkflowRun } from '../../types.js';
 import { createGraphNodes } from './nodes.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
@@ -77,6 +78,11 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
 }
 
 export async function startGraphWorkflow(taskId: string, deps: GraphRuntimeDeps = {}): Promise<WorkflowRun> {
+  const run = createGraphWorkflowRun(taskId);
+  return continueGraphWorkflow(run.id, deps);
+}
+
+export function createGraphWorkflowRun(taskId: string): WorkflowRun {
   const { task, room, project } = requireTaskContext(taskId);
   const existing = workflowRepo.getActiveByTask(task.id);
   if (existing) throw new Error('task already has an active workflow');
@@ -106,33 +112,40 @@ export async function startGraphWorkflow(taskId: string, deps: GraphRuntimeDeps 
     workflowRunId: run.id,
   };
   workflowRepo.updateGraphState(run.id, serializeGraphState(initialState));
+  return workflowRepo.getRun(run.id) ?? run;
+}
 
-  const graph = buildRuntimeGraph(deps);
-  let finalState: AgentWorkflowState;
+export function enqueueGraphWorkflow(runId: string, deps: GraphRuntimeDeps = {}): void {
+  void continueGraphWorkflow(runId, deps).catch((err) => {
+    handleBackgroundGraphWorkflowError(runId, err);
+  });
+}
+
+export async function continueGraphWorkflow(runId: string, deps: GraphRuntimeDeps = {}): Promise<WorkflowRun> {
+  let state: AgentWorkflowState | null = null;
   try {
-    finalState = await graph.invoke(initialState, {
-      configurable: {
-        thread_id: run.id,
-      },
-    }) as AgentWorkflowState;
+    const run = requireGraphRun(runId);
+    state = requireGraphStateOrBlock(run);
+    const finalState = await resumeGraphWorkflowFromState(state, deps);
+    workflowRepo.updateGraphState(run.id, serializeGraphState(finalState));
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    const failedState = blockGraphWorkflowRun(run.id, initialState, error);
-    workflowRepo.updateGraphState(run.id, serializeGraphState(failedState));
+    const latest = workflowRepo.getRun(runId);
+    const parsed = latest ? tryParseGraphState(latest) : null;
+    const fallbackState = parsed?.ok ? parsed.state : null;
+    const failedState = blockGraphWorkflowRun(runId, fallbackState ?? state, error);
+    if (failedState) workflowRepo.updateGraphState(runId, serializeGraphState(failedState));
+    const blocked = workflowRepo.getRun(runId);
+    if (blocked) createGraphTools(deps).broadcastWorkflowUpdated(blocked);
     throw err;
   }
 
-  workflowRepo.updateGraphState(run.id, serializeGraphState(finalState));
-  const latest = workflowRepo.getRun(run.id);
+  const latest = workflowRepo.getRun(runId);
   if (!latest) throw new Error('workflow not found');
   return latest;
 }
 
-export async function approveGraphWorkflow(
-  id: string,
-  approvedBy = 'user',
-  deps: GraphRuntimeDeps = {},
-): Promise<WorkflowRun> {
+export function approveGraphWorkflowPlan(id: string, approvedBy = 'user'): WorkflowRun {
   const run = requireGraphRun(id);
   if (run.status !== 'awaiting_approval') throw new Error('workflow is not awaiting approval');
   const state = requireGraphStateOrBlock(run);
@@ -142,18 +155,23 @@ export async function approveGraphWorkflow(
     status: 'running',
     error: null,
   };
-  workflowRepo.updateRun(run.id, {
+  const updated = workflowRepo.updateRun(run.id, {
     status: 'running',
     approved_by: approvedBy,
     error: null,
   });
+  if (!updated) throw new Error('workflow not found');
   workflowRepo.updateGraphState(run.id, serializeGraphState(approvedState));
+  return workflowRepo.getRun(run.id) ?? updated;
+}
 
-  const finalState = await resumeGraphWorkflowFromState(approvedState, deps);
-  workflowRepo.updateGraphState(run.id, serializeGraphState(finalState));
-  const latest = workflowRepo.getRun(run.id);
-  if (!latest) throw new Error('workflow not found');
-  return latest;
+export async function approveGraphWorkflow(
+  id: string,
+  approvedBy = 'user',
+  deps: GraphRuntimeDeps = {},
+): Promise<WorkflowRun> {
+  const run = approveGraphWorkflowPlan(id, approvedBy);
+  return continueGraphWorkflow(run.id, deps);
 }
 
 export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}): Promise<WorkflowRun> {
@@ -235,7 +253,11 @@ export async function cancelGraphWorkflow(id: string): Promise<WorkflowRun> {
   return latest;
 }
 
-function blockGraphWorkflowRun(runId: string, state: AgentWorkflowState, error: string): AgentWorkflowState {
+function blockGraphWorkflowRun(
+  runId: string,
+  state: AgentWorkflowState | null,
+  error: string,
+): AgentWorkflowState | null {
   const run = workflowRepo.updateRun(runId, {
     status: 'blocked',
     error,
@@ -246,12 +268,38 @@ function blockGraphWorkflowRun(runId: string, state: AgentWorkflowState, error: 
       error,
     });
   }
+  if (!state) return null;
   return {
     ...state,
     workflowRunId: run?.id ?? runId,
     status: 'blocked',
     error,
   };
+}
+
+function handleBackgroundGraphWorkflowError(runId: string, err: unknown): void {
+  const error = err instanceof Error ? err.message : String(err);
+  const run = workflowRepo.getRun(runId);
+  if (!run) return;
+  const parsed = tryParseGraphState(run);
+  const failedState = blockGraphWorkflowRun(runId, parsed.ok ? parsed.state : null, error);
+  if (failedState) workflowRepo.updateGraphState(runId, serializeGraphState(failedState));
+
+  const latest = workflowRepo.getRun(runId) ?? run;
+  const task = taskRepo.get(latest.task_id);
+  if (!task) return;
+  try {
+    recordTaskEvent({
+      roomId: latest.room_id,
+      taskId: task.id,
+      taskTitle: task.title,
+      workflowRunId: latest.id,
+      eventType: 'workflow_failed',
+      content: `工作流后台推进失败：${error}`,
+    });
+  } catch (recordErr) {
+    console.warn(`[graph-runtime] failed to record background failure: ${(recordErr as Error).message}`);
+  }
 }
 
 export function recoverGraphWorkflow(error: string): number {

@@ -35,7 +35,7 @@ function normalizeRoomAgent(row: RoomAgentRow): RoomAgent {
     capabilities: parseStringArray(row.capabilities),
     default_runtime: runtime && DEFAULT_RUNTIMES.has(runtime as AgentDefaultRuntime)
       ? (runtime as AgentDefaultRuntime)
-      : 'openclaw',
+      : 'none',
   };
 }
 
@@ -85,8 +85,8 @@ export const roomAgentRepo = {
   }): RoomAgent {
     const id = nanoid(12);
     db.prepare(
-      `INSERT INTO room_agents (id, room_id, agent_id, agent_name, agent_role, joined_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO room_agents (id, room_id, agent_id, agent_name, agent_role, joined_at, default_runtime)
+       VALUES (?, ?, ?, ?, ?, ?, 'none')`,
     ).run(id, input.room_id, input.agent_id, input.agent_name, input.agent_role ?? null, now());
     return this.get(id)!;
   },

@@ -1148,7 +1148,16 @@ function finishAcceptance(run: WorkflowRun, step: WorkflowStep, output: string):
 function safelyRecordWorkflowEvent(input: {
   run: WorkflowRun;
   task: Task;
-  eventType: 'workflow_started' | 'workflow_stage_changed' | 'workflow_plan_ready' | 'workflow_assignment_created' | 'workflow_blocked' | 'workflow_completed' | 'workflow_cancelled';
+  eventType:
+    | 'workflow_started'
+    | 'workflow_stage_changed'
+    | 'workflow_plan_ready'
+    | 'workflow_assignment_created'
+    | 'workflow_blocked'
+    | 'workflow_completed'
+    | 'workflow_cancelled'
+    | 'workflow_failed'
+    | 'workflow_memory_written';
   content: string;
   workflowStepId?: string | null;
   origin?: 'workflow_assignment';

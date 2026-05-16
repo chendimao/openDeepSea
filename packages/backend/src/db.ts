@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS room_agents (
   acp_permission_mode TEXT NOT NULL DEFAULT 'bypass',
   acp_writable_dirs TEXT NOT NULL DEFAULT '[]',
   capabilities TEXT NOT NULL DEFAULT '[]',
-  default_runtime TEXT NOT NULL DEFAULT 'openclaw',
+  default_runtime TEXT NOT NULL DEFAULT 'none',
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
   UNIQUE (room_id, agent_id)
 );
@@ -354,7 +354,7 @@ if (!roomAgentColumnNames.has('capabilities')) {
   db.exec("ALTER TABLE room_agents ADD COLUMN capabilities TEXT NOT NULL DEFAULT '[]'");
 }
 if (!roomAgentColumnNames.has('default_runtime')) {
-  db.exec("ALTER TABLE room_agents ADD COLUMN default_runtime TEXT NOT NULL DEFAULT 'openclaw'");
+  db.exec("ALTER TABLE room_agents ADD COLUMN default_runtime TEXT NOT NULL DEFAULT 'none'");
 }
 
 const agentRunColumns = db.prepare('PRAGMA table_info(agent_runs)').all() as { name: string }[];
