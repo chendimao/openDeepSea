@@ -25,7 +25,13 @@ test('execute node starts assigned ACP agent and records completed implementatio
     agent_id: 'executor',
     agent_name: 'Executor',
   });
-  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  const withRole = roomAgentRepo.setWorkflowRole(executor.id, 'executor') ?? executor;
+  const acpExecutor = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+  }) ?? withRole;
   const parentTask = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -38,7 +44,7 @@ test('execute node starts assigned ACP agent and records completed implementatio
     parent_task_id: parentTask.id,
     title: 'Child task',
     description: 'Implementation child task',
-    assigned_agent_id: executor.id,
+    assigned_agent_id: acpExecutor.id,
     created_from: 'workflow_assignment',
   });
   const run = workflowRepo.createRun({
@@ -65,8 +71,8 @@ test('execute node starts assigned ACP agent and records completed implementatio
     runAcpAgent: async (input) => {
       const runRow = agentRunRepo.create({
         room_id: room.id,
-        room_agent_id: executor.id,
-        agent_id: executor.agent_id,
+        room_agent_id: acpExecutor.id,
+        agent_id: acpExecutor.agent_id,
         backend: 'codex',
         task_id: input.taskId ?? null,
         workflow_run_id: input.workflowRunId ?? null,
@@ -78,8 +84,8 @@ test('execute node starts assigned ACP agent and records completed implementatio
       const message = messageRepo.create({
         room_id: room.id,
         sender_type: 'agent',
-        sender_id: executor.agent_id,
-        sender_name: executor.agent_name,
+        sender_id: acpExecutor.agent_id,
+        sender_name: acpExecutor.agent_name,
         content: 'implementation done',
         message_type: 'agent_stream',
       });
@@ -143,7 +149,7 @@ test('execute node starts assigned ACP agent and records completed implementatio
   });
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.roomAgentId, executor.id);
+  assert.equal(calls[0]?.roomAgentId, acpExecutor.id);
   assert.equal(calls[0]?.taskId, childTask.id);
   assert.equal(calls[0]?.workflowRunId, run.id);
   assert.equal(calls[0]?.workflowStage, 'implementation');
@@ -154,8 +160,8 @@ test('execute node starts assigned ACP agent and records completed implementatio
   assert.ok(step);
   assert.equal(step?.stage, 'implementation');
   assert.equal(step?.status, 'completed');
-  assert.equal(step?.room_agent_id, executor.id);
-  assert.equal(step?.assigned_room_agent_id, executor.id);
+  assert.equal(step?.room_agent_id, acpExecutor.id);
+  assert.equal(step?.assigned_room_agent_id, acpExecutor.id);
   assert.deepEqual(step?.scope_read, ['packages/backend/src/workflows/graph/nodes.ts']);
   assert.deepEqual(step?.scope_write, ['packages/backend/src/workflows/graph/nodes.ts']);
   assert.equal(step?.agent_run_id, fakeRunId);
@@ -169,6 +175,99 @@ test('execute node starts assigned ACP agent and records completed implementatio
   assert.equal(nextState.activeAgentRunId, fakeRunId);
 });
 
+test('execute node blocks assigned non-ACP agent without starting ACP run', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-non-acp-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Non ACP', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Non ACP Room' });
+  const executor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'legacy-executor',
+    agent_name: 'Legacy Executor',
+  });
+  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parent non ACP task',
+    description: 'Parent workflow task',
+  });
+  const childTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Child non ACP task',
+    description: 'Implementation child task',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+
+  let calls = 0;
+  const tools = createGraphTools({
+    runAcpAgent: async () => {
+      calls += 1;
+      throw new Error('runAcpAgent should not be called for assigned non-ACP agent');
+    },
+  });
+  const nodes = createGraphNodes(tools);
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Execute one child task',
+      assumptions: [],
+      tasks: [{
+        title: childTask.title,
+        description: childTask.description ?? '',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Block because assigned executor is not ACP configured'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [childTask.id],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(nextState.status, 'blocked');
+  assert.match(nextState.error ?? '', /No executor available/);
+  assert.equal(workflowRepo.getRun(run.id)?.status, 'blocked');
+  assert.match(workflowRepo.getRun(run.id)?.error ?? '', /No executor available/);
+  assert.equal(taskRepo.get(childTask.id)?.status, 'todo');
+  assert.equal(workflowRepo.listSteps(run.id).some((item) => item.node_name === 'execute'), false);
+});
+
 test('execute node fails workflow step and child task when ACP agent fails', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-execute-fail-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -179,7 +278,13 @@ test('execute node fails workflow step and child task when ACP agent fails', asy
     agent_id: 'executor-fail',
     agent_name: 'Executor Fail',
   });
-  roomAgentRepo.setWorkflowRole(executor.id, 'executor');
+  const withRole = roomAgentRepo.setWorkflowRole(executor.id, 'executor') ?? executor;
+  const acpExecutor = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+  }) ?? withRole;
   const parentTask = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -192,7 +297,7 @@ test('execute node fails workflow step and child task when ACP agent fails', asy
     parent_task_id: parentTask.id,
     title: 'Child fail task',
     description: 'Implementation child task',
-    assigned_agent_id: executor.id,
+    assigned_agent_id: acpExecutor.id,
     created_from: 'workflow_assignment',
   });
   const run = workflowRepo.createRun({
@@ -207,8 +312,8 @@ test('execute node fails workflow step and child task when ACP agent fails', asy
     runAcpAgent: async (input) => {
       const runRow = agentRunRepo.create({
         room_id: room.id,
-        room_agent_id: executor.id,
-        agent_id: executor.agent_id,
+        room_agent_id: acpExecutor.id,
+        agent_id: acpExecutor.agent_id,
         backend: 'codex',
         task_id: input.taskId ?? null,
         workflow_run_id: input.workflowRunId ?? null,
@@ -223,8 +328,8 @@ test('execute node fails workflow step and child task when ACP agent fails', asy
       const message = messageRepo.create({
         room_id: room.id,
         sender_type: 'agent',
-        sender_id: executor.agent_id,
-        sender_name: executor.agent_name,
+        sender_id: acpExecutor.agent_id,
+        sender_name: acpExecutor.agent_name,
         content: 'partial output',
         message_type: 'agent_stream',
       });

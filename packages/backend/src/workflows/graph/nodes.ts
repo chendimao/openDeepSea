@@ -217,8 +217,13 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         return nextState;
       }
 
+      const assignedExecutor = nextChild.assigned_agent_id
+        ? context.agents.find((agent) =>
+          agent.id === nextChild.assigned_agent_id && agent.acp_enabled && agent.acp_backend,
+        ) ?? null
+        : null;
       const executor = nextChild.assigned_agent_id
-        ? context.agents.find((agent) => agent.id === nextChild.assigned_agent_id) ?? null
+        ? assignedExecutor
         : tools.selectAgentForRole('executor', context.agents);
       if (!executor) {
         const error = 'No executor available for implementation';
