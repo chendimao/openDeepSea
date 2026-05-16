@@ -20,7 +20,6 @@ interface FilePickerDialogProps {
 
 export function FilePickerDialog({
   projectId,
-  disabled,
   selectedFileIds,
   onSelect,
   children,
@@ -60,7 +59,7 @@ export function FilePickerDialog({
         }
       }}
     >
-      <DialogTrigger asChild disabled={disabled}>
+      <DialogTrigger asChild>
         {children}
       </DialogTrigger>
       <DialogContent

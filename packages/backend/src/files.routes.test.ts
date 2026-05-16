@@ -11,6 +11,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-fi
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { fileRepo } = await import('./repos/files.js');
+const { messageRepo } = await import('./repos/messages.js');
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
 
@@ -104,6 +105,39 @@ test('message route accepts project file ids and records message refs', async ()
   assert.ok(listedFile);
   assert.equal(listedFile.reference_count, 1);
   assert.equal(listedFile.last_referenced_room_id, room.id);
+});
+
+test('delete project file marks historical message attachment snapshots deleted', async () => {
+  const project = createProject('deleted-snapshot-project');
+  const room = roomRepo.create({ project_id: project.id, name: 'File Room' });
+  const file = fileRepo.create({
+    project_id: project.id,
+    original_name: 'notes.txt',
+    stored_name: 'stored.txt',
+    mime_type: 'text/plain',
+    size: 128,
+    url: `/uploads/files/${project.id}/stored.txt`,
+    storage_path: join(tmpdir(), 'stored.txt'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+
+  const messageRes = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: 'keep snapshot', fileIds: [file.id] }),
+  });
+  assert.equal(messageRes.status, 201);
+  const message = await messageRes.json() as { id: string };
+
+  const deleteRes = await request(`/api/files/${file.id}`, { method: 'DELETE' });
+  assert.equal(deleteRes.status, 204);
+
+  const updatedMessage = messageRepo.get(message.id);
+  assert.ok(updatedMessage?.metadata);
+  const metadata = JSON.parse(updatedMessage.metadata) as { attachments: Array<{ fileId: string; deleted?: boolean }> };
+  assert.equal(metadata.attachments[0]?.fileId, file.id);
+  assert.equal(metadata.attachments[0]?.deleted, true);
 });
 
 test('message route rejects project file ids from another project', async () => {

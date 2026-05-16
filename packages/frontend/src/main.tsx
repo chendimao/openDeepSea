@@ -7,6 +7,7 @@ import { AppShell } from './components/AppShell';
 import { I18nProvider } from './lib/i18n';
 import { AgentsPage } from './pages/AgentsPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { FilesPage } from './pages/FilesPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { RoomPage } from './pages/RoomPage';
 import { getThemeTone, parseThemeMode, type ThemeMode } from './lib/theme';
@@ -43,6 +44,7 @@ function RootApp(): JSX.Element {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/agents" element={<AgentsPage />} />
               <Route path="/projects/:projectId" element={<ProjectPage />} />
+              <Route path="/projects/:projectId/files" element={<FilesPage />} />
               <Route path="/projects/:projectId/rooms/:roomId" element={<RoomPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

@@ -384,6 +384,7 @@ router.delete('/files/:fileId', async (req, res, next) => {
     if (!file) return res.status(404).json({ error: 'not found' });
     const deleted = fileRepo.softDelete(file.id);
     if (!deleted) return res.status(404).json({ error: 'not found' });
+    messageRepo.markFileAttachmentDeleted(file.id);
     await unlinkProjectFileSafely(file);
     res.status(204).end();
   } catch (err) {

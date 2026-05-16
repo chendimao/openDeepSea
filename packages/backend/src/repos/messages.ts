@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { Message, MessageType, SenderType } from '../types.js';
+import type { Message, MessageMetadata, MessageType, SenderType } from '../types.js';
 
 export const messageRepo = {
   listByRoom(roomId: string, limit = 200): Message[] {
@@ -45,4 +45,47 @@ export const messageRepo = {
   appendChunk(id: string, chunk: string): void {
     db.prepare('UPDATE messages SET content = content || ? WHERE id = ?').run(chunk, id);
   },
+
+  markFileAttachmentDeleted(fileId: string): number {
+    const messages = db.prepare(
+      `SELECT DISTINCT messages.*
+       FROM messages
+       INNER JOIN message_file_refs ON message_file_refs.message_id = messages.id
+       WHERE message_file_refs.file_id = ?`,
+    ).all(fileId) as Message[];
+    const update = db.prepare('UPDATE messages SET metadata = ? WHERE id = ?');
+    let changed = 0;
+
+    const transaction = db.transaction(() => {
+      for (const message of messages) {
+        const nextMetadata = markMetadataFileDeleted(message.metadata, fileId);
+        if (!nextMetadata) continue;
+        update.run(JSON.stringify(nextMetadata), message.id);
+        changed += 1;
+      }
+    });
+    transaction();
+    return changed;
+  },
 };
+
+function markMetadataFileDeleted(rawMetadata: string | null, fileId: string): MessageMetadata | null {
+  if (!rawMetadata) return null;
+
+  let metadata: MessageMetadata;
+  try {
+    metadata = JSON.parse(rawMetadata) as MessageMetadata;
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(metadata.attachments)) return null;
+  let changed = false;
+  const attachments = metadata.attachments.map((attachment) => {
+    if (attachment.fileId !== fileId || attachment.deleted) return attachment;
+    changed = true;
+    return { ...attachment, deleted: true };
+  });
+
+  return changed ? { ...metadata, attachments } : null;
+}

@@ -38,6 +38,8 @@ import {
   MessageRunPanel as AiMessageRunPanel,
 } from '../components/ai-elements/Message';
 
+type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[] };
+
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
   const queryClient = useQueryClient();
@@ -462,22 +464,24 @@ function ChatColumn({
   const canSendChat = agents.length > 0 || modelChatReady;
 
   const send = useMutation({
-    mutationFn: (input: { content: string; mentions?: string[]; files?: File[] }) => api.sendMessage(roomId, input),
+    mutationFn: (input: SendInput) => api.sendMessage(roomId, input),
     onSuccess: () => {
       setComposerResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['project-files', projectId] });
     },
     onError: (err) => toast.error((err as Error).message),
   });
 
-  const handleSend = (input: { content: string; mentions?: string[]; files?: File[] }) => {
+  const handleSend = (input: SendInput) => {
     const content = input.content.trim();
     const files = input.files;
-    if (!content && (!files || files.length === 0)) return;
-    send.mutate({ content, mentions: input.mentions, files });
+    const fileIds = input.fileIds;
+    if (!content && (!files || files.length === 0) && (!fileIds || fileIds.length === 0)) return;
+    send.mutate({ content, mentions: input.mentions, files, fileIds });
   };
 
   return (
@@ -552,6 +556,7 @@ function ChatColumn({
       </Conversation>
 
       <RichMessageComposer
+        projectId={projectId}
         resetKey={composerResetKey}
         onSend={handleSend}
         sending={send.isPending}
@@ -730,6 +735,22 @@ function MessageAttachments({ attachments }: { attachments: MessageAttachmentMet
     <>
       <div className="message-attachments">
         {attachments.map((attachment) => {
+          if (attachment.deleted) {
+            return (
+              <div key={attachment.id} className="message-attachment-card is-deleted">
+                <span className="message-attachment-icon" aria-hidden="true">
+                  <FileText className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate text-[12px] font-medium text-[var(--color-fg)]">{attachment.name}</span>
+                  <span className="block truncate text-[10.5px] font-mono text-[var(--color-fg-muted)]">
+                    {t('message.attachmentDeleted')}
+                  </span>
+                </span>
+              </div>
+            );
+          }
+
           const content = (
             <>
               {attachment.isImage ? (
