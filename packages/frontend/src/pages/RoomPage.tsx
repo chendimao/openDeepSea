@@ -279,6 +279,7 @@ export function RoomPage() {
             agentRuns={agentRuns}
             roomId={roomId}
             projectId={projectId}
+            modelChatReady={Boolean(settings?.system.langchain_planner_model && settings.system.openai_api_key_set)}
             routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
             fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
             onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
@@ -394,6 +395,7 @@ function ChatColumn({
   agentRuns,
   roomId,
   projectId,
+  modelChatReady,
   routingMode,
   fallbackAgentId,
   onRetryWorkflow,
@@ -404,6 +406,7 @@ function ChatColumn({
   agentRuns: AgentRun[];
   roomId: string;
   projectId: string;
+  modelChatReady: boolean;
   routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
   fallbackAgentId: string | null;
   onRetryWorkflow: (workflowId: string) => void;
@@ -425,6 +428,7 @@ function ChatColumn({
     [messages, agentRuns],
   );
   const visibleMessages = useMemo(() => dedupeMessages(messages), [messages]);
+  const canSendChat = agents.length > 0 || modelChatReady;
 
   const send = useMutation({
     mutationFn: (input: { content: string; mentions?: string[]; files?: File[] }) => api.sendMessage(roomId, input),
@@ -498,10 +502,12 @@ function ChatColumn({
                 title={t('room.emptyMessagesTitle')}
                 description={
                   agents.length === 0
-                    ? t('room.emptyMessagesNoAgents')
+                    ? modelChatReady
+                      ? t('room.emptyMessagesWithModel')
+                      : t('room.emptyMessagesNoAgents')
                     : t('room.emptyMessagesWithAgents')
                 }
-                action={agents.length === 0 ? <AddAgentDialog roomId={roomId} /> : undefined}
+                action={agents.length === 0 && !modelChatReady ? <AddAgentDialog roomId={roomId} /> : undefined}
               />
             </ConversationEmptyState>
           ) : (
@@ -530,17 +536,25 @@ function ChatColumn({
         resetKey={composerResetKey}
         onSend={handleSend}
         sending={send.isPending || createTaskFromCommand.isPending}
-        disabled={agents.length === 0}
+        disabled={!canSendChat}
         agents={agents}
         placeholder={
-          agents.length === 0 ? t('room.composerNoAgents') : t('room.composerReady')
+          agents.length === 0
+            ? modelChatReady
+              ? t('room.composerModelReady')
+              : t('room.composerNoAgents')
+            : t('room.composerReady')
         }
-        routingHint={routingHint(
-          routingMode,
-          fallbackAgentId,
-          agents.find((agent) => agent.agent_id === fallbackAgentId),
-          t,
-        )}
+        routingHint={
+          agents.length === 0 && modelChatReady
+            ? t('room.routing.modelChat')
+            : routingHint(
+              routingMode,
+              fallbackAgentId,
+              agents.find((agent) => agent.agent_id === fallbackAgentId),
+              t,
+            )
+        }
       />
     </div>
   );

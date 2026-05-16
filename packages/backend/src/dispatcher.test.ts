@@ -186,6 +186,42 @@ test('dispatchUserMessage marks empty successful ACP output as failed', async ()
   }
 });
 
+test('dispatchUserMessage replies with configured model when no agent target is available', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-test-'));
+  const project = projectRepo.create({ name: `model-chat-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '你好，给我一句回复',
+    message_type: 'text',
+  });
+
+  try {
+    await dispatchUserMessage({
+      roomId: room.id,
+      userMessage: message,
+      modelChatInvoker: {
+        async invoke(messages) {
+          assert.equal(messages.length, 2);
+          return '模型回复成功';
+        },
+      },
+    });
+
+    const messages = messageRepo.listByRoom(room.id);
+    const modelReply = messages.find((item) => item.sender_id === 'model-chat');
+    assert.ok(modelReply);
+    assert.equal(modelReply.sender_type, 'agent');
+    assert.equal(modelReply.sender_name, 'Model Chat');
+    assert.equal(modelReply.content, '模型回复成功');
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 function createMessage(metadata: MessageMetadata): Message {
   return {
     id: 'msg-1',

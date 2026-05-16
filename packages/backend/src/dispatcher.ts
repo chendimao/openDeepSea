@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { dirname, resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
+import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation } from './memory/distill.js';
 import { gatewayClient } from './openclaw/gateway.js';
@@ -28,6 +29,7 @@ export async function dispatchUserMessage(args: {
   roomId: string;
   userMessage: Message;
   mentionedAgentRoomIds?: string[];
+  modelChatInvoker?: ModelChatInvoker;
 }): Promise<void> {
   const { roomId, userMessage } = args;
   const room = roomRepo.get(roomId);
@@ -54,7 +56,15 @@ export async function dispatchUserMessage(args: {
     prompt: promptWithAttachments,
     imagePaths,
   });
-  if (routing.targets.length === 0) return;
+  if (routing.targets.length === 0) {
+    await respondWithConfiguredModel({
+      project,
+      room,
+      userMessage,
+      invoker: args.modelChatInvoker,
+    });
+    return;
+  }
 
   const responses = await runTargets({
     targets: routing.targets,
@@ -79,6 +89,46 @@ export async function dispatchUserMessage(args: {
       roomId,
       imagePaths,
     });
+  }
+}
+
+async function respondWithConfiguredModel(args: {
+  project: NonNullable<ReturnType<typeof projectRepo.get>>;
+  room: NonNullable<ReturnType<typeof roomRepo.get>>;
+  userMessage: Message;
+  invoker?: ModelChatInvoker;
+}): Promise<void> {
+  if (!args.invoker && !isModelChatConfigured()) return;
+
+  try {
+    const reply = await generateModelChatReply({
+      project: args.project,
+      room: args.room,
+      userMessage: args.userMessage,
+      recentMessages: messageRepo.listByRoom(args.room.id, 20),
+    }, args.invoker);
+    const message = messageRepo.create({
+      room_id: args.room.id,
+      sender_type: 'agent',
+      sender_id: 'model-chat',
+      sender_name: 'Model Chat',
+      content: reply,
+      message_type: 'text',
+      metadata: {
+        model_chat: true,
+      },
+    });
+    wsHub.broadcast(args.room.id, { type: 'message:new', roomId: args.room.id, message });
+  } catch (err) {
+    const message = messageRepo.create({
+      room_id: args.room.id,
+      sender_type: 'system',
+      sender_id: 'system',
+      sender_name: 'System',
+      content: `Model chat failed: ${(err as Error).message}`,
+      message_type: 'system',
+    });
+    wsHub.broadcast(args.room.id, { type: 'message:new', roomId: args.room.id, message });
   }
 }
 
