@@ -19,6 +19,7 @@ import {
   approveWorkflowPlanWithConversation,
   startWorkflowWithConversation,
 } from './workflows/conversation.js';
+import { getLangGraphWorkflowConfig } from './workflows/graph/runtime-config.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
 import type { AcpBackend, MemoryScope, MessageMetadata, MessageRoutingMode, TaskInteractionMode, WorkflowRole } from './types.js';
@@ -817,11 +818,21 @@ const workflowApprovalConversationSchema = z.object({
 // ---------- Workflows ----------
 router.post('/tasks/:id/workflows', async (req, res) => {
   try {
+    if (getLangGraphWorkflowConfig().enabled) {
+      const task = taskRepo.get(req.params.id);
+      if (!task) return res.status(404).json({ error: 'task not found' });
+      const workflow = startWorkflowWithConversation({
+        roomId: task.room_id,
+        taskId: task.id,
+        source: 'task_button',
+      });
+      return res.status(202).json(workflow);
+    }
     const workflow = await workflowOrchestrator.start(req.params.id);
-    res.status(201).json(workflow);
+    return res.status(201).json(workflow);
   } catch (err) {
-    const error = err as Error;
-    res.status(workflowErrorStatus(error)).json({ error: error.message });
+    const error = err as Error & { status?: number };
+    return res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
   }
 });
 
@@ -857,11 +868,20 @@ router.get('/workflows/:id', (req, res) => {
 
 router.post('/workflows/:id/approve-plan', async (req, res) => {
   try {
+    const existing = workflowRepo.getRun(req.params.id);
+    if (getLangGraphWorkflowConfig().enabled && existing?.graph_version) {
+      const workflow = approveWorkflowPlanWithConversation({
+        roomId: existing.room_id,
+        workflowId: existing.id,
+        source: 'approval_button',
+      });
+      return res.status(202).json(workflow);
+    }
     const workflow = await workflowOrchestrator.approvePlan(req.params.id, 'user');
-    res.json(workflow);
+    return res.json(workflow);
   } catch (err) {
-    const error = err as Error;
-    res.status(workflowErrorStatus(error)).json({ error: error.message });
+    const error = err as Error & { status?: number };
+    return res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
   }
 });
 
