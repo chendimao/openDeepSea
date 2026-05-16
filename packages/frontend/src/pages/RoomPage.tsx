@@ -462,6 +462,9 @@ function ChatColumn({
     onSuccess: () => {
       setComposerResetKey((key) => key + 1);
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
     },
     onError: (err) => toast.error((err as Error).message),
   });

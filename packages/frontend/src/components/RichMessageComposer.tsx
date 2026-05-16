@@ -143,11 +143,6 @@ export function RichMessageComposer({
 
     const content = segmentsToPlainText(segments).trim();
 
-    if (/^\/task\s+(.+)/.test(content) && attachmentsRef.current.length > 0) {
-      toast.error(t('composer.taskNoAttachments'));
-      return;
-    }
-
     if (!content && attachmentsRef.current.length === 0) return;
 
     const mentionedRoomAgentIds = [
