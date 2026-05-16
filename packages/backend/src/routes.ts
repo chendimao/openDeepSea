@@ -654,6 +654,9 @@ router.post('/rooms/:roomId/agents', (req, res) => {
   if (!parsed.data.global_agent_id && !parsed.data.agent_id) {
     return res.status(400).json({ error: 'agent_id is required' });
   }
+  if (!roomRepo.get(req.params.roomId)) {
+    return res.status(404).json({ error: 'room not found' });
+  }
   try {
     const agent = parsed.data.global_agent_id
       ? roomAgentRepo.addFromGlobalAgent({
@@ -950,6 +953,12 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       return;
     }
 
+    const referencedFiles = resolveActiveProjectFiles(room.project_id, uniqueFileIds);
+    if (referencedFiles.length !== uniqueFileIds.length) {
+      await cleanupProjectUploadedFiles(files);
+      res.status(400).json({ error: 'invalid fileIds' });
+      return;
+    }
     let mentions: string[] | undefined;
     try {
       mentions = parseMultipartMentions(parsed.data.mentions);
@@ -967,12 +976,6 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
         uploaded_by_name: parsed.data.sender_name ?? 'You',
       },
     )));
-    const referencedFiles = resolveActiveProjectFiles(room.project_id, uniqueFileIds);
-    if (referencedFiles.length !== uniqueFileIds.length) {
-      await cleanupProjectUploadedFiles(files);
-      res.status(400).json({ error: 'invalid fileIds' });
-      return;
-    }
     const messageFiles = [...uploadedFiles, ...referencedFiles];
     const metadata: MessageMetadata | undefined = messageFiles.length > 0
       ? { attachments: messageFiles.map(buildAttachmentMetadataFromProjectFile) }

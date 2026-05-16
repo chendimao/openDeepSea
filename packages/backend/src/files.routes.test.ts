@@ -164,3 +164,33 @@ test('message route rejects project file ids from another project', async () => 
 
   assert.equal(messageRes.status, 400);
 });
+
+test('multipart message rejects invalid project file ids without leaving uploaded file records', async () => {
+  const project = createProject('multipart-invalid-fileids');
+  const otherProject = createProject('multipart-invalid-fileids-other');
+  const room = roomRepo.create({ project_id: project.id, name: 'File Room' });
+  const otherFile = fileRepo.create({
+    project_id: otherProject.id,
+    original_name: 'foreign.pdf',
+    stored_name: 'foreign.pdf',
+    mime_type: 'application/pdf',
+    size: 2048,
+    url: `/uploads/files/${otherProject.id}/foreign.pdf`,
+    storage_path: join(tmpdir(), 'foreign.pdf'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const before = fileRepo.listByProject(project.id).length;
+  const form = new FormData();
+  form.append('content', 'upload plus invalid ref');
+  form.append('fileIds', JSON.stringify([otherFile.id]));
+  form.append('files', new Blob(['local'], { type: 'text/plain' }), 'local.txt');
+
+  const messageRes = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: form,
+  });
+
+  assert.equal(messageRes.status, 400);
+  assert.equal(fileRepo.listByProject(project.id).length, before);
+});

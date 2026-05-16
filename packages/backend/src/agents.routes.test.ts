@@ -8,6 +8,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-ag
 
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
+const { agentRepo } = await import('./repos/agents.js');
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
 
@@ -107,4 +108,20 @@ test('global agent routes create, list, update, protect referenced deletes, and 
 
   const deleteUnusedRes = await request(`/api/agents/${unused.id}`, { method: 'DELETE' });
   assert.equal(deleteUnusedRes.status, 204);
+});
+
+test('manual room agent creation rejects unknown rooms without creating a global agent', async () => {
+  const before = agentRepo.list().length;
+
+  const inviteRes = await request('/api/rooms/missing-room/agents', {
+    method: 'POST',
+    body: JSON.stringify({
+      agent_id: 'orphan-agent',
+      agent_name: 'Orphan Agent',
+      acp_backend: 'codex',
+    }),
+  });
+
+  assert.equal(inviteRes.status, 404);
+  assert.equal(agentRepo.list().length, before);
 });
