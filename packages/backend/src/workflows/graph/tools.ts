@@ -1,4 +1,5 @@
 import { formatMemoryContext } from '../../memory/context.js';
+import { runAgentOnce, type RespondAsAgentInput } from '../../dispatcher.js';
 import { memoryRepo } from '../../repos/memory.js';
 import { messageRepo } from '../../repos/messages.js';
 import { projectRepo } from '../../repos/projects.js';
@@ -6,7 +7,19 @@ import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { recordTaskEvent } from '../../task-conversation.js';
-import type { RoomAgent, Task, TaskArtifact, TaskCreatedFrom, TaskEventType, WorkflowRole, WorkflowRun, WorkflowStep } from '../../types.js';
+import type {
+  AgentRun,
+  AgentRunStatus,
+  Message,
+  RoomAgent,
+  Task,
+  TaskArtifact,
+  TaskCreatedFrom,
+  TaskEventType,
+  WorkflowRole,
+  WorkflowRun,
+  WorkflowStep,
+} from '../../types.js';
 import { wsHub } from '../../ws-hub.js';
 import { generateLangChainPlan, type LangChainPlannerInput } from '../langchain-planner.js';
 import type { ParsedPlan } from '../plan-parser.js';
@@ -14,6 +27,11 @@ import { formatRecentMessagesForPlanner } from '../orchestrator.js';
 
 export interface GraphRuntimeDeps {
   planner?: (input: LangChainPlannerInput) => Promise<ParsedPlan>;
+  runAcpAgent?: (input: RespondAsAgentInput) => Promise<{
+    run: AgentRun;
+    message: Message;
+    status: AgentRunStatus;
+  }>;
 }
 
 interface WorkflowRuntimeContext {
@@ -34,6 +52,7 @@ export interface GraphTools {
   updateGraphStep: typeof workflowRepo.updateStep;
   createArtifact: typeof workflowRepo.createArtifact;
   createChildTask: typeof taskRepo.create;
+  updateTaskStatus: typeof taskRepo.updateStatus;
   listChildTasks: typeof taskRepo.listChildren;
   listSteps: typeof workflowRepo.listSteps;
   listArtifacts: typeof workflowRepo.listArtifacts;
@@ -42,6 +61,7 @@ export interface GraphTools {
   broadcastStepUpdated: (roomId: string, step: WorkflowStep) => void;
   broadcastArtifactCreated: (roomId: string, artifact: TaskArtifact) => void;
   broadcastTaskCreated: (task: Task) => void;
+  broadcastTaskUpdated: (task: Task) => void;
   recordWorkflowEvent: (input: {
     roomId: string;
     taskId: string;
@@ -56,10 +76,16 @@ export interface GraphTools {
   updateGraphState: typeof workflowRepo.updateGraphState;
   nextStepSortOrder: (workflowRunId: string) => number;
   selectAgentForRole: (role: WorkflowRole, agents: RoomAgent[]) => RoomAgent | null;
+  runAcpAgent: (input: RespondAsAgentInput) => Promise<{
+    run: AgentRun;
+    message: Message;
+    status: AgentRunStatus;
+  }>;
 }
 
 export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
   const planner = deps.planner ?? ((input: LangChainPlannerInput) => generateLangChainPlan(input));
+  const runAcpAgent = deps.runAcpAgent ?? runAgentOnce;
 
   return {
     readWorkflowContext(workflowRunId: string) {
@@ -99,6 +125,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     updateGraphStep: workflowRepo.updateStep.bind(workflowRepo),
     createArtifact: workflowRepo.createArtifact.bind(workflowRepo),
     createChildTask: taskRepo.create.bind(taskRepo),
+    updateTaskStatus: taskRepo.updateStatus.bind(taskRepo),
     listChildTasks: taskRepo.listChildren.bind(taskRepo),
     listSteps: workflowRepo.listSteps.bind(workflowRepo),
     listArtifacts: workflowRepo.listArtifacts.bind(workflowRepo),
@@ -116,6 +143,9 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     },
     broadcastTaskCreated(task: Task) {
       wsHub.broadcast(task.room_id, { type: 'task:created', task });
+    },
+    broadcastTaskUpdated(task: Task) {
+      wsHub.broadcast(task.room_id, { type: 'task:updated', task });
     },
     recordWorkflowEvent(input) {
       recordTaskEvent({
@@ -140,5 +170,6 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
       if (role !== 'executor') return this.selectAgentForRole('executor', agents);
       return null;
     },
+    runAcpAgent,
   };
 }

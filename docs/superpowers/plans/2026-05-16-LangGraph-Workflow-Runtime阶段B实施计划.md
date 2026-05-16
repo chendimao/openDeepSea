@@ -820,7 +820,7 @@ git commit -m "feat(workflows): 用 LangGraph 分配计划任务"
 - Modify: `packages/backend/src/workflows/graph/runtime.ts`
 - Create: `packages/backend/src/workflows/graph/execute.test.ts`
 
-- [ ] **Step 1: Add failing execute test with fake ACP runner**
+- [x] **Step 1: Add failing execute test with fake ACP runner**
 
 Create `packages/backend/src/workflows/graph/execute.test.ts`:
 
@@ -834,7 +834,7 @@ test('execute node starts assigned ACP agent and records completed implementatio
 });
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -844,7 +844,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because execute node cannot run ACP via injectable tool yet.
 
-- [ ] **Step 3: Extract promise-based ACP runner**
+- [x] **Step 3: Extract promise-based ACP runner**
 
 Modify `packages/backend/src/dispatcher.ts` to export a safe promise wrapper without changing current `respondAsAgent` API:
 
@@ -865,7 +865,7 @@ export async function runAgentOnce(input: RespondAsAgentInput): Promise<{
 
 If `RespondAsAgentInput` is not exported, export its interface.
 
-- [ ] **Step 4: Add graph runAcpAgent tool**
+- [x] **Step 4: Add graph runAcpAgent tool**
 
 In `tools.ts`, add injectable dependency:
 
@@ -875,7 +875,7 @@ runAcpAgent?: typeof runAgentOnce;
 
 Default to `runAgentOnce`.
 
-- [ ] **Step 5: Implement execute node**
+- [x] **Step 5: Implement execute node**
 
 `executeNode` behavior:
 
@@ -889,7 +889,7 @@ Default to `runAgentOnce`.
 - On completion, update step completed, bind `agent_run_id/result/result_message_id`, set child task `review`.
 - Store `activeAgentRunId` and latest step id in graph state.
 
-- [ ] **Step 6: Run execute test**
+- [x] **Step 6: Run execute test**
 
 Run:
 
@@ -899,7 +899,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 7: Run dispatcher regression tests**
+- [x] **Step 7: Run dispatcher regression tests**
 
 Run:
 
@@ -909,7 +909,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/dispatch
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add packages/backend/src/dispatcher.ts packages/backend/src/workflows/graph/tools.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/router.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/execute.test.ts

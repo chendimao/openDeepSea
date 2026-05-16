@@ -86,6 +86,20 @@ export function buildPromptWithMessageAttachments(userPrompt: string, userMessag
   return buildPromptWithResolvedMessageAttachments(userPrompt, getResolvedMessageAttachments(userMessage));
 }
 
+export interface RespondAsAgentInput {
+  agent: RoomAgent;
+  projectPath: string;
+  roomId: string;
+  prompt: string;
+  imagePaths?: string[];
+  taskId?: string | null;
+  workflowRunId?: string | null;
+  workflowStepId?: string | null;
+  workflowStage?: WorkflowStage | null;
+  onRunCreated?: (run: AgentRun) => Promise<void> | void;
+  onFinished?: (result: { run: AgentRun; message: Message; status: AgentRunStatus }) => Promise<void> | void;
+}
+
 interface ResolvedMessageAttachment {
   metadata: MessageAttachmentMetadata;
   localPath: string | null;
@@ -290,19 +304,7 @@ function buildFallbackHandoffPrompt(args: {
   ].join('\n');
 }
 
-export async function respondAsAgent(args: {
-  agent: RoomAgent;
-  projectPath: string;
-  roomId: string;
-  prompt: string;
-  imagePaths?: string[];
-  taskId?: string | null;
-  workflowRunId?: string | null;
-  workflowStepId?: string | null;
-  workflowStage?: WorkflowStage | null;
-  onRunCreated?: (run: AgentRun) => Promise<void> | void;
-  onFinished?: (result: { run: AgentRun; message: Message; status: AgentRunStatus }) => Promise<void> | void;
-}): Promise<void> {
+export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const { agent, projectPath, roomId } = args;
   const room = roomRepo.get(roomId);
   const prompt =
@@ -516,6 +518,24 @@ export async function respondAsAgent(args: {
     const updated = agentRunRepo.updateStatus(id, status, { error: error ?? null });
     if (updated) broadcastRun('agent_run:updated', updated);
   }
+}
+
+export async function runAgentOnce(input: RespondAsAgentInput): Promise<{
+  run: AgentRun;
+  message: Message;
+  status: AgentRunStatus;
+}> {
+  return new Promise((resolve, reject) => {
+    void respondAsAgent({
+      ...input,
+      onFinished: async (result) => {
+        if (input.onFinished) {
+          await input.onFinished(result);
+        }
+        resolve(result);
+      },
+    }).catch(reject);
+  });
 }
 
 function imageUploadDirs(imagePaths: string[]): string[] {

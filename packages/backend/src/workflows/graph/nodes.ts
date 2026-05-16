@@ -1,6 +1,7 @@
 import { serializeGraphState, type AgentWorkflowState } from './state.js';
 import type { GraphTools } from './tools.js';
 import { formatParsedPlanArtifact } from '../orchestrator.js';
+import { buildStagePrompt } from '../prompts.js';
 
 export interface GraphRuntimeNodes {
   contextNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
@@ -193,9 +194,115 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
     async executeNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
+      const childTasks = tools.listChildTasks(context.task.id);
+      const pendingChildren = state.childTaskIds
+        .map((id) => childTasks.find((task) => task.id === id))
+        .filter((task): task is NonNullable<typeof task> => Boolean(task));
+      const nextChild = [...pendingChildren, ...childTasks]
+        .find((child) => child.status === 'todo' || child.status === 'in_progress');
+      if (!nextChild) {
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'execute',
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      const executor = nextChild.assigned_agent_id
+        ? context.agents.find((agent) => agent.id === nextChild.assigned_agent_id) ?? null
+        : tools.selectAgentForRole('executor', context.agents);
+      if (!executor) {
+        const error = 'No executor available for implementation';
+        const updatedRun = tools.updateRun(context.run.id, {
+          status: 'blocked',
+          current_stage: 'implementation',
+          error,
+        });
+        if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'execute',
+          status: 'blocked',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      const inProgressChild = nextChild.status === 'in_progress' ? nextChild : tools.updateTaskStatus(nextChild.id, 'in_progress');
+      if (inProgressChild) {
+        tools.broadcastTaskUpdated(inProgressChild);
+      }
+
+      const orderedChildIds = state.childTaskIds.length > 0 ? state.childTaskIds : childTasks.map((item) => item.id);
+      const plannedTaskIndex = orderedChildIds.indexOf(nextChild.id);
+      const plannedTask = plannedTaskIndex >= 0
+        ? state.plan?.tasks[plannedTaskIndex]
+        : state.plan?.tasks.find((item) => item.title === nextChild.title);
+      const scopeRead = plannedTask?.scopeRead ?? [];
+      const scopeWrite = plannedTask?.scopeWrite ?? [];
+      const prompt = buildStagePrompt('implementation', {
+        projectName: context.project.name,
+        projectPath: context.project.path,
+        room: context.room,
+        task: nextChild,
+        agents: context.agents,
+        artifacts: context.artifacts,
+        childTasks,
+        memoryContext: context.memories,
+      });
+      const step = tools.createGraphStep({
+        workflow_run_id: context.run.id,
+        task_id: nextChild.id,
+        stage: 'implementation',
+        node_name: 'execute',
+        status: 'running',
+        room_agent_id: executor.id,
+        assigned_room_agent_id: nextChild.assigned_agent_id ?? executor.id,
+        scope_read: scopeRead,
+        scope_write: scopeWrite,
+        prompt,
+        sort_order: tools.nextStepSortOrder(context.run.id),
+      });
+      tools.broadcastStepCreated(context.room.id, step);
+
+      const updatedRun = tools.updateRun(context.run.id, {
+        status: 'running',
+        current_stage: 'implementation',
+        error: null,
+      });
+      if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+
+      const runResult = await tools.runAcpAgent({
+        agent: executor,
+        projectPath: context.project.path,
+        roomId: context.room.id,
+        prompt,
+        taskId: nextChild.id,
+        workflowRunId: context.run.id,
+        workflowStepId: step.id,
+        workflowStage: 'implementation',
+      });
+
+      const completedStep = tools.updateGraphStep(step.id, {
+        status: 'completed',
+        agent_run_id: runResult.run.id,
+        result: runResult.run.stdout || runResult.message.content,
+        result_message_id: runResult.message.id,
+        error: runResult.run.error,
+      });
+      if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+
+      const reviewedChild = tools.updateTaskStatus(nextChild.id, 'review');
+      if (reviewedChild) tools.broadcastTaskUpdated(reviewedChild);
+
       const nextState: AgentWorkflowState = {
         ...state,
         currentNode: 'execute',
+        currentStepId: step.id,
+        activeAgentRunId: runResult.run.id,
+        error: null,
       };
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
       return nextState;
