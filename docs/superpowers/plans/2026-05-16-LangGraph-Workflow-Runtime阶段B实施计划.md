@@ -1243,7 +1243,7 @@ git commit -m "feat(workflows): 实现 LangGraph 记忆与恢复"
 - Create: `packages/backend/src/workflows/graph/facade.test.ts`
 - Modify: `packages/backend/src/routes.ts`
 
-- [ ] **Step 1: Write failing facade tests**
+- [x] **Step 1: Write failing facade tests**
 
 Create `packages/backend/src/workflows/graph/facade.test.ts`:
 
@@ -1261,7 +1261,7 @@ test('workflowOrchestrator.start uses legacy runtime when graph disabled', async
 });
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -1271,7 +1271,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: FAIL because orchestrator does not delegate to graph runtime.
 
-- [ ] **Step 3: Add graph facade imports**
+- [x] **Step 3: Add graph facade imports**
 
 Modify `orchestrator.ts`:
 
@@ -1286,7 +1286,7 @@ import {
 } from './graph/runtime.js';
 ```
 
-- [ ] **Step 4: Delegate public methods behind flag**
+- [x] **Step 4: Delegate public methods behind flag**
 
 At the start of `workflowOrchestrator.start`:
 
@@ -1303,11 +1303,11 @@ Similarly:
 - `cancel`: if run has `graph_version`, call `cancelGraphWorkflow`.
 - `recoverOrphanedSteps`: run `recoverGraphWorkflow` first, then legacy recovery, return total.
 
-- [ ] **Step 5: Preserve API responses**
+- [x] **Step 5: Preserve API responses**
 
 Routes should keep returning `WorkflowRun` or `WorkflowDetail` without changing endpoint contracts. Only add graph fields to types already serialized from DB.
 
-- [ ] **Step 6: Run facade tests**
+- [x] **Step 6: Run facade tests**
 
 Run:
 
@@ -1317,7 +1317,7 @@ PATH="$(dirname $(mise which node)):$PATH" node --import tsx --test src/workflow
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/backend/src/workflows/orchestrator.ts packages/backend/src/workflows/graph/facade.test.ts packages/backend/src/routes.ts

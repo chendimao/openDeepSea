@@ -28,6 +28,15 @@ import {
   getLangChainPlannerConfig,
   type LangChainPlannerConfig,
 } from './langchain-planner.js';
+import { getLangGraphWorkflowConfig } from './graph/runtime-config.js';
+import {
+  approveGraphWorkflow,
+  cancelGraphWorkflow,
+  recoverGraphWorkflow,
+  retryGraphWorkflow,
+  startGraphWorkflow,
+} from './graph/runtime.js';
+import type { GraphRuntimeDeps } from './graph/tools.js';
 import { buildStagePrompt } from './prompts.js';
 import type {
   AgentRun,
@@ -50,8 +59,17 @@ const PLANNER_RECENT_MESSAGE_MAX_CHARS = 1000;
 const PLANNER_RECENT_MESSAGES_TOTAL_MAX_CHARS = 8000;
 const TRUNCATED_MARKER = '...';
 
+let workflowOrchestratorGraphDeps: GraphRuntimeDeps = {};
+
+export function setWorkflowOrchestratorGraphDeps(deps: GraphRuntimeDeps): void {
+  workflowOrchestratorGraphDeps = deps;
+}
+
 export const workflowOrchestrator = {
-  start(taskId: string): WorkflowRun {
+  async start(taskId: string): Promise<WorkflowRun> {
+    if (getLangGraphWorkflowConfig().enabled) {
+      return startGraphWorkflow(taskId, workflowOrchestratorGraphDeps);
+    }
     const task = requireTask(taskId);
     const existing = workflowRepo.getActiveByTask(task.id);
     if (existing) throw new Error('task already has an active workflow');
@@ -78,8 +96,9 @@ export const workflowOrchestrator = {
     return workflowRepo.detail(id);
   },
 
-  approvePlan(id: string, approvedBy = 'user'): WorkflowRun {
+  async approvePlan(id: string, approvedBy = 'user'): Promise<WorkflowRun> {
     const run = requireRun(id);
+    if (run.graph_version) return approveGraphWorkflow(id, approvedBy, workflowOrchestratorGraphDeps);
     if (run.status !== 'awaiting_approval') throw new Error('workflow is not awaiting approval');
     const updated = workflowRepo.updateRun(id, {
       status: 'running',
@@ -128,6 +147,7 @@ export const workflowOrchestrator = {
 
   async cancel(id: string): Promise<WorkflowRun> {
     const run = requireRun(id);
+    if (run.graph_version) return cancelGraphWorkflow(id);
     for (const agentRun of agentRunRepo.listActiveByWorkflow(run.id)) {
       runRegistry.cancel(agentRun.id);
       const cancelledRun = agentRunRepo.updateStatus(agentRun.id, 'cancelled');
@@ -157,8 +177,9 @@ export const workflowOrchestrator = {
     return updated;
   },
 
-  retryStep(id: string): WorkflowRun {
+  async retryStep(id: string): Promise<WorkflowRun> {
     const run = requireRun(id);
+    if (run.graph_version) return retryGraphWorkflow(id, workflowOrchestratorGraphDeps);
     if (run.status === 'running' || run.status === 'awaiting_approval') {
       throw new Error('workflow is already running');
     }
@@ -202,9 +223,11 @@ export const workflowOrchestrator = {
   },
 
   recoverOrphanedSteps(error: string): number {
-    let count = 0;
+    let count = recoverGraphWorkflow(error);
     for (const step of workflowRepo.listRunningSteps()) {
+      if (step.node_name) continue;
       const run = workflowRepo.getRun(step.workflow_run_id);
+      if (run?.graph_version) continue;
       if (!run || run.status === 'cancelled' || run.status === 'completed') continue;
       const interruptedStep = workflowRepo.updateStep(step.id, { status: 'interrupted', error });
       if (interruptedStep) broadcastStep('workflow_step:updated', run.room_id, interruptedStep);
