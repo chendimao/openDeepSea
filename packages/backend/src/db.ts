@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL,
   path TEXT NOT NULL UNIQUE,
   description TEXT,
-  message_routing_mode TEXT NOT NULL DEFAULT 'mentions_only',
+  message_routing_mode TEXT NOT NULL DEFAULT 'fallback_reply',
   fallback_agent_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -514,6 +514,20 @@ if (!settingsColumnNames.has('openai_base_url')) {
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN memory_max_context_chars INTEGER');
 }
+
+db.exec(`
+UPDATE projects
+SET message_routing_mode = 'fallback_reply',
+    fallback_agent_id = COALESCE(NULLIF(TRIM(fallback_agent_id), ''), 'planner')
+WHERE message_routing_mode = 'fallback_route'
+   OR (message_routing_mode = 'fallback_reply' AND (fallback_agent_id IS NULL OR TRIM(fallback_agent_id) = ''));
+
+UPDATE settings
+SET message_routing_mode = 'fallback_reply',
+    fallback_agent_id = COALESCE(NULLIF(TRIM(fallback_agent_id), ''), 'planner')
+WHERE message_routing_mode = 'fallback_route'
+   OR (message_routing_mode = 'fallback_reply' AND (fallback_agent_id IS NULL OR TRIM(fallback_agent_id) = ''));
+`);
 
 db.exec(`
 INSERT OR IGNORE INTO settings (

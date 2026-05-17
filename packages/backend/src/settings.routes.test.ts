@@ -79,3 +79,15 @@ test('system settings route trims planner fields and never returns raw api key',
   assert.equal(fetched.openai_api_key_set, false);
   assert.equal('openai_api_key' in fetched, false);
 });
+
+test('settings routes reject removed fallback_route mode', async () => {
+  const res = await request('/api/settings/system', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      message_routing_mode: 'fallback_route',
+      fallback_agent_id: 'planner',
+    }),
+  });
+
+  assert.equal(res.status, 400);
+});

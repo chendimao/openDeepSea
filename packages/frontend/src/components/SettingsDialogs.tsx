@@ -28,6 +28,7 @@ import {
   type ThemeTone,
 } from '../lib/theme';
 import {
+  type Agent,
   type EffectiveSettings,
   type MessageRoutingMode,
   type Project,
@@ -52,7 +53,6 @@ type SettingsPatch = {
 const ROUTING_OPTIONS: Array<{ value: MessageRoutingMode; descriptionKey: MessageKey }> = [
   { value: 'mentions_only', descriptionKey: 'settings.routing.mentions_only.description' },
   { value: 'fallback_reply', descriptionKey: 'settings.routing.fallback_reply.description' },
-  { value: 'fallback_route', descriptionKey: 'settings.routing.fallback_route.description' },
 ];
 
 const INTERACTION_OPTIONS: Array<{ value: TaskInteractionMode; descriptionKey: MessageKey }> = [
@@ -61,8 +61,8 @@ const INTERACTION_OPTIONS: Array<{ value: TaskInteractionMode; descriptionKey: M
 ];
 
 const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
-  message_routing_mode: 'mentions_only',
-  fallback_agent_id: null,
+  message_routing_mode: 'fallback_reply',
+  fallback_agent_id: 'planner',
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
   langchain_planner_model: null,
@@ -90,6 +90,11 @@ export function SystemSettingsDialog({
     queryFn: api.getSystemSettings,
     enabled: open,
   });
+  const { data: agents = [] } = useQuery({
+    queryKey: ['agents'],
+    queryFn: api.listAgents,
+    enabled: open,
+  });
   const save = useMutation({
     mutationFn: api.updateSystemSettings,
     onSuccess: () => {
@@ -112,6 +117,7 @@ export function SystemSettingsDialog({
           key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.langchain_planner_model ?? ''}:${settings.openai_base_url ?? ''}:${settings.openai_api_key_set}:${settings.openai_api_key_preview ?? ''}`}
           theme={theme}
           value={settings}
+          fallbackOptions={toGlobalFallbackOptions(agents)}
           isSaving={save.isPending}
           onThemeChange={onThemeChange}
           onSave={(patch) => save.mutate(patch)}
@@ -136,6 +142,11 @@ export function ProjectSettingsDialog({
     queryFn: () => api.getProjectSettings(project.id),
     enabled: open,
   });
+  const { data: agents = [] } = useQuery({
+    queryKey: ['agents'],
+    queryFn: api.listAgents,
+    enabled: open,
+  });
   const save = useMutation({
     mutationFn: (patch: SettingsPatch) => api.updateProjectSettings(project.id, patch),
     onSuccess: () => {
@@ -158,6 +169,7 @@ export function ProjectSettingsDialog({
           key={`${project.id}:${settings?.project?.updated_at ?? 0}`}
           project={project}
           settings={settings}
+          fallbackOptions={toGlobalFallbackOptions(agents)}
           isSaving={save.isPending}
           onSave={(patch) => save.mutate(patch)}
         />
@@ -195,10 +207,7 @@ export function RoomSettingsDialog({
     onError: (err) => toast.error((err as Error).message),
   });
   const fallbackOptions = useMemo(
-    () =>
-      [...agents]
-        .sort((a, b) => a.agent_name.localeCompare(b.agent_name))
-        .filter((agent, index, list) => list.findIndex((item) => item.agent_id === agent.agent_id) === index),
+    () => toRoomFallbackOptions(agents),
     [agents],
   );
 
@@ -226,12 +235,14 @@ export function RoomSettingsDialog({
 function SystemSettingsForm({
   theme,
   value,
+  fallbackOptions,
   isSaving,
   onThemeChange,
   onSave,
 }: {
   theme: ThemeMode;
   value: SystemSettings;
+  fallbackOptions: FallbackAgentOption[];
   isSaving: boolean;
   onThemeChange: (theme: ThemeMode) => void;
   onSave: (patch: {
@@ -245,7 +256,7 @@ function SystemSettingsForm({
   }) => void;
 }): JSX.Element {
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode>(value.message_routing_mode);
-  const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? '');
+  const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? 'planner');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
   const [autoDistillEnabled, setAutoDistillEnabled] = useState(value.auto_distill_enabled);
   const [plannerModel, setPlannerModel] = useState(value.langchain_planner_model ?? '');
@@ -255,6 +266,7 @@ function SystemSettingsForm({
   const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('general');
   const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
+  const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
   const categories: Array<{
     value: SystemSettingsCategory;
     title: string;
@@ -288,11 +300,11 @@ function SystemSettingsForm({
       footer={
         <Button
           type="button"
-          disabled={isSaving || (requiresFallback && !fallbackAgentId.trim())}
+          disabled={isSaving || (requiresFallback && !selectedFallbackAgentId)}
           onClick={() => {
             const patch: Parameters<typeof onSave>[0] = {
               message_routing_mode: routingMode,
-              fallback_agent_id: requiresFallback ? fallbackAgentId.trim() : null,
+              fallback_agent_id: requiresFallback ? selectedFallbackAgentId : null,
               interaction_mode: interactionMode,
               auto_distill_enabled: autoDistillEnabled,
               langchain_planner_model: trimmedOrNull(plannerModel),
@@ -384,7 +396,7 @@ function SystemSettingsForm({
                 <RoutingSection
                   mode={routingMode}
                   fallbackAgentId={fallbackAgentId}
-                  fallbackOptions={[]}
+                  fallbackOptions={fallbackOptions}
                   inheritedLabel={null}
                   onModeChange={(mode) => {
                     if (mode !== 'inherit') setRoutingMode(mode);
@@ -683,11 +695,13 @@ function SegmentedSetting<T extends string>({
 function ProjectSettingsForm({
   project,
   settings,
+  fallbackOptions,
   isSaving,
   onSave,
 }: {
   project: Project;
   settings?: SettingsResolution;
+  fallbackOptions: FallbackAgentOption[];
   isSaving: boolean;
   onSave: (patch: SettingsPatch) => void;
 }): JSX.Element {
@@ -697,7 +711,7 @@ function ProjectSettingsForm({
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
     own?.message_routing_mode ?? 'inherit',
   );
-  const [fallbackAgentId, setFallbackAgentId] = useState(own?.fallback_agent_id ?? '');
+  const [fallbackAgentId, setFallbackAgentId] = useState(own?.fallback_agent_id ?? system.fallback_agent_id ?? 'planner');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode | 'inherit'>(
     own?.interaction_mode ?? 'inherit',
   );
@@ -707,17 +721,18 @@ function ProjectSettingsForm({
       : Boolean(own.auto_distill_enabled),
   );
   const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
+  const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
 
   return (
     <SettingsDialogBody
       footer={
         <Button
           type="button"
-          disabled={isSaving || (requiresFallback && !fallbackAgentId.trim())}
+          disabled={isSaving || (requiresFallback && !selectedFallbackAgentId)}
           onClick={() =>
             onSave({
               message_routing_mode: routingMode === 'inherit' ? null : routingMode,
-              fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : fallbackAgentId.trim(),
+              fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : selectedFallbackAgentId,
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
               auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
             })
@@ -737,7 +752,7 @@ function ProjectSettingsForm({
         <RoutingSection
           mode={routingMode}
           fallbackAgentId={fallbackAgentId || system.fallback_agent_id || ''}
-          fallbackOptions={[]}
+          fallbackOptions={fallbackOptions}
           inheritedLabel={t('settings.inheritedSystem', { value: routingModeLabel(system.message_routing_mode) })}
           onModeChange={setRoutingMode}
           onFallbackAgentChange={setFallbackAgentId}
@@ -778,7 +793,7 @@ function RoomSettingsForm({
 }: {
   room: Room;
   settings?: SettingsResolution;
-  fallbackOptions: RoomAgent[];
+  fallbackOptions: FallbackAgentOption[];
   isSaving: boolean;
   onSave: (patch: SettingsPatch) => void;
 }): JSX.Element {
@@ -798,17 +813,18 @@ function RoomSettingsForm({
       : Boolean(own.auto_distill_enabled),
   );
   const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
+  const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId || inherited.fallback_agent_id || '', fallbackOptions);
 
   return (
     <SettingsDialogBody
       footer={
         <Button
           type="button"
-          disabled={isSaving || (requiresFallback && !fallbackAgentId.trim())}
+          disabled={isSaving || (requiresFallback && !selectedFallbackAgentId)}
           onClick={() =>
             onSave({
               message_routing_mode: routingMode === 'inherit' ? null : routingMode,
-              fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : fallbackAgentId.trim(),
+              fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : selectedFallbackAgentId,
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
               auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
             })
@@ -907,7 +923,7 @@ function RoutingSection({
 }: {
   mode: MessageRoutingMode | 'inherit';
   fallbackAgentId: string;
-  fallbackOptions: RoomAgent[];
+  fallbackOptions: FallbackAgentOption[];
   inheritedLabel: string | null;
   onModeChange: (mode: MessageRoutingMode | 'inherit') => void;
   onFallbackAgentChange: (agentId: string) => void;
@@ -938,32 +954,21 @@ function RoutingSection({
       {requiresFallback && (
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
           <Label>{t('settings.fallbackAgent')}</Label>
-          {fallbackOptions.length > 0 ? (
-            <select
-              value={fallbackAgentId}
-              onChange={(event) => onFallbackAgentChange(event.target.value)}
-              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none transition-all focus:border-[var(--color-primary)] focus:glow-primary"
-            >
-              {!fallbackAgentId && <option value="">{t('settings.selectFallbackAgent')}</option>}
-              {fallbackAgentId && !fallbackOptions.some((agent) => agent.agent_id === fallbackAgentId) && (
-                <option value={fallbackAgentId}>
-                  {t('settings.fallbackCurrentInvisible', { agentId: fallbackAgentId })}
-                </option>
-              )}
-              {fallbackOptions.map((agent) => (
+          <select
+            value={pickFallbackAgentId(fallbackAgentId, fallbackOptions)}
+            onChange={(event) => onFallbackAgentChange(event.target.value)}
+            className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none transition-all focus:border-[var(--color-primary)] focus:glow-primary"
+          >
+            {fallbackOptions.length === 0 ? (
+              <option value="">{t('settings.noFallbackAgents')}</option>
+            ) : (
+              fallbackOptions.map((agent) => (
                 <option key={agent.agent_id} value={agent.agent_id}>
                   {agent.agent_name} ({agent.agent_id})
                 </option>
-              ))}
-            </select>
-          ) : (
-            <Input
-              value={fallbackAgentId}
-              onChange={(event) => onFallbackAgentChange(event.target.value)}
-              placeholder={t('settings.fallbackPlaceholder')}
-              className="font-mono"
-            />
-          )}
+              ))
+            )}
+          </select>
         </div>
       )}
     </>
@@ -1153,6 +1158,31 @@ function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
         ? settings.system.auto_distill_enabled
         : Boolean(settings.project.auto_distill_enabled),
   };
+}
+
+type FallbackAgentOption = {
+  agent_id: string;
+  agent_name: string;
+};
+
+function toGlobalFallbackOptions(agents: Agent[]): FallbackAgentOption[] {
+  return agents
+    .map((agent) => ({ agent_id: agent.agent_id, agent_name: agent.name }))
+    .sort((a, b) => a.agent_name.localeCompare(b.agent_name))
+    .filter((agent, index, list) => list.findIndex((item) => item.agent_id === agent.agent_id) === index);
+}
+
+function toRoomFallbackOptions(agents: RoomAgent[]): FallbackAgentOption[] {
+  return agents
+    .map((agent) => ({ agent_id: agent.agent_id, agent_name: agent.agent_name }))
+    .sort((a, b) => a.agent_name.localeCompare(b.agent_name))
+    .filter((agent, index, list) => list.findIndex((item) => item.agent_id === agent.agent_id) === index);
+}
+
+function pickFallbackAgentId(value: string, options: FallbackAgentOption[]): string {
+  if (options.length === 0) return '';
+  if (options.some((agent) => agent.agent_id === value)) return value;
+  return options.find((agent) => agent.agent_id === 'planner')?.agent_id ?? options[0].agent_id;
 }
 
 function trimmedOrNull(value: string): string | null {

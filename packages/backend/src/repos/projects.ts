@@ -25,7 +25,7 @@ export const projectRepo = {
         id, name, path, description, message_routing_mode, fallback_agent_id, created_at, updated_at
       )
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, input.name, input.path, input.description ?? null, 'mentions_only', null, ts, ts);
+    ).run(id, input.name, input.path, input.description ?? null, 'fallback_reply', 'planner', ts, ts);
     return this.get(id)!;
   },
 

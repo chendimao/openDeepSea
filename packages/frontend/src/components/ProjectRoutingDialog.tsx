@@ -20,10 +20,6 @@ const ROUTING_OPTIONS: Array<{
     value: 'fallback_reply',
     descriptionKey: 'projectRouting.fallbackReplyDescription',
   },
-  {
-    value: 'fallback_route',
-    descriptionKey: 'projectRouting.fallbackRouteDescription',
-  },
 ];
 
 export function ProjectRoutingDialog({
@@ -35,7 +31,7 @@ export function ProjectRoutingDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<MessageRoutingMode>(project.message_routing_mode);
-  const [fallbackAgentId, setFallbackAgentId] = useState(project.fallback_agent_id ?? '');
+  const [fallbackAgentId, setFallbackAgentId] = useState(project.fallback_agent_id ?? 'planner');
   const queryClient = useQueryClient();
   const { routingModeLabel, t } = useI18n();
   const fallbackOptions = useMemo(
@@ -46,25 +42,25 @@ export function ProjectRoutingDialog({
     [agents],
   );
   const requiresFallback = mode !== 'mentions_only';
-  const selectedFallbackInRoom = fallbackOptions.some((agent) => agent.agent_id === fallbackAgentId);
+  const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
 
   useEffect(() => {
     if (!open) return;
     setMode(project.message_routing_mode);
-    setFallbackAgentId(project.fallback_agent_id ?? '');
+    setFallbackAgentId(project.fallback_agent_id ?? 'planner');
   }, [open, project.fallback_agent_id, project.message_routing_mode]);
 
   useEffect(() => {
-    if (requiresFallback && !fallbackAgentId && fallbackOptions.length > 0) {
-      setFallbackAgentId(fallbackOptions[0].agent_id);
+    if (requiresFallback && fallbackOptions.length > 0 && !fallbackOptions.some((agent) => agent.agent_id === fallbackAgentId)) {
+      setFallbackAgentId(selectedFallbackAgentId);
     }
-  }, [fallbackAgentId, fallbackOptions, requiresFallback]);
+  }, [fallbackAgentId, fallbackOptions, requiresFallback, selectedFallbackAgentId]);
 
   const save = useMutation({
     mutationFn: () =>
       api.updateProjectRouting(project.id, {
         message_routing_mode: mode,
-        fallback_agent_id: requiresFallback ? fallbackAgentId : null,
+        fallback_agent_id: requiresFallback ? selectedFallbackAgentId : null,
       }),
     onSuccess: (updated) => {
       queryClient.setQueryData(['project', project.id], updated);
@@ -122,16 +118,11 @@ export function ProjectRoutingDialog({
                 {t('projectRouting.fallbackAgent')}
               </label>
               <select
-                value={fallbackAgentId}
+                value={selectedFallbackAgentId}
                 onChange={(event) => setFallbackAgentId(event.target.value)}
                 className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none transition-all focus:border-[var(--color-primary)] focus:glow-primary"
               >
-                {fallbackAgentId && !selectedFallbackInRoom && (
-                  <option value={fallbackAgentId}>
-                    {t('projectRouting.fallbackMissingInRoom', { agentId: fallbackAgentId })}
-                  </option>
-                )}
-                {fallbackOptions.length === 0 && !fallbackAgentId ? (
+                {fallbackOptions.length === 0 ? (
                   <option value="">{t('projectRouting.noAvailableAgents')}</option>
                 ) : (
                   fallbackOptions.map((agent) => (
@@ -154,7 +145,7 @@ export function ProjectRoutingDialog({
             <Button
               type="button"
               onClick={() => save.mutate()}
-              disabled={save.isPending || (requiresFallback && !fallbackAgentId)}
+              disabled={save.isPending || (requiresFallback && !selectedFallbackAgentId)}
             >
               {t('projectRouting.save')}
             </Button>
@@ -163,4 +154,10 @@ export function ProjectRoutingDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function pickFallbackAgentId(value: string, options: RoomAgent[]): string {
+  if (options.length === 0) return '';
+  if (options.some((agent) => agent.agent_id === value)) return value;
+  return options.find((agent) => agent.agent_id === 'planner')?.agent_id ?? options[0].agent_id;
 }

@@ -431,7 +431,7 @@ function ChatColumn({
   roomId: string;
   projectId: string;
   modelChatReady: boolean;
-  routingMode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
+  routingMode: 'mentions_only' | 'fallback_reply';
   fallbackAgentId: string | null;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
@@ -821,7 +821,7 @@ function formatAttachmentSize(size: number): string {
 }
 
 function routingHint(
-  mode: 'mentions_only' | 'fallback_reply' | 'fallback_route',
+  mode: 'mentions_only' | 'fallback_reply',
   fallbackAgentId: string | null,
   fallbackAgent: RoomAgent | undefined,
   t: ReturnType<typeof useI18n>['t'],
@@ -831,8 +831,5 @@ function routingHint(
     return t('room.routing.fallbackMissing', { agentId: fallbackAgentId });
   }
   const agentName = fallbackAgent?.agent_name ?? t('room.routing.fallbackAgent');
-  if (mode === 'fallback_reply') {
-    return t('room.routing.fallbackReply', { agentName });
-  }
-  return t('room.routing.fallbackRoute', { agentName });
+  return t('room.routing.fallbackReply', { agentName });
 }

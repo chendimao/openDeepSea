@@ -9,7 +9,7 @@ export interface Project {
   updated_at: number;
 }
 
-export type MessageRoutingMode = 'mentions_only' | 'fallback_reply' | 'fallback_route';
+export type MessageRoutingMode = 'mentions_only' | 'fallback_reply';
 export type SettingsScope = 'system' | 'project' | 'room';
 
 export interface Room {

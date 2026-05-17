@@ -64,6 +64,7 @@ export const roomRepo = {
       `INSERT INTO rooms (id, project_id, name, description, created_at)
        VALUES (?, ?, ?, ?, ?)`,
     ).run(id, input.project_id, input.name, input.description ?? null, now());
+    roomAgentRepo.ensureDefaultPlanner(id);
     return this.get(id)!;
   },
 
@@ -74,12 +75,22 @@ export const roomRepo = {
 
 export const roomAgentRepo = {
   listByRoom(roomId: string, options: { includeRemoved?: boolean } = {}): RoomAgent[] {
+    if (!options.includeRemoved && roomRepo.get(roomId)) {
+      this.ensureDefaultPlanner(roomId);
+    }
     const rows = db
       .prepare(
         `${roomAgentSelectSql()} WHERE room_agents.room_id = ?${options.includeRemoved ? '' : ' AND room_agents.left_at IS NULL'} ORDER BY room_agents.joined_at ASC`,
       )
       .all(roomId) as RoomAgentRow[];
     return rows.map(normalizeRoomAgent);
+  },
+
+  ensureDefaultPlanner(roomId: string): RoomAgent | undefined {
+    if (!roomRepo.get(roomId)) return undefined;
+    const planner = agentRepo.getByBuiltinKey('planner') ?? agentRepo.getByAgentId('planner');
+    if (!planner) return undefined;
+    return this.addFromGlobalAgent({ room_id: roomId, global_agent_id: planner.id });
   },
 
   get(id: string): RoomAgent | undefined {

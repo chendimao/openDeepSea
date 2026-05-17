@@ -117,7 +117,7 @@ export interface Project {
   stats?: ProjectStats;
 }
 
-export type MessageRoutingMode = 'mentions_only' | 'fallback_reply' | 'fallback_route';
+export type MessageRoutingMode = 'mentions_only' | 'fallback_reply';
 
 export interface ScopedSettings {
   scope: SettingsScope;

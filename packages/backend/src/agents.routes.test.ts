@@ -7,7 +7,7 @@ import test from 'node:test';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-agent-routes-')), 'test.db');
 
 const { projectRepo } = await import('./repos/projects.js');
-const { roomRepo } = await import('./repos/rooms.js');
+const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { agentRepo } = await import('./repos/agents.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { taskRepo } = await import('./repos/tasks.js');
@@ -196,31 +196,61 @@ test('room agents can be batch-added and already joined agents are reused', asyn
   assert.equal(repeated[0]?.id, batch.find((agent) => agent.agent_id === 'planner')?.id);
 });
 
+test('rooms always include planner and reject removing it from the room', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-default-planner-project-'));
+  const project = projectRepo.create({ name: 'Default Planner Project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Default Planner Room' });
+
+  const agentsRes = await request(`/api/rooms/${room.id}/agents`);
+  assert.equal(agentsRes.status, 200);
+  const agents = await agentsRes.json() as Array<{ id: string; agent_id: string }>;
+  const planner = agents.find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+
+  const deleteRes = await request(`/api/rooms/${room.id}/agents/${planner.id}`, { method: 'DELETE' });
+  assert.equal(deleteRes.status, 409);
+  const body = await deleteRes.json() as { error: string };
+  assert.equal(body.error, 'planner agent cannot be removed');
+});
+
+test('listing agents for legacy rooms backfills planner automatically', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-legacy-planner-project-'));
+  const project = projectRepo.create({ name: 'Legacy Planner Project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Legacy Planner Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.remove(planner.id);
+
+  const listed = roomAgentRepo.listByRoom(room.id);
+
+  assert.ok(listed.some((agent) => agent.agent_id === 'planner' && agent.left_at === null));
+});
+
 test('removing room agents protects active runs and requires task handling for open tasks', async () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-remove-project-'));
   const project = projectRepo.create({ name: 'Agent Remove Project', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Agent Remove Room' });
-  const planner = agentRepo.getByAgentId('planner');
+  const backend = agentRepo.getByAgentId('backend-executor');
   const reviewer = agentRepo.getByAgentId('reviewer');
-  assert.ok(planner);
+  assert.ok(backend);
   assert.ok(reviewer);
 
-  const plannerRes = await request(`/api/rooms/${room.id}/agents`, {
+  const backendRes = await request(`/api/rooms/${room.id}/agents`, {
     method: 'POST',
-    body: JSON.stringify({ global_agent_id: planner.id }),
+    body: JSON.stringify({ global_agent_id: backend.id }),
   });
-  assert.equal(plannerRes.status, 201);
-  const plannerRoomAgent = await plannerRes.json() as { id: string; agent_id: string };
+  assert.equal(backendRes.status, 201);
+  const backendRoomAgent = await backendRes.json() as { id: string; agent_id: string };
 
   const activeRun = agentRunRepo.create({
     room_id: room.id,
-    room_agent_id: plannerRoomAgent.id,
-    agent_id: plannerRoomAgent.agent_id,
+    room_agent_id: backendRoomAgent.id,
+    agent_id: backendRoomAgent.agent_id,
     backend: 'codex',
     prompt: 'run',
   });
 
-  const activeBlockedRes = await request(`/api/rooms/${room.id}/agents/${plannerRoomAgent.id}`, { method: 'DELETE' });
+  const activeBlockedRes = await request(`/api/rooms/${room.id}/agents/${backendRoomAgent.id}`, { method: 'DELETE' });
   assert.equal(activeBlockedRes.status, 409);
   const activeBlocked = await activeBlockedRes.json() as { error: string; active_run_count: number };
   assert.equal(activeBlocked.error, 'agent has active runs');
@@ -231,42 +261,42 @@ test('removing room agents protects active runs and requires task handling for o
     room_id: room.id,
     project_id: project.id,
     title: 'Open assigned task',
-    assigned_agent_id: plannerRoomAgent.id,
+    assigned_agent_id: backendRoomAgent.id,
   });
   const doneTask = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
     title: 'Done assigned task',
-    assigned_agent_id: plannerRoomAgent.id,
+    assigned_agent_id: backendRoomAgent.id,
   });
   taskRepo.updateStatus(doneTask.id, 'done');
 
-  const taskBlockedRes = await request(`/api/rooms/${room.id}/agents/${plannerRoomAgent.id}`, { method: 'DELETE' });
+  const taskBlockedRes = await request(`/api/rooms/${room.id}/agents/${backendRoomAgent.id}`, { method: 'DELETE' });
   assert.equal(taskBlockedRes.status, 409);
   const taskBlocked = await taskBlockedRes.json() as { error: string; open_task_count: number };
   assert.equal(taskBlocked.error, 'agent has open tasks');
   assert.equal(taskBlocked.open_task_count, 1);
 
-  const unassignRes = await request(`/api/rooms/${room.id}/agents/${plannerRoomAgent.id}`, {
+  const unassignRes = await request(`/api/rooms/${room.id}/agents/${backendRoomAgent.id}`, {
     method: 'DELETE',
     body: JSON.stringify({ task_action: 'unassign' }),
   });
   assert.equal(unassignRes.status, 204);
   assert.equal(taskRepo.get(openTask.id)?.assigned_agent_id, null);
-  assert.equal(taskRepo.get(doneTask.id)?.assigned_agent_id, plannerRoomAgent.id);
+  assert.equal(taskRepo.get(doneTask.id)?.assigned_agent_id, backendRoomAgent.id);
 
   const listedAfterRemove = await request(`/api/rooms/${room.id}/agents`);
   assert.equal(listedAfterRemove.status, 200);
   const activeAgents = await listedAfterRemove.json() as Array<{ id: string }>;
-  assert.equal(activeAgents.some((agent) => agent.id === plannerRoomAgent.id), false);
+  assert.equal(activeAgents.some((agent) => agent.id === backendRoomAgent.id), false);
 
   const readdRes = await request(`/api/rooms/${room.id}/agents`, {
     method: 'POST',
-    body: JSON.stringify({ global_agent_id: planner.id }),
+    body: JSON.stringify({ global_agent_id: backend.id }),
   });
   assert.equal(readdRes.status, 201);
   const readded = await readdRes.json() as { id: string };
-  assert.equal(readded.id, plannerRoomAgent.id);
+  assert.equal(readded.id, backendRoomAgent.id);
 
   const reviewerRes = await request(`/api/rooms/${room.id}/agents`, {
     method: 'POST',
@@ -278,10 +308,10 @@ test('removing room agents protects active runs and requires task handling for o
     room_id: room.id,
     project_id: project.id,
     title: 'Transfer assigned task',
-    assigned_agent_id: plannerRoomAgent.id,
+    assigned_agent_id: backendRoomAgent.id,
   });
 
-  const transferRes = await request(`/api/rooms/${room.id}/agents/${plannerRoomAgent.id}`, {
+  const transferRes = await request(`/api/rooms/${room.id}/agents/${backendRoomAgent.id}`, {
     method: 'DELETE',
     body: JSON.stringify({ task_action: 'transfer', transfer_to_room_agent_id: reviewerRoomAgent.id }),
   });

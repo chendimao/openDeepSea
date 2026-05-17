@@ -13,10 +13,11 @@ import { projectRepo } from './projects.js';
 import { roomRepo } from './rooms.js';
 
 const SYSTEM_SCOPE_ID = 'default';
+const DEFAULT_FALLBACK_AGENT_ID = 'planner';
 
 const DEFAULT_SETTINGS: EffectiveSettings = {
-  message_routing_mode: 'mentions_only',
-  fallback_agent_id: null,
+  message_routing_mode: 'fallback_reply',
+  fallback_agent_id: DEFAULT_FALLBACK_AGENT_ID,
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
 };
@@ -99,12 +100,10 @@ function upsertScoped(
         : patch.auto_distill_enabled
           ? 1
           : 0;
-  const fallbackAgentId =
-    routingMode === null || routingMode === 'mentions_only'
-      ? null
-      : patch.fallback_agent_id === undefined
-        ? existing.fallback_agent_id
-        : patch.fallback_agent_id;
+  const rawFallbackAgentId = patch.fallback_agent_id === undefined
+    ? existing.fallback_agent_id
+    : patch.fallback_agent_id;
+  const fallbackAgentId = normalizeFallbackAgentId(routingMode, rawFallbackAgentId);
   const updatedAt = now();
 
   db.prepare(
@@ -133,12 +132,34 @@ function normalizedOptionalString(value: string | null | undefined): string | nu
   return trimmed ? trimmed : null;
 }
 
+function normalizeFallbackAgentId(mode: MessageRoutingMode | null, fallbackAgentId: string | null | undefined): string | null {
+  if (mode === null || mode === 'mentions_only') return null;
+  return normalizedOptionalString(fallbackAgentId) ?? DEFAULT_FALLBACK_AGENT_ID;
+}
+
+function normalizeLegacyRouting(): void {
+  db.exec(`
+    UPDATE projects
+    SET message_routing_mode = 'fallback_reply',
+        fallback_agent_id = COALESCE(NULLIF(TRIM(fallback_agent_id), ''), 'planner')
+    WHERE message_routing_mode = 'fallback_route'
+       OR (message_routing_mode = 'fallback_reply' AND (fallback_agent_id IS NULL OR TRIM(fallback_agent_id) = ''));
+
+    UPDATE settings
+    SET message_routing_mode = 'fallback_reply',
+        fallback_agent_id = COALESCE(NULLIF(TRIM(fallback_agent_id), ''), 'planner')
+    WHERE message_routing_mode = 'fallback_route'
+       OR (message_routing_mode = 'fallback_reply' AND (fallback_agent_id IS NULL OR TRIM(fallback_agent_id) = ''));
+  `);
+}
+
 function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
   const openaiApiKey = normalizedOptionalString(settings?.openai_api_key);
   const openaiApiKeyPreview = apiKeyPreview(openaiApiKey);
+  const routingMode = settings?.message_routing_mode ?? DEFAULT_SETTINGS.message_routing_mode;
   return {
-    message_routing_mode: settings?.message_routing_mode ?? DEFAULT_SETTINGS.message_routing_mode,
-    fallback_agent_id: settings?.message_routing_mode === 'mentions_only' ? null : settings?.fallback_agent_id ?? null,
+    message_routing_mode: routingMode,
+    fallback_agent_id: normalizeFallbackAgentId(routingMode, settings?.fallback_agent_id),
     interaction_mode: settings?.interaction_mode ?? DEFAULT_SETTINGS.interaction_mode,
     auto_distill_enabled: settings?.auto_distill_enabled === null || settings?.auto_distill_enabled === undefined
       ? DEFAULT_SETTINGS.auto_distill_enabled
@@ -152,6 +173,7 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
 
 export const settingsRepo = {
   getSystem(): SystemSettings {
+    normalizeLegacyRouting();
     return normalizeSystem(getSystemRow());
   },
 
@@ -164,6 +186,7 @@ export const settingsRepo = {
     openai_api_key?: string | null;
     openai_base_url?: string | null;
   }): SystemSettings {
+    normalizeLegacyRouting();
     const existing = getSystemRow();
     const routingMode =
       patch.message_routing_mode === undefined ? existing?.message_routing_mode ?? null : patch.message_routing_mode;
@@ -175,12 +198,10 @@ export const settingsRepo = {
         : patch.auto_distill_enabled
           ? 1
           : 0;
-    const fallbackAgentId =
-      routingMode === null || routingMode === 'mentions_only'
-        ? null
-        : patch.fallback_agent_id === undefined
-          ? existing?.fallback_agent_id ?? null
-          : patch.fallback_agent_id;
+    const rawFallbackAgentId = patch.fallback_agent_id === undefined
+      ? existing?.fallback_agent_id ?? null
+      : patch.fallback_agent_id;
+    const fallbackAgentId = normalizeFallbackAgentId(routingMode as MessageRoutingMode | null, rawFallbackAgentId);
     const plannerModel =
       patch.langchain_planner_model === undefined
         ? normalizedOptionalString(existing?.langchain_planner_model)
@@ -234,6 +255,7 @@ export const settingsRepo = {
   },
 
   getLangChainPlannerSettings(): LangChainPlannerSettings {
+    normalizeLegacyRouting();
     const settings = getSystemRow();
     return {
       langchain_planner_model: normalizedOptionalString(settings?.langchain_planner_model),
@@ -243,6 +265,7 @@ export const settingsRepo = {
   },
 
   getProject(projectId: string): ScopedSettings | null {
+    normalizeLegacyRouting();
     return getScoped('project', projectId);
   },
 
@@ -255,11 +278,13 @@ export const settingsRepo = {
       auto_distill_enabled?: boolean | null;
     },
   ): ScopedSettings | null {
+    normalizeLegacyRouting();
     if (!projectRepo.get(projectId)) return null;
     return upsertScoped('project', projectId, patch);
   },
 
   getRoom(roomId: string): ScopedSettings | null {
+    normalizeLegacyRouting();
     return getScoped('room', roomId);
   },
 
@@ -272,11 +297,13 @@ export const settingsRepo = {
       auto_distill_enabled?: boolean | null;
     },
   ): ScopedSettings | null {
+    normalizeLegacyRouting();
     if (!roomRepo.get(roomId)) return null;
     return upsertScoped('room', roomId, patch);
   },
 
   resolveForProject(projectId: string): SettingsResolution | null {
+    normalizeLegacyRouting();
     if (!projectRepo.get(projectId)) return null;
     const system = this.getSystem();
     const project = getScoped('project', projectId);
@@ -292,9 +319,7 @@ export const settingsRepo = {
       effective: {
         message_routing_mode: project?.message_routing_mode ?? system.message_routing_mode,
         fallback_agent_id: project?.message_routing_mode
-          ? project.message_routing_mode === 'mentions_only'
-            ? null
-            : project.fallback_agent_id
+          ? normalizeFallbackAgentId(project.message_routing_mode, project.fallback_agent_id)
           : system.fallback_agent_id,
         interaction_mode: project?.interaction_mode ?? system.interaction_mode,
         auto_distill_enabled: project?.auto_distill_enabled === null || project?.auto_distill_enabled === undefined
@@ -310,6 +335,7 @@ export const settingsRepo = {
   },
 
   resolveForRoom(roomId: string): SettingsResolution | null {
+    normalizeLegacyRouting();
     const room = roomRepo.get(roomId);
     if (!room) return null;
     const projectResolution = this.resolveForProject(room.project_id);
@@ -332,9 +358,7 @@ export const settingsRepo = {
       effective: {
         message_routing_mode: roomSettings?.message_routing_mode ?? inheritedRoutingMode,
         fallback_agent_id: roomSettings?.message_routing_mode
-          ? roomSettings.message_routing_mode === 'mentions_only'
-            ? null
-            : roomSettings.fallback_agent_id
+          ? normalizeFallbackAgentId(roomSettings.message_routing_mode, roomSettings.fallback_agent_id)
           : projectResolution.effective.fallback_agent_id,
         interaction_mode: roomSettings?.interaction_mode ?? projectResolution.effective.interaction_mode,
         auto_distill_enabled:
