@@ -20,6 +20,30 @@ export interface Room {
   created_at: number;
 }
 
+export type RoomSearchMode = 'semantic' | 'keyword';
+export type RoomSearchMatchedField =
+  | 'room_name'
+  | 'room_description'
+  | 'message'
+  | 'task_title'
+  | 'task_description';
+
+export interface RoomSearchResult {
+  room: Room;
+  score: number;
+  matchedFields: RoomSearchMatchedField[];
+  highlights: string[];
+}
+
+export interface RoomSearchResponse {
+  query: string;
+  mode: RoomSearchMode;
+  degraded: boolean;
+  degradationReason: string | null;
+  total: number;
+  results: RoomSearchResult[];
+}
+
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
 export type AcpPermissionMode = 'bypass' | 'workspace-write' | 'read-only';
 export type AgentDefaultRuntime = 'acp' | 'openclaw' | 'none';
