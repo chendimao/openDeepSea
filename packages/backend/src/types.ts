@@ -95,6 +95,50 @@ export type GraphNodeName =
   | 'verify'
   | 'acceptance'
   | 'memory';
+export type WorkflowDefinitionScope = 'system' | 'project' | 'room';
+export type WorkflowDefinitionStatus = 'draft' | 'published' | 'archived';
+export type WorkflowDefinitionNodeType =
+  | 'context'
+  | 'planning'
+  | 'approval_gate'
+  | 'dispatch'
+  | 'execute'
+  | 'review'
+  | 'repair_decision'
+  | 'verify'
+  | 'acceptance'
+  | 'memory';
+export interface WorkflowDefinitionNode {
+  id: string;
+  type: WorkflowDefinitionNodeType;
+  label: string;
+  stage?: WorkflowStage | null;
+  role?: WorkflowRole | null;
+  position?: { x: number; y: number } | null;
+}
+export interface WorkflowDefinitionEdge {
+  from: string;
+  to: string;
+  condition?: string | null;
+}
+export interface WorkflowDefinitionGraph {
+  nodes: WorkflowDefinitionNode[];
+  edges: WorkflowDefinitionEdge[];
+}
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description: string | null;
+  scope: WorkflowDefinitionScope;
+  scope_id: string;
+  version: number;
+  status: WorkflowDefinitionStatus;
+  builtin_key: string | null;
+  definition_json: string;
+  definition: WorkflowDefinitionGraph;
+  created_at: number;
+  updated_at: number;
+}
 export type WorkflowStepStatus =
   | 'pending'
   | 'running'
@@ -358,6 +402,7 @@ export interface ScopedSettings {
   fallback_agent_id: string | null;
   interaction_mode: TaskInteractionMode | null;
   auto_distill_enabled: 0 | 1 | null;
+  default_workflow_definition_id: string | null;
   updated_at: number;
 }
 
@@ -366,6 +411,7 @@ export interface EffectiveSettings {
   fallback_agent_id: string | null;
   interaction_mode: TaskInteractionMode;
   auto_distill_enabled: boolean;
+  default_workflow_definition_id: string | null;
 }
 
 export interface SystemSettings extends EffectiveSettings {
@@ -390,6 +436,7 @@ export interface SettingsResolution {
     message_routing: SettingsScope;
     interaction_mode: SettingsScope;
     auto_distill: SettingsScope;
+    default_workflow_definition: SettingsScope;
   };
 }
 
@@ -424,6 +471,9 @@ export interface WorkflowRun {
   approved_at: number | null;
   approved_by: string | null;
   openclaw_flow_id: string | null;
+  workflow_definition_id: string | null;
+  workflow_definition_version: number | null;
+  workflow_definition_snapshot: string | null;
   created_at: number;
   updated_at: number;
   completed_at: number | null;

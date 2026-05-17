@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Circle, Loader2, PauseCircle, RotateCcw, X
 import { useMemo, useState } from 'react';
 import { useI18n } from '../lib/i18n';
 import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowStep } from '../lib/types';
+import type { WorkflowDefinitionGraph, WorkflowStage } from '../lib/types';
 import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 
@@ -31,6 +32,7 @@ export function WorkflowTimeline({
 
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const artifacts = [...detail.artifacts].reverse();
+  const stagePills = getWorkflowStagePills(detail);
   const hasRetryableStep = detail.steps.some(
     (step) => step.status === 'failed' || step.status === 'cancelled' || step.status === 'interrupted',
   );
@@ -41,7 +43,7 @@ export function WorkflowTimeline({
   return (
     <div className="space-y-3">
       <div className="workflow-stage-pills" aria-label={t('workflow.stagesAria')}>
-        {(['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const).map((stage) => (
+        {stagePills.map((stage) => (
           <span
             key={stage}
             className={cn(
@@ -116,6 +118,27 @@ export function WorkflowTimeline({
       </div>
     </div>
   );
+}
+
+function getWorkflowStagePills(detail: WorkflowDetail): WorkflowStage[] {
+  const snapshot = parseWorkflowDefinitionSnapshot(detail.run.workflow_definition_snapshot);
+  const stages = snapshot?.nodes
+    .map((node) => node.stage)
+    .filter((stage): stage is WorkflowStage => Boolean(stage));
+  const unique = stages ? [...new Set(stages)] : [];
+  return unique.length > 0
+    ? unique
+    : ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'];
+}
+
+function parseWorkflowDefinitionSnapshot(value: string | null): WorkflowDefinitionGraph | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as { definition?: WorkflowDefinitionGraph };
+    return parsed.definition ?? null;
+  } catch {
+    return null;
+  }
 }
 
 interface DecisionOption {

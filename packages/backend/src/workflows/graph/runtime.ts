@@ -2,11 +2,13 @@ import { Annotation, END, MemorySaver, START, StateGraph } from '@langchain/lang
 import { agentRunRepo } from '../../repos/agent-runs.js';
 import { projectRepo } from '../../repos/projects.js';
 import { roomRepo } from '../../repos/rooms.js';
+import { settingsRepo } from '../../repos/settings.js';
 import { taskRepo } from '../../repos/tasks.js';
+import { workflowDefinitionRepo } from '../../repos/workflow-definitions.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { runRegistry } from '../../run-registry.js';
 import { recordTaskEvent } from '../../task-conversation.js';
-import type { WorkflowRun } from '../../types.js';
+import type { WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
 import { createGraphNodes } from './nodes.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
 import { emptyAgentWorkflowState, parseGraphState, serializeGraphState, type AgentWorkflowState } from './state.js';
@@ -87,6 +89,8 @@ export function createGraphWorkflowRun(taskId: string): WorkflowRun {
   const { task, room, project } = requireTaskContext(taskId);
   const existing = workflowRepo.getActiveByTask(task.id);
   if (existing) throw new Error('task already has an active workflow');
+  const defaultDefinitionId = settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id;
+  const definition = workflowDefinitionRepo.getPublishedForRoomOrDefault(defaultDefinitionId, room.id);
 
   const pendingState = emptyAgentWorkflowState({
     workflowRunId: 'pending',
@@ -106,6 +110,15 @@ export function createGraphWorkflowRun(taskId: string): WorkflowRun {
     approval_required: true,
     graph_version: 'phase-b-v1',
     graph_state: serializeGraphState(pendingState),
+    workflow_definition_id: definition.id,
+    workflow_definition_version: definition.version,
+    workflow_definition_snapshot: JSON.stringify({
+      id: definition.id,
+      name: definition.name,
+      description: definition.description,
+      version: definition.version,
+      definition: definition.definition,
+    }),
   });
 
   const initialState: AgentWorkflowState = {
@@ -129,7 +142,7 @@ export async function continueGraphWorkflow(runId: string, deps: GraphRuntimeDep
   try {
     const run = requireGraphRun(runId);
     state = requireGraphStateOrBlock(run);
-    const finalState = await resumeGraphWorkflowFromState(state, deps);
+    const finalState = await resumeGraphWorkflowFromState(state, deps, parseWorkflowDefinitionSnapshot(run));
     workflowRepo.updateGraphState(run.id, serializeGraphState(finalState));
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
@@ -242,7 +255,7 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
   });
   workflowRepo.updateGraphState(run.id, serializeGraphState(retryState));
 
-  const finalState = await resumeGraphWorkflowFromState(retryState, deps);
+  const finalState = await resumeGraphWorkflowFromState(retryState, deps, parseWorkflowDefinitionSnapshot(run));
   workflowRepo.updateGraphState(run.id, serializeGraphState(finalState));
   const latest = workflowRepo.getRun(run.id);
   if (!latest) throw new Error('workflow not found');
@@ -454,6 +467,20 @@ function requireGraphStateOrBlock(run: WorkflowRun): AgentWorkflowState {
   return state.state;
 }
 
+function parseWorkflowDefinitionSnapshot(run: WorkflowRun): WorkflowDefinitionGraph | null {
+  if (!run.workflow_definition_snapshot) return null;
+  try {
+    const snapshot = JSON.parse(run.workflow_definition_snapshot) as {
+      definition?: WorkflowDefinitionGraph;
+    };
+    return snapshot.definition
+      ? workflowDefinitionRepo.validateDefinition(snapshot.definition)
+      : null;
+  } catch (err) {
+    throw new Error(`workflow definition snapshot is invalid: ${(err as Error).message}`);
+  }
+}
+
 function tryParseGraphState(run: WorkflowRun): { ok: true; state: AgentWorkflowState | null } | { ok: false; error: string } {
   try {
     return { ok: true, state: parseGraphState(run.graph_state) };
@@ -477,11 +504,13 @@ function retryCurrentNode(state: AgentWorkflowState): AgentWorkflowState['curren
 async function resumeGraphWorkflowFromState(
   state: AgentWorkflowState,
   deps: GraphRuntimeDeps,
+  definition: WorkflowDefinitionGraph | null = null,
 ): Promise<AgentWorkflowState> {
   const tools = createGraphTools(deps);
   const nodes = createGraphNodes(tools);
+  const routePlan = compileRoutePlan(definition ?? workflowDefinitionRepo.ensureBuiltInDefinitions().definition);
   let nextState = state;
-  let nodeToRun = nextNodeAfter(null, nextState);
+  let nodeToRun = nextNodeAfter(null, nextState, routePlan);
 
   for (let iteration = 0; iteration < 20; iteration += 1) {
     if (!nodeToRun || isTerminalResumeState(nextState)) {
@@ -509,7 +538,7 @@ async function resumeGraphWorkflowFromState(
     } else if (nodeToRun === 'memory') {
       nextState = await nodes.memoryNode(nextState);
     }
-    nodeToRun = nextNodeAfter(nodeToRun, nextState);
+    nodeToRun = nextNodeAfter(nodeToRun, nextState, routePlan);
   }
 
   throw new Error('graph retry exceeded resume limit');
@@ -525,11 +554,138 @@ function isTerminalResumeState(state: AgentWorkflowState): boolean {
   );
 }
 
+type WorkflowRouteNode = AgentWorkflowState['currentNode'];
+type WorkflowRoutePlan = {
+  start: WorkflowRouteNode;
+  next: Map<WorkflowRouteNode, Array<{ to: WorkflowRouteNode; condition: string | null }>>;
+};
+
+const NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteNode> = {
+  context: 'context',
+  planning: 'planning',
+  approval_gate: 'approval',
+  dispatch: 'dispatch',
+  execute: 'execute',
+  review: 'review',
+  repair_decision: 'repair_decision',
+  verify: 'verify',
+  acceptance: 'acceptance',
+  memory: 'memory',
+};
+
+function compileRoutePlan(definition: WorkflowDefinitionGraph): WorkflowRoutePlan {
+  const idToStateNode = new Map<string, WorkflowRouteNode>();
+  for (const node of definition.nodes) {
+    idToStateNode.set(node.id, NODE_TYPE_TO_STATE_NODE[node.type]);
+  }
+
+  const incoming = new Map<string, number>();
+  for (const node of definition.nodes) incoming.set(node.id, 0);
+  for (const edge of definition.edges) {
+    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1);
+  }
+  const startDefinitionNodes = definition.nodes.filter((node) => (incoming.get(node.id) ?? 0) === 0);
+  if (startDefinitionNodes.length !== 1) throw new Error('workflow definition must have exactly one start node');
+
+  const next = new Map<WorkflowRouteNode, Array<{ to: WorkflowRouteNode; condition: string | null }>>();
+  for (const edge of definition.edges) {
+    const from = idToStateNode.get(edge.from);
+    const to = idToStateNode.get(edge.to);
+    if (!from || !to) throw new Error(`workflow definition has invalid edge ${edge.from} -> ${edge.to}`);
+    const list = next.get(from) ?? [];
+    list.push({ to, condition: edge.condition ?? null });
+    next.set(from, list);
+  }
+
+  const start = idToStateNode.get(startDefinitionNodes[0]!.id);
+  if (!start) throw new Error('workflow definition has invalid start node');
+  return { start, next };
+}
+
+function nextNodeFromDefinition(
+  nodeJustRun: AgentWorkflowState['currentNode'] | null,
+  state: AgentWorkflowState,
+  plan: WorkflowRoutePlan,
+): AgentWorkflowState['currentNode'] | null {
+  const node = nodeJustRun ?? state.currentNode;
+  if (!node) return plan.start;
+  const outgoing = plan.next.get(node) ?? [];
+  if (outgoing.length === 0) return null;
+  if (outgoing.length === 1 && !outgoing[0]!.condition) return outgoing[0]!.to;
+  const routed = routeRuntimeNode(node, state);
+  if (routed) {
+    const matching = outgoing.find((edge) => edge.to === routed);
+    if (matching) return matching.to;
+    return null;
+  }
+  for (const edge of outgoing) {
+    if (matchesRouteCondition(node, edge.condition, state)) return edge.to;
+  }
+  return null;
+}
+
+function routeRuntimeNode(
+  node: WorkflowRouteNode,
+  state: AgentWorkflowState,
+): WorkflowRouteNode | null {
+  if (node === 'approval') {
+    const route = routeAfterApproval(state);
+    return route === END ? null : route;
+  }
+  if (node === 'execute') {
+    const route = routeAfterExecute(state);
+    return route === END ? null : route;
+  }
+  if (node === 'review') {
+    const route = routeAfterReview(state);
+    return route === END ? null : route;
+  }
+  if (node === 'repair_decision') {
+    const route = routeAfterRepairDecision(state);
+    return route === END ? null : route;
+  }
+  if (node === 'verify') return 'acceptance';
+  if (node === 'acceptance') return state.status === 'completed' ? 'memory' : null;
+  return null;
+}
+
+function matchesRouteCondition(
+  node: WorkflowRouteNode,
+  condition: string | null,
+  state: AgentWorkflowState,
+): boolean {
+  if (!condition || condition === 'default' || condition === 'done') return true;
+  if (node === 'approval') {
+    const route = routeAfterApproval(state);
+    if (condition === 'approved') return route === 'dispatch';
+    if (condition === 'pending' || condition === 'rejected') return route === END;
+  }
+  if (node === 'execute') {
+    const route = routeAfterExecute(state);
+    if (condition === 'has_runnable_child') return route === 'execute';
+    if (condition === 'review' || condition === 'complete') return route === 'review';
+  }
+  if (node === 'review') {
+    const route = routeAfterReview(state);
+    if (condition === 'changes_requested') return route === 'repair_decision';
+    if (condition === 'pass' || condition === 'verify') return route === 'verify';
+  }
+  if (node === 'repair_decision') {
+    const route = routeAfterRepairDecision(state);
+    if (condition === 'repair' || condition === 'execute') return route === 'execute';
+  }
+  if (node === 'verify') return condition === 'pass' || condition === 'acceptance';
+  if (node === 'acceptance') return condition === 'completed' ? state.status === 'completed' : false;
+  return false;
+}
+
 function nextNodeAfter(
   nodeJustRun: AgentWorkflowState['currentNode'] | null,
   state: AgentWorkflowState,
+  routePlan?: WorkflowRoutePlan,
 ): AgentWorkflowState['currentNode'] | null {
   if (isTerminalResumeState(state)) return null;
+  if (routePlan) return nextNodeFromDefinition(nodeJustRun, state, routePlan);
   const node = nodeJustRun ?? state.currentNode;
   if (!node) return 'context';
   if (node === 'context') return 'planning';

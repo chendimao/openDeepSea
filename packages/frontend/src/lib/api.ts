@@ -21,6 +21,8 @@ import type {
   Task,
   TaskInteractionMode,
   WorkflowDetail,
+  WorkflowDefinition,
+  WorkflowDefinitionGraph,
   WorkflowRole,
   WorkflowRun,
 } from './types';
@@ -95,6 +97,7 @@ export const api = {
     fallback_agent_id?: string | null;
     interaction_mode?: TaskInteractionMode;
     auto_distill_enabled?: boolean;
+    default_workflow_definition_id?: string | null;
     langchain_planner_model?: string | null;
     openai_base_url?: string | null;
     openai_api_key?: string | null;
@@ -112,6 +115,7 @@ export const api = {
       fallback_agent_id?: string | null;
       interaction_mode?: TaskInteractionMode | null;
       auto_distill_enabled?: boolean | null;
+      default_workflow_definition_id?: string | null;
     },
   ) =>
     request<SettingsResolution>(`/projects/${projectId}/settings`, {
@@ -127,12 +131,42 @@ export const api = {
       fallback_agent_id?: string | null;
       interaction_mode?: TaskInteractionMode | null;
       auto_distill_enabled?: boolean | null;
+      default_workflow_definition_id?: string | null;
     },
   ) =>
     request<SettingsResolution>(`/rooms/${roomId}/settings`, {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
+
+  listWorkflowDefinitions: () => request<WorkflowDefinition[]>('/workflow-definitions'),
+  listRoomWorkflowDefinitions: (roomId: string) =>
+    request<WorkflowDefinition[]>(`/rooms/${roomId}/workflow-definitions`),
+  createWorkflowDefinition: (input: {
+    name: string;
+    description?: string | null;
+    scope: 'system' | 'project' | 'room';
+    scope_id: string;
+    definition: WorkflowDefinitionGraph;
+  }) =>
+    request<WorkflowDefinition>('/workflow-definitions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateWorkflowDefinition: (
+    id: string,
+    input: {
+      name?: string;
+      description?: string | null;
+      definition?: WorkflowDefinitionGraph;
+    },
+  ) =>
+    request<WorkflowDefinition>(`/workflow-definitions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  publishWorkflowDefinition: (id: string) =>
+    request<WorkflowDefinition>(`/workflow-definitions/${id}/publish`, { method: 'POST' }),
 
   listProjects: () => request<Project[]>('/projects'),
   pickDirectory: () =>

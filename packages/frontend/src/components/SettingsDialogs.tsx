@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
+  GitBranch,
   Globe2,
   Moon,
   PanelTop,
@@ -37,17 +38,20 @@ import {
   type SettingsResolution,
   type SystemSettings,
   type TaskInteractionMode,
+  type WorkflowDefinition,
 } from '../lib/types';
 import { cn } from '../lib/utils';
 import { Button } from './ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { Input, Label } from './ui/Input';
+import { WorkflowBuilderDialog } from './WorkflowBuilderDialog';
 
 type SettingsPatch = {
   message_routing_mode?: MessageRoutingMode | null;
   fallback_agent_id?: string | null;
   interaction_mode?: TaskInteractionMode | null;
   auto_distill_enabled?: boolean | null;
+  default_workflow_definition_id?: string | null;
 };
 
 const ROUTING_OPTIONS: Array<{ value: MessageRoutingMode; descriptionKey: MessageKey }> = [
@@ -65,6 +69,7 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   fallback_agent_id: 'planner',
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
+  default_workflow_definition_id: null,
   langchain_planner_model: null,
   openai_base_url: null,
   openai_api_key_set: false,
@@ -197,6 +202,11 @@ export function RoomSettingsDialog({
     queryFn: () => api.getRoomSettings(room.id),
     enabled: open,
   });
+  const { data: workflowDefinitions = [] } = useQuery({
+    queryKey: ['workflow-definitions', room.id],
+    queryFn: () => api.listRoomWorkflowDefinitions(room.id),
+    enabled: open,
+  });
   const save = useMutation({
     mutationFn: (patch: SettingsPatch) => api.updateRoomSettings(room.id, patch),
     onSuccess: () => {
@@ -223,6 +233,7 @@ export function RoomSettingsDialog({
           key={`${room.id}:${settings?.room?.updated_at ?? 0}`}
           room={room}
           settings={settings}
+          workflowDefinitions={workflowDefinitions}
           fallbackOptions={fallbackOptions}
           isSaving={save.isPending}
           onSave={(patch) => save.mutate(patch)}
@@ -787,12 +798,14 @@ function ProjectSettingsForm({
 function RoomSettingsForm({
   room,
   settings,
+  workflowDefinitions,
   fallbackOptions,
   isSaving,
   onSave,
 }: {
   room: Room;
   settings?: SettingsResolution;
+  workflowDefinitions: WorkflowDefinition[];
   fallbackOptions: FallbackAgentOption[];
   isSaving: boolean;
   onSave: (patch: SettingsPatch) => void;
@@ -812,8 +825,16 @@ function RoomSettingsForm({
       ? 'inherit'
       : Boolean(own.auto_distill_enabled),
   );
+  const [workflowDefinitionId, setWorkflowDefinitionId] = useState<string | 'inherit'>(
+    own?.default_workflow_definition_id ?? 'inherit',
+  );
+  const [builderOpen, setBuilderOpen] = useState(false);
   const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
   const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId || inherited.fallback_agent_id || '', fallbackOptions);
+  const effectiveDefinitionId = workflowDefinitionId === 'inherit'
+    ? inherited.default_workflow_definition_id
+    : workflowDefinitionId;
+  const selectedDefinition = workflowDefinitions.find((definition) => definition.id === effectiveDefinitionId) ?? null;
 
   return (
     <SettingsDialogBody
@@ -827,6 +848,7 @@ function RoomSettingsForm({
               fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : selectedFallbackAgentId,
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
               auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
+              default_workflow_definition_id: workflowDefinitionId === 'inherit' ? null : workflowDefinitionId,
             })
           }
         >
@@ -862,16 +884,51 @@ function RoomSettingsForm({
           onModeChange={setAutoDistillEnabled}
         />
       </SettingGroup>
-      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit') && (
+      <SettingGroup title="工作流编排" icon={<GitBranch className="h-4 w-4" strokeWidth={1.75} />}>
+        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
+          <Label>默认工作流</Label>
+          <select
+            value={workflowDefinitionId}
+            onChange={(event) => setWorkflowDefinitionId(event.target.value as string | 'inherit')}
+            className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none transition-all focus:border-[var(--color-primary)] focus:glow-primary"
+          >
+            <option value="inherit">
+              {t('settings.inheritParentSettings')} ({selectedDefinition?.name ?? '默认开发闭环'})
+            </option>
+            {workflowDefinitions.map((definition) => (
+              <option key={definition.id} value={definition.id}>
+                {definition.name} v{definition.version}
+              </option>
+            ))}
+          </select>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="min-w-0 truncate text-[11px] text-[var(--color-fg-muted)]">
+              {selectedDefinition ? `${selectedDefinition.status} / ${selectedDefinition.scope}` : '使用继承工作流'}
+            </div>
+            <Button type="button" size="sm" variant="secondary" onClick={() => setBuilderOpen(true)}>
+              <GitBranch className="h-3.5 w-3.5" />
+              编排
+            </Button>
+          </div>
+        </div>
+      </SettingGroup>
+      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit' || workflowDefinitionId !== 'inherit') && (
         <ResetInheritanceButton
           onClick={() => {
             setRoutingMode('inherit');
             setFallbackAgentId('');
             setInteractionMode('inherit');
             setAutoDistillEnabled('inherit');
+            setWorkflowDefinitionId('inherit');
           }}
         />
       )}
+      <WorkflowBuilderDialog
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        roomId={room.id}
+        definition={selectedDefinition}
+      />
     </SettingsDialogBody>
   );
 }
@@ -1157,6 +1214,8 @@ function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
       settings.project?.auto_distill_enabled === null || settings.project?.auto_distill_enabled === undefined
         ? settings.system.auto_distill_enabled
         : Boolean(settings.project.auto_distill_enabled),
+    default_workflow_definition_id:
+      settings.project?.default_workflow_definition_id ?? settings.system.default_workflow_definition_id,
   };
 }
 

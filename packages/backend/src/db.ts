@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS settings (
   fallback_agent_id TEXT,
   interaction_mode TEXT,
   auto_distill_enabled INTEGER CHECK (auto_distill_enabled IN (0, 1)),
+  default_workflow_definition_id TEXT,
   langchain_planner_model TEXT,
   openai_api_key TEXT,
   openai_base_url TEXT,
@@ -161,6 +162,21 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 CREATE INDEX IF NOT EXISTS idx_agent_runs_room ON agent_runs(room_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
 
+CREATE TABLE IF NOT EXISTS workflow_definitions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  scope TEXT NOT NULL CHECK (scope IN ('system', 'project', 'room')),
+  scope_id TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'published', 'archived')),
+  builtin_key TEXT UNIQUE,
+  definition_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_definitions_scope ON workflow_definitions(scope, scope_id, status, updated_at);
+
 CREATE TABLE IF NOT EXISTS workflow_runs (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
@@ -174,6 +190,9 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   approved_at INTEGER,
   approved_by TEXT,
   openclaw_flow_id TEXT,
+  workflow_definition_id TEXT,
+  workflow_definition_version INTEGER,
+  workflow_definition_snapshot TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   completed_at INTEGER,
@@ -494,6 +513,15 @@ if (!workflowRunColumnNames.has('graph_version')) {
 if (!workflowRunColumnNames.has('graph_state')) {
   db.exec('ALTER TABLE workflow_runs ADD COLUMN graph_state TEXT');
 }
+if (!workflowRunColumnNames.has('workflow_definition_id')) {
+  db.exec('ALTER TABLE workflow_runs ADD COLUMN workflow_definition_id TEXT');
+}
+if (!workflowRunColumnNames.has('workflow_definition_version')) {
+  db.exec('ALTER TABLE workflow_runs ADD COLUMN workflow_definition_version INTEGER');
+}
+if (!workflowRunColumnNames.has('workflow_definition_snapshot')) {
+  db.exec('ALTER TABLE workflow_runs ADD COLUMN workflow_definition_snapshot TEXT');
+}
 
 const workflowStepColumns = db.prepare('PRAGMA table_info(workflow_steps)').all() as { name: string }[];
 const workflowStepColumnNames = new Set(workflowStepColumns.map((column) => column.name));
@@ -533,6 +561,9 @@ const settingsColumnNames = new Set(settingsColumns.map((column) => column.name)
 if (!settingsColumnNames.has('auto_distill_enabled')) {
   db.exec('ALTER TABLE settings ADD COLUMN auto_distill_enabled INTEGER CHECK (auto_distill_enabled IN (0, 1))');
 }
+if (!settingsColumnNames.has('default_workflow_definition_id')) {
+  db.exec('ALTER TABLE settings ADD COLUMN default_workflow_definition_id TEXT');
+}
 if (!settingsColumnNames.has('langchain_planner_model')) {
   db.exec('ALTER TABLE settings ADD COLUMN langchain_planner_model TEXT');
 }
@@ -563,13 +594,14 @@ WHERE message_routing_mode = 'fallback_route'
 
 db.exec(`
 INSERT OR IGNORE INTO settings (
-  scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, auto_distill_enabled, updated_at
+  scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, auto_distill_enabled, default_workflow_definition_id, updated_at
 )
 SELECT
   'project',
   id,
   message_routing_mode,
   fallback_agent_id,
+  NULL,
   NULL,
   NULL,
   updated_at

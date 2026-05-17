@@ -11,6 +11,7 @@ import type {
 } from '../types.js';
 import { projectRepo } from './projects.js';
 import { roomRepo } from './rooms.js';
+import { workflowDefinitionRepo } from './workflow-definitions.js';
 
 const SYSTEM_SCOPE_ID = 'default';
 const DEFAULT_FALLBACK_AGENT_ID = 'planner';
@@ -20,6 +21,7 @@ const DEFAULT_SETTINGS: EffectiveSettings = {
   fallback_agent_id: DEFAULT_FALLBACK_AGENT_ID,
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
+  default_workflow_definition_id: null,
 };
 
 interface SystemSettingsRow extends ScopedSettings {
@@ -36,6 +38,7 @@ function emptyScoped(scope: SettingsScope, scopeId: string): ScopedSettings {
     fallback_agent_id: null,
     interaction_mode: null,
     auto_distill_enabled: null,
+    default_workflow_definition_id: null,
     updated_at: 0,
   };
 }
@@ -50,6 +53,7 @@ function getScoped(scope: SettingsScope, scopeId: string): ScopedSettings | null
         fallback_agent_id,
         interaction_mode,
         auto_distill_enabled,
+        default_workflow_definition_id,
         updated_at
       FROM settings
       WHERE scope = ? AND scope_id = ?`,
@@ -67,6 +71,7 @@ function getSystemRow(): SystemSettingsRow | null {
         fallback_agent_id,
         interaction_mode,
         auto_distill_enabled,
+        default_workflow_definition_id,
         langchain_planner_model,
         openai_api_key,
         openai_base_url,
@@ -85,6 +90,7 @@ function upsertScoped(
     fallback_agent_id?: string | null;
     interaction_mode?: TaskInteractionMode | null;
     auto_distill_enabled?: boolean | null;
+    default_workflow_definition_id?: string | null;
   },
 ): ScopedSettings {
   const existing = getScoped(scope, scopeId) ?? emptyScoped(scope, scopeId);
@@ -100,6 +106,10 @@ function upsertScoped(
         : patch.auto_distill_enabled
           ? 1
           : 0;
+  const defaultWorkflowDefinitionId =
+    patch.default_workflow_definition_id === undefined
+      ? existing.default_workflow_definition_id
+      : normalizedOptionalString(patch.default_workflow_definition_id);
   const rawFallbackAgentId = patch.fallback_agent_id === undefined
     ? existing.fallback_agent_id
     : patch.fallback_agent_id;
@@ -108,16 +118,27 @@ function upsertScoped(
 
   db.prepare(
     `INSERT INTO settings (
-      scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, auto_distill_enabled, updated_at
+      scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, auto_distill_enabled,
+      default_workflow_definition_id, updated_at
     )
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(scope, scope_id) DO UPDATE SET
        message_routing_mode = excluded.message_routing_mode,
        fallback_agent_id = excluded.fallback_agent_id,
        interaction_mode = excluded.interaction_mode,
        auto_distill_enabled = excluded.auto_distill_enabled,
+       default_workflow_definition_id = excluded.default_workflow_definition_id,
        updated_at = excluded.updated_at`,
-  ).run(scope, scopeId, routingMode, fallbackAgentId, interactionMode, autoDistillEnabled, updatedAt);
+  ).run(
+    scope,
+    scopeId,
+    routingMode,
+    fallbackAgentId,
+    interactionMode,
+    autoDistillEnabled,
+    defaultWorkflowDefinitionId,
+    updatedAt,
+  );
   return getScoped(scope, scopeId)!;
 }
 
@@ -157,6 +178,8 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
   const openaiApiKey = normalizedOptionalString(settings?.openai_api_key);
   const openaiApiKeyPreview = apiKeyPreview(openaiApiKey);
   const routingMode = settings?.message_routing_mode ?? DEFAULT_SETTINGS.message_routing_mode;
+  const defaultWorkflowDefinitionId = settings?.default_workflow_definition_id
+    ?? workflowDefinitionRepo.ensureBuiltInDefinitions().id;
   return {
     message_routing_mode: routingMode,
     fallback_agent_id: normalizeFallbackAgentId(routingMode, settings?.fallback_agent_id),
@@ -164,6 +187,7 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
     auto_distill_enabled: settings?.auto_distill_enabled === null || settings?.auto_distill_enabled === undefined
       ? DEFAULT_SETTINGS.auto_distill_enabled
       : Boolean(settings.auto_distill_enabled),
+    default_workflow_definition_id: defaultWorkflowDefinitionId,
     langchain_planner_model: normalizedOptionalString(settings?.langchain_planner_model),
     openai_base_url: normalizedOptionalString(settings?.openai_base_url),
     openai_api_key_set: Boolean(openaiApiKey),
@@ -182,6 +206,7 @@ export const settingsRepo = {
     fallback_agent_id?: string | null;
     interaction_mode?: TaskInteractionMode;
     auto_distill_enabled?: boolean;
+    default_workflow_definition_id?: string | null;
     langchain_planner_model?: string | null;
     openai_api_key?: string | null;
     openai_base_url?: string | null;
@@ -198,6 +223,9 @@ export const settingsRepo = {
         : patch.auto_distill_enabled
           ? 1
           : 0;
+    const defaultWorkflowDefinitionId = patch.default_workflow_definition_id === undefined
+      ? normalizedOptionalString(existing?.default_workflow_definition_id)
+      : normalizedOptionalString(patch.default_workflow_definition_id);
     const rawFallbackAgentId = patch.fallback_agent_id === undefined
       ? existing?.fallback_agent_id ?? null
       : patch.fallback_agent_id;
@@ -224,17 +252,19 @@ export const settingsRepo = {
         fallback_agent_id,
         interaction_mode,
         auto_distill_enabled,
+        default_workflow_definition_id,
         langchain_planner_model,
         openai_api_key,
         openai_base_url,
         updated_at
       )
-       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(scope, scope_id) DO UPDATE SET
          message_routing_mode = excluded.message_routing_mode,
          fallback_agent_id = excluded.fallback_agent_id,
          interaction_mode = excluded.interaction_mode,
          auto_distill_enabled = excluded.auto_distill_enabled,
+         default_workflow_definition_id = excluded.default_workflow_definition_id,
          langchain_planner_model = excluded.langchain_planner_model,
          openai_api_key = excluded.openai_api_key,
          openai_base_url = excluded.openai_base_url,
@@ -245,6 +275,7 @@ export const settingsRepo = {
       fallbackAgentId,
       interactionMode,
       autoDistillEnabled,
+      defaultWorkflowDefinitionId,
       plannerModel,
       openaiApiKey,
       openaiBaseUrl,
@@ -276,6 +307,7 @@ export const settingsRepo = {
       fallback_agent_id?: string | null;
       interaction_mode?: TaskInteractionMode | null;
       auto_distill_enabled?: boolean | null;
+      default_workflow_definition_id?: string | null;
     },
   ): ScopedSettings | null {
     normalizeLegacyRouting();
@@ -295,6 +327,7 @@ export const settingsRepo = {
       fallback_agent_id?: string | null;
       interaction_mode?: TaskInteractionMode | null;
       auto_distill_enabled?: boolean | null;
+      default_workflow_definition_id?: string | null;
     },
   ): ScopedSettings | null {
     normalizeLegacyRouting();
@@ -312,6 +345,7 @@ export const settingsRepo = {
     const autoDistillSource: SettingsScope = project?.auto_distill_enabled === null || project?.auto_distill_enabled === undefined
       ? 'system'
       : 'project';
+    const workflowSource: SettingsScope = project?.default_workflow_definition_id ? 'project' : 'system';
     return {
       system,
       project,
@@ -325,11 +359,15 @@ export const settingsRepo = {
         auto_distill_enabled: project?.auto_distill_enabled === null || project?.auto_distill_enabled === undefined
           ? system.auto_distill_enabled
           : Boolean(project.auto_distill_enabled),
+        default_workflow_definition_id: project?.default_workflow_definition_id
+          ?? system.default_workflow_definition_id
+          ?? workflowDefinitionRepo.ensureBuiltInDefinitions().id,
       },
       sources: {
         message_routing: messageRoutingSource,
         interaction_mode: interactionSource,
         auto_distill: autoDistillSource,
+        default_workflow_definition: workflowSource,
       },
     };
   },
@@ -351,6 +389,9 @@ export const settingsRepo = {
       roomSettings?.auto_distill_enabled === null || roomSettings?.auto_distill_enabled === undefined
         ? projectResolution.sources.auto_distill
         : 'room';
+    const workflowSource: SettingsScope = roomSettings?.default_workflow_definition_id
+      ? 'room'
+      : projectResolution.sources.default_workflow_definition;
     const inheritedRoutingMode = projectResolution.effective.message_routing_mode;
     return {
       ...projectResolution,
@@ -365,11 +406,15 @@ export const settingsRepo = {
           roomSettings?.auto_distill_enabled === null || roomSettings?.auto_distill_enabled === undefined
             ? projectResolution.effective.auto_distill_enabled
             : Boolean(roomSettings.auto_distill_enabled),
+        default_workflow_definition_id: roomSettings?.default_workflow_definition_id
+          ?? projectResolution.effective.default_workflow_definition_id
+          ?? workflowDefinitionRepo.ensureBuiltInDefinitions().id,
       },
       sources: {
         message_routing: messageRoutingSource,
         interaction_mode: interactionSource,
         auto_distill: autoDistillSource,
+        default_workflow_definition: workflowSource,
       },
     };
   },

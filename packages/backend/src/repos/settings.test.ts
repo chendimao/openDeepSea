@@ -54,6 +54,60 @@ test('settingsRepo resolves auto_distill_enabled with project and room overrides
   assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.auto_distill_enabled, true);
 });
 
+test('settingsRepo resolves default workflow definition with project and room overrides', async () => {
+  const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-settings-workflow-project-'));
+  const project = projectRepo.create({ name: 'Settings Workflow', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Settings Workflow Room' });
+  const builtIn = workflowDefinitionRepo.ensureBuiltInDefinitions();
+  const projectDefinition = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Project Workflow',
+    description: null,
+    scope: 'project',
+    scope_id: project.id,
+    definition: testDefinition('project-planning'),
+  }).id);
+  const roomDefinition = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Room Workflow',
+    description: null,
+    scope: 'room',
+    scope_id: room.id,
+    definition: testDefinition('room-planning'),
+  }).id);
+
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, builtIn.id);
+
+  settingsRepo.updateProject(project.id, { default_workflow_definition_id: projectDefinition?.id });
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, projectDefinition?.id);
+
+  settingsRepo.updateRoom(room.id, { default_workflow_definition_id: roomDefinition?.id });
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, roomDefinition?.id);
+});
+
+function testDefinition(prefix: string) {
+  return {
+    nodes: [
+      { id: prefix, type: 'planning' as const, label: 'Planning' },
+      { id: `${prefix}-approval`, type: 'approval_gate' as const, label: 'Approval' },
+      { id: `${prefix}-dispatch`, type: 'dispatch' as const, label: 'Dispatch' },
+      { id: `${prefix}-execute`, type: 'execute' as const, label: 'Execute' },
+      { id: `${prefix}-review`, type: 'review' as const, label: 'Review' },
+      { id: `${prefix}-verify`, type: 'verify' as const, label: 'Verify' },
+      { id: `${prefix}-acceptance`, type: 'acceptance' as const, label: 'Acceptance' },
+      { id: `${prefix}-memory`, type: 'memory' as const, label: 'Memory' },
+    ],
+    edges: [
+      { from: prefix, to: `${prefix}-approval` },
+      { from: `${prefix}-approval`, to: `${prefix}-dispatch`, condition: 'approved' },
+      { from: `${prefix}-dispatch`, to: `${prefix}-execute` },
+      { from: `${prefix}-execute`, to: `${prefix}-review`, condition: 'review' },
+      { from: `${prefix}-review`, to: `${prefix}-verify`, condition: 'pass' },
+      { from: `${prefix}-verify`, to: `${prefix}-acceptance`, condition: 'acceptance' },
+      { from: `${prefix}-acceptance`, to: `${prefix}-memory`, condition: 'completed' },
+    ],
+  };
+}
+
 test('settingsRepo stores system planner settings while redacting api key responses', () => {
   const updated = settingsRepo.updateSystem({
     langchain_planner_model: ' gpt-4.1 ',

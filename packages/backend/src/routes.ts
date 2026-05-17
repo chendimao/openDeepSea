@@ -20,6 +20,7 @@ import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskRepo } from './repos/tasks.js';
 import { workflowContextRepo } from './repos/workflow-context.js';
+import { workflowDefinitionRepo } from './repos/workflow-definitions.js';
 import { searchProjectRooms } from './room-search.js';
 import { pickDirectory } from './system-dialogs.js';
 import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
@@ -131,6 +132,7 @@ const settingsPatchShape = {
   fallback_agent_id: z.string().min(1).nullable().optional(),
   interaction_mode: z.enum(['ask_user', 'auto_recommended']).nullable().optional(),
   auto_distill_enabled: z.boolean().nullable().optional(),
+  default_workflow_definition_id: z.string().min(1).nullable().optional(),
 };
 
 const nullableTrimmedStringSchema = z.union([z.string(), z.null()]).optional().transform((value) => {
@@ -341,11 +343,18 @@ router.get('/settings/system', (_req, res) => {
 router.patch('/settings/system', (req, res) => {
   const parsed = systemSettingsPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (
+    parsed.data.default_workflow_definition_id &&
+    !workflowDefinitionRepo.isVisibleForSystem(parsed.data.default_workflow_definition_id)
+  ) {
+    return res.status(400).json({ error: 'default workflow definition is not available for system settings' });
+  }
   res.json(settingsRepo.updateSystem({
     message_routing_mode: parsed.data.message_routing_mode ?? undefined,
     fallback_agent_id: parsed.data.fallback_agent_id,
     interaction_mode: parsed.data.interaction_mode ?? undefined,
     auto_distill_enabled: parsed.data.auto_distill_enabled ?? undefined,
+    default_workflow_definition_id: parsed.data.default_workflow_definition_id,
     langchain_planner_model: parsed.data.langchain_planner_model,
     openai_api_key: parsed.data.openai_api_key,
     openai_base_url: parsed.data.openai_base_url,
@@ -361,11 +370,18 @@ router.get('/projects/:projectId/settings', (req, res) => {
 router.patch('/projects/:projectId/settings', (req, res) => {
   const parsed = settingsPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (
+    parsed.data.default_workflow_definition_id &&
+    !workflowDefinitionRepo.isVisibleForProject(parsed.data.default_workflow_definition_id, req.params.projectId)
+  ) {
+    return res.status(400).json({ error: 'default workflow definition is not available for project settings' });
+  }
   const updated = settingsRepo.updateProject(req.params.projectId, {
     message_routing_mode: parsed.data.message_routing_mode,
     fallback_agent_id: parsed.data.fallback_agent_id,
     interaction_mode: parsed.data.interaction_mode,
     auto_distill_enabled: parsed.data.auto_distill_enabled,
+    default_workflow_definition_id: parsed.data.default_workflow_definition_id,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForProject(req.params.projectId));
@@ -380,14 +396,104 @@ router.get('/rooms/:roomId/settings', (req, res) => {
 router.patch('/rooms/:roomId/settings', (req, res) => {
   const parsed = settingsPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (
+    parsed.data.default_workflow_definition_id &&
+    !workflowDefinitionRepo.isVisibleForRoom(parsed.data.default_workflow_definition_id, req.params.roomId)
+  ) {
+    return res.status(400).json({ error: 'default workflow definition is not available for room settings' });
+  }
   const updated = settingsRepo.updateRoom(req.params.roomId, {
     message_routing_mode: parsed.data.message_routing_mode,
     fallback_agent_id: parsed.data.fallback_agent_id,
     interaction_mode: parsed.data.interaction_mode,
     auto_distill_enabled: parsed.data.auto_distill_enabled,
+    default_workflow_definition_id: parsed.data.default_workflow_definition_id,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForRoom(req.params.roomId));
+});
+
+const workflowDefinitionGraphSchema = z.object({
+  nodes: z.array(z.object({
+    id: z.string().trim().min(1),
+    type: z.enum([
+      'context',
+      'planning',
+      'approval_gate',
+      'dispatch',
+      'execute',
+      'review',
+      'repair_decision',
+      'verify',
+      'acceptance',
+      'memory',
+    ]),
+    label: z.string().trim().min(1),
+    stage: z.enum(['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance']).nullable().optional(),
+    role: z.enum(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor']).nullable().optional(),
+    position: z.object({ x: z.number(), y: z.number() }).nullable().optional(),
+  })).min(1),
+  edges: z.array(z.object({
+    from: z.string().trim().min(1),
+    to: z.string().trim().min(1),
+    condition: z.string().trim().min(1).nullable().optional(),
+  })),
+});
+
+const workflowDefinitionCreateSchema = z.object({
+  name: z.string().trim().min(1),
+  description: z.string().trim().nullable().optional(),
+  scope: z.enum(['system', 'project', 'room']),
+  scope_id: z.string().trim().min(1),
+  definition: workflowDefinitionGraphSchema,
+});
+
+const workflowDefinitionPatchSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  description: z.string().trim().nullable().optional(),
+  definition: workflowDefinitionGraphSchema.optional(),
+});
+
+router.get('/workflow-definitions', (_req, res) => {
+  res.json(workflowDefinitionRepo.list());
+});
+
+router.post('/workflow-definitions', (req, res) => {
+  const parsed = workflowDefinitionCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const definition = workflowDefinitionRepo.createDraft(parsed.data);
+    res.status(201).json(definition);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.patch('/workflow-definitions/:id', (req, res) => {
+  const parsed = workflowDefinitionPatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const definition = workflowDefinitionRepo.updateDraft(req.params.id, parsed.data);
+    if (!definition) return res.status(404).json({ error: 'not found' });
+    res.json(definition);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/workflow-definitions/:id/publish', (req, res) => {
+  try {
+    const definition = workflowDefinitionRepo.publish(req.params.id);
+    if (!definition) return res.status(404).json({ error: 'not found' });
+    res.json(definition);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.get('/rooms/:roomId/workflow-definitions', (req, res) => {
+  if (!roomRepo.get(req.params.roomId)) return res.status(404).json({ error: 'not found' });
+  res.json(workflowDefinitionRepo.listVisibleForRoom(req.params.roomId));
 });
 
 // ---------- Projects ----------

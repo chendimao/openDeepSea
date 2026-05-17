@@ -12,6 +12,8 @@ const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
 const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { messageRepo } = await import('../../repos/messages.js');
+const { settingsRepo } = await import('../../repos/settings.js');
+const { workflowDefinitionRepo } = await import('../../repos/workflow-definitions.js');
 const { createGraphNodes } = await import('./nodes.js');
 const { parseGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
@@ -55,11 +57,6 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Graph Room' });
-  roomAgentRepo.add({
-    room_id: room.id,
-    agent_id: 'planner',
-    agent_name: 'Planner',
-  });
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -97,6 +94,53 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'plan'));
   assert.ok(detail?.steps.some((step) => step.node_name === 'context'));
   assert.ok(detail?.steps.some((step) => step.node_name === 'planning'));
+});
+
+test('createGraphWorkflowRun records selected room workflow definition snapshot', () => {
+  const projectPath = join(tmpdir(), `graph-runtime-definition-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Definition', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Definition Room' });
+  const definition = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Room Defined Workflow',
+    description: null,
+    scope: 'room',
+    scope_id: room.id,
+    definition: {
+      nodes: [
+        { id: 'planning', type: 'planning', label: 'Planning' },
+        { id: 'approval', type: 'approval_gate', label: 'Approval' },
+        { id: 'dispatch', type: 'dispatch', label: 'Dispatch' },
+        { id: 'execute', type: 'execute', label: 'Execute' },
+        { id: 'review', type: 'review', label: 'Review' },
+        { id: 'verify', type: 'verify', label: 'Verify' },
+        { id: 'acceptance', type: 'acceptance', label: 'Acceptance' },
+        { id: 'memory', type: 'memory', label: 'Memory' },
+      ],
+      edges: [
+        { from: 'planning', to: 'approval' },
+        { from: 'approval', to: 'dispatch', condition: 'approved' },
+        { from: 'dispatch', to: 'execute' },
+        { from: 'execute', to: 'review', condition: 'review' },
+        { from: 'review', to: 'verify', condition: 'pass' },
+        { from: 'verify', to: 'acceptance', condition: 'acceptance' },
+        { from: 'acceptance', to: 'memory', condition: 'completed' },
+      ],
+    },
+  }).id);
+  assert.ok(definition);
+  settingsRepo.updateRoom(room.id, { default_workflow_definition_id: definition.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Record definition snapshot',
+  });
+
+  const run = createGraphWorkflowRun(task.id);
+
+  assert.equal(run.workflow_definition_id, definition.id);
+  assert.equal(run.workflow_definition_version, definition.version);
+  assert.match(run.workflow_definition_snapshot ?? '', /Room Defined Workflow/);
 });
 
 test('startGraphWorkflow blocks workflow and fails running graph step when planner fails', async () => {

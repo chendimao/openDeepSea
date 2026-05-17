@@ -75,14 +75,18 @@ export const workflowRepo = {
     openclaw_flow_id?: string | null;
     graph_version?: string | null;
     graph_state?: string | null;
+    workflow_definition_id?: string | null;
+    workflow_definition_version?: number | null;
+    workflow_definition_snapshot?: string | null;
   }): WorkflowRun {
     const id = nanoid(14);
     const ts = now();
     db.prepare(
       `INSERT INTO workflow_runs (
         id, room_id, project_id, task_id, status, current_stage, approval_required,
-        openclaw_flow_id, graph_version, graph_state, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        openclaw_flow_id, graph_version, graph_state, workflow_definition_id, workflow_definition_version,
+        workflow_definition_snapshot, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.room_id,
@@ -94,6 +98,9 @@ export const workflowRepo = {
       input.openclaw_flow_id ?? null,
       input.graph_version ?? null,
       input.graph_state ?? null,
+      input.workflow_definition_id ?? null,
+      input.workflow_definition_version ?? null,
+      input.workflow_definition_snapshot ?? null,
       ts,
       ts,
     );
