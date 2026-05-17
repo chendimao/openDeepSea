@@ -1,19 +1,28 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { ArrowUpRight, FolderOpen, MessageSquare, Plus } from 'lucide-react';
+import { ArrowUpRight, FolderOpen, MessageSquare, Plus, Search } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
 import { CreateProjectDialog } from '../components/CreateProjectDialog';
 import { LobsterMark } from '../components/LobsterMark';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 
 export function DashboardPage() {
   const { t, formatRelativeTime } = useI18n();
+  const [projectQuery, setProjectQuery] = useState('');
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
   });
+  const filteredProjects = useMemo(() => {
+    const query = projectQuery.trim().toLowerCase();
+    if (!query) return projects;
+    return projects.filter((project) => project.name.toLowerCase().includes(query));
+  }, [projectQuery, projects]);
+  const hasProjectQuery = projectQuery.trim().length > 0;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -42,20 +51,38 @@ export function DashboardPage() {
 
       <section className="px-4 sm:px-8 py-8">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-baseline gap-3 mb-5">
+          <div className="flex flex-wrap items-center gap-3 mb-5">
             <h2 className="font-display text-[15px] font-medium">{t('dashboard.allProjects')}</h2>
             <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">
-              {t('dashboard.projectCount', { count: projects.length })}
+              {hasProjectQuery
+                ? `${filteredProjects.length} / ${projects.length}`
+                : t('dashboard.projectCount', { count: projects.length })}
             </span>
+            <div className="relative ml-auto w-full sm:w-[280px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-muted)]" />
+              <Input
+                value={projectQuery}
+                onChange={(event) => setProjectQuery(event.target.value)}
+                placeholder={t('dashboard.projectSearchPlaceholder')}
+                className="pl-9"
+                aria-label={t('dashboard.projectSearchPlaceholder')}
+              />
+            </div>
           </div>
 
           {isLoading ? (
             <div className="text-[var(--color-fg-muted)] text-[13px]">{t('dashboard.loading')}</div>
           ) : projects.length === 0 ? (
             <EmptyState />
+          ) : filteredProjects.length === 0 ? (
+            <WorkspaceEmptyState
+              icon={<Search className="h-9 w-9" strokeWidth={1.75} />}
+              title={t('dashboard.noProjectMatchesTitle')}
+              description={t('dashboard.noProjectMatchesDescription')}
+            />
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4">
-              {projects.map((p) => (
+              {filteredProjects.map((p) => (
                 <Link
                   key={p.id}
                   to={`/projects/${p.id}`}
