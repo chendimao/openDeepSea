@@ -437,7 +437,7 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 6px;
   }
   .toolbar-tab {
@@ -503,7 +503,7 @@
     grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
   }
   .room-switcher {
-    justify-self: center;
+    justify-self: stretch;
   }
   .room-more-menu {
     position: relative;
@@ -554,7 +554,7 @@
     display: flex;
     min-height: 48px;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     border-bottom: 1px solid rgba(255,255,255,0.48);
     padding: 8px 12px;
   }
