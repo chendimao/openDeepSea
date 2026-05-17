@@ -54,6 +54,7 @@ export async function runCollaborationStages(input: RunCollaborationStagesInput)
     [agent.agent_id, agent],
     [agent.id, agent],
   ]));
+  const plannerAgent = agentsById.get('planner') ?? null;
 
   createSystemEvent(input.roomId, '轻量群聊协作已开始', {
     event_type: 'collaboration_started',
@@ -61,12 +62,9 @@ export async function runCollaborationStages(input: RunCollaborationStagesInput)
     source_message_id: input.sourceMessage.id,
   });
 
-  const invalidStage = input.decision.stages.find((stage) => stage.agentIds.length === 0);
-  if (input.decision.stages.length === 0 || invalidStage) {
+  if (input.decision.stages.length === 0) {
     result.status = 'blocked';
-    result.error = invalidStage
-      ? `Collaboration stage ${invalidStage.stage} has no agents`
-      : 'Collaboration decision has no stages';
+    result.error = 'Collaboration decision has no stages';
     result.completed_at = now();
     createSystemEvent(input.roomId, `轻量群聊协作已阻塞：${result.error}`, {
       event_type: 'collaboration_blocked',
@@ -78,10 +76,23 @@ export async function runCollaborationStages(input: RunCollaborationStagesInput)
   }
 
   for (const stage of input.decision.stages) {
+    const stageAssignments = buildStageAssignments({ agentsById, plannerAgent, stage });
+    if (stageAssignments.length === 0) {
+      result.status = 'blocked';
+      result.error = `Collaboration stage ${stage.stage} has no agents and planner fallback is unavailable`;
+      result.completed_at = now();
+      createSystemEvent(input.roomId, `轻量群聊协作已阻塞：${result.error}`, {
+        event_type: 'collaboration_blocked',
+        collaboration_run_id: input.runId,
+        source_message_id: input.sourceMessage.id,
+        error: result.error,
+      });
+      return result;
+    }
+
     const stageSteps = stage.parallel
-      ? await Promise.all(stage.agentIds.map((agentId, index) => runStageStep({
-        agentId,
-        agentsById,
+      ? await Promise.all(stageAssignments.map((assignment, index) => runStageStep({
+        assignment,
         input,
         previousSteps: result.steps,
         runAgent,
@@ -89,12 +100,12 @@ export async function runCollaborationStages(input: RunCollaborationStagesInput)
         stage,
       })))
       : await runStageStepsSequentially({
-        agentsById,
         input,
         previousSteps: result.steps,
         runAgent,
         sortOrder: result.steps.length,
         stage,
+        stageAssignments,
       });
 
     result.steps.push(...stageSteps);
@@ -125,18 +136,18 @@ export async function runCollaborationStages(input: RunCollaborationStagesInput)
 }
 
 async function runStageStepsSequentially(args: {
-  agentsById: Map<string, RoomAgent>;
   input: RunCollaborationStagesInput;
   previousSteps: CollaborationStepResult[];
   runAgent: CollaborationAgentRunner;
   sortOrder: number;
   stage: CollaborationStagePlan;
+  stageAssignments: CollaborationStageAssignment[];
 }): Promise<CollaborationStepResult[]> {
   const steps: CollaborationStepResult[] = [];
-  for (const [index, agentId] of args.stage.agentIds.entries()) {
+  for (const [index, assignment] of args.stageAssignments.entries()) {
     const step = await runStageStep({
       ...args,
-      agentId,
+      assignment,
       previousSteps: [...args.previousSteps, ...steps],
       sortOrder: args.sortOrder + index,
     });
@@ -147,8 +158,7 @@ async function runStageStepsSequentially(args: {
 }
 
 async function runStageStep(args: {
-  agentId: string;
-  agentsById: Map<string, RoomAgent>;
+  assignment: CollaborationStageAssignment;
   input: RunCollaborationStagesInput;
   previousSteps: CollaborationStepResult[];
   runAgent: CollaborationAgentRunner;
@@ -156,14 +166,13 @@ async function runStageStep(args: {
   stage: CollaborationStagePlan;
 }): Promise<CollaborationStepResult> {
   const startedAt = now();
-  const agent = args.agentsById.get(args.agentId);
   const baseStep: CollaborationStepResult = {
     id: nanoid(16),
     collaboration_run_id: args.input.runId,
     stage: args.stage.stage,
     status: 'running',
-    room_agent_id: agent?.id ?? null,
-    agent_id: args.agentId,
+    room_agent_id: args.assignment.agent.id,
+    agent_id: args.assignment.agent.agent_id,
     agent_run_id: null,
     result_message_id: null,
     result_content: null,
@@ -173,15 +182,9 @@ async function runStageStep(args: {
     started_at: startedAt,
     completed_at: null,
   };
-
-  if (!agent) {
-    return {
-      ...baseStep,
-      status: 'failed',
-      error: `Collaboration agent not found: ${args.agentId}`,
-      completed_at: now(),
-    };
-  }
+  const agent = args.assignment.fallbackReason
+    ? { ...args.assignment.agent, acp_session_id: null }
+    : args.assignment.agent;
 
   const prompt = buildStagePrompt({
     agent,
@@ -190,6 +193,7 @@ async function runStageStep(args: {
     sourceMessage: args.input.sourceMessage,
     stage: args.stage,
     runId: args.input.runId,
+    fallbackReason: args.assignment.fallbackReason,
   });
 
   try {
@@ -233,6 +237,7 @@ function buildStagePrompt(args: {
   sourceMessage: Message;
   stage: CollaborationStagePlan;
   runId: string;
+  fallbackReason: string | null;
 }): string {
   const previousResults = args.previousSteps
     .filter((step) => step.status === 'completed' && step.result_message_id)
@@ -247,6 +252,9 @@ function buildStagePrompt(args: {
     `协作运行：${args.runId}`,
     `协作阶段：${args.stage.stage}`,
     `目标智能体：${args.agent.agent_name} (${args.agent.agent_id})`,
+    args.fallbackReason
+      ? `补位说明：planner 作为 ${args.stage.stage} 阶段补位智能体。原计划智能体 unavailable：${args.fallbackReason}。本阶段必须使用独立新会话，不继承 planner 既有执行上下文。`
+      : null,
     `阶段目标：${args.stage.goal}`,
     '',
     'Planner 决策摘要：',
@@ -260,7 +268,32 @@ function buildStagePrompt(args: {
     '',
     '已完成的上游步骤：',
     previousResults || '- 暂无',
-  ].join('\n');
+  ].filter((line): line is string => line !== null).join('\n');
+}
+
+interface CollaborationStageAssignment {
+  agent: RoomAgent;
+  fallbackReason: string | null;
+}
+
+function buildStageAssignments(args: {
+  agentsById: Map<string, RoomAgent>;
+  plannerAgent: RoomAgent | null;
+  stage: CollaborationStagePlan;
+}): CollaborationStageAssignment[] {
+  if (args.stage.agentIds.length === 0) {
+    return args.plannerAgent
+      ? [{ agent: args.plannerAgent, fallbackReason: 'no assigned agents' }]
+      : [];
+  }
+
+  return args.stage.agentIds.flatMap((agentId): CollaborationStageAssignment[] => {
+    const agent = args.agentsById.get(agentId);
+    if (agent) return [{ agent, fallbackReason: null }];
+    return args.plannerAgent
+      ? [{ agent: args.plannerAgent, fallbackReason: agentId }]
+      : [];
+  });
 }
 
 async function defaultRunAgent(input: Parameters<CollaborationAgentRunner>[0]): ReturnType<CollaborationAgentRunner> {

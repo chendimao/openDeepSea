@@ -181,7 +181,7 @@ test('collaboration is blocked when a required stage fails and later stages are 
   }
 });
 
-test('collaboration is blocked when decision has no executable stages', async () => {
+test('collaboration is blocked when decision has no stages', async () => {
   const fixture = await createFixture('empty-stages');
   const calls: string[] = [];
   const runAgent = createRunnerStub({ calls });
@@ -198,19 +198,76 @@ test('collaboration is blocked when decision has no executable stages', async ()
     assert.equal(emptyStages.status, 'blocked');
     assert.match(emptyStages.error ?? '', /no stages/);
 
-    const emptyAgentIds = await runCollaborationStages({
-      runId: 'collab-empty-agent-ids',
+    assert.deepEqual(calls, []);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('planner fills stages that have no assigned agents with independent fresh sessions', async () => {
+  const fixture = await createFixture('planner-fallback-empty-stage');
+  const calls: string[] = [];
+  const seenSessionIds: Array<string | null> = [];
+  const runAgent = createRunnerStub({ calls, seenSessionIds });
+  const planner = roomAgentRepo.listByRoom(fixture.room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'existing-planner-session',
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+
+  try {
+    const result = await runCollaborationStages({
+      runId: 'collab-planner-fallback-empty-stage',
+      projectPath: fixture.projectPath,
+      roomId: fixture.room.id,
+      sourceMessage: fixture.sourceMessage,
+      decision: decisionWithStages('unknown', [
+        { stage: 'execute', agentIds: [], parallel: false, goal: '排查图片消息链路' },
+        { stage: 'summary', agentIds: [], parallel: false, goal: '总结根因和下一步' },
+      ]),
+      runAgent,
+    });
+
+    assert.equal(result.status, 'completed');
+    assert.deepEqual(calls, ['planner:execute', 'planner:summary']);
+    assert.deepEqual(seenSessionIds, [null, null]);
+    assert.equal(result.steps[0]?.agent_id, 'planner');
+    assert.equal(result.steps[1]?.agent_id, 'planner');
+    assert.match(result.steps[0]?.prompt ?? '', /planner 作为 execute 阶段补位智能体/);
+    assert.match(result.steps[1]?.prompt ?? '', /planner 作为 summary 阶段补位智能体/);
+  } finally {
+    await fixture.cleanup();
+  }
+});
+
+test('planner fills missing stage agents while existing stage agents still run', async () => {
+  const fixture = await createFixture('planner-fallback-mixed-stage');
+  const calls: string[] = [];
+  const runAgent = createRunnerStub({ calls });
+
+  try {
+    const result = await runCollaborationStages({
+      runId: 'collab-planner-fallback-mixed-stage',
       projectPath: fixture.projectPath,
       roomId: fixture.room.id,
       sourceMessage: fixture.sourceMessage,
       decision: decisionWithStages('frontend', [
-        { stage: 'execute', agentIds: [], parallel: false, goal: '无人执行' },
+        { stage: 'execute', agentIds: ['frontend-executor'], parallel: false, goal: '实现前端' },
+        { stage: 'review', agentIds: ['missing-reviewer'], parallel: false, goal: '审查实现' },
       ]),
       runAgent,
     });
-    assert.equal(emptyAgentIds.status, 'blocked');
-    assert.match(emptyAgentIds.error ?? '', /has no agents/);
-    assert.deepEqual(calls, []);
+
+    assert.equal(result.status, 'completed');
+    assert.deepEqual(calls, ['frontend-executor:execute', 'planner:review']);
+    assert.equal(result.steps[0]?.agent_id, 'frontend-executor');
+    assert.equal(result.steps[1]?.agent_id, 'planner');
+    assert.match(result.steps[1]?.prompt ?? '', /原计划智能体 unavailable：missing-reviewer/);
   } finally {
     await fixture.cleanup();
   }
@@ -300,10 +357,12 @@ function createRunnerStub(args: {
   statuses?: Record<string, AgentRunStatus>;
   outputs?: Record<string, string>;
   prompts?: Record<string, string>;
+  seenSessionIds?: Array<string | null>;
 }): CollaborationAgentRunner {
   return async ({ agent, collaborationStage, prompt }) => {
     const key = `${agent.agent_id}:${collaborationStage}`;
     args.calls.push(key);
+    args.seenSessionIds?.push(agent.acp_session_id);
     if (args.prompts) args.prompts[key] = prompt;
     return fakeRunResult(agent, collaborationStage, args.statuses?.[key] ?? 'completed', args.outputs?.[key]);
   };
