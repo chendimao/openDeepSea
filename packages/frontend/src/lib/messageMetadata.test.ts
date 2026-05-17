@@ -136,6 +136,48 @@ test('parseMessageMetadata accepts collaboration decision metadata', () => {
   assert.equal(parsed.collaboration_decision?.stages[1]?.stage, 'review');
 });
 
+test('parseMessageMetadata accepts collaboration decision stages without assigned agents', () => {
+  const metadata = JSON.stringify({
+    event_type: 'collaboration_decision',
+    source_message_id: 'message-1',
+    fallback_agent_id: 'planner',
+    collaboration_decision: {
+      intent: 'analysis',
+      recommendedMode: 'chat_collaboration',
+      problemArea: 'fullstack',
+      summary: '检查图片未收到的原因',
+      rationale: '这是只读排查，可以先给出分析路径，不需要立即分配具体执行智能体。',
+      needsUserChoice: true,
+      proposedAgents: {
+        executors: [],
+        reviewers: [],
+        testers: [],
+        acceptors: [],
+      },
+      stages: [
+        {
+          stage: 'execute',
+          agentIds: [],
+          parallel: false,
+          goal: '收集上下文并定位图片消息链路。',
+        },
+        {
+          stage: 'summary',
+          agentIds: [],
+          parallel: false,
+          goal: '输出根因和后续建议。',
+        },
+      ],
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.source_message_id, 'message-1');
+  assert.equal(parsed.collaboration_decision?.proposedAgents.executors.length, 0);
+  assert.deepEqual(parsed.collaboration_decision?.stages.map((stage) => stage.agentIds), [[], []]);
+});
+
 test('parseMessageMetadata ignores invalid collaboration decision metadata', () => {
   const metadata = JSON.stringify({
     event_type: 'collaboration_decision',

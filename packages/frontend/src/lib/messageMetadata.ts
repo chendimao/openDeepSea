@@ -137,7 +137,7 @@ function sanitizeCollaborationStages(value: unknown): CollaborationDecision['sta
     if (!isRecord(stage)) return null;
     if (!isCollaborationStage(stage.stage) || typeof stage.parallel !== 'boolean') return null;
     const agentIds = sanitizeStringArray(stage.agentIds);
-    if (!agentIds || agentIds.length === 0 || typeof stage.goal !== 'string' || !stage.goal.trim()) return null;
+    if (!agentIds || typeof stage.goal !== 'string' || !stage.goal.trim()) return null;
     return {
       stage: stage.stage,
       agentIds,
