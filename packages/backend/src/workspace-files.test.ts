@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
-  chmodSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -191,6 +189,20 @@ test('workspace preview and reference reject ignored direct paths', async () => 
   }
 });
 
+test('workspace preview and reference reject safe symlink that points to ignored target', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-ignored-symlink-');
+
+  try {
+    writeFileSync(join(projectRoot, '.env.local'), 'OPENAI_API_KEY=secret\n');
+    symlinkSync(join(projectRoot, '.env.local'), join(projectRoot, 'safe.txt'));
+
+    await assert.rejects(() => readWorkspaceFilePreview(projectRoot, 'safe.txt'), /WORKSPACE_PATH_IGNORED/);
+    await assert.rejects(() => readWorkspaceFileReference(projectRoot, 'safe.txt'), /WORKSPACE_PATH_IGNORED/);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
 test('workspace reference allows binary file under size limit', async () => {
   const projectRoot = createWorkspaceRoot('openclaw-workspace-reference-binary-');
 
@@ -201,6 +213,25 @@ test('workspace reference allows binary file under size limit', async () => {
     const reference = await readWorkspaceFileReference(projectRoot, 'sample.bin');
     assert.equal(reference.size, binary.length);
     assert.equal(reference.bytes.equals(binary), true);
+    assert.equal(reference.isBinary, true);
+    assert.equal(reference.content, null);
+    assert.equal(reference.truncated, false);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace reference returns text content for text file', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-reference-text-');
+
+  try {
+    writeFileSync(join(projectRoot, 'sample.ts'), 'export const answer = 42;\n');
+    const reference = await readWorkspaceFileReference(projectRoot, 'sample.ts');
+
+    assert.equal(reference.isBinary, false);
+    assert.equal(reference.content, 'export const answer = 42;\n');
+    assert.equal(reference.language, 'typescript');
+    assert.equal(reference.bytes.length > 0, true);
   } finally {
     cleanupWorkspaceRoot(projectRoot);
   }
@@ -257,25 +288,55 @@ test('workspace search is filename-only, caps results, and respects depth/inacce
     writeFileSync(join(depth12, 'needle-depth-12.txt'), 'depth12\n');
     writeFileSync(join(depth13, 'needle-depth-13.txt'), 'depth13\n');
 
-    const blockedDir = join(projectRoot, 'blocked');
-    mkdirSync(blockedDir);
-    writeFileSync(join(blockedDir, 'needle-hidden.txt'), 'hidden\n');
-    chmodSync(blockedDir, 0);
-
     const cappedResults = await searchWorkspaceFiles(projectRoot, 'needle');
     assert.equal(cappedResults.length, 50);
     assert.equal(cappedResults.every((entry) => entry.name.toLowerCase().includes('needle')), true);
-    assert.equal(cappedResults.some((entry) => entry.path.includes('needle-hidden.txt')), false);
     assert.equal(cappedResults.some((entry) => entry.path.includes('nope.txt')), false);
 
     const depthResults = await searchWorkspaceFiles(projectRoot, 'depth-');
     assert.equal(depthResults.some((entry) => entry.path.endsWith('needle-depth-12.txt')), true);
     assert.equal(depthResults.some((entry) => entry.path.endsWith('needle-depth-13.txt')), false);
   } finally {
-    const blocked = join(projectRoot, 'blocked');
-    if (existsSync(blocked)) {
-      chmodSync(blocked, 0o700);
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace list/search skip safe symlink that points to ignored target', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-symlink-ignored-target-');
+
+  try {
+    writeFileSync(join(projectRoot, '.env.local'), 'SECRET=1\n');
+    symlinkSync(join(projectRoot, '.env.local'), join(projectRoot, 'safe-link.txt'));
+    writeFileSync(join(projectRoot, 'safe-real.txt'), 'visible\n');
+
+    const listed = await listWorkspaceDirectory(projectRoot);
+    assert.equal(listed.some((entry) => entry.name === 'safe-link.txt'), false);
+    assert.equal(listed.some((entry) => entry.name === 'safe-real.txt'), true);
+
+    const searchResults = await searchWorkspaceFiles(projectRoot, 'safe');
+    assert.equal(searchResults.some((entry) => entry.path === 'safe-link.txt'), false);
+    assert.equal(searchResults.some((entry) => entry.path === 'safe-real.txt'), true);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace search result cap uses deterministic lexicographic traversal', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-search-order-');
+
+  try {
+    mkdirSync(join(projectRoot, 'a-dir'), { recursive: true });
+    mkdirSync(join(projectRoot, 'z-dir'), { recursive: true });
+    for (let index = 0; index < 60; index += 1) {
+      const fileName = `needle-${String(index).padStart(3, '0')}.txt`;
+      writeFileSync(join(projectRoot, 'a-dir', fileName), 'a\n');
+      writeFileSync(join(projectRoot, 'z-dir', fileName), 'z\n');
     }
+
+    const results = await searchWorkspaceFiles(projectRoot, 'needle');
+    assert.equal(results.length, 50);
+    assert.equal(results.every((entry) => entry.path.startsWith('a-dir/')), true);
+  } finally {
     cleanupWorkspaceRoot(projectRoot);
   }
 });

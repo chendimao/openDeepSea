@@ -1,5 +1,6 @@
-import { lstat, open, readdir, readFile, realpath, stat } from 'node:fs/promises';
-import { isAbsolute, join, posix, sep } from 'node:path';
+import { constants as fsConstants } from 'node:fs';
+import { lstat, open, readdir, realpath, stat } from 'node:fs/promises';
+import { isAbsolute, join, posix, relative, sep } from 'node:path';
 import type {
   WorkspaceDirectoryEntry,
   WorkspaceFilePreview,
@@ -20,6 +21,7 @@ export const WORKSPACE_SEARCH_TIMEOUT_MS = 1500;
 const BINARY_PROBE_BYTES = 8192;
 
 const IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.turbo', 'coverage']);
+
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   '.ts': 'typescript',
   '.tsx': 'typescript',
@@ -154,45 +156,35 @@ export async function resolveWorkspacePath(projectPath: string, inputPath = ''):
   const relativePath = normalizeWorkspacePath(inputPath);
   const segments = relativePath ? relativePath.split('/') : [];
   let absolutePath = projectRealPath;
+  let symlinkTargetRelativePath: string | null = null;
 
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index];
     if (!segment) continue;
     absolutePath = join(absolutePath, segment);
 
-    let entryStats;
-    try {
-      entryStats = await lstat(absolutePath);
-    } catch (error) {
-      if (isSkippableFsError(error)) {
-        throw workspaceFileError('WORKSPACE_PATH_NOT_FOUND');
-      }
-      throw error;
-    }
-
+    const entryStats = await readLstatOrThrow(absolutePath);
     if (!entryStats.isSymbolicLink()) continue;
     const isTerminal = index === segments.length - 1;
-
     if (!isTerminal) {
       throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
     }
 
-    let targetPath: string;
-    try {
-      targetPath = await realpath(absolutePath);
-    } catch {
-      throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
-    }
-
-    if (!isSubPath(targetPath, projectRealPath)) {
+    const targetPath = await readSymlinkTargetPathOrThrow(absolutePath, projectRealPath);
+    const targetRelativePath = toRelativeProjectPath(projectRealPath, targetPath);
+    if (targetRelativePath === null) {
       throw workspaceFileError('WORKSPACE_PATH_OUTSIDE_PROJECT');
     }
+    if (isIgnoredWorkspacePath(targetRelativePath)) {
+      throw workspaceFileError('WORKSPACE_PATH_IGNORED');
+    }
 
-    const targetStats = await stat(absolutePath);
+    const targetStats = await readStatOrThrow(absolutePath);
     if (targetStats.isDirectory()) {
       throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
     }
     absolutePath = targetPath;
+    symlinkTargetRelativePath = targetRelativePath;
   }
 
   if (!isSubPath(absolutePath, projectRealPath)) {
@@ -203,6 +195,7 @@ export async function resolveWorkspacePath(projectPath: string, inputPath = ''):
     projectRealPath,
     relativePath,
     absolutePath,
+    symlinkTargetRelativePath,
   };
 }
 
@@ -219,7 +212,8 @@ export function isIgnoredWorkspacePath(inputPath: string): boolean {
 
 export async function listWorkspaceDirectory(projectPath: string, inputPath = ''): Promise<WorkspaceDirectoryEntry[]> {
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
-  ensureWorkspacePathAllowed(resolved.relativePath);
+  ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
+
   const directoryStats = await lstat(resolved.absolutePath);
   if (!directoryStats.isDirectory()) {
     throw workspaceFileError('WORKSPACE_PATH_NOT_DIRECTORY');
@@ -232,7 +226,6 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
     if (isSkippableFsError(error)) return [];
     throw error;
   }
-
   names.sort((left, right) => left.localeCompare(right));
 
   const visibleEntries: WorkspaceDirectoryEntry[] = [];
@@ -250,13 +243,11 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
     }
 
     if (entryStats.isSymbolicLink()) {
-      let realTargetPath: string;
-      try {
-        realTargetPath = await realpath(absoluteEntryPath);
-      } catch {
-        continue;
-      }
-      if (!isSubPath(realTargetPath, resolved.projectRealPath)) continue;
+      const targetPath = await readSymlinkTargetPathOrNull(absoluteEntryPath, resolved.projectRealPath);
+      if (!targetPath) continue;
+      const targetRelativePath = toRelativeProjectPath(resolved.projectRealPath, targetPath);
+      if (targetRelativePath === null || isIgnoredWorkspacePath(targetRelativePath)) continue;
+
       let targetStats;
       try {
         targetStats = await stat(absoluteEntryPath);
@@ -265,6 +256,7 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
         throw error;
       }
       if (targetStats.isDirectory()) continue;
+
       visibleEntries.push({
         name,
         path: relativeEntryPath,
@@ -293,36 +285,54 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
 
 export async function readWorkspaceFilePreview(projectPath: string, inputPath: string): Promise<WorkspaceFilePreview> {
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
-  ensureWorkspacePathAllowed(resolved.relativePath);
-  const fileStats = await lstat(resolved.absolutePath);
-  if (!fileStats.isFile()) {
-    throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
-  }
+  ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
 
-  const maxReadSize = Math.min(fileStats.size, WORKSPACE_PREVIEW_TEXT_LIMIT);
-  const contentBuffer = await readFileBytes(resolved.absolutePath, maxReadSize);
-  if (!isTextFile(resolved.relativePath, contentBuffer)) {
-    throw workspaceFileError('WORKSPACE_FILE_BINARY');
+  const fileHandle = await openWorkspaceFileForRead(resolved.absolutePath);
+  try {
+    const fileStats = await fileHandle.stat();
+    if (!fileStats.isFile()) {
+      throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
+    }
+    const fileSize = fileStats.size;
+    const maxReadSize = Math.min(fileSize, WORKSPACE_PREVIEW_TEXT_LIMIT);
+    const contentBuffer = await readHandleBytes(fileHandle, maxReadSize);
+    if (!isTextBuffer(contentBuffer)) {
+      throw workspaceFileError('WORKSPACE_FILE_BINARY');
+    }
+    return buildPreviewFromBuffer(resolved.relativePath, fileSize, contentBuffer, WORKSPACE_PREVIEW_TEXT_LIMIT);
+  } finally {
+    await fileHandle.close();
   }
-  return buildFilePreview(resolved.relativePath, fileStats.size, contentBuffer, WORKSPACE_PREVIEW_TEXT_LIMIT);
 }
 
 export async function readWorkspaceFileReference(projectPath: string, inputPath: string): Promise<WorkspaceFileReference> {
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
-  ensureWorkspacePathAllowed(resolved.relativePath);
-  const fileStats = await lstat(resolved.absolutePath);
-  if (!fileStats.isFile()) {
-    throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
+  ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
+
+  const fileHandle = await openWorkspaceFileForRead(resolved.absolutePath);
+  try {
+    const fileStats = await fileHandle.stat();
+    if (!fileStats.isFile()) {
+      throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
+    }
+    if (fileStats.size > WORKSPACE_REFERENCE_SIZE_LIMIT) {
+      throw workspaceFileError('WORKSPACE_FILE_TOO_LARGE');
+    }
+    const contentBuffer = await readHandleBytes(fileHandle, fileStats.size);
+    const isBinary = !isTextBuffer(contentBuffer);
+    return {
+      path: resolved.relativePath,
+      size: fileStats.size,
+      mimeType: inferMimeType(resolved.relativePath),
+      language: inferLanguage(resolved.relativePath),
+      isBinary,
+      content: isBinary ? null : contentBuffer.toString('utf-8'),
+      truncated: false,
+      bytes: contentBuffer,
+    };
+  } finally {
+    await fileHandle.close();
   }
-  if (fileStats.size > WORKSPACE_REFERENCE_SIZE_LIMIT) {
-    throw workspaceFileError('WORKSPACE_FILE_TOO_LARGE');
-  }
-  const contentBuffer = await readFile(resolved.absolutePath);
-  const preview = buildFilePreview(resolved.relativePath, fileStats.size, contentBuffer, WORKSPACE_REFERENCE_SIZE_LIMIT);
-  return {
-    ...preview,
-    bytes: contentBuffer,
-  };
 }
 
 export async function searchWorkspaceFiles(
@@ -336,26 +346,29 @@ export async function searchWorkspaceFiles(
   }
 
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
-  ensureWorkspacePathAllowed(resolved.relativePath);
+  ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
+
   const rootStats = await lstat(resolved.absolutePath);
   if (!rootStats.isDirectory()) {
     throw workspaceFileError('WORKSPACE_PATH_NOT_DIRECTORY');
   }
 
   const results: WorkspaceSearchResult[] = [];
-  const stack: Array<{ absolutePath: string; relativePath: string; depth: number }> = [
+  const queue: Array<{ absolutePath: string; relativePath: string; depth: number }> = [
     { absolutePath: resolved.absolutePath, relativePath: resolved.relativePath, depth: 0 },
   ];
+  let queueIndex = 0;
   let visitedDirectories = 0;
   let visitedFiles = 0;
   const startedAt = Date.now();
 
-  while (stack.length > 0 && results.length < WORKSPACE_SEARCH_LIMIT) {
+  while (queueIndex < queue.length && results.length < WORKSPACE_SEARCH_LIMIT) {
     if (visitedDirectories >= WORKSPACE_SEARCH_MAX_DIRECTORIES) break;
     if (visitedFiles >= WORKSPACE_SEARCH_MAX_FILES) break;
     if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) break;
 
-    const current = stack.pop();
+    const current = queue[queueIndex];
+    queueIndex += 1;
     if (!current) break;
     visitedDirectories += 1;
 
@@ -366,7 +379,6 @@ export async function searchWorkspaceFiles(
       if (isSkippableFsError(error)) continue;
       throw error;
     }
-
     names.sort((left, right) => left.localeCompare(right));
 
     for (const name of names) {
@@ -383,13 +395,11 @@ export async function searchWorkspaceFiles(
       }
 
       if (entryStats.isSymbolicLink()) {
-        let targetPath: string;
-        try {
-          targetPath = await realpath(absoluteEntryPath);
-        } catch {
-          continue;
-        }
-        if (!isSubPath(targetPath, resolved.projectRealPath)) continue;
+        const targetPath = await readSymlinkTargetPathOrNull(absoluteEntryPath, resolved.projectRealPath);
+        if (!targetPath) continue;
+        const targetRelativePath = toRelativeProjectPath(resolved.projectRealPath, targetPath);
+        if (targetRelativePath === null || isIgnoredWorkspacePath(targetRelativePath)) continue;
+
         let targetStats;
         try {
           targetStats = await stat(absoluteEntryPath);
@@ -397,15 +407,14 @@ export async function searchWorkspaceFiles(
           if (isSkippableFsError(error)) continue;
           throw error;
         }
-      if (!targetStats.isFile()) continue;
-      visitedFiles += 1;
-      if (visitedFiles > WORKSPACE_SEARCH_MAX_FILES) break;
-      if (name.toLowerCase().includes(normalizedQuery)) {
-        results.push({
-          path: relativeEntryPath,
-            name,
-            type: 'file',
-          });
+        if (!targetStats.isFile()) continue;
+
+        visitedFiles += 1;
+        if (visitedFiles > WORKSPACE_SEARCH_MAX_FILES) break;
+        if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) break;
+
+        if (name.toLowerCase().includes(normalizedQuery)) {
+          results.push({ path: relativeEntryPath, name, type: 'file' });
           if (results.length >= WORKSPACE_SEARCH_LIMIT) break;
         }
         continue;
@@ -413,7 +422,7 @@ export async function searchWorkspaceFiles(
 
       if (entryStats.isDirectory()) {
         if (current.depth < WORKSPACE_SEARCH_MAX_DEPTH) {
-          stack.push({
+          queue.push({
             absolutePath: absoluteEntryPath,
             relativePath: relativeEntryPath,
             depth: current.depth + 1,
@@ -427,17 +436,13 @@ export async function searchWorkspaceFiles(
       if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) break;
 
       if (name.toLowerCase().includes(normalizedQuery)) {
-        results.push({
-          path: relativeEntryPath,
-          name,
-          type: 'file',
-        });
+        results.push({ path: relativeEntryPath, name, type: 'file' });
         if (results.length >= WORKSPACE_SEARCH_LIMIT) break;
       }
     }
   }
 
-  return results.sort((left, right) => left.path.localeCompare(right.path)).slice(0, WORKSPACE_SEARCH_LIMIT);
+  return results.slice(0, WORKSPACE_SEARCH_LIMIT);
 }
 
 function normalizeIgnoredPath(inputPath: string): string {
@@ -485,11 +490,6 @@ function inferExtension(fileName: string): string {
   return lower.slice(dotIndex);
 }
 
-function isTextFile(relativePath: string, content: Buffer): boolean {
-  void relativePath;
-  return isTextBuffer(content);
-}
-
 function isTextBuffer(content: Buffer): boolean {
   if (content.length === 0) return true;
   const probeLength = Math.min(content.length, BINARY_PROBE_BYTES);
@@ -508,33 +508,53 @@ function isTextBuffer(content: Buffer): boolean {
   return suspiciousBytes / probeLength < 0.3;
 }
 
-function buildFilePreview(
+function buildPreviewFromBuffer(
   relativePath: string,
   fileSize: number,
   content: Buffer,
   maxBytes: number,
 ): WorkspaceFilePreview {
-  const truncated = fileSize > maxBytes;
   return {
     path: relativePath,
     size: fileSize,
     mimeType: inferMimeType(relativePath),
     language: inferLanguage(relativePath),
     content: content.toString('utf-8'),
-    truncated,
+    truncated: fileSize > maxBytes,
   };
 }
 
-async function readFileBytes(filePath: string, byteLength: number): Promise<Buffer> {
-  if (byteLength <= 0) return Buffer.alloc(0);
-  const fileHandle = await open(filePath, 'r');
+async function openWorkspaceFileForRead(filePath: string) {
+  const readonly = fsConstants.O_RDONLY;
+  const noFollow = (fsConstants as { O_NOFOLLOW?: number }).O_NOFOLLOW;
+  const flags = typeof noFollow === 'number' ? readonly | noFollow : readonly;
   try {
-    const buffer = Buffer.alloc(byteLength);
-    const { bytesRead } = await fileHandle.read(buffer, 0, byteLength, 0);
-    return bytesRead === byteLength ? buffer : buffer.subarray(0, bytesRead);
-  } finally {
-    await fileHandle.close();
+    return await open(filePath, flags);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === 'ELOOP') {
+      throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
+    }
+    if (typeof noFollow === 'number' && isNoFollowUnsupportedError(code)) {
+      return open(filePath, readonly);
+    }
+    if (isSkippableFsError(error)) {
+      throw workspaceFileError('WORKSPACE_PATH_NOT_FOUND');
+    }
+    throw error;
   }
+}
+
+async function readHandleBytes(fileHandle: Awaited<ReturnType<typeof open>>, byteLength: number): Promise<Buffer> {
+  if (byteLength <= 0) return Buffer.alloc(0);
+  const buffer = Buffer.alloc(byteLength);
+  let offset = 0;
+  while (offset < byteLength) {
+    const { bytesRead } = await fileHandle.read(buffer, offset, byteLength - offset, offset);
+    if (bytesRead <= 0) break;
+    offset += bytesRead;
+  }
+  return offset === byteLength ? buffer : buffer.subarray(0, offset);
 }
 
 function isAbsolutePath(inputPath: string): boolean {
@@ -548,14 +568,72 @@ function isSubPath(candidate: string, root: string): boolean {
   return candidate.startsWith(prefix);
 }
 
+function toRelativeProjectPath(projectRealPath: string, targetAbsolutePath: string): string | null {
+  if (!isSubPath(targetAbsolutePath, projectRealPath)) return null;
+  const rel = relative(projectRealPath, targetAbsolutePath).replaceAll('\\', '/');
+  if (!rel || rel === '.') return '';
+  return rel;
+}
+
 function workspaceFileError(code: WorkspaceFileErrorCode): WorkspaceFileError {
   return new WorkspaceFileError(code);
 }
 
-function ensureWorkspacePathAllowed(relativePath: string): void {
+function ensureWorkspacePathAllowed(relativePath: string, symlinkTargetRelativePath: string | null = null): void {
   if (relativePath && isIgnoredWorkspacePath(relativePath)) {
     throw workspaceFileError('WORKSPACE_PATH_IGNORED');
   }
+  if (symlinkTargetRelativePath && isIgnoredWorkspacePath(symlinkTargetRelativePath)) {
+    throw workspaceFileError('WORKSPACE_PATH_IGNORED');
+  }
+}
+
+async function readLstatOrThrow(targetPath: string) {
+  try {
+    return await lstat(targetPath);
+  } catch (error) {
+    if (isSkippableFsError(error)) {
+      throw workspaceFileError('WORKSPACE_PATH_NOT_FOUND');
+    }
+    throw error;
+  }
+}
+
+async function readStatOrThrow(targetPath: string) {
+  try {
+    return await stat(targetPath);
+  } catch (error) {
+    if (isSkippableFsError(error)) {
+      throw workspaceFileError('WORKSPACE_PATH_NOT_FOUND');
+    }
+    throw error;
+  }
+}
+
+async function readSymlinkTargetPathOrThrow(symlinkPath: string, projectRealPath: string): Promise<string> {
+  let targetPath: string;
+  try {
+    targetPath = await realpath(symlinkPath);
+  } catch {
+    throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
+  }
+  if (!isSubPath(targetPath, projectRealPath)) {
+    throw workspaceFileError('WORKSPACE_PATH_OUTSIDE_PROJECT');
+  }
+  return targetPath;
+}
+
+async function readSymlinkTargetPathOrNull(symlinkPath: string, projectRealPath: string): Promise<string | null> {
+  let targetPath: string;
+  try {
+    targetPath = await realpath(symlinkPath);
+  } catch {
+    return null;
+  }
+  if (!isSubPath(targetPath, projectRealPath)) {
+    return null;
+  }
+  return targetPath;
 }
 
 async function resolveProjectRealPath(projectPath: string): Promise<string> {
@@ -581,4 +659,8 @@ async function resolveProjectRealPath(projectPath: string): Promise<string> {
 function isSkippableFsError(error: unknown): boolean {
   const code = (error as { code?: string })?.code;
   return code === 'ENOENT' || code === 'EACCES' || code === 'EPERM';
+}
+
+function isNoFollowUnsupportedError(code: string | undefined): boolean {
+  return code === 'EINVAL' || code === 'ENOTSUP' || code === 'EOPNOTSUPP';
 }

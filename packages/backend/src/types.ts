@@ -137,6 +137,7 @@ export interface WorkspacePathResolution {
   projectRealPath: string;
   relativePath: string;
   absolutePath: string;
+  symlinkTargetRelativePath: string | null;
 }
 
 export interface WorkspaceDirectoryEntry {
@@ -157,7 +158,14 @@ export interface WorkspaceFilePreview {
   truncated: boolean;
 }
 
-export interface WorkspaceFileReference extends WorkspaceFilePreview {
+export interface WorkspaceFileReference {
+  path: string;
+  size: number;
+  mimeType: string;
+  language: string | null;
+  isBinary: boolean;
+  content: string | null;
+  truncated: boolean;
   bytes: Buffer;
 }
 
