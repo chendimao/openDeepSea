@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hash, MessageSquarePlus, Plus, Settings2, Trash2 } from 'lucide-react';
+import { Hash, MessageSquarePlus, Plus, Search, Settings2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/Button';
@@ -10,10 +10,13 @@ import { Input, Label, Textarea } from '../components/ui/Input';
 import { useI18n } from '../lib/i18n';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { ProjectSettingsDialog } from '../components/SettingsDialogs';
+import type { Room } from '../lib/types';
 
 export function ProjectPage() {
   const { projectId = '' } = useParams();
   const { t } = useI18n();
+  const [roomQuery, setRoomQuery] = useState('');
+  const [debouncedRoomQuery, setDebouncedRoomQuery] = useState('');
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => api.getProject(projectId),
@@ -24,6 +27,30 @@ export function ProjectPage() {
     queryFn: () => api.listRooms(projectId),
     enabled: !!projectId,
   });
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedRoomQuery(roomQuery.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [roomQuery]);
+
+  const hasRoomSearch = debouncedRoomQuery.length > 0;
+  const { data: roomSearch, isFetching: isRoomSearchFetching } = useQuery({
+    queryKey: ['rooms', 'search', projectId, debouncedRoomQuery],
+    queryFn: () => api.searchRooms(projectId, { query: debouncedRoomQuery }),
+    enabled: !!projectId && hasRoomSearch,
+  });
+  const visibleRooms = useMemo(
+    () => hasRoomSearch ? roomSearch?.results.map((result) => result.room) ?? [] : rooms,
+    [hasRoomSearch, roomSearch, rooms],
+  );
+  const roomSearchStatus = hasRoomSearch
+    ? isRoomSearchFetching
+      ? t('project.roomSearchLoading')
+      : roomSearch?.degraded
+        ? t('project.roomSearchFallback')
+        : null
+    : null;
 
   if (!project) return <div className="p-8 text-[var(--color-fg-muted)]">{t('project.loading')}</div>;
 
@@ -59,24 +86,47 @@ export function ProjectPage() {
 
       <section className="px-4 sm:px-8 py-6">
         <div className="max-w-5xl mx-auto">
-          <div className="flex items-baseline gap-3 mb-4">
+          <div className="flex flex-wrap items-center gap-3 mb-4">
             <h2 className="font-display text-[14px] font-medium">{t('project.rooms')}</h2>
-            <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">{rooms.length}</span>
-            <div className="ml-auto">
+            <span className="text-[12px] font-mono text-[var(--color-fg-muted)]">
+              {hasRoomSearch ? `${visibleRooms.length} / ${rooms.length}` : rooms.length}
+            </span>
+            <div className="relative ml-auto w-full sm:w-[320px]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-muted)]" />
+              <Input
+                value={roomQuery}
+                onChange={(event) => setRoomQuery(event.target.value)}
+                placeholder={t('project.roomSearchPlaceholder')}
+                className="pl-9"
+                aria-label={t('project.roomSearchPlaceholder')}
+              />
+            </div>
+            <div className="max-sm:w-full">
               <CreateRoomDialog projectId={projectId} />
             </div>
           </div>
+          {roomSearchStatus && (
+            <div className="mb-3 text-[11px] text-[var(--color-fg-muted)]">
+              {roomSearchStatus}
+            </div>
+          )}
 
-          {rooms.length === 0 ? (
+          {rooms.length === 0 && !hasRoomSearch ? (
             <WorkspaceEmptyState
               icon={<MessageSquarePlus className="h-9 w-9" strokeWidth={1.75} />}
               title={t('project.emptyRoomsTitle')}
               description={t('project.emptyRoomsDescription')}
               action={<CreateRoomDialog projectId={projectId} buttonText={t('project.createFirstRoom')} buttonIcon="message" />}
             />
+          ) : hasRoomSearch && !isRoomSearchFetching && visibleRooms.length === 0 ? (
+            <WorkspaceEmptyState
+              icon={<Search className="h-9 w-9" strokeWidth={1.75} />}
+              title={t('project.noRoomMatchesTitle')}
+              description={t('project.noRoomMatchesDescription')}
+            />
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-              {rooms.map((r) => (
+              {visibleRooms.map((r) => (
                 <RoomItem key={r.id} projectId={projectId} room={r} />
               ))}
             </div>
@@ -87,13 +137,14 @@ export function ProjectPage() {
   );
 }
 
-function RoomItem({ projectId, room }: { projectId: string; room: { id: string; name: string; description: string | null; created_at: number } }) {
+function RoomItem({ projectId, room }: { projectId: string; room: Room }) {
   const queryClient = useQueryClient();
   const { t, formatRelativeTime } = useI18n();
   const del = useMutation({
     mutationFn: () => api.deleteRoom(room.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['rooms', 'search', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
       toast.success(t('project.roomDeleted'));
     },
@@ -143,6 +194,7 @@ function CreateRoomDialog({
     mutationFn: () => api.createRoom(projectId, { name, description: description || undefined }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['rooms', 'search', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
       toast.success(t('project.roomCreated'));
       setOpen(false);
