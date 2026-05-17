@@ -14,6 +14,7 @@ import type {
   Project,
   Room,
   RoomAgent,
+  RoomSearchResponse,
   SettingsResolution,
   Task,
   TaskInteractionMode,
@@ -207,6 +208,11 @@ export const api = {
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
   listRooms: (projectId: string) => request<Room[]>(`/projects/${projectId}/rooms`),
+  searchRooms: (projectId: string, input: { query: string }) => {
+    const params = new URLSearchParams();
+    params.set('q', input.query);
+    return request<RoomSearchResponse>(`/projects/${projectId}/rooms/search?${params.toString()}`);
+  },
   createRoom: (projectId: string, input: { name: string; description?: string }) =>
     request<Room>(`/projects/${projectId}/rooms`, { method: 'POST', body: JSON.stringify(input) }),
   getRoom: (id: string) => request<Room>(`/rooms/${id}`),
