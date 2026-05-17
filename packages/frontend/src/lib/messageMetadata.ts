@@ -1,4 +1,14 @@
-import type { MessageAttachmentMetadata, MessageMetadata, TaskCreatedFrom, TaskEventType } from './types';
+import type {
+  CollaborationDecision,
+  CollaborationIntent,
+  CollaborationMode,
+  CollaborationProblemArea,
+  CollaborationStage,
+  MessageAttachmentMetadata,
+  MessageMetadata,
+  TaskCreatedFrom,
+  TaskEventType,
+} from './types';
 
 const messageAttachmentUrlPrefix = '/uploads/messages/';
 const projectFileAttachmentUrlPrefix = '/uploads/files/';
@@ -18,6 +28,10 @@ const taskEventTypes = new Set<TaskEventType>([
   'workflow_memory_written',
 ]);
 const taskOrigins = new Set<TaskCreatedFrom>(['manual', 'chat_plan', 'slash_command', 'workflow_assignment']);
+const collaborationIntents = new Set<CollaborationIntent>(['question', 'analysis', 'implementation']);
+const collaborationModes = new Set<CollaborationMode>(['chat_collaboration', 'formal_workflow']);
+const collaborationProblemAreas = new Set<CollaborationProblemArea>(['frontend', 'backend', 'fullstack', 'unknown']);
+const collaborationStages = new Set<CollaborationStage>(['execute', 'review', 'acceptance', 'summary']);
 
 function createEmptyMessageMetadata(): MessageMetadata {
   return { attachments: [] };
@@ -37,7 +51,8 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
       : [];
 
     const taskEvent = sanitizeTaskEventMetadata(parsed);
-    return { attachments, ...taskEvent };
+    const collaboration = sanitizeCollaborationDecisionMetadata(parsed);
+    return { attachments, ...taskEvent, ...collaboration };
   } catch {
     return createEmptyMessageMetadata();
   }
@@ -59,6 +74,101 @@ function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
     event_type: eventType,
     origin,
   };
+}
+
+function sanitizeCollaborationDecisionMetadata(value: Record<string, unknown>) {
+  const eventType = typeof value.event_type === 'string' ? value.event_type : undefined;
+  const decision = eventType === 'collaboration_decision'
+    ? sanitizeCollaborationDecision(value.collaboration_decision)
+    : null;
+  if (!decision) return {};
+
+  return {
+    source_message_id: typeof value.source_message_id === 'string' ? value.source_message_id : undefined,
+    fallback_agent_id: typeof value.fallback_agent_id === 'string' ? value.fallback_agent_id : undefined,
+    collaboration_decision: decision,
+  };
+}
+
+function sanitizeCollaborationDecision(value: unknown): CollaborationDecision | null {
+  if (!isRecord(value)) return null;
+  if (
+    !isCollaborationIntent(value.intent) ||
+    !isCollaborationMode(value.recommendedMode) ||
+    !isCollaborationProblemArea(value.problemArea) ||
+    typeof value.summary !== 'string' ||
+    !value.summary.trim() ||
+    typeof value.rationale !== 'string' ||
+    !value.rationale.trim() ||
+    typeof value.needsUserChoice !== 'boolean'
+  ) {
+    return null;
+  }
+
+  const proposedAgents = sanitizeProposedAgents(value.proposedAgents);
+  const stages = sanitizeCollaborationStages(value.stages);
+  if (!proposedAgents || !stages) return null;
+
+  return {
+    intent: value.intent,
+    recommendedMode: value.recommendedMode,
+    problemArea: value.problemArea,
+    summary: value.summary,
+    rationale: value.rationale,
+    needsUserChoice: value.needsUserChoice,
+    proposedAgents,
+    stages,
+  };
+}
+
+function sanitizeProposedAgents(value: unknown): CollaborationDecision['proposedAgents'] | null {
+  if (!isRecord(value)) return null;
+  const executors = sanitizeStringArray(value.executors);
+  const reviewers = sanitizeStringArray(value.reviewers);
+  const testers = sanitizeStringArray(value.testers);
+  const acceptors = sanitizeStringArray(value.acceptors);
+  if (!executors || !reviewers || !testers || !acceptors) return null;
+  return { executors, reviewers, testers, acceptors };
+}
+
+function sanitizeCollaborationStages(value: unknown): CollaborationDecision['stages'] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const stages = value.map((stage) => {
+    if (!isRecord(stage)) return null;
+    if (!isCollaborationStage(stage.stage) || typeof stage.parallel !== 'boolean') return null;
+    const agentIds = sanitizeStringArray(stage.agentIds);
+    if (!agentIds || agentIds.length === 0 || typeof stage.goal !== 'string' || !stage.goal.trim()) return null;
+    return {
+      stage: stage.stage,
+      agentIds,
+      parallel: stage.parallel,
+      goal: stage.goal,
+    };
+  });
+  if (stages.some((stage) => stage === null)) return null;
+  return stages as CollaborationDecision['stages'];
+}
+
+function sanitizeStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const strings = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  return strings.length === value.length ? strings : null;
+}
+
+function isCollaborationIntent(value: unknown): value is CollaborationIntent {
+  return typeof value === 'string' && collaborationIntents.has(value as CollaborationIntent);
+}
+
+function isCollaborationMode(value: unknown): value is CollaborationMode {
+  return typeof value === 'string' && collaborationModes.has(value as CollaborationMode);
+}
+
+function isCollaborationProblemArea(value: unknown): value is CollaborationProblemArea {
+  return typeof value === 'string' && collaborationProblemAreas.has(value as CollaborationProblemArea);
+}
+
+function isCollaborationStage(value: unknown): value is CollaborationStage {
+  return typeof value === 'string' && collaborationStages.has(value as CollaborationStage);
 }
 
 function isTaskEventType(value: string): value is TaskEventType {

@@ -19,6 +19,7 @@ import { RichMessageComposer } from '../components/RichMessageComposer';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { MessageContent } from '../components/MessageContent';
+import { CollaborationDecisionCard } from '../components/CollaborationDecisionCard';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
@@ -533,6 +534,7 @@ function ChatColumn({
                   key={m.id}
                   message={m}
                   agentMeta={agentMap.get(m.sender_id)}
+                  agents={agents}
                   run={run}
                   runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
                   roomId={roomId}
@@ -600,6 +602,7 @@ function pairRunsWithAgentMessages(messages: Message[], runs: AgentRun[]): Map<s
 function MessageBubble({
   message,
   agentMeta,
+  agents,
   run,
   runAgent,
   roomId,
@@ -609,6 +612,7 @@ function MessageBubble({
 }: {
   message: Message;
   agentMeta?: RoomAgent;
+  agents: RoomAgent[];
   run?: AgentRun;
   runAgent?: RoomAgent;
   roomId: string;
@@ -618,6 +622,39 @@ function MessageBubble({
 }) {
   const { t, formatRelativeTime } = useI18n();
   const queryClient = useQueryClient();
+  const metadata = parseMessageMetadata(message.metadata);
+  const startCollaboration = useMutation({
+    mutationFn: () => {
+      if (!metadata.collaboration_decision || !metadata.source_message_id) {
+        throw new Error('collaboration decision is missing source message');
+      }
+      return api.startCollaboration(roomId, {
+        source_message_id: metadata.source_message_id,
+        decision: metadata.collaboration_decision,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
+      toast.success('已启动群聊协作');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const promoteToWorkflow = useMutation({
+    mutationFn: () => {
+      if (!metadata.collaboration_decision || !metadata.source_message_id) {
+        throw new Error('collaboration decision is missing source message');
+      }
+      return api.promoteMessageToWorkflow(roomId, metadata.source_message_id, {
+        decision: metadata.collaboration_decision,
+      });
+    },
+    onSuccess: ({ task, workflow }) => {
+      invalidateWorkflowConversationQueries(queryClient, roomId, task.id, workflow.id);
+      toast.success(t('taskDetail.workflowStarted'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
   const saveAsMemory = useMutation({
     mutationFn: () =>
       api.createMemory(projectId, {
@@ -637,10 +674,10 @@ function MessageBubble({
   });
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
-  const metadata = parseMessageMetadata(message.metadata);
   const attachments = metadata.attachments;
   const hasContent = Boolean(message.content?.trim());
   const isTaskEvent = isSystem && Boolean(metadata.event_type && metadata.task_id);
+  const isCollaborationDecision = isSystem && Boolean(metadata.collaboration_decision && metadata.source_message_id);
 
   if (isTaskEvent) {
     return (
@@ -649,6 +686,22 @@ function MessageBubble({
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
           <span>{message.content}</span>
         </div>
+      </AiMessageRow>
+    );
+  }
+
+  if (isCollaborationDecision && metadata.collaboration_decision && metadata.source_message_id) {
+    return (
+      <AiMessageRow variant="event">
+        <CollaborationDecisionCard
+          decision={metadata.collaboration_decision}
+          sourceMessageId={metadata.source_message_id}
+          agents={agents}
+          starting={startCollaboration.isPending}
+          promoting={promoteToWorkflow.isPending}
+          onStartCollaboration={() => startCollaboration.mutate()}
+          onPromoteToWorkflow={() => promoteToWorkflow.mutate()}
+        />
       </AiMessageRow>
     );
   }

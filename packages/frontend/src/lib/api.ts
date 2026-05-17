@@ -5,6 +5,8 @@ import type {
   AgentRun,
   BuiltInAgentTemplate,
   CliSession,
+  CollaborationDecision,
+  CollaborationRunSummary,
   MemoryEntry,
   MemoryInput,
   MemorySearchResult,
@@ -313,6 +315,23 @@ export const api = {
       body: JSON.stringify({ content: input.content, mentions: input.mentions, fileIds: input.fileIds }),
     });
   },
+  startCollaboration: (
+    roomId: string,
+    input: { source_message_id: string; decision: CollaborationDecision },
+  ) =>
+    request<{ run: CollaborationRunSummary }>(`/rooms/${roomId}/collaborations`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  promoteMessageToWorkflow: (
+    roomId: string,
+    messageId: string,
+    input: { decision?: CollaborationDecision } = {},
+  ) =>
+    request<{ task: Task; workflow: WorkflowRun }>(`/rooms/${roomId}/messages/${messageId}/promote-to-workflow`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   listProjectTasks: (projectId: string) => request<Task[]>(`/projects/${projectId}/tasks`),
   listRoomTasks: (roomId: string) => request<Task[]>(`/rooms/${roomId}/tasks`),

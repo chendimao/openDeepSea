@@ -274,6 +274,44 @@ export interface MessageMetadata {
   workflow_step_id?: string;
   event_type?: TaskEventType;
   origin?: TaskCreatedFrom;
+  source_message_id?: string;
+  fallback_agent_id?: string;
+  collaboration_decision?: CollaborationDecision;
+}
+
+export type CollaborationIntent = 'question' | 'analysis' | 'implementation';
+export type CollaborationMode = 'chat_collaboration' | 'formal_workflow';
+export type CollaborationProblemArea = 'frontend' | 'backend' | 'fullstack' | 'unknown';
+export type CollaborationStage = 'execute' | 'review' | 'acceptance' | 'summary';
+
+export interface CollaborationStagePlan {
+  stage: CollaborationStage;
+  agentIds: string[];
+  parallel: boolean;
+  goal: string;
+}
+
+export interface CollaborationDecision {
+  intent: CollaborationIntent;
+  recommendedMode: CollaborationMode;
+  problemArea: CollaborationProblemArea;
+  summary: string;
+  rationale: string;
+  needsUserChoice: boolean;
+  proposedAgents: {
+    executors: string[];
+    reviewers: string[];
+    testers: string[];
+    acceptors: string[];
+  };
+  stages: CollaborationStagePlan[];
+}
+
+export interface CollaborationRunSummary {
+  id: string;
+  room_id: string;
+  source_message_id: string;
+  status: 'running' | 'completed' | 'blocked';
 }
 
 export interface Message {

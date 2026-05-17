@@ -209,6 +209,112 @@ test('explicit mentions still dispatch directly to mentioned agent in fallback r
   }
 });
 
+test('planner fallback reply creates collaboration decision without dispatching other agents', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-decision-'));
+  const project = projectRepo.create({ name: `planner-decision-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  const executor = roomAgentRepo.add({ room_id: room.id, agent_id: 'frontend-dev', agent_name: 'FrontendDev' });
+  const reviewer = roomAgentRepo.add({ room_id: room.id, agent_id: 'reviewer', agent_name: 'Reviewer' });
+  assert.ok(planner);
+  const globalPlanner = agentRepo.getByBuiltinKey('planner') ?? agentRepo.getByAgentId('planner');
+  assert.ok(globalPlanner);
+  agentRepo.update(globalPlanner.id, {
+    default_acp_backend: 'codex',
+    default_acp_permission_mode: 'bypass',
+  });
+  for (const agent of [planner, executor, reviewer]) {
+    roomAgentRepo.setAcp(agent.id, {
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: null,
+      acp_session_label: null,
+      acp_permission_mode: 'bypass',
+      acp_writable_dirs: [],
+    });
+  }
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: planner.agent_id,
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '修复群聊协作同时启动所有智能体的问题',
+    message_type: 'text',
+  });
+
+  const invokedAgents: string[] = [];
+  const prompts: string[] = [];
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      invokedAgents.push(planner.agent_id);
+      prompts.push(args.prompt);
+      args.onChunk?.({
+        stream: 'stdout',
+        text: JSON.stringify({
+          intent: 'implementation',
+          recommendedMode: 'formal_workflow',
+          problemArea: 'frontend',
+          summary: '修复群聊协作调度',
+          rationale: '涉及代码修改，应由用户选择正式工作流或轻量协作。',
+          needsUserChoice: true,
+          proposedAgents: {
+            executors: ['frontend-dev'],
+            reviewers: ['reviewer'],
+            testers: [],
+            acceptors: [],
+          },
+          stages: [
+            {
+              stage: 'execute',
+              agentIds: ['frontend-dev'],
+              parallel: false,
+              goal: '实现修复',
+            },
+            {
+              stage: 'review',
+              agentIds: ['reviewer'],
+              parallel: false,
+              goal: '审查修复',
+            },
+          ],
+        }),
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+    const messages = messageRepo.listByRoom(room.id, 20);
+    const decisionMessage = messages.find((message) => {
+      const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
+      return metadata.event_type === 'collaboration_decision';
+    });
+    assert.deepEqual(invokedAgents, ['planner']);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.agent_id, 'planner');
+    assert.match(prompts[0] ?? '', /Return ONLY valid JSON/);
+    assert.match(prompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
+    assert.ok(decisionMessage);
+    const metadata = JSON.parse(decisionMessage.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.source_message_id, userMessage.id);
+    assert.equal(metadata.fallback_agent_id, 'planner');
+    const decision = metadata.collaboration_decision as { recommendedMode?: unknown } | undefined;
+    assert.equal(decision?.recommendedMode, 'formal_workflow');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('message route handles /task command after persisting user message without ACP dispatch', async () => {
   const { projectPath, room } = await createRoutedRoom('task-command');
   const { restore, calls } = installCountingCodexAdapter();
