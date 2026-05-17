@@ -744,8 +744,14 @@ router.put('/projects/:id/routing', (req, res) => {
 });
 
 router.delete('/projects/:id', (req, res) => {
-  const ok = projectRepo.delete(req.params.id);
-  res.status(ok ? 204 : 404).end();
+  const result = projectRepo.delete(req.params.id);
+  if (result.ok) return res.status(204).end();
+  if (result.reason === 'not_found') return res.status(404).json({ error: 'not found' });
+  return res.status(409).json({
+    error: 'project has active runs',
+    active_agent_run_count: result.activeAgentRunCount,
+    active_workflow_run_count: result.activeWorkflowRunCount,
+  });
 });
 
 // ---------- Rooms ----------

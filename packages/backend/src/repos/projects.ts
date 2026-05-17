@@ -3,6 +3,18 @@ import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
 import type { MessageRoutingMode, Project } from '../types.js';
 
+export type DeleteProjectResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' }
+  | {
+      ok: false;
+      reason: 'active_runs';
+      activeAgentRunCount: number;
+      activeWorkflowRunCount: number;
+    };
+
+const ACTIVE_WORKFLOW_STATUSES = ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked'];
+
 export const projectRepo = {
   list(): Project[] {
     return db
@@ -53,9 +65,52 @@ export const projectRepo = {
     return this.get(id);
   },
 
-  delete(id: string): boolean {
-    const r = db.prepare('DELETE FROM projects WHERE id = ?').run(id);
-    return r.changes > 0;
+  delete(id: string): DeleteProjectResult {
+    if (!this.get(id)) return { ok: false, reason: 'not_found' };
+
+    const activeAgentRunCount = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM agent_runs
+           JOIN rooms ON rooms.id = agent_runs.room_id
+           WHERE rooms.project_id = ?
+             AND agent_runs.status IN ('running', 'queued')`,
+        )
+        .get(id) as { count: number }
+    ).count;
+    const activeWorkflowRunCount = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count
+           FROM workflow_runs
+           WHERE project_id = ?
+             AND status IN (${ACTIVE_WORKFLOW_STATUSES.map(() => '?').join(', ')})`,
+        )
+        .get(id, ...ACTIVE_WORKFLOW_STATUSES) as { count: number }
+    ).count;
+
+    if (activeAgentRunCount > 0 || activeWorkflowRunCount > 0) {
+      return {
+        ok: false,
+        reason: 'active_runs',
+        activeAgentRunCount,
+        activeWorkflowRunCount,
+      };
+    }
+
+    const removeProject = db.transaction((projectId: string) => {
+      db.prepare(
+        `DELETE FROM settings
+         WHERE scope = 'room'
+           AND scope_id IN (SELECT id FROM rooms WHERE project_id = ?)`,
+      ).run(projectId);
+      db.prepare("DELETE FROM settings WHERE scope = 'project' AND scope_id = ?").run(projectId);
+      db.prepare('DELETE FROM projects WHERE id = ?').run(projectId);
+    });
+
+    removeProject(id);
+    return { ok: true };
   },
 
   stats(id: string): { rooms: number; tasks: number; tasksDone: number; tasksInProgress: number } {
