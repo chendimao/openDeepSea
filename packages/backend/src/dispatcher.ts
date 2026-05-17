@@ -2,7 +2,6 @@ import { dirname, resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
-import { buildCollaborationDecisionPrompt, parseCollaborationDecision } from './collaboration-decision.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
 import { agentRunRepo } from './repos/agent-runs.js';
@@ -64,41 +63,13 @@ export async function dispatchUserMessage(args: {
     return;
   }
 
-  const responses = await runTargets({
+  await runTargets({
     targets: routing.targets,
     projectPath: project.path,
     roomId,
     imagePaths,
     distillModelInvoker: args.distillModelInvoker,
   });
-
-  const fallbackTarget = routing.targets[0];
-  const fallbackResponse = responses[0]?.content;
-  if (routing.after === 'route_from_fallback' && fallbackTarget && fallbackResponse) {
-    try {
-      const decision = parseCollaborationDecision(fallbackResponse);
-      const decisionMessage = messageRepo.create({
-        room_id: roomId,
-        sender_type: 'system',
-        sender_id: 'system',
-        sender_name: 'System',
-        content: '已生成协作模式选择',
-        message_type: 'system',
-        metadata: {
-          event_type: 'collaboration_decision',
-          collaboration_decision: decision,
-          source_message_id: userMessage.id,
-          fallback_agent_id: fallbackTarget.agent.agent_id,
-        },
-      });
-      wsHub.broadcast(roomId, { type: 'message:new', roomId, message: decisionMessage });
-    } catch (error) {
-      console.warn(
-        `[dispatcher] fallback_route decision parse failed: roomId=${roomId} sourceMessageId=${userMessage.id} fallbackAgentId=${fallbackTarget.agent.agent_id} error=${(error as Error).message}`,
-      );
-      // Keep planner output as-is and do not auto-dispatch on parse failure.
-    }
-  }
 }
 
 async function respondWithConfiguredModel(args: {
@@ -300,10 +271,10 @@ function resolveInitialTargets(args: {
   allAgents: RoomAgent[];
   explicitlyMentionedAgents: RoomAgent[];
   fallbackAgentId: string | null;
-  mode: 'mentions_only' | 'fallback_reply' | 'fallback_route';
+  mode: 'mentions_only' | 'fallback_reply';
   prompt: string;
   imagePaths?: string[];
-}): { targets: { agent: RoomAgent; prompt: string }[]; after?: 'route_from_fallback' } {
+}): { targets: { agent: RoomAgent; prompt: string }[] } {
   if (args.explicitlyMentionedAgents.length > 0) {
     return {
       targets: args.explicitlyMentionedAgents.map((agent) => ({ agent, prompt: args.prompt })),
@@ -312,33 +283,9 @@ function resolveInitialTargets(args: {
   if (args.mode === 'mentions_only' || !args.fallbackAgentId) return { targets: [] };
   const fallbackAgent = args.allAgents.find((agent) => agent.agent_id === args.fallbackAgentId);
   if (!fallbackAgent) return { targets: [] };
-  const prompt =
-    args.mode === 'fallback_route'
-      ? buildFallbackRoutingPrompt(args.prompt, args.allAgents, fallbackAgent)
-      : args.prompt;
   return {
-    targets: [{ agent: fallbackAgent, prompt }],
-    after: args.mode === 'fallback_route' ? 'route_from_fallback' : undefined,
+    targets: [{ agent: fallbackAgent, prompt: args.prompt }],
   };
-}
-
-function buildFallbackRoutingPrompt(
-  userPrompt: string,
-  allAgents: RoomAgent[],
-  fallbackAgent: RoomAgent,
-): string {
-  const agents = allAgents
-    .filter((agent) => agent.id !== fallbackAgent.id)
-    .map((agent) => ({
-      agent_id: agent.agent_id,
-      agent_name: agent.agent_name,
-      agent_role: agent.agent_role,
-      workflow_role: agent.workflow_role ?? null,
-    }));
-  return buildCollaborationDecisionPrompt({
-    userPrompt,
-    agents,
-  });
 }
 
 export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): string {

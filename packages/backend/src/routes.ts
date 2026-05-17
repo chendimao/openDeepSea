@@ -1,9 +1,12 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { unlink } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
+import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
+import type { CollaborationDecision } from './collaboration-decision.js';
+import { runCollaborationStages as defaultRunCollaborationStages } from './collaboration-runner.js';
 import { dispatchUserMessage } from './dispatcher.js';
 import { validateLocalAccess } from './local-access.js';
 import { resolveMentionedAgentRoomIds } from './mentions.js';
@@ -47,9 +50,28 @@ import {
 import { getLangGraphWorkflowConfig } from './workflows/graph/runtime-config.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
-import type { AcpBackend, MemoryScope, MessageMetadata, MessageRoutingMode, ProjectFile, TaskInteractionMode, WorkflowRole } from './types.js';
+import {
+  COLLABORATION_STAGES,
+  type AcpBackend,
+  type MemoryScope,
+  type MessageMetadata,
+  type MessageRoutingMode,
+  type ProjectFile,
+  type TaskInteractionMode,
+  type WorkflowRole,
+} from './types.js';
 
 export const router = Router();
+
+interface CollaborationRouteDeps {
+  runCollaborationStages?: typeof defaultRunCollaborationStages;
+}
+
+let collaborationRouteDeps: CollaborationRouteDeps = {};
+
+export function setCollaborationRouteDeps(deps: CollaborationRouteDeps): void {
+  collaborationRouteDeps = deps;
+}
 
 function workflowErrorStatus(error: Error): number {
   const message = error.message.toLowerCase();
@@ -96,7 +118,7 @@ router.get('/agent-templates', (_req, res) => {
 });
 
 const settingsPatchShape = {
-  message_routing_mode: z.enum(['mentions_only', 'fallback_reply', 'fallback_route']).nullable().optional(),
+  message_routing_mode: z.enum(['mentions_only', 'fallback_reply']).nullable().optional(),
   fallback_agent_id: z.string().min(1).nullable().optional(),
   interaction_mode: z.enum(['ask_user', 'auto_recommended']).nullable().optional(),
   auto_distill_enabled: z.boolean().nullable().optional(),
@@ -685,7 +707,7 @@ router.patch('/projects/:id', (req, res) => {
 router.put('/projects/:id/routing', (req, res) => {
   const schema = z
     .object({
-      message_routing_mode: z.enum(['mentions_only', 'fallback_reply', 'fallback_route']),
+      message_routing_mode: z.enum(['mentions_only', 'fallback_reply']),
       fallback_agent_id: z.string().min(1).nullable().optional(),
     })
     .refine(
@@ -900,6 +922,12 @@ router.delete('/rooms/:roomId/agents/:agentId', (req, res) => {
 
   const agent = roomAgentRepo.get(req.params.agentId);
   if (!agent || agent.room_id !== req.params.roomId) return res.status(404).end();
+  if (agent.global_agent_id) {
+    const globalAgent = agentRepo.get(agent.global_agent_id);
+    if (globalAgent?.builtin_key === 'planner') {
+      return res.status(409).json({ error: 'planner agent cannot be removed' });
+    }
+  }
   const impact = roomAgentRepo.getRemovalImpact(req.params.agentId);
   if (impact.active_run_count > 0) {
     return res.status(409).json({ error: 'agent has active runs', ...impact });
@@ -1370,6 +1398,159 @@ const workflowApprovalConversationSchema = z.object({
   sender_name: z.string().optional(),
   source: z.enum(['approval_button']).default('approval_button'),
 });
+
+const collaborationDecisionSchema: z.ZodType<CollaborationDecision> = z.object({
+  intent: z.enum(['question', 'analysis', 'implementation']),
+  recommendedMode: z.enum(['chat_collaboration', 'formal_workflow']),
+  problemArea: z.enum(['frontend', 'backend', 'fullstack', 'unknown']),
+  summary: z.string().trim().min(1),
+  rationale: z.string().trim().min(1),
+  needsUserChoice: z.boolean(),
+  proposedAgents: z.object({
+    executors: z.array(z.string().trim().min(1)),
+    reviewers: z.array(z.string().trim().min(1)),
+    testers: z.array(z.string().trim().min(1)),
+    acceptors: z.array(z.string().trim().min(1)),
+  }),
+  stages: z.array(z.object({
+    stage: z.enum(COLLABORATION_STAGES),
+    agentIds: z.array(z.string().trim().min(1)),
+    parallel: z.boolean(),
+    goal: z.string().trim().min(1),
+  })),
+});
+
+const collaborationStartSchema = z.object({
+  source_message_id: z.string().trim().min(1),
+  decision: collaborationDecisionSchema,
+});
+
+router.post('/rooms/:roomId/collaborations', (req, res) => {
+  const parsed = collaborationStartSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const project = projectRepo.get(room.project_id);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const sourceMessage = messageRepo.get(parsed.data.source_message_id);
+  if (!sourceMessage || sourceMessage.room_id !== room.id) {
+    return res.status(404).json({ error: 'source message not found' });
+  }
+
+  const run = {
+    id: nanoid(16),
+    room_id: room.id,
+    source_message_id: sourceMessage.id,
+    status: 'running' as const,
+  };
+  const runCollaborationStages =
+    collaborationRouteDeps.runCollaborationStages ?? defaultRunCollaborationStages;
+
+  void runCollaborationStages({
+    runId: run.id,
+    projectPath: project.path,
+    roomId: room.id,
+    sourceMessage,
+    decision: parsed.data.decision,
+  }).catch((err) => {
+    console.warn(`[collaboration-routes] collaboration ${run.id} failed: ${formatUnknownError(err)}`);
+  });
+
+  return res.status(202).json({ run });
+});
+
+router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res) => {
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const sourceMessage = messageRepo.get(req.params.messageId);
+  if (!sourceMessage || sourceMessage.room_id !== room.id) {
+    return res.status(404).json({ error: 'source message not found' });
+  }
+
+  try {
+    const taskInput = buildPromotedTaskInput(sourceMessage);
+    const taskResult = createTaskWithConversation({
+      roomId: room.id,
+      origin: 'chat_plan',
+      sourceMessageId: sourceMessage.id,
+      taskInput: {
+        title: taskInput.title,
+        description: taskInput.description,
+        interaction_mode: 'ask_user',
+      },
+    });
+    const workflow = startWorkflowWithConversation({
+      roomId: room.id,
+      taskId: taskResult.task.id,
+      source: 'task_button',
+      sourceMessageId: sourceMessage.id,
+    });
+    return res.status(202).json({ task: taskResult.task, workflow });
+  } catch (err) {
+    const error = err as Error & { status?: number };
+    return res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
+  }
+});
+
+function buildPromotedTaskInput(sourceMessage: ReturnType<typeof messageRepo.get>): {
+  title: string;
+  description: string;
+} {
+  if (!sourceMessage) throw new Error('source message not found');
+  const metadata = parseMessageMetadataObject(sourceMessage.metadata);
+  const decision = parseMessageMetadataObject(metadata?.collaboration_decision)
+    ?? parseMessageMetadataObject(metadata?.decision);
+  const rawTitle = firstNonEmptyString([
+    metadata?.task_title,
+    decision?.summary,
+    metadata?.summary,
+    sourceMessage.content.split(/\r?\n/)[0],
+    sourceMessage.content,
+  ]);
+  const title = truncateTitle(rawTitle || '从群聊创建的工作流任务');
+  const description = sourceMessage.content.trim() || title;
+  return { title, description };
+}
+
+function parseMessageMetadataObject(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function firstNonEmptyString(values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function truncateTitle(value: string): string {
+  return value.length <= 160 ? value : value.slice(0, 157).trimEnd() + '...';
+}
+
+function formatUnknownError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  try {
+    const serialized = JSON.stringify(error);
+    if (serialized) return serialized;
+  } catch {
+    // Fall through to String() below.
+  }
+  return String(error);
+}
 
 // ---------- Workflows ----------
 router.post('/tasks/:id/workflows', async (req, res) => {
