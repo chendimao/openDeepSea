@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, CheckSquare, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, FolderOpen, ListTodo, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { AgentRun, Message, MessageAttachmentMetadata, RoomAgent, Task, WorkflowRun } from '../lib/types';
+import type { AgentRun, Message, MessageAttachmentMetadata, Room, RoomAgent, Task, WorkflowRun } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
 import { cn } from '../lib/utils';
@@ -18,6 +18,7 @@ import { MemoryPanel } from '../components/MemoryPanel';
 import { RichMessageComposer } from '../components/RichMessageComposer';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
+import { RoomFilesPanel } from '../components/RoomFilesPanel';
 import { MessageContent } from '../components/MessageContent';
 import { CollaborationDecisionCard } from '../components/CollaborationDecisionCard';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
@@ -40,6 +41,7 @@ import {
 } from '../components/ai-elements/Message';
 
 type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[] };
+type RoomFeatureTab = 'chat' | 'tasks' | 'files';
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -48,6 +50,9 @@ export function RoomPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
+  const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
   const { t } = useI18n();
 
   const { data: project } = useQuery({
@@ -59,6 +64,11 @@ export function RoomPage() {
     queryKey: ['room', roomId],
     queryFn: () => api.getRoom(roomId),
     enabled: !!roomId,
+  });
+  const { data: rooms = [] } = useQuery({
+    queryKey: ['rooms', projectId],
+    queryFn: () => api.listRooms(projectId),
+    enabled: !!projectId,
   });
   const { data: messages = [] } = useQuery({
     queryKey: ['messages', roomId],
@@ -99,6 +109,46 @@ export function RoomPage() {
       return runs?.some((run) => run.status === 'running' || run.status === 'queued') ? 2000 : false;
     },
   });
+
+  useEffect(() => {
+    setActiveTab('chat');
+    setSelectedTask(null);
+    setShowMemoryPanel(false);
+    setHighlightMessageId(null);
+    messageRefs.current.clear();
+  }, [roomId]);
+
+  const registerMessageRef = useCallback((messageId: string, node: HTMLElement | null) => {
+    if (node) {
+      messageRefs.current.set(messageId, node);
+    } else {
+      messageRefs.current.delete(messageId);
+    }
+  }, []);
+
+  const focusMessage = useCallback((messageId: string) => {
+    setShowMemoryPanel(false);
+    setConfigAgent(null);
+    setActiveTab('chat');
+    setHighlightMessageId(messageId);
+  }, []);
+
+  useEffect(() => {
+    if (!highlightMessageId || activeTab !== 'chat') return;
+    const scrollTimer = window.setTimeout(() => {
+      messageRefs.current.get(highlightMessageId)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 60);
+    const clearTimer = window.setTimeout(() => {
+      setHighlightMessageId((current) => (current === highlightMessageId ? null : current));
+    }, 2400);
+    return () => {
+      window.clearTimeout(scrollTimer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [activeTab, highlightMessageId, messages.length]);
 
   const updateTaskStatus = useMutation({
     mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
@@ -241,11 +291,7 @@ export function RoomPage() {
           </div>
         </div>
 
-        <div className="toolbar-tabs" aria-label={t('room.viewLabel')}>
-          <span className="toolbar-tab is-active">{t('room.layout.chatTasks')}</span>
-          <span className="toolbar-tab">{t('room.tab.workflow')}</span>
-          <span className="toolbar-tab">{t('room.tab.files')}</span>
-        </div>
+        <RoomSwitcher projectId={projectId} roomId={roomId} rooms={rooms} />
 
         <div className="room-toolbar-actions ml-auto flex min-w-0 items-center gap-2">
           <AgentStrip
@@ -300,23 +346,65 @@ export function RoomPage() {
         </div>
       </header>
 
-      <div className="workspace-grid">
-        <section className="workbench-panel chat-workspace" aria-label={t('room.chatAria')}>
-          <ChatColumn
-            messages={messages}
-            agents={agents}
-            agentRuns={agentRuns}
-            roomId={roomId}
-            projectId={projectId}
-            modelChatReady={Boolean(settings?.system.langchain_planner_model && settings.system.openai_api_key_set)}
-            routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
-            fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
-            onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
-            retryingWorkflowId={retryWorkflow.variables}
-            streamingMessageIds={streamingMessageIds}
-          />
+      <div className={cn('workspace-grid', showMemoryPanel && 'has-inspector')}>
+        <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
+          <RoomFeatureTabs activeTab={activeTab} onChange={setActiveTab} />
+          <div className="room-tab-content">
+            {activeTab === 'chat' && (
+              <ChatColumn
+                messages={messages}
+                agents={agents}
+                agentRuns={agentRuns}
+                roomId={roomId}
+                projectId={projectId}
+                modelChatReady={Boolean(settings?.system.langchain_planner_model && settings.system.openai_api_key_set)}
+                routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
+                fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
+                onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
+                retryingWorkflowId={retryWorkflow.variables}
+                streamingMessageIds={streamingMessageIds}
+                registerMessageRef={registerMessageRef}
+                highlightMessageId={highlightMessageId}
+              />
+            )}
+            {activeTab === 'tasks' && (
+              <div className="room-task-tab">
+                <TaskBoard
+                  tasks={tasks}
+                  agents={agents}
+                  workflows={taskWorkflows}
+                  selectedTaskId={selectedTask?.id ?? null}
+                  onSelectTask={(task) => {
+                    setConfigAgent(null);
+                    setShowMemoryPanel(false);
+                    setSelectedTask(task);
+                  }}
+                  onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
+                  onStartWorkflow={(task) => startWorkflow.mutate(task)}
+                  onLocateSourceMessage={focusMessage}
+                  startingTaskId={startWorkflow.isPending ? startWorkflow.variables?.id : null}
+                />
+                {selectedTask && (
+                  <TaskDetailPanel
+                    task={selectedTask}
+                    agents={agents}
+                    projectId={projectId}
+                    onLocateSourceMessage={focusMessage}
+                    onClose={() => setSelectedTask(null)}
+                  />
+                )}
+              </div>
+            )}
+            {activeTab === 'files' && (
+              <RoomFilesPanel
+                projectId={projectId}
+                roomId={roomId}
+                onLocateMessage={focusMessage}
+              />
+            )}
+          </div>
         </section>
-        {showMemoryPanel ? (
+        {showMemoryPanel && (
           <aside className="workbench-panel inspector-panel memory-panel-shell p-4">
             <MemoryPanel
               projectId={projectId}
@@ -324,27 +412,6 @@ export function RoomPage() {
               roomAgents={agents}
             />
           </aside>
-        ) : selectedTask ? (
-          <TaskDetailPanel
-            task={selectedTask}
-            agents={agents}
-            projectId={projectId}
-            onClose={() => setSelectedTask(null)}
-          />
-        ) : (
-          <TaskBoard
-            tasks={tasks}
-            agents={agents}
-            workflows={taskWorkflows}
-            selectedTaskId={null}
-            onSelectTask={(task) => {
-              setConfigAgent(null);
-              setSelectedTask(task);
-            }}
-            onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
-            onStartWorkflow={(task) => startWorkflow.mutate(task)}
-            startingTaskId={startWorkflow.isPending ? startWorkflow.variables?.id : null}
-          />
         )}
       </div>
 
@@ -432,6 +499,93 @@ function invalidateWorkflowConversationQueries(
   queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
 }
 
+function RoomSwitcher({
+  projectId,
+  roomId,
+  rooms,
+}: {
+  projectId: string;
+  roomId: string;
+  rooms: Room[];
+}) {
+  const { t } = useI18n();
+  const currentRoom = rooms.find((item) => item.id === roomId) ?? null;
+  const visibleRooms = [
+    ...(currentRoom ? [currentRoom] : []),
+    ...rooms.filter((item) => item.id !== roomId).slice(0, 4),
+  ];
+  const visibleIds = new Set(visibleRooms.map((item) => item.id));
+  const hiddenRooms = rooms.filter((item) => !visibleIds.has(item.id));
+
+  return (
+    <nav className="toolbar-tabs room-switcher" aria-label={t('room.switcherLabel')}>
+      {visibleRooms.map((item) => (
+        <Link
+          key={item.id}
+          to={`/projects/${projectId}/rooms/${item.id}`}
+          className={cn('toolbar-tab', item.id === roomId && 'is-active')}
+          aria-current={item.id === roomId ? 'page' : undefined}
+          title={item.name}
+        >
+          {item.name}
+        </Link>
+      ))}
+      {hiddenRooms.length > 0 && (
+        <details className="room-more-menu">
+          <summary className="toolbar-tab">
+            <span>{t('room.moreRooms')}</span>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </summary>
+          <div className="room-more-list">
+            {hiddenRooms.map((item) => (
+              <Link key={item.id} to={`/projects/${projectId}/rooms/${item.id}`}>
+                {item.name}
+              </Link>
+            ))}
+          </div>
+        </details>
+      )}
+    </nav>
+  );
+}
+
+function RoomFeatureTabs({
+  activeTab,
+  onChange,
+}: {
+  activeTab: RoomFeatureTab;
+  onChange: (tab: RoomFeatureTab) => void;
+}) {
+  const { t } = useI18n();
+  const tabs: Array<{ id: RoomFeatureTab; label: string; icon: typeof MessageSquare }> = [
+    { id: 'chat', label: t('room.tab.chat'), icon: MessageSquare },
+    { id: 'tasks', label: t('room.tab.tasks'), icon: ListTodo },
+    { id: 'files', label: t('room.tab.files'), icon: FolderOpen },
+  ];
+
+  return (
+    <div className="room-feature-tabs" aria-label={t('room.viewLabel')}>
+      <div className="segmented-control">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              className={activeTab === tab.id ? 'is-active' : ''}
+              aria-pressed={activeTab === tab.id}
+              onClick={() => onChange(tab.id)}
+            >
+              <Icon className="h-3.5 w-3.5" strokeWidth={1.7} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function AgentStrip({
   agents,
   onConfig,
@@ -476,6 +630,8 @@ function ChatColumn({
   onRetryWorkflow,
   retryingWorkflowId,
   streamingMessageIds,
+  registerMessageRef,
+  highlightMessageId,
 }: {
   messages: Message[];
   agents: RoomAgent[];
@@ -488,6 +644,8 @@ function ChatColumn({
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
   streamingMessageIds: Set<string>;
+  registerMessageRef: (messageId: string, node: HTMLElement | null) => void;
+  highlightMessageId: string | null;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
   const queryClient = useQueryClient();
@@ -531,26 +689,6 @@ function ChatColumn({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="chat-stream-header">
-        <div className="segmented-control">
-          <button className="is-active" type="button">
-            <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.7} />
-            {t('room.stream.agent')}
-          </button>
-          <button type="button">
-            <Users className="h-3.5 w-3.5" strokeWidth={1.7} />
-            {t('room.stream.runs')}
-          </button>
-          <button type="button">
-            <FileText className="h-3.5 w-3.5" strokeWidth={1.7} />
-            {t('room.stream.stderr')}
-          </button>
-        </div>
-        <button type="button" className="icon-glass-button" aria-label={t('room.newTask')}>
-          <Plus className="h-4 w-4" strokeWidth={1.8} />
-        </button>
-      </div>
-
       <Conversation className="flex-1">
         <ConversationContent>
           {messages.length === 0 ? (
@@ -594,6 +732,8 @@ function ChatColumn({
                   onRetryWorkflow={onRetryWorkflow}
                   retryingWorkflowId={retryingWorkflowId}
                   streaming={streamingMessageIds.has(m.id)}
+                  messageRef={(node) => registerMessageRef(m.id, node)}
+                  highlighted={highlightMessageId === m.id}
                 />
               );
             })
@@ -663,6 +803,8 @@ function MessageBubble({
   onRetryWorkflow,
   retryingWorkflowId,
   streaming,
+  messageRef,
+  highlighted,
 }: {
   message: Message;
   agentMeta?: RoomAgent;
@@ -674,6 +816,8 @@ function MessageBubble({
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
   streaming: boolean;
+  messageRef: (node: HTMLElement | null) => void;
+  highlighted: boolean;
 }) {
   const { t, formatRelativeTime } = useI18n();
   const queryClient = useQueryClient();
@@ -739,7 +883,12 @@ function MessageBubble({
 
   if (isTaskEvent) {
     return (
-      <AiMessageRow variant="event">
+      <AiMessageRow
+        ref={messageRef}
+        variant="event"
+        data-message-id={message.id}
+        className={cn(highlighted && 'is-highlighted')}
+      >
         <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
           <span>{message.content}</span>
@@ -750,7 +899,12 @@ function MessageBubble({
 
   if (isCollaborationDecision && metadata.collaboration_decision && metadata.source_message_id) {
     return (
-      <AiMessageRow variant="event">
+      <AiMessageRow
+        ref={messageRef}
+        variant="event"
+        data-message-id={message.id}
+        className={cn(highlighted && 'is-highlighted')}
+      >
         <CollaborationDecisionCard
           decision={metadata.collaboration_decision}
           sourceMessageId={metadata.source_message_id}
@@ -766,14 +920,24 @@ function MessageBubble({
 
   if (isSystem) {
     return (
-      <AiMessageRow variant="system">
+      <AiMessageRow
+        ref={messageRef}
+        variant="system"
+        data-message-id={message.id}
+        className={cn(highlighted && 'is-highlighted')}
+      >
         {message.content}
       </AiMessageRow>
     );
   }
 
   return (
-    <AiMessageRow variant={isUser ? 'user' : 'agent'} className="fade-up">
+    <AiMessageRow
+      ref={messageRef}
+      variant={isUser ? 'user' : 'agent'}
+      data-message-id={message.id}
+      className={cn('fade-up', highlighted && 'is-highlighted')}
+    >
       {!isUser && (
         <AgentAvatar name={message.sender_name ?? message.sender_id} size={32} active={!!agentMeta?.acp_enabled} />
       )}

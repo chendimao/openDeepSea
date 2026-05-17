@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Box, ChevronRight, RotateCcw, XCircle } from 'lucide-react';
+import { Box, ChevronRight, LocateFixed, RotateCcw, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -22,11 +22,13 @@ export function TaskDetailPanel({
   task,
   agents,
   projectId,
+  onLocateSourceMessage,
   onClose,
 }: {
   task: Task | null;
   agents: RoomAgent[];
   projectId: string;
+  onLocateSourceMessage?: (messageId: string, task: Task) => void;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -171,6 +173,18 @@ export function TaskDetailPanel({
             <InfoRow label={t('taskDetail.status')} value={taskStatusLabel(task.status)} />
             <InfoRow label={t('taskDetail.priority')} value={taskPriorityLabel(task.priority)} />
             <InfoRow label={t('taskDetail.assignee')} value={assignedAgent?.agent_name ?? t('common.unassigned')} />
+            {task.source_message_id && onLocateSourceMessage && (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="mt-1 w-full justify-center"
+                onClick={() => onLocateSourceMessage(task.source_message_id!, task)}
+              >
+                <LocateFixed className="h-3.5 w-3.5" />
+                {t('taskBoard.locateSourceMessage')}
+              </Button>
+            )}
           </div>
         </section>
 

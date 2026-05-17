@@ -1,19 +1,16 @@
-import type { ReactNode } from 'react';
+import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { cn } from '../../lib/utils';
 
 export type MessageVariant = 'user' | 'agent' | 'system' | 'event';
 
-export function MessageRow({
-  variant,
-  className,
-  children,
-}: {
+export const MessageRow = forwardRef<HTMLElement, ComponentPropsWithoutRef<'article'> & {
   variant: MessageVariant;
-  className?: string;
-  children: ReactNode;
-}): JSX.Element {
-  return <article className={cn('ai-message-row', `ai-message-row--${variant}`, className)}>{children}</article>;
-}
+}>(({ variant, className, children, ...props }, ref) => (
+  <article ref={ref} className={cn('ai-message-row', `ai-message-row--${variant}`, className)} {...props}>
+    {children}
+  </article>
+));
+MessageRow.displayName = 'MessageRow';
 
 export function MessageHeader({
   className,

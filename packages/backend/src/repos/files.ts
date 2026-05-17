@@ -5,10 +5,12 @@ import type { ProjectFile, ProjectFileWithRefs } from '../types.js';
 export const fileRepo = {
   list(filters: { projectId?: string; roomId?: string } = {}): ProjectFileWithRefs[] {
     const where = ['files.deleted_at IS NULL'];
-    const params: string[] = [];
+    const params: { projectId?: string; roomId?: string } = {};
+    const roomReferenceFilter = filters.roomId ? ' AND refs.room_id = @roomId' : '';
+    const joinRoomFilter = filters.roomId ? ' AND message_file_refs.room_id = @roomId' : '';
     if (filters.projectId) {
-      where.push('files.project_id = ?');
-      params.push(filters.projectId);
+      where.push('files.project_id = @projectId');
+      params.projectId = filters.projectId;
     }
     if (filters.roomId) {
       where.push(
@@ -16,11 +18,13 @@ export const fileRepo = {
           SELECT 1
           FROM message_file_refs room_refs
           WHERE room_refs.file_id = files.id
-            AND room_refs.room_id = ?
+            AND room_refs.room_id = @roomId
         )`,
       );
-      params.push(filters.roomId);
+      params.roomId = filters.roomId;
     }
+
+    const bindArgs = Object.keys(params).length > 0 ? [params] : [];
 
     return db
       .prepare(
@@ -29,9 +33,18 @@ export const fileRepo = {
           COUNT(message_file_refs.id) AS reference_count,
           MAX(message_file_refs.created_at) AS last_referenced_at,
           (
+            SELECT refs.message_id
+            FROM message_file_refs refs
+            WHERE refs.file_id = files.id
+              ${roomReferenceFilter}
+            ORDER BY refs.created_at DESC
+            LIMIT 1
+          ) AS last_referenced_message_id,
+          (
             SELECT refs.room_id
             FROM message_file_refs refs
             WHERE refs.file_id = files.id
+              ${roomReferenceFilter}
             ORDER BY refs.created_at DESC
             LIMIT 1
           ) AS last_referenced_room_id,
@@ -40,16 +53,17 @@ export const fileRepo = {
             FROM message_file_refs refs
             JOIN rooms ON rooms.id = refs.room_id
             WHERE refs.file_id = files.id
+              ${roomReferenceFilter}
             ORDER BY refs.created_at DESC
             LIMIT 1
           ) AS last_referenced_room_name
         FROM files
-        LEFT JOIN message_file_refs ON message_file_refs.file_id = files.id
+        LEFT JOIN message_file_refs ON message_file_refs.file_id = files.id${joinRoomFilter}
         WHERE ${where.join(' AND ')}
         GROUP BY files.id
         ORDER BY files.created_at DESC`,
       )
-      .all(...params) as ProjectFileWithRefs[];
+      .all(...bindArgs) as ProjectFileWithRefs[];
   },
 
   listByProject(projectId: string): ProjectFileWithRefs[] {

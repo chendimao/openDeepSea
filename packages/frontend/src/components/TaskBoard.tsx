@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Eye, Loader2, Play } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Eye, LocateFixed, Loader2, Play } from 'lucide-react';
 import type { RoomAgent, Task, WorkflowRun } from '../lib/types';
 import { useI18n } from '../lib/i18n';
 import { cn } from '../lib/utils';
@@ -44,6 +44,7 @@ export function TaskBoard({
   onSelectTask,
   onChangeStatus,
   onStartWorkflow,
+  onLocateSourceMessage,
   startingTaskId,
 }: {
   tasks: Task[];
@@ -53,6 +54,7 @@ export function TaskBoard({
   onSelectTask: (task: Task) => void;
   onChangeStatus: (task: Task, status: Task['status']) => void;
   onStartWorkflow?: (task: Task) => void;
+  onLocateSourceMessage?: (messageId: string, task: Task) => void;
   startingTaskId?: string | null;
 }) {
   const { t, taskStatusLabel } = useI18n();
@@ -99,6 +101,11 @@ export function TaskBoard({
                       onSelect={() => onSelectTask(task)}
                       onChangeStatus={(next) => onChangeStatus(task, next)}
                       onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(task) : undefined}
+                      onLocateSourceMessage={
+                        onLocateSourceMessage && task.source_message_id
+                          ? () => onLocateSourceMessage(task.source_message_id!, task)
+                          : undefined
+                      }
                       startingWorkflow={startingTaskId === task.id}
                     />
                   ))
@@ -120,6 +127,7 @@ function TaskCard({
   onSelect,
   onChangeStatus,
   onStartWorkflow,
+  onLocateSourceMessage,
   startingWorkflow,
 }: {
   task: Task;
@@ -129,6 +137,7 @@ function TaskCard({
   onSelect: () => void;
   onChangeStatus: (status: Task['status']) => void;
   onStartWorkflow?: () => void;
+  onLocateSourceMessage?: () => void;
   startingWorkflow?: boolean;
 }) {
   const { formatRelativeTime, t, taskPriorityLabel, taskStatusLabel, workflowStatusLabel } = useI18n();
@@ -189,6 +198,18 @@ function TaskCard({
             ) : (
               <Play className="h-3.5 w-3.5" />
             )}
+          </Button>
+        )}
+        {onLocateSourceMessage && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={onLocateSourceMessage}
+            title={t('taskBoard.locateSourceMessage')}
+            aria-label={t('taskBoard.locateSourceMessage')}
+            className="w-7 px-0"
+          >
+            <LocateFixed className="h-3.5 w-3.5" />
           </Button>
         )}
         {nextStatus && (

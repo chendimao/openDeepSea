@@ -154,6 +154,7 @@ export interface ProjectFile {
 export interface ProjectFileWithRefs extends ProjectFile {
   reference_count: number;
   last_referenced_at: number | null;
+  last_referenced_message_id: string | null;
   last_referenced_room_id: string | null;
   last_referenced_room_name: string | null;
 }

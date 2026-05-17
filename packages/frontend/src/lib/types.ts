@@ -262,6 +262,7 @@ export interface ProjectFile {
   deleted_at: number | null;
   reference_count: number;
   last_referenced_at: number | null;
+  last_referenced_message_id: string | null;
   last_referenced_room_id: string | null;
   last_referenced_room_name: string | null;
 }

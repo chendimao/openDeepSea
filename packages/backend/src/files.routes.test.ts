@@ -76,6 +76,7 @@ test('global file route lists all active files and filters by project or room', 
   const project = createProject('global-project');
   const otherProject = createProject('global-other-project');
   const room = roomRepo.create({ project_id: project.id, name: 'Filter Room' });
+  const secondRoom = roomRepo.create({ project_id: project.id, name: 'Second Filter Room' });
   const projectFile = fileRepo.create({
     project_id: project.id,
     original_name: 'project.txt',
@@ -122,6 +123,19 @@ test('global file route lists all active files and filters by project or room', 
     message_id: message.id,
     file_ids: [roomFile.id],
   });
+  const secondRoomMessage = messageRepo.create({
+    room_id: secondRoom.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'see same file elsewhere',
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: secondRoom.id,
+    message_id: secondRoomMessage.id,
+    file_ids: [roomFile.id],
+  });
 
   const allRes = await request('/api/files');
   assert.equal(allRes.status, 200);
@@ -137,8 +151,13 @@ test('global file route lists all active files and filters by project or room', 
 
   const roomRes = await request(`/api/files?projectId=${project.id}&roomId=${room.id}`);
   assert.equal(roomRes.status, 200);
-  const roomFiles = await roomRes.json() as Array<{ id: string; last_referenced_room_id: string | null }>;
+  const roomFiles = await roomRes.json() as Array<{
+    id: string;
+    last_referenced_message_id: string | null;
+    last_referenced_room_id: string | null;
+  }>;
   assert.deepEqual(roomFiles.map((file) => file.id), [roomFile.id]);
+  assert.equal(roomFiles[0]?.last_referenced_message_id, message.id);
   assert.equal(roomFiles[0]?.last_referenced_room_id, room.id);
 
   const invalidRes = await request(`/api/files?projectId=${otherProject.id}&roomId=${room.id}`);
@@ -166,7 +185,7 @@ test('message route accepts project file ids and records message refs', async ()
     body: JSON.stringify({ content: 'read this', fileIds: [file.id] }),
   });
   assert.equal(messageRes.status, 201);
-  const message = await messageRes.json() as { metadata: string };
+  const message = await messageRes.json() as { id: string; metadata: string };
   const metadata = JSON.parse(message.metadata) as { attachments: Array<{ fileId: string; name: string }> };
   const attachment = metadata.attachments[0];
   assert.ok(attachment);
@@ -177,6 +196,7 @@ test('message route accepts project file ids and records message refs', async ()
   const listedFile = files[0];
   assert.ok(listedFile);
   assert.equal(listedFile.reference_count, 1);
+  assert.equal(listedFile.last_referenced_message_id, message.id);
   assert.equal(listedFile.last_referenced_room_id, room.id);
 });
 
