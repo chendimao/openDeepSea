@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { listBuiltInAgentTemplates } from '../agent-templates.js';
 import { db, now } from '../db.js';
 import type { AcpBackend, AcpPermissionMode, Agent, AgentReference } from '../types.js';
 
@@ -10,6 +11,7 @@ type AgentRow = Omit<Agent, 'reference_count' | 'references' | 'default_acp_perm
 export type AgentDeleteResult =
   | { ok: true }
   | { ok: false; reason: 'not_found'; references: [] }
+  | { ok: false; reason: 'builtin'; references: [] }
   | { ok: false; reason: 'in_use'; references: AgentReference[] };
 
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
@@ -77,6 +79,22 @@ export const agentRepo = {
     };
   },
 
+  getByBuiltinKey(builtinKey: string): Agent | undefined {
+    const row = db.prepare(
+      `SELECT agents.*,
+              COUNT(room_agents.id) AS reference_count
+       FROM agents
+       LEFT JOIN room_agents ON room_agents.global_agent_id = agents.id
+       WHERE agents.builtin_key = ?
+       GROUP BY agents.id`,
+    ).get(builtinKey) as AgentRow | undefined;
+    if (!row) return undefined;
+    return {
+      ...normalizeAgent(row),
+      references: this.getReferences(row.id),
+    };
+  },
+
   create(input: {
     agent_id: string;
     name: string;
@@ -87,15 +105,17 @@ export const agentRepo = {
     responsibilities?: string | null;
     default_acp_backend?: AcpBackend | null;
     default_acp_permission_mode?: AcpPermissionMode | null;
+    is_builtin?: boolean;
+    builtin_key?: string | null;
   }): Agent {
     const id = nanoid(12);
     const ts = now();
     db.prepare(
       `INSERT INTO agents (
         id, agent_id, name, description, preferred_user_name, personality, rules,
-        responsibilities, default_acp_backend, default_acp_permission_mode, created_at, updated_at
+        responsibilities, default_acp_backend, default_acp_permission_mode, is_builtin, builtin_key, created_at, updated_at
       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.agent_id.trim(),
@@ -107,6 +127,8 @@ export const agentRepo = {
       trimmedOrNull(input.responsibilities),
       input.default_acp_backend ?? null,
       input.default_acp_permission_mode ?? 'bypass',
+      input.is_builtin ? 1 : 0,
+      trimmedOrNull(input.builtin_key),
       ts,
       ts,
     );
@@ -129,6 +151,10 @@ export const agentRepo = {
   ): Agent | undefined {
     const existing = this.get(id);
     if (!existing) return undefined;
+    const nextAgentId = patch.agent_id === undefined ? existing.agent_id : patch.agent_id.trim();
+    if (existing.is_builtin && nextAgentId !== existing.agent_id) {
+      throw new Error('builtin agent id cannot be changed');
+    }
 
     db.prepare(
       `UPDATE agents
@@ -137,7 +163,7 @@ export const agentRepo = {
            default_acp_backend = ?, default_acp_permission_mode = ?, updated_at = ?
        WHERE id = ?`,
     ).run(
-      patch.agent_id === undefined ? existing.agent_id : patch.agent_id.trim(),
+      nextAgentId,
       patch.name === undefined ? existing.name : patch.name.trim(),
       patch.description === undefined ? existing.description : trimmedOrNull(patch.description),
       patch.preferred_user_name === undefined
@@ -159,6 +185,7 @@ export const agentRepo = {
   delete(id: string): AgentDeleteResult {
     const existing = this.get(id);
     if (!existing) return { ok: false, reason: 'not_found', references: [] };
+    if (existing.is_builtin) return { ok: false, reason: 'builtin', references: [] };
 
     const references = this.getReferences(id);
     if (references.length > 0) return { ok: false, reason: 'in_use', references };
@@ -169,12 +196,103 @@ export const agentRepo = {
 
   getReferences(id: string): AgentReference[] {
     return db.prepare(
-      `SELECT rooms.id AS room_id, rooms.name AS room_name
+      `SELECT rooms.id AS room_id, rooms.name AS room_name,
+              CASE WHEN MAX(CASE WHEN room_agents.left_at IS NULL THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS active
        FROM room_agents
        JOIN rooms ON rooms.id = room_agents.room_id
        WHERE room_agents.global_agent_id = ?
+       GROUP BY rooms.id, rooms.name
        ORDER BY rooms.created_at DESC`,
     ).all(id) as AgentReference[];
+  },
+
+  ensureBuiltInAgents(): void {
+    const ts = now();
+    const insert = db.prepare(
+      `INSERT INTO agents (
+        id, agent_id, name, description, preferred_user_name, personality, rules,
+        responsibilities, default_acp_backend, default_acp_permission_mode, is_builtin, builtin_key, created_at, updated_at
+      )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+    );
+    const markExisting = db.prepare(
+      `UPDATE agents
+       SET is_builtin = 1,
+           builtin_key = ?,
+           description = COALESCE(description, ?),
+           preferred_user_name = COALESCE(preferred_user_name, ?),
+           personality = COALESCE(personality, ?),
+           rules = COALESCE(rules, ?),
+           responsibilities = COALESCE(responsibilities, ?),
+           default_acp_backend = COALESCE(default_acp_backend, ?),
+           default_acp_permission_mode = COALESCE(default_acp_permission_mode, ?),
+           updated_at = ?
+       WHERE id = ?`,
+    );
+    const transaction = db.transaction(() => {
+      for (const template of listBuiltInAgentTemplates()) {
+        const existing = this.getByBuiltinKey(template.id) ?? this.getByAgentId(template.id);
+        if (existing) {
+          markExisting.run(
+            template.id,
+            template.description,
+            template.preferred_user_name,
+            template.personality,
+            template.rules,
+            template.responsibilities,
+            template.acp_backend,
+            template.acp_permission_mode,
+            ts,
+            existing.id,
+          );
+          continue;
+        }
+        insert.run(
+          nanoid(12),
+          template.id,
+          template.name,
+          template.description,
+          template.preferred_user_name,
+          template.personality,
+          template.rules,
+          template.responsibilities,
+          template.acp_backend,
+          template.acp_permission_mode,
+          template.id,
+          ts,
+          ts,
+        );
+      }
+    });
+    transaction();
+  },
+
+  restoreBuiltInDefaults(id: string): Agent | undefined {
+    const existing = this.get(id);
+    if (!existing?.is_builtin || !existing.builtin_key) return undefined;
+    const template = listBuiltInAgentTemplates().find((item) => item.id === existing.builtin_key);
+    if (!template) return undefined;
+
+    db.prepare(
+      `UPDATE agents
+       SET agent_id = ?, name = ?, description = ?, preferred_user_name = ?,
+           personality = ?, rules = ?, responsibilities = ?,
+           default_acp_backend = ?, default_acp_permission_mode = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(
+      template.id,
+      template.name,
+      template.description,
+      template.preferred_user_name,
+      template.personality,
+      template.rules,
+      template.responsibilities,
+      template.acp_backend,
+      template.acp_permission_mode,
+      now(),
+      id,
+    );
+    return this.get(id);
   },
 
   createOrReuseFromRoomAgent(input: {
@@ -196,3 +314,5 @@ export const agentRepo = {
     });
   },
 };
+
+agentRepo.ensureBuiltInAgents();

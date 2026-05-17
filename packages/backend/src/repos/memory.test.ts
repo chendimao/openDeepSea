@@ -635,11 +635,15 @@ test('memoryRepo does not widen agent or task memories after owner deletion', ()
   assert.equal(roomAgentRepo.remove(agent.id), true);
   assert.equal(taskRepo.delete(task.id), true);
 
-  assert.equal(memoryRepo.get(agentMemory.id), undefined);
+  assert.equal(memoryRepo.get(agentMemory.id)?.id, agentMemory.id);
   assert.equal(memoryRepo.get(taskMemory.id), undefined);
   assert.deepEqual(memoryRepo.list({ projectId: project.id, roomId: room.id }).map((entry) => entry.id), [
     roomMemory.id,
   ]);
+  assert.deepEqual(
+    memoryRepo.list({ projectId: project.id, roomId: room.id, roomAgentId: agent.id }).map((entry) => entry.id),
+    [agentMemory.id, roomMemory.id],
+  );
 });
 
 test('memoryRepo upserts one automatic task summary per task and source', () => {

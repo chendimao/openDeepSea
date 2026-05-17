@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, MessageCircleQuestion, Plus, Save, Search, Trash2, Users } from 'lucide-react';
+import { Bot, MessageCircleQuestion, Plus, RotateCcw, Save, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentConversationBuilder } from '../components/AgentConversationBuilder';
 import { Button } from '../components/ui/Button';
@@ -109,6 +109,16 @@ export function AgentsPage() {
     },
     onError: (error) => toast.error((error as Error).message),
   });
+  const restore = useMutation({
+    mutationFn: (agent: Agent) => api.restoreAgentDefaults(agent.id),
+    onSuccess: (agent) => {
+      queryClient.invalidateQueries({ queryKey: ['agents'] });
+      setSelectedId(agent.id);
+      setForm(agentToForm(agent));
+      toast.success('已恢复内置智能体默认配置');
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
 
   const isNew = !selectedAgent;
 
@@ -186,7 +196,14 @@ export function AgentsPage() {
                 >
                   <span className="agent-list-avatar">{agent.name.slice(0, 1).toUpperCase()}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium">{agent.name}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[13px] font-medium">{agent.name}</span>
+                      {agent.is_builtin ? (
+                        <span className="rounded border border-[var(--color-border)] px-1 py-0.5 text-[9.5px] text-[var(--color-fg-muted)]">
+                          内置
+                        </span>
+                      ) : null}
+                    </span>
                     <span className="mt-0.5 block truncate font-mono text-[10.5px] text-[var(--color-fg-muted)]">
                       {agent.agent_id}
                     </span>
@@ -218,6 +235,7 @@ export function AgentsPage() {
               isNew={isNew}
               isSaving={create.isPending || update.isPending}
               isDeleting={remove.isPending}
+              isRestoring={restore.isPending}
               deleteReferences={deleteReferences}
               onChange={setForm}
               onSave={() => {
@@ -227,6 +245,9 @@ export function AgentsPage() {
               }}
               onDelete={() => {
                 if (selectedAgent) remove.mutate(selectedAgent);
+              }}
+              onRestore={() => {
+                if (selectedAgent) restore.mutate(selectedAgent);
               }}
             />
           )}
@@ -242,22 +263,27 @@ function AgentEditor({
   isNew,
   isSaving,
   isDeleting,
+  isRestoring,
   deleteReferences,
   onChange,
   onSave,
   onDelete,
+  onRestore,
 }: {
   form: AgentInput;
   selectedAgent: Agent | null;
   isNew: boolean;
   isSaving: boolean;
   isDeleting: boolean;
+  isRestoring: boolean;
   deleteReferences: AgentReference[] | null;
   onChange: (form: AgentInput) => void;
   onSave: () => void;
   onDelete: () => void;
+  onRestore: () => void;
 }) {
   const canSave = form.agent_id.trim().length > 0 && form.name.trim().length > 0;
+  const isBuiltIn = !!selectedAgent?.is_builtin;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -268,12 +294,25 @@ function AgentEditor({
             <h2 className="truncate font-display text-[17px] font-semibold">
               {isNew ? '新建智能体' : form.name || selectedAgent?.name}
             </h2>
-            <p className="mt-1 font-mono text-[11px] text-[var(--color-fg-muted)]">
-              {isNew ? '创建后可被任意聊天室拉入' : selectedAgent?.agent_id}
-            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <p className="font-mono text-[11px] text-[var(--color-fg-muted)]">
+                {isNew ? '创建后可被任意聊天室拉入' : selectedAgent?.agent_id}
+              </p>
+              {isBuiltIn ? (
+                <span className="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10.5px] text-[var(--color-fg-muted)]">
+                  内置
+                </span>
+              ) : null}
+            </div>
           </div>
           <div className="flex gap-2">
-            {!isNew && (
+            {isBuiltIn && (
+              <Button variant="secondary" onClick={onRestore} disabled={isRestoring}>
+                <RotateCcw className="h-3.5 w-3.5" />
+                {isRestoring ? '恢复中...' : '恢复默认'}
+              </Button>
+            )}
+            {!isNew && !isBuiltIn && (
               <Button variant="danger" onClick={onDelete} disabled={isDeleting}>
                 <Trash2 className="h-3.5 w-3.5" />
                 删除
@@ -309,6 +348,7 @@ function AgentEditor({
             <Input
               value={form.agent_id}
               className="font-mono"
+              disabled={isBuiltIn}
               onChange={(event) => onChange({ ...form, agent_id: event.target.value })}
             />
           </Field>

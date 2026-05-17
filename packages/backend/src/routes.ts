@@ -198,7 +198,14 @@ router.delete('/agents/:agentId', (req, res) => {
   const result = agentRepo.delete(req.params.agentId);
   if (result.ok) return res.status(204).end();
   if (result.reason === 'not_found') return res.status(404).json({ error: 'not found' });
+  if (result.reason === 'builtin') return res.status(409).json({ error: 'builtin agent cannot be deleted' });
   return res.status(409).json({ error: 'agent is in use', references: result.references });
+});
+
+router.post('/agents/:agentId/restore-defaults', (req, res) => {
+  const restored = agentRepo.restoreBuiltInDefaults(req.params.agentId);
+  if (!restored) return res.status(404).json({ error: 'not found' });
+  res.json(restored);
 });
 
 const memoryInputSchema = z.object({
@@ -416,7 +423,7 @@ router.get('/projects/:projectId/files', (req, res) => {
   res.json(fileRepo.listByProject(req.params.projectId));
 });
 
-router.get('/projects/:projectId/workspace/tree', async (req, res) => {
+router.get('/projects/:projectId/workspace/tree', async (req, res, next) => {
   if (!requireLocalAccess(req, res)) return;
   const project = projectRepo.get(req.params.projectId);
   if (!project) return res.status(404).json({ error: 'project not found' });
@@ -431,11 +438,11 @@ router.get('/projects/:projectId/workspace/tree', async (req, res) => {
     if (error instanceof WorkspaceFileError) {
       return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
     }
-    throw error;
+    next(error);
   }
 });
 
-router.get('/projects/:projectId/workspace/file', async (req, res) => {
+router.get('/projects/:projectId/workspace/file', async (req, res, next) => {
   if (!requireLocalAccess(req, res)) return;
   const project = projectRepo.get(req.params.projectId);
   if (!project) return res.status(404).json({ error: 'project not found' });
@@ -449,11 +456,11 @@ router.get('/projects/:projectId/workspace/file', async (req, res) => {
     if (error instanceof WorkspaceFileError) {
       return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
     }
-    throw error;
+    next(error);
   }
 });
 
-router.get('/projects/:projectId/workspace/search', async (req, res) => {
+router.get('/projects/:projectId/workspace/search', async (req, res, next) => {
   if (!requireLocalAccess(req, res)) return;
   const project = projectRepo.get(req.params.projectId);
   if (!project) return res.status(404).json({ error: 'project not found' });
@@ -464,16 +471,13 @@ router.get('/projects/:projectId/workspace/search', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   try {
-    const entries = await searchWorkspaceFiles(project.path, parsed.data.q, parsed.data.path ?? '');
-    res.json({
-      entries,
-      truncated: entries.length >= 50,
-    });
+    const result = await searchWorkspaceFiles(project.path, parsed.data.q, parsed.data.path ?? '');
+    res.json(result);
   } catch (error) {
     if (error instanceof WorkspaceFileError) {
       return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
     }
-    throw error;
+    next(error);
   }
 });
 
@@ -818,6 +822,31 @@ router.post('/rooms/:roomId/agents', (req, res) => {
   }
 });
 
+router.post('/rooms/:roomId/agents/batch', (req, res) => {
+  const schema = z.object({
+    global_agent_ids: z.array(z.string().min(1)).min(1),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!roomRepo.get(req.params.roomId)) {
+    return res.status(404).json({ error: 'room not found' });
+  }
+  try {
+    const agents = dedupeIds(parsed.data.global_agent_ids).map((globalAgentId) =>
+      roomAgentRepo.addFromGlobalAgent({
+        room_id: req.params.roomId,
+        global_agent_id: globalAgentId,
+      }),
+    );
+    for (const agent of agents) {
+      wsHub.broadcast(req.params.roomId, { type: 'room:agent_joined', roomId: req.params.roomId, agent });
+    }
+    res.status(201).json(agents);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
 router.post('/rooms/:roomId/agents/from-template', (req, res) => {
   const schema = z.object({
     template_id: z.string().min(1),
@@ -862,6 +891,35 @@ router.post('/rooms/:roomId/agents/from-template', (req, res) => {
 });
 
 router.delete('/rooms/:roomId/agents/:agentId', (req, res) => {
+  const schema = z.object({
+    task_action: z.enum(['unassign', 'transfer']).optional(),
+    transfer_to_room_agent_id: z.string().min(1).optional(),
+  });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const agent = roomAgentRepo.get(req.params.agentId);
+  if (!agent || agent.room_id !== req.params.roomId) return res.status(404).end();
+  const impact = roomAgentRepo.getRemovalImpact(req.params.agentId);
+  if (impact.active_run_count > 0) {
+    return res.status(409).json({ error: 'agent has active runs', ...impact });
+  }
+  if (impact.open_task_count > 0) {
+    if (!parsed.data.task_action) {
+      return res.status(409).json({ error: 'agent has open tasks', ...impact });
+    }
+    if (parsed.data.task_action === 'unassign') {
+      taskRepo.unassignOpenByAgent(req.params.agentId);
+    } else {
+      const targetId = parsed.data.transfer_to_room_agent_id;
+      const target = targetId ? roomAgentRepo.get(targetId) : undefined;
+      if (!target || target.room_id !== req.params.roomId || target.left_at) {
+        return res.status(400).json({ error: 'transfer target is invalid' });
+      }
+      taskRepo.transferOpenByAgent(req.params.agentId, target.id);
+    }
+  }
+
   const ok = roomAgentRepo.remove(req.params.agentId);
   if (ok) {
     wsHub.broadcast(req.params.roomId, {

@@ -59,9 +59,10 @@ test('agentRepo creates, updates, references, and deletes global agents', () => 
 
   assert.equal(roomAgentRepo.remove(roomAgent.id), true);
 
-  const deleted = agentRepo.delete(agent.id);
-  assert.equal(deleted.ok, true);
-  assert.equal(agentRepo.get(agent.id), undefined);
+  const stillReferenced = agentRepo.delete(agent.id);
+  assert.equal(stillReferenced.ok, false);
+  assert.equal(stillReferenced.reason, 'in_use');
+  assert.equal(agentRepo.get(agent.id)?.id, agent.id);
 });
 
 test('roomAgentRepo migrates legacy room agents into reusable global agents', () => {
@@ -82,9 +83,82 @@ test('roomAgentRepo migrates legacy room agents into reusable global agents', ()
   assert.ok(migrated?.global_agent_id);
   assert.equal(migrated?.agent_id, 'reviewer');
   assert.equal(migrated?.agent_name, 'Reviewer');
-  assert.equal(migrated?.responsibilities, '审查代码、风险和验证缺口。');
+  assert.equal(migrated?.responsibilities, '代码审查、风险识别、测试缺口分析、验收前质量把关。');
 
   const global = migrated?.global_agent_id ? agentRepo.get(migrated.global_agent_id) : undefined;
   assert.equal(global?.agent_id, 'reviewer');
   assert.equal(global?.name, 'Reviewer');
+});
+
+test('built-in agents are seeded into the global library and can be restored', () => {
+  const builtIns = agentRepo.list().filter((agent) => agent.is_builtin);
+  assert.ok(builtIns.length >= 5);
+
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  assert.equal(planner.is_builtin, 1);
+  assert.equal(planner.builtin_key, 'planner');
+
+  const updated = agentRepo.update(planner.id, {
+    personality: '临时修改的性格。',
+    responsibilities: '临时修改的职责。',
+  });
+  assert.equal(updated?.personality, '临时修改的性格。');
+  assert.equal(updated?.responsibilities, '临时修改的职责。');
+
+  const deleted = agentRepo.delete(planner.id);
+  assert.equal(deleted.ok, false);
+  assert.equal(deleted.reason, 'builtin');
+
+  const restored = agentRepo.restoreBuiltInDefaults(planner.id);
+  assert.ok(restored);
+  assert.equal(restored.is_builtin, 1);
+  assert.notEqual(restored.personality, '临时修改的性格。');
+  assert.notEqual(restored.responsibilities, '临时修改的职责。');
+});
+
+test('built-in agent identity is stable across edits and seed re-runs', () => {
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+
+  assert.throws(
+    () => agentRepo.update(planner.id, { agent_id: 'custom-planner' }),
+    /builtin agent id cannot be changed/,
+  );
+  assert.equal(agentRepo.get(planner.id)?.agent_id, 'planner');
+
+  agentRepo.ensureBuiltInAgents();
+  const planners = agentRepo.list().filter((agent) => agent.builtin_key === 'planner');
+  assert.equal(planners.length, 1);
+  assert.equal(planners[0]?.id, planner.id);
+});
+
+test('roomAgentRepo soft-removes agents and restores existing memberships', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-soft-remove-project-'));
+  const project = projectRepo.create({ name: 'Soft Remove Agent Library', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Soft Remove Agent Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({
+    room_id: room.id,
+    global_agent_id: planner.id,
+  });
+  assert.equal(roomAgent.left_at, null);
+  assert.equal(roomAgentRepo.remove(roomAgent.id), true);
+
+  assert.equal(roomAgentRepo.get(roomAgent.id)?.left_at === null, false);
+  assert.equal(roomAgentRepo.listByRoom(room.id).some((agent) => agent.id === roomAgent.id), false);
+  assert.equal(
+    roomAgentRepo.listByRoom(room.id, { includeRemoved: true }).some((agent) => agent.id === roomAgent.id),
+    true,
+  );
+
+  const restored = roomAgentRepo.addFromGlobalAgent({
+    room_id: room.id,
+    global_agent_id: planner.id,
+  });
+  assert.equal(restored.id, roomAgent.id);
+  assert.equal(restored.left_at, null);
+  assert.equal(roomAgentRepo.listByRoom(room.id).some((agent) => agent.id === roomAgent.id), true);
 });

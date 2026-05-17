@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import type { NextFunction, Request, Response as ExpressResponse } from 'express';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-workspace-routes-')), 'test.db');
 process.env.OPENDEEPSEA_LOCAL_TOKEN = 'workspace-test-token';
@@ -14,6 +15,9 @@ const express = (await import('express')).default;
 const app = express();
 app.use(express.json());
 app.use('/api', router);
+app.use((err: unknown, _req: Request, res: ExpressResponse, _next: NextFunction) => {
+  res.status(500).json({ error: err instanceof Error ? err.message : 'unknown error' });
+});
 
 const TRUSTED_ORIGIN = 'http://localhost:5173';
 const WRONG_ORIGIN = 'https://evil.example';
@@ -21,7 +25,7 @@ const LOCAL_TOKEN = process.env.OPENDEEPSEA_LOCAL_TOKEN as string;
 
 type HeaderMap = Record<string, string>;
 
-async function request(path: string, init: RequestInit = {}, headers: HeaderMap = {}): Promise<Response> {
+async function request(path: string, init: RequestInit = {}, headers: HeaderMap = {}): Promise<globalThis.Response> {
   const server = app.listen(0);
   try {
     const address = server.address();
@@ -138,4 +142,36 @@ test('workspace search returns matching files and truncation metadata', async ()
   assert.equal(payload.entries.length, 50);
   assert.equal(payload.entries.every((entry) => entry.name.includes('needle-')), true);
   assert.equal(payload.truncated, true);
+});
+
+test('workspace search does not mark exactly 50 complete results as truncated', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-workspace-search-exact-'));
+  mkdirSync(join(projectPath, 'search'), { recursive: true });
+  for (let index = 0; index < 50; index += 1) {
+    writeFileSync(join(projectPath, 'search', `exact-${String(index).padStart(2, '0')}.ts`), 'export {};\n');
+  }
+  const project = projectRepo.create({ name: 'search-exact', path: projectPath });
+  const res = await request(
+    `/api/projects/${project.id}/workspace/search?q=exact`,
+    {},
+    localHeaders(),
+  );
+  assert.equal(res.status, 200);
+  const payload = await res.json() as {
+    entries: Array<{ path: string; name: string; type: string }>;
+    truncated: boolean;
+  };
+  assert.equal(payload.entries.length, 50);
+  assert.equal(payload.truncated, false);
+});
+
+test('workspace route forwards unexpected filesystem errors to error middleware', async () => {
+  const project = createWorkspaceProject('unexpected-error');
+  const tooLongPath = `${'a'.repeat(300)}.ts`;
+  const res = await request(
+    `/api/projects/${project.id}/workspace/tree?path=${encodeURIComponent(tooLongPath)}`,
+    {},
+    localHeaders(),
+  );
+  assert.equal(res.status, 500);
 });

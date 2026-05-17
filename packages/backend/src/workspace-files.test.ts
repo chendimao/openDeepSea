@@ -289,13 +289,15 @@ test('workspace search is filename-only, caps results, and respects depth/inacce
     writeFileSync(join(depth13, 'needle-depth-13.txt'), 'depth13\n');
 
     const cappedResults = await searchWorkspaceFiles(projectRoot, 'needle');
-    assert.equal(cappedResults.length, 50);
-    assert.equal(cappedResults.every((entry) => entry.name.toLowerCase().includes('needle')), true);
-    assert.equal(cappedResults.some((entry) => entry.path.includes('nope.txt')), false);
+    assert.equal(cappedResults.entries.length, 50);
+    assert.equal(cappedResults.truncated, true);
+    assert.equal(cappedResults.entries.every((entry) => entry.name.toLowerCase().includes('needle')), true);
+    assert.equal(cappedResults.entries.some((entry) => entry.path.includes('nope.txt')), false);
 
     const depthResults = await searchWorkspaceFiles(projectRoot, 'depth-');
-    assert.equal(depthResults.some((entry) => entry.path.endsWith('needle-depth-12.txt')), true);
-    assert.equal(depthResults.some((entry) => entry.path.endsWith('needle-depth-13.txt')), false);
+    assert.equal(depthResults.truncated, true);
+    assert.equal(depthResults.entries.some((entry) => entry.path.endsWith('needle-depth-12.txt')), true);
+    assert.equal(depthResults.entries.some((entry) => entry.path.endsWith('needle-depth-13.txt')), false);
   } finally {
     cleanupWorkspaceRoot(projectRoot);
   }
@@ -314,8 +316,8 @@ test('workspace list/search skip safe symlink that points to ignored target', as
     assert.equal(listed.some((entry) => entry.name === 'safe-real.txt'), true);
 
     const searchResults = await searchWorkspaceFiles(projectRoot, 'safe');
-    assert.equal(searchResults.some((entry) => entry.path === 'safe-link.txt'), false);
-    assert.equal(searchResults.some((entry) => entry.path === 'safe-real.txt'), true);
+    assert.equal(searchResults.entries.some((entry) => entry.path === 'safe-link.txt'), false);
+    assert.equal(searchResults.entries.some((entry) => entry.path === 'safe-real.txt'), true);
   } finally {
     cleanupWorkspaceRoot(projectRoot);
   }
@@ -334,8 +336,26 @@ test('workspace search result cap uses deterministic lexicographic traversal', a
     }
 
     const results = await searchWorkspaceFiles(projectRoot, 'needle');
-    assert.equal(results.length, 50);
-    assert.equal(results.every((entry) => entry.path.startsWith('a-dir/')), true);
+    assert.equal(results.entries.length, 50);
+    assert.equal(results.truncated, true);
+    assert.equal(results.entries.every((entry) => entry.path.startsWith('a-dir/')), true);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace search reports exact complete cap-sized result set as not truncated', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-search-exact-');
+
+  try {
+    mkdirSync(join(projectRoot, 'exact'), { recursive: true });
+    for (let index = 0; index < 50; index += 1) {
+      writeFileSync(join(projectRoot, 'exact', `match-${String(index).padStart(2, '0')}.txt`), 'x\n');
+    }
+
+    const results = await searchWorkspaceFiles(projectRoot, 'match-');
+    assert.equal(results.entries.length, 50);
+    assert.equal(results.truncated, false);
   } finally {
     cleanupWorkspaceRoot(projectRoot);
   }

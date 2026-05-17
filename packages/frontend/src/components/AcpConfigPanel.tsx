@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Code2, Sparkles, Terminal, X } from 'lucide-react';
+import { AlertTriangle, Bot, Code2, Sparkles, Terminal, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { type MessageKey, useI18n } from '../lib/i18n';
@@ -24,12 +24,14 @@ const CODEX_PERMISSION_MODES: { id: AcpPermissionMode; titleKey: MessageKey; des
 
 export function AcpConfigPanel({
   agent,
+  roomAgents,
   projectId,
   projectPath,
   roomId,
   onClose,
 }: {
   agent: RoomAgent;
+  roomAgents: RoomAgent[];
   projectId: string;
   projectPath: string;
   roomId: string;
@@ -40,8 +42,17 @@ export function AcpConfigPanel({
   const [sessionId, setSessionId] = useState<string | null>(agent.acp_session_id);
   const [workflowRole, setWorkflowRole] = useState<WorkflowRole | null>(agent.workflow_role);
   const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(agent.acp_permission_mode ?? 'bypass');
+  const [removeImpact, setRemoveImpact] = useState<{
+    error: string;
+    active_run_count?: number;
+    open_task_count?: number;
+    historical_run_count?: number;
+    message_count?: number;
+  } | null>(null);
+  const [transferTargetId, setTransferTargetId] = useState('');
   const queryClient = useQueryClient();
   const { formatRelativeTime, t, workflowRoleLabel } = useI18n();
+  const transferTargets = roomAgents.filter((item) => item.id !== agent.id && !item.left_at);
 
   useEffect(() => {
     setEnabled(!!agent.acp_enabled);
@@ -49,6 +60,8 @@ export function AcpConfigPanel({
     setSessionId(agent.acp_session_id);
     setWorkflowRole(agent.workflow_role);
     setPermissionMode(agent.acp_permission_mode ?? 'bypass');
+    setRemoveImpact(null);
+    setTransferTargetId('');
   }, [agent]);
 
   const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
@@ -75,6 +88,30 @@ export function AcpConfigPanel({
       onClose();
     },
     onError: (err) => toast.error((err as Error).message),
+  });
+  const remove = useMutation({
+    mutationFn: (input?: { task_action?: 'unassign' | 'transfer'; transfer_to_room_agent_id?: string }) =>
+      api.removeRoomAgent(roomId, agent.id, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
+      toast.success('智能体已移出当前群聊');
+      onClose();
+    },
+    onError: (err) => {
+      const impact = parseRemoveImpact((err as Error).message);
+      if (impact) {
+        setRemoveImpact(impact);
+        if (!transferTargetId && transferTargets[0]) setTransferTargetId(transferTargets[0].id);
+        if (impact.error === 'agent has active runs') {
+          toast.error('该智能体有运行中的任务，暂时不能移出');
+        } else {
+          toast.error('该智能体还有未完成任务，请先选择处理方式');
+        }
+        return;
+      }
+      toast.error((err as Error).message);
+    },
   });
 
   return (
@@ -321,13 +358,83 @@ export function AcpConfigPanel({
       </div>
 
       <footer className="px-4 py-3 border-t border-[var(--color-border)] flex justify-end gap-2">
-        <Button variant="ghost" onClick={onClose}>{t('common.cancel')}</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending}>
+        <div className="mr-auto flex max-w-[70%] flex-wrap items-center gap-2">
+          <Button variant="danger" onClick={() => remove.mutate(undefined)} disabled={remove.isPending}>
+            <Trash2 className="h-3.5 w-3.5" />
+            {remove.isPending ? '移出中...' : '移出群聊'}
+          </Button>
+          {removeImpact && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-fg-muted)]">
+              <AlertTriangle className="h-3 w-3 text-[var(--color-danger)]" />
+              {removeImpact.error === 'agent has active runs'
+                ? `运行中：${removeImpact.active_run_count ?? 0}`
+                : `未完成任务：${removeImpact.open_task_count ?? 0}`}
+            </span>
+          )}
+          {removeImpact?.error === 'agent has open tasks' && (
+            <>
+              <Button variant="secondary" onClick={() => remove.mutate({ task_action: 'unassign' })} disabled={remove.isPending}>
+                清空负责人
+              </Button>
+              <select
+                value={transferTargetId}
+                onChange={(event) => setTransferTargetId(event.target.value)}
+                className="surface-1 h-9 min-w-[150px] rounded-md px-2 text-[12px] outline-none focus:border-[var(--color-primary)]"
+              >
+                {transferTargets.map((item) => (
+                  <option key={item.id} value={item.id}>{item.agent_name}</option>
+                ))}
+              </select>
+              <Button
+                variant="secondary"
+                onClick={() => remove.mutate({
+                  task_action: 'transfer',
+                  transfer_to_room_agent_id: transferTargetId,
+                })}
+                disabled={remove.isPending || !transferTargetId}
+              >
+                转交并移出
+              </Button>
+            </>
+          )}
+        </div>
+        <Button variant="ghost" onClick={onClose} disabled={remove.isPending}>{t('common.cancel')}</Button>
+        <Button onClick={() => save.mutate()} disabled={save.isPending || remove.isPending}>
           {save.isPending ? t('acp.saving') : t('common.apply')}
         </Button>
       </footer>
     </div>
   );
+}
+
+function parseRemoveImpact(message: string): {
+  error: string;
+  active_run_count?: number;
+  open_task_count?: number;
+  historical_run_count?: number;
+  message_count?: number;
+} | null {
+  const jsonStart = message.indexOf('{');
+  if (jsonStart < 0) return null;
+  try {
+    const parsed = JSON.parse(message.slice(jsonStart)) as {
+      error?: string;
+      active_run_count?: number;
+      open_task_count?: number;
+      historical_run_count?: number;
+      message_count?: number;
+    };
+    if (parsed.error === 'agent has active runs' || parsed.error === 'agent has open tasks') return parsed as {
+      error: string;
+      active_run_count?: number;
+      open_task_count?: number;
+      historical_run_count?: number;
+      message_count?: number;
+    };
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function permissionModeDescription(

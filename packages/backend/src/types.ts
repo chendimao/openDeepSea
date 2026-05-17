@@ -51,6 +51,7 @@ export type AgentDefaultRuntime = 'acp' | 'openclaw' | 'none';
 export interface AgentReference {
   room_id: string;
   room_name: string;
+  active?: boolean;
 }
 
 export interface Agent {
@@ -64,6 +65,8 @@ export interface Agent {
   responsibilities: string | null;
   default_acp_backend: AcpBackend | null;
   default_acp_permission_mode: AcpPermissionMode;
+  is_builtin: 0 | 1;
+  builtin_key: string | null;
   created_at: number;
   updated_at: number;
   reference_count: number;
@@ -199,6 +202,11 @@ export interface WorkspaceSearchResult {
   type: Extract<WorkspaceEntryType, 'file'>;
 }
 
+export interface WorkspaceSearchResponse {
+  entries: WorkspaceSearchResult[];
+  truncated: boolean;
+}
+
 export interface RoomAgent {
   id: string;
   room_id: string;
@@ -212,6 +220,7 @@ export interface RoomAgent {
   responsibilities: string | null;
   workflow_role: WorkflowRole | null;
   joined_at: number;
+  left_at: number | null;
   acp_enabled: 0 | 1;
   acp_backend: AcpBackend | null;
   acp_session_id: string | null;

@@ -84,6 +84,8 @@ export const api = {
     request<Agent>(`/agents/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
   deleteAgent: (id: string) =>
     request<void>(`/agents/${id}`, { method: 'DELETE' }),
+  restoreAgentDefaults: (id: string) =>
+    request<Agent>(`/agents/${id}/restore-defaults`, { method: 'POST' }),
 
   getSystemSettings: () => request<SettingsResolution['system']>('/settings/system'),
   updateSystemSettings: (input: {
@@ -240,13 +242,25 @@ export const api = {
       acp_permission_mode?: 'bypass' | 'workspace-write' | 'read-only';
     },
   ) => request<RoomAgent>(`/rooms/${roomId}/agents`, { method: 'POST', body: JSON.stringify(input) }),
+  addRoomAgentsBatch: (roomId: string, global_agent_ids: string[]) =>
+    request<RoomAgent[]>(`/rooms/${roomId}/agents/batch`, {
+      method: 'POST',
+      body: JSON.stringify({ global_agent_ids }),
+    }),
   addRoomAgentFromTemplate: (roomId: string, template_id: string) =>
     request<RoomAgent>(`/rooms/${roomId}/agents/from-template`, {
       method: 'POST',
       body: JSON.stringify({ template_id }),
     }),
-  removeRoomAgent: (roomId: string, agentId: string) =>
-    request<void>(`/rooms/${roomId}/agents/${agentId}`, { method: 'DELETE' }),
+  removeRoomAgent: (
+    roomId: string,
+    agentId: string,
+    input?: { task_action?: 'unassign' | 'transfer'; transfer_to_room_agent_id?: string },
+  ) =>
+    request<void>(`/rooms/${roomId}/agents/${agentId}`, {
+      method: 'DELETE',
+      body: input ? JSON.stringify(input) : undefined,
+    }),
   setAgentAcp: (
     roomId: string,
     agentId: string,

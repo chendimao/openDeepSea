@@ -10,6 +10,13 @@ type RoomAgentRow = Omit<RoomAgent, 'acp_writable_dirs' | 'acp_permission_mode' 
   default_runtime?: string | null;
 };
 
+export interface RoomAgentRemovalImpact {
+  active_run_count: number;
+  open_task_count: number;
+  historical_run_count: number;
+  message_count: number;
+}
+
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
 const DEFAULT_RUNTIMES = new Set<AgentDefaultRuntime>(['acp', 'openclaw', 'none']);
 
@@ -66,9 +73,11 @@ export const roomRepo = {
 };
 
 export const roomAgentRepo = {
-  listByRoom(roomId: string): RoomAgent[] {
+  listByRoom(roomId: string, options: { includeRemoved?: boolean } = {}): RoomAgent[] {
     const rows = db
-      .prepare(`${roomAgentSelectSql()} WHERE room_agents.room_id = ? ORDER BY room_agents.joined_at ASC`)
+      .prepare(
+        `${roomAgentSelectSql()} WHERE room_agents.room_id = ?${options.includeRemoved ? '' : ' AND room_agents.left_at IS NULL'} ORDER BY room_agents.joined_at ASC`,
+      )
       .all(roomId) as RoomAgentRow[];
     return rows.map(normalizeRoomAgent);
   },
@@ -95,6 +104,33 @@ export const roomAgentRepo = {
   addFromGlobalAgent(input: { room_id: string; global_agent_id: string }): RoomAgent {
     const agent = agentRepo.get(input.global_agent_id);
     if (!agent) throw new Error('global agent not found');
+
+    const existing = db.prepare(
+      `SELECT id
+       FROM room_agents
+       WHERE room_id = ?
+         AND (global_agent_id = ? OR agent_id = ?)
+       ORDER BY CASE WHEN global_agent_id = ? THEN 0 ELSE 1 END, joined_at ASC
+       LIMIT 1`,
+    ).get(input.room_id, agent.id, agent.agent_id, agent.id) as { id: string } | undefined;
+    if (existing) {
+      db.prepare(
+        `UPDATE room_agents
+         SET global_agent_id = ?, agent_name = ?, agent_role = ?, left_at = NULL,
+             acp_enabled = ?, acp_backend = ?, acp_permission_mode = ?, default_runtime = ?
+         WHERE id = ?`,
+      ).run(
+        agent.id,
+        agent.name,
+        agent.description,
+        agent.default_acp_backend ? 1 : 0,
+        agent.default_acp_backend,
+        agent.default_acp_permission_mode,
+        agent.default_acp_backend ? 'acp' : 'none',
+        existing.id,
+      );
+      return this.get(existing.id)!;
+    }
 
     const id = nanoid(12);
     db.prepare(
@@ -136,7 +172,31 @@ export const roomAgentRepo = {
   },
 
   remove(id: string): boolean {
-    return db.prepare('DELETE FROM room_agents WHERE id = ?').run(id).changes > 0;
+    return db.prepare('UPDATE room_agents SET left_at = ? WHERE id = ? AND left_at IS NULL').run(now(), id).changes > 0;
+  },
+
+  getRemovalImpact(id: string): RoomAgentRemovalImpact {
+    const activeRuns = db.prepare(
+      "SELECT COUNT(*) AS count FROM agent_runs WHERE room_agent_id = ? AND status IN ('queued', 'running')",
+    ).get(id) as { count: number };
+    const openTasks = db.prepare(
+      "SELECT COUNT(*) AS count FROM tasks WHERE assigned_agent_id = ? AND status <> 'done'",
+    ).get(id) as { count: number };
+    const historicalRuns = db.prepare(
+      'SELECT COUNT(*) AS count FROM agent_runs WHERE room_agent_id = ?',
+    ).get(id) as { count: number };
+    const agent = this.get(id);
+    const messages = agent
+      ? db.prepare(
+        "SELECT COUNT(*) AS count FROM messages WHERE room_id = ? AND sender_type = 'agent' AND sender_id = ?",
+      ).get(agent.room_id, agent.agent_id) as { count: number }
+      : { count: 0 };
+    return {
+      active_run_count: activeRuns.count,
+      open_task_count: openTasks.count,
+      historical_run_count: historicalRuns.count,
+      message_count: messages.count,
+    };
   },
 
   setAcp(

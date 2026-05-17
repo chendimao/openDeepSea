@@ -15,6 +15,12 @@ export const taskRepo = {
       .all(roomId) as Task[];
   },
 
+  listOpenByAssignedAgent(roomAgentId: string): Task[] {
+    return db
+      .prepare("SELECT * FROM tasks WHERE assigned_agent_id = ? AND status <> 'done' ORDER BY created_at DESC")
+      .all(roomAgentId) as Task[];
+  },
+
   listChildren(parentTaskId: string): Task[] {
     return db
       .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC')
@@ -96,6 +102,18 @@ export const taskRepo = {
        WHERE id = ?`,
     ).run(next.title, next.description, next.priority, next.interaction_mode, next.assigned_agent_id, now(), id);
     return this.get(id);
+  },
+
+  unassignOpenByAgent(roomAgentId: string): number {
+    return db.prepare(
+      "UPDATE tasks SET assigned_agent_id = NULL, updated_at = ? WHERE assigned_agent_id = ? AND status <> 'done'",
+    ).run(now(), roomAgentId).changes;
+  },
+
+  transferOpenByAgent(fromRoomAgentId: string, toRoomAgentId: string): number {
+    return db.prepare(
+      "UPDATE tasks SET assigned_agent_id = ?, updated_at = ? WHERE assigned_agent_id = ? AND status <> 'done'",
+    ).run(toRoomAgentId, now(), fromRoomAgentId).changes;
   },
 
   delete(id: string): boolean {

@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS agents (
   responsibilities TEXT,
   default_acp_backend TEXT,
   default_acp_permission_mode TEXT NOT NULL DEFAULT 'bypass',
+  is_builtin INTEGER NOT NULL DEFAULT 0,
+  builtin_key TEXT UNIQUE,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS room_agents (
   agent_name TEXT NOT NULL,
   agent_role TEXT,
   joined_at INTEGER NOT NULL,
+  left_at INTEGER,
   acp_enabled INTEGER NOT NULL DEFAULT 0,
   acp_backend TEXT,
   acp_session_id TEXT,
@@ -411,7 +414,21 @@ if (!roomAgentColumnNames.has('default_runtime')) {
 if (!roomAgentColumnNames.has('global_agent_id')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN global_agent_id TEXT');
 }
+if (!roomAgentColumnNames.has('left_at')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN left_at INTEGER');
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_room_agents_global_agent ON room_agents(global_agent_id)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_room_agents_active ON room_agents(room_id, left_at)');
+
+const agentColumns = db.prepare('PRAGMA table_info(agents)').all() as { name: string }[];
+const agentColumnNames = new Set(agentColumns.map((column) => column.name));
+if (!agentColumnNames.has('is_builtin')) {
+  db.exec('ALTER TABLE agents ADD COLUMN is_builtin INTEGER NOT NULL DEFAULT 0');
+}
+if (!agentColumnNames.has('builtin_key')) {
+  db.exec('ALTER TABLE agents ADD COLUMN builtin_key TEXT');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_agents_builtin_key ON agents(builtin_key)');
 
 const agentRunColumns = db.prepare('PRAGMA table_info(agent_runs)').all() as { name: string }[];
 const agentRunColumnNames = new Set(agentRunColumns.map((column) => column.name));

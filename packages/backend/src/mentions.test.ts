@@ -14,6 +14,7 @@ function agent(input: Partial<RoomAgent> & Pick<RoomAgent, 'id' | 'agent_id' | '
     responsibilities: null,
     workflow_role: null,
     joined_at: 0,
+    left_at: null,
     acp_enabled: 0,
     acp_backend: null,
     acp_session_id: null,

@@ -84,7 +84,9 @@ test('agent template routes list and create ACP-only room agents', async () => {
     method: 'POST',
     body: JSON.stringify({ template_id: 'backend-executor' }),
   });
-  assert.equal(duplicateRes.status, 400);
+  assert.equal(duplicateRes.status, 201);
+  const duplicate = await duplicateRes.json() as { agent_id: string };
+  assert.equal(duplicate.agent_id, 'backend-executor');
 });
 
 test('agent template route rejects unknown templates and mirrors missing room errors', async () => {

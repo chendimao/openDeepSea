@@ -329,6 +329,7 @@ function fakeAgent(overrides: Partial<RoomAgent> = {}): RoomAgent {
     responsibilities: null,
     workflow_role: 'executor',
     joined_at: 1,
+    left_at: null,
     acp_enabled: 1,
     acp_backend: 'codex',
     acp_session_id: null,

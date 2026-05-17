@@ -6,6 +6,7 @@ import type {
   WorkspaceFilePreview,
   WorkspaceFileReference,
   WorkspacePathResolution,
+  WorkspaceSearchResponse,
   WorkspaceSearchResult,
 } from './types.js';
 
@@ -339,7 +340,7 @@ export async function searchWorkspaceFiles(
   projectPath: string,
   query: string,
   inputPath = '',
-): Promise<WorkspaceSearchResult[]> {
+): Promise<WorkspaceSearchResponse> {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
     throw workspaceFileError('WORKSPACE_SEARCH_QUERY_INVALID');
@@ -360,12 +361,22 @@ export async function searchWorkspaceFiles(
   let queueIndex = 0;
   let visitedDirectories = 0;
   let visitedFiles = 0;
+  let truncated = false;
   const startedAt = Date.now();
 
   while (queueIndex < queue.length && results.length < WORKSPACE_SEARCH_LIMIT) {
-    if (visitedDirectories >= WORKSPACE_SEARCH_MAX_DIRECTORIES) break;
-    if (visitedFiles >= WORKSPACE_SEARCH_MAX_FILES) break;
-    if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) break;
+    if (visitedDirectories >= WORKSPACE_SEARCH_MAX_DIRECTORIES) {
+      truncated = true;
+      break;
+    }
+    if (visitedFiles >= WORKSPACE_SEARCH_MAX_FILES) {
+      truncated = true;
+      break;
+    }
+    if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) {
+      truncated = true;
+      break;
+    }
 
     const current = queue[queueIndex];
     queueIndex += 1;
@@ -382,6 +393,18 @@ export async function searchWorkspaceFiles(
     names.sort((left, right) => left.localeCompare(right));
 
     for (const name of names) {
+      if (results.length >= WORKSPACE_SEARCH_LIMIT) {
+        truncated = true;
+        break;
+      }
+      if (visitedFiles >= WORKSPACE_SEARCH_MAX_FILES) {
+        truncated = true;
+        break;
+      }
+      if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) {
+        truncated = true;
+        break;
+      }
       const relativeEntryPath = joinRelativePath(current.relativePath, name);
       if (isIgnoredWorkspacePath(relativeEntryPath)) continue;
 
@@ -410,12 +433,9 @@ export async function searchWorkspaceFiles(
         if (!targetStats.isFile()) continue;
 
         visitedFiles += 1;
-        if (visitedFiles > WORKSPACE_SEARCH_MAX_FILES) break;
-        if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) break;
 
         if (name.toLowerCase().includes(normalizedQuery)) {
           results.push({ path: relativeEntryPath, name, type: 'file' });
-          if (results.length >= WORKSPACE_SEARCH_LIMIT) break;
         }
         continue;
       }
@@ -427,22 +447,28 @@ export async function searchWorkspaceFiles(
             relativePath: relativeEntryPath,
             depth: current.depth + 1,
           });
+        } else {
+          truncated = true;
         }
         continue;
       }
 
       visitedFiles += 1;
-      if (visitedFiles > WORKSPACE_SEARCH_MAX_FILES) break;
-      if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) break;
 
       if (name.toLowerCase().includes(normalizedQuery)) {
         results.push({ path: relativeEntryPath, name, type: 'file' });
-        if (results.length >= WORKSPACE_SEARCH_LIMIT) break;
       }
     }
   }
 
-  return results.slice(0, WORKSPACE_SEARCH_LIMIT);
+  if (queueIndex < queue.length) {
+    truncated = true;
+  }
+
+  return {
+    entries: results.slice(0, WORKSPACE_SEARCH_LIMIT),
+    truncated,
+  };
 }
 
 function normalizeIgnoredPath(inputPath: string): string {
