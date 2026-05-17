@@ -1,6 +1,7 @@
 import type { MessageAttachmentMetadata, MessageMetadata, TaskCreatedFrom, TaskEventType } from './types';
 
-const allowedAttachmentUrlPrefix = '/uploads/messages/';
+const messageAttachmentUrlPrefix = '/uploads/messages/';
+const projectFileAttachmentUrlPrefix = '/uploads/files/';
 const taskEventTypes = new Set<TaskEventType>([
   'plan_proposed',
   'task_created',
@@ -87,16 +88,18 @@ function sanitizeMessageAttachmentMetadata(value: unknown): MessageAttachmentMet
 
   return {
     id: value.id,
+    fileId: typeof value.fileId === 'string' ? value.fileId : undefined,
     name: value.name,
     mimeType: value.mimeType,
     size: value.size,
     url: safeUrl,
     isImage: value.isImage,
+    deleted: typeof value.deleted === 'boolean' ? value.deleted : undefined,
   };
 }
 
 function sanitizeAttachmentUrl(url: string): string | null {
-  if (!url.startsWith(allowedAttachmentUrlPrefix)) return null;
+  if (!url.startsWith(messageAttachmentUrlPrefix) && !url.startsWith(projectFileAttachmentUrlPrefix)) return null;
 
   try {
     const origin = globalThis.location?.origin ?? 'http://localhost';
@@ -104,7 +107,7 @@ function sanitizeAttachmentUrl(url: string): string | null {
     if (parsed.origin !== origin) return null;
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
     if (parsed.search || parsed.hash) return null;
-    if (!parsed.pathname.startsWith(allowedAttachmentUrlPrefix)) return null;
+    if (!isAllowedAttachmentPathname(parsed.pathname)) return null;
     const decodedPathname = safeDecodeURIComponent(parsed.pathname);
     if (decodedPathname.includes('/../') || decodedPathname.endsWith('/..')) return null;
     const hasTraversal = parsed.pathname
@@ -118,6 +121,21 @@ function sanitizeAttachmentUrl(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+function isAllowedAttachmentPathname(pathname: string): boolean {
+  if (pathname.startsWith(messageAttachmentUrlPrefix)) {
+    const relativePath = pathname.slice(messageAttachmentUrlPrefix.length);
+    return Boolean(relativePath) && !relativePath.includes('/');
+  }
+
+  if (pathname.startsWith(projectFileAttachmentUrlPrefix)) {
+    const relativePath = pathname.slice(projectFileAttachmentUrlPrefix.length);
+    const parts = relativePath.split('/');
+    return parts.length === 2 && parts.every(Boolean);
+  }
+
+  return false;
 }
 
 function safeDecodeURIComponent(value: string): string {
