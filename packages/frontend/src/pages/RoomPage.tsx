@@ -221,8 +221,7 @@ export function RoomPage() {
         </div>
 
         <div className="toolbar-tabs" aria-label={t('room.viewLabel')}>
-          <span className="toolbar-tab is-active">{t('room.tab.chat')}</span>
-          <span className="toolbar-tab is-active">{t('room.tab.tasks')}</span>
+          <span className="toolbar-tab is-active">{t('room.layout.chatTasks')}</span>
           <span className="toolbar-tab">{t('room.tab.workflow')}</span>
           <span className="toolbar-tab">{t('room.tab.files')}</span>
         </div>
@@ -330,6 +329,7 @@ export function RoomPage() {
       {configAgent && (
         <AcpConfigPanel
           agent={configAgent}
+          roomAgents={agents}
           projectId={projectId}
           projectPath={project?.path ?? ''}
           roomId={roomId}

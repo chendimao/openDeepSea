@@ -493,7 +493,7 @@
     flex: 1;
     padding: 8px;
   }
-  @media (max-width: 900px) {
+  @media (max-width: 1023px) {
     .workspace-toolbar {
       grid-template-columns: minmax(0, 1fr);
       align-items: stretch;
@@ -2321,9 +2321,6 @@
     }
     .app-main {
       padding-right: 8px;
-    }
-    .workspace-toolbar {
-      grid-template-columns: minmax(0, 1fr) auto;
     }
     .workspace-grid {
       grid-template-columns: minmax(0, 1fr);
