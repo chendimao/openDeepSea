@@ -1,19 +1,9 @@
-import { AlertTriangle, ArrowRight, CheckCircle2, Circle, Eye, LocateFixed, Loader2, Play } from 'lucide-react';
+import { ArrowRight, CheckCircle2, LocateFixed, Loader2, Play } from 'lucide-react';
 import type { RoomAgent, Task, WorkflowRun } from '../lib/types';
 import { useI18n } from '../lib/i18n';
 import { cn } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 import { Button } from './ui/Button';
-
-const TASK_COLUMNS: Task['status'][] = ['todo', 'in_progress', 'review', 'done', 'failed'];
-
-const STATUS_ICON: Record<Task['status'], typeof Circle> = {
-  todo: Circle,
-  in_progress: Loader2,
-  review: Eye,
-  done: CheckCircle2,
-  failed: AlertTriangle,
-};
 
 const NEXT_STATUS: Partial<Record<Task['status'], Task['status']>> = {
   todo: 'in_progress',
@@ -60,60 +50,50 @@ export function TaskBoard({
   const { t, taskStatusLabel } = useI18n();
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const workflowByTaskId = createWorkflowByTaskId(workflows ?? []);
-  const rootTasks = tasks.filter((task) => !task.parent_task_id);
+  const rootTasks = tasks
+    .filter((task) => !task.parent_task_id)
+    .sort((a, b) => b.updated_at - a.updated_at);
 
   return (
     <aside className="workbench-panel task-board-panel" data-testid="task-panel">
       <header className="task-board-toolbar">
         <CheckCircle2 className="h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
-        <div className="font-display text-[13px] font-semibold">{t('taskBoard.title')}</div>
+        <div className="min-w-0">
+          <div className="font-display text-[13px] font-semibold">{t('taskBoard.listTitle')}</div>
+          <div className="mt-0.5 truncate text-[10.5px] font-mono text-[var(--color-fg-muted)]">
+            {t('taskBoard.listSubtitle')}
+          </div>
+        </div>
         <span className="ml-auto text-[11px] font-mono text-[var(--color-fg-muted)]">
           {rootTasks.length}
         </span>
       </header>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-        {TASK_COLUMNS.map((status) => {
-          const columnTasks = rootTasks.filter((task) => task.status === status);
-          const Icon = STATUS_ICON[status];
-          if (status !== 'failed' && status !== 'done' && columnTasks.length === 0) return null;
-          return (
-            <section key={status} className="task-column">
-              <div className="task-column-header">
-                <Icon className="h-3.5 w-3.5 text-[var(--color-accent)]" strokeWidth={1.75} />
-                <h3 className="font-display text-[12px] font-medium">{taskStatusLabel(status)}</h3>
-                <span className="ml-auto text-[10.5px] font-mono text-[var(--color-muted)]">
-                  {columnTasks.length}
-                </span>
-              </div>
-              <div className="p-2 space-y-2">
-                {columnTasks.length === 0 ? (
-                  <div className="px-2 py-5 text-center text-[11.5px] text-[var(--color-muted)]">
-                    {t('taskBoard.empty')}
-                  </div>
-                ) : (
-                  columnTasks.map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      agent={task.assigned_agent_id ? agentMap.get(task.assigned_agent_id) : undefined}
-                      workflow={workflowByTaskId.get(task.id)}
-                      selected={selectedTaskId === task.id}
-                      onSelect={() => onSelectTask(task)}
-                      onChangeStatus={(next) => onChangeStatus(task, next)}
-                      onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(task) : undefined}
-                      onLocateSourceMessage={
-                        onLocateSourceMessage && task.source_message_id
-                          ? () => onLocateSourceMessage(task.source_message_id!, task)
-                          : undefined
-                      }
-                      startingWorkflow={startingTaskId === task.id}
-                    />
-                  ))
-                )}
-              </div>
-            </section>
-          );
-        })}
+      <div className="task-list-scroll">
+        {rootTasks.length === 0 ? (
+          <div className="px-4 py-10 text-center text-[12px] text-[var(--color-muted)]">
+            {t('taskBoard.empty')}
+          </div>
+        ) : (
+          rootTasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              agent={task.assigned_agent_id ? agentMap.get(task.assigned_agent_id) : undefined}
+              workflow={workflowByTaskId.get(task.id)}
+              selected={selectedTaskId === task.id}
+              statusLabel={taskStatusLabel(task.status)}
+              onSelect={() => onSelectTask(task)}
+              onChangeStatus={(next) => onChangeStatus(task, next)}
+              onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(task) : undefined}
+              onLocateSourceMessage={
+                onLocateSourceMessage && task.source_message_id
+                  ? () => onLocateSourceMessage(task.source_message_id!, task)
+                  : undefined
+              }
+              startingWorkflow={startingTaskId === task.id}
+            />
+          ))
+        )}
       </div>
     </aside>
   );
@@ -124,6 +104,7 @@ function TaskCard({
   agent,
   workflow,
   selected,
+  statusLabel,
   onSelect,
   onChangeStatus,
   onStartWorkflow,
@@ -134,6 +115,7 @@ function TaskCard({
   agent?: RoomAgent;
   workflow?: WorkflowRun;
   selected?: boolean;
+  statusLabel: string;
   onSelect: () => void;
   onChangeStatus: (status: Task['status']) => void;
   onStartWorkflow?: () => void;
@@ -146,7 +128,7 @@ function TaskCard({
   const canStartWorkflow = !hasActiveWorkflow && task.status !== 'done';
 
   return (
-    <article className={cn('task-card', selected && 'is-selected')}>
+    <article className={cn('task-card task-list-item', selected && 'is-selected')}>
       <button type="button" onClick={onSelect} className="block w-full text-left">
         <div className="flex items-start gap-2">
           <h4 className="min-w-0 flex-1 font-display text-[12.5px] font-semibold leading-snug">
@@ -156,11 +138,16 @@ function TaskCard({
             {taskPriorityLabel(task.priority)}
           </span>
         </div>
-        {workflow && (
-          <div className="mt-2 inline-flex max-w-full rounded-[5px] bg-white/52 px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.64)]">
-            <span className="truncate">{workflowStatusLabel(workflow.status)}</span>
-          </div>
-        )}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex rounded-[5px] bg-white/52 px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-fg-muted)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.64)]">
+            {statusLabel}
+          </span>
+          {workflow && (
+            <span className="inline-flex max-w-full rounded-[5px] bg-white/52 px-1.5 py-0.5 text-[10px] font-mono text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.64)]">
+              <span className="truncate">{workflowStatusLabel(workflow.status)}</span>
+            </span>
+          )}
+        </div>
         {task.description && (
           <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
             {task.description}

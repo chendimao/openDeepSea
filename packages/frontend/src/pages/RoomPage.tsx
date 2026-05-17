@@ -118,6 +118,20 @@ export function RoomPage() {
     messageRefs.current.clear();
   }, [roomId]);
 
+  useEffect(() => {
+    if (activeTab !== 'tasks') return;
+    const rootTasks = tasks
+      .filter((task) => !task.parent_task_id)
+      .sort((a, b) => b.updated_at - a.updated_at);
+    if (rootTasks.length === 0) {
+      setSelectedTask(null);
+      return;
+    }
+    if (!selectedTask || !rootTasks.some((task) => task.id === selectedTask.id)) {
+      setSelectedTask(rootTasks[0] ?? null);
+    }
+  }, [activeTab, selectedTask, tasks]);
+
   const registerMessageRef = useCallback((messageId: string, node: HTMLElement | null) => {
     if (node) {
       messageRefs.current.set(messageId, node);
