@@ -14,7 +14,8 @@ import { Input } from '../components/ui/Input';
 export function FilesPage(): JSX.Element {
   const { projectId = '' } = useParams();
   const [searchParams] = useSearchParams();
-  const initialRoomId = searchParams.get('roomId') ?? '';
+  const roomIdFromUrl = searchParams.get('roomId') ?? '';
+  const initialRoomId = projectId ? roomIdFromUrl : '';
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t, formatRelativeTime } = useI18n();
@@ -37,17 +38,23 @@ export function FilesPage(): JSX.Element {
     queryFn: () => api.getProject(projectId),
     enabled: !!projectId,
   });
-  const { data: rooms = [] } = useQuery({
+  const { data: rooms = [], isFetched: roomsFetched } = useQuery({
     queryKey: ['rooms', selectedProjectId],
     queryFn: () => api.listRooms(selectedProjectId),
     enabled: !!selectedProjectId,
   });
+  const activeRoomId = useMemo(() => {
+    if (!selectedProjectId || !selectedRoomId) return '';
+    return rooms.some((room) => room.id === selectedRoomId) ? selectedRoomId : '';
+  }, [rooms, selectedProjectId, selectedRoomId]);
+  const canLoadFiles = !selectedProjectId || !selectedRoomId || roomsFetched;
   const { data: files = [], isLoading } = useQuery({
-    queryKey: ['files', selectedProjectId, selectedRoomId],
+    queryKey: ['files', selectedProjectId, activeRoomId],
     queryFn: () => api.listFiles({
       projectId: selectedProjectId || undefined,
-      roomId: selectedRoomId || undefined,
+      roomId: activeRoomId || undefined,
     }),
+    enabled: canLoadFiles,
   });
   const selectedProject = useMemo(
     () => projects.find((item) => item.id === selectedProjectId) ?? project ?? null,
@@ -77,6 +84,11 @@ export function FilesPage(): JSX.Element {
     () => files.reduce((sum, file) => sum + file.size, 0),
     [files],
   );
+
+  useEffect(() => {
+    if (!selectedProjectId || !selectedRoomId || !roomsFetched) return;
+    if (!activeRoomId) setSelectedRoomId('');
+  }, [activeRoomId, roomsFetched, selectedProjectId, selectedRoomId]);
 
   const upload = useMutation({
     mutationFn: (selectedFiles: File[]) => {
