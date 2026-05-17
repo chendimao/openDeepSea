@@ -456,8 +456,11 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         type: 'message:stream',
         roomId,
         messageId: placeholder.id,
+        runId: run.id,
+        channel: 'answer',
         chunk,
         done: false,
+        status: 'streaming',
       });
     }
   };
@@ -552,8 +555,12 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           type: 'message:stream',
           roomId,
           messageId: placeholder.id,
+          runId: finalRun?.id ?? run.id,
+          channel: 'answer',
           chunk: '',
           done: true,
+          status: finalRun?.status ?? (controller.signal.aborted ? 'cancelled' : 'failed'),
+          error: finalRun?.error ?? null,
         });
       }
       // Async memory distillation after reply completes (non-workflow only)

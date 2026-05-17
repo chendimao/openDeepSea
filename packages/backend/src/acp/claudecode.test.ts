@@ -237,3 +237,43 @@ test('Codex agent message snapshots are treated as full-answer snapshots', () =>
   ]);
   assert.deepEqual(normalize(`${duplicate}\n`), []);
 });
+
+test('plain text chunks that repeat the streamed prefix only append the new suffix', () => {
+  const normalize = createStdoutNormalizer();
+
+  assert.deepEqual(normalize('当前证据显示消息附件主要走 metadata.attachments\n'), [
+    {
+      channel: 'answer',
+      text: '当前证据显示消息附件主要走 metadata.attachments',
+    },
+  ]);
+  assert.deepEqual(normalize('当前证据显示消息附件主要走 metadata.attachments，并会进一步映射成本地 imagePaths\n'), [
+    {
+      channel: 'answer',
+      text: '，并会进一步映射成本地 imagePaths',
+    },
+  ]);
+});
+
+test('plain text delta chunks keep accumulated state for later snapshot dedupe', () => {
+  const normalize = createStdoutNormalizer();
+
+  assert.deepEqual(normalize('第一段'), [
+    {
+      channel: 'answer',
+      text: '第一段',
+    },
+  ]);
+  assert.deepEqual(normalize('第二段'), [
+    {
+      channel: 'answer',
+      text: '第二段',
+    },
+  ]);
+  assert.deepEqual(normalize('第一段第二段第三段'), [
+    {
+      channel: 'answer',
+      text: '第三段',
+    },
+  ]);
+});

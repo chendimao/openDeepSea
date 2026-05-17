@@ -23,7 +23,7 @@ const { taskRepo } = await import('./repos/tasks.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { messageUploadDir } = await import('./uploads.js');
 const { wsHub } = await import('./ws-hub.js');
-const { buildAgentIdentityPrompt, buildPromptWithMessageAttachments, dispatchUserMessage } = await import('./dispatcher.js');
+const { buildAgentIdentityPrompt, buildPromptWithMessageAttachments, dispatchUserMessage, respondAsAgent } = await import('./dispatcher.js');
 const { router } = await import('./routes.js');
 const { setWorkflowConversationDeps } = await import('./workflows/conversation.js');
 const express = (await import('express')).default;
@@ -666,6 +666,138 @@ test('dispatchUserMessage marks empty successful ACP output as failed', async ()
     assert.match(agentMessages.at(-1)?.content ?? '', /opencode error.*completed without output/i);
   } finally {
     adapters.opencode = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke resolves', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-true-stream-test-'));
+  const project = projectRepo.create({ name: `true-stream-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'stream-agent', agent_name: 'StreamAgent' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  assert.ok(acpAgent);
+
+  const events = captureRoomEvents(room.id);
+  const originalAdapter = adapters.codex;
+  let releaseInvoke!: () => void;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({ stream: 'stdout', text: '第一段' });
+      await new Promise<void>((resolve) => {
+        releaseInvoke = resolve;
+      });
+      args.onChunk({ stream: 'stdout', text: '第二段' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    let finished = false;
+    const running = respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '请真流式回复',
+    }).then(() => {
+      finished = true;
+    });
+
+    await waitFor(() => messageRepo.listByRoom(room.id).some((item) => item.content === '第一段'));
+    assert.equal(finished, false, 'agent response should still be waiting for ACP process completion');
+    assert.equal(
+      messageRepo.listByRoom(room.id).find((item) => item.sender_id === acpAgent.agent_id)?.content,
+      '第一段',
+    );
+    assert.ok(events.some((event) =>
+      event.type === 'message:stream' &&
+      event.chunk === '第一段' &&
+      event.done === false &&
+      event.runId &&
+      event.channel === 'answer' &&
+      event.status === 'streaming'
+    ));
+
+    releaseInvoke();
+    await running;
+
+    const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === acpAgent.agent_id);
+    assert.equal(reply?.content, '第一段第二段');
+    const run = agentRunRepo.listByRoom(room.id, 1)[0];
+    assert.equal(run?.stdout, '第一段第二段');
+    assert.equal(run?.stderr, '');
+    assert.ok(events.some((event) =>
+      event.type === 'message:stream' &&
+      event.messageId === reply?.id &&
+      event.done === true &&
+      event.status === 'completed' &&
+      event.chunk === ''
+    ));
+  } finally {
+    events.restore();
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent marks final stream event failed without mixing stderr into message content', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-stream-error-test-'));
+  const project = projectRepo.create({ name: `stream-error-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'stream-error-agent', agent_name: 'StreamErrorAgent' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  assert.ok(acpAgent);
+
+  const events = captureRoomEvents(room.id);
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({ stream: 'stdout', text: 'partial answer' });
+      args.onChunk({ stream: 'stderr', text: 'cli exploded' });
+      return { exitCode: 1, sessionId: null, stderr: 'cli exploded' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '请失败',
+    });
+
+    const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === acpAgent.agent_id);
+    const run = agentRunRepo.listByRoom(room.id, 1)[0];
+    assert.equal(reply?.content, 'partial answer');
+    assert.equal(run?.status, 'failed');
+    assert.equal(run?.stdout, 'partial answer');
+    assert.equal(run?.stderr, 'cli exploded');
+    assert.ok(events.some((event) =>
+      event.type === 'message:stream' &&
+      event.messageId === reply?.id &&
+      event.done === true &&
+      event.status === 'failed' &&
+      event.error === 'cli exploded'
+    ));
+  } finally {
+    events.restore();
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });

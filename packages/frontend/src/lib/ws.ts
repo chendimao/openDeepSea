@@ -1,8 +1,18 @@
-import type { AgentRun, Message, RoomAgent, Task, TaskArtifact, WorkflowRun, WorkflowStep } from './types';
+import type { AgentRun, AgentRunStatus, Message, RoomAgent, Task, TaskArtifact, WorkflowRun, WorkflowStep } from './types';
 
 export type WsServerEvent =
   | { type: 'message:new'; roomId: string; message: Message }
-  | { type: 'message:stream'; roomId: string; messageId: string; chunk: string; done: boolean }
+  | {
+      type: 'message:stream';
+      roomId: string;
+      messageId: string;
+      chunk: string;
+      done: boolean;
+      runId?: string;
+      channel?: 'answer';
+      status?: 'streaming' | AgentRunStatus;
+      error?: string | null;
+    }
   | { type: 'agent_run:created'; roomId: string; run: AgentRun }
   | { type: 'agent_run:updated'; roomId: string; run: AgentRun }
   | { type: 'room:agent_joined'; roomId: string; agent: RoomAgent }

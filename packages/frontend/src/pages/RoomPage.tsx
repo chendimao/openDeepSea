@@ -47,6 +47,7 @@ export function RoomPage() {
   const [configAgent, setConfigAgent] = useState<RoomAgent | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
   const { t } = useI18n();
 
   const { data: project } = useQuery({
@@ -138,13 +139,26 @@ export function RoomPage() {
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) =>
           upsertMessage(prev, event.message),
         );
+        if (event.message.message_type === 'agent_stream') {
+          setStreamingMessageIds((prev) => addStreamingMessageId(prev, event.message.id));
+        }
       } else if (event.type === 'message:stream' && event.roomId === roomId) {
+        let matchedMessage = false;
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) => {
           if (!prev) return prev;
-          return dedupeMessages(prev.map((m) =>
-            m.id === event.messageId ? { ...m, content: m.content + event.chunk } : m,
-          ));
+          const next = prev.map((m) => {
+            if (m.id !== event.messageId) return m;
+            matchedMessage = true;
+            return { ...m, content: m.content + event.chunk };
+          });
+          return dedupeMessages(next);
         });
+        if (!matchedMessage) {
+          queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+        }
+        setStreamingMessageIds((prev) =>
+          event.done ? removeStreamingMessageId(prev, event.messageId) : addStreamingMessageId(prev, event.messageId),
+        );
       } else if (
         (event.type === 'agent_run:created' || event.type === 'agent_run:updated') &&
         event.roomId === roomId
@@ -152,6 +166,12 @@ export function RoomPage() {
         queryClient.setQueryData<AgentRun[] | undefined>(['agent-runs', roomId], (prev) =>
           upsertAgentRun(prev, event.run),
         );
+        if (event.type === 'agent_run:updated' && isTerminalAgentRunStatus(event.run.status)) {
+          const messageId = findAgentRunMessageId(queryClient.getQueryData<Message[]>(['messages', roomId]), event.run);
+          if (messageId) {
+            setStreamingMessageIds((prev) => removeStreamingMessageId(prev, messageId));
+          }
+        }
       } else if (event.type === 'room:agent_joined' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       } else if (event.type === 'room:agent_left' && event.roomId === roomId) {
@@ -293,6 +313,7 @@ export function RoomPage() {
             fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
             onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
             retryingWorkflowId={retryWorkflow.variables}
+            streamingMessageIds={streamingMessageIds}
           />
         </section>
         {showMemoryPanel ? (
@@ -354,6 +375,35 @@ function dedupeMessages(messages: Message[]): Message[] {
   return [...byId.values()].sort(
     (a, b) => a.created_at - b.created_at,
   );
+}
+
+function addStreamingMessageId(prev: Set<string>, messageId: string): Set<string> {
+  if (prev.has(messageId)) return prev;
+  const next = new Set(prev);
+  next.add(messageId);
+  return next;
+}
+
+function removeStreamingMessageId(prev: Set<string>, messageId: string): Set<string> {
+  if (!prev.has(messageId)) return prev;
+  const next = new Set(prev);
+  next.delete(messageId);
+  return next;
+}
+
+function isTerminalAgentRunStatus(status: AgentRun['status']): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'interrupted';
+}
+
+function findAgentRunMessageId(messages: Message[] | undefined, run: AgentRun): string | null {
+  if (!messages) return null;
+  const message = messages.find((item) =>
+    item.sender_type === 'agent' &&
+    item.message_type === 'agent_stream' &&
+    item.sender_id === run.agent_id &&
+    Math.abs(item.created_at - run.started_at) < 5000
+  );
+  return message?.id ?? null;
 }
 
 function upsertAgentRun(prev: AgentRun[] | undefined, run: AgentRun): AgentRun[] {
@@ -425,6 +475,7 @@ function ChatColumn({
   fallbackAgentId,
   onRetryWorkflow,
   retryingWorkflowId,
+  streamingMessageIds,
 }: {
   messages: Message[];
   agents: RoomAgent[];
@@ -436,6 +487,7 @@ function ChatColumn({
   fallbackAgentId: string | null;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
+  streamingMessageIds: Set<string>;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
   const queryClient = useQueryClient();
@@ -541,6 +593,7 @@ function ChatColumn({
                   projectId={projectId}
                   onRetryWorkflow={onRetryWorkflow}
                   retryingWorkflowId={retryingWorkflowId}
+                  streaming={streamingMessageIds.has(m.id)}
                 />
               );
             })
@@ -609,6 +662,7 @@ function MessageBubble({
   projectId,
   onRetryWorkflow,
   retryingWorkflowId,
+  streaming,
 }: {
   message: Message;
   agentMeta?: RoomAgent;
@@ -619,6 +673,7 @@ function MessageBubble({
   projectId: string;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
+  streaming: boolean;
 }) {
   const { t, formatRelativeTime } = useI18n();
   const queryClient = useQueryClient();
@@ -676,6 +731,9 @@ function MessageBubble({
   const isSystem = message.sender_type === 'system';
   const attachments = metadata.attachments;
   const hasContent = Boolean(message.content?.trim());
+  const isStreaming = !isUser && message.message_type === 'agent_stream' && (
+    streaming || run?.status === 'running' || run?.status === 'queued'
+  );
   const isTaskEvent = isSystem && Boolean(metadata.event_type && metadata.task_id);
   const isCollaborationDecision = isSystem && Boolean(metadata.collaboration_decision && metadata.source_message_id);
 
@@ -746,7 +804,7 @@ function MessageBubble({
             </AiMessageActions>
           )}
         </AiMessageHeader>
-        <AiMessageBody stream={message.message_type === 'agent_stream' && !isUser}>
+        <AiMessageBody stream={isStreaming}>
           {hasContent ? (
             <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
           ) : message.message_type === 'agent_stream' ? (

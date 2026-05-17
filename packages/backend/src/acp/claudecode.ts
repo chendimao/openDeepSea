@@ -279,7 +279,8 @@ function normalizeStdoutChunkWithSnapshots(
           }
         : '';
     } catch {
-      return { channel: 'answer' as const, text: line };
+      const delta = toPlainTextDelta(line, snapshots);
+      return delta ? { channel: 'answer' as const, text: delta } : '';
     }
   });
   return normalized.filter(Boolean) as Array<{
@@ -304,6 +305,16 @@ function toSnapshotDelta(key: string, text: string, snapshots: Map<string, strin
   const previous = snapshots.get(key) ?? '';
   snapshots.set(key, text);
   return text.startsWith(previous) ? text.slice(previous.length) : text;
+}
+
+function toPlainTextDelta(text: string, snapshots: Map<string, string>): string {
+  const previous = snapshots.get('answer') ?? '';
+  if (text.startsWith(previous)) {
+    snapshots.set('answer', text);
+    return text.slice(previous.length);
+  }
+  snapshots.set('answer', previous + text);
+  return text;
 }
 
 function isFullAnswerSnapshot(obj: Record<string, unknown>): boolean {
