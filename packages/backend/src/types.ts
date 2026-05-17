@@ -131,6 +131,42 @@ export interface ProjectFileWithRefs extends ProjectFile {
   last_referenced_room_name: string | null;
 }
 
+export type WorkspaceEntryType = 'file' | 'directory';
+
+export interface WorkspacePathResolution {
+  projectRealPath: string;
+  relativePath: string;
+  absolutePath: string;
+}
+
+export interface WorkspaceDirectoryEntry {
+  name: string;
+  path: string;
+  type: WorkspaceEntryType;
+  size: number | null;
+  mimeType: string | null;
+  language: string | null;
+}
+
+export interface WorkspaceFilePreview {
+  path: string;
+  size: number;
+  mimeType: string;
+  language: string | null;
+  content: string;
+  truncated: boolean;
+}
+
+export interface WorkspaceFileReference extends WorkspaceFilePreview {
+  bytes: Buffer;
+}
+
+export interface WorkspaceSearchResult {
+  path: string;
+  name: string;
+  type: Extract<WorkspaceEntryType, 'file'>;
+}
+
 export interface RoomAgent {
   id: string;
   room_id: string;
