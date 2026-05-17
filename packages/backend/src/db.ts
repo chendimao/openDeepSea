@@ -233,6 +233,37 @@ CREATE TABLE IF NOT EXISTS task_artifacts (
 CREATE INDEX IF NOT EXISTS idx_task_artifacts_workflow ON task_artifacts(workflow_run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_task_artifacts_task ON task_artifacts(task_id, created_at);
 
+CREATE TABLE IF NOT EXISTS workflow_context_entries (
+  id TEXT PRIMARY KEY,
+  workflow_run_id TEXT NOT NULL,
+  workflow_step_id TEXT,
+  task_id TEXT NOT NULL,
+  room_agent_id TEXT,
+  agent_run_id TEXT,
+  source_type TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  entry_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  metadata TEXT,
+  raw_char_count INTEGER NOT NULL DEFAULT 0,
+  summary_char_count INTEGER NOT NULL DEFAULT 0,
+  token_estimate INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (workflow_step_id) REFERENCES workflow_steps(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE SET NULL,
+  FOREIGN KEY (agent_run_id) REFERENCES agent_runs(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_context_run ON workflow_context_entries(workflow_run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_context_step ON workflow_context_entries(workflow_step_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_context_task ON workflow_context_entries(task_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_context_type ON workflow_context_entries(workflow_run_id, entry_type, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_context_source_version
+  ON workflow_context_entries(source_type, source_id, entry_type, version);
+
 CREATE TABLE IF NOT EXISTS memory_entries (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,

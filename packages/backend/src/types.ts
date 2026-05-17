@@ -465,6 +465,36 @@ export interface TaskArtifact {
   created_at: number;
 }
 
+export type WorkflowContextSourceType = 'agent_run' | 'workflow_step' | 'artifact' | 'verification' | 'system';
+export type WorkflowContextEntryType =
+  | 'summary'
+  | 'handoff'
+  | 'decision'
+  | 'verification'
+  | 'file_change'
+  | 'issue'
+  | 'open_question';
+
+export interface WorkflowContextEntry {
+  id: string;
+  workflow_run_id: string;
+  workflow_step_id: string | null;
+  task_id: string;
+  room_agent_id: string | null;
+  agent_run_id: string | null;
+  source_type: WorkflowContextSourceType;
+  source_id: string;
+  entry_type: WorkflowContextEntryType;
+  title: string;
+  content: string;
+  metadata: string | null;
+  raw_char_count: number;
+  summary_char_count: number;
+  token_estimate: number;
+  version: number;
+  created_at: number;
+}
+
 export interface WorkflowDetail {
   run: WorkflowRun;
   steps: WorkflowStep[];
@@ -483,7 +513,17 @@ export interface CliSessionSummary {
 
 export type WsServerEvent =
   | { type: 'message:new'; roomId: string; message: Message }
-  | { type: 'message:stream'; roomId: string; messageId: string; chunk: string; done: boolean }
+  | {
+      type: 'message:stream';
+      roomId: string;
+      messageId: string;
+      chunk: string;
+      done: boolean;
+      runId?: string;
+      channel?: 'answer';
+      status?: 'streaming' | AgentRunStatus;
+      error?: string | null;
+    }
   | { type: 'agent_run:created'; roomId: string; run: AgentRun }
   | { type: 'agent_run:updated'; roomId: string; run: AgentRun }
   | { type: 'room:agent_joined'; roomId: string; agent: RoomAgent }
