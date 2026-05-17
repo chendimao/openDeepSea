@@ -2,6 +2,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
+import { buildCollaborationDecisionPrompt, parseCollaborationDecision } from './collaboration-decision.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
 import { agentRunRepo } from './repos/agent-runs.js';
@@ -74,20 +75,29 @@ export async function dispatchUserMessage(args: {
   const fallbackTarget = routing.targets[0];
   const fallbackResponse = responses[0]?.content;
   if (routing.after === 'route_from_fallback' && fallbackTarget && fallbackResponse) {
-    const selectedAgents = selectAgentsFromFallbackResponse(fallbackResponse, allAgents, fallbackTarget.agent);
-    if (selectedAgents.length === 0) return;
-    const handoffPrompt = buildFallbackHandoffPrompt({
-      userPrompt: promptWithAttachments,
-      fallbackAgentName: fallbackTarget.agent.agent_name,
-      fallbackResponse,
-    });
-    await runTargets({
-      targets: selectedAgents.map((agent) => ({ agent, prompt: handoffPrompt })),
-      projectPath: project.path,
-      roomId,
-      imagePaths,
-      distillModelInvoker: args.distillModelInvoker,
-    });
+    try {
+      const decision = parseCollaborationDecision(fallbackResponse);
+      const decisionMessage = messageRepo.create({
+        room_id: roomId,
+        sender_type: 'system',
+        sender_id: 'system',
+        sender_name: 'System',
+        content: '已生成协作模式选择',
+        message_type: 'system',
+        metadata: {
+          event_type: 'collaboration_decision',
+          collaboration_decision: decision,
+          source_message_id: userMessage.id,
+          fallback_agent_id: fallbackTarget.agent.agent_id,
+        },
+      });
+      wsHub.broadcast(roomId, { type: 'message:new', roomId, message: decisionMessage });
+    } catch (error) {
+      console.warn(
+        `[dispatcher] fallback_route decision parse failed: roomId=${roomId} sourceMessageId=${userMessage.id} fallbackAgentId=${fallbackTarget.agent.agent_id} error=${(error as Error).message}`,
+      );
+      // Keep planner output as-is and do not auto-dispatch on parse failure.
+    }
   }
 }
 
@@ -317,61 +327,16 @@ function buildFallbackRoutingPrompt(
 ): string {
   const agents = allAgents
     .filter((agent) => agent.id !== fallbackAgent.id)
-    .map((agent) => {
-      const role = agent.agent_role?.trim() ? `职责：${agent.agent_role.trim()}` : '职责：未填写';
-      return `- @${agent.agent_name} (${agent.agent_id})：${role}`;
-    })
-    .join('\n');
-  const agentList = agents || '- 当前聊天室没有其他可路由的智能体。';
-
-  return [
-    '你是当前项目聊天室的兜底调度智能体。',
-    '请先判断用户消息是否需要其他智能体参与。',
-    '如果问题可以由你直接回答，请直接回答，并说明你没有转派。',
-    '如果需要转派，请在回复开头列出应当 @ 的智能体，格式为“建议协作：@AgentA @AgentB”，然后给出每个智能体应处理的具体事项。',
-    '系统会读取“建议协作”里的 @ 智能体并启动它们；不要伪造其他智能体的回复。',
-    '',
-    '可用智能体：',
-    agentList,
-    '',
-    '用户消息：',
+    .map((agent) => ({
+      agent_id: agent.agent_id,
+      agent_name: agent.agent_name,
+      agent_role: agent.agent_role,
+      workflow_role: agent.workflow_role ?? null,
+    }));
+  return buildCollaborationDecisionPrompt({
     userPrompt,
-  ].join('\n');
-}
-
-function selectAgentsFromFallbackResponse(
-  fallbackResponse: string,
-  allAgents: RoomAgent[],
-  fallbackAgent: RoomAgent,
-): RoomAgent[] {
-  const firstLines = fallbackResponse.split('\n').slice(0, 6).join('\n');
-  const mentionedNames = new Set(
-    Array.from(firstLines.matchAll(/@([\p{L}\p{N}_.-]+)/gu)).map((match) => match[1]),
-  );
-  if (mentionedNames.size === 0) return [];
-  const selected = allAgents.filter(
-    (agent) =>
-      agent.id !== fallbackAgent.id &&
-      (mentionedNames.has(agent.agent_name) || mentionedNames.has(agent.agent_id)),
-  );
-  return selected.filter((agent, index) => selected.findIndex((item) => item.id === agent.id) === index);
-}
-
-function buildFallbackHandoffPrompt(args: {
-  userPrompt: string;
-  fallbackAgentName: string;
-  fallbackResponse: string;
-}): string {
-  return [
-    `${args.fallbackAgentName} 已将这条用户消息分派给你协作处理。`,
-    '请只围绕你的职责给出回答、方案或执行建议；如果这是开发任务，请明确你负责的部分、改动边界和需要与其他智能体对齐的接口。',
-    '',
-    '用户原始消息：',
-    args.userPrompt,
-    '',
-    `${args.fallbackAgentName} 的调度说明：`,
-    args.fallbackResponse,
-  ].join('\n');
+    agents,
+  });
 }
 
 export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): string {

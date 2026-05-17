@@ -21,6 +21,7 @@ const { settingsRepo } = await import('./repos/settings.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { messageUploadDir } = await import('./uploads.js');
+const { wsHub } = await import('./ws-hub.js');
 const { buildAgentIdentityPrompt, buildPromptWithMessageAttachments, dispatchUserMessage } = await import('./dispatcher.js');
 const { router } = await import('./routes.js');
 const { setWorkflowConversationDeps } = await import('./workflows/conversation.js');
@@ -90,6 +91,249 @@ test('dispatchUserMessage reports non-ACP agent as not executable', async () => 
       'expected readable system message for non-ACP agent',
     );
   } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('fallback_route with valid JSON decision only runs fallback planner and creates decision system message', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-fallback-route-valid-decision-'));
+  const project = projectRepo.create({ name: `fallback-route-valid-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner-1', agent_name: 'PlannerAgent' });
+  const executor = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor-1', agent_name: 'ExecutorAgent' });
+  const reviewer = roomAgentRepo.add({ room_id: room.id, agent_id: 'reviewer-1', agent_name: 'ReviewerAgent' });
+  for (const agent of [planner, executor, reviewer]) {
+    roomAgentRepo.setAcp(agent.id, {
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: null,
+      acp_session_label: null,
+      acp_permission_mode: 'bypass',
+      acp_writable_dirs: [],
+    });
+  }
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_route',
+    fallback_agent_id: planner.agent_id,
+  });
+  const decision = {
+    intent: 'implementation',
+    recommendedMode: 'formal_workflow',
+    problemArea: 'backend',
+    summary: '需要后端改造',
+    rationale: '实现类任务建议走 formal_workflow',
+    needsUserChoice: true,
+    proposedAgents: {
+      executors: ['executor-1'],
+      reviewers: ['reviewer-1'],
+      testers: [],
+      acceptors: [],
+    },
+    stages: [
+      {
+        stage: 'execute',
+        agentIds: ['executor-1'],
+        parallel: false,
+        goal: '完成实现',
+      },
+    ],
+  };
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '请修复 dispatcher 并安排协作',
+    message_type: 'text',
+  });
+
+  const events = captureRoomEvents(room.id);
+  const originalAdapter = adapters.codex;
+  let invokeCount = 0;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      invokeCount += 1;
+      args.onChunk?.({ stream: 'stdout', text: JSON.stringify(decision) });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+    assert.equal(invokeCount, 1);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.agent_id, planner.agent_id);
+
+    const messages = messageRepo.listByRoom(room.id, 50);
+    assert.equal(messages.filter((message) => message.sender_id === executor.agent_id).length, 0);
+    assert.equal(messages.filter((message) => message.sender_id === reviewer.agent_id).length, 0);
+
+    const decisionMessage = messages.find((message) => {
+      if (message.sender_type !== 'system' || !message.metadata) return false;
+      const metadata = JSON.parse(message.metadata) as Record<string, unknown>;
+      return metadata.event_type === 'collaboration_decision';
+    });
+    assert.ok(decisionMessage, 'expected a system message carrying collaboration decision metadata');
+    const metadata = JSON.parse(decisionMessage.metadata ?? '{}') as Record<string, unknown>;
+    assert.equal(metadata.source_message_id, userMessage.id);
+    assert.equal(metadata.fallback_agent_id, planner.agent_id);
+    assert.deepEqual(metadata.collaboration_decision, decision);
+
+    assert.ok(events.some((event) =>
+      event.type === 'message:new' &&
+      event.message.id === decisionMessage.id
+    ));
+  } finally {
+    events.restore();
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('fallback_route with invalid decision does not run executor/reviewer and keeps planner output readable', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-fallback-route-invalid-decision-'));
+  const project = projectRepo.create({ name: `fallback-route-invalid-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner-invalid', agent_name: 'PlannerInvalid' });
+  const executor = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor-invalid', agent_name: 'ExecutorInvalid' });
+  const reviewer = roomAgentRepo.add({ room_id: room.id, agent_id: 'reviewer-invalid', agent_name: 'ReviewerInvalid' });
+  for (const agent of [planner, executor, reviewer]) {
+    roomAgentRepo.setAcp(agent.id, {
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: null,
+      acp_session_label: null,
+      acp_permission_mode: 'bypass',
+      acp_writable_dirs: [],
+    });
+  }
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_route',
+    fallback_agent_id: planner.agent_id,
+  });
+  const invalidPlannerOutput = '建议协作：@ExecutorInvalid @ReviewerInvalid\n请你们并行处理。';
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '请处理这个复杂改造',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  const originalWarn = console.warn;
+  let invokeCount = 0;
+  const warnCalls: string[] = [];
+  console.warn = ((...args: unknown[]) => {
+    warnCalls.push(args.map((arg) => String(arg)).join(' '));
+  }) as typeof console.warn;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      invokeCount += 1;
+      args.onChunk?.({ stream: 'stdout', text: invalidPlannerOutput });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+    assert.equal(invokeCount, 1);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.agent_id, planner.agent_id);
+
+    const messages = messageRepo.listByRoom(room.id, 50);
+    const plannerMessage = messages.find((message) => message.sender_id === planner.agent_id);
+    assert.ok(plannerMessage);
+    assert.match(plannerMessage.content, /建议协作：@ExecutorInvalid @ReviewerInvalid/);
+    assert.equal(messages.filter((message) => message.sender_id === executor.agent_id).length, 0);
+    assert.equal(messages.filter((message) => message.sender_id === reviewer.agent_id).length, 0);
+
+    const decisionMessages = messages.filter((message) => {
+      if (message.sender_type !== 'system' || !message.metadata) return false;
+      const metadata = JSON.parse(message.metadata) as Record<string, unknown>;
+      return metadata.event_type === 'collaboration_decision';
+    });
+    assert.equal(decisionMessages.length, 0);
+    assert.ok(
+      warnCalls.some((line) =>
+        line.includes('[dispatcher] fallback_route decision parse failed:') &&
+        line.includes(`roomId=${room.id}`) &&
+        line.includes(`sourceMessageId=${userMessage.id}`) &&
+        line.includes(`fallbackAgentId=${planner.agent_id}`) &&
+        line.includes('error='),
+      ),
+      'expected parse failure warning with room/source/fallback context',
+    );
+  } finally {
+    console.warn = originalWarn;
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('explicit mentions still dispatch directly to mentioned agent in fallback_route mode', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-fallback-route-explicit-mention-'));
+  const project = projectRepo.create({ name: `fallback-route-explicit-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner-explicit', agent_name: 'PlannerExplicit' });
+  const executor = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor-explicit', agent_name: 'ExecutorExplicit' });
+  const reviewer = roomAgentRepo.add({ room_id: room.id, agent_id: 'reviewer-explicit', agent_name: 'ReviewerExplicit' });
+  for (const agent of [planner, executor, reviewer]) {
+    roomAgentRepo.setAcp(agent.id, {
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: null,
+      acp_session_label: null,
+      acp_permission_mode: 'bypass',
+      acp_writable_dirs: [],
+    });
+  }
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_route',
+    fallback_agent_id: planner.agent_id,
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: `@${reviewer.agent_name} 请直接审查这个改动`,
+    message_type: 'text',
+  });
+
+  const seenPrompts: string[] = [];
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      seenPrompts.push(args.prompt);
+      args.onChunk?.({ stream: 'stdout', text: '收到，开始审查。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({
+      roomId: room.id,
+      userMessage,
+      mentionedAgentRoomIds: [reviewer.id],
+    });
+
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.agent_id, reviewer.agent_id);
+    assert.equal(seenPrompts.length, 1);
+    assert.doesNotMatch(seenPrompts[0] ?? '', /Return ONLY valid JSON/);
+    assert.doesNotMatch(seenPrompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
+  } finally {
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });
@@ -700,6 +944,22 @@ async function waitFor(assertion: () => boolean, timeoutMs = 1000): Promise<void
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.ok(assertion(), 'condition did not become true before timeout');
+}
+
+type CapturedRoomEvent = Parameters<typeof wsHub.broadcast>[1];
+
+function captureRoomEvents(roomId: string): CapturedRoomEvent[] & { restore: () => void } {
+  const original = wsHub.broadcast.bind(wsHub);
+  const events: CapturedRoomEvent[] = [];
+  wsHub.broadcast = ((targetRoomId: string, event: CapturedRoomEvent) => {
+    if (targetRoomId === roomId) events.push(event);
+    original(targetRoomId, event);
+  }) as typeof wsHub.broadcast;
+  return Object.assign(events, {
+    restore: () => {
+      wsHub.broadcast = original as typeof wsHub.broadcast;
+    },
+  });
 }
 
 function clearModelEnv(): () => void {
