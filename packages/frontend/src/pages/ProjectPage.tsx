@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Hash, MessageSquarePlus, Plus, Search, Settings2, Trash2 } from 'lucide-react';
+import { ChevronLeft, Hash, MessageSquarePlus, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/Button';
@@ -59,7 +59,14 @@ export function ProjectPage() {
       <header className="px-4 sm:px-8 pt-8 pb-5 border-b border-[var(--color-border)]">
         <div className="max-w-5xl mx-auto">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-display text-[22px] font-semibold tracking-tight">{project.name}</h1>
+            <Link
+              to="/"
+              className="inline-grid h-8 w-8 place-items-center rounded-lg text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-primary)] focus-visible:outline-none focus-visible:glow-primary"
+              aria-label={t('project.backToProjects')}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Link>
+            <h1 className="min-w-0 font-display text-[22px] font-semibold tracking-tight">{project.name}</h1>
             <span className="min-w-0 truncate text-[12px] font-mono text-[var(--color-muted)]">
               {project.path}
             </span>
@@ -97,9 +104,19 @@ export function ProjectPage() {
                 value={roomQuery}
                 onChange={(event) => setRoomQuery(event.target.value)}
                 placeholder={t('project.roomSearchPlaceholder')}
-                className="pl-9"
+                className="pl-9 pr-9"
                 aria-label={t('project.roomSearchPlaceholder')}
               />
+              {roomQuery.trim().length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setRoomQuery('')}
+                  className="absolute right-2 top-1/2 inline-grid h-6 w-6 -translate-y-1/2 place-items-center rounded-md text-[var(--color-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:glow-primary"
+                  aria-label={t('common.clear')}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <div className="max-sm:w-full">
               <CreateRoomDialog projectId={projectId} />
@@ -123,6 +140,11 @@ export function ProjectPage() {
               icon={<Search className="h-9 w-9" strokeWidth={1.75} />}
               title={t('project.noRoomMatchesTitle')}
               description={t('project.noRoomMatchesDescription')}
+              action={
+                <Button variant="secondary" onClick={() => setRoomQuery('')}>
+                  <X className="h-4 w-4" /> {t('common.clearSearch')}
+                </Button>
+              }
             />
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -140,6 +162,7 @@ export function ProjectPage() {
 function RoomItem({ projectId, room }: { projectId: string; room: Room }) {
   const queryClient = useQueryClient();
   const { t, formatRelativeTime } = useI18n();
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const del = useMutation({
     mutationFn: () => api.deleteRoom(room.id),
     onSuccess: () => {
@@ -147,6 +170,7 @@ function RoomItem({ projectId, room }: { projectId: string; room: Room }) {
       queryClient.invalidateQueries({ queryKey: ['rooms', 'search', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project', projectId] });
       toast.success(t('project.roomDeleted'));
+      setConfirmOpen(false);
     },
   });
 
@@ -163,13 +187,25 @@ function RoomItem({ projectId, room }: { projectId: string; room: Room }) {
         <p className="text-[11px] font-mono text-[var(--color-muted)] mt-3">{formatRelativeTime(room.created_at)}</p>
       </Link>
       <button
-        onClick={() => del.mutate()}
-        className="absolute right-2 top-2 p-1.5 rounded-md text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-danger)] hover:bg-[var(--color-surface-raised)] ease-ocean"
+        onClick={() => setConfirmOpen(true)}
+        className="absolute right-2 top-2 p-1.5 rounded-md text-[var(--color-muted)] opacity-70 hover:opacity-100 hover:text-[var(--color-danger)] hover:bg-[var(--color-surface-raised)] focus-visible:opacity-100 focus-visible:outline-none focus-visible:glow-primary ease-ocean"
         aria-label={t('project.deleteRoom')}
         type="button"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent title={t('project.deleteRoom')} description={t('project.deleteRoomConfirm', { name: room.name })}>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="ghost" onClick={() => setConfirmOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" variant="danger" onClick={() => del.mutate()} disabled={del.isPending}>
+              {del.isPending ? t('common.deleting') : t('common.delete')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

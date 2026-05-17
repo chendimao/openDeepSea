@@ -493,6 +493,41 @@
     flex: 1;
     padding: 8px;
   }
+  @media (max-width: 900px) {
+    .workspace-toolbar {
+      grid-template-columns: minmax(0, 1fr);
+      align-items: stretch;
+      gap: 10px;
+      min-height: auto;
+      padding: 12px;
+    }
+    .toolbar-tabs {
+      order: 3;
+      display: flex;
+      max-width: 100%;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .toolbar-tab {
+      flex: 0 0 auto;
+      min-height: 28px;
+      font-size: 11px;
+    }
+    .room-toolbar-actions {
+      margin-left: 0;
+      justify-content: flex-start;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .room-toolbar-actions .glass-button {
+      min-width: 34px;
+      flex: 0 0 auto;
+      padding: 0 10px;
+    }
+    .workspace-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
   .agents-page {
     display: flex;
     height: 100%;
@@ -2270,9 +2305,6 @@
     }
     .workspace-toolbar {
       grid-template-columns: minmax(0, 1fr) auto;
-    }
-    .toolbar-tabs {
-      display: none;
     }
     .workspace-grid {
       grid-template-columns: minmax(0, 1fr);

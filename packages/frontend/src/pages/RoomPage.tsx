@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, CheckSquare, ChevronLeft, Download, FileText, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -221,23 +221,13 @@ export function RoomPage() {
         </div>
 
         <div className="toolbar-tabs" aria-label={t('room.viewLabel')}>
-          <button className="toolbar-tab is-active" type="button">
-            {t('room.tab.chat')} <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
-          </button>
-          <button className="toolbar-tab is-active" type="button">
-            {t('room.tab.tasks')} <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
-          </button>
-          <button className="toolbar-tab" type="button">
-            {t('room.tab.workflow')} <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
-          </button>
-          <button className="toolbar-tab" type="button">
-            {t('room.tab.files')} <ChevronDown className="h-3 w-3" strokeWidth={1.8} />
-          </button>
-          <button className="toolbar-tab" type="button">{t('room.tab.agent')}</button>
-          <button className="toolbar-tab" type="button">{t('room.tab.settings')}</button>
+          <span className="toolbar-tab is-active">{t('room.tab.chat')}</span>
+          <span className="toolbar-tab is-active">{t('room.tab.tasks')}</span>
+          <span className="toolbar-tab">{t('room.tab.workflow')}</span>
+          <span className="toolbar-tab">{t('room.tab.files')}</span>
         </div>
 
-        <div className="ml-auto flex min-w-0 items-center gap-2">
+        <div className="room-toolbar-actions ml-auto flex min-w-0 items-center gap-2">
           <AgentStrip
             agents={agents}
             onConfig={(agent) => {
@@ -245,11 +235,11 @@ export function RoomPage() {
               setConfigAgent(agent);
             }}
           />
-          <span className="hidden sm:inline-flex">
+          <span className="inline-flex">
             <CreateTaskDialog roomId={roomId} agents={agents}>
-              <button type="button" className="glass-button glass-button-primary">
+              <button type="button" className="glass-button glass-button-primary" aria-label={t('room.newTask')}>
                 <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
-                {t('room.newTask')}
+                <span className="hidden sm:inline">{t('room.newTask')}</span>
               </button>
             </CreateTaskDialog>
           </span>
@@ -267,6 +257,7 @@ export function RoomPage() {
           )}
           <button
             type="button"
+            aria-label={t('memory.tab')}
             className={cn('glass-button', showMemoryPanel && 'glass-button-primary')}
             onClick={() => {
               setShowMemoryPanel((v) => !v);
@@ -281,9 +272,9 @@ export function RoomPage() {
             roomAgentGlobalIds={agents.map((agent) => agent.global_agent_id ?? '')}
             roomAgentIds={agents.map((agent) => agent.agent_id)}
           >
-            <button type="button" className="glass-button">
+            <button type="button" className="glass-button" aria-label={t('room.inviteAgent')}>
               <Users className="h-3.5 w-3.5" strokeWidth={1.8} />
-              {t('room.inviteAgent')}
+              <span className="hidden sm:inline">{t('room.inviteAgent')}</span>
             </button>
           </AddAgentDialog>
         </div>
