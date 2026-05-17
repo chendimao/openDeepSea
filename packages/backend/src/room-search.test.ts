@@ -66,3 +66,57 @@ test('keyword room search matches room metadata, messages, and tasks within one 
   assert.ok(result.results[0]?.matchedFields.includes('message'));
   assert.ok(result.results[0]?.matchedFields.includes('task_title'));
 });
+
+test('semantic room search reranks candidates with model JSON output', async () => {
+  const project = projectRepo.create({ name: 'Semantic Project', path: createProjectPath('semantic') });
+  const target = roomRepo.create({ project_id: project.id, name: 'UI 回归排查' });
+  const other = roomRepo.create({ project_id: project.id, name: '接口联调' });
+
+  messageRepo.create({
+    room_id: target.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    content: '页面底部在小屏幕显示不完整。',
+  });
+  messageRepo.create({
+    room_id: other.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    content: '接口鉴权联调。',
+  });
+
+  const result = await searchProjectRooms({
+    projectId: project.id,
+    query: '修复页面显示不完整的bug的群聊',
+    invokeModel: async () => JSON.stringify({
+      results: [
+        { roomId: target.id, score: 0.94, reason: '消息提到页面显示不完整' },
+        { roomId: 'missing-room', score: 1, reason: 'invalid' },
+        { roomId: other.id, score: 0.1, reason: '弱相关' },
+      ],
+    }),
+  });
+
+  assert.equal(result.mode, 'semantic');
+  assert.equal(result.degraded, false);
+  assert.deepEqual(result.results.map((item) => item.room.id), [target.id]);
+  assert.equal(result.results[0]?.score, 0.94);
+});
+
+test('semantic room search falls back to keyword results when model fails', async () => {
+  const project = projectRepo.create({ name: 'Fallback Project', path: createProjectPath('fallback') });
+  const target = roomRepo.create({ project_id: project.id, name: '页面 bug' });
+
+  const result = await searchProjectRooms({
+    projectId: project.id,
+    query: '页面 bug',
+    invokeModel: async () => {
+      throw new Error('model timeout');
+    },
+  });
+
+  assert.equal(result.mode, 'keyword');
+  assert.equal(result.degraded, true);
+  assert.equal(result.degradationReason, 'model_failed');
+  assert.deepEqual(result.results.map((item) => item.room.id), [target.id]);
+});

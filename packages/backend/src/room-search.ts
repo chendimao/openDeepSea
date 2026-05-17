@@ -1,3 +1,4 @@
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { invokeConfiguredModelText } from './chat-model.js';
 import { db } from './db.js';
 import { projectRepo } from './repos/projects.js';
@@ -22,6 +23,23 @@ interface RoomCandidate {
   room: Room;
   messages: Message[];
   tasks: Task[];
+}
+
+interface ModelRoomSearchPayload {
+  query: string;
+  rooms: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    messages: string[];
+    tasks: Array<{ title: string; description: string | null }>;
+  }>;
+}
+
+interface ParsedModelResult {
+  roomId: string;
+  score: number;
+  reason: string;
 }
 
 const STOP_WORDS = new Set([
@@ -53,7 +71,125 @@ export async function searchProjectRooms(input: SearchProjectRoomsInput): Promis
   const candidates = listRoomCandidates(input.projectId);
   const keywordResults = keywordSearch(candidates, query);
 
-  return buildResponse(query, 'keyword', false, null, keywordResults);
+  if (input.forceKeywordOnly) {
+    return buildResponse(query, 'keyword', false, null, keywordResults);
+  }
+
+  const invokeModel = input.invokeModel ?? invokeConfiguredModelText;
+  const modelCandidates = selectModelCandidates(candidates, keywordResults);
+  if (modelCandidates.length === 0) {
+    return buildResponse(query, 'keyword', true, 'model_empty', keywordResults);
+  }
+
+  try {
+    const raw = await invokeModel(buildModelMessages(buildModelPayload(query, modelCandidates)));
+    const modelResults = parseModelResults(raw, modelCandidates, keywordResults);
+    if (modelResults.length === 0) {
+      return buildResponse(query, 'keyword', true, 'model_empty', keywordResults);
+    }
+    return buildResponse(query, 'semantic', false, null, modelResults);
+  } catch (err) {
+    const reason = err instanceof SyntaxError ? 'model_invalid_response' : 'model_failed';
+    return buildResponse(query, 'keyword', true, reason, keywordResults);
+  }
+}
+
+function selectModelCandidates(candidates: RoomCandidate[], keywordResults: RoomSearchResult[]): RoomCandidate[] {
+  if (keywordResults.length === 0) return candidates.slice(0, 30);
+  const candidateByRoomId = new Map(candidates.map((candidate) => [candidate.room.id, candidate]));
+  return keywordResults
+    .slice(0, 30)
+    .map((result) => candidateByRoomId.get(result.room.id))
+    .filter((candidate): candidate is RoomCandidate => Boolean(candidate));
+}
+
+function buildModelPayload(query: string, candidates: RoomCandidate[]): ModelRoomSearchPayload {
+  return {
+    query,
+    rooms: candidates.map((candidate) => ({
+      id: candidate.room.id,
+      name: candidate.room.name,
+      description: candidate.room.description,
+      messages: candidate.messages.slice(0, 8).map((message) => truncateForModel(message.content)),
+      tasks: candidate.tasks.slice(0, 8).map((task) => ({
+        title: truncateForModel(task.title),
+        description: task.description ? truncateForModel(task.description) : null,
+      })),
+    })),
+  };
+}
+
+function buildModelMessages(payload: ModelRoomSearchPayload): Array<SystemMessage | HumanMessage> {
+  return [
+    new SystemMessage([
+      '你是 OpenDeepSea 的群聊搜索排序器。',
+      '根据用户查询判断候选群聊是否相关，并按相关度返回 JSON。',
+      '只输出 JSON，不要输出解释文本。',
+      '输出格式：{"results":[{"roomId":"...","score":0.9,"reason":"..."}]}',
+      'score 必须是 0 到 1。低于 0.2 的弱相关候选不要返回。',
+      '只能返回输入候选中存在的 room id。',
+    ].join('\n')),
+    new HumanMessage(JSON.stringify(payload)),
+  ];
+}
+
+function parseModelResults(
+  raw: string,
+  candidates: RoomCandidate[],
+  keywordResults: RoomSearchResult[],
+): RoomSearchResult[] {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as { results?: unknown }).results)) {
+    throw new SyntaxError('model response missing results');
+  }
+
+  const candidateByRoomId = new Map(candidates.map((candidate) => [candidate.room.id, candidate]));
+  const keywordByRoomId = new Map(keywordResults.map((result) => [result.room.id, result]));
+  const results: RoomSearchResult[] = [];
+  for (const item of (parsed as { results: unknown[] }).results) {
+    const modelResult = normalizeModelResult(item);
+    if (!modelResult) continue;
+    const candidate = candidateByRoomId.get(modelResult.roomId);
+    if (!candidate) continue;
+    const keywordResult = keywordByRoomId.get(modelResult.roomId);
+    results.push({
+      room: candidate.room,
+      score: modelResult.score,
+      matchedFields: keywordResult?.matchedFields ?? inferMatchedFields(candidate),
+      highlights: [modelResult.reason, ...(keywordResult?.highlights ?? [])].filter(Boolean).slice(0, 3),
+    });
+  }
+
+  return results.sort((a, b) => b.score - a.score);
+}
+
+function normalizeModelResult(value: unknown): ParsedModelResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record['roomId'] !== 'string') return null;
+  const rawScore = Number(record['score']);
+  if (!Number.isFinite(rawScore)) return null;
+  const score = Math.max(0, Math.min(1, rawScore));
+  if (score < 0.2) return null;
+  return {
+    roomId: record['roomId'],
+    score,
+    reason: typeof record['reason'] === 'string' ? truncateText(record['reason']) : '',
+  };
+}
+
+function inferMatchedFields(candidate: RoomCandidate): RoomSearchMatchedField[] {
+  const fields: RoomSearchMatchedField[] = ['room_name'];
+  if (candidate.room.description) fields.push('room_description');
+  if (candidate.messages.length > 0) fields.push('message');
+  if (candidate.tasks.some((task) => task.title)) fields.push('task_title');
+  if (candidate.tasks.some((task) => task.description)) fields.push('task_description');
+  return fields;
+}
+
+function truncateForModel(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.length > 240 ? `${trimmed.slice(0, 240)}...` : trimmed;
 }
 
 function listRoomCandidates(projectId: string): RoomCandidate[] {
