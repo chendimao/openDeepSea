@@ -13,7 +13,7 @@ export type LocalAccessRequest = {
 
 export type LocalAccessValidationResult =
   | { ok: true }
-  | { ok: false; status: 401 | 403; error: string };
+  | { ok: false; status: 403; error: string };
 
 let generatedLocalAccessToken: string | null = null;
 
@@ -60,7 +60,7 @@ export function validateLocalAccess(
 
   const providedToken = readLocalAccessTokenHeader(req.headers);
   if (!providedToken || providedToken !== expectedToken) {
-    return { ok: false, status: 401, error: 'invalid local access token' };
+    return { ok: false, status: 403, error: 'invalid local access token' };
   }
 
   return { ok: true };

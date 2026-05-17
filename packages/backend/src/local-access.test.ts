@@ -48,7 +48,7 @@ test('local access rejects missing or wrong token', () => {
     headers: { origin: TRUSTED_LOCALHOST_ORIGIN },
   }, token);
   assert.equal(missingToken.ok, false);
-  assert.equal(missingToken.status, 401);
+  assert.equal(missingToken.status, 403);
 
   const wrongToken = validateLocalAccess({
     method: 'GET',
@@ -58,7 +58,7 @@ test('local access rejects missing or wrong token', () => {
     },
   }, token);
   assert.equal(wrongToken.ok, false);
-  assert.equal(wrongToken.status, 401);
+  assert.equal(wrongToken.status, 403);
 });
 
 test('local access uses one configured token source', () => {
