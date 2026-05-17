@@ -423,6 +423,84 @@ test('graph review prompt uses workflow context entries instead of raw implement
   assert.equal(reviewer.workflow_role, 'reviewer');
 });
 
+test('graph workflow blocks when critical context entry creation fails', async () => {
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-context-failure-'));
+  projectPathsToCleanup.push(projectPath);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Context Failure', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Context Failure Room' });
+  addAcpWorkflowAgent(room.id, 'executor');
+  addAcpWorkflowAgent(room.id, 'reviewer');
+  addAcpWorkflowAgent(room.id, 'acceptor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Block without workflow context',
+  });
+  const reviewPrompts: string[] = [];
+  const originalCreate = workflowContextRepo.create;
+  workflowContextRepo.create = (() => {
+    throw new Error('context db unavailable');
+  }) as typeof workflowContextRepo.create;
+
+  try {
+    setWorkflowOrchestratorGraphDeps({
+      planner: async () => ({
+        goal: task.title,
+        summary: 'Create one child task.',
+        assumptions: [],
+        tasks: [{
+          title: 'Produce output',
+          description: 'Return implementation output.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['context is required before review'],
+          scopeRead: [],
+          scopeWrite: [],
+          dependsOn: [],
+        }],
+        reviewFocus: [],
+        verification: [],
+        verificationCommands: [],
+        risks: [],
+        needsApproval: false,
+      }),
+      runAcpAgent: async (input) => {
+        if (input.workflowStage === 'code_review') reviewPrompts.push(input.prompt);
+        const output = outputForStage(input.workflowStage ?? 'implementation');
+        const agentRun = agentRunRepo.create({
+          room_id: input.roomId,
+          room_agent_id: input.agent.id,
+          agent_id: input.agent.agent_id,
+          backend: 'codex',
+          status: 'completed',
+          task_id: input.taskId,
+          workflow_run_id: input.workflowRunId,
+          workflow_step_id: input.workflowStepId,
+          workflow_stage: input.workflowStage,
+          prompt: input.prompt,
+        });
+        return {
+          run: { ...agentRun, stdout: output },
+          message: fakeMessage(input, output),
+          status: 'completed',
+        };
+      },
+    });
+
+    await assert.rejects(() => workflowOrchestrator.start(task.id), /context db unavailable/);
+  } finally {
+    workflowContextRepo.create = originalCreate;
+  }
+
+  const run = workflowRepo.listByTask(task.id)[0];
+  assert.ok(run);
+  assert.equal(run.status, 'blocked');
+  assert.match(run.error ?? '', /context db unavailable/);
+  assert.equal(reviewPrompts.length, 0);
+});
+
 test('graph approval records accepted event before continuing', async () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-approval-event-'));
   projectPathsToCleanup.push(projectPath);

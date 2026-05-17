@@ -36,6 +36,7 @@ export interface WorkflowContextFormatOptions {
 export const workflowContextRepo = {
   create(input: WorkflowContextCreateInput): WorkflowContextEntry {
     const existing = this.getBySourceVersion({
+      workflow_run_id: input.workflow_run_id,
       source_type: input.source_type,
       source_id: input.source_id,
       entry_type: input.entry_type,
@@ -81,6 +82,7 @@ export const workflowContextRepo = {
   },
 
   getBySourceVersion(input: {
+    workflow_run_id: string;
     source_type: WorkflowContextSourceType;
     source_id: string;
     entry_type: WorkflowContextEntryType;
@@ -89,10 +91,16 @@ export const workflowContextRepo = {
     return db
       .prepare(
         `SELECT * FROM workflow_context_entries
-         WHERE source_type = ? AND source_id = ? AND entry_type = ? AND version = ?
+         WHERE workflow_run_id = ? AND source_type = ? AND source_id = ? AND entry_type = ? AND version = ?
          LIMIT 1`,
       )
-      .get(input.source_type, input.source_id, input.entry_type, input.version) as WorkflowContextEntry | undefined;
+      .get(
+        input.workflow_run_id,
+        input.source_type,
+        input.source_id,
+        input.entry_type,
+        input.version,
+      ) as WorkflowContextEntry | undefined;
   },
 
   listByWorkflow(workflowRunId: string): WorkflowContextEntry[] {
@@ -147,10 +155,7 @@ export function estimateTokenCount(text: string): number {
 }
 
 function compareContextEntries(a: WorkflowContextEntry, b: WorkflowContextEntry): number {
-  const priority = entryPriority(a.entry_type) - entryPriority(b.entry_type);
-  if (priority !== 0) return priority;
-  if (a.created_at !== b.created_at) return a.created_at - b.created_at;
-  return a.id.localeCompare(b.id);
+  return entryPriority(a.entry_type) - entryPriority(b.entry_type);
 }
 
 function entryPriority(type: WorkflowContextEntryType): number {

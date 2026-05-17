@@ -123,6 +123,36 @@ test('workflowContextRepo treats duplicate source entry version as idempotent', 
   assert.equal(workflowContextRepo.listByWorkflow(run.id).length, 1);
 });
 
+test('workflowContextRepo scopes idempotency to workflow runs', () => {
+  const firstFixture = createFixture('workflow-scope-a');
+  const secondFixture = createFixture('workflow-scope-b');
+
+  const first = workflowContextRepo.create({
+    workflow_run_id: firstFixture.run.id,
+    workflow_step_id: firstFixture.step.id,
+    task_id: firstFixture.task.id,
+    source_type: 'system',
+    source_id: 'shared-source',
+    entry_type: 'summary',
+    title: '第一条',
+    content: '第一个工作流的上下文。',
+  });
+  const second = workflowContextRepo.create({
+    workflow_run_id: secondFixture.run.id,
+    workflow_step_id: secondFixture.step.id,
+    task_id: secondFixture.task.id,
+    source_type: 'system',
+    source_id: 'shared-source',
+    entry_type: 'summary',
+    title: '第二条',
+    content: '第二个工作流的上下文。',
+  });
+
+  assert.notEqual(second.id, first.id);
+  assert.deepEqual(workflowContextRepo.listByWorkflow(firstFixture.run.id).map((item) => item.id), [first.id]);
+  assert.deepEqual(workflowContextRepo.listByWorkflow(secondFixture.run.id).map((item) => item.id), [second.id]);
+});
+
 test('formatWorkflowContextEntries truncates entry and total budgets with raw refs', () => {
   const { task, run, step, agentRun } = createFixture('format');
   const longText = `前缀-${'x'.repeat(200)}-后缀`;
@@ -160,6 +190,34 @@ test('formatWorkflowContextEntries truncates entry and total budgets with raw re
   assert.doesNotMatch(formatted, /后缀/);
   assert.match(formatted, new RegExp(`source=agent_run:${handoff.source_id}`));
   assert.ok(formatted.length <= 500);
+});
+
+test('formatWorkflowContextEntries preserves input order for equal priority entries', () => {
+  const { task, run, step } = createFixture('formatter-order');
+  const first = workflowContextRepo.create({
+    workflow_run_id: run.id,
+    workflow_step_id: step.id,
+    task_id: task.id,
+    source_type: 'system',
+    source_id: 'order-first',
+    entry_type: 'summary',
+    title: '第一条摘要',
+    content: 'first',
+  });
+  const second = workflowContextRepo.create({
+    workflow_run_id: run.id,
+    workflow_step_id: step.id,
+    task_id: task.id,
+    source_type: 'system',
+    source_id: 'order-second',
+    entry_type: 'summary',
+    title: '第二条摘要',
+    content: 'second',
+  });
+
+  const formatted = formatWorkflowContextEntries([second, first]);
+
+  assert.ok(formatted.indexOf('第二条摘要') < formatted.indexOf('第一条摘要'));
 });
 
 test('formatWorkflowContextEntries returns explicit empty context', () => {

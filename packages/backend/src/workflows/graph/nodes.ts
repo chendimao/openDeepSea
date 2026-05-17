@@ -1384,6 +1384,7 @@ function createContextEntrySafely(
     });
   } catch (err) {
     console.warn(`[graph-context] failed to create ${input.entryType}: ${(err as Error).message}`);
+    throw err;
   }
 }
 

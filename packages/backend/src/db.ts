@@ -261,8 +261,9 @@ CREATE INDEX IF NOT EXISTS idx_workflow_context_run ON workflow_context_entries(
 CREATE INDEX IF NOT EXISTS idx_workflow_context_step ON workflow_context_entries(workflow_step_id);
 CREATE INDEX IF NOT EXISTS idx_workflow_context_task ON workflow_context_entries(task_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_workflow_context_type ON workflow_context_entries(workflow_run_id, entry_type, created_at);
+DROP INDEX IF EXISTS idx_workflow_context_source_version;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_context_source_version
-  ON workflow_context_entries(source_type, source_id, entry_type, version);
+  ON workflow_context_entries(workflow_run_id, source_type, source_id, entry_type, version);
 
 CREATE TABLE IF NOT EXISTS memory_entries (
   id TEXT PRIMARY KEY,
