@@ -86,6 +86,7 @@ export function FilePickerDialog({
               type="button"
               className={viewMode === 'list' ? 'is-active' : ''}
               aria-label={listViewLabel}
+              aria-pressed={viewMode === 'list'}
               title={listViewLabel}
               onClick={() => setViewMode('list')}
             >
@@ -95,6 +96,7 @@ export function FilePickerDialog({
               type="button"
               className={viewMode === 'card' ? 'is-active' : ''}
               aria-label={cardViewLabel}
+              aria-pressed={viewMode === 'card'}
               title={cardViewLabel}
               onClick={() => setViewMode('card')}
             >
@@ -103,7 +105,7 @@ export function FilePickerDialog({
           </div>
         </div>
 
-        <div className="file-picker-list" role="listbox" aria-label={t('files.picker.title')}>
+        <div className="file-picker-list" aria-label={t('files.picker.title')}>
           {isLoading ? (
             <div className="file-picker-empty">{t('files.loading')}</div>
           ) : visibleFiles.length === 0 ? (

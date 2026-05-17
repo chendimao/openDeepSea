@@ -205,6 +205,7 @@ export function FilesPage(): JSX.Element {
                 type="button"
                 className={viewMode === 'list' ? 'is-active' : ''}
                 aria-label={listViewLabel}
+                aria-pressed={viewMode === 'list'}
                 title={listViewLabel}
                 onClick={() => setViewMode('list')}
               >
@@ -214,6 +215,7 @@ export function FilesPage(): JSX.Element {
                 type="button"
                 className={viewMode === 'card' ? 'is-active' : ''}
                 aria-label={cardViewLabel}
+                aria-pressed={viewMode === 'card'}
                 title={cardViewLabel}
                 onClick={() => setViewMode('card')}
               >
