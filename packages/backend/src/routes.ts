@@ -16,6 +16,7 @@ import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskRepo } from './repos/tasks.js';
+import { searchProjectRooms } from './room-search.js';
 import { pickDirectory } from './system-dialogs.js';
 import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
 import { workflowRepo } from './repos/workflows.js';
@@ -705,6 +706,24 @@ router.delete('/projects/:id', (req, res) => {
 });
 
 // ---------- Rooms ----------
+router.get('/projects/:projectId/rooms/search', async (req, res) => {
+  const parsed = z.object({
+    q: z.string().trim().min(1),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    res.json(await searchProjectRooms({
+      projectId: req.params.projectId,
+      query: parsed.data.q,
+    }));
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message === 'project not found') return res.status(404).json({ error: 'project not found' });
+    if (message === 'query is required') return res.status(400).json({ error: 'query is required' });
+    res.status(500).json({ error: 'room search failed' });
+  }
+});
+
 router.get('/projects/:projectId/rooms', (req, res) => {
   res.json(roomRepo.listByProject(req.params.projectId));
 });
