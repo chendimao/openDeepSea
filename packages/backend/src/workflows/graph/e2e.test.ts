@@ -16,6 +16,7 @@ const { projectRepo } = await import('../../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
+const { workflowContextRepo } = await import('../../repos/workflow-context.js');
 const { parseGraphState, serializeGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
 const {
@@ -329,6 +330,97 @@ test('graph runtime executes every planned child before review', async () => {
   assert.equal(agentCalls.at(-1)?.agentId, acceptor.id);
   assert.equal(implementationCalls.every((call) => call.agentId === executor.id), true);
   assert.equal(agentCalls.some((call) => call.stage === 'code_review' && call.agentId === reviewer.id), true);
+});
+
+test('graph review prompt uses workflow context entries instead of raw implementation output', async () => {
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-context-budget-'));
+  projectPathsToCleanup.push(projectPath);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Context Budget', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Context Budget Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  addAcpWorkflowAgent(room.id, 'acceptor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Keep raw implementation out of review prompt',
+    description: 'Verify workflow context entries are the downstream context source.',
+  });
+  const rawNeedle = 'RAW_IMPLEMENTATION_OUTPUT_SHOULD_NOT_REACH_REVIEW_PROMPT';
+  const longImplementationOutput = `${rawNeedle}\n${'x'.repeat(50_000)}`;
+  const reviewPrompts: string[] = [];
+
+  setWorkflowOrchestratorGraphDeps({
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Create one child task with long raw output.',
+      assumptions: [],
+      tasks: [{
+        title: 'Produce long output',
+        description: 'Return a deliberately long implementation output.',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['review receives handoff only'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => {
+      if (!input.workflowStage || !input.workflowStepId || !input.taskId) {
+        throw new Error('workflow fake requires stage, step, and task');
+      }
+      if (input.workflowStage === 'code_review') {
+        reviewPrompts.push(input.prompt);
+      }
+      const output = input.workflowStage === 'implementation'
+        ? longImplementationOutput
+        : outputForStage(input.workflowStage);
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(input, output),
+        status: 'completed',
+      };
+    },
+  });
+
+  const run = await workflowOrchestrator.start(task.id);
+  const detail = workflowRepo.detail(run.id);
+  assert.ok(detail);
+  const executeStep = requireStep(detail.steps, 'execute');
+  const contextEntries = workflowContextRepo.listByWorkflow(run.id);
+  const handoff = contextEntries.find((entry) => entry.entry_type === 'handoff' && entry.workflow_step_id === executeStep.id);
+
+  assert.ok(handoff);
+  assert.equal(handoff.raw_char_count, longImplementationOutput.length);
+  assert.match(handoff.content, /完整原始输出请查看引用/);
+  assert.equal(reviewPrompts.length, 1);
+  assert.match(reviewPrompts[0] ?? '', /已有工作流上下文/);
+  assert.match(reviewPrompts[0] ?? '', /执行交接：Produce long output/);
+  assert.doesNotMatch(reviewPrompts[0] ?? '', new RegExp(rawNeedle));
+  assert.ok((reviewPrompts[0] ?? '').length < 12_000);
+  assert.equal(taskRepo.get(task.id)?.status, 'done');
+  assert.equal(executor.workflow_role, 'executor');
+  assert.equal(reviewer.workflow_role, 'reviewer');
 });
 
 test('graph approval records accepted event before continuing', async () => {

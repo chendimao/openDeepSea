@@ -553,7 +553,7 @@ function startAgentStage(
     room: context.room,
     task,
     agents: context.agents,
-    artifacts: context.artifacts,
+    workflowContext: '已有工作流上下文：暂无。',
     memoryContext: buildWorkflowMemoryContext(context.project.id, context.room.id, agent.id, task.id),
   });
   const step = workflowRepo.createStep({
@@ -1012,7 +1012,7 @@ function startAgentStageWithAgent(
     room: context.room,
     task,
     agents: context.agents,
-    artifacts: context.artifacts,
+    workflowContext: '已有工作流上下文：暂无。',
     memoryContext: buildWorkflowMemoryContext(context.project.id, context.room.id, agent.id, task.id),
   });
   const step = workflowRepo.createStep({

@@ -4,7 +4,7 @@ import { getVerificationCwd, runVerificationCommand } from './verification.js';
 import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orchestrator.js';
 import { parseAcceptanceVerdict, parseReviewVerdict } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
-import type { Task, TaskEventType } from '../../types.js';
+import type { Task, TaskEventType, WorkflowContextEntryType, WorkflowContextSourceType } from '../../types.js';
 
 export interface GraphRuntimeNodes {
   contextNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
@@ -86,6 +86,27 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       tools.updateGraphStep(step.id, {
         status: 'completed',
         result: output,
+      });
+      createContextEntrySafely(tools, context, {
+        workflowStepId: step.id,
+        sourceType: 'workflow_step',
+        sourceId: step.id,
+        entryType: 'summary',
+        title: '规划摘要',
+        content: [
+          `目标：${plan.goal ?? plan.summary}`,
+          `摘要：${plan.summary}`,
+          `子任务数：${plan.tasks.length}`,
+          plan.verification.length > 0 ? `验证：${plan.verification.join('; ')}` : '验证：未配置',
+          `是否需要审批：${plan.needsApproval ? '是' : '否'}`,
+        ].join('\n'),
+        rawCharCount: output.length,
+        metadata: {
+          graph_node: 'planning',
+          workflow_stage: 'planning',
+          task_count: plan.tasks.length,
+          needs_approval: plan.needsApproval,
+        },
       });
       recordEventSafely(tools, context, {
         eventType: 'workflow_plan_ready',
@@ -207,6 +228,23 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         },
       });
       tools.broadcastArtifactCreated(context.room.id, artifact);
+      createContextEntrySafely(tools, context, {
+        workflowStepId: step.id,
+        sourceType: 'artifact',
+        sourceId: artifact.id,
+        entryType: 'summary',
+        title: '任务分配摘要',
+        content: [
+          artifactContent,
+          `子任务：${childTaskIds.join(', ')}`,
+        ].join('\n'),
+        rawCharCount: artifactContent.length,
+        metadata: {
+          graph_node: 'dispatch',
+          workflow_stage: 'assignment',
+          child_task_ids: childTaskIds,
+        },
+      });
       tools.recordWorkflowEvent({
         roomId: context.room.id,
         taskId: context.task.id,
@@ -313,7 +351,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         room: context.room,
         task: nextChild,
         agents: context.agents,
-        artifacts: context.artifacts,
+        workflowContext: context.workflowContext,
         childTasks,
         memoryContext: context.memories,
       });
@@ -371,6 +409,24 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           error,
         });
         if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+        createContextEntrySafely(tools, context, {
+          task: nextChild,
+          workflowStepId: step.id,
+          roomAgentId: executor.id,
+          agentRunId: runResult.run.id,
+          sourceType: 'agent_run',
+          sourceId: `${runResult.run.id}:implementation-failed`,
+          entryType: 'handoff',
+          title: `执行失败：${nextChild.title}`,
+          content: buildImplementationHandoff(nextChild, runResult.run.stdout || runResult.message.content, error),
+          rawCharCount: (runResult.run.stdout || runResult.message.content).length,
+          metadata: {
+            graph_node: 'execute',
+            workflow_stage: 'implementation',
+            status: runResult.status,
+            error,
+          },
+        });
         const failedChild = tools.updateTaskStatus(nextChild.id, 'failed');
         if (failedChild) tools.broadcastTaskUpdated(failedChild);
         const blockedRun = tools.updateRun(context.run.id, {
@@ -413,6 +469,24 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         error: runResult.run.error,
       });
       if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+      createContextEntrySafely(tools, context, {
+        task: nextChild,
+        workflowStepId: step.id,
+        roomAgentId: executor.id,
+        agentRunId: runResult.run.id,
+        sourceType: 'agent_run',
+        sourceId: `${runResult.run.id}:implementation`,
+        entryType: 'handoff',
+        title: `执行交接：${nextChild.title}`,
+        content: buildImplementationHandoff(nextChild, runResult.run.stdout || runResult.message.content),
+        rawCharCount: (runResult.run.stdout || runResult.message.content).length,
+        metadata: {
+          graph_node: 'execute',
+          workflow_stage: 'implementation',
+          status: 'completed',
+          result_message_id: runResult.message.id,
+        },
+      });
 
       const reviewedChild = tools.updateTaskStatus(nextChild.id, 'review');
       if (reviewedChild) tools.broadcastTaskUpdated(reviewedChild);
@@ -472,7 +546,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         room: context.room,
         task: context.task,
         agents: context.agents,
-        artifacts: context.artifacts,
+        workflowContext: context.workflowContext,
         childTasks: tools.listChildTasks(context.task.id),
         memoryContext: context.memories,
       });
@@ -524,6 +598,22 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         content: output,
       });
       tools.broadcastArtifactCreated(context.room.id, artifact);
+      createContextEntrySafely(tools, context, {
+        workflowStepId: step.id,
+        roomAgentId: reviewer.id,
+        agentRunId: runResult.run.id,
+        sourceType: 'agent_run',
+        sourceId: `${runResult.run.id}:review-output`,
+        entryType: 'summary',
+        title: '代码审查输出摘要',
+        content: buildFallbackSummary(output),
+        rawCharCount: output.length,
+        metadata: {
+          graph_node: 'review',
+          workflow_stage: 'code_review',
+          result_message_id: runResult.message.id,
+        },
+      });
 
       if (runResult.status !== 'completed') {
         const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Code review failed');
@@ -611,6 +701,23 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         error: finalError,
       });
       if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+      createContextEntrySafely(tools, context, {
+        workflowStepId: step.id,
+        roomAgentId: reviewer.id,
+        agentRunId: runResult.run.id,
+        sourceType: 'agent_run',
+        sourceId: `${runResult.run.id}:review-verdict`,
+        entryType: verdict.findings.length > 0 ? 'issue' : 'summary',
+        title: `代码审查结论：${verdict.verdict}`,
+        content: buildReviewContext(verdict),
+        rawCharCount: output.length,
+        metadata: {
+          graph_node: 'review',
+          workflow_stage: 'code_review',
+          review_verdict: verdict.verdict,
+          findings_count: verdict.findings.length,
+        },
+      });
 
       if (verdict.verdict === 'failed') {
         const blockedRun = tools.updateRun(context.run.id, {
@@ -784,6 +891,21 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         },
       });
       tools.broadcastArtifactCreated(context.room.id, artifact);
+      createContextEntrySafely(tools, context, {
+        workflowStepId: step.id,
+        sourceType: 'verification',
+        sourceId: `${step.id}:verification`,
+        entryType: 'verification',
+        title: blocked ? '验证失败' : '验证结果',
+        content: summary,
+        rawCharCount: summary.length,
+        metadata: {
+          graph_node: 'verify',
+          workflow_stage: 'code_review',
+          results,
+          status: blocked ? 'failed' : 'completed',
+        },
+      });
 
       const updatedStep = tools.updateGraphStep(step.id, {
         status: blocked ? 'failed' : 'completed',
@@ -859,7 +981,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         room: context.room,
         task: context.task,
         agents: context.agents,
-        artifacts: context.artifacts,
+        workflowContext: context.workflowContext,
         childTasks: tools.listChildTasks(context.task.id),
         memoryContext: context.memories,
       });
@@ -912,6 +1034,22 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         content: output,
       });
       tools.broadcastArtifactCreated(context.room.id, artifact);
+      createContextEntrySafely(tools, context, {
+        workflowStepId: step.id,
+        roomAgentId: acceptor.id,
+        agentRunId: runResult.run.id,
+        sourceType: 'agent_run',
+        sourceId: `${runResult.run.id}:acceptance-output`,
+        entryType: 'summary',
+        title: '验收输出摘要',
+        content: buildFallbackSummary(output),
+        rawCharCount: output.length,
+        metadata: {
+          graph_node: 'acceptance',
+          workflow_stage: 'acceptance',
+          result_message_id: runResult.message.id,
+        },
+      });
 
       if (runResult.status !== 'completed') {
         const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Acceptance failed');
@@ -1003,6 +1141,22 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         error: verdict.verdict === 'pass' ? null : 'Acceptance failed',
       });
       if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+      createContextEntrySafely(tools, context, {
+        workflowStepId: step.id,
+        roomAgentId: acceptor.id,
+        agentRunId: runResult.run.id,
+        sourceType: 'agent_run',
+        sourceId: `${runResult.run.id}:acceptance-verdict`,
+        entryType: 'summary',
+        title: `验收结论：${verdict.verdict}`,
+        content: buildAcceptanceContext(verdict),
+        rawCharCount: output.length,
+        metadata: {
+          graph_node: 'acceptance',
+          workflow_stage: 'acceptance',
+          acceptance_verdict: verdict.verdict,
+        },
+      });
 
       if (verdict.verdict === 'pass') {
         for (const child of tools.listChildTasks(context.task.id).filter((item) => item.status === 'review')) {
@@ -1181,4 +1335,103 @@ function recordEventSafely(
   } catch (err) {
     console.warn(`[graph-events] failed to record ${input.eventType}: ${(err as Error).message}`);
   }
+}
+
+function createContextEntrySafely(
+  tools: GraphTools,
+  context: {
+    room: { id: string };
+    task: Task;
+    run: { id: string };
+  },
+  input: {
+    workflowStepId?: string | null;
+    task?: Task;
+    roomAgentId?: string | null;
+    agentRunId?: string | null;
+    sourceType: WorkflowContextSourceType;
+    sourceId: string;
+    entryType: WorkflowContextEntryType;
+    title: string;
+    content: string;
+    rawCharCount?: number;
+    metadata?: Record<string, unknown>;
+  },
+): void {
+  const task = input.task ?? context.task;
+  try {
+    tools.createContextEntry({
+      workflow_run_id: context.run.id,
+      workflow_step_id: input.workflowStepId ?? null,
+      task_id: task.id,
+      room_agent_id: input.roomAgentId ?? null,
+      agent_run_id: input.agentRunId ?? null,
+      source_type: input.sourceType,
+      source_id: input.sourceId,
+      entry_type: input.entryType,
+      title: input.title,
+      content: input.content,
+      raw_char_count: input.rawCharCount ?? input.content.length,
+      metadata: {
+        ...(input.metadata ?? {}),
+        raw_refs: {
+          workflow_step_id: input.workflowStepId ?? null,
+          agent_run_id: input.agentRunId ?? null,
+          source_type: input.sourceType,
+          source_id: input.sourceId,
+        },
+      },
+    });
+  } catch (err) {
+    console.warn(`[graph-context] failed to create ${input.entryType}: ${(err as Error).message}`);
+  }
+}
+
+function buildImplementationHandoff(task: Task, output: string, error?: string | null): string {
+  return [
+    `子任务：${task.title}`,
+    `状态：${error ? '失败' : '完成'}`,
+    error ? `错误：${error}` : null,
+    '',
+    '交接摘要：',
+    buildFallbackSummary(output),
+  ].filter((line): line is string => line !== null).join('\n');
+}
+
+function buildReviewContext(verdict: ReturnType<typeof parseReviewVerdict>): string {
+  return [
+    `审查结论：${verdict.verdict}`,
+    `风险等级：${verdict.riskLevel}`,
+    '',
+    '发现：',
+    verdict.findings.length > 0 ? verdict.findings.map((item) => `- ${item}`).join('\n') : '- 无',
+    '',
+    '必须修复：',
+    verdict.requiredFixes.length > 0 ? verdict.requiredFixes.map((item) => `- ${item}`).join('\n') : '- 无',
+  ].join('\n');
+}
+
+function buildAcceptanceContext(verdict: ReturnType<typeof parseAcceptanceVerdict>): string {
+  return [
+    `验收结论：${verdict.verdict}`,
+    verdict.notes.trim() ? `说明：${verdict.notes.trim()}` : null,
+    '',
+    '通过标准：',
+    verdict.acceptedCriteria.length > 0 ? verdict.acceptedCriteria.map((item) => `- ${item}`).join('\n') : '- 无',
+    '',
+    '未通过标准：',
+    verdict.failedCriteria.length > 0 ? verdict.failedCriteria.map((item) => `- ${item}`).join('\n') : '- 无',
+  ].filter((line): line is string => line !== null).join('\n');
+}
+
+function buildFallbackSummary(output: string): string {
+  const normalized = output.trim();
+  if (!normalized) return '无输出。';
+  const maxChars = 1800;
+  if (normalized.length <= maxChars) return normalized;
+  return [
+    `原始输出较长，已压缩为引用摘要。`,
+    `原始字符数：${normalized.length}`,
+    '完整原始输出请查看引用的 agent run 或 workflow step。',
+  ].join('\n');
 }

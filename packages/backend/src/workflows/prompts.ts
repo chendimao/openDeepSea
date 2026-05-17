@@ -1,4 +1,4 @@
-import type { Room, RoomAgent, Task, TaskArtifact, WorkflowStage } from '../types.js';
+import type { Room, RoomAgent, Task, WorkflowStage } from '../types.js';
 
 interface PromptContext {
   projectName: string;
@@ -6,7 +6,7 @@ interface PromptContext {
   room: Room;
   task: Task;
   agents: RoomAgent[];
-  artifacts: TaskArtifact[];
+  workflowContext?: string;
   childTasks?: Task[];
   memoryContext?: string;
 }
@@ -30,11 +30,6 @@ function formatAgents(agents: RoomAgent[]): string {
     .join('\n');
 }
 
-function formatArtifacts(artifacts: TaskArtifact[]): string {
-  if (artifacts.length === 0) return '暂无阶段产物。';
-  return artifacts.map((artifact) => `## ${artifact.title}\n${artifact.content}`).join('\n\n');
-}
-
 function baseContext(context: PromptContext): string {
   return [
     `项目：${context.projectName}`,
@@ -48,6 +43,10 @@ function baseContext(context: PromptContext): string {
     '',
     context.memoryContext || '项目/聊天室记忆：暂无相关记忆。',
   ].join('\n');
+}
+
+function workflowContext(context: PromptContext): string {
+  return context.workflowContext || '已有工作流上下文：暂无。';
 }
 
 function buildAnalysisPrompt(context: PromptContext): string {
@@ -94,8 +93,7 @@ function buildPlanningPrompt(context: PromptContext): string {
     '',
     baseContext(context),
     '',
-    '已有阶段产物：',
-    formatArtifacts(context.artifacts),
+    workflowContext(context),
     '',
     '输出示例：',
     '```json',
@@ -131,8 +129,7 @@ function buildAssignmentPrompt(context: PromptContext): string {
     '',
     baseContext(context),
     '',
-    '已有阶段产物：',
-    formatArtifacts(context.artifacts),
+    workflowContext(context),
   ].join('\n');
 }
 
@@ -142,8 +139,7 @@ function buildImplementationPrompt(context: PromptContext): string {
     '',
     baseContext(context),
     '',
-    '已有阶段产物：',
-    formatArtifacts(context.artifacts),
+    workflowContext(context),
   ].join('\n');
 }
 
@@ -154,8 +150,7 @@ function buildReviewPrompt(context: PromptContext): string {
     '',
     baseContext(context),
     '',
-    '已有阶段产物：',
-    formatArtifacts(context.artifacts),
+    workflowContext(context),
   ].join('\n');
 }
 
@@ -166,7 +161,6 @@ function buildAcceptancePrompt(context: PromptContext): string {
     '',
     baseContext(context),
     '',
-    '已有阶段产物：',
-    formatArtifacts(context.artifacts),
+    workflowContext(context),
   ].join('\n');
 }

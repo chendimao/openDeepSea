@@ -8,6 +8,7 @@ import { projectRepo } from '../../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
 import { settingsRepo } from '../../repos/settings.js';
 import { taskRepo } from '../../repos/tasks.js';
+import { formatWorkflowContextEntries, workflowContextRepo } from '../../repos/workflow-context.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { recordTaskEvent } from '../../task-conversation.js';
 import type {
@@ -46,6 +47,7 @@ interface WorkflowRuntimeContext {
   task: NonNullable<ReturnType<typeof taskRepo.get>>;
   agents: RoomAgent[];
   artifacts: ReturnType<typeof workflowRepo.listArtifacts>;
+  workflowContext: string;
   memories: string;
   recentMessages: string[];
 }
@@ -61,6 +63,7 @@ export interface GraphTools {
   listChildTasks: typeof taskRepo.listChildren;
   listSteps: typeof workflowRepo.listSteps;
   listArtifacts: typeof workflowRepo.listArtifacts;
+  createContextEntry: typeof workflowContextRepo.create;
   broadcastWorkflowUpdated: (workflow: WorkflowRun) => void;
   broadcastStepCreated: (roomId: string, step: WorkflowStep) => void;
   broadcastStepUpdated: (roomId: string, step: WorkflowStep) => void;
@@ -122,6 +125,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
       const recentMessages = formatRecentMessagesForPlanner(messageRepo.listByRoom(room.id, 20), {
         limit: 20,
       });
+      const workflowContext = formatWorkflowContextEntries(workflowContextRepo.listByWorkflow(run.id));
 
       return {
         run,
@@ -130,6 +134,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
         task,
         agents: roomAgentRepo.listByRoom(run.room_id),
         artifacts: workflowRepo.listArtifacts(run.id),
+        workflowContext,
         memories,
         recentMessages,
       };
@@ -145,6 +150,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     listChildTasks: taskRepo.listChildren.bind(taskRepo),
     listSteps: workflowRepo.listSteps.bind(workflowRepo),
     listArtifacts: workflowRepo.listArtifacts.bind(workflowRepo),
+    createContextEntry: workflowContextRepo.create.bind(workflowContextRepo),
     broadcastWorkflowUpdated(workflow: WorkflowRun) {
       wsHub.broadcast(workflow.room_id, { type: 'workflow:updated', roomId: workflow.room_id, workflow });
     },
