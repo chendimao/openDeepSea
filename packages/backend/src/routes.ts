@@ -53,6 +53,7 @@ import { wsHub } from './ws-hub.js';
 import {
   COLLABORATION_STAGES,
   type AcpBackend,
+  type CollaborationRunStatus,
   type MemoryScope,
   type MessageMetadata,
   type MessageRoutingMode,
@@ -68,9 +69,16 @@ interface CollaborationRouteDeps {
 }
 
 let collaborationRouteDeps: CollaborationRouteDeps = {};
+const collaborationRunsBySource = new Map<string, {
+  id: string;
+  room_id: string;
+  source_message_id: string;
+  status: CollaborationRunStatus;
+}>();
 
 export function setCollaborationRouteDeps(deps: CollaborationRouteDeps): void {
   collaborationRouteDeps = deps;
+  collaborationRunsBySource.clear();
 }
 
 function workflowErrorStatus(error: Error): number {
@@ -1438,12 +1446,19 @@ router.post('/rooms/:roomId/collaborations', (req, res) => {
     return res.status(404).json({ error: 'source message not found' });
   }
 
+  const dedupeKey = `${room.id}:${sourceMessage.id}`;
+  const existingRun = collaborationRunsBySource.get(dedupeKey);
+  if (existingRun) {
+    return res.status(202).json({ run: existingRun });
+  }
+
   const run = {
     id: nanoid(16),
     room_id: room.id,
     source_message_id: sourceMessage.id,
     status: 'running' as const,
   };
+  collaborationRunsBySource.set(dedupeKey, run);
   const runCollaborationStages =
     collaborationRouteDeps.runCollaborationStages ?? defaultRunCollaborationStages;
 
@@ -1453,9 +1468,24 @@ router.post('/rooms/:roomId/collaborations', (req, res) => {
     roomId: room.id,
     sourceMessage,
     decision: parsed.data.decision,
-  }).catch((err) => {
-    console.warn(`[collaboration-routes] collaboration ${run.id} failed: ${formatUnknownError(err)}`);
-  });
+  })
+    .then((result) => {
+      collaborationRunsBySource.set(dedupeKey, {
+        id: run.id,
+        room_id: room.id,
+        source_message_id: sourceMessage.id,
+        status: result.status,
+      });
+    })
+    .catch((err) => {
+      console.warn(`[collaboration-routes] collaboration ${run.id} failed: ${formatUnknownError(err)}`);
+      collaborationRunsBySource.set(dedupeKey, {
+        id: run.id,
+        room_id: room.id,
+        source_message_id: sourceMessage.id,
+        status: 'blocked',
+      });
+    });
 
   return res.status(202).json({ run });
 });

@@ -142,7 +142,7 @@ test('legacy fallback_route data is normalized to planner fallback reply during 
     assert.equal(runs[0]?.agent_id, 'planner');
     assert.equal(resolution?.effective.message_routing_mode, 'fallback_reply');
     assert.equal(resolution?.effective.fallback_agent_id, 'planner');
-    assert.equal(messageRepo.listByRoom(room.id, 20).at(-1)?.content, '收到，先规划。');
+    assert.match(messageRepo.listByRoom(room.id, 20).at(-1)?.content ?? '', /Planner 协作决策解析失败/);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -304,6 +304,14 @@ test('planner fallback reply creates collaboration decision without dispatching 
     assert.match(prompts[0] ?? '', /Return ONLY valid JSON/);
     assert.match(prompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
     assert.ok(decisionMessage);
+    assert.equal(
+      messages.some((message) =>
+        message.sender_id === 'planner' &&
+        message.message_type === 'agent_stream' &&
+        message.content.includes('"recommendedMode"')
+      ),
+      false,
+    );
     const metadata = JSON.parse(decisionMessage.metadata ?? '{}') as MessageMetadata;
     assert.equal(metadata.source_message_id, userMessage.id);
     assert.equal(metadata.fallback_agent_id, 'planner');

@@ -75,6 +75,53 @@ test('POST /rooms/:roomId/collaborations creates a collaboration run and trigger
   assert.deepEqual(call.decision, decision);
 });
 
+test('POST /rooms/:roomId/collaborations is idempotent for the same source message', async () => {
+  const { room, message, decision } = createCollaborationFixture('collaboration-idempotent');
+  const calls: unknown[] = [];
+  setCollaborationRouteDeps({
+    runCollaborationStages: async (input) => {
+      calls.push(input);
+      return {
+        id: input.runId,
+        room_id: input.roomId,
+        source_message_id: input.sourceMessage.id,
+        status: 'completed',
+        steps: [],
+        error: null,
+        started_at: Date.now(),
+        completed_at: Date.now(),
+      };
+    },
+  });
+
+  const first = await request(`/api/rooms/${room.id}/collaborations`, {
+    method: 'POST',
+    body: JSON.stringify({
+      source_message_id: message.id,
+      decision,
+    }),
+  });
+  const second = await request(`/api/rooms/${room.id}/collaborations`, {
+    method: 'POST',
+    body: JSON.stringify({
+      source_message_id: message.id,
+      decision,
+    }),
+  });
+
+  assert.equal(first.status, 202);
+  assert.equal(second.status, 202);
+  const firstBody = await first.json() as {
+    run: { id: string; room_id: string; source_message_id: string; status: string };
+  };
+  const secondBody = await second.json() as {
+    run: { id: string; room_id: string; source_message_id: string; status: string };
+  };
+  assert.equal(secondBody.run.id, firstBody.run.id);
+  assert.equal(secondBody.run.source_message_id, message.id);
+  assert.equal(calls.length, 1);
+});
+
 test('POST /rooms/:roomId/messages/:messageId/promote-to-workflow creates a task and starts workflow', async () => {
   const { room, message } = createCollaborationFixture('promote');
   const enqueued: string[] = [];

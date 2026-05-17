@@ -6,7 +6,11 @@ export const messageRepo = {
   listByRoom(roomId: string, limit = 200): Message[] {
     return db
       .prepare(
-        'SELECT * FROM messages WHERE room_id = ? ORDER BY created_at ASC LIMIT ?',
+        `SELECT * FROM messages
+         WHERE room_id = ?
+           AND COALESCE(json_extract(metadata, '$.internal'), 0) <> 1
+         ORDER BY created_at ASC
+         LIMIT ?`,
       )
       .all(roomId, limit) as Message[];
   },

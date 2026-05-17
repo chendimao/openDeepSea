@@ -96,7 +96,20 @@ export async function dispatchUserMessage(args: {
       console.warn(
         `[dispatcher] planner fallback decision parse failed: roomId=${roomId} sourceMessageId=${userMessage.id} fallbackAgentId=${fallbackTarget.agent.agent_id} error=${(error as Error).message}`,
       );
-      // Keep planner output as-is and do not auto-dispatch on parse failure.
+      const errorMessage = messageRepo.create({
+        room_id: roomId,
+        sender_type: 'system',
+        sender_id: 'system',
+        sender_name: 'System',
+        content: `Planner 协作决策解析失败：${(error as Error).message}`,
+        message_type: 'system',
+        metadata: {
+          event_type: 'collaboration_decision_failed',
+          source_message_id: userMessage.id,
+          fallback_agent_id: fallbackTarget.agent.agent_id,
+        },
+      });
+      wsHub.broadcast(roomId, { type: 'message:new', roomId, message: errorMessage });
     }
   }
 }
@@ -150,6 +163,7 @@ export interface RespondAsAgentInput {
   projectPath: string;
   roomId: string;
   prompt: string;
+  internalMessage?: boolean;
   imagePaths?: string[];
   taskId?: string | null;
   workflowRunId?: string | null;
@@ -260,7 +274,7 @@ function resolveUploadLocalPath(rootDir: string, relativePath: string): string |
 }
 
 async function runTargets(args: {
-  targets: { agent: RoomAgent; prompt: string }[];
+  targets: { agent: RoomAgent; prompt: string; internalMessage?: boolean }[];
   projectPath: string;
   roomId: string;
   imagePaths?: string[];
@@ -274,6 +288,7 @@ async function runTargets(args: {
         projectPath: args.projectPath,
         roomId: args.roomId,
         prompt: target.prompt,
+        internalMessage: target.internalMessage,
         imagePaths: args.imagePaths,
         distillModelInvoker: args.distillModelInvoker,
         onFinished: ({ message }) => {
@@ -303,7 +318,7 @@ function resolveInitialTargets(args: {
   mode: 'mentions_only' | 'fallback_reply';
   prompt: string;
   imagePaths?: string[];
-}): { targets: { agent: RoomAgent; prompt: string }[]; after?: 'decision_from_planner_fallback' } {
+}): { targets: { agent: RoomAgent; prompt: string; internalMessage?: boolean }[]; after?: 'decision_from_planner_fallback' } {
   if (args.explicitlyMentionedAgents.length > 0) {
     return {
       targets: args.explicitlyMentionedAgents.map((agent) => ({ agent, prompt: args.prompt })),
@@ -317,7 +332,7 @@ function resolveInitialTargets(args: {
     ? buildPlannerFallbackDecisionPrompt(args.prompt, args.allAgents, fallbackAgent)
     : args.prompt;
   return {
-    targets: [{ agent: fallbackAgent, prompt }],
+    targets: [{ agent: fallbackAgent, prompt, internalMessage: shouldAskForDecision }],
     after: shouldAskForDecision ? 'decision_from_planner_fallback' : undefined,
   };
 }
@@ -425,21 +440,26 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       acp_enabled: !!agent.acp_enabled,
       acp_backend: agent.acp_backend,
       acp_session_id: agent.acp_session_id,
+      internal: args.internalMessage ? true : undefined,
     },
   });
-  wsHub.broadcast(roomId, { type: 'message:new', roomId, message: placeholder });
+  if (!args.internalMessage) {
+    wsHub.broadcast(roomId, { type: 'message:new', roomId, message: placeholder });
+  }
 
   const onStdout = (chunk: string): void => {
     messageRepo.appendChunk(placeholder.id, chunk);
     const updated = agentRunRepo.appendStdout(run.id, chunk);
     if (updated) broadcastRun('agent_run:updated', updated);
-    wsHub.broadcast(roomId, {
-      type: 'message:stream',
-      roomId,
-      messageId: placeholder.id,
-      chunk,
-      done: false,
-    });
+    if (!args.internalMessage) {
+      wsHub.broadcast(roomId, {
+        type: 'message:stream',
+        roomId,
+        messageId: placeholder.id,
+        chunk,
+        done: false,
+      });
+    }
   };
 
   const onStderr = (chunk: string): void => {
@@ -527,18 +547,20 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         }
       }
     } finally {
-      wsHub.broadcast(roomId, {
-        type: 'message:stream',
-        roomId,
-        messageId: placeholder.id,
-        chunk: '',
-        done: true,
-      });
+      if (!args.internalMessage) {
+        wsHub.broadcast(roomId, {
+          type: 'message:stream',
+          roomId,
+          messageId: placeholder.id,
+          chunk: '',
+          done: true,
+        });
+      }
       // Async memory distillation after reply completes (non-workflow only)
       const autoDistillEnabled = room
         ? settingsRepo.resolveForRoom(roomId)?.effective.auto_distill_enabled ?? true
         : false;
-      if (room && !args.workflowRunId && finalRun?.status === 'completed' && autoDistillEnabled) {
+      if (room && !args.internalMessage && !args.workflowRunId && finalRun?.status === 'completed' && autoDistillEnabled) {
         distillFromConversation({
           projectId: room.project_id,
           roomId,
