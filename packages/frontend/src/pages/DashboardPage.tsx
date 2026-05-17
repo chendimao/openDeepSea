@@ -200,8 +200,7 @@ function ProjectActions({ project }: { project: Project }): JSX.Element {
           >
             <DropdownMenu.Item
               className="flex cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-2 text-[12.5px] text-[var(--color-danger)] outline-none transition-colors hover:bg-[var(--color-surface-raised)] focus:bg-[var(--color-surface-raised)]"
-              onSelect={(event) => {
-                event.preventDefault();
+              onSelect={() => {
                 setConfirmOpen(true);
               }}
             >
