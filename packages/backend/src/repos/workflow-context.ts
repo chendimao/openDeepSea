@@ -97,13 +97,13 @@ export const workflowContextRepo = {
 
   listByWorkflow(workflowRunId: string): WorkflowContextEntry[] {
     return db
-      .prepare('SELECT * FROM workflow_context_entries WHERE workflow_run_id = ? ORDER BY created_at ASC, id ASC')
+      .prepare('SELECT * FROM workflow_context_entries WHERE workflow_run_id = ? ORDER BY created_at ASC, rowid ASC')
       .all(workflowRunId) as WorkflowContextEntry[];
   },
 
   listByStep(workflowStepId: string): WorkflowContextEntry[] {
     return db
-      .prepare('SELECT * FROM workflow_context_entries WHERE workflow_step_id = ? ORDER BY created_at ASC, id ASC')
+      .prepare('SELECT * FROM workflow_context_entries WHERE workflow_step_id = ? ORDER BY created_at ASC, rowid ASC')
       .all(workflowStepId) as WorkflowContextEntry[];
   },
 };

@@ -26,8 +26,12 @@ function createFixture(name: string) {
     room_id: room.id,
     agent_id: `${name}-agent`,
     agent_name: `${name} Agent`,
+  });
+  roomAgentRepo.setAcp(agent.id, {
     acp_enabled: true,
     acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
   });
   const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: `${name} task` });
   const run = workflowRepo.createRun({

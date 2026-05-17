@@ -187,7 +187,7 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
       completed_at: null,
     },
     agents: [],
-    artifacts: [],
+    workflowContext: '已有工作流上下文：暂无。',
   };
 }
 
