@@ -27,10 +27,10 @@ const LOCAL_ACCESS_TOKEN_STORAGE_KEY = 'opendeepsea.localToken';
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isFormData = init.body instanceof FormData;
-  const headers = {
-    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(init.headers ?? {}),
-  };
+  const headers = new Headers(init.headers);
+  if (!isFormData && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
   const res = await fetch(`${BASE}${path}`, {
     ...init,
     headers,

@@ -33,6 +33,17 @@ test('local access accepts trusted frontend origin with token', () => {
   assert.equal(result.ok, true);
 });
 
+test('local access accepts no-origin request with correct token', () => {
+  const token = createLocalAccessToken();
+  const result = validateLocalAccess({
+    method: 'GET',
+    headers: {
+      'x-opendeepsea-local-token': token,
+    },
+  }, token);
+  assert.equal(result.ok, true);
+});
+
 test('local access rejects untrusted origin even with token', () => {
   const token = createLocalAccessToken();
   const result = validateLocalAccess(requestWithToken(token, UNTRUSTED_ORIGIN), token);
