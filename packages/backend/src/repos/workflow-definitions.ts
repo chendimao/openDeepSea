@@ -130,10 +130,10 @@ export const workflowDefinitionRepo = {
   },
 
   list(): WorkflowDefinition[] {
+    this.ensureBuiltInDefinitions();
     const rows = db
       .prepare('SELECT * FROM workflow_definitions ORDER BY updated_at DESC, created_at DESC')
       .all() as WorkflowDefinitionRow[];
-    if (rows.length === 0) return [this.ensureBuiltInDefinitions()];
     return rows.map(normalize);
   },
 
@@ -265,6 +265,7 @@ export const workflowDefinitionRepo = {
     });
 
     requireSupportedWorkflowShape({ nodes, edges });
+    requireExecutableWorkflowShape({ nodes, edges });
     return { nodes, edges };
   },
 };
@@ -283,6 +284,7 @@ function requireSupportedWorkflowShape(input: WorkflowDefinitionGraph): void {
     'dispatch',
     'execute',
     'review',
+    'repair_decision',
     'verify',
     'acceptance',
     'memory',
@@ -290,6 +292,68 @@ function requireSupportedWorkflowShape(input: WorkflowDefinitionGraph): void {
   for (const type of required) {
     if (!types.has(type)) throw new Error(`workflow definition must include ${type} node`);
   }
+}
+
+function requireExecutableWorkflowShape(input: WorkflowDefinitionGraph): void {
+  const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
+  const incoming = new Map(input.nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map<string, WorkflowDefinitionGraph['edges']>();
+  for (const edge of input.edges) {
+    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1);
+    const list = outgoing.get(edge.from) ?? [];
+    list.push(edge);
+    outgoing.set(edge.from, list);
+  }
+
+  const startNodes = input.nodes.filter((node) => (incoming.get(node.id) ?? 0) === 0);
+  if (startNodes.length !== 1) throw new Error('workflow definition must have exactly one start node');
+
+  const visited = new Set<string>();
+  const stack = [startNodes[0]!.id];
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    for (const edge of outgoing.get(id) ?? []) {
+      if (!visited.has(edge.to)) stack.push(edge.to);
+    }
+  }
+  if (visited.size !== input.nodes.length) throw new Error('workflow definition must be fully reachable from the start node');
+
+  for (const edge of input.edges) {
+    const from = nodeById.get(edge.from)!;
+    const to = nodeById.get(edge.to)!;
+    if (!isSupportedRuntimeTransition(from.type, to.type, edge.condition ?? null)) {
+      throw new Error(`unsupported workflow transition: ${from.type} -> ${to.type}`);
+    }
+  }
+}
+
+function isSupportedRuntimeTransition(
+  from: WorkflowDefinitionNodeType,
+  to: WorkflowDefinitionNodeType,
+  condition: string | null,
+): boolean {
+  if (from === 'context') return to === 'planning';
+  if (from === 'planning') return to === 'approval_gate';
+  if (from === 'approval_gate') return to === 'dispatch' && (!condition || condition === 'approved' || condition === 'default');
+  if (from === 'dispatch') return to === 'execute';
+  if (from === 'execute') {
+    return (
+      (to === 'execute' && condition === 'has_runnable_child') ||
+      (to === 'review' && (!condition || condition === 'done' || condition === 'review' || condition === 'complete' || condition === 'default'))
+    );
+  }
+  if (from === 'review') {
+    return (
+      (to === 'repair_decision' && condition === 'changes_requested') ||
+      (to === 'verify' && (!condition || condition === 'pass' || condition === 'verify' || condition === 'default'))
+    );
+  }
+  if (from === 'repair_decision') return to === 'execute' && (!condition || condition === 'repair' || condition === 'execute' || condition === 'default');
+  if (from === 'verify') return to === 'acceptance' && (!condition || condition === 'pass' || condition === 'acceptance' || condition === 'default');
+  if (from === 'acceptance') return to === 'memory' && (!condition || condition === 'completed' || condition === 'default');
+  return false;
 }
 
 function defaultStageForNodeType(type: WorkflowDefinitionNodeType) {

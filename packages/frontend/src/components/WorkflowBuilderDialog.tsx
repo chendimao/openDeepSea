@@ -64,9 +64,19 @@ export function WorkflowBuilderDialog({
   const [nodes, setNodes] = useState<Node[]>(() => toFlowNodes(definition?.definition ?? defaultGraph()));
   const [edges, setEdges] = useState<Edge[]>(() => toFlowEdges(definition?.definition ?? defaultGraph()));
   const selectedNode = useMemo(() => nodes.find((node) => node.id === selectedNodeId) ?? null, [nodes, selectedNodeId]);
+  const hasDuplicateNodeTypes = useMemo(() => {
+    const seen = new Set<WorkflowDefinitionNodeType>();
+    return nodes.some((node) => {
+      const type = node.data.nodeType as WorkflowDefinitionNodeType;
+      if (seen.has(type)) return true;
+      seen.add(type);
+      return false;
+    });
+  }, [nodes]);
 
   const create = useMutation({
     mutationFn: async () => {
+      if (hasDuplicateNodeTypes) throw new Error('当前版本每种节点类型只能出现一次');
       const created = await api.createWorkflowDefinition({
         name,
         description: description.trim() || null,
@@ -119,6 +129,14 @@ export function WorkflowBuilderDialog({
 
   const updateSelectedNode = (patch: Partial<WorkflowDefinitionNode>) => {
     if (!selectedNode) return;
+    if (
+      patch.type &&
+      patch.type !== selectedNode.data.nodeType &&
+      nodes.some((node) => node.id !== selectedNode.id && node.data.nodeType === patch.type)
+    ) {
+      toast.error('当前版本每种节点类型只能出现一次');
+      return;
+    }
     setNodes((prev) =>
       prev.map((node) =>
         node.id === selectedNode.id
@@ -206,6 +224,10 @@ export function WorkflowBuilderDialog({
                       label="类型"
                       value={String(selectedNode.data.nodeType)}
                       options={NODE_TYPES}
+                      disabledOptions={NODE_TYPES.filter((type) =>
+                        type !== selectedNode.data.nodeType &&
+                        nodes.some((node) => node.data.nodeType === type)
+                      )}
                       onChange={(value) => updateSelectedNode({ type: value as WorkflowDefinitionNodeType })}
                     />
                     <SelectField
@@ -225,7 +247,7 @@ export function WorkflowBuilderDialog({
               )}
               <Button
                 className="w-full justify-center"
-                disabled={create.isPending || !name.trim() || nodes.length === 0}
+                disabled={create.isPending || !name.trim() || nodes.length === 0 || hasDuplicateNodeTypes}
                 onClick={() => create.mutate()}
               >
                 <UploadCloud className="h-3.5 w-3.5" />
@@ -247,13 +269,16 @@ function SelectField({
   label,
   value,
   options,
+  disabledOptions = [],
   onChange,
 }: {
   label: string;
   value: string;
   options: string[];
+  disabledOptions?: string[];
   onChange: (value: string) => void;
 }) {
+  const disabled = new Set(disabledOptions);
   return (
     <div>
       <Label>{label}</Label>
@@ -263,7 +288,7 @@ function SelectField({
         className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[12px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)]"
       >
         {options.map((option) => (
-          <option key={option || 'none'} value={option}>
+          <option key={option || 'none'} value={option} disabled={disabled.has(option)}>
             {option || '无'}
           </option>
         ))}
@@ -343,6 +368,7 @@ function defaultGraph(): WorkflowDefinitionGraph {
       { id: 'dispatch', type: 'dispatch', label: 'Dispatch', stage: 'assignment', role: 'coordinator', position: { x: 600, y: 140 } },
       { id: 'execute', type: 'execute', label: 'Execute', stage: 'implementation', role: 'executor', position: { x: 840, y: 140 } },
       { id: 'review', type: 'review', label: 'Review', stage: 'code_review', role: 'reviewer', position: { x: 1080, y: 140 } },
+      { id: 'repair_decision', type: 'repair_decision', label: 'Repair Decision', stage: 'assignment', role: 'coordinator', position: { x: 1080, y: 300 } },
       { id: 'verify', type: 'verify', label: 'Verify', stage: 'code_review', position: { x: 1320, y: 140 } },
       { id: 'acceptance', type: 'acceptance', label: 'Acceptance', stage: 'acceptance', role: 'acceptor', position: { x: 1560, y: 140 } },
       { id: 'memory', type: 'memory', label: 'Memory', stage: 'acceptance', position: { x: 1800, y: 140 } },
@@ -351,8 +377,11 @@ function defaultGraph(): WorkflowDefinitionGraph {
       { from: 'planning', to: 'approval' },
       { from: 'approval', to: 'dispatch', condition: 'approved' },
       { from: 'dispatch', to: 'execute' },
+      { from: 'execute', to: 'execute', condition: 'has_runnable_child' },
       { from: 'execute', to: 'review', condition: 'review' },
+      { from: 'review', to: 'repair_decision', condition: 'changes_requested' },
       { from: 'review', to: 'verify', condition: 'pass' },
+      { from: 'repair_decision', to: 'execute', condition: 'execute' },
       { from: 'verify', to: 'acceptance', condition: 'acceptance' },
       { from: 'acceptance', to: 'memory', condition: 'completed' },
     ],

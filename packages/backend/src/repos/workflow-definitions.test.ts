@@ -59,6 +59,58 @@ test('workflowDefinitionRepo validates graph nodes and edges', () => {
     }),
     /must include approval_gate node/,
   );
+
+  assert.throws(
+    () => workflowDefinitionRepo.validateDefinition({
+      nodes: [
+        { id: 'planning', type: 'planning', label: 'Planning' },
+        { id: 'approval', type: 'approval_gate', label: 'Approval' },
+        { id: 'dispatch', type: 'dispatch', label: 'Dispatch' },
+        { id: 'execute', type: 'execute', label: 'Execute' },
+        { id: 'review', type: 'review', label: 'Review' },
+        { id: 'verify', type: 'verify', label: 'Verify' },
+        { id: 'acceptance', type: 'acceptance', label: 'Acceptance' },
+        { id: 'memory', type: 'memory', label: 'Memory' },
+      ],
+      edges: [
+        { from: 'planning', to: 'approval' },
+        { from: 'approval', to: 'dispatch', condition: 'approved' },
+        { from: 'dispatch', to: 'execute' },
+        { from: 'execute', to: 'review', condition: 'review' },
+        { from: 'review', to: 'verify', condition: 'pass' },
+        { from: 'verify', to: 'acceptance', condition: 'acceptance' },
+        { from: 'acceptance', to: 'memory', condition: 'completed' },
+      ],
+    }),
+    /must include repair_decision node/,
+  );
+
+  assert.throws(
+    () => workflowDefinitionRepo.validateDefinition({
+      nodes: [
+        { id: 'planning', type: 'planning', label: 'Planning' },
+        { id: 'approval', type: 'approval_gate', label: 'Approval' },
+        { id: 'dispatch', type: 'dispatch', label: 'Dispatch' },
+        { id: 'execute', type: 'execute', label: 'Execute' },
+        { id: 'review', type: 'review', label: 'Review' },
+        { id: 'repair', type: 'repair_decision', label: 'Repair' },
+        { id: 'verify', type: 'verify', label: 'Verify' },
+        { id: 'acceptance', type: 'acceptance', label: 'Acceptance' },
+        { id: 'memory', type: 'memory', label: 'Memory' },
+      ],
+      edges: [
+        { from: 'planning', to: 'approval' },
+        { from: 'approval', to: 'dispatch', condition: 'approved' },
+        { from: 'dispatch', to: 'execute' },
+        { from: 'review', to: 'repair', condition: 'changes_requested' },
+        { from: 'repair', to: 'review', condition: 'default' },
+        { from: 'verify', to: 'acceptance', condition: 'acceptance' },
+        { from: 'acceptance', to: 'memory', condition: 'completed' },
+        { from: 'memory', to: 'verify', condition: 'default' },
+      ],
+    }),
+    /must be fully reachable/,
+  );
 });
 
 test('workflowDefinitionRepo lists room-visible definitions by scope', () => {
@@ -106,6 +158,26 @@ test('workflowDefinitionRepo lists room-visible definitions by scope', () => {
   assert.equal(visibleIds.has(hiddenDefinition.id), false);
 });
 
+test('workflowDefinitionRepo list always includes built-in default definition', () => {
+  const project = projectRepo.create({
+    name: 'List Default Project',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-definition-list-default-')),
+  });
+  const projectDefinition = workflowDefinitionRepo.createDraft({
+    name: 'Only Custom Workflow',
+    description: null,
+    scope: 'project',
+    scope_id: project.id,
+    definition: minimalDefinition('list-default-plan'),
+  });
+  workflowDefinitionRepo.publish(projectDefinition.id);
+
+  const definitions = workflowDefinitionRepo.list();
+
+  assert.ok(definitions.some((definition) => definition.id === projectDefinition.id));
+  assert.ok(definitions.some((definition) => definition.builtin_key === 'default-langgraph'));
+});
+
 function minimalDefinition(id: string) {
   return {
     nodes: [
@@ -114,6 +186,7 @@ function minimalDefinition(id: string) {
       { id: `${id}-dispatch`, type: 'dispatch' as const, label: 'Dispatch' },
       { id: `${id}-execute`, type: 'execute' as const, label: 'Execute' },
       { id: `${id}-review`, type: 'review' as const, label: 'Review' },
+      { id: `${id}-repair`, type: 'repair_decision' as const, label: 'Repair' },
       { id: `${id}-verify`, type: 'verify' as const, label: 'Verify' },
       { id: `${id}-acceptance`, type: 'acceptance' as const, label: 'Acceptance' },
       { id: `${id}-memory`, type: 'memory' as const, label: 'Memory' },
@@ -122,8 +195,11 @@ function minimalDefinition(id: string) {
       { from: id, to: `${id}-approval` },
       { from: `${id}-approval`, to: `${id}-dispatch`, condition: 'approved' },
       { from: `${id}-dispatch`, to: `${id}-execute` },
+      { from: `${id}-execute`, to: `${id}-execute`, condition: 'has_runnable_child' },
       { from: `${id}-execute`, to: `${id}-review`, condition: 'review' },
+      { from: `${id}-review`, to: `${id}-repair`, condition: 'changes_requested' },
       { from: `${id}-review`, to: `${id}-verify`, condition: 'pass' },
+      { from: `${id}-repair`, to: `${id}-execute`, condition: 'execute' },
       { from: `${id}-verify`, to: `${id}-acceptance`, condition: 'acceptance' },
       { from: `${id}-acceptance`, to: `${id}-memory`, condition: 'completed' },
     ],
