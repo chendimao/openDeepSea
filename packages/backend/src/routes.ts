@@ -19,6 +19,7 @@ import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskRepo } from './repos/tasks.js';
+import { workflowContextRepo } from './repos/workflow-context.js';
 import { searchProjectRooms } from './room-search.js';
 import { pickDirectory } from './system-dialogs.js';
 import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
@@ -1637,6 +1638,17 @@ router.get('/workflows/:id', (req, res) => {
   const detail = workflowOrchestrator.detail(req.params.id);
   if (!detail) return res.status(404).json({ error: 'not found' });
   res.json(detail);
+});
+
+router.get('/workflows/:id/context', (req, res) => {
+  const workflow = workflowRepo.getRun(req.params.id);
+  if (!workflow) return res.status(404).json({ error: 'not found' });
+  const entries = workflowContextRepo.listByWorkflow(workflow.id);
+  res.json({
+    entries,
+    total_token_estimate: entries.reduce((sum, entry) => sum + entry.token_estimate, 0),
+    total_summary_chars: entries.reduce((sum, entry) => sum + entry.summary_char_count, 0),
+  });
 });
 
 router.post('/workflows/:id/approve-plan', async (req, res) => {

@@ -10,6 +10,7 @@ process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
 const { projectRepo } = await import('../repos/projects.js');
 const { roomRepo } = await import('../repos/rooms.js');
 const { taskRepo } = await import('../repos/tasks.js');
+const { workflowContextRepo } = await import('../repos/workflow-context.js');
 const { workflowRepo } = await import('../repos/workflows.js');
 const { setWorkflowConversationDeps } = await import('./conversation.js');
 const { emptyAgentWorkflowState, serializeGraphState } = await import('./graph/state.js');
@@ -91,6 +92,67 @@ test('legacy workflow approval route uses conversation short request path when g
   assert.equal(workflow.approved_by, 'user');
   assert.equal(workflowRepo.listSteps(run.id).length, 0);
   assert.deepEqual(enqueued, [run.id]);
+});
+
+test('workflow context route returns entries and aggregate stats', async () => {
+  const { project, room, task } = createTask('Context Route');
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'running',
+    graph_version: 'phase-b-v1',
+  });
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: task.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'completed',
+    prompt: 'prompt',
+    sort_order: 1,
+  });
+  const first = workflowContextRepo.create({
+    workflow_run_id: run.id,
+    workflow_step_id: step.id,
+    task_id: task.id,
+    source_type: 'workflow_step',
+    source_id: `${step.id}:summary`,
+    entry_type: 'summary',
+    title: '摘要',
+    content: '完成了上下文路由。',
+    token_estimate: 12,
+  });
+  const second = workflowContextRepo.create({
+    workflow_run_id: run.id,
+    workflow_step_id: step.id,
+    task_id: task.id,
+    source_type: 'workflow_step',
+    source_id: `${step.id}:handoff`,
+    entry_type: 'handoff',
+    title: '交接',
+    content: '后续审查读取上下文条目。',
+    token_estimate: 16,
+  });
+
+  const res = await request(`/api/workflows/${run.id}/context`);
+
+  assert.equal(res.status, 200);
+  const body = await res.json() as {
+    entries: Array<{ id: string; title: string; summary_char_count: number }>;
+    total_token_estimate: number;
+    total_summary_chars: number;
+  };
+  assert.deepEqual(body.entries.map((entry) => entry.id), [first.id, second.id]);
+  assert.equal(body.total_token_estimate, 28);
+  assert.equal(body.total_summary_chars, first.summary_char_count + second.summary_char_count);
+});
+
+test('workflow context route returns 404 for missing workflow', async () => {
+  const res = await request('/api/workflows/missing-workflow/context');
+
+  assert.equal(res.status, 404);
+  assert.deepEqual(await res.json(), { error: 'not found' });
 });
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
