@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   chmodSync,
@@ -13,10 +14,16 @@ import test from 'node:test';
 import {
   WORKSPACE_DIRECTORY_LIMIT,
   WORKSPACE_PREVIEW_TEXT_LIMIT,
+  WORKSPACE_REFERENCE_SIZE_LIMIT,
+  WORKSPACE_SEARCH_MAX_DEPTH,
+  WORKSPACE_SEARCH_MAX_DIRECTORIES,
+  WORKSPACE_SEARCH_MAX_FILES,
+  WORKSPACE_SEARCH_TIMEOUT_MS,
   normalizeWorkspacePath,
   isIgnoredWorkspacePath,
   listWorkspaceDirectory,
   readWorkspaceFilePreview,
+  readWorkspaceFileReference,
   resolveWorkspacePath,
   searchWorkspaceFiles,
 } from './workspace-files.js';
@@ -101,6 +108,28 @@ test('workspace directory listing sorts entries and enforces the entry limit', a
   }
 });
 
+test('workspace directory listing collects before sort/slice so directories stay ahead of files', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-list-sort-slice-');
+
+  try {
+    for (let index = 0; index < WORKSPACE_DIRECTORY_LIMIT; index += 1) {
+      writeFileSync(join(projectRoot, `a-file-${String(index).padStart(3, '0')}.txt`), 'x\n');
+    }
+    mkdirSync(join(projectRoot, 'z-dir-1'));
+    mkdirSync(join(projectRoot, 'z-dir-2'));
+    mkdirSync(join(projectRoot, 'z-dir-3'));
+
+    const entries = await listWorkspaceDirectory(projectRoot);
+    assert.equal(entries.length, WORKSPACE_DIRECTORY_LIMIT);
+    assert.deepEqual(
+      entries.slice(0, 3).map((entry) => entry.name),
+      ['z-dir-1', 'z-dir-2', 'z-dir-3'],
+    );
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
 test('workspace directory listing skips directory symlinks', async () => {
   const projectRoot = createWorkspaceRoot('openclaw-workspace-symlink-');
   const outsideRoot = createWorkspaceRoot('openclaw-workspace-symlink-outside-');
@@ -125,6 +154,7 @@ test('workspace previews return text content and language, and reject binary fil
   try {
     writeFileSync(join(projectRoot, 'example.ts'), 'export const value = 1;\n');
     writeFileSync(join(projectRoot, 'binary.bin'), Buffer.from([0, 255, 4, 8, 13]));
+    writeFileSync(join(projectRoot, 'binary.ts'), Buffer.from([0, 1, 2, 3, 4]));
 
     const preview = await readWorkspaceFilePreview(projectRoot, 'example.ts');
     assert.equal(preview.content, 'export const value = 1;\n');
@@ -139,44 +169,113 @@ test('workspace previews return text content and language, and reject binary fil
     assert.equal(truncated.truncated, true);
 
     await assert.rejects(() => readWorkspaceFilePreview(projectRoot, 'binary.bin'), /WORKSPACE_FILE_BINARY/);
+    await assert.rejects(() => readWorkspaceFilePreview(projectRoot, 'binary.ts'), /WORKSPACE_FILE_BINARY/);
   } finally {
     cleanupWorkspaceRoot(projectRoot);
   }
 });
 
-test('workspace search is filename-only, caps results, and skips inaccessible branches', async () => {
+test('workspace preview and reference reject ignored direct paths', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-ignored-');
+
+  try {
+    writeFileSync(join(projectRoot, '.env.local'), 'OPENAI_API_KEY=secret\n');
+    writeFileSync(join(projectRoot, 'private.pem'), '-----BEGIN PRIVATE KEY-----\n');
+
+    await assert.rejects(() => readWorkspaceFilePreview(projectRoot, '.env.local'), /WORKSPACE_PATH_IGNORED/);
+    await assert.rejects(() => readWorkspaceFileReference(projectRoot, '.env.local'), /WORKSPACE_PATH_IGNORED/);
+    await assert.rejects(() => readWorkspaceFilePreview(projectRoot, 'private.pem'), /WORKSPACE_PATH_IGNORED/);
+    await assert.rejects(() => readWorkspaceFileReference(projectRoot, 'private.pem'), /WORKSPACE_PATH_IGNORED/);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace reference allows binary file under size limit', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-reference-binary-');
+
+  try {
+    const binary = Buffer.from([0, 255, 1, 2, 3, 4, 5]);
+    writeFileSync(join(projectRoot, 'sample.bin'), binary);
+
+    const reference = await readWorkspaceFileReference(projectRoot, 'sample.bin');
+    assert.equal(reference.size, binary.length);
+    assert.equal(reference.bytes.equals(binary), true);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace reference rejects files over size limit', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-reference-too-large-');
+
+  try {
+    writeFileSync(join(projectRoot, 'oversize.bin'), Buffer.alloc(WORKSPACE_REFERENCE_SIZE_LIMIT + 1, 1));
+    await assert.rejects(() => readWorkspaceFileReference(projectRoot, 'oversize.bin'), /WORKSPACE_FILE_TOO_LARGE/);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace search constants match design limits', () => {
+  assert.equal(WORKSPACE_SEARCH_MAX_DEPTH, 12);
+  assert.equal(WORKSPACE_SEARCH_MAX_DIRECTORIES, 1000);
+  assert.equal(WORKSPACE_SEARCH_MAX_FILES, 10000);
+  assert.equal(WORKSPACE_SEARCH_TIMEOUT_MS, 1500);
+});
+
+test('workspace search is filename-only, caps results, and respects depth/inaccessible branches', async () => {
   const projectRoot = createWorkspaceRoot('openclaw-workspace-search-');
 
   try {
-    mkdirSync(join(projectRoot, 'src', 'deep', 'nest', 'level', 'more', 'again', 'and-again', 'too-deep'), {
-      recursive: true,
-    });
-    writeFileSync(join(projectRoot, 'src', 'match-01.txt'), '1\n');
-    writeFileSync(join(projectRoot, 'src', 'match-02.txt'), '2\n');
-    writeFileSync(join(projectRoot, 'src', 'nope.txt'), '3\n');
+    const depth12 = join(
+      projectRoot,
+      'd01',
+      'd02',
+      'd03',
+      'd04',
+      'd05',
+      'd06',
+      'd07',
+      'd08',
+      'd09',
+      'd10',
+      'd11',
+      'd12',
+    );
+    const depth13 = join(depth12, 'd13');
+    mkdirSync(depth13, { recursive: true });
+    writeFileSync(join(projectRoot, 'match-01.txt'), '1\n');
+    writeFileSync(join(projectRoot, 'match-02.txt'), '2\n');
+    writeFileSync(join(projectRoot, 'nope.txt'), '3\n');
+    mkdirSync(join(projectRoot, 'z-bulk'), { recursive: true });
 
     for (let index = 0; index < 60; index += 1) {
-      writeFileSync(join(projectRoot, 'src', `needle-${String(index).padStart(2, '0')}.txt`), 'needle\n');
+      writeFileSync(join(projectRoot, 'z-bulk', `needle-${String(index).padStart(2, '0')}.txt`), 'needle\n');
     }
 
-    writeFileSync(
-      join(projectRoot, 'src', 'deep', 'nest', 'level', 'more', 'again', 'and-again', 'too-deep', 'needle.txt'),
-      'deep\n',
-    );
+    writeFileSync(join(depth12, 'needle-depth-12.txt'), 'depth12\n');
+    writeFileSync(join(depth13, 'needle-depth-13.txt'), 'depth13\n');
 
     const blockedDir = join(projectRoot, 'blocked');
     mkdirSync(blockedDir);
     writeFileSync(join(blockedDir, 'needle-hidden.txt'), 'hidden\n');
     chmodSync(blockedDir, 0);
 
-    const results = await searchWorkspaceFiles(projectRoot, 'needle');
-    assert.equal(results.length, 50);
-    assert.equal(results.every((entry) => entry.name.toLowerCase().includes('needle')), true);
-    assert.equal(results.some((entry) => entry.path.includes('too-deep')), false);
-    assert.equal(results.some((entry) => entry.path.includes('needle-hidden.txt')), false);
-    assert.equal(results.some((entry) => entry.path.includes('nope.txt')), false);
+    const cappedResults = await searchWorkspaceFiles(projectRoot, 'needle');
+    assert.equal(cappedResults.length, 50);
+    assert.equal(cappedResults.every((entry) => entry.name.toLowerCase().includes('needle')), true);
+    assert.equal(cappedResults.some((entry) => entry.path.includes('needle-hidden.txt')), false);
+    assert.equal(cappedResults.some((entry) => entry.path.includes('nope.txt')), false);
+
+    const depthResults = await searchWorkspaceFiles(projectRoot, 'depth-');
+    assert.equal(depthResults.some((entry) => entry.path.endsWith('needle-depth-12.txt')), true);
+    assert.equal(depthResults.some((entry) => entry.path.endsWith('needle-depth-13.txt')), false);
   } finally {
-    chmodSync(join(projectRoot, 'blocked'), 0o700);
+    const blocked = join(projectRoot, 'blocked');
+    if (existsSync(blocked)) {
+      chmodSync(blocked, 0o700);
+    }
     cleanupWorkspaceRoot(projectRoot);
   }
 });

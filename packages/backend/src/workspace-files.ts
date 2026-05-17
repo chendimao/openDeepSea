@@ -13,17 +13,13 @@ export const WORKSPACE_PREVIEW_TEXT_LIMIT = 512 * 1024;
 export const WORKSPACE_REFERENCE_SIZE_LIMIT = 2 * 1024 * 1024;
 
 const WORKSPACE_SEARCH_LIMIT = 50;
-const WORKSPACE_SEARCH_MAX_DEPTH = 7;
-const WORKSPACE_SEARCH_MAX_DIRECTORIES = 5000;
+export const WORKSPACE_SEARCH_MAX_DEPTH = 12;
+export const WORKSPACE_SEARCH_MAX_DIRECTORIES = 1000;
+export const WORKSPACE_SEARCH_MAX_FILES = 10000;
+export const WORKSPACE_SEARCH_TIMEOUT_MS = 1500;
 const BINARY_PROBE_BYTES = 8192;
 
 const IGNORED_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.turbo', 'coverage']);
-const TEXT_EXTENSIONS = new Set([
-  '.txt', '.md', '.markdown', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.jsonc', '.yaml', '.yml',
-  '.toml', '.ini', '.conf', '.env', '.css', '.scss', '.less', '.html', '.htm', '.xml', '.svg', '.sql', '.sh',
-  '.bash', '.zsh', '.py', '.go', '.rs', '.java', '.c', '.h', '.cpp', '.cc', '.hpp', '.rb', '.php', '.vue',
-]);
-
 const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   '.ts': 'typescript',
   '.tsx': 'typescript',
@@ -110,6 +106,7 @@ export type WorkspaceFileErrorCode =
   | 'WORKSPACE_PATH_NOT_FILE'
   | 'WORKSPACE_PATH_SYMLINK'
   | 'WORKSPACE_PATH_OUTSIDE_PROJECT'
+  | 'WORKSPACE_PATH_IGNORED'
   | 'WORKSPACE_FILE_BINARY'
   | 'WORKSPACE_FILE_TOO_LARGE'
   | 'WORKSPACE_SEARCH_QUERY_INVALID';
@@ -222,6 +219,7 @@ export function isIgnoredWorkspacePath(inputPath: string): boolean {
 
 export async function listWorkspaceDirectory(projectPath: string, inputPath = ''): Promise<WorkspaceDirectoryEntry[]> {
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
+  ensureWorkspacePathAllowed(resolved.relativePath);
   const directoryStats = await lstat(resolved.absolutePath);
   if (!directoryStats.isDirectory()) {
     throw workspaceFileError('WORKSPACE_PATH_NOT_DIRECTORY');
@@ -241,7 +239,6 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
   for (const name of names) {
     const relativeEntryPath = joinRelativePath(resolved.relativePath, name);
     if (isIgnoredWorkspacePath(relativeEntryPath)) continue;
-    if (visibleEntries.length >= WORKSPACE_DIRECTORY_LIMIT) break;
 
     const absoluteEntryPath = join(resolved.absolutePath, name);
     let entryStats;
@@ -296,6 +293,7 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
 
 export async function readWorkspaceFilePreview(projectPath: string, inputPath: string): Promise<WorkspaceFilePreview> {
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
+  ensureWorkspacePathAllowed(resolved.relativePath);
   const fileStats = await lstat(resolved.absolutePath);
   if (!fileStats.isFile()) {
     throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
@@ -311,6 +309,7 @@ export async function readWorkspaceFilePreview(projectPath: string, inputPath: s
 
 export async function readWorkspaceFileReference(projectPath: string, inputPath: string): Promise<WorkspaceFileReference> {
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
+  ensureWorkspacePathAllowed(resolved.relativePath);
   const fileStats = await lstat(resolved.absolutePath);
   if (!fileStats.isFile()) {
     throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
@@ -319,9 +318,6 @@ export async function readWorkspaceFileReference(projectPath: string, inputPath:
     throw workspaceFileError('WORKSPACE_FILE_TOO_LARGE');
   }
   const contentBuffer = await readFile(resolved.absolutePath);
-  if (!isTextFile(resolved.relativePath, contentBuffer)) {
-    throw workspaceFileError('WORKSPACE_FILE_BINARY');
-  }
   const preview = buildFilePreview(resolved.relativePath, fileStats.size, contentBuffer, WORKSPACE_REFERENCE_SIZE_LIMIT);
   return {
     ...preview,
@@ -340,6 +336,7 @@ export async function searchWorkspaceFiles(
   }
 
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
+  ensureWorkspacePathAllowed(resolved.relativePath);
   const rootStats = await lstat(resolved.absolutePath);
   if (!rootStats.isDirectory()) {
     throw workspaceFileError('WORKSPACE_PATH_NOT_DIRECTORY');
@@ -350,8 +347,14 @@ export async function searchWorkspaceFiles(
     { absolutePath: resolved.absolutePath, relativePath: resolved.relativePath, depth: 0 },
   ];
   let visitedDirectories = 0;
+  let visitedFiles = 0;
+  const startedAt = Date.now();
 
-  while (stack.length > 0 && results.length < WORKSPACE_SEARCH_LIMIT && visitedDirectories < WORKSPACE_SEARCH_MAX_DIRECTORIES) {
+  while (stack.length > 0 && results.length < WORKSPACE_SEARCH_LIMIT) {
+    if (visitedDirectories >= WORKSPACE_SEARCH_MAX_DIRECTORIES) break;
+    if (visitedFiles >= WORKSPACE_SEARCH_MAX_FILES) break;
+    if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) break;
+
     const current = stack.pop();
     if (!current) break;
     visitedDirectories += 1;
@@ -394,10 +397,12 @@ export async function searchWorkspaceFiles(
           if (isSkippableFsError(error)) continue;
           throw error;
         }
-        if (!targetStats.isFile()) continue;
-        if (name.toLowerCase().includes(normalizedQuery)) {
-          results.push({
-            path: relativeEntryPath,
+      if (!targetStats.isFile()) continue;
+      visitedFiles += 1;
+      if (visitedFiles > WORKSPACE_SEARCH_MAX_FILES) break;
+      if (name.toLowerCase().includes(normalizedQuery)) {
+        results.push({
+          path: relativeEntryPath,
             name,
             type: 'file',
           });
@@ -416,6 +421,10 @@ export async function searchWorkspaceFiles(
         }
         continue;
       }
+
+      visitedFiles += 1;
+      if (visitedFiles > WORKSPACE_SEARCH_MAX_FILES) break;
+      if (Date.now() - startedAt >= WORKSPACE_SEARCH_TIMEOUT_MS) break;
 
       if (name.toLowerCase().includes(normalizedQuery)) {
         results.push({
@@ -477,8 +486,7 @@ function inferExtension(fileName: string): string {
 }
 
 function isTextFile(relativePath: string, content: Buffer): boolean {
-  const extension = inferExtension(relativePath);
-  if (TEXT_EXTENSIONS.has(extension)) return true;
+  void relativePath;
   return isTextBuffer(content);
 }
 
@@ -542,6 +550,12 @@ function isSubPath(candidate: string, root: string): boolean {
 
 function workspaceFileError(code: WorkspaceFileErrorCode): WorkspaceFileError {
   return new WorkspaceFileError(code);
+}
+
+function ensureWorkspacePathAllowed(relativePath: string): void {
+  if (relativePath && isIgnoredWorkspacePath(relativePath)) {
+    throw workspaceFileError('WORKSPACE_PATH_IGNORED');
+  }
 }
 
 async function resolveProjectRealPath(projectPath: string): Promise<string> {
