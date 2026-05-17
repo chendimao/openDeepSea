@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
 import { dispatchUserMessage } from './dispatcher.js';
+import { validateLocalAccess } from './local-access.js';
 import { resolveMentionedAgentRoomIds } from './mentions.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { agentRepo } from './repos/agents.js';
@@ -32,6 +33,13 @@ import {
   roomProjectFileUpload,
 } from './uploads.js';
 import {
+  type WorkspaceFileErrorCode,
+  WorkspaceFileError,
+  listWorkspaceDirectory,
+  readWorkspaceFileReference,
+  searchWorkspaceFiles,
+} from './workspace-files.js';
+import {
   approveWorkflowPlanWithConversation,
   startWorkflowWithConversation,
 } from './workflows/conversation.js';
@@ -57,6 +65,24 @@ function workflowErrorStatus(error: Error): number {
     return 409;
   }
   return 400;
+}
+
+const WORKSPACE_FILE_NOT_FOUND_CODES: WorkspaceFileErrorCode[] = [
+  'WORKSPACE_PATH_NOT_FOUND',
+];
+
+function workspaceFileErrorStatus(error: WorkspaceFileError): number {
+  if (WORKSPACE_FILE_NOT_FOUND_CODES.includes(error.code)) {
+    return 404;
+  }
+  return 400;
+}
+
+function requireLocalAccess(req: Request, res: Response): boolean {
+  const auth = validateLocalAccess(req);
+  if (auth.ok) return true;
+  res.status(auth.status).json({ error: auth.error });
+  return false;
 }
 
 // ---------- Health ----------
@@ -365,6 +391,80 @@ router.get('/projects/:id', (req, res) => {
 router.get('/projects/:projectId/files', (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
   res.json(fileRepo.listByProject(req.params.projectId));
+});
+
+router.get('/projects/:projectId/workspace/tree', async (req, res) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({ path: z.string().optional() }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const workspacePath = parsed.data.path ?? '';
+
+  try {
+    const entries = await listWorkspaceDirectory(project.path, workspacePath);
+    res.json({ path: workspacePath, entries });
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    throw error;
+  }
+});
+
+router.get('/projects/:projectId/workspace/file', async (req, res) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({ path: z.string().min(1) }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  try {
+    const preview = await readWorkspaceFileReference(project.path, parsed.data.path);
+    if (preview.isBinary) {
+      return res.status(400).json({ error: 'WORKSPACE_FILE_BINARY' });
+    }
+    if (preview.size > 512 * 1024) {
+      return res.status(400).json({ error: 'WORKSPACE_FILE_TOO_LARGE' });
+    }
+    return res.json({
+      path: preview.path,
+      size: preview.size,
+      mimeType: preview.mimeType,
+      language: preview.language,
+      content: preview.content ?? '',
+      truncated: preview.truncated,
+    });
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    throw error;
+  }
+});
+
+router.get('/projects/:projectId/workspace/search', async (req, res) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({
+    q: z.string().min(1),
+    path: z.string().optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  try {
+    const entries = await searchWorkspaceFiles(project.path, parsed.data.q, parsed.data.path ?? '');
+    res.json({
+      entries,
+      truncated: entries.length >= 50,
+    });
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    throw error;
+  }
 });
 
 router.post('/projects/:projectId/files', (req, res, next) => {
