@@ -3,6 +3,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { getAdapter } from './acp/index.js';
+import { getLocalAccessToken, isTrustedOrigin } from './local-access.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
@@ -19,9 +20,19 @@ import { wsHub } from './ws-hub.js';
 import type { WsClientEvent } from './types.js';
 
 const PORT = Number(process.env.PORT ?? 7330);
+const configuredLocalAccessToken = process.env.OPENDEEPSEA_LOCAL_TOKEN?.trim();
+const localAccessToken = getLocalAccessToken();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || isTrustedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(null, false);
+  },
+}));
 app.use(express.json({ limit: '4mb' }));
 await ensureMessageUploadDir();
 await ensureProjectFileUploadRoot();
@@ -70,6 +81,9 @@ void recoverInterruptedAgentRuns();
 
 httpServer.listen(PORT, () => {
   console.log(`[server] backend listening on :${PORT}`);
+  if (!configuredLocalAccessToken) {
+    console.log(`[server] local access token: ${localAccessToken}`);
+  }
 });
 
 async function recoverInterruptedAgentRuns(): Promise<void> {

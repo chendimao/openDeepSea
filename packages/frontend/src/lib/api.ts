@@ -23,6 +23,7 @@ import type {
 } from './types';
 
 const BASE = '/api';
+const LOCAL_ACCESS_TOKEN_STORAGE_KEY = 'opendeepsea.localToken';
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isFormData = init.body instanceof FormData;
@@ -40,6 +41,30 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+function getWorkspaceLocalToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  const token = window.localStorage.getItem(LOCAL_ACCESS_TOKEN_STORAGE_KEY);
+  const trimmed = token?.trim();
+  return trimmed || null;
+}
+
+function buildWorkspaceHeaders(headers: HeadersInit = {}): Headers {
+  const merged = new Headers(headers);
+  const token = getWorkspaceLocalToken();
+  if (token && !merged.has('X-OpenDeepSea-Local-Token')) {
+    merged.set('X-OpenDeepSea-Local-Token', token);
+  }
+  return merged;
+}
+
+export async function workspaceRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const workspacePath = path.startsWith('/') ? path : `/${path}`;
+  return request<T>(workspacePath, {
+    ...init,
+    headers: buildWorkspaceHeaders(init.headers),
+  });
 }
 
 export const api = {
