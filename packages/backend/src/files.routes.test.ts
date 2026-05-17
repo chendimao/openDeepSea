@@ -72,6 +72,79 @@ test('project file routes upload, list, and delete files', async () => {
   assert.deepEqual(await afterDeleteRes.json(), []);
 });
 
+test('global file route lists all active files and filters by project or room', async () => {
+  const project = createProject('global-project');
+  const otherProject = createProject('global-other-project');
+  const room = roomRepo.create({ project_id: project.id, name: 'Filter Room' });
+  const projectFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'project.txt',
+    stored_name: 'project.txt',
+    mime_type: 'text/plain',
+    size: 128,
+    url: `/uploads/files/${project.id}/project.txt`,
+    storage_path: join(tmpdir(), 'project.txt'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const roomFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'room.txt',
+    stored_name: 'room.txt',
+    mime_type: 'text/plain',
+    size: 256,
+    url: `/uploads/files/${project.id}/room.txt`,
+    storage_path: join(tmpdir(), 'room.txt'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const otherFile = fileRepo.create({
+    project_id: otherProject.id,
+    original_name: 'other.txt',
+    stored_name: 'other.txt',
+    mime_type: 'text/plain',
+    size: 512,
+    url: `/uploads/files/${otherProject.id}/other.txt`,
+    storage_path: join(tmpdir(), 'other.txt'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'see file',
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: room.id,
+    message_id: message.id,
+    file_ids: [roomFile.id],
+  });
+
+  const allRes = await request('/api/files');
+  assert.equal(allRes.status, 200);
+  const all = await allRes.json() as Array<{ id: string }>;
+  assert.ok(all.some((file) => file.id === projectFile.id));
+  assert.ok(all.some((file) => file.id === roomFile.id));
+  assert.ok(all.some((file) => file.id === otherFile.id));
+
+  const projectRes = await request(`/api/files?projectId=${project.id}`);
+  assert.equal(projectRes.status, 200);
+  const projectFiles = await projectRes.json() as Array<{ id: string }>;
+  assert.deepEqual(new Set(projectFiles.map((file) => file.id)), new Set([projectFile.id, roomFile.id]));
+
+  const roomRes = await request(`/api/files?projectId=${project.id}&roomId=${room.id}`);
+  assert.equal(roomRes.status, 200);
+  const roomFiles = await roomRes.json() as Array<{ id: string; last_referenced_room_id: string | null }>;
+  assert.deepEqual(roomFiles.map((file) => file.id), [roomFile.id]);
+  assert.equal(roomFiles[0]?.last_referenced_room_id, room.id);
+
+  const invalidRes = await request(`/api/files?projectId=${otherProject.id}&roomId=${room.id}`);
+  assert.equal(invalidRes.status, 400);
+});
+
 test('message route accepts project file ids and records message refs', async () => {
   const project = createProject('message-project');
   const room = roomRepo.create({ project_id: project.id, name: 'File Room' });

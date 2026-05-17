@@ -139,6 +139,13 @@ export const api = {
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
+  listFiles: (filters: { projectId?: string; roomId?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filters.projectId) params.set('projectId', filters.projectId);
+    if (filters.roomId) params.set('roomId', filters.roomId);
+    const query = params.toString();
+    return request<ProjectFile[]>(`/files${query ? `?${query}` : ''}`);
+  },
   listProjectFiles: (projectId: string) => request<ProjectFile[]>(`/projects/${projectId}/files`),
   uploadProjectFiles: (projectId: string, files: File[]) => {
     const form = new FormData();

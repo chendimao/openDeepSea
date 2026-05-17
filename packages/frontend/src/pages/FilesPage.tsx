@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, Eye, FileText, Image, Search, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FileText, Filter, Image, Search, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
@@ -13,22 +13,54 @@ import { Input } from '../components/ui/Input';
 
 export function FilesPage(): JSX.Element {
   const { projectId = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const initialRoomId = searchParams.get('roomId') ?? '';
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t, formatRelativeTime } = useI18n();
   const [query, setQuery] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState(projectId);
+  const [selectedRoomId, setSelectedRoomId] = useState(initialRoomId);
   const [preview, setPreview] = useState<ProjectFile | null>(null);
 
+  useEffect(() => {
+    setSelectedProjectId(projectId);
+    setSelectedRoomId(initialRoomId);
+  }, [initialRoomId, projectId]);
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects'],
+    queryFn: api.listProjects,
+  });
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
     queryFn: () => api.getProject(projectId),
     enabled: !!projectId,
   });
-  const { data: files = [], isLoading } = useQuery({
-    queryKey: ['project-files', projectId],
-    queryFn: () => api.listProjectFiles(projectId),
-    enabled: !!projectId,
+  const { data: rooms = [] } = useQuery({
+    queryKey: ['rooms', selectedProjectId],
+    queryFn: () => api.listRooms(selectedProjectId),
+    enabled: !!selectedProjectId,
   });
+  const { data: files = [], isLoading } = useQuery({
+    queryKey: ['files', selectedProjectId, selectedRoomId],
+    queryFn: () => api.listFiles({
+      projectId: selectedProjectId || undefined,
+      roomId: selectedRoomId || undefined,
+    }),
+  });
+  const selectedProject = useMemo(
+    () => projects.find((item) => item.id === selectedProjectId) ?? project ?? null,
+    [project, projects, selectedProjectId],
+  );
+  const selectedRoom = useMemo(
+    () => rooms.find((item) => item.id === selectedRoomId) ?? null,
+    [rooms, selectedRoomId],
+  );
+  const projectNameById = useMemo(
+    () => new Map(projects.map((item) => [item.id, item.name])),
+    [projects],
+  );
 
   const visibleFiles = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -36,9 +68,10 @@ export function FilesPage(): JSX.Element {
     return files.filter((file) =>
       file.original_name.toLocaleLowerCase().includes(needle) ||
       file.mime_type.toLocaleLowerCase().includes(needle) ||
+      (projectNameById.get(file.project_id) ?? '').toLocaleLowerCase().includes(needle) ||
       (file.last_referenced_room_name ?? '').toLocaleLowerCase().includes(needle),
     );
-  }, [files, query]);
+  }, [files, projectNameById, query]);
 
   const totalSize = useMemo(
     () => files.reduce((sum, file) => sum + file.size, 0),
@@ -46,9 +79,13 @@ export function FilesPage(): JSX.Element {
   );
 
   const upload = useMutation({
-    mutationFn: (selectedFiles: File[]) => api.uploadProjectFiles(projectId, selectedFiles),
+    mutationFn: (selectedFiles: File[]) => {
+      if (!selectedProjectId) throw new Error(t('files.selectProjectForUpload'));
+      return api.uploadProjectFiles(selectedProjectId, selectedFiles);
+    },
     onSuccess: (uploaded) => {
-      queryClient.invalidateQueries({ queryKey: ['project-files', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['files'] });
+      queryClient.invalidateQueries({ queryKey: ['project-files', selectedProjectId] });
       toast.success(t('files.uploaded', { count: uploaded.length }));
     },
     onError: (err) => toast.error((err as Error).message),
@@ -57,7 +94,8 @@ export function FilesPage(): JSX.Element {
   const remove = useMutation({
     mutationFn: (fileId: string) => api.deleteProjectFile(fileId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['project-files', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['files'] });
+      queryClient.invalidateQueries({ queryKey: ['project-files'] });
       toast.success(t('files.deleted'));
     },
     onError: (err) => toast.error((err as Error).message),
@@ -73,16 +111,19 @@ export function FilesPage(): JSX.Element {
       <header className="workspace-toolbar">
         <div className="flex min-w-0 items-center gap-3">
           <Link
-            to={`/projects/${projectId}`}
+            to={projectId ? `/projects/${projectId}` : '/'}
             className="toolbar-back"
-            aria-label={t('room.backToProject')}
+            aria-label={projectId ? t('room.backToProject') : t('shell.nav.development')}
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div className="min-w-0">
             <div className="font-display text-[15px] font-semibold leading-tight">{t('files.title')}</div>
             <div className="mt-1 hidden truncate font-mono text-[11px] text-[var(--color-fg-muted)] sm:block">
-              {project?.name ?? t('project.loading')} · {project?.path ?? t('room.projectPathUnknown')}
+              {selectedProject
+                ? `${selectedProject.name} · ${selectedProject.path}`
+                : t('files.allProjects')}
+              {selectedRoom ? ` · ${selectedRoom.name}` : ''}
             </div>
           </div>
         </div>
@@ -100,6 +141,39 @@ export function FilesPage(): JSX.Element {
             <p>{t('files.subtitle')}</p>
           </div>
           <div className="files-toolbar-actions">
+            <div className="files-filters" aria-label={t('files.filters')}>
+              <Filter className="h-4 w-4 text-[var(--color-muted)]" />
+              <select
+                className="files-filter-select"
+                value={selectedProjectId}
+                aria-label={t('files.projectFilter')}
+                onChange={(event) => {
+                  setSelectedProjectId(event.target.value);
+                  setSelectedRoomId('');
+                }}
+              >
+                <option value="">{t('files.allProjects')}</option>
+                {projects.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="files-filter-select"
+                value={selectedRoomId}
+                aria-label={t('files.roomFilter')}
+                disabled={!selectedProjectId}
+                onChange={(event) => setSelectedRoomId(event.target.value)}
+              >
+                <option value="">{t('files.allRooms')}</option>
+                {rooms.map((room) => (
+                  <option key={room.id} value={room.id}>
+                    {room.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="files-search">
               <Search className="h-4 w-4 text-[var(--color-muted)]" />
               <Input
@@ -124,7 +198,7 @@ export function FilesPage(): JSX.Element {
             <Button
               type="button"
               className="gap-2"
-              disabled={upload.isPending}
+              disabled={upload.isPending || !selectedProjectId}
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload className="h-4 w-4" strokeWidth={1.75} />
@@ -151,6 +225,7 @@ export function FilesPage(): JSX.Element {
                 <div className="file-row-main">
                   <div className="file-row-name" title={file.original_name}>{file.original_name}</div>
                   <div className="file-row-meta">
+                    <span>{projectNameById.get(file.project_id) ?? file.project_id}</span>
                     <span>{formatFileSize(file.size)}</span>
                     <span>{file.mime_type}</span>
                     <span>{formatRelativeTime(file.created_at)}</span>

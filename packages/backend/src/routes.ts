@@ -389,6 +389,28 @@ router.get('/projects/:id', (req, res) => {
   res.json({ ...project, stats: projectRepo.stats(project.id) });
 });
 
+router.get('/files', (req, res) => {
+  const parsed = z.object({
+    projectId: z.string().optional(),
+    roomId: z.string().optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const { projectId, roomId } = parsed.data;
+  if (projectId && !projectRepo.get(projectId)) {
+    return res.status(404).json({ error: 'project not found' });
+  }
+  if (roomId) {
+    const room = roomRepo.get(roomId);
+    if (!room) return res.status(404).json({ error: 'room not found' });
+    if (projectId && room.project_id !== projectId) {
+      return res.status(400).json({ error: 'room does not belong to project' });
+    }
+  }
+
+  res.json(fileRepo.list({ projectId, roomId }));
+});
+
 router.get('/projects/:projectId/files', (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
   res.json(fileRepo.listByProject(req.params.projectId));

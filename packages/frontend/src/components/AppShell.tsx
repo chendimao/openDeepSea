@@ -156,12 +156,7 @@ function ProjectSidebar({
           inactive={!currentProject}
         />
         <SidebarLink to="/" icon={BriefcaseBusiness} label={t('shell.nav.workflow')} inactive />
-        <SidebarLink
-          to={currentProject ? `/projects/${currentProject.id}/files` : '/'}
-          icon={FolderKanban}
-          label={t('shell.nav.files')}
-          inactive={!currentProject}
-        />
+        <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">

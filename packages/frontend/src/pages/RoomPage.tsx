@@ -463,6 +463,7 @@ function ChatColumn({
       queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       queryClient.invalidateQueries({ queryKey: ['project-files', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['files'] });
     },
     onError: (err) => toast.error((err as Error).message),
   });

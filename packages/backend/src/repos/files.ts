@@ -3,7 +3,25 @@ import { db, now } from '../db.js';
 import type { ProjectFile, ProjectFileWithRefs } from '../types.js';
 
 export const fileRepo = {
-  listByProject(projectId: string): ProjectFileWithRefs[] {
+  list(filters: { projectId?: string; roomId?: string } = {}): ProjectFileWithRefs[] {
+    const where = ['files.deleted_at IS NULL'];
+    const params: string[] = [];
+    if (filters.projectId) {
+      where.push('files.project_id = ?');
+      params.push(filters.projectId);
+    }
+    if (filters.roomId) {
+      where.push(
+        `EXISTS (
+          SELECT 1
+          FROM message_file_refs room_refs
+          WHERE room_refs.file_id = files.id
+            AND room_refs.room_id = ?
+        )`,
+      );
+      params.push(filters.roomId);
+    }
+
     return db
       .prepare(
         `SELECT
@@ -27,11 +45,15 @@ export const fileRepo = {
           ) AS last_referenced_room_name
         FROM files
         LEFT JOIN message_file_refs ON message_file_refs.file_id = files.id
-        WHERE files.project_id = ? AND files.deleted_at IS NULL
+        WHERE ${where.join(' AND ')}
         GROUP BY files.id
         ORDER BY files.created_at DESC`,
       )
-      .all(projectId) as ProjectFileWithRefs[];
+      .all(...params) as ProjectFileWithRefs[];
+  },
+
+  listByProject(projectId: string): ProjectFileWithRefs[] {
+    return this.list({ projectId });
   },
 
   get(id: string): ProjectFile | undefined {

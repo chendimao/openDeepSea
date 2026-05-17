@@ -43,6 +43,7 @@ function RootApp(): JSX.Element {
             <Routes>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/agents" element={<AgentsPage />} />
+              <Route path="/files" element={<FilesPage />} />
               <Route path="/projects/:projectId" element={<ProjectPage />} />
               <Route path="/projects/:projectId/files" element={<FilesPage />} />
               <Route path="/projects/:projectId/rooms/:roomId" element={<RoomPage />} />
