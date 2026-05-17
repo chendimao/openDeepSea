@@ -233,6 +233,10 @@ export interface RoomAgent {
 }
 
 export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export const COLLABORATION_STAGES = ['execute', 'review', 'acceptance', 'summary'] as const;
+export type CollaborationStage = typeof COLLABORATION_STAGES[number];
+export type CollaborationRunStatus = 'running' | 'completed' | 'blocked';
+export type CollaborationStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 
 export interface AgentRun {
   id: string;
@@ -247,6 +251,8 @@ export interface AgentRun {
   workflow_run_id: string | null;
   workflow_step_id: string | null;
   workflow_stage: WorkflowStage | null;
+  collaboration_run_id: string | null;
+  collaboration_stage: CollaborationStage | null;
   prompt: string;
   stdout: string;
   stderr: string;
@@ -254,6 +260,34 @@ export interface AgentRun {
   error: string | null;
   started_at: number;
   updated_at: number;
+  completed_at: number | null;
+}
+
+export interface CollaborationStepResult {
+  id: string;
+  collaboration_run_id: string;
+  stage: CollaborationStage;
+  status: CollaborationStepStatus;
+  room_agent_id: string | null;
+  agent_id: string;
+  agent_run_id: string | null;
+  result_message_id: string | null;
+  result_content: string | null;
+  prompt: string;
+  error: string | null;
+  sort_order: number;
+  started_at: number | null;
+  completed_at: number | null;
+}
+
+export interface CollaborationRunResult {
+  id: string;
+  room_id: string;
+  source_message_id: string;
+  status: CollaborationRunStatus;
+  steps: CollaborationStepResult[];
+  error: string | null;
+  started_at: number;
   completed_at: number | null;
 }
 

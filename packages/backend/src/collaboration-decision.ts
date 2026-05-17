@@ -1,7 +1,8 @@
+import { COLLABORATION_STAGES, type CollaborationStage } from './types.js';
+
 export type CollaborationIntent = 'question' | 'analysis' | 'implementation';
 export type CollaborationMode = 'chat_collaboration' | 'formal_workflow';
 export type CollaborationProblemArea = 'frontend' | 'backend' | 'fullstack' | 'unknown';
-export type CollaborationStage = 'execute' | 'review' | 'acceptance' | 'summary';
 
 export interface CollaborationStagePlan {
   stage: CollaborationStage;
@@ -39,8 +40,6 @@ interface DecisionPromptInput {
 const INTENTS = ['question', 'analysis', 'implementation'] as const;
 const MODES = ['chat_collaboration', 'formal_workflow'] as const;
 const PROBLEM_AREAS = ['frontend', 'backend', 'fullstack', 'unknown'] as const;
-const STAGES = ['execute', 'review', 'acceptance', 'summary'] as const;
-
 export function parseCollaborationDecision(output: string): CollaborationDecision {
   const jsonText = extractDecisionJson(output);
   let parsed: unknown;
@@ -107,7 +106,7 @@ export function buildCollaborationDecisionPrompt(input: DecisionPromptInput): st
     '  },',
     '  "stages": [',
     '    {',
-    '      "stage": "execute" | "review" | "acceptance" | "summary",',
+    `      "stage": ${COLLABORATION_STAGES.map((stage) => `"${stage}"`).join(' | ')},`,
     '      "agentIds": string[],',
     '      "parallel": boolean,',
     '      "goal": string (non-empty)',
@@ -145,7 +144,7 @@ function readStages(source: Record<string, unknown>, field: 'stages'): Collabora
   return value.map((item, index) => {
     const path = `${field}[${index}]`;
     const record = asRecord(item, path);
-    const stage = readEnum(record, 'stage', STAGES, path);
+    const stage = readEnum(record, 'stage', COLLABORATION_STAGES, path);
     const agentIds = readStringArray(record, 'agentIds', path);
     const parallel = readBoolean(record, 'parallel', path);
     const goal = readNonEmptyString(record, 'goal', path);

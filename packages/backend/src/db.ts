@@ -444,6 +444,12 @@ if (!agentRunColumnNames.has('workflow_step_id')) {
 if (!agentRunColumnNames.has('workflow_stage')) {
   db.exec('ALTER TABLE agent_runs ADD COLUMN workflow_stage TEXT');
 }
+if (!agentRunColumnNames.has('collaboration_run_id')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN collaboration_run_id TEXT');
+}
+if (!agentRunColumnNames.has('collaboration_stage')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN collaboration_stage TEXT');
+}
 if (!agentRunColumnNames.has('activity_log')) {
   db.exec("ALTER TABLE agent_runs ADD COLUMN activity_log TEXT NOT NULL DEFAULT ''");
 }

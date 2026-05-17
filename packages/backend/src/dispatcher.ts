@@ -155,6 +155,8 @@ export interface RespondAsAgentInput {
   workflowRunId?: string | null;
   workflowStepId?: string | null;
   workflowStage?: WorkflowStage | null;
+  collaborationRunId?: string | null;
+  collaborationStage?: AgentRun['collaboration_stage'];
   distillModelInvoker?: MemoryDistillModelInvoker;
   onRunCreated?: (run: AgentRun) => Promise<void> | void;
   onFinished?: (result: { run: AgentRun; message: Message; status: AgentRunStatus }) => Promise<void> | void;
@@ -397,6 +399,8 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     workflow_run_id: args.workflowRunId,
     workflow_step_id: args.workflowStepId,
     workflow_stage: args.workflowStage,
+    collaboration_run_id: args.collaborationRunId,
+    collaboration_stage: args.collaborationStage,
     prompt,
   });
   const controller = runRegistry.create(run.id);
