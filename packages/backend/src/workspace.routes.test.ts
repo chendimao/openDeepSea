@@ -89,7 +89,7 @@ test('workspace tree returns entries with trusted origin and token', async () =>
   assert.equal(payload.entries.some((entry) => entry.name === 'main.ts' && entry.type === 'file' && entry.path === 'src/main.ts'), true);
 });
 
-test('workspace file rejects binary, too-large and ignored paths', async () => {
+test('workspace file rejects binary and ignored paths, and truncates large text preview', async () => {
   const project = createWorkspaceProject('file-errors');
   const headers = localHeaders();
 
@@ -105,7 +105,15 @@ test('workspace file rejects binary, too-large and ignored paths', async () => {
     {},
     headers,
   );
-  assert.equal(tooLargeRes.status, 400);
+  assert.equal(tooLargeRes.status, 200);
+  const largePreview = await tooLargeRes.json() as {
+    path: string;
+    content: string;
+    truncated: boolean;
+  };
+  assert.equal(largePreview.path, 'too-large.txt');
+  assert.equal(largePreview.truncated, true);
+  assert.equal(largePreview.content.length, 512 * 1024);
 
   const ignoredRes = await request(
     `/api/projects/${project.id}/workspace/file?path=.env`,

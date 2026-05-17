@@ -37,7 +37,7 @@ import {
   type WorkspaceFileErrorCode,
   WorkspaceFileError,
   listWorkspaceDirectory,
-  readWorkspaceFileReference,
+  readWorkspaceFilePreview,
   searchWorkspaceFiles,
 } from './workspace-files.js';
 import {
@@ -421,21 +421,8 @@ router.get('/projects/:projectId/workspace/file', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   try {
-    const preview = await readWorkspaceFileReference(project.path, parsed.data.path);
-    if (preview.isBinary) {
-      return res.status(400).json({ error: 'WORKSPACE_FILE_BINARY' });
-    }
-    if (preview.size > 512 * 1024) {
-      return res.status(400).json({ error: 'WORKSPACE_FILE_TOO_LARGE' });
-    }
-    return res.json({
-      path: preview.path,
-      size: preview.size,
-      mimeType: preview.mimeType,
-      language: preview.language,
-      content: preview.content ?? '',
-      truncated: preview.truncated,
-    });
+    const preview = await readWorkspaceFilePreview(project.path, parsed.data.path);
+    return res.json(preview);
   } catch (error) {
     if (error instanceof WorkspaceFileError) {
       return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
