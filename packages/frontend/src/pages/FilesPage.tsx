@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, Eye, FileText, Filter, Image, Search, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Download, Eye, Filter, Grid2X2, List, Search, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
@@ -10,6 +10,7 @@ import type { ProjectFile } from '../lib/types';
 import { Button } from '../components/ui/Button';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { Input } from '../components/ui/Input';
+import { ProjectFileView, type ProjectFileViewMode } from '../components/ProjectFileView';
 
 export function FilesPage(): JSX.Element {
   const { projectId = '' } = useParams();
@@ -18,11 +19,12 @@ export function FilesPage(): JSX.Element {
   const initialRoomId = projectId ? roomIdFromUrl : '';
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { t, formatRelativeTime } = useI18n();
+  const { t, locale, formatRelativeTime } = useI18n();
   const [query, setQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(projectId);
   const [selectedRoomId, setSelectedRoomId] = useState(initialRoomId);
   const [preview, setPreview] = useState<ProjectFile | null>(null);
+  const [viewMode, setViewMode] = useState<ProjectFileViewMode>('list');
 
   useEffect(() => {
     setSelectedProjectId(projectId);
@@ -68,6 +70,9 @@ export function FilesPage(): JSX.Element {
     () => new Map(projects.map((item) => [item.id, item.name])),
     [projects],
   );
+  const viewModeLabel = locale === 'zh' ? '展示模式' : 'View mode';
+  const listViewLabel = locale === 'zh' ? '列表模式' : 'List view';
+  const cardViewLabel = locale === 'zh' ? 'Card 模式' : 'Card view';
 
   const visibleFiles = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -195,6 +200,26 @@ export function FilesPage(): JSX.Element {
                 className="border-0 bg-transparent px-0 shadow-none focus:ring-0"
               />
             </div>
+            <div className="file-view-toggle" aria-label={viewModeLabel}>
+              <button
+                type="button"
+                className={viewMode === 'list' ? 'is-active' : ''}
+                aria-label={listViewLabel}
+                title={listViewLabel}
+                onClick={() => setViewMode('list')}
+              >
+                <List className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                className={viewMode === 'card' ? 'is-active' : ''}
+                aria-label={cardViewLabel}
+                title={cardViewLabel}
+                onClick={() => setViewMode('card')}
+              >
+                <Grid2X2 className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -225,62 +250,50 @@ export function FilesPage(): JSX.Element {
           ) : visibleFiles.length === 0 ? (
             <div className="files-empty">{t('files.empty')}</div>
           ) : (
-            visibleFiles.map((file) => (
-              <article className="file-row" key={file.id}>
-                <div className="file-row-icon">
-                  {file.mime_type.startsWith('image/') ? (
-                    <Image className="h-5 w-5" strokeWidth={1.7} />
-                  ) : (
-                    <FileText className="h-5 w-5" strokeWidth={1.7} />
-                  )}
-                </div>
-                <div className="file-row-main">
-                  <div className="file-row-name" title={file.original_name}>{file.original_name}</div>
-                  <div className="file-row-meta">
-                    <span>{projectNameById.get(file.project_id) ?? file.project_id}</span>
-                    <span>{formatFileSize(file.size)}</span>
-                    <span>{file.mime_type}</span>
-                    <span>{formatRelativeTime(file.created_at)}</span>
-                  </div>
-                </div>
-                <div className="file-row-refs">
+            <ProjectFileView
+              files={visibleFiles}
+              mode={viewMode}
+              variant="library"
+              getMeta={(file) => (
+                <>
+                  <span>{projectNameById.get(file.project_id) ?? file.project_id}</span>
+                  <span>{formatFileSize(file.size)}</span>
+                  <span>{file.mime_type}</span>
+                  <span>{formatRelativeTime(file.created_at)}</span>
+                </>
+              )}
+              getSecondaryMeta={(file) => (
+                <>
                   <span>{t('files.referenceCount', { count: file.reference_count })}</span>
                   <span title={file.last_referenced_room_name ?? undefined}>
                     {file.last_referenced_room_name ?? t('files.neverReferenced')}
                   </span>
-                </div>
-                <div className="file-row-actions">
-                  <button
-                    type="button"
-                    className="icon-glass-button"
-                    aria-label={t('files.preview')}
-                    title={t('files.preview')}
-                    onClick={() => setPreview(file)}
-                  >
-                    <Eye className="h-4 w-4" strokeWidth={1.8} />
-                  </button>
-                  <a
-                    href={file.url}
-                    download={file.original_name}
-                    className="icon-glass-button"
-                    aria-label={t('files.download')}
-                    title={t('files.download')}
-                  >
-                    <Download className="h-4 w-4" strokeWidth={1.8} />
-                  </a>
-                  <button
-                    type="button"
-                    className="icon-glass-button is-danger"
-                    aria-label={t('files.delete')}
-                    title={t('files.delete')}
-                    disabled={remove.isPending}
-                    onClick={() => handleDelete(file)}
-                  >
-                    <Trash2 className="h-4 w-4" strokeWidth={1.8} />
-                  </button>
-                </div>
-              </article>
-            ))
+                </>
+              )}
+              getActions={(file) => [
+                {
+                  key: 'preview',
+                  label: t('files.preview'),
+                  icon: <Eye className="h-4 w-4" strokeWidth={1.8} />,
+                  onClick: () => setPreview(file),
+                },
+                {
+                  key: 'download',
+                  label: t('files.download'),
+                  icon: <Download className="h-4 w-4" strokeWidth={1.8} />,
+                  href: file.url,
+                  download: file.original_name,
+                },
+                {
+                  key: 'delete',
+                  label: t('files.delete'),
+                  icon: <Trash2 className="h-4 w-4" strokeWidth={1.8} />,
+                  danger: true,
+                  disabled: remove.isPending,
+                  onClick: () => handleDelete(file),
+                },
+              ]}
+            />
           )}
         </section>
       </main>
