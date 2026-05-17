@@ -250,7 +250,7 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
 
       let targetStats;
       try {
-        targetStats = await stat(absoluteEntryPath);
+        targetStats = await stat(targetPath);
       } catch (error) {
         if (isSkippableFsError(error)) continue;
         throw error;
@@ -402,7 +402,7 @@ export async function searchWorkspaceFiles(
 
         let targetStats;
         try {
-          targetStats = await stat(absoluteEntryPath);
+          targetStats = await stat(targetPath);
         } catch (error) {
           if (isSkippableFsError(error)) continue;
           throw error;
@@ -527,7 +527,10 @@ function buildPreviewFromBuffer(
 async function openWorkspaceFileForRead(filePath: string) {
   const readonly = fsConstants.O_RDONLY;
   const noFollow = (fsConstants as { O_NOFOLLOW?: number }).O_NOFOLLOW;
-  const flags = typeof noFollow === 'number' ? readonly | noFollow : readonly;
+  if (typeof noFollow !== 'number') {
+    throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
+  }
+  const flags = readonly | noFollow;
   try {
     return await open(filePath, flags);
   } catch (error) {
@@ -535,8 +538,8 @@ async function openWorkspaceFileForRead(filePath: string) {
     if (code === 'ELOOP') {
       throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
     }
-    if (typeof noFollow === 'number' && isNoFollowUnsupportedError(code)) {
-      return open(filePath, readonly);
+    if (isNoFollowUnsupportedError(code)) {
+      throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
     }
     if (isSkippableFsError(error)) {
       throw workspaceFileError('WORKSPACE_PATH_NOT_FOUND');
