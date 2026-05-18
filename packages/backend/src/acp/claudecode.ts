@@ -148,16 +148,26 @@ function runStreaming(
   onChunk: (chunk: AcpStreamChunk) => void,
   signal?: AbortSignal,
   onSession?: (sessionId: string) => void,
+  stdin?: string,
 ): Promise<{ exitCode: number; sessionId: string | null; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, { cwd, env: process.env, stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
     let stderr = '';
     let detectedSession: string | null = null;
     let stdoutBuffer = '';
     const normalizeStdout = createStdoutNormalizer();
-    child.stdout.setEncoding('utf-8');
-    child.stderr.setEncoding('utf-8');
-    child.stdout.on('data', (data: string) => {
+    if (!child.stdout || !child.stderr) {
+      resolve({ exitCode: -1, sessionId: detectedSession, stderr: 'failed to open child process streams' });
+      return;
+    }
+    if (stdin !== undefined && child.stdin) {
+      child.stdin.end(stdin);
+    }
+    const stdout = child.stdout;
+    const stderrStream = child.stderr;
+    stdout.setEncoding('utf-8');
+    stderrStream.setEncoding('utf-8');
+    stdout.on('data', (data: string) => {
       const parsed = takeCompleteLines(stdoutBuffer + data);
       stdoutBuffer = parsed.rest;
       for (const chunk of normalizeStdout(parsed.complete)) {
@@ -170,7 +180,7 @@ function runStreaming(
         if (typeof obj['thread_id'] === 'string') detectedSession = rememberSession(obj['thread_id'], detectedSession, onSession);
       }
     });
-    child.stderr.on('data', (data: string) => {
+    stderrStream.on('data', (data: string) => {
       const filtered = filterStderr(data);
       stderr += filtered;
       if (filtered) onChunk({ stream: 'stderr', text: filtered });
@@ -213,10 +223,13 @@ function rememberSession(
   return sessionId;
 }
 
-function filterStderr(data: string): string {
+export function filterStderr(data: string): string {
   return data
     .split('\n')
-    .filter((line) => line.trim() !== 'Reading additional input from stdin...')
+    .filter((line) => {
+      const text = line.trim();
+      return text !== 'Reading prompt from stdin...' && text !== 'Reading additional input from stdin...';
+    })
     .join('\n');
 }
 

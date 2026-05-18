@@ -115,24 +115,24 @@ export const codexAdapter: SessionAdapter = {
   },
 
   async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
-    const args = buildCodexExecArgs({
+    const invocation = buildCodexExecInvocation({
       sessionId,
       prompt,
       imagePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
-    return runStreaming('codex', args, projectPath, onChunk, signal, onSession);
+    return runStreaming('codex', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin);
   },
 };
 
-export function buildCodexExecArgs(args: {
+export function buildCodexExecInvocation(args: {
   sessionId: string | null;
   prompt: string;
   imagePaths?: string[];
   permissionMode: AcpPermissionMode;
   writableDirs: string[];
-}): string[] {
+}): { args: string[]; stdin: string } {
   const cliArgs: string[] = ['exec', '--json'];
 
   if (args.permissionMode === 'bypass') {
@@ -150,8 +150,18 @@ export function buildCodexExecArgs(args: {
     cliArgs.push('--image', imagePath);
   }
   if (args.sessionId) cliArgs.push('resume', args.sessionId);
-  cliArgs.push(args.prompt);
-  return cliArgs;
+  cliArgs.push('-');
+  return { args: cliArgs, stdin: args.prompt };
+}
+
+export function buildCodexExecArgs(args: {
+  sessionId: string | null;
+  prompt: string;
+  imagePaths?: string[];
+  permissionMode: AcpPermissionMode;
+  writableDirs: string[];
+}): string[] {
+  return buildCodexExecInvocation(args).args;
 }
 
 function normalizeWritableDirs(dirs: string[]): string[] {

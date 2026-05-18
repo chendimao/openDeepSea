@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildClaudeCodeArgs, buildClaudeCodePrompt, createStdoutNormalizer, normalizeStdoutChunk } from './claudecode.js';
+import { buildClaudeCodeArgs, buildClaudeCodePrompt, createStdoutNormalizer, filterStderr, normalizeStdoutChunk } from './claudecode.js';
 
 test('buildClaudeCodeArgs maps bypass to bypassPermissions', () => {
   assert.deepEqual(
@@ -65,6 +65,17 @@ test('buildClaudeCodePrompt appends local image paths for Claude Code', () => {
   assert.match(prompt, /Claude Code 图片附件：/);
   assert.match(prompt, /1\. \/tmp\/screen\.png/);
   assert.match(prompt, /2\. \/tmp\/diagram\.webp/);
+});
+
+test('filterStderr hides stdin progress notices from CLI adapters', () => {
+  assert.equal(
+    filterStderr([
+      'Reading prompt from stdin...',
+      'real error',
+      'Reading additional input from stdin...',
+    ].join('\n')),
+    'real error',
+  );
 });
 
 test('normalizeStdoutChunk reads OpenCode text events from current and legacy shapes', () => {
