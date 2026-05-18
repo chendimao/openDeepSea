@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, Copy, Eye, GitBranch, Layers3, Pencil, Plus, Search, Send, Trash2, Workflow } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import type { WorkflowDefinition, WorkflowDefinitionScope, WorkflowDefinitionStatus } from '../lib/types';
+import type { WorkflowDefinition, WorkflowDefinitionScope, WorkflowDefinitionStatus, WorkflowStage } from '../lib/types';
+import { useI18n } from '../lib/i18n';
 import { Button } from '../components/ui/Button';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { Input } from '../components/ui/Input';
@@ -277,7 +278,8 @@ function WorkflowDefinitionCard({
   onArchive: () => void;
   onDelete: () => void;
 }): JSX.Element {
-  const stages = [...new Set(definition.definition.nodes.map((node) => node.stage).filter(Boolean))];
+  const { workflowStageLabel } = useI18n();
+  const stages = [...new Set(definition.definition.nodes.map((node) => node.stage).filter(isWorkflowStage))];
   return (
     <article className="surface-1 rounded-xl p-5">
       <div className="flex items-start gap-3">
@@ -313,7 +315,7 @@ function WorkflowDefinitionCard({
           stages
         </span>
         {stages.map((stage) => (
-          <Badge key={stage}>{stage}</Badge>
+          <Badge key={stage}>{workflowStageLabel(stage)}</Badge>
         ))}
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3">
@@ -429,6 +431,7 @@ function WorkflowDefinitionViewDialog({
   definition: WorkflowDefinition | null;
   onOpenChange: (open: boolean) => void;
 }): JSX.Element {
+  const { workflowRoleLabel, workflowStageLabel } = useI18n();
   return (
     <Dialog open={Boolean(definition)} onOpenChange={onOpenChange}>
       <DialogContent
@@ -460,8 +463,8 @@ function WorkflowDefinitionViewDialog({
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[13px] font-medium">{node.label}</span>
                       <Badge>{node.type}</Badge>
-                      {node.stage && <Badge>{node.stage}</Badge>}
-                      {node.role && <Badge>{node.role}</Badge>}
+                      {node.stage && <Badge>{workflowStageLabel(node.stage)}</Badge>}
+                      {node.role && <Badge>{workflowRoleLabel(node.role)}</Badge>}
                     </div>
                     <div className="mt-1 font-mono text-[10.5px] text-[var(--color-fg-muted)]">{node.id}</div>
                   </div>
@@ -532,6 +535,10 @@ function statusLabel(status: WorkflowDefinitionStatus): string {
 
 function scopeLabel(scope: WorkflowDefinitionScope): string {
   return scope === 'system' ? '系统' : scope === 'project' ? '项目' : '群聊';
+}
+
+function isWorkflowStage(stage: WorkflowStage | null | undefined): stage is WorkflowStage {
+  return Boolean(stage);
 }
 
 function formatTime(timestamp: number): string {

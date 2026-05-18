@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 import type {
   WorkflowDefinition,
   WorkflowDefinitionGraph,
@@ -46,6 +47,8 @@ const NODE_TYPES: WorkflowDefinitionNodeType[] = [
 
 const STAGES: WorkflowStage[] = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'];
 const ROLES: WorkflowRole[] = ['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor'];
+const OPTIONAL_STAGES: Array<WorkflowStage | ''> = ['', ...STAGES];
+const OPTIONAL_ROLES: Array<WorkflowRole | ''> = ['', ...ROLES];
 const NODE_TYPE_LABELS: Record<WorkflowDefinitionNodeType, string> = {
   context: '上下文',
   planning: '规划',
@@ -94,6 +97,7 @@ export function WorkflowBuilderDialog(props: WorkflowBuilderDialogProps | Legacy
   } = normalizeProps(props);
   const defaultName = initialScope === 'room' ? '群聊工作流' : initialScope === 'project' ? '项目工作流' : '系统工作流';
   const queryClient = useQueryClient();
+  const { workflowRoleLabel, workflowStageLabel } = useI18n();
   const [name, setName] = useState(definition?.builtin_key ? `${definition.name} 副本` : definition?.name ?? defaultName);
   const [description, setDescription] = useState(definition?.description ?? '');
   const [selectedScopeKey, setSelectedScopeKey] = useState(() => scopeKey(definition?.scope ?? initialScope, definition?.scope_id ?? initialScopeId));
@@ -315,13 +319,19 @@ export function WorkflowBuilderDialog(props: WorkflowBuilderDialogProps | Legacy
                     <SelectField
                       label="阶段"
                       value={String(selectedNode.data.stage ?? '')}
-                      options={['', ...STAGES].map((stage) => ({ value: stage, label: stage || '无' }))}
+                      options={OPTIONAL_STAGES.map((stage) => ({
+                        value: stage,
+                        label: stage ? workflowStageLabel(stage) : '无',
+                      }))}
                       onChange={(value) => updateSelectedNode({ stage: value ? value as WorkflowStage : null })}
                     />
                     <SelectField
                       label="角色"
                       value={String(selectedNode.data.role ?? '')}
-                      options={['', ...ROLES].map((role) => ({ value: role, label: role || '无' }))}
+                      options={OPTIONAL_ROLES.map((role) => ({
+                        value: role,
+                        label: role ? workflowRoleLabel(role) : '无',
+                      }))}
                       onChange={(value) => updateSelectedNode({ role: value ? value as WorkflowRole : null })}
                     />
                   </div>
