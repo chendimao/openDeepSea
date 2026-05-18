@@ -2,10 +2,10 @@ import { serializeGraphState, type AgentWorkflowState } from './state.js';
 import type { GraphTools } from './tools.js';
 import { getVerificationCwd, runVerificationCommand } from './verification.js';
 import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orchestrator.js';
-import { parseAcceptanceVerdict, parseReviewVerdict } from '../plan-parser.js';
+import { parseAcceptanceVerdict, parseReviewVerdict, type ParsedPlanTask } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
 import { resolveWorkflowExecutor } from '../role-resolver.js';
-import type { Task, TaskEventType, WorkflowContextEntryType, WorkflowContextSourceType } from '../../types.js';
+import type { RoomAgent, Task, TaskEventType, WorkflowContextEntryType, WorkflowContextSourceType } from '../../types.js';
 
 export interface GraphRuntimeNodes {
   contextNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
@@ -200,8 +200,9 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const childTaskIds: string[] = [];
       for (const [index, planTask] of state.plan.tasks.entries()) {
-        const assigned = selectAssignmentHintForPlanTask(state, index, context.agents, tools)
-          ?? tools.selectAgentForPlanTask(planTask, context.agents);
+        const resolved = tools.selectAgentForPlanTask(planTask, context.agents);
+        const assigned = selectAssignmentHintForPlanTask(state, index, context.agents, tools, resolved)
+          ?? resolved;
         const child = tools.createChildTask({
           room_id: context.task.room_id,
           project_id: context.task.project_id,
@@ -1388,6 +1389,7 @@ function selectAssignmentHintForPlanTask(
   planTaskIndex: number,
   agents: Parameters<GraphTools['selectAgentForPlanTask']>[1],
   tools: GraphTools,
+  resolvedAgent: ReturnType<GraphTools['selectAgentForPlanTask']>,
 ) {
   const planTask = state.plan?.tasks[planTaskIndex];
   if (!planTask) return null;
@@ -1398,7 +1400,83 @@ function selectAssignmentHintForPlanTask(
   const hint = (state.supervisorAssignments ?? []).find((assignment) =>
     assignment.stage === 'implementation' && assignment.role === planTask.suggestedRole,
   );
-  return hint ? tools.selectAgentForSupervisorAssignment(hint, agents) : null;
+  const hintedAgent = hint ? tools.selectAgentForSupervisorAssignment(hint, agents) : null;
+  if (!hintedAgent) return null;
+  return planTaskHasDomainMismatch(planTask, hintedAgent, resolvedAgent) ? null : hintedAgent;
+}
+
+type PlanTaskDomain = 'frontend' | 'backend' | null;
+
+function planTaskHasDomainMismatch(
+  planTask: ParsedPlanTask,
+  hintedAgent: RoomAgent,
+  resolvedAgent: RoomAgent | null,
+): boolean {
+  const domain = inferPlanTaskDomain(planTask);
+  if (!domain) return false;
+  if (agentMatchesDomain(hintedAgent, domain)) return false;
+  return Boolean(resolvedAgent && agentMatchesDomain(resolvedAgent, domain));
+}
+
+function inferPlanTaskDomain(planTask: ParsedPlanTask): PlanTaskDomain {
+  const text = [
+    planTask.title,
+    planTask.description,
+    ...planTask.scopeRead,
+    ...planTask.scopeWrite,
+  ].join('\n').toLowerCase();
+  const frontend = countDomainSignals(text, [
+    'frontend',
+    'front-end',
+    'react',
+    'tsx',
+    'jsx',
+    'vite',
+    'tailwind',
+    'packages/frontend',
+    'src/pages',
+    'src/components',
+    '前端',
+    '界面',
+    '页面',
+    '组件',
+    '交互',
+  ]);
+  const backend = countDomainSignals(text, [
+    'backend',
+    'back-end',
+    'express',
+    'sqlite',
+    'api',
+    'route',
+    'routes',
+    'repo',
+    'repos',
+    'database',
+    'packages/backend',
+    '后端',
+    '接口',
+    '数据库',
+    '路由',
+    '仓储',
+  ]);
+  if (frontend === 0 && backend === 0) return null;
+  return frontend > backend ? 'frontend' : 'backend';
+}
+
+function agentMatchesDomain(agent: RoomAgent, domain: Exclude<PlanTaskDomain, null>): boolean {
+  const text = [
+    agent.agent_id,
+    agent.agent_name,
+    agent.agent_role ?? '',
+    agent.responsibilities ?? '',
+    ...agent.capabilities,
+  ].join(' ').toLowerCase();
+  return text.includes(domain);
+}
+
+function countDomainSignals(text: string, signals: string[]): number {
+  return signals.reduce((count, signal) => count + (text.includes(signal) ? 1 : 0), 0);
 }
 
 function buildImplementationHandoff(task: Task, output: string, error?: string | null): string {

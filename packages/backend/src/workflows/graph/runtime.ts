@@ -111,6 +111,7 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
 }
 
 export async function startGraphWorkflow(taskId: string, deps: GraphRuntimeDeps = {}): Promise<WorkflowRun> {
+  assertTaskCanStartGraphWorkflow(taskId);
   const selection = await resolveWorkflowDefinitionForTask(taskId, deps);
   const run = createGraphWorkflowRun(taskId, selection);
   recordWorkflowStartedEvent(run);
@@ -156,6 +157,12 @@ export function createGraphWorkflowRun(taskId: string, selection?: WorkflowDefin
   };
   workflowRepo.updateGraphState(run.id, serializeGraphState(initialState));
   return workflowRepo.getRun(run.id) ?? run;
+}
+
+function assertTaskCanStartGraphWorkflow(taskId: string): void {
+  const { task } = requireTaskContext(taskId);
+  const existing = workflowRepo.getActiveByTask(task.id);
+  if (existing) throw new Error('task already has an active workflow');
 }
 
 async function resolveWorkflowDefinitionForTask(

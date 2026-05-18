@@ -380,6 +380,89 @@ test('supervisor assignment hint is ignored when multiple executor tasks would m
   assert.equal(children.find((child) => child.title === 'Update API route')?.assigned_agent_id, backend.id);
 });
 
+test('supervisor assignment hint ignores scope mismatch and falls back to resolver', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-assignment-scope-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Assignment Scope', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Assignment Scope Room' });
+  const backend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+  });
+  const frontend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(frontend.id, {
+    capabilities: ['frontend'],
+    default_runtime: 'acp',
+  });
+  const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Assignment Scope Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Ignore mismatched supervisor assignment hint',
+  });
+
+  await startGraphWorkflow(task.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: workflow.id,
+      confidence: 0.92,
+      reason: 'Workflow is suitable but assignment scope is wrong.',
+      assignments: [{
+        stage: 'implementation',
+        role: 'executor',
+        agentId: frontend.id,
+        reason: 'Incorrectly suggested frontend for backend route.',
+      }],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => ({
+      ...createApprovalPlan(task.title),
+      tasks: [{
+        title: 'Update API route',
+        description: 'Modify the backend route.',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Backend route is updated'],
+        scopeRead: ['packages/backend/src/routes.ts'],
+        scopeWrite: ['packages/backend/src/routes.ts'],
+        dependsOn: [],
+      }],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const child = taskRepo.listChildren(task.id)[0];
+  assert.equal(child?.assigned_agent_id, backend.id);
+});
+
+test('startGraphWorkflow does not call supervisor when task already has active workflow', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-active-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Active Guard', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Active Guard Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Already active workflow',
+  });
+  createGraphWorkflowRun(task.id);
+
+  let calls = 0;
+  await assert.rejects(
+    () => startGraphWorkflow(task.id, {
+      supervisor: async () => {
+        calls += 1;
+        throw new Error('supervisor should not be called');
+      },
+      planner: async () => createApprovalPlan(task.title),
+    }),
+    /task already has an active workflow/,
+  );
+  assert.equal(calls, 0);
+});
+
 test('startGraphWorkflow blocks workflow and fails running graph step when planner fails', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-failure-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
