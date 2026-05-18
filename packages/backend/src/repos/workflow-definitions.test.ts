@@ -18,7 +18,8 @@ test('workflowDefinitionRepo creates built-in default definition once', () => {
   assert.equal(first.status, 'published');
   assert.equal(first.scope, 'system');
   assert.equal(first.builtin_key, 'default-langgraph');
-  assert.ok(first.definition.nodes.some((node) => node.type === 'planning'));
+  assert.ok(first.definition.nodes.some((node) => node.type === 'planning' && node.label === '规划'));
+  assert.ok(first.definition.nodes.some((node) => node.type === 'context' && node.label === '上下文'));
 });
 
 test('workflowDefinitionRepo validates graph nodes and edges', () => {

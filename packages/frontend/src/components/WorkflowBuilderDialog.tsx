@@ -46,6 +46,18 @@ const NODE_TYPES: WorkflowDefinitionNodeType[] = [
 
 const STAGES: WorkflowStage[] = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'];
 const ROLES: WorkflowRole[] = ['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor'];
+const NODE_TYPE_LABELS: Record<WorkflowDefinitionNodeType, string> = {
+  context: '上下文',
+  planning: '规划',
+  approval_gate: '审批',
+  dispatch: '派发',
+  execute: '执行',
+  review: '审查',
+  repair_decision: '修复决策',
+  verify: '验证',
+  acceptance: '验收',
+  memory: '记忆',
+};
 
 type ScopeOption = { scope: WorkflowDefinitionScope; scope_id: string; label: string };
 
@@ -527,15 +539,15 @@ function edgeCondition(edge: Edge, nodes: Node[]): string | null {
 function defaultGraph(): WorkflowDefinitionGraph {
   return {
     nodes: [
-      { id: 'planning', type: 'planning', label: 'Planning', stage: 'planning', role: 'planner', position: { x: 120, y: 140 } },
-      { id: 'approval', type: 'approval_gate', label: 'Approval', stage: 'planning', position: { x: 360, y: 140 } },
-      { id: 'dispatch', type: 'dispatch', label: 'Dispatch', stage: 'assignment', role: 'coordinator', position: { x: 600, y: 140 } },
-      { id: 'execute', type: 'execute', label: 'Execute', stage: 'implementation', role: 'executor', position: { x: 840, y: 140 } },
-      { id: 'review', type: 'review', label: 'Review', stage: 'code_review', role: 'reviewer', position: { x: 1080, y: 140 } },
-      { id: 'repair_decision', type: 'repair_decision', label: 'Repair Decision', stage: 'assignment', role: 'coordinator', position: { x: 1080, y: 300 } },
-      { id: 'verify', type: 'verify', label: 'Verify', stage: 'code_review', position: { x: 1320, y: 140 } },
-      { id: 'acceptance', type: 'acceptance', label: 'Acceptance', stage: 'acceptance', role: 'acceptor', position: { x: 1560, y: 140 } },
-      { id: 'memory', type: 'memory', label: 'Memory', stage: 'acceptance', position: { x: 1800, y: 140 } },
+      { id: 'planning', type: 'planning', label: '规划', stage: 'planning', role: 'planner', position: { x: 120, y: 140 } },
+      { id: 'approval', type: 'approval_gate', label: '审批', stage: 'planning', position: { x: 360, y: 140 } },
+      { id: 'dispatch', type: 'dispatch', label: '派发', stage: 'assignment', role: 'coordinator', position: { x: 600, y: 140 } },
+      { id: 'execute', type: 'execute', label: '执行', stage: 'implementation', role: 'executor', position: { x: 840, y: 140 } },
+      { id: 'review', type: 'review', label: '审查', stage: 'code_review', role: 'reviewer', position: { x: 1080, y: 140 } },
+      { id: 'repair_decision', type: 'repair_decision', label: '修复决策', stage: 'assignment', role: 'coordinator', position: { x: 1080, y: 300 } },
+      { id: 'verify', type: 'verify', label: '验证', stage: 'code_review', position: { x: 1320, y: 140 } },
+      { id: 'acceptance', type: 'acceptance', label: '验收', stage: 'acceptance', role: 'acceptor', position: { x: 1560, y: 140 } },
+      { id: 'memory', type: 'memory', label: '记忆', stage: 'acceptance', position: { x: 1800, y: 140 } },
     ],
     edges: [
       { from: 'planning', to: 'approval' },
@@ -553,7 +565,7 @@ function defaultGraph(): WorkflowDefinitionGraph {
 }
 
 function labelForNodeType(type: WorkflowDefinitionNodeType): string {
-  return type.replace(/_/g, ' ');
+  return NODE_TYPE_LABELS[type];
 }
 
 function defaultStageForType(type: WorkflowDefinitionNodeType): WorkflowStage {

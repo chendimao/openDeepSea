@@ -27,16 +27,16 @@ const ALLOWED_NODE_TYPES = new Set<WorkflowDefinitionNodeType>([
 
 const DEFAULT_DEFINITION: WorkflowDefinitionGraph = {
   nodes: [
-    { id: 'context', type: 'context', label: 'Context', stage: 'analysis', position: { x: 0, y: 80 } },
-    { id: 'planning', type: 'planning', label: 'Planning', stage: 'planning', role: 'planner', position: { x: 220, y: 80 } },
-    { id: 'approval', type: 'approval_gate', label: 'Approval', stage: 'planning', position: { x: 440, y: 80 } },
-    { id: 'dispatch', type: 'dispatch', label: 'Dispatch', stage: 'assignment', role: 'coordinator', position: { x: 660, y: 80 } },
-    { id: 'execute', type: 'execute', label: 'Execute', stage: 'implementation', role: 'executor', position: { x: 880, y: 80 } },
-    { id: 'review', type: 'review', label: 'Review', stage: 'code_review', role: 'reviewer', position: { x: 1100, y: 80 } },
-    { id: 'repair_decision', type: 'repair_decision', label: 'Repair Decision', stage: 'assignment', role: 'coordinator', position: { x: 1100, y: 240 } },
-    { id: 'verify', type: 'verify', label: 'Verify', stage: 'code_review', position: { x: 1320, y: 80 } },
-    { id: 'acceptance', type: 'acceptance', label: 'Acceptance', stage: 'acceptance', role: 'acceptor', position: { x: 1540, y: 80 } },
-    { id: 'memory', type: 'memory', label: 'Memory', stage: 'acceptance', position: { x: 1760, y: 80 } },
+    { id: 'context', type: 'context', label: '上下文', stage: 'analysis', position: { x: 0, y: 80 } },
+    { id: 'planning', type: 'planning', label: '规划', stage: 'planning', role: 'planner', position: { x: 220, y: 80 } },
+    { id: 'approval', type: 'approval_gate', label: '审批', stage: 'planning', position: { x: 440, y: 80 } },
+    { id: 'dispatch', type: 'dispatch', label: '派发', stage: 'assignment', role: 'coordinator', position: { x: 660, y: 80 } },
+    { id: 'execute', type: 'execute', label: '执行', stage: 'implementation', role: 'executor', position: { x: 880, y: 80 } },
+    { id: 'review', type: 'review', label: '审查', stage: 'code_review', role: 'reviewer', position: { x: 1100, y: 80 } },
+    { id: 'repair_decision', type: 'repair_decision', label: '修复决策', stage: 'assignment', role: 'coordinator', position: { x: 1100, y: 240 } },
+    { id: 'verify', type: 'verify', label: '验证', stage: 'code_review', position: { x: 1320, y: 80 } },
+    { id: 'acceptance', type: 'acceptance', label: '验收', stage: 'acceptance', role: 'acceptor', position: { x: 1540, y: 80 } },
+    { id: 'memory', type: 'memory', label: '记忆', stage: 'acceptance', position: { x: 1760, y: 80 } },
   ],
   edges: [
     { from: 'context', to: 'planning' },
@@ -75,7 +75,24 @@ export const workflowDefinitionRepo = {
     const existing = db
       .prepare('SELECT * FROM workflow_definitions WHERE builtin_key = ?')
       .get(BUILTIN_DEFAULT_KEY) as WorkflowDefinitionRow | undefined;
-    if (existing) return normalize(existing);
+    if (existing) {
+      const normalizedDefault = this.validateDefinition(DEFAULT_DEFINITION);
+      if (existing.definition_json !== JSON.stringify(normalizedDefault)) {
+        db.prepare(
+          `UPDATE workflow_definitions
+           SET name = ?, description = ?, definition_json = ?, updated_at = ?
+           WHERE id = ?`,
+        ).run(
+          '默认开发闭环',
+          '内置 LangGraph 开发闭环：上下文、规划、审批、派发、执行、审查、验证、验收和记忆。',
+          JSON.stringify(normalizedDefault),
+          now(),
+          existing.id,
+        );
+        return this.get(existing.id)!;
+      }
+      return normalize(existing);
+    }
 
     const id = nanoid(14);
     const ts = now();
@@ -86,7 +103,7 @@ export const workflowDefinitionRepo = {
     ).run(
       id,
       '默认开发闭环',
-      '内置 LangGraph 开发闭环：规划、审批、执行、审查、验证、验收和记忆。',
+      '内置 LangGraph 开发闭环：上下文、规划、审批、派发、执行、审查、验证、验收和记忆。',
       BUILTIN_DEFAULT_KEY,
       JSON.stringify(this.validateDefinition(DEFAULT_DEFINITION)),
       ts,
