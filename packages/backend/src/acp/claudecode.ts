@@ -279,8 +279,11 @@ function normalizeStdoutChunkWithSnapshots(
           }
         : '';
     } catch {
-      const delta = toPlainTextDelta(line, snapshots);
-      return delta ? { channel: 'answer' as const, text: delta } : '';
+      const snapshotText = index === lines.length - 1 ? line : `${line}\n`;
+      const delta = toPlainTextDelta(snapshotText, snapshots);
+      if (!delta) return '';
+      const displayText = index === lines.length - 1 ? delta : delta.replace(/\n$/, '');
+      return displayText ? { channel: 'answer' as const, text: displayText } : '';
     }
   });
   return normalized.filter(Boolean) as Array<{
@@ -312,6 +315,13 @@ function toPlainTextDelta(text: string, snapshots: Map<string, string>): string 
   if (text.startsWith(previous)) {
     snapshots.set('answer', text);
     return text.slice(previous.length);
+  }
+  if (previous.endsWith('\n')) {
+    const previousWithoutTrailingNewline = previous.slice(0, -1);
+    if (text.startsWith(previousWithoutTrailingNewline)) {
+      snapshots.set('answer', text);
+      return text.slice(previousWithoutTrailingNewline.length);
+    }
   }
   snapshots.set('answer', previous + text);
   return text;

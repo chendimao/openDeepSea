@@ -10,7 +10,7 @@ const BLOCK_NEWLINE_COUNT = 4;
 const MEDIUM_QUEUE_LENGTH = 80;
 const LARGE_QUEUE_LENGTH = 240;
 
-const logLikePattern = /(\[error\]|stdout|stderr|^\s*[-+]\s|^diff --git|^\$\s|^>\s)/m;
+const logLikePattern = /(^\s*\[error\]|^\s*(stdout|stderr)(\s|:)|^\s*[-+]\s|^diff --git|^\$\s|^>\s)/m;
 
 export function createStreamingDisplayState(displayed = ''): StreamingDisplayState {
   return {
@@ -23,9 +23,10 @@ export function classifyStreamingChunk(currentDisplayed: string, chunk: string):
   if (!chunk) return 'typewriter';
   if (isInsideFencedCodeBlock(currentDisplayed)) return 'block';
   if (chunk.includes('```')) return 'block';
-  if (chunk.length > BLOCK_CHUNK_LENGTH) return 'block';
-  if (countNewlines(chunk) >= BLOCK_NEWLINE_COUNT) return 'block';
-  if (logLikePattern.test(chunk)) return 'block';
+  const logLike = logLikePattern.test(chunk);
+  if (logLike) return 'block';
+  if (chunk.length > BLOCK_CHUNK_LENGTH && looksLikeStructuredOutput(chunk)) return 'block';
+  if (countNewlines(chunk) >= BLOCK_NEWLINE_COUNT && looksLikeStructuredOutput(chunk)) return 'block';
   return 'typewriter';
 }
 
@@ -83,6 +84,10 @@ function isInsideFencedCodeBlock(text: string): boolean {
 
 function countNewlines(text: string): number {
   return (text.match(/\n/g) ?? []).length;
+}
+
+function looksLikeStructuredOutput(text: string): boolean {
+  return /^[\s\S]*(\n\s{2,}\S|\n\t+\S|^[\s]*[}\]\)]\s*$|;\s*$|={3,}|-{3,}|\|)/m.test(text);
 }
 
 function getReleaseCount(queueLength: number): number {

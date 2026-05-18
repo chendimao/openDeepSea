@@ -277,3 +277,30 @@ test('plain text delta chunks keep accumulated state for later snapshot dedupe',
     },
   ]);
 });
+
+test('plain text lines keep newline state for later structured snapshot dedupe', () => {
+  const normalize = createStdoutNormalizer();
+
+  assert.deepEqual(normalize('第一段\n第二段\n'), [
+    {
+      channel: 'answer',
+      text: '第一段',
+    },
+    {
+      channel: 'answer',
+      text: '第二段',
+    },
+  ]);
+
+  const finalSnapshot = JSON.stringify({
+    type: 'result',
+    result: '第一段\n第二段\n第三段',
+  });
+  assert.deepEqual(normalize(`${finalSnapshot}\n`), [
+    {
+      channel: 'answer',
+      text: '第三段',
+      rawType: 'result',
+    },
+  ]);
+});
