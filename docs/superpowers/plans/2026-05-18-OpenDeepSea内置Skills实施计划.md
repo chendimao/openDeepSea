@@ -51,12 +51,18 @@
   - 挂载 skills router。
 - Modify: `packages/backend/src/workflows/langchain-planner.ts`
   - `buildPlannerMessages` 支持注入 `planner` skill context。
+- Modify: `packages/backend/src/workflows/orchestrator.ts`
+  - legacy/orchestrator planner 路径调用 `generateLangChainPlan` 时也注入 `planner` skill context。
+- Modify: `packages/backend/src/workflows/supervisor.ts`
+  - Workflow supervisor 作为内部模型路径，支持注入 `workflow` skill context。
 - Modify: `packages/backend/src/chat-model.ts`
   - `buildModelChatMessages` 支持注入 `model_chat` skill context。
+- Modify: `packages/backend/src/memory/distill.ts`
+  - 记忆蒸馏模型调用支持注入 `memory` skill context。
 - Modify: `packages/backend/src/workflows/graph/tools.ts`
   - 为 workflow 节点提供按 scope 生成 skill prompt 的 helper。
 - Modify: `packages/backend/src/workflows/graph/nodes.ts`
-  - 在 review/acceptance/memory 等 prompt 型节点接入 skill context；execute ACP prompt 默认不接入。
+  - 仅在内部模型路径接入 skill context；execute/review/acceptance 等 ACP agent prompt 默认不接入。
 
 新增或修改前端文件：
 
@@ -87,6 +93,20 @@
 
 禁止并行修改 `db.ts`、`routes.ts`、`skills/*`、`types.ts` 这类 shared contract 文件；这些由主线串行处理。
 
+## 命令约定
+
+仓库根脚本使用 npm workspace 包名，例如 `npm run test -w @openclaw-room/backend`。后端 `test` script 固定运行 `src/**/*.test.ts`，因此计划中的定向测试使用 Node test 直接命令：
+
+```bash
+cd packages/backend && node --import tsx --test src/path/to/file.test.ts
+```
+
+全量后端测试仍使用：
+
+```bash
+npm run test -w @openclaw-room/backend
+```
+
 ---
 
 ### Task 1: 数据模型与 Repo
@@ -114,7 +134,7 @@
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/skills/repo.test.ts
+cd packages/backend && node --import tsx --test src/skills/repo.test.ts
 ```
 
 Expected: FAIL，原因是 `skills/repo.ts` 或表不存在。
@@ -229,6 +249,7 @@ export type {
 
 - JSON parse 失败时返回空数组，不抛出数据库级错误。
 - `priority_override ?? skill.priority` 作为有效优先级。
+- priority 数字越小优先级越高；默认 `100`，强规则可用 `80` 或更小。
 - scope specificity 排序：agent=4、room=3、project=2、system=1。
 - `scope='system'` 固定 `scope_id='default'`。
 
@@ -237,7 +258,7 @@ export type {
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/skills/repo.test.ts
+cd packages/backend && node --import tsx --test src/skills/repo.test.ts
 ```
 
 Expected: PASS。
@@ -277,8 +298,9 @@ git commit -m "feat(skills): 新增内置技能数据模型"
 - `keyword` 模式只有关键词命中才选中。
 - `always_for_scope` 在 scope 匹配时选中。
 - `manual` 不自动选中，除非 request 显式传入 `skillIds`。
-- 同名/同 id 去重，保留有效优先级最高的结果。
+- 同名/同 id 去重，保留有效 priority 数字最小的结果。
 - 最多 3 个 skill 和总字符上限生效。
+- `always_for_scope` 每个 runtime scope 默认最多选中 1 个，避免全局规则膨胀。
 
 - [ ] **Step 3: 写 prompt formatter 失败测试**
 
@@ -296,7 +318,7 @@ git commit -m "feat(skills): 新增内置技能数据模型"
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/skills/loader.test.ts src/skills/selector.test.ts src/skills/prompt.test.ts
+cd packages/backend && node --import tsx --test src/skills/loader.test.ts src/skills/selector.test.ts src/skills/prompt.test.ts
 ```
 
 Expected: FAIL，原因是模块未实现。
@@ -356,7 +378,7 @@ export interface SelectedSkill {
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/skills/loader.test.ts src/skills/selector.test.ts src/skills/prompt.test.ts
+cd packages/backend && node --import tsx --test src/skills/loader.test.ts src/skills/selector.test.ts src/skills/prompt.test.ts
 ```
 
 Expected: PASS。
@@ -383,18 +405,34 @@ git commit -m "feat(skills): 实现技能选择与提示词注入"
 在 `routes.test.ts` 覆盖：
 
 - `GET /api/skills` 返回列表。
+- `GET /api/skills/:skillId` 返回详情，未知 ID 返回 404。
 - `POST /api/skills/import/local` 导入临时目录中的 `SKILL.md`。
 - `PATCH /api/skills/:skillId` 可禁用 skill 或修改 priority。
+- `DELETE /api/skills/:skillId` 删除或禁用 skill，且只移除 OpenDeepSea 管理目录内副本。
+- `GET /api/skills/bindings?scope=system&scopeId=default` 返回 bindings。
 - `PUT /api/skills/bindings` 可创建/更新 binding。
+- `DELETE /api/skills/bindings/:bindingId` 删除 binding。
 - `POST /api/skills/preview-selection` 返回命中 reasons。
 - `POST /api/skills/import/git` 第一阶段返回 `501` 和明确错误，除非本任务实现 Git clone。
+- API 响应不暴露非必要本地绝对路径；列表 DTO 默认只返回 `install_path_set` 或脱敏路径，详情页如需路径也只返回管理目录相对路径。
+
+- [ ] **Step 1.1: 写 installer 安全失败测试**
+
+在 `routes.test.ts` 或独立 `installer.test.ts` 覆盖：
+
+- 缺少 `SKILL.md` 时返回 400。
+- local path 为空、相对路径逃逸或不存在时返回 400。
+- 导入时跳过 `.git`、`node_modules`。
+- symlink 指向导入目录外文件时不复制或返回安全错误。
+- 删除 skill 不会删除用户原始目录。
+- 物理删除只能作用于 `OPENDEEPSEA_SKILLS_DIR` 管理目录内路径。
 
 - [ ] **Step 2: 运行测试确认失败**
 
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/skills/routes.test.ts
+cd packages/backend && node --import tsx --test src/skills/routes.test.ts
 ```
 
 Expected: FAIL，原因是 routes/installer 未实现。
@@ -422,6 +460,8 @@ throw new Error('Git skill import is not implemented yet');
 
 由 route 映射为 `501`。
 
+本计划将 Git 导入明确延后到阶段 2；Task 3 只保留 endpoint 占位和 `501` 回归测试，避免首版引入网络 clone 与额外安全边界。
+
 - [ ] **Step 4: 实现 skills router**
 
 `routes.ts` 中挂载：
@@ -438,6 +478,28 @@ router.use('/skills', skillsRouter);
 - trigger mode enum
 - priority number
 - local path string min(1)
+
+所有对外响应通过 DTO mapper 输出，不直接 `res.json(skillRow)`。DTO 至少包含：
+
+```ts
+{
+  id,
+  name,
+  description,
+  source_type,
+  source_uri,
+  manifest_path,
+  runtime_scopes,
+  trigger_mode,
+  trigger_keywords,
+  enabled,
+  priority,
+  checksum,
+  created_at,
+  updated_at,
+  install_path_set: Boolean(install_path)
+}
+```
 
 - [ ] **Step 5: 实现 preview-selection**
 
@@ -476,7 +538,7 @@ router.use('/skills', skillsRouter);
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/skills/routes.test.ts
+cd packages/backend && node --import tsx --test src/skills/routes.test.ts
 ```
 
 Expected: PASS。
@@ -486,7 +548,7 @@ Expected: PASS。
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/acp/codex.test.ts src/acp/claudecode.test.ts src/acp/opencode.test.ts
+cd packages/backend && node --import tsx --test src/acp/codex.test.ts src/acp/claudecode.test.ts src/acp/opencode.test.ts
 ```
 
 Expected: PASS，证明默认不影响外部 ACP CLI skills。
@@ -505,11 +567,19 @@ git commit -m "feat(skills): 新增技能管理接口"
 **Files:**
 - Modify: `packages/backend/src/workflows/langchain-planner.ts`
 - Modify: `packages/backend/src/workflows/langchain-planner.test.ts`
+- Modify: `packages/backend/src/workflows/orchestrator.ts`
+- Modify: `packages/backend/src/workflows/orchestrator.test.ts`
+- Modify: `packages/backend/src/workflows/supervisor.ts`
+- Modify: `packages/backend/src/workflows/supervisor.test.ts`
 - Modify: `packages/backend/src/chat-model.ts`
 - Modify: `packages/backend/src/dispatcher.test.ts`
+- Modify: `packages/backend/src/memory/distill.ts`
+- Modify: `packages/backend/src/memory/distill.test.ts`
 - Modify: `packages/backend/src/workflows/graph/tools.ts`
 - Modify: `packages/backend/src/workflows/graph/nodes.ts`
-- Modify: `packages/backend/src/workflows/graph/*.test.ts` 具体按失败点补充
+- Modify: `packages/backend/src/workflows/graph/review.test.ts`
+- Modify: `packages/backend/src/workflows/graph/recovery.test.ts`
+- Modify: `packages/backend/src/workflows/graph/runtime.test.ts`
 
 - [ ] **Step 1: 写 planner 注入失败测试**
 
@@ -529,18 +599,21 @@ git commit -m "feat(skills): 新增技能管理接口"
 
 - [ ] **Step 3: 写 workflow prompt 注入失败测试**
 
-优先在 graph nodes 单元测试中覆盖：
+覆盖内部模型路径，而不是 ACP agent prompt：
 
-- review/acceptance prompt 包含 `review` 或 `workflow` skill context。
+- graph `planningNode` 调用 `tools.generatePlan` 时传递 `planner/workflow` skill context。
+- legacy `orchestrator.ts` 的 `startLangChainPlanningStage -> generateLangChainPlan` 路径也传递 `planner` skill context。
+- `buildSupervisorMessages(input, { skillContext })` 支持 `workflow` skill context。
 - memory distill 只请求 `memory` scope。
 - execute ACP prompt 不默认注入 OpenDeepSea skills。
+- review/acceptance 当前通过 `tools.runAcpAgent` 调用外部 ACP CLI，必须断言默认不注入 OpenDeepSea skills。
 
 - [ ] **Step 4: 运行测试确认失败**
 
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/workflows/langchain-planner.test.ts src/dispatcher.test.ts src/workflows/graph/nodes.test.ts
+cd packages/backend && node --import tsx --test src/workflows/langchain-planner.test.ts src/workflows/orchestrator.test.ts src/workflows/supervisor.test.ts src/dispatcher.test.ts src/memory/distill.test.ts src/workflows/graph/review.test.ts src/workflows/graph/recovery.test.ts src/workflows/graph/runtime.test.ts
 ```
 
 Expected: FAIL，原因是函数签名或 helper 未实现。
@@ -563,7 +636,7 @@ system message 中基础规则后追加：
 options.skillContext ? `\n\n${options.skillContext}` : null
 ```
 
-`generateLangChainPlan` 第一阶段可以保持不自动查 selector，或增加 optional `skillContext` 参数由 graph tools 传入。优先选择显式参数，便于测试。
+`generateLangChainPlan` 增加 optional `skillContext` 参数，内部调用 `buildPlannerMessages(input, { skillContext })`。`graph tools` 和 `orchestrator.ts` 都负责在调用前解析 selector 并显式传入，便于测试和审计。
 
 - [ ] **Step 6: 扩展 model chat message 构造**
 
@@ -577,7 +650,21 @@ export interface ModelChatOptions {
 
 dispatcher 中 model fallback 调用前使用 selector 获取 `model_chat` skill context。
 
-- [ ] **Step 7: 在 graph tools 中增加 skill context helper**
+- [ ] **Step 7: 扩展 supervisor 与 memory 内部模型消息**
+
+`supervisor.ts` 增加：
+
+```ts
+export interface SupervisorMessageOptions {
+  skillContext?: string;
+}
+
+export function buildSupervisorMessages(input: WorkflowSupervisorInput, options: SupervisorMessageOptions = {}): PlannerMessage[]
+```
+
+`memory/distill.ts` 的 `distillFromConversation`、`distillFromTask` 增加可选 `skillContext`，在系统消息基础规则后追加。基础事实提取规则必须仍位于 skill context 前面。
+
+- [ ] **Step 8: 在 graph tools 中增加 skill context helper**
 
 在 `GraphTools` 增加：
 
@@ -593,29 +680,30 @@ buildSkillContext(input: {
 
 默认实现调用 `selectSkills` + `formatSkillPrompt`。测试中可注入 fake helper。
 
-- [ ] **Step 8: 接入 workflow prompt 型节点**
+- [ ] **Step 9: 接入内部模型路径**
 
 接入范围：
 
-- `planningNode` 调用 `tools.generatePlan` 前传入 planner skill context。
-- `reviewNode`、`acceptanceNode` 在 `buildStagePrompt` 结果后追加 `workflow/review` skill context。
+- `planningNode` 调用 `tools.generatePlan` 前传入 `planner/workflow` skill context。
+- `orchestrator.ts` 的 `startLangChainPlanningStage` 调用 `generateLangChainPlan` 前传入 `planner` skill context。
+- `supervisor` 决策模型调用前传入 `workflow` skill context。
 - `memoryNode` 调用 distill 前准备 `memory` skill context；如果现有 `distillTask` 无参数，则先扩展可选参数。
-- `executeNode` 保持不注入，避免影响 ACP CLI skills。
+- `executeNode`、`reviewNode`、`acceptanceNode` 保持不注入，因为它们当前默认进入 `tools.runAcpAgent` 外部 ACP CLI。
 
-- [ ] **Step 9: 运行 Task 4 测试**
+- [ ] **Step 10: 运行 Task 4 测试**
 
 Run:
 
 ```bash
-npm --workspace packages/backend test -- src/workflows/langchain-planner.test.ts src/dispatcher.test.ts src/workflows/graph/nodes.test.ts src/workflows/graph/tools.test.ts
+cd packages/backend && node --import tsx --test src/workflows/langchain-planner.test.ts src/workflows/orchestrator.test.ts src/workflows/supervisor.test.ts src/dispatcher.test.ts src/memory/distill.test.ts src/workflows/graph/review.test.ts src/workflows/graph/recovery.test.ts src/workflows/graph/runtime.test.ts
 ```
 
 Expected: PASS。
 
-- [ ] **Step 10: 提交 Task 4**
+- [ ] **Step 11: 提交 Task 4**
 
 ```bash
-git add packages/backend/src/workflows/langchain-planner.ts packages/backend/src/workflows/langchain-planner.test.ts packages/backend/src/chat-model.ts packages/backend/src/dispatcher.test.ts packages/backend/src/workflows/graph/tools.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/*.test.ts
+git add packages/backend/src/workflows/langchain-planner.ts packages/backend/src/workflows/langchain-planner.test.ts packages/backend/src/workflows/orchestrator.ts packages/backend/src/workflows/orchestrator.test.ts packages/backend/src/workflows/supervisor.ts packages/backend/src/workflows/supervisor.test.ts packages/backend/src/chat-model.ts packages/backend/src/dispatcher.test.ts packages/backend/src/memory/distill.ts packages/backend/src/memory/distill.test.ts packages/backend/src/workflows/graph/tools.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/review.test.ts packages/backend/src/workflows/graph/recovery.test.ts packages/backend/src/workflows/graph/runtime.test.ts
 git commit -m "feat(skills): 接入内部模型提示词"
 ```
 
@@ -657,6 +745,30 @@ export interface SkillPreviewResponse { ... }
 - `upsertSkillBinding`
 - `deleteSkillBinding`
 - `previewSkillSelection`
+
+- [ ] **Step 2.1: 对齐前端 DTO 脱敏字段**
+
+前端 `Skill` 类型必须匹配后端 DTO，不包含原始 `install_path` 本地绝对路径。使用：
+
+```ts
+export interface Skill {
+  id: string;
+  name: string;
+  description: string | null;
+  source_type: 'local_directory' | 'git_repo' | 'manual';
+  source_uri: string | null;
+  manifest_path: string | null;
+  runtime_scopes: SkillRuntimeScope[];
+  trigger_mode: SkillTriggerMode;
+  trigger_keywords: string[];
+  enabled: 0 | 1;
+  priority: number;
+  checksum: string | null;
+  install_path_set: boolean;
+  created_at: number;
+  updated_at: number;
+}
+```
 
 - [ ] **Step 3: 创建 SkillsSettingsPanel**
 
@@ -700,7 +812,7 @@ export interface SkillPreviewResponse { ... }
 Run:
 
 ```bash
-npm --workspace packages/frontend run build
+npm run build -w @openclaw-room/frontend
 ```
 
 Expected: PASS。
@@ -726,7 +838,7 @@ git commit -m "feat(frontend): 新增内置技能设置面板"
 Run:
 
 ```bash
-npm --workspace packages/backend test
+npm run test -w @openclaw-room/backend
 ```
 
 Expected: PASS。
@@ -746,10 +858,18 @@ Expected: PASS。
 确认以下测试仍通过：
 
 ```bash
-npm --workspace packages/backend test -- src/acp/codex.test.ts src/acp/claudecode.test.ts src/acp/opencode.test.ts
+cd packages/backend && node --import tsx --test src/acp/codex.test.ts src/acp/claudecode.test.ts src/acp/opencode.test.ts
 ```
 
 Expected: PASS。
+
+- [ ] **Step 3.1: 无 skills 兼容回归**
+
+在空 `skills` / `skill_bindings` 状态下确认：
+
+- planner/model chat/workflow 构造的核心 system prompt 仍包含原基础规则。
+- `buildPlannerMessages(input)`、`buildModelChatMessages(input)`、`buildSupervisorMessages(input)` 不传 `skillContext` 时不出现 `OpenDeepSea active skills`。
+- `executeNode`、`reviewNode`、`acceptanceNode` 发给 `runAcpAgent` 的 prompt 不包含 OpenDeepSea skill context。
 
 - [ ] **Step 4: 手动 smoke**
 
@@ -798,10 +918,10 @@ git commit -m "docs: 记录内置技能验收"
 - `skills` 与 `skill_bindings` 持久化可用。
 - 本地 Markdown skill 可导入、列表展示、启用禁用和绑定。
 - Preview API 能解释命中原因并返回 prompt preview。
-- Planner、model chat、workflow review/memory 能按 scope 注入 OpenDeepSea skills。
+- Planner、model chat、workflow 内部模型路径和 memory distill 能按 scope 注入 OpenDeepSea skills；execute/review/acceptance 的外部 ACP CLI prompt 默认不注入。
 - Execute/ACP CLI 路径默认不注入 OpenDeepSea skills。
 - 前端系统设置中可管理和预览 OpenDeepSea 内置 skills。
-- `npm --workspace packages/backend test` 和 `npm run build` 通过。
+- `npm run test -w @openclaw-room/backend` 和 `npm run build` 通过。
 
 ## 风险提示
 
