@@ -199,8 +199,9 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       tools.broadcastStepCreated(context.room.id, step);
 
       const childTaskIds: string[] = [];
-      for (const planTask of state.plan.tasks) {
-        const assigned = tools.selectAgentForPlanTask(planTask, context.agents);
+      for (const [index, planTask] of state.plan.tasks.entries()) {
+        const assigned = selectAssignmentHintForPlanTask(state, index, context.agents, tools)
+          ?? tools.selectAgentForPlanTask(planTask, context.agents);
         const child = tools.createChildTask({
           room_id: context.task.room_id,
           project_id: context.task.project_id,
@@ -1380,6 +1381,24 @@ function createContextEntrySafely(
     console.warn(`[graph-context] failed to create ${input.entryType}: ${(err as Error).message}`);
     throw err;
   }
+}
+
+function selectAssignmentHintForPlanTask(
+  state: AgentWorkflowState,
+  planTaskIndex: number,
+  agents: Parameters<GraphTools['selectAgentForPlanTask']>[1],
+  tools: GraphTools,
+) {
+  const planTask = state.plan?.tasks[planTaskIndex];
+  if (!planTask) return null;
+  const sameRoleTaskCount = state.plan?.tasks.filter((task) =>
+    task.suggestedRole === planTask.suggestedRole,
+  ).length ?? 0;
+  if (sameRoleTaskCount !== 1) return null;
+  const hint = (state.supervisorAssignments ?? []).find((assignment) =>
+    assignment.stage === 'implementation' && assignment.role === planTask.suggestedRole,
+  );
+  return hint ? tools.selectAgentForSupervisorAssignment(hint, agents) : null;
 }
 
 function buildImplementationHandoff(task: Task, output: string, error?: string | null): string {

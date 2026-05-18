@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { GraphNodeName, WorkflowStatus } from '../../types.js';
+import type { GraphNodeName, WorkflowRole, WorkflowStage, WorkflowStatus } from '../../types.js';
 import type { ParsedPlan } from '../plan-parser.js';
 
 export const workflowGraphNodeNameSchema = z.enum([
@@ -32,6 +32,13 @@ export const verificationResultSchema = z.object({
   exitCode: z.number().nullable(),
   stdout: z.string(),
   stderr: z.string(),
+});
+
+export const supervisorAssignmentHintSchema = z.object({
+  stage: z.enum(['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance']),
+  role: z.enum(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor']),
+  agentId: z.string(),
+  reason: z.string(),
 });
 
 export const parsedPlanTaskSchema = z.object({
@@ -74,6 +81,7 @@ export const agentWorkflowStateSchema = z.object({
   currentStepId: z.string().nullable(),
   activeAgentRunId: z.string().nullable(),
   childTaskIds: z.array(z.string()),
+  supervisorAssignments: z.array(supervisorAssignmentHintSchema).default([]),
   reviewFindings: z.array(z.string()),
   reviewVerdict: z.enum(['pass', 'changes_requested', 'failed']).nullable().default(null),
   verificationResults: z.array(verificationResultSchema),
@@ -84,10 +92,20 @@ export const agentWorkflowStateSchema = z.object({
 });
 
 export type VerificationResult = z.infer<typeof verificationResultSchema>;
-export type AgentWorkflowState = Omit<z.infer<typeof agentWorkflowStateSchema>, 'plan' | 'currentNode' | 'status'> & {
+export interface SupervisorAssignmentHint {
+  stage: WorkflowStage;
+  role: WorkflowRole;
+  agentId: string;
+  reason: string;
+}
+export type AgentWorkflowState = Omit<
+  z.infer<typeof agentWorkflowStateSchema>,
+  'plan' | 'currentNode' | 'status' | 'supervisorAssignments'
+> & {
   plan: ParsedPlan | null;
   currentNode: GraphNodeName | null;
   status: WorkflowStatus;
+  supervisorAssignments?: SupervisorAssignmentHint[];
 };
 
 export function emptyAgentWorkflowState(input: {
@@ -105,6 +123,7 @@ export function emptyAgentWorkflowState(input: {
     currentStepId: null,
     activeAgentRunId: null,
     childTaskIds: [],
+    supervisorAssignments: [],
     reviewFindings: [],
     reviewVerdict: null,
     verificationResults: [],

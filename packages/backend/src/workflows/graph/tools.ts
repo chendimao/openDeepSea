@@ -30,10 +30,12 @@ import { generateLangChainPlan, type LangChainPlannerInput } from '../langchain-
 import type { ParsedPlan } from '../plan-parser.js';
 import { formatRecentMessagesForPlanner } from '../orchestrator.js';
 import { selectWorkflowAgentForPlanTask, selectWorkflowAgentForRole } from '../role-resolver.js';
-import { parseGraphState } from './state.js';
+import type { WorkflowSupervisorDecision, WorkflowSupervisorInput } from '../supervisor.js';
+import { parseGraphState, type SupervisorAssignmentHint } from './state.js';
 
 export interface GraphRuntimeDeps {
   planner?: (input: LangChainPlannerInput) => Promise<ParsedPlan>;
+  supervisor?: (input: WorkflowSupervisorInput) => Promise<WorkflowSupervisorDecision>;
   runAcpAgent?: (input: RespondAsAgentInput) => Promise<{
     run: AgentRun;
     message: Message;
@@ -87,6 +89,7 @@ export interface GraphTools {
   nextStepSortOrder: (workflowRunId: string) => number;
   selectAgentForRole: (role: WorkflowRole, agents: RoomAgent[]) => RoomAgent | null;
   selectAgentForPlanTask: (planTask: ParsedPlan['tasks'][number], agents: RoomAgent[]) => RoomAgent | null;
+  selectAgentForSupervisorAssignment: (hint: SupervisorAssignmentHint, agents: RoomAgent[]) => RoomAgent | null;
   runAcpAgent: (input: RespondAsAgentInput) => Promise<{
     run: AgentRun;
     message: Message;
@@ -194,6 +197,13 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     },
     selectAgentForPlanTask(planTask: ParsedPlan['tasks'][number], agents: RoomAgent[]) {
       return selectWorkflowAgentForPlanTask(planTask.suggestedRole, agents, planTask);
+    },
+    selectAgentForSupervisorAssignment(hint: SupervisorAssignmentHint, agents: RoomAgent[]) {
+      const agent = agents.find((item) => item.id === hint.agentId || item.agent_id === hint.agentId) ?? null;
+      if (!agent) return null;
+      if (agent.left_at !== null || agent.acp_enabled !== 1 || !agent.acp_backend) return null;
+      if (agent.workflow_role !== hint.role) return null;
+      return agent;
     },
     runAcpAgent,
     upsertTaskSummaryMemory: memoryRepo.upsertTaskSummary.bind(memoryRepo),

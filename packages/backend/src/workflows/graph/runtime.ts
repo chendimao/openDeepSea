@@ -1,14 +1,15 @@
 import { Annotation, END, MemorySaver, START, StateGraph } from '@langchain/langgraph';
 import { agentRunRepo } from '../../repos/agent-runs.js';
 import { projectRepo } from '../../repos/projects.js';
-import { roomRepo } from '../../repos/rooms.js';
+import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
 import { settingsRepo } from '../../repos/settings.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowDefinitionRepo } from '../../repos/workflow-definitions.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { runRegistry } from '../../run-registry.js';
 import { recordTaskEvent } from '../../task-conversation.js';
-import type { WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
+import type { WorkflowDefinition, WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
+import { generateWorkflowSupervisorDecision, type WorkflowSupervisorDecision } from '../supervisor.js';
 import { createGraphNodes } from './nodes.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
 import { emptyAgentWorkflowState, parseGraphState, serializeGraphState, type AgentWorkflowState } from './state.js';
@@ -26,6 +27,7 @@ const GraphState = Annotation.Root({
   currentStepId: Annotation<string | null>(),
   activeAgentRunId: Annotation<string | null>(),
   childTaskIds: Annotation<string[]>(),
+  supervisorAssignments: Annotation<AgentWorkflowState['supervisorAssignments']>(),
   reviewFindings: Annotation<string[]>(),
   reviewVerdict: Annotation<AgentWorkflowState['reviewVerdict']>(),
   verificationResults: Annotation<AgentWorkflowState['verificationResults']>(),
@@ -34,6 +36,35 @@ const GraphState = Annotation.Root({
   status: Annotation<AgentWorkflowState['status']>(),
   error: Annotation<string | null>(),
 });
+
+const SUPERVISOR_CONFIDENCE_THRESHOLD = 0.75;
+
+type WorkflowDefinitionSnapshot = {
+  id: string;
+  name: string;
+  description: string | null;
+  version: number;
+  definition: WorkflowDefinitionGraph;
+  supervisorDecision?: WorkflowSupervisorAudit;
+};
+
+type WorkflowSupervisorAudit = WorkflowSupervisorDecision & {
+  usedWorkflowDefinitionId: string;
+  fallbackReason: WorkflowSelectionFallbackReason | null;
+  error?: string;
+};
+
+type WorkflowSelectionFallbackReason =
+  | 'low_confidence'
+  | 'workflow_not_visible'
+  | 'unsupported_mode'
+  | 'missing_workflow_definition'
+  | 'supervisor_failed';
+
+type WorkflowDefinitionSelection = {
+  definition: WorkflowDefinition;
+  supervisorDecision?: WorkflowSupervisorAudit;
+};
 
 function requireTaskContext(taskId: string) {
   const task = taskRepo.get(taskId);
@@ -80,17 +111,18 @@ function buildRuntimeGraph(deps: GraphRuntimeDeps = {}) {
 }
 
 export async function startGraphWorkflow(taskId: string, deps: GraphRuntimeDeps = {}): Promise<WorkflowRun> {
-  const run = createGraphWorkflowRun(taskId);
+  const selection = await resolveWorkflowDefinitionForTask(taskId, deps);
+  const run = createGraphWorkflowRun(taskId, selection);
   recordWorkflowStartedEvent(run);
   return continueGraphWorkflow(run.id, deps);
 }
 
-export function createGraphWorkflowRun(taskId: string): WorkflowRun {
+export function createGraphWorkflowRun(taskId: string, selection?: WorkflowDefinitionSelection): WorkflowRun {
   const { task, room, project } = requireTaskContext(taskId);
   const existing = workflowRepo.getActiveByTask(task.id);
   if (existing) throw new Error('task already has an active workflow');
-  const defaultDefinitionId = settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id;
-  const definition = workflowDefinitionRepo.getPublishedForRoomOrDefault(defaultDefinitionId, room.id);
+  const workflowSelection = selection ?? getDefaultWorkflowDefinitionSelection(room.id);
+  const definition = workflowSelection.definition;
 
   const pendingState = emptyAgentWorkflowState({
     workflowRunId: 'pending',
@@ -112,21 +144,128 @@ export function createGraphWorkflowRun(taskId: string): WorkflowRun {
     graph_state: serializeGraphState(pendingState),
     workflow_definition_id: definition.id,
     workflow_definition_version: definition.version,
-    workflow_definition_snapshot: JSON.stringify({
-      id: definition.id,
-      name: definition.name,
-      description: definition.description,
-      version: definition.version,
-      definition: definition.definition,
-    }),
+    workflow_definition_snapshot: JSON.stringify(createWorkflowDefinitionSnapshot(workflowSelection)),
   });
 
   const initialState: AgentWorkflowState = {
     ...pendingState,
     workflowRunId: run.id,
+    supervisorAssignments: workflowSelection.supervisorDecision?.fallbackReason === null
+      ? workflowSelection.supervisorDecision.assignments
+      : [],
   };
   workflowRepo.updateGraphState(run.id, serializeGraphState(initialState));
   return workflowRepo.getRun(run.id) ?? run;
+}
+
+async function resolveWorkflowDefinitionForTask(
+  taskId: string,
+  deps: GraphRuntimeDeps,
+): Promise<WorkflowDefinitionSelection> {
+  const { task, room, project } = requireTaskContext(taskId);
+  const defaultSelection = getDefaultWorkflowDefinitionSelection(room.id);
+  const supervisor = deps.supervisor ?? generateWorkflowSupervisorDecision;
+
+  try {
+    const visibleDefinitions = workflowDefinitionRepo.listVisibleForRoom(room.id);
+    const decision = await supervisor({
+      project,
+      room,
+      task,
+      agents: roomAgentRepo.listByRoom(room.id),
+      workflowDefinitions: visibleDefinitions,
+    });
+    const selected = selectWorkflowDefinitionFromSupervisorDecision(room.id, visibleDefinitions, decision);
+    if (selected.definition) {
+      return {
+        definition: selected.definition,
+        supervisorDecision: createSupervisorAudit(decision, selected.definition.id, null),
+      };
+    }
+    return {
+      ...defaultSelection,
+      supervisorDecision: createSupervisorAudit(decision, defaultSelection.definition.id, selected.fallbackReason),
+    };
+  } catch (err) {
+    return {
+      ...defaultSelection,
+      supervisorDecision: createSupervisorFailureAudit(defaultSelection.definition.id, err),
+    };
+  }
+}
+
+function getDefaultWorkflowDefinitionSelection(roomId: string): WorkflowDefinitionSelection {
+  const defaultDefinitionId = settingsRepo.resolveForRoom(roomId)?.effective.default_workflow_definition_id;
+  return {
+    definition: workflowDefinitionRepo.getPublishedForRoomOrDefault(defaultDefinitionId, roomId),
+  };
+}
+
+function selectWorkflowDefinitionFromSupervisorDecision(
+  roomId: string,
+  visibleDefinitions: WorkflowDefinition[],
+  decision: WorkflowSupervisorDecision,
+): { definition: WorkflowDefinition; fallbackReason: null } | {
+  definition: null;
+  fallbackReason: WorkflowSelectionFallbackReason;
+} {
+  if (decision.mode !== 'select_existing_workflow') {
+    return { definition: null, fallbackReason: 'unsupported_mode' };
+  }
+  if (decision.confidence < SUPERVISOR_CONFIDENCE_THRESHOLD) {
+    return { definition: null, fallbackReason: 'low_confidence' };
+  }
+  if (!decision.workflowDefinitionId) {
+    return { definition: null, fallbackReason: 'missing_workflow_definition' };
+  }
+  if (!workflowDefinitionRepo.isVisibleForRoom(decision.workflowDefinitionId, roomId)) {
+    return { definition: null, fallbackReason: 'workflow_not_visible' };
+  }
+  const definition = visibleDefinitions.find((item) => item.id === decision.workflowDefinitionId)
+    ?? workflowDefinitionRepo.get(decision.workflowDefinitionId);
+  return definition
+    ? { definition, fallbackReason: null }
+    : { definition: null, fallbackReason: 'missing_workflow_definition' };
+}
+
+function createWorkflowDefinitionSnapshot(selection: WorkflowDefinitionSelection): WorkflowDefinitionSnapshot {
+  const snapshot: WorkflowDefinitionSnapshot = {
+    id: selection.definition.id,
+    name: selection.definition.name,
+    description: selection.definition.description,
+    version: selection.definition.version,
+    definition: selection.definition.definition,
+  };
+  if (selection.supervisorDecision) {
+    snapshot.supervisorDecision = selection.supervisorDecision;
+  }
+  return snapshot;
+}
+
+function createSupervisorAudit(
+  decision: WorkflowSupervisorDecision,
+  usedWorkflowDefinitionId: string,
+  fallbackReason: WorkflowSelectionFallbackReason | null,
+): WorkflowSupervisorAudit {
+  return {
+    ...decision,
+    usedWorkflowDefinitionId,
+    fallbackReason,
+  };
+}
+
+function createSupervisorFailureAudit(usedWorkflowDefinitionId: string, err: unknown): WorkflowSupervisorAudit {
+  return {
+    mode: 'use_default_workflow',
+    workflowDefinitionId: null,
+    confidence: 0,
+    reason: 'Workflow Supervisor failed; using default workflow.',
+    assignments: [],
+    fallbackMode: 'default_workflow',
+    usedWorkflowDefinitionId,
+    fallbackReason: 'supervisor_failed',
+    error: err instanceof Error ? err.message : String(err),
+  };
 }
 
 export function enqueueGraphWorkflow(runId: string, deps: GraphRuntimeDeps = {}): void {

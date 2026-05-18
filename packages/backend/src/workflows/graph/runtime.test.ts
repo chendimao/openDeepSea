@@ -19,7 +19,8 @@ const { parseGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
 const { createGraphWorkflowRun, enqueueGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
 import type { RespondAsAgentInput } from '../../dispatcher.js';
-import type { RoomAgent, WorkflowStage } from '../../types.js';
+import type { ParsedPlan } from '../plan-parser.js';
+import type { RoomAgent, WorkflowDefinitionGraph, WorkflowStage } from '../../types.js';
 
 test('enqueueGraphWorkflow defers graph node execution until after the current turn', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-enqueue-${Date.now()}`);
@@ -106,31 +107,7 @@ test('createGraphWorkflowRun records selected room workflow definition snapshot'
     description: null,
     scope: 'room',
     scope_id: room.id,
-    definition: {
-      nodes: [
-        { id: 'planning', type: 'planning', label: 'Planning' },
-        { id: 'approval', type: 'approval_gate', label: 'Approval' },
-        { id: 'dispatch', type: 'dispatch', label: 'Dispatch' },
-        { id: 'execute', type: 'execute', label: 'Execute' },
-        { id: 'review', type: 'review', label: 'Review' },
-        { id: 'repair', type: 'repair_decision', label: 'Repair' },
-        { id: 'verify', type: 'verify', label: 'Verify' },
-        { id: 'acceptance', type: 'acceptance', label: 'Acceptance' },
-        { id: 'memory', type: 'memory', label: 'Memory' },
-      ],
-      edges: [
-        { from: 'planning', to: 'approval' },
-        { from: 'approval', to: 'dispatch', condition: 'approved' },
-        { from: 'dispatch', to: 'execute' },
-        { from: 'execute', to: 'execute', condition: 'has_runnable_child' },
-        { from: 'execute', to: 'review', condition: 'review' },
-        { from: 'review', to: 'repair', condition: 'changes_requested' },
-        { from: 'review', to: 'verify', condition: 'pass' },
-        { from: 'repair', to: 'execute', condition: 'execute' },
-        { from: 'verify', to: 'acceptance', condition: 'acceptance' },
-        { from: 'acceptance', to: 'memory', condition: 'completed' },
-      ],
-    },
+    definition: createTestWorkflowDefinition(),
   }).id);
   assert.ok(definition);
   settingsRepo.updateRoom(room.id, { default_workflow_definition_id: definition.id });
@@ -145,6 +122,262 @@ test('createGraphWorkflowRun records selected room workflow definition snapshot'
   assert.equal(run.workflow_definition_id, definition.id);
   assert.equal(run.workflow_definition_version, definition.version);
   assert.match(run.workflow_definition_snapshot ?? '', /Room Defined Workflow/);
+});
+
+test('startGraphWorkflow uses high-confidence supervisor workflow choice', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-choice-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Choice', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Choice Room' });
+  const selected = createPublishedRoomWorkflow(room.id, 'Supervisor Selected Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Choose workflow dynamically',
+  });
+
+  const run = await startGraphWorkflow(task.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: selected.id,
+      confidence: 0.91,
+      reason: 'The selected workflow matches the task.',
+      assignments: [],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => createApprovalPlan(task.title),
+  });
+  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: { reason?: string } };
+
+  assert.equal(run.workflow_definition_id, selected.id);
+  assert.match(run.workflow_definition_snapshot ?? '', /Supervisor Selected Workflow/);
+  assert.equal(snapshot.supervisorDecision?.reason, 'The selected workflow matches the task.');
+});
+
+test('startGraphWorkflow falls back to default workflow on low confidence, invisible workflow, and supervisor failure', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-fallback-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Fallback', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Fallback Room' });
+  const defaultDefinition = createPublishedRoomWorkflow(room.id, 'Room Default Workflow');
+  const selected = createPublishedRoomWorkflow(room.id, 'Low Confidence Workflow');
+  settingsRepo.updateRoom(room.id, { default_workflow_definition_id: defaultDefinition.id });
+
+  const lowConfidenceTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Low confidence task',
+  });
+  const lowConfidenceRun = await startGraphWorkflow(lowConfidenceTask.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: selected.id,
+      confidence: 0.5,
+      reason: 'Not confident enough.',
+      assignments: [],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => createApprovalPlan(lowConfidenceTask.title),
+  });
+  assert.equal(lowConfidenceRun.workflow_definition_id, defaultDefinition.id);
+
+  const invisibleTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Invisible workflow task',
+  });
+  const invisibleRun = await startGraphWorkflow(invisibleTask.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: 'missing-workflow',
+      confidence: 0.95,
+      reason: 'Bad id.',
+      assignments: [],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => createApprovalPlan(invisibleTask.title),
+  });
+  assert.equal(invisibleRun.workflow_definition_id, defaultDefinition.id);
+
+  const failedTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Supervisor failure task',
+  });
+  const failedRun = await startGraphWorkflow(failedTask.id, {
+    supervisor: async () => {
+      throw new Error('supervisor unavailable');
+    },
+    planner: async () => createApprovalPlan(failedTask.title),
+  });
+  assert.equal(failedRun.workflow_definition_id, defaultDefinition.id);
+});
+
+test('supervisor assignment hint can assign implementation child task to executable agent', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-assignment-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Assignment', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Assignment Room' });
+  const defaultExecutor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(defaultExecutor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+  });
+  const hintedExecutor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(hintedExecutor.id, {
+    capabilities: ['frontend'],
+    default_runtime: 'acp',
+  });
+  const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Assignment Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Use supervisor assignment hint',
+  });
+
+  await startGraphWorkflow(task.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: workflow.id,
+      confidence: 0.92,
+      reason: 'Workflow and executor are suitable.',
+      assignments: [{
+        stage: 'implementation',
+        role: 'executor',
+        agentId: hintedExecutor.id,
+        reason: 'Prefer frontend executor.',
+      }],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => ({
+      ...createApprovalPlan(task.title),
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const child = taskRepo.listChildren(task.id)[0];
+  assert.equal(child?.assigned_agent_id, hintedExecutor.id);
+});
+
+test('supervisor assignment hint ignores non-executable agent and falls back to resolver', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-assignment-fallback-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Assignment Fallback', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Assignment Fallback Room' });
+  const fallbackExecutor = addAcpWorkflowAgent(room.id, 'executor');
+  const nonExecutable = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'non-executable-hint',
+    agent_name: 'Non Executable Hint',
+  });
+  roomAgentRepo.setWorkflowRole(nonExecutable.id, 'executor');
+  const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Assignment Fallback Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Ignore invalid supervisor assignment hint',
+  });
+
+  await startGraphWorkflow(task.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: workflow.id,
+      confidence: 0.92,
+      reason: 'Workflow is suitable but assignment is invalid.',
+      assignments: [{
+        stage: 'implementation',
+        role: 'executor',
+        agentId: nonExecutable.id,
+        reason: 'This agent is not ACP executable.',
+      }],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => ({
+      ...createApprovalPlan(task.title),
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const child = taskRepo.listChildren(task.id)[0];
+  assert.equal(child?.assigned_agent_id, fallbackExecutor.id);
+});
+
+test('supervisor assignment hint is ignored when multiple executor tasks would make it ambiguous', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-assignment-ambiguous-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Assignment Ambiguous', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Assignment Ambiguous Room' });
+  const backend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+  });
+  const frontend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(frontend.id, {
+    capabilities: ['frontend'],
+    default_runtime: 'acp',
+  });
+  const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Assignment Ambiguous Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Ignore ambiguous supervisor assignment hint',
+  });
+
+  await startGraphWorkflow(task.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: workflow.id,
+      confidence: 0.92,
+      reason: 'Workflow is suitable but assignment is ambiguous.',
+      assignments: [{
+        stage: 'implementation',
+        role: 'executor',
+        agentId: frontend.id,
+        reason: 'This hint is not task-specific.',
+      }],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Create frontend and backend child tasks',
+      assumptions: [],
+      tasks: [
+        {
+          title: 'Update React page',
+          description: 'Modify packages/frontend.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend updated'],
+          scopeRead: ['packages/frontend/src/pages/RoomPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/RoomPage.tsx'],
+          dependsOn: [],
+        },
+        {
+          title: 'Update API route',
+          description: 'Modify packages/backend.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend updated'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const children = taskRepo.listChildren(task.id);
+  assert.equal(children.find((child) => child.title === 'Update React page')?.assigned_agent_id, frontend.id);
+  assert.equal(children.find((child) => child.title === 'Update API route')?.assigned_agent_id, backend.id);
 });
 
 test('startGraphWorkflow blocks workflow and fails running graph step when planner fails', async () => {
@@ -439,6 +672,70 @@ function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'ac
   });
   if (!withAcp) throw new Error(`failed to enable ACP for ${role}`);
   return withAcp;
+}
+
+function createPublishedRoomWorkflow(roomId: string, name: string) {
+  const draft = workflowDefinitionRepo.createDraft({
+    name,
+    description: null,
+    scope: 'room',
+    scope_id: roomId,
+    definition: createTestWorkflowDefinition(),
+  });
+  const published = workflowDefinitionRepo.publish(draft.id);
+  if (!published) throw new Error(`failed to publish workflow ${name}`);
+  return published;
+}
+
+function createApprovalPlan(title: string): ParsedPlan {
+  return {
+    goal: title,
+    summary: `Plan for ${title}`,
+    assumptions: [],
+    tasks: [{
+      title: 'Implement selected workflow task',
+      description: 'Use the selected workflow definition.',
+      suggestedRole: 'executor',
+      priority: 'normal',
+      acceptance: ['Workflow definition is selected'],
+      scopeRead: [],
+      scopeWrite: [],
+      dependsOn: [],
+    }],
+    reviewFocus: [],
+    verification: [],
+    verificationCommands: [],
+    risks: [],
+    needsApproval: true,
+  };
+}
+
+function createTestWorkflowDefinition(): WorkflowDefinitionGraph {
+  return {
+    nodes: [
+      { id: 'planning', type: 'planning', label: 'Planning' },
+      { id: 'approval', type: 'approval_gate', label: 'Approval' },
+      { id: 'dispatch', type: 'dispatch', label: 'Dispatch' },
+      { id: 'execute', type: 'execute', label: 'Execute' },
+      { id: 'review', type: 'review', label: 'Review' },
+      { id: 'repair', type: 'repair_decision', label: 'Repair' },
+      { id: 'verify', type: 'verify', label: 'Verify' },
+      { id: 'acceptance', type: 'acceptance', label: 'Acceptance' },
+      { id: 'memory', type: 'memory', label: 'Memory' },
+    ],
+    edges: [
+      { from: 'planning', to: 'approval' },
+      { from: 'approval', to: 'dispatch', condition: 'approved' },
+      { from: 'dispatch', to: 'execute' },
+      { from: 'execute', to: 'execute', condition: 'has_runnable_child' },
+      { from: 'execute', to: 'review', condition: 'review' },
+      { from: 'review', to: 'repair', condition: 'changes_requested' },
+      { from: 'review', to: 'verify', condition: 'pass' },
+      { from: 'repair', to: 'execute', condition: 'execute' },
+      { from: 'verify', to: 'acceptance', condition: 'acceptance' },
+      { from: 'acceptance', to: 'memory', condition: 'completed' },
+    ],
+  };
 }
 
 function createCompletedAgentRun(roomId: string, input: RespondAsAgentInput) {
