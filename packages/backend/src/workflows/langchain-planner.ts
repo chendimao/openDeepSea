@@ -29,6 +29,7 @@ export interface PlannerInvoker {
 
 export interface LangChainPlannerOptions {
   maxAttempts?: number;
+  skillContext?: string;
 }
 
 export class LangChainPlannerError extends Error {
@@ -71,7 +72,7 @@ export async function generateLangChainPlan(
   options: LangChainPlannerOptions = {},
 ): Promise<ParsedPlan> {
   const maxAttempts = Math.max(1, options.maxAttempts ?? 2);
-  const messages = buildPlannerMessages(input);
+  const messages = buildPlannerMessages(input, { skillContext: options.skillContext });
   let lastOutput = '';
   let lastError: unknown;
 
@@ -88,7 +89,11 @@ export async function generateLangChainPlan(
   throw new LangChainPlannerError(`LangChain Planner failed after ${maxAttempts} attempts: ${detail}`, lastOutput, lastError);
 }
 
-export function buildPlannerMessages(input: LangChainPlannerInput): PlannerMessage[] {
+export interface PlannerMessageOptions {
+  skillContext?: string;
+}
+
+export function buildPlannerMessages(input: LangChainPlannerInput, options: PlannerMessageOptions = {}): PlannerMessage[] {
   return [
     new SystemMessage(
       [
@@ -100,6 +105,7 @@ export function buildPlannerMessages(input: LangChainPlannerInput): PlannerMessa
         'Valid assigneeRole values: analyst, planner, coordinator, executor, reviewer, acceptor.',
         'Valid preferredBackend values: claudecode, opencode, codex.',
         'Use needsApproval=false only when the plan can proceed without a user decision.',
+        options.skillContext?.trim() ? `\n${options.skillContext.trim()}` : null,
       ].join('\n'),
     ),
     new HumanMessage(formatPlannerInput(input)),

@@ -93,6 +93,17 @@ test('buildPlannerMessages uses current product name in system prompt', () => {
   assert.equal(systemContent.includes(`Open${'Claw'} Room`), false);
 });
 
+test('buildPlannerMessages appends skill context after schema rules', () => {
+  const [systemMessage] = buildPlannerMessages(basePlannerInput(), {
+    skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: planner-skill',
+  });
+
+  const systemContent = String(systemMessage?.content);
+  assert.match(systemContent, /Return only a fenced JSON object/);
+  assert.match(systemContent, /OpenDeepSea active skills for this runtime/);
+  assert.ok(systemContent.indexOf('Return only a fenced JSON object') < systemContent.indexOf('OpenDeepSea active skills'));
+});
+
 test('generateLangChainPlan validates model output into ParsedPlan', async () => {
   const plan = await generateLangChainPlan(
     {
@@ -168,6 +179,19 @@ test('generateLangChainPlan validates model output into ParsedPlan', async () =>
 
   assert.equal(plan.tasks.length, 1);
   assert.equal(plan.tasks[0]?.suggestedRole, 'executor');
+});
+
+test('generateLangChainPlan passes skill context to planner messages', async () => {
+  await generateLangChainPlan(
+    basePlannerInput(),
+    {
+      async invoke(messages) {
+        assert.match(String(messages[0]?.content), /Skill: planner-skill/);
+        return validPlannerOutput();
+      },
+    },
+    { skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: planner-skill' },
+  );
 });
 
 test('generateLangChainPlan retries once after invalid model output', async () => {

@@ -138,3 +138,52 @@ test('buildSupervisorMessages includes task, workflows, and executable agents', 
   assert.match(content, /frontend-executor/);
   assert.match(content, /前端实现流程/);
 });
+
+test('buildSupervisorMessages appends workflow skill context after base rules', () => {
+  const messages = buildSupervisorMessages(baseSupervisorInput(), {
+    skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: workflow-supervisor-skill',
+  });
+
+  const systemContent = String(messages[0]?.content);
+  assert.match(systemContent, /Choose the best existing published workflow definition/);
+  assert.match(systemContent, /Skill: workflow-supervisor-skill/);
+  assert.ok(
+    systemContent.indexOf('Choose the best existing published workflow definition') <
+      systemContent.indexOf('Skill: workflow-supervisor-skill'),
+  );
+});
+
+function baseSupervisorInput() {
+  return {
+    project: {
+      id: 'project',
+      name: 'Project',
+      path: '/tmp/project',
+      description: null,
+      message_routing_mode: 'mentions_only' as const,
+      fallback_agent_id: null,
+      created_at: 1,
+      updated_at: 1,
+    },
+    room: { id: 'room', project_id: 'project', name: 'Room', description: 'Feature room', created_at: 1 },
+    task: {
+      id: 'task',
+      room_id: 'room',
+      project_id: 'project',
+      parent_task_id: null,
+      title: '实现前端页面',
+      description: '修改 packages/frontend/src/pages/RoomPage.tsx',
+      status: 'todo' as const,
+      priority: 'normal' as const,
+      interaction_mode: 'auto_recommended' as const,
+      assigned_agent_id: null,
+      source_message_id: null,
+      created_from: 'manual' as const,
+      created_at: 1,
+      updated_at: 1,
+      completed_at: null,
+    },
+    agents: [],
+    workflowDefinitions: [],
+  };
+}

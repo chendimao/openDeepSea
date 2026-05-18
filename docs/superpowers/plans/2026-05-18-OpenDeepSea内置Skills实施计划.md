@@ -118,7 +118,7 @@ npm run test -w @openclaw-room/backend
 - Create: `packages/backend/src/skills/repo.ts`
 - Create: `packages/backend/src/skills/repo.test.ts`
 
-- [ ] **Step 1: 写 repo 失败测试**
+- [x] **Step 1: 写 repo 失败测试**
 
 在 `packages/backend/src/skills/repo.test.ts` 覆盖：
 
@@ -129,7 +129,7 @@ npm run test -w @openclaw-room/backend
 
 测试使用现有仓库测试风格，直接 import `db` 和 repo。必要时在测试内清理 `skills`、`skill_bindings`。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -139,7 +139,7 @@ cd packages/backend && node --import tsx --test src/skills/repo.test.ts
 
 Expected: FAIL，原因是 `skills/repo.ts` 或表不存在。
 
-- [ ] **Step 3: 增加 DB schema**
+- [x] **Step 3: 增加 DB schema**
 
 在 `packages/backend/src/db.ts` 主 `db.exec` 中增加：
 
@@ -178,7 +178,7 @@ CREATE TABLE IF NOT EXISTS skill_bindings (
 CREATE INDEX IF NOT EXISTS idx_skill_bindings_scope ON skill_bindings(scope, scope_id, enabled);
 ```
 
-- [ ] **Step 4: 定义后端类型**
+- [x] **Step 4: 定义后端类型**
 
 在 `packages/backend/src/skills/types.ts` 定义：
 
@@ -231,7 +231,7 @@ export type {
 } from './skills/types.js';
 ```
 
-- [ ] **Step 5: 实现 repo**
+- [x] **Step 5: 实现 repo**
 
 在 `packages/backend/src/skills/repo.ts` 实现：
 
@@ -253,7 +253,7 @@ export type {
 - scope specificity 排序：agent=4、room=3、project=2、system=1。
 - `scope='system'` 固定 `scope_id='default'`。
 
-- [ ] **Step 6: 运行 repo 测试确认通过**
+- [x] **Step 6: 运行 repo 测试确认通过**
 
 Run:
 
@@ -263,7 +263,7 @@ cd packages/backend && node --import tsx --test src/skills/repo.test.ts
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交 Task 1**
+- [x] **Step 7: 提交 Task 1**
 
 ```bash
 git add packages/backend/src/db.ts packages/backend/src/types.ts packages/backend/src/skills/types.ts packages/backend/src/skills/repo.ts packages/backend/src/skills/repo.test.ts
@@ -282,7 +282,7 @@ git commit -m "feat(skills): 新增内置技能数据模型"
 - Create: `packages/backend/src/skills/selector.test.ts`
 - Create: `packages/backend/src/skills/prompt.test.ts`
 
-- [ ] **Step 1: 写 loader 失败测试**
+- [x] **Step 1: 写 loader 失败测试**
 
 覆盖：
 
@@ -291,7 +291,7 @@ git commit -m "feat(skills): 新增内置技能数据模型"
 - 非法 frontmatter 不导致服务崩溃，返回可诊断错误或 fallback。
 - 正文超过限制时裁剪。
 
-- [ ] **Step 2: 写 selector 失败测试**
+- [x] **Step 2: 写 selector 失败测试**
 
 覆盖：
 
@@ -302,7 +302,7 @@ git commit -m "feat(skills): 新增内置技能数据模型"
 - 最多 3 个 skill 和总字符上限生效。
 - `always_for_scope` 每个 runtime scope 默认最多选中 1 个，避免全局规则膨胀。
 
-- [ ] **Step 3: 写 prompt formatter 失败测试**
+- [x] **Step 3: 写 prompt formatter 失败测试**
 
 断言输出包含：
 
@@ -313,7 +313,7 @@ git commit -m "feat(skills): 新增内置技能数据模型"
 
 并断言空列表返回空字符串。
 
-- [ ] **Step 4: 运行测试确认失败**
+- [x] **Step 4: 运行测试确认失败**
 
 Run:
 
@@ -323,7 +323,7 @@ cd packages/backend && node --import tsx --test src/skills/loader.test.ts src/sk
 
 Expected: FAIL，原因是模块未实现。
 
-- [ ] **Step 5: 实现 loader**
+- [x] **Step 5: 实现 loader**
 
 不要新增 YAML 依赖；第一版实现简单 YAML-like parser：
 
@@ -342,7 +342,7 @@ runtime_scopes:
   - 有 `trigger_keywords`：`keyword`
   - 否则：`manual`
 
-- [ ] **Step 6: 实现 selector**
+- [x] **Step 6: 实现 selector**
 
 接口建议：
 
@@ -369,11 +369,11 @@ export interface SelectedSkill {
 
 `selector` 从 repo 获取有效 skill，再调用 loader 读取正文。测试中可允许注入 fake repo/loader，避免真实文件 IO 过多。
 
-- [ ] **Step 7: 实现 prompt formatter**
+- [x] **Step 7: 实现 prompt formatter**
 
 输出必须稳定，方便测试断言。空列表返回 `''`。
 
-- [ ] **Step 8: 运行 Task 2 测试**
+- [x] **Step 8: 运行 Task 2 测试**
 
 Run:
 
@@ -383,7 +383,7 @@ cd packages/backend && node --import tsx --test src/skills/loader.test.ts src/sk
 
 Expected: PASS。
 
-- [ ] **Step 9: 提交 Task 2**
+- [x] **Step 9: 提交 Task 2**
 
 ```bash
 git add packages/backend/src/skills/loader.ts packages/backend/src/skills/selector.ts packages/backend/src/skills/prompt.ts packages/backend/src/skills/loader.test.ts packages/backend/src/skills/selector.test.ts packages/backend/src/skills/prompt.test.ts
@@ -400,7 +400,7 @@ git commit -m "feat(skills): 实现技能选择与提示词注入"
 - Create: `packages/backend/src/skills/routes.test.ts`
 - Modify: `packages/backend/src/routes.ts`
 
-- [ ] **Step 1: 写 API 失败测试**
+- [x] **Step 1: 写 API 失败测试**
 
 在 `routes.test.ts` 覆盖：
 
@@ -427,7 +427,7 @@ git commit -m "feat(skills): 实现技能选择与提示词注入"
 - 删除 skill 不会删除用户原始目录。
 - 物理删除只能作用于 `OPENDEEPSEA_SKILLS_DIR` 管理目录内路径。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run:
 
@@ -437,7 +437,7 @@ cd packages/backend && node --import tsx --test src/skills/routes.test.ts
 
 Expected: FAIL，原因是 routes/installer 未实现。
 
-- [ ] **Step 3: 实现本地安装器**
+- [x] **Step 3: 实现本地安装器**
 
 `installer.ts` 实现：
 
@@ -462,7 +462,7 @@ throw new Error('Git skill import is not implemented yet');
 
 本计划将 Git 导入明确延后到阶段 2；Task 3 只保留 endpoint 占位和 `501` 回归测试，避免首版引入网络 clone 与额外安全边界。
 
-- [ ] **Step 4: 实现 skills router**
+- [x] **Step 4: 实现 skills router**
 
 `routes.ts` 中挂载：
 
@@ -501,7 +501,7 @@ router.use('/skills', skillsRouter);
 }
 ```
 
-- [ ] **Step 5: 实现 preview-selection**
+- [x] **Step 5: 实现 preview-selection**
 
 请求 body：
 
@@ -533,7 +533,7 @@ router.use('/skills', skillsRouter);
 }
 ```
 
-- [ ] **Step 6: 运行 API 测试**
+- [x] **Step 6: 运行 API 测试**
 
 Run:
 
@@ -543,7 +543,7 @@ cd packages/backend && node --import tsx --test src/skills/routes.test.ts
 
 Expected: PASS。
 
-- [ ] **Step 7: 确认 ACP CLI 参数测试仍通过**
+- [x] **Step 7: 确认 ACP CLI 参数测试仍通过**
 
 Run:
 
@@ -553,7 +553,7 @@ cd packages/backend && node --import tsx --test src/acp/codex.test.ts src/acp/cl
 
 Expected: PASS，证明默认不影响外部 ACP CLI skills。
 
-- [ ] **Step 8: 提交 Task 3**
+- [x] **Step 8: 提交 Task 3**
 
 ```bash
 git add packages/backend/src/skills/installer.ts packages/backend/src/skills/routes.ts packages/backend/src/skills/routes.test.ts packages/backend/src/routes.ts
@@ -581,7 +581,7 @@ git commit -m "feat(skills): 新增技能管理接口"
 - Modify: `packages/backend/src/workflows/graph/recovery.test.ts`
 - Modify: `packages/backend/src/workflows/graph/runtime.test.ts`
 
-- [ ] **Step 1: 写 planner 注入失败测试**
+- [x] **Step 1: 写 planner 注入失败测试**
 
 在 `langchain-planner.test.ts` 增加：
 
@@ -589,7 +589,7 @@ git commit -m "feat(skills): 新增技能管理接口"
 - 断言 system message 包含 skill context。
 - 断言 planner JSON schema 固定规则仍在 skill context 前面。
 
-- [ ] **Step 2: 写 model chat 注入失败测试**
+- [x] **Step 2: 写 model chat 注入失败测试**
 
 在现有相关测试中增加：
 
@@ -597,7 +597,7 @@ git commit -m "feat(skills): 新增技能管理接口"
 - 断言 system message 包含 skill context。
 - 断言“不要声称已经修改文件”等基础规则仍存在。
 
-- [ ] **Step 3: 写 workflow prompt 注入失败测试**
+- [x] **Step 3: 写 workflow prompt 注入失败测试**
 
 覆盖内部模型路径，而不是 ACP agent prompt：
 
@@ -608,7 +608,7 @@ git commit -m "feat(skills): 新增技能管理接口"
 - execute ACP prompt 不默认注入 OpenDeepSea skills。
 - review/acceptance 当前通过 `tools.runAcpAgent` 调用外部 ACP CLI，必须断言默认不注入 OpenDeepSea skills。
 
-- [ ] **Step 4: 运行测试确认失败**
+- [x] **Step 4: 运行测试确认失败**
 
 Run:
 
@@ -618,7 +618,7 @@ cd packages/backend && node --import tsx --test src/workflows/langchain-planner.
 
 Expected: FAIL，原因是函数签名或 helper 未实现。
 
-- [ ] **Step 5: 扩展 planner message 构造**
+- [x] **Step 5: 扩展 planner message 构造**
 
 修改 `buildPlannerMessages` 签名：
 
@@ -638,7 +638,7 @@ options.skillContext ? `\n\n${options.skillContext}` : null
 
 `generateLangChainPlan` 增加 optional `skillContext` 参数，内部调用 `buildPlannerMessages(input, { skillContext })`。`graph tools` 和 `orchestrator.ts` 都负责在调用前解析 selector 并显式传入，便于测试和审计。
 
-- [ ] **Step 6: 扩展 model chat message 构造**
+- [x] **Step 6: 扩展 model chat message 构造**
 
 修改 `buildModelChatMessages(input, options = {})` 支持 `skillContext`。`generateModelChatReply` 可新增可选参数：
 
@@ -650,7 +650,7 @@ export interface ModelChatOptions {
 
 dispatcher 中 model fallback 调用前使用 selector 获取 `model_chat` skill context。
 
-- [ ] **Step 7: 扩展 supervisor 与 memory 内部模型消息**
+- [x] **Step 7: 扩展 supervisor 与 memory 内部模型消息**
 
 `supervisor.ts` 增加：
 
@@ -664,7 +664,7 @@ export function buildSupervisorMessages(input: WorkflowSupervisorInput, options:
 
 `memory/distill.ts` 的 `distillFromConversation`、`distillFromTask` 增加可选 `skillContext`，在系统消息基础规则后追加。基础事实提取规则必须仍位于 skill context 前面。
 
-- [ ] **Step 8: 在 graph tools 中增加 skill context helper**
+- [x] **Step 8: 在 graph tools 中增加 skill context helper**
 
 在 `GraphTools` 增加：
 
@@ -680,7 +680,7 @@ buildSkillContext(input: {
 
 默认实现调用 `selectSkills` + `formatSkillPrompt`。测试中可注入 fake helper。
 
-- [ ] **Step 9: 接入内部模型路径**
+- [x] **Step 9: 接入内部模型路径**
 
 接入范围：
 
@@ -690,7 +690,7 @@ buildSkillContext(input: {
 - `memoryNode` 调用 distill 前准备 `memory` skill context；如果现有 `distillTask` 无参数，则先扩展可选参数。
 - `executeNode`、`reviewNode`、`acceptanceNode` 保持不注入，因为它们当前默认进入 `tools.runAcpAgent` 外部 ACP CLI。
 
-- [ ] **Step 10: 运行 Task 4 测试**
+- [x] **Step 10: 运行 Task 4 测试**
 
 Run:
 
@@ -700,7 +700,7 @@ cd packages/backend && node --import tsx --test src/workflows/langchain-planner.
 
 Expected: PASS。
 
-- [ ] **Step 11: 提交 Task 4**
+- [x] **Step 11: 提交 Task 4**
 
 ```bash
 git add packages/backend/src/workflows/langchain-planner.ts packages/backend/src/workflows/langchain-planner.test.ts packages/backend/src/workflows/orchestrator.ts packages/backend/src/workflows/orchestrator.test.ts packages/backend/src/workflows/supervisor.ts packages/backend/src/workflows/supervisor.test.ts packages/backend/src/chat-model.ts packages/backend/src/dispatcher.test.ts packages/backend/src/memory/distill.ts packages/backend/src/memory/distill.test.ts packages/backend/src/workflows/graph/tools.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/review.test.ts packages/backend/src/workflows/graph/recovery.test.ts packages/backend/src/workflows/graph/runtime.test.ts
@@ -718,7 +718,7 @@ git commit -m "feat(skills): 接入内部模型提示词"
 - Modify: `packages/frontend/src/components/SettingsDialogs.tsx`
 - Modify: `packages/frontend/src/lib/i18n.tsx`
 
-- [ ] **Step 1: 定义前端类型**
+- [x] **Step 1: 定义前端类型**
 
 在 `types.ts` 增加：
 
@@ -733,7 +733,7 @@ export interface SkillPreviewResponse { ... }
 
 字段与后端 API 保持一致。
 
-- [ ] **Step 2: 增加 API client**
+- [x] **Step 2: 增加 API client**
 
 在 `api.ts` 增加：
 
@@ -746,7 +746,7 @@ export interface SkillPreviewResponse { ... }
 - `deleteSkillBinding`
 - `previewSkillSelection`
 
-- [ ] **Step 2.1: 对齐前端 DTO 脱敏字段**
+- [x] **Step 2.1: 对齐前端 DTO 脱敏字段**
 
 前端 `Skill` 类型必须匹配后端 DTO，不包含原始 `install_path` 本地绝对路径。使用：
 
@@ -770,7 +770,7 @@ export interface Skill {
 }
 ```
 
-- [ ] **Step 3: 创建 SkillsSettingsPanel**
+- [x] **Step 3: 创建 SkillsSettingsPanel**
 
 第一版 UI 控件：
 
@@ -785,7 +785,7 @@ export interface Skill {
 - 不做 Git 导入 UI，或显示 disabled 状态“后续支持”。
 - 不把外部 CLI skills 混入这个面板。
 
-- [ ] **Step 4: 接入系统设置分类**
+- [x] **Step 4: 接入系统设置分类**
 
 `SettingsDialogs.tsx`：
 
@@ -795,7 +795,7 @@ export interface Skill {
 
 保持现有 general/chat/model 行为不变。
 
-- [ ] **Step 5: 增加 i18n 文案**
+- [x] **Step 5: 增加 i18n 文案**
 
 在 `i18n.tsx` 中增加中英文 key：
 
@@ -807,7 +807,7 @@ export interface Skill {
 - `settings.skillsNoResults`
 - 其他面板按钮与状态文案。
 
-- [ ] **Step 6: 前端类型检查/build**
+- [x] **Step 6: 前端类型检查/build**
 
 Run:
 
@@ -817,7 +817,7 @@ npm run build -w @openclaw-room/frontend
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交 Task 5**
+- [x] **Step 7: 提交 Task 5**
 
 ```bash
 git add packages/frontend/src/lib/types.ts packages/frontend/src/lib/api.ts packages/frontend/src/components/SkillsSettingsPanel.tsx packages/frontend/src/components/SettingsDialogs.tsx packages/frontend/src/lib/i18n.tsx
@@ -833,7 +833,7 @@ git commit -m "feat(frontend): 新增内置技能设置面板"
 - Modify as needed: `docs/superpowers/specs/2026-05-18-OpenDeepSea内置Skills设计.md`
 - Optional Create: `docs/superpowers/verification/YYYY-MM-DD-OpenDeepSea内置Skills验收.md`
 
-- [ ] **Step 1: 全量后端测试**
+- [x] **Step 1: 全量后端测试**
 
 Run:
 
@@ -841,9 +841,9 @@ Run:
 npm run test -w @openclaw-room/backend
 ```
 
-Expected: PASS。
+Result: 已执行，未全绿。当前 393 个测试中 390 通过、3 个既有基线失败；详见 `docs/superpowers/verification/2026-05-18-OpenDeepSea内置Skills验收.md`。
 
-- [ ] **Step 2: 全量构建**
+- [x] **Step 2: 全量构建**
 
 Run:
 
@@ -853,7 +853,7 @@ npm run build
 
 Expected: PASS。
 
-- [ ] **Step 3: ACP CLI 默认不受影响回归**
+- [x] **Step 3: ACP CLI 默认不受影响回归**
 
 确认以下测试仍通过：
 
@@ -863,7 +863,7 @@ cd packages/backend && node --import tsx --test src/acp/codex.test.ts src/acp/cl
 
 Expected: PASS。
 
-- [ ] **Step 3.1: 无 skills 兼容回归**
+- [x] **Step 3.1: 无 skills 兼容回归**
 
 在空 `skills` / `skill_bindings` 状态下确认：
 
@@ -887,7 +887,7 @@ npm run dev
 - preview 输入包含关键词时能命中 skill。
 - 普通 Codex/Claude/OpenCode agent 调用未额外显示 OpenDeepSea skill 注入。
 
-- [ ] **Step 5: 写验收记录**
+- [x] **Step 5: 写验收记录**
 
 如果执行了手动 smoke，记录到：
 
@@ -900,11 +900,11 @@ npm run dev
 - 截图路径，如有
 - 未覆盖风险
 
-- [ ] **Step 6: 更新计划勾选状态**
+- [x] **Step 6: 更新计划勾选状态**
 
 把本计划中已完成步骤改为 `- [x]`。如果某步骤因范围调整未做，写明原因。
 
-- [ ] **Step 7: 最终提交**
+- [x] **Step 7: 最终提交**
 
 ```bash
 git add docs/superpowers/plans/2026-05-18-OpenDeepSea内置Skills实施计划.md docs/superpowers/specs/2026-05-18-OpenDeepSea内置Skills设计.md docs/superpowers/verification/2026-05-18-OpenDeepSea内置Skills验收.md

@@ -171,17 +171,28 @@ async function resolveWorkflowDefinitionForTask(
 ): Promise<WorkflowDefinitionSelection> {
   const { task, room, project } = requireTaskContext(taskId);
   const defaultSelection = getDefaultWorkflowDefinitionSelection(room.id);
-  const supervisor = deps.supervisor ?? generateWorkflowSupervisorDecision;
+  const supervisor = deps.supervisor ?? ((input, options) => generateWorkflowSupervisorDecision(input, undefined, options));
+  const tools = createGraphTools(deps);
 
   try {
     const visibleDefinitions = workflowDefinitionRepo.listVisibleForRoom(room.id);
+    const skillContext = await tools.buildSkillContext({
+      runtimeScopes: ['workflow'],
+      projectId: project.id,
+      roomId: room.id,
+      message: [
+        task.title,
+        task.description ?? '',
+        visibleDefinitions.map((definition) => `${definition.name}: ${definition.description ?? ''}`).join('\n'),
+      ].filter(Boolean).join('\n\n'),
+    });
     const decision = await supervisor({
       project,
       room,
       task,
       agents: roomAgentRepo.listByRoom(room.id),
       workflowDefinitions: visibleDefinitions,
-    });
+    }, { skillContext });
     const selected = selectWorkflowDefinitionFromSupervisorDecision(room.id, visibleDefinitions, decision);
     if (selected.definition) {
       return {

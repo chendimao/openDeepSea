@@ -23,6 +23,7 @@ import { taskRepo } from './repos/tasks.js';
 import { workflowContextRepo } from './repos/workflow-context.js';
 import { workflowDefinitionRepo } from './repos/workflow-definitions.js';
 import { searchProjectRooms } from './room-search.js';
+import { skillsRouter } from './skills/routes.js';
 import { pickDirectory } from './system-dialogs.js';
 import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
 import { workflowRepo } from './repos/workflows.js';
@@ -70,6 +71,7 @@ import {
 } from './types.js';
 
 export const router = Router();
+router.use('/skills', skillsRouter);
 
 interface CollaborationRouteDeps {
   runCollaborationStages?: typeof defaultRunCollaborationStages;

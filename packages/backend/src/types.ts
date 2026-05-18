@@ -11,6 +11,14 @@ export interface Project {
 
 export type MessageRoutingMode = 'mentions_only' | 'fallback_reply';
 export type SettingsScope = 'system' | 'project' | 'room';
+export type {
+  Skill,
+  SkillBinding,
+  SkillBindingScope,
+  SkillRuntimeScope,
+  SkillSourceType,
+  SkillTriggerMode,
+} from './skills/types.js';
 
 export interface Room {
   id: string;

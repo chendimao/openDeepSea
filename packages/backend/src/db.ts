@@ -40,6 +40,39 @@ CREATE TABLE IF NOT EXISTS settings (
   PRIMARY KEY (scope, scope_id)
 );
 
+CREATE TABLE IF NOT EXISTS skills (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  source_type TEXT NOT NULL,
+  source_uri TEXT,
+  install_path TEXT NOT NULL,
+  manifest_path TEXT,
+  runtime_scopes TEXT NOT NULL,
+  trigger_mode TEXT NOT NULL,
+  trigger_keywords TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  priority INTEGER NOT NULL DEFAULT 100,
+  checksum TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(enabled, priority, updated_at);
+
+CREATE TABLE IF NOT EXISTS skill_bindings (
+  id TEXT PRIMARY KEY,
+  skill_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  scope_id TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  priority_override INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(skill_id) REFERENCES skills(id) ON DELETE CASCADE,
+  UNIQUE(skill_id, scope, scope_id)
+);
+CREATE INDEX IF NOT EXISTS idx_skill_bindings_scope ON skill_bindings(scope, scope_id, enabled);
+
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,

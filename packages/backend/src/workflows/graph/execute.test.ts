@@ -68,6 +68,7 @@ test('execute node starts assigned ACP agent and records completed implementatio
     prompt: string;
   }> = [];
   const tools = createGraphTools({
+    buildSkillContext: async () => 'OpenDeepSea active skills for this runtime:\nSkill: should-not-reach-execute-acp',
     runAcpAgent: async (input) => {
       const runRow = agentRunRepo.create({
         room_id: room.id,
@@ -154,6 +155,8 @@ test('execute node starts assigned ACP agent and records completed implementatio
   assert.equal(calls[0]?.workflowRunId, run.id);
   assert.equal(calls[0]?.workflowStage, 'implementation');
   assert.match(calls[0]?.prompt ?? '', /你是开发闭环的执行智能体/);
+  assert.doesNotMatch(calls[0]?.prompt ?? '', /OpenDeepSea active skills for this runtime/);
+  assert.doesNotMatch(calls[0]?.prompt ?? '', /should-not-reach-execute-acp/);
 
   const steps = workflowRepo.listSteps(run.id);
   const step = steps.find((item) => item.node_name === 'execute');

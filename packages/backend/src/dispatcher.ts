@@ -12,6 +12,8 @@ import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
+import { formatSkillPrompt } from './skills/prompt.js';
+import { selectSkills } from './skills/selector.js';
 import { runRegistry } from './run-registry.js';
 import { messageUploadDir, messageUploadRoute, projectFileUploadRoot, projectFileUploadRoute } from './uploads.js';
 import { wsHub } from './ws-hub.js';
@@ -124,12 +126,17 @@ async function respondWithConfiguredModel(args: {
   if (!args.invoker && !isModelChatConfigured()) return;
 
   try {
+    const skillContext = await buildModelChatSkillContext({
+      projectId: args.project.id,
+      roomId: args.room.id,
+      message: args.userMessage.content,
+    });
     const reply = await generateModelChatReply({
       project: args.project,
       room: args.room,
       userMessage: args.userMessage,
       recentMessages: messageRepo.listByRoom(args.room.id, 20),
-    }, args.invoker);
+    }, args.invoker, { skillContext });
     const message = messageRepo.create({
       room_id: args.room.id,
       sender_type: 'agent',
@@ -152,6 +159,25 @@ async function respondWithConfiguredModel(args: {
       message_type: 'system',
     });
     wsHub.broadcast(args.room.id, { type: 'message:new', roomId: args.room.id, message });
+  }
+}
+
+async function buildModelChatSkillContext(input: {
+  projectId: string;
+  roomId: string;
+  message: string;
+}): Promise<string> {
+  try {
+    const skills = await selectSkills({
+      runtimeScopes: ['model_chat'],
+      projectId: input.projectId,
+      roomId: input.roomId,
+      message: input.message,
+    });
+    return formatSkillPrompt(skills);
+  } catch (err) {
+    console.warn(`[skills] failed to build model chat skill context: ${(err as Error).message}`);
+    return '';
   }
 }
 
@@ -653,12 +679,17 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         ? settingsRepo.resolveForRoom(roomId)?.effective.auto_distill_enabled ?? true
         : false;
       if (room && !args.internalMessage && !args.workflowRunId && finalRun?.status === 'completed' && autoDistillEnabled) {
-        distillFromConversation({
+        buildMemorySkillContext({
+          projectId: room.project_id,
+          roomId,
+          message: finalMessage?.content ?? finalRun.stdout ?? '',
+        }).then((skillContext) => distillFromConversation({
           projectId: room.project_id,
           roomId,
           triggerMessageId: placeholder.id,
           modelInvoker: args.distillModelInvoker,
-        }).catch((err) => console.warn(`[distill] async distill error: ${(err as Error).message}`));
+          skillContext,
+        })).catch((err) => console.warn(`[distill] async distill error: ${(err as Error).message}`));
       }
     }
   }
@@ -670,6 +701,25 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   function finishRun(id: string, status: AgentRunStatus, error?: string | null): void {
     const updated = agentRunRepo.updateStatus(id, status, { error: error ?? null });
     if (updated) broadcastRun('agent_run:updated', updated);
+  }
+}
+
+async function buildMemorySkillContext(input: {
+  projectId: string;
+  roomId: string;
+  message: string;
+}): Promise<string> {
+  try {
+    const skills = await selectSkills({
+      runtimeScopes: ['memory'],
+      projectId: input.projectId,
+      roomId: input.roomId,
+      message: input.message,
+    });
+    return formatSkillPrompt(skills);
+  } catch (err) {
+    console.warn(`[skills] failed to build memory skill context: ${(err as Error).message}`);
+    return '';
   }
 }
 
