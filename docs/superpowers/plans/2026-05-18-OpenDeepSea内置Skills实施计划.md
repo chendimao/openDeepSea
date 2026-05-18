@@ -833,7 +833,7 @@ git commit -m "feat(frontend): 新增内置技能设置面板"
 - Modify as needed: `docs/superpowers/specs/2026-05-18-OpenDeepSea内置Skills设计.md`
 - Optional Create: `docs/superpowers/verification/YYYY-MM-DD-OpenDeepSea内置Skills验收.md`
 
-- [ ] **Step 1: 全量后端测试**
+- [x] **Step 1: 全量后端测试**
 
 Run:
 
@@ -841,9 +841,9 @@ Run:
 npm run test -w @openclaw-room/backend
 ```
 
-Expected: PASS。
+Result: 已执行，未全绿。当前 393 个测试中 390 通过、3 个既有基线失败；详见 `docs/superpowers/verification/2026-05-18-OpenDeepSea内置Skills验收.md`。
 
-- [ ] **Step 2: 全量构建**
+- [x] **Step 2: 全量构建**
 
 Run:
 
@@ -853,7 +853,7 @@ npm run build
 
 Expected: PASS。
 
-- [ ] **Step 3: ACP CLI 默认不受影响回归**
+- [x] **Step 3: ACP CLI 默认不受影响回归**
 
 确认以下测试仍通过：
 
@@ -863,7 +863,7 @@ cd packages/backend && node --import tsx --test src/acp/codex.test.ts src/acp/cl
 
 Expected: PASS。
 
-- [ ] **Step 3.1: 无 skills 兼容回归**
+- [x] **Step 3.1: 无 skills 兼容回归**
 
 在空 `skills` / `skill_bindings` 状态下确认：
 
@@ -887,7 +887,7 @@ npm run dev
 - preview 输入包含关键词时能命中 skill。
 - 普通 Codex/Claude/OpenCode agent 调用未额外显示 OpenDeepSea skill 注入。
 
-- [ ] **Step 5: 写验收记录**
+- [x] **Step 5: 写验收记录**
 
 如果执行了手动 smoke，记录到：
 
@@ -900,11 +900,11 @@ npm run dev
 - 截图路径，如有
 - 未覆盖风险
 
-- [ ] **Step 6: 更新计划勾选状态**
+- [x] **Step 6: 更新计划勾选状态**
 
 把本计划中已完成步骤改为 `- [x]`。如果某步骤因范围调整未做，写明原因。
 
-- [ ] **Step 7: 最终提交**
+- [x] **Step 7: 最终提交**
 
 ```bash
 git add docs/superpowers/plans/2026-05-18-OpenDeepSea内置Skills实施计划.md docs/superpowers/specs/2026-05-18-OpenDeepSea内置Skills设计.md docs/superpowers/verification/2026-05-18-OpenDeepSea内置Skills验收.md
