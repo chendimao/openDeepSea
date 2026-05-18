@@ -67,6 +67,18 @@ export interface AgentWorkspacePolicy {
   write: string[];
 }
 
+export interface ResolvedAgentRuntimeProfile {
+  runtimeBackend: AgentRuntimeBackend;
+  acpBackend: AcpBackend | null;
+  acpPermissionMode: AcpPermissionMode;
+  readableDirs: string[];
+  writableDirs: string[];
+  toolPolicy: AgentToolPolicy;
+  memoryScope: AgentMemoryScope;
+  contextBudget: number | null;
+  warnings: string[];
+}
+
 export interface AgentReference {
   room_id: string;
   room_name: string;

@@ -1,4 +1,8 @@
 import { nanoid } from 'nanoid';
+import {
+  normalizeAgentToolPolicy,
+  normalizeAgentWorkspacePolicy,
+} from '../agent-runtime.js';
 import { getBuiltInAgentTemplate, type RoomCrewTemplate } from '../crew-templates.js';
 import { db, now } from '../db.js';
 import type {
@@ -7,7 +11,6 @@ import type {
   AgentDefaultRuntime,
   AgentMemoryScope,
   AgentRuntimeBackend,
-  AgentToolCapability,
   AgentToolPolicy,
   AgentWorkspacePolicy,
   Room,
@@ -51,17 +54,6 @@ const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-wr
 const DEFAULT_RUNTIMES = new Set<AgentDefaultRuntime>(['acp', 'openclaw', 'none']);
 const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
 const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
-const TOOL_CAPABILITIES = new Set<AgentToolCapability>([
-  'read_files',
-  'write_files',
-  'run_shell',
-  'browser',
-  'search',
-  'image_input',
-  'commit',
-]);
-const DEFAULT_TOOL_POLICY: AgentToolPolicy = { allowed: [] };
-const DEFAULT_WORKSPACE_POLICY: AgentWorkspacePolicy = { read: [], write: [] };
 const BUILT_IN_RUNTIME_PROFILE_VERSION = 1;
 
 function parseJsonObject<T>(value: string | null | undefined, fallback: T): T {
@@ -85,30 +77,18 @@ function parseStringArray(value: string | null | undefined): string[] {
   }
 }
 
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
-}
-
 function normalizeToolPolicy(value: string | null | undefined): AgentToolPolicy | null {
   if (!value) return null;
   const parsed = parseJsonObject<Partial<AgentToolPolicy> | null>(value, null);
   if (!parsed) return null;
-  return {
-    allowed: normalizeStringArray(parsed.allowed).filter((item): item is AgentToolCapability =>
-      TOOL_CAPABILITIES.has(item as AgentToolCapability),
-    ),
-  };
+  return normalizeAgentToolPolicy(parsed);
 }
 
 function normalizeWorkspacePolicy(value: string | null | undefined): AgentWorkspacePolicy | null {
   if (!value) return null;
   const parsed = parseJsonObject<Partial<AgentWorkspacePolicy> | null>(value, null);
   if (!parsed) return null;
-  return {
-    read: normalizeStringArray(parsed.read),
-    write: normalizeStringArray(parsed.write),
-  };
+  return normalizeAgentWorkspacePolicy(parsed);
 }
 
 function isLegacyToolPolicy(policy: AgentToolPolicy | null): boolean {

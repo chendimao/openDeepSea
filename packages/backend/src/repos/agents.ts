@@ -1,4 +1,11 @@
 import { nanoid } from 'nanoid';
+import {
+  DEFAULT_AGENT_MEMORY_SCOPE,
+  DEFAULT_AGENT_TOOL_POLICY,
+  DEFAULT_AGENT_WORKSPACE_POLICY,
+  normalizeAgentToolPolicy,
+  normalizeAgentWorkspacePolicy,
+} from '../agent-runtime.js';
 import { listBuiltInAgentTemplates } from '../agent-templates.js';
 import { db, now } from '../db.js';
 import type {
@@ -8,7 +15,6 @@ import type {
   AgentMemoryScope,
   AgentReference,
   AgentRuntimeBackend,
-  AgentToolCapability,
   AgentToolPolicy,
   AgentWorkspacePolicy,
 } from '../types.js';
@@ -64,24 +70,13 @@ export type AgentDeleteResult =
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
 const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
 const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
-const TOOL_CAPABILITIES = new Set<AgentToolCapability>([
-  'read_files',
-  'write_files',
-  'run_shell',
-  'browser',
-  'search',
-  'image_input',
-  'commit',
-]);
-const DEFAULT_TOOL_POLICY: AgentToolPolicy = { allowed: [] };
-const DEFAULT_WORKSPACE_POLICY: AgentWorkspacePolicy = { read: [], write: [] };
 const BUILT_IN_RUNTIME_PROFILE_VERSION = 1;
 const LEGACY_RUNTIME_BOUNDARY = {
   default_acp_permission_mode: 'bypass',
   default_runtime_backend: 'acp',
-  default_tool_policy: DEFAULT_TOOL_POLICY,
-  default_workspace_policy: DEFAULT_WORKSPACE_POLICY,
-  default_memory_scope: 'agent',
+  default_tool_policy: DEFAULT_AGENT_TOOL_POLICY,
+  default_workspace_policy: DEFAULT_AGENT_WORKSPACE_POLICY,
+  default_memory_scope: DEFAULT_AGENT_MEMORY_SCOPE,
 } satisfies Pick<
   Agent,
   | 'default_acp_permission_mode'
@@ -101,26 +96,14 @@ function parseJsonObject<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
-}
-
 function normalizeToolPolicy(value: string | null | undefined): AgentToolPolicy {
-  const parsed = parseJsonObject<Partial<AgentToolPolicy>>(value, DEFAULT_TOOL_POLICY);
-  return {
-    allowed: normalizeStringArray(parsed.allowed).filter((item): item is AgentToolCapability =>
-      TOOL_CAPABILITIES.has(item as AgentToolCapability),
-    ),
-  };
+  return normalizeAgentToolPolicy(parseJsonObject<Partial<AgentToolPolicy>>(value, DEFAULT_AGENT_TOOL_POLICY));
 }
 
 function normalizeWorkspacePolicy(value: string | null | undefined): AgentWorkspacePolicy {
-  const parsed = parseJsonObject<Partial<AgentWorkspacePolicy>>(value, DEFAULT_WORKSPACE_POLICY);
-  return {
-    read: normalizeStringArray(parsed.read),
-    write: normalizeStringArray(parsed.write),
-  };
+  return normalizeAgentWorkspacePolicy(
+    parseJsonObject<Partial<AgentWorkspacePolicy>>(value, DEFAULT_AGENT_WORKSPACE_POLICY),
+  );
 }
 
 function normalizeAgent(row: AgentRow): Agent {
@@ -143,7 +126,7 @@ function normalizeAgent(row: AgentRow): Agent {
     default_memory_scope:
       memoryScope && MEMORY_SCOPES.has(memoryScope as AgentMemoryScope)
         ? (memoryScope as AgentMemoryScope)
-        : 'agent',
+        : DEFAULT_AGENT_MEMORY_SCOPE,
     reference_count: row.reference_count ?? 0,
   };
 }
@@ -338,9 +321,9 @@ export const agentRepo = {
       input.default_acp_backend ?? null,
       input.default_acp_permission_mode ?? 'bypass',
       input.default_runtime_backend ?? 'acp',
-      JSON.stringify(input.default_tool_policy ?? DEFAULT_TOOL_POLICY),
-      JSON.stringify(input.default_workspace_policy ?? DEFAULT_WORKSPACE_POLICY),
-      input.default_memory_scope ?? 'agent',
+      JSON.stringify(input.default_tool_policy ?? DEFAULT_AGENT_TOOL_POLICY),
+      JSON.stringify(input.default_workspace_policy ?? DEFAULT_AGENT_WORKSPACE_POLICY),
+      input.default_memory_scope ?? DEFAULT_AGENT_MEMORY_SCOPE,
       input.is_builtin ? 1 : 0,
       trimmedOrNull(input.builtin_key),
       ts,
@@ -402,16 +385,16 @@ export const agentRepo = {
       JSON.stringify(
         patch.default_tool_policy === undefined
           ? existing.default_tool_policy
-          : patch.default_tool_policy ?? DEFAULT_TOOL_POLICY,
+          : patch.default_tool_policy ?? DEFAULT_AGENT_TOOL_POLICY,
       ),
       JSON.stringify(
         patch.default_workspace_policy === undefined
           ? existing.default_workspace_policy
-          : patch.default_workspace_policy ?? DEFAULT_WORKSPACE_POLICY,
+          : patch.default_workspace_policy ?? DEFAULT_AGENT_WORKSPACE_POLICY,
       ),
       patch.default_memory_scope === undefined
         ? existing.default_memory_scope
-        : patch.default_memory_scope ?? 'agent',
+        : patch.default_memory_scope ?? DEFAULT_AGENT_MEMORY_SCOPE,
       getAgentRuntimeProfileVersion(existing.id),
       now(),
       id,
