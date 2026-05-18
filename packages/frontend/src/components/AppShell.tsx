@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   FolderKanban,
   Home,
+  MessageCircle,
   Plus,
   Search,
   Settings,
@@ -148,6 +149,7 @@ function ProjectSidebar({
 
       <div className="sidebar-nav px-4">
         <SidebarLink to="/" active={location.pathname === '/'} icon={Home} label={t('shell.nav.development')} exact />
+        <SidebarLink to="/chat" icon={MessageCircle} label={t('shell.nav.chat')} />
         <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} />
         <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} />
         <SidebarLink

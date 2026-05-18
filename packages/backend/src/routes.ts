@@ -9,11 +9,17 @@ import type { CollaborationDecision } from './collaboration-decision.js';
 import { runCollaborationStages as defaultRunCollaborationStages } from './collaboration-runner.js';
 import { getDefaultRoomCrewTemplate, getRoomCrewTemplate, listRoomCrewTemplates } from './crew-templates.js';
 import { dispatchUserMessage } from './dispatcher.js';
+import {
+  sendGlobalChatMessage,
+  type GlobalChatInvoker,
+  type SafeGlobalChatSettingsSummary,
+} from './global-chat.js';
 import { validateLocalAccess } from './local-access.js';
 import { resolveMentionedAgentRoomIds } from './mentions.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { agentRepo } from './repos/agents.js';
 import { fileRepo } from './repos/files.js';
+import { globalChatRepo } from './repos/global-chat.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
@@ -77,7 +83,13 @@ interface CollaborationRouteDeps {
   runCollaborationStages?: typeof defaultRunCollaborationStages;
 }
 
+interface GlobalChatRouteDeps {
+  invoker?: GlobalChatInvoker;
+  settingsSummary?: SafeGlobalChatSettingsSummary;
+}
+
 let collaborationRouteDeps: CollaborationRouteDeps = {};
+let globalChatRouteDeps: GlobalChatRouteDeps = {};
 const collaborationRunsBySource = new Map<string, {
   id: string;
   room_id: string;
@@ -88,6 +100,10 @@ const collaborationRunsBySource = new Map<string, {
 export function setCollaborationRouteDeps(deps: CollaborationRouteDeps): void {
   collaborationRouteDeps = deps;
   collaborationRunsBySource.clear();
+}
+
+export function setGlobalChatRouteDeps(deps: GlobalChatRouteDeps): void {
+  globalChatRouteDeps = deps;
 }
 
 function workflowErrorStatus(error: Error): number {
@@ -391,6 +407,81 @@ function isMemoryValidationError(error: Error): boolean {
 function logUnexpectedMemoryError(context: string, error: unknown): void {
   console.warn(`[memory-api] ${context}`, error);
 }
+
+// ---------- Global Chat ----------
+router.get('/global-chat/sessions', (req, res) => {
+  res.json(globalChatRepo.listSessions({
+    includeArchived: req.query.includeArchived === '1',
+  }));
+});
+
+router.post('/global-chat/sessions', (req, res) => {
+  const schema = z.object({ title: z.string().optional().nullable() });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  res.status(201).json(globalChatRepo.createSession({ title: parsed.data.title }));
+});
+
+router.patch('/global-chat/sessions/:id', (req, res) => {
+  const schema = z.object({
+    title: z.string().optional().nullable(),
+    archived: z.boolean().optional(),
+  });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const updated = globalChatRepo.updateSession(req.params.id, parsed.data);
+  if (!updated) return res.status(404).json({ error: 'not found' });
+  res.json(updated);
+});
+
+router.delete('/global-chat/sessions/:id', (req, res) => {
+  const deleted = globalChatRepo.deleteSession(req.params.id);
+  if (!deleted) return res.status(404).json({ error: 'not found' });
+  res.status(204).end();
+});
+
+router.get('/global-chat/sessions/:id/messages', (req, res) => {
+  if (!globalChatRepo.getSession(req.params.id)) return res.status(404).json({ error: 'not found' });
+  res.json(globalChatRepo.listMessages(req.params.id));
+});
+
+router.post('/global-chat/sessions/:id/messages', async (req, res) => {
+  const schema = z.object({ content: z.string().trim().min(1) });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const result = await sendGlobalChatMessage({
+      sessionId: req.params.id,
+      content: parsed.data.content,
+      invoker: globalChatRouteDeps.invoker,
+      settingsSummary: globalChatRouteDeps.settingsSummary,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    const message = (err as Error).message;
+    res.status(message.includes('not found') ? 404 : 400).json({ error: message });
+  }
+});
+
+router.post('/global-chat/messages/:id/save-memory', (req, res) => {
+  const schema = z.object({
+    memory_type: z.enum(['decision', 'fact', 'preference', 'lesson']).default('fact'),
+    title: z.string().trim().min(1).optional(),
+    content: z.string().trim().min(1).optional(),
+  });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const message = globalChatRepo.getMessage(req.params.id);
+  if (!message) return res.status(404).json({ error: 'not found' });
+  const title = parsed.data.title ?? `${message.role}: ${message.content.slice(0, 80)}`;
+  const memory = memoryRepo.upsertGlobalFromMessage({
+    message_id: message.id,
+    memory_type: parsed.data.memory_type,
+    title,
+    content: parsed.data.content ?? message.content,
+  });
+  res.status(201).json(memory);
+});
 
 // ---------- Settings ----------
 router.get('/settings/system', (_req, res) => {

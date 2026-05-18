@@ -29,6 +29,7 @@ const zhMessages = {
   'shell.systemSettings': '系统设置',
   'shell.searchCommand': '搜索 / 快速命令',
   'shell.nav.development': '开发',
+  'shell.nav.chat': '聊天',
   'shell.nav.roadmap': '路线',
   'shell.nav.agents': '智能体',
   'shell.nav.skills': '技能',
@@ -598,6 +599,18 @@ const zhMessages = {
   'time.hoursAgo': '{count}小时前',
   'time.daysAgo': '{count}天前',
   'time.dateLocale': 'zh-CN',
+  'globalChat.title': '全局聊天',
+  'globalChat.description': '不绑定项目的助手，可自动检索全局记忆、项目记忆与非敏感配置摘要。',
+  'globalChat.newSession': '新会话',
+  'globalChat.emptyTitle': '开始一次全局查询',
+  'globalChat.emptyDescription': '询问记忆、配置、偏好或任何普通问题。',
+  'globalChat.inputPlaceholder': '询问记忆、配置，或直接聊天',
+  'globalChat.send': '发送',
+  'globalChat.references': '引用来源',
+  'globalChat.configReference': '系统配置摘要',
+  'globalChat.saveMemory': '保存为全局记忆',
+  'globalChat.savedMemory': '已保存为全局记忆',
+  'globalChat.noSessions': '暂无会话',
 } as const;
 
 const enMessages: Record<keyof typeof zhMessages, string> = {
@@ -612,6 +625,7 @@ const enMessages: Record<keyof typeof zhMessages, string> = {
   'shell.systemSettings': 'System settings',
   'shell.searchCommand': 'Search / quick command',
   'shell.nav.development': 'Development',
+  'shell.nav.chat': 'Chat',
   'shell.nav.roadmap': 'Roadmap',
   'shell.nav.agents': '智能体',
   'shell.nav.skills': 'Skills',
@@ -1181,6 +1195,18 @@ const enMessages: Record<keyof typeof zhMessages, string> = {
   'time.hoursAgo': '{count} hr ago',
   'time.daysAgo': '{count} days ago',
   'time.dateLocale': 'en-US',
+  'globalChat.title': 'Global Chat',
+  'globalChat.description': 'A project-independent assistant that searches global memory, project memory, and safe settings summaries by default.',
+  'globalChat.newSession': 'New session',
+  'globalChat.emptyTitle': 'Start a global query',
+  'globalChat.emptyDescription': 'Ask about memory, settings, preferences, or anything else.',
+  'globalChat.inputPlaceholder': 'Ask about memory, settings, or just chat',
+  'globalChat.send': 'Send',
+  'globalChat.references': 'References',
+  'globalChat.configReference': 'System settings summary',
+  'globalChat.saveMemory': 'Save as global memory',
+  'globalChat.savedMemory': 'Saved as global memory',
+  'globalChat.noSessions': 'No sessions',
 };
 
 const dictionaries = {

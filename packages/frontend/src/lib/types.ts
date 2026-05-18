@@ -104,7 +104,7 @@ export type TaskArtifactType =
   | 'implementation_summary'
   | 'review'
   | 'acceptance';
-export type MemoryScope = 'project' | 'room' | 'agent' | 'task';
+export type MemoryScope = 'global' | 'project' | 'room' | 'agent' | 'task';
 export type MemoryType = 'decision' | 'fact' | 'preference' | 'lesson' | 'task_summary' | 'artifact_summary';
 export type MemorySourceType = 'manual' | 'message' | 'workflow' | 'task';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
@@ -535,7 +535,7 @@ export interface TaskArtifact {
 
 export interface MemoryEntry {
   id: string;
-  project_id: string;
+  project_id: string | null;
   room_id: string | null;
   room_agent_id: string | null;
   task_id: string | null;
@@ -566,6 +566,49 @@ export interface MemoryInput {
   source_type?: MemorySourceType;
   source_id?: string | null;
   pinned?: boolean;
+}
+
+export type GlobalChatRole = 'user' | 'assistant' | 'system';
+export type GlobalChatMessageStatus = 'completed' | 'failed';
+
+export interface GlobalChatMemoryRef {
+  id: string;
+  title: string;
+  scope: MemoryScope;
+  project_id: string | null;
+  room_id?: string | null;
+  task_id?: string | null;
+}
+
+export interface GlobalChatMessageMetadata {
+  memory_refs?: GlobalChatMemoryRef[];
+  config_refs?: string[];
+  error?: string;
+  model_chat?: boolean;
+  [key: string]: unknown;
+}
+
+export interface GlobalChatSession {
+  id: string;
+  title: string;
+  archived: 0 | 1;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface GlobalChatMessage {
+  id: string;
+  session_id: string;
+  role: GlobalChatRole;
+  content: string;
+  status: GlobalChatMessageStatus;
+  metadata: GlobalChatMessageMetadata;
+  created_at: number;
+}
+
+export interface GlobalChatSendResponse {
+  userMessage: GlobalChatMessage;
+  assistantMessage: GlobalChatMessage;
 }
 
 export interface WorkflowDetail {

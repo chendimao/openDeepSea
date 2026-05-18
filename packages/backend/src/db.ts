@@ -148,6 +148,27 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room_id, created_at);
 
+CREATE TABLE IF NOT EXISTS global_chat_sessions (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_global_chat_sessions_updated ON global_chat_sessions(archived, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS global_chat_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  content TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+  metadata TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES global_chat_sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_global_chat_messages_session ON global_chat_messages(session_id, created_at);
+
 CREATE TABLE IF NOT EXISTS files (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
@@ -329,11 +350,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_context_source_version
 
 CREATE TABLE IF NOT EXISTS memory_entries (
   id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
+  project_id TEXT,
   room_id TEXT,
   room_agent_id TEXT,
   task_id TEXT,
-  scope TEXT NOT NULL CHECK (scope IN ('project', 'room', 'agent', 'task')),
+  scope TEXT NOT NULL CHECK (scope IN ('global', 'project', 'room', 'agent', 'task')),
   memory_type TEXT NOT NULL CHECK (
     memory_type IN ('decision', 'fact', 'preference', 'lesson', 'task_summary', 'artifact_summary')
   ),
@@ -350,10 +371,11 @@ CREATE TABLE IF NOT EXISTS memory_entries (
   FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE CASCADE,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
   CHECK (
-    (scope = 'project' AND room_id IS NULL AND room_agent_id IS NULL AND task_id IS NULL)
-    OR (scope = 'room' AND room_id IS NOT NULL AND room_agent_id IS NULL AND task_id IS NULL)
-    OR (scope = 'agent' AND room_id IS NOT NULL AND room_agent_id IS NOT NULL AND task_id IS NULL)
-    OR (scope = 'task' AND room_id IS NOT NULL AND room_agent_id IS NULL AND task_id IS NOT NULL)
+    (scope = 'global' AND project_id IS NULL AND room_id IS NULL AND room_agent_id IS NULL AND task_id IS NULL)
+    OR (scope = 'project' AND project_id IS NOT NULL AND room_id IS NULL AND room_agent_id IS NULL AND task_id IS NULL)
+    OR (scope = 'room' AND project_id IS NOT NULL AND room_id IS NOT NULL AND room_agent_id IS NULL AND task_id IS NULL)
+    OR (scope = 'agent' AND project_id IS NOT NULL AND room_id IS NOT NULL AND room_agent_id IS NOT NULL AND task_id IS NULL)
+    OR (scope = 'task' AND project_id IS NOT NULL AND room_id IS NOT NULL AND room_agent_id IS NULL AND task_id IS NOT NULL)
   )
 );
 CREATE INDEX IF NOT EXISTS idx_memory_project ON memory_entries(project_id, pinned, updated_at);
@@ -369,6 +391,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_room_source
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_project_source
   ON memory_entries(project_id, source_type, source_id)
   WHERE scope = 'project' AND source_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_global_source
+  ON memory_entries(source_type, source_id)
+  WHERE scope = 'global' AND source_id IS NOT NULL;
 
 CREATE TRIGGER IF NOT EXISTS trg_memory_entries_validate_insert
 BEFORE INSERT ON memory_entries
@@ -628,6 +653,171 @@ const memoryColumnNames = new Set(memoryColumns.map((column) => column.name));
 if (!memoryColumnNames.has('archived')) {
   db.exec('ALTER TABLE memory_entries ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
 }
+const memoryCreateSql = (db.prepare(
+  "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memory_entries'",
+).get() as { sql: string } | undefined)?.sql ?? '';
+if (
+  memoryCreateSql.includes('project_id TEXT NOT NULL') ||
+  !memoryCreateSql.includes("'global'")
+) {
+  db.exec(`
+    DROP TRIGGER IF EXISTS trg_memory_entries_validate_insert;
+    DROP TRIGGER IF EXISTS trg_memory_entries_validate_update;
+    DROP INDEX IF EXISTS idx_memory_task_source;
+    DROP INDEX IF EXISTS idx_memory_room_source;
+    DROP INDEX IF EXISTS idx_memory_project_source;
+    DROP INDEX IF EXISTS idx_memory_global_source;
+    DROP INDEX IF EXISTS idx_memory_project;
+    DROP INDEX IF EXISTS idx_memory_room;
+    DROP INDEX IF EXISTS idx_memory_agent;
+    DROP INDEX IF EXISTS idx_memory_task;
+
+    CREATE TABLE memory_entries_next (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      room_id TEXT,
+      room_agent_id TEXT,
+      task_id TEXT,
+      scope TEXT NOT NULL CHECK (scope IN ('global', 'project', 'room', 'agent', 'task')),
+      memory_type TEXT NOT NULL CHECK (
+        memory_type IN ('decision', 'fact', 'preference', 'lesson', 'task_summary', 'artifact_summary')
+      ),
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN ('manual', 'message', 'workflow', 'task')),
+      source_id TEXT,
+      pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+      archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+      FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE CASCADE,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      CHECK (
+        (scope = 'global' AND project_id IS NULL AND room_id IS NULL AND room_agent_id IS NULL AND task_id IS NULL)
+        OR (scope = 'project' AND project_id IS NOT NULL AND room_id IS NULL AND room_agent_id IS NULL AND task_id IS NULL)
+        OR (scope = 'room' AND project_id IS NOT NULL AND room_id IS NOT NULL AND room_agent_id IS NULL AND task_id IS NULL)
+        OR (scope = 'agent' AND project_id IS NOT NULL AND room_id IS NOT NULL AND room_agent_id IS NOT NULL AND task_id IS NULL)
+        OR (scope = 'task' AND project_id IS NOT NULL AND room_id IS NOT NULL AND room_agent_id IS NULL AND task_id IS NOT NULL)
+      )
+    );
+
+    INSERT INTO memory_entries_next (
+      id, project_id, room_id, room_agent_id, task_id, scope, memory_type, title,
+      content, source_type, source_id, pinned, archived, created_at, updated_at
+    )
+    SELECT
+      id, project_id, room_id, room_agent_id, task_id, scope, memory_type, title,
+      content, source_type, source_id, pinned, COALESCE(archived, 0), created_at, updated_at
+    FROM memory_entries;
+
+    DROP TABLE memory_entries;
+    ALTER TABLE memory_entries_next RENAME TO memory_entries;
+  `);
+}
+db.exec(`
+CREATE INDEX IF NOT EXISTS idx_memory_project ON memory_entries(project_id, pinned, updated_at);
+CREATE INDEX IF NOT EXISTS idx_memory_room ON memory_entries(room_id, pinned, updated_at);
+CREATE INDEX IF NOT EXISTS idx_memory_agent ON memory_entries(room_agent_id, pinned, updated_at);
+CREATE INDEX IF NOT EXISTS idx_memory_task ON memory_entries(task_id, updated_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_task_source
+  ON memory_entries(task_id, source_type, source_id)
+  WHERE task_id IS NOT NULL AND source_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_room_source
+  ON memory_entries(room_id, source_type, source_id)
+  WHERE scope = 'room' AND room_id IS NOT NULL AND source_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_project_source
+  ON memory_entries(project_id, source_type, source_id)
+  WHERE scope = 'project' AND source_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_global_source
+  ON memory_entries(source_type, source_id)
+  WHERE scope = 'global' AND source_id IS NOT NULL;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_entries_validate_insert
+BEFORE INSERT ON memory_entries
+BEGIN
+  SELECT RAISE(ABORT, 'memory room_id does not belong to project_id')
+  WHERE NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM rooms
+      WHERE rooms.id = NEW.room_id AND rooms.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory room_agent_id does not belong to project_id')
+  WHERE NEW.room_agent_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM room_agents
+      JOIN rooms ON rooms.id = room_agents.room_id
+      WHERE room_agents.id = NEW.room_agent_id AND rooms.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory room_agent_id does not belong to room_id')
+  WHERE NEW.room_agent_id IS NOT NULL
+    AND NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM room_agents
+      WHERE room_agents.id = NEW.room_agent_id AND room_agents.room_id = NEW.room_id
+    );
+
+  SELECT RAISE(ABORT, 'memory task_id does not belong to project_id')
+  WHERE NEW.task_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = NEW.task_id AND tasks.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory task_id does not belong to room_id')
+  WHERE NEW.task_id IS NOT NULL
+    AND NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = NEW.task_id AND tasks.room_id = NEW.room_id
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_entries_validate_update
+BEFORE UPDATE OF project_id, room_id, room_agent_id, task_id, scope ON memory_entries
+BEGIN
+  SELECT RAISE(ABORT, 'memory room_id does not belong to project_id')
+  WHERE NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM rooms
+      WHERE rooms.id = NEW.room_id AND rooms.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory room_agent_id does not belong to project_id')
+  WHERE NEW.room_agent_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM room_agents
+      JOIN rooms ON rooms.id = room_agents.room_id
+      WHERE room_agents.id = NEW.room_agent_id AND rooms.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory room_agent_id does not belong to room_id')
+  WHERE NEW.room_agent_id IS NOT NULL
+    AND NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM room_agents
+      WHERE room_agents.id = NEW.room_agent_id AND room_agents.room_id = NEW.room_id
+    );
+
+  SELECT RAISE(ABORT, 'memory task_id does not belong to project_id')
+  WHERE NEW.task_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = NEW.task_id AND tasks.project_id = NEW.project_id
+    );
+
+  SELECT RAISE(ABORT, 'memory task_id does not belong to room_id')
+  WHERE NEW.task_id IS NOT NULL
+    AND NEW.room_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM tasks
+      WHERE tasks.id = NEW.task_id AND tasks.room_id = NEW.room_id
+    );
+END;
+`);
 
 const settingsColumns = db.prepare('PRAGMA table_info(settings)').all() as { name: string }[];
 const settingsColumnNames = new Set(settingsColumns.map((column) => column.name));

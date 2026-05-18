@@ -28,6 +28,12 @@ export interface MemoryRelevantFilters {
   limit?: number;
 }
 
+export interface MemoryGlobalChatContextFilters {
+  prompt: string;
+  limit?: number;
+  includeArchived?: boolean;
+}
+
 export type MemorySearchResult = MemoryEntry & {
   room_name: string | null;
 };
@@ -46,11 +52,17 @@ function requireProject(id: string): void {
 }
 
 function validateOwnership(input: {
-  project_id: string;
+  project_id?: string | null;
   room_id?: string | null;
   room_agent_id?: string | null;
   task_id?: string | null;
 }): void {
+  if (!input.project_id) {
+    if (input.room_id || input.room_agent_id || input.task_id) {
+      throw new Error('project_id is required for scoped memory');
+    }
+    return;
+  }
   requireProject(input.project_id);
 
   if (input.room_id) {
@@ -98,6 +110,13 @@ function validateScopeRelations(input: {
   room_agent_id?: string | null;
   task_id?: string | null;
 }): void {
+  if (input.scope === 'global') {
+    if (input.room_id || input.room_agent_id || input.task_id) {
+      throw new Error('global scope cannot include project, room, agent, or task relations');
+    }
+    return;
+  }
+
   if (input.scope === 'project') {
     if (input.room_id || input.room_agent_id || input.task_id) {
       throw new Error('project scope cannot include room_id, room_agent_id, or task_id');
@@ -340,8 +359,44 @@ export const memoryRepo = {
       .map((item) => item.entry);
   },
 
+  listForGlobalChatContext(filters: MemoryGlobalChatContextFilters): MemoryEntry[] {
+    const limit = Math.max(1, Math.min(filters.limit ?? 20, 60));
+    const terms = extractMemorySearchTerms(filters.prompt).slice(0, 12);
+    const clauses = ['archived = 0'];
+    const params: Array<string | number> = [];
+    if (filters.includeArchived) clauses[0] = '1 = 1';
+    if (terms.length > 0) {
+      const termClauses = terms.map(() => '(title LIKE ? OR content LIKE ?)');
+      clauses.push(`(scope = 'global' OR ${termClauses.join(' OR ')})`);
+      for (const term of terms) {
+        const pattern = `%${term}%`;
+        params.push(pattern, pattern);
+      }
+    }
+    const candidates = db.prepare(
+      `SELECT * FROM memory_entries
+       WHERE ${clauses.join(' AND ')}
+       ORDER BY pinned DESC, updated_at DESC
+       LIMIT 200`,
+    ).all(...params) as MemoryEntry[];
+
+    return candidates
+      .map((entry) => ({
+        entry,
+        score: entry.scope === 'global' && entry.pinned ? terms.length + 2 : scoreMemoryRelevance(entry, terms),
+      }))
+      .filter((item) => terms.length === 0 || item.entry.scope === 'global' || item.score > 0)
+      .sort((a, b) => {
+        if (a.score !== b.score) return b.score - a.score;
+        if (a.entry.pinned !== b.entry.pinned) return b.entry.pinned - a.entry.pinned;
+        return b.entry.updated_at - a.entry.updated_at;
+      })
+      .slice(0, limit)
+      .map((item) => item.entry);
+  },
+
   create(input: {
-    project_id: string;
+    project_id?: string | null;
     room_id?: string | null;
     room_agent_id?: string | null;
     task_id?: string | null;
@@ -354,7 +409,9 @@ export const memoryRepo = {
     pinned?: boolean;
   }): MemoryEntry {
     validateScopeRelations(input);
-    validateOwnership(input);
+    if (input.scope !== 'global') {
+      validateOwnership(input);
+    }
 
     const id = nanoid(16);
     const ts = now();
@@ -366,7 +423,7 @@ export const memoryRepo = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
-      input.project_id,
+      input.project_id ?? null,
       input.room_id ?? null,
       input.room_agent_id ?? null,
       input.task_id ?? null,
@@ -381,6 +438,33 @@ export const memoryRepo = {
       ts,
     );
     return this.get(id)!;
+  },
+
+  upsertGlobalFromMessage(input: {
+    message_id: string;
+    memory_type: Exclude<MemoryType, 'task_summary' | 'artifact_summary'>;
+    title: string;
+    content: string;
+  }): MemoryEntry {
+    const existing = db.prepare(
+      `SELECT * FROM memory_entries
+       WHERE scope = 'global' AND source_type = 'message' AND source_id = ?`,
+    ).get(input.message_id) as MemoryEntry | undefined;
+    if (existing) {
+      return this.update(existing.id, {
+        memory_type: input.memory_type,
+        title: input.title,
+        content: input.content,
+      })!;
+    }
+    return this.create({
+      scope: 'global',
+      memory_type: input.memory_type,
+      title: input.title,
+      content: input.content,
+      source_type: 'message',
+      source_id: input.message_id,
+    });
   },
 
   update(

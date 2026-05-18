@@ -8,6 +8,7 @@ import { I18nProvider } from './lib/i18n';
 import { AgentsPage } from './pages/AgentsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { FilesPage } from './pages/FilesPage';
+import { GlobalChatPage } from './pages/GlobalChatPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { RoomPage } from './pages/RoomPage';
 import { SkillsPage } from './pages/SkillsPage';
@@ -44,6 +45,7 @@ function RootApp(): JSX.Element {
           <AppShell theme={theme} onThemeChange={setTheme}>
             <Routes>
               <Route path="/" element={<DashboardPage />} />
+              <Route path="/chat" element={<GlobalChatPage />} />
               <Route path="/agents" element={<AgentsPage />} />
               <Route path="/files" element={<FilesPage />} />
               <Route path="/skills" element={<SkillsPage />} />

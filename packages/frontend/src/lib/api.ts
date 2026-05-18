@@ -12,6 +12,9 @@ import type {
   CliSession,
   CollaborationDecision,
   CollaborationRunSummary,
+  GlobalChatMessage,
+  GlobalChatSendResponse,
+  GlobalChatSession,
   MemoryEntry,
   MemoryInput,
   MemorySearchResult,
@@ -129,6 +132,35 @@ export const api = {
     request<{ templates: BuiltInAgentTemplate[] }>('/agent-templates'),
   listCrewTemplates: () =>
     request<{ templates: RoomCrewTemplate[] }>('/crew-templates'),
+
+  listGlobalChatSessions: () => request<GlobalChatSession[]>('/global-chat/sessions'),
+  createGlobalChatSession: (input: { title?: string | null } = {}) =>
+    request<GlobalChatSession>('/global-chat/sessions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateGlobalChatSession: (id: string, input: { title?: string | null; archived?: boolean }) =>
+    request<GlobalChatSession>(`/global-chat/sessions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteGlobalChatSession: (id: string) =>
+    request<void>(`/global-chat/sessions/${id}`, { method: 'DELETE' }),
+  listGlobalChatMessages: (sessionId: string) =>
+    request<GlobalChatMessage[]>(`/global-chat/sessions/${sessionId}/messages`),
+  sendGlobalChatMessage: (sessionId: string, input: { content: string }) =>
+    request<GlobalChatSendResponse>(`/global-chat/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  saveGlobalChatMessageAsMemory: (
+    messageId: string,
+    input: { memory_type?: 'decision' | 'fact' | 'preference' | 'lesson'; title?: string; content?: string } = {},
+  ) =>
+    request<MemoryEntry>(`/global-chat/messages/${messageId}/save-memory`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   listAgents: () => request<Agent[]>('/agents'),
   getAgent: (id: string) => request<Agent>(`/agents/${id}`),
