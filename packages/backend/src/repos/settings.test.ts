@@ -84,6 +84,51 @@ test('settingsRepo resolves default workflow definition with project and room ov
   assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, roomDefinition?.id);
 });
 
+test('settingsRepo validates workflow definition visibility by settings scope', async () => {
+  const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
+  const project = projectRepo.create({
+    name: 'Workflow Visibility Project',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-settings-workflow-visibility-')),
+  });
+  const otherProject = projectRepo.create({
+    name: 'Other Workflow Visibility Project',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-settings-workflow-visibility-other-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Workflow Visibility Room' });
+  const otherProjectWorkflow = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Other Project Workflow',
+    description: null,
+    scope: 'project',
+    scope_id: otherProject.id,
+    definition: testDefinition('other-project-planning'),
+  }).id)!;
+
+  assert.throws(
+    () => settingsRepo.updateProject(project.id, { default_workflow_definition_id: otherProjectWorkflow.id }),
+    /not visible/,
+  );
+  assert.throws(
+    () => settingsRepo.updateRoom(room.id, { default_workflow_definition_id: otherProjectWorkflow.id }),
+    /not visible/,
+  );
+});
+
+test('settingsRepo rejects draft and archived workflow defaults', async () => {
+  const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
+  const draft = workflowDefinitionRepo.createDraft({
+    name: 'Draft Default Workflow',
+    description: null,
+    scope: 'system',
+    scope_id: 'default',
+    definition: testDefinition('draft-default-planning'),
+  });
+  assert.throws(() => settingsRepo.updateSystem({ default_workflow_definition_id: draft.id }), /published/);
+
+  const published = workflowDefinitionRepo.publish(draft.id)!;
+  workflowDefinitionRepo.archive(published.id);
+  assert.throws(() => settingsRepo.updateSystem({ default_workflow_definition_id: published.id }), /archived|published/);
+});
+
 function testDefinition(prefix: string) {
   return {
     nodes: [

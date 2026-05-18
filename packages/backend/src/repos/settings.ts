@@ -109,7 +109,7 @@ function upsertScoped(
   const defaultWorkflowDefinitionId =
     patch.default_workflow_definition_id === undefined
       ? existing.default_workflow_definition_id
-      : normalizedOptionalString(patch.default_workflow_definition_id);
+      : validateDefaultWorkflowDefinition(scope, scopeId, patch.default_workflow_definition_id);
   const rawFallbackAgentId = patch.fallback_agent_id === undefined
     ? existing.fallback_agent_id
     : patch.fallback_agent_id;
@@ -151,6 +151,29 @@ function apiKeyPreview(apiKey: string | null | undefined): string | null {
 function normalizedOptionalString(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function validateDefaultWorkflowDefinition(
+  scope: SettingsScope,
+  scopeId: string,
+  workflowDefinitionId: string | null | undefined,
+): string | null {
+  const id = normalizedOptionalString(workflowDefinitionId);
+  if (!id) return null;
+  const definition = workflowDefinitionRepo.get(id);
+  if (!definition) throw new Error('default workflow definition not found');
+  if (definition.status !== 'published') throw new Error('default workflow definition must be published');
+
+  if (scope === 'system' && !workflowDefinitionRepo.isVisibleForSystem(id)) {
+    throw new Error('default workflow definition is not visible for system settings');
+  }
+  if (scope === 'project' && !workflowDefinitionRepo.isVisibleForProject(id, scopeId)) {
+    throw new Error('default workflow definition is not visible for project settings');
+  }
+  if (scope === 'room' && !workflowDefinitionRepo.isVisibleForRoom(id, scopeId)) {
+    throw new Error('default workflow definition is not visible for room settings');
+  }
+  return id;
 }
 
 function normalizeFallbackAgentId(mode: MessageRoutingMode | null, fallbackAgentId: string | null | undefined): string | null {
@@ -225,7 +248,7 @@ export const settingsRepo = {
           : 0;
     const defaultWorkflowDefinitionId = patch.default_workflow_definition_id === undefined
       ? normalizedOptionalString(existing?.default_workflow_definition_id)
-      : normalizedOptionalString(patch.default_workflow_definition_id);
+      : validateDefaultWorkflowDefinition('system', SYSTEM_SCOPE_ID, patch.default_workflow_definition_id);
     const rawFallbackAgentId = patch.fallback_agent_id === undefined
       ? existing?.fallback_agent_id ?? null
       : patch.fallback_agent_id;
