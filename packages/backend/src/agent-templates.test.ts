@@ -46,6 +46,75 @@ test('built-in agent templates include required ACP-only workflow roles', () => 
   }
 });
 
+test('built-in templates define hard runtime boundaries', () => {
+  const templates = Object.fromEntries(listBuiltInAgentTemplates().map((item) => [item.id, item]));
+
+  assert.equal(templates['planner']?.runtime_backend, 'acp');
+  assert.equal(templates['planner']?.acp_permission_mode, 'read-only');
+  assert.deepEqual(templates['planner']?.tool_policy, { allowed: ['read_files'] });
+  assert.deepEqual(templates['planner']?.workspace_policy, { read: ['.'], write: [] });
+  assert.equal(templates['planner']?.memory_scope, 'room');
+
+  assert.equal(templates['backend-executor']?.acp_permission_mode, 'workspace-write');
+  assert.deepEqual(templates['backend-executor']?.tool_policy, {
+    allowed: ['read_files', 'write_files', 'run_shell'],
+  });
+  assert.deepEqual(templates['backend-executor']?.workspace_policy, {
+    read: ['.'],
+    write: ['packages/backend'],
+  });
+  assert.equal(templates['backend-executor']?.memory_scope, 'agent');
+
+  assert.equal(templates['frontend-executor']?.acp_permission_mode, 'workspace-write');
+  assert.deepEqual(templates['frontend-executor']?.tool_policy, {
+    allowed: ['read_files', 'write_files', 'run_shell', 'browser', 'image_input'],
+  });
+  assert.deepEqual(templates['frontend-executor']?.workspace_policy, {
+    read: ['.'],
+    write: ['packages/frontend'],
+  });
+  assert.equal(templates['frontend-executor']?.memory_scope, 'agent');
+
+  assert.equal(templates['reviewer']?.acp_permission_mode, 'read-only');
+  assert.deepEqual(templates['reviewer']?.tool_policy, { allowed: ['read_files', 'run_shell'] });
+  assert.deepEqual(templates['reviewer']?.workspace_policy, { read: ['.'], write: [] });
+  assert.equal(templates['reviewer']?.memory_scope, 'room');
+
+  assert.equal(templates['acceptor']?.acp_permission_mode, 'read-only');
+  assert.deepEqual(templates['acceptor']?.tool_policy, { allowed: ['read_files'] });
+  assert.deepEqual(templates['acceptor']?.workspace_policy, { read: ['.'], write: [] });
+  assert.equal(templates['acceptor']?.memory_scope, 'room');
+});
+
+test('specialist built-in templates use conservative runtime boundaries', () => {
+  const specialTemplateIds = [
+    'ui-designer',
+    'data-analyst',
+    'computer-assistant',
+    'product-manager',
+    'qa-tester',
+    'devops-engineer',
+    'security-reviewer',
+    'technical-writer',
+    'accounting-advisor',
+    'legal-assistant',
+    'medical-assistant',
+    'marketing-strategist',
+    'sales-assistant',
+  ];
+  const templates = new Map(listBuiltInAgentTemplates().map((template) => [template.id, template]));
+
+  for (const id of specialTemplateIds) {
+    const template = templates.get(id);
+    assert.ok(template);
+    assert.equal(template.runtime_backend, 'acp');
+    assert.equal(template.acp_permission_mode, 'read-only');
+    assert.deepEqual(template.tool_policy, { allowed: ['read_files'] });
+    assert.deepEqual(template.workspace_policy, { read: ['.'], write: [] });
+    assert.equal(template.memory_scope, 'room');
+  }
+});
+
 test('built-in agent templates include broader specialist roles', () => {
   const templates = listBuiltInAgentTemplates();
   const ids = templates.map((template) => template.id);
@@ -133,14 +202,24 @@ test('agent template routes list and create ACP-only room agents', async () => {
     workflow_role: string;
     acp_enabled: 0 | 1;
     acp_backend: string;
+    acp_permission_mode: string;
     default_runtime: string;
+    runtime_backend: string | null;
+    tool_policy: { allowed: string[] } | null;
+    workspace_policy: { read: string[]; write: string[] } | null;
+    memory_scope: string | null;
     capabilities: string[];
   };
   assert.equal(agent.agent_id, 'backend-executor');
   assert.equal(agent.workflow_role, 'executor');
   assert.equal(agent.acp_enabled, 1);
   assert.equal(agent.acp_backend, 'codex');
+  assert.equal(agent.acp_permission_mode, 'workspace-write');
   assert.equal(agent.default_runtime, 'acp');
+  assert.equal(agent.runtime_backend, 'acp');
+  assert.deepEqual(agent.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
+  assert.deepEqual(agent.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.equal(agent.memory_scope, 'agent');
   assert.deepEqual(agent.capabilities, ['backend', 'testing']);
 
   const duplicateRes = await request(`/api/rooms/${room.id}/agents/from-template`, {
@@ -148,8 +227,14 @@ test('agent template routes list and create ACP-only room agents', async () => {
     body: JSON.stringify({ template_id: 'backend-executor' }),
   });
   assert.equal(duplicateRes.status, 201);
-  const duplicate = await duplicateRes.json() as { agent_id: string };
+  const duplicate = await duplicateRes.json() as {
+    agent_id: string;
+    runtime_backend: string | null;
+    workspace_policy: { read: string[]; write: string[] } | null;
+  };
   assert.equal(duplicate.agent_id, 'backend-executor');
+  assert.equal(duplicate.runtime_backend, 'acp');
+  assert.deepEqual(duplicate.workspace_policy, { read: ['.'], write: ['packages/backend'] });
 });
 
 test('agent template route rejects unknown templates and mirrors missing room errors', async () => {

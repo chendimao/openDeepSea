@@ -35,7 +35,10 @@ type RoomAgentRow = Omit<
   tool_policy?: string | null;
   workspace_policy?: string | null;
   memory_scope?: string | null;
+  runtime_profile_version?: number | null;
 };
+
+type RoomAgentWithRuntimeProfileVersion = RoomAgent & { runtime_profile_version?: number | null };
 
 export interface RoomAgentRemovalImpact {
   active_run_count: number;
@@ -59,6 +62,7 @@ const TOOL_CAPABILITIES = new Set<AgentToolCapability>([
 ]);
 const DEFAULT_TOOL_POLICY: AgentToolPolicy = { allowed: [] };
 const DEFAULT_WORKSPACE_POLICY: AgentWorkspacePolicy = { read: [], write: [] };
+const BUILT_IN_RUNTIME_PROFILE_VERSION = 1;
 
 function parseJsonObject<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -107,13 +111,57 @@ function normalizeWorkspacePolicy(value: string | null | undefined): AgentWorksp
   };
 }
 
+function isLegacyToolPolicy(policy: AgentToolPolicy | null): boolean {
+  return !!policy && policy.allowed.length === 0;
+}
+
+function isLegacyWorkspacePolicy(policy: AgentWorkspacePolicy | null): boolean {
+  return !!policy && policy.read.length === 0 && policy.write.length === 0;
+}
+
+function isLegacyMemoryScope(scope: AgentMemoryScope | null): boolean {
+  return scope === 'agent';
+}
+
+function resolveBuiltInRoomRuntimeBoundary(
+  existing: RoomAgentWithRuntimeProfileVersion,
+  template: NonNullable<ReturnType<typeof getBuiltInAgentTemplate>>,
+) {
+  if (existing.runtime_profile_version === BUILT_IN_RUNTIME_PROFILE_VERSION) {
+    return {
+      acp_permission_mode: existing.acp_permission_mode,
+      runtime_backend: existing.runtime_backend,
+      tool_policy: existing.tool_policy,
+      workspace_policy: existing.workspace_policy,
+      memory_scope: existing.memory_scope,
+    };
+  }
+
+  return {
+    acp_permission_mode: existing.acp_permission_mode === 'bypass'
+      ? template.acp_permission_mode
+      : existing.acp_permission_mode,
+    runtime_backend: existing.runtime_backend ?? template.runtime_backend,
+    tool_policy: existing.tool_policy === null || isLegacyToolPolicy(existing.tool_policy)
+      ? template.tool_policy
+      : existing.tool_policy,
+    workspace_policy: existing.workspace_policy === null || isLegacyWorkspacePolicy(existing.workspace_policy)
+      ? template.workspace_policy
+      : existing.workspace_policy,
+    memory_scope: existing.memory_scope === null || isLegacyMemoryScope(existing.memory_scope)
+      ? template.memory_scope
+      : existing.memory_scope,
+  };
+}
+
 function normalizeRoomAgent(row: RoomAgentRow): RoomAgent {
   const mode = row.acp_permission_mode;
   const runtime = row.default_runtime;
   const runtimeBackend = row.runtime_backend;
   const memoryScope = row.memory_scope;
+  const { runtime_profile_version: _runtimeProfileVersion, ...publicRow } = row;
   return {
-    ...row,
+    ...publicRow,
     acp_permission_mode: mode && ACP_PERMISSION_MODES.has(mode as AcpPermissionMode)
       ? (mode as AcpPermissionMode)
       : 'bypass',
@@ -131,6 +179,20 @@ function normalizeRoomAgent(row: RoomAgentRow): RoomAgent {
       ? (memoryScope as AgentMemoryScope)
       : null,
   };
+}
+
+function normalizeRoomAgentWithRuntimeProfileVersion(row: RoomAgentRow): RoomAgentWithRuntimeProfileVersion {
+  return {
+    ...normalizeRoomAgent(row),
+    runtime_profile_version: row.runtime_profile_version ?? 0,
+  };
+}
+
+function getRoomAgentRuntimeProfileVersion(id: string): number {
+  const row = db.prepare('SELECT runtime_profile_version FROM room_agents WHERE id = ?').get(id) as
+    | { runtime_profile_version?: number | null }
+    | undefined;
+  return row?.runtime_profile_version ?? 0;
 }
 
 export const roomRepo = {
@@ -165,6 +227,7 @@ export const roomAgentRepo = {
   listByRoom(roomId: string, options: { includeRemoved?: boolean } = {}): RoomAgent[] {
     if (!options.includeRemoved && roomRepo.get(roomId)) {
       this.ensureDefaultPlanner(roomId);
+      this.migrateBuiltInRuntimeProfiles(roomId);
     }
     const rows = db
       .prepare(
@@ -172,6 +235,26 @@ export const roomAgentRepo = {
       )
       .all(roomId) as RoomAgentRow[];
     return rows.map(normalizeRoomAgent);
+  },
+
+  migrateBuiltInRuntimeProfiles(roomId: string): void {
+    const rows = db.prepare(
+      `SELECT room_agents.id, agents.id AS global_agent_id, agents.builtin_key
+       FROM room_agents
+       JOIN agents ON agents.id = room_agents.global_agent_id
+         OR (
+           room_agents.global_agent_id IS NULL
+           AND agents.is_builtin = 1
+           AND agents.agent_id = room_agents.agent_id
+         )
+       WHERE room_agents.room_id = ?
+         AND room_agents.left_at IS NULL
+         AND room_agents.runtime_profile_version = 0
+         AND agents.builtin_key IS NOT NULL`,
+    ).all(roomId) as Array<{ id: string; global_agent_id: string; builtin_key: string }>;
+    for (const row of rows) {
+      this.addFromGlobalAgent({ room_id: roomId, global_agent_id: row.global_agent_id });
+    }
   },
 
   ensureDefaultPlanner(roomId: string): RoomAgent | undefined {
@@ -214,10 +297,25 @@ export const roomAgentRepo = {
        LIMIT 1`,
     ).get(input.room_id, agent.id, agent.agent_id, agent.id) as { id: string } | undefined;
     if (existing) {
+      const existingRow = db.prepare(`${roomAgentSelectSql()} WHERE room_agents.id = ?`)
+        .get(existing.id) as RoomAgentRow | undefined;
+      const existingRoomAgent = existingRow ? normalizeRoomAgentWithRuntimeProfileVersion(existingRow) : undefined;
+      const template = agent.builtin_key ? getBuiltInAgentTemplate(agent.builtin_key) : undefined;
+      const runtimeBoundary = existingRoomAgent && template
+        ? resolveBuiltInRoomRuntimeBoundary(existingRoomAgent, template)
+        : {
+          acp_permission_mode: existingRoomAgent?.acp_permission_mode ?? agent.default_acp_permission_mode,
+          runtime_backend: existingRoomAgent?.runtime_backend ?? agent.default_runtime_backend,
+          tool_policy: existingRoomAgent?.tool_policy ?? agent.default_tool_policy,
+          workspace_policy: existingRoomAgent?.workspace_policy ?? agent.default_workspace_policy,
+          memory_scope: existingRoomAgent?.memory_scope ?? agent.default_memory_scope,
+        };
       db.prepare(
         `UPDATE room_agents
          SET global_agent_id = ?, agent_name = ?, agent_role = ?, left_at = NULL,
-             acp_enabled = ?, acp_backend = ?, acp_permission_mode = ?, default_runtime = ?
+             acp_enabled = ?, acp_backend = ?, acp_permission_mode = ?, default_runtime = ?,
+             runtime_backend = ?, tool_policy = ?, workspace_policy = ?, memory_scope = ?,
+             runtime_profile_version = ?
          WHERE id = ?`,
       ).run(
         agent.id,
@@ -225,8 +323,13 @@ export const roomAgentRepo = {
         agent.description,
         agent.default_acp_backend ? 1 : 0,
         agent.default_acp_backend,
-        agent.default_acp_permission_mode,
+        runtimeBoundary.acp_permission_mode,
         agent.default_acp_backend ? 'acp' : 'none',
+        runtimeBoundary.runtime_backend,
+        JSON.stringify(runtimeBoundary.tool_policy),
+        JSON.stringify(runtimeBoundary.workspace_policy),
+        runtimeBoundary.memory_scope,
+        template ? BUILT_IN_RUNTIME_PROFILE_VERSION : (existingRoomAgent?.runtime_profile_version ?? 0),
         existing.id,
       );
       return this.get(existing.id)!;
@@ -236,9 +339,10 @@ export const roomAgentRepo = {
     db.prepare(
       `INSERT INTO room_agents (
         id, room_id, global_agent_id, agent_id, agent_name, agent_role, joined_at,
-        acp_enabled, acp_backend, acp_permission_mode, default_runtime
+        acp_enabled, acp_backend, acp_permission_mode, default_runtime,
+        runtime_backend, tool_policy, workspace_policy, memory_scope, runtime_profile_version
       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.room_id,
@@ -251,6 +355,11 @@ export const roomAgentRepo = {
       agent.default_acp_backend,
       agent.default_acp_permission_mode,
       agent.default_acp_backend ? 'acp' : 'none',
+      agent.default_runtime_backend,
+      JSON.stringify(agent.default_tool_policy),
+      JSON.stringify(agent.default_workspace_policy),
+      agent.default_memory_scope,
+      agent.is_builtin ? 0 : BUILT_IN_RUNTIME_PROFILE_VERSION,
     );
     const roomAgent = this.get(id)!;
     return agent.builtin_key ? this.applyBuiltInTemplate(roomAgent.id, agent.builtin_key) ?? roomAgent : roomAgent;
@@ -279,20 +388,29 @@ export const roomAgentRepo = {
   applyBuiltInTemplate(id: string, templateId: string): RoomAgent | undefined {
     const template = getBuiltInAgentTemplate(templateId);
     if (!template) return undefined;
-    const existing = this.get(id);
+    const existingRow = db.prepare(`${roomAgentSelectSql()} WHERE room_agents.id = ?`).get(id) as
+      | RoomAgentRow
+      | undefined;
+    const existing = existingRow ? normalizeRoomAgentWithRuntimeProfileVersion(existingRow) : undefined;
     if (!existing) return undefined;
+    const runtimeBoundary = resolveBuiltInRoomRuntimeBoundary(existing, template);
     const withRole = this.setWorkflowRole(id, template.workflow_role) ?? existing;
     const withAcp = this.setAcp(withRole.id, {
       acp_enabled: template.acp_enabled,
       acp_backend: template.acp_backend,
       acp_session_id: withRole.acp_session_id,
       acp_session_label: withRole.acp_session_label,
-      acp_permission_mode: template.acp_permission_mode,
+      acp_permission_mode: runtimeBoundary.acp_permission_mode,
       acp_writable_dirs: withRole.acp_writable_dirs,
     }) ?? withRole;
     return this.setCapabilitiesAndRuntime(withAcp.id, {
       capabilities: template.capabilities,
       default_runtime: 'acp',
+      runtime_backend: runtimeBoundary.runtime_backend,
+      tool_policy: runtimeBoundary.tool_policy,
+      workspace_policy: runtimeBoundary.workspace_policy,
+      memory_scope: runtimeBoundary.memory_scope,
+      runtime_profile_version: BUILT_IN_RUNTIME_PROFILE_VERSION,
     }) ?? withAcp;
   },
 
@@ -375,10 +493,42 @@ export const roomAgentRepo = {
 
   setCapabilitiesAndRuntime(
     id: string,
-    input: { capabilities: string[]; default_runtime: AgentDefaultRuntime },
+    input: {
+      capabilities: string[];
+      default_runtime: AgentDefaultRuntime;
+      runtime_backend?: AgentRuntimeBackend | null;
+      tool_policy?: AgentToolPolicy | null;
+      workspace_policy?: AgentWorkspacePolicy | null;
+      memory_scope?: AgentMemoryScope | null;
+      runtime_profile_version?: number;
+    },
   ): RoomAgent | undefined {
-    db.prepare('UPDATE room_agents SET capabilities = ?, default_runtime = ? WHERE id = ?')
-      .run(JSON.stringify(input.capabilities), input.default_runtime, id);
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    db.prepare(
+      `UPDATE room_agents
+       SET capabilities = ?, default_runtime = ?, runtime_backend = ?,
+           tool_policy = ?, workspace_policy = ?, memory_scope = ?,
+           runtime_profile_version = ?
+       WHERE id = ?`,
+    ).run(
+      JSON.stringify(input.capabilities),
+      input.default_runtime,
+      input.runtime_backend === undefined ? existing.runtime_backend : input.runtime_backend,
+      input.tool_policy === undefined
+        ? JSON.stringify(existing.tool_policy)
+        : input.tool_policy === null
+          ? null
+          : JSON.stringify(input.tool_policy),
+      input.workspace_policy === undefined
+        ? JSON.stringify(existing.workspace_policy)
+        : input.workspace_policy === null
+          ? null
+          : JSON.stringify(input.workspace_policy),
+      input.memory_scope === undefined ? existing.memory_scope : input.memory_scope,
+      input.runtime_profile_version ?? getRoomAgentRuntimeProfileVersion(id),
+      id,
+    );
     return this.get(id);
   },
 };

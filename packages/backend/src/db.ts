@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS agents (
   default_tool_policy TEXT NOT NULL DEFAULT '{"allowed":[]}',
   default_workspace_policy TEXT NOT NULL DEFAULT '{"read":[],"write":[]}',
   default_memory_scope TEXT NOT NULL DEFAULT 'agent',
+  runtime_profile_version INTEGER NOT NULL DEFAULT 0,
   is_builtin INTEGER NOT NULL DEFAULT 0,
   builtin_key TEXT UNIQUE,
   created_at INTEGER NOT NULL,
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS room_agents (
   tool_policy TEXT,
   workspace_policy TEXT,
   memory_scope TEXT,
+  runtime_profile_version INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
   FOREIGN KEY (global_agent_id) REFERENCES agents(id) ON DELETE RESTRICT,
   UNIQUE (room_id, agent_id)
@@ -482,6 +484,9 @@ if (!roomAgentColumnNames.has('workspace_policy')) {
 if (!roomAgentColumnNames.has('memory_scope')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN memory_scope TEXT');
 }
+if (!roomAgentColumnNames.has('runtime_profile_version')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN runtime_profile_version INTEGER NOT NULL DEFAULT 0');
+}
 if (!roomAgentColumnNames.has('global_agent_id')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN global_agent_id TEXT');
 }
@@ -510,6 +515,9 @@ if (!agentColumnNames.has('default_workspace_policy')) {
 }
 if (!agentColumnNames.has('default_memory_scope')) {
   db.exec("ALTER TABLE agents ADD COLUMN default_memory_scope TEXT NOT NULL DEFAULT 'agent'");
+}
+if (!agentColumnNames.has('runtime_profile_version')) {
+  db.exec('ALTER TABLE agents ADD COLUMN runtime_profile_version INTEGER NOT NULL DEFAULT 0');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_agents_builtin_key ON agents(builtin_key)');
 

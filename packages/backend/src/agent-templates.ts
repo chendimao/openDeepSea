@@ -1,4 +1,12 @@
-import type { AcpBackend, AcpPermissionMode, WorkflowRole } from './types.js';
+import type {
+  AcpBackend,
+  AcpPermissionMode,
+  AgentMemoryScope,
+  AgentRuntimeBackend,
+  AgentToolPolicy,
+  AgentWorkspacePolicy,
+  WorkflowRole,
+} from './types.js';
 
 export interface BuiltInAgentTemplate {
   id: string;
@@ -12,8 +20,19 @@ export interface BuiltInAgentTemplate {
   acp_enabled: true;
   acp_backend: AcpBackend;
   acp_permission_mode: AcpPermissionMode;
+  runtime_backend: AgentRuntimeBackend;
+  tool_policy: AgentToolPolicy;
+  workspace_policy: AgentWorkspacePolicy;
+  memory_scope: AgentMemoryScope;
   capabilities: string[];
 }
+
+const CONSERVATIVE_RUNTIME_BOUNDARY = {
+  runtime_backend: 'acp',
+  tool_policy: { allowed: ['read_files'] },
+  workspace_policy: { read: ['.'], write: [] },
+  memory_scope: 'room',
+} satisfies Pick<BuiltInAgentTemplate, 'runtime_backend' | 'tool_policy' | 'workspace_policy' | 'memory_scope'>;
 
 const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
   {
@@ -27,7 +46,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'planner',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['planning', 'architecture'],
   },
   {
@@ -41,7 +61,11 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'workspace-write',
+    runtime_backend: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+    memory_scope: 'agent',
     capabilities: ['backend', 'testing'],
   },
   {
@@ -55,7 +79,11 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'workspace-write',
+    runtime_backend: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell', 'browser', 'image_input'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+    memory_scope: 'agent',
     capabilities: ['frontend', 'testing'],
   },
   {
@@ -69,7 +97,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'planner',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['design', 'ui', 'ux', 'accessibility'],
   },
   {
@@ -83,7 +112,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'analyst',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['data-analysis', 'metrics', 'reporting', 'visualization'],
   },
   {
@@ -97,7 +127,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['computer-help', 'cli', 'automation', 'troubleshooting'],
   },
   {
@@ -111,7 +142,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'planner',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['product', 'planning', 'requirements', 'acceptance'],
   },
   {
@@ -125,7 +157,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'reviewer',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['qa', 'testing', 'regression', 'acceptance'],
   },
   {
@@ -139,7 +172,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['devops', 'ci-cd', 'deployment', 'observability'],
   },
   {
@@ -153,7 +187,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'reviewer',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['security', 'review', 'privacy', 'risk'],
   },
   {
@@ -167,7 +202,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['documentation', 'writing', 'handoff', 'release-notes'],
   },
   {
@@ -181,7 +217,11 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'reviewer',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    runtime_backend: 'acp',
+    tool_policy: { allowed: ['read_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: [] },
+    memory_scope: 'room',
     capabilities: ['review', 'quality'],
   },
   {
@@ -195,7 +235,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'acceptor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['acceptance'],
   },
   {
@@ -209,7 +250,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'analyst',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['accounting', 'finance', 'budgeting', 'compliance'],
   },
   {
@@ -223,7 +265,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'reviewer',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['legal', 'contracts', 'risk', 'compliance'],
   },
   {
@@ -237,7 +280,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'analyst',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['medical', 'health', 'triage-prep', 'risk'],
   },
   {
@@ -251,7 +295,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'planner',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['marketing', 'growth', 'content', 'strategy'],
   },
   {
@@ -265,7 +310,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'bypass',
+    acp_permission_mode: 'read-only',
+    ...CONSERVATIVE_RUNTIME_BOUNDARY,
     capabilities: ['sales', 'crm', 'communication', 'follow-up'],
   },
 ];
@@ -273,6 +319,11 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
 export function listBuiltInAgentTemplates(): BuiltInAgentTemplate[] {
   return BUILT_IN_AGENT_TEMPLATES.map((template) => ({
     ...template,
+    tool_policy: { allowed: [...template.tool_policy.allowed] },
+    workspace_policy: {
+      read: [...template.workspace_policy.read],
+      write: [...template.workspace_policy.write],
+    },
     capabilities: [...template.capabilities],
   }));
 }
