@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { unlink } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
+import { isAbsolute, resolve, sep, win32 } from 'node:path';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
@@ -57,6 +57,10 @@ import {
   COLLABORATION_STAGES,
   type AcpBackend,
   type CollaborationRunStatus,
+  type AgentMemoryScope,
+  type AgentRuntimeBackend,
+  type AgentToolPolicy,
+  type AgentWorkspacePolicy,
   type MemoryScope,
   type MessageMetadata,
   type MessageRoutingMode,
@@ -187,6 +191,52 @@ const systemSettingsPatchSchema = z
       Boolean(value.fallback_agent_id),
     { message: 'fallback_agent_id is required unless message_routing_mode is mentions_only' },
   );
+
+const agentToolCapabilitySchema = z.enum([
+  'read_files',
+  'write_files',
+  'run_shell',
+  'browser',
+  'search',
+  'image_input',
+  'commit',
+]);
+
+function normalizeWorkspaceBoundaryPath(value: string): string {
+  const path = value.trim();
+  if (!path) {
+    throw new Error('workspace path cannot be empty');
+  }
+  if (isAbsolute(path) || win32.isAbsolute(path)) {
+    throw new Error('workspace path cannot be absolute');
+  }
+  if (path.split(/[\\/]+/).includes('..')) {
+    throw new Error('workspace path cannot contain .. segments');
+  }
+  return path;
+}
+
+const workspaceBoundaryPathSchema = z.string().transform((value, ctx) => {
+  try {
+    return normalizeWorkspaceBoundaryPath(value);
+  } catch (error) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: (error as Error).message });
+    return z.NEVER;
+  }
+});
+
+const roomAgentRuntimeBoundarySchema = z.object({
+  runtime_backend: z.enum(['acp', 'model', 'none']).nullable().optional(),
+  tool_policy: z.object({
+    allowed: z.array(agentToolCapabilitySchema),
+  }).nullable().optional(),
+  workspace_policy: z.object({
+    read: z.array(workspaceBoundaryPathSchema),
+    write: z.array(workspaceBoundaryPathSchema),
+  }).nullable().optional(),
+  memory_scope: z.enum(['project', 'room', 'agent', 'task', 'none']).nullable().optional(),
+  memory_max_context_chars: z.number().int().positive().nullable().optional(),
+});
 
 // ---------- Global agents ----------
 router.get('/agents', (_req, res) => {
@@ -1166,16 +1216,27 @@ router.put('/rooms/:roomId/agents/:agentId/acp', (req, res) => {
     acp_session_id: z.string().nullable(),
     acp_session_label: z.string().nullable().optional(),
     acp_permission_mode: z.enum(['bypass', 'workspace-write', 'read-only']).optional(),
-  });
+  }).merge(roomAgentRuntimeBoundarySchema);
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const updated = roomAgentRepo.setAcp(req.params.agentId, {
+  const existing = roomAgentRepo.get(req.params.agentId);
+  if (!existing || existing.room_id !== req.params.roomId) return res.status(404).json({ error: 'not found' });
+  const withAcp = roomAgentRepo.setAcp(req.params.agentId, {
     acp_enabled: parsed.data.acp_enabled,
     acp_backend: parsed.data.acp_backend,
     acp_session_id: parsed.data.acp_session_id,
     acp_session_label: parsed.data.acp_session_label ?? null,
     acp_permission_mode: parsed.data.acp_permission_mode ?? 'bypass',
     acp_writable_dirs: [],
+  });
+  if (!withAcp) return res.status(404).json({ error: 'not found' });
+  const updated = roomAgentRepo.setCapabilitiesAndRuntime(req.params.agentId, {
+    capabilities: withAcp.capabilities,
+    default_runtime: withAcp.default_runtime,
+    runtime_backend: parsed.data.runtime_backend as AgentRuntimeBackend | null | undefined,
+    tool_policy: parsed.data.tool_policy as AgentToolPolicy | null | undefined,
+    workspace_policy: parsed.data.workspace_policy as AgentWorkspacePolicy | null | undefined,
+    memory_scope: parsed.data.memory_scope as AgentMemoryScope | null | undefined,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(updated);

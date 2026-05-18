@@ -196,6 +196,117 @@ test('room agents can be batch-added and already joined agents are reused', asyn
   assert.equal(repeated[0]?.id, batch.find((agent) => agent.agent_id === 'planner')?.id);
 });
 
+test('room agent ACP route updates runtime boundary fields without changing rooms', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-runtime-project-'));
+  const project = projectRepo.create({ name: 'Agent Runtime Project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Agent Runtime Room' });
+  const otherRoom = roomRepo.create({ project_id: project.id, name: 'Other Agent Runtime Room' });
+  const backend = agentRepo.getByAgentId('backend-executor');
+  assert.ok(backend);
+
+  const agentRes = await request(`/api/rooms/${room.id}/agents`, {
+    method: 'POST',
+    body: JSON.stringify({ global_agent_id: backend.id }),
+  });
+  assert.equal(agentRes.status, 201);
+  const roomAgent = await agentRes.json() as {
+    id: string;
+    capabilities: string[];
+    default_runtime: string;
+    acp_backend: string | null;
+  };
+
+  const crossRoomRes = await request(`/api/rooms/${otherRoom.id}/agents/${roomAgent.id}/acp`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: null,
+      runtime_backend: 'model',
+    }),
+  });
+  assert.equal(crossRoomRes.status, 404);
+
+  const updateRes = await request(`/api/rooms/${room.id}/agents/${roomAgent.id}/acp`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: 'session-123',
+      acp_session_label: 'Main session',
+      acp_permission_mode: 'workspace-write',
+      runtime_backend: 'model',
+      tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+      workspace_policy: { read: [' . ', 'packages/backend'], write: ['packages/backend/src'] },
+      memory_scope: 'room',
+    }),
+  });
+
+  assert.equal(updateRes.status, 200);
+  const updated = await updateRes.json() as {
+    id: string;
+    acp_backend: string | null;
+    acp_session_id: string | null;
+    acp_permission_mode: string;
+    capabilities: string[];
+    default_runtime: string;
+    runtime_backend: string | null;
+    tool_policy: { allowed: string[] } | null;
+    workspace_policy: { read: string[]; write: string[] } | null;
+    memory_scope: string | null;
+  };
+  assert.equal(updated.id, roomAgent.id);
+  assert.equal(updated.acp_backend, 'codex');
+  assert.equal(updated.acp_session_id, 'session-123');
+  assert.equal(updated.acp_permission_mode, 'workspace-write');
+  assert.deepEqual(updated.capabilities, roomAgent.capabilities);
+  assert.equal(updated.default_runtime, roomAgent.default_runtime);
+  assert.equal(updated.runtime_backend, 'model');
+  assert.deepEqual(updated.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
+  assert.deepEqual(updated.workspace_policy, {
+    read: ['.', 'packages/backend'],
+    write: ['packages/backend/src'],
+  });
+  assert.equal(updated.memory_scope, 'room');
+});
+
+test('room agent ACP route rejects unsafe workspace policy paths', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-runtime-invalid-project-'));
+  const project = projectRepo.create({ name: 'Agent Runtime Invalid Project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Agent Runtime Invalid Room' });
+  const backend = agentRepo.getByAgentId('backend-executor');
+  assert.ok(backend);
+
+  const agentRes = await request(`/api/rooms/${room.id}/agents`, {
+    method: 'POST',
+    body: JSON.stringify({ global_agent_id: backend.id }),
+  });
+  assert.equal(agentRes.status, 201);
+  const roomAgent = await agentRes.json() as { id: string };
+
+  const absolutePathRes = await request(`/api/rooms/${room.id}/agents/${roomAgent.id}/acp`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: null,
+      workspace_policy: { read: ['/tmp'], write: [] },
+    }),
+  });
+  assert.equal(absolutePathRes.status, 400);
+
+  const parentSegmentRes = await request(`/api/rooms/${room.id}/agents/${roomAgent.id}/acp`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      acp_enabled: true,
+      acp_backend: 'codex',
+      acp_session_id: null,
+      workspace_policy: { read: ['packages/../backend'], write: [] },
+    }),
+  });
+  assert.equal(parentSegmentRes.status, 400);
+});
+
 test('rooms always include planner and reject removing it from the room', async () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-default-planner-project-'));
   const project = projectRepo.create({ name: 'Default Planner Project', path: projectPath });
