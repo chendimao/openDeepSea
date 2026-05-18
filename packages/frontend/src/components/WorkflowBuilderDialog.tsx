@@ -57,6 +57,7 @@ type WorkflowBuilderDialogProps = {
   scopeOptions: ScopeOption[];
   definition: WorkflowDefinition | null;
   mode?: 'create' | 'edit-draft';
+  allowDraftSave?: boolean;
   onSaved?: (definition: WorkflowDefinition) => void | Promise<void>;
 };
 
@@ -76,6 +77,7 @@ export function WorkflowBuilderDialog(props: WorkflowBuilderDialogProps | Legacy
     scopeOptions,
     definition,
     mode,
+    allowDraftSave = true,
     onSaved,
   } = normalizeProps(props);
   const defaultName = initialScope === 'room' ? '群聊工作流' : initialScope === 'project' ? '项目工作流' : '系统工作流';
@@ -87,6 +89,7 @@ export function WorkflowBuilderDialog(props: WorkflowBuilderDialogProps | Legacy
   const [nodes, setNodes] = useState<Node[]>(() => toFlowNodes(definition?.definition ?? defaultGraph()));
   const [edges, setEdges] = useState<Edge[]>(() => toFlowEdges(definition?.definition ?? defaultGraph()));
   const normalizedMode = mode ?? 'create';
+  const isEditingDraft = definition?.status === 'draft' && normalizedMode === 'edit-draft';
   const selectedScope = useMemo(
     () => scopeOptions.find((option) => scopeKey(option.scope, option.scope_id) === selectedScopeKey) ?? scopeOptions[0],
     [scopeOptions, selectedScopeKey],
@@ -117,7 +120,6 @@ export function WorkflowBuilderDialog(props: WorkflowBuilderDialogProps | Legacy
       });
     },
     onSuccess: async (saved) => {
-      await onSaved?.(saved);
       await invalidateWorkflowDefinitionQueries(queryClient, saved);
       toast.success('工作流草稿已保存');
       onOpenChange(false);
@@ -266,8 +268,14 @@ export function WorkflowBuilderDialog(props: WorkflowBuilderDialogProps | Legacy
                   value: scopeKey(option.scope, option.scope_id),
                   label: option.label,
                 }))}
+                disabled={isEditingDraft}
                 onChange={setSelectedScopeKey}
               />
+              {isEditingDraft && (
+                <div className="-mt-2 text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+                  草稿作用域已固定，发布前不可在此处切换。
+                </div>
+              )}
               {selectedNode && (
                 <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
                   <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold">
@@ -308,17 +316,19 @@ export function WorkflowBuilderDialog(props: WorkflowBuilderDialogProps | Legacy
                 </div>
               )}
               <div className="grid grid-cols-2 gap-2">
+                {allowDraftSave && (
+                  <Button
+                    variant="secondary"
+                    className="justify-center"
+                    disabled={saveDraft.isPending || publish.isPending || !canSubmit}
+                    onClick={() => saveDraft.mutate()}
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    {saveDraft.isPending ? '保存中' : '保存草稿'}
+                  </Button>
+                )}
                 <Button
-                  variant="secondary"
-                  className="justify-center"
-                  disabled={saveDraft.isPending || publish.isPending || !canSubmit}
-                  onClick={() => saveDraft.mutate()}
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  {saveDraft.isPending ? '保存中' : '保存草稿'}
-                </Button>
-                <Button
-                  className="justify-center"
+                  className={allowDraftSave ? 'justify-center' : 'col-span-2 justify-center'}
                   disabled={saveDraft.isPending || publish.isPending || !canSubmit}
                   onClick={() => publish.mutate()}
                 >
@@ -343,20 +353,23 @@ function SelectField({
   value,
   options,
   disabledOptions = [],
+  disabled = false,
   onChange,
 }: {
   label: string;
   value: string;
   options: Array<string | { value: string; label: string }>;
   disabledOptions?: string[];
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
-  const disabled = new Set(disabledOptions);
+  const disabledSet = new Set(disabledOptions);
   return (
     <div>
       <Label>{label}</Label>
       <select
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[12px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)]"
       >
@@ -364,7 +377,7 @@ function SelectField({
           <option
             key={(typeof option === 'string' ? option : option.value) || 'none'}
             value={typeof option === 'string' ? option : option.value}
-            disabled={disabled.has(typeof option === 'string' ? option : option.value)}
+            disabled={disabledSet.has(typeof option === 'string' ? option : option.value)}
           >
             {typeof option === 'string' ? option || '无' : option.label}
           </option>
@@ -384,6 +397,7 @@ function normalizeProps(props: WorkflowBuilderDialogProps | LegacyWorkflowBuilde
     scopeOptions: [{ scope: 'room', scope_id: props.roomId, label: '当前群聊' }],
     definition: props.definition,
     mode: props.definition?.status === 'draft' ? 'edit-draft' : 'create',
+    allowDraftSave: false,
     onSaved: async (definition) => {
       if (definition.status !== 'published') return;
       await api.updateRoomSettings(props.roomId, { default_workflow_definition_id: definition.id });
@@ -433,10 +447,13 @@ async function invalidateWorkflowDefinitionQueries(
   queryClient: ReturnType<typeof useQueryClient>,
   definition: WorkflowDefinition,
 ) {
+  const settingsQueryKey = definition.scope === 'system'
+    ? ['settings', 'system']
+    : ['settings', definition.scope, definition.scope_id];
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ['workflow-definitions'] }),
     queryClient.invalidateQueries({ queryKey: ['workflow-definitions', definition.scope_id] }),
-    queryClient.invalidateQueries({ queryKey: ['settings', definition.scope, definition.scope_id] }),
+    queryClient.invalidateQueries({ queryKey: settingsQueryKey }),
   ]);
 }
 
