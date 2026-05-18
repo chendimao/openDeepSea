@@ -60,25 +60,29 @@ test('skills routes import, list, detail, patch, bind, preview, and delete local
     id: string;
     name: string;
     install_path?: string;
+    source_uri?: string;
     install_path_set: boolean;
     runtime_scopes: string[];
   };
   assert.equal(imported.name, 'route-skill');
   assert.equal(imported.install_path, undefined);
+  assert.equal(imported.source_uri, undefined);
   assert.equal(imported.install_path_set, true);
   assert.deepEqual(imported.runtime_scopes, ['planner']);
 
   const listRes = await request('/api/skills');
   assert.equal(listRes.status, 200);
-  const listed = await listRes.json() as Array<{ id: string; name: string; install_path?: string }>;
+  const listed = await listRes.json() as Array<{ id: string; name: string; install_path?: string; source_uri?: string }>;
   assert.equal(listed.some((skill) => skill.id === imported.id), true);
   assert.equal(listed.find((skill) => skill.id === imported.id)?.install_path, undefined);
+  assert.equal(listed.find((skill) => skill.id === imported.id)?.source_uri, undefined);
 
   const detailRes = await request(`/api/skills/${imported.id}`);
   assert.equal(detailRes.status, 200);
-  const detail = await detailRes.json() as { id: string; install_path?: string; install_path_set: boolean };
+  const detail = await detailRes.json() as { id: string; install_path?: string; source_uri?: string; install_path_set: boolean };
   assert.equal(detail.id, imported.id);
   assert.equal(detail.install_path, undefined);
+  assert.equal(detail.source_uri, undefined);
   assert.equal(detail.install_path_set, true);
 
   const patchRes = await request(`/api/skills/${imported.id}`, {

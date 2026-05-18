@@ -19,6 +19,12 @@ import type {
   RoomCrewTemplate,
   RoomSearchResponse,
   SettingsResolution,
+  Skill,
+  SkillBinding,
+  SkillBindingScope,
+  SkillPreviewResponse,
+  SkillRuntimeScope,
+  SkillTriggerMode,
   Task,
   TaskInteractionMode,
   WorkflowDetail,
@@ -235,6 +241,65 @@ export const api = {
     request<WorkflowDefinition>(`/workflow-definitions/${id}/archive`, { method: 'POST' }),
   deleteWorkflowDefinition: (id: string) =>
     request<void>(`/workflow-definitions/${id}`, { method: 'DELETE' }),
+
+  listSkills: () => request<Skill[]>('/skills'),
+  importLocalSkill: (path: string) =>
+    request<Skill>('/skills/import/local', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+  updateSkill: (
+    id: string,
+    input: {
+      name?: string;
+      description?: string | null;
+      runtime_scopes?: SkillRuntimeScope[];
+      trigger_mode?: SkillTriggerMode;
+      trigger_keywords?: string[];
+      enabled?: boolean;
+      priority?: number;
+    },
+  ) =>
+    request<Skill>(`/skills/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteSkill: (id: string) =>
+    request<void>(`/skills/${id}`, { method: 'DELETE' }),
+  listSkillBindings: (filters: { scope?: SkillBindingScope; scopeId?: string; skillId?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filters.scope) params.set('scope', filters.scope);
+    if (filters.scopeId) params.set('scopeId', filters.scopeId);
+    if (filters.skillId) params.set('skillId', filters.skillId);
+    const query = params.toString();
+    return request<SkillBinding[]>(`/skills/bindings${query ? `?${query}` : ''}`);
+  },
+  upsertSkillBinding: (input: {
+    id?: string;
+    skill_id: string;
+    scope: SkillBindingScope;
+    scope_id: string;
+    enabled?: boolean;
+    priority_override?: number | null;
+  }) =>
+    request<SkillBinding>('/skills/bindings', {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+  deleteSkillBinding: (id: string) =>
+    request<void>(`/skills/bindings/${id}`, { method: 'DELETE' }),
+  previewSkillSelection: (input: {
+    runtimeScopes: SkillRuntimeScope[];
+    projectId?: string | null;
+    roomId?: string | null;
+    agentId?: string | null;
+    message?: string;
+    skillIds?: string[];
+  }) =>
+    request<SkillPreviewResponse>('/skills/preview-selection', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   listProjects: () => request<Project[]>('/projects'),
   pickDirectory: () =>

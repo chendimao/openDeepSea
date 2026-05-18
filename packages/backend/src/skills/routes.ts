@@ -156,7 +156,6 @@ function toSkillDto(skill: Skill): Record<string, unknown> {
     name: skill.name,
     description: skill.description,
     source_type: skill.source_type,
-    source_uri: skill.source_uri,
     manifest_path: skill.manifest_path,
     runtime_scopes: skill.runtime_scopes,
     trigger_mode: skill.trigger_mode,

@@ -718,7 +718,7 @@ git commit -m "feat(skills): 接入内部模型提示词"
 - Modify: `packages/frontend/src/components/SettingsDialogs.tsx`
 - Modify: `packages/frontend/src/lib/i18n.tsx`
 
-- [ ] **Step 1: 定义前端类型**
+- [x] **Step 1: 定义前端类型**
 
 在 `types.ts` 增加：
 
@@ -733,7 +733,7 @@ export interface SkillPreviewResponse { ... }
 
 字段与后端 API 保持一致。
 
-- [ ] **Step 2: 增加 API client**
+- [x] **Step 2: 增加 API client**
 
 在 `api.ts` 增加：
 
@@ -746,7 +746,7 @@ export interface SkillPreviewResponse { ... }
 - `deleteSkillBinding`
 - `previewSkillSelection`
 
-- [ ] **Step 2.1: 对齐前端 DTO 脱敏字段**
+- [x] **Step 2.1: 对齐前端 DTO 脱敏字段**
 
 前端 `Skill` 类型必须匹配后端 DTO，不包含原始 `install_path` 本地绝对路径。使用：
 
@@ -770,7 +770,7 @@ export interface Skill {
 }
 ```
 
-- [ ] **Step 3: 创建 SkillsSettingsPanel**
+- [x] **Step 3: 创建 SkillsSettingsPanel**
 
 第一版 UI 控件：
 
@@ -785,7 +785,7 @@ export interface Skill {
 - 不做 Git 导入 UI，或显示 disabled 状态“后续支持”。
 - 不把外部 CLI skills 混入这个面板。
 
-- [ ] **Step 4: 接入系统设置分类**
+- [x] **Step 4: 接入系统设置分类**
 
 `SettingsDialogs.tsx`：
 
@@ -795,7 +795,7 @@ export interface Skill {
 
 保持现有 general/chat/model 行为不变。
 
-- [ ] **Step 5: 增加 i18n 文案**
+- [x] **Step 5: 增加 i18n 文案**
 
 在 `i18n.tsx` 中增加中英文 key：
 
@@ -807,7 +807,7 @@ export interface Skill {
 - `settings.skillsNoResults`
 - 其他面板按钮与状态文案。
 
-- [ ] **Step 6: 前端类型检查/build**
+- [x] **Step 6: 前端类型检查/build**
 
 Run:
 
@@ -817,7 +817,7 @@ npm run build -w @openclaw-room/frontend
 
 Expected: PASS。
 
-- [ ] **Step 7: 提交 Task 5**
+- [x] **Step 7: 提交 Task 5**
 
 ```bash
 git add packages/frontend/src/lib/types.ts packages/frontend/src/lib/api.ts packages/frontend/src/components/SkillsSettingsPanel.tsx packages/frontend/src/components/SettingsDialogs.tsx packages/frontend/src/lib/i18n.tsx
