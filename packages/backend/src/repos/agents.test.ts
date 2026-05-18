@@ -9,6 +9,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-ag
 const { agentRepo } = await import('./agents.js');
 const { projectRepo } = await import('./projects.js');
 const { roomAgentRepo, roomRepo } = await import('./rooms.js');
+const { db } = await import('../db.js');
 
 test('agentRepo creates, updates, references, and deletes global agents', () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-project-'));
@@ -115,6 +116,128 @@ test('built-in agents are seeded into the global library and can be restored', (
   assert.equal(restored.is_builtin, 1);
   assert.notEqual(restored.personality, '临时修改的性格。');
   assert.notEqual(restored.responsibilities, '临时修改的职责。');
+});
+
+test('agentRepo persists runtime boundary defaults on create and update', () => {
+  const agent = agentRepo.create({
+    agent_id: 'runtime-agent',
+    name: 'Runtime Agent',
+    default_runtime_backend: 'model',
+    default_tool_policy: { allowed: ['read_files', 'run_shell'] },
+    default_workspace_policy: { read: ['docs'], write: ['packages/backend'] },
+    default_memory_scope: 'room',
+  });
+
+  assert.equal(agent.default_runtime_backend, 'model');
+  assert.deepEqual(agent.default_tool_policy, { allowed: ['read_files', 'run_shell'] });
+  assert.deepEqual(agent.default_workspace_policy, { read: ['docs'], write: ['packages/backend'] });
+  assert.equal(agent.default_memory_scope, 'room');
+
+  const updated = agentRepo.update(agent.id, {
+    default_runtime_backend: 'none',
+    default_tool_policy: { allowed: ['read_files'] },
+    default_workspace_policy: { read: ['.'], write: [] },
+    default_memory_scope: 'none',
+  });
+
+  assert.equal(updated?.default_runtime_backend, 'none');
+  assert.deepEqual(updated?.default_tool_policy, { allowed: ['read_files'] });
+  assert.deepEqual(updated?.default_workspace_policy, { read: ['.'], write: [] });
+  assert.equal(updated?.default_memory_scope, 'none');
+});
+
+test('agentRepo falls back for invalid persisted runtime boundary defaults', () => {
+  const agent = agentRepo.create({
+    agent_id: 'invalid-runtime-agent',
+    name: 'Invalid Runtime Agent',
+  });
+
+  db.prepare(
+    `UPDATE agents
+     SET default_runtime_backend = 'invalid',
+         default_tool_policy = 'not json',
+         default_workspace_policy = '[]',
+         default_memory_scope = 'invalid'
+     WHERE id = ?`,
+  ).run(agent.id);
+
+  const normalized = agentRepo.get(agent.id);
+  assert.equal(normalized?.default_runtime_backend, 'acp');
+  assert.deepEqual(normalized?.default_tool_policy, { allowed: [] });
+  assert.deepEqual(normalized?.default_workspace_policy, { read: [], write: [] });
+  assert.equal(normalized?.default_memory_scope, 'agent');
+});
+
+test('built-in agents expose default runtime boundary fields', () => {
+  for (const agentId of ['planner', 'backend-executor', 'frontend-executor', 'reviewer', 'acceptor']) {
+    const agent = agentRepo.getByAgentId(agentId);
+    assert.ok(agent);
+    assert.equal(agent.default_runtime_backend, 'acp');
+    assert.deepEqual(agent.default_tool_policy, { allowed: [] });
+    assert.deepEqual(agent.default_workspace_policy, { read: [], write: [] });
+    assert.equal(agent.default_memory_scope, 'agent');
+  }
+});
+
+test('room agents expose runtime boundary overrides with defaults and invalid JSON fallback', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-runtime-project-'));
+  const project = projectRepo.create({ name: 'Runtime Boundary Project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Runtime Boundary Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({
+    room_id: room.id,
+    global_agent_id: planner.id,
+  });
+
+  assert.equal(roomAgent.runtime_backend, null);
+  assert.equal(roomAgent.tool_policy, null);
+  assert.equal(roomAgent.workspace_policy, null);
+  assert.equal(roomAgent.memory_scope, null);
+
+  const backend = agentRepo.create({
+    agent_id: 'runtime-backend',
+    name: 'Runtime Backend',
+  });
+  const overridden = roomAgentRepo.addFromGlobalAgent({
+    room_id: room.id,
+    global_agent_id: backend.id,
+  });
+
+  db.prepare(
+    `UPDATE room_agents
+     SET runtime_backend = 'model',
+         tool_policy = ?,
+         workspace_policy = ?,
+         memory_scope = 'room'
+     WHERE id = ?`,
+  ).run(
+    JSON.stringify({ allowed: ['read_files', 'run_shell'] }),
+    JSON.stringify({ read: ['docs'], write: ['packages/backend'] }),
+    overridden.id,
+  );
+
+  const normalized = roomAgentRepo.get(overridden.id);
+  assert.equal(normalized?.runtime_backend, 'model');
+  assert.deepEqual(normalized?.tool_policy, { allowed: ['read_files', 'run_shell'] });
+  assert.deepEqual(normalized?.workspace_policy, { read: ['docs'], write: ['packages/backend'] });
+  assert.equal(normalized?.memory_scope, 'room');
+
+  db.prepare(
+    `UPDATE room_agents
+     SET runtime_backend = 'invalid',
+         tool_policy = 'not json',
+         workspace_policy = '[]',
+         memory_scope = 'invalid'
+     WHERE id = ?`,
+  ).run(overridden.id);
+
+  const fallback = roomAgentRepo.get(overridden.id);
+  assert.equal(fallback?.runtime_backend, null);
+  assert.equal(fallback?.tool_policy, null);
+  assert.equal(fallback?.workspace_policy, null);
+  assert.equal(fallback?.memory_scope, null);
 });
 
 test('built-in agent identity is stable across edits and seed re-runs', () => {

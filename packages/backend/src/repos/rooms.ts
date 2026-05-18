@@ -1,14 +1,40 @@
 import { nanoid } from 'nanoid';
 import { getBuiltInAgentTemplate, type RoomCrewTemplate } from '../crew-templates.js';
 import { db, now } from '../db.js';
-import type { AcpBackend, AcpPermissionMode, AgentDefaultRuntime, Room, RoomAgent, WorkflowRole } from '../types.js';
+import type {
+  AcpBackend,
+  AcpPermissionMode,
+  AgentDefaultRuntime,
+  AgentMemoryScope,
+  AgentRuntimeBackend,
+  AgentToolCapability,
+  AgentToolPolicy,
+  AgentWorkspacePolicy,
+  Room,
+  RoomAgent,
+  WorkflowRole,
+} from '../types.js';
 import { agentRepo } from './agents.js';
 
-type RoomAgentRow = Omit<RoomAgent, 'acp_writable_dirs' | 'acp_permission_mode' | 'capabilities' | 'default_runtime'> & {
+type RoomAgentRow = Omit<
+  RoomAgent,
+  | 'acp_writable_dirs'
+  | 'acp_permission_mode'
+  | 'capabilities'
+  | 'default_runtime'
+  | 'runtime_backend'
+  | 'tool_policy'
+  | 'workspace_policy'
+  | 'memory_scope'
+> & {
   acp_permission_mode?: string | null;
   acp_writable_dirs?: string | null;
   capabilities?: string | null;
   default_runtime?: string | null;
+  runtime_backend?: string | null;
+  tool_policy?: string | null;
+  workspace_policy?: string | null;
+  memory_scope?: string | null;
 };
 
 export interface RoomAgentRemovalImpact {
@@ -20,6 +46,29 @@ export interface RoomAgentRemovalImpact {
 
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
 const DEFAULT_RUNTIMES = new Set<AgentDefaultRuntime>(['acp', 'openclaw', 'none']);
+const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
+const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
+const TOOL_CAPABILITIES = new Set<AgentToolCapability>([
+  'read_files',
+  'write_files',
+  'run_shell',
+  'browser',
+  'search',
+  'image_input',
+  'commit',
+]);
+const DEFAULT_TOOL_POLICY: AgentToolPolicy = { allowed: [] };
+const DEFAULT_WORKSPACE_POLICY: AgentWorkspacePolicy = { read: [], write: [] };
+
+function parseJsonObject<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function parseStringArray(value: string | null | undefined): string[] {
   if (!value) return [];
@@ -32,9 +81,37 @@ function parseStringArray(value: string | null | undefined): string[] {
   }
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function normalizeToolPolicy(value: string | null | undefined): AgentToolPolicy | null {
+  if (!value) return null;
+  const parsed = parseJsonObject<Partial<AgentToolPolicy> | null>(value, null);
+  if (!parsed) return null;
+  return {
+    allowed: normalizeStringArray(parsed.allowed).filter((item): item is AgentToolCapability =>
+      TOOL_CAPABILITIES.has(item as AgentToolCapability),
+    ),
+  };
+}
+
+function normalizeWorkspacePolicy(value: string | null | undefined): AgentWorkspacePolicy | null {
+  if (!value) return null;
+  const parsed = parseJsonObject<Partial<AgentWorkspacePolicy> | null>(value, null);
+  if (!parsed) return null;
+  return {
+    read: normalizeStringArray(parsed.read),
+    write: normalizeStringArray(parsed.write),
+  };
+}
+
 function normalizeRoomAgent(row: RoomAgentRow): RoomAgent {
   const mode = row.acp_permission_mode;
   const runtime = row.default_runtime;
+  const runtimeBackend = row.runtime_backend;
+  const memoryScope = row.memory_scope;
   return {
     ...row,
     acp_permission_mode: mode && ACP_PERMISSION_MODES.has(mode as AcpPermissionMode)
@@ -45,6 +122,14 @@ function normalizeRoomAgent(row: RoomAgentRow): RoomAgent {
     default_runtime: runtime && DEFAULT_RUNTIMES.has(runtime as AgentDefaultRuntime)
       ? (runtime as AgentDefaultRuntime)
       : 'none',
+    runtime_backend: runtimeBackend && RUNTIME_BACKENDS.has(runtimeBackend as AgentRuntimeBackend)
+      ? (runtimeBackend as AgentRuntimeBackend)
+      : null,
+    tool_policy: normalizeToolPolicy(row.tool_policy),
+    workspace_policy: normalizeWorkspacePolicy(row.workspace_policy),
+    memory_scope: memoryScope && MEMORY_SCOPES.has(memoryScope as AgentMemoryScope)
+      ? (memoryScope as AgentMemoryScope)
+      : null,
   };
 }
 

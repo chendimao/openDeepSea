@@ -338,6 +338,10 @@ function fakeAgent(overrides: Partial<RoomAgent> = {}): RoomAgent {
     acp_writable_dirs: ['/repo/openDeepSea'],
     capabilities: [],
     default_runtime: 'acp',
+    runtime_backend: null,
+    tool_policy: null,
+    workspace_policy: null,
+    memory_scope: null,
     memory_max_context_chars: null,
     ...overrides,
   };

@@ -1,7 +1,17 @@
 import { nanoid } from 'nanoid';
 import { listBuiltInAgentTemplates } from '../agent-templates.js';
 import { db, now } from '../db.js';
-import type { AcpBackend, AcpPermissionMode, Agent, AgentReference } from '../types.js';
+import type {
+  AcpBackend,
+  AcpPermissionMode,
+  Agent,
+  AgentMemoryScope,
+  AgentReference,
+  AgentRuntimeBackend,
+  AgentToolCapability,
+  AgentToolPolicy,
+  AgentWorkspacePolicy,
+} from '../types.js';
 
 const LEGACY_BUILT_IN_AGENT_NAMES: Record<string, string> = {
   planner: 'Planner',
@@ -24,8 +34,21 @@ const LEGACY_BUILT_IN_AGENT_NAMES: Record<string, string> = {
   'sales-assistant': 'Sales Assistant',
 };
 
-type AgentRow = Omit<Agent, 'reference_count' | 'references' | 'default_acp_permission_mode'> & {
+type AgentRow = Omit<
+  Agent,
+  | 'reference_count'
+  | 'references'
+  | 'default_acp_permission_mode'
+  | 'default_runtime_backend'
+  | 'default_tool_policy'
+  | 'default_workspace_policy'
+  | 'default_memory_scope'
+> & {
   default_acp_permission_mode?: string | null;
+  default_runtime_backend?: string | null;
+  default_tool_policy?: string | null;
+  default_workspace_policy?: string | null;
+  default_memory_scope?: string | null;
   reference_count?: number;
 };
 
@@ -36,15 +59,72 @@ export type AgentDeleteResult =
   | { ok: false; reason: 'in_use'; references: AgentReference[] };
 
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
+const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
+const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
+const TOOL_CAPABILITIES = new Set<AgentToolCapability>([
+  'read_files',
+  'write_files',
+  'run_shell',
+  'browser',
+  'search',
+  'image_input',
+  'commit',
+]);
+const DEFAULT_TOOL_POLICY: AgentToolPolicy = { allowed: [] };
+const DEFAULT_WORKSPACE_POLICY: AgentWorkspacePolicy = { read: [], write: [] };
+
+function parseJsonObject<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function normalizeToolPolicy(value: string | null | undefined): AgentToolPolicy {
+  const parsed = parseJsonObject<Partial<AgentToolPolicy>>(value, DEFAULT_TOOL_POLICY);
+  return {
+    allowed: normalizeStringArray(parsed.allowed).filter((item): item is AgentToolCapability =>
+      TOOL_CAPABILITIES.has(item as AgentToolCapability),
+    ),
+  };
+}
+
+function normalizeWorkspacePolicy(value: string | null | undefined): AgentWorkspacePolicy {
+  const parsed = parseJsonObject<Partial<AgentWorkspacePolicy>>(value, DEFAULT_WORKSPACE_POLICY);
+  return {
+    read: normalizeStringArray(parsed.read),
+    write: normalizeStringArray(parsed.write),
+  };
+}
 
 function normalizeAgent(row: AgentRow): Agent {
   const permissionMode = row.default_acp_permission_mode;
+  const runtimeBackend = row.default_runtime_backend;
+  const memoryScope = row.default_memory_scope;
   return {
     ...row,
     default_acp_permission_mode:
       permissionMode && ACP_PERMISSION_MODES.has(permissionMode as AcpPermissionMode)
         ? (permissionMode as AcpPermissionMode)
         : 'bypass',
+    default_runtime_backend:
+      runtimeBackend && RUNTIME_BACKENDS.has(runtimeBackend as AgentRuntimeBackend)
+        ? (runtimeBackend as AgentRuntimeBackend)
+        : 'acp',
+    default_tool_policy: normalizeToolPolicy(row.default_tool_policy),
+    default_workspace_policy: normalizeWorkspacePolicy(row.default_workspace_policy),
+    default_memory_scope:
+      memoryScope && MEMORY_SCOPES.has(memoryScope as AgentMemoryScope)
+        ? (memoryScope as AgentMemoryScope)
+        : 'agent',
     reference_count: row.reference_count ?? 0,
   };
 }
@@ -131,6 +211,10 @@ export const agentRepo = {
     responsibilities?: string | null;
     default_acp_backend?: AcpBackend | null;
     default_acp_permission_mode?: AcpPermissionMode | null;
+    default_runtime_backend?: AgentRuntimeBackend | null;
+    default_tool_policy?: AgentToolPolicy | null;
+    default_workspace_policy?: AgentWorkspacePolicy | null;
+    default_memory_scope?: AgentMemoryScope | null;
     is_builtin?: boolean;
     builtin_key?: string | null;
   }): Agent {
@@ -139,9 +223,11 @@ export const agentRepo = {
     db.prepare(
       `INSERT INTO agents (
         id, agent_id, name, description, preferred_user_name, personality, rules,
-        responsibilities, default_acp_backend, default_acp_permission_mode, is_builtin, builtin_key, created_at, updated_at
+        responsibilities, default_acp_backend, default_acp_permission_mode,
+        default_runtime_backend, default_tool_policy, default_workspace_policy, default_memory_scope,
+        is_builtin, builtin_key, created_at, updated_at
       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.agent_id.trim(),
@@ -153,6 +239,10 @@ export const agentRepo = {
       trimmedOrNull(input.responsibilities),
       input.default_acp_backend ?? null,
       input.default_acp_permission_mode ?? 'bypass',
+      input.default_runtime_backend ?? 'acp',
+      JSON.stringify(input.default_tool_policy ?? DEFAULT_TOOL_POLICY),
+      JSON.stringify(input.default_workspace_policy ?? DEFAULT_WORKSPACE_POLICY),
+      input.default_memory_scope ?? 'agent',
       input.is_builtin ? 1 : 0,
       trimmedOrNull(input.builtin_key),
       ts,
@@ -173,6 +263,10 @@ export const agentRepo = {
       responsibilities: string | null;
       default_acp_backend: AcpBackend | null;
       default_acp_permission_mode: AcpPermissionMode | null;
+      default_runtime_backend: AgentRuntimeBackend | null;
+      default_tool_policy: AgentToolPolicy | null;
+      default_workspace_policy: AgentWorkspacePolicy | null;
+      default_memory_scope: AgentMemoryScope | null;
     }>,
   ): Agent | undefined {
     const existing = this.get(id);
@@ -186,7 +280,9 @@ export const agentRepo = {
       `UPDATE agents
        SET agent_id = ?, name = ?, description = ?, preferred_user_name = ?,
            personality = ?, rules = ?, responsibilities = ?,
-           default_acp_backend = ?, default_acp_permission_mode = ?, updated_at = ?
+           default_acp_backend = ?, default_acp_permission_mode = ?,
+           default_runtime_backend = ?, default_tool_policy = ?, default_workspace_policy = ?,
+           default_memory_scope = ?, updated_at = ?
        WHERE id = ?`,
     ).run(
       nextAgentId,
@@ -202,6 +298,22 @@ export const agentRepo = {
       patch.default_acp_permission_mode === undefined
         ? existing.default_acp_permission_mode
         : patch.default_acp_permission_mode ?? 'bypass',
+      patch.default_runtime_backend === undefined
+        ? existing.default_runtime_backend
+        : patch.default_runtime_backend ?? 'acp',
+      JSON.stringify(
+        patch.default_tool_policy === undefined
+          ? existing.default_tool_policy
+          : patch.default_tool_policy ?? DEFAULT_TOOL_POLICY,
+      ),
+      JSON.stringify(
+        patch.default_workspace_policy === undefined
+          ? existing.default_workspace_policy
+          : patch.default_workspace_policy ?? DEFAULT_WORKSPACE_POLICY,
+      ),
+      patch.default_memory_scope === undefined
+        ? existing.default_memory_scope
+        : patch.default_memory_scope ?? 'agent',
       now(),
       id,
     );
@@ -237,9 +349,11 @@ export const agentRepo = {
     const insert = db.prepare(
       `INSERT INTO agents (
         id, agent_id, name, description, preferred_user_name, personality, rules,
-        responsibilities, default_acp_backend, default_acp_permission_mode, is_builtin, builtin_key, created_at, updated_at
+        responsibilities, default_acp_backend, default_acp_permission_mode,
+        default_runtime_backend, default_tool_policy, default_workspace_policy, default_memory_scope,
+        is_builtin, builtin_key, created_at, updated_at
       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
     );
     const markExisting = db.prepare(
       `UPDATE agents
@@ -253,6 +367,10 @@ export const agentRepo = {
            responsibilities = COALESCE(responsibilities, ?),
            default_acp_backend = COALESCE(default_acp_backend, ?),
            default_acp_permission_mode = COALESCE(default_acp_permission_mode, ?),
+           default_runtime_backend = COALESCE(default_runtime_backend, 'acp'),
+           default_tool_policy = COALESCE(default_tool_policy, ?),
+           default_workspace_policy = COALESCE(default_workspace_policy, ?),
+           default_memory_scope = COALESCE(default_memory_scope, 'agent'),
            updated_at = ?
        WHERE id = ?`,
     );
@@ -270,6 +388,8 @@ export const agentRepo = {
             template.responsibilities,
             template.acp_backend,
             template.acp_permission_mode,
+            JSON.stringify(DEFAULT_TOOL_POLICY),
+            JSON.stringify(DEFAULT_WORKSPACE_POLICY),
             ts,
             existing.id,
           );
@@ -286,6 +406,10 @@ export const agentRepo = {
           template.responsibilities,
           template.acp_backend,
           template.acp_permission_mode,
+          'acp',
+          JSON.stringify(DEFAULT_TOOL_POLICY),
+          JSON.stringify(DEFAULT_WORKSPACE_POLICY),
+          'agent',
           template.id,
           ts,
           ts,
@@ -305,7 +429,9 @@ export const agentRepo = {
       `UPDATE agents
        SET agent_id = ?, name = ?, description = ?, preferred_user_name = ?,
            personality = ?, rules = ?, responsibilities = ?,
-           default_acp_backend = ?, default_acp_permission_mode = ?, updated_at = ?
+           default_acp_backend = ?, default_acp_permission_mode = ?,
+           default_runtime_backend = ?, default_tool_policy = ?, default_workspace_policy = ?,
+           default_memory_scope = ?, updated_at = ?
        WHERE id = ?`,
     ).run(
       template.id,
@@ -317,6 +443,10 @@ export const agentRepo = {
       template.responsibilities,
       template.acp_backend,
       template.acp_permission_mode,
+      'acp',
+      JSON.stringify(DEFAULT_TOOL_POLICY),
+      JSON.stringify(DEFAULT_WORKSPACE_POLICY),
+      'agent',
       now(),
       id,
     );

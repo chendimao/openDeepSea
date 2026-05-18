@@ -1,5 +1,25 @@
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
 export type AcpPermissionMode = 'bypass' | 'workspace-write' | 'read-only';
+export type AgentRuntimeBackend = 'acp' | 'model' | 'none';
+export type AgentMemoryScope = 'project' | 'room' | 'agent' | 'task' | 'none';
+export type AgentToolCapability =
+  | 'read_files'
+  | 'write_files'
+  | 'run_shell'
+  | 'browser'
+  | 'search'
+  | 'image_input'
+  | 'commit';
+
+export interface AgentToolPolicy {
+  allowed: AgentToolCapability[];
+}
+
+export interface AgentWorkspacePolicy {
+  read: string[];
+  write: string[];
+}
+
 export type WorkflowRole = 'analyst' | 'planner' | 'coordinator' | 'executor' | 'reviewer' | 'acceptor';
 export type WorkflowStatus =
   | 'draft'
@@ -122,6 +142,10 @@ export interface Agent {
   responsibilities: string | null;
   default_acp_backend: AcpBackend | null;
   default_acp_permission_mode: AcpPermissionMode;
+  default_runtime_backend: AgentRuntimeBackend;
+  default_tool_policy: AgentToolPolicy;
+  default_workspace_policy: AgentWorkspacePolicy;
+  default_memory_scope: AgentMemoryScope;
   is_builtin: 0 | 1;
   builtin_key: string | null;
   created_at: number;
@@ -248,6 +272,10 @@ export interface RoomAgent {
   workflow_role: WorkflowRole | null;
   capabilities: string[];
   default_runtime: 'acp' | 'openclaw' | 'none';
+  runtime_backend: AgentRuntimeBackend | null;
+  tool_policy: AgentToolPolicy | null;
+  workspace_policy: AgentWorkspacePolicy | null;
+  memory_scope: AgentMemoryScope | null;
   joined_at: number;
   left_at: number | null;
   acp_enabled: 0 | 1;

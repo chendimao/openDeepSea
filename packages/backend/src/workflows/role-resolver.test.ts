@@ -85,6 +85,10 @@ function agent(patch: Partial<RoomAgent>): RoomAgent {
     acp_writable_dirs: patch.acp_writable_dirs ?? [],
     capabilities: patch.capabilities ?? [],
     default_runtime: patch.default_runtime ?? 'acp',
+    runtime_backend: patch.runtime_backend ?? null,
+    tool_policy: patch.tool_policy ?? null,
+    workspace_policy: patch.workspace_policy ?? null,
+    memory_scope: patch.memory_scope ?? null,
     memory_max_context_chars: patch.memory_max_context_chars ?? null,
   };
 }

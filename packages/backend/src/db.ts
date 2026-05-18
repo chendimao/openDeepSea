@@ -61,6 +61,10 @@ CREATE TABLE IF NOT EXISTS agents (
   responsibilities TEXT,
   default_acp_backend TEXT,
   default_acp_permission_mode TEXT NOT NULL DEFAULT 'bypass',
+  default_runtime_backend TEXT NOT NULL DEFAULT 'acp',
+  default_tool_policy TEXT NOT NULL DEFAULT '{"allowed":[]}',
+  default_workspace_policy TEXT NOT NULL DEFAULT '{"read":[],"write":[]}',
+  default_memory_scope TEXT NOT NULL DEFAULT 'agent',
   is_builtin INTEGER NOT NULL DEFAULT 0,
   builtin_key TEXT UNIQUE,
   created_at INTEGER NOT NULL,
@@ -85,6 +89,10 @@ CREATE TABLE IF NOT EXISTS room_agents (
   acp_writable_dirs TEXT NOT NULL DEFAULT '[]',
   capabilities TEXT NOT NULL DEFAULT '[]',
   default_runtime TEXT NOT NULL DEFAULT 'none',
+  runtime_backend TEXT,
+  tool_policy TEXT,
+  workspace_policy TEXT,
+  memory_scope TEXT,
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
   FOREIGN KEY (global_agent_id) REFERENCES agents(id) ON DELETE RESTRICT,
   UNIQUE (room_id, agent_id)
@@ -462,6 +470,18 @@ if (!roomAgentColumnNames.has('capabilities')) {
 if (!roomAgentColumnNames.has('default_runtime')) {
   db.exec("ALTER TABLE room_agents ADD COLUMN default_runtime TEXT NOT NULL DEFAULT 'none'");
 }
+if (!roomAgentColumnNames.has('runtime_backend')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN runtime_backend TEXT');
+}
+if (!roomAgentColumnNames.has('tool_policy')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN tool_policy TEXT');
+}
+if (!roomAgentColumnNames.has('workspace_policy')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN workspace_policy TEXT');
+}
+if (!roomAgentColumnNames.has('memory_scope')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN memory_scope TEXT');
+}
 if (!roomAgentColumnNames.has('global_agent_id')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN global_agent_id TEXT');
 }
@@ -478,6 +498,18 @@ if (!agentColumnNames.has('is_builtin')) {
 }
 if (!agentColumnNames.has('builtin_key')) {
   db.exec('ALTER TABLE agents ADD COLUMN builtin_key TEXT');
+}
+if (!agentColumnNames.has('default_runtime_backend')) {
+  db.exec("ALTER TABLE agents ADD COLUMN default_runtime_backend TEXT NOT NULL DEFAULT 'acp'");
+}
+if (!agentColumnNames.has('default_tool_policy')) {
+  db.exec("ALTER TABLE agents ADD COLUMN default_tool_policy TEXT NOT NULL DEFAULT '{\"allowed\":[]}'");
+}
+if (!agentColumnNames.has('default_workspace_policy')) {
+  db.exec("ALTER TABLE agents ADD COLUMN default_workspace_policy TEXT NOT NULL DEFAULT '{\"read\":[],\"write\":[]}'");
+}
+if (!agentColumnNames.has('default_memory_scope')) {
+  db.exec("ALTER TABLE agents ADD COLUMN default_memory_scope TEXT NOT NULL DEFAULT 'agent'");
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_agents_builtin_key ON agents(builtin_key)');
 
