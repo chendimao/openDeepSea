@@ -364,12 +364,13 @@ export function validateGraphWorkflowApproval(id: string): WorkflowRun {
   const state = requireGraphStateOrBlock(run);
   if (!state.plan) {
     const error = 'workflow approval requires generated plan';
-    workflowRepo.updateRun(run.id, { status: 'blocked', error });
+    const blocked = workflowRepo.updateRun(run.id, { status: 'blocked', error });
     workflowRepo.updateGraphState(run.id, serializeGraphState({
       ...state,
       status: 'blocked',
       error,
     }));
+    if (blocked) createGraphTools().broadcastWorkflowUpdated(blocked);
     throw new Error(error);
   }
   return run;

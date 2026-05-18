@@ -12,12 +12,14 @@ const { projectRepo } = await import('../repos/projects.js');
 const { roomRepo } = await import('../repos/rooms.js');
 const { taskRepo } = await import('../repos/tasks.js');
 const { workflowRepo } = await import('../repos/workflows.js');
+const { wsHub } = await import('../ws-hub.js');
 const {
   approveWorkflowPlanWithConversation,
   setWorkflowConversationDeps,
   startWorkflowWithConversation,
 } = await import('./conversation.js');
 const { emptyAgentWorkflowState, serializeGraphState } = await import('./graph/state.js');
+import type { WsServerEvent } from '../types.js';
 
 test.afterEach(() => {
   setWorkflowConversationDeps({});
@@ -248,6 +250,60 @@ test('approveWorkflowPlanWithConversation blocks missing plan before writing app
   assert.match(latest?.error ?? '', /requires generated plan/);
 });
 
+test('approveWorkflowPlanWithConversation broadcasts blocked workflow when plan is missing', () => {
+  const { room, project } = createRoomWithProject('Approve Missing Plan Broadcast');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Missing plan approval broadcast',
+  });
+  const pendingState = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    graph_version: 'phase-b-v1',
+    graph_state: serializeGraphState({
+      ...pendingState,
+      workflowRunId: 'pending',
+      currentNode: 'approval',
+      status: 'awaiting_approval',
+      approval: 'pending',
+    }),
+  });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...pendingState,
+    workflowRunId: run.id,
+    currentNode: 'approval',
+    status: 'awaiting_approval',
+    approval: 'pending',
+  }));
+  const events = captureRoomEvents(room.id);
+
+  try {
+    assert.throws(
+      () => approveWorkflowPlanWithConversation({ roomId: room.id, workflowId: run.id, source: 'approval_button' }),
+      /requires generated plan/,
+    );
+  } finally {
+    events.restore();
+  }
+
+  const workflowEvent = events.find((event) => event.type === 'workflow:updated');
+  assert.equal(workflowEvent?.workflow.id, run.id);
+  assert.equal(workflowEvent?.workflow.status, 'blocked');
+  assert.match(workflowEvent?.workflow.error ?? '', /requires generated plan/);
+});
+
 test('approveWorkflowPlanWithConversation rolls back intent message when approval update fails', () => {
   const { room, project } = createRoomWithProject('Approve Update Rollback');
   const task = taskRepo.create({
@@ -455,4 +511,18 @@ function createRoomWithProject(name: string) {
     name: `${name} Room`,
   });
   return { project, room };
+}
+
+function captureRoomEvents(roomId: string): WsServerEvent[] & { restore: () => void } {
+  const original = wsHub.broadcast.bind(wsHub);
+  const events: WsServerEvent[] = [];
+  wsHub.broadcast = ((targetRoomId: string, event: WsServerEvent) => {
+    if (targetRoomId === roomId) events.push(event);
+    original(targetRoomId, event);
+  }) as typeof wsHub.broadcast;
+  return Object.assign(events, {
+    restore: () => {
+      wsHub.broadcast = original as typeof wsHub.broadcast;
+    },
+  });
 }
