@@ -29,7 +29,7 @@ export function selectWorkflowAgentForRole(
       : [];
   if (candidates.length === 0) return null;
 
-  return rankByDomain(candidates, inferDomainHint(context))[0] ?? null;
+  return rankCandidates(candidates, role, context)[0] ?? null;
 }
 
 export function resolveWorkflowExecutor(
@@ -63,9 +63,69 @@ export function isExecutableAgent(agent: RoomAgent): boolean {
   return agent.left_at === null && agent.acp_enabled === 1 && Boolean(agent.acp_backend);
 }
 
-function rankByDomain(agents: RoomAgent[], domain: DomainHint): RoomAgent[] {
-  if (!domain) return agents;
-  return [...agents].sort((a, b) => scoreDomain(b, domain) - scoreDomain(a, domain));
+function rankCandidates(
+  agents: RoomAgent[],
+  role: WorkflowRole,
+  context: WorkflowAgentSelectionContext,
+): RoomAgent[] {
+  const scopeWrite = context.scopeWrite ?? [];
+  if (role === 'executor' && scopeWrite.length > 0) {
+    const writableMatches = agents.filter((agent) =>
+      scoreWorkspaceWrite(agent, scopeWrite) > 0 && scoreExecutableRuntime(agent, role, true) > 0,
+    );
+    agents = writableMatches;
+  }
+  const domain = inferDomainHint(context);
+  return [...agents].sort((a, b) => scoreAgent(b, role, context, domain) - scoreAgent(a, role, context, domain));
+}
+
+function scoreAgent(
+  agent: RoomAgent,
+  role: WorkflowRole,
+  context: WorkflowAgentSelectionContext,
+  domain: DomainHint,
+): number {
+  const scopeWrite = context.scopeWrite ?? [];
+  const writeMatch = scoreWorkspaceWrite(agent, scopeWrite);
+  const writeRequired = role === 'executor' && scopeWrite.length > 0;
+  const executableRuntime = scoreExecutableRuntime(agent, role, writeRequired);
+  return (
+    (agent.workflow_role === role ? 100 : 0)
+    + scoreCapability(agent, domain) * 20
+    + writeMatch * 30
+    + (domain ? scoreDomain(agent, domain) * 10 : 0)
+    + executableRuntime * 50
+  );
+}
+
+function scoreCapability(agent: RoomAgent, domain: DomainHint): number {
+  if (!domain) return 0;
+  return agent.capabilities.some((capability) => capability.toLowerCase().includes(domain)) ? 1 : 0;
+}
+
+function scoreExecutableRuntime(agent: RoomAgent, role: WorkflowRole, writeRequired: boolean): number {
+  if (role === 'reviewer' || role === 'acceptor') return 1;
+  if (!writeRequired) return 1;
+  const hasWriteTool = agent.tool_policy?.allowed.includes('write_files') ?? false;
+  const hasWritableWorkspace = (agent.workspace_policy?.write.length ?? 0) > 0;
+  const hasWritePermission = agent.acp_permission_mode !== 'read-only';
+  return hasWriteTool && hasWritableWorkspace && hasWritePermission ? 1 : 0;
+}
+
+function scoreWorkspaceWrite(agent: RoomAgent, scopeWrite: string[]): number {
+  if (scopeWrite.length === 0) return 0;
+  const writableScopes = agent.workspace_policy?.write ?? [];
+  if (writableScopes.length === 0) return 0;
+  return scopeWrite.every((scope) => writableScopes.some((writable) => pathMatchesScope(scope, writable))) ? 1 : 0;
+}
+
+function pathMatchesScope(scope: string, writable: string): boolean {
+  const normalizedScope = normalizePath(scope);
+  const normalizedWritable = normalizePath(writable);
+  if (normalizedScope === null || normalizedWritable === null) return false;
+  if (!normalizedScope) return !normalizedWritable;
+  if (!normalizedWritable) return true;
+  return normalizedScope === normalizedWritable || normalizedScope.startsWith(`${normalizedWritable}/`);
 }
 
 function scoreDomain(agent: RoomAgent, domain: Exclude<DomainHint, null>): number {
@@ -129,4 +189,11 @@ function inferDomainHint(context: WorkflowAgentSelectionContext): DomainHint {
 
 function countSignals(text: string, signals: string[]): number {
   return signals.reduce((count, signal) => count + (text.includes(signal) ? 1 : 0), 0);
+}
+
+function normalizePath(path: string): string | null {
+  const trimmed = path.trim();
+  if (trimmed.split(/[\\/]+/).includes('..')) return null;
+  const normalized = trimmed.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+$/, '').toLowerCase();
+  return normalized === '.' ? '' : normalized;
 }

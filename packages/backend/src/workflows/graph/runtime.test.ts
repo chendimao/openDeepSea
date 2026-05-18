@@ -313,11 +313,15 @@ test('supervisor assignment hint is ignored when multiple executor tasks would m
   roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
     capabilities: ['backend'],
     default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
   });
   const frontend = addAcpWorkflowAgent(room.id, 'executor');
   roomAgentRepo.setCapabilitiesAndRuntime(frontend.id, {
     capabilities: ['frontend'],
     default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
   });
   const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Assignment Ambiguous Workflow');
   const task = taskRepo.create({
@@ -389,11 +393,15 @@ test('supervisor assignment hint ignores scope mismatch and falls back to resolv
   roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
     capabilities: ['backend'],
     default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
   });
   const frontend = addAcpWorkflowAgent(room.id, 'executor');
   roomAgentRepo.setCapabilitiesAndRuntime(frontend.id, {
     capabilities: ['frontend'],
     default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
   });
   const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Assignment Scope Workflow');
   const task = taskRepo.create({
@@ -435,6 +443,67 @@ test('supervisor assignment hint ignores scope mismatch and falls back to resolv
 
   const child = taskRepo.listChildren(task.id)[0];
   assert.equal(child?.assigned_agent_id, backend.id);
+});
+
+test('supervisor assignment hint ignores executor without matching runtime write boundary', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-runtime-boundary-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Runtime Boundary', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Runtime Boundary Room' });
+  const writableBackend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(writableBackend.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const readOnlyBackend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(readOnlyBackend.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Runtime Boundary Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Ignore runtime-ineligible supervisor assignment hint',
+  });
+
+  await startGraphWorkflow(task.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: workflow.id,
+      confidence: 0.92,
+      reason: 'Workflow is suitable but assignment runtime boundary is wrong.',
+      assignments: [{
+        stage: 'implementation',
+        role: 'executor',
+        agentId: readOnlyBackend.id,
+        reason: 'Incorrectly suggested executor without write tool.',
+      }],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => ({
+      ...createApprovalPlan(task.title),
+      tasks: [{
+        title: 'Update API route',
+        description: 'Modify the backend route.',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Backend route is updated'],
+        scopeRead: ['packages/backend/src/routes.ts'],
+        scopeWrite: ['packages/backend/src/routes.ts'],
+        dependsOn: [],
+      }],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const child = taskRepo.listChildren(task.id)[0];
+  assert.equal(child?.assigned_agent_id, writableBackend.id);
 });
 
 test('startGraphWorkflow does not call supervisor when task already has active workflow', async () => {
@@ -501,6 +570,12 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
   const project = projectRepo.create({ name: 'Graph Runtime Dispatch', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Graph Dispatch Room' });
   const executor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(executor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -552,11 +627,15 @@ test('graph dispatch assigns child tasks by frontend and backend scope hints', a
   roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
     capabilities: ['backend', 'testing'],
     default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
   });
   const frontend = addAcpWorkflowAgent(room.id, 'executor');
   roomAgentRepo.setCapabilitiesAndRuntime(frontend.id, {
     capabilities: ['frontend', 'testing'],
     default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
   });
   const task = taskRepo.create({
     room_id: room.id,
@@ -660,6 +739,161 @@ test('no-approval graph blocks instead of selecting non-ACP executor', async () 
   assert.match(detail?.run.error ?? '', /No executor available/);
   assert.equal(childTasks.length, 1);
   assert.equal(childTasks[0]?.assigned_agent_id, null);
+  assert.equal(graphState?.status, 'blocked');
+  assert.match(graphState?.error ?? '', /No executor available/);
+});
+
+test('graph execute blocks unassigned write task instead of falling back to executor outside runtime boundary', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-unassigned-write-boundary-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Unassigned Write Boundary', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Unassigned Write Boundary Room' });
+  const backend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Do not fallback outside write boundary',
+  });
+
+  let calls = 0;
+  const run = await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: 'Do not fallback outside write boundary',
+      summary: 'Create one frontend child task without eligible executor',
+      assumptions: [],
+      tasks: [{
+        title: 'Update React page',
+        description: 'Modify frontend page.',
+        suggestedRole: 'executor' as const,
+        priority: 'normal' as const,
+        acceptance: ['Frontend page is updated'],
+        scopeRead: ['packages/frontend/src/pages/RoomPage.tsx'],
+        scopeWrite: ['packages/frontend/src/pages/RoomPage.tsx'],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async () => {
+      calls += 1;
+      throw new Error('backend executor should not run frontend write task');
+    },
+  });
+
+  const detail = workflowRepo.detail(run.id);
+  const childTasks = taskRepo.listChildren(task.id);
+  const graphState = parseGraphState(detail?.run.graph_state ?? null);
+
+  assert.equal(calls, 0);
+  assert.equal(detail?.run.status, 'blocked');
+  assert.match(detail?.run.error ?? '', /No executor available/);
+  assert.equal(childTasks.length, 1);
+  assert.equal(childTasks[0]?.assigned_agent_id, null);
+  assert.equal(graphState?.status, 'blocked');
+  assert.match(graphState?.error ?? '', /No executor available/);
+});
+
+test('graph execute blocks assigned write task when assigned executor is outside runtime boundary', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-assigned-write-boundary-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Assigned Write Boundary', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Assigned Write Boundary Room' });
+  const backend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Assigned executor must respect write boundary',
+  });
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: 'Update React page',
+    description: 'Modify frontend page.',
+    priority: 'normal',
+    assigned_agent_id: backend.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    graph_version: 'phase-b-v1',
+  });
+  const state = {
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+    plan: {
+      goal: 'Assigned executor must respect write boundary',
+      summary: 'Create one frontend child task with invalid assigned executor',
+      assumptions: [],
+      tasks: [{
+        title: 'Update React page',
+        description: 'Modify frontend page.',
+        suggestedRole: 'executor' as const,
+        priority: 'normal' as const,
+        acceptance: ['Frontend page is updated'],
+        scopeRead: ['packages/frontend/src/pages/RoomPage.tsx'],
+        scopeWrite: ['packages/frontend/src/pages/RoomPage.tsx'],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'dispatch' as const,
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [child.id],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required' as const,
+    status: 'running' as const,
+    error: null,
+  };
+
+  let calls = 0;
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async () => {
+      calls += 1;
+      throw new Error('assigned backend executor should not run frontend write task');
+    },
+  }));
+  const nextState = await nodes.executeNode(state);
+
+  const detail = workflowRepo.detail(run.id);
+  const childTasks = taskRepo.listChildren(task.id);
+  const graphState = parseGraphState(detail?.run.graph_state ?? null);
+
+  assert.equal(calls, 0);
+  assert.equal(detail?.run.status, 'blocked');
+  assert.match(detail?.run.error ?? '', /No executor available/);
+  assert.equal(childTasks.length, 1);
+  assert.equal(childTasks[0]?.assigned_agent_id, backend.id);
+  assert.equal(nextState.status, 'blocked');
   assert.equal(graphState?.status, 'blocked');
   assert.match(graphState?.error ?? '', /No executor available/);
 });

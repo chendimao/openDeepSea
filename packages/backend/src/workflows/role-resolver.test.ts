@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { RoomAgent, Task } from '../types.js';
-import { resolveWorkflowExecutor, selectWorkflowAgentForRole } from './role-resolver.js';
+import { resolveWorkflowExecutor, selectWorkflowAgentForPlanTask, selectWorkflowAgentForRole } from './role-resolver.js';
 
 test('selectWorkflowAgentForRole filters to ACP executable agents and prefers exact role', () => {
   const manualExecutor = agent({ id: 'manual', workflow_role: 'executor', acp_enabled: 0, acp_backend: null });
@@ -60,6 +60,263 @@ test('resolveWorkflowExecutor honors assigned agent override only when executabl
     resolveWorkflowExecutor([disabledAssigned, fallback], task({ assigned_agent_id: disabledAssigned.id })),
     null,
   );
+});
+
+test('selectWorkflowAgentForPlanTask prefers executor whose writable workspace matches scopeWrite', () => {
+  const frontend = agent({
+    id: 'frontend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+  });
+  const backend = agent({
+    id: 'backend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backend, frontend], {
+    title: '修改 React 页面',
+    description: '更新组件',
+    scopeRead: ['packages/frontend/src/pages/RoomPage.tsx'],
+    scopeWrite: ['packages/frontend/src/pages/RoomPage.tsx'],
+  });
+
+  assert.equal(selected?.id, 'frontend');
+});
+
+test('selectWorkflowAgentForRole allows read-only reviewer for review role', () => {
+  const reviewer = agent({
+    id: 'reviewer',
+    workflow_role: 'reviewer',
+    acp_permission_mode: 'read-only',
+    workspace_policy: { read: ['.'], write: [] },
+    tool_policy: { allowed: ['read_files'] },
+  });
+
+  assert.equal(selectWorkflowAgentForRole('reviewer', [reviewer])?.id, 'reviewer');
+});
+
+test('selectWorkflowAgentForPlanTask downgrades executor without write tools', () => {
+  const noWriteTools = agent({
+    id: 'no-write-tools',
+    workflow_role: 'executor',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const writable = agent({
+    id: 'writable',
+    workflow_role: 'executor',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [noWriteTools, writable], {
+    title: '修改 API 路由',
+    description: '更新后端实现',
+    scopeRead: ['packages/backend/src/routes.ts'],
+    scopeWrite: ['packages/backend/src/routes.ts'],
+  });
+
+  assert.equal(selected?.id, 'writable');
+});
+
+test('selectWorkflowAgentForPlanTask treats root writable workspace as matching any project scope', () => {
+  const rootWritable = agent({
+    id: 'root-writable',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: [],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  const noWorkspace = agent({
+    id: 'no-workspace',
+    workflow_role: 'executor',
+    capabilities: ['backend'],
+    workspace_policy: { read: ['.'], write: [] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [noWorkspace, rootWritable], {
+    title: '修改 API 路由',
+    description: '更新后端实现',
+    scopeRead: ['packages/backend/src/routes.ts'],
+    scopeWrite: ['packages/backend/src/routes.ts'],
+  });
+
+  assert.equal(selected?.id, 'root-writable');
+});
+
+test('selectWorkflowAgentForPlanTask treats root write scope as matching root writable workspace', () => {
+  const rootWritable = agent({
+    id: 'root-writable',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: [],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  const backendOnly = agent({
+    id: 'backend-only',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backendOnly, rootWritable], {
+    title: '修改项目根配置',
+    description: '更新根目录配置',
+    scopeRead: ['.'],
+    scopeWrite: ['.'],
+  });
+
+  assert.equal(selected?.id, 'root-writable');
+});
+
+test('selectWorkflowAgentForPlanTask prioritizes workspace match over domain signals for write tasks', () => {
+  const domainOnly = agent({
+    id: 'domain-only',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+  });
+  const workspaceMatch = agent({
+    id: 'workspace-match',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: [],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [domainOnly, workspaceMatch], {
+    title: '修改后端接口',
+    description: '更新 Express route',
+    scopeRead: ['packages/backend/src/routes.ts'],
+    scopeWrite: ['packages/backend/src/routes.ts'],
+  });
+
+  assert.equal(selected?.id, 'workspace-match');
+});
+
+test('selectWorkflowAgentForPlanTask requires explicit write capability and non-read-only permission for write tasks', () => {
+  const implicitToolPolicy = agent({
+    id: 'implicit-tool-policy',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    tool_policy: null,
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const readOnly = agent({
+    id: 'read-only',
+    workflow_role: 'executor',
+    acp_permission_mode: 'read-only',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const writable = agent({
+    id: 'writable',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [implicitToolPolicy, readOnly, writable], {
+    title: '修改 API 路由',
+    description: '更新后端实现',
+    scopeRead: ['packages/backend/src/routes.ts'],
+    scopeWrite: ['packages/backend/src/routes.ts'],
+  });
+
+  assert.equal(selected?.id, 'writable');
+});
+
+test('selectWorkflowAgentForPlanTask returns null when write task has no writable executor', () => {
+  const noWorkspace = agent({
+    id: 'no-workspace',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const readOnly = agent({
+    id: 'read-only',
+    workflow_role: 'executor',
+    acp_permission_mode: 'read-only',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [noWorkspace, readOnly], {
+    title: '修改 API 路由',
+    description: '更新后端实现',
+    scopeRead: ['packages/backend/src/routes.ts'],
+    scopeWrite: ['packages/backend/src/routes.ts'],
+  });
+
+  assert.equal(selected, null);
+});
+
+test('selectWorkflowAgentForPlanTask requires writable workspace to cover every scopeWrite path', () => {
+  const backendOnly = agent({
+    id: 'backend-only',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const fullStack = agent({
+    id: 'full-stack',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend', 'frontend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend', 'packages/frontend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backendOnly, fullStack], {
+    title: '修改前后端联动',
+    description: '同时更新 API 和页面',
+    scopeRead: ['packages/backend/src/routes.ts', 'packages/frontend/src/pages/RoomPage.tsx'],
+    scopeWrite: ['packages/backend/src/routes.ts', 'packages/frontend/src/pages/RoomPage.tsx'],
+  });
+
+  assert.equal(selected?.id, 'full-stack');
+});
+
+test('selectWorkflowAgentForPlanTask rejects parent-directory path segments in scopeWrite matching', () => {
+  const backendOnly = agent({
+    id: 'backend-only',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backendOnly], {
+    title: '修改伪装路径',
+    description: '不能通过 .. 绕过 workspace',
+    scopeRead: ['packages/backend/../frontend/src/pages/RoomPage.tsx'],
+    scopeWrite: ['packages/backend/../frontend/src/pages/RoomPage.tsx'],
+  });
+
+  assert.equal(selected, null);
 });
 
 function agent(patch: Partial<RoomAgent>): RoomAgent {

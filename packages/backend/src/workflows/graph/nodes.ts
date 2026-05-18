@@ -304,7 +304,14 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         return nextState;
       }
 
-      const executor = resolveWorkflowExecutor(context.agents, nextChild);
+      const orderedChildIds = state.childTaskIds.length > 0 ? state.childTaskIds : childTasks.map((item) => item.id);
+      const plannedTaskIndex = orderedChildIds.indexOf(nextChild.id);
+      const plannedTask = plannedTaskIndex >= 0
+        ? state.plan?.tasks[plannedTaskIndex]
+        : state.plan?.tasks.find((item) => item.title === nextChild.title);
+      const scopeRead = plannedTask?.scopeRead ?? [];
+      const scopeWrite = plannedTask?.scopeWrite ?? [];
+      const executor = selectExecutorForPlannedChild(context.agents, nextChild, plannedTask, tools);
       if (!executor) {
         const error = 'No executor available for implementation';
         const updatedRun = tools.updateRun(context.run.id, {
@@ -334,13 +341,6 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         tools.broadcastTaskUpdated(inProgressChild);
       }
 
-      const orderedChildIds = state.childTaskIds.length > 0 ? state.childTaskIds : childTasks.map((item) => item.id);
-      const plannedTaskIndex = orderedChildIds.indexOf(nextChild.id);
-      const plannedTask = plannedTaskIndex >= 0
-        ? state.plan?.tasks[plannedTaskIndex]
-        : state.plan?.tasks.find((item) => item.title === nextChild.title);
-      const scopeRead = plannedTask?.scopeRead ?? [];
-      const scopeWrite = plannedTask?.scopeWrite ?? [];
       const prompt = buildStagePrompt('implementation', {
         projectName: context.project.name,
         projectPath: context.project.path,
@@ -1402,7 +1402,22 @@ function selectAssignmentHintForPlanTask(
   );
   const hintedAgent = hint ? tools.selectAgentForSupervisorAssignment(hint, agents) : null;
   if (!hintedAgent) return null;
-  return planTaskHasDomainMismatch(planTask, hintedAgent, resolvedAgent) ? null : hintedAgent;
+  const runtimeEligibleHint = tools.selectAgentForPlanTask(planTask, [hintedAgent]);
+  if (!runtimeEligibleHint) return null;
+  return planTaskHasDomainMismatch(planTask, runtimeEligibleHint, resolvedAgent) ? null : runtimeEligibleHint;
+}
+
+function selectExecutorForPlannedChild(
+  agents: RoomAgent[],
+  child: Task,
+  planTask: ParsedPlanTask | undefined,
+  tools: GraphTools,
+): RoomAgent | null {
+  if (!planTask) return resolveWorkflowExecutor(agents, child);
+  if (!child.assigned_agent_id) return tools.selectAgentForPlanTask(planTask, agents);
+  const assigned = agents.find((agent) => agent.id === child.assigned_agent_id) ?? null;
+  if (!assigned) return null;
+  return tools.selectAgentForPlanTask(planTask, [assigned]);
 }
 
 type PlanTaskDomain = 'frontend' | 'backend' | null;
