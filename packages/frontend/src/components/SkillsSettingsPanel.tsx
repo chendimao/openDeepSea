@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  BookOpenCheck,
   Eye,
   FolderInput,
   Loader2,
@@ -22,7 +23,11 @@ import { Input, Label, Textarea } from './ui/Input';
 const RUNTIME_SCOPES: SkillRuntimeScope[] = ['planner', 'model_chat', 'workflow', 'memory', 'review'];
 const TRIGGER_MODES: SkillTriggerMode[] = ['manual', 'keyword', 'always_for_scope'];
 
-export function SkillsSettingsPanel(): JSX.Element {
+export function SkillsSettingsPanel({
+  showUsageGuide = false,
+}: {
+  showUsageGuide?: boolean;
+}): JSX.Element {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [localPath, setLocalPath] = useState('');
@@ -49,6 +54,16 @@ export function SkillsSettingsPanel(): JSX.Element {
   const importSkill = useMutation({
     mutationFn: api.importLocalSkill,
     onSuccess: async (skill) => {
+      try {
+        await api.upsertSkillBinding({
+          skill_id: skill.id,
+          scope: 'system',
+          scope_id: 'default',
+          enabled: true,
+        });
+      } catch (err) {
+        toast.error((err as Error).message);
+      }
       setLocalPath('');
       toast.success(t('settings.skillsImportSuccess', { name: skill.name }));
       await Promise.all([
@@ -93,6 +108,36 @@ export function SkillsSettingsPanel(): JSX.Element {
 
   return (
     <div className="space-y-4">
+      {showUsageGuide && (
+        <section className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
+          <div className="mb-3 flex items-start gap-2.5">
+            <BookOpenCheck className="mt-0.5 h-4 w-4 text-[var(--color-accent)]" strokeWidth={1.75} />
+            <div>
+              <h4 className="text-[13px] font-semibold text-[var(--color-fg)]">{t('settings.skillsUsageTitle')}</h4>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+                {t('settings.skillsUsageDescription')}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-2 text-[12px] text-[var(--color-fg-muted)] sm:grid-cols-3">
+            <div className="rounded-md bg-[var(--color-surface)] p-2.5">
+              <div className="font-semibold text-[var(--color-fg)]">{t('settings.skillsUsageStepImport')}</div>
+              <code className="mt-1 block break-all rounded bg-[var(--color-code-bg)] px-2 py-1 font-mono text-[11px]">
+                ~/.codex/skills/&lt;skill-name&gt;
+              </code>
+            </div>
+            <div className="rounded-md bg-[var(--color-surface)] p-2.5">
+              <div className="font-semibold text-[var(--color-fg)]">{t('settings.skillsUsageStepBind')}</div>
+              <div className="mt-1 leading-relaxed">{t('settings.skillsUsageBindDescription')}</div>
+            </div>
+            <div className="rounded-md bg-[var(--color-surface)] p-2.5">
+              <div className="font-semibold text-[var(--color-fg)]">{t('settings.skillsUsageStepPreview')}</div>
+              <div className="mt-1 leading-relaxed">{t('settings.skillsUsagePreviewDescription')}</div>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div className="min-w-0">

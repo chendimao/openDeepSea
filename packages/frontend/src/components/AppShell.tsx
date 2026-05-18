@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   Settings,
+  ShieldCheck,
   SquareCheck,
 } from 'lucide-react';
 import { api } from '../lib/api';
@@ -149,6 +150,7 @@ function ProjectSidebar({
         <SidebarLink to="/" active={!currentProject} icon={Home} label={t('shell.nav.development')} exact />
         <SidebarLink to={currentProject ? `/projects/${currentProject.id}` : '/'} icon={GitBranch} label={t('shell.nav.roadmap')} />
         <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} />
+        <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} />
         <SidebarLink
           to={currentProject ? `/projects/${currentProject.id}` : '/'}
           icon={SquareCheck}
