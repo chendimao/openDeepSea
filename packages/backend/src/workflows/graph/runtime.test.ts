@@ -97,6 +97,35 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   assert.ok(detail?.steps.some((step) => step.node_name === 'planning'));
 });
 
+test('planning node passes planner and workflow skill context to graph planner', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-planner-skills-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Planner Skills', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Planner Skills Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Plan with runtime skills',
+  });
+  let capturedSkillContext = '';
+  const run = await startGraphWorkflow(task.id, {
+    buildSkillContext: async (input) => {
+      assert.deepEqual(input.runtimeScopes, ['planner', 'workflow']);
+      assert.equal(input.projectId, project.id);
+      assert.equal(input.roomId, room.id);
+      assert.match(input.message ?? '', /Plan with runtime skills/);
+      return 'OpenDeepSea active skills for this runtime:\nSkill: graph-planner-skill';
+    },
+    planner: async (_input, options) => {
+      capturedSkillContext = options?.skillContext ?? '';
+      return createApprovalPlan(task.title);
+    },
+  });
+
+  assert.equal(workflowRepo.detail(run.id)?.run.status, 'awaiting_approval');
+  assert.match(capturedSkillContext, /Skill: graph-planner-skill/);
+});
+
 test('createGraphWorkflowRun records selected room workflow definition snapshot', () => {
   const projectPath = join(tmpdir(), `graph-runtime-definition-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -122,6 +151,47 @@ test('createGraphWorkflowRun records selected room workflow definition snapshot'
   assert.equal(run.workflow_definition_id, definition.id);
   assert.equal(run.workflow_definition_version, definition.version);
   assert.match(run.workflow_definition_snapshot ?? '', /Room Defined Workflow/);
+});
+
+test('startGraphWorkflow passes workflow skill context to supervisor model', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-skills-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Skills', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Skills Room' });
+  const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Skills Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Choose workflow with skills',
+  });
+  let capturedSkillContext = '';
+
+  const run = await startGraphWorkflow(task.id, {
+    buildSkillContext: async (input) => {
+      if (input.runtimeScopes.length === 1 && input.runtimeScopes[0] === 'workflow') {
+        assert.equal(input.projectId, project.id);
+        assert.equal(input.roomId, room.id);
+        assert.match(input.message ?? '', /Choose workflow with skills/);
+        return 'OpenDeepSea active skills for this runtime:\nSkill: workflow-supervisor-skill';
+      }
+      return '';
+    },
+    supervisor: async (_input, options) => {
+      capturedSkillContext = options?.skillContext ?? '';
+      return {
+        mode: 'select_existing_workflow',
+        workflowDefinitionId: workflow.id,
+        confidence: 0.91,
+        reason: 'The workflow skill selected this workflow.',
+        assignments: [],
+        fallbackMode: 'default_workflow',
+      };
+    },
+    planner: async () => createApprovalPlan(task.title),
+  });
+
+  assert.equal(run.workflow_definition_id, workflow.id);
+  assert.match(capturedSkillContext, /Skill: workflow-supervisor-skill/);
 });
 
 test('startGraphWorkflow uses high-confidence supervisor workflow choice', async () => {

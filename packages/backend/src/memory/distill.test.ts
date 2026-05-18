@@ -53,6 +53,41 @@ test('distillFromConversation stores candidates from model text', async () => {
   assert.equal(created.source_id, `${reply.id}#distill-1`);
 });
 
+test('distillFromConversation appends skill context after memory extraction rules', async () => {
+  const project = projectRepo.create({ name: 'Distill Skill Context', path: createProjectDir() });
+  const room = roomRepo.create({ project_id: project.id, name: 'Distill Skill Context Room' });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '请记住使用内置 skills。',
+  });
+  const reply = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'assistant',
+    sender_name: 'Assistant',
+    content: '确认。',
+  });
+  let capturedPrompt = '';
+
+  await distillFromConversation({
+    projectId: project.id,
+    roomId: room.id,
+    triggerMessageId: reply.id,
+    skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: memory-skill',
+    modelInvoker: async (prompt) => {
+      capturedPrompt = prompt;
+      return '[]';
+    },
+  });
+
+  assert.match(capturedPrompt, /仅提取新的、有价值的信息/);
+  assert.match(capturedPrompt, /Skill: memory-skill/);
+  assert.ok(capturedPrompt.indexOf('仅提取新的、有价值的信息') < capturedPrompt.indexOf('Skill: memory-skill'));
+});
+
 test('distillFromConversation skips when model is not configured', async () => {
   const restoreEnv = clearModelEnv();
   const project = projectRepo.create({ name: 'Distill Missing Model', path: createProjectDir() });
@@ -118,6 +153,29 @@ test('distillFromTask stores candidates from model text', async () => {
   assert.equal(taskMemory.room_id, room.id);
   assert.equal(taskMemory.task_id, task.id);
   assert.equal(taskMemory.source_id, 'workflow-task-distill-stores#distill-2');
+});
+
+test('distillFromTask appends skill context after task extraction rules', async () => {
+  const { project, room, task } = createTaskDistillContext('Task Distill Skill Context');
+  let capturedPrompt = '';
+
+  await distillFromTask({
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    taskTitle: task.title,
+    taskSummary: '任务完成。',
+    sourceId: 'workflow-task-distill-skill-context',
+    skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: task-memory-skill',
+    modelInvoker: async (prompt) => {
+      capturedPrompt = prompt;
+      return '[]';
+    },
+  });
+
+  assert.match(capturedPrompt, /提取架构决策/);
+  assert.match(capturedPrompt, /Skill: task-memory-skill/);
+  assert.ok(capturedPrompt.indexOf('提取架构决策') < capturedPrompt.indexOf('Skill: task-memory-skill'));
 });
 
 test('distillFromTask ignores malformed model JSON without writing memory', async () => {

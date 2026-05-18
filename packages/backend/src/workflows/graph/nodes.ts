@@ -64,6 +64,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         metadata: { graph_node: 'planning', workflow_stage: 'planning', status: 'running' },
       });
 
+      const skillContext = await tools.buildSkillContext({
+        runtimeScopes: ['planner', 'workflow'],
+        projectId: context.project.id,
+        roomId: context.room.id,
+        message: [
+          context.task.title,
+          context.task.description ?? '',
+          context.workflowContext,
+          context.recentMessages.join('\n'),
+        ].filter(Boolean).join('\n\n'),
+      });
       const plan = await tools.generatePlan({
         projectName: context.project.name,
         projectPath: context.project.path,
@@ -72,7 +83,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         agents: context.agents,
         memories: context.memories ? [context.memories] : [],
         recentMessages: context.recentMessages,
-      });
+      }, { skillContext });
 
       const output = formatParsedPlanArtifact(plan);
       tools.createArtifact({
@@ -1258,6 +1269,16 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           });
           const autoDistillEnabled = tools.resolveRoomSettings(context.room.id)?.effective.auto_distill_enabled ?? true;
           if (autoDistillEnabled) {
+            const skillContext = await tools.buildSkillContext({
+              runtimeScopes: ['memory'],
+              projectId: context.project.id,
+              roomId: context.room.id,
+              message: [
+                context.task.title,
+                taskSummary,
+                acceptanceArtifact.content,
+              ].join('\n\n'),
+            });
             tools.distillTask({
               projectId: context.project.id,
               roomId: context.room.id,
@@ -1265,6 +1286,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
               taskTitle: context.task.title,
               taskSummary,
               sourceId: context.run.id,
+              skillContext,
             }).catch((err) => console.warn(`[distill] graph task distill error: ${(err as Error).message}`));
           }
         } catch (err) {

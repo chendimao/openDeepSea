@@ -143,6 +143,125 @@ test('review pass routes to acceptance and completes workflow on acceptance pass
   assert.equal(acceptedState.status, 'completed');
 });
 
+test('review and acceptance ACP prompts do not include OpenDeepSea skill context by default', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-review-no-skills-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Review No Skills', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Review No Skills Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  addAcpWorkflowAgent(room.id, 'reviewer');
+  addAcpWorkflowAgent(room.id, 'acceptor');
+
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parent no skill prompt task',
+    description: 'Parent workflow task',
+  });
+  const childTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Child no skill prompt task',
+    description: 'Implementation child task',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  taskRepo.updateStatus(childTask.id, 'review');
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'code_review',
+    graph_version: 'phase-b-v1',
+  });
+
+  const acpPrompts: string[] = [];
+  const tools = createGraphTools({
+    buildSkillContext: async () => 'OpenDeepSea active skills for this runtime:\nSkill: should-not-reach-acp',
+    runAcpAgent: async (input) => {
+      acpPrompts.push(input.prompt);
+      const runRow = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRow.id, 'completed') ?? runRow;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: input.workflowStage === 'code_review'
+          ? '{"verdict":"pass","findings":[],"requiredFixes":[],"riskLevel":"low"}'
+          : '{"verdict":"pass","acceptedCriteria":["child done"],"failedCriteria":[],"notes":"ok"}',
+        message_type: 'agent_stream',
+      });
+      return {
+        run: completedRun,
+        message,
+        status: 'completed' as const,
+      };
+    },
+  });
+  const nodes = createGraphNodes(tools);
+  const initialState = {
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Review and accept',
+      assumptions: [],
+      tasks: [{
+        title: childTask.title,
+        description: childTask.description ?? '',
+        suggestedRole: 'executor' as const,
+        priority: 'normal' as const,
+        acceptance: ['done'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: ['bug risk'],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'execute' as const,
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [childTask.id],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required' as const,
+    status: 'running' as const,
+    error: null,
+  };
+
+  const reviewedState = await nodes.reviewNode(initialState);
+  await nodes.acceptanceNode(reviewedState);
+
+  assert.equal(acpPrompts.length, 2);
+  for (const prompt of acpPrompts) {
+    assert.doesNotMatch(prompt, /OpenDeepSea active skills for this runtime/);
+    assert.doesNotMatch(prompt, /should-not-reach-acp/);
+  }
+});
+
 test('review changes_requested routes back to execute with bounded repair attempts', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-review-repair-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

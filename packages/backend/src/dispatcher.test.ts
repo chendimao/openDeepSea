@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -19,6 +19,7 @@ const { agentRepo } = await import('./repos/agents.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { settingsRepo } = await import('./repos/settings.js');
+const { skillRepo } = await import('./skills/repo.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { messageUploadDir } = await import('./uploads.js');
@@ -1042,8 +1043,35 @@ test('respondAsAgent marks final stream event failed without mixing stderr into 
 
 test('dispatchUserMessage triggers model distill after completed ACP reply when enabled', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-acp-distill-test-'));
+  const skillPath = await mkdtemp(join(tmpdir(), 'openclaw-room-memory-skill-dir-'));
+  await mkdir(skillPath, { recursive: true });
+  await writeFile(join(skillPath, 'SKILL.md'), [
+    '---',
+    'name: memory-runtime-skill',
+    'description: Runtime memory skill',
+    '---',
+    'Capture memory using runtime memory guidance.',
+  ].join('\n'));
   const project = projectRepo.create({ name: `acp-distill-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const skill = skillRepo.createSkill({
+    id: `skill-memory-${Date.now()}`,
+    name: 'memory-runtime-skill',
+    description: 'Runtime memory skill',
+    source_type: 'manual',
+    install_path: skillPath,
+    runtime_scopes: ['memory'],
+    trigger_mode: 'always_for_scope',
+    trigger_keywords: [],
+    priority: 10,
+  });
+  skillRepo.upsertBinding({
+    id: `binding-memory-${Date.now()}`,
+    skill_id: skill.id,
+    scope: 'room',
+    scope_id: room.id,
+    enabled: true,
+  });
   const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'codex-distill', agent_name: 'CodexDistill' });
   roomAgentRepo.setAcp(agent.id, {
     acp_enabled: true,
@@ -1083,6 +1111,8 @@ test('dispatchUserMessage triggers model distill after completed ACP reply when 
       userMessage: message,
       distillModelInvoker: async (prompt) => {
         assert.match(prompt, /Codex ACP 可以回复/);
+        assert.match(prompt, /OpenDeepSea active skills for this runtime/);
+        assert.match(prompt, /Skill: memory-runtime-skill/);
         return JSON.stringify([
           { scope: 'room', memory_type: 'fact', title: 'ACP 可用', content: 'Codex ACP 可以回复。' },
         ]);
@@ -1100,6 +1130,7 @@ test('dispatchUserMessage triggers model distill after completed ACP reply when 
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
+    await rm(skillPath, { recursive: true, force: true });
   }
 });
 
@@ -1186,6 +1217,10 @@ test('dispatchUserMessage replies with configured model when no agent target is 
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-test-'));
   const project = projectRepo.create({ name: `model-chat-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  settingsRepo.updateRoom(room.id, {
+    message_routing_mode: 'mentions_only',
+    fallback_agent_id: null,
+  });
   const message = messageRepo.create({
     room_id: room.id,
     sender_type: 'user',
@@ -1213,6 +1248,104 @@ test('dispatchUserMessage replies with configured model when no agent target is 
     assert.equal(modelReply.sender_type, 'agent');
     assert.equal(modelReply.sender_name, 'Model Chat');
     assert.equal(modelReply.content, '模型回复成功');
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('dispatchUserMessage passes model_chat skill context to configured model fallback', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-skill-runtime-'));
+  const skillPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-skill-dir-'));
+  await mkdir(skillPath, { recursive: true });
+  await writeFile(join(skillPath, 'SKILL.md'), [
+    '---',
+    'name: model-chat-runtime-skill',
+    'description: Runtime model chat skill',
+    '---',
+    'Reply with runtime model chat guidance.',
+  ].join('\n'));
+  const project = projectRepo.create({ name: `model-chat-runtime-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  settingsRepo.updateRoom(room.id, {
+    message_routing_mode: 'mentions_only',
+    fallback_agent_id: null,
+  });
+  const skill = skillRepo.createSkill({
+    id: `skill-model-chat-${Date.now()}`,
+    name: 'model-chat-runtime-skill',
+    description: 'Runtime model chat skill',
+    source_type: 'manual',
+    install_path: skillPath,
+    runtime_scopes: ['model_chat'],
+    trigger_mode: 'always_for_scope',
+    trigger_keywords: [],
+    priority: 10,
+  });
+  skillRepo.upsertBinding({
+    id: `binding-model-chat-${Date.now()}`,
+    skill_id: skill.id,
+    scope: 'room',
+    scope_id: room.id,
+    enabled: true,
+  });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '请调用模型聊天技能',
+    message_type: 'text',
+  });
+  let capturedSystem = '';
+
+  try {
+    await dispatchUserMessage({
+      roomId: room.id,
+      userMessage: message,
+      modelChatInvoker: {
+        async invoke(messages) {
+          capturedSystem = String(messages[0]?.content);
+          return '模型技能回复成功';
+        },
+      },
+    });
+
+    assert.match(capturedSystem, /OpenDeepSea active skills for this runtime/);
+    assert.match(capturedSystem, /Skill: model-chat-runtime-skill/);
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+    await rm(skillPath, { recursive: true, force: true });
+  }
+});
+
+test('buildModelChatMessages appends skill context after base rules', async () => {
+  const { buildModelChatMessages } = await import('./chat-model.js');
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-skill-test-'));
+  const project = projectRepo.create({ name: 'Model Chat Skill', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Skill Room' });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '请按 skill 回复',
+    message_type: 'text',
+  });
+
+  try {
+    const [systemMessage] = buildModelChatMessages({
+      project,
+      room,
+      userMessage,
+      recentMessages: [userMessage],
+    }, {
+      skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: model-chat-skill',
+    });
+
+    const systemContent = String(systemMessage?.content);
+    assert.match(systemContent, /不要声称已经修改文件/);
+    assert.match(systemContent, /Skill: model-chat-skill/);
+    assert.ok(systemContent.indexOf('不要声称已经修改文件') < systemContent.indexOf('Skill: model-chat-skill'));
   } finally {
     await rm(projectPath, { recursive: true, force: true });
   }

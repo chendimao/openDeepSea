@@ -91,6 +91,76 @@ test('memory node stores accepted task summary and completes graph state', async
   assert.equal(state.currentNode, 'memory');
 });
 
+test('memory node passes memory skill context to task distillation', async () => {
+  const projectPath = join(tmpdir(), `graph-memory-node-skill-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Memory Skill Node', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Memory Skill Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Memory skill task',
+    description: 'Ensure memory distill receives skill context.',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'running',
+    current_stage: 'acceptance',
+    graph_version: 'phase-b-v1',
+  });
+  workflowRepo.createArtifact({
+    task_id: task.id,
+    workflow_run_id: run.id,
+    artifact_type: 'acceptance',
+    title: '功能验收',
+    content: JSON.stringify({
+      verdict: 'pass',
+      acceptedCriteria: ['memory distill requested'],
+      failedCriteria: [],
+      notes: 'Accepted',
+    }),
+  });
+
+  let capturedSkillContext = '';
+  const tools = createGraphTools({
+    buildSkillContext: async (input) => {
+      assert.deepEqual(input.runtimeScopes, ['memory']);
+      assert.equal(input.projectId, project.id);
+      assert.equal(input.roomId, room.id);
+      assert.match(input.message ?? '', /Memory skill task/);
+      return 'OpenDeepSea active skills for this runtime:\nSkill: memory-runtime-skill';
+    },
+    distillTask: async (input) => {
+      capturedSkillContext = input.skillContext ?? '';
+    },
+  });
+
+  await createGraphNodes(tools).memoryNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+    plan: null,
+    currentNode: 'acceptance',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [],
+    reviewFindings: [],
+    reviewVerdict: 'pass',
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'completed',
+    error: null,
+  });
+
+  assert.match(capturedSkillContext, /Skill: memory-runtime-skill/);
+});
+
 test('memory node without acceptance artifact skips task summary but still completes graph state', async () => {
   const projectPath = join(tmpdir(), `graph-memory-node-no-acceptance-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
