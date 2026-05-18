@@ -61,10 +61,23 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`${res.status}: ${text}`);
+    throw new Error(formatApiError(res.status, text));
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+function formatApiError(status: number, text: string): string {
+  const fallback = text.trim() || '请求失败';
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown };
+    if (typeof parsed.error === 'string' && parsed.error.trim()) {
+      return parsed.error.trim();
+    }
+  } catch {
+    // Non-JSON responses keep the original body for diagnostics.
+  }
+  return `${status}: ${fallback}`;
 }
 
 function getWorkspaceLocalToken(): string | null {

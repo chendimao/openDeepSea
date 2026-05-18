@@ -198,6 +198,7 @@ export const workflowDefinitionRepo = {
     description?: string | null;
     scope?: WorkflowDefinitionScope;
     scope_id?: string;
+    version?: number;
   }): WorkflowDefinition | undefined {
     const source = this.get(id);
     if (!source) return undefined;
@@ -208,13 +209,14 @@ export const workflowDefinitionRepo = {
     db.prepare(
       `INSERT INTO workflow_definitions (
         id, name, description, scope, scope_id, version, status, builtin_key, definition_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 1, 'draft', NULL, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, 'draft', NULL, ?, ?, ?)`,
     ).run(
       draftId,
       target?.name?.trim() || `${source.name} 副本`,
       target?.description === undefined ? source.description : target.description?.trim() || null,
       scope,
       scopeId,
+      target?.version ?? 1,
       JSON.stringify(source.definition),
       ts,
       ts,
@@ -232,6 +234,7 @@ export const workflowDefinitionRepo = {
       description: existing.description,
       scope: existing.scope,
       scope_id: existing.scope_id,
+      version: existing.version + 1,
     });
   },
 

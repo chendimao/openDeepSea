@@ -18,7 +18,13 @@ export function WorkflowOverflowPage(): JSX.Element {
   const [editingDefinition, setEditingDefinition] = useState<WorkflowDefinition | null>(null);
   const [viewingDefinition, setViewingDefinition] = useState<WorkflowDefinition | null>(null);
   const queryClient = useQueryClient();
-  const { data: definitions = [], isLoading } = useQuery({
+  const {
+    data: definitions = [],
+    error: definitionsError,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ['workflow-definitions', { includeArchived: true }],
     queryFn: () => api.listWorkflowDefinitions({ includeArchived: true }),
   });
@@ -172,6 +178,11 @@ export function WorkflowOverflowPage(): JSX.Element {
 
           {isLoading ? (
             <div className="text-[13px] text-[var(--color-fg-muted)]">加载中...</div>
+          ) : isError ? (
+            <WorkflowErrorState
+              message={definitionsError instanceof Error ? definitionsError.message : '工作流定义加载失败'}
+              onRetry={() => void refetch()}
+            />
           ) : filteredDefinitions.length === 0 ? (
             <WorkspaceEmptyState
               icon={<Search className="h-9 w-9" strokeWidth={1.75} />}
@@ -214,6 +225,24 @@ export function WorkflowOverflowPage(): JSX.Element {
         mode={editingDefinition?.status === 'draft' ? 'edit-draft' : 'create'}
       />
       <WorkflowDefinitionViewDialog definition={viewingDefinition} onOpenChange={(open) => !open && setViewingDefinition(null)} />
+    </div>
+  );
+}
+
+function WorkflowErrorState({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}): JSX.Element {
+  return (
+    <div className="rounded-lg border border-[var(--color-danger)]/40 bg-[var(--color-surface)] p-4">
+      <div className="text-[13px] font-medium text-[var(--color-danger)]">工作流定义加载失败</div>
+      <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">{message}</p>
+      <Button type="button" variant="secondary" className="mt-3" onClick={onRetry}>
+        重试
+      </Button>
     </div>
   );
 }

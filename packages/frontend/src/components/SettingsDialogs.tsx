@@ -188,6 +188,15 @@ export function ProjectSettingsDialog({
           fallbackOptions={toGlobalFallbackOptions(agents)}
           workflowDefinitions={workflowDefinitions}
           isSaving={save.isPending}
+          onBuilderSaved={async (definition) => {
+            if (definition.status === 'published') {
+              await api.updateProjectSettings(project.id, { default_workflow_definition_id: definition.id });
+            }
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['workflow-definitions', 'settings'] }),
+              queryClient.invalidateQueries({ queryKey: ['settings', 'project', project.id] }),
+            ]);
+          }}
           onSave={(patch) => save.mutate(patch)}
         />
       </DialogContent>
@@ -755,6 +764,7 @@ function ProjectSettingsForm({
   fallbackOptions,
   workflowDefinitions,
   isSaving,
+  onBuilderSaved,
   onSave,
 }: {
   project: Project;
@@ -762,6 +772,7 @@ function ProjectSettingsForm({
   fallbackOptions: FallbackAgentOption[];
   workflowDefinitions: WorkflowDefinition[];
   isSaving: boolean;
+  onBuilderSaved: (definition: WorkflowDefinition) => void | Promise<void>;
   onSave: (patch: SettingsPatch) => void;
 }): JSX.Element {
   const system = settings?.system ?? DEFAULT_SYSTEM_SETTINGS;
@@ -782,6 +793,7 @@ function ProjectSettingsForm({
   const [workflowDefinitionId, setWorkflowDefinitionId] = useState<string | 'inherit'>(
     own?.default_workflow_definition_id ?? 'inherit',
   );
+  const [builderOpen, setBuilderOpen] = useState(false);
   const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
   const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
   const inheritedWorkflowDefinition = workflowDefinitions.find(
@@ -802,6 +814,9 @@ function ProjectSettingsForm({
     ? null
     : workflowDefinitions.find((definition) => definition.id === workflowDefinitionId);
   const archivedDefaultSelected = selectedWorkflowDefinition?.status === 'archived';
+  const builderDefinition = selectedWorkflowDefinition?.scope === 'project' && selectedWorkflowDefinition.scope_id === project.id
+    ? selectedWorkflowDefinition
+    : null;
 
   return (
     <SettingsDialogBody
@@ -859,6 +874,18 @@ function ProjectSettingsForm({
           helperText={archivedDefaultSelected ? '当前默认工作流已归档，请选择新的已发布工作流' : null}
           onChange={setWorkflowDefinitionId}
         />
+        <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
+          <div className="min-w-0">
+            <div className="text-[12px] font-medium text-[var(--color-fg)]">项目级编排</div>
+            <div className="mt-1 truncate text-[11px] text-[var(--color-fg-muted)]">
+              {builderDefinition ? `${workflowDefinitionLabel(builderDefinition)} / ${builderDefinition.status}` : '新建项目级工作流'}
+            </div>
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={() => setBuilderOpen(true)}>
+            <GitBranch className="h-3.5 w-3.5" />
+            编排
+          </Button>
+        </div>
       </SettingGroup>
       {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit' || workflowDefinitionId !== 'inherit') && (
         <ResetInheritanceButton
@@ -871,6 +898,15 @@ function ProjectSettingsForm({
           }}
         />
       )}
+      <WorkflowBuilderDialog
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        initialScope="project"
+        initialScopeId={project.id}
+        scopeOptions={[{ scope: 'project', scope_id: project.id, label: `项目：${project.name}` }]}
+        definition={builderDefinition}
+        onSaved={onBuilderSaved}
+      />
     </SettingsDialogBody>
   );
 }

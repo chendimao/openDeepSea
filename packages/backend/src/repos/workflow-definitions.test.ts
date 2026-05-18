@@ -206,6 +206,7 @@ test('workflowDefinitionRepo duplicates and creates edit drafts without mutating
 
   assert.notEqual(editDraft.id, source.id);
   assert.equal(editDraft.status, 'draft');
+  assert.equal(editDraft.version, source.version + 1);
   assert.equal(editDraft.scope, source.scope);
   assert.equal(editDraft.scope_id, source.scope_id);
   assert.equal(workflowDefinitionRepo.get(source.id)?.status, 'published');
