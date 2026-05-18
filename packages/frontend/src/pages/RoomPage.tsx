@@ -1114,9 +1114,9 @@ function MessageBubble({
         </AiMessageHeader>
         <AiMessageBody stream={isStreaming}>
           {hasContent ? (
-            <MessageContent content={renderedContent} />
+            <MessageContent content={renderedContent} streaming={isStreaming} />
           ) : message.message_type === 'agent_stream' ? (
-            <MessageContent content="…" />
+            <MessageContent content="…" streaming={isStreaming} />
           ) : null}
           <MessageAttachments attachments={attachments} />
         </AiMessageBody>

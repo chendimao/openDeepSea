@@ -32,7 +32,13 @@ function parseMessage(content: string): MessagePart[] {
   return parts.length > 0 ? parts : [{ type: 'text', value: content }];
 }
 
-export function MessageContent({ content }: { content: string }): JSX.Element {
+export function MessageContent({
+  content,
+  streaming = false,
+}: {
+  content: string;
+  streaming?: boolean;
+}): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
   const { t } = useI18n();
@@ -75,31 +81,34 @@ export function MessageContent({ content }: { content: string }): JSX.Element {
       )}
 
       {markdown && mode === 'preview' ? (
-        <MarkdownPreview content={content} />
+        <MarkdownPreview content={content} streaming={streaming} />
       ) : (
-        parts.map((part, index) => {
-          if (part.type === 'text') {
-            if (!part.value) return null;
-            return (
-              <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
-                {part.value}
-              </span>
-            );
-          }
+        <>
+          {parts.map((part, index) => {
+            if (part.type === 'text') {
+              if (!part.value) return null;
+              return (
+                <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
+                  {part.value}
+                </span>
+              );
+            }
 
-          const copied = copiedIndex === index;
-          return (
-            <CodeBlock
-              key={`code-${index}`}
-              language={part.language}
-              value={part.value}
-              copied={copied}
-              onCopy={() => void copyCode(part.value, index)}
-              copyLabel={t('message.copy')}
-              copiedLabel={t('message.copied')}
-            />
-          );
-        })
+            const copied = copiedIndex === index;
+            return (
+              <CodeBlock
+                key={`code-${index}`}
+                language={part.language}
+                value={part.value}
+                copied={copied}
+                onCopy={() => void copyCode(part.value, index)}
+                copyLabel={t('message.copy')}
+                copiedLabel={t('message.copied')}
+              />
+            );
+          })}
+          {streaming && <StreamingCursor />}
+        </>
       )}
     </div>
   );
@@ -123,7 +132,7 @@ function isMarkdownContent(content: string): boolean {
     || /\*\*[^*\n]+\*\*/.test(trimmed);
 }
 
-function MarkdownPreview({ content }: { content: string }): JSX.Element {
+function MarkdownPreview({ content, streaming }: { content: string; streaming: boolean }): JSX.Element {
   const { t } = useI18n();
   const parts = parseMessage(content);
   return (
@@ -144,8 +153,13 @@ function MarkdownPreview({ content }: { content: string }): JSX.Element {
         }
         return <MarkdownText key={`preview-text-${index}`} text={part.value} />;
       })}
+      {streaming && <StreamingCursor />}
     </div>
   );
+}
+
+function StreamingCursor(): JSX.Element {
+  return <span className="streaming-cursor" aria-hidden="true" />;
 }
 
 function MarkdownText({ text }: { text: string }): JSX.Element {
