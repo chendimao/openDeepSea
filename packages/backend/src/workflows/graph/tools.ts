@@ -40,6 +40,7 @@ export interface GraphRuntimeDeps {
   planner?: (input: LangChainPlannerInput, options?: LangChainPlannerOptions) => Promise<ParsedPlan>;
   supervisor?: (input: WorkflowSupervisorInput, options?: WorkflowSupervisorOptions) => Promise<WorkflowSupervisorDecision>;
   buildSkillContext?: (input: BuildSkillContextInput) => Promise<string>;
+  scheduleRetry?: (input: { runId: string; attempt: number; delayMs: number; error: string }, retry: () => void) => void;
   distillTask?: typeof distillFromTask;
   runAcpAgent?: (input: RespondAsAgentInput) => Promise<{
     run: AgentRun;

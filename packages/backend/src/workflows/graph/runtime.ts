@@ -38,6 +38,7 @@ const GraphState = Annotation.Root({
 });
 
 const SUPERVISOR_CONFIDENCE_THRESHOLD = 0.75;
+const BACKGROUND_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 120_000] as const;
 
 type WorkflowDefinitionSnapshot = {
   id: string;
@@ -287,14 +288,29 @@ function createSupervisorFailureAudit(usedWorkflowDefinitionId: string, err: unk
 }
 
 export function enqueueGraphWorkflow(runId: string, deps: GraphRuntimeDeps = {}): void {
+  enqueueGraphWorkflowAttempt(runId, deps, 0);
+}
+
+function enqueueGraphWorkflowAttempt(runId: string, deps: GraphRuntimeDeps, attempt: number): void {
   setImmediate(() => {
-    void continueGraphWorkflow(runId, deps).catch((err) => {
+    void continueGraphWorkflow(runId, deps, { blockOnError: false }).catch((err) => {
+      const delayMs = BACKGROUND_RETRY_DELAYS_MS[attempt];
+      if (delayMs !== undefined && canRetryBackgroundGraphWorkflow(runId)) {
+        const error = err instanceof Error ? err.message : String(err);
+        markBackgroundGraphWorkflowAttemptInterrupted(runId, error);
+        scheduleBackgroundGraphWorkflowRetry(runId, deps, attempt + 1, delayMs, error);
+        return;
+      }
       handleBackgroundGraphWorkflowError(runId, err);
     });
   });
 }
 
-export async function continueGraphWorkflow(runId: string, deps: GraphRuntimeDeps = {}): Promise<WorkflowRun> {
+export async function continueGraphWorkflow(
+  runId: string,
+  deps: GraphRuntimeDeps = {},
+  options: { blockOnError?: boolean } = {},
+): Promise<WorkflowRun> {
   let state: AgentWorkflowState | null = null;
   try {
     const run = requireGraphRun(runId);
@@ -302,6 +318,7 @@ export async function continueGraphWorkflow(runId: string, deps: GraphRuntimeDep
     const finalState = await resumeGraphWorkflowFromState(state, deps, parseWorkflowDefinitionSnapshot(run));
     workflowRepo.updateGraphState(run.id, serializeGraphState(finalState));
   } catch (err) {
+    if (options.blockOnError === false) throw err;
     const error = err instanceof Error ? err.message : String(err);
     const latest = workflowRepo.getRun(runId);
     const parsed = latest ? tryParseGraphState(latest) : null;
@@ -318,11 +335,45 @@ export async function continueGraphWorkflow(runId: string, deps: GraphRuntimeDep
   return latest;
 }
 
+function scheduleBackgroundGraphWorkflowRetry(
+  runId: string,
+  deps: GraphRuntimeDeps,
+  attempt: number,
+  delayMs: number,
+  error: string,
+): void {
+  const retry = () => enqueueGraphWorkflowAttempt(runId, deps, attempt);
+  if (deps.scheduleRetry) {
+    deps.scheduleRetry({ runId, attempt, delayMs, error }, retry);
+    return;
+  }
+  setTimeout(retry, delayMs);
+}
+
+function canRetryBackgroundGraphWorkflow(runId: string): boolean {
+  const run = workflowRepo.getRun(runId);
+  return Boolean(run && run.status !== 'cancelled' && run.status !== 'completed' && run.status !== 'failed');
+}
+
+function markBackgroundGraphWorkflowAttemptInterrupted(runId: string, error: string): void {
+  const run = workflowRepo.getRun(runId);
+  if (!run) return;
+  const tools = createGraphTools();
+  for (const step of workflowRepo.listSteps(runId).filter((item) => item.node_name && item.status === 'running')) {
+    const interrupted = workflowRepo.updateStep(step.id, {
+      status: 'interrupted',
+      error,
+    });
+    if (interrupted) tools.broadcastStepUpdated(run.room_id, interrupted);
+  }
+}
+
 export function approveGraphWorkflowPlan(id: string, approvedBy = 'user'): WorkflowRun {
   const run = validateGraphWorkflowApproval(id);
   const state = requireGraphStateOrBlock(run);
   const approvedState: AgentWorkflowState = {
     ...state,
+    currentNode: 'approval',
     approval: 'approved',
     status: 'running',
     error: null,

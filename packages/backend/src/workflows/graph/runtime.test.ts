@@ -53,6 +53,96 @@ test('enqueueGraphWorkflow defers graph node execution until after the current t
   assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'context'));
 });
 
+test('enqueueGraphWorkflow retries background errors with configured backoff delays', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-enqueue-retry-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Enqueue Retry', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Enqueue Retry Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Retry transient planner error',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const scheduled: Array<{ delayMs: number; retry: () => void }> = [];
+  let plannerCalls = 0;
+
+  enqueueGraphWorkflow(run.id, {
+    planner: async () => {
+      plannerCalls += 1;
+      if (plannerCalls < 3) throw new Error(`planner transient ${plannerCalls}`);
+      return createApprovalPlan(task.title);
+    },
+    scheduleRetry: (input, retry) => {
+      scheduled.push({ delayMs: input.delayMs, retry });
+    },
+  });
+
+  await flushImmediate();
+  assert.equal(plannerCalls, 1);
+  assert.equal(workflowRepo.getRun(run.id)?.status, 'running');
+  assert.deepEqual(scheduled.map((item) => item.delayMs), [10_000]);
+
+  scheduled[0]!.retry();
+  await flushImmediate();
+  assert.equal(plannerCalls, 2);
+  assert.equal(workflowRepo.getRun(run.id)?.status, 'running');
+  assert.deepEqual(scheduled.map((item) => item.delayMs), [10_000, 20_000]);
+
+  scheduled[1]!.retry();
+  await flushImmediate();
+
+  const latest = workflowRepo.getRun(run.id);
+  const state = parseGraphState(latest?.graph_state ?? null);
+  assert.equal(plannerCalls, 3);
+  assert.equal(latest?.status, 'awaiting_approval');
+  assert.equal(state?.status, 'awaiting_approval');
+  assert.equal(state?.plan?.summary, `Plan for ${task.title}`);
+  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.status === 'running'), false);
+  assert.deepEqual(scheduled.map((item) => item.delayMs), [10_000, 20_000]);
+});
+
+test('enqueueGraphWorkflow blocks background errors after retry backoff is exhausted', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-enqueue-retry-exhausted-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Enqueue Retry Exhausted', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Enqueue Retry Exhausted Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Retry exhausted planner error',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const scheduled: Array<{ delayMs: number; retry: () => void }> = [];
+  let plannerCalls = 0;
+
+  enqueueGraphWorkflow(run.id, {
+    planner: async () => {
+      plannerCalls += 1;
+      throw new Error(`planner unavailable ${plannerCalls}`);
+    },
+    scheduleRetry: (input, retry) => {
+      scheduled.push({ delayMs: input.delayMs, retry });
+    },
+  });
+
+  await flushImmediate();
+  for (let index = 0; index < 4; index += 1) {
+    scheduled[index]!.retry();
+    await flushImmediate();
+  }
+
+  const latest = workflowRepo.getRun(run.id);
+  const state = parseGraphState(latest?.graph_state ?? null);
+
+  assert.equal(plannerCalls, 5);
+  assert.deepEqual(scheduled.map((item) => item.delayMs), [10_000, 20_000, 40_000, 120_000]);
+  assert.equal(latest?.status, 'blocked');
+  assert.match(latest?.error ?? '', /planner unavailable 5/);
+  assert.equal(state?.status, 'blocked');
+  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.status === 'running'), false);
+});
+
 test('startGraphWorkflow runs context and planning nodes into awaiting approval', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -1174,6 +1264,10 @@ function createApprovalPlan(title: string): ParsedPlan {
     risks: [],
     needsApproval: true,
   };
+}
+
+function flushImmediate(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function createTestWorkflowDefinition(): WorkflowDefinitionGraph {

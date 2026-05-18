@@ -191,6 +191,51 @@ test('workflowOrchestrator.approvePlan delegates graph approval to runtime conti
   assert.ok(['running', 'blocked', 'failed', 'cancelled', 'completed'].includes(approved.status));
 });
 
+test('workflowOrchestrator.approvePlan resumes dispatch when awaiting approval state is still on planning', async () => {
+  const task = createTask('graph-facade-approve-stale-node', 'Facade stale approval node');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  const run = createAwaitingGraphRun(task, {
+    currentNode: 'planning',
+    approval: 'pending',
+  });
+  const executionOrder: string[] = [];
+  const agentRuns: AgentRun[] = [];
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      executionOrder.push(input.workflowStage ?? 'unknown');
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      agentRuns.push(agentRun);
+      return {
+        run: { ...agentRun, stdout: 'implementation completed' },
+        message: fakeMessage(task.room_id, 'implementation completed'),
+        status: 'completed',
+      };
+    },
+  });
+
+  const approved = await workflowOrchestrator.approvePlan(run.id, 'tester');
+  const state = parseGraphState(approved.graph_state);
+
+  assert.notEqual(approved.status, 'awaiting_approval');
+  assert.equal(approved.current_stage, 'implementation');
+  assert.equal(state?.approval, 'approved');
+  assert.notEqual(state?.status, 'awaiting_approval');
+  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'));
+  assert.equal(executionOrder[0], 'implementation');
+  assert.equal(agentRuns[0]?.room_agent_id, executor.id);
+});
+
 test('workflowOrchestrator.approvePlan resumes through acceptance and memory on successful path', async () => {
   const task = createTask('graph-facade-approve-memory', 'Facade graph approval memory path');
   addWorkflowAgent(task.room_id, 'executor');
