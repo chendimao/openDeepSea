@@ -9,6 +9,14 @@ import type { AgentRun, Message, MessageAttachmentMetadata, Room, RoomAgent, Tas
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
 import { cn } from '../lib/utils';
+import {
+  createStreamingDisplayState,
+  enqueueStreamingChunk,
+  flushStreamingDisplay,
+  hasQueuedStreamingContent,
+  tickStreamingDisplay,
+  type StreamingDisplayState,
+} from '../lib/streamingDisplay';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
@@ -109,6 +117,7 @@ export function RoomPage() {
       return runs?.some((run) => run.status === 'running' || run.status === 'queued') ? 2000 : false;
     },
   });
+  const streamingDisplay = useStreamingMessageDisplay(roomId);
 
   useEffect(() => {
     setActiveTab('chat');
@@ -208,17 +217,29 @@ export function RoomPage() {
         }
       } else if (event.type === 'message:stream' && event.roomId === roomId) {
         let matchedMessage = false;
+        let fullContent = '';
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) => {
           if (!prev) return prev;
           const next = prev.map((m) => {
             if (m.id !== event.messageId) return m;
             matchedMessage = true;
-            return { ...m, content: m.content + event.chunk };
+            fullContent = m.content + event.chunk;
+            return { ...m, content: fullContent };
           });
           return dedupeMessages(next);
         });
+        if (event.chunk) {
+          streamingDisplay.appendChunk(event.messageId, event.chunk);
+        }
         if (!matchedMessage) {
           queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+        }
+        if (event.done) {
+          const fallbackContent = queryClient
+            .getQueryData<Message[]>(['messages', roomId])
+            ?.find((message) => message.id === event.messageId)
+            ?.content ?? fullContent;
+          streamingDisplay.finishMessage(event.messageId, fallbackContent);
         }
         setStreamingMessageIds((prev) =>
           event.done ? removeStreamingMessageId(prev, event.messageId) : addStreamingMessageId(prev, event.messageId),
@@ -282,7 +303,7 @@ export function RoomPage() {
       roomSocket.unsubscribe(roomId);
       off();
     };
-  }, [roomId, queryClient]);
+  }, [roomId, queryClient, streamingDisplay.appendChunk, streamingDisplay.finishMessage]);
 
   return (
     <div className="workspace-root" data-testid="room-page">
@@ -377,6 +398,7 @@ export function RoomPage() {
                 onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
                 retryingWorkflowId={retryWorkflow.variables}
                 streamingMessageIds={streamingMessageIds}
+                streamingDisplay={streamingDisplay}
                 registerMessageRef={registerMessageRef}
                 highlightMessageId={highlightMessageId}
               />
@@ -470,6 +492,107 @@ function removeStreamingMessageId(prev: Set<string>, messageId: string): Set<str
   const next = new Set(prev);
   next.delete(messageId);
   return next;
+}
+
+type StreamingMessageDisplay = {
+  appendChunk: (messageId: string, chunk: string) => void;
+  finishMessage: (messageId: string, fullContent: string) => void;
+  getDisplayedContent: (message: Message) => string;
+  isAnimating: (messageId: string) => boolean;
+};
+
+function useStreamingMessageDisplay(roomId: string): StreamingMessageDisplay {
+  const [displayStates, setDisplayStates] = useState<Map<string, StreamingDisplayState>>(() => new Map());
+  const finalContentRef = useRef<Map<string, string>>(new Map());
+  const timerRef = useRef<number | null>(null);
+
+  const stopTimer = useCallback(() => {
+    if (timerRef.current === null) return;
+    window.clearInterval(timerRef.current);
+    timerRef.current = null;
+  }, []);
+
+  const tick = useCallback(() => {
+    setDisplayStates((prev) => {
+      if (prev.size === 0) {
+        stopTimer();
+        return prev;
+      }
+
+      let changed = false;
+      let hasQueued = false;
+      const next = new Map<string, StreamingDisplayState>();
+      for (const [messageId, state] of prev) {
+        let ticked = tickStreamingDisplay(state);
+        const finalContent = finalContentRef.current.get(messageId);
+        if (finalContent !== undefined && !hasQueuedStreamingContent(ticked)) {
+          ticked = flushStreamingDisplay(ticked, finalContent);
+          finalContentRef.current.delete(messageId);
+        }
+        if (finalContentRef.current.has(messageId) || hasQueuedStreamingContent(ticked)) {
+          next.set(messageId, ticked);
+        }
+        if (ticked !== state) changed = true;
+        if (hasQueuedStreamingContent(ticked)) hasQueued = true;
+      }
+
+      if (!hasQueued) stopTimer();
+      return changed ? next : prev;
+    });
+  }, [stopTimer]);
+
+  const ensureTimer = useCallback(() => {
+    if (timerRef.current !== null) return;
+    timerRef.current = window.setInterval(tick, 18);
+  }, [tick]);
+
+  const appendChunk = useCallback((messageId: string, chunk: string) => {
+    if (!chunk) return;
+    setDisplayStates((prev) => {
+      const current = prev.get(messageId) ?? createStreamingDisplayState();
+      const next = new Map(prev);
+      next.set(messageId, enqueueStreamingChunk(current, chunk));
+      return next;
+    });
+    ensureTimer();
+  }, [ensureTimer]);
+
+  const finishMessage = useCallback((messageId: string, fullContent: string) => {
+    setDisplayStates((prev) => {
+      const current = prev.get(messageId);
+      if (current && hasQueuedStreamingContent(current)) {
+        finalContentRef.current.set(messageId, fullContent);
+        return prev;
+      }
+      finalContentRef.current.delete(messageId);
+      const next = new Map(prev);
+      next.delete(messageId);
+      return next;
+    });
+    ensureTimer();
+  }, [ensureTimer]);
+
+  const getDisplayedContent = useCallback((message: Message) => {
+    return displayStates.get(message.id)?.displayed ?? message.content;
+  }, [displayStates]);
+
+  const isAnimating = useCallback((messageId: string) => {
+    return hasQueuedStreamingContent(displayStates.get(messageId) ?? createStreamingDisplayState());
+  }, [displayStates]);
+
+  useEffect(() => {
+    setDisplayStates(new Map());
+    finalContentRef.current.clear();
+    stopTimer();
+    return stopTimer;
+  }, [roomId, stopTimer]);
+
+  return useMemo(() => ({
+    appendChunk,
+    finishMessage,
+    getDisplayedContent,
+    isAnimating,
+  }), [appendChunk, finishMessage, getDisplayedContent, isAnimating]);
 }
 
 function isTerminalAgentRunStatus(status: AgentRun['status']): boolean {
@@ -644,6 +767,7 @@ function ChatColumn({
   onRetryWorkflow,
   retryingWorkflowId,
   streamingMessageIds,
+  streamingDisplay,
   registerMessageRef,
   highlightMessageId,
 }: {
@@ -658,6 +782,7 @@ function ChatColumn({
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
   streamingMessageIds: Set<string>;
+  streamingDisplay: StreamingMessageDisplay;
   registerMessageRef: (messageId: string, node: HTMLElement | null) => void;
   highlightMessageId: string | null;
 }) {
@@ -733,6 +858,7 @@ function ChatColumn({
           ) : (
             visibleMessages.map((m) => {
               const run = runByMessageId.get(m.id);
+              const isStreamingMessage = streamingMessageIds.has(m.id) || streamingDisplay.isAnimating(m.id);
               return (
                 <MessageBubble
                   key={m.id}
@@ -745,7 +871,8 @@ function ChatColumn({
                   projectId={projectId}
                   onRetryWorkflow={onRetryWorkflow}
                   retryingWorkflowId={retryingWorkflowId}
-                  streaming={streamingMessageIds.has(m.id)}
+                  streaming={isStreamingMessage}
+                  displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
                   messageRef={(node) => registerMessageRef(m.id, node)}
                   highlighted={highlightMessageId === m.id}
                 />
@@ -817,6 +944,7 @@ function MessageBubble({
   onRetryWorkflow,
   retryingWorkflowId,
   streaming,
+  displayContent,
   messageRef,
   highlighted,
 }: {
@@ -830,6 +958,7 @@ function MessageBubble({
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
   streaming: boolean;
+  displayContent: string;
   messageRef: (node: HTMLElement | null) => void;
   highlighted: boolean;
 }) {
@@ -888,7 +1017,8 @@ function MessageBubble({
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
   const attachments = metadata.attachments;
-  const hasContent = Boolean(message.content?.trim());
+  const renderedContent = displayContent || (message.message_type === 'agent_stream' ? '…' : '');
+  const hasContent = Boolean(renderedContent.trim());
   const isStreaming = !isUser && message.message_type === 'agent_stream' && (
     streaming || run?.status === 'running' || run?.status === 'queued'
   );
@@ -984,7 +1114,7 @@ function MessageBubble({
         </AiMessageHeader>
         <AiMessageBody stream={isStreaming}>
           {hasContent ? (
-            <MessageContent content={message.content || (message.message_type === 'agent_stream' ? '…' : '')} />
+            <MessageContent content={renderedContent} />
           ) : message.message_type === 'agent_stream' ? (
             <MessageContent content="…" />
           ) : null}
