@@ -754,7 +754,15 @@ function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'ac
     acp_writable_dirs: [],
   });
   if (!withAcp) throw new Error(`failed to enable ACP for ${role}`);
-  return withAcp;
+  if (role !== 'executor') return withAcp;
+  const withRuntimeBoundary = roomAgentRepo.setCapabilitiesAndRuntime(withAcp.id, {
+    capabilities: withAcp.capabilities,
+    default_runtime: withAcp.default_runtime,
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  if (!withRuntimeBoundary) throw new Error(`failed to configure runtime boundary for ${role}`);
+  return withRuntimeBoundary;
 }
 
 function outputForStage(stage: WorkflowStage): string {

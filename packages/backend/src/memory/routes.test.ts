@@ -247,7 +247,11 @@ test('memory routes reject agent and task room mismatches', async () => {
   const project = projectRepo.create({ name: 'API Memory Ownership', path: createProjectPath('ownership') });
   const firstRoom = roomRepo.create({ project_id: project.id, name: 'First Room' });
   const secondRoom = roomRepo.create({ project_id: project.id, name: 'Second Room' });
-  const agent = roomAgentRepo.add({ room_id: firstRoom.id, agent_id: 'planner', agent_name: 'Planner' });
+  const agent = roomAgentRepo.add({
+    room_id: firstRoom.id,
+    agent_id: 'ownership-agent',
+    agent_name: 'Ownership Agent',
+  });
   const task = taskRepo.create({ project_id: project.id, room_id: firstRoom.id, title: 'Ownership task' });
 
   const agentMismatch = await request(`/api/projects/${project.id}/memories`, {

@@ -31,7 +31,14 @@ test('execute node starts assigned ACP agent and records completed implementatio
     acp_backend: 'codex',
     acp_session_id: null,
     acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
   }) ?? withRole;
+  const boundedExecutor = roomAgentRepo.setCapabilitiesAndRuntime(acpExecutor.id, {
+    capabilities: acpExecutor.capabilities,
+    default_runtime: acpExecutor.default_runtime,
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  }) ?? acpExecutor;
   const parentTask = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -44,7 +51,7 @@ test('execute node starts assigned ACP agent and records completed implementatio
     parent_task_id: parentTask.id,
     title: 'Child task',
     description: 'Implementation child task',
-    assigned_agent_id: acpExecutor.id,
+    assigned_agent_id: boundedExecutor.id,
     created_from: 'workflow_assignment',
   });
   const run = workflowRepo.createRun({
@@ -72,8 +79,8 @@ test('execute node starts assigned ACP agent and records completed implementatio
     runAcpAgent: async (input) => {
       const runRow = agentRunRepo.create({
         room_id: room.id,
-        room_agent_id: acpExecutor.id,
-        agent_id: acpExecutor.agent_id,
+        room_agent_id: boundedExecutor.id,
+        agent_id: boundedExecutor.agent_id,
         backend: 'codex',
         task_id: input.taskId ?? null,
         workflow_run_id: input.workflowRunId ?? null,
@@ -85,8 +92,8 @@ test('execute node starts assigned ACP agent and records completed implementatio
       const message = messageRepo.create({
         room_id: room.id,
         sender_type: 'agent',
-        sender_id: acpExecutor.agent_id,
-        sender_name: acpExecutor.agent_name,
+        sender_id: boundedExecutor.agent_id,
+        sender_name: boundedExecutor.agent_name,
         content: 'implementation done',
         message_type: 'agent_stream',
       });
@@ -150,7 +157,7 @@ test('execute node starts assigned ACP agent and records completed implementatio
   });
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.roomAgentId, acpExecutor.id);
+  assert.equal(calls[0]?.roomAgentId, boundedExecutor.id);
   assert.equal(calls[0]?.taskId, childTask.id);
   assert.equal(calls[0]?.workflowRunId, run.id);
   assert.equal(calls[0]?.workflowStage, 'implementation');
@@ -163,8 +170,8 @@ test('execute node starts assigned ACP agent and records completed implementatio
   assert.ok(step);
   assert.equal(step?.stage, 'implementation');
   assert.equal(step?.status, 'completed');
-  assert.equal(step?.room_agent_id, acpExecutor.id);
-  assert.equal(step?.assigned_room_agent_id, acpExecutor.id);
+  assert.equal(step?.room_agent_id, boundedExecutor.id);
+  assert.equal(step?.assigned_room_agent_id, boundedExecutor.id);
   assert.deepEqual(step?.scope_read, ['packages/backend/src/workflows/graph/nodes.ts']);
   assert.deepEqual(step?.scope_write, ['packages/backend/src/workflows/graph/nodes.ts']);
   assert.equal(step?.agent_run_id, fakeRunId);

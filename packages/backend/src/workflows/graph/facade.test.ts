@@ -60,11 +60,17 @@ test('workflowOrchestrator.start uses legacy runtime when graph disabled', async
   const task = createTask('graph-facade-disabled', 'Facade legacy workflow');
 
   const run = await workflowOrchestrator.start(task.id);
+  const step = workflowRepo.listSteps(run.id).find((item) => item.stage === 'analysis');
 
   assert.equal(run.graph_version, null);
   assert.equal(run.current_stage, 'analysis');
-  assert.equal(run.status, 'blocked');
-  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.node_name), false);
+  assert.equal(run.status, 'running');
+  assert.equal(step?.status, 'running');
+  assert.equal(step?.node_name, null);
+  assert.equal(workflowRepo.listSteps(run.id).some((item) => item.node_name), false);
+  assert.ok(step);
+  workflowRepo.updateRun(run.id, { status: 'blocked' });
+  workflowRepo.updateStep(step.id, { status: 'interrupted', error: 'test cleanup' });
 });
 
 test('workflowOrchestrator.recoverOrphanedSteps recovers graph steps before legacy steps', () => {
@@ -701,7 +707,15 @@ function addWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'accep
     acp_writable_dirs: [],
   });
   if (!withAcp) throw new Error(`failed to enable ACP for ${role}`);
-  return withAcp;
+  if (role !== 'executor') return withAcp;
+  const withRuntimeBoundary = roomAgentRepo.setCapabilitiesAndRuntime(withAcp.id, {
+    capabilities: withAcp.capabilities,
+    default_runtime: withAcp.default_runtime,
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  if (!withRuntimeBoundary) throw new Error(`failed to configure runtime boundary for ${role}`);
+  return withRuntimeBoundary;
 }
 
 function fakeMessage(roomId: string, content: string): Message {

@@ -29,6 +29,16 @@ OpenDeepSea 是一个本地优先的项目管理系统，让多个 ACP agent 在
 
 仓库内仍保留部分历史 package name、localStorage key、数据库字段和类型 union，用于迁移兼容；这些名称不代表当前需要外部编排服务运行时。
 
+## 智能体运行边界
+
+OpenDeepSea 将智能体差异拆为两层：提示词/persona 决定协作风格，运行边界决定真实执行权限。每个全局 Agent 提供默认 runtime profile，加入房间后 Room Agent 可单独覆盖。
+
+- **内置默认边界**：Planner、Reviewer、Acceptor 默认只读；Backend Executor 默认可写 `packages/backend`；Frontend Executor 默认可写 `packages/frontend`。
+- **ACP 后端与 session**：`acp_backend` 选择 Claude Code、OpenCode 或 Codex；`acp_session_id` 只决定复用哪个 CLI 会话上下文，不扩大可写目录。
+- **权限与 workspace policy**：`acp_permission_mode` 决定 ACP adapter 的权限模式，`workspace_policy.write` 决定最终传给 adapter 的可写目录。调度执行时会按任务 `scopeWrite` 匹配可写范围，不能覆盖全部写入路径的 executor 不会被选中。
+- **工具与记忆范围**：`tool_policy.allowed` 描述智能体可使用的工具能力；`memory_scope` 控制注入上下文的记忆范围。
+- **只读角色**：Reviewer 与 Acceptor 默认 `read-only` 且无 writable dirs，用于审查和验收，不承担代码写入。
+
 ### Optional: LangChain Planner
 
 LangChain Planner is optional in phase A. When disabled, workflow planning falls back to the existing ACP planner stage.

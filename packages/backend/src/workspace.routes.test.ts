@@ -30,12 +30,18 @@ async function request(path: string, init: RequestInit = {}, headers: HeaderMap 
   try {
     const address = server.address();
     assert(address && typeof address === 'object');
-    return await fetch(`http://127.0.0.1:${address.port}${path}`, {
+    const res = await fetch(`http://127.0.0.1:${address.port}${path}`, {
       ...init,
       headers: {
         ...headers,
         ...(init.headers ?? {}),
       },
+    });
+    const body = await res.arrayBuffer();
+    return new Response(body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
     });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
