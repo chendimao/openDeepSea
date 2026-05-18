@@ -100,6 +100,11 @@ export function SystemSettingsDialog({
     queryFn: api.listAgents,
     enabled: open,
   });
+  const { data: workflowDefinitions = [] } = useQuery({
+    queryKey: ['workflow-definitions', 'settings'],
+    queryFn: () => api.listWorkflowDefinitions({ includeArchived: true }),
+    enabled: open,
+  });
   const save = useMutation({
     mutationFn: api.updateSystemSettings,
     onSuccess: () => {
@@ -119,10 +124,11 @@ export function SystemSettingsDialog({
         className="max-h-[88vh] w-[min(94vw,900px)] overflow-y-auto"
       >
         <SystemSettingsForm
-          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.langchain_planner_model ?? ''}:${settings.openai_base_url ?? ''}:${settings.openai_api_key_set}:${settings.openai_api_key_preview ?? ''}`}
+          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.default_workflow_definition_id ?? ''}:${settings.langchain_planner_model ?? ''}:${settings.openai_base_url ?? ''}:${settings.openai_api_key_set}:${settings.openai_api_key_preview ?? ''}`}
           theme={theme}
           value={settings}
           fallbackOptions={toGlobalFallbackOptions(agents)}
+          workflowDefinitions={workflowDefinitions}
           isSaving={save.isPending}
           onThemeChange={onThemeChange}
           onSave={(patch) => save.mutate(patch)}
@@ -152,6 +158,11 @@ export function ProjectSettingsDialog({
     queryFn: api.listAgents,
     enabled: open,
   });
+  const { data: workflowDefinitions = [] } = useQuery({
+    queryKey: ['workflow-definitions', 'settings'],
+    queryFn: () => api.listWorkflowDefinitions({ includeArchived: true }),
+    enabled: open,
+  });
   const save = useMutation({
     mutationFn: (patch: SettingsPatch) => api.updateProjectSettings(project.id, patch),
     onSuccess: () => {
@@ -171,10 +182,11 @@ export function ProjectSettingsDialog({
         className="max-h-[88vh] w-[min(94vw,780px)] overflow-y-auto"
       >
         <ProjectSettingsForm
-          key={`${project.id}:${settings?.project?.updated_at ?? 0}`}
+          key={`${project.id}:${settings?.project?.updated_at ?? 0}:${settings?.system.default_workflow_definition_id ?? ''}`}
           project={project}
           settings={settings}
           fallbackOptions={toGlobalFallbackOptions(agents)}
+          workflowDefinitions={workflowDefinitions}
           isSaving={save.isPending}
           onSave={(patch) => save.mutate(patch)}
         />
@@ -204,7 +216,7 @@ export function RoomSettingsDialog({
   });
   const { data: workflowDefinitions = [] } = useQuery({
     queryKey: ['workflow-definitions', room.id],
-    queryFn: () => api.listRoomWorkflowDefinitions(room.id),
+    queryFn: () => api.listWorkflowDefinitions({ roomId: room.id, includeArchived: true }),
     enabled: open,
   });
   const save = useMutation({
@@ -236,6 +248,15 @@ export function RoomSettingsDialog({
           workflowDefinitions={workflowDefinitions}
           fallbackOptions={fallbackOptions}
           isSaving={save.isPending}
+          onBuilderSaved={async (definition) => {
+            if (definition.status === 'published') {
+              await api.updateRoomSettings(room.id, { default_workflow_definition_id: definition.id });
+            }
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['workflow-definitions', room.id] }),
+              queryClient.invalidateQueries({ queryKey: ['settings', 'room', room.id] }),
+            ]);
+          }}
           onSave={(patch) => save.mutate(patch)}
         />
       </DialogContent>
@@ -247,6 +268,7 @@ function SystemSettingsForm({
   theme,
   value,
   fallbackOptions,
+  workflowDefinitions,
   isSaving,
   onThemeChange,
   onSave,
@@ -254,6 +276,7 @@ function SystemSettingsForm({
   theme: ThemeMode;
   value: SystemSettings;
   fallbackOptions: FallbackAgentOption[];
+  workflowDefinitions: WorkflowDefinition[];
   isSaving: boolean;
   onThemeChange: (theme: ThemeMode) => void;
   onSave: (patch: {
@@ -261,6 +284,7 @@ function SystemSettingsForm({
     fallback_agent_id: string | null;
     interaction_mode: TaskInteractionMode;
     auto_distill_enabled: boolean;
+    default_workflow_definition_id: string | null;
     langchain_planner_model: string | null;
     openai_base_url: string | null;
     openai_api_key?: string | null;
@@ -270,6 +294,7 @@ function SystemSettingsForm({
   const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? 'planner');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
   const [autoDistillEnabled, setAutoDistillEnabled] = useState(value.auto_distill_enabled);
+  const [workflowDefinitionId, setWorkflowDefinitionId] = useState(value.default_workflow_definition_id ?? '');
   const [plannerModel, setPlannerModel] = useState(value.langchain_planner_model ?? '');
   const [openaiBaseUrl, setOpenaiBaseUrl] = useState(value.openai_base_url ?? '');
   const [openaiApiKey, setOpenaiApiKey] = useState('');
@@ -278,6 +303,17 @@ function SystemSettingsForm({
   const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
   const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
+  const workflowOptions = useMemo(
+    () =>
+      workflowSelectOptions(
+        workflowDefinitions,
+        (definition) => definition.scope === 'system' && definition.status === 'published',
+        workflowDefinitionId,
+      ),
+    [workflowDefinitions, workflowDefinitionId],
+  );
+  const selectedWorkflowDefinition = workflowDefinitions.find((definition) => definition.id === workflowDefinitionId);
+  const archivedDefaultSelected = selectedWorkflowDefinition?.status === 'archived';
   const categories: Array<{
     value: SystemSettingsCategory;
     title: string;
@@ -311,13 +347,14 @@ function SystemSettingsForm({
       footer={
         <Button
           type="button"
-          disabled={isSaving || (requiresFallback && !selectedFallbackAgentId)}
+          disabled={isSaving || archivedDefaultSelected || (requiresFallback && !selectedFallbackAgentId)}
           onClick={() => {
             const patch: Parameters<typeof onSave>[0] = {
               message_routing_mode: routingMode,
               fallback_agent_id: requiresFallback ? selectedFallbackAgentId : null,
               interaction_mode: interactionMode,
               auto_distill_enabled: autoDistillEnabled,
+              default_workflow_definition_id: workflowDefinitionId || null,
               langchain_planner_model: trimmedOrNull(plannerModel),
               openai_base_url: trimmedOrNull(openaiBaseUrl),
             };
@@ -427,6 +464,15 @@ function SystemSettingsForm({
                   onModeChange={(mode) => {
                     if (mode !== 'inherit') setAutoDistillEnabled(mode);
                   }}
+                />
+                <DefaultWorkflowSelect
+                  label="默认工作流"
+                  value={workflowDefinitionId}
+                  inheritLabel="默认开发闭环"
+                  allowInherit={false}
+                  options={workflowOptions}
+                  helperText={archivedDefaultSelected ? '当前默认工作流已归档，请选择新的已发布工作流' : null}
+                  onChange={setWorkflowDefinitionId}
                 />
               </SubSettingSection>
             </div>
@@ -707,12 +753,14 @@ function ProjectSettingsForm({
   project,
   settings,
   fallbackOptions,
+  workflowDefinitions,
   isSaving,
   onSave,
 }: {
   project: Project;
   settings?: SettingsResolution;
   fallbackOptions: FallbackAgentOption[];
+  workflowDefinitions: WorkflowDefinition[];
   isSaving: boolean;
   onSave: (patch: SettingsPatch) => void;
 }): JSX.Element {
@@ -731,21 +779,43 @@ function ProjectSettingsForm({
       ? 'inherit'
       : Boolean(own.auto_distill_enabled),
   );
+  const [workflowDefinitionId, setWorkflowDefinitionId] = useState<string | 'inherit'>(
+    own?.default_workflow_definition_id ?? 'inherit',
+  );
   const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
   const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
+  const inheritedWorkflowDefinition = workflowDefinitions.find(
+    (definition) => definition.id === system.default_workflow_definition_id,
+  );
+  const workflowOptions = useMemo(
+    () =>
+      workflowSelectOptions(
+        workflowDefinitions,
+        (definition) =>
+          definition.status === 'published' &&
+          (definition.scope === 'system' || (definition.scope === 'project' && definition.scope_id === project.id)),
+        workflowDefinitionId === 'inherit' ? null : workflowDefinitionId,
+      ),
+    [project.id, workflowDefinitions, workflowDefinitionId],
+  );
+  const selectedWorkflowDefinition = workflowDefinitionId === 'inherit'
+    ? null
+    : workflowDefinitions.find((definition) => definition.id === workflowDefinitionId);
+  const archivedDefaultSelected = selectedWorkflowDefinition?.status === 'archived';
 
   return (
     <SettingsDialogBody
       footer={
         <Button
           type="button"
-          disabled={isSaving || (requiresFallback && !selectedFallbackAgentId)}
+          disabled={isSaving || archivedDefaultSelected || (requiresFallback && !selectedFallbackAgentId)}
           onClick={() =>
             onSave({
               message_routing_mode: routingMode === 'inherit' ? null : routingMode,
               fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : selectedFallbackAgentId,
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
               auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
+              default_workflow_definition_id: workflowDefinitionId === 'inherit' ? null : workflowDefinitionId,
             })
           }
         >
@@ -780,14 +850,24 @@ function ProjectSettingsForm({
           inheritedLabel={t('settings.inheritedSystem', { value: autoDistillLabel(system.auto_distill_enabled, t) })}
           onModeChange={setAutoDistillEnabled}
         />
+        <DefaultWorkflowSelect
+          label="默认工作流"
+          value={workflowDefinitionId}
+          inheritLabel={`继承系统设置 (${inheritedWorkflowDefinition ? workflowDefinitionLabel(inheritedWorkflowDefinition) : '默认开发闭环'})`}
+          allowInherit
+          options={workflowOptions}
+          helperText={archivedDefaultSelected ? '当前默认工作流已归档，请选择新的已发布工作流' : null}
+          onChange={setWorkflowDefinitionId}
+        />
       </SettingGroup>
-      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit') && (
+      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit' || workflowDefinitionId !== 'inherit') && (
         <ResetInheritanceButton
           onClick={() => {
             setRoutingMode('inherit');
             setFallbackAgentId('');
             setInteractionMode('inherit');
             setAutoDistillEnabled('inherit');
+            setWorkflowDefinitionId('inherit');
           }}
         />
       )}
@@ -801,6 +881,7 @@ function RoomSettingsForm({
   workflowDefinitions,
   fallbackOptions,
   isSaving,
+  onBuilderSaved,
   onSave,
 }: {
   room: Room;
@@ -808,6 +889,7 @@ function RoomSettingsForm({
   workflowDefinitions: WorkflowDefinition[];
   fallbackOptions: FallbackAgentOption[];
   isSaving: boolean;
+  onBuilderSaved: (definition: WorkflowDefinition) => void | Promise<void>;
   onSave: (patch: SettingsPatch) => void;
 }): JSX.Element {
   const inherited = settings ? inheritedForRoom(settings) : DEFAULT_SYSTEM_SETTINGS;
@@ -835,13 +917,29 @@ function RoomSettingsForm({
     ? inherited.default_workflow_definition_id
     : workflowDefinitionId;
   const selectedDefinition = workflowDefinitions.find((definition) => definition.id === effectiveDefinitionId) ?? null;
+  const selectedOwnWorkflowDefinition = workflowDefinitionId === 'inherit'
+    ? null
+    : workflowDefinitions.find((definition) => definition.id === workflowDefinitionId);
+  const archivedDefaultSelected = selectedOwnWorkflowDefinition?.status === 'archived';
+  const builderDefinition = selectedDefinition?.scope === 'room' && selectedDefinition.scope_id === room.id
+    ? selectedDefinition
+    : null;
+  const workflowOptions = useMemo(
+    () =>
+      workflowSelectOptions(
+        workflowDefinitions,
+        (definition) => definition.status === 'published',
+        workflowDefinitionId === 'inherit' ? null : workflowDefinitionId,
+      ),
+    [workflowDefinitions, workflowDefinitionId],
+  );
 
   return (
     <SettingsDialogBody
       footer={
         <Button
           type="button"
-          disabled={isSaving || (requiresFallback && !selectedFallbackAgentId)}
+          disabled={isSaving || archivedDefaultSelected || (requiresFallback && !selectedFallbackAgentId)}
           onClick={() =>
             onSave({
               message_routing_mode: routingMode === 'inherit' ? null : routingMode,
@@ -893,14 +991,19 @@ function RoomSettingsForm({
             className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none transition-all focus:border-[var(--color-primary)] focus:glow-primary"
           >
             <option value="inherit">
-              {t('settings.inheritParentSettings')} ({selectedDefinition?.name ?? '默认开发闭环'})
+              {t('settings.inheritParentSettings')} ({selectedDefinition ? workflowDefinitionLabel(selectedDefinition) : '默认开发闭环'})
             </option>
-            {workflowDefinitions.map((definition) => (
-              <option key={definition.id} value={definition.id}>
-                {definition.name} v{definition.version}
+            {workflowOptions.map((option) => (
+              <option key={option.definition.id} value={option.definition.id}>
+                {option.label}
               </option>
             ))}
           </select>
+          {archivedDefaultSelected && (
+            <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-danger)]">
+              当前默认工作流已归档，请选择新的已发布工作流
+            </p>
+          )}
           <div className="mt-2 flex items-center justify-between gap-2">
             <div className="min-w-0 truncate text-[11px] text-[var(--color-fg-muted)]">
               {selectedDefinition ? `${selectedDefinition.status} / ${selectedDefinition.scope}` : '使用继承工作流'}
@@ -926,8 +1029,11 @@ function RoomSettingsForm({
       <WorkflowBuilderDialog
         open={builderOpen}
         onOpenChange={setBuilderOpen}
-        roomId={room.id}
-        definition={selectedDefinition}
+        initialScope="room"
+        initialScopeId={room.id}
+        scopeOptions={[{ scope: 'room', scope_id: room.id, label: `群聊：${room.name}` }]}
+        definition={builderDefinition}
+        onSaved={onBuilderSaved}
       />
     </SettingsDialogBody>
   );
@@ -1101,6 +1207,50 @@ function AutoDistillSection({
   );
 }
 
+type WorkflowSelectOption = {
+  definition: WorkflowDefinition;
+  label: string;
+};
+
+function DefaultWorkflowSelect({
+  label,
+  value,
+  inheritLabel,
+  allowInherit,
+  options,
+  helperText,
+  onChange,
+}: {
+  label: string;
+  value: string | 'inherit';
+  inheritLabel: string;
+  allowInherit: boolean;
+  options: WorkflowSelectOption[];
+  helperText?: string | null;
+  onChange: (value: string | 'inherit') => void;
+}): JSX.Element {
+  return (
+    <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
+      <Label>{label}</Label>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value as string | 'inherit')}
+        className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none transition-all focus:border-[var(--color-primary)] focus:glow-primary"
+      >
+        <option value={allowInherit ? 'inherit' : ''}>{inheritLabel}</option>
+        {options.map((option) => (
+          <option key={option.definition.id} value={option.definition.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {helperText && (
+        <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-danger)]">{helperText}</p>
+      )}
+    </div>
+  );
+}
+
 function OptionButton({
   active,
   title,
@@ -1242,6 +1392,28 @@ function pickFallbackAgentId(value: string, options: FallbackAgentOption[]): str
   if (options.length === 0) return '';
   if (options.some((agent) => agent.agent_id === value)) return value;
   return options.find((agent) => agent.agent_id === 'planner')?.agent_id ?? options[0].agent_id;
+}
+
+function workflowSelectOptions(
+  definitions: WorkflowDefinition[],
+  isPrimaryOption: (definition: WorkflowDefinition) => boolean,
+  currentDefinitionId: string | null,
+): WorkflowSelectOption[] {
+  const options = definitions.filter(isPrimaryOption);
+  const currentArchivedDefinition = currentDefinitionId
+    ? definitions.find((definition) => definition.id === currentDefinitionId && definition.status === 'archived')
+    : null;
+  if (currentArchivedDefinition && !options.some((definition) => definition.id === currentArchivedDefinition.id)) {
+    options.push(currentArchivedDefinition);
+  }
+  return options.map((definition) => ({
+    definition,
+    label: workflowDefinitionLabel(definition),
+  }));
+}
+
+function workflowDefinitionLabel(definition: WorkflowDefinition): string {
+  return `${definition.name} v${definition.version}${definition.status === 'archived' ? '（已归档）' : ''}`;
 }
 
 function trimmedOrNull(value: string): string | null {
