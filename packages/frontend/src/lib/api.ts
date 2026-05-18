@@ -23,12 +23,31 @@ import type {
   WorkflowDetail,
   WorkflowDefinition,
   WorkflowDefinitionGraph,
+  WorkflowDefinitionScope,
+  WorkflowDefinitionStatus,
   WorkflowRole,
   WorkflowRun,
 } from './types';
 
 const BASE = '/api';
 const LOCAL_ACCESS_TOKEN_STORAGE_KEY = 'opendeepsea.localToken';
+
+type WorkflowDefinitionListFilters = {
+  scope?: WorkflowDefinitionScope;
+  status?: WorkflowDefinitionStatus;
+  projectId?: string;
+  roomId?: string;
+  includeArchived?: boolean;
+};
+
+type QueryFunctionContextLike = {
+  queryKey: unknown;
+  signal?: AbortSignal;
+  meta?: unknown;
+  pageParam?: unknown;
+  direction?: unknown;
+  client?: unknown;
+};
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isFormData = init.body instanceof FormData;
@@ -70,6 +89,10 @@ export async function workspaceRequest<T>(path: string, init: RequestInit = {}):
     ...init,
     headers: buildWorkspaceHeaders(init.headers),
   });
+}
+
+function isQueryFunctionContextLike(value: WorkflowDefinitionListFilters | QueryFunctionContextLike): value is QueryFunctionContextLike {
+  return typeof value === 'object' && value !== null && 'queryKey' in value;
 }
 
 export const api = {
@@ -139,13 +162,23 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  listWorkflowDefinitions: () => request<WorkflowDefinition[]>('/workflow-definitions'),
+  listWorkflowDefinitions: (filters: WorkflowDefinitionListFilters | QueryFunctionContextLike = {}) => {
+    const normalizedFilters = isQueryFunctionContextLike(filters) ? {} : filters;
+    const params = new URLSearchParams();
+    if (normalizedFilters.scope) params.set('scope', normalizedFilters.scope);
+    if (normalizedFilters.status) params.set('status', normalizedFilters.status);
+    if (normalizedFilters.projectId) params.set('projectId', normalizedFilters.projectId);
+    if (normalizedFilters.roomId) params.set('roomId', normalizedFilters.roomId);
+    if (normalizedFilters.includeArchived) params.set('includeArchived', '1');
+    const query = params.toString();
+    return request<WorkflowDefinition[]>(`/workflow-definitions${query ? `?${query}` : ''}`);
+  },
   listRoomWorkflowDefinitions: (roomId: string) =>
     request<WorkflowDefinition[]>(`/rooms/${roomId}/workflow-definitions`),
   createWorkflowDefinition: (input: {
     name: string;
     description?: string | null;
-    scope: 'system' | 'project' | 'room';
+    scope: WorkflowDefinitionScope;
     scope_id: string;
     definition: WorkflowDefinitionGraph;
   }) =>
@@ -167,6 +200,25 @@ export const api = {
     }),
   publishWorkflowDefinition: (id: string) =>
     request<WorkflowDefinition>(`/workflow-definitions/${id}/publish`, { method: 'POST' }),
+  duplicateWorkflowDefinition: (
+    id: string,
+    input: {
+      name?: string;
+      description?: string | null;
+      scope?: WorkflowDefinitionScope;
+      scope_id?: string;
+    } = {},
+  ) =>
+    request<WorkflowDefinition>(`/workflow-definitions/${id}/duplicate`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  createWorkflowDefinitionEditDraft: (id: string) =>
+    request<WorkflowDefinition>(`/workflow-definitions/${id}/edit-draft`, { method: 'POST' }),
+  archiveWorkflowDefinition: (id: string) =>
+    request<WorkflowDefinition>(`/workflow-definitions/${id}/archive`, { method: 'POST' }),
+  deleteWorkflowDefinition: (id: string) =>
+    request<void>(`/workflow-definitions/${id}`, { method: 'DELETE' }),
 
   listProjects: () => request<Project[]>('/projects'),
   pickDirectory: () =>

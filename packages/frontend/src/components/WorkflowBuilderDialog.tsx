@@ -23,6 +23,7 @@ import type {
   WorkflowDefinitionGraph,
   WorkflowDefinitionNode,
   WorkflowDefinitionNodeType,
+  WorkflowDefinitionScope,
   WorkflowRole,
   WorkflowStage,
 } from '../lib/types';
@@ -46,23 +47,50 @@ const NODE_TYPES: WorkflowDefinitionNodeType[] = [
 const STAGES: WorkflowStage[] = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'];
 const ROLES: WorkflowRole[] = ['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor'];
 
-export function WorkflowBuilderDialog({
-  open,
-  onOpenChange,
-  roomId,
-  definition,
-}: {
+type ScopeOption = { scope: WorkflowDefinitionScope; scope_id: string; label: string };
+
+type WorkflowBuilderDialogProps = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialScope: WorkflowDefinitionScope;
+  initialScopeId: string;
+  scopeOptions: ScopeOption[];
+  definition: WorkflowDefinition | null;
+  mode?: 'create' | 'edit-draft';
+  onSaved?: (definition: WorkflowDefinition) => void | Promise<void>;
+};
+
+type LegacyWorkflowBuilderDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   roomId: string;
   definition: WorkflowDefinition | null;
-}): JSX.Element {
+};
+
+export function WorkflowBuilderDialog(props: WorkflowBuilderDialogProps | LegacyWorkflowBuilderDialogProps): JSX.Element {
+  const {
+    open,
+    onOpenChange,
+    initialScope,
+    initialScopeId,
+    scopeOptions,
+    definition,
+    mode,
+    onSaved,
+  } = normalizeProps(props);
+  const defaultName = initialScope === 'room' ? '群聊工作流' : initialScope === 'project' ? '项目工作流' : '系统工作流';
   const queryClient = useQueryClient();
-  const [name, setName] = useState(definition?.builtin_key ? `${definition.name} 副本` : definition?.name ?? '群聊工作流');
+  const [name, setName] = useState(definition?.builtin_key ? `${definition.name} 副本` : definition?.name ?? defaultName);
   const [description, setDescription] = useState(definition?.description ?? '');
+  const [selectedScopeKey, setSelectedScopeKey] = useState(() => scopeKey(definition?.scope ?? initialScope, definition?.scope_id ?? initialScopeId));
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(definition?.definition.nodes[0]?.id ?? null);
   const [nodes, setNodes] = useState<Node[]>(() => toFlowNodes(definition?.definition ?? defaultGraph()));
   const [edges, setEdges] = useState<Edge[]>(() => toFlowEdges(definition?.definition ?? defaultGraph()));
+  const normalizedMode = mode ?? 'create';
+  const selectedScope = useMemo(
+    () => scopeOptions.find((option) => scopeKey(option.scope, option.scope_id) === selectedScopeKey) ?? scopeOptions[0],
+    [scopeOptions, selectedScopeKey],
+  );
   const selectedNode = useMemo(() => nodes.find((node) => node.id === selectedNodeId) ?? null, [nodes, selectedNodeId]);
   const hasDuplicateNodeTypes = useMemo(() => {
     const seen = new Set<WorkflowDefinitionNodeType>();
@@ -73,24 +101,48 @@ export function WorkflowBuilderDialog({
       return false;
     });
   }, [nodes]);
+  const canSubmit = !!selectedScope && !!name.trim() && nodes.length > 0 && !hasDuplicateNodeTypes;
 
-  const create = useMutation({
+  const saveDraft = useMutation({
     mutationFn: async () => {
-      if (hasDuplicateNodeTypes) throw new Error('当前版本每种节点类型只能出现一次');
-      const created = await api.createWorkflowDefinition({
+      return saveDraftDefinition({
+        existingDefinition: definition,
+        mode: normalizedMode,
+        selectedScope,
         name,
-        description: description.trim() || null,
-        scope: 'room',
-        scope_id: roomId,
-        definition: toDefinitionGraph(nodes, edges),
+        description,
+        nodes,
+        edges,
+        hasDuplicateNodeTypes,
       });
-      return api.publishWorkflowDefinition(created.id);
+    },
+    onSuccess: async (saved) => {
+      await onSaved?.(saved);
+      await invalidateWorkflowDefinitionQueries(queryClient, saved);
+      toast.success('工作流草稿已保存');
+      onOpenChange(false);
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const publish = useMutation({
+    mutationFn: async () => {
+      const draft = await saveDraftDefinition({
+        existingDefinition: definition,
+        mode: normalizedMode,
+        selectedScope,
+        name,
+        description,
+        nodes,
+        edges,
+        hasDuplicateNodeTypes,
+      });
+      return api.publishWorkflowDefinition(draft.id);
     },
     onSuccess: async (published) => {
-      await api.updateRoomSettings(roomId, { default_workflow_definition_id: published.id });
-      queryClient.invalidateQueries({ queryKey: ['workflow-definitions', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['settings', 'room', roomId] });
-      toast.success('工作流已发布并设为当前群聊默认');
+      await onSaved?.(published);
+      await invalidateWorkflowDefinitionQueries(queryClient, published);
+      toast.success('工作流已发布');
       onOpenChange(false);
     },
     onError: (err) => toast.error((err as Error).message),
@@ -120,12 +172,13 @@ export function WorkflowBuilderDialog({
   useEffect(() => {
     if (!open) return;
     const graph = definition?.definition ?? defaultGraph();
-    setName(definition?.builtin_key ? `${definition.name} 副本` : definition?.name ?? '群聊工作流');
+    setName(definition?.builtin_key ? `${definition.name} 副本` : definition?.name ?? defaultName);
     setDescription(definition?.description ?? '');
+    setSelectedScopeKey(scopeKey(definition?.scope ?? initialScope, definition?.scope_id ?? initialScopeId));
     setNodes(toFlowNodes(graph));
     setEdges(toFlowEdges(graph));
     setSelectedNodeId(graph.nodes[0]?.id ?? null);
-  }, [definition, open]);
+  }, [defaultName, definition, initialScope, initialScopeId, open]);
 
   const updateSelectedNode = (patch: Partial<WorkflowDefinitionNode>) => {
     if (!selectedNode) return;
@@ -159,7 +212,7 @@ export function WorkflowBuilderDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         title="工作流编排"
-        description="编辑受控节点和连线，发布后作为当前群聊的默认工作流。"
+        description="编辑受控节点和连线，保存为草稿后可发布到指定作用域。"
         className="h-[88vh] w-[min(96vw,1180px)] overflow-hidden p-0"
       >
         <div className="grid h-full grid-cols-[230px_minmax(0,1fr)_260px]">
@@ -206,6 +259,15 @@ export function WorkflowBuilderDialog({
                 <Label>描述</Label>
                 <Input value={description} onChange={(event) => setDescription(event.target.value)} />
               </div>
+              <SelectField
+                label="作用域"
+                value={selectedScopeKey}
+                options={scopeOptions.map((option) => ({
+                  value: scopeKey(option.scope, option.scope_id),
+                  label: option.label,
+                }))}
+                onChange={setSelectedScopeKey}
+              />
               {selectedNode && (
                 <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
                   <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold">
@@ -223,7 +285,7 @@ export function WorkflowBuilderDialog({
                     <SelectField
                       label="类型"
                       value={String(selectedNode.data.nodeType)}
-                      options={NODE_TYPES}
+                      options={NODE_TYPES.map((type) => ({ value: type, label: labelForNodeType(type) }))}
                       disabledOptions={NODE_TYPES.filter((type) =>
                         type !== selectedNode.data.nodeType &&
                         nodes.some((node) => node.data.nodeType === type)
@@ -233,29 +295,40 @@ export function WorkflowBuilderDialog({
                     <SelectField
                       label="阶段"
                       value={String(selectedNode.data.stage ?? '')}
-                      options={['', ...STAGES]}
+                      options={['', ...STAGES].map((stage) => ({ value: stage, label: stage || '无' }))}
                       onChange={(value) => updateSelectedNode({ stage: value ? value as WorkflowStage : null })}
                     />
                     <SelectField
                       label="角色"
                       value={String(selectedNode.data.role ?? '')}
-                      options={['', ...ROLES]}
+                      options={['', ...ROLES].map((role) => ({ value: role, label: role || '无' }))}
                       onChange={(value) => updateSelectedNode({ role: value ? value as WorkflowRole : null })}
                     />
                   </div>
                 </div>
               )}
-              <Button
-                className="w-full justify-center"
-                disabled={create.isPending || !name.trim() || nodes.length === 0 || hasDuplicateNodeTypes}
-                onClick={() => create.mutate()}
-              >
-                <UploadCloud className="h-3.5 w-3.5" />
-                {create.isPending ? '发布中' : '发布并应用'}
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="secondary"
+                  className="justify-center"
+                  disabled={saveDraft.isPending || publish.isPending || !canSubmit}
+                  onClick={() => saveDraft.mutate()}
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {saveDraft.isPending ? '保存中' : '保存草稿'}
+                </Button>
+                <Button
+                  className="justify-center"
+                  disabled={saveDraft.isPending || publish.isPending || !canSubmit}
+                  onClick={() => publish.mutate()}
+                >
+                  <UploadCloud className="h-3.5 w-3.5" />
+                  {publish.isPending ? '发布中' : '发布'}
+                </Button>
+              </div>
               <div className="rounded-md border border-[var(--color-border)] p-2 text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
                 <Save className="mr-1 inline h-3 w-3" />
-                发布会创建新版本副本，不会修改内置工作流。
+                发布不会自动设为默认工作流，调用方可在保存回调中决定是否应用。
               </div>
             </div>
           </aside>
@@ -274,7 +347,7 @@ function SelectField({
 }: {
   label: string;
   value: string;
-  options: string[];
+  options: Array<string | { value: string; label: string }>;
   disabledOptions?: string[];
   onChange: (value: string) => void;
 }) {
@@ -288,13 +361,87 @@ function SelectField({
         className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[12px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)]"
       >
         {options.map((option) => (
-          <option key={option || 'none'} value={option} disabled={disabled.has(option)}>
-            {option || '无'}
+          <option
+            key={(typeof option === 'string' ? option : option.value) || 'none'}
+            value={typeof option === 'string' ? option : option.value}
+            disabled={disabled.has(typeof option === 'string' ? option : option.value)}
+          >
+            {typeof option === 'string' ? option || '无' : option.label}
           </option>
         ))}
       </select>
     </div>
   );
+}
+
+function normalizeProps(props: WorkflowBuilderDialogProps | LegacyWorkflowBuilderDialogProps): WorkflowBuilderDialogProps {
+  if ('initialScope' in props) return props;
+  return {
+    open: props.open,
+    onOpenChange: props.onOpenChange,
+    initialScope: 'room',
+    initialScopeId: props.roomId,
+    scopeOptions: [{ scope: 'room', scope_id: props.roomId, label: '当前群聊' }],
+    definition: props.definition,
+    mode: props.definition?.status === 'draft' ? 'edit-draft' : 'create',
+    onSaved: async (definition) => {
+      if (definition.status !== 'published') return;
+      await api.updateRoomSettings(props.roomId, { default_workflow_definition_id: definition.id });
+    },
+  };
+}
+
+async function saveDraftDefinition({
+  existingDefinition,
+  mode,
+  selectedScope,
+  name,
+  description,
+  nodes,
+  edges,
+  hasDuplicateNodeTypes,
+}: {
+  existingDefinition: WorkflowDefinition | null;
+  mode: 'create' | 'edit-draft';
+  selectedScope: ScopeOption | undefined;
+  name: string;
+  description: string;
+  nodes: Node[];
+  edges: Edge[];
+  hasDuplicateNodeTypes: boolean;
+}): Promise<WorkflowDefinition> {
+  if (hasDuplicateNodeTypes) throw new Error('当前版本每种节点类型只能出现一次');
+  if (!selectedScope) throw new Error('请选择工作流作用域');
+  const trimmedName = name.trim();
+  if (!trimmedName) throw new Error('请输入工作流名称');
+  const input = {
+    name: trimmedName,
+    description: description.trim() || null,
+    definition: toDefinitionGraph(nodes, edges),
+  };
+  if (existingDefinition?.status === 'draft' && mode === 'edit-draft') {
+    return api.updateWorkflowDefinition(existingDefinition.id, input);
+  }
+  return api.createWorkflowDefinition({
+    ...input,
+    scope: selectedScope.scope,
+    scope_id: selectedScope.scope_id,
+  });
+}
+
+async function invalidateWorkflowDefinitionQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  definition: WorkflowDefinition,
+) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['workflow-definitions'] }),
+    queryClient.invalidateQueries({ queryKey: ['workflow-definitions', definition.scope_id] }),
+    queryClient.invalidateQueries({ queryKey: ['settings', definition.scope, definition.scope_id] }),
+  ]);
+}
+
+function scopeKey(scope: WorkflowDefinitionScope, scopeId: string): string {
+  return `${scope}:${scopeId}`;
 }
 
 function toFlowNodes(graph: WorkflowDefinitionGraph): Node[] {
