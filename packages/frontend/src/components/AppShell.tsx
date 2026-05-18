@@ -5,7 +5,6 @@ import {
   Bot,
   BriefcaseBusiness,
   FolderKanban,
-  GitBranch,
   Home,
   Plus,
   Search,
@@ -149,7 +148,6 @@ function ProjectSidebar({
 
       <div className="sidebar-nav px-4">
         <SidebarLink to="/" active={location.pathname === '/'} icon={Home} label={t('shell.nav.development')} exact />
-        <SidebarLink to={currentProject ? `/projects/${currentProject.id}` : '/'} icon={GitBranch} label={t('shell.nav.roadmap')} />
         <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} />
         <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} />
         <SidebarLink
