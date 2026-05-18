@@ -178,6 +178,180 @@ test('workflowDefinitionRepo list always includes built-in default definition', 
   assert.ok(definitions.some((definition) => definition.builtin_key === 'default-langgraph'));
 });
 
+test('workflowDefinitionRepo supports user system drafts and normalizes scope id', () => {
+  const definition = workflowDefinitionRepo.createDraft({
+    name: 'System Workflow',
+    description: null,
+    scope: 'system',
+    scope_id: 'ignored',
+    definition: minimalDefinition('system-plan'),
+  });
+
+  assert.equal(definition.scope, 'system');
+  assert.equal(definition.scope_id, 'default');
+  assert.equal(definition.status, 'draft');
+  assert.equal(definition.builtin_key, null);
+});
+
+test('workflowDefinitionRepo duplicates and creates edit drafts without mutating published versions', () => {
+  const source = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Published Workflow',
+    description: 'Original',
+    scope: 'system',
+    scope_id: 'default',
+    definition: minimalDefinition('published-plan'),
+  }).id)!;
+
+  const editDraft = workflowDefinitionRepo.createEditDraft(source.id)!;
+
+  assert.notEqual(editDraft.id, source.id);
+  assert.equal(editDraft.status, 'draft');
+  assert.equal(editDraft.scope, source.scope);
+  assert.equal(editDraft.scope_id, source.scope_id);
+  assert.equal(workflowDefinitionRepo.get(source.id)?.status, 'published');
+});
+
+test('workflowDefinitionRepo duplicates definitions into independent user drafts', () => {
+  const project = projectRepo.create({
+    name: 'Duplicate Project',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-definition-duplicate-')),
+  });
+  const source = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Duplicated Workflow',
+    description: 'Source',
+    scope: 'project',
+    scope_id: project.id,
+    definition: minimalDefinition('duplicate-plan'),
+  }).id)!;
+
+  const duplicate = workflowDefinitionRepo.duplicate(source.id)!;
+
+  assert.notEqual(duplicate.id, source.id);
+  assert.equal(duplicate.name, `${source.name} 副本`);
+  assert.equal(duplicate.description, source.description);
+  assert.equal(duplicate.status, 'draft');
+  assert.equal(duplicate.scope, source.scope);
+  assert.equal(duplicate.scope_id, source.scope_id);
+  assert.equal(duplicate.builtin_key, null);
+  assert.equal(workflowDefinitionRepo.get(source.id)?.status, 'published');
+
+  const builtIn = workflowDefinitionRepo.ensureBuiltInDefinitions();
+  const builtInDuplicate = workflowDefinitionRepo.duplicate(builtIn.id)!;
+
+  assert.notEqual(builtInDuplicate.id, builtIn.id);
+  assert.equal(builtInDuplicate.status, 'draft');
+  assert.equal(builtInDuplicate.scope, builtIn.scope);
+  assert.equal(builtInDuplicate.scope_id, builtIn.scope_id);
+  assert.equal(builtInDuplicate.builtin_key, null);
+  assert.equal(workflowDefinitionRepo.get(builtIn.id)?.builtin_key, 'default-langgraph');
+});
+
+test('workflowDefinitionRepo archives published definitions and deletes only drafts', () => {
+  const draft = workflowDefinitionRepo.createDraft({
+    name: 'Draft Workflow',
+    description: null,
+    scope: 'system',
+    scope_id: 'default',
+    definition: minimalDefinition('delete-plan'),
+  });
+  assert.equal(workflowDefinitionRepo.deleteDraft(draft.id), true);
+  assert.equal(workflowDefinitionRepo.get(draft.id), undefined);
+
+  const published = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Archive Workflow',
+    description: null,
+    scope: 'system',
+    scope_id: 'default',
+    definition: minimalDefinition('archive-plan'),
+  }).id)!;
+  assert.throws(() => workflowDefinitionRepo.deleteDraft(published.id), /only draft/);
+
+  const archived = workflowDefinitionRepo.archive(published.id)!;
+  assert.equal(archived.status, 'archived');
+  assert.equal(workflowDefinitionRepo.createEditDraft(archived.id), undefined);
+  assert.throws(() => workflowDefinitionRepo.publish(archived.id), /only draft/);
+});
+
+test('workflowDefinitionRepo publishes only user drafts', () => {
+  const published = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Publish Once Workflow',
+    description: null,
+    scope: 'system',
+    scope_id: 'default',
+    definition: minimalDefinition('publish-once-plan'),
+  }).id)!;
+
+  assert.throws(() => workflowDefinitionRepo.publish(published.id), /only draft/);
+
+  const builtIn = workflowDefinitionRepo.ensureBuiltInDefinitions();
+  assert.equal(workflowDefinitionRepo.publish(builtIn.id)?.id, builtIn.id);
+});
+
+test('workflowDefinitionRepo protects built-in definitions from mutation', () => {
+  const builtIn = workflowDefinitionRepo.ensureBuiltInDefinitions();
+
+  assert.throws(() => workflowDefinitionRepo.updateDraft(builtIn.id, { name: 'Changed' }), /builtin/);
+  assert.throws(() => workflowDefinitionRepo.archive(builtIn.id), /builtin/);
+  assert.throws(() => workflowDefinitionRepo.deleteDraft(builtIn.id), /builtin/);
+});
+
+test('workflowDefinitionRepo list filters by status and visibility scope', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-definition-filter-project-'));
+  const project = projectRepo.create({ name: 'Filter Project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Filter Room' });
+  const otherProject = projectRepo.create({
+    name: 'Other Filter Project',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-definition-filter-other-')),
+  });
+
+  const systemDraft = workflowDefinitionRepo.createDraft({
+    name: 'System Draft',
+    description: null,
+    scope: 'system',
+    scope_id: 'default',
+    definition: minimalDefinition('filter-system-plan'),
+  });
+  const projectDraft = workflowDefinitionRepo.createDraft({
+    name: 'Project Draft',
+    description: null,
+    scope: 'project',
+    scope_id: project.id,
+    definition: minimalDefinition('filter-project-plan'),
+  });
+  const roomDraft = workflowDefinitionRepo.createDraft({
+    name: 'Room Draft',
+    description: null,
+    scope: 'room',
+    scope_id: room.id,
+    definition: minimalDefinition('filter-room-plan'),
+  });
+  const otherDraft = workflowDefinitionRepo.createDraft({
+    name: 'Other Draft',
+    description: null,
+    scope: 'project',
+    scope_id: otherProject.id,
+    definition: minimalDefinition('filter-other-plan'),
+  });
+  const archived = workflowDefinitionRepo.archive(workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Archived Filter',
+    description: null,
+    scope: 'system',
+    scope_id: 'default',
+    definition: minimalDefinition('filter-archived-plan'),
+  }).id)!.id)!;
+
+  const roomVisibleIds = new Set(workflowDefinitionRepo.list({ roomId: room.id }).map((definition) => definition.id));
+  assert.ok(roomVisibleIds.has(systemDraft.id));
+  assert.ok(roomVisibleIds.has(projectDraft.id));
+  assert.ok(roomVisibleIds.has(roomDraft.id));
+  assert.equal(roomVisibleIds.has(otherDraft.id), false);
+  assert.equal(roomVisibleIds.has(archived.id), false);
+  assert.equal(workflowDefinitionRepo.list({ projectId: otherProject.id, roomId: room.id }).length, 0);
+
+  const archivedIds = new Set(workflowDefinitionRepo.list({ status: 'archived' }).map((definition) => definition.id));
+  assert.ok(archivedIds.has(archived.id));
+});
+
 function minimalDefinition(id: string) {
   return {
     nodes: [

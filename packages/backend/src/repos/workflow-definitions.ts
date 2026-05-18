@@ -54,6 +54,13 @@ const DEFAULT_DEFINITION: WorkflowDefinitionGraph = {
 };
 
 type WorkflowDefinitionRow = Omit<WorkflowDefinition, 'definition'>;
+type WorkflowDefinitionListFilters = {
+  scope?: WorkflowDefinitionScope;
+  status?: WorkflowDefinitionStatus;
+  projectId?: string;
+  roomId?: string;
+  includeArchived?: boolean;
+};
 
 function normalize(row: WorkflowDefinitionRow): WorkflowDefinition {
   const parsed = JSON.parse(row.definition_json) as WorkflowDefinitionGraph;
@@ -129,12 +136,14 @@ export const workflowDefinitionRepo = {
     return Boolean(definition && definition.status === 'published' && definition.scope === 'system');
   },
 
-  list(): WorkflowDefinition[] {
+  list(filters: WorkflowDefinitionListFilters = {}): WorkflowDefinition[] {
     this.ensureBuiltInDefinitions();
     const rows = db
       .prepare('SELECT * FROM workflow_definitions ORDER BY updated_at DESC, created_at DESC')
       .all() as WorkflowDefinitionRow[];
-    return rows.map(normalize);
+    return rows
+      .map(normalize)
+      .filter((definition) => matchesListFilters(definition, filters));
   },
 
   listVisibleForRoom(roomId: string): WorkflowDefinition[] {
@@ -163,7 +172,7 @@ export const workflowDefinitionRepo = {
     scope_id: string;
     definition: WorkflowDefinitionGraph;
   }): WorkflowDefinition {
-    validateScopeTarget(input.scope, input.scope_id);
+    const scopeId = normalizeScopeTarget(input.scope, input.scope_id);
     const graph = this.validateDefinition(input.definition);
     const id = nanoid(14);
     const ts = now();
@@ -176,12 +185,76 @@ export const workflowDefinitionRepo = {
       input.name.trim(),
       input.description?.trim() || null,
       input.scope,
-      input.scope_id,
+      scopeId,
       JSON.stringify(graph),
       ts,
       ts,
     );
     return this.get(id)!;
+  },
+
+  duplicate(id: string, target?: {
+    name?: string;
+    description?: string | null;
+    scope?: WorkflowDefinitionScope;
+    scope_id?: string;
+  }): WorkflowDefinition | undefined {
+    const source = this.get(id);
+    if (!source) return undefined;
+    const scope = target?.scope ?? source.scope;
+    const scopeId = normalizeScopeTarget(scope, target?.scope_id ?? source.scope_id);
+    const draftId = nanoid(14);
+    const ts = now();
+    db.prepare(
+      `INSERT INTO workflow_definitions (
+        id, name, description, scope, scope_id, version, status, builtin_key, definition_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 1, 'draft', NULL, ?, ?, ?)`,
+    ).run(
+      draftId,
+      target?.name?.trim() || `${source.name} 副本`,
+      target?.description === undefined ? source.description : target.description?.trim() || null,
+      scope,
+      scopeId,
+      JSON.stringify(source.definition),
+      ts,
+      ts,
+    );
+    return this.get(draftId);
+  },
+
+  createEditDraft(id: string): WorkflowDefinition | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    if (existing.status === 'draft') return existing;
+    if (existing.status === 'archived') return undefined;
+    return this.duplicate(id, {
+      name: existing.name,
+      description: existing.description,
+      scope: existing.scope,
+      scope_id: existing.scope_id,
+    });
+  },
+
+  archive(id: string): WorkflowDefinition | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    if (existing.builtin_key) throw new Error('builtin workflow definition cannot be archived');
+    if (existing.status !== 'published') throw new Error('only published workflow definitions can be archived');
+    db.prepare(
+      `UPDATE workflow_definitions
+       SET status = 'archived', updated_at = ?
+       WHERE id = ?`,
+    ).run(now(), id);
+    return this.get(id);
+  },
+
+  deleteDraft(id: string): boolean {
+    const existing = this.get(id);
+    if (!existing) return false;
+    if (existing.builtin_key) throw new Error('builtin workflow definition cannot be deleted');
+    if (existing.status !== 'draft') throw new Error('only draft workflow definitions can be deleted');
+    const result = db.prepare('DELETE FROM workflow_definitions WHERE id = ?').run(id);
+    return result.changes > 0;
   },
 
   updateDraft(id: string, patch: {
@@ -212,12 +285,12 @@ export const workflowDefinitionRepo = {
     const existing = this.get(id);
     if (!existing) return undefined;
     if (existing.builtin_key) return existing;
-    const nextVersion = existing.status === 'published' ? existing.version + 1 : existing.version;
+    if (existing.status !== 'draft') throw new Error('only draft workflow definitions can be published');
     db.prepare(
       `UPDATE workflow_definitions
        SET status = 'published', version = ?, updated_at = ?
        WHERE id = ?`,
-    ).run(nextVersion, now(), id);
+    ).run(existing.version, now(), id);
     return this.get(id);
   },
 
@@ -270,10 +343,31 @@ export const workflowDefinitionRepo = {
   },
 };
 
-function validateScopeTarget(scope: WorkflowDefinitionScope, scopeId: string): void {
-  if (scope === 'system') throw new Error('system workflow definitions are reserved for built-ins');
+function normalizeScopeTarget(scope: WorkflowDefinitionScope, scopeId: string): string {
+  if (scope === 'system') return 'default';
   if (scope === 'project' && !projectRepo.get(scopeId)) throw new Error('workflow definition project scope does not exist');
   if (scope === 'room' && !roomRepo.get(scopeId)) throw new Error('workflow definition room scope does not exist');
+  return scopeId;
+}
+
+function matchesListFilters(definition: WorkflowDefinition, filters: WorkflowDefinitionListFilters): boolean {
+  if (filters.scope && definition.scope !== filters.scope) return false;
+  if (filters.status && definition.status !== filters.status) return false;
+  if (!filters.status && !filters.includeArchived && definition.status === 'archived') return false;
+  if (filters.roomId) {
+    const room = roomRepo.get(filters.roomId);
+    if (!room) return false;
+    if (filters.projectId && room.project_id !== filters.projectId) return false;
+    return (
+      definition.scope === 'system' ||
+      (definition.scope === 'project' && definition.scope_id === room.project_id) ||
+      (definition.scope === 'room' && definition.scope_id === room.id)
+    );
+  }
+  if (filters.projectId) {
+    return definition.scope === 'system' || (definition.scope === 'project' && definition.scope_id === filters.projectId);
+  }
+  return true;
 }
 
 function requireSupportedWorkflowShape(input: WorkflowDefinitionGraph): void {
