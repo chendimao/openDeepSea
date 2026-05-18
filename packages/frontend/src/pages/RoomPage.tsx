@@ -14,6 +14,7 @@ import {
   enqueueStreamingChunk,
   flushStreamingDisplay,
   hasQueuedStreamingContent,
+  shouldRetainStreamingDisplayState,
   tickStreamingDisplay,
   type StreamingDisplayState,
 } from '../lib/streamingDisplay';
@@ -520,23 +521,27 @@ function useStreamingMessageDisplay(roomId: string): StreamingMessageDisplay {
       }
 
       let changed = false;
-      let hasQueued = false;
+      let needsMoreTicks = false;
       const next = new Map<string, StreamingDisplayState>();
       for (const [messageId, state] of prev) {
         let ticked = tickStreamingDisplay(state);
         const finalContent = finalContentRef.current.get(messageId);
+        let done = finalContent !== undefined;
         if (finalContent !== undefined && !hasQueuedStreamingContent(ticked)) {
           ticked = flushStreamingDisplay(ticked, finalContent);
           finalContentRef.current.delete(messageId);
+          done = true;
         }
-        if (finalContentRef.current.has(messageId) || hasQueuedStreamingContent(ticked)) {
+        if (shouldRetainStreamingDisplayState(ticked, done)) {
           next.set(messageId, ticked);
         }
         if (ticked !== state) changed = true;
-        if (hasQueuedStreamingContent(ticked)) hasQueued = true;
+        if (hasQueuedStreamingContent(ticked) || finalContentRef.current.has(messageId)) {
+          needsMoreTicks = true;
+        }
       }
 
-      if (!hasQueued) stopTimer();
+      if (!needsMoreTicks) stopTimer();
       return changed ? next : prev;
     });
   }, [stopTimer]);

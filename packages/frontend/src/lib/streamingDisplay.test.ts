@@ -5,6 +5,7 @@ import {
   createStreamingDisplayState,
   enqueueStreamingChunk,
   flushStreamingDisplay,
+  shouldRetainStreamingDisplayState,
   tickStreamingDisplay,
 } from './streamingDisplay.js';
 
@@ -41,3 +42,19 @@ test('done 后 flush 到真实完整内容', () => {
   assert.equal(flushed.displayed, '你好，完整内容');
   assert.deepEqual(flushed.queue, []);
 });
+
+test('队列清空但未完成时保留已展示内容等待下一块 chunk', () => {
+  const drained = tickUntilDrained(enqueueStreamingChunk(createStreamingDisplayState(), '第一块'));
+  assert.equal(drained.displayed, '第一块');
+  assert.deepEqual(drained.queue, []);
+  assert.equal(shouldRetainStreamingDisplayState(drained, false), true);
+  assert.equal(shouldRetainStreamingDisplayState(drained, true), false);
+});
+
+function tickUntilDrained(state: ReturnType<typeof createStreamingDisplayState>) {
+  let current = state;
+  while (current.queue.length > 0) {
+    current = tickStreamingDisplay(current);
+  }
+  return current;
+}

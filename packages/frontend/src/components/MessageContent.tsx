@@ -44,6 +44,7 @@ export function MessageContent({
   const { t } = useI18n();
   const parts = parseMessage(content);
   const markdown = isMarkdownContent(content);
+  const lastTextPartIndex = findLastTextPartIndex(parts);
 
   const copyCode = async (code: string, index: number) => {
     try {
@@ -90,6 +91,7 @@ export function MessageContent({
               return (
                 <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
                   {part.value}
+                  {streaming && index === lastTextPartIndex && <StreamingCursor />}
                 </span>
               );
             }
@@ -107,11 +109,18 @@ export function MessageContent({
               />
             );
           })}
-          {streaming && <StreamingCursor />}
+          {streaming && lastTextPartIndex === -1 && <StreamingCursor />}
         </>
       )}
     </div>
   );
+}
+
+function findLastTextPartIndex(parts: MessagePart[]): number {
+  for (let index = parts.length - 1; index >= 0; index--) {
+    if (parts[index].type === 'text' && parts[index].value.length > 0) return index;
+  }
+  return -1;
 }
 
 function isMarkdownContent(content: string): boolean {

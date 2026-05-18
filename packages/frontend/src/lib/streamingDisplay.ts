@@ -69,6 +69,13 @@ export function hasQueuedStreamingContent(state: StreamingDisplayState): boolean
   return state.queue.length > 0;
 }
 
+export function shouldRetainStreamingDisplayState(
+  state: StreamingDisplayState,
+  done: boolean,
+): boolean {
+  return !done || hasQueuedStreamingContent(state);
+}
+
 function isInsideFencedCodeBlock(text: string): boolean {
   const matches = text.match(/```/g);
   return Boolean(matches && matches.length % 2 === 1);
