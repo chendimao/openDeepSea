@@ -29,7 +29,7 @@ import { wsHub } from '../../ws-hub.js';
 import { generateLangChainPlan, type LangChainPlannerInput } from '../langchain-planner.js';
 import type { ParsedPlan } from '../plan-parser.js';
 import { formatRecentMessagesForPlanner } from '../orchestrator.js';
-import { selectWorkflowAgentForRole } from '../role-resolver.js';
+import { selectWorkflowAgentForPlanTask, selectWorkflowAgentForRole } from '../role-resolver.js';
 import { parseGraphState } from './state.js';
 
 export interface GraphRuntimeDeps {
@@ -86,6 +86,7 @@ export interface GraphTools {
   updateGraphState: typeof workflowRepo.updateGraphState;
   nextStepSortOrder: (workflowRunId: string) => number;
   selectAgentForRole: (role: WorkflowRole, agents: RoomAgent[]) => RoomAgent | null;
+  selectAgentForPlanTask: (planTask: ParsedPlan['tasks'][number], agents: RoomAgent[]) => RoomAgent | null;
   runAcpAgent: (input: RespondAsAgentInput) => Promise<{
     run: AgentRun;
     message: Message;
@@ -190,6 +191,9 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     },
     selectAgentForRole(role: WorkflowRole, agents: RoomAgent[]) {
       return selectWorkflowAgentForRole(role, agents);
+    },
+    selectAgentForPlanTask(planTask: ParsedPlan['tasks'][number], agents: RoomAgent[]) {
+      return selectWorkflowAgentForPlanTask(planTask.suggestedRole, agents, planTask);
     },
     runAcpAgent,
     upsertTaskSummaryMemory: memoryRepo.upsertTaskSummary.bind(memoryRepo),

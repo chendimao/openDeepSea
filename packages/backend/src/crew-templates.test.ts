@@ -68,19 +68,19 @@ test('room creation applies the selected crew template with executable workflow 
   assert.equal(agents.every((agent) => agent.default_runtime === 'acp'), true);
 });
 
-test('room creation defaults to discussion-only for backward-compatible API calls', async () => {
-  const project = createProject('Discussion Template Project');
+test('room creation uses the default implementation crew when no template is supplied', async () => {
+  const project = createProject('Default Template Project');
 
   const res = await request(`/api/projects/${project.id}/rooms`, {
     method: 'POST',
-    body: JSON.stringify({ name: 'Discussion Room' }),
+    body: JSON.stringify({ name: 'Default Room' }),
   });
   assert.equal(res.status, 201);
   const room = await res.json() as { id: string };
   const agents = roomAgentRepo.listByRoom(room.id);
 
-  assert.deepEqual(agents.map((agent) => agent.agent_id), ['planner']);
-  assert.deepEqual(agents.map((agent) => agent.workflow_role), ['planner']);
+  assert.deepEqual(agents.map((agent) => agent.agent_id), ['planner', 'backend-executor', 'reviewer']);
+  assert.deepEqual(agents.map((agent) => agent.workflow_role), ['planner', 'executor', 'reviewer']);
 });
 
 test('batch-adding built-in global agents preserves workflow metadata', async () => {
@@ -104,6 +104,31 @@ test('batch-adding built-in global agents preserves workflow metadata', async ()
   assert.equal(executor?.workflow_role, 'executor');
   assert.deepEqual(executor?.capabilities, ['backend', 'testing']);
   assert.equal(executor?.default_runtime, 'acp');
+});
+
+test('re-adding an existing built-in agent does not overwrite room-level workflow customization', async () => {
+  const project = createProject('Builtin Customization Project');
+  const roomRes = await request(`/api/projects/${project.id}/rooms`, {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Customized Room', crew_template_id: 'light-implementation' }),
+  });
+  assert.equal(roomRes.status, 201);
+  const room = await roomRes.json() as { id: string };
+  const executor = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'backend-executor');
+  assert.ok(executor);
+  const customized = roomAgentRepo.setWorkflowRole(executor.id, 'reviewer');
+  assert.equal(customized?.workflow_role, 'reviewer');
+
+  const backend = agentRepo.getByAgentId('backend-executor');
+  assert.ok(backend);
+  const addRes = await request(`/api/rooms/${room.id}/agents/batch`, {
+    method: 'POST',
+    body: JSON.stringify({ global_agent_ids: [backend.id] }),
+  });
+  assert.equal(addRes.status, 201);
+
+  const after = roomAgentRepo.get(executor.id);
+  assert.equal(after?.workflow_role, 'reviewer');
 });
 
 function createProject(name: string) {

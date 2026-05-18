@@ -200,7 +200,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const childTaskIds: string[] = [];
       for (const planTask of state.plan.tasks) {
-        const assigned = tools.selectAgentForRole(planTask.suggestedRole, context.agents);
+        const assigned = tools.selectAgentForPlanTask(planTask, context.agents);
         const child = tools.createChildTask({
           room_id: context.task.room_id,
           project_id: context.task.project_id,

@@ -37,7 +37,7 @@ import {
   startGraphWorkflow,
 } from './graph/runtime.js';
 import type { GraphRuntimeDeps } from './graph/tools.js';
-import { resolveWorkflowExecutor, selectWorkflowAgentForRole } from './role-resolver.js';
+import { resolveWorkflowExecutor, selectWorkflowAgentForPlanTask, selectWorkflowAgentForRole } from './role-resolver.js';
 import { buildStagePrompt } from './prompts.js';
 import type {
   AgentRun,
@@ -938,7 +938,7 @@ function assignFromPlan(run: WorkflowRun): void {
   broadcastStep('workflow_step:created', run.room_id, step);
 
   for (const item of plan.tasks) {
-    const assigned = selectAgentForRole(item.suggestedRole, context.agents);
+    const assigned = selectWorkflowAgentForPlanTask(item.suggestedRole, context.agents, item);
     const child = taskRepo.create({
       room_id: task.room_id,
       project_id: task.project_id,

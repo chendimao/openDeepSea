@@ -6,6 +6,13 @@ interface WorkflowAgentSelectionContext {
   scopeWrite?: string[];
 }
 
+export interface WorkflowPlanTaskSelectionContext {
+  title: string;
+  description: string;
+  scopeRead: string[];
+  scopeWrite: string[];
+}
+
 type DomainHint = 'frontend' | 'backend' | null;
 
 export function selectWorkflowAgentForRole(
@@ -34,6 +41,22 @@ export function resolveWorkflowExecutor(
     return assigned && isExecutableAgent(assigned) ? assigned : null;
   }
   return selectWorkflowAgentForRole('executor', agents, { task });
+}
+
+export function selectWorkflowAgentForPlanTask(
+  role: WorkflowRole,
+  agents: RoomAgent[],
+  planTask: WorkflowPlanTaskSelectionContext,
+): RoomAgent | null {
+  return selectWorkflowAgentForRole(role, agents, {
+    task: {
+      title: planTask.title,
+      description: planTask.description,
+      assigned_agent_id: null,
+    },
+    scopeRead: planTask.scopeRead,
+    scopeWrite: planTask.scopeWrite,
+  });
 }
 
 export function isExecutableAgent(agent: RoomAgent): boolean {

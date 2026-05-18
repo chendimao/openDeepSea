@@ -43,6 +43,10 @@ export function getRoomCrewTemplate(id: string | null | undefined): RoomCrewTemp
   return ROOM_CREW_TEMPLATES.find((template) => template.id === id);
 }
 
+export function getDefaultRoomCrewTemplate(): RoomCrewTemplate {
+  return ROOM_CREW_TEMPLATES.find((template) => template.default) ?? ROOM_CREW_TEMPLATES[0]!;
+}
+
 export function getBuiltInAgentTemplate(id: string): BuiltInAgentTemplate | undefined {
   return listBuiltInAgentTemplates().find((template) => template.id === id);
 }

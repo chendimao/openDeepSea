@@ -144,8 +144,7 @@ export const roomAgentRepo = {
         agent.default_acp_backend ? 'acp' : 'none',
         existing.id,
       );
-      const roomAgent = this.get(existing.id)!;
-      return agent.builtin_key ? this.applyBuiltInTemplate(roomAgent.id, agent.builtin_key) ?? roomAgent : roomAgent;
+      return this.get(existing.id)!;
     }
 
     const id = nanoid(12);

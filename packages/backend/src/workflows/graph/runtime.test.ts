@@ -227,6 +227,68 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
   assert.equal(graphState?.childTaskIds.length, 1);
 });
 
+test('graph dispatch assigns child tasks by frontend and backend scope hints', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-scope-dispatch-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Scope Dispatch', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Scope Dispatch Room' });
+  const backend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
+    capabilities: ['backend', 'testing'],
+    default_runtime: 'acp',
+  });
+  const frontend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(frontend.id, {
+    capabilities: ['frontend', 'testing'],
+    default_runtime: 'acp',
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Dispatch scoped tasks',
+  });
+
+  await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: 'Dispatch scoped tasks',
+      summary: 'Create frontend and backend child tasks',
+      assumptions: [],
+      tasks: [
+        {
+          title: 'Update React page',
+          description: 'Modify the room page component.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend page is updated'],
+          scopeRead: ['packages/frontend/src/pages/RoomPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/RoomPage.tsx'],
+          dependsOn: [],
+        },
+        {
+          title: 'Update API route',
+          description: 'Modify the backend route.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend route is updated'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const children = taskRepo.listChildren(task.id);
+  assert.equal(children.find((child) => child.title === 'Update React page')?.assigned_agent_id, frontend.id);
+  assert.equal(children.find((child) => child.title === 'Update API route')?.assigned_agent_id, backend.id);
+});
+
 test('no-approval graph blocks instead of selecting non-ACP executor', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-non-acp-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

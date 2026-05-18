@@ -7,7 +7,7 @@ import { getAdapter } from './acp/index.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
 import type { CollaborationDecision } from './collaboration-decision.js';
 import { runCollaborationStages as defaultRunCollaborationStages } from './collaboration-runner.js';
-import { getRoomCrewTemplate, listRoomCrewTemplates } from './crew-templates.js';
+import { getDefaultRoomCrewTemplate, getRoomCrewTemplate, listRoomCrewTemplates } from './crew-templates.js';
 import { dispatchUserMessage } from './dispatcher.js';
 import { validateLocalAccess } from './local-access.js';
 import { resolveMentionedAgentRoomIds } from './mentions.js';
@@ -973,7 +973,9 @@ router.post('/projects/:projectId/rooms', (req, res) => {
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const crewTemplate = getRoomCrewTemplate(parsed.data.crew_template_id ?? 'discussion-only');
+  const crewTemplate = parsed.data.crew_template_id
+    ? getRoomCrewTemplate(parsed.data.crew_template_id)
+    : getDefaultRoomCrewTemplate();
   if (!crewTemplate) return res.status(404).json({ error: 'crew template not found' });
   const room = roomRepo.create({
     project_id: req.params.projectId,
