@@ -323,8 +323,25 @@ function toPlainTextDelta(text: string, snapshots: Map<string, string>): string 
       return text.slice(previousWithoutTrailingNewline.length);
     }
   }
+  if (previous.length >= 3 && text.includes(previous)) {
+    snapshots.set('answer', text);
+    return text;
+  }
+  const overlapPrefixLength = findOverlapPrefixLength(previous, text);
+  if (overlapPrefixLength > 0) {
+    snapshots.set('answer', text);
+    return text.slice(overlapPrefixLength);
+  }
   snapshots.set('answer', previous + text);
   return text;
+}
+
+function findOverlapPrefixLength(previous: string, text: string): number {
+  const maxLength = Math.min(previous.length, text.length);
+  for (let length = maxLength; length >= 4; length--) {
+    if (previous.endsWith(text.slice(0, length))) return length;
+  }
+  return 0;
 }
 
 function isFullAnswerSnapshot(obj: Record<string, unknown>): boolean {

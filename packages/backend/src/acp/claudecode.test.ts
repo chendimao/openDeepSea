@@ -278,6 +278,29 @@ test('plain text delta chunks keep accumulated state for later snapshot dedupe',
   ]);
 });
 
+test('plain text chunks that look like non-prefix snapshots do not corrupt accumulated state', () => {
+  const normalize = createStdoutNormalizer();
+
+  assert.deepEqual(normalize('第一段'), [
+    {
+      channel: 'answer',
+      text: '第一段',
+    },
+  ]);
+  assert.deepEqual(normalize('修订后的第一段'), [
+    {
+      channel: 'answer',
+      text: '修订后的第一段',
+    },
+  ]);
+  assert.deepEqual(normalize('修订后的第一段第二段'), [
+    {
+      channel: 'answer',
+      text: '第二段',
+    },
+  ]);
+});
+
 test('plain text lines keep newline state for later structured snapshot dedupe', () => {
   const normalize = createStdoutNormalizer();
 

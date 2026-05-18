@@ -62,6 +62,7 @@ export function RoomPage() {
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
   const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const streamingRunMessageIds = useRef<Map<string, string>>(new Map());
   const { t } = useI18n();
 
   const { data: project } = useQuery({
@@ -126,6 +127,7 @@ export function RoomPage() {
     setShowMemoryPanel(false);
     setHighlightMessageId(null);
     messageRefs.current.clear();
+    streamingRunMessageIds.current.clear();
   }, [roomId]);
 
   useEffect(() => {
@@ -219,6 +221,9 @@ export function RoomPage() {
       } else if (event.type === 'message:stream' && event.roomId === roomId) {
         let matchedMessage = false;
         let fullContent = '';
+        if (event.runId) {
+          streamingRunMessageIds.current.set(event.runId, event.messageId);
+        }
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) => {
           if (!prev) return prev;
           const next = prev.map((m) => {
@@ -245,6 +250,9 @@ export function RoomPage() {
         setStreamingMessageIds((prev) =>
           event.done ? removeStreamingMessageId(prev, event.messageId) : addStreamingMessageId(prev, event.messageId),
         );
+        if (event.done && event.runId) {
+          streamingRunMessageIds.current.delete(event.runId);
+        }
       } else if (
         (event.type === 'agent_run:created' || event.type === 'agent_run:updated') &&
         event.roomId === roomId
@@ -253,9 +261,12 @@ export function RoomPage() {
           upsertAgentRun(prev, event.run),
         );
         if (event.type === 'agent_run:updated' && isTerminalAgentRunStatus(event.run.status)) {
-          const messageId = findAgentRunMessageId(queryClient.getQueryData<Message[]>(['messages', roomId]), event.run);
+          const messageId =
+            streamingRunMessageIds.current.get(event.run.id) ??
+            findAgentRunMessageId(queryClient.getQueryData<Message[]>(['messages', roomId]), event.run);
           if (messageId) {
             setStreamingMessageIds((prev) => removeStreamingMessageId(prev, messageId));
+            streamingRunMessageIds.current.delete(event.run.id);
           }
         }
       } else if (event.type === 'room:agent_joined' && event.roomId === roomId) {
