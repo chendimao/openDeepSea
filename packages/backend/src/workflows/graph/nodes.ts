@@ -215,11 +215,13 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       for (const [index, planTask] of state.plan.tasks.entries()) {
         let resolved = tools.selectAgentForPlanTask(planTask, assignmentAgents);
         if (!resolved && planTask.suggestedRole === 'executor') {
-          assignmentAgents = ensureWorkflowAgentsForRun({
+          const provisioning = ensureWorkflowAgentsForRun({
             roomId: context.room.id,
             agents: assignmentAgents,
             planTasks: [planTask],
           });
+          assignmentAgents = provisioning.agents;
+          broadcastJoinedAgents(tools, context.room.id, provisioning.joinedAgents);
           resolved = tools.selectAgentForPlanTask(planTask, assignmentAgents);
         }
         const assigned = selectAssignmentHintForPlanTask(state, index, assignmentAgents, tools, resolved)
@@ -335,11 +337,13 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       let executionAgents = context.agents;
       let executor = selectExecutorForPlannedChild(executionAgents, nextChild, plannedTask, tools);
       if (!executor && plannedTask) {
-        executionAgents = ensureWorkflowAgentsForRun({
+        const provisioning = ensureWorkflowAgentsForRun({
           roomId: context.room.id,
           agents: executionAgents,
           planTasks: [plannedTask],
         });
+        executionAgents = provisioning.agents;
+        broadcastJoinedAgents(tools, context.room.id, provisioning.joinedAgents);
         executor = selectExecutorForPlannedChild(executionAgents, nextChild, plannedTask, tools);
       }
       if (!executor) {
@@ -544,11 +548,13 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const context = tools.readWorkflowContext(state.workflowRunId);
       let reviewAgents = context.agents;
       if (!hasExecutableWorkflowRole(reviewAgents, 'reviewer')) {
-        reviewAgents = ensureWorkflowAgentsForRun({
+        const provisioning = ensureWorkflowAgentsForRun({
           roomId: context.room.id,
           agents: reviewAgents,
           roles: ['reviewer'],
         });
+        reviewAgents = provisioning.agents;
+        broadcastJoinedAgents(tools, context.room.id, provisioning.joinedAgents);
       }
       const reviewer = tools.selectAgentForRole('reviewer', reviewAgents)
         ?? tools.selectAgentForRole('executor', reviewAgents);
@@ -986,11 +992,13 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const context = tools.readWorkflowContext(state.workflowRunId);
       let acceptanceAgents = context.agents;
       if (!hasExecutableWorkflowRole(acceptanceAgents, 'acceptor')) {
-        acceptanceAgents = ensureWorkflowAgentsForRun({
+        const provisioning = ensureWorkflowAgentsForRun({
           roomId: context.room.id,
           agents: acceptanceAgents,
           roles: ['acceptor'],
         });
+        acceptanceAgents = provisioning.agents;
+        broadcastJoinedAgents(tools, context.room.id, provisioning.joinedAgents);
       }
       const acceptor = tools.selectAgentForRole('acceptor', acceptanceAgents)
         ?? tools.selectAgentForRole('reviewer', acceptanceAgents);
@@ -1484,6 +1492,12 @@ function hasExecutableWorkflowRole(agents: RoomAgent[], role: RoomAgent['workflo
     agent.acp_enabled === 1 &&
     Boolean(agent.acp_backend),
   );
+}
+
+function broadcastJoinedAgents(tools: GraphTools, roomId: string, agents: RoomAgent[]): void {
+  for (const agent of agents) {
+    tools.broadcastAgentJoined(roomId, agent);
+  }
 }
 
 type PlanTaskDomain = 'frontend' | 'backend' | null;

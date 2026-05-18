@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { WebSocket } from 'ws';
+import type { WsServerEvent } from '../../types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-execute-')), 'test.db');
 
@@ -12,6 +14,7 @@ const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
 const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { messageRepo } = await import('../../repos/messages.js');
+const { wsHub } = await import('../../ws-hub.js');
 const { createGraphNodes } = await import('./nodes.js');
 const { createGraphTools } = await import('./tools.js');
 
@@ -278,6 +281,117 @@ test('execute node blocks assigned non-ACP agent without starting ACP run', asyn
   assert.equal(workflowRepo.listSteps(run.id).some((item) => item.node_name === 'execute'), false);
 });
 
+test('execute node broadcasts agent join when it provisions a workflow executor', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-provision-broadcast-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Provision Broadcast', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Provision Broadcast Room' });
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parent provision broadcast task',
+    description: 'Parent workflow task',
+  });
+  const childTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Child backend task',
+    description: 'Implementation child task',
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const capture = captureRoomEvents(room.id);
+  const calls: string[] = [];
+  const tools = createGraphTools({
+    runAcpAgent: async (input) => {
+      calls.push(input.agent.agent_id);
+      const runRow = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRow.id, 'completed') ?? runRow;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: 'implementation done',
+        message_type: 'agent_stream',
+      });
+      return {
+        run: completedRun,
+        message,
+        status: 'completed' as const,
+      };
+    },
+  });
+  const nodes = createGraphNodes(tools);
+
+  try {
+    await nodes.executeNode({
+      workflowRunId: run.id,
+      projectId: project.id,
+      roomId: room.id,
+      taskId: parentTask.id,
+      userGoal: parentTask.title,
+      projectPath: project.path,
+      plan: {
+        goal: parentTask.title,
+        summary: 'Provision one backend executor',
+        assumptions: [],
+        tasks: [{
+          title: childTask.title,
+          description: childTask.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend implementation completes'],
+          scopeRead: ['packages/backend/src/workflows/graph/nodes.ts'],
+          scopeWrite: ['packages/backend/src/workflows/graph/nodes.ts'],
+          dependsOn: [],
+        }],
+        reviewFocus: [],
+        verification: [],
+        verificationCommands: [],
+        risks: [],
+        needsApproval: false,
+      },
+      currentNode: 'dispatch',
+      currentStepId: null,
+      activeAgentRunId: null,
+      childTaskIds: [childTask.id],
+      reviewFindings: [],
+      reviewVerdict: null,
+      verificationResults: [],
+      repairAttempts: 0,
+      approval: 'not_required',
+      status: 'running',
+      error: null,
+    });
+  } finally {
+    capture.cleanup();
+  }
+
+  const joinedAgents = capture.events.filter((event) => event.type === 'room:agent_joined');
+  assert.deepEqual(calls, ['backend-executor']);
+  assert.equal(joinedAgents.length, 1);
+  assert.equal(joinedAgents[0]?.agent.agent_id, 'backend-executor');
+});
+
 test('execute node fails workflow step and child task when ACP agent fails', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-execute-fail-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -399,3 +513,19 @@ test('execute node fails workflow step and child task when ACP agent fails', asy
   assert.equal(nextState.status, 'blocked');
   assert.match(nextState.error ?? '', /implementation failed/);
 });
+
+function captureRoomEvents(roomId: string): { events: WsServerEvent[]; cleanup: () => void } {
+  const events: WsServerEvent[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send(payload: string) {
+      events.push(JSON.parse(payload) as WsServerEvent);
+    },
+  } as unknown as WebSocket;
+  wsHub.subscribe(roomId, socket);
+  return {
+    events,
+    cleanup: () => wsHub.removeSocket(socket),
+  };
+}

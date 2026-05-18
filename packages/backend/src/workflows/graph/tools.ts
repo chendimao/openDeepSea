@@ -87,6 +87,7 @@ export interface GraphTools {
   broadcastArtifactCreated: (roomId: string, artifact: TaskArtifact) => void;
   broadcastTaskCreated: (task: Task) => void;
   broadcastTaskUpdated: (task: Task) => void;
+  broadcastAgentJoined: (roomId: string, agent: RoomAgent) => void;
   recordWorkflowEvent: (input: {
     roomId: string;
     taskId: string;
@@ -190,6 +191,9 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     },
     broadcastTaskUpdated(task: Task) {
       wsHub.broadcast(task.room_id, { type: 'task:updated', task });
+    },
+    broadcastAgentJoined(roomId: string, agent: RoomAgent) {
+      wsHub.broadcast(roomId, { type: 'room:agent_joined', roomId, agent });
     },
     recordWorkflowEvent(input) {
       recordTaskEvent({

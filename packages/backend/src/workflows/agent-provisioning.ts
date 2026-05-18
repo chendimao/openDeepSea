@@ -11,13 +11,18 @@ interface WorkflowAgentProvisioningInput {
   roles?: WorkflowRole[];
 }
 
+interface WorkflowAgentProvisioningResult {
+  agents: RoomAgent[];
+  joinedAgents: RoomAgent[];
+}
+
 const ROLE_TEMPLATE_IDS: Partial<Record<WorkflowRole, string>> = {
   planner: 'planner',
   reviewer: 'reviewer',
   acceptor: 'acceptor',
 };
 
-export function ensureWorkflowAgentsForRun(input: WorkflowAgentProvisioningInput): RoomAgent[] {
+export function ensureWorkflowAgentsForRun(input: WorkflowAgentProvisioningInput): WorkflowAgentProvisioningResult {
   const templateIds = new Set<string>();
   for (const role of input.roles ?? []) {
     const templateId = ROLE_TEMPLATE_IDS[role];
@@ -29,12 +34,14 @@ export function ensureWorkflowAgentsForRun(input: WorkflowAgentProvisioningInput
   }
 
   let agents = input.agents;
+  const joinedAgents: RoomAgent[] = [];
   for (const templateId of templateIds) {
     if (hasBuiltInAgent(agents, templateId)) continue;
     const agent = roomAgentRepo.ensureBuiltInAgent(input.roomId, templateId);
     agents = replaceOrAppendAgent(agents, agent);
+    joinedAgents.push(agent);
   }
-  return agents;
+  return { agents, joinedAgents };
 }
 
 function templateIdForPlanTask(task: ParsedPlanTask): string {
