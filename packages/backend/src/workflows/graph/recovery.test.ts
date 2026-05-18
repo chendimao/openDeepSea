@@ -409,6 +409,62 @@ test('recoverGraphWorkflow marks graph running steps interrupted, blocks runs, a
   assert.equal(nextGraphState?.error, 'Backend restarted before graph node completed');
 });
 
+test('recoverGraphWorkflow blocks awaiting approval graph runs that have no plan', () => {
+  const projectPath = join(tmpdir(), `graph-recover-missing-plan-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Missing Plan Recovery', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Missing Plan Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Recover missing plan approval',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    graph_version: 'phase-b-v1',
+    graph_state: JSON.stringify({
+      workflowRunId: 'pending',
+      projectId: project.id,
+      roomId: room.id,
+      taskId: task.id,
+      userGoal: task.title,
+      projectPath: project.path,
+      plan: null,
+      currentNode: 'approval',
+      currentStepId: null,
+      activeAgentRunId: null,
+      childTaskIds: [],
+      supervisorAssignments: [],
+      reviewFindings: [],
+      reviewVerdict: null,
+      verificationResults: [],
+      repairAttempts: 0,
+      approval: 'pending',
+      status: 'awaiting_approval',
+      error: null,
+    }),
+  });
+  const parsed = parseGraphState(run.graph_state);
+  if (!parsed) throw new Error('graph state missing');
+  workflowRepo.updateGraphState(run.id, JSON.stringify({ ...parsed, workflowRunId: run.id }));
+
+  const count = recoverGraphWorkflow('Backend restarted before graph node completed');
+
+  const updatedRun = workflowRepo.getRun(run.id);
+  const nextState = parseGraphState(updatedRun?.graph_state ?? null);
+
+  assert.equal(count, 1);
+  assert.equal(updatedRun?.status, 'blocked');
+  assert.match(updatedRun?.error ?? '', /without a generated plan/);
+  assert.equal(nextState?.status, 'blocked');
+  assert.equal(nextState?.currentNode, 'approval');
+  assert.equal(nextState?.plan, null);
+});
+
 function runIdPlaceholder(): string {
   return 'pending-run-id';
 }

@@ -117,6 +117,7 @@ export interface GraphTools {
   interruptAgentRun: typeof agentRunRepo.interruptRun;
   parseGraphState: typeof parseGraphState;
   listRunningSteps: typeof workflowRepo.listRunningSteps;
+  listGraphAwaitingApprovalRuns: typeof workflowRepo.listGraphAwaitingApprovalRuns;
   getRun: typeof workflowRepo.getRun;
   getStep: typeof workflowRepo.getStep;
   broadcastAgentRunUpdated: (roomId: string, run: AgentRun) => void;
@@ -234,6 +235,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     interruptAgentRun: agentRunRepo.interruptRun.bind(agentRunRepo),
     parseGraphState,
     listRunningSteps: workflowRepo.listRunningSteps.bind(workflowRepo),
+    listGraphAwaitingApprovalRuns: workflowRepo.listGraphAwaitingApprovalRuns.bind(workflowRepo),
     getRun: workflowRepo.getRun.bind(workflowRepo),
     getStep: workflowRepo.getStep.bind(workflowRepo),
     broadcastAgentRunUpdated(roomId: string, run: AgentRun) {

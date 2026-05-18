@@ -145,7 +145,8 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
     async approvalNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
-      const needsApproval = state.plan?.needsApproval ?? true;
+      if (!state.plan) throw new Error('approval requires plan');
+      const needsApproval = state.plan.needsApproval;
       const nextState: AgentWorkflowState = {
         ...state,
         currentNode: 'approval',

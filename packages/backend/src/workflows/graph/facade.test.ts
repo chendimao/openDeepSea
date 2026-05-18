@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentRun, Message, Task, WorkflowRun } from '../../types.js';
+import type { ParsedPlan } from '../plan-parser.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-facade-')), 'test.db');
 
@@ -412,6 +413,68 @@ test('workflowOrchestrator.retryStep restores failed graph child task and resume
   assert.ok(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length >= 2);
 });
 
+test('workflowOrchestrator.retryStep reruns interrupted planning before awaiting approval', async () => {
+  const task = createTask('graph-facade-retry-planning', 'Facade graph planning retry');
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'planning',
+    plan: null,
+    approval: 'not_required',
+    error: 'Backend restarted before workflow step completed',
+  });
+  const planningStep = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: task.id,
+    stage: 'planning',
+    node_name: 'planning',
+    status: 'interrupted',
+    prompt: 'interrupted planning',
+    sort_order: 1,
+  });
+  workflowRepo.updateStep(planningStep.id, {
+    error: 'Backend restarted before workflow step completed',
+  });
+  let plannerCalls = 0;
+  setWorkflowOrchestratorGraphDeps({
+    planner: async () => {
+      plannerCalls += 1;
+      return {
+        goal: 'Recovered planning goal',
+        summary: 'Recovered planning summary.',
+        assumptions: [],
+        tasks: [{
+          title: 'Recovered child task',
+          description: 'Planning must be regenerated before approval.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Plan exists before approval'],
+          scopeRead: [],
+          scopeWrite: [],
+          dependsOn: [],
+        }],
+        reviewFocus: [],
+        verification: [],
+        verificationCommands: [],
+        risks: [],
+        needsApproval: true,
+      };
+    },
+  });
+
+  await workflowOrchestrator.retryStep(run.id);
+
+  const latest = workflowRepo.getRun(run.id);
+  const state = parseGraphState(latest?.graph_state ?? null);
+  const steps = workflowRepo.listSteps(run.id);
+
+  assert.equal(plannerCalls, 1);
+  assert.equal(workflowRepo.getStep(planningStep.id)?.status, 'skipped');
+  assert.equal(latest?.status, 'awaiting_approval');
+  assert.equal(state?.currentNode, 'approval');
+  assert.equal(state?.plan?.summary, 'Recovered planning summary.');
+  assert.ok(steps.some((step) => step.node_name === 'planning' && step.status === 'completed'));
+});
+
 test('workflowOrchestrator.retryStep rejects invalid graph_state before resetting child or step state', async () => {
   const task = createTask('graph-facade-retry-invalid-state', 'Facade invalid graph state retry');
   const executor = addWorkflowAgent(task.room_id, 'executor');
@@ -632,12 +695,34 @@ function createAwaitingGraphRun(
   task: Task,
   overrides: {
     status?: WorkflowRun['status'];
-    currentNode?: 'approval' | 'execute' | 'review' | 'repair_decision' | 'acceptance';
+    currentNode?: 'planning' | 'approval' | 'execute' | 'review' | 'repair_decision' | 'acceptance';
+    plan?: ParsedPlan | null;
+    approval?: 'pending' | 'approved' | 'not_required';
     childTaskIds?: string[];
     error?: string | null;
     reviewVerdict?: 'pass' | 'changes_requested' | 'failed' | null;
   } = {},
 ) {
+  const defaultPlan: ParsedPlan = {
+    goal: task.title,
+    summary: 'Facade graph approval plan.',
+    assumptions: [],
+    tasks: [{
+      title: 'Implement delegated graph workflow',
+      description: 'Created by approval continuation',
+      suggestedRole: 'executor' as const,
+      priority: 'normal' as const,
+      acceptance: ['Dispatch creates a child task'],
+      scopeRead: [],
+      scopeWrite: [],
+      dependsOn: [],
+    }],
+    reviewFocus: [],
+    verification: [],
+    verificationCommands: [],
+    risks: [],
+    needsApproval: true,
+  };
   const state = {
     workflowRunId: 'pending',
     projectId: task.project_id,
@@ -645,26 +730,7 @@ function createAwaitingGraphRun(
     taskId: task.id,
     userGoal: task.title,
     projectPath: 'unused',
-    plan: {
-      goal: task.title,
-      summary: 'Facade graph approval plan.',
-      assumptions: [],
-      tasks: [{
-        title: 'Implement delegated graph workflow',
-        description: 'Created by approval continuation',
-        suggestedRole: 'executor' as const,
-        priority: 'normal' as const,
-        acceptance: ['Dispatch creates a child task'],
-        scopeRead: [],
-        scopeWrite: [],
-        dependsOn: [],
-      }],
-      reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
-      risks: [],
-      needsApproval: true,
-    },
+    plan: Object.prototype.hasOwnProperty.call(overrides, 'plan') ? overrides.plan! : defaultPlan,
     currentNode: overrides.currentNode ?? 'approval' as const,
     currentStepId: null,
     activeAgentRunId: null,
@@ -673,7 +739,7 @@ function createAwaitingGraphRun(
     reviewVerdict: overrides.reviewVerdict ?? null,
     verificationResults: [],
     repairAttempts: 0,
-    approval: 'pending' as const,
+    approval: overrides.approval ?? 'pending' as const,
     status: overrides.status ?? 'awaiting_approval' as const,
     error: overrides.error ?? null,
   };

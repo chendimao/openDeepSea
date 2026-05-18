@@ -90,6 +90,17 @@ test('approveWorkflowPlanWithConversation records approval and returns before la
     userGoal: task.title,
     projectPath: project.path,
   });
+  const plan = {
+    goal: task.title,
+    summary: 'Approval short request plan.',
+    assumptions: [],
+    tasks: [],
+    reviewFocus: [],
+    verification: [],
+    verificationCommands: [],
+    risks: [],
+    needsApproval: true,
+  };
   const run = workflowRepo.createRun({
     room_id: room.id,
     project_id: project.id,
@@ -100,6 +111,7 @@ test('approveWorkflowPlanWithConversation records approval and returns before la
     graph_state: serializeGraphState({
       ...pendingState,
       workflowRunId: 'pending',
+      plan,
       currentNode: 'approval',
       status: 'awaiting_approval',
       approval: 'pending',
@@ -108,6 +120,7 @@ test('approveWorkflowPlanWithConversation records approval and returns before la
   workflowRepo.updateGraphState(run.id, serializeGraphState({
     ...pendingState,
     workflowRunId: run.id,
+    plan,
     currentNode: 'approval',
     status: 'awaiting_approval',
     approval: 'pending',
@@ -186,12 +199,12 @@ test('approveWorkflowPlanWithConversation validates graph state before writing a
   assert.equal(workflowRepo.getRun(run.id)?.status, 'blocked');
 });
 
-test('approveWorkflowPlanWithConversation rolls back intent message when approval update fails', () => {
-  const { room, project } = createRoomWithProject('Approve Update Rollback');
+test('approveWorkflowPlanWithConversation blocks missing plan before writing approval message', () => {
+  const { room, project } = createRoomWithProject('Approve Missing Plan');
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
-    title: 'Rollback approval update',
+    title: 'Missing plan approval',
   });
   const pendingState = emptyAgentWorkflowState({
     workflowRunId: 'pending',
@@ -219,6 +232,68 @@ test('approveWorkflowPlanWithConversation rolls back intent message when approva
   workflowRepo.updateGraphState(run.id, serializeGraphState({
     ...pendingState,
     workflowRunId: run.id,
+    currentNode: 'approval',
+    status: 'awaiting_approval',
+    approval: 'pending',
+  }));
+  const before = messageRepo.listByRoom(room.id, 20).length;
+
+  assert.throws(
+    () => approveWorkflowPlanWithConversation({ roomId: room.id, workflowId: run.id, source: 'approval_button' }),
+    /requires generated plan/,
+  );
+  const latest = workflowRepo.getRun(run.id);
+  assert.equal(messageRepo.listByRoom(room.id, 20).length, before);
+  assert.equal(latest?.status, 'blocked');
+  assert.match(latest?.error ?? '', /requires generated plan/);
+});
+
+test('approveWorkflowPlanWithConversation rolls back intent message when approval update fails', () => {
+  const { room, project } = createRoomWithProject('Approve Update Rollback');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Rollback approval update',
+  });
+  const pendingState = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  });
+  const plan = {
+    goal: task.title,
+    summary: 'Approval update rollback plan.',
+    assumptions: [],
+    tasks: [],
+    reviewFocus: [],
+    verification: [],
+    verificationCommands: [],
+    risks: [],
+    needsApproval: true,
+  };
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    graph_version: 'phase-b-v1',
+    graph_state: serializeGraphState({
+      ...pendingState,
+      workflowRunId: 'pending',
+      plan,
+      currentNode: 'approval',
+      status: 'awaiting_approval',
+      approval: 'pending',
+    }),
+  });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...pendingState,
+    workflowRunId: run.id,
+    plan,
     currentNode: 'approval',
     status: 'awaiting_approval',
     approval: 'pending',

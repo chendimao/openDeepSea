@@ -127,6 +127,12 @@ export const workflowRepo = {
       .all(taskId) as WorkflowRun[];
   },
 
+  listGraphAwaitingApprovalRuns(): WorkflowRun[] {
+    return db
+      .prepare('SELECT * FROM workflow_runs WHERE graph_version IS NOT NULL AND status = ? ORDER BY created_at ASC')
+      .all('awaiting_approval') as WorkflowRun[];
+  },
+
   updateRun(
     id: string,
     patch: Partial<Pick<WorkflowRun, 'status' | 'current_stage' | 'approved_by' | 'error' | 'graph_version' | 'graph_state'>>,

@@ -361,7 +361,17 @@ export function approveGraphWorkflowPlan(id: string, approvedBy = 'user'): Workf
 export function validateGraphWorkflowApproval(id: string): WorkflowRun {
   const run = requireGraphRun(id);
   if (run.status !== 'awaiting_approval') throw new Error('workflow is not awaiting approval');
-  requireGraphStateOrBlock(run);
+  const state = requireGraphStateOrBlock(run);
+  if (!state.plan) {
+    const error = 'workflow approval requires generated plan';
+    workflowRepo.updateRun(run.id, { status: 'blocked', error });
+    workflowRepo.updateGraphState(run.id, serializeGraphState({
+      ...state,
+      status: 'blocked',
+      error,
+    }));
+    throw new Error(error);
+  }
   return run;
 }
 
@@ -554,6 +564,26 @@ function handleBackgroundGraphWorkflowError(runId: string, err: unknown): void {
 export function recoverGraphWorkflow(error: string): number {
   const tools = createGraphTools();
   let count = 0;
+  for (const run of tools.listGraphAwaitingApprovalRuns()) {
+    try {
+      const parsedState = tools.parseGraphState(run.graph_state);
+      if (!parsedState || parsedState.plan) continue;
+      const blockedRun = tools.updateRun(run.id, {
+        status: 'blocked',
+        error: 'Workflow is awaiting approval without a generated plan',
+      });
+      const nextState = {
+        ...parsedState,
+        status: 'blocked' as const,
+        error: 'Workflow is awaiting approval without a generated plan',
+      };
+      tools.updateGraphState(run.id, serializeGraphState(nextState));
+      if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
+      count += 1;
+    } catch (err) {
+      console.warn(`[graph-recovery] invalid graph_state for awaiting approval run ${run.id}: ${(err as Error).message}`);
+    }
+  }
   for (const step of tools.listRunningSteps()) {
     const run = tools.getRun(step.workflow_run_id);
     if (!step.node_name && !run?.graph_version) continue;
@@ -650,6 +680,7 @@ function tryParseGraphState(run: WorkflowRun): { ok: true; state: AgentWorkflowS
 }
 
 function retryCurrentNode(state: AgentWorkflowState): AgentWorkflowState['currentNode'] {
+  if (state.currentNode === 'planning' || (state.currentNode === 'approval' && !state.plan)) return 'context';
   if (state.currentNode === 'execute') return 'dispatch';
   if (state.currentNode === 'review') return 'dispatch';
   if (state.currentNode === 'repair_decision') return 'review';

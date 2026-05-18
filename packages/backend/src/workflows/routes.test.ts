@@ -54,6 +54,17 @@ test('legacy workflow approval route uses conversation short request path when g
     userGoal: task.title,
     projectPath: project.path,
   });
+  const plan = {
+    goal: task.title,
+    summary: 'Route approval plan.',
+    assumptions: [],
+    tasks: [],
+    reviewFocus: [],
+    verification: [],
+    verificationCommands: [],
+    risks: [],
+    needsApproval: true,
+  };
   const run = workflowRepo.createRun({
     room_id: room.id,
     project_id: project.id,
@@ -64,6 +75,7 @@ test('legacy workflow approval route uses conversation short request path when g
     graph_state: serializeGraphState({
       ...state,
       workflowRunId: 'pending',
+      plan,
       currentNode: 'approval',
       status: 'awaiting_approval',
       approval: 'pending',
@@ -72,6 +84,7 @@ test('legacy workflow approval route uses conversation short request path when g
   workflowRepo.updateGraphState(run.id, serializeGraphState({
     ...state,
     workflowRunId: run.id,
+    plan,
     currentNode: 'approval',
     status: 'awaiting_approval',
     approval: 'pending',
