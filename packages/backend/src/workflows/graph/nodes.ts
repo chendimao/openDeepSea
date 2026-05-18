@@ -4,6 +4,7 @@ import { getVerificationCwd, runVerificationCommand } from './verification.js';
 import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orchestrator.js';
 import { parseAcceptanceVerdict, parseReviewVerdict } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
+import { resolveWorkflowExecutor } from '../role-resolver.js';
 import type { Task, TaskEventType, WorkflowContextEntryType, WorkflowContextSourceType } from '../../types.js';
 
 export interface GraphRuntimeNodes {
@@ -301,14 +302,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         return nextState;
       }
 
-      const assignedExecutor = nextChild.assigned_agent_id
-        ? context.agents.find((agent) =>
-          agent.id === nextChild.assigned_agent_id && agent.acp_enabled && agent.acp_backend,
-        ) ?? null
-        : null;
-      const executor = nextChild.assigned_agent_id
-        ? assignedExecutor
-        : tools.selectAgentForRole('executor', context.agents);
+      const executor = resolveWorkflowExecutor(context.agents, nextChild);
       if (!executor) {
         const error = 'No executor available for implementation';
         const updatedRun = tools.updateRun(context.run.id, {

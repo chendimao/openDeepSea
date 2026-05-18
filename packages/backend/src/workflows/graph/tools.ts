@@ -29,6 +29,7 @@ import { wsHub } from '../../ws-hub.js';
 import { generateLangChainPlan, type LangChainPlannerInput } from '../langchain-planner.js';
 import type { ParsedPlan } from '../plan-parser.js';
 import { formatRecentMessagesForPlanner } from '../orchestrator.js';
+import { selectWorkflowAgentForRole } from '../role-resolver.js';
 import { parseGraphState } from './state.js';
 
 export interface GraphRuntimeDeps {
@@ -188,11 +189,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
       return workflowRepo.listSteps(workflowRunId).length + 1;
     },
     selectAgentForRole(role: WorkflowRole, agents: RoomAgent[]) {
-      const executableAgents = agents.filter((agent) => agent.acp_enabled && agent.acp_backend);
-      const exact = executableAgents.filter((agent) => agent.workflow_role === role);
-      if (exact.length > 0) return exact[0] ?? null;
-      if (role !== 'executor') return this.selectAgentForRole('executor', executableAgents);
-      return null;
+      return selectWorkflowAgentForRole(role, agents);
     },
     runAcpAgent,
     upsertTaskSummaryMemory: memoryRepo.upsertTaskSummary.bind(memoryRepo),

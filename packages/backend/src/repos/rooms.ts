@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid';
+import { getBuiltInAgentTemplate, type RoomCrewTemplate } from '../crew-templates.js';
 import { db, now } from '../db.js';
 import type { AcpBackend, AcpPermissionMode, AgentDefaultRuntime, Room, RoomAgent, WorkflowRole } from '../types.js';
 import { agentRepo } from './agents.js';
@@ -58,13 +59,15 @@ export const roomRepo = {
     return db.prepare('SELECT * FROM rooms WHERE id = ?').get(id) as Room | undefined;
   },
 
-  create(input: { project_id: string; name: string; description?: string }): Room {
+  create(input: { project_id: string; name: string; description?: string; ensureDefaultPlanner?: boolean }): Room {
     const id = nanoid(12);
     db.prepare(
       `INSERT INTO rooms (id, project_id, name, description, created_at)
        VALUES (?, ?, ?, ?, ?)`,
     ).run(id, input.project_id, input.name, input.description ?? null, now());
-    roomAgentRepo.ensureDefaultPlanner(id);
+    if (input.ensureDefaultPlanner !== false) {
+      roomAgentRepo.ensureDefaultPlanner(id);
+    }
     return this.get(id)!;
   },
 
@@ -90,7 +93,8 @@ export const roomAgentRepo = {
     if (!roomRepo.get(roomId)) return undefined;
     const planner = agentRepo.getByBuiltinKey('planner') ?? agentRepo.getByAgentId('planner');
     if (!planner) return undefined;
-    return this.addFromGlobalAgent({ room_id: roomId, global_agent_id: planner.id });
+    const agent = this.addFromGlobalAgent({ room_id: roomId, global_agent_id: planner.id });
+    return this.applyBuiltInTemplate(agent.id, 'planner') ?? agent;
   },
 
   get(id: string): RoomAgent | undefined {
@@ -140,7 +144,8 @@ export const roomAgentRepo = {
         agent.default_acp_backend ? 'acp' : 'none',
         existing.id,
       );
-      return this.get(existing.id)!;
+      const roomAgent = this.get(existing.id)!;
+      return agent.builtin_key ? this.applyBuiltInTemplate(roomAgent.id, agent.builtin_key) ?? roomAgent : roomAgent;
     }
 
     const id = nanoid(12);
@@ -163,7 +168,48 @@ export const roomAgentRepo = {
       agent.default_acp_permission_mode,
       agent.default_acp_backend ? 'acp' : 'none',
     );
-    return this.get(id)!;
+    const roomAgent = this.get(id)!;
+    return agent.builtin_key ? this.applyBuiltInTemplate(roomAgent.id, agent.builtin_key) ?? roomAgent : roomAgent;
+  },
+
+  applyCrewTemplate(roomId: string, template: RoomCrewTemplate): RoomAgent[] {
+    if (!roomRepo.get(roomId)) throw new Error('room not found');
+    return template.agent_template_ids.map((templateId) => {
+      const templateAgent = getBuiltInAgentTemplate(templateId);
+      if (!templateAgent) throw new Error(`agent template not found: ${templateId}`);
+      const globalAgent = agentRepo.createOrReuseFromRoomAgent({
+        agent_id: templateAgent.id,
+        agent_name: templateAgent.name,
+        agent_role: templateAgent.description,
+        acp_backend: templateAgent.acp_backend,
+        acp_permission_mode: templateAgent.acp_permission_mode,
+      });
+      const agent = this.addFromGlobalAgent({
+        room_id: roomId,
+        global_agent_id: globalAgent.id,
+      });
+      return this.applyBuiltInTemplate(agent.id, templateId) ?? agent;
+    });
+  },
+
+  applyBuiltInTemplate(id: string, templateId: string): RoomAgent | undefined {
+    const template = getBuiltInAgentTemplate(templateId);
+    if (!template) return undefined;
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    const withRole = this.setWorkflowRole(id, template.workflow_role) ?? existing;
+    const withAcp = this.setAcp(withRole.id, {
+      acp_enabled: template.acp_enabled,
+      acp_backend: template.acp_backend,
+      acp_session_id: withRole.acp_session_id,
+      acp_session_label: withRole.acp_session_label,
+      acp_permission_mode: template.acp_permission_mode,
+      acp_writable_dirs: withRole.acp_writable_dirs,
+    }) ?? withRole;
+    return this.setCapabilitiesAndRuntime(withAcp.id, {
+      capabilities: template.capabilities,
+      default_runtime: 'acp',
+    }) ?? withAcp;
   },
 
   ensureGlobalAgent(id: string): RoomAgent | undefined {

@@ -16,6 +16,7 @@ import type {
   Project,
   Room,
   RoomAgent,
+  RoomCrewTemplate,
   RoomSearchResponse,
   SettingsResolution,
   Task,
@@ -115,6 +116,8 @@ export const api = {
     }>('/health'),
   listAgentTemplates: () =>
     request<{ templates: BuiltInAgentTemplate[] }>('/agent-templates'),
+  listCrewTemplates: () =>
+    request<{ templates: RoomCrewTemplate[] }>('/crew-templates'),
 
   listAgents: () => request<Agent[]>('/agents'),
   getAgent: (id: string) => request<Agent>(`/agents/${id}`),
@@ -323,7 +326,7 @@ export const api = {
     params.set('q', input.query);
     return request<RoomSearchResponse>(`/projects/${projectId}/rooms/search?${params.toString()}`);
   },
-  createRoom: (projectId: string, input: { name: string; description?: string }) =>
+  createRoom: (projectId: string, input: { name: string; description?: string; crew_template_id?: string }) =>
     request<Room>(`/projects/${projectId}/rooms`, { method: 'POST', body: JSON.stringify(input) }),
   getRoom: (id: string) => request<Room>(`/rooms/${id}`),
   deleteRoom: (id: string) => request<void>(`/rooms/${id}`, { method: 'DELETE' }),

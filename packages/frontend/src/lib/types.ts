@@ -510,3 +510,11 @@ export interface BuiltInAgentTemplate {
   acp_backend: AcpBackend;
   capabilities: string[];
 }
+
+export interface RoomCrewTemplate {
+  id: string;
+  name: string;
+  description: string;
+  agent_template_ids: string[];
+  default: boolean;
+}

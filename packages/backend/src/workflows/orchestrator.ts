@@ -37,6 +37,7 @@ import {
   startGraphWorkflow,
 } from './graph/runtime.js';
 import type { GraphRuntimeDeps } from './graph/tools.js';
+import { resolveWorkflowExecutor, selectWorkflowAgentForRole } from './role-resolver.js';
 import { buildStagePrompt } from './prompts.js';
 import type {
   AgentRun,
@@ -973,19 +974,17 @@ function assignFromPlan(run: WorkflowRun): void {
 }
 
 function selectAgentForRole(role: WorkflowRole, agents: RoomAgent[]): RoomAgent | null {
-  const candidates = agents.filter((agent) => agent.workflow_role === role);
-  if (candidates.length === 0 && role !== 'executor') return selectAgentForRole('executor', agents);
-  if (candidates.length === 0) return null;
-  return candidates.find((agent) => agent.acp_enabled) ?? candidates[0] ?? null;
+  return selectWorkflowAgentForRole(role, agents);
 }
 
 function continueImplementationOrReview(run: WorkflowRun): void {
   const children = taskRepo.listChildren(run.task_id);
   const nextChild = children.find((task) => task.status === 'todo' || task.status === 'in_progress');
   if (nextChild) {
-    const assigned = nextChild.assigned_agent_id ? roomAgentRepo.get(nextChild.assigned_agent_id) : null;
     const agents = roomAgentRepo.listByRoom(run.room_id);
-    const agent = assigned ?? selectAgentForRole('executor', agents);
+    const agent = nextChild.assigned_agent_id
+      ? resolveWorkflowExecutor(agents, nextChild)
+      : selectAgentForRole('executor', agents);
     if (!agent) {
       failStageWithoutAgent(run, nextChild, 'implementation', 'No executor available for implementation');
       return;

@@ -7,6 +7,7 @@ import { getAdapter } from './acp/index.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
 import type { CollaborationDecision } from './collaboration-decision.js';
 import { runCollaborationStages as defaultRunCollaborationStages } from './collaboration-runner.js';
+import { getRoomCrewTemplate, listRoomCrewTemplates } from './crew-templates.js';
 import { dispatchUserMessage } from './dispatcher.js';
 import { validateLocalAccess } from './local-access.js';
 import { resolveMentionedAgentRoomIds } from './mentions.js';
@@ -125,6 +126,10 @@ router.get('/health', (_req, res) => {
 
 router.get('/agent-templates', (_req, res) => {
   res.json({ templates: listBuiltInAgentTemplates() });
+});
+
+router.get('/crew-templates', (_req, res) => {
+  res.json({ templates: listRoomCrewTemplates() });
 });
 
 const settingsPatchShape = {
@@ -961,14 +966,22 @@ router.get('/projects/:projectId/rooms', (req, res) => {
 });
 
 router.post('/projects/:projectId/rooms', (req, res) => {
-  const schema = z.object({ name: z.string().min(1), description: z.string().optional() });
+  const schema = z.object({
+    name: z.string().min(1),
+    description: z.string().optional(),
+    crew_template_id: z.string().min(1).optional(),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const crewTemplate = getRoomCrewTemplate(parsed.data.crew_template_id ?? 'discussion-only');
+  if (!crewTemplate) return res.status(404).json({ error: 'crew template not found' });
   const room = roomRepo.create({
     project_id: req.params.projectId,
     name: parsed.data.name,
     description: parsed.data.description,
+    ensureDefaultPlanner: false,
   });
+  roomAgentRepo.applyCrewTemplate(room.id, crewTemplate);
   res.status(201).json(room);
 });
 
@@ -1088,19 +1101,7 @@ router.post('/rooms/:roomId/agents/from-template', (req, res) => {
       room_id: req.params.roomId,
       global_agent_id: globalAgent.id,
     });
-    const withRole = roomAgentRepo.setWorkflowRole(agent.id, template.workflow_role) ?? agent;
-    const withAcp = roomAgentRepo.setAcp(withRole.id, {
-      acp_enabled: template.acp_enabled,
-      acp_backend: template.acp_backend,
-      acp_session_id: null,
-      acp_session_label: null,
-      acp_permission_mode: 'bypass',
-      acp_writable_dirs: [],
-    }) ?? withRole;
-    const result = roomAgentRepo.setCapabilitiesAndRuntime(withAcp.id, {
-      capabilities: template.capabilities,
-      default_runtime: 'acp',
-    }) ?? withAcp;
+    const result = roomAgentRepo.applyBuiltInTemplate(agent.id, template.id) ?? agent;
 
     wsHub.broadcast(result.room_id, { type: 'room:agent_joined', roomId: result.room_id, agent: result });
     res.status(201).json(result);
