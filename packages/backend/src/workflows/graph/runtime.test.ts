@@ -374,6 +374,83 @@ test('supervisor assignment hint ignores non-executable agent and falls back to 
   assert.equal(child?.assigned_agent_id, fallbackExecutor.id);
 });
 
+test('graph workflow invites required built-in agents when the room only has planner', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-auto-invite-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Auto Invite', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Auto Invite Room' });
+  roomAgentRepo.ensureDefaultPlanner(room.id);
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Auto invite workflow agents',
+  });
+  const calls: Array<{ agentId: string; stage: WorkflowStage | null | undefined }> = [];
+
+  await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: 'Auto invite workflow agents',
+      summary: 'Create frontend and backend work items',
+      assumptions: [],
+      tasks: [
+        {
+          title: 'Update React page',
+          description: 'Modify the room page component.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend page is updated'],
+          scopeRead: ['packages/frontend/src/pages/RoomPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/RoomPage.tsx'],
+          dependsOn: [],
+        },
+        {
+          title: 'Update API route',
+          description: 'Modify the backend route.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend route is updated'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => {
+      calls.push({ agentId: input.agent.agent_id, stage: input.workflowStage });
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+
+  const agents = roomAgentRepo.listByRoom(room.id);
+  assert.deepEqual(
+    agents.map((agent) => agent.agent_id),
+    ['planner', 'frontend-executor', 'backend-executor', 'reviewer', 'acceptor'],
+  );
+  const children = taskRepo.listChildren(task.id);
+  assert.equal(
+    children.find((child) => child.title === 'Update React page')?.assigned_agent_id,
+    agents.find((agent) => agent.agent_id === 'frontend-executor')?.id,
+  );
+  assert.equal(
+    children.find((child) => child.title === 'Update API route')?.assigned_agent_id,
+    agents.find((agent) => agent.agent_id === 'backend-executor')?.id,
+  );
+  assert.deepEqual(
+    calls.map((call) => `${call.stage}:${call.agentId}`),
+    [
+      'implementation:frontend-executor',
+      'implementation:backend-executor',
+      'code_review:reviewer',
+      'acceptance:acceptor',
+    ],
+  );
+});
+
 test('supervisor assignment hint is ignored when multiple executor tasks would make it ambiguous', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-supervisor-assignment-ambiguous-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -754,7 +831,7 @@ test('graph dispatch assigns child tasks by frontend and backend scope hints', a
   assert.equal(children.find((child) => child.title === 'Update API route')?.assigned_agent_id, backend.id);
 });
 
-test('no-approval graph blocks instead of selecting non-ACP executor', async () => {
+test('no-approval graph invites built-in executor instead of selecting non-ACP executor', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-non-acp-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Non ACP', path: projectPath });
@@ -772,7 +849,7 @@ test('no-approval graph blocks instead of selecting non-ACP executor', async () 
     description: 'Do not select legacy executors for ACP-only graph workflows.',
   });
 
-  let calls = 0;
+  let implementationAgentId: string | null = null;
   const run = await startGraphWorkflow(task.id, {
     planner: async () => ({
       goal: 'Dispatch without ACP executor',
@@ -780,7 +857,7 @@ test('no-approval graph blocks instead of selecting non-ACP executor', async () 
       assumptions: [],
       tasks: [{
         title: 'Implement without legacy executor',
-        description: 'This should block before agent execution',
+        description: 'This should invite a built-in executor before agent execution',
         suggestedRole: 'executor',
         priority: 'normal',
         acceptance: ['No non-ACP agent is invoked'],
@@ -794,9 +871,9 @@ test('no-approval graph blocks instead of selecting non-ACP executor', async () 
       risks: [],
       needsApproval: false,
     }),
-    runAcpAgent: async () => {
-      calls += 1;
-      throw new Error('non-ACP executor should not run');
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'implementation') implementationAgentId = input.agent.agent_id;
+      return createCompletedAgentRun(room.id, input);
     },
   });
 
@@ -804,16 +881,17 @@ test('no-approval graph blocks instead of selecting non-ACP executor', async () 
   const childTasks = taskRepo.listChildren(task.id);
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
 
-  assert.equal(calls, 0);
-  assert.equal(detail?.run.status, 'blocked');
-  assert.match(detail?.run.error ?? '', /No executor available/);
+  assert.ok(['backend-executor', 'frontend-executor'].includes(implementationAgentId ?? ''));
+  assert.equal(detail?.run.status, 'completed');
   assert.equal(childTasks.length, 1);
-  assert.equal(childTasks[0]?.assigned_agent_id, null);
-  assert.equal(graphState?.status, 'blocked');
-  assert.match(graphState?.error ?? '', /No executor available/);
+  assert.equal(
+    childTasks[0]?.assigned_agent_id,
+    roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === implementationAgentId)?.id,
+  );
+  assert.equal(graphState?.status, 'completed');
 });
 
-test('graph execute blocks unassigned write task instead of falling back to executor outside runtime boundary', async () => {
+test('graph execute invites matching executor instead of falling back outside runtime boundary', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-unassigned-write-boundary-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Unassigned Write Boundary', path: projectPath });
@@ -831,11 +909,11 @@ test('graph execute blocks unassigned write task instead of falling back to exec
     title: 'Do not fallback outside write boundary',
   });
 
-  let calls = 0;
+  let implementationAgentId: string | null = null;
   const run = await startGraphWorkflow(task.id, {
     planner: async () => ({
       goal: 'Do not fallback outside write boundary',
-      summary: 'Create one frontend child task without eligible executor',
+      summary: 'Create one frontend child task without eligible existing executor',
       assumptions: [],
       tasks: [{
         title: 'Update React page',
@@ -853,9 +931,9 @@ test('graph execute blocks unassigned write task instead of falling back to exec
       risks: [],
       needsApproval: false,
     }),
-    runAcpAgent: async () => {
-      calls += 1;
-      throw new Error('backend executor should not run frontend write task');
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'implementation') implementationAgentId = input.agent.agent_id;
+      return createCompletedAgentRun(room.id, input);
     },
   });
 
@@ -863,13 +941,14 @@ test('graph execute blocks unassigned write task instead of falling back to exec
   const childTasks = taskRepo.listChildren(task.id);
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
 
-  assert.equal(calls, 0);
-  assert.equal(detail?.run.status, 'blocked');
-  assert.match(detail?.run.error ?? '', /No executor available/);
+  assert.equal(implementationAgentId, 'frontend-executor');
+  assert.equal(detail?.run.status, 'completed');
   assert.equal(childTasks.length, 1);
-  assert.equal(childTasks[0]?.assigned_agent_id, null);
-  assert.equal(graphState?.status, 'blocked');
-  assert.match(graphState?.error ?? '', /No executor available/);
+  assert.equal(
+    childTasks[0]?.assigned_agent_id,
+    roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'frontend-executor')?.id,
+  );
+  assert.equal(graphState?.status, 'completed');
 });
 
 test('graph execute blocks assigned write task when assigned executor is outside runtime boundary', async () => {

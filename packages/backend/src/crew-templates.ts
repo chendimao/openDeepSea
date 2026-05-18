@@ -14,14 +14,14 @@ const ROOM_CREW_TEMPLATES: RoomCrewTemplate[] = [
     name: '只讨论',
     description: '仅加入 Planner，适合需求澄清、方案讨论和非执行型群聊。',
     agent_template_ids: ['planner'],
-    default: false,
+    default: true,
   },
   {
     id: 'light-implementation',
     name: '轻量实现',
     description: 'Planner + Backend Executor + Reviewer，适合大多数小型实现和修复任务。',
     agent_template_ids: ['planner', 'backend-executor', 'reviewer'],
-    default: true,
+    default: false,
   },
   {
     id: 'fullstack-collaboration',

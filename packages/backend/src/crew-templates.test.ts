@@ -45,7 +45,7 @@ test('crew template route lists the built-in room crews', async () => {
     body.templates.find((template) => template.id === 'light-implementation')?.agent_template_ids,
     ['planner', 'backend-executor', 'reviewer'],
   );
-  assert.equal(body.templates.find((template) => template.id === 'light-implementation')?.default, true);
+  assert.equal(body.templates.find((template) => template.id === 'discussion-only')?.default, true);
 });
 
 test('room creation applies the selected crew template with executable workflow roles', async () => {
@@ -84,7 +84,7 @@ test('room creation applies the selected crew template with executable workflow 
   assert.equal(reviewer?.memory_scope, 'room');
 });
 
-test('room creation uses the default implementation crew when no template is supplied', async () => {
+test('room creation uses the default planner-only crew when no template is supplied', async () => {
   const project = createProject('Default Template Project');
 
   const res = await request(`/api/projects/${project.id}/rooms`, {
@@ -95,8 +95,8 @@ test('room creation uses the default implementation crew when no template is sup
   const room = await res.json() as { id: string };
   const agents = roomAgentRepo.listByRoom(room.id);
 
-  assert.deepEqual(agents.map((agent) => agent.agent_id), ['planner', 'backend-executor', 'reviewer']);
-  assert.deepEqual(agents.map((agent) => agent.workflow_role), ['planner', 'executor', 'reviewer']);
+  assert.deepEqual(agents.map((agent) => agent.agent_id), ['planner']);
+  assert.deepEqual(agents.map((agent) => agent.workflow_role), ['planner']);
 });
 
 test('batch-adding built-in global agents preserves workflow metadata', async () => {

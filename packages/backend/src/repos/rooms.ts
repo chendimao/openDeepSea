@@ -347,22 +347,25 @@ export const roomAgentRepo = {
 
   applyCrewTemplate(roomId: string, template: RoomCrewTemplate): RoomAgent[] {
     if (!roomRepo.get(roomId)) throw new Error('room not found');
-    return template.agent_template_ids.map((templateId) => {
-      const templateAgent = getBuiltInAgentTemplate(templateId);
-      if (!templateAgent) throw new Error(`agent template not found: ${templateId}`);
-      const globalAgent = agentRepo.createOrReuseFromRoomAgent({
-        agent_id: templateAgent.id,
-        agent_name: templateAgent.name,
-        agent_role: templateAgent.description,
-        acp_backend: templateAgent.acp_backend,
-        acp_permission_mode: templateAgent.acp_permission_mode,
-      });
-      const agent = this.addFromGlobalAgent({
-        room_id: roomId,
-        global_agent_id: globalAgent.id,
-      });
-      return this.applyBuiltInTemplate(agent.id, templateId) ?? agent;
+    return template.agent_template_ids.map((templateId) => this.ensureBuiltInAgent(roomId, templateId));
+  },
+
+  ensureBuiltInAgent(roomId: string, templateId: string): RoomAgent {
+    if (!roomRepo.get(roomId)) throw new Error('room not found');
+    const templateAgent = getBuiltInAgentTemplate(templateId);
+    if (!templateAgent) throw new Error(`agent template not found: ${templateId}`);
+    const globalAgent = agentRepo.createOrReuseFromRoomAgent({
+      agent_id: templateAgent.id,
+      agent_name: templateAgent.name,
+      agent_role: templateAgent.description,
+      acp_backend: templateAgent.acp_backend,
+      acp_permission_mode: templateAgent.acp_permission_mode,
     });
+    const agent = this.addFromGlobalAgent({
+      room_id: roomId,
+      global_agent_id: globalAgent.id,
+    });
+    return this.applyBuiltInTemplate(agent.id, templateId) ?? agent;
   },
 
   applyBuiltInTemplate(id: string, templateId: string): RoomAgent | undefined {

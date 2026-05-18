@@ -5,6 +5,7 @@ import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orch
 import { parseAcceptanceVerdict, parseReviewVerdict, type ParsedPlanTask } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
 import { resolveWorkflowExecutor } from '../role-resolver.js';
+import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
 import type { RoomAgent, Task, TaskEventType, WorkflowContextEntryType, WorkflowContextSourceType } from '../../types.js';
 
 export interface GraphRuntimeNodes {
@@ -210,9 +211,18 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       tools.broadcastStepCreated(context.room.id, step);
 
       const childTaskIds: string[] = [];
+      let assignmentAgents = context.agents;
       for (const [index, planTask] of state.plan.tasks.entries()) {
-        const resolved = tools.selectAgentForPlanTask(planTask, context.agents);
-        const assigned = selectAssignmentHintForPlanTask(state, index, context.agents, tools, resolved)
+        let resolved = tools.selectAgentForPlanTask(planTask, assignmentAgents);
+        if (!resolved && planTask.suggestedRole === 'executor') {
+          assignmentAgents = ensureWorkflowAgentsForRun({
+            roomId: context.room.id,
+            agents: assignmentAgents,
+            planTasks: [planTask],
+          });
+          resolved = tools.selectAgentForPlanTask(planTask, assignmentAgents);
+        }
+        const assigned = selectAssignmentHintForPlanTask(state, index, assignmentAgents, tools, resolved)
           ?? resolved;
         const child = tools.createChildTask({
           room_id: context.task.room_id,
@@ -322,7 +332,16 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         : state.plan?.tasks.find((item) => item.title === nextChild.title);
       const scopeRead = plannedTask?.scopeRead ?? [];
       const scopeWrite = plannedTask?.scopeWrite ?? [];
-      const executor = selectExecutorForPlannedChild(context.agents, nextChild, plannedTask, tools);
+      let executionAgents = context.agents;
+      let executor = selectExecutorForPlannedChild(executionAgents, nextChild, plannedTask, tools);
+      if (!executor && plannedTask) {
+        executionAgents = ensureWorkflowAgentsForRun({
+          roomId: context.room.id,
+          agents: executionAgents,
+          planTasks: [plannedTask],
+        });
+        executor = selectExecutorForPlannedChild(executionAgents, nextChild, plannedTask, tools);
+      }
       if (!executor) {
         const error = 'No executor available for implementation';
         const updatedRun = tools.updateRun(context.run.id, {
@@ -357,7 +376,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         projectPath: context.project.path,
         room: context.room,
         task: nextChild,
-        agents: context.agents,
+        agents: executionAgents,
         workflowContext: context.workflowContext,
         childTasks,
         memoryContext: context.memories,
@@ -523,8 +542,16 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
     async reviewNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
-      const reviewer = tools.selectAgentForRole('reviewer', context.agents)
-        ?? tools.selectAgentForRole('executor', context.agents);
+      let reviewAgents = context.agents;
+      if (!hasExecutableWorkflowRole(reviewAgents, 'reviewer')) {
+        reviewAgents = ensureWorkflowAgentsForRun({
+          roomId: context.room.id,
+          agents: reviewAgents,
+          roles: ['reviewer'],
+        });
+      }
+      const reviewer = tools.selectAgentForRole('reviewer', reviewAgents)
+        ?? tools.selectAgentForRole('executor', reviewAgents);
       if (!reviewer) {
         const error = 'No reviewer available for code review';
         const updatedRun = tools.updateRun(context.run.id, {
@@ -552,7 +579,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         projectPath: context.project.path,
         room: context.room,
         task: context.task,
-        agents: context.agents,
+        agents: reviewAgents,
         workflowContext: context.workflowContext,
         childTasks: tools.listChildTasks(context.task.id),
         memoryContext: context.memories,
@@ -957,8 +984,16 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
     async acceptanceNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
-      const acceptor = tools.selectAgentForRole('acceptor', context.agents)
-        ?? tools.selectAgentForRole('reviewer', context.agents);
+      let acceptanceAgents = context.agents;
+      if (!hasExecutableWorkflowRole(acceptanceAgents, 'acceptor')) {
+        acceptanceAgents = ensureWorkflowAgentsForRun({
+          roomId: context.room.id,
+          agents: acceptanceAgents,
+          roles: ['acceptor'],
+        });
+      }
+      const acceptor = tools.selectAgentForRole('acceptor', acceptanceAgents)
+        ?? tools.selectAgentForRole('reviewer', acceptanceAgents);
       if (!acceptor) {
         const error = 'No acceptor available for acceptance';
         const updatedRun = tools.updateRun(context.run.id, {
@@ -987,7 +1022,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         projectPath: context.project.path,
         room: context.room,
         task: context.task,
-        agents: context.agents,
+        agents: acceptanceAgents,
         workflowContext: context.workflowContext,
         childTasks: tools.listChildTasks(context.task.id),
         memoryContext: context.memories,
@@ -1440,6 +1475,15 @@ function selectExecutorForPlannedChild(
   const assigned = agents.find((agent) => agent.id === child.assigned_agent_id) ?? null;
   if (!assigned) return null;
   return tools.selectAgentForPlanTask(planTask, [assigned]);
+}
+
+function hasExecutableWorkflowRole(agents: RoomAgent[], role: RoomAgent['workflow_role']): boolean {
+  return agents.some((agent) =>
+    agent.left_at === null &&
+    agent.workflow_role === role &&
+    agent.acp_enabled === 1 &&
+    Boolean(agent.acp_backend),
+  );
 }
 
 type PlanTaskDomain = 'frontend' | 'backend' | null;

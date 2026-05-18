@@ -8,34 +8,9 @@ import { Button } from '../components/ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from '../components/ui/Dialog';
 import { Input, Label, Textarea } from '../components/ui/Input';
 import { useI18n } from '../lib/i18n';
-import { cn } from '../lib/utils';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { ProjectSettingsDialog } from '../components/SettingsDialogs';
-import type { Room, RoomCrewTemplate } from '../lib/types';
-
-const DEFAULT_CREW_TEMPLATES: RoomCrewTemplate[] = [
-  {
-    id: 'discussion-only',
-    name: '只讨论',
-    description: '仅加入 Planner，适合需求澄清和方案讨论。',
-    agent_template_ids: ['planner'],
-    default: false,
-  },
-  {
-    id: 'light-implementation',
-    name: '轻量实现',
-    description: 'Planner、执行者、Reviewer，适合常规小任务。',
-    agent_template_ids: ['planner', 'backend-executor', 'reviewer'],
-    default: true,
-  },
-  {
-    id: 'fullstack-collaboration',
-    name: '前后端协作',
-    description: '前后端执行者并行协作，并带验收角色。',
-    agent_template_ids: ['planner', 'frontend-executor', 'backend-executor', 'reviewer', 'acceptor'],
-    default: false,
-  },
-];
+import type { Room } from '../lib/types';
 
 export function ProjectPage() {
   const { projectId = '' } = useParams();
@@ -247,22 +222,14 @@ function CreateRoomDialog({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [crewTemplateId, setCrewTemplateId] = useState('light-implementation');
   const queryClient = useQueryClient();
   const { t } = useI18n();
   const resolvedButtonText = buttonText ?? t('project.newRoom');
-  const { data: crewTemplatesData } = useQuery({
-    queryKey: ['crew-templates'],
-    queryFn: api.listCrewTemplates,
-    enabled: open,
-  });
-  const crewTemplates = crewTemplatesData?.templates ?? DEFAULT_CREW_TEMPLATES;
 
   const create = useMutation({
     mutationFn: () => api.createRoom(projectId, {
       name,
       description: description || undefined,
-      crew_template_id: crewTemplateId,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
@@ -272,7 +239,6 @@ function CreateRoomDialog({
       setOpen(false);
       setName('');
       setDescription('');
-      setCrewTemplateId('light-implementation');
     },
   });
 
@@ -310,38 +276,6 @@ function CreateRoomDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
-          </div>
-          <div>
-            <Label>协作编队</Label>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {crewTemplates.map((template) => {
-                const selected = crewTemplateId === template.id;
-                return (
-                  <button
-                    key={template.id}
-                    type="button"
-                    onClick={() => setCrewTemplateId(template.id)}
-                    className={cn(
-                      'min-h-[104px] rounded-md border px-3 py-2 text-left ease-ocean transition-all',
-                      'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]',
-                      'focus-visible:outline-none focus-visible:glow-primary',
-                      selected && 'border-[var(--color-primary)] bg-[var(--color-surface-raised)] glow-primary',
-                    )}
-                    aria-pressed={selected}
-                  >
-                    <span className="block font-display text-[13px] font-medium text-[var(--color-fg)]">
-                      {template.name}
-                    </span>
-                    <span className="mt-1 block text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
-                      {template.description}
-                    </span>
-                    <span className="mt-2 block truncate font-mono text-[10.5px] text-[var(--color-muted)]">
-                      {template.agent_template_ids.join(' / ')}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
