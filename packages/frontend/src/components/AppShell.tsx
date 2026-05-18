@@ -155,7 +155,7 @@ function ProjectSidebar({
           label={t('shell.nav.tasks')}
           inactive={!currentProject}
         />
-        <SidebarLink to="/" icon={BriefcaseBusiness} label={t('shell.nav.workflow')} inactive />
+        <SidebarLink to="/workflow" icon={BriefcaseBusiness} label={t('shell.nav.workflow')} />
         <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} />
       </div>
 
