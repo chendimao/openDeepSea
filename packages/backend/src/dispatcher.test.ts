@@ -122,7 +122,7 @@ test('dispatchUserMessage reports non-ACP agent as not executable', async () => 
 test('legacy fallback_route data is normalized to planner fallback reply during dispatch', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-legacy-fallback-route-'));
   const project = projectRepo.create({ name: `legacy-fallback-route-${Date.now()}`, path: projectPath });
-  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
   const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
   assert.ok(planner);
   roomAgentRepo.setAcp(planner.id, {
@@ -986,6 +986,84 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
   }
 });
 
+test('respondAsAgent passes resolved workspace writable dirs and runtime prompt to ACP adapter', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-runtime-profile-test-'));
+  const project = projectRepo.create({ name: `runtime-profile-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const global = agentRepo.getByAgentId('backend-executor');
+  assert.ok(global);
+  const agent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: global.id });
+
+  const originalAdapter = adapters.codex;
+  let capturedWritableDirs: string[] | null | undefined;
+  let capturedPermissionMode: string | null | undefined;
+  let capturedPrompt = '';
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedWritableDirs = args.acpWritableDirs;
+      capturedPermissionMode = args.acpPermissionMode;
+      capturedPrompt = args.prompt;
+      args.onChunk({ stream: 'stdout', text: 'done' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent,
+      projectPath,
+      roomId: room.id,
+      prompt: '修改后端',
+    });
+
+    assert.deepEqual(capturedWritableDirs, [join(projectPath, 'packages/backend')]);
+    assert.equal(capturedPermissionMode, 'workspace-write');
+    assert.match(capturedPrompt, /智能体运行边界：/);
+    assert.match(capturedPrompt, /可写目录：.*packages\/backend/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent forces read-only and empty writable dirs for reviewer runtime profile', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-runtime-readonly-test-'));
+  const project = projectRepo.create({ name: `runtime-readonly-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const global = agentRepo.getByAgentId('reviewer');
+  assert.ok(global);
+  const agent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: global.id });
+
+  const originalAdapter = adapters.codex;
+  let capturedWritableDirs: string[] | null | undefined;
+  let capturedPermissionMode: string | null | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedWritableDirs = args.acpWritableDirs;
+      capturedPermissionMode = args.acpPermissionMode;
+      args.onChunk({ stream: 'stdout', text: 'reviewed' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent,
+      projectPath,
+      roomId: room.id,
+      prompt: '审查后端',
+    });
+
+    assert.deepEqual(capturedWritableDirs, []);
+    assert.equal(capturedPermissionMode, 'read-only');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent marks final stream event failed without mixing stderr into message content', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-stream-error-test-'));
   const project = projectRepo.create({ name: `stream-error-${Date.now()}`, path: projectPath });
@@ -1185,7 +1263,9 @@ test('dispatchUserMessage does not let disabled or missing model distill block A
 test('dispatchUserMessage replies with configured model when no agent target is available', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-test-'));
   const project = projectRepo.create({ name: `model-chat-${Date.now()}`, path: projectPath });
-  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  projectRepo.updateRouting(project.id, { message_routing_mode: 'mentions_only', fallback_agent_id: null });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  settingsRepo.updateRoom(room.id, { message_routing_mode: 'mentions_only', fallback_agent_id: null });
   const message = messageRepo.create({
     room_id: room.id,
     sender_type: 'user',

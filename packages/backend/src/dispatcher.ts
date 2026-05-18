@@ -1,6 +1,7 @@
-import { dirname, resolve, sep } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
+import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { buildCollaborationDecisionPrompt, parseCollaborationDecision } from './collaboration-decision.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
@@ -451,10 +452,20 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const { agent, projectPath, roomId } = args;
   const room = roomRepo.get(roomId);
   const promptWithIdentity = buildAgentIdentityPrompt(agent, args.prompt);
+  const runtimeProfile = resolveAgentRuntimeProfile({
+    agent,
+    projectPath,
+    imagePaths: args.imagePaths ?? [],
+  });
+  const promptWithRuntime = [
+    promptWithIdentity,
+    '',
+    buildAgentRuntimeContextPrompt(runtimeProfile),
+  ].join('\n');
   const prompt =
     room && !args.workflowRunId
       ? appendMemoryContextForPromptSafely({
-          prompt: promptWithIdentity,
+          prompt: promptWithRuntime,
           loadContextEntries: () => memoryRepo.listForRoomContext({
             projectId: room.project_id,
             roomId,
@@ -464,12 +475,12 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           loadRelevantEntries: () => memoryRepo.listRelevantForPrompt({
             projectId: room.project_id,
             roomId,
-            prompt: promptWithIdentity,
+            prompt: promptWithRuntime,
           }),
           maxChars: agent.memory_max_context_chars,
           warn: (message) => console.warn(message),
         })
-      : promptWithIdentity;
+      : promptWithRuntime;
   const backend = agent.acp_enabled && agent.acp_backend ? agent.acp_backend : null;
   if (!backend) {
     throw new Error(`Agent ${agent.agent_name} has no ACP backend configured`);
@@ -557,8 +568,8 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       sessionId: agent.acp_session_id,
       prompt,
       imagePaths: args.imagePaths,
-      acpPermissionMode: agent.acp_permission_mode,
-      acpWritableDirs: uniqueNonEmpty([projectPath, ...imageUploadDirs(args.imagePaths ?? [])]),
+      acpPermissionMode: runtimeProfile.acpPermissionMode,
+      acpWritableDirs: runtimeProfile.writableDirs,
       onChunk: (chunk) => {
         if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);
         else if (chunk.stream === 'stdout') onStdout(chunk.text);
@@ -678,21 +689,6 @@ export async function runAgentOnce(input: RespondAsAgentInput): Promise<{
   });
 }
 
-function imageUploadDirs(imagePaths: string[]): string[] {
-  return imagePaths.map((imagePath) => dirname(imagePath));
-}
-
-function uniqueNonEmpty(values: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const raw of values) {
-    const value = raw.trim();
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    result.push(value);
-  }
-  return result;
-}
 
 function formatActivityChunk(chunk: string): string {
   const text = chunk.trim();
