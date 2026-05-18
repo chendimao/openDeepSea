@@ -245,6 +245,11 @@ export const workflowDefinitionRepo = {
        SET status = 'archived', updated_at = ?
        WHERE id = ?`,
     ).run(now(), id);
+    db.prepare(
+      `UPDATE settings
+       SET default_workflow_definition_id = NULL, updated_at = ?
+       WHERE default_workflow_definition_id = ?`,
+    ).run(now(), id);
     return this.get(id);
   },
 

@@ -129,6 +129,50 @@ test('settingsRepo rejects draft and archived workflow defaults', async () => {
   assert.throws(() => settingsRepo.updateSystem({ default_workflow_definition_id: published.id }), /archived|published/);
 });
 
+test('settingsRepo clears archived workflow defaults from system project and room scopes', async () => {
+  const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
+  const project = projectRepo.create({
+    name: 'Workflow Archive Defaults Project',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-settings-workflow-archive-defaults-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Workflow Archive Defaults Room' });
+  const builtIn = workflowDefinitionRepo.ensureBuiltInDefinitions();
+  const systemWorkflow = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'System Archive Default',
+    description: null,
+    scope: 'system',
+    scope_id: 'default',
+    definition: testDefinition('system-archive-default-planning'),
+  }).id)!;
+  const projectWorkflow = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Project Archive Default',
+    description: null,
+    scope: 'project',
+    scope_id: project.id,
+    definition: testDefinition('project-archive-default-planning'),
+  }).id)!;
+  const roomWorkflow = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Room Archive Default',
+    description: null,
+    scope: 'room',
+    scope_id: room.id,
+    definition: testDefinition('room-archive-default-planning'),
+  }).id)!;
+
+  settingsRepo.updateSystem({ default_workflow_definition_id: systemWorkflow.id });
+  settingsRepo.updateProject(project.id, { default_workflow_definition_id: projectWorkflow.id });
+  settingsRepo.updateRoom(room.id, { default_workflow_definition_id: roomWorkflow.id });
+
+  workflowDefinitionRepo.archive(systemWorkflow.id);
+  assert.equal(settingsRepo.getSystem().default_workflow_definition_id, builtIn.id);
+
+  workflowDefinitionRepo.archive(projectWorkflow.id);
+  assert.equal(settingsRepo.resolveForProject(project.id)?.effective.default_workflow_definition_id, builtIn.id);
+
+  workflowDefinitionRepo.archive(roomWorkflow.id);
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, builtIn.id);
+});
+
 function testDefinition(prefix: string) {
   return {
     nodes: [
