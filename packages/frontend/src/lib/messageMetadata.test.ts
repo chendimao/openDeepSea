@@ -211,3 +211,29 @@ test('parseMessageMetadata ignores invalid collaboration decision metadata', () 
   assert.equal(parsed.source_message_id, undefined);
   assert.equal(parsed.collaboration_decision, undefined);
 });
+
+test('parseMessageMetadata accepts task readiness metadata', () => {
+  const metadata = JSON.stringify({
+    task_readiness: {
+      ready: true,
+      confidence: 0.91,
+      title: '收口 ACP 权限派生',
+      description: '以 workspace_policy 和 tool_policy 为主配置源，自动派生 Codex 权限。',
+      missing_questions: [],
+      recommended_mode: 'formal_workflow',
+      source_message_id: 'source-message-1',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.deepEqual(parsed.task_readiness, {
+    ready: true,
+    confidence: 0.91,
+    title: '收口 ACP 权限派生',
+    description: '以 workspace_policy 和 tool_policy 为主配置源，自动派生 Codex 权限。',
+    missing_questions: [],
+    recommended_mode: 'formal_workflow',
+    source_message_id: 'source-message-1',
+  });
+});

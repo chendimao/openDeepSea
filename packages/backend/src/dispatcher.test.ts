@@ -559,6 +559,65 @@ test('planner fallback reply creates collaboration decision when user confirms e
   }
 });
 
+test('planner completed reply marks task readiness when it contains enough implementation details', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-readiness-'));
+  const project = projectRepo.create({ name: `task-readiness-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'planner',
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '设计改进方案',
+  });
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke({ onChunk }) {
+      onChunk?.({
+        stream: 'stdout',
+        text: [
+          '已锁定实施目标：收口 ACP 权限派生。',
+          '实施范围：后端派生逻辑、API 保存逻辑、前端权限配置展示。',
+          '验收标准：只读智能体无法写文件，后端智能体不能写前端目录。',
+          '下一步可以进入工程排期。',
+        ].join('\n'),
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const plannerMessage = messageRepo.listByRoom(room.id, 20).find((message) => message.sender_id === 'planner');
+    assert.ok(plannerMessage);
+    const metadata = JSON.parse(plannerMessage.metadata ?? '{}') as Record<string, unknown>;
+    const readiness = metadata.task_readiness as Record<string, unknown> | undefined;
+    assert.equal(readiness?.ready, true);
+    assert.equal(readiness?.recommended_mode, 'formal_workflow');
+    assert.equal(readiness?.source_message_id, userMessage.id);
+    assert.match(String(readiness?.title), /收口 ACP 权限派生/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('message route handles /task command after persisting user message without ACP dispatch', async () => {
   const { projectPath, room } = await createRoutedRoom('task-command');
   const { restore, calls } = installCountingCodexAdapter();

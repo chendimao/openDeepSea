@@ -1787,7 +1787,9 @@ function buildPromotedTaskInput(sourceMessage: ReturnType<typeof messageRepo.get
   const metadata = parseMessageMetadataObject(sourceMessage.metadata);
   const decision = parseMessageMetadataObject(metadata?.collaboration_decision)
     ?? parseMessageMetadataObject(metadata?.decision);
+  const readiness = parseMessageMetadataObject(metadata?.task_readiness);
   const rawTitle = firstNonEmptyString([
+    readiness?.title,
     metadata?.task_title,
     decision?.summary,
     metadata?.summary,
@@ -1795,7 +1797,10 @@ function buildPromotedTaskInput(sourceMessage: ReturnType<typeof messageRepo.get
     sourceMessage.content,
   ]);
   const title = truncateTitle(rawTitle || '从群聊创建的工作流任务');
-  const description = sourceMessage.content.trim() || title;
+  const description = firstNonEmptyString([
+    readiness?.description,
+    sourceMessage.content,
+  ]) ?? title;
   return { title, description };
 }
 

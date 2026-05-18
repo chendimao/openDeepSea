@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, FolderOpen, ListTodo, MessageSquare, Plus, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, FolderOpen, ListTodo, MessageSquare, Play, Plus, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -234,7 +234,7 @@ export function RoomPage() {
             if (m.id !== event.messageId) return m;
             matchedMessage = true;
             fullContent = m.content + event.chunk;
-            return { ...m, content: fullContent };
+            return event.done && event.message ? event.message : { ...m, content: fullContent };
           });
           return dedupeMessages(next);
         });
@@ -1034,6 +1034,15 @@ function MessageBubble({
     },
     onError: (err) => toast.error((err as Error).message),
   });
+  const [readinessDismissed, setReadinessDismissed] = useState(false);
+  const promoteReadyTask = useMutation({
+    mutationFn: () => api.promoteMessageToWorkflow(roomId, message.id),
+    onSuccess: ({ task, workflow }) => {
+      invalidateWorkflowConversationQueries(queryClient, roomId, task.id, workflow.id);
+      toast.success(t('taskDetail.workflowStarted'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
   const attachments = metadata.attachments;
@@ -1044,6 +1053,12 @@ function MessageBubble({
   );
   const isTaskEvent = isSystem && Boolean(metadata.event_type && metadata.task_id);
   const isCollaborationDecision = isSystem && Boolean(metadata.collaboration_decision && metadata.source_message_id);
+  const shouldShowTaskReadiness =
+    !isUser &&
+    !isSystem &&
+    !isStreaming &&
+    !readinessDismissed &&
+    metadata.task_readiness?.ready === true;
 
   if (isTaskEvent) {
     return (
@@ -1140,6 +1155,14 @@ function MessageBubble({
           ) : null}
           <MessageAttachments attachments={attachments} />
         </AiMessageBody>
+        {shouldShowTaskReadiness && metadata.task_readiness && (
+          <TaskReadinessActions
+            title={metadata.task_readiness.title}
+            starting={promoteReadyTask.isPending}
+            onStart={() => promoteReadyTask.mutate()}
+            onContinue={() => setReadinessDismissed(true)}
+          />
+        )}
         {!isUser && run && (
           <AiMessageRunPanel>
             <AgentRunStatusCard
@@ -1154,6 +1177,46 @@ function MessageBubble({
         )}
       </div>
     </AiMessageRow>
+  );
+}
+
+function TaskReadinessActions({
+  title,
+  starting,
+  onStart,
+  onContinue,
+}: {
+  title: string;
+  starting: boolean;
+  onStart: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <div className="task-readiness-actions">
+      <div className="task-readiness-copy">
+        <span>已具备创建任务的基础信息</span>
+        <strong>{title}</strong>
+      </div>
+      <div className="task-readiness-buttons">
+        <button
+          type="button"
+          className="task-readiness-button is-primary"
+          disabled={starting}
+          onClick={onStart}
+        >
+          <Play className="h-3.5 w-3.5" strokeWidth={1.8} />
+          <span>{starting ? '启动中' : '开始任务'}</span>
+        </button>
+        <button
+          type="button"
+          className="task-readiness-button"
+          disabled={starting}
+          onClick={onContinue}
+        >
+          继续沟通
+        </button>
+      </div>
+    </div>
   );
 }
 

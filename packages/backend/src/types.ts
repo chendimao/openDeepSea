@@ -424,6 +424,15 @@ export interface MessageTaskEventMetadata {
 
 export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
+  task_readiness?: {
+    ready: boolean;
+    confidence: number;
+    title: string;
+    description: string;
+    missing_questions: string[];
+    recommended_mode: 'formal_workflow' | 'chat_collaboration';
+    source_message_id?: string;
+  };
 }
 
 export interface Message {
@@ -622,6 +631,7 @@ export type WsServerEvent =
       channel?: 'answer';
       status?: 'streaming' | AgentRunStatus;
       error?: string | null;
+      message?: Message;
     }
   | { type: 'agent_run:created'; roomId: string; run: AgentRun }
   | { type: 'agent_run:updated'; roomId: string; run: AgentRun }

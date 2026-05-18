@@ -6,6 +6,7 @@ import type {
   CollaborationStage,
   MessageAttachmentMetadata,
   MessageMetadata,
+  TaskReadinessMetadata,
   TaskCreatedFrom,
   TaskEventType,
 } from './types';
@@ -52,7 +53,8 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
 
     const taskEvent = sanitizeTaskEventMetadata(parsed);
     const collaboration = sanitizeCollaborationDecisionMetadata(parsed);
-    return { attachments, ...taskEvent, ...collaboration };
+    const taskReadiness = sanitizeTaskReadinessMetadata(parsed);
+    return { attachments, ...taskEvent, ...collaboration, ...taskReadiness };
   } catch {
     return createEmptyMessageMetadata();
   }
@@ -87,6 +89,42 @@ function sanitizeCollaborationDecisionMetadata(value: Record<string, unknown>) {
     source_message_id: typeof value.source_message_id === 'string' ? value.source_message_id : undefined,
     fallback_agent_id: typeof value.fallback_agent_id === 'string' ? value.fallback_agent_id : undefined,
     collaboration_decision: decision,
+  };
+}
+
+function sanitizeTaskReadinessMetadata(value: Record<string, unknown>) {
+  const readiness = sanitizeTaskReadiness(value.task_readiness);
+  return readiness ? { task_readiness: readiness } : {};
+}
+
+function sanitizeTaskReadiness(value: unknown): TaskReadinessMetadata | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.ready !== 'boolean' ||
+    typeof value.confidence !== 'number' ||
+    !Number.isFinite(value.confidence) ||
+    value.confidence < 0 ||
+    value.confidence > 1 ||
+    typeof value.title !== 'string' ||
+    !value.title.trim() ||
+    typeof value.description !== 'string' ||
+    !value.description.trim() ||
+    !isCollaborationMode(value.recommended_mode)
+  ) {
+    return null;
+  }
+
+  const missingQuestions = sanitizeStringArray(value.missing_questions);
+  if (!missingQuestions) return null;
+
+  return {
+    ready: value.ready,
+    confidence: value.confidence,
+    title: value.title,
+    description: value.description,
+    missing_questions: missingQuestions,
+    recommended_mode: value.recommended_mode,
+    source_message_id: typeof value.source_message_id === 'string' ? value.source_message_id : undefined,
   };
 }
 

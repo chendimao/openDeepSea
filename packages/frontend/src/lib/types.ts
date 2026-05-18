@@ -397,6 +397,7 @@ export interface MessageMetadata {
   source_message_id?: string;
   fallback_agent_id?: string;
   collaboration_decision?: CollaborationDecision;
+  task_readiness?: TaskReadinessMetadata;
 }
 
 export type CollaborationIntent = 'question' | 'analysis' | 'implementation';
@@ -425,6 +426,16 @@ export interface CollaborationDecision {
     acceptors: string[];
   };
   stages: CollaborationStagePlan[];
+}
+
+export interface TaskReadinessMetadata {
+  ready: boolean;
+  confidence: number;
+  title: string;
+  description: string;
+  missing_questions: string[];
+  recommended_mode: CollaborationMode;
+  source_message_id?: string;
 }
 
 export interface CollaborationRunSummary {

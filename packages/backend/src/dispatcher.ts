@@ -71,6 +71,7 @@ export async function dispatchUserMessage(args: {
     targets: routing.targets,
     projectPath: project.path,
     roomId,
+    sourceMessageId: userMessage.id,
     imagePaths,
     distillModelInvoker: args.distillModelInvoker,
   });
@@ -196,6 +197,7 @@ export interface RespondAsAgentInput {
   workflowRunId?: string | null;
   workflowStepId?: string | null;
   workflowStage?: WorkflowStage | null;
+  sourceMessageId?: string | null;
   collaborationRunId?: string | null;
   collaborationStage?: AgentRun['collaboration_stage'];
   distillModelInvoker?: MemoryDistillModelInvoker;
@@ -304,6 +306,7 @@ async function runTargets(args: {
   targets: { agent: RoomAgent; prompt: string; internalMessage?: boolean }[];
   projectPath: string;
   roomId: string;
+  sourceMessageId?: string | null;
   imagePaths?: string[];
   distillModelInvoker?: MemoryDistillModelInvoker;
 }): Promise<Array<Message | undefined>> {
@@ -317,6 +320,7 @@ async function runTargets(args: {
         prompt: target.prompt,
         internalMessage: target.internalMessage,
         imagePaths: args.imagePaths,
+        sourceMessageId: args.sourceMessageId,
         distillModelInvoker: args.distillModelInvoker,
         onFinished: ({ message }) => {
           finalMessage = message;
@@ -654,6 +658,12 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     try {
       if (finalRun && finalMessage && args.onFinished) {
         try {
+          annotateTaskReadiness({
+            message: finalMessage,
+            run: finalRun,
+            sourceMessageId: args.sourceMessageId,
+            agent,
+          });
           await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
         } catch (err) {
           console.warn(`[agent-runs] onFinished callback failed for ${finalRun.id}: ${(err as Error).message}`);
@@ -661,6 +671,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       }
     } finally {
       if (!args.internalMessage) {
+        const completedMessage = messageRepo.get(placeholder.id) ?? finalMessage;
         wsHub.broadcast(roomId, {
           type: 'message:stream',
           roomId,
@@ -672,6 +683,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           seq: ++streamSeq,
           status: finalRun?.status ?? (controller.signal.aborted ? 'cancelled' : 'failed'),
           error: finalRun?.error ?? null,
+          message: completedMessage,
         });
       }
       // Async memory distillation after reply completes (non-workflow only)
@@ -702,6 +714,91 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     const updated = agentRunRepo.updateStatus(id, status, { error: error ?? null });
     if (updated) broadcastRun('agent_run:updated', updated);
   }
+}
+
+function annotateTaskReadiness(input: {
+  message: Message;
+  run: AgentRun;
+  sourceMessageId?: string | null;
+  agent: RoomAgent;
+}): void {
+  if (input.run.status !== 'completed') return;
+  if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return;
+  if (input.agent.agent_id !== 'planner') return;
+
+  const readiness = inferTaskReadiness(input.message.content, input.sourceMessageId);
+  if (!readiness) return;
+  messageRepo.mergeMetadata(input.message.id, { task_readiness: readiness });
+}
+
+function inferTaskReadiness(content: string, sourceMessageId?: string | null): Record<string, unknown> | null {
+  const text = content.trim();
+  if (!text) return null;
+  const normalized = text.toLocaleLowerCase();
+  const hasImplementationScope = [
+    /实施目标/,
+    /实施范围/,
+    /实施顺序/,
+    /实施计划/,
+    /工程排期/,
+    /下一步交付物/,
+    /可以进入工程排期/,
+  ].some((pattern) => pattern.test(text));
+  const hasAcceptance = [
+    /验收标准/,
+    /验收口径/,
+    /验证方式/,
+    /测试/,
+    /build/,
+    /npm run build/,
+  ].some((pattern) => pattern.test(normalized));
+  const asksForMoreInput = [
+    /还需要/,
+    /需要补充/,
+    /请确认/,
+    /请补充/,
+    /缺少/,
+    /待确认/,
+  ].some((pattern) => pattern.test(text));
+  if (!hasImplementationScope || !hasAcceptance || asksForMoreInput) return null;
+
+  return {
+    ready: true,
+    confidence: 0.82,
+    title: extractTaskReadinessTitle(text),
+    description: summarizeTaskReadinessDescription(text),
+    missing_questions: [],
+    recommended_mode: 'formal_workflow',
+    source_message_id: sourceMessageId ?? undefined,
+  };
+}
+
+function extractTaskReadinessTitle(content: string): string {
+  const titlePatterns = [
+    /实施目标[：:]\s*([^\n。]+)/,
+    /产品决策[：:]\s*([^\n。]+)/,
+    /已锁定范围[：:]\s*([^\n。]+)/,
+  ];
+  for (const pattern of titlePatterns) {
+    const match = content.match(pattern)?.[1]?.trim();
+    if (match) return truncateTaskReadinessText(match, 80);
+  }
+  const firstMeaningfulLine = content
+    .split(/\n+/)
+    .map((line) => line.replace(/^[-*\d.\s]+/, '').trim())
+    .find((line) => line && !/^大哥[，,]/.test(line));
+  return truncateTaskReadinessText(firstMeaningfulLine || '根据 planner 方案启动任务', 80);
+}
+
+function summarizeTaskReadinessDescription(content: string): string {
+  const compact = content.replace(/\s+/g, ' ').trim();
+  return truncateTaskReadinessText(compact, 800);
+}
+
+function truncateTaskReadinessText(value: string, maxLength: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
 async function buildMemorySkillContext(input: {

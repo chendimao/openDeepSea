@@ -204,6 +204,41 @@ test('promote-to-workflow is idempotent for the same source message', async () =
   assert.deepEqual(enqueued, [firstBody.workflow.id]);
 });
 
+test('promote-to-workflow prefers task readiness title and description metadata', async () => {
+  const { room } = createCollaborationFixture('promote-readiness');
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    content: '完整方案正文',
+    message_type: 'agent_stream',
+    metadata: {
+      task_readiness: {
+        ready: true,
+        confidence: 0.9,
+        title: '收口 ACP 权限派生',
+        description: '以业务权限为主配置源，自动派生 ACP/Codex 权限。',
+        missing_questions: [],
+        recommended_mode: 'formal_workflow',
+        source_message_id: 'original-user-message',
+      },
+    },
+  });
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: () => undefined,
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages/${message.id}/promote-to-workflow`, {
+    method: 'POST',
+  });
+
+  assert.equal(res.status, 202);
+  const body = await res.json() as { task: { id: string; title: string; description: string } };
+  assert.equal(body.task.title, '收口 ACP 权限派生');
+  assert.equal(body.task.description, '以业务权限为主配置源，自动派生 ACP/Codex 权限。');
+});
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);
   try {

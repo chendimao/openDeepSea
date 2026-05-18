@@ -13,6 +13,7 @@ export type WsServerEvent =
       channel?: 'answer';
       status?: 'streaming' | AgentRunStatus;
       error?: string | null;
+      message?: Message;
     }
   | { type: 'agent_run:created'; roomId: string; run: AgentRun }
   | { type: 'agent_run:updated'; roomId: string; run: AgentRun }

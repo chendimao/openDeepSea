@@ -50,6 +50,15 @@ export const messageRepo = {
     db.prepare('UPDATE messages SET content = content || ? WHERE id = ?').run(chunk, id);
   },
 
+  mergeMetadata(id: string, patch: Record<string, unknown>): Message | undefined {
+    const message = this.get(id);
+    if (!message) return undefined;
+    const metadata = parseMetadataObject(message.metadata);
+    const nextMetadata = { ...metadata, ...patch };
+    db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify(nextMetadata), id);
+    return this.get(id);
+  },
+
   markFileAttachmentDeleted(fileId: string): number {
     const messages = db.prepare(
       `SELECT DISTINCT messages.*
@@ -72,6 +81,17 @@ export const messageRepo = {
     return changed;
   },
 };
+
+function parseMetadataObject(rawMetadata: string | null): Record<string, unknown> {
+  if (!rawMetadata) return {};
+  try {
+    const parsed = JSON.parse(rawMetadata) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
 
 function markMetadataFileDeleted(rawMetadata: string | null, fileId: string): MessageMetadata | null {
   if (!rawMetadata) return null;
