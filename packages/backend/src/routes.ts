@@ -454,8 +454,41 @@ const workflowDefinitionPatchSchema = z.object({
   definition: workflowDefinitionGraphSchema.optional(),
 });
 
-router.get('/workflow-definitions', (_req, res) => {
-  res.json(workflowDefinitionRepo.list());
+const workflowDefinitionListSchema = z.object({
+  scope: z.enum(['system', 'project', 'room']).optional(),
+  status: z.enum(['draft', 'published', 'archived']).optional(),
+  projectId: z.string().trim().min(1).optional(),
+  roomId: z.string().trim().min(1).optional(),
+  includeArchived: z.enum(['1']).optional(),
+});
+
+const workflowDefinitionDuplicateSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  description: z.string().trim().nullable().optional(),
+  scope: z.enum(['system', 'project', 'room']).optional(),
+  scope_id: z.string().trim().min(1).optional(),
+});
+
+router.get('/workflow-definitions', (req, res) => {
+  const parsed = workflowDefinitionListSchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (parsed.data.projectId && !projectRepo.get(parsed.data.projectId)) {
+    return res.status(404).json({ error: 'project not found' });
+  }
+  if (parsed.data.roomId) {
+    const room = roomRepo.get(parsed.data.roomId);
+    if (!room) return res.status(404).json({ error: 'room not found' });
+    if (parsed.data.projectId && room.project_id !== parsed.data.projectId) {
+      return res.status(400).json({ error: 'room does not belong to project' });
+    }
+  }
+  res.json(workflowDefinitionRepo.list({
+    scope: parsed.data.scope,
+    status: parsed.data.status,
+    projectId: parsed.data.projectId,
+    roomId: parsed.data.roomId,
+    includeArchived: parsed.data.includeArchived === '1',
+  }));
 });
 
 router.post('/workflow-definitions', (req, res) => {
@@ -486,6 +519,49 @@ router.post('/workflow-definitions/:id/publish', (req, res) => {
     const definition = workflowDefinitionRepo.publish(req.params.id);
     if (!definition) return res.status(404).json({ error: 'not found' });
     res.json(definition);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/workflow-definitions/:id/duplicate', (req, res) => {
+  const parsed = workflowDefinitionDuplicateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const definition = workflowDefinitionRepo.duplicate(req.params.id, parsed.data);
+    if (!definition) return res.status(404).json({ error: 'not found' });
+    res.status(201).json(definition);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/workflow-definitions/:id/edit-draft', (req, res) => {
+  try {
+    if (!workflowDefinitionRepo.get(req.params.id)) return res.status(404).json({ error: 'not found' });
+    const definition = workflowDefinitionRepo.createEditDraft(req.params.id);
+    if (!definition) return res.status(400).json({ error: 'workflow definition cannot be edited' });
+    res.status(201).json(definition);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/workflow-definitions/:id/archive', (req, res) => {
+  try {
+    const definition = workflowDefinitionRepo.archive(req.params.id);
+    if (!definition) return res.status(404).json({ error: 'not found' });
+    res.json(definition);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.delete('/workflow-definitions/:id', (req, res) => {
+  try {
+    const deleted = workflowDefinitionRepo.deleteDraft(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'not found' });
+    res.status(204).end();
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
