@@ -8,6 +8,7 @@ export type WsServerEvent =
       messageId: string;
       chunk: string;
       done: boolean;
+      seq?: number;
       runId?: string;
       channel?: 'answer';
       status?: 'streaming' | AgentRunStatus;

@@ -517,6 +517,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   if (!args.internalMessage) {
     wsHub.broadcast(roomId, { type: 'message:new', roomId, message: placeholder });
   }
+  let streamSeq = 0;
 
   const onStdout = (chunk: string): void => {
     messageRepo.appendChunk(placeholder.id, chunk);
@@ -531,6 +532,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         channel: 'answer',
         chunk,
         done: false,
+        seq: ++streamSeq,
         status: 'streaming',
       });
     }
@@ -630,6 +632,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           channel: 'answer',
           chunk: '',
           done: true,
+          seq: ++streamSeq,
           status: finalRun?.status ?? (controller.signal.aborted ? 'cancelled' : 'failed'),
           error: finalRun?.error ?? null,
         });

@@ -18,6 +18,7 @@ import {
   tickStreamingDisplay,
   type StreamingDisplayState,
 } from '../lib/streamingDisplay';
+import { createStreamingEventTracker, shouldApplyStreamingEvent } from '../lib/streamingEvents';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
@@ -63,6 +64,7 @@ export function RoomPage() {
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
   const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
   const streamingRunMessageIds = useRef<Map<string, string>>(new Map());
+  const streamingEventTracker = useRef(createStreamingEventTracker());
   const { t } = useI18n();
 
   const { data: project } = useQuery({
@@ -128,6 +130,7 @@ export function RoomPage() {
     setHighlightMessageId(null);
     messageRefs.current.clear();
     streamingRunMessageIds.current.clear();
+    streamingEventTracker.current.clear();
   }, [roomId]);
 
   useEffect(() => {
@@ -219,6 +222,7 @@ export function RoomPage() {
           setStreamingMessageIds((prev) => addStreamingMessageId(prev, event.message.id));
         }
       } else if (event.type === 'message:stream' && event.roomId === roomId) {
+        if (!shouldApplyStreamingEvent(streamingEventTracker.current, event)) return;
         let matchedMessage = false;
         let fullContent = '';
         if (event.runId) {

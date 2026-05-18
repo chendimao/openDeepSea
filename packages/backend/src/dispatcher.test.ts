@@ -956,6 +956,7 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
       event.type === 'message:stream' &&
       event.chunk === '第一段' &&
       event.done === false &&
+      event.seq === 1 &&
       event.runId &&
       event.channel === 'answer' &&
       event.status === 'streaming'
@@ -973,6 +974,8 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
       event.type === 'message:stream' &&
       event.messageId === reply?.id &&
       event.done === true &&
+      typeof event.seq === 'number' &&
+      event.seq > 1 &&
       event.status === 'completed' &&
       event.chunk === ''
     ));
