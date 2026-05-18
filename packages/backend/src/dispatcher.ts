@@ -327,7 +327,8 @@ function resolveInitialTargets(args: {
   if (args.mode === 'mentions_only' || !args.fallbackAgentId) return { targets: [] };
   const fallbackAgent = args.allAgents.find((agent) => agent.agent_id === args.fallbackAgentId);
   if (!fallbackAgent) return { targets: [] };
-  const shouldAskForDecision = fallbackAgent.agent_id === 'planner';
+  const shouldAskForDecision =
+    fallbackAgent.agent_id === 'planner' && shouldRequestCollaborationDecision(args.prompt);
   const prompt = shouldAskForDecision
     ? buildPlannerFallbackDecisionPrompt(args.prompt, args.allAgents, fallbackAgent)
     : args.prompt;
@@ -354,6 +355,79 @@ function buildPlannerFallbackDecisionPrompt(
     userPrompt,
     agents,
   });
+}
+
+function shouldRequestCollaborationDecision(prompt: string): boolean {
+  const normalized = prompt.trim().toLocaleLowerCase();
+  if (!normalized) return false;
+
+  const discussionSignals = [
+    /是否/,
+    /合理/,
+    /怎么看/,
+    /如何看待/,
+    /分析/,
+    /解释/,
+    /为什么/,
+    /原因/,
+    /方案/,
+    /建议/,
+    /能不能/,
+    /可以吗/,
+    /\bwhy\b/,
+    /\bwhat\b/,
+    /\bhow\b/,
+    /\banaly[sz]e\b/,
+    /\bexplain\b/,
+  ];
+  const explicitTaskSignals = [
+    /开始任务/,
+    /启动任务/,
+    /执行任务/,
+    /开始执行/,
+    /方案.*执行/,
+    /执行.*方案/,
+    /开始处理/,
+    /直接处理/,
+    /帮我做/,
+    /帮我修/,
+    /帮我实现/,
+    /请修复/,
+    /修复/,
+    /修一下/,
+    /实现/,
+    /开发/,
+    /写代码/,
+    /改代码/,
+    /提交/,
+    /\bfix\b/,
+    /\bimplement\b/,
+    /\bbuild\b/,
+    /\bcommit\b/,
+  ];
+
+  const hasTaskSignal = explicitTaskSignals.some((pattern) => pattern.test(normalized));
+  if (!hasTaskSignal) return false;
+
+  const hasDiscussionSignal = discussionSignals.some((pattern) => pattern.test(normalized));
+  const hasStrongTaskSignal = [
+    /开始任务/,
+    /启动任务/,
+    /执行任务/,
+    /开始执行/,
+    /方案.*执行/,
+    /执行.*方案/,
+    /开始处理/,
+    /直接处理/,
+    /请修复/,
+    /修复/,
+    /帮我修/,
+    /帮我实现/,
+    /\bfix\b/,
+    /\bimplement\b/,
+    /\bcommit\b/,
+  ].some((pattern) => pattern.test(normalized));
+  return hasStrongTaskSignal || !hasDiscussionSignal;
 }
 
 export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): string {
