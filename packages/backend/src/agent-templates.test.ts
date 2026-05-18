@@ -46,6 +46,52 @@ test('built-in agent templates include required ACP-only workflow roles', () => 
   }
 });
 
+test('built-in agent templates include broader specialist roles', () => {
+  const templates = listBuiltInAgentTemplates();
+  const ids = templates.map((template) => template.id);
+  const uniqueIds = new Set(ids);
+
+  assert.equal(uniqueIds.size, ids.length);
+
+  for (const id of [
+    'ui-designer',
+    'data-analyst',
+    'computer-assistant',
+    'product-manager',
+    'qa-tester',
+    'devops-engineer',
+    'security-reviewer',
+    'technical-writer',
+    'accounting-advisor',
+    'legal-assistant',
+    'medical-assistant',
+    'marketing-strategist',
+    'sales-assistant',
+  ]) {
+    assert.equal(uniqueIds.has(id), true);
+  }
+
+  const uiDesigner = templates.find((template) => template.id === 'ui-designer');
+  assert.equal(uiDesigner?.workflow_role, 'planner');
+  assert.deepEqual(uiDesigner?.capabilities, ['design', 'ui', 'ux', 'accessibility']);
+
+  const dataAnalyst = templates.find((template) => template.id === 'data-analyst');
+  assert.equal(dataAnalyst?.workflow_role, 'analyst');
+  assert.equal(dataAnalyst?.capabilities.includes('data-analysis'), true);
+});
+
+test('high-risk professional templates include explicit advisory boundaries', () => {
+  const templates = listBuiltInAgentTemplates();
+
+  const accountingAdvisor = templates.find((template) => template.id === 'accounting-advisor');
+  const legalAssistant = templates.find((template) => template.id === 'legal-assistant');
+  const medicalAssistant = templates.find((template) => template.id === 'medical-assistant');
+
+  assert.match(accountingAdvisor?.rules ?? '', /不能替代注册会计师/);
+  assert.match(legalAssistant?.rules ?? '', /不能替代律师意见/);
+  assert.match(medicalAssistant?.rules ?? '', /不能诊断、开药或替代医生/);
+});
+
 test('agent template routes list and create ACP-only room agents', async () => {
   const projectPath = join(tmpdir(), `openclaw-room-template-project-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
