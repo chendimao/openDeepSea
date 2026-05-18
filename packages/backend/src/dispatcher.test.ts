@@ -23,7 +23,13 @@ const { taskRepo } = await import('./repos/tasks.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { messageUploadDir } = await import('./uploads.js');
 const { wsHub } = await import('./ws-hub.js');
-const { buildAgentIdentityPrompt, buildPromptWithMessageAttachments, dispatchUserMessage, respondAsAgent } = await import('./dispatcher.js');
+const {
+  buildAgentIdentityPrompt,
+  buildPromptWithMessageAttachments,
+  dispatchUserMessage,
+  respondAsAgent,
+  shouldRequestCollaborationDecision,
+} = await import('./dispatcher.js');
 const { router } = await import('./routes.js');
 const { setWorkflowConversationDeps } = await import('./workflows/conversation.js');
 const express = (await import('express')).default;
@@ -59,6 +65,23 @@ test('buildPromptWithMessageAttachments appends readable attachment context', ()
   assert.match(prompt, /mimeType=image\/png/);
   assert.match(prompt, /kind=image/);
   assert.match(prompt, new RegExp(`localPath=${escapeRegExp(messageUploadDir)}/stored\\.png`));
+});
+
+test('shouldRequestCollaborationDecision gates discussion and execution intents', () => {
+  const cases: Array<{ prompt: string; expected: boolean }> = [
+    { prompt: '这种方式是否更加合理', expected: false },
+    { prompt: '这个修复方案是否合理', expected: false },
+    { prompt: '帮我分析怎么修复这个问题', expected: false },
+    { prompt: 'why does this fix fail', expected: false },
+    { prompt: '修复群聊协作同时启动所有智能体的问题', expected: true },
+    { prompt: '请修复这个问题', expected: true },
+    { prompt: '按这个方案开始执行', expected: true },
+    { prompt: 'commit this change', expected: true },
+  ];
+
+  for (const item of cases) {
+    assert.equal(shouldRequestCollaborationDecision(item.prompt), item.expected, item.prompt);
+  }
 });
 
 test('dispatchUserMessage reports non-ACP agent as not executable', async () => {
@@ -394,6 +417,63 @@ test('planner fallback reply keeps discussion messages in chat without collabora
       message.message_type === 'agent_stream' &&
       message.content.includes('触发时机更合理'),
     ));
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('planner fallback reply keeps repair discussion messages in chat without collaboration decision', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-repair-discussion-'));
+  const project = projectRepo.create({ name: `planner-repair-discussion-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: planner.agent_id,
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '这个修复方案是否合理',
+    message_type: 'text',
+  });
+
+  const prompts: string[] = [];
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      prompts.push(args.prompt);
+      args.onChunk?.({ stream: 'stdout', text: '这个修复方案整体合理。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const messages = messageRepo.listByRoom(room.id, 20);
+    assert.doesNotMatch(prompts[0] ?? '', /Return ONLY valid JSON/);
+    assert.doesNotMatch(prompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
+    assert.equal(
+      messages.some((message) => {
+        const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
+        return metadata.event_type === 'collaboration_decision';
+      }),
+      false,
+    );
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

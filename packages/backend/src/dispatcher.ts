@@ -357,7 +357,7 @@ function buildPlannerFallbackDecisionPrompt(
   });
 }
 
-function shouldRequestCollaborationDecision(prompt: string): boolean {
+export function shouldRequestCollaborationDecision(prompt: string): boolean {
   const normalized = prompt.trim().toLocaleLowerCase();
   if (!normalized) return false;
 
@@ -420,11 +420,8 @@ function shouldRequestCollaborationDecision(prompt: string): boolean {
     /开始处理/,
     /直接处理/,
     /请修复/,
-    /修复/,
     /帮我修/,
     /帮我实现/,
-    /\bfix\b/,
-    /\bimplement\b/,
     /\bcommit\b/,
   ].some((pattern) => pattern.test(normalized));
   return hasStrongTaskSignal || !hasDiscussionSignal;
