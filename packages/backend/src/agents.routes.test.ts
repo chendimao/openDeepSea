@@ -239,6 +239,7 @@ test('room agent ACP route updates runtime boundary fields without changing room
       tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
       workspace_policy: { read: [' . ', 'packages/backend'], write: ['packages/backend/src'] },
       memory_scope: 'room',
+      memory_max_context_chars: 24000,
     }),
   });
 
@@ -254,6 +255,7 @@ test('room agent ACP route updates runtime boundary fields without changing room
     tool_policy: { allowed: string[] } | null;
     workspace_policy: { read: string[]; write: string[] } | null;
     memory_scope: string | null;
+    memory_max_context_chars: number | null;
   };
   assert.equal(updated.id, roomAgent.id);
   assert.equal(updated.acp_backend, 'codex');
@@ -268,6 +270,7 @@ test('room agent ACP route updates runtime boundary fields without changing room
     write: ['packages/backend/src'],
   });
   assert.equal(updated.memory_scope, 'room');
+  assert.equal(updated.memory_max_context_chars, 24000);
 });
 
 test('room agent ACP route rejects unsafe workspace policy paths', async () => {

@@ -146,10 +146,10 @@ export function AcpConfigPanel({
         acp_session_id: enabled ? sessionId : null,
         acp_session_label: label,
         acp_permission_mode: permissionMode,
-        runtime_backend: enabled ? runtimeBackend : null,
-        tool_policy: enabled ? { allowed: toolPolicy } : null,
-        workspace_policy: enabled ? { read: ['.'], write: parsePathList(workspaceWriteInput) } : null,
-        memory_scope: enabled ? memoryScope : null,
+        runtime_backend: runtimeBackend,
+        tool_policy: { allowed: toolPolicy },
+        workspace_policy: { read: ['.'], write: parsePathList(workspaceWriteInput) },
+        memory_scope: memoryScope,
       });
       return api.setAgentWorkflowRole(roomId, updated.id, workflowRole);
     },

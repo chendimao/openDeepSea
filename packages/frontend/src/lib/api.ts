@@ -387,6 +387,7 @@ export const api = {
       tool_policy?: { allowed: AgentToolCapability[] } | null;
       workspace_policy?: { read: string[]; write: string[] } | null;
       memory_scope?: AgentMemoryScope | null;
+      memory_max_context_chars?: number | null;
     },
   ) =>
     request<RoomAgent>(`/rooms/${roomId}/agents/${agentId}/acp`, {

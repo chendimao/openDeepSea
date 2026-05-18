@@ -480,6 +480,7 @@ export const roomAgentRepo = {
       tool_policy?: AgentToolPolicy | null;
       workspace_policy?: AgentWorkspacePolicy | null;
       memory_scope?: AgentMemoryScope | null;
+      memory_max_context_chars?: number | null;
       runtime_profile_version?: number;
     },
   ): RoomAgent | undefined {
@@ -488,7 +489,7 @@ export const roomAgentRepo = {
     db.prepare(
       `UPDATE room_agents
        SET capabilities = ?, default_runtime = ?, runtime_backend = ?,
-           tool_policy = ?, workspace_policy = ?, memory_scope = ?,
+           tool_policy = ?, workspace_policy = ?, memory_scope = ?, memory_max_context_chars = ?,
            runtime_profile_version = ?
        WHERE id = ?`,
     ).run(
@@ -506,6 +507,9 @@ export const roomAgentRepo = {
           ? null
           : JSON.stringify(input.workspace_policy),
       input.memory_scope === undefined ? existing.memory_scope : input.memory_scope,
+      input.memory_max_context_chars === undefined
+        ? existing.memory_max_context_chars
+        : input.memory_max_context_chars,
       input.runtime_profile_version ?? getRoomAgentRuntimeProfileVersion(id),
       id,
     );

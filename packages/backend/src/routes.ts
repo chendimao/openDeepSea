@@ -1237,6 +1237,7 @@ router.put('/rooms/:roomId/agents/:agentId/acp', (req, res) => {
     tool_policy: parsed.data.tool_policy as AgentToolPolicy | null | undefined,
     workspace_policy: parsed.data.workspace_policy as AgentWorkspacePolicy | null | undefined,
     memory_scope: parsed.data.memory_scope as AgentMemoryScope | null | undefined,
+    memory_max_context_chars: parsed.data.memory_max_context_chars,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(updated);
