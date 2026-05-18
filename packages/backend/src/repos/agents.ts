@@ -3,6 +3,27 @@ import { listBuiltInAgentTemplates } from '../agent-templates.js';
 import { db, now } from '../db.js';
 import type { AcpBackend, AcpPermissionMode, Agent, AgentReference } from '../types.js';
 
+const LEGACY_BUILT_IN_AGENT_NAMES: Record<string, string> = {
+  planner: 'Planner',
+  'backend-executor': 'Backend Executor',
+  'frontend-executor': 'Frontend Executor',
+  'ui-designer': 'UI Designer',
+  'data-analyst': 'Data Analyst',
+  'computer-assistant': 'Computer Assistant',
+  'product-manager': 'Product Manager',
+  'qa-tester': 'QA Tester',
+  'devops-engineer': 'DevOps Engineer',
+  'security-reviewer': 'Security Reviewer',
+  'technical-writer': 'Technical Writer',
+  reviewer: 'Reviewer',
+  acceptor: 'Acceptor',
+  'accounting-advisor': 'Accounting Advisor',
+  'legal-assistant': 'Legal Assistant',
+  'medical-assistant': 'Medical Assistant',
+  'marketing-strategist': 'Marketing Strategist',
+  'sales-assistant': 'Sales Assistant',
+};
+
 type AgentRow = Omit<Agent, 'reference_count' | 'references' | 'default_acp_permission_mode'> & {
   default_acp_permission_mode?: string | null;
   reference_count?: number;
@@ -32,6 +53,11 @@ function trimmedOrNull(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+function shouldUpdateBuiltInName(agent: Agent, templateId: string): boolean {
+  if (!agent.is_builtin) return true;
+  return agent.name === LEGACY_BUILT_IN_AGENT_NAMES[templateId];
 }
 
 export const agentRepo = {
@@ -219,6 +245,7 @@ export const agentRepo = {
       `UPDATE agents
        SET is_builtin = 1,
            builtin_key = ?,
+           name = ?,
            description = COALESCE(description, ?),
            preferred_user_name = COALESCE(preferred_user_name, ?),
            personality = COALESCE(personality, ?),
@@ -235,6 +262,7 @@ export const agentRepo = {
         if (existing) {
           markExisting.run(
             template.id,
+            shouldUpdateBuiltInName(existing, template.id) ? template.name : existing.name,
             template.description,
             template.preferred_user_name,
             template.personality,

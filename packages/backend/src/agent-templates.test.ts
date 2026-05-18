@@ -80,6 +80,23 @@ test('built-in agent templates include broader specialist roles', () => {
   assert.equal(dataAnalyst?.capabilities.includes('data-analysis'), true);
 });
 
+test('built-in agent templates use Chinese display names by default', () => {
+  const templates = listBuiltInAgentTemplates();
+
+  for (const template of templates) {
+    assert.doesNotMatch(template.name, /^[A-Za-z]/);
+  }
+
+  const names = new Map(templates.map((template) => [template.id, template.name]));
+  assert.equal(names.get('planner'), '规划师');
+  assert.equal(names.get('ui-designer'), '界面设计师');
+  assert.equal(names.get('data-analyst'), '数据分析师');
+  assert.equal(names.get('computer-assistant'), '电脑助手');
+  assert.equal(names.get('accounting-advisor'), '会计顾问');
+  assert.equal(names.get('legal-assistant'), '法律助手');
+  assert.equal(names.get('medical-assistant'), '医疗助手');
+});
+
 test('high-risk professional templates include explicit advisory boundaries', () => {
   const templates = listBuiltInAgentTemplates();
 

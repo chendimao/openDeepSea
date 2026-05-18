@@ -82,12 +82,12 @@ test('roomAgentRepo migrates legacy room agents into reusable global agents', ()
   const migrated = roomAgentRepo.ensureGlobalAgent(legacy.id);
   assert.ok(migrated?.global_agent_id);
   assert.equal(migrated?.agent_id, 'reviewer');
-  assert.equal(migrated?.agent_name, 'Reviewer');
+  assert.equal(migrated?.agent_name, '审查员');
   assert.equal(migrated?.responsibilities, '代码审查、风险识别、测试缺口分析、验收前质量把关。');
 
   const global = migrated?.global_agent_id ? agentRepo.get(migrated.global_agent_id) : undefined;
   assert.equal(global?.agent_id, 'reviewer');
-  assert.equal(global?.name, 'Reviewer');
+  assert.equal(global?.name, '审查员');
 });
 
 test('built-in agents are seeded into the global library and can be restored', () => {
@@ -133,16 +133,31 @@ test('built-in agent identity is stable across edits and seed re-runs', () => {
   assert.equal(planners[0]?.id, planner.id);
 });
 
+test('built-in agent seeding migrates legacy English names without overwriting custom names', () => {
+  const planner = agentRepo.getByAgentId('planner');
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(planner);
+  assert.ok(reviewer);
+
+  agentRepo.update(planner.id, { name: 'Planner' });
+  agentRepo.update(reviewer.id, { name: '我的审查员' });
+
+  agentRepo.ensureBuiltInAgents();
+
+  assert.equal(agentRepo.get(planner.id)?.name, '规划师');
+  assert.equal(agentRepo.get(reviewer.id)?.name, '我的审查员');
+});
+
 test('roomAgentRepo soft-removes agents and restores existing memberships', () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-agent-soft-remove-project-'));
   const project = projectRepo.create({ name: 'Soft Remove Agent Library', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Soft Remove Agent Room' });
-  const planner = agentRepo.getByAgentId('planner');
-  assert.ok(planner);
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(reviewer);
 
   const roomAgent = roomAgentRepo.addFromGlobalAgent({
     room_id: room.id,
-    global_agent_id: planner.id,
+    global_agent_id: reviewer.id,
   });
   assert.equal(roomAgent.left_at, null);
   assert.equal(roomAgentRepo.remove(roomAgent.id), true);
@@ -156,7 +171,7 @@ test('roomAgentRepo soft-removes agents and restores existing memberships', () =
 
   const restored = roomAgentRepo.addFromGlobalAgent({
     room_id: room.id,
-    global_agent_id: planner.id,
+    global_agent_id: reviewer.id,
   });
   assert.equal(restored.id, roomAgent.id);
   assert.equal(restored.left_at, null);
