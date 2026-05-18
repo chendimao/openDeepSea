@@ -7,6 +7,9 @@ import test from 'node:test';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-skills-routes-db-')), 'test.db');
 process.env.OPENDEEPSEA_SKILLS_DIR = mkdtempSync(join(tmpdir(), 'opendeepsea-skills-managed-'));
+process.env.OPENDEEPSEA_LOCAL_TOKEN = 'skills-routes-local-token';
+
+const LOCAL_TOKEN = process.env.OPENDEEPSEA_LOCAL_TOKEN;
 
 const { router } = await import('../routes.js');
 const { skillRepo } = await import('./repo.js');
@@ -16,14 +19,19 @@ const app = express();
 app.use(express.json());
 app.use('/api', router);
 
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
+async function request(path: string, init: RequestInit = {}, options: { localToken?: boolean } = {}): Promise<Response> {
   const server = app.listen(0);
   try {
     const address = server.address();
     assert(address && typeof address === 'object');
+    const headers = new Headers(init.headers);
+    headers.set('Content-Type', 'application/json');
+    if (options.localToken !== false) {
+      headers.set('X-OpenDeepSea-Local-Token', LOCAL_TOKEN);
+    }
     return await fetch(`http://127.0.0.1:${address.port}${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+      headers,
     });
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -47,6 +55,12 @@ async function createLocalSkill(name: string, body = 'Follow the local instructi
   ].join('\n'));
   return dir;
 }
+
+test('skills routes require local access token', async () => {
+  const res = await request('/api/skills', {}, { localToken: false });
+
+  assert.equal(res.status, 403);
+});
 
 test('skills routes import, list, detail, patch, bind, preview, and delete local skills', async () => {
   const sourceDir = await createLocalSkill('route-skill');
@@ -144,6 +158,26 @@ test('skills routes import, list, detail, patch, bind, preview, and delete local
 
   const missingDetailRes = await request(`/api/skills/${imported.id}`);
   assert.equal(missingDetailRes.status, 404);
+});
+
+test('skills routes reject duplicate skill names', async () => {
+  const firstDir = await createLocalSkill('duplicate-skill', 'First instructions.');
+  const secondDir = await createLocalSkill('duplicate-skill', 'Second instructions.');
+
+  const firstRes = await request('/api/skills/import/local', {
+    method: 'POST',
+    body: JSON.stringify({ path: firstDir }),
+  });
+  assert.equal(firstRes.status, 201);
+
+  const secondRes = await request('/api/skills/import/local', {
+    method: 'POST',
+    body: JSON.stringify({ path: secondDir }),
+  });
+
+  assert.equal(secondRes.status, 409);
+  const body = await secondRes.json() as { error: string };
+  assert.match(body.error, /same name/i);
 });
 
 test('skills routes reject missing manifests and unsafe local imports', async () => {

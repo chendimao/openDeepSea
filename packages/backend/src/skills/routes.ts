@@ -1,12 +1,17 @@
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { importLocalSkill, installedPathLabel, removeInstalledSkill } from './installer.js';
+import { validateLocalAccess } from '../local-access.js';
 import { formatSkillPrompt } from './prompt.js';
-import { skillRepo } from './repo.js';
+import { DuplicateSkillNameError, skillRepo } from './repo.js';
 import { selectSkills } from './selector.js';
 import type { Skill, SkillBinding, SkillBindingScope, SkillRuntimeScope, SkillTriggerMode } from './types.js';
 
 export const skillsRouter = Router();
+skillsRouter.use((req, res, next) => {
+  if (!requireLocalAccess(req, res)) return;
+  next();
+});
 
 const runtimeScopeSchema = z.enum(['planner', 'model_chat', 'workflow', 'memory', 'review']);
 const bindingScopeSchema = z.enum(['system', 'project', 'room', 'agent']);
@@ -51,6 +56,9 @@ skillsRouter.post('/import/local', async (req, res) => {
     const skill = await importLocalSkill(parsed.data.path);
     res.status(201).json(toSkillDto(skill));
   } catch (err) {
+    if (err instanceof DuplicateSkillNameError) {
+      return res.status(409).json({ error: err.message });
+    }
     res.status(400).json({ error: (err as Error).message });
   }
 });
@@ -125,17 +133,24 @@ skillsRouter.get('/:skillId', (req, res) => {
 skillsRouter.patch('/:skillId', (req, res) => {
   const parsed = skillPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const updated = skillRepo.updateSkill(req.params.skillId, {
-    name: parsed.data.name,
-    description: parsed.data.description,
-    runtime_scopes: parsed.data.runtime_scopes as SkillRuntimeScope[] | undefined,
-    trigger_mode: parsed.data.trigger_mode as SkillTriggerMode | undefined,
-    trigger_keywords: parsed.data.trigger_keywords,
-    enabled: parsed.data.enabled,
-    priority: parsed.data.priority,
-  });
-  if (!updated) return res.status(404).json({ error: 'not found' });
-  res.json(toSkillDto(updated));
+  try {
+    const updated = skillRepo.updateSkill(req.params.skillId, {
+      name: parsed.data.name,
+      description: parsed.data.description,
+      runtime_scopes: parsed.data.runtime_scopes as SkillRuntimeScope[] | undefined,
+      trigger_mode: parsed.data.trigger_mode as SkillTriggerMode | undefined,
+      trigger_keywords: parsed.data.trigger_keywords,
+      enabled: parsed.data.enabled,
+      priority: parsed.data.priority,
+    });
+    if (!updated) return res.status(404).json({ error: 'not found' });
+    res.json(toSkillDto(updated));
+  } catch (err) {
+    if (err instanceof DuplicateSkillNameError) {
+      return res.status(409).json({ error: err.message });
+    }
+    res.status(400).json({ error: (err as Error).message });
+  }
 });
 
 skillsRouter.delete('/:skillId', async (req, res) => {
@@ -181,4 +196,11 @@ function toBindingDto(binding: SkillBinding): {
   updated_at: number;
 } {
   return binding;
+}
+
+function requireLocalAccess(req: Request, res: Response): boolean {
+  const auth = validateLocalAccess(req);
+  if (auth.ok) return true;
+  res.status(auth.status).json({ error: auth.error });
+  return false;
 }

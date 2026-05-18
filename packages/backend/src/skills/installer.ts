@@ -39,21 +39,26 @@ export async function importLocalSkill(sourcePath: string): Promise<Skill> {
     .update(await readFile(join(installPath, 'SKILL.md')))
     .digest('hex');
 
-  return skillRepo.createSkill({
-    id,
-    name: loaded.name,
-    description: loaded.description,
-    source_type: 'local_directory',
-    source_uri: sourceRealPath,
-    install_path: installPath,
-    manifest_path: loaded.manifestPath,
-    runtime_scopes: loaded.runtimeScopes,
-    trigger_mode: loaded.triggerMode,
-    trigger_keywords: loaded.triggerKeywords,
-    enabled: true,
-    priority: loaded.priority,
-    checksum,
-  });
+  try {
+    return skillRepo.createSkill({
+      id,
+      name: loaded.name,
+      description: loaded.description,
+      source_type: 'local_directory',
+      source_uri: sourceRealPath,
+      install_path: installPath,
+      manifest_path: loaded.manifestPath,
+      runtime_scopes: loaded.runtimeScopes,
+      trigger_mode: loaded.triggerMode,
+      trigger_keywords: loaded.triggerKeywords,
+      enabled: true,
+      priority: loaded.priority,
+      checksum,
+    });
+  } catch (err) {
+    await rm(installPath, { recursive: true, force: true });
+    throw err;
+  }
 }
 
 export async function removeInstalledSkill(skill: Skill): Promise<void> {

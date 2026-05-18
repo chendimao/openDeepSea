@@ -242,9 +242,9 @@ export const api = {
   deleteWorkflowDefinition: (id: string) =>
     request<void>(`/workflow-definitions/${id}`, { method: 'DELETE' }),
 
-  listSkills: () => request<Skill[]>('/skills'),
+  listSkills: () => workspaceRequest<Skill[]>('/skills'),
   importLocalSkill: (path: string) =>
-    request<Skill>('/skills/import/local', {
+    workspaceRequest<Skill>('/skills/import/local', {
       method: 'POST',
       body: JSON.stringify({ path }),
     }),
@@ -260,19 +260,19 @@ export const api = {
       priority?: number;
     },
   ) =>
-    request<Skill>(`/skills/${id}`, {
+    workspaceRequest<Skill>(`/skills/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
   deleteSkill: (id: string) =>
-    request<void>(`/skills/${id}`, { method: 'DELETE' }),
+    workspaceRequest<void>(`/skills/${id}`, { method: 'DELETE' }),
   listSkillBindings: (filters: { scope?: SkillBindingScope; scopeId?: string; skillId?: string } = {}) => {
     const params = new URLSearchParams();
     if (filters.scope) params.set('scope', filters.scope);
     if (filters.scopeId) params.set('scopeId', filters.scopeId);
     if (filters.skillId) params.set('skillId', filters.skillId);
     const query = params.toString();
-    return request<SkillBinding[]>(`/skills/bindings${query ? `?${query}` : ''}`);
+    return workspaceRequest<SkillBinding[]>(`/skills/bindings${query ? `?${query}` : ''}`);
   },
   upsertSkillBinding: (input: {
     id?: string;
@@ -282,12 +282,12 @@ export const api = {
     enabled?: boolean;
     priority_override?: number | null;
   }) =>
-    request<SkillBinding>('/skills/bindings', {
+    workspaceRequest<SkillBinding>('/skills/bindings', {
       method: 'PUT',
       body: JSON.stringify(input),
     }),
   deleteSkillBinding: (id: string) =>
-    request<void>(`/skills/bindings/${id}`, { method: 'DELETE' }),
+    workspaceRequest<void>(`/skills/bindings/${id}`, { method: 'DELETE' }),
   previewSkillSelection: (input: {
     runtimeScopes: SkillRuntimeScope[];
     projectId?: string | null;
@@ -296,7 +296,7 @@ export const api = {
     message?: string;
     skillIds?: string[];
   }) =>
-    request<SkillPreviewResponse>('/skills/preview-selection', {
+    workspaceRequest<SkillPreviewResponse>('/skills/preview-selection', {
       method: 'POST',
       body: JSON.stringify(input),
     }),

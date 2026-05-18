@@ -81,7 +81,17 @@ export const skillRepo = {
     return row ? normalizeSkill(row) : null;
   },
 
+  findSkillByName(name: string, excludeId?: string): Skill | null {
+    const normalized = name.trim();
+    if (!normalized) return null;
+    const row = excludeId
+      ? db.prepare('SELECT * FROM skills WHERE lower(name) = lower(?) AND id != ?').get(normalized, excludeId) as SkillRow | undefined
+      : db.prepare('SELECT * FROM skills WHERE lower(name) = lower(?)').get(normalized) as SkillRow | undefined;
+    return row ? normalizeSkill(row) : null;
+  },
+
   createSkill(input: CreateSkillInput): Skill {
+    assertUniqueSkillName(input.name);
     const ts = now();
     db.prepare(
       `INSERT INTO skills (
@@ -112,6 +122,7 @@ export const skillRepo = {
   updateSkill(id: string, patch: UpdateSkillInput): Skill | null {
     const existing = this.getSkill(id);
     if (!existing) return null;
+    if (patch.name !== undefined) assertUniqueSkillName(patch.name, id);
     const updated: Skill = {
       ...existing,
       ...(patch.name !== undefined ? { name: patch.name } : {}),
@@ -277,6 +288,19 @@ export const skillRepo = {
       );
   },
 };
+
+export class DuplicateSkillNameError extends Error {
+  constructor(name: string) {
+    super(`A skill with the same name already exists: ${name}`);
+    this.name = 'DuplicateSkillNameError';
+  }
+}
+
+function assertUniqueSkillName(name: string, excludeId?: string): void {
+  if (skillRepo.findSkillByName(name, excludeId)) {
+    throw new DuplicateSkillNameError(name);
+  }
+}
 
 function normalizeSkill(row: SkillRow): Skill {
   return {

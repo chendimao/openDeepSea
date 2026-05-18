@@ -57,6 +57,42 @@ test('skillRepo creates, reads, updates, lists, and deletes skills with JSON fie
   assert.equal(skillRepo.deleteSkill('skill-tdd'), false);
 });
 
+test('skillRepo rejects duplicate skill names', () => {
+  resetSkills();
+
+  skillRepo.createSkill({
+    id: 'skill-one',
+    name: 'duplicate-skill',
+    description: null,
+    source_type: 'manual',
+    source_uri: null,
+    install_path: '/managed/one',
+    manifest_path: null,
+    runtime_scopes: ['planner'],
+    trigger_mode: 'manual',
+    trigger_keywords: [],
+    enabled: true,
+    priority: 100,
+    checksum: null,
+  });
+
+  assert.throws(() => skillRepo.createSkill({
+    id: 'skill-two',
+    name: 'Duplicate-Skill',
+    description: null,
+    source_type: 'manual',
+    source_uri: null,
+    install_path: '/managed/two',
+    manifest_path: null,
+    runtime_scopes: ['planner'],
+    trigger_mode: 'manual',
+    trigger_keywords: [],
+    enabled: true,
+    priority: 100,
+    checksum: null,
+  }), /same name/i);
+});
+
 test('skillRepo resolves bindings from narrow scopes over wider scopes', () => {
   resetSkills();
 
