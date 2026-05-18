@@ -4,7 +4,15 @@ import { AlertTriangle, Bot, Code2, Sparkles, Terminal, Trash2, X } from 'lucide
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { type MessageKey, useI18n } from '../lib/i18n';
-import type { AcpBackend, AcpPermissionMode, RoomAgent, WorkflowRole } from '../lib/types';
+import type {
+  AcpBackend,
+  AcpPermissionMode,
+  AgentMemoryScope,
+  AgentRuntimeBackend,
+  AgentToolCapability,
+  RoomAgent,
+  WorkflowRole,
+} from '../lib/types';
 import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 
@@ -21,6 +29,53 @@ const CODEX_PERMISSION_MODES: { id: AcpPermissionMode; titleKey: MessageKey; des
   { id: 'workspace-write', titleKey: 'acp.permission.workspaceWrite', descriptionKey: 'acp.permission.workspaceWriteHelp' },
   { id: 'read-only', titleKey: 'acp.permission.readOnly', descriptionKey: 'acp.permission.readOnlyHelp' },
 ];
+
+type BoundaryTemplate = 'readOnly' | 'backend' | 'frontend' | 'custom';
+
+const TOOL_CAPABILITIES: AgentToolCapability[] = [
+  'read_files',
+  'write_files',
+  'run_shell',
+  'browser',
+  'search',
+  'image_input',
+  'commit',
+];
+
+const MEMORY_SCOPES: AgentMemoryScope[] = ['project', 'room', 'agent', 'task', 'none'];
+
+const BOUNDARY_TEMPLATES: Record<
+  Exclude<BoundaryTemplate, 'custom'>,
+  {
+    permissionMode: AcpPermissionMode;
+    runtimeBackend: AgentRuntimeBackend;
+    tools: AgentToolCapability[];
+    writeDirs: string[];
+    memoryScope: AgentMemoryScope;
+  }
+> = {
+  readOnly: {
+    permissionMode: 'read-only',
+    runtimeBackend: 'acp',
+    tools: ['read_files'],
+    writeDirs: [],
+    memoryScope: 'room',
+  },
+  backend: {
+    permissionMode: 'workspace-write',
+    runtimeBackend: 'acp',
+    tools: ['read_files', 'write_files', 'run_shell'],
+    writeDirs: ['packages/backend'],
+    memoryScope: 'room',
+  },
+  frontend: {
+    permissionMode: 'workspace-write',
+    runtimeBackend: 'acp',
+    tools: ['read_files', 'write_files', 'run_shell'],
+    writeDirs: ['packages/frontend'],
+    memoryScope: 'room',
+  },
+};
 
 export function AcpConfigPanel({
   agent,
@@ -42,6 +97,13 @@ export function AcpConfigPanel({
   const [sessionId, setSessionId] = useState<string | null>(agent.acp_session_id);
   const [workflowRole, setWorkflowRole] = useState<WorkflowRole | null>(agent.workflow_role);
   const [permissionMode, setPermissionMode] = useState<AcpPermissionMode>(agent.acp_permission_mode ?? 'bypass');
+  const [boundaryTemplate, setBoundaryTemplate] = useState<BoundaryTemplate>('custom');
+  const [runtimeBackend, setRuntimeBackend] = useState<AgentRuntimeBackend | null>(agent.runtime_backend ?? 'acp');
+  const [toolPolicy, setToolPolicy] = useState<AgentToolCapability[]>(agent.tool_policy?.allowed ?? ['read_files']);
+  const [workspaceWriteInput, setWorkspaceWriteInput] = useState(
+    formatPathList(agent.workspace_policy?.write ?? []),
+  );
+  const [memoryScope, setMemoryScope] = useState<AgentMemoryScope | null>(agent.memory_scope ?? 'room');
   const [removeImpact, setRemoveImpact] = useState<{
     error: string;
     active_run_count?: number;
@@ -60,6 +122,11 @@ export function AcpConfigPanel({
     setSessionId(agent.acp_session_id);
     setWorkflowRole(agent.workflow_role);
     setPermissionMode(agent.acp_permission_mode ?? 'bypass');
+    setBoundaryTemplate('custom');
+    setRuntimeBackend(agent.runtime_backend ?? 'acp');
+    setToolPolicy(agent.tool_policy?.allowed ?? ['read_files']);
+    setWorkspaceWriteInput(formatPathList(agent.workspace_policy?.write ?? []));
+    setMemoryScope(agent.memory_scope ?? 'room');
     setRemoveImpact(null);
     setTransferTargetId('');
   }, [agent]);
@@ -79,6 +146,10 @@ export function AcpConfigPanel({
         acp_session_id: enabled ? sessionId : null,
         acp_session_label: label,
         acp_permission_mode: permissionMode,
+        runtime_backend: enabled ? runtimeBackend : null,
+        tool_policy: enabled ? { allowed: toolPolicy } : null,
+        workspace_policy: enabled ? { read: ['.'], write: parsePathList(workspaceWriteInput) } : null,
+        memory_scope: enabled ? memoryScope : null,
       });
       return api.setAgentWorkflowRole(roomId, updated.id, workflowRole);
     },
@@ -89,6 +160,25 @@ export function AcpConfigPanel({
     },
     onError: (err) => toast.error((err as Error).message),
   });
+
+  function applyBoundaryTemplate(template: BoundaryTemplate) {
+    setBoundaryTemplate(template);
+    if (template === 'custom') return;
+    const next = BOUNDARY_TEMPLATES[template];
+    setPermissionMode(next.permissionMode);
+    setRuntimeBackend(next.runtimeBackend);
+    setToolPolicy(next.tools);
+    setWorkspaceWriteInput(formatPathList(next.writeDirs));
+    setMemoryScope(next.memoryScope);
+  }
+
+  function updateToolCapability(capability: AgentToolCapability, checked: boolean) {
+    setBoundaryTemplate('custom');
+    setToolPolicy((current) => {
+      if (checked) return current.includes(capability) ? current : [...current, capability];
+      return current.filter((item) => item !== capability);
+    });
+  }
   const remove = useMutation({
     mutationFn: (input?: { task_action?: 'unassign' | 'transfer'; transfer_to_room_agent_id?: string }) =>
       api.removeRoomAgent(roomId, agent.id, input),
@@ -242,7 +332,10 @@ export function AcpConfigPanel({
                       <button
                         type="button"
                         key={mode.id}
-                        onClick={() => setPermissionMode(mode.id)}
+                        onClick={() => {
+                          setBoundaryTemplate('custom');
+                          setPermissionMode(mode.id);
+                        }}
                         className={cn(
                           'w-full surface-1 rounded-lg px-3 py-2.5 text-left ease-ocean transition-all',
                           selected
@@ -283,6 +376,117 @@ export function AcpConfigPanel({
                     {t('acp.writableDirsHelp.opencode')}
                   </div>
                 )}
+              </section>
+
+              <section>
+                <div className="font-display text-[12px] font-medium uppercase tracking-wider text-[var(--color-fg-muted)] mb-2">
+                  {t('acp.boundaryLabel')}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['readOnly', 'backend', 'frontend', 'custom'] as const).map((template) => {
+                    const selected = boundaryTemplate === template;
+                    return (
+                      <button
+                        type="button"
+                        key={template}
+                        onClick={() => applyBoundaryTemplate(template)}
+                        className={cn(
+                          'surface-1 min-h-9 rounded-md px-2.5 py-2 text-left text-[12px] ease-ocean transition-all',
+                          selected
+                            ? 'border-[var(--color-primary)] glow-primary'
+                            : 'hover:border-[var(--color-border-strong)]',
+                        )}
+                      >
+                        <span className="block truncate font-display font-medium">
+                          {t(`acp.boundaryTemplate.${template}`)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11.5px] font-medium text-[var(--color-fg-muted)]">
+                      {t('acp.runtimeBackend')}
+                    </span>
+                    <select
+                      value={runtimeBackend ?? ''}
+                      onChange={(event) => {
+                        setBoundaryTemplate('custom');
+                        setRuntimeBackend((event.target.value || null) as AgentRuntimeBackend | null);
+                      }}
+                      className="surface-1 h-9 w-full rounded-md px-2 text-[12px] outline-none focus:border-[var(--color-primary)]"
+                    >
+                      {(['acp', 'model', 'none'] as AgentRuntimeBackend[]).map((value) => (
+                        <option key={value} value={value}>
+                          {t(`acp.runtimeBackend.${value}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11.5px] font-medium text-[var(--color-fg-muted)]">
+                      {t('acp.memoryScope')}
+                    </span>
+                    <select
+                      value={memoryScope ?? ''}
+                      onChange={(event) => {
+                        setBoundaryTemplate('custom');
+                        setMemoryScope((event.target.value || null) as AgentMemoryScope | null);
+                      }}
+                      className="surface-1 h-9 w-full rounded-md px-2 text-[12px] outline-none focus:border-[var(--color-primary)]"
+                    >
+                      {MEMORY_SCOPES.map((scope) => (
+                        <option key={scope} value={scope}>
+                          {t(`acp.memoryScope.${scope}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="mt-3">
+                  <div className="mb-2 text-[11.5px] font-medium text-[var(--color-fg-muted)]">
+                    {t('acp.toolPolicy')}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {TOOL_CAPABILITIES.map((capability) => (
+                      <label
+                        key={capability}
+                        className="surface-1 flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-[11.5px]"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={toolPolicy.includes(capability)}
+                          onChange={(event) => updateToolCapability(capability, event.target.checked)}
+                          className="h-3.5 w-3.5 shrink-0 accent-[var(--color-primary)]"
+                        />
+                        <span className="min-w-0 truncate">{t(`acp.tool.${capability}`)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <label className="mt-3 block">
+                  <span className="mb-1.5 block text-[11.5px] font-medium text-[var(--color-fg-muted)]">
+                    {t('acp.writableDirs')}
+                  </span>
+                  <textarea
+                    value={workspaceWriteInput}
+                    onChange={(event) => {
+                      setBoundaryTemplate('custom');
+                      setWorkspaceWriteInput(event.target.value);
+                    }}
+                    rows={3}
+                    placeholder="packages/frontend, docs"
+                    className="surface-1 w-full resize-y rounded-md px-2.5 py-2 font-mono text-[12px] outline-none focus:border-[var(--color-primary)]"
+                  />
+                  <span className="mt-1 block text-[11px] text-[var(--color-fg-muted)]">
+                    {t('acp.writableDirsHelp')}
+                  </span>
+                </label>
               </section>
 
               <section>
@@ -435,6 +639,21 @@ function parseRemoveImpact(message: string): {
   } catch {
     return null;
   }
+}
+
+function parsePathList(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function formatPathList(value: string[]): string {
+  return value.join('\n');
 }
 
 function permissionModeDescription(

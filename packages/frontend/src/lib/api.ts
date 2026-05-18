@@ -3,6 +3,11 @@ import type {
   Agent,
   AgentInput,
   AgentRun,
+  AgentMemoryScope,
+  AgentRuntimeBackend,
+  AgentToolCapability,
+  AgentToolPolicy,
+  AgentWorkspacePolicy,
   BuiltInAgentTemplate,
   CliSession,
   CollaborationDecision,
@@ -344,6 +349,10 @@ export const api = {
       acp_session_id?: string | null;
       acp_session_label?: string | null;
       acp_permission_mode?: 'bypass' | 'workspace-write' | 'read-only';
+      runtime_backend?: AgentRuntimeBackend | null;
+      tool_policy?: AgentToolPolicy | null;
+      workspace_policy?: AgentWorkspacePolicy | null;
+      memory_scope?: AgentMemoryScope | null;
     },
   ) => request<RoomAgent>(`/rooms/${roomId}/agents`, { method: 'POST', body: JSON.stringify(input) }),
   addRoomAgentsBatch: (roomId: string, global_agent_ids: string[]) =>
@@ -374,6 +383,10 @@ export const api = {
       acp_session_id: string | null;
       acp_session_label?: string | null;
       acp_permission_mode?: 'bypass' | 'workspace-write' | 'read-only';
+      runtime_backend?: AgentRuntimeBackend | null;
+      tool_policy?: { allowed: AgentToolCapability[] } | null;
+      workspace_policy?: { read: string[]; write: string[] } | null;
+      memory_scope?: AgentMemoryScope | null;
     },
   ) =>
     request<RoomAgent>(`/rooms/${roomId}/agents/${agentId}/acp`, {
