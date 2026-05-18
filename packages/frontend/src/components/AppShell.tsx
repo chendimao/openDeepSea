@@ -106,6 +106,7 @@ function ProjectSidebar({
   onOpenCommand: () => void;
 }): JSX.Element {
   const { t } = useI18n();
+  const location = useLocation();
 
   return (
     <div className="glass-sidebar flex h-full flex-col">
@@ -147,7 +148,7 @@ function ProjectSidebar({
       </div>
 
       <div className="sidebar-nav px-4">
-        <SidebarLink to="/" active={!currentProject} icon={Home} label={t('shell.nav.development')} exact />
+        <SidebarLink to="/" active={location.pathname === '/'} icon={Home} label={t('shell.nav.development')} exact />
         <SidebarLink to={currentProject ? `/projects/${currentProject.id}` : '/'} icon={GitBranch} label={t('shell.nav.roadmap')} />
         <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} />
         <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} />

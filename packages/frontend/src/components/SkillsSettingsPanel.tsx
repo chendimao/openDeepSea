@@ -54,6 +54,7 @@ export function SkillsSettingsPanel({
   const importSkill = useMutation({
     mutationFn: api.importLocalSkill,
     onSuccess: async (skill) => {
+      let systemBindingEnabled = true;
       try {
         await api.upsertSkillBinding({
           skill_id: skill.id,
@@ -62,10 +63,14 @@ export function SkillsSettingsPanel({
           enabled: true,
         });
       } catch (err) {
-        toast.error((err as Error).message);
+        systemBindingEnabled = false;
+        toast.error(t('settings.skillsSystemBindingFailed', { message: (err as Error).message }));
       }
       setLocalPath('');
-      toast.success(t('settings.skillsImportSuccess', { name: skill.name }));
+      toast.success(t(
+        systemBindingEnabled ? 'settings.skillsImportAndBindSuccess' : 'settings.skillsImportSuccess',
+        { name: skill.name },
+      ));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['skills'] }),
         queryClient.invalidateQueries({ queryKey: ['skills', 'bindings'] }),
