@@ -73,29 +73,12 @@ wss.on('connection', (socket) => {
   socket.on('close', () => wsHub.removeSocket(socket));
 });
 
-void recoverWorkflowStartupOrphans({ buildInterruptedRunReason }).then((recovered) => {
-  if (recovered.interruptedAgentRuns > 0) {
-    console.warn(`[agent-runs] Marked ${recovered.interruptedAgentRuns} orphaned active run(s) as interrupted`);
-  }
-  if (recovered.orphanedSteps > 0) {
-    console.warn(`[workflows] Marked ${recovered.orphanedSteps} orphaned running step(s) as interrupted`);
-  }
-  if (recovered.incidents > 0) {
-    console.warn(`[workflow-monitor] Detected ${recovered.incidents} startup workflow incident(s)`);
-  }
-}).catch((err) => {
-  console.warn(`[workflow-monitor] startup recovery failed: ${(err as Error).message}`);
-});
-
 httpServer.listen(PORT, () => {
   console.log(`[server] backend listening on :${PORT}`);
   if (!configuredLocalAccessToken) {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
-  const monitorService = startWorkflowMonitorService();
-  void monitorService.runOnce().catch((err) => {
-    console.warn(`[workflow-monitor] initial scan failed: ${(err as Error).message}`);
-  });
+  void startWorkflowMonitoringAfterStartupRecovery();
 });
 
 async function buildInterruptedRunReason(run: AgentRun): Promise<string> {
@@ -118,5 +101,29 @@ async function buildInterruptedRunReason(run: AgentRun): Promise<string> {
       : `${base}; ACP session ${run.acp_session_id} was not found, retry will start a fresh invocation.`;
   } catch (err) {
     return `${base}; ACP session lookup failed: ${(err as Error).message}`;
+  }
+}
+
+async function startWorkflowMonitoringAfterStartupRecovery(): Promise<void> {
+  try {
+    const recovered = await recoverWorkflowStartupOrphans({ buildInterruptedRunReason });
+    if (recovered.interruptedAgentRuns > 0) {
+      console.warn(`[agent-runs] Marked ${recovered.interruptedAgentRuns} orphaned active run(s) as interrupted`);
+    }
+    if (recovered.orphanedSteps > 0) {
+      console.warn(`[workflows] Marked ${recovered.orphanedSteps} orphaned running step(s) as interrupted`);
+    }
+    if (recovered.incidents > 0) {
+      console.warn(`[workflow-monitor] Detected ${recovered.incidents} startup workflow incident(s)`);
+    }
+  } catch (err) {
+    console.warn(`[workflow-monitor] startup recovery failed: ${(err as Error).message}`);
+  }
+
+  const monitorService = startWorkflowMonitorService();
+  try {
+    await monitorService.runOnce();
+  } catch (err) {
+    console.warn(`[workflow-monitor] initial scan failed: ${(err as Error).message}`);
   }
 }
