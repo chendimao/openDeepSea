@@ -1,8 +1,7 @@
 import { spawn } from 'node:child_process';
 import { access, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { projectRepo } from '../repos/projects.js';
 import { skillRepo } from './repo.js';
@@ -41,11 +40,6 @@ export async function runSkillInProjectSandbox(input: RunSkillInput): Promise<Sk
   }
   const project = projectRepo.get(input.projectId);
   if (!project) throw new Error('project not found');
-  const projectPath = await realpath(validateProjectSandboxPath(project.path, project.path));
-  const installPath = await realpath(skill.install_path);
-  const entrypointCandidate = validateProjectSandboxPath(installPath, resolve(installPath, skill.entrypoint));
-  const entrypoint = validateProjectSandboxPath(installPath, await realpath(entrypointCandidate));
-  await access(entrypoint);
 
   const run = skillRunRepo.createRun({
     id: nanoid(),
@@ -57,23 +51,37 @@ export async function runSkillInProjectSandbox(input: RunSkillInput): Promise<Sk
     runtime: skill.runtime_type,
     entrypoint: skill.entrypoint,
     input: input.input ?? null,
-    allowed_paths: [projectPath],
+    allowed_paths: [project.path],
     network_enabled: skill.permissions.network,
     status: 'running',
   });
 
-  const command = runtimeCommand(skill.runtime_type);
-  const args = runtimeArgs(skill.runtime_type, entrypoint);
-  const inputText = JSON.stringify(input.input ?? null);
-  const sandbox = await createProjectSandbox({
-    command,
-    args,
-    projectPath,
-    installPath,
-    networkEnabled: skill.permissions.network,
-  });
-
+  let sandbox: { command: string; args: string[]; cleanup: () => Promise<void> } | null = null;
   try {
+    const projectPath = await realpath(validateProjectSandboxPath(project.path, project.path));
+    const installPath = await realpath(skill.install_path);
+    const entrypointCandidate = validateProjectSandboxPath(installPath, resolve(installPath, skill.entrypoint));
+    const entrypoint = validateProjectSandboxPath(installPath, await realpath(entrypointCandidate));
+    await access(entrypoint);
+
+    skillRunRepo.updateRun(run.id, { allowed_paths: [projectPath] });
+
+    const command = runtimeCommand(skill.runtime_type);
+    const args = runtimeArgs(skill.runtime_type, entrypoint, {
+      projectPath,
+      installPath,
+      networkEnabled: skill.permissions.network,
+    });
+    const inputText = JSON.stringify(input.input ?? null);
+    sandbox = await createProjectSandbox({
+      runtime: skill.runtime_type,
+      command,
+      args,
+      projectPath,
+      installPath,
+      networkEnabled: skill.permissions.network,
+    });
+
     const result = await runProcess(sandbox.command, sandbox.args, {
       cwd: projectPath,
       input: inputText,
@@ -98,22 +106,44 @@ export async function runSkillInProjectSandbox(input: RunSkillInput): Promise<Sk
       error: (err as Error).message,
     })!;
   } finally {
-    await sandbox.cleanup();
+    await sandbox?.cleanup();
   }
 }
 
 function runtimeCommand(runtime: 'node' | 'python' | 'shell'): string {
   if (runtime === 'node') return process.execPath;
-  if (runtime === 'python') return 'python3';
-  return 'bash';
+  if (runtime === 'python') return '/usr/bin/python3';
+  return '/bin/bash';
 }
 
-function runtimeArgs(runtime: 'node' | 'python' | 'shell', entrypoint: string): string[] {
+function runtimeArgs(runtime: 'node' | 'python' | 'shell', entrypoint: string, options: {
+  projectPath: string;
+  installPath: string;
+  networkEnabled: boolean;
+}): string[] {
+  if (runtime === 'node') {
+    const args = [
+      '--permission',
+      `--allow-fs-read=${options.projectPath}`,
+      `--allow-fs-read=${options.installPath}`,
+      `--allow-fs-write=${options.projectPath}`,
+    ];
+    if (options.networkEnabled) args.push('--allow-net');
+    return [...args, entrypoint];
+  }
+  if (runtime === 'python') {
+    return [
+      '-c',
+      pythonSandboxBootstrap(options.projectPath, options.installPath),
+      entrypoint,
+    ];
+  }
   if (runtime === 'shell') return [entrypoint];
   return [entrypoint];
 }
 
 async function createProjectSandbox(options: {
+  runtime: 'node' | 'python' | 'shell';
   command: string;
   args: string[];
   projectPath: string;
@@ -137,6 +167,8 @@ async function createProjectSandbox(options: {
 }
 
 function buildMacSandboxProfile(options: {
+  runtime: 'node' | 'python' | 'shell';
+  command: string;
   projectPath: string;
   installPath: string;
   networkEnabled: boolean;
@@ -155,19 +187,100 @@ function buildMacSandboxProfile(options: {
     `(allow file-read* (subpath ${sandboxString(options.installPath)}))`,
     `(allow file-write* (subpath ${sandboxString(options.projectPath)}))`,
     `(allow file-write* (literal ${sandboxString(options.projectPath)}))`,
-    '(allow file-read* (subpath "/bin"))',
-    '(allow file-read* (subpath "/usr"))',
-    '(allow file-read* (subpath "/System"))',
-    '(allow file-read* (subpath "/Library"))',
-    '(allow file-read* (subpath "/private/etc"))',
-    '(allow file-read* (subpath "/etc"))',
     '(allow file-read* (subpath "/dev"))',
     '(allow file-write* (subpath "/dev"))',
+    ...runtimeReadRules(options.runtime, options.command),
   ].join('\n');
 }
 
 function sandboxString(value: string): string {
   return JSON.stringify(value);
+}
+
+function runtimeReadRules(runtime: 'node' | 'python' | 'shell', command: string): string[] {
+  if (runtime === 'node') {
+    return [
+      `(allow file-read* (literal ${sandboxString(command)}))`,
+      `(allow file-read* (subpath ${sandboxString(dirname(dirname(command)))}))`,
+      '(allow file-read* (subpath "/usr/local/Cellar"))',
+      '(allow file-read* (subpath "/usr/local/opt"))',
+      '(allow file-read* (subpath "/usr/local/etc/openssl@3"))',
+    ];
+  }
+  if (runtime === 'python') {
+    return [
+      '(allow file-read* (literal "/usr/bin/python3"))',
+      '(allow file-read* (subpath "/Library/Developer/CommandLineTools"))',
+      '(allow file-map-executable (subpath "/System"))',
+      '(allow file-map-executable (subpath "/usr"))',
+    ];
+  }
+  return [];
+}
+
+function pythonSandboxBootstrap(projectPath: string, installPath: string): string {
+  const projectJson = JSON.stringify(projectPath);
+  const installJson = JSON.stringify(installPath);
+  return `
+import os
+import runpy
+import sys
+
+allowed_roots = [os.path.realpath(${projectJson}), os.path.realpath(${installJson})]
+runtime_roots = [
+    os.path.realpath("/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework"),
+    os.path.realpath("/Library/Developer/CommandLineTools/usr/lib"),
+]
+blocked_events = {
+    "ctypes.dlopen",
+    "os.fork",
+    "os.forkpty",
+    "os.posix_spawn",
+    "os.posix_spawnp",
+    "os.system",
+    "subprocess.Popen",
+}
+
+def is_allowed_path(value):
+    if not isinstance(value, (str, bytes, os.PathLike)):
+        return True
+    try:
+        candidate = os.path.realpath(os.fspath(value))
+    except Exception:
+        return True
+    return any(candidate == root or candidate.startswith(root + os.sep) for root in allowed_roots)
+
+def is_runtime_import_path(value):
+    if not isinstance(value, (str, bytes, os.PathLike)):
+        return False
+    try:
+        candidate = os.path.realpath(os.fspath(value))
+    except Exception:
+        return False
+    return any(candidate == root or candidate.startswith(root + os.sep) for root in runtime_roots)
+
+def is_import_loader_access():
+    frame = sys._getframe()
+    while frame is not None:
+        filename = frame.f_code.co_filename
+        if filename.startswith("<frozen importlib") or "/importlib/" in filename:
+            return True
+        frame = frame.f_back
+    return False
+
+def audit_hook(event, args):
+    if event in blocked_events:
+        raise PermissionError(f"skill sandbox denied event: {event}")
+    if event == "open" and args and not is_allowed_path(args[0]) and not (is_runtime_import_path(args[0]) and is_import_loader_access()):
+        raise PermissionError(f"skill sandbox denied path: {args[0]}")
+    if event.startswith("os.") and args and isinstance(args[0], (str, bytes, os.PathLike)) and not is_allowed_path(args[0]) and not (is_runtime_import_path(args[0]) and is_import_loader_access()):
+        raise PermissionError(f"skill sandbox denied path: {args[0]}")
+
+sys.addaudithook(audit_hook)
+entrypoint = sys.argv[1]
+sys.argv = [entrypoint] + sys.argv[2:]
+runpy.run_path(entrypoint, run_name="__main__")
+`;
 }
 
 function runProcess(command: string, args: string[], options: {

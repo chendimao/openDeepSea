@@ -28,6 +28,7 @@ interface CreateSkillRunInput {
 }
 
 interface UpdateSkillRunInput {
+  allowed_paths?: string[];
   status?: SkillRunStatus;
   exit_code?: number | null;
   stdout?: string | null;
@@ -117,6 +118,7 @@ export const skillRunRepo = {
     const updated: SkillRun = {
       ...existing,
       ...(patch.status !== undefined ? { status: patch.status } : {}),
+      ...(patch.allowed_paths !== undefined ? { allowed_paths: patch.allowed_paths } : {}),
       ...(patch.exit_code !== undefined ? { exit_code: patch.exit_code } : {}),
       ...(patch.stdout !== undefined ? { stdout: patch.stdout } : {}),
       ...(patch.stderr !== undefined ? { stderr: patch.stderr } : {}),
@@ -126,9 +128,10 @@ export const skillRunRepo = {
     };
     db.prepare(
       `UPDATE skill_runs
-       SET status = ?, exit_code = ?, stdout = ?, stderr = ?, result_json = ?, error = ?, updated_at = ?
+       SET allowed_paths_json = ?, status = ?, exit_code = ?, stdout = ?, stderr = ?, result_json = ?, error = ?, updated_at = ?
        WHERE id = ?`,
     ).run(
+      stringifyJson(updated.allowed_paths),
       updated.status,
       updated.exit_code,
       updated.stdout,
