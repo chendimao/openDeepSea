@@ -615,6 +615,45 @@ if (!projectColumnNames.has('fallback_agent_id')) {
   db.exec('ALTER TABLE projects ADD COLUMN fallback_agent_id TEXT');
 }
 
+const skillColumns = db.prepare('PRAGMA table_info(skills)').all() as { name: string }[];
+const skillColumnNames = new Set(skillColumns.map((column) => column.name));
+if (!skillColumnNames.has('package_version')) {
+  db.exec('ALTER TABLE skills ADD COLUMN package_version TEXT');
+}
+if (!skillColumnNames.has('package_revision')) {
+  db.exec('ALTER TABLE skills ADD COLUMN package_revision TEXT');
+}
+if (!skillColumnNames.has('runtime_type')) {
+  db.exec('ALTER TABLE skills ADD COLUMN runtime_type TEXT');
+}
+if (!skillColumnNames.has('entrypoint')) {
+  db.exec('ALTER TABLE skills ADD COLUMN entrypoint TEXT');
+}
+if (!skillColumnNames.has('permissions_json')) {
+  db.exec('ALTER TABLE skills ADD COLUMN permissions_json TEXT');
+}
+if (!skillColumnNames.has('install_source_label')) {
+  db.exec('ALTER TABLE skills ADD COLUMN install_source_label TEXT');
+}
+if (!skillColumnNames.has('update_check_mode')) {
+  db.exec("ALTER TABLE skills ADD COLUMN update_check_mode TEXT NOT NULL DEFAULT 'startup'");
+}
+if (!skillColumnNames.has('update_apply_mode')) {
+  db.exec("ALTER TABLE skills ADD COLUMN update_apply_mode TEXT NOT NULL DEFAULT 'prompt'");
+}
+if (!skillColumnNames.has('last_update_checked_at')) {
+  db.exec('ALTER TABLE skills ADD COLUMN last_update_checked_at INTEGER');
+}
+if (!skillColumnNames.has('available_version')) {
+  db.exec('ALTER TABLE skills ADD COLUMN available_version TEXT');
+}
+if (!skillColumnNames.has('available_revision')) {
+  db.exec('ALTER TABLE skills ADD COLUMN available_revision TEXT');
+}
+
+db.exec('CREATE INDEX IF NOT EXISTS idx_skill_runs_skill ON skill_runs(skill_id, created_at)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_skill_runs_project ON skill_runs(project_id, created_at)');
+
 const roomAgentColumns = db.prepare('PRAGMA table_info(room_agents)').all() as { name: string }[];
 const roomAgentColumnNames = new Set(roomAgentColumns.map((column) => column.name));
 if (!roomAgentColumnNames.has('workflow_role')) {

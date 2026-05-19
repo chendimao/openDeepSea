@@ -57,6 +57,28 @@ test('skillRepo creates, reads, updates, lists, and deletes skills with JSON fie
   assert.equal(skillRepo.deleteSkill('skill-tdd'), false);
 });
 
+
+test('skills table includes executable metadata columns for existing database migration', () => {
+  const columns = db.prepare('PRAGMA table_info(skills)').all() as Array<{ name: string }>;
+  const names = new Set(columns.map((column) => column.name));
+
+  for (const expected of [
+    'package_version',
+    'package_revision',
+    'runtime_type',
+    'entrypoint',
+    'permissions_json',
+    'install_source_label',
+    'update_check_mode',
+    'update_apply_mode',
+    'last_update_checked_at',
+    'available_version',
+    'available_revision',
+  ]) {
+    assert.equal(names.has(expected), true, expected);
+  }
+});
+
 test('skillRepo persists executable skill metadata and update policy fields', () => {
   resetSkills();
 

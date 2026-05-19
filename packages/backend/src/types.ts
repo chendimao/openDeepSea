@@ -15,9 +15,16 @@ export type {
   Skill,
   SkillBinding,
   SkillBindingScope,
+  SkillExecutableRuntime,
+  SkillPermissions,
+  SkillRun,
+  SkillRunInvoker,
+  SkillRunStatus,
   SkillRuntimeScope,
   SkillSourceType,
   SkillTriggerMode,
+  SkillUpdateApplyMode,
+  SkillUpdateCheckMode,
 } from './skills/types.js';
 
 export interface Room {
