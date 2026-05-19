@@ -10,7 +10,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-gl
 
 const { globalChatRepo } = await import('./repos/global-chat.js');
 const { memoryRepo } = await import('./repos/memory.js');
-const { sendGlobalChatMessage } = await import('./global-chat.js');
+const { buildGlobalChatMessages, sendGlobalChatMessage } = await import('./global-chat.js');
 const { router, setGlobalChatRouteDeps } = await import('./routes.js');
 
 const app = express();
@@ -68,6 +68,72 @@ test('global memories do not require a project and are returned for global chat 
   const context = memoryRepo.listForGlobalChatContext({ prompt: '检索偏好', limit: 10 });
   assert.equal(memory.project_id, null);
   assert.ok(context.some((entry) => entry.id === memory.id));
+});
+
+test('global chat message listing with a limit returns the most recent messages in chronological order', () => {
+  const session = globalChatRepo.createSession({ title: '长会话' });
+  for (let index = 1; index <= 25; index += 1) {
+    globalChatRepo.createMessage({
+      session_id: session.id,
+      role: index % 2 === 0 ? 'assistant' : 'user',
+      content: `message-${index}`,
+      status: 'completed',
+    });
+  }
+
+  assert.deepEqual(
+    globalChatRepo.listMessages(session.id, { limit: 5 }).map((message) => message.content),
+    ['message-21', 'message-22', 'message-23', 'message-24', 'message-25'],
+  );
+});
+
+test('global chat prompt bounds memory and history content length', () => {
+  const longMemory = 'M'.repeat(6000);
+  const longHistory = 'H'.repeat(6000);
+  const messages = buildGlobalChatMessages({
+    userContent: '需要总结上下文',
+    memories: [{
+      id: 'memory-long',
+      project_id: null,
+      room_id: null,
+      room_agent_id: null,
+      task_id: null,
+      scope: 'global',
+      memory_type: 'fact',
+      title: '长记忆',
+      content: longMemory,
+      source_type: 'manual',
+      source_id: null,
+      pinned: 0,
+      archived: 0,
+      created_at: 1,
+      updated_at: 1,
+    }],
+    history: [{
+      id: 'message-long',
+      session_id: 'session-long',
+      role: 'assistant',
+      content: longHistory,
+      status: 'completed',
+      metadata: {},
+      created_at: 1,
+    }],
+    settingsSummary: {
+      model: 'gpt-4.1',
+      baseURL: 'https://api.example/v1',
+      apiKeySet: false,
+      apiKeyPreview: null,
+    },
+  });
+
+  const system = String(messages[0]?.content ?? '');
+  const human = String(messages[1]?.content ?? '');
+  assert.ok(system.length < 5000);
+  assert.ok(human.length < 5000);
+  assert.doesNotMatch(system, new RegExp(`M{${longMemory.length}}`));
+  assert.doesNotMatch(human, new RegExp(`H{${longHistory.length}}`));
+  assert.match(system, /截断/);
+  assert.match(human, /截断/);
 });
 
 test('global chat sends messages with memory and redacted config context', async () => {

@@ -101,10 +101,13 @@ export const globalChatRepo = {
   listMessages(sessionId: string, input: { limit?: number } = {}): GlobalChatMessage[] {
     const limit = Math.max(1, Math.min(input.limit ?? 200, 500));
     return (db.prepare(
-      `SELECT * FROM global_chat_messages
-       WHERE session_id = ?
-       ORDER BY created_at ASC
-       LIMIT ?`,
+      `SELECT * FROM (
+         SELECT rowid AS sort_rowid, * FROM global_chat_messages
+         WHERE session_id = ?
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT ?
+       )
+       ORDER BY created_at ASC, sort_rowid ASC`,
     ).all(sessionId, limit) as GlobalChatMessageRow[]).map(normalizeMessage);
   },
 };

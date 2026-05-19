@@ -30,6 +30,11 @@ export interface SendGlobalChatMessageResult {
   assistantMessage: GlobalChatMessage;
 }
 
+const MEMORY_ITEM_CHAR_LIMIT = 900;
+const MEMORY_TOTAL_CHAR_LIMIT = 3600;
+const HISTORY_ITEM_CHAR_LIMIT = 700;
+const HISTORY_TOTAL_CHAR_LIMIT = 3600;
+
 export async function sendGlobalChatMessage(input: SendGlobalChatMessageInput): Promise<SendGlobalChatMessageResult> {
   const content = input.content.trim();
   if (!content) throw new Error('content is required');
@@ -93,13 +98,19 @@ export function buildGlobalChatMessages(input: {
   settingsSummary: SafeGlobalChatSettingsSummary;
 }): Array<SystemMessage | HumanMessage> {
   const memoryContext = input.memories.length > 0
-    ? input.memories.map((memory) =>
-      `- [${memory.scope}] ${memory.title}: ${memory.content}`,
-    ).join('\n')
+    ? joinBounded(
+      input.memories.map((memory) =>
+        `- [${memory.scope}] ${truncateText(memory.title, 120)}: ${truncateText(memory.content, MEMORY_ITEM_CHAR_LIMIT)}`,
+      ),
+      MEMORY_TOTAL_CHAR_LIMIT,
+    )
     : '无';
-  const history = input.history.slice(-12).map((message) =>
-    `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.content}`,
-  ).join('\n');
+  const history = joinBounded(
+    input.history.slice(-12).map((message) =>
+      `${message.role === 'user' ? 'User' : 'Assistant'}: ${truncateText(message.content, HISTORY_ITEM_CHAR_LIMIT)}`,
+    ),
+    HISTORY_TOTAL_CHAR_LIMIT,
+  );
   const settings = [
     `模型：${input.settingsSummary.model ?? '未配置'}`,
     `Base URL：${input.settingsSummary.baseURL ?? '未配置'}`,
@@ -125,6 +136,29 @@ export function buildGlobalChatMessages(input: {
       input.userContent,
     ].join('\n')),
   ];
+}
+
+function joinBounded(parts: string[], limit: number): string {
+  const output: string[] = [];
+  let used = 0;
+  for (const part of parts) {
+    const separatorLength = output.length > 0 ? 1 : 0;
+    const remaining = limit - used - separatorLength;
+    if (remaining <= 0) {
+      output.push('[已截断]');
+      break;
+    }
+    const next = truncateText(part, remaining);
+    output.push(next);
+    used += next.length + separatorLength;
+    if (next.length < part.length) break;
+  }
+  return output.join('\n');
+}
+
+function truncateText(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 8))}...[已截断]`;
 }
 
 export function buildSafeSettingsSummary(): SafeGlobalChatSettingsSummary {

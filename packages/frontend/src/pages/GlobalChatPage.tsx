@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Database, MessageCircle, Plus, Save, Send, Settings2, Trash2, User } from 'lucide-react';
+import { Bot, Database, MessageCircle, MessagesSquare, Plus, Save, Send, Settings2, Trash2, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -14,6 +14,7 @@ export function GlobalChatPage(): JSX.Element {
   const queryClient = useQueryClient();
   const [activeSessionId, setActiveSessionId] = useState('');
   const [draft, setDraft] = useState('');
+  const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { data: sessions = [] } = useQuery({
@@ -56,6 +57,7 @@ export function GlobalChatPage(): JSX.Element {
       );
       queryClient.removeQueries({ queryKey: ['global-chat-messages', id] });
       if (activeSessionId === id) setActiveSessionId('');
+      setMobileSessionsOpen(false);
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -75,6 +77,7 @@ export function GlobalChatPage(): JSX.Element {
       queryClient.setQueryData<GlobalChatMessage[]>(['global-chat-messages', nextSessionId], (prev) =>
         upsertGlobalChatMessages(prev, [result.userMessage, result.assistantMessage]),
       );
+      setActiveSessionId(nextSessionId);
       setDraft('');
     },
     onError: (err) => toast.error((err as Error).message),
@@ -149,20 +152,73 @@ export function GlobalChatPage(): JSX.Element {
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] px-5 py-4">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="h-5 w-5 text-[var(--color-primary)]" strokeWidth={1.8} />
-              <h1 className="truncate font-display text-[22px] font-semibold tracking-tight">
-                {activeSession?.title ?? t('globalChat.title')}
-              </h1>
+        <header className="shrink-0 border-b border-[var(--color-border)] px-5 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <MessageCircle className="h-5 w-5 text-[var(--color-primary)]" strokeWidth={1.8} />
+                <h1 className="truncate font-display text-[22px] font-semibold tracking-tight">
+                  {activeSession?.title ?? t('globalChat.title')}
+                </h1>
+              </div>
+              <p className="mt-1 text-[12.5px] text-[var(--color-fg-muted)]">{t('globalChat.description')}</p>
             </div>
-            <p className="mt-1 text-[12.5px] text-[var(--color-fg-muted)]">{t('globalChat.description')}</p>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="px-2 sm:px-3 lg:hidden"
+                onClick={() => setMobileSessionsOpen((open) => !open)}
+              >
+                <MessagesSquare className="h-4 w-4" />
+                <span className="hidden sm:inline">{t('globalChat.sessions')}</span>
+              </Button>
+              <Button type="button" variant="secondary" className="px-2 sm:px-3" onClick={() => createSession.mutate()}>
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">{t('globalChat.newSession')}</span>
+              </Button>
+            </div>
           </div>
-          <Button type="button" variant="secondary" onClick={() => createSession.mutate()}>
-            <Plus className="h-4 w-4" />
-            {t('globalChat.newSession')}
-          </Button>
+          {mobileSessionsOpen && (
+            <div className="mt-3 max-h-[34vh] overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 lg:hidden">
+              {sessions.map((session) => (
+                <div
+                  key={session.id}
+                  className={cn(
+                    'flex items-center gap-2 rounded-md px-2 py-2',
+                    session.id === sessionId ? 'bg-[var(--color-surface-raised)]' : 'hover:bg-[var(--color-surface-raised)]',
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSessionId(session.id);
+                      setMobileSessionsOpen(false);
+                    }}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className="block truncate text-[12.5px] font-medium">{session.title}</span>
+                    <span className="mt-0.5 block font-mono text-[10px] text-[var(--color-muted)]">
+                      {formatRelativeTime(session.updated_at)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteSession.mutate(session.id)}
+                    className="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
+                    aria-label="delete"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {sessions.length === 0 && (
+                <div className="px-3 py-5 text-center text-[12px] text-[var(--color-fg-muted)]">
+                  {t('globalChat.noSessions')}
+                </div>
+              )}
+            </div>
+          )}
         </header>
 
         <section className="min-h-0 flex-1 overflow-auto px-5 py-5">
