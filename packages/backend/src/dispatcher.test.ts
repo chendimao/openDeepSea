@@ -28,6 +28,7 @@ const {
   buildAgentIdentityPrompt,
   buildPromptWithMessageAttachments,
   dispatchUserMessage,
+  inferTaskReadiness,
   respondAsAgent,
   shouldRequestCollaborationDecision,
 } = await import('./dispatcher.js');
@@ -675,6 +676,20 @@ test('planner completed reply marks analysis-only readiness without formal workf
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
+});
+
+test('inferTaskReadiness marks analysis-only readiness without implementation scope headings', () => {
+  const readiness = inferTaskReadiness([
+    '本轮只做产品规则设计，不进入实现。',
+    '问题分析：当前归档规则需要先明确分类口径。',
+    '修复方案：输出归档规则、边界条件、风险和后续实现输入。',
+    '验收标准：规则覆盖正常、冲突和异常路径。',
+  ].join('\n'), 'source-message-1');
+
+  assert.equal(readiness?.ready, true);
+  assert.equal(readiness?.execution_intent, 'analysis_only');
+  assert.equal(readiness?.recommended_mode, 'chat_collaboration');
+  assert.equal(readiness?.source_message_id, 'source-message-1');
 });
 
 test('message route handles /task command after persisting user message without ACP dispatch', async () => {

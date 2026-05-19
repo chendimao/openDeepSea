@@ -1,5 +1,7 @@
 import type { Room, RoomAgent, Task, TaskExecutionIntent, WorkflowStage } from '../types.js';
 
+export type WorkflowPromptKind = 'development' | 'analysis_document';
+
 interface PromptContext {
   projectName: string;
   projectPath: string;
@@ -9,6 +11,7 @@ interface PromptContext {
   workflowContext?: string;
   childTasks?: Task[];
   memoryContext?: string;
+  workflowKind?: WorkflowPromptKind;
 }
 
 export function buildStagePrompt(stage: WorkflowStage, context: PromptContext): string {
@@ -179,6 +182,7 @@ function buildAcceptancePrompt(context: PromptContext): string {
 }
 
 function isAnalysisDocumentContext(context: PromptContext): boolean {
+  if (context.workflowKind === 'analysis_document') return true;
   const intent = extractTaskExecutionIntent(context.task.description);
   return Boolean(intent && intent !== 'implementation' && intent !== 'debug_fix');
 }

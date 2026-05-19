@@ -407,6 +407,39 @@ test('startGraphWorkflow falls back to analysis document workflow for analysis-o
   assert.equal(snapshot.supervisorDecision?.fallbackReason, 'low_confidence');
 });
 
+test('startGraphWorkflow overrides high-confidence development workflow selection for analysis-only tasks', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-analysis-override-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Analysis Intent Override', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Analysis Intent Override Room' });
+  const defaultDefinition = workflowDefinitionRepo.ensureBuiltInDefinitions();
+  const analysisDefinition = workflowDefinitionRepo.getBuiltInByKey('analysis-document');
+  assert.ok(analysisDefinition);
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '只读排查方案',
+    description: '只做方案设计，不进入实现。\n\n任务意图：analysis_only',
+  });
+
+  const run = await startGraphWorkflow(task.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: defaultDefinition.id,
+      confidence: 0.97,
+      reason: 'Incorrectly selected development workflow.',
+      assignments: [],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => createApprovalPlan(task.title),
+  });
+  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: { fallbackReason?: string } };
+
+  assert.equal(run.workflow_definition_id, analysisDefinition.id);
+  assert.match(run.workflow_definition_snapshot ?? '', /方案文档闭环/);
+  assert.equal(snapshot.supervisorDecision?.fallbackReason, 'intent_mismatch');
+});
+
 test('supervisor assignment hint can assign implementation child task to executable agent', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-supervisor-assignment-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

@@ -1039,6 +1039,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         workflowContext: context.workflowContext,
         childTasks: tools.listChildTasks(context.task.id),
         memoryContext: context.memories,
+        workflowKind: tools.getWorkflowPromptKind(),
       });
       const step = tools.createGraphStep({
         workflow_run_id: context.run.id,

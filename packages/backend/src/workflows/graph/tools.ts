@@ -28,6 +28,7 @@ import type {
   SettingsResolution,
   SkillRuntimeScope,
 } from '../../types.js';
+import type { WorkflowPromptKind } from '../prompts.js';
 import { wsHub } from '../../ws-hub.js';
 import { generateLangChainPlan, type LangChainPlannerInput, type LangChainPlannerOptions } from '../langchain-planner.js';
 import type { ParsedPlan } from '../plan-parser.js';
@@ -122,6 +123,7 @@ export interface GraphTools {
   getRun: typeof workflowRepo.getRun;
   getStep: typeof workflowRepo.getStep;
   broadcastAgentRunUpdated: (roomId: string, run: AgentRun) => void;
+  getWorkflowPromptKind: () => WorkflowPromptKind;
 }
 
 export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
@@ -241,6 +243,9 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     getStep: workflowRepo.getStep.bind(workflowRepo),
     broadcastAgentRunUpdated(roomId: string, run: AgentRun) {
       wsHub.broadcast(roomId, { type: 'agent_run:updated', roomId, run });
+    },
+    getWorkflowPromptKind() {
+      return 'development';
     },
   };
 }

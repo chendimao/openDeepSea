@@ -44,6 +44,7 @@ type WorkflowDefinitionSnapshot = {
   id: string;
   name: string;
   description: string | null;
+  builtinKey: string | null;
   version: number;
   definition: WorkflowDefinitionGraph;
   supervisorDecision?: WorkflowSupervisorAudit;
@@ -60,6 +61,7 @@ type WorkflowSelectionFallbackReason =
   | 'workflow_not_visible'
   | 'unsupported_mode'
   | 'missing_workflow_definition'
+  | 'intent_mismatch'
   | 'supervisor_failed';
 
 type WorkflowDefinitionSelection = {
@@ -196,6 +198,13 @@ async function resolveWorkflowDefinitionForTask(
     }, { skillContext });
     const selected = selectWorkflowDefinitionFromSupervisorDecision(room.id, visibleDefinitions, decision);
     if (selected.definition) {
+      const intentMismatchFallback = selectIntentMismatchFallback(task.description, selected.definition);
+      if (intentMismatchFallback) {
+        return {
+          ...intentMismatchFallback,
+          supervisorDecision: createSupervisorAudit(decision, intentMismatchFallback.definition.id, 'intent_mismatch'),
+        };
+      }
       return {
         definition: selected.definition,
         supervisorDecision: createSupervisorAudit(decision, selected.definition.id, null),
@@ -211,6 +220,23 @@ async function resolveWorkflowDefinitionForTask(
       supervisorDecision: createSupervisorFailureAudit(defaultSelection.definition.id, err),
     };
   }
+}
+
+function selectIntentMismatchFallback(
+  taskDescription: string | null,
+  selectedDefinition: WorkflowDefinition,
+): WorkflowDefinitionSelection | null {
+  const executionIntent = extractTaskExecutionIntent(taskDescription);
+  if (!executionIntent || isImplementationIntent(executionIntent)) return null;
+  if (!isDevelopmentWorkflowDefinition(selectedDefinition)) return null;
+  const analysisDefinition = workflowDefinitionRepo.getBuiltInByKey('analysis-document');
+  return analysisDefinition ? { definition: analysisDefinition } : null;
+}
+
+function isDevelopmentWorkflowDefinition(definition: WorkflowDefinition): boolean {
+  return definition.definition.nodes.some((node) =>
+    node.type === 'execute' || node.type === 'review' || node.type === 'verify',
+  );
 }
 
 function getDefaultWorkflowDefinitionSelection(roomId: string): WorkflowDefinitionSelection {
@@ -271,6 +297,7 @@ function createWorkflowDefinitionSnapshot(selection: WorkflowDefinitionSelection
     id: selection.definition.id,
     name: selection.definition.name,
     description: selection.definition.description,
+    builtinKey: selection.definition.builtin_key,
     version: selection.definition.version,
     definition: selection.definition.definition,
   };
@@ -725,15 +752,29 @@ function requireGraphStateOrBlock(run: WorkflowRun): AgentWorkflowState {
   return state.state;
 }
 
-function parseWorkflowDefinitionSnapshot(run: WorkflowRun): WorkflowDefinitionGraph | null {
+function parseWorkflowDefinitionSnapshot(run: WorkflowRun): WorkflowDefinitionSnapshot | null {
   if (!run.workflow_definition_snapshot) return null;
   try {
     const snapshot = JSON.parse(run.workflow_definition_snapshot) as {
+      id?: string;
+      name?: string;
+      description?: string | null;
+      builtinKey?: string | null;
+      builtin_key?: string | null;
+      version?: number;
       definition?: WorkflowDefinitionGraph;
     };
-    return snapshot.definition
-      ? workflowDefinitionRepo.validateDefinition(snapshot.definition)
-      : null;
+    if (!snapshot.definition) return null;
+    return {
+      id: typeof snapshot.id === 'string' ? snapshot.id : '',
+      name: typeof snapshot.name === 'string' ? snapshot.name : '',
+      description: typeof snapshot.description === 'string' ? snapshot.description : null,
+      builtinKey: typeof snapshot.builtinKey === 'string'
+        ? snapshot.builtinKey
+        : (typeof snapshot.builtin_key === 'string' ? snapshot.builtin_key : null),
+      version: typeof snapshot.version === 'number' ? snapshot.version : 0,
+      definition: workflowDefinitionRepo.validateDefinition(snapshot.definition),
+    };
   } catch (err) {
     throw new Error(`workflow definition snapshot is invalid: ${(err as Error).message}`);
   }
@@ -763,11 +804,14 @@ function retryCurrentNode(state: AgentWorkflowState): AgentWorkflowState['curren
 async function resumeGraphWorkflowFromState(
   state: AgentWorkflowState,
   deps: GraphRuntimeDeps,
-  definition: WorkflowDefinitionGraph | null = null,
+  snapshot: WorkflowDefinitionSnapshot | null = null,
 ): Promise<AgentWorkflowState> {
   const tools = createGraphTools(deps);
-  const nodes = createGraphNodes(tools);
-  const routePlan = compileRoutePlan(definition ?? workflowDefinitionRepo.ensureBuiltInDefinitions().definition);
+  const nodes = createGraphNodes({
+    ...tools,
+    getWorkflowPromptKind: () => inferWorkflowPromptKind(snapshot),
+  });
+  const routePlan = compileRoutePlan(snapshot?.definition ?? workflowDefinitionRepo.ensureBuiltInDefinitions().definition);
   let nextState = state;
   let nodeToRun = nextNodeAfter(null, nextState, routePlan);
 
@@ -801,6 +845,16 @@ async function resumeGraphWorkflowFromState(
   }
 
   throw new Error('graph retry exceeded resume limit');
+}
+
+function inferWorkflowPromptKind(snapshot: WorkflowDefinitionSnapshot | null): 'analysis_document' | 'development' {
+  if (snapshot?.builtinKey === 'analysis-document') return 'analysis_document';
+  if (snapshot && !snapshot.definition.nodes.some((node) =>
+    node.type === 'execute' || node.type === 'review' || node.type === 'verify',
+  )) {
+    return 'analysis_document';
+  }
+  return 'development';
 }
 
 function isTerminalResumeState(state: AgentWorkflowState): boolean {

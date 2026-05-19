@@ -731,7 +731,7 @@ function annotateTaskReadiness(input: {
   messageRepo.mergeMetadata(input.message.id, { task_readiness: readiness });
 }
 
-function inferTaskReadiness(content: string, sourceMessageId?: string | null): Record<string, unknown> | null {
+export function inferTaskReadiness(content: string, sourceMessageId?: string | null): Record<string, unknown> | null {
   const text = content.trim();
   if (!text) return null;
   const normalized = text.toLocaleLowerCase();
@@ -761,7 +761,9 @@ function inferTaskReadiness(content: string, sourceMessageId?: string | null): R
     /缺少/,
     /待确认/,
   ].some((pattern) => pattern.test(text));
-  if (!executionIntent || !hasImplementationScope || !hasAcceptance || asksForMoreInput) return null;
+  if (!executionIntent || !hasAcceptance || asksForMoreInput) return null;
+  if (isImplementationIntent(executionIntent) && !hasImplementationScope) return null;
+  if (!isImplementationIntent(executionIntent) && !hasAnalysisReadinessSignal(text)) return null;
 
   return {
     ready: true,
@@ -804,6 +806,20 @@ function inferTaskExecutionIntent(text: string): InferredTaskExecutionIntent | n
 
 function isImplementationIntent(intent: InferredTaskExecutionIntent): boolean {
   return intent === 'implementation' || intent === 'debug_fix';
+}
+
+function hasAnalysisReadinessSignal(text: string): boolean {
+  return matchesAny(text, [
+    /问题分析/,
+    /原因分析/,
+    /修复方案/,
+    /方案设计/,
+    /产品规则/,
+    /边界/,
+    /风险/,
+    /后续实现输入/,
+    /交付物/,
+  ]);
 }
 
 function matchesAny(text: string, patterns: RegExp[]): boolean {
