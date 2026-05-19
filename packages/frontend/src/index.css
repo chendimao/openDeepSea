@@ -2082,6 +2082,10 @@
     width: min(48vw, 560px);
   }
 
+  .files-filters.is-compact {
+    width: min(28vw, 230px);
+  }
+
   .file-view-toggle {
     display: inline-flex;
     flex: 0 0 auto;
@@ -2146,13 +2150,31 @@
 
   .files-empty,
   .file-picker-empty {
-    display: grid;
+    display: flex;
     min-height: 180px;
-    place-items: center;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
     border: 1px dashed var(--color-border-strong);
     border-radius: 8px;
     color: var(--color-fg-muted);
     font-size: 13px;
+    padding: 18px;
+    text-align: center;
+  }
+
+  .files-empty-title {
+    color: var(--color-fg);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .files-empty-description {
+    max-width: 520px;
+    color: var(--color-fg-muted);
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   .project-file-view {

@@ -21,6 +21,7 @@ import type {
   Message,
   MessageRoutingMode,
   ProjectFile,
+  ResourceDetail,
   Project,
   Room,
   RoomAgent,
@@ -363,6 +364,12 @@ export const api = {
     if (filters.sourceType) params.set('sourceType', filters.sourceType);
     const query = params.toString();
     return request<ProjectFile[]>(`/projects/${projectId}/files${query ? `?${query}` : ''}`);
+  },
+  getResourceDetail: (assetId: string, filters: { projectId?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filters.projectId) params.set('projectId', filters.projectId);
+    const query = params.toString();
+    return request<ResourceDetail>(`/resource-assets/${encodeURIComponent(assetId)}${query ? `?${query}` : ''}`);
   },
   uploadProjectFiles: (projectId: string, files: File[]) => {
     const form = new FormData();

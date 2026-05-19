@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Crosshair, Download, Eye, Grid2X2, List, Search, Trash2 } from 'lucide-react';
+import { Crosshair, Download, Eye, Filter, Grid2X2, List, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
+import { getProjectFileSourceSummary, projectFileMatchesKeyword } from '../lib/projectFileDisplay';
 import type { ProjectFile } from '../lib/types';
 import { ProjectFileView, type ProjectFileViewMode } from './ProjectFileView';
 import { ProjectFilePreviewDialog } from './ProjectFilePreviewDialog';
@@ -20,33 +21,30 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
   const queryClient = useQueryClient();
   const { t, locale, formatRelativeTime } = useI18n();
   const [query, setQuery] = useState('');
+  const [selectedSourceType, setSelectedSourceType] = useState<ProjectFile['source_type'] | ''>('');
   const [preview, setPreview] = useState<ProjectFile | null>(null);
   const [viewMode, setViewMode] = useState<ProjectFileViewMode>('list');
   const viewModeLabel = locale === 'zh' ? '展示模式' : 'View mode';
   const listViewLabel = locale === 'zh' ? '列表模式' : 'List view';
   const cardViewLabel = locale === 'zh' ? 'Card 模式' : 'Card view';
-  const sourceTypeLabel = (file: ProjectFile) =>
-    file.source_type === 'agent_document'
-      ? t('files.source.agentDocument')
-      : t('files.source.uploadedFile');
-
-  const { data: files = [], isLoading } = useQuery<ProjectFile[]>({
-    queryKey: ['files', projectId, roomId],
-    queryFn: () => api.listFiles({ projectId, roomId }),
+  const {
+    data: files = [],
+    error: filesError,
+    isError: filesIsError,
+    isLoading,
+    refetch: refetchFiles,
+  } = useQuery<ProjectFile[]>({
+    queryKey: ['files', projectId, roomId, selectedSourceType],
+    queryFn: () => api.listFiles({
+      projectId,
+      roomId,
+      sourceType: selectedSourceType || undefined,
+    }),
     enabled: !!projectId && !!roomId,
   });
 
   const visibleFiles = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
-    if (!needle) return files;
-    return files.filter((file) =>
-      file.original_name.toLocaleLowerCase().includes(needle) ||
-      file.mime_type.toLocaleLowerCase().includes(needle) ||
-      file.source_type.toLocaleLowerCase().includes(needle) ||
-      sourceTypeLabel(file).toLocaleLowerCase().includes(needle) ||
-      (file.source_agent_id ?? '').toLocaleLowerCase().includes(needle) ||
-      (file.last_referenced_room_name ?? '').toLocaleLowerCase().includes(needle),
-    );
+    return files.filter((file) => projectFileMatchesKeyword(file, query, t));
   }, [files, query, t]);
 
   const totalSize = useMemo(
@@ -82,6 +80,19 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
           <div className="files-summary" aria-label={t('files.summary')}>
             <span>{t('files.count', { count: files.length })}</span>
             <span>{t('files.totalSize', { size: formatFileSize(totalSize) })}</span>
+          </div>
+          <div className="files-filters is-compact" aria-label={t('files.filters')}>
+            <Filter className="h-4 w-4 text-[var(--color-muted)]" />
+            <select
+              className="files-filter-select"
+              value={selectedSourceType}
+              aria-label={t('files.sourceFilter')}
+              onChange={(event) => setSelectedSourceType(event.target.value as ProjectFile['source_type'] | '')}
+            >
+              <option value="">{t('files.source.all')}</option>
+              <option value="uploaded_file">{t('files.source.uploadedFile')}</option>
+              <option value="agent_document">{t('files.source.agentDocument')}</option>
+            </select>
           </div>
           <div className="files-search">
             <Search className="h-4 w-4 text-[var(--color-muted)]" />
@@ -119,9 +130,19 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
 
       <section className="files-list" aria-label={t('files.title')}>
         {isLoading ? (
-          <div className="files-empty">{t('files.loading')}</div>
+          <FilesState title={t('files.loading')} />
+        ) : filesIsError ? (
+          <FilesState
+            title={t('files.loadErrorTitle')}
+            description={filesError instanceof Error ? filesError.message : t('common.error')}
+            actionLabel={t('common.retry')}
+            onAction={() => void refetchFiles()}
+          />
         ) : visibleFiles.length === 0 ? (
-          <div className="files-empty">{t('files.empty')}</div>
+          <FilesState
+            title={files.length === 0 && !query.trim() ? t('files.empty') : t('files.noResults')}
+            description={files.length === 0 && !query.trim() ? undefined : t('files.noResultsDescription')}
+          />
         ) : (
           <ProjectFileView
             files={visibleFiles}
@@ -136,8 +157,10 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
             )}
             getSecondaryMeta={(file) => (
               <>
+                <span title={getProjectFileSourceSummary(file, t)}>
+                  {getProjectFileSourceSummary(file, t)}
+                </span>
                 <span>{t('files.referenceCount', { count: file.reference_count })}</span>
-                {file.source_agent_id ? <span>{file.source_agent_id}</span> : null}
                 <span title={file.last_referenced_room_name ?? undefined}>
                   {file.last_referenced_room_name ?? t('files.neverReferenced')}
                 </span>
@@ -148,7 +171,7 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
               return [
                 {
                   key: 'preview',
-                  label: t('files.preview'),
+                  label: file.source_type === 'agent_document' ? t('files.viewMarkdown') : t('files.preview'),
                   icon: <Eye className="h-4 w-4" strokeWidth={1.8} />,
                   onClick: () => setPreview(file),
                 },
@@ -185,9 +208,34 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
 
       <ProjectFilePreviewDialog
         file={preview}
+        projectId={projectId}
         onOpenChange={(open) => !open && setPreview(null)}
         onLocateMessage={onLocateMessage}
       />
+    </div>
+  );
+}
+
+function FilesState({
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  description?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}): JSX.Element {
+  return (
+    <div className="files-empty">
+      <span className="files-empty-title">{title}</span>
+      {description ? <span className="files-empty-description">{description}</span> : null}
+      {actionLabel && onAction ? (
+        <button type="button" className="image-preview-link" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
     </div>
   );
 }

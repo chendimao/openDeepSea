@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
+import { getProjectFileSourceSummary, projectFileMatchesKeyword } from '../lib/projectFileDisplay';
 import type { ProjectFile } from '../lib/types';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -51,7 +52,13 @@ export function FilesPage(): JSX.Element {
     return rooms.some((room) => room.id === selectedRoomId) ? selectedRoomId : '';
   }, [rooms, selectedProjectId, selectedRoomId]);
   const canLoadFiles = !selectedProjectId || !selectedRoomId || roomsFetched;
-  const { data: files = [], isLoading } = useQuery({
+  const {
+    data: files = [],
+    error: filesError,
+    isError: filesIsError,
+    isLoading,
+    refetch: refetchFiles,
+  } = useQuery({
     queryKey: ['files', selectedProjectId, activeRoomId, selectedSourceType],
     queryFn: () => api.listFiles({
       projectId: selectedProjectId || undefined,
@@ -75,23 +82,10 @@ export function FilesPage(): JSX.Element {
   const viewModeLabel = locale === 'zh' ? '展示模式' : 'View mode';
   const listViewLabel = locale === 'zh' ? '列表模式' : 'List view';
   const cardViewLabel = locale === 'zh' ? 'Card 模式' : 'Card view';
-  const sourceTypeLabel = (file: ProjectFile) =>
-    file.source_type === 'agent_document'
-      ? t('files.source.agentDocument')
-      : t('files.source.uploadedFile');
-
   const visibleFiles = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
-    if (!needle) return files;
-    return files.filter((file) =>
-      file.original_name.toLocaleLowerCase().includes(needle) ||
-      file.mime_type.toLocaleLowerCase().includes(needle) ||
-      file.source_type.toLocaleLowerCase().includes(needle) ||
-      sourceTypeLabel(file).toLocaleLowerCase().includes(needle) ||
-      (file.source_agent_id ?? '').toLocaleLowerCase().includes(needle) ||
-      (projectNameById.get(file.project_id) ?? '').toLocaleLowerCase().includes(needle) ||
-      (file.last_referenced_room_name ?? '').toLocaleLowerCase().includes(needle),
-    );
+    return files.filter((file) => projectFileMatchesKeyword(file, query, t, [
+      projectNameById.get(file.project_id),
+    ]));
   }, [files, projectNameById, query, t]);
 
   const totalSize = useMemo(
@@ -267,9 +261,19 @@ export function FilesPage(): JSX.Element {
 
         <section className="files-list" aria-label={t('files.title')}>
           {isLoading ? (
-            <div className="files-empty">{t('files.loading')}</div>
+            <FilesState title={t('files.loading')} />
+          ) : filesIsError ? (
+            <FilesState
+              title={t('files.loadErrorTitle')}
+              description={filesError instanceof Error ? filesError.message : t('common.error')}
+              actionLabel={t('common.retry')}
+              onAction={() => void refetchFiles()}
+            />
           ) : visibleFiles.length === 0 ? (
-            <div className="files-empty">{t('files.empty')}</div>
+            <FilesState
+              title={files.length === 0 && !query.trim() ? t('files.empty') : t('files.noResults')}
+              description={files.length === 0 && !query.trim() ? undefined : t('files.noResultsDescription')}
+            />
           ) : (
             <ProjectFileView
               files={visibleFiles}
@@ -285,8 +289,10 @@ export function FilesPage(): JSX.Element {
               )}
               getSecondaryMeta={(file) => (
                 <>
+                  <span title={getProjectFileSourceSummary(file, t)}>
+                    {getProjectFileSourceSummary(file, t)}
+                  </span>
                   <span>{t('files.referenceCount', { count: file.reference_count })}</span>
-                  {file.source_agent_id ? <span>{file.source_agent_id}</span> : null}
                   <span title={file.last_referenced_room_name ?? undefined}>
                     {file.last_referenced_room_name ?? t('files.neverReferenced')}
                   </span>
@@ -295,7 +301,7 @@ export function FilesPage(): JSX.Element {
               getActions={(file) => [
                 {
                   key: 'preview',
-                  label: t('files.preview'),
+                  label: file.source_type === 'agent_document' ? t('files.viewMarkdown') : t('files.preview'),
                   icon: <Eye className="h-4 w-4" strokeWidth={1.8} />,
                   onClick: () => setPreview(file),
                 },
@@ -322,7 +328,35 @@ export function FilesPage(): JSX.Element {
         </section>
       </main>
 
-      <ProjectFilePreviewDialog file={preview} onOpenChange={(open) => !open && setPreview(null)} />
+      <ProjectFilePreviewDialog
+        file={preview}
+        projectId={preview?.project_id}
+        onOpenChange={(open) => !open && setPreview(null)}
+      />
+    </div>
+  );
+}
+
+function FilesState({
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  description?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}): JSX.Element {
+  return (
+    <div className="files-empty">
+      <span className="files-empty-title">{title}</span>
+      {description ? <span className="files-empty-description">{description}</span> : null}
+      {actionLabel && onAction ? (
+        <button type="button" className="image-preview-link" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
     </div>
   );
 }

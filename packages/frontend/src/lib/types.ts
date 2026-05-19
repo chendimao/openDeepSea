@@ -422,6 +422,62 @@ export interface ProjectFile {
   last_referenced_room_name: string | null;
 }
 
+export type ResourceType = 'uploaded_file' | 'agent_document';
+
+export interface ResourceSourceInfo {
+  type: 'user_upload' | 'agent';
+  label: string;
+  display_name: string | null;
+  agent_id: string | null;
+  user_id: string | null;
+  message_id: string | null;
+  room_id: string | null;
+  task_id: string | null;
+  context: {
+    id: string;
+    type: 'room' | 'task';
+    name: string | null;
+  } | null;
+}
+
+export interface ResourceCapabilities {
+  preview: boolean;
+  download: boolean;
+  markdown: boolean;
+  delete: boolean;
+}
+
+export interface ResourceDetail {
+  id: string;
+  project_id: string;
+  asset_type: ResourceType;
+  resource_type: ResourceType;
+  group_key: 'uploaded_files' | 'agent_documents';
+  title: string;
+  name: string;
+  content: string | null;
+  mime_type: string | null;
+  size: number | null;
+  url: string | null;
+  file_id: string | null;
+  source_message_id: string | null;
+  source_room_id: string | null;
+  source_agent_id: string | null;
+  source_task_id: string | null;
+  source_display_name: string | null;
+  source_label: string;
+  source_context_id: string | null;
+  source_context_name: string | null;
+  source_context_type: 'room' | 'task' | null;
+  source: ResourceSourceInfo;
+  capabilities: ResourceCapabilities;
+  preview_url: string | null;
+  download_url: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
 export interface MessageMetadata {
   attachments: MessageAttachmentMetadata[];
   reply_to?: MessageReplyMetadata;

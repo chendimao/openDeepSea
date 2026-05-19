@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useState, type ElementType, type ReactNode } from 'react';
 import { useI18n } from '../lib/i18n';
+import { getProjectFileTypeLabel } from '../lib/projectFileDisplay';
 import type { ProjectFile } from '../lib/types';
 import { cn } from '../lib/utils';
 
@@ -219,7 +220,7 @@ function ProjectFileSourceBadge({ file }: { file: ProjectFile }): JSX.Element {
 
   return (
     <span className={cn('project-file-source-badge', isAgentDocument ? 'is-agent-document' : 'is-uploaded-file')}>
-      {isAgentDocument ? t('files.source.agentDocument') : t('files.source.uploadedFile')}
+      {getProjectFileTypeLabel(file, t)}
     </span>
   );
 }
