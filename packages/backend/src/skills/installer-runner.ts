@@ -102,6 +102,26 @@ export function normalizeSkillsShManifest(raw: unknown): SkillsShManifest {
 }
 
 
+
+export function readSkillsShPackageMetadata(pkg: SkillsShPackage): SkillsShMetadata | null {
+  const metadata = pkg.files.find((file) => file.path === 'metadata.json');
+  if (!metadata) return null;
+  try {
+    const record = asRecord(JSON.parse(metadata.content) as unknown);
+    if (!record) return null;
+    return normalizeSkillsShMetadataRecord(record);
+  } catch (err) {
+    throw new Error(`invalid metadata.json: ${(err as Error).message}`);
+  }
+}
+
+function normalizeSkillsShMetadataRecord(record: Record<string, unknown>): SkillsShMetadata {
+  return {
+    version: firstString(record.version, record.package_version, record.packageVersion) ?? null,
+    revision: firstString(record.revision, record.package_revision, record.packageRevision, record.sha, record.hash) ?? null,
+  };
+}
+
 export async function readSkillsShMetadata(dir: string): Promise<SkillsShMetadata | null> {
   let raw: string;
   try {
@@ -114,10 +134,7 @@ export async function readSkillsShMetadata(dir: string): Promise<SkillsShMetadat
   try {
     const record = asRecord(JSON.parse(raw) as unknown);
     if (!record) return null;
-    return {
-      version: firstString(record.version, record.package_version, record.packageVersion) ?? null,
-      revision: firstString(record.revision, record.package_revision, record.packageRevision, record.sha, record.hash) ?? null,
-    };
+    return normalizeSkillsShMetadataRecord(record);
   } catch (err) {
     throw new Error(`invalid metadata.json: ${(err as Error).message}`);
   }

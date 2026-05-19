@@ -242,6 +242,45 @@ test('checkSkillsShUpdate records whether the remote package has a newer version
   assert.equal(typeof updated?.last_update_checked_at, 'number');
 });
 
+
+test('checkSkillsShUpdate reads package version from metadata.json when remote response has no top-level version', async () => {
+  resetSkills();
+  const localDir = mkdtempSync(join(tmpdir(), 'opendeepsea-metadata-update-skill-'));
+  await writeFile(join(localDir, 'SKILL.md'), [
+    '---',
+    'name: metadata-update-skill',
+    'runtime_scopes: [planner]',
+    '---',
+    '',
+    'Check metadata updates.',
+  ].join('\n'));
+  const skill = await importLocalSkill(localDir);
+  const skillsShSkill = skillRepo.updateSkill(skill.id, {
+    source_type: 'skills_sh',
+    source_uri: 'skills.sh/acme/skills/metadata-update',
+    install_source_label: 'acme/skills/metadata-update',
+    package_version: '1.0.0',
+    package_revision: 'rev-old',
+  });
+  assert.ok(skillsShSkill);
+
+  const client = new SkillsShClient({
+    fetch: async () => jsonResponse({
+      hash: 'snapshot-metadata-update',
+      files: [
+        { path: 'SKILL.md', contents: '# Metadata Update Skill\n' },
+        { path: 'metadata.json', contents: JSON.stringify({ version: '1.2.0', revision: 'rev-meta' }) },
+      ],
+    }),
+  });
+
+  const result = await checkSkillsShUpdate(skillsShSkill, { client });
+
+  assert.equal(result.hasUpdate, true);
+  assert.equal(result.availableVersion, '1.2.0');
+  assert.equal(result.availableRevision, 'rev-meta');
+});
+
 test('checkSkillsShUpdate ignores non-skills.sh skills', async () => {
   resetSkills();
   const localDir = mkdtempSync(join(tmpdir(), 'opendeepsea-local-no-update-skill-'));

@@ -10,6 +10,7 @@ import type { Skill } from './types.js';
 import {
   readSkillsShManifest,
   readSkillsShMetadata,
+  readSkillsShPackageMetadata,
   writeSkillsShPackage,
   type SkillsShPackage,
 } from './installer-runner.js';
@@ -140,8 +141,9 @@ export async function checkSkillsShUpdate(skill: Skill, options: InstallSkillsSh
   const client = options.client ?? new SkillsShClient();
   const remote = await client.fetchPackageMetadata(installLabel);
   const checkedAt = Date.now();
-  const availableVersion = remote.version;
-  const availableRevision = remote.revision;
+  const metadata = readSkillsShPackageMetadata(remote);
+  const availableVersion = metadata?.version ?? remote.version;
+  const availableRevision = metadata?.revision ?? remote.revision;
   const hasUpdate = hasRemoteUpdate(skill, remote);
 
   skillRepo.updateSkill(skill.id, {
