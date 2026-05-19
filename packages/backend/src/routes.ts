@@ -1538,11 +1538,18 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const metadata = buildUserMessageMetadata({
-    roomId,
-    attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile),
-    replyToMessageId: parsed.data.reply_to_message_id,
-  });
+  let metadata: MessageMetadata | undefined;
+  try {
+    metadata = buildUserMessageMetadata({
+      roomId,
+      attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile),
+      replyToMessageId: parsed.data.reply_to_message_id,
+    });
+  } catch (err) {
+    const error = err as Error & { status?: number };
+    res.status(error.status ?? 400).json({ error: error.message });
+    return;
+  }
   const userMsg = createAndDispatchUserMessage({
     roomId,
     senderId: parsed.data.sender_id,
@@ -1629,11 +1636,19 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
     )));
     const messageFiles = [...uploadedFiles, ...referencedFiles];
     const replyToMessageId = normalizeOptionalId(parsed.data.reply_to_message_id);
-    const metadata = buildUserMessageMetadata({
-      roomId,
-      attachments: messageFiles.map(buildAttachmentMetadataFromProjectFile),
-      replyToMessageId,
-    });
+    let metadata: MessageMetadata | undefined;
+    try {
+      metadata = buildUserMessageMetadata({
+        roomId,
+        attachments: messageFiles.map(buildAttachmentMetadataFromProjectFile),
+        replyToMessageId,
+      });
+    } catch (err) {
+      await cleanupProjectUploadedFiles(files);
+      const error = err as Error & { status?: number };
+      res.status(error.status ?? 400).json({ error: error.message });
+      return;
+    }
     const userMsg = createAndDispatchUserMessage({
       roomId,
       senderId: parsed.data.sender_id,

@@ -839,6 +839,7 @@ function ChatColumn({
   onLocateReplyTarget: (messageId: string) => void;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
+  const [defaultReplySuppressedForMessageId, setDefaultReplySuppressedForMessageId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const { t } = useI18n();
   const agentMap = useMemo(
@@ -854,9 +855,19 @@ function ChatColumn({
     [messages, agentRuns],
   );
   const visibleMessages = useMemo(() => dedupeMessages(messages), [messages]);
+  const streamingReplyMessageIds = useMemo(
+    () => new Set(Array.from(streamingMessageIds)),
+    [streamingMessageIds],
+  );
   const defaultReplyTarget = useMemo(
-    () => explicitReplyTarget ?? createDefaultReplyTarget(visibleMessages),
-    [explicitReplyTarget, visibleMessages],
+    () => explicitReplyTarget ?? createDefaultReplyTarget(
+      visibleMessages,
+      new Set([
+        ...streamingReplyMessageIds,
+        ...(defaultReplySuppressedForMessageId ? [defaultReplySuppressedForMessageId] : []),
+      ]),
+    ),
+    [defaultReplySuppressedForMessageId, explicitReplyTarget, streamingReplyMessageIds, visibleMessages],
   );
   const latestWorkflowEventMessageIds = useMemo(
     () => latestWorkflowEventMessageIdsByRun(visibleMessages),
@@ -868,6 +879,7 @@ function ChatColumn({
     mutationFn: (input: SendInput) => api.sendMessage(roomId, input),
     onSuccess: () => {
       setComposerResetKey((key) => key + 1);
+      setDefaultReplySuppressedForMessageId(null);
       onClearReplyTarget();
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
@@ -956,7 +968,13 @@ function ChatColumn({
         disabled={!canSendChat}
         agents={agents}
         replyTarget={defaultReplyTarget}
-        onClearReplyTarget={explicitReplyTarget ? onClearReplyTarget : undefined}
+        onClearReplyTarget={
+          explicitReplyTarget
+            ? onClearReplyTarget
+            : defaultReplyTarget
+              ? () => setDefaultReplySuppressedForMessageId(defaultReplyTarget.messageId)
+              : undefined
+        }
         placeholder={
           agents.length === 0
             ? modelChatReady
@@ -1014,9 +1032,13 @@ function latestWorkflowEventMessageIdsByRun(messages: Message[]): Map<string, st
   return new Map(Array.from(latest, ([workflowId, item]) => [workflowId, item.messageId]));
 }
 
-function createDefaultReplyTarget(messages: Message[]): ReplyTarget | null {
+export function createDefaultReplyTarget(
+  messages: Message[],
+  excludedMessageIds: ReadonlySet<string> = new Set(),
+): ReplyTarget | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+    if (message && excludedMessageIds.has(message.id)) continue;
     if (!message || !isReplyableMessage(message)) continue;
     return createReplyTarget(message, false);
   }

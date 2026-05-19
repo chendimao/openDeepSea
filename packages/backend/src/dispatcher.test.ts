@@ -839,6 +839,42 @@ test('message route persists reply target metadata', async () => {
   }
 });
 
+test('message route returns JSON 400 when reply target is outside the room', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-message-reply-invalid-'));
+  const project = projectRepo.create({ name: `message-reply-invalid-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const otherRoom = roomRepo.create({ project_id: project.id, name: 'Other Room' });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'mentions_only',
+    fallback_agent_id: null,
+  });
+  const sourceMessage = messageRepo.create({
+    room_id: otherRoom.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    content: '其它房间消息',
+    message_type: 'agent_stream',
+  });
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: '确定',
+        reply_to_message_id: sourceMessage.id,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const payload = await response.json() as { error?: unknown };
+    assert.equal(response.status, 400);
+    assert.equal(payload.error, 'reply_to_message_id not found in room');
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('message route handles /start-task command after persisting user message without ACP dispatch', async () => {
   const { project, projectPath, room } = await createRoutedRoom('start-task-command');
   const task = taskRepo.create({
