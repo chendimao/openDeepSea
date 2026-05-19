@@ -52,10 +52,82 @@ test('fileRepo creates and lists active project files with reference summary', (
   const listedFile = files[0];
   assert.ok(listedFile);
   assert.equal(listedFile.id, file.id);
+  assert.equal(listedFile.source_type, 'uploaded_file');
   assert.equal(listedFile.reference_count, 1);
   assert.equal(listedFile.last_referenced_room_id, room.id);
   assert.equal(listedFile.last_referenced_room_name, room.name);
   assert.equal(typeof listedFile.last_referenced_at, 'number');
+});
+
+test('fileRepo lists user uploads and agent markdown documents by source type', () => {
+  const { project, room, message } = createProjectRoomMessage();
+  const uploadedFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'notes.txt',
+    stored_name: 'stored.txt',
+    mime_type: 'text/plain',
+    size: 42,
+    url: `/uploads/files/${project.id}/stored.txt`,
+    storage_path: `/tmp/${project.id}/stored.txt`,
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const agentDocument = fileRepo.createAgentDocument({
+    project_id: project.id,
+    title: '执行总结.md',
+    content: '# 执行总结\n\n已完成。',
+    source_message_id: message.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+    source_task_id: null,
+  });
+
+  const allFiles = fileRepo.list({ projectId: project.id });
+
+  assert.deepEqual(new Set(allFiles.map((file) => file.source_type)), new Set(['uploaded_file', 'agent_document']));
+  assert.equal(allFiles.find((file) => file.id === uploadedFile.id)?.source_type, 'uploaded_file');
+  assert.equal(allFiles.find((file) => file.id === agentDocument.id)?.source_type, 'agent_document');
+
+  const agentDocuments = fileRepo.list({ projectId: project.id, sourceType: 'agent_document' });
+  assert.deepEqual(agentDocuments.map((file) => file.id), [agentDocument.id]);
+  assert.equal(agentDocuments[0]?.source_message_id, message.id);
+  assert.equal(agentDocuments[0]?.source_room_id, room.id);
+  assert.equal(agentDocuments[0]?.source_agent_id, 'backend-executor');
+  assert.equal(agentDocuments[0]?.content, '# 执行总结\n\n已完成。');
+
+  const uploads = fileRepo.list({ projectId: project.id, sourceType: 'uploaded_file' });
+  assert.deepEqual(uploads.map((file) => file.id), [uploadedFile.id]);
+});
+
+test('fileRepo filters agent markdown documents by source room and exposes details', () => {
+  const { project, room, message } = createProjectRoomMessage();
+  const otherRoom = roomRepo.create({ project_id: project.id, name: 'Other Room' });
+  const agentDocument = fileRepo.createAgentDocument({
+    project_id: project.id,
+    title: '房间总结.md',
+    content: '# 房间总结',
+    source_message_id: message.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+    source_task_id: null,
+  });
+
+  const roomDocuments = fileRepo.list({
+    projectId: project.id,
+    roomId: room.id,
+    sourceType: 'agent_document',
+  });
+  const otherRoomDocuments = fileRepo.list({
+    projectId: project.id,
+    roomId: otherRoom.id,
+    sourceType: 'agent_document',
+  });
+  const details = fileRepo.get(agentDocument.id);
+
+  assert.deepEqual(roomDocuments.map((file) => file.id), [agentDocument.id]);
+  assert.deepEqual(otherRoomDocuments, []);
+  assert.equal(details?.source_type, 'agent_document');
+  assert.equal(details?.content, '# 房间总结');
 });
 
 test('fileRepo soft deletes project file and hides it from active list', () => {

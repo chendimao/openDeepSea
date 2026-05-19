@@ -164,6 +164,79 @@ test('global file route lists all active files and filters by project or room', 
   assert.equal(invalidRes.status, 400);
 });
 
+test('file routes return and filter user upload and agent document source types', async () => {
+  const project = createProject('source-type-project');
+  const room = roomRepo.create({ project_id: project.id, name: 'Source Room' });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# 冒烟验证\n\n结论。',
+    message_type: 'agent_stream',
+  });
+  const upload = fileRepo.create({
+    project_id: project.id,
+    original_name: 'upload.txt',
+    stored_name: 'upload.txt',
+    mime_type: 'text/plain',
+    size: 128,
+    url: `/uploads/files/${project.id}/upload.txt`,
+    storage_path: join(tmpdir(), 'upload.txt'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const agentDocument = fileRepo.createAgentDocument({
+    project_id: project.id,
+    title: '冒烟验证.md',
+    content: message.content,
+    source_message_id: message.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+    source_task_id: null,
+  });
+
+  const projectRes = await request(`/api/projects/${project.id}/files`);
+  assert.equal(projectRes.status, 200);
+  const projectFiles = await projectRes.json() as Array<{ id: string; source_type: string }>;
+  assert.equal(projectFiles.find((file) => file.id === upload.id)?.source_type, 'uploaded_file');
+  assert.equal(projectFiles.find((file) => file.id === agentDocument.id)?.source_type, 'agent_document');
+
+  const agentRes = await request(`/api/files?projectId=${project.id}&sourceType=agent_document`);
+  assert.equal(agentRes.status, 200);
+  const agentFiles = await agentRes.json() as Array<{
+    id: string;
+    source_type: string;
+    source_message_id: string | null;
+    source_room_id: string | null;
+    source_agent_id: string | null;
+  }>;
+  assert.deepEqual(agentFiles.map((file) => file.id), [agentDocument.id]);
+  assert.equal(agentFiles[0]?.source_type, 'agent_document');
+  assert.equal(agentFiles[0]?.source_message_id, message.id);
+  assert.equal(agentFiles[0]?.source_room_id, room.id);
+  assert.equal(agentFiles[0]?.source_agent_id, 'backend-executor');
+
+  const uploadedRes = await request(`/api/files?projectId=${project.id}&sourceType=uploaded_file`);
+  assert.equal(uploadedRes.status, 200);
+  const uploadedFiles = await uploadedRes.json() as Array<{ id: string; source_type: string }>;
+  assert.deepEqual(uploadedFiles.map((file) => file.id), [upload.id]);
+
+  const roomAgentRes = await request(
+    `/api/projects/${project.id}/files?roomId=${room.id}&sourceType=agent_document`,
+  );
+  assert.equal(roomAgentRes.status, 200);
+  const roomAgentFiles = await roomAgentRes.json() as Array<{ id: string; source_type: string }>;
+  assert.deepEqual(roomAgentFiles.map((file) => file.id), [agentDocument.id]);
+
+  const otherProject = createProject('source-type-other-project');
+  const invalidRoomRes = await request(`/api/projects/${otherProject.id}/files?roomId=${room.id}`);
+  assert.equal(invalidRoomRes.status, 400);
+
+  const invalidSourceRes = await request(`/api/files?sourceType=message`);
+  assert.equal(invalidSourceRes.status, 400);
+});
+
 test('message route accepts project file ids and records message refs', async () => {
   const project = createProject('message-project');
   const room = roomRepo.create({ project_id: project.id, name: 'File Room' });

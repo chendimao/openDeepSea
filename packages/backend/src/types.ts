@@ -291,6 +291,7 @@ export interface MemoryEntry {
 export interface ProjectFile {
   id: string;
   project_id: string;
+  source_type: ResourceAssetType;
   original_name: string;
   stored_name: string;
   mime_type: string;
@@ -299,9 +300,27 @@ export interface ProjectFile {
   storage_path: string;
   uploaded_by_id: string | null;
   uploaded_by_name: string | null;
+  source_message_id: string | null;
+  source_room_id: string | null;
+  source_agent_id: string | null;
+  source_task_id: string | null;
+  content: string | null;
   created_at: number;
   deleted_at: number | null;
 }
+
+export type ProjectFileCreateInput = Omit<
+  ProjectFile,
+  | 'id'
+  | 'source_type'
+  | 'source_message_id'
+  | 'source_room_id'
+  | 'source_agent_id'
+  | 'source_task_id'
+  | 'content'
+  | 'created_at'
+  | 'deleted_at'
+>;
 
 export interface ProjectFileWithRefs extends ProjectFile {
   reference_count: number;

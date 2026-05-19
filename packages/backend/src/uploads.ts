@@ -3,7 +3,7 @@ import { mkdir, unlink } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { nanoid } from 'nanoid';
-import type { MessageAttachmentMetadata, ProjectFile } from './types.js';
+import type { MessageAttachmentMetadata, ProjectFile, ProjectFileCreateInput } from './types.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -146,6 +146,9 @@ export function buildAttachmentMetadata(file: Express.Multer.File): MessageAttac
 }
 
 export function buildAttachmentMetadataFromProjectFile(file: ProjectFile): MessageAttachmentMetadata {
+  if (file.source_type !== 'uploaded_file') {
+    throw new Error('only uploaded files can be used as message attachments');
+  }
   return {
     id: file.id,
     fileId: file.id,
@@ -162,7 +165,7 @@ export function buildProjectFileRecordInput(
   projectId: string,
   file: Express.Multer.File,
   uploader: { uploaded_by_id?: string | null; uploaded_by_name?: string | null } = {},
-): Omit<ProjectFile, 'id' | 'created_at' | 'deleted_at'> {
+): ProjectFileCreateInput {
   const mimeType = file.mimetype || 'application/octet-stream';
   return {
     project_id: projectId,

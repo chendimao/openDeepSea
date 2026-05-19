@@ -766,10 +766,11 @@ router.get('/files', (req, res) => {
   const parsed = z.object({
     projectId: z.string().optional(),
     roomId: z.string().optional(),
+    sourceType: z.enum(['uploaded_file', 'agent_document']).optional(),
   }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  const { projectId, roomId } = parsed.data;
+  const { projectId, roomId, sourceType } = parsed.data;
   if (projectId && !projectRepo.get(projectId)) {
     return res.status(404).json({ error: 'project not found' });
   }
@@ -781,12 +782,24 @@ router.get('/files', (req, res) => {
     }
   }
 
-  res.json(fileRepo.list({ projectId, roomId }));
+  res.json(fileRepo.list({ projectId, roomId, sourceType }));
 });
 
 router.get('/projects/:projectId/files', (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
-  res.json(fileRepo.listByProject(req.params.projectId));
+  const parsed = z.object({
+    roomId: z.string().optional(),
+    sourceType: z.enum(['uploaded_file', 'agent_document']).optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (parsed.data.roomId) {
+    const room = roomRepo.get(parsed.data.roomId);
+    if (!room) return res.status(404).json({ error: 'room not found' });
+    if (room.project_id !== req.params.projectId) {
+      return res.status(400).json({ error: 'room does not belong to project' });
+    }
+  }
+  res.json(fileRepo.listByProject(req.params.projectId, parsed.data));
 });
 
 const resourceAssetTypeSchema = z.enum(['uploaded_file', 'agent_document']);
@@ -938,7 +951,9 @@ router.delete('/files/:fileId', async (req, res, next) => {
     if (!file) return res.status(404).json({ error: 'not found' });
     const deleted = fileRepo.softDelete(file.id);
     if (!deleted) return res.status(404).json({ error: 'not found' });
-    messageRepo.markFileAttachmentDeleted(file.id);
+    if (file.source_type === 'uploaded_file') {
+      messageRepo.markFileAttachmentDeleted(file.id);
+    }
     await unlinkProjectFileSafely(file);
     res.status(204).end();
   } catch (err) {
