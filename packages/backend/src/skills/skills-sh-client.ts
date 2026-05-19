@@ -121,7 +121,12 @@ function normalizeBaseUrl(value: string): URL {
 }
 
 function encodeInstallLabel(label: string): string {
-  return label.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+  const parts = label.split('/').filter(Boolean);
+  if (parts.length === 0) throw new Error('skills.sh install label is required');
+  if (parts.some((part) => part === '.' || part === '..')) {
+    throw new Error('skills.sh install label must not contain dot segments');
+  }
+  return parts.map(encodeURIComponent).join('/');
 }
 
 function normalizeNumber(...values: unknown[]): number | null {

@@ -382,6 +382,23 @@ test('createSkillsShPackage rejects private registry metadata and unsafe manifes
     /private registries are not supported/i,
   );
 
+
+  assert.throws(
+    () => createSkillsShPackage({
+      registry: 'https://registry.example.test',
+      package: {
+        id: 'wrapped-private',
+        source: 'acme/skills',
+        skillId: 'wrapped-private',
+        files: {
+          'SKILL.md': '# Wrapped Private Skill\n',
+        },
+      },
+    }),
+    /private registries are not supported/i,
+    'rejects private registry metadata on wrapper responses',
+  );
+
   assert.throws(
     () => normalizeSkillsShManifest({
       runtime: 'shell',

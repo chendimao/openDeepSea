@@ -136,6 +136,18 @@ test('SkillsShClient normalizes conservative supported result shapes', async () 
   ]);
 });
 
+
+test('SkillsShClient rejects install labels with dot segments', async () => {
+  const client = new SkillsShClient({
+    fetch: async () => jsonResponse({ files: { 'SKILL.md': '# Should not fetch\n' } }),
+  });
+
+  await assert.rejects(
+    () => client.fetchPackage('../search'),
+    /dot segments/i,
+  );
+});
+
 test('SkillsShClient only allows the public skills.sh source', () => {
   assert.throws(
     () => new SkillsShClient({ baseUrl: 'https://registry.example.test' }),

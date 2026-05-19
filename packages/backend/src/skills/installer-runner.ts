@@ -44,8 +44,8 @@ export interface MaterializedSkillsShPackage {
 }
 
 export function createSkillsShPackage(raw: unknown, fallbackInstallLabel?: string): SkillsShPackage {
+  assertPublicRegistryDeep(raw);
   const record = selectPackageRecord(raw);
-  assertPublicRegistry(record);
 
   const id = firstString(record.id, record.package_id, record.packageId)
     ?? fallbackInstallLabel
@@ -282,6 +282,16 @@ function selectPackageRecord(raw: unknown): Record<string, unknown> {
     if (data.files || data.contents) return data;
   }
   return record;
+}
+
+function assertPublicRegistryDeep(raw: unknown): void {
+  const record = asRecord(raw);
+  if (!record) return;
+  assertPublicRegistry(record);
+  for (const key of ['package', 'skill', 'data']) {
+    const nested = asRecord(record[key]);
+    if (nested) assertPublicRegistryDeep(nested);
+  }
 }
 
 function assertPublicRegistry(record: Record<string, unknown>): void {
