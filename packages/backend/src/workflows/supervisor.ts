@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ChatOpenAI } from '@langchain/openai';
 import type { PlannerInvoker, PlannerMessage } from './langchain-planner.js';
 import { buildChatOpenAIFields, extractPlannerText, getRuntimeLangChainPlannerConfig } from './langchain-planner.js';
-import type { Project, Room, RoomAgent, Task, WorkflowDefinition, WorkflowRole, WorkflowStage } from '../types.js';
+import type { Project, Room, RoomAgent, Task, TaskExecutionIntent, WorkflowDefinition, WorkflowRole, WorkflowStage } from '../types.js';
 
 const workflowSupervisorModeSchema = z.enum([
   'select_existing_workflow',
@@ -95,6 +95,8 @@ export function buildSupervisorMessages(input: WorkflowSupervisorInput, options:
       'Allowed mode values: select_existing_workflow, use_default_workflow, propose_temporary_workflow.',
       'Use select_existing_workflow only when one listed workflow is clearly suitable.',
       'Use propose_temporary_workflow only as a recommendation; it will not be executed automatically.',
+      'When task.execution_intent is analysis_only, planning_only, documentation_only, or review_only, prefer a lightweight analysis/document workflow such as 方案文档闭环 or analysis-document. Do not select a development workflow that includes execute, code_review, or verify nodes for these intents.',
+      'When task.execution_intent is implementation or debug_fix, prefer the development workflow with implementation, review, verification, acceptance, and memory stages.',
       'confidence must be a number from 0 to 1.',
       'Assignments are advisory and must reference listed room agent IDs.',
       options.skillContext?.trim() ? `\n${options.skillContext.trim()}` : null,
@@ -159,6 +161,7 @@ function formatSupervisorInput(input: WorkflowSupervisorInput): string {
         id: input.task.id,
         title: input.task.title,
         description: input.task.description,
+        execution_intent: extractTaskExecutionIntent(input.task.description),
         priority: input.task.priority,
         status: input.task.status,
       },
@@ -189,6 +192,12 @@ function formatSupervisorInput(input: WorkflowSupervisorInput): string {
     null,
     2,
   );
+}
+
+function extractTaskExecutionIntent(value: string | null): TaskExecutionIntent | null {
+  if (!value) return null;
+  const match = value.match(/任务意图[：:]\s*(analysis_only|planning_only|documentation_only|implementation|debug_fix|review_only)/);
+  return match ? match[1] as TaskExecutionIntent : null;
 }
 
 function extractJson(raw: string): string {

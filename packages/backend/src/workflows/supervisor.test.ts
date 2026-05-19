@@ -153,6 +153,39 @@ test('buildSupervisorMessages appends workflow skill context after base rules', 
   );
 });
 
+test('buildSupervisorMessages includes execution intent routing rules for analysis-only tasks', () => {
+  const input = baseSupervisorInput();
+  input.task = {
+    ...input.task,
+    title: '只读排查方案',
+    description: '只做方案设计，不进入实现。\n\n任务意图：analysis_only',
+  };
+  input.workflowDefinitions = [
+    {
+      id: 'analysis-workflow',
+      name: '方案文档闭环',
+      description: '只整理方案、验收方案并沉淀记忆。',
+      scope: 'system',
+      scope_id: 'default',
+      version: 1,
+      status: 'published',
+      builtin_key: 'analysis-document',
+      definition_json: '{"nodes":[],"edges":[]}',
+      definition: { nodes: [], edges: [] },
+      created_at: 1,
+      updated_at: 1,
+    },
+  ];
+
+  const messages = buildSupervisorMessages(input);
+  const systemContent = String(messages[0]?.content);
+  const human = JSON.parse(String(messages[1]?.content)) as { task?: { execution_intent?: string } };
+
+  assert.equal(human.task?.execution_intent, 'analysis_only');
+  assert.match(systemContent, /analysis_only/);
+  assert.match(systemContent, /方案文档闭环|analysis-document/);
+});
+
 function baseSupervisorInput() {
   return {
     project: {

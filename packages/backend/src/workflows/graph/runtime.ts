@@ -8,7 +8,7 @@ import { workflowDefinitionRepo } from '../../repos/workflow-definitions.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { runRegistry } from '../../run-registry.js';
 import { recordTaskEvent } from '../../task-conversation.js';
-import type { WorkflowDefinition, WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
+import type { TaskExecutionIntent, WorkflowDefinition, WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
 import { generateWorkflowSupervisorDecision, type WorkflowSupervisorDecision } from '../supervisor.js';
 import { createGraphNodes } from './nodes.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
@@ -171,7 +171,7 @@ async function resolveWorkflowDefinitionForTask(
   deps: GraphRuntimeDeps,
 ): Promise<WorkflowDefinitionSelection> {
   const { task, room, project } = requireTaskContext(taskId);
-  const defaultSelection = getDefaultWorkflowDefinitionSelection(room.id);
+  const defaultSelection = getFallbackWorkflowDefinitionSelection(room.id, task.description);
   const supervisor = deps.supervisor ?? ((input, options) => generateWorkflowSupervisorDecision(input, undefined, options));
   const tools = createGraphTools(deps);
 
@@ -218,6 +218,25 @@ function getDefaultWorkflowDefinitionSelection(roomId: string): WorkflowDefiniti
   return {
     definition: workflowDefinitionRepo.getPublishedForRoomOrDefault(defaultDefinitionId, roomId),
   };
+}
+
+function getFallbackWorkflowDefinitionSelection(roomId: string, taskDescription: string | null): WorkflowDefinitionSelection {
+  const executionIntent = extractTaskExecutionIntent(taskDescription);
+  if (executionIntent && !isImplementationIntent(executionIntent)) {
+    const analysisDefinition = workflowDefinitionRepo.getBuiltInByKey('analysis-document');
+    if (analysisDefinition) return { definition: analysisDefinition };
+  }
+  return getDefaultWorkflowDefinitionSelection(roomId);
+}
+
+function extractTaskExecutionIntent(value: string | null): TaskExecutionIntent | null {
+  if (!value) return null;
+  const match = value.match(/任务意图[：:]\s*(analysis_only|planning_only|documentation_only|implementation|debug_fix|review_only)/);
+  return match ? match[1] as TaskExecutionIntent : null;
+}
+
+function isImplementationIntent(value: TaskExecutionIntent): boolean {
+  return value === 'implementation' || value === 'debug_fix';
 }
 
 function selectWorkflowDefinitionFromSupervisorDecision(
