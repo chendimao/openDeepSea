@@ -5,9 +5,8 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
 import { projectFileMatchesKeyword } from '../lib/projectFileDisplay';
-import type { ProjectFile } from '../lib/types';
-import { ProjectFilePreviewContent } from './ProjectFilePreviewDialog';
-import { ProjectFilePreviewState } from './ProjectFilePreviewDialog';
+import type { ProjectFile, ResourceDetail } from '../lib/types';
+import { ProjectFilePreviewContent, ProjectFilePreviewState, ResourceDetailPreviewContent } from './ProjectFilePreviewDialog';
 import { ProjectFileView } from './ProjectFileView';
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
@@ -89,14 +88,39 @@ test('uploaded file preview keeps download action', () => {
   assert.match(html, /打开原文件/);
 });
 
-test('detail dialog renders a loading state while resource detail loads', () => {
+test('detail panel has clear loading and missing states', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
-      <ProjectFilePreviewState title="正在读取资源详情…" />
+      <ProjectFilePreviewState
+        title="正在读取资源详情…"
+        description="资源不存在或已被移除"
+        actionLabel="重试"
+        onAction={() => undefined}
+      />
     </I18nProvider>,
   );
 
   assert.match(html, /正在读取资源详情/);
+  assert.match(html, /资源不存在或已被移除/);
+  assert.match(html, /重试/);
+});
+
+test('resource detail content hides file actions for agent documents', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ResourceDetailPreviewContent
+        resource={createAgentDocumentResourceDetail()}
+        fallbackFile={createAgentDocument()}
+        onLocateMessage={() => undefined}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /<h1>执行总结<\/h1>/);
+  assert.match(html, /生成时间/);
+  assert.match(html, /来源会话/);
+  assert.doesNotMatch(html, /download="执行总结\.md"/);
+  assert.doesNotMatch(html, /打开原文件/);
 });
 
 test('keyword search matches type and source fields', () => {
@@ -166,6 +190,58 @@ function createAgentDocument(): ProjectFile {
     last_referenced_room_id: 'room-1',
     last_referenced_room_name: 'Current repo fixed workflow',
   });
+}
+
+function createAgentDocumentResourceDetail(): ResourceDetail {
+  return {
+    id: 'asset:agent-doc',
+    project_id: 'project-1',
+    asset_type: 'agent_document',
+    resource_type: 'agent_document',
+    group_key: 'agent_documents',
+    title: '执行总结.md',
+    name: '执行总结.md',
+    content: '# 执行总结\n\n- 展示 Markdown 内容',
+    mime_type: 'text/markdown',
+    size: 64,
+    url: null,
+    file_id: null,
+    source_message_id: 'message-1',
+    source_room_id: 'room-1',
+    source_agent_id: 'frontend-executor',
+    source_task_id: 'task-1',
+    source_display_name: '前端开发工程师',
+    source_label: '智能体生成',
+    source_context_id: 'task-1',
+    source_context_name: '资源详情验收',
+    source_context_type: 'task',
+    source: {
+      type: 'agent',
+      label: '智能体生成',
+      display_name: '前端开发工程师',
+      agent_id: 'frontend-executor',
+      user_id: null,
+      message_id: 'message-1',
+      room_id: 'room-1',
+      task_id: 'task-1',
+      context: {
+        id: 'room-1',
+        type: 'room',
+        name: 'heartbeat workflow 验收 1779231401898',
+      },
+    },
+    capabilities: {
+      preview: true,
+      download: false,
+      markdown: true,
+      delete: true,
+    },
+    preview_url: null,
+    download_url: null,
+    created_at: 1,
+    updated_at: 1,
+    deleted_at: null,
+  };
 }
 
 function createProjectFile(input: Partial<ProjectFile> & Pick<ProjectFile, 'id' | 'source_type' | 'original_name'>): ProjectFile {
