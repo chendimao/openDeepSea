@@ -1179,6 +1179,24 @@ test('graph execute blocks assigned write task when assigned executor is outside
     approval: 'not_required' as const,
     status: 'running' as const,
     error: null,
+    workflowPlan: {
+      workflow_name: task.title,
+      source_message_id: task.id,
+      goal: task.title,
+      summary: 'Create one frontend child task with invalid assigned executor',
+      tasks: [{
+        id: 'task-1-update-react-page',
+        title: 'Update React page',
+        description: 'Modify frontend page.',
+        role: 'executor' as const,
+        agent_id: backend.id,
+        mode: 'parallel' as const,
+        depends_on: [],
+        status: 'pending' as const,
+        progress: 0,
+        result_refs: [],
+      }],
+    },
   };
 
   let calls = 0;
@@ -1202,6 +1220,8 @@ test('graph execute blocks assigned write task when assigned executor is outside
   assert.equal(nextState.status, 'blocked');
   assert.equal(graphState?.status, 'blocked');
   assert.match(graphState?.error ?? '', /No executor available/);
+  assert.equal(graphState?.workflowPlan?.tasks[0]?.status, 'blocked');
+  assert.equal(graphState?.workflowPlan?.tasks[0]?.progress, 0);
 });
 
 test('dispatch node is idempotent when replayed with existing child task ids', async () => {

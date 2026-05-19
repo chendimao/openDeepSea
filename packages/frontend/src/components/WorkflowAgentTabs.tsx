@@ -1,6 +1,6 @@
 import * as Tabs from '@radix-ui/react-tabs';
 import { Bot, FileText } from 'lucide-react';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../lib/i18n';
 import type { RoomAgent, TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson } from '../lib/types';
 import { truncate } from '../lib/utils';
@@ -23,13 +23,20 @@ export function WorkflowAgentTabs({
   const { t } = useI18n();
   const groups = useMemo(() => groupTasksByAgent(plan, agents, t('workflowPlan.unassigned')), [agents, plan, t]);
   const artifactMap = useMemo(() => new Map(artifacts.map((artifact) => [artifact.id, artifact])), [artifacts]);
+  const [activeKey, setActiveKey] = useState<string | null>(groups[0]?.key ?? null);
 
-  if (groups.length === 0) {
+  useEffect(() => {
+    if (!groups.some((group) => group.key === activeKey)) {
+      setActiveKey(groups[0]?.key ?? null);
+    }
+  }, [activeKey, groups]);
+
+  if (groups.length === 0 || !activeKey) {
     return null;
   }
 
   return (
-    <Tabs.Root defaultValue={groups[0].key} className="workflow-agent-tabs">
+    <Tabs.Root value={activeKey} onValueChange={setActiveKey} className="workflow-agent-tabs">
       <Tabs.List className="workflow-agent-tab-list" aria-label={t('workflowPlan.agentTabsAria')}>
         {groups.map((group) => (
           <Tabs.Trigger key={group.key} value={group.key} className="workflow-agent-tab-trigger">
