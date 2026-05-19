@@ -405,6 +405,13 @@ export type CollaborationIntent = 'question' | 'analysis' | 'implementation';
 export type CollaborationMode = 'chat_collaboration' | 'formal_workflow';
 export type CollaborationProblemArea = 'frontend' | 'backend' | 'fullstack' | 'unknown';
 export type CollaborationStage = 'execute' | 'review' | 'acceptance' | 'summary';
+export type TaskExecutionIntent =
+  | 'analysis_only'
+  | 'planning_only'
+  | 'documentation_only'
+  | 'implementation'
+  | 'debug_fix'
+  | 'review_only';
 
 export interface CollaborationStagePlan {
   stage: CollaborationStage;
@@ -436,6 +443,7 @@ export interface TaskReadinessMetadata {
   description: string;
   missing_questions: string[];
   recommended_mode: CollaborationMode;
+  execution_intent?: TaskExecutionIntent;
   source_message_id?: string;
 }
 

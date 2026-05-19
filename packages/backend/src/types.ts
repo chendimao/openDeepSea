@@ -495,6 +495,14 @@ export interface MessageTaskEventMetadata {
   [key: string]: unknown;
 }
 
+export type TaskExecutionIntent =
+  | 'analysis_only'
+  | 'planning_only'
+  | 'documentation_only'
+  | 'implementation'
+  | 'debug_fix'
+  | 'review_only';
+
 export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
   task_readiness?: {
@@ -504,6 +512,7 @@ export interface MessageMetadata extends MessageTaskEventMetadata {
     description: string;
     missing_questions: string[];
     recommended_mode: 'formal_workflow' | 'chat_collaboration';
+    execution_intent?: TaskExecutionIntent;
     source_message_id?: string;
   };
 }

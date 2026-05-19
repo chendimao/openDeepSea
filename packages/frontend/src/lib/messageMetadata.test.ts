@@ -238,6 +238,26 @@ test('parseMessageMetadata accepts task readiness metadata', () => {
   });
 });
 
+test('parseMessageMetadata accepts task readiness metadata with execution intent', () => {
+  const metadata = JSON.stringify({
+    task_readiness: {
+      ready: true,
+      confidence: 0.91,
+      title: '只读排查方案',
+      description: '只做原因分析，不进入实现。',
+      missing_questions: [],
+      recommended_mode: 'chat_collaboration',
+      execution_intent: 'analysis_only',
+      source_message_id: 'source-message-1',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.task_readiness?.execution_intent, 'analysis_only');
+  assert.equal(parsed.task_readiness?.recommended_mode, 'chat_collaboration');
+});
+
 test('parseMessageMetadata accepts workflow recovery decision task event', () => {
   const metadata = JSON.stringify({
     task_id: 'task-1',

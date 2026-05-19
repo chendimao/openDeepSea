@@ -6,6 +6,7 @@ import type {
   CollaborationStage,
   MessageAttachmentMetadata,
   MessageMetadata,
+  TaskExecutionIntent,
   TaskReadinessMetadata,
   TaskCreatedFrom,
   TaskEventType,
@@ -34,6 +35,14 @@ const collaborationIntents = new Set<CollaborationIntent>(['question', 'analysis
 const collaborationModes = new Set<CollaborationMode>(['chat_collaboration', 'formal_workflow']);
 const collaborationProblemAreas = new Set<CollaborationProblemArea>(['frontend', 'backend', 'fullstack', 'unknown']);
 const collaborationStages = new Set<CollaborationStage>(['execute', 'review', 'acceptance', 'summary']);
+const taskExecutionIntents = new Set<TaskExecutionIntent>([
+  'analysis_only',
+  'planning_only',
+  'documentation_only',
+  'implementation',
+  'debug_fix',
+  'review_only',
+]);
 
 function createEmptyMessageMetadata(): MessageMetadata {
   return { attachments: [] };
@@ -125,6 +134,7 @@ function sanitizeTaskReadiness(value: unknown): TaskReadinessMetadata | null {
     description: value.description,
     missing_questions: missingQuestions,
     recommended_mode: value.recommended_mode,
+    ...(isTaskExecutionIntent(value.execution_intent) ? { execution_intent: value.execution_intent } : {}),
     source_message_id: typeof value.source_message_id === 'string' ? value.source_message_id : undefined,
   };
 }
@@ -208,6 +218,10 @@ function isCollaborationProblemArea(value: unknown): value is CollaborationProbl
 
 function isCollaborationStage(value: unknown): value is CollaborationStage {
   return typeof value === 'string' && collaborationStages.has(value as CollaborationStage);
+}
+
+function isTaskExecutionIntent(value: unknown): value is TaskExecutionIntent {
+  return typeof value === 'string' && taskExecutionIntents.has(value as TaskExecutionIntent);
 }
 
 function isTaskEventType(value: string): value is TaskEventType {
