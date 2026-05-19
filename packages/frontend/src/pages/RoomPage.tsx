@@ -122,6 +122,10 @@ export function RoomPage() {
     },
   });
   const streamingDisplay = useStreamingMessageDisplay(roomId);
+  const workflowById = useMemo(
+    () => new Map(taskWorkflows.map((workflow) => [workflow.id, workflow])),
+    [taskWorkflows],
+  );
 
   useEffect(() => {
     setActiveTab('chat');
@@ -412,7 +416,8 @@ export function RoomPage() {
                 routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
                 fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
                 onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
-                retryingWorkflowId={retryWorkflow.variables}
+                retryingWorkflowId={retryWorkflow.isPending ? retryWorkflow.variables : undefined}
+                workflowById={workflowById}
                 streamingMessageIds={streamingMessageIds}
                 streamingDisplay={streamingDisplay}
                 registerMessageRef={registerMessageRef}
@@ -786,6 +791,7 @@ function ChatColumn({
   fallbackAgentId,
   onRetryWorkflow,
   retryingWorkflowId,
+  workflowById,
   streamingMessageIds,
   streamingDisplay,
   registerMessageRef,
@@ -801,6 +807,7 @@ function ChatColumn({
   fallbackAgentId: string | null;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
+  workflowById: Map<string, WorkflowRun>;
   streamingMessageIds: Set<string>;
   streamingDisplay: StreamingMessageDisplay;
   registerMessageRef: (messageId: string, node: HTMLElement | null) => void;
@@ -822,6 +829,10 @@ function ChatColumn({
     [messages, agentRuns],
   );
   const visibleMessages = useMemo(() => dedupeMessages(messages), [messages]);
+  const latestWorkflowEventMessageIds = useMemo(
+    () => latestWorkflowEventMessageIdsByRun(visibleMessages),
+    [visibleMessages],
+  );
   const canSendChat = agents.length > 0 || modelChatReady;
 
   const send = useMutation({
@@ -891,6 +902,8 @@ function ChatColumn({
                   projectId={projectId}
                   onRetryWorkflow={onRetryWorkflow}
                   retryingWorkflowId={retryingWorkflowId}
+                  workflowById={workflowById}
+                  latestWorkflowEventMessageIds={latestWorkflowEventMessageIds}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
                   messageRef={(node) => registerMessageRef(m.id, node)}
@@ -953,6 +966,20 @@ function pairRunsWithAgentMessages(messages: Message[], runs: AgentRun[]): Map<s
   return result;
 }
 
+function latestWorkflowEventMessageIdsByRun(messages: Message[]): Map<string, string> {
+  const latest = new Map<string, { messageId: string; createdAt: number }>();
+  for (const message of messages) {
+    if (message.sender_type !== 'system') continue;
+    const metadata = parseMessageMetadata(message.metadata);
+    if (!metadata.workflow_run_id || !metadata.event_type?.startsWith('workflow_')) continue;
+    const current = latest.get(metadata.workflow_run_id);
+    if (!current || message.created_at >= current.createdAt) {
+      latest.set(metadata.workflow_run_id, { messageId: message.id, createdAt: message.created_at });
+    }
+  }
+  return new Map(Array.from(latest, ([workflowId, item]) => [workflowId, item.messageId]));
+}
+
 function MessageBubble({
   message,
   agentMeta,
@@ -963,6 +990,8 @@ function MessageBubble({
   projectId,
   onRetryWorkflow,
   retryingWorkflowId,
+  workflowById,
+  latestWorkflowEventMessageIds,
   streaming,
   displayContent,
   messageRef,
@@ -977,6 +1006,8 @@ function MessageBubble({
   projectId: string;
   onRetryWorkflow: (workflowId: string) => void;
   retryingWorkflowId?: string;
+  workflowById: Map<string, WorkflowRun>;
+  latestWorkflowEventMessageIds: Map<string, string>;
   streaming: boolean;
   displayContent: string;
   messageRef: (node: HTMLElement | null) => void;
@@ -1052,9 +1083,16 @@ function MessageBubble({
     streaming || run?.status === 'running' || run?.status === 'queued'
   );
   const isTaskEvent = isSystem && Boolean(metadata.event_type && metadata.task_id);
+  const eventWorkflow = metadata.workflow_run_id ? workflowById.get(metadata.workflow_run_id) : undefined;
+  const isLatestWorkflowEvent = Boolean(
+    metadata.workflow_run_id &&
+      latestWorkflowEventMessageIds.get(metadata.workflow_run_id) === message.id,
+  );
   const canRetryWorkflowEvent = isTaskEvent &&
     metadata.event_type === 'workflow_blocked' &&
-    Boolean(metadata.workflow_run_id);
+    Boolean(metadata.workflow_run_id) &&
+    isLatestWorkflowEvent &&
+    (!eventWorkflow || eventWorkflow.status === 'blocked');
   const isCollaborationDecision = isSystem && Boolean(metadata.collaboration_decision && metadata.source_message_id);
   const shouldShowTaskReadiness =
     !isUser &&
