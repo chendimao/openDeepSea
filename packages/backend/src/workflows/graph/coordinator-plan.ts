@@ -185,13 +185,14 @@ function extractImplementationTasks(background: string): ParsedPlanTask[] {
   }
 
   if (current) tasks.push(current);
-  return tasks
+  const parsedTasks = tasks
     .filter((task) => isExecutableBackgroundTask(task))
     .map((task) => ({
       ...task,
       description: task.description || task.title,
       acceptance: task.acceptance.length > 0 ? task.acceptance : extractAcceptance(`${task.title}\n${task.description}`),
     }));
+  return parsedTasks.length > 0 ? parsedTasks : extractInlineImplementationTasks(background);
 }
 
 function parseTaskTitle(line: string): string | null {
@@ -225,6 +226,44 @@ function isExecutableBackgroundTask(task: ParsedPlanTask): boolean {
     '组件',
     '数据库',
   ].some((signal) => text.includes(signal));
+}
+
+function extractInlineImplementationTasks(background: string): ParsedPlanTask[] {
+  const acceptance = extractAcceptance(background);
+  const clauses = background
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      if (!/^(?:实施计划|执行计划|开发计划|实现计划)[:：]/.test(line)) return [];
+      return splitInlinePlanClauses(cleanLabelValue(line));
+    });
+
+  const seen = new Set<string>();
+  return clauses
+    .map((title) => ({
+      title,
+      description: title,
+      suggestedRole: 'executor' as const,
+      priority: 'normal' as const,
+      acceptance,
+      scopeRead: [],
+      scopeWrite: [],
+      dependsOn: [],
+    }))
+    .filter((task) => {
+      if (seen.has(task.title) || !isExecutableBackgroundTask(task)) return false;
+      seen.add(task.title);
+      return true;
+    });
+}
+
+function splitInlinePlanClauses(value: string): string[] {
+  return value
+    .split(/[，,；;。]/)
+    .map((item) => item.trim().replace(/[.。；;，,]+$/, ''))
+    .filter(Boolean)
+    .filter((item) => !/^(验收|验收标准|成功标准|acceptance)[:：]/i.test(item));
 }
 
 function extractAcceptance(text: string): string[] {

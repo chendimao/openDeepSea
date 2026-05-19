@@ -28,6 +28,7 @@ const GraphState = Annotation.Root({
   currentStepId: Annotation<string | null>(),
   activeAgentRunId: Annotation<string | null>(),
   childTaskIds: Annotation<string[]>(),
+  childTaskPlanIndexes: Annotation<AgentWorkflowState['childTaskPlanIndexes']>(),
   supervisorAssignments: Annotation<AgentWorkflowState['supervisorAssignments']>(),
   reviewFindings: Annotation<string[]>(),
   reviewVerdict: Annotation<AgentWorkflowState['reviewVerdict']>(),

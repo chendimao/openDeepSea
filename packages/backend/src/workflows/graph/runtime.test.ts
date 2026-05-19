@@ -1537,6 +1537,162 @@ test('dispatch node is idempotent when replayed with existing child task ids', a
   assert.equal(workflowRepo.listArtifacts(run.id).filter((artifact) => artifact.artifact_type === 'assignment').length, 1);
 });
 
+test('execute node maps duplicate child titles by child task id instead of title', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-duplicate-child-title-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Duplicate Child Title', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Duplicate Child Title Room' });
+  const backend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(backend.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const frontend = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(frontend.id, {
+    capabilities: ['frontend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Execute duplicate child title safely',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    graph_version: 'phase-b-v1',
+  });
+  const backendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: '补充实现',
+    description: '后端实现。',
+    assigned_agent_id: backend.id,
+    created_from: 'workflow_assignment',
+  });
+  const frontendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: '补充实现',
+    description: '前端实现。',
+    assigned_agent_id: frontend.id,
+    created_from: 'workflow_assignment',
+  });
+  const planTasks: ParsedPlan['tasks'] = [
+    {
+      title: '补充实现',
+      description: '补充后端实现。',
+      suggestedRole: 'executor',
+      priority: 'normal',
+      acceptance: ['后端完成'],
+      scopeRead: ['packages/backend/src/routes.ts'],
+      scopeWrite: ['packages/backend/src/routes.ts'],
+      dependsOn: [],
+    },
+    {
+      title: '补充实现',
+      description: '补充前端实现。',
+      suggestedRole: 'executor',
+      priority: 'normal',
+      acceptance: ['前端完成'],
+      scopeRead: ['packages/frontend/src/pages/FilesPage.tsx'],
+      scopeWrite: ['packages/frontend/src/pages/FilesPage.tsx'],
+      dependsOn: [],
+    },
+  ];
+  const state = {
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+    plan: {
+      goal: task.title,
+      summary: 'Execute duplicate titles without corrupting workflow plan.',
+      assumptions: [],
+      tasks: planTasks,
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'dispatch' as const,
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [backendChild.id, frontendChild.id],
+    childTaskPlanIndexes: {
+      [backendChild.id]: 0,
+      [frontendChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required' as const,
+    status: 'running' as const,
+    error: null,
+    workflowPlan: {
+      workflow_name: task.title,
+      source_message_id: task.id,
+      goal: task.title,
+      summary: 'Execute duplicate titles without corrupting workflow plan.',
+      tasks: [
+        {
+          id: 'task-1-duplicate-title',
+          title: '补充实现',
+          description: '补充后端实现。',
+          role: 'executor' as const,
+          agent_id: backend.id,
+          mode: 'parallel' as const,
+          depends_on: [],
+          status: 'pending' as const,
+          progress: 0,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-duplicate-title',
+          title: '补充实现',
+          description: '补充前端实现。',
+          role: 'executor' as const,
+          agent_id: frontend.id,
+          mode: 'serial' as const,
+          depends_on: ['task-1-duplicate-title'],
+          status: 'pending' as const,
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+  };
+  const calls: string[] = [];
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async (input) => {
+      calls.push(input.agent.id);
+      return createCompletedAgentRun(room.id, input);
+    },
+  }));
+
+  const afterBackend = await nodes.executeNode(state);
+  const afterFrontend = await nodes.executeNode(afterBackend);
+
+  assert.deepEqual(calls, [backend.id, frontend.id]);
+  assert.equal(afterFrontend.workflowPlan?.tasks[0]?.agent_id, backend.id);
+  assert.equal(afterFrontend.workflowPlan?.tasks[0]?.status, 'completed');
+  assert.equal(afterFrontend.workflowPlan?.tasks[1]?.agent_id, frontend.id);
+  assert.equal(afterFrontend.workflowPlan?.tasks[1]?.status, 'completed');
+  assert.ok(afterFrontend.workflowPlan?.tasks[0]?.result_refs.length);
+  assert.ok(afterFrontend.workflowPlan?.tasks[1]?.result_refs.length);
+});
+
 function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor'): RoomAgent {
   const agent = roomAgentRepo.add({
     room_id: roomId,

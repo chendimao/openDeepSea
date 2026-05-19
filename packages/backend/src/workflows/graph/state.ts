@@ -103,6 +103,7 @@ export const agentWorkflowStateSchema = z.object({
   currentStepId: z.string().nullable(),
   activeAgentRunId: z.string().nullable(),
   childTaskIds: z.array(z.string()),
+  childTaskPlanIndexes: z.record(z.string(), z.number().int().min(0)).default({}),
   supervisorAssignments: z.array(supervisorAssignmentHintSchema).default([]),
   reviewFindings: z.array(z.string()),
   reviewVerdict: z.enum(['pass', 'changes_requested', 'failed']).nullable().default(null),
@@ -122,13 +123,14 @@ export interface SupervisorAssignmentHint {
 }
 export type AgentWorkflowState = Omit<
   z.infer<typeof agentWorkflowStateSchema>,
-  'plan' | 'workflowPlan' | 'currentNode' | 'status' | 'supervisorAssignments'
+  'plan' | 'workflowPlan' | 'currentNode' | 'status' | 'supervisorAssignments' | 'childTaskPlanIndexes'
 > & {
   plan: ParsedPlan | null;
   workflowPlan?: WorkflowPlanJson | null;
   currentNode: GraphNodeName | null;
   status: WorkflowStatus;
   supervisorAssignments?: SupervisorAssignmentHint[];
+  childTaskPlanIndexes?: Record<string, number>;
 };
 
 export function emptyAgentWorkflowState(input: {
@@ -147,6 +149,7 @@ export function emptyAgentWorkflowState(input: {
     currentStepId: null,
     activeAgentRunId: null,
     childTaskIds: [],
+    childTaskPlanIndexes: {},
     supervisorAssignments: [],
     reviewFindings: [],
     reviewVerdict: null,

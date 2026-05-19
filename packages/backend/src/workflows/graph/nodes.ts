@@ -186,8 +186,14 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         ? state.childTaskIds
         : tools.listChildTasks(context.task.id).map((task) => task.id);
       if (existingStep || existingChildTaskIds.length > 0) {
+        const childTaskPlanIndexes = normalizeChildTaskPlanIndexes(state, existingChildTaskIds);
         const workflowPlan = state.workflowPlan
-          ? reconcileWorkflowPlanAssignmentsFromChildren(state.workflowPlan, state.plan.tasks, tools.listChildTasks(context.task.id))
+          ? reconcileWorkflowPlanAssignmentsFromChildren(
+            state.workflowPlan,
+            state.plan.tasks,
+            tools.listChildTasks(context.task.id),
+            childTaskPlanIndexes,
+          )
           : state.workflowPlan;
         const nextState: AgentWorkflowState = {
           ...state,
@@ -195,6 +201,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           currentNode: 'dispatch',
           currentStepId: existingStep?.id ?? state.currentStepId,
           childTaskIds: existingChildTaskIds,
+          childTaskPlanIndexes,
         };
         tools.updateGraphState(context.run.id, serializeGraphState(nextState));
         const updatedRun = tools.updateRun(context.run.id, {
@@ -220,6 +227,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       });
 
       const childTaskIds: string[] = [];
+      const childTaskPlanIndexes: Record<string, number> = {};
       const workflowPlanAssignments: Array<{ taskId: string; agentId: string | null; assignmentReason?: string }> = [];
       const createdChildren: Task[] = [];
       let assignmentAgents = context.agents;
@@ -256,6 +264,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           created_from: 'workflow_assignment',
         });
         childTaskIds.push(child.id);
+        childTaskPlanIndexes[child.id] = originalIndex;
         createdChildren.push(child);
         workflowPlanAssignments.push({
           taskId: state.workflowPlan?.tasks[originalIndex]?.id ?? '',
@@ -332,6 +341,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         currentNode: 'dispatch',
         currentStepId: step.id,
         childTaskIds,
+        childTaskPlanIndexes,
       };
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
       tools.broadcastStepCreated(context.room.id, step);
@@ -382,7 +392,11 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const orderedChildIds = state.childTaskIds.length > 0 ? state.childTaskIds : childTasks.map((item) => item.id);
       const plannedTaskIndex = orderedChildIds.indexOf(nextChild.id);
-      const matchingPlanTaskIndex = state.plan?.tasks.findIndex((item) => item.title === nextChild.title) ?? -1;
+      const childTaskPlanIndexes = normalizeChildTaskPlanIndexes(state, orderedChildIds);
+      const mappedPlanTaskIndex = childTaskPlanIndexes[nextChild.id] ?? -1;
+      const matchingPlanTaskIndex = mappedPlanTaskIndex >= 0
+        ? mappedPlanTaskIndex
+        : state.plan?.tasks.findIndex((item) => item.title === nextChild.title) ?? -1;
       const originalPlanTaskIndex = matchingPlanTaskIndex >= 0 ? matchingPlanTaskIndex : plannedTaskIndex;
       const plannedTask = originalPlanTaskIndex >= 0
         ? state.plan?.tasks[originalPlanTaskIndex]
@@ -415,6 +429,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
             status: 'blocked',
             progress: 0,
           }),
+          childTaskPlanIndexes,
           currentNode: 'execute',
           status: 'blocked',
           error,
@@ -466,6 +481,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       tools.updateGraphState(context.run.id, serializeGraphState({
         ...state,
         workflowPlan: runningWorkflowPlan,
+        childTaskPlanIndexes,
         currentNode: 'execute',
         currentStepId: step.id,
         activeAgentRunId: null,
@@ -503,6 +519,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       tools.updateGraphState(context.run.id, serializeGraphState({
         ...state,
         workflowPlan: runningWorkflowPlan,
+        childTaskPlanIndexes,
         currentNode: 'execute',
         currentStepId: step.id,
         activeAgentRunId: runResult.run.id,
@@ -552,6 +569,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
             progress: 35,
             agentId: executor.id,
           }),
+          childTaskPlanIndexes,
           currentNode: 'execute',
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
@@ -643,6 +661,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           agentId: executor.id,
           resultRefs: [implementationArtifact.id],
         }),
+        childTaskPlanIndexes,
         currentNode: 'execute',
         currentStepId: step.id,
         activeAgentRunId: runResult.run.id,
@@ -1808,16 +1827,39 @@ function updateWorkflowPlanNonImplementationTasks(
   };
 }
 
+function normalizeChildTaskPlanIndexes(
+  state: AgentWorkflowState,
+  childTaskIds: string[],
+): Record<string, number> {
+  const existing = state.childTaskPlanIndexes ?? {};
+  const executablePlanIndexes = state.plan?.tasks
+    .map((planTask, originalIndex) => ({ planTask, originalIndex }))
+    .filter(({ planTask }) => isImplementationPlanTask(planTask))
+    .map(({ originalIndex }) => originalIndex) ?? [];
+  const normalized: Record<string, number> = {};
+  childTaskIds.forEach((childTaskId, childIndex) => {
+    const existingIndex = existing[childTaskId];
+    normalized[childTaskId] = existingIndex ?? executablePlanIndexes[childIndex] ?? childIndex;
+  });
+  return normalized;
+}
+
 function reconcileWorkflowPlanAssignmentsFromChildren(
   plan: WorkflowPlanJson,
   planTasks: ParsedPlanTask[],
   childTasks: Task[],
+  childTaskPlanIndexes: Record<string, number> = {},
 ): WorkflowPlanJson {
   const childByTitle = new Map(childTasks.map((task) => [task.title, task]));
+  const childByPlanIndex = new Map<number, Task>();
+  for (const child of childTasks) {
+    const planIndex = childTaskPlanIndexes[child.id];
+    if (planIndex !== undefined) childByPlanIndex.set(planIndex, child);
+  }
   return {
     ...plan,
     tasks: plan.tasks.map((task, index) => {
-      const child = childByTitle.get(planTasks[index]?.title ?? task.title);
+      const child = childByPlanIndex.get(index) ?? childByTitle.get(planTasks[index]?.title ?? task.title);
       return child ? { ...task, agent_id: child.assigned_agent_id ?? null } : task;
     }),
   };

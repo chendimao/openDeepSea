@@ -205,6 +205,30 @@ test('deriveCoordinatorPlanFromProductManagerBackground extracts executable task
   assert.match(plan.tasks[1]?.acceptance.join('\n') ?? '', /前端显示/);
 });
 
+test('deriveCoordinatorPlanFromProductManagerBackground splits inline prose implementation plan into executable tasks', () => {
+  const plan = deriveCoordinatorPlanFromProductManagerBackground({
+    taskTitle: '文件管理来源细化',
+    taskDescription: [
+      '文件管理来源细化。',
+      '',
+      '产品经理方案背景：',
+      '实施计划：补充后端来源字段，改造前端文件列表。',
+      '验收标准：文件列表显示来源。',
+      '',
+      '任务意图：implementation',
+    ].join('\n'),
+  });
+
+  assert.ok(plan);
+  assert.deepEqual(plan.tasks.map((task) => task.title), [
+    '补充后端来源字段',
+    '改造前端文件列表',
+  ]);
+  assert.deepEqual(plan.tasks.map((task) => task.suggestedRole), ['executor', 'executor']);
+  assert.match(plan.tasks[0]?.acceptance.join('\n') ?? '', /文件列表显示来源/);
+  assert.match(plan.tasks[1]?.description ?? '', /改造前端文件列表/);
+});
+
 function makeWorkflowPlanJson(sourceMessageId: string): WorkflowPlanJson {
   return {
     workflow_name: 'Coordinator 计划',

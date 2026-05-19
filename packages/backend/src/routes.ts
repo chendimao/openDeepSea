@@ -8,6 +8,7 @@ import { listBuiltInAgentTemplates } from './agent-templates.js';
 import type { CollaborationDecision } from './collaboration-decision.js';
 import { runCollaborationStages as defaultRunCollaborationStages } from './collaboration-runner.js';
 import { getDefaultRoomCrewTemplate, getRoomCrewTemplate, listRoomCrewTemplates } from './crew-templates.js';
+import { db } from './db.js';
 import { dispatchUserMessage } from './dispatcher.js';
 import {
   sendGlobalChatMessage,
@@ -1997,6 +1998,7 @@ router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res)
         interaction_mode: 'ask_user',
       },
     });
+    ensurePromotedTaskCanStart(taskResult.task.id, promotion.taskSourceMessage.id);
     const task = ensurePromotedTaskHasLatestPlannerBackground(taskResult.task.id, taskInput);
     const workflow = startWorkflowWithConversation({
       roomId: room.id,
@@ -2010,6 +2012,32 @@ router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res)
     return res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
   }
 });
+
+function ensurePromotedTaskCanStart(taskId: string, sourceMessageId: string) {
+  const task = taskRepo.get(taskId);
+  if (!task) throw workflowPromotionError(404, 'task not found');
+  const active = workflowRepo.getActiveByTask(task.id);
+  if (active && !isWorkflowStartedBySourceMessage(task.room_id, task.id, sourceMessageId)) {
+    throw workflowPromotionError(409, 'task already has an active workflow');
+  }
+  if (task.status === 'done') {
+    throw workflowPromotionError(409, 'task is already completed');
+  }
+}
+
+function isWorkflowStartedBySourceMessage(roomId: string, taskId: string, sourceMessageId: string): boolean {
+  const row = db.prepare(
+    `SELECT id FROM messages
+     WHERE room_id = ?
+       AND metadata IS NOT NULL
+       AND json_valid(metadata)
+       AND json_extract(metadata, '$.event_type') = 'workflow_started'
+       AND json_extract(metadata, '$.task_id') = ?
+       AND json_extract(metadata, '$.workflow_source_message_id') = ?
+     LIMIT 1`,
+  ).get(roomId, taskId, sourceMessageId) as { id: string } | undefined;
+  return Boolean(row);
+}
 
 interface PromotedTaskSource {
   triggerMessage: NonNullable<ReturnType<typeof messageRepo.get>>;

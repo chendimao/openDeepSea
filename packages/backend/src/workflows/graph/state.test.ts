@@ -63,7 +63,7 @@ test('workflowRepo persists workflow step node and scope metadata', () => {
   assert.deepEqual(step.scope_write, ['packages/backend/src/workflows/graph/runtime.ts']);
 });
 
-test('parseGraphState defaults missing workflowPlan to null for existing runs', () => {
+test('parseGraphState defaults missing workflowPlan and child task mappings for existing runs', () => {
   const state = emptyAgentWorkflowState({
     workflowRunId: 'run-legacy',
     projectId: 'project-legacy',
@@ -73,10 +73,11 @@ test('parseGraphState defaults missing workflowPlan to null for existing runs', 
     projectPath: tempDir,
   });
   const legacyJson = JSON.stringify(Object.fromEntries(
-    Object.entries(state).filter(([key]) => key !== 'workflowPlan'),
+    Object.entries(state).filter(([key]) => key !== 'workflowPlan' && key !== 'childTaskPlanIndexes'),
   ));
 
   const parsed = parseGraphState(legacyJson);
 
   assert.equal(parsed?.workflowPlan, null);
+  assert.deepEqual(parsed?.childTaskPlanIndexes, {});
 });
