@@ -69,6 +69,8 @@ test('skillRunRepo creates, updates, and lists execution records', () => {
   assert.deepEqual(created.input, { prompt: 'summarize' });
   assert.deepEqual(created.allowed_paths, ['/project']);
   assert.equal(created.network_enabled, 1);
+  assert.equal(Object.hasOwn(created, 'input_json'), false, 'does not expose raw input_json');
+  assert.equal(Object.hasOwn(created, 'allowed_paths_json'), false, 'does not expose raw allowed_paths_json');
 
   const finished = skillRunRepo.updateRun('run-1', {
     status: 'completed',
@@ -84,6 +86,7 @@ test('skillRunRepo creates, updates, and lists execution records', () => {
   assert.equal(finished?.stdout, 'done');
   assert.equal(finished?.stderr, '');
   assert.deepEqual(finished?.result, { ok: true });
+  assert.equal(Object.hasOwn(finished ?? {}, 'result_json'), false, 'does not expose raw result_json');
   assert.equal(finished?.error, null);
 
   const bySkill = skillRunRepo.listRuns({ skill_id: 'skill-executable' });

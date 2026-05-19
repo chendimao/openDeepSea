@@ -369,8 +369,9 @@ function assertUniqueSkillName(name: string, excludeId?: string): void {
 }
 
 function normalizeSkill(row: SkillRow): Skill {
+  const { permissions_json: _permissionsJson, ...skill } = row;
   return {
-    ...row,
+    ...skill,
     runtime_scopes: parseStringArray(row.runtime_scopes).filter(isSkillRuntimeScope),
     trigger_keywords: parseStringArray(row.trigger_keywords),
     permissions: parsePermissions(row.permissions_json),

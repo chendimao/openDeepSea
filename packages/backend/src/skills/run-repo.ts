@@ -143,8 +143,14 @@ export const skillRunRepo = {
 };
 
 function normalizeRun(row: SkillRunRow): SkillRun {
+  const {
+    input_json: _inputJson,
+    allowed_paths_json: _allowedPathsJson,
+    result_json: _resultJson,
+    ...run
+  } = row;
   return {
-    ...row,
+    ...run,
     input: parseJson(row.input_json),
     allowed_paths: parseStringArray(row.allowed_paths_json),
     network_enabled: row.network_enabled ? 1 : 0,

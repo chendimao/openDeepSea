@@ -123,6 +123,7 @@ test('skillRepo persists executable skill metadata and update policy fields', ()
   assert.equal(created.install_source_label, 'example/executable-meta-skill');
   assert.equal(created.update_check_mode, 'startup');
   assert.equal(created.update_apply_mode, 'prompt');
+  assert.equal(Object.hasOwn(created, 'permissions_json'), false, 'does not expose raw permissions_json');
 
   const updated = skillRepo.updateSkill('skill-executable-meta', {
     package_version: '1.2.4',
