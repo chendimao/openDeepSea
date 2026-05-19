@@ -123,6 +123,38 @@ test('resource detail content hides file actions for agent documents', () => {
   assert.doesNotMatch(html, /打开原文件/);
 });
 
+test('resource detail content keeps preview and download for uploaded files', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ResourceDetailPreviewContent
+        resource={createUploadedResourceDetail()}
+        fallbackFile={createUploadedFile()}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /上传文件/);
+  assert.match(html, /screen\.png/);
+  assert.match(html, /打开原文件/);
+  assert.match(html, /download="screen\.png"/);
+  assert.match(html, /src="\/uploads\/files\/project-1\/stored-screen\.png"/);
+});
+
+test('resource detail content shows empty state for blank agent documents', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ResourceDetailPreviewContent
+        resource={{ ...createAgentDocumentResourceDetail(), content: '   ' }}
+        fallbackFile={createAgentDocument()}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /该智能体文档暂无内容/);
+  assert.doesNotMatch(html, /download=/);
+  assert.doesNotMatch(html, /打开原文件/);
+});
+
 test('keyword search matches type and source fields', () => {
   const t = (key: string, params?: Record<string, string | number>) => {
     const messages: Record<string, string> = {
@@ -166,6 +198,54 @@ function createUploadedFile(): ProjectFile {
     uploaded_by_id: 'user',
     uploaded_by_name: '大哥',
   });
+}
+
+function createUploadedResourceDetail(): ResourceDetail {
+  return {
+    id: 'file-uploaded',
+    project_id: 'project-1',
+    asset_type: 'uploaded_file',
+    resource_type: 'uploaded_file',
+    group_key: 'uploaded_files',
+    title: 'screen.png',
+    name: 'screen.png',
+    content: null,
+    mime_type: 'image/png',
+    size: 128,
+    url: '/uploads/files/project-1/stored-screen.png',
+    file_id: 'file-uploaded',
+    source_message_id: null,
+    source_room_id: null,
+    source_agent_id: 'user',
+    source_task_id: null,
+    source_display_name: '大哥',
+    source_label: '用户上传',
+    source_context_id: null,
+    source_context_name: null,
+    source_context_type: null,
+    source: {
+      type: 'user_upload',
+      label: '用户上传',
+      display_name: '大哥',
+      agent_id: null,
+      user_id: 'user',
+      message_id: null,
+      room_id: null,
+      task_id: null,
+      context: null,
+    },
+    capabilities: {
+      preview: true,
+      download: true,
+      markdown: false,
+      delete: true,
+    },
+    preview_url: '/uploads/files/project-1/stored-screen.png',
+    download_url: '/uploads/files/project-1/stored-screen.png',
+    created_at: 1,
+    updated_at: 1,
+    deleted_at: null,
+  };
 }
 
 function createAgentDocument(): ProjectFile {
