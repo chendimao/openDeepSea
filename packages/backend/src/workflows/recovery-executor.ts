@@ -27,17 +27,17 @@ export async function executeRecoveryDecision(input: {
 
   const run = workflowRepo.getRun(latestIncident.workflow_run_id);
   if (!run) {
-    workflowIncidentRepo.markBlocked(latestIncident.id, input.decision, null);
+    workflowIncidentRepo.markBlocked(latestIncident.id, decisionToJson(input.decision), null);
     return { status: 'blocked', detail: 'workflow not found' };
   }
 
   const task = taskRepo.get(run.task_id);
   if (!task) {
-    workflowIncidentRepo.markBlocked(latestIncident.id, input.decision, null);
+    workflowIncidentRepo.markBlocked(latestIncident.id, decisionToJson(input.decision), null);
     return { status: 'blocked', detail: 'task not found' };
   }
 
-  workflowIncidentRepo.markExecuting(latestIncident.id, input.decision);
+  workflowIncidentRepo.markExecuting(latestIncident.id, decisionToJson(input.decision));
   const context = parseContext(latestIncident.context_json);
 
   switch (input.decision.action) {
@@ -162,7 +162,7 @@ function markBlocked(
 ): WorkflowRecoveryExecutionResult {
   workflowRepo.updateRun(run.id, { status: 'blocked', error: decision.reason });
   const message = writeRecoveryMessage(incident, decision, run, task, '已将工作流标记为阻塞，等待人工处理。');
-  workflowIncidentRepo.markBlocked(incident.id, decision, message.id);
+  workflowIncidentRepo.markBlocked(incident.id, decisionToJson(decision), message.id);
   return { status: 'blocked', messageId: message.id };
 }
 
@@ -231,4 +231,8 @@ function parseContext(raw: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function decisionToJson(decision: WorkflowRecoveryDecision): { action: WorkflowRecoveryDecision['action'] } & Record<string, unknown> {
+  return { ...decision };
 }

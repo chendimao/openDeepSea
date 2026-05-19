@@ -142,15 +142,11 @@ function createWorkflowFixture(name: string) {
   mkdirSync(fixtureProjectDir, { recursive: true });
   const project = projectRepo.create({ name: `Project ${name}`, path: fixtureProjectDir });
   const room = roomRepo.create({ project_id: project.id, name: `Room ${name}` });
-  const agent = roomAgentRepo.add({
+  const agent = configureExecutor(roomAgentRepo.add({
     room_id: room.id,
     agent_id: `codex-${name.replace(/\s+/g, '-')}`,
     agent_name: 'Codex Agent',
-    workflow_role: 'executor',
-    acp_enabled: 1,
-    acp_backend: 'codex',
-    capabilities: ['backend'],
-  });
+  }));
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -173,4 +169,18 @@ function createWorkflowFixture(name: string) {
     current_stage: 'implementation',
   });
   return { project, room, agent, task, childTask, workflow };
+}
+
+function configureExecutor(agent: ReturnType<typeof roomAgentRepo.add>) {
+  const withRole = roomAgentRepo.setWorkflowRole(agent.id, 'executor') ?? agent;
+  const withAcp = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+  }) ?? withRole;
+  return roomAgentRepo.setCapabilitiesAndRuntime(withAcp.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+  }) ?? withAcp;
 }

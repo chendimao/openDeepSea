@@ -68,6 +68,7 @@ function templateIdForRecoveryContext(context: Record<string, unknown>): string 
     scopeRead: stringArray(workflowStep.scopeRead),
     scopeWrite: stringArray(workflowStep.scopeWrite),
     acceptance: [],
+    dependsOn: [],
   };
   return templateIdForPlanTask(task);
 }

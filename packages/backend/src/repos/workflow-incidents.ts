@@ -130,7 +130,7 @@ export const workflowIncidentRepo = {
     return updateIncident(id, {
       status: 'blocked',
       decision_json: JSON.stringify(decision),
-      action: typeof decision.action === 'string' ? decision.action : 'mark_blocked',
+      action: isWorkflowRecoveryAction(decision.action) ? decision.action : 'mark_blocked',
       action_status: 'failed',
       last_message_id: messageId ?? null,
       resolved_at: now(),
@@ -211,4 +211,15 @@ function normalizeIncidentError(error: string | null | undefined): string {
     .replace(/\s+/g, ' ')
     .replace(/[0-9a-z_-]{10,}/g, '<id>')
     .trim();
+}
+
+function isWorkflowRecoveryAction(value: unknown): value is WorkflowRecoveryAction {
+  return typeof value === 'string' && [
+    'retry_same_agent',
+    'retry_with_global_agent',
+    'reassign_agent',
+    'split_task',
+    'ask_user',
+    'mark_blocked',
+  ].includes(value);
 }

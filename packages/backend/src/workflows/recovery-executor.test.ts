@@ -21,6 +21,7 @@ const { executeRecoveryDecision } = await import('./recovery-executor.js');
 
 test('executeRecoveryDecision retries same agent and records recovery message', async () => {
   const fixture = createFixture('retry same');
+  assert.ok(fixture.agent);
   const step = workflowRepo.createStep({
     workflow_run_id: fixture.workflow.id,
     task_id: fixture.childTask.id,
@@ -57,10 +58,10 @@ test('executeRecoveryDecision provisions global executor then retries workflow',
   const incident = createIncident(fixture, {
     incident_type: 'executor_unavailable',
     error: 'No executor available for implementation',
-    context_json: JSON.stringify({
+    context: {
       childTask: { title: fixture.childTask.title, description: fixture.childTask.description },
       workflowStep: { scopeWrite: ['packages/backend/src/repos/assets.ts'] },
-    }),
+    },
   });
 
   const result = await executeRecoveryDecision({
@@ -75,15 +76,12 @@ test('executeRecoveryDecision provisions global executor then retries workflow',
 
 test('executeRecoveryDecision reassigns child task before retrying', async () => {
   const fixture = createFixture('reassign');
-  const other = roomAgentRepo.add({
+  assert.ok(fixture.agent);
+  const other = configureExecutor(roomAgentRepo.add({
     room_id: fixture.room.id,
     agent_id: 'backend-reassign',
     agent_name: 'Backend Reassign',
-    workflow_role: 'executor',
-    acp_enabled: 1,
-    acp_backend: 'codex',
-    capabilities: ['backend'],
-  });
+  }));
   const incident = createIncident(fixture, {
     incident_type: 'runtime_boundary_mismatch',
     child_task_id: fixture.childTask.id,
@@ -163,15 +161,11 @@ function createFixture(name: string, options: { createAgent?: boolean } = {}) {
   const room = roomRepo.create({ project_id: project.id, name: `Room ${name}` });
   const agent = options.createAgent === false
     ? null
-    : roomAgentRepo.add({
+    : configureExecutor(roomAgentRepo.add({
       room_id: room.id,
       agent_id: `codex-${name.replace(/\s+/g, '-')}`,
       agent_name: 'Codex Agent',
-      workflow_role: 'executor',
-      acp_enabled: 1,
-      acp_backend: 'codex',
-      capabilities: ['backend'],
-    });
+    }));
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -219,6 +213,20 @@ function createIncident(
     },
     ...patch,
   });
+}
+
+function configureExecutor(agent: ReturnType<typeof roomAgentRepo.add>) {
+  const withRole = roomAgentRepo.setWorkflowRole(agent.id, 'executor') ?? agent;
+  const withAcp = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+  }) ?? withRole;
+  return roomAgentRepo.setCapabilitiesAndRuntime(withAcp.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+  }) ?? withAcp;
 }
 
 function decision(action: WorkflowRecoveryDecision['action']): WorkflowRecoveryDecision {

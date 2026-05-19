@@ -3,11 +3,16 @@ import { workflowIncidentRepo } from '../repos/workflow-incidents.js';
 import type {
   AgentRun,
   Task,
+  AgentRunStatus,
+  TaskStatus,
   WorkflowIncident,
   WorkflowIncidentSeverity,
   WorkflowIncidentType,
   WorkflowRun,
+  WorkflowStage,
+  WorkflowStatus,
   WorkflowStep,
+  WorkflowStepStatus,
 } from '../types.js';
 
 const DEFAULT_STALE_AGENT_RUN_MS = 120_000;
@@ -264,51 +269,79 @@ function createIncident(
 
 function buildIncidentContext(row: JoinedWorkflowRow): Record<string, unknown> {
   return {
-    workflowRun: {
+    workflowRun: compactObject({
       id: row.run_id,
-      status: row.run_status,
-      currentStage: row.run_current_stage,
+      status: asWorkflowStatus(row.run_status),
+      currentStage: asWorkflowStage(row.run_current_stage),
       error: row.run_error,
-    } satisfies Partial<WorkflowRun>,
+    }) satisfies Partial<WorkflowRun>,
     workflowStep: row.step_id
-      ? {
+      ? compactObject({
         id: row.step_id,
-        stage: row.step_stage,
-        status: row.step_status,
+        stage: asWorkflowStage(row.step_stage),
+        status: asWorkflowStepStatus(row.step_status),
         error: row.step_error,
         scopeRead: parseStringArray(row.step_scope_read),
         scopeWrite: parseStringArray(row.step_scope_write),
-      } satisfies Partial<WorkflowStep>
+      }) satisfies Partial<WorkflowStep>
       : null,
-    task: {
+    task: compactObject({
       id: row.run_task_id,
-      title: row.parent_title,
-      description: row.parent_description,
-      status: row.parent_status,
-    } satisfies Partial<Task>,
+      title: row.parent_title ?? undefined,
+      description: row.parent_description ?? undefined,
+      status: asTaskStatus(row.parent_status),
+    }) satisfies Partial<Task>,
     childTask: getChildTaskId(row)
-      ? {
+      ? compactObject({
         id: getChildTaskId(row),
-        title: row.child_title,
-        description: row.child_description,
-        status: row.child_status,
+        title: row.child_title ?? undefined,
+        description: row.child_description ?? undefined,
+        status: asTaskStatus(row.child_status),
         assignedAgentId: row.child_assigned_agent_id,
-      }
+      })
       : null,
     agentRun: row.agent_run_id
-      ? {
+      ? compactObject({
         id: row.agent_run_id,
         roomAgentId: row.agent_run_room_agent_id,
         agentId: row.agent_run_agent_id,
-        status: row.agent_run_status,
+        status: asAgentRunStatus(row.agent_run_status),
         error: row.agent_run_error,
         updatedAt: row.agent_run_updated_at,
-      } satisfies Partial<AgentRun>
+      }) satisfies Partial<AgentRun>
       : null,
     stdout: excerpt(row.agent_run_stdout),
     stderr: excerpt(row.agent_run_stderr),
     activityLog: excerpt(row.agent_run_activity_log),
   };
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>;
+}
+
+function asWorkflowStatus(value: string | null): WorkflowStatus | undefined {
+  return isOneOf(value, ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked', 'cancelled', 'completed', 'failed']);
+}
+
+function asWorkflowStage(value: string | null): WorkflowStage | undefined {
+  return isOneOf(value, ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance']);
+}
+
+function asWorkflowStepStatus(value: string | null): WorkflowStepStatus | undefined {
+  return isOneOf(value, ['pending', 'running', 'awaiting_approval', 'completed', 'failed', 'cancelled', 'interrupted', 'skipped']);
+}
+
+function asTaskStatus(value: string | null): TaskStatus | undefined {
+  return isOneOf(value, ['todo', 'in_progress', 'review', 'done', 'failed']);
+}
+
+function asAgentRunStatus(value: string | null): AgentRunStatus | undefined {
+  return isOneOf(value, ['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']);
+}
+
+function isOneOf<const T extends string>(value: string | null, allowed: readonly T[]): T | undefined {
+  return value && (allowed as readonly string[]).includes(value) ? value as T : undefined;
 }
 
 function getChildTaskId(row: JoinedWorkflowRow): string | null {

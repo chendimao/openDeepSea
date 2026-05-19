@@ -4,7 +4,6 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { getAdapter } from './acp/index.js';
 import { getLocalAccessToken, isTrustedOrigin } from './local-access.js';
-import { agentRunRepo } from './repos/agent-runs.js';
 import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
 import {
@@ -15,9 +14,10 @@ import {
   projectFileUploadRoot,
   projectFileUploadRoute,
 } from './uploads.js';
+import { recoverWorkflowStartupOrphans, startWorkflowMonitorService } from './workflows/workflow-monitor-service.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { wsHub } from './ws-hub.js';
-import type { WsClientEvent } from './types.js';
+import type { AgentRun, WsClientEvent } from './types.js';
 
 const PORT = Number(process.env.PORT ?? 7330);
 const configuredLocalAccessToken = process.env.OPENDEEPSEA_LOCAL_TOKEN?.trim();
@@ -73,42 +73,32 @@ wss.on('connection', (socket) => {
   socket.on('close', () => wsHub.removeSocket(socket));
 });
 
-const orphanedSteps = workflowOrchestrator.recoverOrphanedSteps('Backend restarted before workflow step completed');
-if (orphanedSteps > 0) {
-  console.warn(`[workflows] Marked ${orphanedSteps} orphaned running step(s) as failed`);
-}
-void recoverInterruptedAgentRuns();
+void recoverWorkflowStartupOrphans({ buildInterruptedRunReason }).then((recovered) => {
+  if (recovered.interruptedAgentRuns > 0) {
+    console.warn(`[agent-runs] Marked ${recovered.interruptedAgentRuns} orphaned active run(s) as interrupted`);
+  }
+  if (recovered.orphanedSteps > 0) {
+    console.warn(`[workflows] Marked ${recovered.orphanedSteps} orphaned running step(s) as interrupted`);
+  }
+  if (recovered.incidents > 0) {
+    console.warn(`[workflow-monitor] Detected ${recovered.incidents} startup workflow incident(s)`);
+  }
+}).catch((err) => {
+  console.warn(`[workflow-monitor] startup recovery failed: ${(err as Error).message}`);
+});
 
 httpServer.listen(PORT, () => {
   console.log(`[server] backend listening on :${PORT}`);
   if (!configuredLocalAccessToken) {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
+  const monitorService = startWorkflowMonitorService();
+  void monitorService.runOnce().catch((err) => {
+    console.warn(`[workflow-monitor] initial scan failed: ${(err as Error).message}`);
+  });
 });
 
-async function recoverInterruptedAgentRuns(): Promise<void> {
-  const activeRuns = agentRunRepo.listActive();
-  if (activeRuns.length === 0) return;
-
-  let interrupted = 0;
-  for (const run of activeRuns) {
-    const reason = await buildInterruptedRunReason(run);
-    const updated = agentRunRepo.interruptRun(run.id, reason);
-    if (updated) {
-      wsHub.broadcast(updated.room_id, {
-        type: 'agent_run:updated',
-        roomId: updated.room_id,
-        run: updated,
-      });
-      interrupted++;
-    }
-  }
-  if (interrupted > 0) {
-    console.warn(`[agent-runs] Marked ${interrupted} orphaned active run(s) as interrupted`);
-  }
-}
-
-async function buildInterruptedRunReason(run: { backend: string; acp_session_id: string | null; workflow_run_id: string | null }): Promise<string> {
+async function buildInterruptedRunReason(run: AgentRun): Promise<string> {
   const base = 'Backend restarted before agent run completed';
   if (!run.acp_session_id || !['claudecode', 'opencode', 'codex'].includes(run.backend)) {
     return `${base}; no resumable ACP session id was recorded.`;
