@@ -237,3 +237,23 @@ test('parseMessageMetadata accepts task readiness metadata', () => {
     source_message_id: 'source-message-1',
   });
 });
+
+test('parseMessageMetadata accepts workflow recovery decision task event', () => {
+  const metadata = JSON.stringify({
+    task_id: 'task-1',
+    task_title: '实现资源资产后端模型与接口',
+    workflow_run_id: 'workflow-1',
+    workflow_step_id: 'step-1',
+    event_type: 'workflow_recovery_decided',
+    incident_id: 'incident-1',
+    incident_type: 'executor_unavailable',
+    recovery_action: 'retry_with_global_agent',
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.task_id, 'task-1');
+  assert.equal(parsed.workflow_run_id, 'workflow-1');
+  assert.equal(parsed.workflow_step_id, 'step-1');
+  assert.equal(parsed.event_type, 'workflow_recovery_decided');
+});

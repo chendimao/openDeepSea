@@ -119,6 +119,7 @@ export type TaskEventType =
   | 'workflow_plan_ready'
   | 'workflow_assignment_created'
   | 'workflow_blocked'
+  | 'workflow_recovery_decided'
   | 'workflow_completed'
   | 'workflow_cancelled'
   | 'workflow_failed'
