@@ -22,13 +22,7 @@ import {
   PromptInputToolbar,
 } from './ai-elements/PromptInput';
 import { Button } from './ui/Button';
-
-interface ComposerReplyTarget {
-  messageId: string;
-  senderName: string;
-  excerpt: string;
-  explicit: boolean;
-}
+import { getExplicitReplyToMessageId, type ComposerReplyTarget } from './RichMessageComposer.model';
 
 interface RichMessageComposerProps {
   projectId: string;
@@ -215,7 +209,7 @@ export function RichMessageComposer({
       mentions: mentionedRoomAgentIds.length > 0 ? mentionedRoomAgentIds : undefined,
       files: localFiles.length > 0 ? localFiles : undefined,
       fileIds: fileIds.length > 0 ? fileIds : undefined,
-      replyToMessageId: replyTarget?.messageId,
+      replyToMessageId: getExplicitReplyToMessageId(replyTarget),
     });
   };
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { RoomAgent } from '../lib/types';
+import { getExplicitReplyToMessageId } from './RichMessageComposer.model';
 import { buildComposerTriggers } from './RichMessageComposer.triggers';
 import type { TriggerSuggestion } from './prompt-area/types';
 
@@ -62,6 +63,28 @@ test('buildComposerTriggers registers agent mention and slash command triggers',
     { value: 'start-task', label: '/start-task', description: 'Start a task workflow' },
   ]);
   assert.equal(commandTrigger?.onSelect?.({ value: 'task', label: '/task' }), 'task');
+});
+
+test('getExplicitReplyToMessageId only returns explicit reply targets', () => {
+  assert.equal(
+    getExplicitReplyToMessageId({
+      messageId: 'message-explicit',
+      senderName: '产品经理',
+      excerpt: '显式引用',
+      explicit: true,
+    }),
+    'message-explicit',
+  );
+  assert.equal(
+    getExplicitReplyToMessageId({
+      messageId: 'message-default',
+      senderName: '产品经理',
+      excerpt: '默认回复',
+      explicit: false,
+    }),
+    undefined,
+  );
+  assert.equal(getExplicitReplyToMessageId(null), undefined);
 });
 
 function asSuggestions(
