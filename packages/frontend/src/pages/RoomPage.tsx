@@ -1077,7 +1077,7 @@ function MessageBubble({
           {canRetryWorkflowEvent && metadata.workflow_run_id && (
             <button
               type="button"
-              className="ml-2 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[11px] font-medium text-[var(--color-fg)] transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-raised)] disabled:pointer-events-none disabled:opacity-50"
+              className="task-event-action"
               disabled={retryingWorkflowId === metadata.workflow_run_id}
               title={t('agentRun.retryStage')}
               aria-label={t('agentRun.retryStage')}
