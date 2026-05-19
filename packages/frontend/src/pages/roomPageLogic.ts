@@ -39,11 +39,11 @@ export function createReplyTarget(message: Message, explicit: boolean): ReplyTar
 export function getTaskReadinessActionState(intent: TaskExecutionIntent | undefined): TaskReadinessActionState {
   const implementationIntent = intent === undefined || intent === 'implementation' || intent === 'debug_fix';
   return {
-    canGenerateTask: true,
+    canGenerateTask: implementationIntent,
     description: implementationIntent
       ? '已具备创建任务的基础信息'
-      : '这是方案/分析输出，可生成任务但不会直接执行实现',
-    primaryLabel: implementationIntent ? '开始任务' : '生成任务',
+      : '这是方案/分析输出，不会直接启动正式 workflow',
+    primaryLabel: implementationIntent ? '开始任务' : '继续沟通',
     pendingLabel: '启动中',
   };
 }

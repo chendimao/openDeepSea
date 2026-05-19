@@ -77,6 +77,8 @@ test('shouldRequestCollaborationDecision gates discussion and execution intents'
     { prompt: 'why does this fix fail', expected: false },
     { prompt: '修复群聊协作同时启动所有智能体的问题', expected: true },
     { prompt: '请修复这个问题', expected: true },
+    { prompt: '细化文件管理功能，比如区分用户上传文件和智能体生成文档', expected: true },
+    { prompt: '完善文件管理功能，支持智能体生成的 md 文档分类', expected: true },
     { prompt: '按这个方案开始执行', expected: true },
     { prompt: 'commit this change', expected: true },
   ];
@@ -1140,6 +1142,24 @@ test('buildAgentIdentityPrompt renders global personality and rules before the u
   assert.match(prompt, /主要工作：前端实现和 UI 验收。/);
   assert.match(prompt, /必须遵守的规则：\n完成前必须验证。/);
   assert.match(prompt, /当前用户请求：\n请实现页面/);
+});
+
+test('built-in planner identity does not convert executable feature requests into analysis-only work', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-planner-identity-'));
+  const project = projectRepo.create({ name: `planner-identity-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Planner Identity Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+
+  const prompt = buildAgentIdentityPrompt(
+    planner,
+    '细化文件管理功能 ，比如有些是用户上传的文件，有些是智能体生成的md文档',
+  );
+
+  assert.match(prompt, /不亲自修改代码/);
+  assert.match(prompt, /不得把任务改写成“只做分析\/不进入实现”/);
+  assert.match(prompt, /可进入 workflow 的执行计划/);
+  assert.match(prompt, /当前用户请求：\n细化文件管理功能/);
 });
 
 test('dispatchUserMessage passes uploaded image paths to ACP adapters', async () => {

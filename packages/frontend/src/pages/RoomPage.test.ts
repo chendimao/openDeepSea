@@ -27,12 +27,12 @@ test('createDefaultReplyTarget returns null when default reply is suppressed for
   assert.equal(target, null);
 });
 
-test('analysis-only ready messages can still be promoted into tasks', () => {
+test('analysis-only ready messages do not expose formal workflow start', () => {
   const state = getTaskReadinessActionState('analysis_only');
 
-  assert.equal(state.canGenerateTask, true);
-  assert.equal(state.primaryLabel, '生成任务');
-  assert.equal(state.description, '这是方案/分析输出，可生成任务但不会直接执行实现');
+  assert.equal(state.canGenerateTask, false);
+  assert.equal(state.primaryLabel, '继续沟通');
+  assert.equal(state.description, '这是方案/分析输出，不会直接启动正式 workflow');
 });
 
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'>): Message {

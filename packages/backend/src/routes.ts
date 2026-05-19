@@ -1985,11 +1985,12 @@ router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res)
   }
 
   try {
-    const taskInput = buildPromotedTaskInput(sourceMessage);
+    const promotion = resolvePromotedTaskSource(room.id, sourceMessage);
+    const taskInput = buildPromotedTaskInput(promotion);
     const taskResult = createTaskWithConversation({
       roomId: room.id,
       origin: 'chat_plan',
-      sourceMessageId: sourceMessage.id,
+      sourceMessageId: promotion.taskSourceMessage.id,
       taskInput: {
         title: taskInput.title,
         description: taskInput.description,
@@ -2000,7 +2001,7 @@ router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res)
       roomId: room.id,
       taskId: taskResult.task.id,
       source: 'task_button',
-      sourceMessageId: sourceMessage.id,
+      sourceMessageId: promotion.taskSourceMessage.id,
     });
     return res.status(202).json({ task: taskResult.task, workflow });
   } catch (err) {
@@ -2009,34 +2010,88 @@ router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res)
   }
 });
 
-function buildPromotedTaskInput(sourceMessage: ReturnType<typeof messageRepo.get>): {
+interface PromotedTaskSource {
+  triggerMessage: NonNullable<ReturnType<typeof messageRepo.get>>;
+  taskSourceMessage: NonNullable<ReturnType<typeof messageRepo.get>>;
+  readiness: Record<string, unknown> | null;
+  decision: Record<string, unknown> | null;
+}
+
+function resolvePromotedTaskSource(
+  roomId: string,
+  triggerMessage: NonNullable<ReturnType<typeof messageRepo.get>>,
+): PromotedTaskSource {
+  const metadata = parseMessageMetadataObject(triggerMessage.metadata);
+  const readiness = parseMessageMetadataObject(metadata?.task_readiness);
+  const decision = parseMessageMetadataObject(metadata?.collaboration_decision)
+    ?? parseMessageMetadataObject(metadata?.decision);
+  const readinessSourceMessageId = firstNonEmptyString([readiness?.source_message_id]);
+  if (!readinessSourceMessageId) {
+    if (!readiness || isFormalWorkflowReadiness(readiness)) {
+      return { triggerMessage, taskSourceMessage: triggerMessage, readiness, decision };
+    }
+    throw workflowPromotionError(
+      400,
+      'analysis-only readiness cannot be promoted to workflow without an original user source message',
+    );
+  }
+
+  const taskSourceMessage = messageRepo.get(readinessSourceMessageId);
+  if (!taskSourceMessage || taskSourceMessage.room_id !== roomId) {
+    throw workflowPromotionError(404, 'source message not found');
+  }
+  return { triggerMessage, taskSourceMessage, readiness, decision };
+}
+
+function buildPromotedTaskInput(promotion: PromotedTaskSource): {
   title: string;
   description: string;
 } {
-  if (!sourceMessage) throw new Error('source message not found');
-  const metadata = parseMessageMetadataObject(sourceMessage.metadata);
-  const decision = parseMessageMetadataObject(metadata?.collaboration_decision)
-    ?? parseMessageMetadataObject(metadata?.decision);
-  const readiness = parseMessageMetadataObject(metadata?.task_readiness);
+  const { triggerMessage, taskSourceMessage, readiness, decision } = promotion;
   const rawTitle = firstNonEmptyString([
-    readiness?.title,
-    metadata?.task_title,
+    taskSourceMessage.content.split(/\r?\n/)[0],
+    taskSourceMessage.content,
+    isFormalWorkflowReadiness(readiness) ? readiness?.title : null,
     decision?.summary,
-    metadata?.summary,
-    sourceMessage.content.split(/\r?\n/)[0],
-    sourceMessage.content,
   ]);
   const title = truncateTitle(rawTitle || '从群聊创建的工作流任务');
-  const baseDescription = firstNonEmptyString([
-    readiness?.description,
-    sourceMessage.content,
-  ]) ?? title;
+  const baseDescription = firstNonEmptyString([taskSourceMessage.content]) ?? title;
   const executionIntent = parseTaskExecutionIntent(readiness?.execution_intent);
+  const plannerBackground = isFormalWorkflowReadiness(readiness)
+    ? buildPlannerBackground(triggerMessage, readiness)
+    : null;
   const description = [
     baseDescription,
-    executionIntent ? `任务意图：${executionIntent}` : null,
+    plannerBackground,
+    isImplementationIntent(executionIntent) ? `任务意图：${executionIntent}` : null,
   ].filter(Boolean).join('\n\n');
   return { title, description };
+}
+
+function buildPlannerBackground(
+  triggerMessage: NonNullable<ReturnType<typeof messageRepo.get>>,
+  readiness: Record<string, unknown> | null,
+): string | null {
+  const background = firstNonEmptyString([
+    readiness?.description,
+    triggerMessage.content,
+  ]);
+  return background ? `产品经理方案背景：\n${background}` : null;
+}
+
+function isFormalWorkflowReadiness(readiness: Record<string, unknown> | null): boolean {
+  const executionIntent = parseTaskExecutionIntent(readiness?.execution_intent);
+  return readiness?.recommended_mode === 'formal_workflow' || isImplementationIntent(executionIntent);
+}
+
+function isImplementationIntent(intent: TaskExecutionIntent | null): boolean {
+  return intent === 'implementation' || intent === 'debug_fix';
+}
+
+function workflowPromotionError(status: number, message: string): Error & { status: number } {
+  const error = new Error(message) as Error & { status: number };
+  error.status = status;
+  return error;
 }
 
 function parseTaskExecutionIntent(value: unknown): TaskExecutionIntent | null {

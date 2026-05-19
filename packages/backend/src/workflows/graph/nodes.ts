@@ -343,6 +343,20 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
     async executeNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
+      const activeRuns = tools.listActiveAgentRunsByWorkflow(context.run.id);
+      if (activeRuns.length > 0) {
+        const activeRun = activeRuns[0]!;
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'execute',
+          currentStepId: activeRun.workflow_step_id ?? state.currentStepId,
+          activeAgentRunId: activeRun.id,
+          status: 'running',
+          error: null,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
       const childTasks = tools.listChildTasks(context.task.id);
       const pendingChildren = state.childTaskIds
         .map((id) => childTasks.find((task) => task.id === id))
@@ -445,6 +459,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         workflowPlan: runningWorkflowPlan,
         currentNode: 'execute',
         currentStepId: step.id,
+        activeAgentRunId: null,
         error: null,
       }));
       recordEventSafely(tools, context, {
@@ -476,6 +491,14 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         workflowStepId: step.id,
         workflowStage: 'implementation',
       });
+      tools.updateGraphState(context.run.id, serializeGraphState({
+        ...state,
+        workflowPlan: runningWorkflowPlan,
+        currentNode: 'execute',
+        currentStepId: step.id,
+        activeAgentRunId: runResult.run.id,
+        error: null,
+      }));
 
       if (runResult.status !== 'completed') {
         const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');

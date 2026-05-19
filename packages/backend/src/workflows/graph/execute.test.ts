@@ -188,6 +188,122 @@ test('execute node starts assigned ACP agent and records completed implementatio
   assert.equal(nextState.activeAgentRunId, fakeRunId);
 });
 
+test('execute node reuses active workflow run instead of starting duplicate ACP execution', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-active-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Active', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Active Room' });
+  const executor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'executor-active',
+    agent_name: 'Executor Active',
+  });
+  const withRole = roomAgentRepo.setWorkflowRole(executor.id, 'executor') ?? executor;
+  const acpExecutor = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+  }) ?? withRole;
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parent active task',
+    description: 'Parent workflow task',
+  });
+  const childTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Child active task',
+    description: 'Implementation child task',
+    assigned_agent_id: acpExecutor.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const activeStep = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: childTask.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    room_agent_id: acpExecutor.id,
+    sort_order: 1,
+  });
+  const activeRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: acpExecutor.id,
+    agent_id: acpExecutor.agent_id,
+    backend: 'codex',
+    task_id: childTask.id,
+    workflow_run_id: run.id,
+    workflow_step_id: activeStep.id,
+    workflow_stage: 'implementation',
+    prompt: 'already running',
+  });
+  let calls = 0;
+  const tools = createGraphTools({
+    runAcpAgent: async () => {
+      calls += 1;
+      throw new Error('runAcpAgent should not be called while workflow has an active run');
+    },
+  });
+  const nodes = createGraphNodes(tools);
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Do not duplicate active execution',
+      assumptions: [],
+      tasks: [{
+        title: childTask.title,
+        description: childTask.description ?? '',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Active run is reused'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'execute',
+    currentStepId: activeStep.id,
+    activeAgentRunId: activeRun.id,
+    childTaskIds: [childTask.id],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(nextState.currentStepId, activeStep.id);
+  assert.equal(nextState.activeAgentRunId, activeRun.id);
+  assert.equal(agentRunRepo.listActiveByWorkflow(run.id).length, 1);
+});
+
 test('execute node blocks assigned non-ACP agent without starting ACP run', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-execute-non-acp-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

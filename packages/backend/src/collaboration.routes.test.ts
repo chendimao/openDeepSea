@@ -204,8 +204,16 @@ test('promote-to-workflow is idempotent for the same source message', async () =
   assert.deepEqual(enqueued, [firstBody.workflow.id]);
 });
 
-test('promote-to-workflow prefers task readiness title and description metadata', async () => {
+test('promote-to-workflow uses original user message as task source and keeps planner background', async () => {
   const { room } = createCollaborationFixture('promote-readiness');
+  const original = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '实现 ACP 权限派生，自动把业务权限同步到 Codex 权限。',
+    message_type: 'text',
+  });
   const message = messageRepo.create({
     room_id: room.id,
     sender_type: 'agent',
@@ -221,7 +229,7 @@ test('promote-to-workflow prefers task readiness title and description metadata'
         description: '以业务权限为主配置源，自动派生 ACP/Codex 权限。',
         missing_questions: [],
         recommended_mode: 'formal_workflow',
-        source_message_id: 'original-user-message',
+        source_message_id: original.id,
       },
     },
   });
@@ -234,12 +242,15 @@ test('promote-to-workflow prefers task readiness title and description metadata'
   });
 
   assert.equal(res.status, 202);
-  const body = await res.json() as { task: { id: string; title: string; description: string } };
-  assert.equal(body.task.title, '收口 ACP 权限派生');
-  assert.equal(body.task.description, '以业务权限为主配置源，自动派生 ACP/Codex 权限。');
+  const body = await res.json() as { task: { id: string; source_message_id: string; title: string; description: string } };
+  assert.equal(body.task.source_message_id, original.id);
+  assert.equal(body.task.title, '实现 ACP 权限派生，自动把业务权限同步到 Codex 权限。');
+  assert.match(body.task.description, /实现 ACP 权限派生/);
+  assert.match(body.task.description, /产品经理方案背景/);
+  assert.match(body.task.description, /以业务权限为主配置源/);
 });
 
-test('promote-to-workflow persists task readiness execution intent in task description', async () => {
+test('promote-to-workflow rejects analysis-only readiness without original user source', async () => {
   const { room } = createCollaborationFixture('promote-readiness-intent');
   const message = messageRepo.create({
     room_id: room.id,
@@ -268,10 +279,56 @@ test('promote-to-workflow persists task readiness execution intent in task descr
     method: 'POST',
   });
 
+  assert.equal(res.status, 400);
+  const body = await res.json() as { error: string };
+  assert.match(body.error, /analysis-only readiness cannot be promoted/);
+});
+
+test('promote-to-workflow keeps analysis-only planner wording out of executable task description', async () => {
+  const { room } = createCollaborationFixture('promote-analysis-source');
+  const original = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '实现自动归档规则，覆盖用户上传文件和智能体生成文档。',
+    message_type: 'text',
+  });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    content: '本轮只做产品规则设计，不进入实现。',
+    message_type: 'agent_stream',
+    metadata: {
+      task_readiness: {
+        ready: true,
+        confidence: 0.82,
+        title: '自动归档规则方案',
+        description: '只做产品规则设计，不进入实现。',
+        missing_questions: [],
+        recommended_mode: 'chat_collaboration',
+        execution_intent: 'analysis_only',
+        source_message_id: original.id,
+      },
+    },
+  });
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: () => undefined,
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages/${message.id}/promote-to-workflow`, {
+    method: 'POST',
+  });
+
   assert.equal(res.status, 202);
-  const body = await res.json() as { task: { id: string; description: string } };
-  assert.match(body.task.description, /只做产品规则设计，不进入实现。/);
-  assert.match(body.task.description, /任务意图：analysis_only/);
+  const body = await res.json() as { task: { source_message_id: string; title: string; description: string } };
+  assert.equal(body.task.source_message_id, original.id);
+  assert.equal(body.task.title, '实现自动归档规则，覆盖用户上传文件和智能体生成文档。');
+  assert.match(body.task.description, /实现自动归档规则/);
+  assert.doesNotMatch(body.task.description, /不进入实现/);
+  assert.doesNotMatch(body.task.description, /任务意图：analysis_only/);
 });
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
