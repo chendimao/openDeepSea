@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -84,7 +84,56 @@ test('runSkillInProjectSandbox executes shell skills inside the project and reco
   assert.equal(stored?.skill_id, skillId);
   assert.equal(stored?.project_id, project.id);
   assert.equal(stored?.network_enabled, 1);
-  assert.deepEqual(stored?.allowed_paths, [project.path]);
+  assert.deepEqual(stored?.allowed_paths, [realpathSync(project.path)]);
+});
+
+test('runSkillInProjectSandbox blocks filesystem access outside the project directory', async () => {
+  reset();
+  const project = await createProject();
+  const outsideDir = mkdtempSync(join(tmpdir(), 'opendeepsea-skill-outside-'));
+  const outsideSecret = join(outsideDir, 'secret.txt');
+  const outsideWrite = join(outsideDir, 'write.txt');
+  writeFileSync(outsideSecret, 'secret');
+
+  const installPath = mkdtempSync(join(process.env.OPENDEEPSEA_SKILLS_DIR!, 'sandbox-boundary-skill-'));
+  await mkdir(join(installPath, 'scripts'), { recursive: true });
+  await writeFile(join(installPath, 'SKILL.md'), '# Sandbox Boundary Skill\n');
+  await writeFile(join(installPath, 'scripts', 'run.sh'), [
+    'set +e',
+    `cat ${JSON.stringify(outsideSecret)} > outside-read.txt 2> outside-read.err`,
+    'read_status=$?',
+    `(echo denied > ${JSON.stringify(outsideWrite)}) 2> outside-write.err`,
+    'write_status=$?',
+    'echo allowed > project-write.txt',
+    'printf \'{"readStatus":%s,"writeStatus":%s}\\n\' "$read_status" "$write_status"',
+  ].join('\n'));
+  const skill = skillRepo.createSkill({
+    id: 'skill-sandbox-boundary',
+    name: 'sandbox-boundary-skill',
+    source_type: 'skills_sh',
+    source_uri: 'skills.sh/acme/sandbox-boundary',
+    install_path: installPath,
+    manifest_path: 'SKILL.md',
+    runtime_scopes: ['workflow'],
+    trigger_mode: 'manual',
+    runtime_type: 'shell',
+    entrypoint: 'scripts/run.sh',
+    permissions: { filesystem: 'project', network: false, commands: ['bash'] },
+  });
+
+  const run = await runSkillInProjectSandbox({
+    skillId: skill.id,
+    projectId: project.id,
+    invokedBy: 'workflow',
+    input: null,
+  });
+
+  assert.equal(run.status, 'completed');
+  assert.deepEqual(run.result, { readStatus: 1, writeStatus: 1 });
+  assert.equal(readFileSync(join(project.path, 'project-write.txt'), 'utf-8').trim(), 'allowed');
+  assert.equal(existsSync(outsideWrite), false);
+  assert.match(readFileSync(join(project.path, 'outside-read.err'), 'utf-8'), /Operation not permitted/i);
+  assert.match(readFileSync(join(project.path, 'outside-write.err'), 'utf-8'), /Operation not permitted/i);
 });
 
 test('runSkillInProjectSandbox records failed executions', async () => {
