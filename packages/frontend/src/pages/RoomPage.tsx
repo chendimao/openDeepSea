@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, FolderOpen, ListTodo, MessageSquare, Play, Plus, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, FolderOpen, ListTodo, MessageSquare, Play, Plus, RotateCcw, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -1052,6 +1052,9 @@ function MessageBubble({
     streaming || run?.status === 'running' || run?.status === 'queued'
   );
   const isTaskEvent = isSystem && Boolean(metadata.event_type && metadata.task_id);
+  const canRetryWorkflowEvent = isTaskEvent &&
+    metadata.event_type === 'workflow_blocked' &&
+    Boolean(metadata.workflow_run_id);
   const isCollaborationDecision = isSystem && Boolean(metadata.collaboration_decision && metadata.source_message_id);
   const shouldShowTaskReadiness =
     !isUser &&
@@ -1071,6 +1074,22 @@ function MessageBubble({
         <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
           <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
           <span>{message.content}</span>
+          {canRetryWorkflowEvent && metadata.workflow_run_id && (
+            <button
+              type="button"
+              className="ml-2 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[11px] font-medium text-[var(--color-fg)] transition hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-raised)] disabled:pointer-events-none disabled:opacity-50"
+              disabled={retryingWorkflowId === metadata.workflow_run_id}
+              title={t('agentRun.retryStage')}
+              aria-label={t('agentRun.retryStage')}
+              onClick={(event) => {
+                event.stopPropagation();
+                onRetryWorkflow(metadata.workflow_run_id!);
+              }}
+            >
+              <RotateCcw className={cn('h-3 w-3', retryingWorkflowId === metadata.workflow_run_id && 'animate-spin')} strokeWidth={1.8} />
+              <span>{t('common.retry')}</span>
+            </button>
+          )}
         </div>
       </AiMessageRow>
     );
