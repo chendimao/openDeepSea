@@ -5,7 +5,7 @@ import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, F
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { AgentRun, Message, MessageAttachmentMetadata, Room, RoomAgent, Task, WorkflowRun } from '../lib/types';
+import type { AgentRun, Message, MessageAttachmentMetadata, Room, RoomAgent, Task, TaskExecutionIntent, WorkflowRun } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
 import { cn } from '../lib/utils';
@@ -1215,6 +1215,7 @@ function MessageBubble({
         {shouldShowTaskReadiness && metadata.task_readiness && (
           <TaskReadinessActions
             title={metadata.task_readiness.title}
+            intent={metadata.task_readiness.execution_intent}
             starting={promoteReadyTask.isPending}
             onStart={() => promoteReadyTask.mutate()}
             onContinue={() => setReadinessDismissed(true)}
@@ -1239,31 +1240,36 @@ function MessageBubble({
 
 function TaskReadinessActions({
   title,
+  intent,
   starting,
   onStart,
   onContinue,
 }: {
   title: string;
+  intent?: TaskExecutionIntent;
   starting: boolean;
   onStart: () => void;
   onContinue: () => void;
 }) {
+  const canStart = canStartWorkflowFromReadiness(intent);
   return (
     <div className="task-readiness-actions">
       <div className="task-readiness-copy">
-        <span>已具备创建任务的基础信息</span>
+        <span>{canStart ? '已具备创建任务的基础信息' : '这是方案/分析输出，未进入实现'}</span>
         <strong>{title}</strong>
       </div>
       <div className="task-readiness-buttons">
-        <button
-          type="button"
-          className="task-readiness-button is-primary"
-          disabled={starting}
-          onClick={onStart}
-        >
-          <Play className="h-3.5 w-3.5" strokeWidth={1.8} />
-          <span>{starting ? '启动中' : '开始任务'}</span>
-        </button>
+        {canStart && (
+          <button
+            type="button"
+            className="task-readiness-button is-primary"
+            disabled={starting}
+            onClick={onStart}
+          >
+            <Play className="h-3.5 w-3.5" strokeWidth={1.8} />
+            <span>{starting ? '启动中' : '开始任务'}</span>
+          </button>
+        )}
         <button
           type="button"
           className="task-readiness-button"
@@ -1275,6 +1281,10 @@ function TaskReadinessActions({
       </div>
     </div>
   );
+}
+
+function canStartWorkflowFromReadiness(intent: TaskExecutionIntent | undefined): boolean {
+  return intent === undefined || intent === 'implementation' || intent === 'debug_fix';
 }
 
 function MessageAttachments({ attachments }: { attachments: MessageAttachmentMetadata[] }) {
