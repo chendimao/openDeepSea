@@ -1,11 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { importLocalSkill, installedPathLabel, removeInstalledSkill } from './installer.js';
+import { invokeSkill } from './executor.js';
+import { skillRunRepo } from './run-repo.js';
 import { validateLocalAccess } from '../local-access.js';
 import { formatSkillPrompt } from './prompt.js';
 import { DuplicateSkillNameError, skillRepo } from './repo.js';
 import { selectSkills } from './selector.js';
-import type { Skill, SkillBinding, SkillBindingScope, SkillRuntimeScope, SkillTriggerMode } from './types.js';
+import type { Skill, SkillBinding, SkillBindingScope, SkillRun, SkillRuntimeScope, SkillTriggerMode } from './types.js';
 
 export const skillsRouter = Router();
 skillsRouter.use((req, res, next) => {
@@ -34,6 +36,15 @@ const bindingInputSchema = z.object({
   scope_id: z.string().min(1),
   enabled: z.boolean().optional(),
   priority_override: z.number().int().nullable().optional(),
+});
+
+
+const runSkillSchema = z.object({
+  projectId: z.string().min(1),
+  roomId: z.string().min(1).nullable().optional(),
+  agentId: z.string().min(1).nullable().optional(),
+  invokedBy: z.enum(['workflow', 'agent', 'manual']).optional(),
+  input: z.unknown().optional(),
 });
 
 const previewSchema = z.object({
@@ -124,6 +135,43 @@ skillsRouter.post('/preview-selection', async (req, res) => {
   });
 });
 
+
+skillsRouter.get('/runs', (req, res) => {
+  const parsed = z.object({
+    skillId: z.string().optional(),
+    projectId: z.string().optional(),
+    roomId: z.string().optional(),
+    agentId: z.string().optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  res.json(skillRunRepo.listRuns({
+    skill_id: parsed.data.skillId,
+    project_id: parsed.data.projectId,
+    room_id: parsed.data.roomId,
+    agent_id: parsed.data.agentId,
+  }).map(toSkillRunDto));
+});
+
+skillsRouter.post('/:skillId/run', async (req, res) => {
+  const parsed = runSkillSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const run = await invokeSkill({
+      skillId: req.params.skillId,
+      projectId: parsed.data.projectId,
+      roomId: parsed.data.roomId,
+      agentId: parsed.data.agentId,
+      invokedBy: parsed.data.invokedBy ?? 'manual',
+      input: parsed.data.input ?? null,
+    });
+    res.status(run.status === 'completed' ? 200 : 500).json(toSkillRunDto(run));
+  } catch (err) {
+    const message = (err as Error).message;
+    const status = message.includes('not found') ? 404 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
 skillsRouter.get('/:skillId', (req, res) => {
   const skill = skillRepo.getSkill(req.params.skillId);
   if (!skill) return res.status(404).json({ error: 'not found' });
@@ -196,6 +244,31 @@ function toBindingDto(binding: SkillBinding): {
   updated_at: number;
 } {
   return binding;
+}
+
+
+function toSkillRunDto(run: SkillRun): Record<string, unknown> {
+  return {
+    id: run.id,
+    skill_id: run.skill_id,
+    project_id: run.project_id,
+    room_id: run.room_id,
+    agent_id: run.agent_id,
+    invoked_by: run.invoked_by,
+    runtime: run.runtime,
+    entrypoint: run.entrypoint,
+    input: run.input,
+    allowed_paths: run.allowed_paths,
+    network_enabled: run.network_enabled,
+    status: run.status,
+    exit_code: run.exit_code,
+    stdout: run.stdout,
+    stderr: run.stderr,
+    result: run.result,
+    error: run.error,
+    created_at: run.created_at,
+    updated_at: run.updated_at,
+  };
 }
 
 function requireLocalAccess(req: Request, res: Response): boolean {

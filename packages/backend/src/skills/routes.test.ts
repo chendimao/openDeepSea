@@ -235,6 +235,51 @@ test('skills routes reject missing manifests and unsafe local imports', async ()
   await rm(externalFile, { force: true });
 });
 
+
+test('skills routes execute skills and list run history', async () => {
+  const projectDir = mkdtempSync(join(tmpdir(), 'opendeepsea-skill-route-project-'));
+  const project = (await import('../repos/projects.js')).projectRepo.create({ name: 'Skill Route Project', path: projectDir });
+  const installPath = mkdtempSync(join(process.env.OPENDEEPSEA_SKILLS_DIR!, 'route-exec-skill-'));
+  await mkdir(join(installPath, 'scripts'), { recursive: true });
+  await writeFile(join(installPath, 'SKILL.md'), '# Route Exec Skill\n');
+  await writeFile(join(installPath, 'scripts', 'run.sh'), 'cat > route-skill-input.json\necho route-ok\n');
+  const skill = skillRepo.createSkill({
+    id: 'skill-route-exec',
+    name: 'route-exec-skill',
+    source_type: 'skills_sh',
+    source_uri: 'skills.sh/acme/route-exec',
+    install_path: installPath,
+    manifest_path: 'SKILL.md',
+    runtime_scopes: ['workflow'],
+    trigger_mode: 'manual',
+    runtime_type: 'shell',
+    entrypoint: 'scripts/run.sh',
+    permissions: { filesystem: 'project', network: false, commands: ['bash'] },
+  });
+
+  const noToken = await request(`/api/skills/${skill.id}/run`, {
+    method: 'POST',
+    body: JSON.stringify({ projectId: project.id, input: { route: true } }),
+  }, { localToken: false });
+  assert.equal(noToken.status, 403);
+
+  const runRes = await request(`/api/skills/${skill.id}/run`, {
+    method: 'POST',
+    body: JSON.stringify({ projectId: project.id, invokedBy: 'workflow', input: { route: true } }),
+  });
+  assert.equal(runRes.status, 200);
+  const run = await runRes.json() as { id: string; status: string; stdout: string; exit_code: number; project_id: string };
+  assert.equal(run.status, 'completed');
+  assert.equal(run.exit_code, 0);
+  assert.equal(run.project_id, project.id);
+  assert.match(run.stdout, /route-ok/);
+
+  const runsRes = await request(`/api/skills/runs?skillId=${skill.id}`);
+  assert.equal(runsRes.status, 200);
+  const runs = await runsRes.json() as Array<{ id: string; skill_id: string }>;
+  assert.equal(runs.some((item) => item.id === run.id && item.skill_id === skill.id), true);
+});
+
 test('git skill import is explicitly deferred', async () => {
   const res = await request('/api/skills/import/git', {
     method: 'POST',
