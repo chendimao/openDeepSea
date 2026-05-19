@@ -304,6 +304,11 @@ export interface ProjectFile {
   source_room_id: string | null;
   source_agent_id: string | null;
   source_task_id: string | null;
+  source_display_name: string | null;
+  source_label: string;
+  source_context_id: string | null;
+  source_context_name: string | null;
+  source_context_type: 'room' | 'task' | null;
   content: string | null;
   created_at: number;
   deleted_at: number | null;
@@ -317,6 +322,11 @@ export type ProjectFileCreateInput = Omit<
   | 'source_room_id'
   | 'source_agent_id'
   | 'source_task_id'
+  | 'source_display_name'
+  | 'source_label'
+  | 'source_context_id'
+  | 'source_context_name'
+  | 'source_context_type'
   | 'content'
   | 'created_at'
   | 'deleted_at'
@@ -348,6 +358,11 @@ export interface ResourceAsset {
   source_room_id: string | null;
   source_agent_id: string | null;
   source_task_id: string | null;
+  source_display_name: string | null;
+  source_label: string;
+  source_context_id: string | null;
+  source_context_name: string | null;
+  source_context_type: 'room' | 'task' | null;
   metadata: string | null;
   created_at: number;
   updated_at: number;
@@ -357,6 +372,49 @@ export interface ResourceAsset {
 export type ResourceAssetListItem = Omit<ResourceAsset, 'content'> & {
   content?: never;
 };
+
+export type ResourceSourceType = 'user_upload' | 'agent';
+
+export interface ResourceSourceInfo {
+  type: ResourceSourceType;
+  label: string;
+  display_name: string | null;
+  agent_id: string | null;
+  user_id: string | null;
+  message_id: string | null;
+  room_id: string | null;
+  task_id: string | null;
+  context: {
+    id: string;
+    type: 'room' | 'task';
+    name: string | null;
+  } | null;
+}
+
+export interface ResourceCapabilities {
+  preview: boolean;
+  download: boolean;
+  markdown: boolean;
+  delete: boolean;
+}
+
+export interface ResourceListItem extends ResourceAssetListItem {
+  resource_type: ResourceAssetType;
+  name: string;
+  source: ResourceSourceInfo;
+  capabilities: ResourceCapabilities;
+  preview_url: string | null;
+  download_url: string | null;
+}
+
+export interface ResourceDetail extends ResourceAsset {
+  resource_type: ResourceAssetType;
+  name: string;
+  source: ResourceSourceInfo;
+  capabilities: ResourceCapabilities;
+  preview_url: string | null;
+  download_url: string | null;
+}
 
 export type WorkspaceEntryType = 'file' | 'directory';
 

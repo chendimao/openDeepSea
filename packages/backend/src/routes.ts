@@ -767,10 +767,11 @@ router.get('/files', (req, res) => {
     projectId: z.string().optional(),
     roomId: z.string().optional(),
     sourceType: z.enum(['uploaded_file', 'agent_document']).optional(),
+    q: z.string().trim().min(1).optional(),
   }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  const { projectId, roomId, sourceType } = parsed.data;
+  const { projectId, roomId, sourceType, q } = parsed.data;
   if (projectId && !projectRepo.get(projectId)) {
     return res.status(404).json({ error: 'project not found' });
   }
@@ -782,7 +783,7 @@ router.get('/files', (req, res) => {
     }
   }
 
-  res.json(fileRepo.list({ projectId, roomId, sourceType }));
+  res.json(fileRepo.list({ projectId, roomId, sourceType, query: q }));
 });
 
 router.get('/projects/:projectId/files', (req, res) => {
@@ -790,6 +791,7 @@ router.get('/projects/:projectId/files', (req, res) => {
   const parsed = z.object({
     roomId: z.string().optional(),
     sourceType: z.enum(['uploaded_file', 'agent_document']).optional(),
+    q: z.string().trim().min(1).optional(),
   }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   if (parsed.data.roomId) {
@@ -825,12 +827,14 @@ router.get('/projects/:projectId/resource-assets', (req, res) => {
   const parsed = z.object({
     assetType: resourceAssetTypeSchema.optional(),
     groupKey: resourceAssetGroupKeySchema.optional(),
+    q: z.string().trim().min(1).optional(),
   }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  res.json(resourceAssetRepo.list({
+  res.json(resourceAssetRepo.listResources({
     projectId: req.params.projectId,
     assetType: parsed.data.assetType as ResourceAssetType | undefined,
     groupKey: parsed.data.groupKey as ResourceAssetGroupKey | undefined,
+    query: parsed.data.q,
   }));
 });
 
@@ -864,8 +868,18 @@ router.post('/projects/:projectId/resource-assets', (req, res) => {
 });
 
 router.get('/resource-assets/:assetId', (req, res) => {
-  const asset = resourceAssetRepo.get(req.params.assetId);
+  const parsed = z.object({
+    projectId: z.string().optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (parsed.data.projectId && !projectRepo.get(parsed.data.projectId)) {
+    return res.status(404).json({ error: 'project not found' });
+  }
+  const asset = resourceAssetRepo.getResource(req.params.assetId);
   if (!asset) return res.status(404).json({ error: 'not found' });
+  if (parsed.data.projectId && asset.project_id !== parsed.data.projectId) {
+    return res.status(403).json({ error: 'resource does not belong to project' });
+  }
   res.json(asset);
 });
 
@@ -1766,6 +1780,7 @@ function createAndDispatchUserMessage(input: {
     }
     return userMsg;
   }
+  // 这里是用户消息落库后触发智能体继续回复的最小入口。
   const agents = roomAgentRepo.listByRoom(input.roomId);
   const mentionedAgentRoomIds = resolveMentionedAgentRoomIds({
     content: input.content,

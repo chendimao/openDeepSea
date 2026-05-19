@@ -3,6 +3,8 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { IncomingMessage, ServerResponse, type OutgoingHttpHeaders } from 'node:http';
+import { Duplex } from 'node:stream';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-resource-assets-routes-')), 'test.db');
 
@@ -18,15 +20,87 @@ const app = express();
 app.use(express.json());
 app.use('/api', router);
 
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  const server = app.listen(0);
-  try {
-    const address = server.address();
-    assert(address && typeof address === 'object');
-    return await fetch(`http://127.0.0.1:${address.port}${path}`, init);
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+class InMemorySocket extends Duplex {
+  _read(): void {}
+
+  _write(_chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    callback();
   }
+}
+
+function toResponseHeaders(headers: OutgoingHttpHeaders): Headers {
+  const responseHeaders = new Headers();
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) responseHeaders.append(name, item);
+    } else {
+      responseHeaders.set(name, String(value));
+    }
+  }
+  return responseHeaders;
+}
+
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
+  const serializedRequest = new Request(`http://127.0.0.1${path}`, init);
+  const body = init.body === undefined || init.body === null
+    ? null
+    : Buffer.from(await serializedRequest.arrayBuffer());
+  const socket = new InMemorySocket();
+  const req = new IncomingMessage(socket as unknown as import('node:net').Socket);
+  req.method = init.method ?? 'GET';
+  req.url = path;
+  req.headers = Object.fromEntries(serializedRequest.headers);
+  req.httpVersion = '1.1';
+  req.httpVersionMajor = 1;
+  req.httpVersionMinor = 1;
+  if (body) {
+    req.headers['content-length'] = String(body.byteLength);
+  }
+
+  const res = new ServerResponse(req);
+  res.assignSocket(socket as unknown as import('node:net').Socket);
+
+  const chunks: Buffer[] = [];
+  res.write = ((chunk: unknown, encoding?: BufferEncoding | ((error?: Error | null) => void), callback?: (error?: Error | null) => void) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') encoding();
+    if (callback) callback();
+    return true;
+  }) as typeof res.write;
+  res.end = ((chunk?: unknown, encoding?: BufferEncoding | (() => void), callback?: () => void) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') encoding();
+    if (callback) callback();
+    res.emit('finish');
+    res.emit('close');
+    return res;
+  }) as typeof res.end;
+
+  const responsePromise = new Promise<Response>((resolve, reject) => {
+    res.once('finish', () => {
+      const responseBody = res.statusCode === 204 || res.statusCode === 304 ? null : Buffer.concat(chunks);
+      resolve(new Response(responseBody, {
+        status: res.statusCode,
+        headers: toResponseHeaders(res.getHeaders()),
+      }));
+    });
+    (app as unknown as { handle: (...args: unknown[]) => void }).handle(req, res, (error: unknown) => {
+      if (error) reject(error);
+    });
+  });
+
+  if (body) {
+    req.push(body);
+  }
+  req.push(null);
+  req.complete = true;
+
+  return responsePromise;
 }
 
 function createProject(name: string) {
@@ -90,16 +164,40 @@ test('resource asset routes create, list, filter, detail, and delete agent docum
 
   const listRes = await request(`/api/projects/${project.id}/resource-assets?assetType=agent_document&groupKey=agent_documents`);
   assert.equal(listRes.status, 200);
-  const list = await listRes.json() as Array<{ id: string; title: string; content?: string }>;
+  const list = await listRes.json() as Array<{
+    id: string;
+    title: string;
+    content?: string;
+    source_display_name: string | null;
+    source_label: string;
+    source_context_id: string | null;
+    source_context_name: string | null;
+    source_context_type: string | null;
+  }>;
   assert.deepEqual(list.map((item) => item.id), [created.id]);
   assert.equal(list[0]?.title, '方案文档');
+  assert.equal(list[0]?.source_display_name, '后端开发工程师');
+  assert.equal(list[0]?.source_label, '智能体生成');
+  assert.equal(list[0]?.source_context_id, task.id);
+  assert.equal(list[0]?.source_context_name, task.title);
+  assert.equal(list[0]?.source_context_type, 'task');
   assert.equal(Object.hasOwn(list[0] ?? {}, 'content'), false);
 
   const detailRes = await request(`/api/resource-assets/${created.id}`);
   assert.equal(detailRes.status, 200);
-  const detail = await detailRes.json() as { id: string; content: string; metadata: string | null };
+  const detail = await detailRes.json() as {
+    id: string;
+    content: string;
+    metadata: string | null;
+    source_display_name: string | null;
+    source_label: string;
+    source_context_id: string | null;
+  };
   assert.equal(detail.id, created.id);
   assert.equal(detail.content, message.content);
+  assert.equal(detail.source_display_name, '后端开发工程师');
+  assert.equal(detail.source_label, '智能体生成');
+  assert.equal(detail.source_context_id, task.id);
   assert.deepEqual(JSON.parse(detail.metadata ?? '{}'), { summary: '方案' });
 
   const deleteRes = await request(`/api/resource-assets/${created.id}`, { method: 'DELETE' });
@@ -133,6 +231,8 @@ test('resource asset list includes uploaded files without breaking existing file
     group_key: string;
     file_id?: string;
     title: string;
+    source_display_name: string | null;
+    source_label: string;
   }>;
 
   assert.ok(assets.some((asset) =>
@@ -140,9 +240,164 @@ test('resource asset list includes uploaded files without breaking existing file
     asset.file_id === file.id &&
     asset.asset_type === 'uploaded_file' &&
     asset.group_key === 'uploaded_files' &&
-    asset.title === 'screen.png',
+    asset.title === 'screen.png' &&
+    asset.source_display_name === 'You' &&
+    asset.source_label === '用户上传',
   ));
   assert.equal(fileRepo.get(file.id)?.deleted_at, null);
+});
+
+test('resource asset routes search mixed resource types and reject empty search', async () => {
+  const project = createProject('search-assets');
+  const room = roomRepo.create({ project_id: project.id, name: 'Search Room' });
+  fileRepo.create({
+    project_id: project.id,
+    original_name: 'smoke-upload.txt',
+    stored_name: 'smoke-upload.txt',
+    mime_type: 'text/plain',
+    size: 128,
+    url: `/uploads/files/${project.id}/smoke-upload.txt`,
+    storage_path: join(tmpdir(), 'smoke-upload.txt'),
+    uploaded_by_id: null,
+    uploaded_by_name: null,
+  });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# 图片冒烟验证\n\nMarkdown 详情正文。',
+    message_type: 'agent_stream',
+  });
+
+  const createRes = await request(`/api/projects/${project.id}/resource-assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_type: 'agent_document',
+      title: '图片冒烟验证',
+      content: message.content,
+      mime_type: 'text/markdown',
+      source_message_id: message.id,
+      source_room_id: room.id,
+      source_agent_id: 'backend-executor',
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const created = await createRes.json() as { id: string };
+
+  const documentRes = await request(`/api/projects/${project.id}/resource-assets?q=${encodeURIComponent('图片冒烟')}`);
+  assert.equal(documentRes.status, 200);
+  const documents = await documentRes.json() as Array<{ id: string; asset_type: string }>;
+  assert.deepEqual(documents.map((asset) => asset.id), [created.id]);
+
+  const uploadRes = await request(`/api/projects/${project.id}/resource-assets?q=smoke-upload`);
+  assert.equal(uploadRes.status, 200);
+  const uploads = await uploadRes.json() as Array<{ asset_type: string; source_display_name: string | null }>;
+  assert.deepEqual(uploads.map((asset) => asset.asset_type), ['uploaded_file']);
+  assert.equal(uploads[0]?.source_display_name, '用户上传');
+
+  const invalidSearchRes = await request(`/api/projects/${project.id}/resource-assets?q=${encodeURIComponent('   ')}`);
+  assert.equal(invalidSearchRes.status, 400);
+});
+
+test('resource asset routes return unified list and typed detail contracts', async () => {
+  const project = createProject('unified-contract');
+  const otherProject = createProject('unified-contract-other');
+  const room = roomRepo.create({ project_id: project.id, name: 'Unified Room' });
+  const upload = fileRepo.create({
+    project_id: project.id,
+    original_name: 'screen.png',
+    stored_name: 'stored.png',
+    mime_type: 'image/png',
+    size: 128,
+    url: `/uploads/files/${project.id}/stored.png`,
+    storage_path: join(tmpdir(), 'stored.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# 统一资源详情\n\nMarkdown 内容。',
+    message_type: 'agent_stream',
+  });
+  const createRes = await request(`/api/projects/${project.id}/resource-assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_type: 'agent_document',
+      title: '统一资源详情.md',
+      content: message.content,
+      mime_type: 'text/markdown',
+      source_message_id: message.id,
+      source_room_id: room.id,
+      source_agent_id: 'backend-executor',
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const document = await createRes.json() as { id: string };
+
+  const listRes = await request(`/api/projects/${project.id}/resource-assets`);
+  assert.equal(listRes.status, 200);
+  const listed = await listRes.json() as Array<{
+    id: string;
+    name: string;
+    resource_type: string;
+    source: { type: string; display_name: string | null; context: { id: string; type: string; name: string | null } | null };
+    capabilities: { preview: boolean; download: boolean; markdown: boolean; delete: boolean };
+    content?: string;
+  }>;
+  const uploadItem = listed.find((item) => item.id === `file:${upload.id}`);
+  const documentItem = listed.find((item) => item.id === document.id);
+
+  assert.equal(uploadItem?.name, 'screen.png');
+  assert.equal(uploadItem?.resource_type, 'uploaded_file');
+  assert.deepEqual(uploadItem?.capabilities, { preview: true, download: true, markdown: false, delete: true });
+  assert.equal(uploadItem?.source.type, 'user_upload');
+  assert.equal(uploadItem?.source.display_name, 'You');
+  assert.equal(Object.hasOwn(uploadItem ?? {}, 'content'), false);
+
+  assert.equal(documentItem?.name, '统一资源详情.md');
+  assert.equal(documentItem?.resource_type, 'agent_document');
+  assert.deepEqual(documentItem?.capabilities, { preview: true, download: false, markdown: true, delete: true });
+  assert.equal(documentItem?.source.type, 'agent');
+  assert.equal(documentItem?.source.display_name, '后端开发工程师');
+  assert.equal(documentItem?.source.context?.id, room.id);
+
+  const uploadDetailRes = await request(`/api/resource-assets/file:${upload.id}?projectId=${project.id}`);
+  assert.equal(uploadDetailRes.status, 200);
+  const uploadDetail = await uploadDetailRes.json() as {
+    resource_type: string;
+    preview_url: string | null;
+    download_url: string | null;
+    content: string | null;
+  };
+  assert.equal(uploadDetail.resource_type, 'uploaded_file');
+  assert.equal(uploadDetail.preview_url, upload.url);
+  assert.equal(uploadDetail.download_url, upload.url);
+  assert.equal(uploadDetail.content, null);
+
+  const documentDetailRes = await request(`/api/resource-assets/${document.id}?projectId=${project.id}`);
+  assert.equal(documentDetailRes.status, 200);
+  const documentDetail = await documentDetailRes.json() as {
+    resource_type: string;
+    content: string | null;
+    preview_url: string | null;
+    source: { message_id: string | null };
+  };
+  assert.equal(documentDetail.resource_type, 'agent_document');
+  assert.equal(documentDetail.content, message.content);
+  assert.equal(documentDetail.preview_url, null);
+  assert.equal(documentDetail.source.message_id, message.id);
+
+  const missingRes = await request('/api/resource-assets/missing');
+  assert.equal(missingRes.status, 404);
+
+  const forbiddenRes = await request(`/api/resource-assets/${document.id}?projectId=${otherProject.id}`);
+  assert.equal(forbiddenRes.status, 403);
 });
 
 test('resource asset routes reject source fields outside the project boundary', async () => {

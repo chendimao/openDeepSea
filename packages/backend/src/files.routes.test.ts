@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { constants } from 'node:fs';
+import { IncomingMessage, ServerResponse, type OutgoingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Duplex } from 'node:stream';
 import test from 'node:test';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-file-routes-')), 'test.db');
@@ -19,15 +21,87 @@ const app = express();
 app.use(express.json());
 app.use('/api', router);
 
-async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  const server = app.listen(0);
-  try {
-    const address = server.address();
-    assert(address && typeof address === 'object');
-    return await fetch(`http://127.0.0.1:${address.port}${path}`, init);
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+class InMemorySocket extends Duplex {
+  _read(): void {}
+
+  _write(_chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    callback();
   }
+}
+
+function toResponseHeaders(headers: OutgoingHttpHeaders): Headers {
+  const responseHeaders = new Headers();
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) responseHeaders.append(name, item);
+    } else {
+      responseHeaders.set(name, String(value));
+    }
+  }
+  return responseHeaders;
+}
+
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
+  const serializedRequest = new Request(`http://127.0.0.1${path}`, init);
+  const body = init.body === undefined || init.body === null
+    ? null
+    : Buffer.from(await serializedRequest.arrayBuffer());
+  const socket = new InMemorySocket();
+  const req = new IncomingMessage(socket as unknown as import('node:net').Socket);
+  req.method = init.method ?? 'GET';
+  req.url = path;
+  req.headers = Object.fromEntries(serializedRequest.headers);
+  req.httpVersion = '1.1';
+  req.httpVersionMajor = 1;
+  req.httpVersionMinor = 1;
+  if (body) {
+    req.headers['content-length'] = String(body.byteLength);
+  }
+
+  const res = new ServerResponse(req);
+  res.assignSocket(socket as unknown as import('node:net').Socket);
+
+  const chunks: Buffer[] = [];
+  res.write = ((chunk: unknown, encoding?: BufferEncoding | ((error?: Error | null) => void), callback?: (error?: Error | null) => void) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') encoding();
+    if (callback) callback();
+    return true;
+  }) as typeof res.write;
+  res.end = ((chunk?: unknown, encoding?: BufferEncoding | (() => void), callback?: () => void) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') encoding();
+    if (callback) callback();
+    res.emit('finish');
+    res.emit('close');
+    return res;
+  }) as typeof res.end;
+
+  const responsePromise = new Promise<Response>((resolve, reject) => {
+    res.once('finish', () => {
+      const responseBody = res.statusCode === 204 || res.statusCode === 304 ? null : Buffer.concat(chunks);
+      resolve(new Response(responseBody, {
+        status: res.statusCode,
+        headers: toResponseHeaders(res.getHeaders()),
+      }));
+    });
+    (app as unknown as { handle: (...args: unknown[]) => void }).handle(req, res, (error: unknown) => {
+      if (error) reject(error);
+    });
+  });
+
+  if (body) {
+    req.push(body);
+  }
+  req.push(null);
+  req.complete = true;
+
+  return responsePromise;
 }
 
 function createProject(name: string) {
@@ -210,17 +284,34 @@ test('file routes return and filter user upload and agent document source types'
     source_message_id: string | null;
     source_room_id: string | null;
     source_agent_id: string | null;
+    source_display_name: string | null;
+    source_label: string;
+    source_context_id: string | null;
+    source_context_name: string | null;
+    source_context_type: string | null;
   }>;
   assert.deepEqual(agentFiles.map((file) => file.id), [agentDocument.id]);
   assert.equal(agentFiles[0]?.source_type, 'agent_document');
   assert.equal(agentFiles[0]?.source_message_id, message.id);
   assert.equal(agentFiles[0]?.source_room_id, room.id);
   assert.equal(agentFiles[0]?.source_agent_id, 'backend-executor');
+  assert.equal(agentFiles[0]?.source_display_name, '后端开发工程师');
+  assert.equal(agentFiles[0]?.source_label, '智能体生成');
+  assert.equal(agentFiles[0]?.source_context_id, room.id);
+  assert.equal(agentFiles[0]?.source_context_name, room.name);
+  assert.equal(agentFiles[0]?.source_context_type, 'room');
 
   const uploadedRes = await request(`/api/files?projectId=${project.id}&sourceType=uploaded_file`);
   assert.equal(uploadedRes.status, 200);
-  const uploadedFiles = await uploadedRes.json() as Array<{ id: string; source_type: string }>;
+  const uploadedFiles = await uploadedRes.json() as Array<{
+    id: string;
+    source_type: string;
+    source_display_name: string | null;
+    source_label: string;
+  }>;
   assert.deepEqual(uploadedFiles.map((file) => file.id), [upload.id]);
+  assert.equal(uploadedFiles[0]?.source_display_name, 'You');
+  assert.equal(uploadedFiles[0]?.source_label, '用户上传');
 
   const roomAgentRes = await request(
     `/api/projects/${project.id}/files?roomId=${room.id}&sourceType=agent_document`,
@@ -235,6 +326,65 @@ test('file routes return and filter user upload and agent document source types'
 
   const invalidSourceRes = await request(`/api/files?sourceType=message`);
   assert.equal(invalidSourceRes.status, 400);
+});
+
+test('file routes search mixed resources and return agent document detail content', async () => {
+  const project = createProject('search-resource-project');
+  const room = roomRepo.create({ project_id: project.id, name: 'Search Room' });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# 图片冒烟验证\n\nMarkdown 详情正文。',
+    message_type: 'agent_stream',
+  });
+  const upload = fileRepo.create({
+    project_id: project.id,
+    original_name: 'legacy-upload.txt',
+    stored_name: 'legacy-upload.txt',
+    mime_type: 'text/plain',
+    size: 128,
+    url: `/uploads/files/${project.id}/legacy-upload.txt`,
+    storage_path: join(tmpdir(), 'legacy-upload.txt'),
+    uploaded_by_id: null,
+    uploaded_by_name: null,
+  });
+  const agentDocument = fileRepo.createAgentDocument({
+    project_id: project.id,
+    title: '图片冒烟验证.md',
+    content: message.content,
+    source_message_id: message.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+    source_task_id: null,
+  });
+
+  const searchDocRes = await request(`/api/files?projectId=${project.id}&q=${encodeURIComponent('图片冒烟')}`);
+  assert.equal(searchDocRes.status, 200);
+  const searchDocs = await searchDocRes.json() as Array<{ id: string; source_type: string }>;
+  assert.ok(searchDocs.some((file) => file.id === agentDocument.id && file.source_type === 'agent_document'));
+  assert.ok(!searchDocs.some((file) => file.id === upload.id));
+
+  const searchUploadRes = await request(`/api/projects/${project.id}/files?q=legacy`);
+  assert.equal(searchUploadRes.status, 200);
+  const searchUploads = await searchUploadRes.json() as Array<{
+    id: string;
+    source_type: string;
+    source_display_name: string | null;
+    source_label: string;
+  }>;
+  const searchUpload = searchUploads.find((file) => file.id === upload.id);
+  assert.ok(searchUpload);
+  assert.equal(searchUpload.source_type, 'uploaded_file');
+  assert.equal(searchUpload.source_display_name, '用户上传');
+  assert.equal(searchUpload.source_label, '用户上传');
+
+  const detail = fileRepo.get(agentDocument.id);
+  assert.equal(detail?.content, message.content);
+
+  const invalidSearchRes = await request(`/api/files?q=${encodeURIComponent('   ')}`);
+  assert.equal(invalidSearchRes.status, 400);
 });
 
 test('message route accepts project file ids and records message refs', async () => {

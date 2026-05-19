@@ -7,6 +7,7 @@ interface FileListFilters {
   projectId?: string;
   roomId?: string;
   sourceType?: ResourceAssetType;
+  query?: string;
 }
 
 interface AgentDocumentCreateInput {
@@ -42,6 +43,11 @@ export const fileRepo = {
         NULL AS source_room_id,
         NULL AS source_agent_id,
         NULL AS source_task_id,
+        COALESCE(NULLIF(uploaded_by_name, ''), '用户上传') AS source_display_name,
+        '用户上传' AS source_label,
+        NULL AS source_context_id,
+        NULL AS source_context_name,
+        NULL AS source_context_type,
         NULL AS content
        FROM files
        WHERE id = ?`,
@@ -132,6 +138,11 @@ export const fileRepo = {
            NULL AS source_room_id,
            NULL AS source_agent_id,
            NULL AS source_task_id,
+           COALESCE(NULLIF(uploaded_by_name, ''), '用户上传') AS source_display_name,
+           '用户上传' AS source_label,
+           NULL AS source_context_id,
+           NULL AS source_context_name,
+           NULL AS source_context_type,
            NULL AS content
          FROM files
          WHERE project_id = ?
@@ -145,7 +156,7 @@ export const fileRepo = {
 
 function listUploadedFiles(filters: FileListFilters): ProjectFileWithRefs[] {
   const where = ['files.deleted_at IS NULL'];
-  const params: { projectId?: string; roomId?: string } = {};
+  const params: { projectId?: string; roomId?: string; query?: string } = {};
   const roomReferenceFilter = filters.roomId ? ' AND refs.room_id = @roomId' : '';
   const joinRoomFilter = filters.roomId ? ' AND message_file_refs.room_id = @roomId' : '';
   if (filters.projectId) {
@@ -163,6 +174,20 @@ function listUploadedFiles(filters: FileListFilters): ProjectFileWithRefs[] {
     );
     params.roomId = filters.roomId;
   }
+  const query = normalizeSearchQuery(filters.query);
+  if (query) {
+    where.push(
+      `(
+        files.original_name LIKE @query ESCAPE '\\'
+        OR files.stored_name LIKE @query ESCAPE '\\'
+        OR files.mime_type LIKE @query ESCAPE '\\'
+        OR COALESCE(files.uploaded_by_name, '') LIKE @query ESCAPE '\\'
+        OR COALESCE(files.uploaded_by_id, '') LIKE @query ESCAPE '\\'
+        OR '用户上传' LIKE @query ESCAPE '\\'
+      )`,
+    );
+    params.query = query;
+  }
 
   const bindArgs = Object.keys(params).length > 0 ? [params] : [];
 
@@ -175,6 +200,11 @@ function listUploadedFiles(filters: FileListFilters): ProjectFileWithRefs[] {
           NULL AS source_room_id,
           NULL AS source_agent_id,
           NULL AS source_task_id,
+          COALESCE(NULLIF(files.uploaded_by_name, ''), '用户上传') AS source_display_name,
+          '用户上传' AS source_label,
+          NULL AS source_context_id,
+          NULL AS source_context_name,
+          NULL AS source_context_type,
           NULL AS content,
           COUNT(message_file_refs.id) AS reference_count,
           MAX(message_file_refs.created_at) AS last_referenced_at,
@@ -217,7 +247,7 @@ function listAgentDocuments(filters: FileListFilters): ProjectFileWithRefs[] {
     "resource_assets.asset_type = 'agent_document'",
     'resource_assets.deleted_at IS NULL',
   ];
-  const params: { projectId?: string; roomId?: string } = {};
+  const params: { projectId?: string; roomId?: string; query?: string } = {};
   if (filters.projectId) {
     where.push('resource_assets.project_id = @projectId');
     params.projectId = filters.projectId;
@@ -225,6 +255,21 @@ function listAgentDocuments(filters: FileListFilters): ProjectFileWithRefs[] {
   if (filters.roomId) {
     where.push('resource_assets.source_room_id = @roomId');
     params.roomId = filters.roomId;
+  }
+  const query = normalizeSearchQuery(filters.query);
+  if (query) {
+    where.push(
+      `(
+        resource_assets.title LIKE @query ESCAPE '\\'
+        OR COALESCE(resource_assets.mime_type, '') LIKE @query ESCAPE '\\'
+        OR COALESCE(resource_assets.source_agent_id, '') LIKE @query ESCAPE '\\'
+        OR COALESCE(messages.sender_name, '') LIKE @query ESCAPE '\\'
+        OR COALESCE(resource_assets.content, '') LIKE @query ESCAPE '\\'
+        OR COALESCE(rooms.name, '') LIKE @query ESCAPE '\\'
+        OR '智能体生成' LIKE @query ESCAPE '\\'
+      )`,
+    );
+    params.query = query;
   }
   const bindArgs = Object.keys(params).length > 0 ? [params] : [];
 
@@ -245,6 +290,19 @@ function listAgentDocuments(filters: FileListFilters): ProjectFileWithRefs[] {
        resource_assets.source_room_id,
        resource_assets.source_agent_id,
        resource_assets.source_task_id,
+       COALESCE(
+         CASE WHEN messages.sender_type = 'agent' THEN NULLIF(messages.sender_name, '') END,
+         NULLIF(resource_assets.source_agent_id, ''),
+         '智能体'
+       ) AS source_display_name,
+       '智能体生成' AS source_label,
+       COALESCE(resource_assets.source_task_id, resource_assets.source_room_id) AS source_context_id,
+       COALESCE(tasks.title, rooms.name) AS source_context_name,
+       CASE
+         WHEN resource_assets.source_task_id IS NOT NULL THEN 'task'
+         WHEN resource_assets.source_room_id IS NOT NULL THEN 'room'
+         ELSE NULL
+       END AS source_context_type,
        resource_assets.content,
        resource_assets.created_at,
        resource_assets.deleted_at,
@@ -254,7 +312,9 @@ function listAgentDocuments(filters: FileListFilters): ProjectFileWithRefs[] {
        resource_assets.source_room_id AS last_referenced_room_id,
        rooms.name AS last_referenced_room_name
      FROM resource_assets
+     LEFT JOIN messages ON messages.id = resource_assets.source_message_id
      LEFT JOIN rooms ON rooms.id = resource_assets.source_room_id
+     LEFT JOIN tasks ON tasks.id = resource_assets.source_task_id
      WHERE ${where.join(' AND ')}
      ORDER BY resource_assets.created_at DESC`,
   ).all(...bindArgs) as ProjectFileWithRefs[];
@@ -278,11 +338,33 @@ function getAgentDocument(id: string): ProjectFile | undefined {
        resource_assets.source_room_id,
        resource_assets.source_agent_id,
        resource_assets.source_task_id,
+       COALESCE(
+         CASE WHEN messages.sender_type = 'agent' THEN NULLIF(messages.sender_name, '') END,
+         NULLIF(resource_assets.source_agent_id, ''),
+         '智能体'
+       ) AS source_display_name,
+       '智能体生成' AS source_label,
+       COALESCE(resource_assets.source_task_id, resource_assets.source_room_id) AS source_context_id,
+       COALESCE(tasks.title, rooms.name) AS source_context_name,
+       CASE
+         WHEN resource_assets.source_task_id IS NOT NULL THEN 'task'
+         WHEN resource_assets.source_room_id IS NOT NULL THEN 'room'
+         ELSE NULL
+       END AS source_context_type,
        resource_assets.content,
        resource_assets.created_at,
        resource_assets.deleted_at
      FROM resource_assets
+     LEFT JOIN messages ON messages.id = resource_assets.source_message_id
+     LEFT JOIN rooms ON rooms.id = resource_assets.source_room_id
+     LEFT JOIN tasks ON tasks.id = resource_assets.source_task_id
      WHERE resource_assets.id = ?
        AND resource_assets.asset_type = 'agent_document'`,
   ).get(id) as ProjectFile | undefined;
+}
+
+function normalizeSearchQuery(query: string | undefined): string | undefined {
+  const trimmed = query?.trim();
+  if (!trimmed) return undefined;
+  return `%${trimmed.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
