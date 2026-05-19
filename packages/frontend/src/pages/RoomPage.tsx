@@ -49,15 +49,15 @@ import {
   MessageRow as AiMessageRow,
   MessageRunPanel as AiMessageRunPanel,
 } from '../components/ai-elements/Message';
+import {
+  createDefaultReplyTarget,
+  createReplyTarget,
+  getTaskReadinessActionState,
+  type ReplyTarget,
+} from './roomPageLogic';
 
-type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[]; replyToMessageId?: string };
 type RoomFeatureTab = 'chat' | 'tasks' | 'files';
-interface ReplyTarget {
-  messageId: string;
-  senderName: string;
-  excerpt: string;
-  explicit: boolean;
-}
+type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[]; replyToMessageId?: string };
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -1032,38 +1032,6 @@ function latestWorkflowEventMessageIdsByRun(messages: Message[]): Map<string, st
   return new Map(Array.from(latest, ([workflowId, item]) => [workflowId, item.messageId]));
 }
 
-export function createDefaultReplyTarget(
-  messages: Message[],
-  excludedMessageIds: ReadonlySet<string> = new Set(),
-): ReplyTarget | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message && excludedMessageIds.has(message.id)) continue;
-    if (!message || !isReplyableMessage(message)) continue;
-    return createReplyTarget(message, false);
-  }
-  return null;
-}
-
-function isReplyableMessage(message: Message): boolean {
-  return message.sender_type === 'agent' && Boolean(message.content.trim());
-}
-
-function createReplyTarget(message: Message, explicit: boolean): ReplyTarget {
-  return {
-    messageId: message.id,
-    senderName: message.sender_name ?? message.sender_id,
-    excerpt: summarizeMessageExcerpt(message.content),
-    explicit,
-  };
-}
-
-function summarizeMessageExcerpt(content: string): string {
-  const normalized = content.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '空消息';
-  return normalized.length <= 96 ? normalized : `${normalized.slice(0, 93).trimEnd()}...`;
-}
-
 function MessageBubble({
   message,
   agentMeta,
@@ -1361,15 +1329,15 @@ function TaskReadinessActions({
   onStart: () => void;
   onContinue: () => void;
 }) {
-  const canStart = canStartWorkflowFromReadiness(intent);
+  const actionState = getTaskReadinessActionState(intent);
   return (
     <div className="task-readiness-actions">
       <div className="task-readiness-copy">
-        <span>{canStart ? '已具备创建任务的基础信息' : '这是方案/分析输出，未进入实现'}</span>
+        <span>{actionState.description}</span>
         <strong>{title}</strong>
       </div>
       <div className="task-readiness-buttons">
-        {canStart && (
+        {actionState.canGenerateTask && (
           <button
             type="button"
             className="task-readiness-button is-primary"
@@ -1377,7 +1345,7 @@ function TaskReadinessActions({
             onClick={onStart}
           >
             <Play className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span>{starting ? '启动中' : '开始任务'}</span>
+            <span>{starting ? actionState.pendingLabel : actionState.primaryLabel}</span>
           </button>
         )}
         <button
@@ -1391,10 +1359,6 @@ function TaskReadinessActions({
       </div>
     </div>
   );
-}
-
-function canStartWorkflowFromReadiness(intent: TaskExecutionIntent | undefined): boolean {
-  return intent === undefined || intent === 'implementation' || intent === 'debug_fix';
 }
 
 function MessageAttachments({ attachments }: { attachments: MessageAttachmentMetadata[] }) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Message } from '../lib/types';
-import { createDefaultReplyTarget } from './RoomPage';
+import { createDefaultReplyTarget, getTaskReadinessActionState } from './roomPageLogic';
 
 test('createDefaultReplyTarget returns the latest non-streaming agent message', () => {
   const messages = [
@@ -25,6 +25,14 @@ test('createDefaultReplyTarget returns null when default reply is suppressed for
   const target = createDefaultReplyTarget(messages, new Set(['agent-complete']));
 
   assert.equal(target, null);
+});
+
+test('analysis-only ready messages can still be promoted into tasks', () => {
+  const state = getTaskReadinessActionState('analysis_only');
+
+  assert.equal(state.canGenerateTask, true);
+  assert.equal(state.primaryLabel, '生成任务');
+  assert.equal(state.description, '这是方案/分析输出，可生成任务但不会直接执行实现');
 });
 
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'>): Message {
