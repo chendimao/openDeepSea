@@ -44,8 +44,32 @@ export function ensureWorkflowAgentsForRun(input: WorkflowAgentProvisioningInput
   return { agents, joinedAgents };
 }
 
+export function ensureGlobalExecutorForRecovery(input: {
+  roomId: string;
+  context?: Record<string, unknown>;
+  globalAgentTemplateId?: string | null;
+}): RoomAgent {
+  const templateId = input.globalAgentTemplateId?.trim() || templateIdForRecoveryContext(input.context ?? {});
+  return roomAgentRepo.ensureBuiltInAgent(input.roomId, templateId);
+}
+
 function templateIdForPlanTask(task: ParsedPlanTask): string {
   return inferTaskDomain(task) === 'frontend' ? 'frontend-executor' : 'backend-executor';
+}
+
+function templateIdForRecoveryContext(context: Record<string, unknown>): string {
+  const childTask = isRecord(context.childTask) ? context.childTask : {};
+  const workflowStep = isRecord(context.workflowStep) ? context.workflowStep : {};
+  const task: ParsedPlanTask = {
+    title: stringValue(childTask.title),
+    description: stringValue(childTask.description),
+    priority: 'normal',
+    suggestedRole: 'executor',
+    scopeRead: stringArray(workflowStep.scopeRead),
+    scopeWrite: stringArray(workflowStep.scopeWrite),
+    acceptance: [],
+  };
+  return templateIdForPlanTask(task);
 }
 
 function inferTaskDomain(task: ParsedPlanTask): TaskDomain {
@@ -96,6 +120,18 @@ function inferTaskDomain(task: ParsedPlanTask): TaskDomain {
 
 function countSignals(text: string, signals: string[]): number {
   return signals.reduce((count, signal) => count + (text.includes(signal) ? 1 : 0), 0);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
 function hasBuiltInAgent(agents: RoomAgent[], templateId: string): boolean {
