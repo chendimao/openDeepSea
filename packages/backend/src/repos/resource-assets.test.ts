@@ -242,3 +242,50 @@ test('resourceAssetRepo exposes unified list and typed details with capabilities
   assert.equal(documentDetail?.download_url, null);
   assert.equal(documentDetail?.source.message_id, message.id);
 });
+
+test('resourceAssetRepo resolves project file list ids and hides deleted agent documents in detail', () => {
+  const project = createProject('project-file-ids');
+  const room = roomRepo.create({ project_id: project.id, name: 'Project File Room' });
+  const upload = fileRepo.create({
+    project_id: project.id,
+    original_name: 'screen.png',
+    stored_name: 'stored.png',
+    mime_type: 'image/png',
+    size: 128,
+    url: `/uploads/files/${project.id}/stored.png`,
+    storage_path: join(tmpdir(), 'stored.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# 可预览文档\n\nMarkdown 内容。',
+    message_type: 'agent_stream',
+  });
+  const documentFile = fileRepo.createAgentDocument({
+    project_id: project.id,
+    title: '可预览文档.md',
+    content: message.content,
+    source_message_id: message.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+    source_task_id: null,
+  });
+
+  const uploadDetail = resourceAssetRepo.getResource(upload.id);
+  assert.equal(uploadDetail?.id, `file:${upload.id}`);
+  assert.equal(uploadDetail?.resource_type, 'uploaded_file');
+  assert.equal(uploadDetail?.preview_url, upload.url);
+
+  const documentDetail = resourceAssetRepo.getResource(documentFile.id);
+  assert.equal(documentDetail?.id, documentFile.id.slice('asset:'.length));
+  assert.equal(documentDetail?.resource_type, 'agent_document');
+  assert.equal(documentDetail?.content, message.content);
+
+  resourceAssetRepo.softDelete(documentFile.id);
+
+  assert.equal(resourceAssetRepo.getResource(documentFile.id), undefined);
+});

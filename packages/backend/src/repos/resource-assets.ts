@@ -70,6 +70,7 @@ export const resourceAssetRepo = {
 
   get(id: string): ResourceAsset | undefined {
     if (id.startsWith('file:')) return getUploadedFileAsset(id.slice('file:'.length));
+    if (id.startsWith('asset:')) return getAgentDocumentAsset(id.slice('asset:'.length));
     return getAgentDocumentAsset(id);
   },
 
@@ -87,17 +88,18 @@ export const resourceAssetRepo = {
   },
 
   getResource(id: string): ResourceDetail | undefined {
-    const asset = this.get(id);
+    const asset = this.get(id) ?? getUploadedFileAsset(id);
     if (!asset) return undefined;
     return toResourceDetail(asset);
   },
 
   softDelete(id: string): ResourceAsset | undefined {
     if (id.startsWith('file:')) return undefined;
+    const assetId = id.startsWith('asset:') ? id.slice('asset:'.length) : id;
     db.prepare(
       'UPDATE resource_assets SET deleted_at = COALESCE(deleted_at, ?), updated_at = ? WHERE id = ?',
-    ).run(now(), now(), id);
-    return this.get(id);
+    ).run(now(), now(), assetId);
+    return getAgentDocumentAsset(assetId, { includeDeleted: true });
   },
 };
 
@@ -311,7 +313,8 @@ function getUploadedFileAsset(fileId: string): ResourceAsset | undefined {
   ).get(fileId) as ResourceAsset | undefined;
 }
 
-function getAgentDocumentAsset(id: string): ResourceAsset | undefined {
+function getAgentDocumentAsset(id: string, options: { includeDeleted?: boolean } = {}): ResourceAsset | undefined {
+  const deletedFilter = options.includeDeleted ? '' : 'AND resource_assets.deleted_at IS NULL';
   return db.prepare(
     `SELECT
        resource_assets.*,
@@ -332,7 +335,8 @@ function getAgentDocumentAsset(id: string): ResourceAsset | undefined {
      LEFT JOIN messages ON messages.id = resource_assets.source_message_id
      LEFT JOIN rooms ON rooms.id = resource_assets.source_room_id
      LEFT JOIN tasks ON tasks.id = resource_assets.source_task_id
-     WHERE resource_assets.id = ?`,
+     WHERE resource_assets.id = ?
+       ${deletedFilter}`,
   ).get(id) as ResourceAsset | undefined;
 }
 

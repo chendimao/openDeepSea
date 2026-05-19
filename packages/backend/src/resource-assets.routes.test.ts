@@ -400,6 +400,59 @@ test('resource asset routes return unified list and typed detail contracts', asy
   assert.equal(forbiddenRes.status, 403);
 });
 
+test('resource asset detail route accepts project file list ids and hides deleted agent documents', async () => {
+  const project = createProject('list-id-detail');
+  const room = roomRepo.create({ project_id: project.id, name: 'List Id Room' });
+  const upload = fileRepo.create({
+    project_id: project.id,
+    original_name: 'screen.png',
+    stored_name: 'stored.png',
+    mime_type: 'image/png',
+    size: 128,
+    url: `/uploads/files/${project.id}/stored.png`,
+    storage_path: join(tmpdir(), 'stored.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# 列表 ID 详情\n\nMarkdown 内容。',
+    message_type: 'agent_stream',
+  });
+  const documentFile = fileRepo.createAgentDocument({
+    project_id: project.id,
+    title: '列表 ID 详情.md',
+    content: message.content,
+    source_message_id: message.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+    source_task_id: null,
+  });
+
+  const uploadDetailRes = await request(`/api/resource-assets/${upload.id}?projectId=${project.id}`);
+  assert.equal(uploadDetailRes.status, 200);
+  const uploadDetail = await uploadDetailRes.json() as { id: string; resource_type: string; preview_url: string | null };
+  assert.equal(uploadDetail.id, `file:${upload.id}`);
+  assert.equal(uploadDetail.resource_type, 'uploaded_file');
+  assert.equal(uploadDetail.preview_url, upload.url);
+
+  const documentDetailRes = await request(`/api/resource-assets/${documentFile.id}?projectId=${project.id}`);
+  assert.equal(documentDetailRes.status, 200);
+  const documentDetail = await documentDetailRes.json() as { id: string; resource_type: string; content: string | null };
+  assert.equal(documentDetail.id, documentFile.id.slice('asset:'.length));
+  assert.equal(documentDetail.resource_type, 'agent_document');
+  assert.equal(documentDetail.content, message.content);
+
+  const deleteRes = await request(`/api/resource-assets/${documentFile.id}`, { method: 'DELETE' });
+  assert.equal(deleteRes.status, 204);
+
+  const afterDeleteDetailRes = await request(`/api/resource-assets/${documentFile.id}?projectId=${project.id}`);
+  assert.equal(afterDeleteDetailRes.status, 404);
+});
+
 test('resource asset routes reject source fields outside the project boundary', async () => {
   const project = createProject('valid-boundary');
   const otherProject = createProject('invalid-boundary');
