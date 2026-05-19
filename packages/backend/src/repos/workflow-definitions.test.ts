@@ -13,6 +13,7 @@ const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
 test('workflowDefinitionRepo creates built-in default definition once', () => {
   const first = workflowDefinitionRepo.ensureBuiltInDefinitions();
   const second = workflowDefinitionRepo.ensureBuiltInDefinitions();
+  const definitions = workflowDefinitionRepo.list();
 
   assert.equal(first.id, second.id);
   assert.equal(first.status, 'published');
@@ -20,6 +21,7 @@ test('workflowDefinitionRepo creates built-in default definition once', () => {
   assert.equal(first.builtin_key, 'default-langgraph');
   assert.ok(first.definition.nodes.some((node) => node.type === 'planning' && node.label === '规划'));
   assert.ok(first.definition.nodes.some((node) => node.type === 'context' && node.label === '上下文'));
+  assert.ok(definitions.some((definition) => definition.builtin_key === 'analysis-document'));
 });
 
 test('workflowDefinitionRepo validates graph nodes and edges', () => {
@@ -58,7 +60,7 @@ test('workflowDefinitionRepo validates graph nodes and edges', () => {
       nodes: [{ id: 'planning', type: 'planning', label: 'Planning' }],
       edges: [],
     }),
-    /must include approval_gate node/,
+    /must include context node/,
   );
 
   assert.throws(
@@ -112,6 +114,10 @@ test('workflowDefinitionRepo validates graph nodes and edges', () => {
     }),
     /must be fully reachable/,
   );
+
+  const analysisDefinition = workflowDefinitionRepo.validateDefinition(analysisDocumentDefinition('analysis-plan'));
+  assert.equal(analysisDefinition.nodes.length, 4);
+  assert.ok(analysisDefinition.edges.some((edge) => edge.from === 'analysis-plan-planning' && edge.to === 'analysis-plan-acceptance'));
 });
 
 test('workflowDefinitionRepo lists room-visible definitions by scope', () => {
@@ -377,6 +383,22 @@ function minimalDefinition(id: string) {
       { from: `${id}-review`, to: `${id}-verify`, condition: 'pass' },
       { from: `${id}-repair`, to: `${id}-execute`, condition: 'execute' },
       { from: `${id}-verify`, to: `${id}-acceptance`, condition: 'acceptance' },
+      { from: `${id}-acceptance`, to: `${id}-memory`, condition: 'completed' },
+    ],
+  };
+}
+
+function analysisDocumentDefinition(id: string) {
+  return {
+    nodes: [
+      { id: `${id}-context`, type: 'context' as const, label: '上下文' },
+      { id: `${id}-planning`, type: 'planning' as const, label: '方案整理', role: 'planner' as const },
+      { id: `${id}-acceptance`, type: 'acceptance' as const, label: '方案验收', role: 'acceptor' as const },
+      { id: `${id}-memory`, type: 'memory' as const, label: '记忆' },
+    ],
+    edges: [
+      { from: `${id}-context`, to: `${id}-planning` },
+      { from: `${id}-planning`, to: `${id}-acceptance` },
       { from: `${id}-acceptance`, to: `${id}-memory`, condition: 'completed' },
     ],
   };

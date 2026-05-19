@@ -11,6 +11,7 @@ import type {
 } from '../types.js';
 
 const BUILTIN_DEFAULT_KEY = 'default-langgraph';
+const BUILTIN_ANALYSIS_DOCUMENT_KEY = 'analysis-document';
 
 const ALLOWED_NODE_TYPES = new Set<WorkflowDefinitionNodeType>([
   'context',
@@ -53,6 +54,20 @@ const DEFAULT_DEFINITION: WorkflowDefinitionGraph = {
   ],
 };
 
+const ANALYSIS_DOCUMENT_DEFINITION: WorkflowDefinitionGraph = {
+  nodes: [
+    { id: 'context', type: 'context', label: '上下文', stage: 'analysis', position: { x: 0, y: 80 } },
+    { id: 'planning', type: 'planning', label: '方案整理', stage: 'planning', role: 'planner', position: { x: 220, y: 80 } },
+    { id: 'acceptance', type: 'acceptance', label: '方案验收', stage: 'acceptance', role: 'acceptor', position: { x: 440, y: 80 } },
+    { id: 'memory', type: 'memory', label: '记忆', stage: 'acceptance', position: { x: 660, y: 80 } },
+  ],
+  edges: [
+    { from: 'context', to: 'planning' },
+    { from: 'planning', to: 'acceptance' },
+    { from: 'acceptance', to: 'memory', condition: 'completed' },
+  ],
+};
+
 type WorkflowDefinitionRow = Omit<WorkflowDefinition, 'definition'>;
 type WorkflowDefinitionListFilters = {
   scope?: WorkflowDefinitionScope;
@@ -70,50 +85,64 @@ function normalize(row: WorkflowDefinitionRow): WorkflowDefinition {
   };
 }
 
+function ensureBuiltInDefinition(
+  key: string,
+  name: string,
+  description: string,
+  definition: WorkflowDefinitionGraph,
+): WorkflowDefinition {
+  const definitionJson = JSON.stringify(definition);
+  const existing = db
+    .prepare('SELECT * FROM workflow_definitions WHERE builtin_key = ?')
+    .get(key) as WorkflowDefinitionRow | undefined;
+
+  if (existing) {
+    if (existing.name !== name || existing.description !== description || existing.definition_json !== definitionJson) {
+      db.prepare(
+        `UPDATE workflow_definitions
+         SET name = ?, description = ?, definition_json = ?, updated_at = ?
+         WHERE id = ?`,
+      ).run(name, description, definitionJson, now(), existing.id);
+      return workflowDefinitionRepo.get(existing.id)!;
+    }
+    return normalize(existing);
+  }
+
+  const id = nanoid(14);
+  const ts = now();
+  db.prepare(
+    `INSERT INTO workflow_definitions (
+      id, name, description, scope, scope_id, version, status, builtin_key, definition_json, created_at, updated_at
+    ) VALUES (?, ?, ?, 'system', 'default', 1, 'published', ?, ?, ?, ?)`,
+  ).run(id, name, description, key, definitionJson, ts, ts);
+  return workflowDefinitionRepo.get(id)!;
+}
+
 export const workflowDefinitionRepo = {
   ensureBuiltInDefinitions(): WorkflowDefinition {
-    const existing = db
-      .prepare('SELECT * FROM workflow_definitions WHERE builtin_key = ?')
-      .get(BUILTIN_DEFAULT_KEY) as WorkflowDefinitionRow | undefined;
-    if (existing) {
-      const normalizedDefault = this.validateDefinition(DEFAULT_DEFINITION);
-      if (existing.definition_json !== JSON.stringify(normalizedDefault)) {
-        db.prepare(
-          `UPDATE workflow_definitions
-           SET name = ?, description = ?, definition_json = ?, updated_at = ?
-           WHERE id = ?`,
-        ).run(
-          '默认开发闭环',
-          '内置 LangGraph 开发闭环：上下文、规划、审批、派发、执行、审查、验证、验收和记忆。',
-          JSON.stringify(normalizedDefault),
-          now(),
-          existing.id,
-        );
-        return this.get(existing.id)!;
-      }
-      return normalize(existing);
-    }
-
-    const id = nanoid(14);
-    const ts = now();
-    db.prepare(
-      `INSERT INTO workflow_definitions (
-        id, name, description, scope, scope_id, version, status, builtin_key, definition_json, created_at, updated_at
-      ) VALUES (?, ?, ?, 'system', 'default', 1, 'published', ?, ?, ?, ?)`,
-    ).run(
-      id,
+    const defaultDefinition = ensureBuiltInDefinition(
+      BUILTIN_DEFAULT_KEY,
       '默认开发闭环',
       '内置 LangGraph 开发闭环：上下文、规划、审批、派发、执行、审查、验证、验收和记忆。',
-      BUILTIN_DEFAULT_KEY,
-      JSON.stringify(this.validateDefinition(DEFAULT_DEFINITION)),
-      ts,
-      ts,
+      this.validateDefinition(DEFAULT_DEFINITION),
     );
-    return this.get(id)!;
+    ensureBuiltInDefinition(
+      BUILTIN_ANALYSIS_DOCUMENT_KEY,
+      '方案文档闭环',
+      '内置轻量方案闭环：上下文、方案整理、方案验收和记忆，不执行代码修改或代码审查。',
+      this.validateDefinition(ANALYSIS_DOCUMENT_DEFINITION),
+    );
+    return defaultDefinition;
   },
 
   get(id: string): WorkflowDefinition | undefined {
     const row = db.prepare('SELECT * FROM workflow_definitions WHERE id = ?').get(id) as WorkflowDefinitionRow | undefined;
+    return row ? normalize(row) : undefined;
+  },
+
+  getBuiltInByKey(key: string): WorkflowDefinition | undefined {
+    this.ensureBuiltInDefinitions();
+    const row = db.prepare('SELECT * FROM workflow_definitions WHERE builtin_key = ?').get(key) as WorkflowDefinitionRow | undefined;
     return row ? normalize(row) : undefined;
   },
 
@@ -397,6 +426,16 @@ function matchesListFilters(definition: WorkflowDefinition, filters: WorkflowDef
 
 function requireSupportedWorkflowShape(input: WorkflowDefinitionGraph): void {
   const types = new Set(input.nodes.map((node) => node.type));
+  const hasDevelopmentNode = ['approval_gate', 'dispatch', 'execute', 'review', 'repair_decision', 'verify']
+    .some((type) => types.has(type as WorkflowDefinitionNodeType));
+  if (!hasDevelopmentNode) {
+    requireAnalysisWorkflowShape(types);
+    return;
+  }
+  requireDevelopmentWorkflowShape(types);
+}
+
+function requireDevelopmentWorkflowShape(types: Set<WorkflowDefinitionNodeType>): void {
   const required: WorkflowDefinitionNodeType[] = [
     'planning',
     'approval_gate',
@@ -408,6 +447,13 @@ function requireSupportedWorkflowShape(input: WorkflowDefinitionGraph): void {
     'acceptance',
     'memory',
   ];
+  for (const type of required) {
+    if (!types.has(type)) throw new Error(`workflow definition must include ${type} node`);
+  }
+}
+
+function requireAnalysisWorkflowShape(types: Set<WorkflowDefinitionNodeType>): void {
+  const required: WorkflowDefinitionNodeType[] = ['context', 'planning', 'acceptance', 'memory'];
   for (const type of required) {
     if (!types.has(type)) throw new Error(`workflow definition must include ${type} node`);
   }
@@ -454,7 +500,7 @@ function isSupportedRuntimeTransition(
   condition: string | null,
 ): boolean {
   if (from === 'context') return to === 'planning';
-  if (from === 'planning') return to === 'approval_gate';
+  if (from === 'planning') return to === 'approval_gate' || to === 'acceptance';
   if (from === 'approval_gate') return to === 'dispatch' && (!condition || condition === 'approved' || condition === 'default');
   if (from === 'dispatch') return to === 'execute';
   if (from === 'execute') {
