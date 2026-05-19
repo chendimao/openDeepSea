@@ -105,6 +105,41 @@ test('installSkillsShSkill installs a public executable package and records sour
   assert.equal(readFileSync(join(skill.install_path, 'scripts/main.js'), 'utf-8'), 'console.log("installed");\n');
 });
 
+
+test('installSkillsShSkill records package version from public metadata.json when response has no top-level version', async () => {
+  resetSkills();
+  const client = new SkillsShClient({
+    fetch: async () => jsonResponse({
+      hash: 'snapshot-metadata',
+      files: [
+        {
+          path: 'SKILL.md',
+          contents: [
+            '---',
+            'name: metadata-version-skill',
+            'runtime_scopes: [workflow]',
+            '---',
+            '',
+            'Metadata version.',
+          ].join('\n'),
+        },
+        {
+          path: 'metadata.json',
+          contents: JSON.stringify({
+            version: '2.0.0',
+            revision: 'metadata-rev',
+          }),
+        },
+      ],
+    }),
+  });
+
+  const skill = await installSkillsShSkill('acme/skills/metadata-version', { client });
+
+  assert.equal(skill.package_version, '2.0.0');
+  assert.equal(skill.package_revision, 'metadata-rev');
+});
+
 test('installSkillsShSkill installs prompt-only public packages with executable fields empty', async () => {
   resetSkills();
   const client = new SkillsShClient({

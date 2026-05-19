@@ -22,6 +22,12 @@ export interface SkillsShPackage {
   files: SkillsShPackageFile[];
 }
 
+
+export interface SkillsShMetadata {
+  version: string | null;
+  revision: string | null;
+}
+
 export interface SkillsShManifest {
   name: string | null;
   description: string | null;
@@ -93,6 +99,28 @@ export function normalizeSkillsShManifest(raw: unknown): SkillsShManifest {
     entrypoint: entrypoint ?? null,
     permissions: runtime ? normalizePermissions(record.permissions) : null,
   };
+}
+
+
+export async function readSkillsShMetadata(dir: string): Promise<SkillsShMetadata | null> {
+  let raw: string;
+  try {
+    raw = await readFile(resolve(dir, 'metadata.json'), 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
+
+  try {
+    const record = asRecord(JSON.parse(raw) as unknown);
+    if (!record) return null;
+    return {
+      version: firstString(record.version, record.package_version, record.packageVersion) ?? null,
+      revision: firstString(record.revision, record.package_revision, record.packageRevision, record.sha, record.hash) ?? null,
+    };
+  } catch (err) {
+    throw new Error(`invalid metadata.json: ${(err as Error).message}`);
+  }
 }
 
 export async function readSkillsShManifest(dir: string): Promise<SkillsShManifest | null> {

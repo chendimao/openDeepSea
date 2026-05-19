@@ -9,6 +9,7 @@ import { skillRepo } from './repo.js';
 import type { Skill } from './types.js';
 import {
   readSkillsShManifest,
+  readSkillsShMetadata,
   writeSkillsShPackage,
   type SkillsShPackage,
 } from './installer-runner.js';
@@ -96,8 +97,9 @@ export async function installSkillsShSkill(installLabel: string, options: Instal
     const materialized = await writeSkillsShPackage(pkg, installPath);
     const loaded = await loadSkillFromDirectory(installPath);
     const manifest = await readSkillsShManifest(installPath);
-    const version = manifest?.version ?? pkg.version;
-    const revision = manifest?.revision ?? pkg.revision;
+    const metadata = await readSkillsShMetadata(installPath);
+    const version = manifest?.version ?? metadata?.version ?? pkg.version;
+    const revision = manifest?.revision ?? metadata?.revision ?? pkg.revision;
 
     return skillRepo.createSkill({
       id,
