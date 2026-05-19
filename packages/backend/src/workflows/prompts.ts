@@ -1,4 +1,4 @@
-import type { Room, RoomAgent, Task, WorkflowStage } from '../types.js';
+import type { Room, RoomAgent, Task, TaskExecutionIntent, WorkflowStage } from '../types.js';
 
 interface PromptContext {
   projectName: string;
@@ -156,6 +156,18 @@ function buildReviewPrompt(context: PromptContext): string {
 }
 
 function buildAcceptancePrompt(context: PromptContext): string {
+  if (isAnalysisDocumentContext(context)) {
+    return [
+      '你是方案/文档验收智能体。请根据原始目标、边界、风险、验证方式和后续实现输入判断输出是否可用。',
+      '不要要求代码修改、构建或提交。',
+      '不要因为没有代码改动、没有 build、没有 commit 而判失败；只有当任务明确要求实现时才检查代码变更。',
+      '必须输出 JSON 代码块：{"verdict":"pass|failed","acceptedCriteria":[],"failedCriteria":[],"notes":"验收说明"}。',
+      '',
+      baseContext(context),
+      '',
+      workflowContext(context),
+    ].join('\n');
+  }
   return [
     '你是开发闭环的功能验收智能体。请根据原始任务、计划、审查结果和验证结果判断是否通过。',
     '必须输出 JSON 代码块：{"verdict":"pass|failed","acceptedCriteria":[],"failedCriteria":[],"notes":"验收说明"}。',
@@ -164,4 +176,15 @@ function buildAcceptancePrompt(context: PromptContext): string {
     '',
     workflowContext(context),
   ].join('\n');
+}
+
+function isAnalysisDocumentContext(context: PromptContext): boolean {
+  const intent = extractTaskExecutionIntent(context.task.description);
+  return Boolean(intent && intent !== 'implementation' && intent !== 'debug_fix');
+}
+
+function extractTaskExecutionIntent(value: string | null): TaskExecutionIntent | null {
+  if (!value) return null;
+  const match = value.match(/任务意图[：:]\s*(analysis_only|planning_only|documentation_only|implementation|debug_fix|review_only)/);
+  return match ? match[1] as TaskExecutionIntent : null;
 }

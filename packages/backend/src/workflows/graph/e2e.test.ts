@@ -553,13 +553,23 @@ test('background graph continuation failure records workflow_failed event', asyn
     title: 'Background failure workflow',
   });
   const run = createGraphWorkflowRun(task.id);
+  const scheduledRetries: Array<() => void> = [];
 
   enqueueGraphWorkflow(run.id, {
     planner: async () => {
       throw new Error('background planner unavailable');
     },
+    scheduleRetry: (_input, retry) => {
+      scheduledRetries.push(retry);
+    },
   });
-  await new Promise((resolve) => setImmediate(resolve));
+  await flushImmediate();
+
+  for (let index = 0; index < 4; index += 1) {
+    assert.ok(scheduledRetries[index]);
+    scheduledRetries[index]!();
+    await flushImmediate();
+  }
 
   assert.equal(workflowRepo.getRun(run.id)?.status, 'blocked');
   const failureEvent = readWorkflowEvents(room.id, run.id)
@@ -568,9 +578,10 @@ test('background graph continuation failure records workflow_failed event', asyn
   assert.equal(failureEvent.graph_node, 'planning');
   assert.equal(failureEvent.workflow_stage, 'planning');
   assert.equal(failureEvent.error, 'background planner unavailable');
-  assert.equal(
-    failureEvent.workflow_step_id,
-    workflowRepo.listSteps(run.id).find((step) => step.node_name === 'planning')?.id,
+  assert.ok(
+    workflowRepo.listSteps(run.id).some((step) =>
+      step.id === failureEvent.workflow_step_id && step.node_name === 'planning',
+    ),
   );
 });
 
@@ -637,6 +648,10 @@ function readWorkflowEvents(roomId: string, workflowRunId: string): MessageMetad
     .filter((metadata): metadata is MessageMetadata =>
       metadata !== null && Boolean(metadata.event_type) && metadata.workflow_run_id === workflowRunId,
     );
+}
+
+function flushImmediate(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function createAwaitingApprovalRun(input: {
