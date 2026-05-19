@@ -348,6 +348,44 @@ DROP INDEX IF EXISTS idx_workflow_context_source_version;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_context_source_version
   ON workflow_context_entries(workflow_run_id, source_type, source_id, entry_type, version);
 
+CREATE TABLE IF NOT EXISTS workflow_incidents (
+  id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  workflow_run_id TEXT NOT NULL,
+  workflow_step_id TEXT,
+  task_id TEXT NOT NULL,
+  child_task_id TEXT,
+  agent_run_id TEXT,
+  room_agent_id TEXT,
+  incident_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'warning',
+  fingerprint TEXT NOT NULL,
+  error TEXT,
+  context_json TEXT NOT NULL DEFAULT '{}',
+  decision_json TEXT,
+  action TEXT,
+  action_status TEXT,
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  last_message_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (workflow_step_id) REFERENCES workflow_steps(id) ON DELETE SET NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (child_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_run_id) REFERENCES agent_runs(id) ON DELETE SET NULL,
+  FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE SET NULL,
+  UNIQUE(workflow_run_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_incidents_open ON workflow_incidents(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_incidents_workflow ON workflow_incidents(workflow_run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_workflow_incidents_child ON workflow_incidents(workflow_run_id, child_task_id, incident_type);
+
 CREATE TABLE IF NOT EXISTS memory_entries (
   id TEXT PRIMARY KEY,
   project_id TEXT,

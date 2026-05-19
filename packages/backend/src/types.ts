@@ -191,6 +191,50 @@ export type WorkflowStepStatus =
   | 'cancelled'
   | 'interrupted'
   | 'skipped';
+export type WorkflowIncidentType =
+  | 'backend_restart_interrupted'
+  | 'agent_run_stale'
+  | 'step_without_active_run'
+  | 'child_task_failed'
+  | 'executor_unavailable'
+  | 'runtime_boundary_mismatch'
+  | 'planner_output_invalid'
+  | 'unknown';
+export type WorkflowIncidentStatus = 'open' | 'deciding' | 'executing' | 'resolved' | 'blocked' | 'ignored';
+export type WorkflowIncidentSeverity = 'info' | 'warning' | 'critical';
+export type WorkflowRecoveryAction =
+  | 'retry_same_agent'
+  | 'retry_with_global_agent'
+  | 'reassign_agent'
+  | 'split_task'
+  | 'ask_user'
+  | 'mark_blocked';
+export type WorkflowRecoveryActionStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
+export interface WorkflowIncident {
+  id: string;
+  room_id: string;
+  project_id: string;
+  workflow_run_id: string;
+  workflow_step_id: string | null;
+  task_id: string;
+  child_task_id: string | null;
+  agent_run_id: string | null;
+  room_agent_id: string | null;
+  incident_type: WorkflowIncidentType;
+  status: WorkflowIncidentStatus;
+  severity: WorkflowIncidentSeverity;
+  fingerprint: string;
+  error: string | null;
+  context_json: string;
+  decision_json: string | null;
+  action: WorkflowRecoveryAction | null;
+  action_status: WorkflowRecoveryActionStatus | null;
+  attempt_count: number;
+  last_message_id: string | null;
+  created_at: number;
+  updated_at: number;
+  resolved_at: number | null;
+}
 export type TaskArtifactType =
   | 'analysis'
   | 'decision_request'
