@@ -179,7 +179,7 @@ function normalizePackageFile(raw: unknown): SkillsShPackageFile | null {
   if (!record) return null;
   const path = firstString(record.path, record.name, record.filename);
   if (!path) return null;
-  const content = normalizeFileContent(record.content ?? record.text ?? record.data);
+  const content = normalizeFileContent(record.content ?? record.contents ?? record.text ?? record.data);
   if (content === null) throw new Error(`package file content must be text: ${path}`);
   assertSafeRelativePath(path, 'unsafe package path');
   return { path, content };
@@ -189,7 +189,7 @@ function normalizeFileContent(raw: unknown): string | null {
   if (typeof raw === 'string') return raw;
   const record = asRecord(raw);
   if (!record) return null;
-  const content = firstString(record.content, record.text, record.data);
+  const content = firstString(record.content, record.contents, record.text, record.data);
   if (content === null) return null;
   const encoding = firstString(record.encoding);
   if (encoding === 'base64') return Buffer.from(content, 'base64').toString('utf-8');

@@ -81,6 +81,25 @@ test('SkillsShClient fetches packages from the public skills.sh download endpoin
   assert.equal(pkg.revision, 'snapshot-a');
 });
 
+
+test('SkillsShClient accepts the public download files contents field', async () => {
+  const client = new SkillsShClient({
+    fetch: async () => jsonResponse({
+      hash: 'snapshot-contents',
+      files: [
+        { path: 'SKILL.md', contents: '# Contents Field\n' },
+      ],
+    }),
+  });
+
+  const pkg = await client.fetchPackage('vercel-labs/agent-skills/contents-field');
+
+  assert.equal(pkg.revision, 'snapshot-contents');
+  assert.deepEqual(pkg.files, [
+    { path: 'SKILL.md', content: '# Contents Field\n' },
+  ]);
+});
+
 test('SkillsShClient normalizes conservative supported result shapes', async () => {
   const client = new SkillsShClient({
     fetch: async () => jsonResponse({
