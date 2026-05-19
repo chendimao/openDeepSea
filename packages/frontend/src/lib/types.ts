@@ -388,6 +388,14 @@ export interface MessageAttachmentMetadata {
   deleted?: boolean;
 }
 
+export interface MessageReplyMetadata {
+  message_id: string;
+  sender_type: 'user' | 'agent' | 'system';
+  sender_id: string;
+  sender_name: string | null;
+  excerpt: string;
+}
+
 export interface ProjectFile {
   id: string;
   project_id: string;
@@ -410,6 +418,7 @@ export interface ProjectFile {
 
 export interface MessageMetadata {
   attachments: MessageAttachmentMetadata[];
+  reply_to?: MessageReplyMetadata;
   task_id?: string;
   task_title?: string;
   workflow_run_id?: string;

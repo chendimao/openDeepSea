@@ -238,6 +238,28 @@ test('parseMessageMetadata accepts task readiness metadata', () => {
   });
 });
 
+test('parseMessageMetadata accepts reply target metadata', () => {
+  const metadata = JSON.stringify({
+    reply_to: {
+      message_id: 'message-1',
+      sender_type: 'agent',
+      sender_id: 'planner',
+      sender_name: '产品经理',
+      excerpt: '你希望这个按钮点击后是哪一种行为？',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.deepEqual(parsed.reply_to, {
+    message_id: 'message-1',
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    excerpt: '你希望这个按钮点击后是哪一种行为？',
+  });
+});
+
 test('parseMessageMetadata accepts task readiness metadata with execution intent', () => {
   const metadata = JSON.stringify({
     task_readiness: {

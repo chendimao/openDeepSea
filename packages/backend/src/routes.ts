@@ -1479,6 +1479,7 @@ const jsonMessageSchema = z.object({
   sender_name: z.string().optional(),
   mentions: z.array(z.string()).optional(),
   fileIds: z.array(z.string()).optional(),
+  reply_to_message_id: z.string().trim().min(1).optional(),
 });
 
 const multipartMessageSchema = z.object({
@@ -1487,6 +1488,7 @@ const multipartMessageSchema = z.object({
   sender_name: z.string().optional(),
   mentions: z.string().optional(),
   fileIds: z.string().optional(),
+  reply_to_message_id: z.string().optional(),
 });
 
 router.post('/rooms/:roomId/messages', (req, res, next) => {
@@ -1536,9 +1538,11 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const metadata: MessageMetadata | undefined = referencedFiles.length > 0
-    ? { attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile) }
-    : undefined;
+  const metadata = buildUserMessageMetadata({
+    roomId,
+    attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile),
+    replyToMessageId: parsed.data.reply_to_message_id,
+  });
   const userMsg = createAndDispatchUserMessage({
     roomId,
     senderId: parsed.data.sender_id,
@@ -1624,9 +1628,12 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       },
     )));
     const messageFiles = [...uploadedFiles, ...referencedFiles];
-    const metadata: MessageMetadata | undefined = messageFiles.length > 0
-      ? { attachments: messageFiles.map(buildAttachmentMetadataFromProjectFile) }
-      : undefined;
+    const replyToMessageId = normalizeOptionalId(parsed.data.reply_to_message_id);
+    const metadata = buildUserMessageMetadata({
+      roomId,
+      attachments: messageFiles.map(buildAttachmentMetadataFromProjectFile),
+      replyToMessageId,
+    });
     const userMsg = createAndDispatchUserMessage({
       roomId,
       senderId: parsed.data.sender_id,
@@ -1662,6 +1669,45 @@ function recordMessageFileRefs(projectId: string, roomId: string, messageId: str
     message_id: messageId,
     file_ids: files.map((file) => file.id),
   });
+}
+
+function buildUserMessageMetadata(input: {
+  roomId: string;
+  attachments: MessageMetadata['attachments'];
+  replyToMessageId?: string;
+}): MessageMetadata | undefined {
+  const metadata: MessageMetadata = {};
+  if (input.attachments && input.attachments.length > 0) {
+    metadata.attachments = input.attachments;
+  }
+  const replyToMessageId = normalizeOptionalId(input.replyToMessageId);
+  if (replyToMessageId) {
+    const replyTarget = messageRepo.get(replyToMessageId);
+    if (!replyTarget || replyTarget.room_id !== input.roomId) {
+      const error = new Error('reply_to_message_id not found in room') as Error & { status?: number };
+      error.status = 400;
+      throw error;
+    }
+    metadata.reply_to = {
+      message_id: replyTarget.id,
+      sender_type: replyTarget.sender_type,
+      sender_id: replyTarget.sender_id,
+      sender_name: replyTarget.sender_name,
+      excerpt: summarizeReplyExcerpt(replyTarget.content),
+    };
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+function normalizeOptionalId(value?: string | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function summarizeReplyExcerpt(content: string): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '空消息';
+  return normalized.length <= 180 ? normalized : `${normalized.slice(0, 177).trimEnd()}...`;
 }
 
 function createAndDispatchUserMessage(input: {

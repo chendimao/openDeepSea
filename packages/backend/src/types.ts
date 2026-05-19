@@ -516,6 +516,14 @@ export interface MessageTaskEventMetadata {
   [key: string]: unknown;
 }
 
+export interface MessageReplyMetadata {
+  message_id: string;
+  sender_type: SenderType;
+  sender_id: string;
+  sender_name: string | null;
+  excerpt: string;
+}
+
 export type TaskExecutionIntent =
   | 'analysis_only'
   | 'planning_only'
@@ -526,6 +534,7 @@ export type TaskExecutionIntent =
 
 export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
+  reply_to?: MessageReplyMetadata;
   task_readiness?: {
     ready: boolean;
     confidence: number;

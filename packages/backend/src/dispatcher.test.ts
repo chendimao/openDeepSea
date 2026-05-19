@@ -425,6 +425,76 @@ test('planner fallback reply keeps discussion messages in chat without collabora
   }
 });
 
+test('dispatchUserMessage includes reply target context in agent prompt', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-reply-context-'));
+  const project = projectRepo.create({ name: `reply-context-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: planner.agent_id,
+  });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    content: '你希望按钮点击后是哪一种行为？\n1. 直接发送用户选择消息\n2. 只填入输入框',
+    message_type: 'agent_stream',
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '我选 1',
+    message_type: 'text',
+    metadata: {
+      reply_to: {
+        message_id: sourceMessage.id,
+        sender_type: sourceMessage.sender_type,
+        sender_id: sourceMessage.sender_id,
+        sender_name: sourceMessage.sender_name,
+        excerpt: sourceMessage.content.slice(0, 80),
+      },
+    },
+  });
+
+  const prompts: string[] = [];
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      prompts.push(args.prompt);
+      args.onChunk?.({ stream: 'stdout', text: '收到，按方案 1 继续。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0] ?? '', /正在回复的消息：/);
+    assert.match(prompts[0] ?? '', /message_id:/);
+    assert.match(prompts[0] ?? '', /产品经理/);
+    assert.match(prompts[0] ?? '', /你希望按钮点击后是哪一种行为/);
+    assert.match(prompts[0] ?? '', /当前用户请求：\n我选 1/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner fallback reply keeps repair discussion messages in chat without collaboration decision', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-repair-discussion-'));
   const project = projectRepo.create({ name: `planner-repair-discussion-${Date.now()}`, path: projectPath });
@@ -726,6 +796,45 @@ test('message route handles /task command after persisting user message without 
     }));
   } finally {
     restore();
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('message route persists reply target metadata', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-message-reply-route-'));
+  const project = projectRepo.create({ name: `message-reply-route-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'mentions_only',
+    fallback_agent_id: null,
+  });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    content: '这个按钮点击后，你希望它直接发送用户选择消息吗？',
+    message_type: 'agent_stream',
+  });
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: '确定，直接发送',
+        reply_to_message_id: sourceMessage.id,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const payload = await response.json() as Message | { error?: unknown };
+    assert.equal(response.status, 201, JSON.stringify(payload));
+    const message = payload as Message;
+    const metadata = JSON.parse(message.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.reply_to?.message_id, sourceMessage.id);
+    assert.equal(metadata.reply_to?.sender_name, '产品经理');
+    assert.match(metadata.reply_to?.excerpt ?? '', /直接发送用户选择消息/);
+  } finally {
     await rm(projectPath, { recursive: true, force: true });
   }
 });

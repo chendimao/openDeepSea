@@ -17,7 +17,15 @@ import { selectSkills } from './skills/selector.js';
 import { runRegistry } from './run-registry.js';
 import { messageUploadDir, messageUploadRoute, projectFileUploadRoot, projectFileUploadRoute } from './uploads.js';
 import { wsHub } from './ws-hub.js';
-import type { AgentRun, AgentRunStatus, Message, MessageAttachmentMetadata, RoomAgent, WorkflowStage } from './types.js';
+import type {
+  AgentRun,
+  AgentRunStatus,
+  Message,
+  MessageAttachmentMetadata,
+  MessageReplyMetadata,
+  RoomAgent,
+  WorkflowStage,
+} from './types.js';
 
 /**
  * Dispatch an incoming user message to the agents selected by project routing.
@@ -45,7 +53,11 @@ export async function dispatchUserMessage(args: {
     fallback_agent_id: project.fallback_agent_id,
   };
   const messageAttachments = getResolvedMessageAttachments(userMessage);
-  const promptWithAttachments = buildPromptWithResolvedMessageAttachments(userMessage.content, messageAttachments);
+  const promptWithAttachments = buildPromptWithResolvedMessageContext(
+    userMessage.content,
+    messageAttachments,
+    getMessageReplyMetadata(userMessage.metadata),
+  );
   const imagePaths = messageAttachments
     .filter((attachment) => attachment.metadata.isImage && attachment.localPath)
     .map((attachment) => attachment.localPath!);
@@ -183,7 +195,11 @@ async function buildModelChatSkillContext(input: {
 }
 
 export function buildPromptWithMessageAttachments(userPrompt: string, userMessage: Message): string {
-  return buildPromptWithResolvedMessageAttachments(userPrompt, getResolvedMessageAttachments(userMessage));
+  return buildPromptWithResolvedMessageContext(
+    userPrompt,
+    getResolvedMessageAttachments(userMessage),
+    getMessageReplyMetadata(userMessage.metadata),
+  );
 }
 
 export interface RespondAsAgentInput {
@@ -217,11 +233,26 @@ function getResolvedMessageAttachments(userMessage: Message): ResolvedMessageAtt
   }));
 }
 
-function buildPromptWithResolvedMessageAttachments(
+function buildPromptWithResolvedMessageContext(
   userPrompt: string,
   attachments: ResolvedMessageAttachment[],
+  replyTo: MessageReplyMetadata | null,
 ): string {
-  if (attachments.length === 0) return userPrompt;
+  const content = userPrompt.trim() || '用户发送了一条仅包含附件的消息。';
+  const sections = [content];
+
+  if (replyTo) {
+    sections.push(
+      '',
+      '---',
+      '正在回复的消息：',
+      `message_id: ${replyTo.message_id}`,
+      `sender: ${replyTo.sender_name ?? replyTo.sender_id} (${replyTo.sender_type})`,
+      `excerpt: ${replyTo.excerpt}`,
+    );
+  }
+
+  if (attachments.length === 0) return sections.join('\n');
 
   const attachmentLines = attachments.map(({ metadata: attachment, localPath }, index) => {
     const kind = attachment.isImage ? 'image' : 'file';
@@ -236,15 +267,39 @@ function buildPromptWithResolvedMessageAttachments(
     ].join(' | ');
   });
 
-  const content = userPrompt.trim() || '用户发送了一条仅包含附件的消息。';
-  return [
-    content,
+  sections.push(
     '',
     '---',
     '消息附件：',
     '请结合以下附件回答。图片附件会优先通过 ACP adapter 传入；如果当前 ACP 不支持图片参数，或需要查看文件，请读取对应的 localPath。',
     ...attachmentLines,
-  ].join('\n');
+  );
+  return sections.join('\n');
+}
+
+function getMessageReplyMetadata(metadata: string | null): MessageReplyMetadata | null {
+  if (!metadata) return null;
+  try {
+    const parsed = JSON.parse(metadata) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return isMessageReplyMetadata((parsed as { reply_to?: unknown }).reply_to)
+      ? (parsed as { reply_to: MessageReplyMetadata }).reply_to
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isMessageReplyMetadata(value: unknown): value is MessageReplyMetadata {
+  if (!value || typeof value !== 'object') return false;
+  const reply = value as Record<string, unknown>;
+  return (
+    typeof reply.message_id === 'string' &&
+    (reply.sender_type === 'user' || reply.sender_type === 'agent' || reply.sender_type === 'system') &&
+    typeof reply.sender_id === 'string' &&
+    (typeof reply.sender_name === 'string' || reply.sender_name === null) &&
+    typeof reply.excerpt === 'string'
+  );
 }
 
 function parseMessageAttachments(metadata: string | null): MessageAttachmentMetadata[] {

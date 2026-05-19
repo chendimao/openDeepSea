@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, FolderOpen, ListTodo, MessageSquare, Play, Plus, RotateCcw, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, FolderOpen, ListTodo, MessageSquare, Play, Plus, Reply, RotateCcw, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -50,8 +50,14 @@ import {
   MessageRunPanel as AiMessageRunPanel,
 } from '../components/ai-elements/Message';
 
-type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[] };
+type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[]; replyToMessageId?: string };
 type RoomFeatureTab = 'chat' | 'tasks' | 'files';
+interface ReplyTarget {
+  messageId: string;
+  senderName: string;
+  excerpt: string;
+  explicit: boolean;
+}
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -62,6 +68,7 @@ export function RoomPage() {
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  const [explicitReplyTarget, setExplicitReplyTarget] = useState<ReplyTarget | null>(null);
   const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
   const streamingRunMessageIds = useRef<Map<string, string>>(new Map());
   const streamingEventTracker = useRef(createStreamingEventTracker());
@@ -132,6 +139,7 @@ export function RoomPage() {
     setSelectedTask(null);
     setShowMemoryPanel(false);
     setHighlightMessageId(null);
+    setExplicitReplyTarget(null);
     messageRefs.current.clear();
     streamingRunMessageIds.current.clear();
     streamingEventTracker.current.clear();
@@ -164,6 +172,11 @@ export function RoomPage() {
     setConfigAgent(null);
     setActiveTab('chat');
     setHighlightMessageId(messageId);
+  }, []);
+
+  const replyToMessage = useCallback((message: Message) => {
+    setExplicitReplyTarget(createReplyTarget(message, true));
+    setActiveTab('chat');
   }, []);
 
   useEffect(() => {
@@ -422,6 +435,10 @@ export function RoomPage() {
                 streamingDisplay={streamingDisplay}
                 registerMessageRef={registerMessageRef}
                 highlightMessageId={highlightMessageId}
+                explicitReplyTarget={explicitReplyTarget}
+                onReplyToMessage={replyToMessage}
+                onClearReplyTarget={() => setExplicitReplyTarget(null)}
+                onLocateReplyTarget={focusMessage}
               />
             )}
             {activeTab === 'tasks' && (
@@ -796,6 +813,10 @@ function ChatColumn({
   streamingDisplay,
   registerMessageRef,
   highlightMessageId,
+  explicitReplyTarget,
+  onReplyToMessage,
+  onClearReplyTarget,
+  onLocateReplyTarget,
 }: {
   messages: Message[];
   agents: RoomAgent[];
@@ -812,6 +833,10 @@ function ChatColumn({
   streamingDisplay: StreamingMessageDisplay;
   registerMessageRef: (messageId: string, node: HTMLElement | null) => void;
   highlightMessageId: string | null;
+  explicitReplyTarget: ReplyTarget | null;
+  onReplyToMessage: (message: Message) => void;
+  onClearReplyTarget: () => void;
+  onLocateReplyTarget: (messageId: string) => void;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
   const queryClient = useQueryClient();
@@ -829,6 +854,10 @@ function ChatColumn({
     [messages, agentRuns],
   );
   const visibleMessages = useMemo(() => dedupeMessages(messages), [messages]);
+  const defaultReplyTarget = useMemo(
+    () => explicitReplyTarget ?? createDefaultReplyTarget(visibleMessages),
+    [explicitReplyTarget, visibleMessages],
+  );
   const latestWorkflowEventMessageIds = useMemo(
     () => latestWorkflowEventMessageIdsByRun(visibleMessages),
     [visibleMessages],
@@ -839,6 +868,7 @@ function ChatColumn({
     mutationFn: (input: SendInput) => api.sendMessage(roomId, input),
     onSuccess: () => {
       setComposerResetKey((key) => key + 1);
+      onClearReplyTarget();
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
@@ -854,7 +884,7 @@ function ChatColumn({
     const files = input.files;
     const fileIds = input.fileIds;
     if (!content && (!files || files.length === 0) && (!fileIds || fileIds.length === 0)) return;
-    send.mutate({ content, mentions: input.mentions, files, fileIds });
+    send.mutate({ content, mentions: input.mentions, files, fileIds, replyToMessageId: input.replyToMessageId });
   };
 
   return (
@@ -908,6 +938,8 @@ function ChatColumn({
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
                   messageRef={(node) => registerMessageRef(m.id, node)}
                   highlighted={highlightMessageId === m.id}
+                  onReply={() => onReplyToMessage(m)}
+                  onLocateReplyTarget={onLocateReplyTarget}
                 />
               );
             })
@@ -923,6 +955,8 @@ function ChatColumn({
         sending={send.isPending}
         disabled={!canSendChat}
         agents={agents}
+        replyTarget={defaultReplyTarget}
+        onClearReplyTarget={explicitReplyTarget ? onClearReplyTarget : undefined}
         placeholder={
           agents.length === 0
             ? modelChatReady
@@ -980,6 +1014,34 @@ function latestWorkflowEventMessageIdsByRun(messages: Message[]): Map<string, st
   return new Map(Array.from(latest, ([workflowId, item]) => [workflowId, item.messageId]));
 }
 
+function createDefaultReplyTarget(messages: Message[]): ReplyTarget | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || !isReplyableMessage(message)) continue;
+    return createReplyTarget(message, false);
+  }
+  return null;
+}
+
+function isReplyableMessage(message: Message): boolean {
+  return message.sender_type === 'agent' && Boolean(message.content.trim());
+}
+
+function createReplyTarget(message: Message, explicit: boolean): ReplyTarget {
+  return {
+    messageId: message.id,
+    senderName: message.sender_name ?? message.sender_id,
+    excerpt: summarizeMessageExcerpt(message.content),
+    explicit,
+  };
+}
+
+function summarizeMessageExcerpt(content: string): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '空消息';
+  return normalized.length <= 96 ? normalized : `${normalized.slice(0, 93).trimEnd()}...`;
+}
+
 function MessageBubble({
   message,
   agentMeta,
@@ -996,6 +1058,8 @@ function MessageBubble({
   displayContent,
   messageRef,
   highlighted,
+  onReply,
+  onLocateReplyTarget,
 }: {
   message: Message;
   agentMeta?: RoomAgent;
@@ -1012,6 +1076,8 @@ function MessageBubble({
   displayContent: string;
   messageRef: (node: HTMLElement | null) => void;
   highlighted: boolean;
+  onReply: () => void;
+  onLocateReplyTarget: (messageId: string) => void;
 }) {
   const { t, formatRelativeTime } = useI18n();
   const queryClient = useQueryClient();
@@ -1094,6 +1160,7 @@ function MessageBubble({
     isLatestWorkflowEvent &&
     (!eventWorkflow || eventWorkflow.status === 'blocked');
   const isCollaborationDecision = isSystem && Boolean(metadata.collaboration_decision && metadata.source_message_id);
+  const canReply = !isSystem && hasContent && !isStreaming;
   const shouldShowTaskReadiness =
     !isUser &&
     !isSystem &&
@@ -1192,6 +1259,16 @@ function MessageBubble({
           )}
           {hasContent && (
             <AiMessageActions>
+              {canReply && (
+                <button
+                  type="button"
+                  className="ai-message-action"
+                  title="回复此消息"
+                  onClick={onReply}
+                >
+                  <Reply className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
+              )}
               <button
                 type="button"
                 className="ai-message-action"
@@ -1205,6 +1282,17 @@ function MessageBubble({
           )}
         </AiMessageHeader>
         <AiMessageBody stream={isStreaming}>
+          {metadata.reply_to && (
+            <button
+              type="button"
+              className="message-reply-reference"
+              onClick={() => onLocateReplyTarget(metadata.reply_to!.message_id)}
+              title="跳转到引用消息"
+            >
+              <span>{metadata.reply_to.sender_name ?? metadata.reply_to.sender_id}</span>
+              <small>{metadata.reply_to.excerpt}</small>
+            </button>
+          )}
           {hasContent ? (
             <MessageContent content={renderedContent} streaming={isStreaming} />
           ) : message.message_type === 'agent_stream' ? (

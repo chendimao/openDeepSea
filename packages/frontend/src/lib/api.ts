@@ -506,11 +506,14 @@ export const api = {
     request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),
   sendMessage: (
     roomId: string,
-    input: { content: string; mentions?: string[]; files?: File[]; fileIds?: string[] },
+    input: { content: string; mentions?: string[]; files?: File[]; fileIds?: string[]; replyToMessageId?: string },
   ) => {
     if (input.files && input.files.length > 0) {
       const form = new FormData();
       form.append('content', input.content);
+      if (input.replyToMessageId) {
+        form.append('reply_to_message_id', input.replyToMessageId);
+      }
       if (input.mentions && input.mentions.length > 0) {
         form.append('mentions', JSON.stringify(input.mentions));
       }
@@ -525,7 +528,12 @@ export const api = {
     }
     return request<Message>(`/rooms/${roomId}/messages`, {
       method: 'POST',
-      body: JSON.stringify({ content: input.content, mentions: input.mentions, fileIds: input.fileIds }),
+      body: JSON.stringify({
+        content: input.content,
+        mentions: input.mentions,
+        fileIds: input.fileIds,
+        reply_to_message_id: input.replyToMessageId,
+      }),
     });
   },
   startCollaboration: (

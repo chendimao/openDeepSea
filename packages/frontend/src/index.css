@@ -919,6 +919,30 @@
     font-size: 13.5px;
     line-height: 1.58;
   }
+  .message-reply-reference {
+    display: grid;
+    width: 100%;
+    gap: 2px;
+    margin-bottom: 9px;
+    border-left: 2px solid var(--color-accent);
+    border-radius: 7px;
+    background: var(--color-surface-raised);
+    padding: 7px 9px;
+    text-align: left;
+  }
+  .message-reply-reference span {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-accent);
+  }
+  .message-reply-reference small {
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: 12px;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .ai-message-body--stream {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 12.5px;
@@ -1053,7 +1077,43 @@
     display: flex;
     flex-shrink: 0;
     flex-direction: column;
+    gap: 8px;
     padding: 10px;
+  }
+  .composer-reply-preview {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    border-radius: 8px;
+    background: var(--color-surface-raised);
+    padding: 7px 8px;
+    box-shadow: inset 0 0 0 1px var(--color-border);
+  }
+  .composer-reply-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--color-accent);
+    white-space: nowrap;
+  }
+  .composer-reply-excerpt {
+    overflow: hidden;
+    color: var(--color-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .composer-reply-clear {
+    display: grid;
+    height: 24px;
+    width: 24px;
+    place-items: center;
+    border-radius: 6px;
+    color: var(--color-fg-muted);
+  }
+  .composer-reply-clear:hover:not(:disabled) {
+    background: var(--color-surface);
+    color: var(--color-fg);
   }
   .ai-prompt-shell {
     display: flex;

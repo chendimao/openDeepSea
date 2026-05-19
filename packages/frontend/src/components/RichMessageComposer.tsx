@@ -23,6 +23,13 @@ import {
 } from './ai-elements/PromptInput';
 import { Button } from './ui/Button';
 
+interface ComposerReplyTarget {
+  messageId: string;
+  senderName: string;
+  excerpt: string;
+  explicit: boolean;
+}
+
 interface RichMessageComposerProps {
   projectId: string;
   agents: RoomAgent[];
@@ -31,7 +38,15 @@ interface RichMessageComposerProps {
   placeholder: string;
   routingHint: string;
   resetKey: number;
-  onSend: (input: { content: string; mentions?: string[]; files?: File[]; fileIds?: string[] }) => void;
+  replyTarget?: ComposerReplyTarget | null;
+  onClearReplyTarget?: () => void;
+  onSend: (input: {
+    content: string;
+    mentions?: string[];
+    files?: File[];
+    fileIds?: string[];
+    replyToMessageId?: string;
+  }) => void;
 }
 
 type ComposerAttachment =
@@ -46,6 +61,8 @@ export function RichMessageComposer({
   placeholder,
   routingHint,
   resetKey,
+  replyTarget,
+  onClearReplyTarget,
   onSend,
 }: RichMessageComposerProps): JSX.Element {
   const promptAreaRef = useRef<PromptAreaHandle>(null);
@@ -198,6 +215,7 @@ export function RichMessageComposer({
       mentions: mentionedRoomAgentIds.length > 0 ? mentionedRoomAgentIds : undefined,
       files: localFiles.length > 0 ? localFiles : undefined,
       fileIds: fileIds.length > 0 ? fileIds : undefined,
+      replyToMessageId: replyTarget?.messageId,
     });
   };
 
@@ -225,6 +243,23 @@ export function RichMessageComposer({
       }}
       onDrop={handleFileDrop}
     >
+      {replyTarget && (
+        <div className="composer-reply-preview">
+          <ReplyPreviewLabel explicit={replyTarget.explicit} senderName={replyTarget.senderName} />
+          <span className="composer-reply-excerpt">{replyTarget.excerpt}</span>
+          {onClearReplyTarget && (
+            <button
+              type="button"
+              className="composer-reply-clear"
+              onClick={onClearReplyTarget}
+              aria-label="取消引用"
+              disabled={isBusy}
+            >
+              <X className="h-3.5 w-3.5" strokeWidth={1.9} />
+            </button>
+          )}
+        </div>
+      )}
       <PromptInputShell>
         <PromptArea
           ref={promptAreaRef}
@@ -334,6 +369,14 @@ export function RichMessageComposer({
         </PromptInputToolbar>
       </PromptInputShell>
     </form>
+  );
+}
+
+function ReplyPreviewLabel({ explicit, senderName }: { explicit: boolean; senderName: string }) {
+  return (
+    <span className="composer-reply-label">
+      {explicit ? '回复' : '默认回复'} {senderName}
+    </span>
   );
 }
 

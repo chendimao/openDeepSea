@@ -6,6 +6,7 @@ import type {
   CollaborationStage,
   MessageAttachmentMetadata,
   MessageMetadata,
+  MessageReplyMetadata,
   TaskExecutionIntent,
   TaskReadinessMetadata,
   TaskCreatedFrom,
@@ -64,10 +65,39 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
     const taskEvent = sanitizeTaskEventMetadata(parsed);
     const collaboration = sanitizeCollaborationDecisionMetadata(parsed);
     const taskReadiness = sanitizeTaskReadinessMetadata(parsed);
-    return { attachments, ...taskEvent, ...collaboration, ...taskReadiness };
+    const reply = sanitizeReplyMetadata(parsed);
+    return { attachments, ...reply, ...taskEvent, ...collaboration, ...taskReadiness };
   } catch {
     return createEmptyMessageMetadata();
   }
+}
+
+function sanitizeReplyMetadata(value: Record<string, unknown>) {
+  const reply = sanitizeReply(value.reply_to);
+  return reply ? { reply_to: reply } : {};
+}
+
+function sanitizeReply(value: unknown): MessageReplyMetadata | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.message_id !== 'string' ||
+    !value.message_id.trim() ||
+    !isSenderType(value.sender_type) ||
+    typeof value.sender_id !== 'string' ||
+    !value.sender_id.trim() ||
+    typeof value.excerpt !== 'string' ||
+    !value.excerpt.trim()
+  ) {
+    return null;
+  }
+
+  return {
+    message_id: value.message_id,
+    sender_type: value.sender_type,
+    sender_id: value.sender_id,
+    sender_name: typeof value.sender_name === 'string' ? value.sender_name : null,
+    excerpt: value.excerpt.slice(0, 240),
+  };
 }
 
 function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
@@ -226,6 +256,10 @@ function isTaskExecutionIntent(value: unknown): value is TaskExecutionIntent {
 
 function isTaskEventType(value: string): value is TaskEventType {
   return taskEventTypes.has(value as TaskEventType);
+}
+
+function isSenderType(value: unknown): value is MessageReplyMetadata['sender_type'] {
+  return value === 'user' || value === 'agent' || value === 'system';
 }
 
 function isTaskOrigin(value: string): value is TaskCreatedFrom {
