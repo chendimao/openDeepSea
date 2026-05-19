@@ -239,6 +239,41 @@ test('promote-to-workflow prefers task readiness title and description metadata'
   assert.equal(body.task.description, '以业务权限为主配置源，自动派生 ACP/Codex 权限。');
 });
 
+test('promote-to-workflow persists task readiness execution intent in task description', async () => {
+  const { room } = createCollaborationFixture('promote-readiness-intent');
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    content: '完整方案正文',
+    message_type: 'agent_stream',
+    metadata: {
+      task_readiness: {
+        ready: true,
+        confidence: 0.82,
+        title: '自动归档规则方案',
+        description: '只做产品规则设计，不进入实现。',
+        missing_questions: [],
+        recommended_mode: 'chat_collaboration',
+        execution_intent: 'analysis_only',
+      },
+    },
+  });
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: () => undefined,
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages/${message.id}/promote-to-workflow`, {
+    method: 'POST',
+  });
+
+  assert.equal(res.status, 202);
+  const body = await res.json() as { task: { id: string; description: string } };
+  assert.match(body.task.description, /只做产品规则设计，不进入实现。/);
+  assert.match(body.task.description, /任务意图：analysis_only/);
+});
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);
   try {

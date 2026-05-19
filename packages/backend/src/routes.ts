@@ -75,6 +75,7 @@ import {
   type ProjectFile,
   type ResourceAssetGroupKey,
   type ResourceAssetType,
+  type TaskExecutionIntent,
   type TaskInteractionMode,
   type WorkflowRole,
 } from './types.js';
@@ -1965,11 +1966,30 @@ function buildPromotedTaskInput(sourceMessage: ReturnType<typeof messageRepo.get
     sourceMessage.content,
   ]);
   const title = truncateTitle(rawTitle || '从群聊创建的工作流任务');
-  const description = firstNonEmptyString([
+  const baseDescription = firstNonEmptyString([
     readiness?.description,
     sourceMessage.content,
   ]) ?? title;
+  const executionIntent = parseTaskExecutionIntent(readiness?.execution_intent);
+  const description = [
+    baseDescription,
+    executionIntent ? `任务意图：${executionIntent}` : null,
+  ].filter(Boolean).join('\n\n');
   return { title, description };
+}
+
+function parseTaskExecutionIntent(value: unknown): TaskExecutionIntent | null {
+  if (
+    value === 'analysis_only' ||
+    value === 'planning_only' ||
+    value === 'documentation_only' ||
+    value === 'implementation' ||
+    value === 'debug_fix' ||
+    value === 'review_only'
+  ) {
+    return value;
+  }
+  return null;
 }
 
 function parseMessageMetadataObject(value: unknown): Record<string, unknown> | null {
