@@ -735,6 +735,7 @@ function inferTaskReadiness(content: string, sourceMessageId?: string | null): R
   const text = content.trim();
   if (!text) return null;
   const normalized = text.toLocaleLowerCase();
+  const executionIntent = inferTaskExecutionIntent(text);
   const hasImplementationScope = [
     /实施目标/,
     /实施范围/,
@@ -760,7 +761,7 @@ function inferTaskReadiness(content: string, sourceMessageId?: string | null): R
     /缺少/,
     /待确认/,
   ].some((pattern) => pattern.test(text));
-  if (!hasImplementationScope || !hasAcceptance || asksForMoreInput) return null;
+  if (!executionIntent || !hasImplementationScope || !hasAcceptance || asksForMoreInput) return null;
 
   return {
     ready: true,
@@ -768,9 +769,45 @@ function inferTaskReadiness(content: string, sourceMessageId?: string | null): R
     title: extractTaskReadinessTitle(text),
     description: summarizeTaskReadinessDescription(text),
     missing_questions: [],
-    recommended_mode: 'formal_workflow',
+    recommended_mode: isImplementationIntent(executionIntent) ? 'formal_workflow' : 'chat_collaboration',
+    execution_intent: executionIntent,
     source_message_id: sourceMessageId ?? undefined,
   };
+}
+
+type InferredTaskExecutionIntent =
+  | 'analysis_only'
+  | 'planning_only'
+  | 'documentation_only'
+  | 'implementation'
+  | 'debug_fix'
+  | 'review_only';
+
+function inferTaskExecutionIntent(text: string): InferredTaskExecutionIntent | null {
+  if (matchesAny(text, [
+    /不进入实现/,
+    /不修改代码/,
+    /不改文件/,
+    /只做方案/,
+    /只做.*规则/,
+    /只读分析/,
+    /本轮不要求代码实现/,
+    /未进入实现/,
+  ])) return 'analysis_only';
+
+  if (matchesAny(text, [/只做文档/, /文档说明/, /产品规则说明/])) return 'documentation_only';
+  if (matchesAny(text, [/只做代码审查/, /review only/i, /审查.*不修改/])) return 'review_only';
+  if (matchesAny(text, [/修复/, /bug/i, /故障/, /报错/, /阻塞/]) && matchesAny(text, [/实现/, /修改/, /改动/, /提交/])) return 'debug_fix';
+  if (matchesAny(text, [/实施目标/, /实施范围/, /下一步可以进入工程排期/, /修改代码/, /实现/])) return 'implementation';
+  return null;
+}
+
+function isImplementationIntent(intent: InferredTaskExecutionIntent): boolean {
+  return intent === 'implementation' || intent === 'debug_fix';
+}
+
+function matchesAny(text: string, patterns: RegExp[]): boolean {
+  return patterns.some((pattern) => pattern.test(text));
 }
 
 function extractTaskReadinessTitle(content: string): string {
