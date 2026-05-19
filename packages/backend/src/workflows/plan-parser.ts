@@ -76,10 +76,12 @@ const langChainPlanSchema = z.object({
   needsApproval: z.boolean(),
 });
 
+const reviewListItemSchema = z.preprocess(formatReviewListItem, z.string().min(1));
+
 const reviewVerdictSchema = z.object({
   verdict: z.enum(['pass', 'changes_requested', 'failed']),
-  findings: z.array(z.string()).default([]),
-  requiredFixes: z.array(z.string()).default([]),
+  findings: z.array(reviewListItemSchema).default([]),
+  requiredFixes: z.array(reviewListItemSchema).default([]),
   riskLevel: z.enum(['low', 'medium', 'high']).default('medium'),
 });
 
@@ -279,4 +281,44 @@ function formatPlanTextValue(value: unknown): unknown {
   } catch {
     return String(value);
   }
+}
+
+function formatReviewListItem(value: unknown): unknown {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value !== 'object' || value === null) return value;
+
+  const record = value as Record<string, unknown>;
+  const file = getStringField(record, 'file');
+  const severity = getStringField(record, 'severity');
+  const issue = getStringField(record, 'issue')
+    ?? getStringField(record, 'finding')
+    ?? getStringField(record, 'message')
+    ?? getStringField(record, 'description')
+    ?? getStringField(record, 'fix')
+    ?? getStringField(record, 'requiredFix');
+  const evidence = getStringField(record, 'behaviorEvidence') ?? getStringField(record, 'evidence');
+  const requiredFix = getStringField(record, 'requiredFix') ?? getStringField(record, 'fix');
+
+  const parts: string[] = [];
+  if (file && issue) {
+    parts.push(severity ? `${file} [${severity}]: ${issue}` : `${file}: ${issue}`);
+  } else if (issue) {
+    parts.push(severity ? `[${severity}] ${issue}` : issue);
+  }
+  if (evidence) parts.push(`Evidence: ${evidence}`);
+  if (requiredFix && requiredFix !== issue) parts.push(`Required fix: ${requiredFix}`);
+  if (parts.length > 0) return parts.join(' ');
+
+  return formatPlanTextValue(value);
+}
+
+function getStringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return null;
 }

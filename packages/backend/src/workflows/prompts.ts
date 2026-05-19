@@ -146,7 +146,8 @@ function buildImplementationPrompt(context: PromptContext): string {
 function buildReviewPrompt(context: PromptContext): string {
   return [
     '你是开发闭环的代码审查智能体。请审查执行结果，重点发现 bug、回归风险和遗漏验证。',
-    '必须输出 JSON 代码块：{"verdict":"pass|changes_requested|failed","findings":[],"requiredFixes":[],"riskLevel":"low|medium|high"}。',
+    '必须输出 JSON 代码块：{"verdict":"pass|changes_requested|failed","findings":["每条发现使用字符串，包含文件位置、问题、证据和影响"],"requiredFixes":["每条必修项使用字符串"],"riskLevel":"low|medium|high"}。',
+    '不要把 findings 或 requiredFixes 写成对象数组。',
     '',
     baseContext(context),
     '',

@@ -328,6 +328,40 @@ test('parseReviewVerdict parses pass verdict', () => {
   assert.equal(verdict.riskLevel, 'low');
 });
 
+test('parseReviewVerdict normalizes structured findings and required fixes', () => {
+  const verdict = parseReviewVerdict(`
+\`\`\`json
+{
+  "verdict": "changes_requested",
+  "findings": [
+    {
+      "file": "/repo/packages/backend/src/uploads.ts:22",
+      "severity": "medium",
+      "issue": "HEIC files are marked as inline-previewable images.",
+      "behaviorEvidence": "RoomPage renders isImage attachments with <img>.",
+      "requiredFix": "Split upload allowlist from inline preview support."
+    }
+  ],
+  "requiredFixes": [
+    {
+      "file": "/repo/packages/backend/src/uploads.ts:22",
+      "fix": "Do not set isImage for HEIC/HEIF unless conversion exists."
+    }
+  ],
+  "riskLevel": "medium"
+}
+\`\`\`
+`);
+
+  assert.equal(verdict.verdict, 'changes_requested');
+  assert.deepEqual(verdict.findings, [
+    '/repo/packages/backend/src/uploads.ts:22 [medium]: HEIC files are marked as inline-previewable images. Evidence: RoomPage renders isImage attachments with <img>. Required fix: Split upload allowlist from inline preview support.',
+  ]);
+  assert.deepEqual(verdict.requiredFixes, [
+    '/repo/packages/backend/src/uploads.ts:22: Do not set isImage for HEIC/HEIF unless conversion exists.',
+  ]);
+});
+
 test('parseReviewVerdict rejects malformed verdict', () => {
   assert.throws(() => parseReviewVerdict('{"verdict":"looks_good"}'), /Invalid enum value|invalid_enum_value/);
 });

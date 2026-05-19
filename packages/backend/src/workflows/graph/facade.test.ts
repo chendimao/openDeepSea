@@ -184,7 +184,7 @@ test('workflowOrchestrator.approvePlan delegates graph approval to runtime conti
 
   assert.equal(approved.graph_version, 'phase-b-v1');
   assert.equal(approved.approved_by, 'tester');
-  assert.equal(approved.current_stage, 'implementation');
+  assert.equal(approved.current_stage, 'code_review');
   assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'));
   assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'execute'));
   assert.equal(agentRuns[0]?.room_agent_id, executor.id);
@@ -228,7 +228,7 @@ test('workflowOrchestrator.approvePlan resumes dispatch when awaiting approval s
   const state = parseGraphState(approved.graph_state);
 
   assert.notEqual(approved.status, 'awaiting_approval');
-  assert.equal(approved.current_stage, 'implementation');
+  assert.equal(approved.current_stage, 'code_review');
   assert.equal(state?.approval, 'approved');
   assert.notEqual(state?.status, 'awaiting_approval');
   assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'));

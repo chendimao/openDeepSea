@@ -262,6 +262,118 @@ test('review and acceptance ACP prompts do not include OpenDeepSea skill context
   }
 });
 
+test('review keeps workflow run stage at code_review when verdict parsing fails', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-review-parse-fail-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Review Parse Fail', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Review Parse Fail Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  addAcpWorkflowAgent(room.id, 'reviewer');
+
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parent review parse fail task',
+    description: 'Parent workflow task',
+  });
+  const childTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Child review parse fail task',
+    description: 'Implementation child task',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  taskRepo.updateStatus(childTask.id, 'review');
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+
+  const tools = createGraphTools({
+    runAcpAgent: async (input) => {
+      assert.equal(workflowRepo.getRun(run.id)?.current_stage, 'code_review');
+      const runRow = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRow.id, 'completed') ?? runRow;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: '{"verdict":"looks_good","findings":[]}',
+        message_type: 'agent_stream',
+      });
+      return {
+        run: completedRun,
+        message,
+        status: 'completed' as const,
+      };
+    },
+  });
+  const nodes = createGraphNodes(tools);
+
+  const reviewedState = await nodes.reviewNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Review parse failure',
+      assumptions: [],
+      tasks: [{
+        title: childTask.title,
+        description: childTask.description ?? '',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['review parse fails cleanly'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: ['json contract'],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'execute',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [childTask.id],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  const blockedRun = workflowRepo.getRun(run.id);
+  assert.equal(reviewedState.status, 'blocked');
+  assert.equal(blockedRun?.status, 'blocked');
+  assert.equal(blockedRun?.current_stage, 'code_review');
+  assert.match(blockedRun?.error ?? '', /Code review output is not valid JSON verdict/);
+});
+
 test('review changes_requested routes back to execute with bounded repair attempts', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-review-repair-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

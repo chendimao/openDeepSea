@@ -615,6 +615,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       });
       const updatedRun = tools.updateRun(context.run.id, {
         status: 'running',
+        current_stage: 'code_review',
         error: null,
       });
       if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
@@ -668,6 +669,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
         const blockedRun = tools.updateRun(context.run.id, {
           status: runResult.status === 'cancelled' ? 'cancelled' : 'blocked',
+          current_stage: 'code_review',
           error,
         });
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
@@ -711,6 +713,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
         const blockedRun = tools.updateRun(context.run.id, {
           status: 'blocked',
+          current_stage: 'code_review',
           error,
         });
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
@@ -763,6 +766,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       if (verdict.verdict === 'failed') {
         const blockedRun = tools.updateRun(context.run.id, {
           status: 'blocked',
+          current_stage: 'code_review',
           error: 'Code review failed',
         });
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
