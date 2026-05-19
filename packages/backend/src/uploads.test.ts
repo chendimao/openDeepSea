@@ -36,6 +36,9 @@ test('safeUploadFileName falls back to bin extension for unsupported extension',
 test('message upload MIME allowlist rejects active content', () => {
   assert.equal(isAllowedMessageUploadMimeType('image/png'), true);
   assert.equal(isAllowedMessageUploadMimeType('image/jpeg'), true);
+  assert.equal(isAllowedMessageUploadMimeType('image/avif'), true);
+  assert.equal(isAllowedMessageUploadMimeType('image/heic'), true);
+  assert.equal(isAllowedMessageUploadMimeType('image/heif'), true);
   assert.equal(isAllowedMessageUploadMimeType('application/pdf'), true);
   assert.equal(isAllowedMessageUploadMimeType('text/plain'), true);
   assert.equal(isAllowedMessageUploadMimeType('text/html'), false);

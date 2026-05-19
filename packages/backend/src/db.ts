@@ -203,6 +203,34 @@ CREATE TABLE IF NOT EXISTS message_file_refs (
 CREATE INDEX IF NOT EXISTS idx_message_file_refs_file ON message_file_refs(file_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_message_file_refs_room ON message_file_refs(room_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS resource_assets (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  asset_type TEXT NOT NULL,
+  group_key TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT,
+  mime_type TEXT,
+  size INTEGER,
+  url TEXT,
+  file_id TEXT,
+  source_message_id TEXT,
+  source_room_id TEXT,
+  source_agent_id TEXT,
+  source_task_id TEXT,
+  metadata TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_room_id) REFERENCES rooms(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_task_id) REFERENCES tasks(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_resource_assets_project ON resource_assets(project_id, asset_type, group_key, created_at);
+CREATE INDEX IF NOT EXISTS idx_resource_assets_source_message ON resource_assets(source_message_id);
+
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,

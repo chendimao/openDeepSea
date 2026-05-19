@@ -23,6 +23,7 @@ import { globalChatRepo } from './repos/global-chat.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
+import { resourceAssetRepo } from './repos/resource-assets.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskRepo } from './repos/tasks.js';
@@ -72,6 +73,8 @@ import {
   type MessageMetadata,
   type MessageRoutingMode,
   type ProjectFile,
+  type ResourceAssetGroupKey,
+  type ResourceAssetType,
   type TaskInteractionMode,
   type WorkflowRole,
 } from './types.js';
@@ -782,6 +785,80 @@ router.get('/files', (req, res) => {
 router.get('/projects/:projectId/files', (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
   res.json(fileRepo.listByProject(req.params.projectId));
+});
+
+const resourceAssetTypeSchema = z.enum(['uploaded_file', 'agent_document']);
+const resourceAssetGroupKeySchema = z.enum(['uploaded_files', 'agent_documents']);
+const resourceAssetInputSchema = z.object({
+  asset_type: resourceAssetTypeSchema,
+  group_key: resourceAssetGroupKeySchema.optional(),
+  title: z.string().trim().min(1),
+  content: z.string().nullable().optional(),
+  mime_type: z.string().nullable().optional(),
+  size: z.number().int().nonnegative().nullable().optional(),
+  url: z.string().nullable().optional(),
+  file_id: z.string().nullable().optional(),
+  source_message_id: z.string().nullable().optional(),
+  source_room_id: z.string().nullable().optional(),
+  source_agent_id: z.string().nullable().optional(),
+  source_task_id: z.string().nullable().optional(),
+  metadata: z.union([z.record(z.unknown()), z.string(), z.null()]).optional(),
+});
+
+router.get('/projects/:projectId/resource-assets', (req, res) => {
+  if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({
+    assetType: resourceAssetTypeSchema.optional(),
+    groupKey: resourceAssetGroupKeySchema.optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  res.json(resourceAssetRepo.list({
+    projectId: req.params.projectId,
+    assetType: parsed.data.assetType as ResourceAssetType | undefined,
+    groupKey: parsed.data.groupKey as ResourceAssetGroupKey | undefined,
+  }));
+});
+
+router.post('/projects/:projectId/resource-assets', (req, res) => {
+  if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
+  const parsed = resourceAssetInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const asset = resourceAssetRepo.create({
+      project_id: req.params.projectId,
+      asset_type: parsed.data.asset_type,
+      group_key: parsed.data.group_key,
+      title: parsed.data.title,
+      content: parsed.data.content,
+      mime_type: parsed.data.mime_type,
+      size: parsed.data.size,
+      url: parsed.data.url,
+      file_id: parsed.data.file_id,
+      source_message_id: parsed.data.source_message_id,
+      source_room_id: parsed.data.source_room_id,
+      source_agent_id: parsed.data.source_agent_id,
+      source_task_id: parsed.data.source_task_id,
+      metadata: parsed.data.metadata,
+    });
+    res.status(201).json(asset);
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message === 'project not found') return res.status(404).json({ error: message });
+    res.status(400).json({ error: message });
+  }
+});
+
+router.get('/resource-assets/:assetId', (req, res) => {
+  const asset = resourceAssetRepo.get(req.params.assetId);
+  if (!asset) return res.status(404).json({ error: 'not found' });
+  res.json(asset);
+});
+
+router.delete('/resource-assets/:assetId', (req, res) => {
+  const existing = resourceAssetRepo.get(req.params.assetId);
+  if (!existing || existing.asset_type === 'uploaded_file') return res.status(404).json({ error: 'not found' });
+  const deleted = resourceAssetRepo.softDelete(req.params.assetId);
+  res.status(deleted ? 204 : 404).end();
 });
 
 router.get('/projects/:projectId/workspace/tree', async (req, res, next) => {

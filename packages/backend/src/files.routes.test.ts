@@ -200,6 +200,58 @@ test('message route accepts project file ids and records message refs', async ()
   assert.equal(listedFile.last_referenced_room_id, room.id);
 });
 
+test('multipart message accepts image-only upload and records image metadata', async () => {
+  const project = createProject('multipart-image-message');
+  const room = roomRepo.create({ project_id: project.id, name: 'Image Room' });
+  const form = new FormData();
+  form.append('files', new Blob(['fake-png'], { type: 'image/png' }), 'screen.png');
+
+  const messageRes = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: form,
+  });
+
+  assert.equal(messageRes.status, 201);
+  const message = await messageRes.json() as { id: string; content: string; metadata: string };
+  assert.equal(message.content, '');
+
+  const metadata = JSON.parse(message.metadata) as {
+    attachments: Array<{ fileId: string; name: string; mimeType: string; isImage: boolean; url: string }>;
+  };
+  const attachment = metadata.attachments[0];
+  assert.ok(attachment);
+  assert.equal(attachment.name, 'screen.png');
+  assert.equal(attachment.mimeType, 'image/png');
+  assert.equal(attachment.isImage, true);
+  assert.match(attachment.url, new RegExp(`^/uploads/files/${project.id}/`));
+
+  const files = fileRepo.list({ projectId: project.id, roomId: room.id });
+  assert.equal(files.length, 1);
+  assert.equal(files[0]?.id, attachment.fileId);
+  assert.equal(files[0]?.reference_count, 1);
+});
+
+test('multipart message accepts common mobile image MIME types', async () => {
+  const project = createProject('multipart-mobile-image-message');
+  const room = roomRepo.create({ project_id: project.id, name: 'Mobile Image Room' });
+  const form = new FormData();
+  form.append('files', new Blob(['fake-heic'], { type: 'image/heic' }), 'photo.heic');
+
+  const messageRes = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: form,
+  });
+
+  assert.equal(messageRes.status, 201);
+  const message = await messageRes.json() as { metadata: string };
+  const metadata = JSON.parse(message.metadata) as {
+    attachments: Array<{ name: string; mimeType: string; isImage: boolean }>;
+  };
+  assert.equal(metadata.attachments[0]?.name, 'photo.heic');
+  assert.equal(metadata.attachments[0]?.mimeType, 'image/heic');
+  assert.equal(metadata.attachments[0]?.isImage, true);
+});
+
 test('delete project file marks historical message attachment snapshots deleted', async () => {
   const project = createProject('deleted-snapshot-project');
   const room = roomRepo.create({ project_id: project.id, name: 'File Room' });

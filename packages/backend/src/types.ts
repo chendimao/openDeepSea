@@ -290,6 +290,34 @@ export interface ProjectFileWithRefs extends ProjectFile {
   last_referenced_room_name: string | null;
 }
 
+export type ResourceAssetType = 'uploaded_file' | 'agent_document';
+export type ResourceAssetGroupKey = 'uploaded_files' | 'agent_documents';
+
+export interface ResourceAsset {
+  id: string;
+  project_id: string;
+  asset_type: ResourceAssetType;
+  group_key: ResourceAssetGroupKey;
+  title: string;
+  content: string | null;
+  mime_type: string | null;
+  size: number | null;
+  url: string | null;
+  file_id: string | null;
+  source_message_id: string | null;
+  source_room_id: string | null;
+  source_agent_id: string | null;
+  source_task_id: string | null;
+  metadata: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export type ResourceAssetListItem = Omit<ResourceAsset, 'content'> & {
+  content?: never;
+};
+
 export type WorkspaceEntryType = 'file' | 'directory';
 
 export interface WorkspacePathResolution {
