@@ -56,7 +56,7 @@ export async function dispatchUserMessage(args: {
   const promptWithAttachments = buildPromptWithResolvedMessageContext(
     userMessage.content,
     messageAttachments,
-    getMessageReplyMetadata(userMessage.metadata),
+    getResolvedMessageReply(userMessage),
   );
   const imagePaths = messageAttachments
     .filter((attachment) => attachment.metadata.isImage && attachment.localPath)
@@ -198,7 +198,7 @@ export function buildPromptWithMessageAttachments(userPrompt: string, userMessag
   return buildPromptWithResolvedMessageContext(
     userPrompt,
     getResolvedMessageAttachments(userMessage),
-    getMessageReplyMetadata(userMessage.metadata),
+    getResolvedMessageReply(userMessage),
   );
 }
 
@@ -226,6 +226,14 @@ interface ResolvedMessageAttachment {
   localPath: string | null;
 }
 
+interface ResolvedMessageReply {
+  metadata: MessageReplyMetadata;
+  body: string | null;
+  bodyTruncated: boolean;
+}
+
+const maxReplyBodyChars = 6000;
+
 function getResolvedMessageAttachments(userMessage: Message): ResolvedMessageAttachment[] {
   return parseMessageAttachments(userMessage.metadata).map((attachment) => ({
     metadata: attachment,
@@ -236,20 +244,27 @@ function getResolvedMessageAttachments(userMessage: Message): ResolvedMessageAtt
 function buildPromptWithResolvedMessageContext(
   userPrompt: string,
   attachments: ResolvedMessageAttachment[],
-  replyTo: MessageReplyMetadata | null,
+  replyTo: ResolvedMessageReply | null,
 ): string {
   const content = userPrompt.trim() || '用户发送了一条仅包含附件的消息。';
   const sections = [content];
 
   if (replyTo) {
+    const senderName = replyTo.metadata.sender_name ?? replyTo.metadata.sender_id;
     sections.push(
       '',
       '---',
       '正在回复的消息：',
-      `message_id: ${replyTo.message_id}`,
-      `sender: ${replyTo.sender_name ?? replyTo.sender_id} (${replyTo.sender_type})`,
-      `excerpt: ${replyTo.excerpt}`,
+      `message_id: ${replyTo.metadata.message_id}`,
+      `sender: ${senderName} (${replyTo.metadata.sender_type})`,
+      `excerpt: ${replyTo.metadata.excerpt}`,
     );
+    if (replyTo.body) {
+      sections.push(
+        replyTo.bodyTruncated ? '正文（已截断，保留开头和结尾）：' : '正文：',
+        replyTo.body,
+      );
+    }
   }
 
   if (attachments.length === 0) return sections.join('\n');
@@ -275,6 +290,38 @@ function buildPromptWithResolvedMessageContext(
     ...attachmentLines,
   );
   return sections.join('\n');
+}
+
+function getResolvedMessageReply(userMessage: Message): ResolvedMessageReply | null {
+  const metadata = getMessageReplyMetadata(userMessage.metadata);
+  if (!metadata) return null;
+  const replyTarget = messageRepo.get(metadata.message_id);
+  if (!replyTarget || replyTarget.room_id !== userMessage.room_id) {
+    return { metadata, body: null, bodyTruncated: false };
+  }
+  const normalizedBody = normalizeReplyBody(replyTarget.content);
+  if (!normalizedBody) return { metadata, body: null, bodyTruncated: false };
+  const summarized = summarizeReplyBody(normalizedBody);
+  return {
+    metadata,
+    body: summarized.body,
+    bodyTruncated: summarized.truncated,
+  };
+}
+
+function normalizeReplyBody(content: string): string {
+  return content.replace(/\s+$/g, '').trimStart();
+}
+
+function summarizeReplyBody(content: string): { body: string; truncated: boolean } {
+  if (content.length <= maxReplyBodyChars) {
+    return { body: content, truncated: false };
+  }
+  const half = Math.floor((maxReplyBodyChars - 32) / 2);
+  return {
+    body: `${content.slice(0, half).trimEnd()}\n...\n${content.slice(-half).trimStart()}`,
+    truncated: true,
+  };
 }
 
 function getMessageReplyMetadata(metadata: string | null): MessageReplyMetadata | null {

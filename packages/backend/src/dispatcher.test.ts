@@ -495,6 +495,75 @@ test('dispatchUserMessage includes reply target context in agent prompt', async 
   }
 });
 
+test('dispatchUserMessage expands reply context from the referenced message body', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-reply-full-context-'));
+  const project = projectRepo.create({ name: `reply-full-context-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: planner.agent_id,
+  });
+  const longPrefix = '这是一段很长的需求分析说明。'.repeat(30);
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    content: `${longPrefix}\n你希望按钮点击后是哪一种行为？\n1. 直接发送用户选择消息\n2. 只填入输入框`,
+    message_type: 'agent_stream',
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '我选 1',
+    message_type: 'text',
+    metadata: {
+      reply_to: {
+        message_id: sourceMessage.id,
+        sender_type: sourceMessage.sender_type,
+        sender_id: sourceMessage.sender_id,
+        sender_name: sourceMessage.sender_name,
+        excerpt: sourceMessage.content.slice(0, 80),
+      },
+    },
+  });
+
+  const prompts: string[] = [];
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      prompts.push(args.prompt);
+      args.onChunk?.({ stream: 'stdout', text: '收到，按方案 1 继续。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0] ?? '', /正在回复的消息：/);
+    assert.match(prompts[0] ?? '', /正文：/);
+    assert.match(prompts[0] ?? '', /1\. 直接发送用户选择消息/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner fallback reply keeps repair discussion messages in chat without collaboration decision', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-repair-discussion-'));
   const project = projectRepo.create({ name: `planner-repair-discussion-${Date.now()}`, path: projectPath });
