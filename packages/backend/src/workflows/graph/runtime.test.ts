@@ -17,7 +17,7 @@ const { workflowDefinitionRepo } = await import('../../repos/workflow-definition
 const { createGraphNodes } = await import('./nodes.js');
 const { parseGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
-const { createGraphWorkflowRun, enqueueGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
+const { continueGraphWorkflow, createGraphWorkflowRun, enqueueGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
 import type { RespondAsAgentInput } from '../../dispatcher.js';
 import type { ParsedPlan } from '../plan-parser.js';
 import type { RoomAgent, WorkflowDefinitionGraph, WorkflowStage } from '../../types.js';
@@ -606,6 +606,129 @@ test('graph workflow invites required built-in agents when the room only has pla
       'acceptance:acceptor',
     ],
   );
+});
+
+test('graph dispatch keeps planner steps as workflow context instead of implementation children', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-skip-planner-child-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Skip Planner Child', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Skip Planner Child Room' });
+  const planner = roomAgentRepo.ensureDefaultPlanner(room.id);
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Skip planner implementation child',
+  });
+  const calls: Array<{ agentId: string; taskId: string | null | undefined; stage: WorkflowStage | null | undefined }> = [];
+
+  const run = await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Plan contains one coordination item and one executable item.',
+      assumptions: [],
+      tasks: [
+        {
+          title: '梳理现状并冻结实现方案',
+          description: '消费产品经理方案背景，不再重复分析。',
+          suggestedRole: 'planner',
+          priority: 'normal',
+          acceptance: ['方案背景已作为执行上下文'],
+          scopeRead: [],
+          scopeWrite: [],
+          dependsOn: [],
+        },
+        {
+          title: '补充后端资源元数据与查询能力',
+          description: '修改后端文件元数据查询。',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['后端查询返回来源类型'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: ['梳理现状并冻结实现方案'],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => {
+      calls.push({ agentId: input.agent.agent_id, taskId: input.taskId, stage: input.workflowStage });
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+
+  const childTasks = taskRepo.listChildren(task.id);
+  const detail = workflowRepo.detail(run.id);
+  const graphState = parseGraphState(detail?.run.graph_state ?? null);
+  const agents = roomAgentRepo.listByRoom(room.id);
+  const backendExecutor = agents.find((agent) => agent.agent_id === 'backend-executor');
+  assert.ok(planner);
+
+  assert.equal(childTasks.length, 1);
+  assert.equal(childTasks[0]?.title, '补充后端资源元数据与查询能力');
+  assert.equal(childTasks[0]?.assigned_agent_id, backendExecutor?.id);
+  assert.deepEqual(
+    calls.filter((call) => call.stage === 'implementation').map((call) => call.agentId),
+    ['backend-executor'],
+  );
+  assert.equal(graphState?.workflowPlan?.tasks[0]?.role, 'planner');
+  assert.equal(graphState?.workflowPlan?.tasks[0]?.agent_id, planner.id);
+  assert.equal(graphState?.workflowPlan?.tasks[0]?.status, 'completed');
+  assert.equal(graphState?.workflowPlan?.tasks[0]?.progress, 100);
+  assert.equal(graphState?.workflowPlan?.tasks[1]?.role, 'executor');
+  assert.equal(graphState?.workflowPlan?.tasks[1]?.agent_id, backendExecutor?.id);
+});
+
+test('planning node consumes product-manager background without calling planner again', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-pm-background-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime PM Background', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph PM Background Room' });
+  roomAgentRepo.ensureDefaultPlanner(room.id);
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '细化文件管理功能',
+    description: [
+      '细化文件管理功能，区分用户上传文件和智能体生成 md 文档。',
+      '',
+      '产品经理方案背景：',
+      '实施计划：',
+      '1. 补充后端资源元数据与查询能力',
+      '- 改动：packages/backend/src/routes.ts',
+      '- 验收：后端返回文件来源类型',
+      '2. 改造前端资源库展示与详情',
+      '- 改动：packages/frontend/src/pages/FilesPage.tsx',
+      '- 验收：前端显示来源类型',
+      '',
+      '任务意图：implementation',
+    ].join('\n'),
+  });
+  const implementationAgents: string[] = [];
+
+  const run = await startGraphWorkflow(task.id, {
+    planner: async () => {
+      throw new Error('planner should not be called for product-manager background');
+    },
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'implementation') implementationAgents.push(input.agent.agent_id);
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+
+  const detail = workflowRepo.detail(run.id);
+  const graphState = parseGraphState(detail?.run.graph_state ?? null);
+
+  assert.equal(detail?.run.status, 'completed');
+  assert.deepEqual(implementationAgents, ['backend-executor', 'frontend-executor']);
+  assert.deepEqual(graphState?.plan?.tasks.map((item) => item.title), [
+    '补充后端资源元数据与查询能力',
+    '改造前端资源库展示与详情',
+  ]);
+  assert.deepEqual(graphState?.workflowPlan?.tasks.map((item) => item.mode), ['parallel', 'serial', 'serial', 'serial']);
 });
 
 test('supervisor assignment hint is ignored when multiple executor tasks would make it ambiguous', async () => {
@@ -1222,6 +1345,123 @@ test('graph execute blocks assigned write task when assigned executor is outside
   assert.match(graphState?.error ?? '', /No executor available/);
   assert.equal(graphState?.workflowPlan?.tasks[0]?.status, 'blocked');
   assert.equal(graphState?.workflowPlan?.tasks[0]?.progress, 0);
+});
+
+test('continueGraphWorkflow waits without looping when implementation agent run is active', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-active-wait-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Active Wait', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Runtime Active Wait Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Wait for active implementation run',
+  });
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: 'Long running child task',
+    description: 'This child task is still being implemented.',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  taskRepo.updateStatus(child.id, 'in_progress');
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+    workflow_definition_snapshot: JSON.stringify({
+      id: 'test-active-wait',
+      name: 'Test Active Wait',
+      description: null,
+      builtinKey: null,
+      version: 1,
+      definition: createTestWorkflowDefinition(),
+    }),
+  });
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: child.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    room_agent_id: executor.id,
+    sort_order: 1,
+  });
+  const activeRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: executor.id,
+    agent_id: executor.agent_id,
+    backend: 'codex',
+    task_id: child.id,
+    workflow_run_id: run.id,
+    workflow_step_id: step.id,
+    workflow_stage: 'implementation',
+    prompt: 'already running implementation',
+  });
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+    plan: {
+      goal: task.title,
+      summary: 'Wait for active implementation',
+      assumptions: [],
+      tasks: [{
+        title: child.title,
+        description: child.description ?? '',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Resume does not start duplicate work'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'execute',
+    currentStepId: step.id,
+    activeAgentRunId: activeRun.id,
+    childTaskIds: [child.id],
+    supervisorAssignments: [],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+    workflowPlan: null,
+  }));
+
+  let calls = 0;
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async () => {
+      calls += 1;
+      throw new Error('resume should wait for active implementation run');
+    },
+  });
+  const graphState = parseGraphState(latest.graph_state);
+
+  assert.equal(calls, 0);
+  assert.equal(latest.status, 'running');
+  assert.equal(latest.error, null);
+  assert.equal(graphState?.currentNode, 'execute');
+  assert.equal(graphState?.currentStepId, step.id);
+  assert.equal(graphState?.activeAgentRunId, activeRun.id);
+  assert.equal(agentRunRepo.listActiveByWorkflow(run.id).length, 1);
 });
 
 test('dispatch node is idempotent when replayed with existing child task ids', async () => {

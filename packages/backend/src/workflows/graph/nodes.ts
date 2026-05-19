@@ -5,10 +5,12 @@ import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orch
 import { parseAcceptanceVerdict, parseReviewVerdict, type ParsedPlanTask } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
 import { resolveWorkflowExecutor } from '../role-resolver.js';
-import { deriveWorkflowPlanFromParsedPlan } from '../workflow-plan-json.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
+import { buildCoordinatorWorkflowPlan, deriveCoordinatorPlanFromProductManagerBackground } from './coordinator-plan.js';
+import { selectCoordinatorAgentForTask, type CoordinatorWorkflowTask } from './coordinator-agents.js';
 import type {
   RoomAgent,
+  AgentRun,
   Task,
   TaskEventType,
   WorkflowContextEntryType,
@@ -74,33 +76,19 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         metadata: { graph_node: 'planning', workflow_stage: 'planning', status: 'running' },
       });
 
-      const skillContext = await tools.buildSkillContext({
-        runtimeScopes: ['planner', 'workflow'],
-        projectId: context.project.id,
-        roomId: context.room.id,
-        message: [
-          context.task.title,
-          context.task.description ?? '',
-          context.workflowContext,
-          context.recentMessages.join('\n'),
-        ].filter(Boolean).join('\n\n'),
+      const coordinatorPlan = deriveCoordinatorPlanFromProductManagerBackground({
+        taskTitle: context.task.title,
+        taskDescription: context.task.description,
       });
-      const plan = await tools.generatePlan({
-        projectName: context.project.name,
-        projectPath: context.project.path,
-        room: context.room,
-        task: context.task,
-        agents: context.agents,
-        memories: context.memories ? [context.memories] : [],
-        recentMessages: context.recentMessages,
-      }, { skillContext });
+      const plan = coordinatorPlan ?? await generatePlannerPlanForContext(tools, context);
 
       const output = formatParsedPlanArtifact(plan);
       const workflowPlan = plan.tasks.length > 0
-        ? deriveWorkflowPlanFromParsedPlan({
+        ? buildCoordinatorWorkflowPlan({
           workflowName: context.task.title,
           sourceMessageId: context.task.source_message_id ?? context.task.id,
-          plan,
+          workflowPlan: state.workflowPlan,
+          parsedPlan: plan,
         })
         : null;
       tools.createArtifact({
@@ -232,11 +220,19 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       });
 
       const childTaskIds: string[] = [];
-      const workflowPlanAssignments: Array<{ taskId: string; agentId: string | null }> = [];
+      const workflowPlanAssignments: Array<{ taskId: string; agentId: string | null; assignmentReason?: string }> = [];
       const createdChildren: Task[] = [];
       let assignmentAgents = context.agents;
-      for (const [index, planTask] of state.plan.tasks.entries()) {
-        let resolved = tools.selectAgentForPlanTask(planTask, assignmentAgents);
+      const implementationPlanTasks = state.plan.tasks
+        .map((planTask, originalIndex) => ({ planTask, originalIndex }))
+        .filter(({ planTask }) => isImplementationPlanTask(planTask));
+      for (const item of implementationPlanTasks) {
+        const { planTask, originalIndex } = item;
+        const coordinatorSelection = selectCoordinatorAgentForTask({
+          task: coordinatorTaskFromPlanTask(planTask),
+          agents: assignmentAgents,
+        });
+        let resolved = coordinatorSelection.agent ?? tools.selectAgentForPlanTask(planTask, assignmentAgents);
         if (!resolved && planTask.suggestedRole === 'executor') {
           const provisioning = ensureWorkflowAgentsForRun({
             roomId: context.room.id,
@@ -247,7 +243,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           broadcastJoinedAgents(tools, context.room.id, provisioning.joinedAgents);
           resolved = tools.selectAgentForPlanTask(planTask, assignmentAgents);
         }
-        const assigned = selectAssignmentHintForPlanTask(state, index, assignmentAgents, tools, resolved)
+        const assigned = selectAssignmentHintForPlanTask(state, originalIndex, assignmentAgents, tools, resolved)
           ?? resolved;
         const child = tools.createChildTask({
           room_id: context.task.room_id,
@@ -262,12 +258,18 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         childTaskIds.push(child.id);
         createdChildren.push(child);
         workflowPlanAssignments.push({
-          taskId: state.workflowPlan?.tasks[index]?.id ?? '',
+          taskId: state.workflowPlan?.tasks[originalIndex]?.id ?? '',
           agentId: assigned?.id ?? null,
+          assignmentReason: assigned
+            ? coordinatorSelection.assignmentReason
+            : `No matching in-room agent; suggested ${coordinatorSelection.templateId ?? 'workflow executor'}.`,
         });
       }
 
-      const artifactContent = `已根据计划创建 ${childTaskIds.length} 个子任务。`;
+      const skippedPlanTaskCount = state.plan.tasks.length - implementationPlanTasks.length;
+      const artifactContent = skippedPlanTaskCount > 0
+        ? `已根据计划创建 ${childTaskIds.length} 个执行子任务，${skippedPlanTaskCount} 个规划/协调项作为 workflow 阶段处理。`
+        : `已根据计划创建 ${childTaskIds.length} 个子任务。`;
       const artifact = tools.createArtifact({
         task_id: context.task.id,
         workflow_run_id: context.run.id,
@@ -318,7 +320,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         content: `任务「${context.task.title}」已完成分配，创建 ${childTaskIds.length} 个子任务。`,
         metadata: { graph_node: 'dispatch', workflow_stage: 'assignment', child_task_ids: childTaskIds },
       });
-      const workflowPlan = updateWorkflowPlanAssignments(state.workflowPlan ?? null, workflowPlanAssignments);
+      const workflowPlan = updateWorkflowPlanNonImplementationTasks(
+        updateWorkflowPlanAssignments(state.workflowPlan ?? null, workflowPlanAssignments),
+        state.plan.tasks,
+        assignmentAgents,
+        tools,
+      );
       const nextState: AgentWorkflowState = {
         ...state,
         workflowPlan,
@@ -343,20 +350,6 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
     async executeNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
-      const activeRuns = tools.listActiveAgentRunsByWorkflow(context.run.id);
-      if (activeRuns.length > 0) {
-        const activeRun = activeRuns[0]!;
-        const nextState: AgentWorkflowState = {
-          ...state,
-          currentNode: 'execute',
-          currentStepId: activeRun.workflow_step_id ?? state.currentStepId,
-          activeAgentRunId: activeRun.id,
-          status: 'running',
-          error: null,
-        };
-        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
-        return nextState;
-      }
       const childTasks = tools.listChildTasks(context.task.id);
       const pendingChildren = state.childTaskIds
         .map((id) => childTasks.find((task) => task.id === id))
@@ -373,10 +366,26 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         return nextState;
       }
 
+      const activeRun = findActiveImplementationRunForChild(tools, context.run.id, nextChild.id);
+      if (activeRun) {
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'execute',
+          currentStepId: activeRun.workflow_step_id ?? state.currentStepId,
+          activeAgentRunId: activeRun.id,
+          status: 'running',
+          error: null,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
       const orderedChildIds = state.childTaskIds.length > 0 ? state.childTaskIds : childTasks.map((item) => item.id);
       const plannedTaskIndex = orderedChildIds.indexOf(nextChild.id);
-      const plannedTask = plannedTaskIndex >= 0
-        ? state.plan?.tasks[plannedTaskIndex]
+      const matchingPlanTaskIndex = state.plan?.tasks.findIndex((item) => item.title === nextChild.title) ?? -1;
+      const originalPlanTaskIndex = matchingPlanTaskIndex >= 0 ? matchingPlanTaskIndex : plannedTaskIndex;
+      const plannedTask = originalPlanTaskIndex >= 0
+        ? state.plan?.tasks[originalPlanTaskIndex]
         : state.plan?.tasks.find((item) => item.title === nextChild.title);
       const scopeRead = plannedTask?.scopeRead ?? [];
       const scopeWrite = plannedTask?.scopeWrite ?? [];
@@ -402,7 +411,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
         const nextState: AgentWorkflowState = {
           ...state,
-          workflowPlan: updateWorkflowPlanTaskByIndex(state.workflowPlan ?? null, plannedTaskIndex, {
+          workflowPlan: updateWorkflowPlanTaskByIndex(state.workflowPlan ?? null, originalPlanTaskIndex, {
             status: 'blocked',
             progress: 0,
           }),
@@ -449,7 +458,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
-      const runningWorkflowPlan = updateWorkflowPlanTaskByIndex(state.workflowPlan ?? null, plannedTaskIndex, {
+      const runningWorkflowPlan = updateWorkflowPlanTaskByIndex(state.workflowPlan ?? null, originalPlanTaskIndex, {
         status: 'running',
         progress: 35,
         agentId: executor.id,
@@ -538,7 +547,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
         const nextState: AgentWorkflowState = {
           ...state,
-          workflowPlan: updateWorkflowPlanTaskByIndex(runningWorkflowPlan, plannedTaskIndex, {
+          workflowPlan: updateWorkflowPlanTaskByIndex(runningWorkflowPlan, originalPlanTaskIndex, {
             status: runResult.status === 'cancelled' ? 'blocked' : 'failed',
             progress: 35,
             agentId: executor.id,
@@ -628,7 +637,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const nextState: AgentWorkflowState = {
         ...state,
-        workflowPlan: updateWorkflowPlanTaskByIndex(runningWorkflowPlan, plannedTaskIndex, {
+        workflowPlan: updateWorkflowPlanTaskByIndex(runningWorkflowPlan, originalPlanTaskIndex, {
           status: 'completed',
           progress: 100,
           agentId: executor.id,
@@ -1650,6 +1659,32 @@ function createContextEntrySafely(
   }
 }
 
+async function generatePlannerPlanForContext(
+  tools: GraphTools,
+  context: ReturnType<GraphTools['readWorkflowContext']>,
+) {
+  const skillContext = await tools.buildSkillContext({
+    runtimeScopes: ['planner', 'workflow'],
+    projectId: context.project.id,
+    roomId: context.room.id,
+    message: [
+      context.task.title,
+      context.task.description ?? '',
+      context.workflowContext,
+      context.recentMessages.join('\n'),
+    ].filter(Boolean).join('\n\n'),
+  });
+  return tools.generatePlan({
+    projectName: context.project.name,
+    projectPath: context.project.path,
+    room: context.room,
+    task: context.task,
+    agents: context.agents,
+    memories: context.memories ? [context.memories] : [],
+    recentMessages: context.recentMessages,
+  }, { skillContext });
+}
+
 function selectAssignmentHintForPlanTask(
   state: AgentWorkflowState,
   planTaskIndex: number,
@@ -1671,6 +1706,28 @@ function selectAssignmentHintForPlanTask(
   const runtimeEligibleHint = tools.selectAgentForPlanTask(planTask, [hintedAgent]);
   if (!runtimeEligibleHint) return null;
   return planTaskHasDomainMismatch(planTask, runtimeEligibleHint, resolvedAgent) ? null : runtimeEligibleHint;
+}
+
+function coordinatorTaskFromPlanTask(planTask: ParsedPlanTask): CoordinatorWorkflowTask {
+  return {
+    role: planTask.suggestedRole === 'reviewer' || planTask.suggestedRole === 'acceptor'
+      ? planTask.suggestedRole
+      : 'executor',
+    title: planTask.title,
+    description: planTask.description,
+    scope_read: planTask.scopeRead,
+    scope_write: planTask.scopeWrite,
+    required_capabilities: inferRequiredCapabilitiesForPlanTask(planTask),
+  };
+}
+
+function isImplementationPlanTask(planTask: ParsedPlanTask): boolean {
+  return planTask.suggestedRole === 'executor';
+}
+
+function inferRequiredCapabilitiesForPlanTask(planTask: ParsedPlanTask): string[] {
+  const domain = inferPlanTaskDomain(planTask);
+  return domain ? [domain] : [];
 }
 
 function selectExecutorForPlannedChild(
@@ -1701,6 +1758,15 @@ function broadcastJoinedAgents(tools: GraphTools, roomId: string, agents: RoomAg
   }
 }
 
+function findActiveImplementationRunForChild(
+  tools: GraphTools,
+  workflowRunId: string,
+  childTaskId: string,
+): AgentRun | null {
+  return tools.listActiveAgentRunsByWorkflow(workflowRunId)
+    .find((run) => run.workflow_stage === 'implementation' && run.task_id === childTaskId) ?? null;
+}
+
 function updateWorkflowPlanAssignments(
   plan: WorkflowPlanJson | null,
   assignments: Array<{ taskId: string; agentId: string | null }>,
@@ -1712,6 +1778,33 @@ function updateWorkflowPlanAssignments(
     tasks: plan.tasks.map((task) => assignmentMap.has(task.id)
       ? { ...task, agent_id: assignmentMap.get(task.id) ?? null, status: 'pending', progress: 0 }
       : task),
+  };
+}
+
+function updateWorkflowPlanNonImplementationTasks(
+  plan: WorkflowPlanJson | null,
+  planTasks: ParsedPlanTask[],
+  agents: RoomAgent[],
+  tools: GraphTools,
+): WorkflowPlanJson | null {
+  if (!plan) return null;
+  return {
+    ...plan,
+    tasks: plan.tasks.map((task, index) => {
+      const planTask = planTasks[index];
+      if (!planTask || isImplementationPlanTask(planTask)) return task;
+      const role = planTask.suggestedRole === 'reviewer' || planTask.suggestedRole === 'acceptor'
+        ? planTask.suggestedRole
+        : 'planner';
+      const agent = tools.selectAgentForRole(role, agents);
+      return {
+        ...task,
+        role,
+        agent_id: agent?.id ?? task.agent_id,
+        status: role === 'planner' ? 'completed' : task.status,
+        progress: role === 'planner' ? 100 : task.progress,
+      };
+    }),
   };
 }
 

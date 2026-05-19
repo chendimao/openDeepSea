@@ -1997,13 +1997,14 @@ router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res)
         interaction_mode: 'ask_user',
       },
     });
+    const task = ensurePromotedTaskHasLatestPlannerBackground(taskResult.task.id, taskInput);
     const workflow = startWorkflowWithConversation({
       roomId: room.id,
-      taskId: taskResult.task.id,
+      taskId: task.id,
       source: 'task_button',
       sourceMessageId: promotion.taskSourceMessage.id,
     });
-    return res.status(202).json({ task: taskResult.task, workflow });
+    return res.status(202).json({ task, workflow });
   } catch (err) {
     const error = err as Error & { status?: number };
     return res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
@@ -2015,6 +2016,22 @@ interface PromotedTaskSource {
   taskSourceMessage: NonNullable<ReturnType<typeof messageRepo.get>>;
   readiness: Record<string, unknown> | null;
   decision: Record<string, unknown> | null;
+}
+
+function ensurePromotedTaskHasLatestPlannerBackground(
+  taskId: string,
+  taskInput: { title: string; description: string },
+) {
+  const task = taskRepo.get(taskId);
+  if (!task) throw workflowPromotionError(404, 'task not found');
+  if (task.description === taskInput.description && task.title === taskInput.title) return task;
+  if (!taskInput.description.includes('产品经理方案背景：')) return task;
+  const updated = taskRepo.update(task.id, {
+    title: taskInput.title,
+    description: taskInput.description,
+    interaction_mode: 'ask_user',
+  });
+  return updated ?? task;
 }
 
 function resolvePromotedTaskSource(

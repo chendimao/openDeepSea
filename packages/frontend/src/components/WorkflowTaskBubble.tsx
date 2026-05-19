@@ -7,9 +7,11 @@ import { WorkflowTaskTable } from './WorkflowTaskTable';
 export function WorkflowTaskBubble({
   detail,
   agents,
+  compact = false,
 }: {
   detail: WorkflowDetail;
   agents: RoomAgent[];
+  compact?: boolean;
 }) {
   const workflowPlan = useMemo(() => getWorkflowPlan(detail), [detail]);
 
@@ -18,10 +20,10 @@ export function WorkflowTaskBubble({
   }
 
   return (
-    <div className="workflow-task-bubble">
+    <div className="workflow-task-bubble" data-source={compact ? 'chat' : 'timeline'}>
       <WorkflowProgressHeader plan={workflowPlan} />
       <WorkflowTaskTable plan={workflowPlan} agents={agents} />
-      <WorkflowAgentTabs plan={workflowPlan} agents={agents} artifacts={detail.artifacts} />
+      {!compact && <WorkflowAgentTabs plan={workflowPlan} agents={agents} artifacts={detail.artifacts} />}
     </div>
   );
 }

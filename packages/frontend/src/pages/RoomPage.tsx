@@ -5,7 +5,7 @@ import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, F
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { AgentRun, Message, MessageAttachmentMetadata, Room, RoomAgent, Task, TaskExecutionIntent, WorkflowRun } from '../lib/types';
+import type { AgentRun, Message, MessageAttachmentMetadata, Room, RoomAgent, Task, TaskExecutionIntent, WorkflowDetail, WorkflowRun } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
 import { cn } from '../lib/utils';
@@ -31,6 +31,7 @@ import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { RoomFilesPanel } from '../components/RoomFilesPanel';
 import { MessageContent } from '../components/MessageContent';
 import { CollaborationDecisionCard } from '../components/CollaborationDecisionCard';
+import { WorkflowTaskBubble } from '../components/WorkflowTaskBubble';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
@@ -235,6 +236,7 @@ export function RoomPage() {
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) =>
           upsertMessage(prev, event.message),
         );
+        invalidateWorkflowDetailFromMessage(queryClient, event.message);
         if (event.message.message_type === 'agent_stream') {
           setStreamingMessageIds((prev) => addStreamingMessageId(prev, event.message.id));
         }
@@ -678,6 +680,17 @@ function invalidateWorkflowConversationQueries(
   queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
 }
 
+function invalidateWorkflowDetailFromMessage(
+  queryClient: ReturnType<typeof useQueryClient>,
+  message: Message,
+): void {
+  const metadata = parseMessageMetadata(message.metadata);
+  const workflowId = metadata.workflow_run_id;
+  if (!workflowId || !metadata.event_type?.startsWith('workflow_')) return;
+  queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
+  if (metadata.task_id) queryClient.invalidateQueries({ queryKey: ['task-workflows', metadata.task_id] });
+}
+
 function RoomSwitcher({
   projectId,
   roomId,
@@ -891,13 +904,15 @@ function ChatColumn({
     onError: (err) => toast.error((err as Error).message),
   });
 
-  const handleSend = (input: SendInput) => {
+  // 这里是消息气泡、方案选择按钮等入口复用的最小发送点。
+  // 统一走 api.sendMessage -> /rooms/:roomId/messages -> dispatchUserMessage。
+  const submitUserMessage = useCallback((input: SendInput) => {
     const content = input.content.trim();
     const files = input.files;
     const fileIds = input.fileIds;
     if (!content && (!files || files.length === 0) && (!fileIds || fileIds.length === 0)) return;
     send.mutate({ content, mentions: input.mentions, files, fileIds, replyToMessageId: input.replyToMessageId });
-  };
+  }, [send]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -963,7 +978,7 @@ function ChatColumn({
       <RichMessageComposer
         projectId={projectId}
         resetKey={composerResetKey}
-        onSend={handleSend}
+        onSend={submitUserMessage}
         sending={send.isPending}
         disabled={!canSendChat}
         agents={agents}
@@ -1166,24 +1181,33 @@ function MessageBubble({
         data-message-id={message.id}
         className={cn(highlighted && 'is-highlighted')}
       >
-        <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
-          <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
-          <span>{message.content}</span>
-          {canRetryWorkflowEvent && metadata.workflow_run_id && (
-            <button
-              type="button"
-              className="task-event-action"
-              disabled={retryingWorkflowId === metadata.workflow_run_id}
-              title={t('agentRun.retryStage')}
-              aria-label={t('agentRun.retryStage')}
-              onClick={(event) => {
-                event.stopPropagation();
-                onRetryWorkflow(metadata.workflow_run_id!);
-              }}
-            >
-              <RotateCcw className={cn('h-3 w-3', retryingWorkflowId === metadata.workflow_run_id && 'animate-spin')} strokeWidth={1.8} />
-              <span>{t('common.retry')}</span>
-            </button>
+        <div className="space-y-2">
+          <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
+            <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
+            <span>{message.content}</span>
+            {canRetryWorkflowEvent && metadata.workflow_run_id && (
+              <button
+                type="button"
+                className="task-event-action"
+                disabled={retryingWorkflowId === metadata.workflow_run_id}
+                title={t('agentRun.retryStage')}
+                aria-label={t('agentRun.retryStage')}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRetryWorkflow(metadata.workflow_run_id!);
+                }}
+              >
+                <RotateCcw className={cn('h-3 w-3', retryingWorkflowId === metadata.workflow_run_id && 'animate-spin')} strokeWidth={1.8} />
+                <span>{t('common.retry')}</span>
+              </button>
+            )}
+          </div>
+          {metadata.workflow_run_id && (
+            <WorkflowEventBubble
+              workflowId={metadata.workflow_run_id}
+              agents={agents}
+              initialWorkflow={eventWorkflow}
+            />
           )}
         </div>
       </AiMessageRow>
@@ -1356,6 +1380,36 @@ function TaskReadinessActions({
         >
           继续沟通
         </button>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowEventBubble({
+  workflowId,
+  agents,
+  initialWorkflow,
+}: {
+  workflowId: string;
+  agents: RoomAgent[];
+  initialWorkflow?: WorkflowRun;
+}) {
+  const { workflowStatusLabel } = useI18n();
+  const { data: detail } = useQuery<WorkflowDetail>({
+    queryKey: ['workflow', workflowId],
+    queryFn: () => api.getWorkflow(workflowId),
+    enabled: Boolean(workflowId),
+    staleTime: 1000,
+  });
+
+  if (detail) {
+    return <WorkflowTaskBubble detail={detail} agents={agents} compact />;
+  }
+  if (!initialWorkflow) return null;
+  return (
+    <div className="workflow-task-bubble" data-source="chat">
+      <div className="text-[11px] text-[var(--color-fg-muted)]">
+        {workflowStatusLabel(initialWorkflow.status)} · {initialWorkflow.current_stage ?? 'workflow'}
       </div>
     </div>
   );

@@ -842,6 +842,9 @@ async function resumeGraphWorkflowFromState(
     } else if (nodeToRun === 'memory') {
       nextState = await nodes.memoryNode(nextState);
     }
+    if (shouldWaitForActiveAgentRun(nodeToRun, nextState)) {
+      return nextState;
+    }
     nodeToRun = nextNodeAfter(nodeToRun, nextState, routePlan);
   }
 
@@ -865,6 +868,22 @@ function isTerminalResumeState(state: AgentWorkflowState): boolean {
     state.status === 'blocked' ||
     state.status === 'cancelled' ||
     state.status === 'failed'
+  );
+}
+
+function shouldWaitForActiveAgentRun(
+  nodeJustRun: AgentWorkflowState['currentNode'],
+  state: AgentWorkflowState,
+): boolean {
+  if (nodeJustRun !== 'execute') return false;
+  if (state.status !== 'running' || !state.activeAgentRunId) return false;
+  const activeRun = agentRunRepo.get(state.activeAgentRunId);
+  return Boolean(
+    activeRun &&
+    activeRun.status !== 'completed' &&
+    activeRun.status !== 'failed' &&
+    activeRun.status !== 'cancelled' &&
+    activeRun.status !== 'interrupted',
   );
 }
 

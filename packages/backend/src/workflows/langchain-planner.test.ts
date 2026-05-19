@@ -194,6 +194,40 @@ test('generateLangChainPlan passes skill context to planner messages', async () 
   );
 });
 
+test('generateLangChainPlan instructs planner to structure existing product-manager background', async () => {
+  await generateLangChainPlan(
+    {
+      ...basePlannerInput(),
+      task: fakeTask({
+        title: '细化文件管理功能',
+        description: [
+          '细化文件管理功能，比如有些是用户上传的文件，有些是智能体生成的 md 文档。',
+          '',
+          '产品经理方案背景：',
+          '目标：区分用户上传文件和智能体生成文档，并进入实现。',
+          '验收标准：文件列表显示来源，md 文档可归档。',
+          '',
+          '任务意图：implementation',
+        ].join('\n'),
+      }),
+    },
+    {
+      async invoke(messages) {
+        const systemContent = String(messages[0]?.content);
+        assert.match(systemContent, /产品经理方案背景/);
+        assert.match(systemContent, /结构化为可执行工程计划/);
+        assert.match(systemContent, /不要重新向产品经理发起需求分析/);
+        assert.match(systemContent, /不要把明确的 implementation 或 debug_fix 任务改写为 analysis_only/);
+
+        const humanContent = String(messages[1]?.content);
+        assert.match(humanContent, /产品经理方案背景/);
+        assert.match(humanContent, /任务意图：implementation/);
+        return validPlannerOutput();
+      },
+    },
+  );
+});
+
 test('generateLangChainPlan retries once after invalid model output', async () => {
   let attempts = 0;
   const plan = await generateLangChainPlan(

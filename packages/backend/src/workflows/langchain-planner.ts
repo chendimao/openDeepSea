@@ -105,6 +105,8 @@ export function buildPlannerMessages(input: LangChainPlannerInput, options: Plan
         'Valid assigneeRole values: analyst, planner, coordinator, executor, reviewer, acceptor.',
         'Valid preferredBackend values: claudecode, opencode, codex.',
         'Use needsApproval=false only when the plan can proceed without a user decision.',
+        '如果 task.description 包含“产品经理方案背景”，将该背景结构化为可执行工程计划；不要重新向产品经理发起需求分析。',
+        '不要把明确的 implementation 或 debug_fix 任务改写为 analysis_only、planning_only 或只读分析。',
         options.skillContext?.trim() ? `\n${options.skillContext.trim()}` : null,
       ].join('\n'),
     ),

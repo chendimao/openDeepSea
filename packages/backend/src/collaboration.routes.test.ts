@@ -331,6 +331,74 @@ test('promote-to-workflow keeps analysis-only planner wording out of executable 
   assert.doesNotMatch(body.task.description, /任务意图：analysis_only/);
 });
 
+test('promote-to-workflow refreshes replayed source task with latest planner background', async () => {
+  const { room } = createCollaborationFixture('promote-refresh-background');
+  const original = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '细化文件管理功能，区分用户上传文件和智能体生成 md 文档。',
+    message_type: 'text',
+  });
+  const oldTask = taskRepo.create({
+    room_id: room.id,
+    project_id: room.project_id,
+    title: '旧文件管理任务',
+    description: '旧描述，没有产品经理方案背景。',
+    source_message_id: original.id,
+    created_from: 'chat_plan',
+  });
+  const oldEvent = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'system',
+    sender_id: 'system',
+    sender_name: 'System',
+    content: '任务已创建',
+    message_type: 'system',
+    metadata: {
+      event_type: 'task_created',
+      task_id: oldTask.id,
+    },
+  });
+  assert.ok(oldEvent.id);
+  const plannerMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '产品经理',
+    content: '实施计划：补充后端来源字段，改造前端文件列表。\n验收标准：文件列表显示来源。',
+    message_type: 'agent_stream',
+    metadata: {
+      task_readiness: {
+        ready: true,
+        confidence: 0.82,
+        title: '文件管理来源细化',
+        description: '实施计划：补充后端来源字段，改造前端文件列表。\n验收标准：文件列表显示来源。',
+        missing_questions: [],
+        recommended_mode: 'formal_workflow',
+        execution_intent: 'implementation',
+        source_message_id: original.id,
+      },
+    },
+  });
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: () => undefined,
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages/${plannerMessage.id}/promote-to-workflow`, {
+    method: 'POST',
+  });
+
+  assert.equal(res.status, 202);
+  const body = await res.json() as { task: { id: string; description: string }; workflow: { task_id: string } };
+  assert.equal(body.task.id, oldTask.id);
+  assert.equal(body.workflow.task_id, oldTask.id);
+  assert.match(body.task.description, /产品经理方案背景/);
+  assert.match(body.task.description, /补充后端来源字段/);
+  assert.equal(taskRepo.get(oldTask.id)?.description, body.task.description);
+});
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);
   try {

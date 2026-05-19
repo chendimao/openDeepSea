@@ -76,21 +76,26 @@ export function deriveWorkflowPlanFromParsedPlan(input: {
   plan: ParsedPlan;
 }): WorkflowPlanJson {
   const taskIdsByTitle = new Map<string, string>();
+  let previousTaskId: string | null = null;
   const tasks = input.plan.tasks.map((task, index): WorkflowPlanTaskInput => {
     const id = `task-${index + 1}-${slugTaskId(task.title)}`;
     taskIdsByTitle.set(task.title, id);
+    const depends_on = previousTaskId ? [previousTaskId] : [];
+    previousTaskId = id;
     return {
       id,
       title: task.title,
       description: task.description,
       role: normalizeTaskRole(task.suggestedRole),
       agent_id: null,
-      depends_on: [],
+      depends_on,
     };
   });
 
   for (const [index, task] of input.plan.tasks.entries()) {
-    tasks[index]!.depends_on = task.dependsOn.map((dependency) => taskIdsByTitle.get(dependency) ?? dependency);
+    tasks[index]!.depends_on = task.dependsOn.length > 0
+      ? task.dependsOn.map((dependency) => taskIdsByTitle.get(dependency) ?? dependency)
+      : tasks[index]!.depends_on;
   }
 
   return normalizeWorkflowPlanObject({

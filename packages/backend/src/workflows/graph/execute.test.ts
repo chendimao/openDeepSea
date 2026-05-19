@@ -304,6 +304,146 @@ test('execute node reuses active workflow run instead of starting duplicate ACP 
   assert.equal(agentRunRepo.listActiveByWorkflow(run.id).length, 1);
 });
 
+test('execute node ignores active run from a different workflow stage', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-active-stage-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Active Stage', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Active Stage Room' });
+  const executor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'executor-active-stage',
+    agent_name: 'Executor Active Stage',
+  });
+  const withRole = roomAgentRepo.setWorkflowRole(executor.id, 'executor') ?? executor;
+  const acpExecutor = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+  }) ?? withRole;
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parent stage task',
+    description: 'Parent workflow task',
+  });
+  const childTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Child stage task',
+    description: 'Implementation child task',
+    assigned_agent_id: acpExecutor.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const reviewStep = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: parentTask.id,
+    stage: 'code_review',
+    node_name: 'review',
+    status: 'running',
+    room_agent_id: acpExecutor.id,
+    sort_order: 1,
+  });
+  agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: acpExecutor.id,
+    agent_id: acpExecutor.agent_id,
+    backend: 'codex',
+    task_id: parentTask.id,
+    workflow_run_id: run.id,
+    workflow_step_id: reviewStep.id,
+    workflow_stage: 'code_review',
+    prompt: 'review still running',
+  });
+  let calls = 0;
+  const tools = createGraphTools({
+    runAcpAgent: async (input) => {
+      calls += 1;
+      const runRow = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: acpExecutor.id,
+        agent_id: acpExecutor.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRow.id, 'completed', { stdout: 'implementation done' }) ?? runRow;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: acpExecutor.agent_id,
+        sender_name: acpExecutor.agent_name,
+        content: 'implementation done',
+        message_type: 'agent_stream',
+      });
+      return {
+        run: completedRun,
+        message,
+        status: 'completed' as const,
+      };
+    },
+  });
+  const nodes = createGraphNodes(tools);
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Ignore active review run',
+      assumptions: [],
+      tasks: [{
+        title: childTask.title,
+        description: childTask.description ?? '',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Implementation still runs'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [childTask.id],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(taskRepo.get(childTask.id)?.status, 'review');
+  assert.equal(nextState.currentStepId !== reviewStep.id, true);
+  assert.equal(workflowRepo.listSteps(run.id).filter((item) => item.node_name === 'execute').length, 1);
+});
+
 test('execute node blocks assigned non-ACP agent without starting ACP run', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-execute-non-acp-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
