@@ -57,6 +57,70 @@ test('skillRepo creates, reads, updates, lists, and deletes skills with JSON fie
   assert.equal(skillRepo.deleteSkill('skill-tdd'), false);
 });
 
+test('skillRepo persists executable skill metadata and update policy fields', () => {
+  resetSkills();
+
+  const created = skillRepo.createSkill({
+    id: 'skill-executable-meta',
+    name: 'executable-meta-skill',
+    description: 'Installed from skills.sh.',
+    source_type: 'skills_sh',
+    source_uri: 'skills.sh/example/executable-meta-skill',
+    install_path: '/managed/executable-meta',
+    manifest_path: 'skill.json',
+    runtime_scopes: ['workflow'],
+    trigger_mode: 'manual',
+    trigger_keywords: [],
+    enabled: true,
+    priority: 70,
+    checksum: 'sha256:def',
+    package_version: '1.2.3',
+    package_revision: 'rev-1',
+    runtime_type: 'python',
+    entrypoint: 'scripts/main.py',
+    permissions: {
+      filesystem: 'project',
+      network: true,
+      commands: ['python3'],
+    },
+    install_source_label: 'example/executable-meta-skill',
+    update_check_mode: 'startup',
+    update_apply_mode: 'prompt',
+  });
+
+  assert.equal(created.source_type, 'skills_sh');
+  assert.equal(created.package_version, '1.2.3');
+  assert.equal(created.package_revision, 'rev-1');
+  assert.equal(created.runtime_type, 'python');
+  assert.equal(created.entrypoint, 'scripts/main.py');
+  assert.deepEqual(created.permissions, {
+    filesystem: 'project',
+    network: true,
+    commands: ['python3'],
+  });
+  assert.equal(created.install_source_label, 'example/executable-meta-skill');
+  assert.equal(created.update_check_mode, 'startup');
+  assert.equal(created.update_apply_mode, 'prompt');
+
+  const updated = skillRepo.updateSkill('skill-executable-meta', {
+    package_version: '1.2.4',
+    package_revision: 'rev-2',
+    update_check_mode: 'manual',
+    update_apply_mode: 'auto',
+    last_update_checked_at: 12345,
+    available_version: '1.3.0',
+    available_revision: 'rev-3',
+  });
+
+  assert.equal(updated?.package_version, '1.2.4');
+  assert.equal(updated?.package_revision, 'rev-2');
+  assert.equal(updated?.update_check_mode, 'manual');
+  assert.equal(updated?.update_apply_mode, 'auto');
+  assert.equal(updated?.last_update_checked_at, 12345);
+  assert.equal(updated?.available_version, '1.3.0');
+  assert.equal(updated?.available_revision, 'rev-3');
+});
+
 test('skillRepo rejects duplicate skill names', () => {
   resetSkills();
 
