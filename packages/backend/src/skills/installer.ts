@@ -144,7 +144,7 @@ export async function checkSkillsShUpdate(skill: Skill, options: InstallSkillsSh
   const metadata = readSkillsShPackageMetadata(remote);
   const availableVersion = metadata?.version ?? remote.version;
   const availableRevision = metadata?.revision ?? remote.revision;
-  const hasUpdate = hasRemoteUpdate(skill, remote);
+  const hasUpdate = hasRemoteUpdate(skill, availableVersion, availableRevision);
 
   skillRepo.updateSkill(skill.id, {
     last_update_checked_at: checkedAt,
@@ -202,8 +202,8 @@ export function installedPathLabel(skill: Skill): string {
   return basename(skill.install_path);
 }
 
-function hasRemoteUpdate(skill: Skill, remote: SkillsShPackage): boolean {
-  if (remote.version !== null && remote.version !== skill.package_version) return true;
-  if (remote.revision !== null && remote.revision !== skill.package_revision) return true;
+function hasRemoteUpdate(skill: Skill, availableVersion: string | null, availableRevision: string | null): boolean {
+  if (availableVersion !== null && availableVersion !== skill.package_version) return true;
+  if (availableRevision !== null && availableRevision !== skill.package_revision) return true;
   return false;
 }

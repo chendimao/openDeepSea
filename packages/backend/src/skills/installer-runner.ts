@@ -183,7 +183,16 @@ export async function writeSkillsShPackage(pkg: SkillsShPackage, targetDir: stri
   }
 
   if (!installedFiles.includes('SKILL.md')) {
-    throw new Error('SKILL.md is required');
+    const skillInstructions = files.find((file) => file.path === 'AGENTS.md');
+    if (!skillInstructions) throw new Error('SKILL.md or AGENTS.md is required');
+    const target = resolve(root, 'SKILL.md');
+    const content = Buffer.from(skillInstructions.content, 'utf-8');
+    await writeFile(target, content);
+    hash.update('SKILL.md');
+    hash.update('\0');
+    hash.update(content);
+    hash.update('\0');
+    installedFiles.push('SKILL.md');
   }
 
   return {

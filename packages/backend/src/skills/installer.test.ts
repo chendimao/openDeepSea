@@ -106,6 +106,36 @@ test('installSkillsShSkill installs a public executable package and records sour
 });
 
 
+
+test('installSkillsShSkill installs public packages that expose AGENTS.md instead of SKILL.md', async () => {
+  resetSkills();
+  const client = new SkillsShClient({
+    fetch: async () => jsonResponse({
+      hash: 'snapshot-agents',
+      files: [
+        {
+          path: 'AGENTS.md',
+          contents: [
+            '---',
+            'name: agents-md-skill',
+            'runtime_scopes: [workflow]',
+            '---',
+            '',
+            'Use AGENTS instructions.',
+          ].join('\n'),
+        },
+      ],
+    }),
+  });
+
+  const skill = await installSkillsShSkill('acme/skills/agents-md', { client });
+
+  assert.equal(skill.name, 'agents-md-skill');
+  assert.equal(existsSync(join(skill.install_path, 'AGENTS.md')), true);
+  assert.equal(existsSync(join(skill.install_path, 'SKILL.md')), true);
+  assert.equal(readFileSync(join(skill.install_path, 'SKILL.md'), 'utf-8'), readFileSync(join(skill.install_path, 'AGENTS.md'), 'utf-8'));
+});
+
 test('installSkillsShSkill records package version from public metadata.json when response has no top-level version', async () => {
   resetSkills();
   const client = new SkillsShClient({
@@ -279,6 +309,45 @@ test('checkSkillsShUpdate reads package version from metadata.json when remote r
   assert.equal(result.hasUpdate, true);
   assert.equal(result.availableVersion, '1.2.0');
   assert.equal(result.availableRevision, 'rev-meta');
+});
+
+
+test('checkSkillsShUpdate detects metadata version changes even when top-level revision is unchanged', async () => {
+  resetSkills();
+  const localDir = mkdtempSync(join(tmpdir(), 'opendeepsea-metadata-version-only-update-'));
+  await writeFile(join(localDir, 'SKILL.md'), [
+    '---',
+    'name: metadata-version-only-update',
+    'runtime_scopes: [planner]',
+    '---',
+    '',
+    'Check version-only metadata updates.',
+  ].join('\n'));
+  const skill = await importLocalSkill(localDir);
+  const skillsShSkill = skillRepo.updateSkill(skill.id, {
+    source_type: 'skills_sh',
+    source_uri: 'skills.sh/acme/skills/metadata-version-only-update',
+    install_source_label: 'acme/skills/metadata-version-only-update',
+    package_version: '1.0.0',
+    package_revision: 'same-rev',
+  });
+  assert.ok(skillsShSkill);
+
+  const client = new SkillsShClient({
+    fetch: async () => jsonResponse({
+      hash: 'same-rev',
+      files: [
+        { path: 'SKILL.md', contents: '# Metadata Version Only Update\n' },
+        { path: 'metadata.json', contents: JSON.stringify({ version: '1.1.0', revision: 'same-rev' }) },
+      ],
+    }),
+  });
+
+  const result = await checkSkillsShUpdate(skillsShSkill, { client });
+
+  assert.equal(result.hasUpdate, true);
+  assert.equal(result.availableVersion, '1.1.0');
+  assert.equal(result.availableRevision, 'same-rev');
 });
 
 test('checkSkillsShUpdate ignores non-skills.sh skills', async () => {
