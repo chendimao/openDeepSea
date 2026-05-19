@@ -202,6 +202,12 @@ function isPathLikeScope(scope: string): boolean {
   const trimmed = scope.trim();
   if (!trimmed) return false;
   if (trimmed === '.' || trimmed.startsWith('./')) return true;
-  if (trimmed.includes('/') || trimmed.includes('\\')) return true;
+  if (trimmed === '..' || trimmed.startsWith('../')) return true;
+  if (trimmed.startsWith('/') || /^[a-z]:[\\/]/i.test(trimmed)) return true;
+  if (trimmed.includes('/') || trimmed.includes('\\')) return isAsciiPathCandidate(trimmed);
   return /^[\w.-]+\.[a-z0-9]+$/i.test(trimmed);
+}
+
+function isAsciiPathCandidate(scope: string): boolean {
+  return /^[a-z0-9_./\\@+-]+$/i.test(scope);
 }

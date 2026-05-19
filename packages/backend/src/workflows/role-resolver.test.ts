@@ -232,7 +232,7 @@ test('selectWorkflowAgentForPlanTask falls back to domain when scopeWrite contai
     title: '实现资源资产后端模型与接口',
     description: '在后端建立或扩展资源资产持久化能力，为文件管理页和自动归档流程提供统一查询、创建、删除、详情接口。',
     scopeRead: ['后端路由/API 层', '数据库访问层', '现有文件上传接口'],
-    scopeWrite: ['资源资产表或现有表扩展', '资源列表接口', '资源详情接口', '资源删除接口'],
+    scopeWrite: ['资源资产表或现有表扩展', '资源列表接口', '资源详情接口', '资源删除接口', '资源创建/归档内部服务'],
   });
 
   assert.equal(selected?.id, 'backend');
