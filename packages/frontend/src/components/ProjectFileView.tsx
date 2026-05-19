@@ -1,5 +1,6 @@
 import {
   Code2,
+  FilePenLine,
   FileArchive,
   FileText,
   Image as ImageIcon,
@@ -9,6 +10,7 @@ import {
   Video,
 } from 'lucide-react';
 import { useState, type ElementType, type ReactNode } from 'react';
+import { useI18n } from '../lib/i18n';
 import type { ProjectFile } from '../lib/types';
 import { cn } from '../lib/utils';
 
@@ -72,7 +74,10 @@ export function ProjectFileView({
               <span className="project-file-name" title={file.original_name}>
                 {file.original_name}
               </span>
-              <span className="project-file-meta">{getMeta(file)}</span>
+              <span className="project-file-meta">
+                <ProjectFileSourceBadge file={file} />
+                {getMeta(file)}
+              </span>
             </span>
             {secondaryMeta ? <span className="project-file-secondary">{secondaryMeta}</span> : null}
             {state ? <span className="project-file-state">{state}</span> : null}
@@ -175,6 +180,8 @@ function ProjectFileThumbnail({ file }: { file: ProjectFile }): JSX.Element {
 }
 
 function getFileTypeIcon(file: ProjectFile): ElementType {
+  if (file.source_type === 'agent_document') return FilePenLine;
+
   const mimeType = file.mime_type.toLocaleLowerCase();
   const extension = getFileExtension(file.original_name);
 
@@ -204,6 +211,17 @@ function getFileTypeIcon(file: ProjectFile): ElementType {
     return Code2;
   }
   return FileText;
+}
+
+function ProjectFileSourceBadge({ file }: { file: ProjectFile }): JSX.Element {
+  const { t } = useI18n();
+  const isAgentDocument = file.source_type === 'agent_document';
+
+  return (
+    <span className={cn('project-file-source-badge', isAgentDocument ? 'is-agent-document' : 'is-uploaded-file')}>
+      {isAgentDocument ? t('files.source.agentDocument') : t('files.source.uploadedFile')}
+    </span>
+  );
 }
 
 function getFileTypeLabel(file: ProjectFile): string {

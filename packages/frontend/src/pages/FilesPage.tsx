@@ -8,9 +8,9 @@ import { formatFileSize } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
 import type { ProjectFile } from '../lib/types';
 import { Button } from '../components/ui/Button';
-import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { Input } from '../components/ui/Input';
 import { ProjectFileView, type ProjectFileViewMode } from '../components/ProjectFileView';
+import { ProjectFilePreviewDialog } from '../components/ProjectFilePreviewDialog';
 
 export function FilesPage(): JSX.Element {
   const { projectId = '' } = useParams();
@@ -23,6 +23,7 @@ export function FilesPage(): JSX.Element {
   const [query, setQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(projectId);
   const [selectedRoomId, setSelectedRoomId] = useState(initialRoomId);
+  const [selectedSourceType, setSelectedSourceType] = useState<ProjectFile['source_type'] | ''>('');
   const [preview, setPreview] = useState<ProjectFile | null>(null);
   const [viewMode, setViewMode] = useState<ProjectFileViewMode>('list');
 
@@ -51,10 +52,11 @@ export function FilesPage(): JSX.Element {
   }, [rooms, selectedProjectId, selectedRoomId]);
   const canLoadFiles = !selectedProjectId || !selectedRoomId || roomsFetched;
   const { data: files = [], isLoading } = useQuery({
-    queryKey: ['files', selectedProjectId, activeRoomId],
+    queryKey: ['files', selectedProjectId, activeRoomId, selectedSourceType],
     queryFn: () => api.listFiles({
       projectId: selectedProjectId || undefined,
       roomId: activeRoomId || undefined,
+      sourceType: selectedSourceType || undefined,
     }),
     enabled: canLoadFiles,
   });
@@ -73,6 +75,10 @@ export function FilesPage(): JSX.Element {
   const viewModeLabel = locale === 'zh' ? '展示模式' : 'View mode';
   const listViewLabel = locale === 'zh' ? '列表模式' : 'List view';
   const cardViewLabel = locale === 'zh' ? 'Card 模式' : 'Card view';
+  const sourceTypeLabel = (file: ProjectFile) =>
+    file.source_type === 'agent_document'
+      ? t('files.source.agentDocument')
+      : t('files.source.uploadedFile');
 
   const visibleFiles = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -80,10 +86,13 @@ export function FilesPage(): JSX.Element {
     return files.filter((file) =>
       file.original_name.toLocaleLowerCase().includes(needle) ||
       file.mime_type.toLocaleLowerCase().includes(needle) ||
+      file.source_type.toLocaleLowerCase().includes(needle) ||
+      sourceTypeLabel(file).toLocaleLowerCase().includes(needle) ||
+      (file.source_agent_id ?? '').toLocaleLowerCase().includes(needle) ||
       (projectNameById.get(file.project_id) ?? '').toLocaleLowerCase().includes(needle) ||
       (file.last_referenced_room_name ?? '').toLocaleLowerCase().includes(needle),
     );
-  }, [files, projectNameById, query]);
+  }, [files, projectNameById, query, t]);
 
   const totalSize = useMemo(
     () => files.reduce((sum, file) => sum + file.size, 0),
@@ -190,6 +199,16 @@ export function FilesPage(): JSX.Element {
                   </option>
                 ))}
               </select>
+              <select
+                className="files-filter-select"
+                value={selectedSourceType}
+                aria-label={t('files.sourceFilter')}
+                onChange={(event) => setSelectedSourceType(event.target.value as ProjectFile['source_type'] | '')}
+              >
+                <option value="">{t('files.source.all')}</option>
+                <option value="uploaded_file">{t('files.source.uploadedFile')}</option>
+                <option value="agent_document">{t('files.source.agentDocument')}</option>
+              </select>
             </div>
             <div className="files-search">
               <Search className="h-4 w-4 text-[var(--color-muted)]" />
@@ -267,6 +286,7 @@ export function FilesPage(): JSX.Element {
               getSecondaryMeta={(file) => (
                 <>
                   <span>{t('files.referenceCount', { count: file.reference_count })}</span>
+                  {file.source_agent_id ? <span>{file.source_agent_id}</span> : null}
                   <span title={file.last_referenced_room_name ?? undefined}>
                     {file.last_referenced_room_name ?? t('files.neverReferenced')}
                   </span>
@@ -279,13 +299,15 @@ export function FilesPage(): JSX.Element {
                   icon: <Eye className="h-4 w-4" strokeWidth={1.8} />,
                   onClick: () => setPreview(file),
                 },
-                {
-                  key: 'download',
-                  label: t('files.download'),
-                  icon: <Download className="h-4 w-4" strokeWidth={1.8} />,
-                  href: file.url,
-                  download: file.original_name,
-                },
+                ...(file.source_type === 'uploaded_file' && file.url
+                  ? [{
+                    key: 'download',
+                    label: t('files.download'),
+                    icon: <Download className="h-4 w-4" strokeWidth={1.8} />,
+                    href: file.url,
+                    download: file.original_name,
+                  }]
+                  : []),
                 {
                   key: 'delete',
                   label: t('files.delete'),
@@ -300,36 +322,7 @@ export function FilesPage(): JSX.Element {
         </section>
       </main>
 
-      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent className="file-preview-dialog" title={preview?.original_name}>
-          {preview && (
-            <div className="file-preview-shell">
-              {preview.mime_type.startsWith('image/') ? (
-                <div className="file-preview-stage">
-                  <img src={preview.url} alt={preview.original_name} />
-                </div>
-              ) : preview.mime_type === 'application/pdf' ? (
-                <iframe className="file-preview-frame" src={preview.url} title={preview.original_name} />
-              ) : preview.mime_type.startsWith('text/') ? (
-                <iframe className="file-preview-frame" src={preview.url} title={preview.original_name} />
-              ) : (
-                <div className="files-empty">{t('files.previewUnavailable')}</div>
-              )}
-              <div className="file-preview-footer">
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-fg-muted)]">
-                  {formatFileSize(preview.size)} · {preview.mime_type}
-                </span>
-                <a href={preview.url} target="_blank" rel="noreferrer" className="image-preview-link">
-                  {t('files.openOriginal')}
-                </a>
-                <a href={preview.url} download={preview.original_name} className="image-preview-link">
-                  {t('files.download')}
-                </a>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ProjectFilePreviewDialog file={preview} onOpenChange={(open) => !open && setPreview(null)} />
     </div>
   );
 }

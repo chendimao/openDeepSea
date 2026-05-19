@@ -31,8 +31,8 @@ export function FilePickerDialog({
   const [viewMode, setViewMode] = useState<ProjectFileViewMode>('list');
   const selectedSet = useMemo(() => new Set(selectedFileIds), [selectedFileIds]);
   const { data: files = [], isLoading } = useQuery({
-    queryKey: ['project-files', projectId],
-    queryFn: () => api.listProjectFiles(projectId),
+    queryKey: ['project-files', projectId, 'uploaded_file'],
+    queryFn: () => api.listProjectFiles(projectId, { sourceType: 'uploaded_file' }),
     enabled: open && !!projectId,
   });
 

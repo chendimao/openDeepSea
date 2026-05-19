@@ -399,6 +399,7 @@ export interface MessageReplyMetadata {
 export interface ProjectFile {
   id: string;
   project_id: string;
+  source_type: 'uploaded_file' | 'agent_document';
   original_name: string;
   stored_name: string;
   mime_type: string;
@@ -407,6 +408,11 @@ export interface ProjectFile {
   storage_path?: string;
   uploaded_by_id: string | null;
   uploaded_by_name: string | null;
+  source_message_id: string | null;
+  source_room_id: string | null;
+  source_agent_id: string | null;
+  source_task_id: string | null;
+  content: string | null;
   created_at: number;
   deleted_at: number | null;
   reference_count: number;

@@ -347,14 +347,23 @@ export const api = {
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
-  listFiles: (filters: { projectId?: string; roomId?: string } = {}) => {
+  listFiles: (filters: { projectId?: string; roomId?: string; sourceType?: ProjectFile['source_type'] } = {}) => {
     const params = new URLSearchParams();
     if (filters.projectId) params.set('projectId', filters.projectId);
     if (filters.roomId) params.set('roomId', filters.roomId);
+    if (filters.sourceType) params.set('sourceType', filters.sourceType);
     const query = params.toString();
     return request<ProjectFile[]>(`/files${query ? `?${query}` : ''}`);
   },
-  listProjectFiles: (projectId: string) => request<ProjectFile[]>(`/projects/${projectId}/files`),
+  listProjectFiles: (
+    projectId: string,
+    filters: { sourceType?: ProjectFile['source_type'] } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (filters.sourceType) params.set('sourceType', filters.sourceType);
+    const query = params.toString();
+    return request<ProjectFile[]>(`/projects/${projectId}/files${query ? `?${query}` : ''}`);
+  },
   uploadProjectFiles: (projectId: string, files: File[]) => {
     const form = new FormData();
     files.forEach((file) => form.append('files', file));

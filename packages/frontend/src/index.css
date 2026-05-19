@@ -2079,7 +2079,7 @@
   }
 
   .files-filters {
-    width: min(42vw, 460px);
+    width: min(48vw, 560px);
   }
 
   .file-view-toggle {
@@ -2127,6 +2127,11 @@
 
   .files-filter-select:disabled {
     color: var(--color-fg-muted);
+  }
+
+  .files-filter-select:focus-visible {
+    border-radius: 6px;
+    box-shadow: 0 0 0 2px rgba(10,132,255,0.28);
   }
 
   .files-list {
@@ -2242,6 +2247,23 @@
     font-weight: 700;
     line-height: 1;
     text-overflow: ellipsis;
+  }
+
+  .project-file-source-badge {
+    flex: 0 0 auto;
+    border-radius: 999px;
+    padding: 2px 6px;
+    background: rgba(51, 199, 89, 0.12);
+    color: var(--color-success);
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .project-file-source-badge.is-agent-document {
+    background: rgba(10,132,255,0.12);
+    color: var(--color-primary);
   }
 
   .project-file-main,
@@ -2465,11 +2487,52 @@
     box-shadow: inset 0 0 0 1px var(--color-border);
   }
 
+  .file-preview-markdown {
+    max-height: min(72dvh, 720px);
+    min-height: min(46vh, 420px);
+    overflow: auto;
+    border-radius: 10px;
+    background: var(--color-surface);
+    padding: 18px;
+    box-shadow: inset 0 0 0 1px var(--color-border);
+  }
+
   .file-preview-footer {
     display: flex;
     min-width: 0;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
+  }
+
+  .file-preview-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 8px;
+    margin: 0;
+  }
+
+  .file-preview-details div {
+    min-width: 0;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.46);
+    padding: 8px 10px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.66);
+  }
+
+  .file-preview-details dt {
+    color: var(--color-fg-muted);
+    font-size: 11px;
+  }
+
+  .file-preview-details dd {
+    margin: 3px 0 0;
+    overflow: hidden;
+    color: var(--color-fg);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .file-picker-dialog {
@@ -3265,6 +3328,13 @@
     .files-search,
     .files-filters {
       width: 100%;
+    }
+    .files-filters {
+      flex-wrap: wrap;
+    }
+    .files-filter-select {
+      flex: 1 1 128px;
+      min-height: 32px;
     }
     .file-view-toggle {
       align-self: flex-start;

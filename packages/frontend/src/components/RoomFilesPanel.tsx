@@ -7,7 +7,7 @@ import { formatFileSize } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
 import type { ProjectFile } from '../lib/types';
 import { ProjectFileView, type ProjectFileViewMode } from './ProjectFileView';
-import { Dialog, DialogContent } from './ui/Dialog';
+import { ProjectFilePreviewDialog } from './ProjectFilePreviewDialog';
 import { Input } from './ui/Input';
 
 interface RoomFilesPanelProps {
@@ -25,6 +25,10 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
   const viewModeLabel = locale === 'zh' ? '展示模式' : 'View mode';
   const listViewLabel = locale === 'zh' ? '列表模式' : 'List view';
   const cardViewLabel = locale === 'zh' ? 'Card 模式' : 'Card view';
+  const sourceTypeLabel = (file: ProjectFile) =>
+    file.source_type === 'agent_document'
+      ? t('files.source.agentDocument')
+      : t('files.source.uploadedFile');
 
   const { data: files = [], isLoading } = useQuery<ProjectFile[]>({
     queryKey: ['files', projectId, roomId],
@@ -38,9 +42,12 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
     return files.filter((file) =>
       file.original_name.toLocaleLowerCase().includes(needle) ||
       file.mime_type.toLocaleLowerCase().includes(needle) ||
+      file.source_type.toLocaleLowerCase().includes(needle) ||
+      sourceTypeLabel(file).toLocaleLowerCase().includes(needle) ||
+      (file.source_agent_id ?? '').toLocaleLowerCase().includes(needle) ||
       (file.last_referenced_room_name ?? '').toLocaleLowerCase().includes(needle),
     );
-  }, [files, query]);
+  }, [files, query, t]);
 
   const totalSize = useMemo(
     () => files.reduce((sum, file) => sum + file.size, 0),
@@ -130,6 +137,7 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
             getSecondaryMeta={(file) => (
               <>
                 <span>{t('files.referenceCount', { count: file.reference_count })}</span>
+                {file.source_agent_id ? <span>{file.source_agent_id}</span> : null}
                 <span title={file.last_referenced_room_name ?? undefined}>
                   {file.last_referenced_room_name ?? t('files.neverReferenced')}
                 </span>
@@ -144,13 +152,15 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
                   icon: <Eye className="h-4 w-4" strokeWidth={1.8} />,
                   onClick: () => setPreview(file),
                 },
-                {
-                  key: 'download',
-                  label: t('files.download'),
-                  icon: <Download className="h-4 w-4" strokeWidth={1.8} />,
-                  href: file.url,
-                  download: file.original_name,
-                },
+                ...(file.source_type === 'uploaded_file' && file.url
+                  ? [{
+                    key: 'download',
+                    label: t('files.download'),
+                    icon: <Download className="h-4 w-4" strokeWidth={1.8} />,
+                    href: file.url,
+                    download: file.original_name,
+                  }]
+                  : []),
                 ...(messageId
                   ? [{
                     key: 'locate-message',
@@ -173,36 +183,11 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
         )}
       </section>
 
-      <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent className="file-preview-dialog" title={preview?.original_name}>
-          {preview && (
-            <div className="file-preview-shell">
-              {preview.mime_type.startsWith('image/') ? (
-                <div className="file-preview-stage">
-                  <img src={preview.url} alt={preview.original_name} />
-                </div>
-              ) : preview.mime_type === 'application/pdf' ? (
-                <iframe className="file-preview-frame" src={preview.url} title={preview.original_name} />
-              ) : preview.mime_type.startsWith('text/') ? (
-                <iframe className="file-preview-frame" src={preview.url} title={preview.original_name} />
-              ) : (
-                <div className="files-empty">{t('files.previewUnavailable')}</div>
-              )}
-              <div className="file-preview-footer">
-                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-fg-muted)]">
-                  {formatFileSize(preview.size)} · {preview.mime_type}
-                </span>
-                <a href={preview.url} target="_blank" rel="noreferrer" className="image-preview-link">
-                  {t('files.openOriginal')}
-                </a>
-                <a href={preview.url} download={preview.original_name} className="image-preview-link">
-                  {t('files.download')}
-                </a>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ProjectFilePreviewDialog
+        file={preview}
+        onOpenChange={(open) => !open && setPreview(null)}
+        onLocateMessage={onLocateMessage}
+      />
     </div>
   );
 }

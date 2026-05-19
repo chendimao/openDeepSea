@@ -141,7 +141,7 @@ function isMarkdownContent(content: string): boolean {
     || /\*\*[^*\n]+\*\*/.test(trimmed);
 }
 
-function MarkdownPreview({ content, streaming }: { content: string; streaming: boolean }): JSX.Element {
+export function MarkdownPreview({ content, streaming = false }: { content: string; streaming?: boolean }): JSX.Element {
   const { t } = useI18n();
   const parts = parseMessage(content);
   return (
@@ -246,16 +246,30 @@ function renderInlineMarkdown(text: string): Array<string | JSX.Element> {
     } else if (match[3]) {
       tokens.push(<code key={match.index}>{match[3]}</code>);
     } else if (match[4] && match[5]) {
-      tokens.push(
-        <a key={match.index} href={match[5]} target="_blank" rel="noreferrer">
+      const href = sanitizeMarkdownHref(match[5]);
+      tokens.push(href ? (
+        <a key={match.index} href={href} target="_blank" rel="noreferrer">
           {match[4]}
-        </a>,
-      );
+        </a>
+      ) : match[4]);
     }
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) tokens.push(text.slice(lastIndex));
   return tokens;
+}
+
+function sanitizeMarkdownHref(href: string): string | null {
+  const trimmed = href.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/') || trimmed.startsWith('#')) return trimmed;
+
+  try {
+    const url = new URL(trimmed);
+    return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? trimmed : null;
+  } catch {
+    return null;
+  }
 }
 
 function CodeBlock({
