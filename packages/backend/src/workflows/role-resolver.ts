@@ -68,10 +68,10 @@ function rankCandidates(
   role: WorkflowRole,
   context: WorkflowAgentSelectionContext,
 ): RoomAgent[] {
-  const scopeWrite = context.scopeWrite ?? [];
-  if (role === 'executor' && scopeWrite.length > 0) {
+  const pathScopeWrite = (context.scopeWrite ?? []).filter(isPathLikeScope);
+  if (role === 'executor' && pathScopeWrite.length > 0) {
     const writableMatches = agents.filter((agent) =>
-      scoreWorkspaceWrite(agent, scopeWrite) > 0 && scoreExecutableRuntime(agent, role, true) > 0,
+      scoreWorkspaceWrite(agent, pathScopeWrite) > 0 && scoreExecutableRuntime(agent, role, true) > 0,
     );
     agents = writableMatches;
   }
@@ -85,9 +85,9 @@ function scoreAgent(
   context: WorkflowAgentSelectionContext,
   domain: DomainHint,
 ): number {
-  const scopeWrite = context.scopeWrite ?? [];
-  const writeMatch = scoreWorkspaceWrite(agent, scopeWrite);
-  const writeRequired = role === 'executor' && scopeWrite.length > 0;
+  const pathScopeWrite = (context.scopeWrite ?? []).filter(isPathLikeScope);
+  const writeMatch = scoreWorkspaceWrite(agent, pathScopeWrite);
+  const writeRequired = role === 'executor' && pathScopeWrite.length > 0;
   const executableRuntime = scoreExecutableRuntime(agent, role, writeRequired);
   return (
     (agent.workflow_role === role ? 100 : 0)
@@ -196,4 +196,12 @@ function normalizePath(path: string): string | null {
   if (trimmed.split(/[\\/]+/).includes('..')) return null;
   const normalized = trimmed.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+$/, '').toLowerCase();
   return normalized === '.' ? '' : normalized;
+}
+
+function isPathLikeScope(scope: string): boolean {
+  const trimmed = scope.trim();
+  if (!trimmed) return false;
+  if (trimmed === '.' || trimmed.startsWith('./')) return true;
+  if (trimmed.includes('/') || trimmed.includes('\\')) return true;
+  return /^[\w.-]+\.[a-z0-9]+$/i.test(trimmed);
 }

@@ -210,6 +210,34 @@ test('selectWorkflowAgentForPlanTask prioritizes workspace match over domain sig
   assert.equal(selected?.id, 'workspace-match');
 });
 
+test('selectWorkflowAgentForPlanTask falls back to domain when scopeWrite contains non-path descriptions', () => {
+  const backend = agent({
+    id: 'backend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const frontend = agent({
+    id: 'frontend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backend, frontend], {
+    title: '实现资源资产后端模型与接口',
+    description: '在后端建立或扩展资源资产持久化能力，为文件管理页和自动归档流程提供统一查询、创建、删除、详情接口。',
+    scopeRead: ['后端路由/API 层', '数据库访问层', '现有文件上传接口'],
+    scopeWrite: ['资源资产表或现有表扩展', '资源列表接口', '资源详情接口', '资源删除接口'],
+  });
+
+  assert.equal(selected?.id, 'backend');
+});
+
 test('selectWorkflowAgentForPlanTask requires explicit write capability and non-read-only permission for write tasks', () => {
   const implicitToolPolicy = agent({
     id: 'implicit-tool-policy',
