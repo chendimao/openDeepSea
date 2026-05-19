@@ -23,6 +23,7 @@ const GraphState = Annotation.Root({
   userGoal: Annotation<string>(),
   projectPath: Annotation<string>(),
   plan: Annotation<AgentWorkflowState['plan']>(),
+  workflowPlan: Annotation<AgentWorkflowState['workflowPlan']>(),
   currentNode: Annotation<AgentWorkflowState['currentNode']>(),
   currentStepId: Annotation<string | null>(),
   activeAgentRunId: Annotation<string | null>(),

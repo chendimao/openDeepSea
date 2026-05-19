@@ -5,6 +5,7 @@ import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowStep } from '../l
 import type { WorkflowDefinitionGraph, WorkflowStage } from '../lib/types';
 import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
+import { WorkflowTaskBubble } from './WorkflowTaskBubble';
 
 export function WorkflowTimeline({
   detail,
@@ -73,6 +74,8 @@ export function WorkflowTimeline({
           </div>
         )}
       </div>
+
+      <WorkflowTaskBubble detail={detail} agents={agents} />
 
       <div className="workflow-timeline space-y-2">
         {detail.steps.map((step) => (

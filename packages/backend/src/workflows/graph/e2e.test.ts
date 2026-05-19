@@ -163,6 +163,21 @@ test('graph runtime completes ACP-only development loop', async () => {
   assert.equal(graphState?.currentNode, 'memory');
   assert.equal(graphState?.verificationResults[0]?.status, 'skipped');
   assert.equal(graphState?.verificationResults[0]?.command, '(none)');
+  assert.equal(graphState?.workflowPlan?.tasks.length, 3);
+  assert.deepEqual(
+    graphState?.workflowPlan?.tasks.map((item) => ({
+      role: item.role,
+      agentId: item.agent_id,
+      status: item.status,
+      progress: item.progress,
+      resultCount: item.result_refs.length,
+    })),
+    [
+      { role: 'executor', agentId: executor.id, status: 'completed', progress: 100, resultCount: 1 },
+      { role: 'reviewer', agentId: reviewer.id, status: 'completed', progress: 100, resultCount: 2 },
+      { role: 'acceptor', agentId: acceptor.id, status: 'completed', progress: 100, resultCount: 1 },
+    ],
+  );
   assertWorkflowEvent(events, 'workflow_started', task.id);
   assertWorkflowEvent(events, 'workflow_stage_changed', task.id, planningStep.id);
   assertWorkflowEvent(events, 'workflow_plan_ready', task.id, planningStep.id);

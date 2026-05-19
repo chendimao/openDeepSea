@@ -1332,6 +1332,120 @@
     background: rgba(255, 242, 241, 0.62);
     box-shadow: inset 0 0 0 1px rgba(255, 149, 141, 0.34);
   }
+  .workflow-task-bubble {
+    display: grid;
+    gap: 10px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.42);
+    padding: 12px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.64), 0 14px 30px rgba(38, 59, 86, 0.08);
+    backdrop-filter: blur(22px) saturate(1.25);
+  }
+  .workflow-plan-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(132px, 168px);
+    gap: 12px;
+    align-items: center;
+  }
+  .workflow-plan-progress {
+    min-width: 132px;
+  }
+  .workflow-task-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.56);
+  }
+  .workflow-task-table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    background: rgba(255,255,255,0.28);
+  }
+  .workflow-task-table th,
+  .workflow-task-table td {
+    border-bottom: 1px solid rgba(255,255,255,0.52);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+    font-size: 11px;
+  }
+  .workflow-task-table th {
+    color: var(--color-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .workflow-task-table tr:last-child td {
+    border-bottom: 0;
+  }
+  .workflow-mode-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 2px 7px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9.5px;
+    white-space: nowrap;
+  }
+  .workflow-mode-pill.is-parallel {
+    background: rgba(52, 199, 89, 0.13);
+    color: var(--color-success);
+  }
+  .workflow-mode-pill.is-serial {
+    background: rgba(255, 159, 10, 0.14);
+    color: var(--color-warning);
+  }
+  .workflow-agent-tabs {
+    min-width: 0;
+  }
+  .workflow-agent-tab-list {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .workflow-agent-tab-trigger {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 180px;
+    align-items: center;
+    gap: 5px;
+    border-radius: 7px;
+    padding: 5px 8px;
+    color: var(--color-fg-muted);
+    font-size: 11px;
+    transition: background 160ms ease, color 160ms ease;
+    white-space: nowrap;
+  }
+  .workflow-agent-tab-trigger[data-state='active'] {
+    background: rgba(10,132,255,0.13);
+    color: var(--color-primary);
+  }
+  .workflow-agent-tab-panel {
+    margin-top: 8px;
+  }
+  .workflow-agent-result {
+    border-radius: 8px;
+    background: rgba(255,255,255,0.32);
+    padding: 9px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.48);
+  }
+  .workflow-agent-artifact {
+    border-radius: 7px;
+    background: rgba(255,255,255,0.32);
+    padding: 7px 8px;
+  }
+  @media (max-width: 720px) {
+    .workflow-plan-header {
+      grid-template-columns: 1fr;
+    }
+    .workflow-plan-progress {
+      min-width: 0;
+    }
+  }
   .inspector-footer {
     display: flex;
     justify-content: flex-end;

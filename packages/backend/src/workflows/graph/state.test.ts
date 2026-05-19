@@ -11,7 +11,7 @@ const { projectRepo } = await import('../../repos/projects.js');
 const { roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
-const { emptyAgentWorkflowState, serializeGraphState } = await import('./state.js');
+const { emptyAgentWorkflowState, parseGraphState, serializeGraphState } = await import('./state.js');
 
 test('workflowRepo persists graph version and graph state', () => {
   const projectPath = join(tempDir, `project-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -61,4 +61,22 @@ test('workflowRepo persists workflow step node and scope metadata', () => {
   assert.equal(step.node_name, 'execute');
   assert.deepEqual(step.scope_read, ['packages/backend/src/workflows/graph/runtime.ts']);
   assert.deepEqual(step.scope_write, ['packages/backend/src/workflows/graph/runtime.ts']);
+});
+
+test('parseGraphState defaults missing workflowPlan to null for existing runs', () => {
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'run-legacy',
+    projectId: 'project-legacy',
+    roomId: 'room-legacy',
+    taskId: 'task-legacy',
+    userGoal: 'Legacy state',
+    projectPath: tempDir,
+  });
+  const legacyJson = JSON.stringify(Object.fromEntries(
+    Object.entries(state).filter(([key]) => key !== 'workflowPlan'),
+  ));
+
+  const parsed = parseGraphState(legacyJson);
+
+  assert.equal(parsed?.workflowPlan, null);
 });

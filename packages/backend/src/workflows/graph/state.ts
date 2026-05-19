@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { GraphNodeName, WorkflowRole, WorkflowStage, WorkflowStatus } from '../../types.js';
+import type { GraphNodeName, WorkflowPlanJson, WorkflowRole, WorkflowStage, WorkflowStatus } from '../../types.js';
 import type { ParsedPlan } from '../plan-parser.js';
 
 export const workflowGraphNodeNameSchema = z.enum([
@@ -69,6 +69,27 @@ export const parsedPlanSchema = z.object({
   needsApproval: z.boolean(),
 });
 
+export const workflowPlanTaskJsonSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  role: z.enum(['planner', 'executor', 'reviewer', 'acceptor']),
+  agent_id: z.string().nullable(),
+  mode: z.enum(['parallel', 'serial']),
+  depends_on: z.array(z.string()),
+  status: z.enum(['pending', 'running', 'completed', 'blocked', 'failed']),
+  progress: z.number().min(0).max(100),
+  result_refs: z.array(z.string()),
+});
+
+export const workflowPlanJsonSchema = z.object({
+  workflow_name: z.string(),
+  source_message_id: z.string(),
+  goal: z.string(),
+  summary: z.string(),
+  tasks: z.array(workflowPlanTaskJsonSchema),
+});
+
 export const agentWorkflowStateSchema = z.object({
   workflowRunId: z.string(),
   projectId: z.string(),
@@ -77,6 +98,7 @@ export const agentWorkflowStateSchema = z.object({
   userGoal: z.string(),
   projectPath: z.string(),
   plan: parsedPlanSchema.nullable(),
+  workflowPlan: workflowPlanJsonSchema.nullable().default(null),
   currentNode: workflowGraphNodeNameSchema.nullable(),
   currentStepId: z.string().nullable(),
   activeAgentRunId: z.string().nullable(),
@@ -100,9 +122,10 @@ export interface SupervisorAssignmentHint {
 }
 export type AgentWorkflowState = Omit<
   z.infer<typeof agentWorkflowStateSchema>,
-  'plan' | 'currentNode' | 'status' | 'supervisorAssignments'
+  'plan' | 'workflowPlan' | 'currentNode' | 'status' | 'supervisorAssignments'
 > & {
   plan: ParsedPlan | null;
+  workflowPlan?: WorkflowPlanJson | null;
   currentNode: GraphNodeName | null;
   status: WorkflowStatus;
   supervisorAssignments?: SupervisorAssignmentHint[];
@@ -119,6 +142,7 @@ export function emptyAgentWorkflowState(input: {
   return {
     ...input,
     plan: null,
+    workflowPlan: null,
     currentNode: null,
     currentStepId: null,
     activeAgentRunId: null,

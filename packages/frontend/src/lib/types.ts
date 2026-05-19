@@ -31,6 +31,27 @@ export type WorkflowStatus =
   | 'completed'
   | 'failed';
 export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
+export type WorkflowPlanTaskMode = 'parallel' | 'serial';
+export type WorkflowPlanTaskStatus = 'pending' | 'running' | 'completed' | 'blocked' | 'failed';
+export interface WorkflowPlanTaskJson {
+  id: string;
+  title: string;
+  description: string;
+  role: Extract<WorkflowRole, 'planner' | 'executor' | 'reviewer' | 'acceptor'>;
+  agent_id: string | null;
+  mode: WorkflowPlanTaskMode;
+  depends_on: string[];
+  status: WorkflowPlanTaskStatus;
+  progress: number;
+  result_refs: string[];
+}
+export interface WorkflowPlanJson {
+  workflow_name: string;
+  source_message_id: string;
+  goal: string;
+  summary: string;
+  tasks: WorkflowPlanTaskJson[];
+}
 export type GraphNodeName =
   | 'context'
   | 'planning'

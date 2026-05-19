@@ -5,8 +5,17 @@ import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orch
 import { parseAcceptanceVerdict, parseReviewVerdict, type ParsedPlanTask } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
 import { resolveWorkflowExecutor } from '../role-resolver.js';
+import { deriveWorkflowPlanFromParsedPlan } from '../workflow-plan-json.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
-import type { RoomAgent, Task, TaskEventType, WorkflowContextEntryType, WorkflowContextSourceType } from '../../types.js';
+import type {
+  RoomAgent,
+  Task,
+  TaskEventType,
+  WorkflowContextEntryType,
+  WorkflowContextSourceType,
+  WorkflowPlanJson,
+  WorkflowPlanTaskStatus,
+} from '../../types.js';
 
 export interface GraphRuntimeNodes {
   contextNode: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
@@ -87,6 +96,13 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       }, { skillContext });
 
       const output = formatParsedPlanArtifact(plan);
+      const workflowPlan = plan.tasks.length > 0
+        ? deriveWorkflowPlanFromParsedPlan({
+          workflowName: context.task.title,
+          sourceMessageId: context.task.source_message_id ?? context.task.id,
+          plan,
+        })
+        : null;
       tools.createArtifact({
         task_id: context.task.id,
         workflow_run_id: context.run.id,
@@ -94,7 +110,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         artifact_type: 'plan',
         title: '执行计划',
         content: output,
-        metadata: plan as unknown as Record<string, unknown>,
+        metadata: { ...plan, workflow_plan_json: workflowPlan } as unknown as Record<string, unknown>,
       });
       tools.updateGraphStep(step.id, {
         status: 'completed',
@@ -136,6 +152,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const nextState: AgentWorkflowState = {
         ...state,
         plan,
+        workflowPlan,
         currentNode: 'planning',
         currentStepId: step.id,
       };
@@ -212,6 +229,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       tools.broadcastStepCreated(context.room.id, step);
 
       const childTaskIds: string[] = [];
+      const workflowPlanAssignments: Array<{ taskId: string; agentId: string | null }> = [];
       let assignmentAgents = context.agents;
       for (const [index, planTask] of state.plan.tasks.entries()) {
         let resolved = tools.selectAgentForPlanTask(planTask, assignmentAgents);
@@ -238,6 +256,10 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           created_from: 'workflow_assignment',
         });
         childTaskIds.push(child.id);
+        workflowPlanAssignments.push({
+          taskId: state.workflowPlan?.tasks[index]?.id ?? '',
+          agentId: assigned?.id ?? null,
+        });
         tools.broadcastTaskCreated(child);
       }
 
@@ -300,8 +322,10 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       });
       if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
 
+      const workflowPlan = updateWorkflowPlanAssignments(state.workflowPlan ?? null, workflowPlanAssignments);
       const nextState: AgentWorkflowState = {
         ...state,
+        workflowPlan,
         currentNode: 'dispatch',
         currentStepId: step.id,
         childTaskIds,
@@ -400,6 +424,18 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+      const runningWorkflowPlan = updateWorkflowPlanTaskByIndex(state.workflowPlan ?? null, plannedTaskIndex, {
+        status: 'running',
+        progress: 35,
+        agentId: executor.id,
+      });
+      tools.updateGraphState(context.run.id, serializeGraphState({
+        ...state,
+        workflowPlan: runningWorkflowPlan,
+        currentNode: 'execute',
+        currentStepId: step.id,
+        error: null,
+      }));
       recordEventSafely(tools, context, {
         eventType: 'workflow_stage_changed',
         task: nextChild,
@@ -468,6 +504,11 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
         const nextState: AgentWorkflowState = {
           ...state,
+          workflowPlan: updateWorkflowPlanTaskByIndex(runningWorkflowPlan, plannedTaskIndex, {
+            status: runResult.status === 'cancelled' ? 'blocked' : 'failed',
+            progress: 35,
+            agentId: executor.id,
+          }),
           currentNode: 'execute',
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
@@ -491,6 +532,23 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         });
         return nextState;
       }
+
+      const implementationArtifact = tools.createArtifact({
+        task_id: nextChild.id,
+        workflow_run_id: context.run.id,
+        workflow_step_id: step.id,
+        artifact_type: 'implementation_summary',
+        title: `执行结果：${nextChild.title}`,
+        content: runResult.run.stdout || runResult.message.content,
+        metadata: {
+          graph_node: 'execute',
+          workflow_stage: 'implementation',
+          child_task_id: nextChild.id,
+          agent_run_id: runResult.run.id,
+          result_message_id: runResult.message.id,
+        },
+      });
+      tools.broadcastArtifactCreated(context.room.id, implementationArtifact);
 
       const completedStep = tools.updateGraphStep(step.id, {
         status: 'completed',
@@ -536,6 +594,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const nextState: AgentWorkflowState = {
         ...state,
+        workflowPlan: updateWorkflowPlanTaskByIndex(runningWorkflowPlan, plannedTaskIndex, {
+          status: 'completed',
+          progress: 100,
+          agentId: executor.id,
+          resultRefs: [implementationArtifact.id],
+        }),
         currentNode: 'execute',
         currentStepId: step.id,
         activeAgentRunId: runResult.run.id,
@@ -603,6 +667,18 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+      const runningWorkflowPlan = updateWorkflowPlanByRole(state.workflowPlan ?? null, 'reviewer', {
+        status: 'running',
+        progress: 50,
+        agentId: reviewer.id,
+      });
+      tools.updateGraphState(context.run.id, serializeGraphState({
+        ...state,
+        workflowPlan: runningWorkflowPlan,
+        currentNode: 'review',
+        currentStepId: step.id,
+        error: null,
+      }));
       recordEventSafely(tools, context, {
         eventType: 'workflow_stage_changed',
         workflowStepId: step.id,
@@ -675,6 +751,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
         const nextState: AgentWorkflowState = {
           ...state,
+          workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'reviewer', {
+            status: runResult.status === 'cancelled' ? 'blocked' : 'failed',
+            progress: 50,
+            agentId: reviewer.id,
+            resultRefs: [artifact.id],
+          }),
           currentNode: 'review',
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
@@ -719,6 +801,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
         const nextState: AgentWorkflowState = {
           ...state,
+          workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'reviewer', {
+            status: 'failed',
+            progress: 50,
+            agentId: reviewer.id,
+            resultRefs: [artifact.id],
+          }),
           currentNode: 'review',
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
@@ -772,6 +860,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
         const blockedState: AgentWorkflowState = {
           ...state,
+          workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'reviewer', {
+            status: 'failed',
+            progress: 100,
+            agentId: reviewer.id,
+            resultRefs: [artifact.id],
+          }),
           currentNode: 'review',
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
@@ -811,6 +905,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const nextState: AgentWorkflowState = {
         ...state,
+        workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'reviewer', {
+          status: 'completed',
+          progress: 100,
+          agentId: reviewer.id,
+          resultRefs: [artifact.id],
+        }),
         currentNode: 'review',
         currentStepId: step.id,
         activeAgentRunId: runResult.run.id,
@@ -833,6 +933,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         }
         const nextState: AgentWorkflowState = {
           ...state,
+          workflowPlan: resetWorkflowPlanExecutorTasksForRepair(state.workflowPlan ?? null),
           currentNode: 'execute',
           repairAttempts: state.repairAttempts + 1,
           reviewVerdict: null,
@@ -892,6 +993,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+      const runningWorkflowPlan = updateWorkflowPlanByRole(state.workflowPlan ?? null, 'reviewer', {
+        status: 'running',
+        progress: Math.max(getRoleProgress(state.workflowPlan ?? null, 'reviewer'), 80),
+      });
+      tools.updateGraphState(context.run.id, serializeGraphState({
+        ...state,
+        workflowPlan: runningWorkflowPlan,
+        currentNode: 'verify',
+        currentStepId: step.id,
+        error: null,
+      }));
       recordEventSafely(tools, context, {
         eventType: 'workflow_stage_changed',
         workflowStepId: step.id,
@@ -983,6 +1095,11 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const nextState: AgentWorkflowState = {
         ...state,
+        workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'reviewer', {
+          status: blocked ? 'failed' : 'completed',
+          progress: blocked ? 80 : 100,
+          resultRefs: [artifact.id],
+        }),
         currentNode: 'verify',
         currentStepId: step.id,
         verificationResults: results,
@@ -1053,6 +1170,18 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sort_order: tools.nextStepSortOrder(context.run.id),
       });
       tools.broadcastStepCreated(context.room.id, step);
+      const runningWorkflowPlan = updateWorkflowPlanByRole(state.workflowPlan ?? null, 'acceptor', {
+        status: 'running',
+        progress: 50,
+        agentId: acceptor.id,
+      });
+      tools.updateGraphState(context.run.id, serializeGraphState({
+        ...state,
+        workflowPlan: runningWorkflowPlan,
+        currentNode: 'acceptance',
+        currentStepId: step.id,
+        error: null,
+      }));
       recordEventSafely(tools, context, {
         eventType: 'workflow_stage_changed',
         workflowStepId: step.id,
@@ -1127,6 +1256,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (failedRun) tools.broadcastWorkflowUpdated(failedRun);
         const failedState: AgentWorkflowState = {
           ...state,
+          workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'acceptor', {
+            status: runResult.status === 'cancelled' ? 'blocked' : 'failed',
+            progress: 50,
+            agentId: acceptor.id,
+            resultRefs: [artifact.id],
+          }),
           currentNode: 'acceptance',
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
@@ -1173,6 +1308,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (failedRun) tools.broadcastWorkflowUpdated(failedRun);
         const failedState: AgentWorkflowState = {
           ...state,
+          workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'acceptor', {
+            status: 'failed',
+            progress: 50,
+            agentId: acceptor.id,
+            resultRefs: [artifact.id],
+          }),
           currentNode: 'acceptance',
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
@@ -1229,6 +1370,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         if (doneRun) tools.broadcastWorkflowUpdated(doneRun);
         const nextState: AgentWorkflowState = {
           ...state,
+          workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'acceptor', {
+            status: 'completed',
+            progress: 100,
+            agentId: acceptor.id,
+            resultRefs: [artifact.id],
+          }),
           currentNode: 'acceptance',
           currentStepId: step.id,
           activeAgentRunId: runResult.run.id,
@@ -1260,6 +1407,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       if (failedRun) tools.broadcastWorkflowUpdated(failedRun);
       const failedState: AgentWorkflowState = {
         ...state,
+        workflowPlan: updateWorkflowPlanByRole(runningWorkflowPlan, 'acceptor', {
+          status: 'failed',
+          progress: 100,
+          agentId: acceptor.id,
+          resultRefs: [artifact.id],
+        }),
         currentNode: 'acceptance',
         currentStepId: step.id,
         activeAgentRunId: runResult.run.id,
@@ -1504,6 +1657,97 @@ function broadcastJoinedAgents(tools: GraphTools, roomId: string, agents: RoomAg
   for (const agent of agents) {
     tools.broadcastAgentJoined(roomId, agent);
   }
+}
+
+function updateWorkflowPlanAssignments(
+  plan: WorkflowPlanJson | null,
+  assignments: Array<{ taskId: string; agentId: string | null }>,
+): WorkflowPlanJson | null {
+  if (!plan) return null;
+  const assignmentMap = new Map(assignments.filter((item) => item.taskId).map((item) => [item.taskId, item.agentId]));
+  return {
+    ...plan,
+    tasks: plan.tasks.map((task) => assignmentMap.has(task.id)
+      ? { ...task, agent_id: assignmentMap.get(task.id) ?? null, status: 'pending', progress: 0 }
+      : task),
+  };
+}
+
+function updateWorkflowPlanTaskByIndex(
+  plan: WorkflowPlanJson | null,
+  index: number,
+  patch: {
+    status?: WorkflowPlanTaskStatus;
+    progress?: number;
+    agentId?: string | null;
+    resultRefs?: string[];
+  },
+): WorkflowPlanJson | null {
+  if (!plan || index < 0 || index >= plan.tasks.length) return plan;
+  return {
+    ...plan,
+    tasks: plan.tasks.map((task, taskIndex) => {
+      if (taskIndex !== index) return task;
+      return {
+        ...task,
+        status: patch.status ?? task.status,
+        progress: patch.progress ?? task.progress,
+        agent_id: patch.agentId !== undefined ? patch.agentId : task.agent_id,
+        result_refs: appendResultRefs(task.result_refs, patch.resultRefs),
+      };
+    }),
+  };
+}
+
+function updateWorkflowPlanByRole(
+  plan: WorkflowPlanJson | null,
+  role: 'reviewer' | 'acceptor',
+  patch: {
+    status?: WorkflowPlanTaskStatus;
+    progress?: number;
+    agentId?: string | null;
+    resultRefs?: string[];
+  },
+): WorkflowPlanJson | null {
+  if (!plan) return null;
+  const index = plan.tasks.findIndex((task) => task.role === role);
+  if (index >= 0) return updateWorkflowPlanTaskByIndex(plan, index, patch);
+
+  const syntheticTask = {
+    id: `task-${plan.tasks.length + 1}-${role}`,
+    title: role === 'reviewer' ? '代码审查' : '功能验收',
+    description: role === 'reviewer' ? '审查实现结果并给出结论。' : '验收整体任务是否满足用户需求。',
+    role,
+    agent_id: patch.agentId ?? null,
+    mode: 'serial' as const,
+    depends_on: plan.tasks.map((task) => task.id),
+    status: patch.status ?? 'pending',
+    progress: patch.progress ?? 0,
+    result_refs: appendResultRefs([], patch.resultRefs),
+  };
+  return {
+    ...plan,
+    tasks: [...plan.tasks, syntheticTask],
+  };
+}
+
+function resetWorkflowPlanExecutorTasksForRepair(plan: WorkflowPlanJson | null): WorkflowPlanJson | null {
+  if (!plan) return null;
+  return {
+    ...plan,
+    tasks: plan.tasks.map((task) => task.role === 'executor'
+      ? { ...task, status: 'pending', progress: 0 }
+      : task),
+  };
+}
+
+function getRoleProgress(plan: WorkflowPlanJson | null, role: 'reviewer' | 'acceptor'): number {
+  return plan?.tasks.find((task) => task.role === role)?.progress ?? 0;
+}
+
+function appendResultRefs(existing: string[], refs: string[] | undefined): string[] {
+  if (!refs?.length) return existing;
+  return Array.from(new Set([...existing, ...refs]));
 }
 
 type PlanTaskDomain = 'frontend' | 'backend' | null;
