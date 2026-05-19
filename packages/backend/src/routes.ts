@@ -2016,8 +2016,9 @@ router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res)
 function ensurePromotedTaskCanStart(taskId: string, sourceMessageId: string) {
   const task = taskRepo.get(taskId);
   if (!task) throw workflowPromotionError(404, 'task not found');
+  if (isWorkflowStartedBySourceMessage(task.room_id, task.id, sourceMessageId)) return;
   const active = workflowRepo.getActiveByTask(task.id);
-  if (active && !isWorkflowStartedBySourceMessage(task.room_id, task.id, sourceMessageId)) {
+  if (active) {
     throw workflowPromotionError(409, 'task already has an active workflow');
   }
   if (task.status === 'done') {

@@ -204,6 +204,34 @@ test('promote-to-workflow is idempotent for the same source message', async () =
   assert.deepEqual(enqueued, [firstBody.workflow.id]);
 });
 
+test('promote-to-workflow replays the same source message after task is done', async () => {
+  const { room, message } = createCollaborationFixture('promote-done-replay');
+  const enqueued: string[] = [];
+  setWorkflowConversationDeps({
+    enqueueGraphWorkflow: (runId) => {
+      enqueued.push(runId);
+    },
+  });
+
+  const first = await request(`/api/rooms/${room.id}/messages/${message.id}/promote-to-workflow`, {
+    method: 'POST',
+  });
+  assert.equal(first.status, 202);
+  const firstBody = await first.json() as { task: { id: string }; workflow: { id: string } };
+  taskRepo.updateStatus(firstBody.task.id, 'done');
+
+  const second = await request(`/api/rooms/${room.id}/messages/${message.id}/promote-to-workflow`, {
+    method: 'POST',
+  });
+
+  assert.equal(second.status, 202);
+  const secondBody = await second.json() as { task: { id: string }; workflow: { id: string } };
+  assert.equal(secondBody.task.id, firstBody.task.id);
+  assert.equal(secondBody.workflow.id, firstBody.workflow.id);
+  assert.equal(workflowRepo.listByTask(firstBody.task.id).length, 1);
+  assert.deepEqual(enqueued, [firstBody.workflow.id]);
+});
+
 test('promote-to-workflow uses original user message as task source and keeps planner background', async () => {
   const { room } = createCollaborationFixture('promote-readiness');
   const original = messageRepo.create({
