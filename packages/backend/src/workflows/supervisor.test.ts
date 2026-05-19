@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSupervisorMessages, parseWorkflowSupervisorDecision } from './supervisor.js';
+import { buildSupervisorMessages, parseWorkflowSupervisorDecision, type WorkflowSupervisorInput } from './supervisor.js';
 
 test('parseWorkflowSupervisorDecision parses fenced selection JSON', () => {
   const decision = parseWorkflowSupervisorDecision(`
@@ -186,7 +186,7 @@ test('buildSupervisorMessages includes execution intent routing rules for analys
   assert.match(systemContent, /方案文档闭环|analysis-document/);
 });
 
-function baseSupervisorInput() {
+function baseSupervisorInput(): WorkflowSupervisorInput {
   return {
     project: {
       id: 'project',
