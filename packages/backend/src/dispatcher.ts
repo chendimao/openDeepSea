@@ -3,7 +3,6 @@ import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
-import { buildCollaborationDecisionPrompt, parseCollaborationDecision } from './collaboration-decision.js';
 import { classifyAgentDocument } from './agent-document-classifier.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
@@ -83,7 +82,7 @@ export async function dispatchUserMessage(args: {
     return;
   }
 
-  const responses = await runTargets({
+  await runTargets({
     targets: routing.targets,
     projectPath: project.path,
     roomId,
@@ -91,47 +90,6 @@ export async function dispatchUserMessage(args: {
     imagePaths,
     distillModelInvoker: args.distillModelInvoker,
   });
-
-  const fallbackTarget = routing.targets[0];
-  const fallbackResponse = responses[0]?.content;
-  if (routing.after === 'decision_from_planner_fallback' && fallbackTarget && fallbackResponse) {
-    try {
-      const decision = parseCollaborationDecision(fallbackResponse);
-      const decisionMessage = messageRepo.create({
-        room_id: roomId,
-        sender_type: 'system',
-        sender_id: 'system',
-        sender_name: 'System',
-        content: '已生成协作模式选择',
-        message_type: 'system',
-        metadata: {
-          event_type: 'collaboration_decision',
-          collaboration_decision: decision,
-          source_message_id: userMessage.id,
-          fallback_agent_id: fallbackTarget.agent.agent_id,
-        },
-      });
-      wsHub.broadcast(roomId, { type: 'message:new', roomId, message: decisionMessage });
-    } catch (error) {
-      console.warn(
-        `[dispatcher] planner fallback decision parse failed: roomId=${roomId} sourceMessageId=${userMessage.id} fallbackAgentId=${fallbackTarget.agent.agent_id} error=${(error as Error).message}`,
-      );
-      const errorMessage = messageRepo.create({
-        room_id: roomId,
-        sender_type: 'system',
-        sender_id: 'system',
-        sender_name: 'System',
-        content: `Planner 协作决策解析失败：${(error as Error).message}`,
-        message_type: 'system',
-        metadata: {
-          event_type: 'collaboration_decision_failed',
-          source_message_id: userMessage.id,
-          fallback_agent_id: fallbackTarget.agent.agent_id,
-        },
-      });
-      wsHub.broadcast(roomId, { type: 'message:new', roomId, message: errorMessage });
-    }
-  }
 }
 
 async function respondWithConfiguredModel(args: {
@@ -455,7 +413,7 @@ function resolveInitialTargets(args: {
   mode: 'mentions_only' | 'fallback_reply';
   prompt: string;
   imagePaths?: string[];
-}): { targets: { agent: RoomAgent; prompt: string; internalMessage?: boolean }[]; after?: 'decision_from_planner_fallback' } {
+}): { targets: { agent: RoomAgent; prompt: string; internalMessage?: boolean }[] } {
   if (args.explicitlyMentionedAgents.length > 0) {
     return {
       targets: args.explicitlyMentionedAgents.map((agent) => ({ agent, prompt: args.prompt })),
@@ -464,116 +422,9 @@ function resolveInitialTargets(args: {
   if (args.mode === 'mentions_only' || !args.fallbackAgentId) return { targets: [] };
   const fallbackAgent = args.allAgents.find((agent) => agent.agent_id === args.fallbackAgentId);
   if (!fallbackAgent) return { targets: [] };
-  const shouldAskForDecision =
-    fallbackAgent.agent_id === 'planner' && shouldRequestCollaborationDecision(args.prompt);
-  const prompt = shouldAskForDecision
-    ? buildPlannerFallbackDecisionPrompt(args.prompt, args.allAgents, fallbackAgent)
-    : args.prompt;
   return {
-    targets: [{ agent: fallbackAgent, prompt, internalMessage: shouldAskForDecision }],
-    after: shouldAskForDecision ? 'decision_from_planner_fallback' : undefined,
+    targets: [{ agent: fallbackAgent, prompt: args.prompt }],
   };
-}
-
-function buildPlannerFallbackDecisionPrompt(
-  userPrompt: string,
-  allAgents: RoomAgent[],
-  fallbackAgent: RoomAgent,
-): string {
-  const agents = allAgents
-    .filter((agent) => agent.id !== fallbackAgent.id)
-    .map((agent) => ({
-      agent_id: agent.agent_id,
-      agent_name: agent.agent_name,
-      agent_role: agent.agent_role,
-      workflow_role: agent.workflow_role ?? null,
-    }));
-  return buildCollaborationDecisionPrompt({
-    userPrompt,
-    agents,
-  });
-}
-
-export function shouldRequestCollaborationDecision(prompt: string): boolean {
-  const normalized = prompt.trim().toLocaleLowerCase();
-  if (!normalized) return false;
-
-  const discussionSignals = [
-    /是否/,
-    /合理/,
-    /怎么看/,
-    /如何看待/,
-    /分析/,
-    /解释/,
-    /为什么/,
-    /原因/,
-    /方案/,
-    /建议/,
-    /能不能/,
-    /可以吗/,
-    /\bwhy\b/,
-    /\bwhat\b/,
-    /\bhow\b/,
-    /\banaly[sz]e\b/,
-    /\bexplain\b/,
-  ];
-  const explicitTaskSignals = [
-    /开始任务/,
-    /启动任务/,
-    /执行任务/,
-    /开始执行/,
-    /方案.*执行/,
-    /执行.*方案/,
-    /开始处理/,
-    /直接处理/,
-    /帮我做/,
-    /帮我修/,
-    /帮我实现/,
-    /细化.*功能/,
-    /功能.*细化/,
-    /完善.*功能/,
-    /功能.*完善/,
-    /优化.*功能/,
-    /功能.*优化/,
-    /请修复/,
-    /修复/,
-    /修一下/,
-    /实现/,
-    /开发/,
-    /写代码/,
-    /改代码/,
-    /提交/,
-    /\bfix\b/,
-    /\bimplement\b/,
-    /\bbuild\b/,
-    /\bcommit\b/,
-  ];
-
-  const hasTaskSignal = explicitTaskSignals.some((pattern) => pattern.test(normalized));
-  if (!hasTaskSignal) return false;
-
-  const hasDiscussionSignal = discussionSignals.some((pattern) => pattern.test(normalized));
-  const hasStrongTaskSignal = [
-    /开始任务/,
-    /启动任务/,
-    /执行任务/,
-    /开始执行/,
-    /方案.*执行/,
-    /执行.*方案/,
-    /开始处理/,
-    /直接处理/,
-    /请修复/,
-    /帮我修/,
-    /帮我实现/,
-    /细化.*功能/,
-    /功能.*细化/,
-    /完善.*功能/,
-    /功能.*完善/,
-    /优化.*功能/,
-    /功能.*优化/,
-    /\bcommit\b/,
-  ].some((pattern) => pattern.test(normalized));
-  return hasStrongTaskSignal || !hasDiscussionSignal;
 }
 
 export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): string {

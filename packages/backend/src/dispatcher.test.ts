@@ -31,7 +31,6 @@ const {
   dispatchUserMessage,
   inferTaskReadiness,
   respondAsAgent,
-  shouldRequestCollaborationDecision,
 } = await import('./dispatcher.js');
 const { router } = await import('./routes.js');
 const { setWorkflowConversationDeps } = await import('./workflows/conversation.js');
@@ -68,25 +67,6 @@ test('buildPromptWithMessageAttachments appends readable attachment context', ()
   assert.match(prompt, /mimeType=image\/png/);
   assert.match(prompt, /kind=image/);
   assert.match(prompt, new RegExp(`localPath=${escapeRegExp(messageUploadDir)}/stored\\.png`));
-});
-
-test('shouldRequestCollaborationDecision gates discussion and execution intents', () => {
-  const cases: Array<{ prompt: string; expected: boolean }> = [
-    { prompt: '这种方式是否更加合理', expected: false },
-    { prompt: '这个修复方案是否合理', expected: false },
-    { prompt: '帮我分析怎么修复这个问题', expected: false },
-    { prompt: 'why does this fix fail', expected: false },
-    { prompt: '修复群聊协作同时启动所有智能体的问题', expected: true },
-    { prompt: '请修复这个问题', expected: true },
-    { prompt: '细化文件管理功能，比如区分用户上传文件和智能体生成文档', expected: true },
-    { prompt: '完善文件管理功能，支持智能体生成的 md 文档分类', expected: true },
-    { prompt: '按这个方案开始执行', expected: true },
-    { prompt: 'commit this change', expected: true },
-  ];
-
-  for (const item of cases) {
-    assert.equal(shouldRequestCollaborationDecision(item.prompt), item.expected, item.prompt);
-  }
 });
 
 test('dispatchUserMessage reports non-ACP agent as not executable', async () => {
@@ -248,7 +228,7 @@ test('explicit mentions still dispatch directly to mentioned agent in fallback r
   }
 });
 
-test('planner fallback reply creates collaboration decision without dispatching other agents', async () => {
+test('planner fallback reply keeps executable requests in planner chat without collaboration decision', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-decision-'));
   const project = projectRepo.create({ name: `planner-decision-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
@@ -295,34 +275,12 @@ test('planner fallback reply creates collaboration decision without dispatching 
       prompts.push(args.prompt);
       args.onChunk?.({
         stream: 'stdout',
-        text: JSON.stringify({
-          intent: 'implementation',
-          recommendedMode: 'formal_workflow',
-          problemArea: 'frontend',
-          summary: '修复群聊协作调度',
-          rationale: '涉及代码修改，应由用户选择正式工作流或轻量协作。',
-          needsUserChoice: true,
-          proposedAgents: {
-            executors: ['frontend-dev'],
-            reviewers: ['reviewer'],
-            testers: [],
-            acceptors: [],
-          },
-          stages: [
-            {
-              stage: 'execute',
-              agentIds: ['frontend-dev'],
-              parallel: false,
-              goal: '实现修复',
-            },
-            {
-              stage: 'review',
-              agentIds: ['reviewer'],
-              parallel: false,
-              goal: '审查修复',
-            },
-          ],
-        }),
+        text: [
+          '实施目标：修复群聊执行型请求不再进入协作决策。',
+          '实施范围：dispatcher fallback、planner 任务就绪输出、相关回归测试。',
+          '验收标准：不生成 collaboration_decision，planner 消息带 formal_workflow 任务就绪元数据。',
+          '下一步可以进入工程排期。',
+        ].join('\n'),
       });
       return { exitCode: 0, sessionId: null, stderr: '' };
     },
@@ -340,22 +298,23 @@ test('planner fallback reply creates collaboration decision without dispatching 
     assert.deepEqual(invokedAgents, ['planner']);
     assert.equal(runs.length, 1);
     assert.equal(runs[0]?.agent_id, 'planner');
-    assert.match(prompts[0] ?? '', /Return ONLY valid JSON/);
-    assert.match(prompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
-    assert.ok(decisionMessage);
+    assert.doesNotMatch(prompts[0] ?? '', /Return ONLY valid JSON/);
+    assert.doesNotMatch(prompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
+    assert.equal(decisionMessage, undefined);
     assert.equal(
       messages.some((message) =>
         message.sender_id === 'planner' &&
         message.message_type === 'agent_stream' &&
-        message.content.includes('"recommendedMode"')
+        message.content.includes('实施目标')
       ),
-      false,
+      true,
     );
-    const metadata = JSON.parse(decisionMessage.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.source_message_id, userMessage.id);
-    assert.equal(metadata.fallback_agent_id, 'planner');
-    const decision = metadata.collaboration_decision as { recommendedMode?: unknown } | undefined;
-    assert.equal(decision?.recommendedMode, 'formal_workflow');
+    const plannerMessage = messages.find((message) => message.sender_id === 'planner');
+    assert.ok(plannerMessage);
+    const metadata = JSON.parse(plannerMessage.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.task_readiness?.ready, true);
+    assert.equal(metadata.task_readiness?.recommended_mode, 'formal_workflow');
+    assert.equal(metadata.task_readiness?.source_message_id, userMessage.id);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -624,7 +583,7 @@ test('planner fallback reply keeps repair discussion messages in chat without co
   }
 });
 
-test('planner fallback reply creates collaboration decision when user confirms executing the plan', async () => {
+test('planner fallback reply keeps execution confirmations in planner chat without collaboration decision', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-confirm-execution-'));
   const project = projectRepo.create({ name: `planner-confirm-execution-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
@@ -659,28 +618,12 @@ test('planner fallback reply creates collaboration decision when user confirms e
       prompts.push(args.prompt);
       args.onChunk?.({
         stream: 'stdout',
-        text: JSON.stringify({
-          intent: 'implementation',
-          recommendedMode: 'formal_workflow',
-          problemArea: 'backend',
-          summary: '按已确认方案开始执行',
-          rationale: '用户明确确认进入执行阶段，需要选择协作模式。',
-          needsUserChoice: true,
-          proposedAgents: {
-            executors: [],
-            reviewers: [],
-            testers: [],
-            acceptors: [],
-          },
-          stages: [
-            {
-              stage: 'execute',
-              agentIds: [],
-              parallel: false,
-              goal: '执行已确认方案',
-            },
-          ],
-        }),
+        text: [
+          '实施目标：按已确认方案进入正式 workflow。',
+          '实施范围：沿用现有任务创建与 workflow 启动链路。',
+          '验收标准：planner 回复不生成协作决策卡片，并可被提升为正式 workflow。',
+          '下一步可以进入工程排期。',
+        ].join('\n'),
       });
       return { exitCode: 0, sessionId: null, stderr: '' };
     },
@@ -690,12 +633,18 @@ test('planner fallback reply creates collaboration decision when user confirms e
     await dispatchUserMessage({ roomId: room.id, userMessage });
 
     const messages = messageRepo.listByRoom(room.id, 20);
-    assert.match(prompts[0] ?? '', /Return ONLY valid JSON/);
-    assert.match(prompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
-    assert.ok(messages.some((message) => {
+    assert.doesNotMatch(prompts[0] ?? '', /Return ONLY valid JSON/);
+    assert.doesNotMatch(prompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
+    assert.equal(messages.some((message) => {
       const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
       return metadata.event_type === 'collaboration_decision';
-    }));
+    }), false);
+    const plannerMessage = messages.find((message) => message.sender_id === 'planner');
+    assert.ok(plannerMessage);
+    const metadata = JSON.parse(plannerMessage.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.task_readiness?.ready, true);
+    assert.equal(metadata.task_readiness?.recommended_mode, 'formal_workflow');
+    assert.equal(metadata.task_readiness?.source_message_id, userMessage.id);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
