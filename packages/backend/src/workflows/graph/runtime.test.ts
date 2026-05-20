@@ -157,7 +157,7 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
     description: 'Use graph shell to produce a plan artifact.',
   });
 
-  await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflow(task.id, {
     planner: async () => ({
       goal: 'Plan with graph',
       summary: 'Graph shell planning',
@@ -200,7 +200,7 @@ test('planning node passes planner and workflow skill context to graph planner',
     title: 'Plan with runtime skills',
   });
   let capturedSkillContext = '';
-  await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflow(task.id, {
     buildSkillContext: async (input) => {
       assert.deepEqual(input.runtimeScopes, ['planner', 'workflow']);
       assert.equal(input.projectId, project.id);
@@ -236,7 +236,7 @@ test('Superpowers run records planning gate steps before dispatch', async () => 
     title: 'Run Superpowers gates before dispatch',
   });
 
-  await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflow(task.id, {
     planner: async () => ({
       ...createApprovalPlan(task.title),
       tasks: [{
@@ -568,6 +568,43 @@ test('Superpowers actual runtime proceeds from TDD execute to spec compliance re
   assert.equal(nodeNames.includes('code_quality_review'), false);
   assert.equal(state?.superpowersPhase, 'spec_compliance_review');
   assert.match(state?.error ?? '', /spec compliance review is pending/i);
+});
+
+test('Superpowers review changes request clears TDD evidence and blocks instead of looping', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-review-changes-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Review Changes', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Review Changes Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Handle changes requested without looping',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    tddEvidence: [
+      { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
+      { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
+    ],
+    specComplianceReview: {
+      verdict: 'changes_requested',
+      findings: ['Update implementation to match the plan.'],
+      reviewedAt: null,
+    },
+  }));
+
+  const latest = await continueGraphWorkflow(run.id);
+  const state = parseGraphState(latest.graph_state);
+  const nodeNames = listRawStepNodeNames(run.id);
+
+  assert.equal(latest.status, 'blocked');
+  assert.deepEqual(nodeNames.slice(0, 4), ['dispatch', 'tdd_execute', 'spec_compliance_review', 'tdd_execute']);
+  assert.equal(nodeNames.filter((nodeName) => nodeName === 'spec_compliance_review').length, 1);
+  assert.equal(state?.superpowersPhase, 'tdd_execute');
+  assert.deepEqual(state?.tddEvidence, []);
+  assert.equal(state?.specComplianceReview, null);
+  assert.match(state?.error ?? '', /TDD evidence/i);
 });
 
 test('startGraphWorkflow always records Superpowers definition and runtime profile for new runs', async () => {

@@ -189,6 +189,10 @@ function applyReviewState(
     return {
       ...state,
       superpowersPhase: phase,
+      tddEvidence: [],
+      tddExemption: null,
+      specComplianceReview: phase === 'spec_compliance_review' ? null : state.specComplianceReview,
+      codeQualityReview: phase === 'code_quality_review' ? null : state.codeQualityReview,
       reviewFindings: findings,
       reviewVerdict: 'changes_requested',
       status: state.status === 'blocked' ? 'running' : state.status,

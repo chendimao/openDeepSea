@@ -971,13 +971,14 @@ function normalizeSuperpowersReviewState(
   state: AgentWorkflowState,
   nodeToRun: SuperpowersExecutionNodeName,
 ): AgentWorkflowState {
+  if (state.reviewVerdict === 'changes_requested') {
+    return state;
+  }
   if (nodeToRun === 'spec_compliance_review' && !state.specComplianceReview) {
     return {
       ...state,
       specComplianceReview: {
-        verdict: state.reviewVerdict === 'changes_requested'
-          ? 'changes_requested'
-          : (state.reviewVerdict === 'failed' ? 'failed' : 'approved'),
+        verdict: state.reviewVerdict === 'failed' ? 'failed' : 'approved',
         findings: state.reviewFindings,
         reviewedAt: null,
       },
@@ -987,9 +988,7 @@ function normalizeSuperpowersReviewState(
     return {
       ...state,
       codeQualityReview: {
-        verdict: state.reviewVerdict === 'changes_requested'
-          ? 'changes_requested'
-          : (state.reviewVerdict === 'failed' ? 'failed' : 'approved'),
+        verdict: state.reviewVerdict === 'failed' ? 'failed' : 'approved',
         findings: state.reviewFindings,
         reviewedAt: null,
       },
