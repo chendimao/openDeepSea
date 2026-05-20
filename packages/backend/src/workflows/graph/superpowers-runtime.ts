@@ -1,5 +1,13 @@
 import type { WorkflowDefinitionGraph, WorkflowDefinitionNodeType } from '../../types.js';
 import type { GraphRuntimeDeps } from './tools.js';
+import {
+  SUPERPOWERS_PLANNING_PHASE_STEPS,
+  canDispatchSuperpowersRuntime,
+  createSuperpowersRuntimeNodes,
+  type SuperpowersPhaseStep,
+  type SuperpowersRuntimeNodes,
+} from './superpowers-nodes.js';
+import type { AgentWorkflowState } from './state.js';
 
 export const SUPERPOWERS_WORKFLOW_DEFINITION_KEY = 'superpowers-development';
 export const SUPERPOWERS_RUNTIME_PROFILE = 'superpowers';
@@ -53,6 +61,9 @@ export interface SuperpowersRuntimeGraph {
   graphVersion: typeof SUPERPOWERS_GRAPH_VERSION;
   runtimeProfile: typeof SUPERPOWERS_RUNTIME_PROFILE;
   placeholderNodeTypes: readonly WorkflowDefinitionNodeType[];
+  phaseSteps: readonly SuperpowersPhaseStep[];
+  nodes: SuperpowersRuntimeNodes;
+  canDispatch: (state: AgentWorkflowState) => boolean;
   executableDefinition: WorkflowDefinitionGraph;
 }
 
@@ -61,6 +72,9 @@ export function buildSuperpowersRuntimeGraph(_deps: GraphRuntimeDeps = {}): Supe
     graphVersion: SUPERPOWERS_GRAPH_VERSION,
     runtimeProfile: SUPERPOWERS_RUNTIME_PROFILE,
     placeholderNodeTypes: SUPERPOWERS_PLACEHOLDER_NODE_TYPES,
+    phaseSteps: SUPERPOWERS_PLANNING_PHASE_STEPS,
+    nodes: createSuperpowersRuntimeNodes(),
+    canDispatch: canDispatchSuperpowersRuntime,
     executableDefinition: SUPERPOWERS_PLACEHOLDER_EXECUTABLE_DEFINITION,
   };
 }
