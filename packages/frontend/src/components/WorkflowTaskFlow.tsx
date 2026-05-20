@@ -1,4 +1,4 @@
-import { CheckCircle2, Loader2, PauseCircle, RotateCcw, Sparkles, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Loader2, MoreHorizontal, PauseCircle, RotateCcw, Settings2, Sparkles, XCircle } from 'lucide-react';
 import { useMemo } from 'react';
 import { useI18n } from '../lib/i18n';
 import type { TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
@@ -22,7 +22,7 @@ export function WorkflowTaskFlow({
     () => buildFlowEntries(plan, steps, artifacts, workflowStageLabel, t),
     [artifacts, plan, steps, t, workflowStageLabel],
   );
-  const swimlanes = useMemo(() => buildSwimlanes(flowEntries, t), [flowEntries, t]);
+  const stagePanels = useMemo(() => buildStagePanels(flowEntries, t), [flowEntries, t]);
   const executorTaskCount = plan.tasks.filter((task) => task.role === 'executor').length;
   const recordCount = steps.length + artifacts.length;
 
@@ -33,26 +33,42 @@ export function WorkflowTaskFlow({
         <div className="workflow-flow-summary">
           <span>{t('workflowPlan.taskFlowPlanItems', { count: executorTaskCount })}</span>
           <span>{t('workflowPlan.taskFlowRecords', { count: recordCount })}</span>
+          <button className="workflow-flow-filter-button" type="button">
+            {t('workflowPlan.taskFlowAllStatus')}
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          <button className="workflow-flow-icon-button" type="button" aria-label={t('workflowPlan.taskFlowViewOptions')}>
+            <Settings2 className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 
       {flowEntries.length > 0 ? (
-        <div className="workflow-flow-swimlanes" aria-label={t('workflowPlan.taskFlowTitle')}>
-          {swimlanes.map((lane) => (
-            <div key={lane.key} className="workflow-flow-swimlane">
-              <div className={cn('workflow-flow-swimlane-label', `is-${lane.key}`)}>
-                <div>{lane.label}</div>
-                {lane.caption && <span>{lane.caption}</span>}
+        <div className="workflow-flow-stage-board" aria-label={t('workflowPlan.taskFlowTitle')}>
+          {stagePanels.map((stage) => (
+            <section key={stage.key} className={cn('workflow-flow-stage-panel', `is-${stage.key}`)}>
+              <div className="workflow-flow-stage-head">
+                <div className="workflow-flow-stage-title">
+                  <span className="workflow-flow-stage-dot" />
+                  <span>{stage.label}</span>
+                  <span className="workflow-flow-stage-count">{stage.entries.length}</span>
+                </div>
+                <ChevronDown className="h-4 w-4 text-[var(--color-muted)]" />
               </div>
-              <div className={cn('workflow-flow-swimlane-track', `is-${lane.key}`)}>
-                {lane.entries.length > 0 ? lane.entries.map((entry) => (
+              <div className="workflow-flow-stage-caption">{stage.caption}</div>
+              <div className="workflow-flow-stage-list">
+                {stage.entries.length > 0 ? stage.entries.map((entry) => (
                   <FlowEntryCard key={entry.key} entry={entry} compact={compact} />
                 )) : (
                   <div className="workflow-flow-lane-empty">{t('workflowPlan.taskFlowEmpty')}</div>
                 )}
               </div>
-            </div>
+            </section>
           ))}
+          <button className="workflow-flow-add-stage" type="button">
+            <span>+</span>
+            {t('workflowPlan.taskFlowAddStage')}
+          </button>
         </div>
       ) : (
         <div className="workflow-flow-empty">{t('workflowPlan.taskFlowEmpty')}</div>
@@ -61,10 +77,10 @@ export function WorkflowTaskFlow({
   );
 }
 
-interface FlowSwimlane {
-  key: 'plan' | 'execution' | 'review';
+interface FlowStagePanel {
+  key: 'plan' | 'execution' | 'review' | 'done';
   label: string;
-  caption: string | null;
+  caption: string;
   entries: FlowEntry[];
 }
 
@@ -95,20 +111,24 @@ function FlowEntryCard({
     >
       <div className="workflow-flow-icon" aria-hidden="true">{entry.icon}</div>
       <div className="workflow-flow-entry-body">
-        <div className="workflow-flow-entry-phase">{entry.phaseLabel}</div>
         <div className="workflow-flow-entry-top">
+          <div className="workflow-flow-entry-role">{entry.phaseLabel}</div>
           <div className="min-w-0 flex-1">
             <div className="workflow-flow-entry-title">{entry.title}</div>
             {entry.subtitle && <div className="workflow-flow-entry-subtitle">{entry.subtitle}</div>}
           </div>
+          <span className={cn('workflow-flow-status-pill', `is-${entry.meta}`)}>{entry.meta}</span>
           <div className="workflow-flow-entry-meta">{entry.meta}</div>
+          <button className="workflow-flow-row-menu" type="button" aria-label={entry.title}>
+            <MoreHorizontal className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </article>
   );
 }
 
-function buildSwimlanes(flowEntries: FlowEntry[], t: TranslateFn): FlowSwimlane[] {
+function buildStagePanels(flowEntries: FlowEntry[], t: TranslateFn): FlowStagePanel[] {
   return [
     {
       key: 'plan',
@@ -127,8 +147,14 @@ function buildSwimlanes(flowEntries: FlowEntry[], t: TranslateFn): FlowSwimlane[
       label: t('workflowPlan.taskFlowReviewLane'),
       caption: t('workflowPlan.taskFlowReviewLaneCaption'),
       entries: flowEntries.filter((entry) =>
-        entry.phase === 'review' || entry.phase === 'verification' || entry.phase === 'acceptance',
+        entry.phase === 'review' || entry.phase === 'verification',
       ),
+    },
+    {
+      key: 'done',
+      label: t('workflowPlan.taskFlowDoneLane'),
+      caption: t('workflowPlan.taskFlowDoneLaneCaption'),
+      entries: flowEntries.filter((entry) => entry.phase === 'acceptance'),
     },
   ];
 }

@@ -257,6 +257,91 @@ test('workflow bubble renders dual-column orchestration layout', () => {
   assert.match(html, /审查 \/ 验收/);
 });
 
+test('task flow renders staged board controls and row actions', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan({
+        tasks: [
+          ...createWorkflowPlan().tasks,
+          {
+            id: 'task-review',
+            title: '代码审查',
+            description: '审查执行结果',
+            role: 'reviewer',
+            agent_id: 'agent-review',
+            mode: 'serial',
+            depends_on: ['task-1'],
+            status: 'running',
+            progress: 20,
+            result_refs: [],
+          },
+          {
+            id: 'task-accept',
+            title: '功能验收',
+            description: '验收整体结果',
+            role: 'acceptor',
+            agent_id: 'agent-accept',
+            mode: 'serial',
+            depends_on: ['task-review'],
+            status: 'completed',
+            progress: 100,
+            result_refs: [],
+          },
+        ],
+      }),
+    }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-plan',
+        assignedRoomAgentId: null,
+        taskId: 'task-root',
+        stage: 'planning',
+        nodeName: 'planning',
+        result: '规划完成。',
+        completedAt: 10,
+      }),
+      createWorkflowStep({
+        id: 'step-impl',
+        assignedRoomAgentId: 'agent-1',
+        taskId: 'task-1',
+        stage: 'implementation',
+        nodeName: 'execute',
+        result: '执行完成。',
+        completedAt: 20,
+      }),
+      createWorkflowStep({
+        id: 'step-review',
+        assignedRoomAgentId: 'agent-review',
+        taskId: 'task-review',
+        stage: 'code_review',
+        nodeName: 'review',
+        result: '代码审查中。',
+        completedAt: null,
+      }),
+      createWorkflowStep({
+        id: 'step-accept',
+        assignedRoomAgentId: 'agent-accept',
+        taskId: 'task-accept',
+        stage: 'acceptance',
+        nodeName: 'acceptance',
+        result: '验收通过。',
+        completedAt: 40,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+
+  assert.match(html, /全部状态/);
+  assert.match(html, /添加阶段/);
+  assert.match(html, /workflow-flow-stage-panel is-plan/);
+  assert.match(html, /workflow-flow-stage-panel is-execution/);
+  assert.match(html, /workflow-flow-stage-panel is-review/);
+  assert.match(html, /workflow-flow-stage-panel is-done/);
+  assert.match(html, /workflow-flow-stage-count/);
+  assert.match(html, /workflow-flow-row-menu/);
+});
+
 test('task flow renders review and verification as ordered workflow nodes', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({
