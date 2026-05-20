@@ -211,8 +211,10 @@ test('resourceAssetRepo exposes unified list and typed details with capabilities
     preview: true,
     download: true,
     markdown: false,
-    delete: true,
+    delete: false,
   });
+  assert.deepEqual(uploadItem?.created_by, { id: 'user', name: 'You', type: 'user' });
+  assert.deepEqual(uploadItem?.available_actions, ['preview', 'download']);
   assert.equal(uploadItem?.source.type, 'user_upload');
   assert.equal(uploadItem?.source.display_name, 'You');
   assert.equal(Object.hasOwn(uploadItem ?? {}, 'content'), false);
@@ -225,18 +227,24 @@ test('resourceAssetRepo exposes unified list and typed details with capabilities
     markdown: true,
     delete: true,
   });
+  assert.deepEqual(documentItem?.created_by, { id: 'backend-executor', name: '后端开发工程师', type: 'agent' });
+  assert.deepEqual(documentItem?.available_actions, ['preview', 'view_markdown', 'delete']);
   assert.equal(documentItem?.source.type, 'agent');
   assert.equal(documentItem?.source.display_name, '后端开发工程师');
   assert.equal(documentItem?.source.context?.id, room.id);
 
   const uploadDetail = resourceAssetRepo.getResource(`file:${upload.id}`);
   assert.equal(uploadDetail?.resource_type, 'uploaded_file');
+  assert.deepEqual(uploadDetail?.created_by, { id: 'user', name: 'You', type: 'user' });
+  assert.deepEqual(uploadDetail?.available_actions, ['preview', 'download']);
   assert.equal(uploadDetail?.preview_url, upload.url);
   assert.equal(uploadDetail?.download_url, upload.url);
   assert.equal(uploadDetail?.content, null);
 
   const documentDetail = resourceAssetRepo.getResource(document.id);
   assert.equal(documentDetail?.resource_type, 'agent_document');
+  assert.deepEqual(documentDetail?.created_by, { id: 'backend-executor', name: '后端开发工程师', type: 'agent' });
+  assert.deepEqual(documentDetail?.available_actions, ['preview', 'view_markdown', 'delete']);
   assert.equal(documentDetail?.content, message.content);
   assert.equal(documentDetail?.preview_url, null);
   assert.equal(documentDetail?.download_url, null);
@@ -288,4 +296,44 @@ test('resourceAssetRepo resolves project file list ids and hides deleted agent d
   resourceAssetRepo.softDelete(documentFile.id);
 
   assert.equal(resourceAssetRepo.getResource(documentFile.id), undefined);
+});
+
+test('resourceAssetRepo keeps agent document registration idempotent by source message', () => {
+  const project = createProject('idempotent-document');
+  const room = roomRepo.create({ project_id: project.id, name: 'Idempotent Room' });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# 交付总结\n\n- 第一版',
+    message_type: 'agent_stream',
+  });
+
+  const first = resourceAssetRepo.ensure({
+    project_id: project.id,
+    asset_type: 'agent_document',
+    title: '交付总结',
+    content: message.content,
+    mime_type: 'text/markdown',
+    source_message_id: message.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+    unique_source_message_id: message.id,
+  });
+  const second = resourceAssetRepo.ensure({
+    project_id: project.id,
+    asset_type: 'agent_document',
+    title: '交付总结',
+    content: `${message.content}\n\n- 第二版`,
+    mime_type: 'text/markdown',
+    source_message_id: message.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+    unique_source_message_id: message.id,
+  });
+
+  assert.equal(first.id, second.id);
+  assert.equal(resourceAssetRepo.list({ projectId: project.id, assetType: 'agent_document' }).length, 1);
+  assert.equal(resourceAssetRepo.get(first.id)?.content, message.content);
 });

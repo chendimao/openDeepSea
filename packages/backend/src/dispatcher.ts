@@ -4,9 +4,11 @@ import { getAdapter } from './acp/index.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { buildCollaborationDecisionPrompt, parseCollaborationDecision } from './collaboration-decision.js';
+import { classifyAgentDocument } from './agent-document-classifier.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
 import { agentRunRepo } from './repos/agent-runs.js';
+import { fileRepo } from './repos/files.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
@@ -26,6 +28,8 @@ import type {
   RoomAgent,
   WorkflowStage,
 } from './types.js';
+
+const AGENT_RUN_HEARTBEAT_MS = 30_000;
 
 /**
  * Dispatch an incoming user message to the agents selected by project routing.
@@ -705,7 +709,14 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     if (updated) broadcastRun('agent_run:updated', updated);
   };
 
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
   try {
+    heartbeat = setInterval(() => {
+      const updated = agentRunRepo.touchActive(run.id);
+      if (updated && (updated.status === 'running' || updated.status === 'queued')) {
+        broadcastRun('agent_run:updated', updated);
+      }
+    }, AGENT_RUN_HEARTBEAT_MS);
     const adapter = getAdapter(backend);
     const result = await adapter.invoke({
       projectPath,
@@ -766,11 +777,12 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     onStderr(`\n[error] ${message}`);
     finishRun(run.id, status, status === 'failed' ? message : null);
   } finally {
+    if (heartbeat) clearInterval(heartbeat);
     runRegistry.remove(run.id);
     const finalRun = agentRunRepo.get(run.id);
     const finalMessage = messageRepo.get(placeholder.id);
     try {
-      if (finalRun && finalMessage && args.onFinished) {
+      if (finalRun && finalMessage) {
         try {
           annotateTaskReadiness({
             message: finalMessage,
@@ -778,10 +790,20 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
             sourceMessageId: args.sourceMessageId,
             agent,
           });
-          await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
+          maybeRegisterAgentDocument({
+            run: finalRun,
+            message: finalMessage,
+            agent,
+            sourceMessageId: args.sourceMessageId ?? null,
+            prompt: args.prompt,
+            taskId: args.taskId ?? null,
+          });
         } catch (err) {
           console.warn(`[agent-runs] onFinished callback failed for ${finalRun.id}: ${(err as Error).message}`);
         }
+      }
+      if (finalRun && finalMessage && args.onFinished) {
+        await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
       }
     } finally {
       if (!args.internalMessage) {
@@ -843,6 +865,56 @@ function annotateTaskReadiness(input: {
   const readiness = inferTaskReadiness(input.message.content, input.sourceMessageId);
   if (!readiness) return;
   messageRepo.mergeMetadata(input.message.id, { task_readiness: readiness });
+}
+
+function maybeRegisterAgentDocument(input: {
+  run: AgentRun;
+  message: Message;
+  agent: RoomAgent;
+  sourceMessageId: string | null;
+  prompt: string;
+  taskId: string | null | undefined;
+}): void {
+  if (input.run.status !== 'completed') return;
+  if (input.message.sender_type !== 'agent') return;
+  if (!input.message.content.trim()) return;
+
+  const room = roomRepo.get(input.run.room_id);
+  if (!room) return;
+
+  const classification = classifyAgentDocument({
+    content: input.message.content,
+    senderType: 'agent',
+    messageComplete: true,
+    projectId: room.project_id,
+    roomId: input.run.room_id,
+    messageId: input.message.id,
+    agentId: input.agent.agent_id,
+    agentName: input.agent.agent_name,
+    userRequest: input.prompt,
+    alreadyArchived: false,
+  });
+  if (classification.decision !== 'auto_archive') {
+    return;
+  }
+
+  const title = classification.title ?? `${input.agent.agent_name} 生成文档`;
+  try {
+    const file = fileRepo.createAgentDocument({
+      project_id: room.project_id,
+      title,
+      content: input.message.content,
+      source_message_id: input.message.id,
+      source_room_id: input.run.room_id,
+      source_agent_id: input.agent.agent_id,
+      source_task_id: input.taskId ?? null,
+    });
+    if (!file) {
+      console.warn(`[agent-document] failed to register resource for message ${input.message.id}`);
+    }
+  } catch (err) {
+    console.warn(`[agent-document] failed to register resource for message ${input.message.id}: ${(err as Error).message}`);
+  }
 }
 
 export function inferTaskReadiness(content: string, sourceMessageId?: string | null): Record<string, unknown> | null {

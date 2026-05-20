@@ -6,6 +6,8 @@ import type {
   ResourceAssetGroupKey,
   ResourceDetail,
   ResourceAssetListItem,
+  ResourceAction,
+  ResourceActorInfo,
   ResourceListItem,
   ResourceSourceInfo,
   ResourceAssetType,
@@ -26,6 +28,10 @@ interface ResourceAssetCreateInput {
   source_agent_id?: string | null;
   source_task_id?: string | null;
   metadata?: Record<string, unknown> | string | null;
+}
+
+interface ResourceAssetUpsertInput extends ResourceAssetCreateInput {
+  unique_source_message_id?: string | null;
 }
 
 interface ResourceAssetListFilters {
@@ -68,6 +74,18 @@ export const resourceAssetRepo = {
     return this.get(id)!;
   },
 
+  ensure(input: ResourceAssetUpsertInput): ResourceAsset {
+    validateProjectBoundary(input);
+    const uniqueSourceMessageId = input.unique_source_message_id ?? input.source_message_id ?? null;
+    if (uniqueSourceMessageId) {
+      const existing = getAgentDocumentBySourceMessage(input.project_id, uniqueSourceMessageId);
+      if (existing) {
+        return existing;
+      }
+    }
+    return this.create(input);
+  },
+
   get(id: string): ResourceAsset | undefined {
     if (id.startsWith('file:')) return getUploadedFileAsset(id.slice('file:'.length));
     if (id.startsWith('asset:')) return getAgentDocumentAsset(id.slice('asset:'.length));
@@ -104,27 +122,44 @@ export const resourceAssetRepo = {
 };
 
 function toResourceListItem(asset: ResourceAssetListItem): ResourceListItem {
+  const capabilities = buildResourceCapabilities(asset.asset_type);
   return {
     ...asset,
     resource_type: asset.asset_type,
     name: asset.title,
+    created_by: buildResourceActor(asset),
     source: buildResourceSource(asset),
-    capabilities: buildResourceCapabilities(asset.asset_type),
+    capabilities,
+    available_actions: buildAvailableActions(capabilities),
     preview_url: asset.asset_type === 'uploaded_file' ? asset.url : null,
     download_url: asset.asset_type === 'uploaded_file' ? asset.url : null,
   };
 }
 
 function toResourceDetail(asset: ResourceAsset): ResourceDetail {
+  const capabilities = buildResourceCapabilities(asset.asset_type);
   return {
     ...asset,
     resource_type: asset.asset_type,
     name: asset.title,
+    created_by: buildResourceActor(asset),
     source: buildResourceSource(asset),
-    capabilities: buildResourceCapabilities(asset.asset_type),
+    capabilities,
+    available_actions: buildAvailableActions(capabilities),
     preview_url: asset.asset_type === 'uploaded_file' ? asset.url : null,
     download_url: asset.asset_type === 'uploaded_file' ? asset.url : null,
     content: asset.asset_type === 'agent_document' ? asset.content : null,
+  };
+}
+
+function buildResourceActor(asset: Pick<
+  ResourceAsset,
+  'asset_type' | 'source_agent_id' | 'source_display_name'
+>): ResourceActorInfo {
+  return {
+    type: asset.asset_type === 'uploaded_file' ? 'user' : 'agent',
+    id: asset.source_agent_id,
+    name: asset.source_display_name,
   };
 }
 
@@ -161,13 +196,22 @@ function buildResourceSource(asset: Pick<
   };
 }
 
+function buildAvailableActions(capabilities: ResourceCapabilities): ResourceAction[] {
+  const actions: ResourceAction[] = [];
+  if (capabilities.preview) actions.push('preview');
+  if (capabilities.download) actions.push('download');
+  if (capabilities.markdown) actions.push('view_markdown');
+  if (capabilities.delete) actions.push('delete');
+  return actions;
+}
+
 function buildResourceCapabilities(assetType: ResourceAssetType): ResourceCapabilities {
   if (assetType === 'uploaded_file') {
     return {
       preview: true,
       download: true,
       markdown: false,
-      delete: true,
+      delete: false,
     };
   }
   return {
@@ -198,6 +242,8 @@ function listAgentDocuments(filters: ResourceAssetListFilters): ResourceAssetLis
         OR COALESCE(source_agent_id, '') LIKE @query ESCAPE '\\'
         OR COALESCE(content, '') LIKE @query ESCAPE '\\'
         OR COALESCE((SELECT sender_name FROM messages WHERE messages.id = resource_assets.source_message_id), '') LIKE @query ESCAPE '\\'
+        OR COALESCE((SELECT name FROM rooms WHERE rooms.id = resource_assets.source_room_id), '') LIKE @query ESCAPE '\\'
+        OR COALESCE((SELECT title FROM tasks WHERE tasks.id = resource_assets.source_task_id), '') LIKE @query ESCAPE '\\'
         OR '智能体生成' LIKE @query ESCAPE '\\'
       )`,
     );
@@ -338,6 +384,20 @@ function getAgentDocumentAsset(id: string, options: { includeDeleted?: boolean }
      WHERE resource_assets.id = ?
        ${deletedFilter}`,
   ).get(id) as ResourceAsset | undefined;
+}
+
+function getAgentDocumentBySourceMessage(projectId: string, sourceMessageId: string): ResourceAsset | undefined {
+  return db.prepare(
+    `SELECT
+       resource_assets.*
+     FROM resource_assets
+     WHERE resource_assets.project_id = ?
+       AND resource_assets.source_message_id = ?
+       AND resource_assets.asset_type = 'agent_document'
+       AND resource_assets.deleted_at IS NULL
+     ORDER BY resource_assets.created_at DESC
+     LIMIT 1`,
+  ).get(projectId, sourceMessageId) as ResourceAsset | undefined;
 }
 
 function validateProjectBoundary(input: ResourceAssetCreateInput): void {

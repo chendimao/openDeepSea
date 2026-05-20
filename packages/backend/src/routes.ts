@@ -826,17 +826,36 @@ router.get('/projects/:projectId/resource-assets', (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
   const parsed = z.object({
     assetType: resourceAssetTypeSchema.optional(),
+    resourceType: resourceAssetTypeSchema.optional(),
+    type: resourceAssetTypeSchema.optional(),
     groupKey: resourceAssetGroupKeySchema.optional(),
     q: z.string().trim().min(1).optional(),
   }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const assetType = resolveResourceAssetTypeFilter(parsed.data);
+  if (assetType === 'conflict') {
+    return res.status(400).json({ error: 'conflicting resource type filters' });
+  }
   res.json(resourceAssetRepo.listResources({
     projectId: req.params.projectId,
-    assetType: parsed.data.assetType as ResourceAssetType | undefined,
+    assetType,
     groupKey: parsed.data.groupKey as ResourceAssetGroupKey | undefined,
     query: parsed.data.q,
   }));
 });
+
+function resolveResourceAssetTypeFilter(input: {
+  assetType?: ResourceAssetType;
+  resourceType?: ResourceAssetType;
+  type?: ResourceAssetType;
+}): ResourceAssetType | undefined | 'conflict' {
+  const filters = [input.assetType, input.resourceType, input.type].filter(
+    (value): value is ResourceAssetType => Boolean(value),
+  );
+  if (filters.length === 0) return undefined;
+  const [first] = filters;
+  return filters.every((value) => value === first) ? first : 'conflict';
+}
 
 router.post('/projects/:projectId/resource-assets', (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });

@@ -297,6 +297,14 @@ test('resource asset routes search mixed resource types and reject empty search'
   assert.deepEqual(uploads.map((asset) => asset.asset_type), ['uploaded_file']);
   assert.equal(uploads[0]?.source_display_name, '用户上传');
 
+  const sourceRes = await request(`/api/projects/${project.id}/resource-assets?q=${encodeURIComponent(room.name)}`);
+  assert.equal(sourceRes.status, 200);
+  const sourceMatches = await sourceRes.json() as Array<{ id: string; resource_type: string }>;
+  assert.deepEqual(
+    sourceMatches.map((asset) => ({ id: asset.id, resource_type: asset.resource_type })),
+    [{ id: created.id, resource_type: 'agent_document' }],
+  );
+
   const invalidSearchRes = await request(`/api/projects/${project.id}/resource-assets?q=${encodeURIComponent('   ')}`);
   assert.equal(invalidSearchRes.status, 400);
 });
@@ -346,8 +354,10 @@ test('resource asset routes return unified list and typed detail contracts', asy
     id: string;
     name: string;
     resource_type: string;
+    created_by: { id: string | null; name: string | null; type: string };
     source: { type: string; display_name: string | null; context: { id: string; type: string; name: string | null } | null };
     capabilities: { preview: boolean; download: boolean; markdown: boolean; delete: boolean };
+    available_actions: string[];
     content?: string;
   }>;
   const uploadItem = listed.find((item) => item.id === `file:${upload.id}`);
@@ -355,7 +365,9 @@ test('resource asset routes return unified list and typed detail contracts', asy
 
   assert.equal(uploadItem?.name, 'screen.png');
   assert.equal(uploadItem?.resource_type, 'uploaded_file');
-  assert.deepEqual(uploadItem?.capabilities, { preview: true, download: true, markdown: false, delete: true });
+  assert.deepEqual(uploadItem?.capabilities, { preview: true, download: true, markdown: false, delete: false });
+  assert.deepEqual(uploadItem?.available_actions, ['preview', 'download']);
+  assert.deepEqual(uploadItem?.created_by, { id: 'user', name: 'You', type: 'user' });
   assert.equal(uploadItem?.source.type, 'user_upload');
   assert.equal(uploadItem?.source.display_name, 'You');
   assert.equal(Object.hasOwn(uploadItem ?? {}, 'content'), false);
@@ -363,19 +375,39 @@ test('resource asset routes return unified list and typed detail contracts', asy
   assert.equal(documentItem?.name, '统一资源详情.md');
   assert.equal(documentItem?.resource_type, 'agent_document');
   assert.deepEqual(documentItem?.capabilities, { preview: true, download: false, markdown: true, delete: true });
+  assert.deepEqual(documentItem?.available_actions, ['preview', 'view_markdown', 'delete']);
+  assert.deepEqual(documentItem?.created_by, { id: 'backend-executor', name: '后端开发工程师', type: 'agent' });
   assert.equal(documentItem?.source.type, 'agent');
   assert.equal(documentItem?.source.display_name, '后端开发工程师');
   assert.equal(documentItem?.source.context?.id, room.id);
+  assert.equal(documentItem?.source.context?.name, room.name);
+
+  const resourceTypeRes = await request(`/api/projects/${project.id}/resource-assets?resourceType=agent_document`);
+  assert.equal(resourceTypeRes.status, 200);
+  const resourceTypeAssets = await resourceTypeRes.json() as Array<{ resource_type: string }>;
+  assert.deepEqual(resourceTypeAssets.map((asset) => asset.resource_type), ['agent_document']);
+
+  const typeRes = await request(`/api/projects/${project.id}/resource-assets?type=uploaded_file`);
+  assert.equal(typeRes.status, 200);
+  const typeAssets = await typeRes.json() as Array<{ resource_type: string }>;
+  assert.deepEqual(typeAssets.map((asset) => asset.resource_type), ['uploaded_file']);
+
+  const conflictRes = await request(`/api/projects/${project.id}/resource-assets?assetType=uploaded_file&resourceType=agent_document`);
+  assert.equal(conflictRes.status, 400);
 
   const uploadDetailRes = await request(`/api/resource-assets/file:${upload.id}?projectId=${project.id}`);
   assert.equal(uploadDetailRes.status, 200);
   const uploadDetail = await uploadDetailRes.json() as {
     resource_type: string;
+    created_by: { id: string | null; name: string | null; type: string };
+    available_actions: string[];
     preview_url: string | null;
     download_url: string | null;
     content: string | null;
   };
   assert.equal(uploadDetail.resource_type, 'uploaded_file');
+  assert.deepEqual(uploadDetail.created_by, { id: 'user', name: 'You', type: 'user' });
+  assert.deepEqual(uploadDetail.available_actions, ['preview', 'download']);
   assert.equal(uploadDetail.preview_url, upload.url);
   assert.equal(uploadDetail.download_url, upload.url);
   assert.equal(uploadDetail.content, null);
@@ -384,11 +416,15 @@ test('resource asset routes return unified list and typed detail contracts', asy
   assert.equal(documentDetailRes.status, 200);
   const documentDetail = await documentDetailRes.json() as {
     resource_type: string;
+    created_by: { id: string | null; name: string | null; type: string };
+    available_actions: string[];
     content: string | null;
     preview_url: string | null;
     source: { message_id: string | null };
   };
   assert.equal(documentDetail.resource_type, 'agent_document');
+  assert.deepEqual(documentDetail.created_by, { id: 'backend-executor', name: '后端开发工程师', type: 'agent' });
+  assert.deepEqual(documentDetail.available_actions, ['preview', 'view_markdown', 'delete']);
   assert.equal(documentDetail.content, message.content);
   assert.equal(documentDetail.preview_url, null);
   assert.equal(documentDetail.source.message_id, message.id);

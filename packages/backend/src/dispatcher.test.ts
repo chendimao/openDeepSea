@@ -22,6 +22,7 @@ const { settingsRepo } = await import('./repos/settings.js');
 const { skillRepo } = await import('./skills/repo.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { workflowRepo } = await import('./repos/workflows.js');
+const { resourceAssetRepo } = await import('./repos/resource-assets.js');
 const { messageUploadDir } = await import('./uploads.js');
 const { wsHub } = await import('./ws-hub.js');
 const {
@@ -1654,6 +1655,130 @@ test('dispatchUserMessage does not let disabled or missing model distill block A
   } finally {
     adapters.codex = originalAdapter;
     restoreModelEnv();
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent registers completed agent markdown as resource asset', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-agent-document-test-'));
+  const project = projectRepo.create({ name: `agent-document-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const global = agentRepo.getByAgentId('backend-executor');
+  assert.ok(global);
+  const agent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: global.id });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({
+        stream: 'stdout',
+        text: [
+          '# 交付总结',
+          '',
+          '## 背景',
+          '',
+          '本次实现补充了智能体生成 Markdown 文档的资源登记链路。',
+          '',
+          '## 结果',
+          '',
+          '- 智能体完成回复后自动登记为资源库文档',
+          '- 上传文件仍然保留原有预览和下载能力',
+          '- 资源列表可以统一展示类型与来源',
+          '',
+          '## 验收点',
+          '',
+          '1. 文档资源可追溯到生成消息',
+          '2. 资源类型与来源字段完整',
+          '3. 重复登记保持幂等',
+          '',
+          '## 说明',
+          '',
+          '这份文档用于验证资源登记链路的完整性，内容长度需要超过自动归档阈值，',
+          '因此这里补充更完整的文档说明，确保分类器会将其识别为正式的 Markdown 文档。',
+          '',
+          '## 细节',
+          '',
+          '本次改动会将完成态的智能体 Markdown 回复登记到资源库中，并保留来源消息、',
+          '来源房间、来源智能体和来源任务等追踪字段，以便后续在资源列表和详情页统一展示。',
+          '',
+          '资源登记应保持幂等：同一来源消息重复完成时，只保留一条 canonical 记录，避免资源库中出现重复文档。',
+          '',
+          '## 延伸说明',
+          '',
+          '这次回归测试的目标不是验证分类器的边界，而是验证完成态的资源登记链路是否真的能把',
+          '合格的 Markdown 回复写入 `resource_assets`。为了覆盖真实场景，这里额外补充一段较长的说明，',
+          '模拟智能体在交付总结中通常会包含的背景、方案、结果和验证内容。只有当内容足够完整时，',
+          '分类器才会把它判定为可自动归档的文档资源，随后 dispatcher 才会调用资源登记逻辑。',
+          '',
+          '在项目实际运行中，这类输出往往包含多段标题、列表、验证结果和来源追踪信息，因此这里的测试',
+          '样本也需要尽量贴近真实产物，而不是仅靠一两句简短回复。这样才能确保我们修复的是资源生成链路，',
+          '而不是误把短回复、日志片段或临时说明登记成资源库文档。',
+          '',
+          '## 验证',
+          '',
+          '- backend build 通过',
+          '- 定向测试通过',
+        ].join('\n'),
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent,
+      projectPath,
+      roomId: room.id,
+      prompt: '请生成交付总结文档',
+    });
+
+    const resources = resourceAssetRepo.list({ projectId: project.id, assetType: 'agent_document' });
+    assert.equal(resources.length, 1);
+    assert.equal(resources[0]?.title, '交付总结');
+    const agentMessage = messageRepo.listByRoom(room.id).find((item) => item.sender_id === agent.agent_id);
+    assert.ok(agentMessage);
+    assert.equal(resources[0]?.source_message_id, agentMessage.id);
+    assert.equal(resources[0]?.source_room_id, room.id);
+    assert.equal(resources[0]?.source_agent_id, agent.agent_id);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent does not register short do_not_archive replies as resource assets', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-agent-document-skip-test-'));
+  const project = projectRepo.create({ name: `agent-document-skip-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const global = agentRepo.getByAgentId('backend-executor');
+  assert.ok(global);
+  const agent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: global.id });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({
+        stream: 'stdout',
+        text: '收到，已处理。',
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent,
+      projectPath,
+      roomId: room.id,
+      prompt: '请简单回复确认',
+    });
+
+    const resources = resourceAssetRepo.list({ projectId: project.id, assetType: 'agent_document' });
+    assert.equal(resources.length, 0);
+  } finally {
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });
