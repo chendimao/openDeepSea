@@ -65,6 +65,15 @@ export function SkillRunHistoryPanel({
           <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
           {t('common.loading')}
         </div>
+      ) : runsQuery.isError ? (
+        <div className="rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-surface)] p-4 text-[12px] text-[var(--color-fg-muted)]">
+          <div className="font-medium text-[var(--color-danger)]">{t('settings.skillsRunHistoryLoadFailed')}</div>
+          <div className="mt-1 break-words">{(runsQuery.error as Error).message}</div>
+          <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => runsQuery.refetch()}>
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t('common.retry')}
+          </Button>
+        </div>
       ) : runs.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--color-border)] p-4 text-[12px] text-[var(--color-fg-muted)]">
           {t('settings.skillsRunHistoryEmpty')}

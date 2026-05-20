@@ -44,11 +44,11 @@ export function SkillMarketplacePanel({
         systemBindingEnabled ? 'settings.skillsImportAndBindSuccess' : 'settings.skillsImportSuccess',
         { name: skill.name },
       ));
-      onInstalled?.(skill.id);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['skills'] }),
+        queryClient.invalidateQueries({ queryKey: ['skills'], refetchType: 'all' }),
         queryClient.invalidateQueries({ queryKey: ['skills', 'bindings'] }),
       ]);
+      onInstalled?.(skill.id);
     },
     onError: (err) => toast.error((err as Error).message),
   });

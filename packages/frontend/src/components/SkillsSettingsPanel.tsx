@@ -545,31 +545,33 @@ function SkillDetail({
           placeholder={t('settings.skillsKeywordsPlaceholder')}
         />
       </div>
-      <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[12px] text-[var(--color-fg-muted)]">
-        <div>{t('settings.skillsSource')}: {skillSourceLabel(skill.source_type, t)}</div>
-        <div className="mt-1">{t('settings.skillsInstallLabel')}: {skill.install_path_label ?? t('common.none')}</div>
+      <div className="grid gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[12px] text-[var(--color-fg-muted)]">
+        <MetadataRow label={t('settings.skillsSource')} value={skillSourceLabel(skill.source_type, t)} />
+        <MetadataRow label={t('settings.skillsInstallLabel')} value={skill.install_path_label ?? t('common.none')} />
         {skill.install_source_label && (
-          <div className="mt-1">{t('settings.skillsInstallSourceLabel')}: {skill.install_source_label}</div>
+          <MetadataRow label={t('settings.skillsInstallSourceLabel')} value={skill.install_source_label} />
         )}
-        <div className="mt-1">
-          {t('settings.skillsPackageVersion')}: {skill.package_version ?? t('common.none')}
-          {skill.package_revision ? ` / ${skill.package_revision}` : ''}
-        </div>
-        <div className="mt-1">
-          {t('settings.skillsRuntimeType')}: {skill.runtime_type ? runtimeTypeLabel(skill.runtime_type, t) : t('common.none')}
-          {skill.entrypoint ? ` / ${skill.entrypoint}` : ''}
-        </div>
-        <div className="mt-1">{t('settings.skillsPermissions')}: {permissionSummary(skill, t)}</div>
-        <div className="mt-1">{t('settings.skillsUpdateStatus')}: {updateStatusLabel(skill, t)}</div>
+        <MetadataRow
+          label={t('settings.skillsPackageVersion')}
+          value={`${skill.package_version ?? t('common.none')}${skill.package_revision ? ` / ${skill.package_revision}` : ''}`}
+        />
+        <MetadataRow
+          label={t('settings.skillsRuntimeType')}
+          value={`${skill.runtime_type ? runtimeTypeLabel(skill.runtime_type, t) : t('common.none')}${skill.entrypoint ? ` / ${skill.entrypoint}` : ''}`}
+        />
+        <MetadataRow label={t('settings.skillsPermissions')} value={permissionSummary(skill, t)} />
+        <MetadataRow label={t('settings.skillsUpdateStatus')} value={updateStatusLabel(skill, t)} />
         {skill.last_update_checked_at && (
-          <div className="mt-1 inline-flex items-center gap-1">
-            <Clock3 className="h-3 w-3" />
-            {t('settings.skillsLastUpdateCheck')}: {new Date(skill.last_update_checked_at).toLocaleString()}
-          </div>
+          <MetadataRow
+            label={t('settings.skillsLastUpdateCheck')}
+            value={new Date(skill.last_update_checked_at).toLocaleString()}
+            icon={<Clock3 className="h-3 w-3" />}
+          />
         )}
-        <div className="mt-1">
-          {t('settings.skillsSystemBinding')}: {binding?.enabled === 1 ? t('settings.skillsStatusOn') : t('settings.skillsStatusOff')}
-        </div>
+        <MetadataRow
+          label={t('settings.skillsSystemBinding')}
+          value={binding?.enabled === 1 ? t('settings.skillsStatusOn') : t('settings.skillsStatusOff')}
+        />
       </div>
       <div className="flex justify-end">
         <Button
@@ -587,6 +589,28 @@ function SkillDetail({
           {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
           {t('common.save')}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function MetadataRow({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div className="grid min-w-0 gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
+      <div className="flex min-w-0 items-center gap-1 text-[var(--color-fg-muted)]">
+        {icon}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="min-w-0 break-words font-mono text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+        {value}
       </div>
     </div>
   );
