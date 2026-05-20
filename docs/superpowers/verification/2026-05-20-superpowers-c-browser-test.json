@@ -1,0 +1,17 @@
+{
+  "results": [
+    {
+      "name": "workflow page renders Superpowers-only read-only view",
+      "status": "pass"
+    },
+    {
+      "name": "project room renders workflow task UI without console errors",
+      "status": "pass"
+    },
+    {
+      "name": "mobile workflow page has no horizontal overflow",
+      "status": "pass"
+    }
+  ],
+  "consoleErrors": []
+}

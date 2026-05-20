@@ -129,7 +129,17 @@ export interface GraphTools {
 export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
   const planner = deps.planner ?? ((input: LangChainPlannerInput, options?: LangChainPlannerOptions) =>
     generateLangChainPlan(input, undefined, options));
-  const runAcpAgent = deps.runAcpAgent ?? runAgentOnce;
+  const runAcpAgent = deps.runAcpAgent ?? ((input: RespondAsAgentInput) =>
+    runAgentOnce({
+      ...input,
+      onRunCreated: async (run) => {
+        if (input.workflowStepId) {
+          const step = workflowRepo.updateStep(input.workflowStepId, { agent_run_id: run.id });
+          if (step) wsHub.broadcast(input.roomId, { type: 'workflow_step:updated', roomId: input.roomId, step });
+        }
+        if (input.onRunCreated) await input.onRunCreated(run);
+      },
+    }));
   const buildSkillContext = deps.buildSkillContext ?? buildDefaultSkillContext;
 
   return {

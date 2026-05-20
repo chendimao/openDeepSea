@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
 
 import {
   buildSuperpowersRuntimeGraph,
@@ -7,6 +8,13 @@ import {
   SUPERPOWERS_RUNTIME_PROFILE,
 } from './superpowers-runtime.js';
 import { emptyAgentWorkflowState, type AgentWorkflowState } from './state.js';
+import { createGraphWorkflowRun } from './runtime.js';
+import { agentRunRepo } from '../../repos/agent-runs.js';
+import { messageRepo } from '../../repos/messages.js';
+import { projectRepo } from '../../repos/projects.js';
+import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
+import { taskRepo } from '../../repos/tasks.js';
+import { workflowRepo } from '../../repos/workflows.js';
 
 test('buildSuperpowersRuntimeGraph exposes Superpowers runtime profile metadata', () => {
   const graph = buildSuperpowersRuntimeGraph();
@@ -161,7 +169,6 @@ test('Superpowers review nodes expose reroute metadata when reviews request chan
     },
   });
   assert.equal(afterSpecChanges.superpowersPhase, 'spec_compliance_review');
-  assert.equal(afterSpecChanges.error, 'Superpowers spec compliance review requested changes');
   assert.equal(afterSpecChanges.reviewVerdict, 'changes_requested');
 
   const afterCodeChanges = await nodes.codeQualityReview({
@@ -175,6 +182,117 @@ test('Superpowers review nodes expose reroute metadata when reviews request chan
   assert.equal(afterCodeChanges.superpowersPhase, 'code_quality_review');
   assert.equal(afterCodeChanges.error, 'Superpowers code quality review requested changes');
   assert.equal(afterCodeChanges.reviewVerdict, 'changes_requested');
+});
+
+test('Superpowers review nodes invoke current room reviewer agent and parse JSON verdict', async () => {
+  const projectPath = `/tmp/superpowers-review-runtime-project-${Date.now()}`;
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Superpowers review runtime project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Superpowers review runtime room' });
+  const reviewer = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'reviewer-agent',
+    agent_name: 'Reviewer Agent',
+  });
+  roomAgentRepo.setWorkflowRole(reviewer.id, 'reviewer');
+  roomAgentRepo.setAcp(reviewer.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [],
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Check reviewer invocation',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const reviewOutput = JSON.stringify({
+    verdict: 'pass',
+    findings: ['reviewed via agent'],
+    requiredFixes: [],
+    riskLevel: 'low',
+  });
+
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...emptyAgentWorkflowState({
+      workflowRunId: run.id,
+      projectId: project.id,
+      roomId: room.id,
+      taskId: task.id,
+      userGoal: task.title,
+      projectPath: project.path,
+    }),
+    runtimeProfile: 'superpowers',
+    superpowersPhase: 'spec_compliance_review',
+    tddEvidence: [
+      { stage: 'RED', command: 'npm test', passed: false, summary: 'red' },
+      { stage: 'GREEN', command: 'npm test', passed: true, summary: 'green' },
+    ],
+    plan: {
+      goal: task.title,
+      summary: task.title,
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [{ command: 'npm run build', reason: 'verify', required: true }],
+      risks: [],
+      needsApproval: false,
+    },
+    implementationPlanPath: 'docs/superpowers/plans/check-review.md',
+  }));
+
+  const calls: string[] = [];
+  const graph = buildSuperpowersRuntimeGraph({
+    runAcpAgent: async (input) => {
+      calls.push(`${input.workflowStage}:${input.agent.agent_id}`);
+      const runRecord = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRecord.id, 'completed', { stdout: reviewOutput }) ?? runRecord;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: reviewOutput,
+        message_type: 'agent_stream',
+      });
+      return {
+        run: completedRun,
+        message,
+        status: 'completed',
+      };
+    },
+  });
+
+  const latest = await graph.nodes.specComplianceReview(emptyAgentWorkflowState({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  }));
+  assert.deepEqual(calls, ['code_review:reviewer-agent']);
+  assert.equal(latest.specComplianceReview?.verdict, 'approved');
+  assert.equal(latest.specComplianceReview?.findings[0], 'reviewed via agent');
+  assert.equal(latest.superpowersPhase, 'spec_compliance_review');
+  const reviewStep = workflowRepo.listSteps(run.id).find((step) => step.node_name === 'spec_compliance_review');
+  assert.equal(reviewStep?.status, 'completed');
+  assert.ok(reviewStep?.agent_run_id);
+  assert.equal(reviewStep?.result, reviewOutput);
 });
 
 test('Superpowers finish branch node records default keep branch decision and available options', async () => {

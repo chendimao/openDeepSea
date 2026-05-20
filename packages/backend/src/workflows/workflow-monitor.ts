@@ -20,6 +20,7 @@ const DEFAULT_LIMIT = 100;
 const ACTIVE_WORKFLOW_STATUSES = ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked'];
 const ACTIVE_AGENT_RUN_STATUSES = ['running', 'queued'];
 const CHILD_TERMINAL_FAILURE_STATUSES = ['failed', 'cancelled'];
+const ACP_BACKED_GRAPH_NODES = ['execute', 'review', 'acceptance'];
 
 export interface WorkflowMonitorScanOptions {
   now?: number;
@@ -176,10 +177,11 @@ function detectRunningStepsWithoutActiveRun(limit: number): WorkflowIncident[] {
      LEFT JOIN tasks child ON child.id = ws.task_id
      WHERE ws.status = 'running'
        AND wr.status IN (${ACTIVE_WORKFLOW_STATUSES.map(() => '?').join(',')})
+       AND ws.node_name IN (${ACP_BACKED_GRAPH_NODES.map(() => '?').join(',')})
        AND ar.id IS NULL
      ORDER BY ws.updated_at ASC
      LIMIT ?`,
-  ).all(...ACTIVE_AGENT_RUN_STATUSES, ...ACTIVE_WORKFLOW_STATUSES, limit) as JoinedWorkflowRow[];
+  ).all(...ACTIVE_AGENT_RUN_STATUSES, ...ACTIVE_WORKFLOW_STATUSES, ...ACP_BACKED_GRAPH_NODES, limit) as JoinedWorkflowRow[];
 
   return rows.map((row) => createIncident(row, 'step_without_active_run', 'Workflow step is running without an active agent run'));
 }

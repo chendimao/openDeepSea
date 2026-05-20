@@ -134,6 +134,44 @@ test('compact mode renders superpowers gate summary from graph_state', () => {
   assert.match(html, /保留分支/);
 });
 
+test('compact mode renders superpowers gate summary without workflow plan', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      runtimeProfile: 'superpowers',
+      superpowersPhase: 'brainstorming',
+      designDocPath: 'docs/superpowers/specs/no-plan.md',
+      tddEvidence: [],
+      specComplianceReview: null,
+      codeQualityReview: null,
+      verificationEvidence: [],
+      finishBranchDecision: null,
+    }),
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+
+  assert.match(html, /当前门禁/);
+  assert.match(html, /brainstorming|Brainstorming/);
+  assert.match(html, /docs\/superpowers\/specs\/no-plan\.md/);
+});
+
+test('compact mode ignores malformed superpowers graph_state without crashing', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      runtimeProfile: 'superpowers',
+      superpowersPhase: 'tdd_execute',
+      designDocPath: 'docs/superpowers/specs/broken.md',
+      tddEvidence: [{ stage: 'RED', command: 'npm test' }],
+      verificationEvidence: 'bad-data',
+      finishBranchDecision: { decision: 'keep_branch' },
+    }),
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+
+  assert.equal(html, '');
+});
+
 test('compact mode renders agent result tabs for chat embedding', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),

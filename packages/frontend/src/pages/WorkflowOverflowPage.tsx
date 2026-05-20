@@ -110,7 +110,7 @@ export function WorkflowOverflowPage(): JSX.Element {
           </div>
 
           {isLoading ? (
-            <div className="text-[13px] text-[var(--color-fg-muted)]">加载中...</div>
+            <div className="text-[13px] text-[var(--color-fg-muted)]">加载中…</div>
           ) : isError ? (
             <WorkflowErrorState
               message={definitionsError instanceof Error ? definitionsError.message : '工作流定义加载失败'}
@@ -160,7 +160,7 @@ function WorkflowErrorState({
 
 function Metric({ label, value }: { label: string; value: number }): JSX.Element {
   return (
-    <div className="min-w-[86px] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-right">
+    <div className="min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-right">
       <div className="font-mono text-[16px] text-[var(--color-fg)]">{value}</div>
       <div className="mt-0.5 text-[10.5px] text-[var(--color-fg-muted)]">{label}</div>
     </div>

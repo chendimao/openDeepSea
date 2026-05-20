@@ -27,7 +27,7 @@ const workflowPlanTaskInputSchema = z.object({
   agent_id: z.string().min(1).nullable().optional(),
   mode: z.enum(['parallel', 'serial']).optional(),
   depends_on: z.array(z.string().min(1)).optional(),
-  status: z.enum(['pending', 'running', 'completed', 'blocked', 'failed']).optional(),
+  status: z.enum(['pending', 'running', 'completed', 'blocked', 'failed', 'skipped']).optional(),
   progress: z.number().min(0).max(100).optional(),
   result_refs: z.array(z.string().min(1)).optional(),
 });

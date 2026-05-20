@@ -74,6 +74,21 @@ describe('coordinator agent matching', () => {
     assert.match(result.assignmentReason, /suggest/i);
   });
 
+  it('suggests frontend executor for UI tasks even when planner only supplied project root scope', () => {
+    const result = selectCoordinatorAgentForTask({
+      task: workflowTask({
+        role: 'executor',
+        title: '实现资源库列表 UI 的类型区分、筛选和搜索',
+        description: '在前端资源库中展示资源类型、来源信息和筛选入口。',
+        scope_write: ['/Users/chendimao/WWW/openDeepSea'],
+      }),
+      agents: [],
+    });
+
+    assert.equal(result.agent, null);
+    assert.equal(result.templateId, 'frontend-executor');
+  });
+
   it('does not select agents without write permission, enabled ACP, or matching workflow role', () => {
     const task = workflowTask({
       role: 'executor',

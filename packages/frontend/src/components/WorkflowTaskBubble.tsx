@@ -30,43 +30,47 @@ export function WorkflowTaskBubble({
   const workflowPlan = useMemo(() => getWorkflowPlan(detail), [detail]);
   const superpowersSummary = useMemo(() => parseSuperpowersSummaryFromGraphState(detail.run.graph_state), [detail.run.graph_state]);
 
-  if (!workflowPlan) {
+  if (!workflowPlan && !superpowersSummary) {
     return null;
   }
 
   return (
     <div className="workflow-task-bubble" data-source={compact ? 'chat' : 'timeline'}>
       <div className="workflow-task-bubble-main">
-        {!compact && <WorkflowProgressHeader plan={workflowPlan} />}
+        {!compact && workflowPlan && <WorkflowProgressHeader plan={workflowPlan} />}
         {superpowersSummary && <SuperpowersGateSummary summary={superpowersSummary} compact={compact} />}
-        <div className="workflow-task-bubble-lanes">
-          {!compact && (
-            <WorkflowTaskTable
+        {workflowPlan && (
+          <div className="workflow-task-bubble-lanes">
+            {!compact && (
+              <WorkflowTaskTable
+                plan={workflowPlan}
+                agents={agents}
+                compact={compact}
+                availableTaskIds={getExecutableTaskIds(workflowPlan)}
+              />
+            )}
+            <WorkflowTaskFlow
               plan={workflowPlan}
               agents={agents}
+              steps={detail.steps}
+              artifacts={detail.artifacts}
+              eventMessages={eventMessages}
               compact={compact}
-              availableTaskIds={getExecutableTaskIds(workflowPlan)}
             />
-          )}
-          <WorkflowTaskFlow
+          </div>
+        )}
+      </div>
+      {workflowPlan && (
+        <div className="workflow-task-bubble-side">
+          <WorkflowAgentTabs
             plan={workflowPlan}
             agents={agents}
-            steps={detail.steps}
             artifacts={detail.artifacts}
-            eventMessages={eventMessages}
+            steps={detail.steps}
             compact={compact}
           />
         </div>
-      </div>
-      <div className="workflow-task-bubble-side">
-        <WorkflowAgentTabs
-          plan={workflowPlan}
-          agents={agents}
-          artifacts={detail.artifacts}
-          steps={detail.steps}
-          compact={compact}
-        />
-      </div>
+      )}
     </div>
   );
 }
@@ -106,10 +110,10 @@ function SuperpowersGateSummary({
         <SuperpowersMetric label="验证证据" value={formatVerificationEvidence(verificationEvidence)} />
         <SuperpowersMetric label="分支收口" value={finishDecision ? formatFinishBranchDecision(finishDecision) : '--'} />
       </div>
-      {!compact && visibleFindings.length > 0 && (
-        <div className="mt-2 grid gap-1">
+      {visibleFindings.length > 0 && (
+        <div className={compact ? 'sr-only' : 'mt-2 grid gap-1'}>
           {visibleFindings.map((finding, index) => (
-            <div key={`${index}:${finding}`} className="truncate rounded-md bg-[var(--color-surface-raised)] px-2 py-1">
+            <div key={`${index}:${finding}`} className={compact ? undefined : 'truncate rounded-md bg-[var(--color-surface-raised)] px-2 py-1'}>
               {finding}
             </div>
           ))}
@@ -159,12 +163,48 @@ function parseWorkflowPlanFromGraphState(raw: string | null): WorkflowPlanJson |
 function parseSuperpowersSummaryFromGraphState(raw: string | null): SuperpowersGraphStateSummary | null {
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as SuperpowersGraphStateSummary;
+    const parsed = JSON.parse(raw) as Partial<SuperpowersGraphStateSummary> & { runtimeProfile?: unknown };
     if (parsed.runtimeProfile !== 'superpowers') return null;
+    if (!isSuperpowersGraphStateSummary(parsed)) return null;
     return parsed;
   } catch {
     return null;
   }
+}
+
+function isSuperpowersGraphStateSummary(value: unknown): value is SuperpowersGraphStateSummary {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as SuperpowersGraphStateSummary;
+  return (
+    (candidate.superpowersPhase === undefined || candidate.superpowersPhase === null || typeof candidate.superpowersPhase === 'string') &&
+    (candidate.designDocPath === undefined || candidate.designDocPath === null || typeof candidate.designDocPath === 'string') &&
+    (candidate.tddEvidence === undefined || Array.isArray(candidate.tddEvidence)) &&
+    (candidate.specComplianceReview === undefined || candidate.specComplianceReview === null || isSuperpowersReview(candidate.specComplianceReview)) &&
+    (candidate.codeQualityReview === undefined || candidate.codeQualityReview === null || isSuperpowersReview(candidate.codeQualityReview)) &&
+    (candidate.verificationEvidence === undefined || Array.isArray(candidate.verificationEvidence)) &&
+    (candidate.finishBranchDecision === undefined || candidate.finishBranchDecision === null || isFinishBranchDecision(candidate.finishBranchDecision))
+  );
+}
+
+function isSuperpowersReview(value: unknown): value is NonNullable<SuperpowersGraphStateSummary['specComplianceReview']> {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as NonNullable<SuperpowersGraphStateSummary['specComplianceReview']>;
+  return (
+    typeof candidate.verdict === 'string' &&
+    Array.isArray(candidate.findings) &&
+    (candidate.reviewedAt === null || typeof candidate.reviewedAt === 'string')
+  );
+}
+
+function isFinishBranchDecision(value: unknown): value is NonNullable<SuperpowersGraphStateSummary['finishBranchDecision']> {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as NonNullable<SuperpowersGraphStateSummary['finishBranchDecision']>;
+  return (
+    typeof candidate.decision === 'string' &&
+    Array.isArray(candidate.options) &&
+    typeof candidate.reason === 'string' &&
+    (candidate.decidedAt === null || typeof candidate.decidedAt === 'string')
+  );
 }
 
 function parseWorkflowPlanFromArtifacts(artifacts: TaskArtifact[]): WorkflowPlanJson | null {

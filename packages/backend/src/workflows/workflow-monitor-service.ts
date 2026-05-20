@@ -61,7 +61,11 @@ export async function runWorkflowMonitorOnce(options: WorkflowMonitorServiceOpti
     if (incident.status === 'resolved' || incident.status === 'blocked' || incident.status === 'ignored') continue;
     const latest = workflowIncidentRepo.markDeciding(incident.id) ?? incident;
     if (options.recoveryHandler) {
-      await options.recoveryHandler(latest);
+      try {
+        await options.recoveryHandler(latest);
+      } catch (err) {
+        markRecoveryExecutionFailure(latest, { action: 'mark_blocked', reason: '自定义恢复处理失败。', confidence: 0.5 }, err);
+      }
       handled += 1;
       continue;
     }
@@ -76,10 +80,28 @@ export async function runWorkflowMonitorOnce(options: WorkflowMonitorServiceOpti
       continue;
     }
     const decision = await decideRecovery(input, { disableModel: options.disableModel });
-    await executeRecoveryDecision({ incident: latest, decision });
+    try {
+      await executeRecoveryDecision({ incident: latest, decision });
+    } catch (err) {
+      markRecoveryExecutionFailure(latest, decision, err);
+    }
     handled += 1;
   }
   return handled;
+}
+
+function markRecoveryExecutionFailure(
+  incident: WorkflowIncident,
+  decision: WorkflowRecoveryDecision,
+  err: unknown,
+): void {
+  const reason = err instanceof Error ? err.message : String(err);
+  workflowIncidentRepo.markBlocked(incident.id, {
+    ...decision,
+    action: 'mark_blocked',
+    reason: `自动恢复执行失败：${reason}`,
+  });
+  console.warn(`[workflow-monitor] recovery failed for incident ${incident.id}: ${reason}`);
 }
 
 export async function recoverWorkflowStartupOrphans(options: {

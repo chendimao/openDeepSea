@@ -1883,7 +1883,9 @@ test('respondAsAgent registers structured markdown documents into resource asset
     assert.equal(resources[0]?.resource_type, 'agent_document');
     assert.equal(resources[0]?.source.type, 'agent');
     assert.equal(resources[0]?.source_summary.includes('智能体生成'), true);
-    assert.match(resources[0]?.content ?? '', /智能体生成资源库方案文档/);
+    const resourceDetail = resources[0] ? resourceAssetRepo.getResource(resources[0].id) : undefined;
+    assert.equal(resourceDetail?.resource_type, 'agent_document');
+    assert.match(resourceDetail?.content ?? '', /智能体生成资源库方案文档/);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

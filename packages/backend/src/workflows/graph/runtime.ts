@@ -40,6 +40,19 @@ const GraphState = Annotation.Root({
   childTaskIds: Annotation<string[]>(),
   childTaskPlanIndexes: Annotation<AgentWorkflowState['childTaskPlanIndexes']>(),
   supervisorAssignments: Annotation<AgentWorkflowState['supervisorAssignments']>(),
+  runtimeProfile: Annotation<AgentWorkflowState['runtimeProfile']>(),
+  superpowersPhase: Annotation<AgentWorkflowState['superpowersPhase']>(),
+  designDocPath: Annotation<AgentWorkflowState['designDocPath']>(),
+  designReviewVerdict: Annotation<AgentWorkflowState['designReviewVerdict']>(),
+  implementationPlanPath: Annotation<AgentWorkflowState['implementationPlanPath']>(),
+  planReviewVerdict: Annotation<AgentWorkflowState['planReviewVerdict']>(),
+  worktree: Annotation<AgentWorkflowState['worktree']>(),
+  tddEvidence: Annotation<AgentWorkflowState['tddEvidence']>(),
+  tddExemption: Annotation<AgentWorkflowState['tddExemption']>(),
+  specComplianceReview: Annotation<AgentWorkflowState['specComplianceReview']>(),
+  codeQualityReview: Annotation<AgentWorkflowState['codeQualityReview']>(),
+  verificationEvidence: Annotation<AgentWorkflowState['verificationEvidence']>(),
+  finishBranchDecision: Annotation<AgentWorkflowState['finishBranchDecision']>(),
   reviewFindings: Annotation<string[]>(),
   reviewVerdict: Annotation<AgentWorkflowState['reviewVerdict']>(),
   verificationResults: Annotation<AgentWorkflowState['verificationResults']>(),
@@ -727,7 +740,7 @@ async function resumeGraphWorkflowFromState(
     getWorkflowPromptKind: () => inferWorkflowPromptKind(snapshot),
   });
   const runtimeGraph = isSuperpowersDefinitionGraph(snapshot?.definition)
-    ? buildSuperpowersRuntimeGraph(deps)
+    ? buildSuperpowersRuntimeGraph(deps, tools)
     : null;
   const routeDefinition = runtimeGraph?.executableDefinition
     ?? snapshot?.definition
@@ -933,6 +946,50 @@ async function runSuperpowersExecutionNode(
   tools: ReturnType<typeof createGraphTools>,
   runtimeGraph: SuperpowersRuntimeGraph,
 ): Promise<AgentWorkflowState> {
+  if (nodeToRun === 'spec_compliance_review' || nodeToRun === 'code_quality_review') {
+    const existingReview = nodeToRun === 'spec_compliance_review'
+      ? state.specComplianceReview
+      : state.codeQualityReview;
+    if (existingReview) {
+      const context = tools.readWorkflowContext(state.workflowRunId);
+      const step = tools.createGraphStep({
+        workflow_run_id: context.run.id,
+        task_id: context.task.id,
+        stage: 'code_review',
+        node_name: nodeToRun as never,
+        status: 'running',
+        sort_order: tools.nextStepSortOrder(context.run.id),
+      });
+      tools.broadcastStepCreated(context.room.id, step);
+      const rawNextState = await callSuperpowersExecutionNode(nodeToRun, state, runtimeGraph);
+      const nextState = normalizeSuperpowersReviewState({
+        ...rawNextState,
+        currentNode: 'review',
+        currentStepId: step.id,
+      }, nodeToRun);
+      const blocked = nextState.status === 'blocked';
+      const completedStep = tools.updateGraphStep(step.id, {
+        status: blocked ? 'failed' : 'completed',
+        error: blocked ? nextState.error : null,
+      });
+      if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+      const updatedRun = tools.updateRun(context.run.id, {
+        status: blocked ? 'blocked' : 'running',
+        current_stage: 'code_review',
+        error: blocked ? nextState.error : null,
+      });
+      if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+      tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      return nextState;
+    }
+
+    const rawNextState = await callSuperpowersExecutionNode(nodeToRun, state, runtimeGraph);
+    return normalizeSuperpowersReviewState({
+      ...rawNextState,
+      currentNode: 'review',
+    }, nodeToRun);
+  }
+
   const context = tools.readWorkflowContext(state.workflowRunId);
   const step = tools.createGraphStep({
     workflow_run_id: context.run.id,
@@ -984,29 +1041,6 @@ function normalizeSuperpowersReviewState(
   state: AgentWorkflowState,
   nodeToRun: SuperpowersExecutionNodeName,
 ): AgentWorkflowState {
-  if (state.reviewVerdict === 'changes_requested') {
-    return state;
-  }
-  if (nodeToRun === 'spec_compliance_review' && !state.specComplianceReview) {
-    return {
-      ...state,
-      specComplianceReview: {
-        verdict: state.reviewVerdict === 'failed' ? 'failed' : 'approved',
-        findings: state.reviewFindings,
-        reviewedAt: null,
-      },
-    };
-  }
-  if (nodeToRun === 'code_quality_review' && !state.codeQualityReview) {
-    return {
-      ...state,
-      codeQualityReview: {
-        verdict: state.reviewVerdict === 'failed' ? 'failed' : 'approved',
-        findings: state.reviewFindings,
-        reviewedAt: null,
-      },
-    };
-  }
   return state;
 }
 

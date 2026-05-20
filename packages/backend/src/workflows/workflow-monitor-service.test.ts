@@ -30,6 +30,46 @@ test('runWorkflowMonitorOnce scans, decides, executes, and records chat message'
   assert.equal(recoveryMessages(fixture.room.id).length, 1);
 });
 
+test('runWorkflowMonitorOnce blocks failed recovery execution and continues scanning', async () => {
+  const first = createFixture('failed recovery first');
+  const second = createFixture('failed recovery second');
+  const firstIncident = workflowIncidentRepo.upsertDetected({
+    room_id: first.room.id,
+    project_id: first.project.id,
+    workflow_run_id: first.workflow.id,
+    task_id: first.task.id,
+    incident_type: 'executor_unavailable',
+    error: 'first',
+    context: {},
+  });
+  const secondIncident = workflowIncidentRepo.upsertDetected({
+    room_id: second.room.id,
+    project_id: second.project.id,
+    workflow_run_id: second.workflow.id,
+    task_id: second.task.id,
+    incident_type: 'executor_unavailable',
+    error: 'second',
+    context: {},
+  });
+  const handled: string[] = [];
+
+  const count = await runWorkflowMonitorOnce({
+    scanner: () => [firstIncident, secondIncident],
+    recoveryHandler: async (incident) => {
+      handled.push(incident.id);
+      if (incident.id === firstIncident.id) throw new Error('boom');
+      workflowIncidentRepo.markResolved(incident.id, null);
+      return { status: 'executed' };
+    },
+  });
+
+  assert.equal(count, 2);
+  assert.deepEqual(handled, [firstIncident.id, secondIncident.id]);
+  assert.equal(workflowIncidentRepo.get(firstIncident.id)?.status, 'blocked');
+  assert.match(workflowIncidentRepo.get(firstIncident.id)?.decision_json ?? '', /boom/);
+  assert.equal(workflowIncidentRepo.listByWorkflow(second.workflow.id)[0]?.status, 'resolved');
+});
+
 test('startWorkflowMonitorService skips overlapping scans with lock', async () => {
   let release!: () => void;
   let calls = 0;

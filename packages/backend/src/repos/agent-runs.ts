@@ -123,6 +123,15 @@ export const agentRunRepo = {
     return this.get(id);
   },
 
+  touchActive(id: string): AgentRun | undefined {
+    db.prepare(
+      `UPDATE agent_runs
+       SET updated_at = ?
+       WHERE id = ? AND status IN ('running', 'queued')`,
+    ).run(now(), id);
+    return this.get(id);
+  },
+
   updateStatus(
     id: string,
     status: AgentRunStatus,

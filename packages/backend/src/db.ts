@@ -277,7 +277,6 @@ CREATE TABLE IF NOT EXISTS resource_assets (
 );
 CREATE INDEX IF NOT EXISTS idx_resource_assets_project ON resource_assets(project_id, asset_type, group_key, created_at);
 CREATE INDEX IF NOT EXISTS idx_resource_assets_source_message ON resource_assets(source_message_id);
-
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
@@ -616,6 +615,50 @@ CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_room ON tasks(room_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 `);
+
+export function migrateUniqueAgentDocumentSourceMessage(database: Database.Database = db): void {
+  database.exec(`
+    DROP INDEX IF EXISTS idx_resource_assets_unique_source_message;
+
+    UPDATE resource_assets
+    SET source_message_id = NULLIF(TRIM(source_message_id), ''),
+        updated_at = strftime('%s', 'now') * 1000
+    WHERE asset_type = 'agent_document'
+      AND source_message_id IS NOT NULL
+      AND (TRIM(source_message_id) = '' OR source_message_id <> TRIM(source_message_id));
+
+    WITH ranked AS (
+      SELECT
+        id,
+        project_id,
+        source_message_id,
+        ROW_NUMBER() OVER (
+          PARTITION BY project_id, source_message_id
+          ORDER BY created_at DESC, id DESC
+        ) AS row_num
+      FROM resource_assets
+      WHERE asset_type = 'agent_document'
+        AND source_message_id IS NOT NULL
+        AND deleted_at IS NULL
+    )
+    UPDATE resource_assets
+    SET deleted_at = COALESCE(deleted_at, strftime('%s', 'now') * 1000),
+        updated_at = strftime('%s', 'now') * 1000
+    WHERE id IN (
+      SELECT id
+      FROM ranked
+      WHERE row_num > 1
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_assets_unique_source_message
+      ON resource_assets(project_id, source_message_id)
+      WHERE asset_type = 'agent_document'
+        AND source_message_id IS NOT NULL
+        AND deleted_at IS NULL;
+  `);
+}
+
+migrateUniqueAgentDocumentSourceMessage();
 
 const projectColumns = db.prepare('PRAGMA table_info(projects)').all() as { name: string }[];
 const projectColumnNames = new Set(projectColumns.map((column) => column.name));

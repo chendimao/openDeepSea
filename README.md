@@ -67,6 +67,10 @@ npm install
 # 启动开发模式 (前后端并行)
 npm run dev
 
+# 如需单独后端热重载调试，可使用：
+# npm run dev:backend:watch
+# 注意：运行正式 workflow 时建议使用默认 dev 后端，避免后端热重启中断执行中的 ACP 会话。
+
 # 前端: http://localhost:5173
 # 后端: http://localhost:7330
 ```

@@ -1,5 +1,4 @@
 import type { WorkflowDefinitionGraph, WorkflowDefinitionNode, WorkflowDefinitionNodeType } from '../../types.js';
-import type { GraphRuntimeDeps } from './tools.js';
 import {
   SUPERPOWERS_PLANNING_PHASE_STEPS,
   canDispatchSuperpowersRuntime,
@@ -9,6 +8,7 @@ import {
 } from './superpowers-nodes.js';
 import { canLeaveTddExecute, canLeaveVerify } from './superpowers-gates.js';
 import type { AgentWorkflowState } from './state.js';
+import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 
 export const SUPERPOWERS_WORKFLOW_DEFINITION_KEY = 'superpowers-development';
 export const SUPERPOWERS_RUNTIME_PROFILE = 'superpowers';
@@ -93,13 +93,18 @@ export interface SuperpowersRuntimeGraph {
   executableDefinition: WorkflowDefinitionGraph;
 }
 
-export function buildSuperpowersRuntimeGraph(_deps: GraphRuntimeDeps = {}): SuperpowersRuntimeGraph {
+export function buildSuperpowersRuntimeGraph(
+  deps: GraphRuntimeDeps = {},
+  tools?: ReturnType<typeof createGraphTools>,
+): SuperpowersRuntimeGraph {
+  const runtimeTools = tools ?? (Object.keys(deps).length > 0 ? createGraphTools(deps) : undefined);
+
   return {
     graphVersion: SUPERPOWERS_GRAPH_VERSION,
     runtimeProfile: SUPERPOWERS_RUNTIME_PROFILE,
     placeholderNodeTypes: SUPERPOWERS_PLACEHOLDER_NODE_TYPES,
     phaseSteps: SUPERPOWERS_PLANNING_PHASE_STEPS,
-    nodes: createSuperpowersRuntimeNodes(),
+    nodes: createSuperpowersRuntimeNodes(runtimeTools),
     canDispatch: canDispatchSuperpowersRuntime,
     canLeaveTddExecute,
     canLeaveVerify,

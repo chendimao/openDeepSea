@@ -79,7 +79,7 @@ export const fileRepo = {
   },
 
   createAgentDocument(input: AgentDocumentCreateInput): ProjectFile {
-    const asset = resourceAssetRepo.create({
+    const asset = resourceAssetRepo.ensure({
       project_id: input.project_id,
       asset_type: 'agent_document',
       group_key: 'agent_documents',
@@ -91,6 +91,7 @@ export const fileRepo = {
       source_room_id: input.source_room_id ?? null,
       source_agent_id: input.source_agent_id ?? null,
       source_task_id: input.source_task_id ?? null,
+      unique_source_message_id: input.source_message_id ?? null,
     });
     return this.get(`asset:${asset.id}`)!;
   },

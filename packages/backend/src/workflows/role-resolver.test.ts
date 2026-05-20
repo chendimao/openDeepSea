@@ -182,6 +182,62 @@ test('selectWorkflowAgentForPlanTask treats root write scope as matching root wr
   assert.equal(selected?.id, 'root-writable');
 });
 
+test('selectWorkflowAgentForPlanTask treats absolute project root scope as broad project write scope', () => {
+  const backend = agent({
+    id: 'backend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const frontend = agent({
+    id: 'frontend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [frontend, backend], {
+    title: '实现后端资源查询、筛选、搜索与详情能力',
+    description: '在后端落地统一资源库能力',
+    scopeRead: ['/Users/chendimao/WWW/openDeepSea'],
+    scopeWrite: ['/Users/chendimao/WWW/openDeepSea'],
+  });
+
+  assert.equal(selected?.id, 'backend');
+});
+
+test('selectWorkflowAgentForPlanTask uses frontend domain when absolute project root scope is broad', () => {
+  const backend = agent({
+    id: 'backend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const frontend = agent({
+    id: 'frontend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend'],
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backend, frontend], {
+    title: '实现资源库列表 UI 的类型区分、筛选和搜索',
+    description: '在前端资源库中展示不同资源类型和来源，并提供筛选入口。',
+    scopeRead: ['/Users/chendimao/WWW/openDeepSea'],
+    scopeWrite: ['/Users/chendimao/WWW/openDeepSea'],
+  });
+
+  assert.equal(selected?.id, 'frontend');
+});
+
 test('selectWorkflowAgentForPlanTask prioritizes workspace match over domain signals for write tasks', () => {
   const domainOnly = agent({
     id: 'domain-only',

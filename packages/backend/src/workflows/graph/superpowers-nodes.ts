@@ -1,5 +1,9 @@
 import { canLeaveTddExecute, canLeaveVerify, canLeaveWritingPlans } from './superpowers-gates.js';
-import type { AgentWorkflowState, SuperpowersReviewVerdict } from './state.js';
+import { buildStagePrompt, buildSuperpowersPhasePrompt } from '../prompts.js';
+import { parseReviewVerdict } from '../plan-parser.js';
+import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
+import type { GraphTools } from './tools.js';
+import { serializeGraphState, type AgentWorkflowState, type SuperpowersReviewVerdict } from './state.js';
 import type { WorkflowDefinitionNodeType, WorkflowRole, WorkflowStage } from '../../types.js';
 
 export type SuperpowersPlanningNodeName =
@@ -89,7 +93,7 @@ export const SUPERPOWERS_FINISH_BRANCH_OPTIONS = [
   'discard_work',
 ] as const;
 
-export function createSuperpowersRuntimeNodes(): SuperpowersRuntimeNodes {
+export function createSuperpowersRuntimeNodes(tools?: GraphTools): SuperpowersRuntimeNodes {
   return {
     async brainstorming(state) {
       const designDocPath = normalizePath(state.designDocPath) ?? DEFAULT_DESIGN_DOC_PATH;
@@ -160,21 +164,11 @@ export function createSuperpowersRuntimeNodes(): SuperpowersRuntimeNodes {
     },
 
     async specComplianceReview(state) {
-      const review = state.specComplianceReview ?? {
-        verdict: 'approved' as const,
-        findings: [],
-        reviewedAt: null,
-      };
-      return applyReviewState(state, 'spec_compliance_review', review.verdict, review.findings);
+      return runSuperpowersReview('spec_compliance_review', state, tools);
     },
 
     async codeQualityReview(state) {
-      const review = state.codeQualityReview ?? {
-        verdict: 'approved' as const,
-        findings: [],
-        reviewedAt: null,
-      };
-      return applyReviewState(state, 'code_quality_review', review.verdict, review.findings);
+      return runSuperpowersReview('code_quality_review', state, tools);
     },
 
     async finishBranch(state) {
@@ -280,4 +274,190 @@ function applyReviewState(
     status: state.status === 'blocked' ? 'running' : state.status,
     error: null,
   };
+}
+
+function hasExecutableWorkflowRole(agents: ReturnType<GraphTools['readWorkflowContext']>['agents'], role: WorkflowRole): boolean {
+  return agents.some((agent) =>
+    agent.left_at === null &&
+    agent.workflow_role === role &&
+    agent.acp_enabled === 1 &&
+    Boolean(agent.acp_backend),
+  );
+}
+
+async function runSuperpowersReview(
+  phase: 'spec_compliance_review' | 'code_quality_review',
+  state: AgentWorkflowState,
+  tools?: GraphTools,
+): Promise<AgentWorkflowState> {
+  const existingReview = phase === 'spec_compliance_review' ? state.specComplianceReview : state.codeQualityReview;
+  if (existingReview) {
+    return applyReviewState(
+      state,
+      phase,
+      existingReview.verdict,
+      existingReview.findings,
+    );
+  }
+
+  if (!tools) {
+    return applyReviewState(
+      state,
+      phase,
+      'approved',
+      [],
+    );
+  }
+
+  const context = tools.readWorkflowContext(state.workflowRunId);
+  let reviewAgents = context.agents;
+  if (!hasExecutableWorkflowRole(reviewAgents, 'reviewer')) {
+    const provisioning = ensureWorkflowAgentsForRun({
+      roomId: context.room.id,
+      agents: reviewAgents,
+      roles: ['reviewer'],
+    });
+    reviewAgents = provisioning.agents;
+    for (const agent of provisioning.joinedAgents) {
+      tools.broadcastAgentJoined(context.room.id, agent);
+    }
+  }
+  const reviewer = tools.selectAgentForRole('reviewer', reviewAgents);
+  if (!reviewer) {
+    return applyReviewState(state, phase, 'failed', ['No reviewer available for Superpowers review']);
+  }
+
+  const step = tools.createGraphStep({
+    workflow_run_id: context.run.id,
+    task_id: context.task.id,
+    stage: 'code_review',
+    node_name: phase as never,
+    status: 'running',
+    room_agent_id: reviewer.id,
+    assigned_room_agent_id: reviewer.id,
+    prompt: buildStagePrompt('code_review', {
+      projectName: context.project.name,
+      projectPath: context.project.path,
+      room: context.room,
+      task: context.task,
+      agents: reviewAgents,
+      workflowContext: context.workflowContext,
+      childTasks: tools.listChildTasks(context.task.id),
+      memoryContext: context.memories,
+    }) + '\n\n' + buildSuperpowersPhasePrompt(
+      phase === 'spec_compliance_review' ? 'spec_compliance_review' : 'code_quality_review',
+      {
+        projectName: context.project.name,
+        projectPath: context.project.path,
+        room: context.room,
+        task: context.task,
+        agents: reviewAgents,
+        workflowContext: context.workflowContext,
+        childTasks: tools.listChildTasks(context.task.id),
+        memoryContext: context.memories,
+      },
+    ),
+    sort_order: tools.nextStepSortOrder(context.run.id),
+  });
+  tools.broadcastStepCreated(context.room.id, step);
+  tools.updateGraphState(context.run.id, serializeGraphState({
+    ...state,
+    currentNode: phase,
+    currentStepId: step.id,
+    activeAgentRunId: null,
+    status: state.status === 'blocked' ? 'running' : state.status,
+    error: null,
+  }));
+
+  const runResult = await tools.runAcpAgent({
+    agent: reviewer,
+    projectPath: context.project.path,
+    roomId: context.room.id,
+    prompt: step.prompt ?? '',
+    taskId: context.task.id,
+    workflowRunId: context.run.id,
+    workflowStepId: step.id,
+    workflowStage: 'code_review',
+  });
+  const output = runResult.run.stdout || runResult.message.content;
+  if (runResult.status !== 'completed') {
+    const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');
+    const failedStep = tools.updateGraphStep(step.id, {
+      status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
+      agent_run_id: runResult.run.id,
+      result: output,
+      result_message_id: runResult.message.id,
+      error,
+    });
+    if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+    return applyReviewState({
+      ...state,
+      activeAgentRunId: runResult.run.id,
+      currentStepId: step.id,
+    }, phase, 'failed', [error]);
+  }
+
+  const artifact = tools.createArtifact({
+    task_id: context.task.id,
+    workflow_run_id: context.run.id,
+    workflow_step_id: step.id,
+    artifact_type: 'review',
+    title: phase === 'spec_compliance_review' ? '规格符合审查' : '代码质量审查',
+    content: output,
+  });
+  tools.broadcastArtifactCreated(context.room.id, artifact);
+
+  let verdict;
+  try {
+    verdict = parseReviewVerdict(output);
+  } catch {
+    const failedStep = tools.updateGraphStep(step.id, {
+      status: 'failed',
+      agent_run_id: runResult.run.id,
+      result: output,
+      result_message_id: runResult.message.id,
+      error: 'Invalid Superpowers review output',
+    });
+    if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+    return applyReviewState({
+      ...state,
+      activeAgentRunId: runResult.run.id,
+      currentStepId: step.id,
+    }, phase, 'failed', ['Invalid Superpowers review output']);
+  }
+
+  const reviewedAt = runResult.run.completed_at ? new Date(runResult.run.completed_at).toISOString() : null;
+  const review = {
+    verdict: verdict.verdict === 'pass' ? 'approved' : verdict.verdict,
+    findings: verdict.findings,
+    reviewedAt,
+  } as const;
+  const nextState = phase === 'spec_compliance_review'
+    ? {
+      ...state,
+      activeAgentRunId: runResult.run.id,
+      currentStepId: step.id,
+      specComplianceReview: review,
+    }
+    : {
+      ...state,
+      activeAgentRunId: runResult.run.id,
+      currentStepId: step.id,
+      codeQualityReview: review,
+    };
+  const finalStatus = verdict.verdict === 'failed' ? 'failed' : 'completed';
+  const finalError = verdict.verdict === 'failed'
+    ? (phase === 'spec_compliance_review'
+      ? 'Superpowers spec compliance review failed'
+      : 'Superpowers code quality review failed')
+    : null;
+  const completedStep = tools.updateGraphStep(step.id, {
+    status: finalStatus,
+    agent_run_id: runResult.run.id,
+    result: output,
+    result_message_id: runResult.message.id,
+    error: finalError,
+  });
+  if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+  return applyReviewState(nextState, phase, verdict.verdict as SuperpowersReviewVerdict, verdict.findings);
 }

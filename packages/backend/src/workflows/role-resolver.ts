@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
 import type { RoomAgent, Task, WorkflowRole } from '../types.js';
 
 interface WorkflowAgentSelectionContext {
@@ -69,9 +71,10 @@ function rankCandidates(
   context: WorkflowAgentSelectionContext,
 ): RoomAgent[] {
   const pathScopeWrite = (context.scopeWrite ?? []).filter(isPathLikeScope);
-  if (role === 'executor' && pathScopeWrite.length > 0) {
+  const boundaryScopeWrite = pathScopeWrite.filter((scope) => normalizePath(scope) !== '');
+  if (role === 'executor' && boundaryScopeWrite.length > 0) {
     const writableMatches = agents.filter((agent) =>
-      scoreWorkspaceWrite(agent, pathScopeWrite) > 0 && scoreExecutableRuntime(agent, role, true) > 0,
+      scoreWorkspaceWrite(agent, boundaryScopeWrite) > 0 && scoreExecutableRuntime(agent, role, true) > 0,
     );
     agents = writableMatches;
   }
@@ -158,7 +161,12 @@ function inferDomainHint(context: WorkflowAgentSelectionContext): DomainHint {
     'packages/frontend',
     'src/pages',
     'src/components',
+    'ui',
+    'ux',
     '前端',
+    '详情页',
+    '详情弹窗',
+    '搜索框',
     '界面',
     '页面',
     '组件',
@@ -194,8 +202,32 @@ function countSignals(text: string, signals: string[]): number {
 function normalizePath(path: string): string | null {
   const trimmed = path.trim();
   if (trimmed.split(/[\\/]+/).includes('..')) return null;
-  const normalized = trimmed.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+$/, '').toLowerCase();
+  const relativePath = relativizeWorkspacePath(trimmed);
+  const normalized = relativePath.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+$/, '').toLowerCase();
   return normalized === '.' ? '' : normalized;
+}
+
+function relativizeWorkspacePath(path: string): string {
+  if (!isAbsolute(path)) return path;
+  const root = findWorkspaceRoot();
+  const rel = relative(root, path);
+  if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) return rel || '.';
+  return path;
+}
+
+function findWorkspaceRoot(): string {
+  let current = process.cwd();
+  for (;;) {
+    if (
+      existsSync(resolve(current, 'package.json')) &&
+      existsSync(resolve(current, 'packages', 'backend', 'package.json'))
+    ) {
+      return current;
+    }
+    const parent = resolve(current, '..');
+    if (parent === current) return process.cwd();
+    current = parent;
+  }
 }
 
 function isPathLikeScope(scope: string): boolean {

@@ -248,7 +248,7 @@ export type WorkflowRecoveryAction =
   | 'mark_blocked';
 export type WorkflowRecoveryActionStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
 export type WorkflowPlanTaskMode = 'parallel' | 'serial';
-export type WorkflowPlanTaskStatus = 'pending' | 'running' | 'completed' | 'blocked' | 'failed';
+export type WorkflowPlanTaskStatus = 'pending' | 'running' | 'completed' | 'blocked' | 'failed' | 'skipped';
 export interface WorkflowPlanTaskJson {
   id: string;
   title: string;

@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "concurrently -n backend,frontend -c blue,magenta \"npm run dev -w @openclaw-room/backend\" \"npm run dev -w @openclaw-room/frontend\"",
     "dev:backend": "npm run dev -w @openclaw-room/backend",
+    "dev:backend:watch": "npm run dev:watch -w @openclaw-room/backend",
     "dev:frontend": "npm run dev -w @openclaw-room/frontend",
     "build": "npm run build -w @openclaw-room/backend && npm run build -w @openclaw-room/frontend",
     "start": "npm run start -w @openclaw-room/backend"

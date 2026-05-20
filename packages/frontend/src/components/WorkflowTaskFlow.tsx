@@ -270,6 +270,24 @@ function buildStagePanels(flowEntries: FlowEntry[], t: TranslateFn): FlowStagePa
   }));
 }
 
+const SUPERPOWERS_STAGE_LABELS: Partial<Record<string, string>> = {
+  brainstorming: '头脑风暴',
+  spec_review: '设计审查',
+  worktree: 'Git Worktree',
+  writing_plans: '编写计划',
+  plan_review: '计划审查',
+  tdd_execute: 'TDD 执行',
+  spec_compliance_review: '规格符合审查',
+  code_quality_review: '代码质量审查',
+  finish_branch: '分支收口',
+};
+
+function formatWorkflowNodeLabel(step: WorkflowStep, workflowStageLabel: (stage: WorkflowStage) => string): string {
+  return step.node_name && step.node_name in SUPERPOWERS_STAGE_LABELS
+    ? SUPERPOWERS_STAGE_LABELS[step.node_name]!
+    : workflowStageLabel(step.stage);
+}
+
 function getCompletedCount(entries: FlowEntry[]): number {
   return entries.filter((entry) => entry.meta === 'completed').length;
 }
@@ -351,7 +369,7 @@ function buildFlowEntries(
         title: task?.title ?? fallbackTaskName,
         shortTitle: task?.title ?? fallbackTaskName,
         taskName: task?.title ?? fallbackTaskName,
-        subtitle: step.node_name ? step.node_name : null,
+        subtitle: step.node_name ? formatWorkflowNodeLabel(step, workflowStageLabel) : null,
         ...baseEntry,
         content: step.result || step.error || null,
         icon: step.status === 'completed'
@@ -374,7 +392,7 @@ function buildFlowEntries(
           title: t('workflowPlan.taskFlowVerification'),
           shortTitle: t('workflowPlan.taskFlowVerification'),
           taskName: task?.title ?? fallbackTaskName,
-          subtitle: task?.title ?? workflowStageLabel(step.stage),
+        subtitle: task?.title ?? formatWorkflowNodeLabel(step, workflowStageLabel),
           ...baseEntry,
           content: step.result || step.error || null,
           icon: step.status === 'completed'
@@ -395,7 +413,7 @@ function buildFlowEntries(
         sequence: index,
         title: reviewedTask
           ? `${t('workflowPlan.taskFlowReviewTarget')} · ${reviewedTask}`
-          : workflowStageLabel(step.stage),
+          : formatWorkflowNodeLabel(step, workflowStageLabel),
         shortTitle: task?.title ?? t('workflowPlan.taskFlowReviewStage'),
         taskName: task?.title ?? reviewedTask ?? fallbackTaskName,
         subtitle: task?.title ?? null,
@@ -417,7 +435,7 @@ function buildFlowEntries(
         title: `${t('workflowPlan.taskFlowAcceptanceTarget')} · ${acceptanceTarget}`,
         shortTitle: task?.title ?? t('workflowPlan.taskFlowAcceptanceStage'),
         taskName: task?.title ?? acceptanceTarget ?? fallbackTaskName,
-        subtitle: task?.title ?? null,
+        subtitle: task?.title ?? formatWorkflowNodeLabel(step, workflowStageLabel),
         ...baseEntry,
         content: step.result || step.error || null,
         icon: <CheckCircle2 className="h-3.5 w-3.5 text-[var(--color-success)]" />,
@@ -431,8 +449,8 @@ function buildFlowEntries(
       phaseLabel: t('workflowPlan.taskFlowPlanStage'),
       sortKey,
       sequence: index,
-      title: workflowStageLabel(step.stage),
-      shortTitle: workflowStageLabel(step.stage),
+      title: formatWorkflowNodeLabel(step, workflowStageLabel),
+      shortTitle: formatWorkflowNodeLabel(step, workflowStageLabel),
       taskName: task?.title ?? fallbackTaskName,
       subtitle: task?.title ?? null,
       ...baseEntry,

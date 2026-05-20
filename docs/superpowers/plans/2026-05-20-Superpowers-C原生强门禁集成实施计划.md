@@ -602,7 +602,7 @@ git commit -m "feat(frontend): 展示Superpowers门禁状态"
 - Modify: `docs/superpowers/plans/2026-05-20-Superpowers-C原生强门禁集成实施计划.md`
 - Create: `docs/superpowers/verification/2026-05-20-Superpowers-C原生强门禁集成验收.md`
 
-- [ ] **Step 1: Run backend targeted tests**
+- [x] **Step 1: Run backend targeted tests**
 
 Run:
 
@@ -612,7 +612,7 @@ npm --workspace packages/backend test -- workflow-definitions workflow-definitio
 
 Expected: PASS.
 
-- [ ] **Step 2: Run frontend targeted tests**
+- [x] **Step 2: Run frontend targeted tests**
 
 Run:
 
@@ -622,13 +622,13 @@ npm --workspace packages/frontend test -- WorkflowTaskBubble
 
 Expected: PASS.
 
-- [ ] **Step 3: Run full build**
+- [x] **Step 3: Run full build**
 
 Run: `npm run build`
 
 Expected: PASS.
 
-- [ ] **Step 4: Run full browser test**
+- [x] **Step 4: Run full browser test**
 
 After code implementation is finished, run a full browser test to verify:
 
@@ -639,15 +639,15 @@ After code implementation is finished, run a full browser test to verify:
 
 Expected: PASS.
 
-- [ ] **Step 5: Write verification doc**
+- [x] **Step 5: Write verification doc**
 
 Create verification report with command outputs, skipped checks, and residual risks.
 
-- [ ] **Step 6: Update plan checkboxes**
+- [x] **Step 6: Update plan checkboxes**
 
 Mark completed tasks in this plan.
 
-- [ ] **Step 7: Final code review**
+- [x] **Step 7: Final code review**
 
 Use `superpowers:requesting-code-review` for the full implementation. Fix Critical and Important findings.
 

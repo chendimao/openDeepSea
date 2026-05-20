@@ -65,12 +65,54 @@ test('scanWorkflowIncidents detects stale active agent run and deduplicates by f
   });
 });
 
+test('scanWorkflowIncidents ignores active agent run after heartbeat touch', () => {
+  const fixture = createWorkflowFixture('heartbeat active run');
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.childTask.id,
+    stage: 'implementation',
+    status: 'running',
+    room_agent_id: fixture.agent.id,
+    sort_order: 1,
+  });
+  const run = agentRunRepo.create({
+    room_id: fixture.room.id,
+    room_agent_id: fixture.agent.id,
+    agent_id: fixture.agent.agent_id,
+    backend: 'codex',
+    task_id: fixture.childTask.id,
+    workflow_run_id: fixture.workflow.id,
+    workflow_step_id: step.id,
+    workflow_stage: 'implementation',
+    prompt: 'implement',
+  });
+  db.prepare('UPDATE agent_runs SET updated_at = ? WHERE id = ?').run(1_000, run.id);
+
+  const touched = agentRunRepo.touchActive(run.id);
+  assert.ok(touched);
+  assert.ok(touched.updated_at > 1_000);
+
+  const incidents = scanWorkflowIncidents({
+    now: touched.updated_at + 30_000,
+    staleAgentRunMs: 120_000,
+  });
+
+  assert.equal(
+    incidents.some((incident) =>
+      incident.workflow_run_id === fixture.workflow.id &&
+      incident.incident_type === 'agent_run_stale'
+    ),
+    false,
+  );
+});
+
 test('scanWorkflowIncidents detects running step without active agent run', () => {
   const fixture = createWorkflowFixture('step without active run');
   workflowRepo.createStep({
     workflow_run_id: fixture.workflow.id,
     task_id: fixture.childTask.id,
     stage: 'implementation',
+    node_name: 'execute',
     status: 'running',
     room_agent_id: fixture.agent.id,
     sort_order: 1,
@@ -80,6 +122,28 @@ test('scanWorkflowIncidents detects running step without active agent run', () =
 
   assert.equal(incidents.length, 1);
   assert.equal(incidents[0]?.incident_type, 'step_without_active_run');
+});
+
+test('scanWorkflowIncidents ignores internal running planning step without agent run', () => {
+  const fixture = createWorkflowFixture('planning without active run');
+  workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.task.id,
+    stage: 'planning',
+    node_name: 'planning',
+    status: 'running',
+    sort_order: 1,
+  });
+
+  const incidents = scanWorkflowIncidents({ now: 20_000, staleAgentRunMs: 120_000 });
+
+  assert.equal(
+    incidents.some((incident) =>
+      incident.workflow_run_id === fixture.workflow.id &&
+      incident.incident_type === 'step_without_active_run'
+    ),
+    false,
+  );
 });
 
 test('scanWorkflowIncidents detects backend restart interrupted agent run', () => {

@@ -415,7 +415,9 @@ test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and fi
     ],
   }));
 
-  const latest = await continueGraphWorkflow(run.id);
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
   const state = parseGraphState(latest.graph_state);
   const nodeNames = listRawStepNodeNames(run.id);
 
@@ -433,6 +435,79 @@ test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and fi
   assert.equal(state?.codeQualityReview?.verdict, 'approved');
   assert.equal(state?.finishBranchDecision?.decision, 'keep_branch');
   assert.equal(nodeNames.includes('review'), false);
+});
+
+test('Superpowers review stages run current room reviewer agents instead of auto-approving', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-agent-review-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Agent Review', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Agent Review Room' });
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  const acceptor = addAcpWorkflowAgent(room.id, 'acceptor');
+  roomAgentRepo.setCapabilitiesAndRuntime(reviewer.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  roomAgentRepo.setCapabilitiesAndRuntime(acceptor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Run Superpowers reviewer agents',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const reviewCalls: Array<{
+    stage: WorkflowStage | null | undefined;
+    nodeName: string | null | undefined;
+    prompt: string;
+    runId: string;
+  }> = [];
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    plan: createRunnableSuperpowersPlan(task.title),
+    tddEvidence: [
+      { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
+      { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
+    ],
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => {
+      const result = await createCompletedAgentRun(room.id, input);
+      reviewCalls.push({
+        stage: input.workflowStage,
+        nodeName: input.workflowStepId ? workflowRepo.getStep(input.workflowStepId)?.node_name : null,
+        prompt: input.prompt,
+        runId: result.run.id,
+      });
+      return result;
+    },
+  });
+  const state = parseGraphState(latest.graph_state);
+
+  assert.equal(latest.status, 'completed');
+  assert.deepEqual(
+    reviewCalls.map((call) => `${call.stage}:${call.nodeName}`),
+    [
+      'code_review:spec_compliance_review',
+      'code_review:code_quality_review',
+      'acceptance:acceptance',
+    ],
+  );
+  assert.match(reviewCalls[0]!.prompt, /spec_compliance_review/);
+  assert.match(reviewCalls[1]!.prompt, /code_quality_review/);
+  assert.equal(state?.specComplianceReview?.verdict, 'approved');
+  assert.equal(state?.codeQualityReview?.verdict, 'approved');
+  assert.equal(
+    state?.specComplianceReview?.reviewedAt,
+    new Date(agentRunRepo.get(reviewCalls[0]!.runId)?.completed_at ?? 0).toISOString(),
+  );
 });
 
 test('Superpowers actual runtime records fresh verification evidence and default finish branch decision after verify succeeds', async () => {
@@ -491,13 +566,13 @@ test('Superpowers actual runtime blocks before finish branch when required verif
   const cases = [
     {
       title: 'missing required evidence',
-      verificationCommands: [],
+      verificationCommands: [{ command: 'npm run build', reason: 'required verification', required: true }],
       verificationEvidence: [],
       expectedError: /verification evidence/i,
     },
     {
       title: 'failing required evidence',
-      verificationCommands: [],
+      verificationCommands: [{ command: 'npm run build', reason: 'required verification', required: true }],
       verificationEvidence: [
         {
           command: 'npm run build',
@@ -511,7 +586,7 @@ test('Superpowers actual runtime blocks before finish branch when required verif
     },
     {
       title: 'stale required evidence',
-      verificationCommands: [],
+      verificationCommands: [{ command: 'npm run build', reason: 'required verification', required: true }],
       verificationEvidence: [
         {
           command: 'npm run build',
@@ -545,6 +620,18 @@ test('Superpowers actual runtime blocks before finish branch when required verif
         { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
         { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
       ],
+      currentNode: 'verify',
+      superpowersPhase: null,
+      specComplianceReview: {
+        verdict: 'approved',
+        findings: [],
+        reviewedAt: '2026-05-20T00:00:00.000Z',
+      },
+      codeQualityReview: {
+        verdict: 'approved',
+        findings: [],
+        reviewedAt: '2026-05-20T00:00:00.000Z',
+      },
       verificationEvidence: item.verificationEvidence,
     }));
 
@@ -555,8 +642,8 @@ test('Superpowers actual runtime blocks before finish branch when required verif
     assert.equal(latest.status, 'blocked', item.title);
     assert.match(latest.error ?? '', item.expectedError);
     assert.equal(nodeNames.includes('acceptance'), false);
-    assert.equal(nodeNames.includes('finish_branch'), false);
-    assert.notEqual(state?.superpowersPhase, 'finish_branch');
+    assert.equal(nodeNames.includes('finish_branch'), true);
+    assert.equal(state?.superpowersPhase, 'finish_branch');
     assert.equal(state?.finishBranchDecision, null);
   }
 });
@@ -1233,7 +1320,7 @@ test('graph workflow invites required built-in agents when the room only has pla
   const agents = roomAgentRepo.listByRoom(room.id);
   assert.deepEqual(
     agents.map((agent) => agent.agent_id),
-    ['planner', 'frontend-executor', 'backend-executor', 'acceptor'],
+    ['planner', 'frontend-executor', 'backend-executor', 'reviewer', 'acceptor'],
   );
   const children = taskRepo.listChildren(task.id);
   assert.equal(
@@ -1249,6 +1336,8 @@ test('graph workflow invites required built-in agents when the room only has pla
     [
       'implementation:frontend-executor',
       'implementation:backend-executor',
+      'code_review:reviewer',
+      'code_review:reviewer',
       'acceptance:acceptor',
     ],
   );

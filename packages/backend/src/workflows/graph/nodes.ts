@@ -237,6 +237,22 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const implementationPlanTasks = state.plan.tasks
         .map((planTask, originalIndex) => ({ planTask, originalIndex }))
         .filter(({ planTask }) => isImplementationPlanTask(planTask));
+      for (const { planTask } of implementationPlanTasks) {
+        const coordinatorSelection = selectCoordinatorAgentForTask({
+          task: coordinatorTaskFromPlanTask(planTask),
+          agents: assignmentAgents,
+        });
+        if (coordinatorSelection.agent) continue;
+        const provisioning = ensureWorkflowAgentsForRun({
+          roomId: context.room.id,
+          agents: assignmentAgents,
+          planTasks: [planTask],
+        });
+        assignmentAgents = provisioning.agents;
+        broadcastJoinedAgents(tools, context.room.id, provisioning.joinedAgents);
+      }
+      const skippedAssignments: Array<{ index: number; reason: string }> = [];
+      const blockedAssignments: Array<{ planTask: ParsedPlanTask; reason: string }> = [];
       for (const item of implementationPlanTasks) {
         const { planTask, originalIndex } = item;
         const coordinatorSelection = selectCoordinatorAgentForTask({
@@ -256,6 +272,30 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         }
         const assigned = selectAssignmentHintForPlanTask(state, originalIndex, assignmentAgents, tools, resolved)
           ?? resolved;
+        if (!assigned) {
+          const reason = buildExecutorAssignmentDiagnostic(planTask, assignmentAgents);
+          if (isOptionalPlanTask(planTask)) {
+            skippedAssignments.push({ index: originalIndex, reason });
+            workflowPlanAssignments.push({
+              taskId: state.workflowPlan?.tasks[originalIndex]?.id ?? '',
+              agentId: null,
+              assignmentReason: reason,
+            });
+            recordEventSafely(tools, context, {
+              eventType: 'workflow_stage_changed',
+              content: `条件子任务「${planTask.title}」未找到单一可覆盖写入范围的执行智能体，已标记为跳过。`,
+              metadata: {
+                graph_node: 'dispatch',
+                workflow_stage: 'assignment',
+                status: 'skipped',
+                reason,
+                scope_write: planTask.scopeWrite,
+              },
+            });
+            continue;
+          }
+          blockedAssignments.push({ planTask, reason });
+        }
         const child = tools.createChildTask({
           room_id: context.task.room_id,
           project_id: context.task.project_id,
@@ -276,6 +316,50 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
             ? coordinatorSelection.assignmentReason
             : `No matching in-room agent; suggested ${coordinatorSelection.templateId ?? 'workflow executor'}.`,
         });
+      }
+
+      if (blockedAssignments.length > 0) {
+        const error = blockedAssignments.map((item) => item.reason).join('\n');
+        const blockedWorkflowPlan = updateWorkflowPlanSkippedTasks(
+          updateWorkflowPlanBlockedTasks(
+            updateWorkflowPlanAssignments(state.workflowPlan ?? null, workflowPlanAssignments),
+            implementationPlanTasks,
+            blockedAssignments.map((item) => item.planTask),
+          ),
+          skippedAssignments,
+        );
+        const updatedRun = tools.updateRun(context.run.id, {
+          status: 'blocked',
+          current_stage: 'assignment',
+          error,
+        });
+        if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+        const nextState: AgentWorkflowState = {
+          ...state,
+          workflowPlan: blockedWorkflowPlan,
+          currentNode: 'dispatch',
+          currentStepId: step.id,
+          childTaskIds,
+          childTaskPlanIndexes,
+          status: 'blocked',
+          error,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        tools.broadcastStepCreated(context.room.id, step);
+        for (const child of createdChildren) {
+          tools.broadcastTaskCreated(child);
+        }
+        recordEventSafely(tools, context, {
+          eventType: 'workflow_blocked',
+          workflowStepId: step.id,
+          content: `任务「${context.task.title}」存在必做子任务无法分配，工作流已阻塞。`,
+          metadata: {
+            graph_node: 'dispatch',
+            workflow_stage: 'assignment',
+            error,
+          },
+        });
+        return nextState;
       }
 
       const skippedPlanTaskCount = state.plan.tasks.length - implementationPlanTasks.length;
@@ -333,7 +417,10 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         metadata: { graph_node: 'dispatch', workflow_stage: 'assignment', child_task_ids: childTaskIds },
       });
       const workflowPlan = updateWorkflowPlanNonImplementationTasks(
-        updateWorkflowPlanAssignments(state.workflowPlan ?? null, workflowPlanAssignments),
+        updateWorkflowPlanSkippedTasks(
+          updateWorkflowPlanAssignments(state.workflowPlan ?? null, workflowPlanAssignments),
+          skippedAssignments,
+        ),
         state.plan.tasks,
         assignmentAgents,
         tools,
@@ -1803,6 +1890,40 @@ function updateWorkflowPlanAssignments(
   };
 }
 
+function updateWorkflowPlanSkippedTasks(
+  plan: WorkflowPlanJson | null,
+  skippedAssignments: Array<{ index: number; reason: string }>,
+): WorkflowPlanJson | null {
+  if (!plan || skippedAssignments.length === 0) return plan;
+  const skippedByIndex = new Map(skippedAssignments.map((item) => [item.index, item.reason]));
+  return {
+    ...plan,
+    tasks: plan.tasks.map((task, index) => skippedByIndex.has(index)
+      ? { ...task, agent_id: null, status: 'skipped', progress: 100 }
+      : task),
+  };
+}
+
+function updateWorkflowPlanBlockedTasks(
+  plan: WorkflowPlanJson | null,
+  implementationPlanTasks: Array<{ planTask: ParsedPlanTask; originalIndex: number }>,
+  blockedPlanTasks: ParsedPlanTask[],
+): WorkflowPlanJson | null {
+  if (!plan || blockedPlanTasks.length === 0) return plan;
+  const blocked = new Set(blockedPlanTasks);
+  const blockedIndexes = new Set(
+    implementationPlanTasks
+      .filter((item) => blocked.has(item.planTask))
+      .map((item) => item.originalIndex),
+  );
+  return {
+    ...plan,
+    tasks: plan.tasks.map((task, index) => blockedIndexes.has(index)
+      ? { ...task, agent_id: null, status: 'blocked', progress: 0 }
+      : task),
+  };
+}
+
 function updateWorkflowPlanNonImplementationTasks(
   plan: WorkflowPlanJson | null,
   planTasks: ParsedPlanTask[],
@@ -1930,7 +2051,7 @@ function resetWorkflowPlanExecutorTasksForRepair(plan: WorkflowPlanJson | null):
   if (!plan) return null;
   return {
     ...plan,
-    tasks: plan.tasks.map((task) => task.role === 'executor'
+    tasks: plan.tasks.map((task) => task.role === 'executor' && task.status !== 'skipped'
       ? { ...task, status: 'pending', progress: 0 }
       : task),
   };
@@ -1943,6 +2064,52 @@ function getRoleProgress(plan: WorkflowPlanJson | null, role: 'reviewer' | 'acce
 function appendResultRefs(existing: string[], refs: string[] | undefined): string[] {
   if (!refs?.length) return existing;
   return Array.from(new Set([...existing, ...refs]));
+}
+
+function isOptionalPlanTask(planTask: ParsedPlanTask): boolean {
+  const text = [
+    planTask.title,
+    planTask.description,
+    ...planTask.acceptance,
+  ].join('\n').toLowerCase();
+  return [
+    '必要时',
+    '如有必要',
+    '按需',
+    '可选',
+    '条件型',
+    '仅当',
+    '如果需要',
+    '若需要',
+    'if needed',
+    'when needed',
+    'optional',
+    'conditional',
+  ].some((signal) => text.includes(signal));
+}
+
+function buildExecutorAssignmentDiagnostic(planTask: ParsedPlanTask, agents: RoomAgent[]): string {
+  const scopeWrite = planTask.scopeWrite.length > 0 ? planTask.scopeWrite.join(', ') : '未指定';
+  const candidates = agents
+    .filter((agent) => agent.left_at === null && agent.workflow_role === 'executor')
+    .map((agent) => {
+      const writable = [
+        ...(agent.workspace_policy?.write ?? []),
+        ...agent.acp_writable_dirs,
+      ];
+      return [
+        `${agent.agent_name || agent.agent_id}(${agent.id})`,
+        `acp=${agent.acp_enabled === 1 && Boolean(agent.acp_backend) ? agent.acp_backend : 'disabled'}`,
+        `permission=${agent.acp_permission_mode}`,
+        `tools=${agent.tool_policy?.allowed.join(', ') || 'none'}`,
+        `write=${writable.join(', ') || 'none'}`,
+      ].join('; ');
+    });
+  return [
+    `No single executor can cover scopeWrite for task "${planTask.title}".`,
+    `scopeWrite: ${scopeWrite}.`,
+    `candidate executors: ${candidates.length > 0 ? candidates.join(' | ') : 'none'}.`,
+  ].join(' ');
 }
 
 type PlanTaskDomain = 'frontend' | 'backend' | null;
@@ -1976,7 +2143,12 @@ function inferPlanTaskDomain(planTask: ParsedPlanTask): PlanTaskDomain {
     'packages/frontend',
     'src/pages',
     'src/components',
+    'ui',
+    'ux',
     '前端',
+    '详情页',
+    '详情弹窗',
+    '搜索框',
     '界面',
     '页面',
     '组件',
