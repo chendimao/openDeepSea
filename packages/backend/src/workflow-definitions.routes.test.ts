@@ -3,17 +3,21 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import type { WorkflowDefinitionGraph } from './types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-definition-routes-')), 'test.db');
 
 const { router } = await import('./routes.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
+const { workflowDefinitionRepo } = await import('./repos/workflow-definitions.js');
 const express = (await import('express')).default;
 
 const app = express();
 app.use(express.json());
 app.use('/api', router);
+
+const CUSTOM_WORKFLOW_GONE_MESSAGE = 'custom workflow definitions have been replaced by Superpowers-C';
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);
@@ -29,39 +33,76 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   }
 }
 
-test('workflow definition routes create publish and list room-visible definitions', async () => {
+test('workflow definition mutation routes return 410 Gone', async () => {
+  const requests: Array<{ path: string; init: RequestInit }> = [
+    {
+      path: '/api/workflow-definitions',
+      init: {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Room Workflow',
+          scope: 'system',
+          scope_id: 'default',
+          definition: routeDefinition(),
+        }),
+      },
+    },
+    {
+      path: '/api/workflow-definitions/legacy-definition/duplicate',
+      init: { method: 'POST', body: JSON.stringify({ name: 'Copied Workflow' }) },
+    },
+    {
+      path: '/api/workflow-definitions/legacy-definition/publish',
+      init: { method: 'POST' },
+    },
+    {
+      path: '/api/workflow-definitions/legacy-definition/archive',
+      init: { method: 'POST' },
+    },
+  ];
+
+  for (const item of requests) {
+    const res = await request(item.path, item.init);
+    assert.equal(res.status, 410);
+    assert.deepEqual(await res.json(), { error: CUSTOM_WORKFLOW_GONE_MESSAGE });
+  }
+});
+
+test('workflow definition routes expose only Superpowers for room selection', async () => {
   const project = projectRepo.create({
     name: 'Workflow Definition Routes',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-definition-routes-project-')),
   });
   const room = roomRepo.create({ project_id: project.id, name: 'Workflow Definition Routes Room' });
+  const projectDefinition = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Historical Project Workflow',
+    description: null,
+    scope: 'project',
+    scope_id: project.id,
+    definition: routeDefinition(),
+  }).id)!;
+  const roomDefinition = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
+    name: 'Historical Room Workflow',
+    description: null,
+    scope: 'room',
+    scope_id: room.id,
+    definition: routeDefinition(),
+  }).id)!;
 
-  const createRes = await request('/api/workflow-definitions', {
-    method: 'POST',
-    body: JSON.stringify({
-      name: 'Room Workflow',
-      scope: 'room',
-      scope_id: room.id,
-      definition: routeDefinition(),
-    }),
-  });
-  assert.equal(createRes.status, 201);
-  const draft = await createRes.json() as { id: string; status: string };
-  assert.equal(draft.status, 'draft');
-
-  const publishRes = await request(`/api/workflow-definitions/${draft.id}/publish`, { method: 'POST' });
-  assert.equal(publishRes.status, 200);
-  const published = await publishRes.json() as { id: string; status: string };
-  assert.equal(published.status, 'published');
-
+  assert.ok(projectDefinition.id);
+  assert.ok(roomDefinition.id);
   const visibleRes = await request(`/api/rooms/${room.id}/workflow-definitions`);
   assert.equal(visibleRes.status, 200);
   const visible = await visibleRes.json() as Array<{ id: string; builtin_key: string | null }>;
-  assert.ok(visible.some((definition) => definition.builtin_key === 'default-langgraph'));
-  assert.ok(visible.some((definition) => definition.id === draft.id));
+  assert.deepEqual(visible.map((definition) => definition.builtin_key), ['superpowers-development']);
+
+  const settingsSelectionRes = await request(`/api/workflow-definitions?roomId=${room.id}&includeArchived=1`);
+  assert.equal(settingsSelectionRes.status, 200);
+  const settingsSelection = await settingsSelectionRes.json() as Array<{ id: string; builtin_key: string | null }>;
+  assert.deepEqual(settingsSelection.map((definition) => definition.builtin_key), ['superpowers-development']);
 });
 
-test('workflow definition routes reject invalid scope targets', async () => {
+test('workflow definition routes return 410 before custom definition validation', async () => {
   const res = await request('/api/workflow-definitions', {
     method: 'POST',
     body: JSON.stringify({
@@ -72,60 +113,8 @@ test('workflow definition routes reject invalid scope targets', async () => {
     }),
   });
 
-  assert.equal(res.status, 400);
-});
-
-test('workflow definition routes duplicate edit draft archive and delete draft', async () => {
-  const createRes = await request('/api/workflow-definitions', {
-    method: 'POST',
-    body: JSON.stringify({
-      name: 'System Workflow',
-      scope: 'system',
-      scope_id: 'default',
-      definition: routeDefinition(),
-    }),
-  });
-  assert.equal(createRes.status, 201);
-  const draft = await createRes.json() as { id: string; scope: string; scope_id: string };
-  assert.equal(draft.scope, 'system');
-  assert.equal(draft.scope_id, 'default');
-
-  const publishRes = await request(`/api/workflow-definitions/${draft.id}/publish`, { method: 'POST' });
-  assert.equal(publishRes.status, 200);
-  const published = await publishRes.json() as { id: string; status: string };
-  assert.equal(published.status, 'published');
-
-  const editDraftRes = await request(`/api/workflow-definitions/${published.id}/edit-draft`, { method: 'POST' });
-  assert.equal(editDraftRes.status, 201);
-  const editDraft = await editDraftRes.json() as { id: string; status: string };
-  assert.notEqual(editDraft.id, published.id);
-  assert.equal(editDraft.status, 'draft');
-
-  const duplicateRes = await request(`/api/workflow-definitions/${published.id}/duplicate`, {
-    method: 'POST',
-    body: JSON.stringify({ name: 'Copied Workflow', scope: 'system', scope_id: 'default' }),
-  });
-  assert.equal(duplicateRes.status, 201);
-  const duplicate = await duplicateRes.json() as {
-    id: string;
-    name: string;
-    status: string;
-    scope: string;
-    scope_id: string;
-  };
-  assert.notEqual(duplicate.id, published.id);
-  assert.equal(duplicate.name, 'Copied Workflow');
-  assert.equal(duplicate.status, 'draft');
-  assert.equal(duplicate.scope, 'system');
-  assert.equal(duplicate.scope_id, 'default');
-
-  const deleteRes = await request(`/api/workflow-definitions/${editDraft.id}`, { method: 'DELETE' });
-  assert.equal(deleteRes.status, 204);
-
-  const archiveRes = await request(`/api/workflow-definitions/${published.id}/archive`, { method: 'POST' });
-  assert.equal(archiveRes.status, 200);
-  const archived = await archiveRes.json() as { status: string };
-  assert.equal(archived.status, 'archived');
+  assert.equal(res.status, 410);
+  assert.deepEqual(await res.json(), { error: CUSTOM_WORKFLOW_GONE_MESSAGE });
 });
 
 test('workflow definition routes list filters by scope status archive flag and visibility context', async () => {
@@ -191,11 +180,14 @@ test('workflow definition routes list filters by scope status archive flag and v
 
   const roomContextRes = await request(`/api/workflow-definitions?projectId=${project.id}&roomId=${room.id}`);
   assert.equal(roomContextRes.status, 200);
-  const roomContextDefinitions = await roomContextRes.json() as Array<{ id: string }>;
-  assert.ok(roomContextDefinitions.some((definition) => definition.id === systemDraft.id));
-  assert.ok(roomContextDefinitions.some((definition) => definition.id === projectDraft.id));
-  assert.ok(roomContextDefinitions.some((definition) => definition.id === roomDraft.id));
-  assert.equal(roomContextDefinitions.some((definition) => definition.id === otherProjectDraft.id), false);
+  const roomContextDefinitions = await roomContextRes.json() as Array<{ id: string; builtin_key: string | null }>;
+  assert.deepEqual(roomContextDefinitions.map((definition) => definition.builtin_key), ['superpowers-development']);
+
+  const historicalContextRes = await request(`/api/workflow-definitions?scope=project&projectId=${project.id}&roomId=${room.id}`);
+  assert.equal(historicalContextRes.status, 200);
+  const historicalContextDefinitions = await historicalContextRes.json() as Array<{ id: string }>;
+  assert.ok(historicalContextDefinitions.some((definition) => definition.id === projectDraft.id));
+  assert.equal(historicalContextDefinitions.some((definition) => definition.id === otherProjectDraft.id), false);
 });
 
 test('workflow definition routes validate list filter query values and references', async () => {
@@ -230,29 +222,22 @@ async function createDefinition(input: {
   scope: 'system' | 'project' | 'room';
   scope_id: string;
 }): Promise<{ id: string; name: string; status: string; scope: string; scope_id: string }> {
-  const res = await request('/api/workflow-definitions', {
-    method: 'POST',
-    body: JSON.stringify({
-      ...input,
-      definition: routeDefinition(),
-    }),
+  return workflowDefinitionRepo.createDraft({
+    ...input,
+    description: null,
+    definition: routeDefinition(),
   });
-  assert.equal(res.status, 201);
-  return await res.json() as { id: string; name: string; status: string; scope: string; scope_id: string };
 }
 
 async function publishAndArchive(id: string): Promise<{ id: string; status: string }> {
-  const publishRes = await request(`/api/workflow-definitions/${id}/publish`, { method: 'POST' });
-  assert.equal(publishRes.status, 200);
-
-  const archiveRes = await request(`/api/workflow-definitions/${id}/archive`, { method: 'POST' });
-  assert.equal(archiveRes.status, 200);
-  return await archiveRes.json() as { id: string; status: string };
+  workflowDefinitionRepo.publish(id);
+  return workflowDefinitionRepo.archive(id) as { id: string; status: string };
 }
 
-function routeDefinition() {
+function routeDefinition(): WorkflowDefinitionGraph {
   return {
     nodes: [
+      { id: 'context', type: 'context', label: 'Context' },
       { id: 'planning', type: 'planning', label: 'Planning' },
       { id: 'approval', type: 'approval_gate', label: 'Approval' },
       { id: 'dispatch', type: 'dispatch', label: 'Dispatch' },
@@ -264,6 +249,7 @@ function routeDefinition() {
       { id: 'memory', type: 'memory', label: 'Memory' },
     ],
     edges: [
+      { from: 'context', to: 'planning' },
       { from: 'planning', to: 'approval' },
       { from: 'approval', to: 'dispatch', condition: 'approved' },
       { from: 'dispatch', to: 'execute' },

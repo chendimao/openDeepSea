@@ -60,12 +60,12 @@ test('settingsRepo resolves auto_distill_enabled with project and room overrides
   assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.auto_distill_enabled, true);
 });
 
-test('settingsRepo resolves default workflow definition with project and room overrides', async () => {
+test('settingsRepo resolves Superpowers default workflow while preserving saved overrides', async () => {
   const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-settings-workflow-project-'));
   const project = projectRepo.create({ name: 'Settings Workflow', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Settings Workflow Room' });
-  const builtIn = workflowDefinitionRepo.ensureBuiltInDefinitions();
+  const superpowers = workflowDefinitionRepo.getSuperpowersDefinition();
   const projectDefinition = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
     name: 'Project Workflow',
     description: null,
@@ -81,13 +81,15 @@ test('settingsRepo resolves default workflow definition with project and room ov
     definition: testDefinition('room-planning'),
   }).id);
 
-  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, builtIn.id);
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, superpowers.id);
 
   settingsRepo.updateProject(project.id, { default_workflow_definition_id: projectDefinition?.id });
-  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, projectDefinition?.id);
+  assert.equal(settingsRepo.getProject(project.id)?.default_workflow_definition_id, projectDefinition?.id);
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, superpowers.id);
 
   settingsRepo.updateRoom(room.id, { default_workflow_definition_id: roomDefinition?.id });
-  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, roomDefinition?.id);
+  assert.equal(settingsRepo.getRoom(room.id)?.default_workflow_definition_id, roomDefinition?.id);
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, superpowers.id);
 });
 
 test('settingsRepo validates workflow definition visibility by settings scope', async () => {
@@ -135,14 +137,14 @@ test('settingsRepo rejects draft and archived workflow defaults', async () => {
   assert.throws(() => settingsRepo.updateSystem({ default_workflow_definition_id: published.id }), /archived|published/);
 });
 
-test('settingsRepo clears archived workflow defaults from system project and room scopes', async () => {
+test('settingsRepo ignores archived workflow defaults from system project and room scopes', async () => {
   const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
   const project = projectRepo.create({
     name: 'Workflow Archive Defaults Project',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-settings-workflow-archive-defaults-')),
   });
   const room = roomRepo.create({ project_id: project.id, name: 'Workflow Archive Defaults Room' });
-  const builtIn = workflowDefinitionRepo.ensureBuiltInDefinitions();
+  const superpowers = workflowDefinitionRepo.getSuperpowersDefinition();
   const systemWorkflow = workflowDefinitionRepo.publish(workflowDefinitionRepo.createDraft({
     name: 'System Archive Default',
     description: null,
@@ -170,13 +172,13 @@ test('settingsRepo clears archived workflow defaults from system project and roo
   settingsRepo.updateRoom(room.id, { default_workflow_definition_id: roomWorkflow.id });
 
   workflowDefinitionRepo.archive(systemWorkflow.id);
-  assert.equal(settingsRepo.getSystem().default_workflow_definition_id, builtIn.id);
+  assert.equal(settingsRepo.getSystem().default_workflow_definition_id, superpowers.id);
 
   workflowDefinitionRepo.archive(projectWorkflow.id);
-  assert.equal(settingsRepo.resolveForProject(project.id)?.effective.default_workflow_definition_id, builtIn.id);
+  assert.equal(settingsRepo.resolveForProject(project.id)?.effective.default_workflow_definition_id, superpowers.id);
 
   workflowDefinitionRepo.archive(roomWorkflow.id);
-  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, builtIn.id);
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.default_workflow_definition_id, superpowers.id);
 });
 
 function testDefinition(prefix: string) {

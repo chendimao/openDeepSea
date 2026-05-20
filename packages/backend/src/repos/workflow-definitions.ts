@@ -320,6 +320,21 @@ export const workflowDefinitionRepo = {
     return row ? normalize(row) : undefined;
   },
 
+  getSuperpowersDefinition(): WorkflowDefinition {
+    const definition = this.getBuiltInByKey(BUILTIN_SUPERPOWERS_KEY);
+    if (!definition) throw new Error('Superpowers workflow definition is not available');
+    return definition;
+  },
+
+  listSelectableBuiltIns(): WorkflowDefinition[] {
+    return [this.getSuperpowersDefinition()];
+  },
+
+  listSelectableForRoom(roomId: string): WorkflowDefinition[] {
+    if (!roomRepo.get(roomId)) return [];
+    return this.listSelectableBuiltIns();
+  },
+
   getPublishedOrDefault(id: string | null | undefined): WorkflowDefinition {
     if (id) {
       const definition = this.get(id);

@@ -621,47 +621,6 @@ router.patch('/rooms/:roomId/settings', (req, res) => {
   res.json(settingsRepo.resolveForRoom(req.params.roomId));
 });
 
-const workflowDefinitionGraphSchema = z.object({
-  nodes: z.array(z.object({
-    id: z.string().trim().min(1),
-    type: z.enum([
-      'context',
-      'planning',
-      'approval_gate',
-      'dispatch',
-      'execute',
-      'review',
-      'repair_decision',
-      'verify',
-      'acceptance',
-      'memory',
-    ]),
-    label: z.string().trim().min(1),
-    stage: z.enum(['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance']).nullable().optional(),
-    role: z.enum(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor']).nullable().optional(),
-    position: z.object({ x: z.number(), y: z.number() }).nullable().optional(),
-  })).min(1),
-  edges: z.array(z.object({
-    from: z.string().trim().min(1),
-    to: z.string().trim().min(1),
-    condition: z.string().trim().min(1).nullable().optional(),
-  })),
-});
-
-const workflowDefinitionCreateSchema = z.object({
-  name: z.string().trim().min(1),
-  description: z.string().trim().nullable().optional(),
-  scope: z.enum(['system', 'project', 'room']),
-  scope_id: z.string().trim().min(1),
-  definition: workflowDefinitionGraphSchema,
-});
-
-const workflowDefinitionPatchSchema = z.object({
-  name: z.string().trim().min(1).optional(),
-  description: z.string().trim().nullable().optional(),
-  definition: workflowDefinitionGraphSchema.optional(),
-});
-
 const workflowDefinitionListSchema = z.object({
   scope: z.enum(['system', 'project', 'room']).optional(),
   status: z.enum(['draft', 'published', 'archived']).optional(),
@@ -670,12 +629,15 @@ const workflowDefinitionListSchema = z.object({
   includeArchived: z.enum(['1']).optional(),
 });
 
-const workflowDefinitionDuplicateSchema = z.object({
-  name: z.string().trim().min(1).optional(),
-  description: z.string().trim().nullable().optional(),
-  scope: z.enum(['system', 'project', 'room']).optional(),
-  scope_id: z.string().trim().min(1).optional(),
-});
+const CUSTOM_WORKFLOW_DEFINITIONS_GONE = 'custom workflow definitions have been replaced by Superpowers-C';
+
+function customWorkflowDefinitionsGone(res: Response) {
+  return res.status(410).json({ error: CUSTOM_WORKFLOW_DEFINITIONS_GONE });
+}
+
+function isSelectableWorkflowDefinitionRequest(query: z.infer<typeof workflowDefinitionListSchema>): boolean {
+  return Boolean((query.projectId || query.roomId) && !query.scope && !query.status);
+}
 
 router.get('/workflow-definitions', (req, res) => {
   const parsed = workflowDefinitionListSchema.safeParse(req.query);
@@ -690,6 +652,10 @@ router.get('/workflow-definitions', (req, res) => {
       return res.status(400).json({ error: 'room does not belong to project' });
     }
   }
+  if (isSelectableWorkflowDefinitionRequest(parsed.data)) {
+    return res.json(workflowDefinitionRepo.listSelectableBuiltIns());
+  }
+  // This route remains a read-only historical/management listing when explicit filters are supplied.
   res.json(workflowDefinitionRepo.list({
     scope: parsed.data.scope,
     status: parsed.data.status,
@@ -699,85 +665,37 @@ router.get('/workflow-definitions', (req, res) => {
   }));
 });
 
-router.post('/workflow-definitions', (req, res) => {
-  const parsed = workflowDefinitionCreateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  try {
-    const definition = workflowDefinitionRepo.createDraft(parsed.data);
-    res.status(201).json(definition);
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
+router.post('/workflow-definitions', (_req, res) => {
+  customWorkflowDefinitionsGone(res);
 });
 
-router.patch('/workflow-definitions/:id', (req, res) => {
-  const parsed = workflowDefinitionPatchSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  try {
-    const definition = workflowDefinitionRepo.updateDraft(req.params.id, parsed.data);
-    if (!definition) return res.status(404).json({ error: 'not found' });
-    res.json(definition);
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
+router.patch('/workflow-definitions/:id', (_req, res) => {
+  customWorkflowDefinitionsGone(res);
 });
 
-router.post('/workflow-definitions/:id/publish', (req, res) => {
-  try {
-    const definition = workflowDefinitionRepo.publish(req.params.id);
-    if (!definition) return res.status(404).json({ error: 'not found' });
-    res.json(definition);
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
+router.post('/workflow-definitions/:id/publish', (_req, res) => {
+  customWorkflowDefinitionsGone(res);
 });
 
-router.post('/workflow-definitions/:id/duplicate', (req, res) => {
-  const parsed = workflowDefinitionDuplicateSchema.safeParse(req.body ?? {});
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  try {
-    const definition = workflowDefinitionRepo.duplicate(req.params.id, parsed.data);
-    if (!definition) return res.status(404).json({ error: 'not found' });
-    res.status(201).json(definition);
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
+router.post('/workflow-definitions/:id/duplicate', (_req, res) => {
+  customWorkflowDefinitionsGone(res);
 });
 
-router.post('/workflow-definitions/:id/edit-draft', (req, res) => {
-  try {
-    if (!workflowDefinitionRepo.get(req.params.id)) return res.status(404).json({ error: 'not found' });
-    const definition = workflowDefinitionRepo.createEditDraft(req.params.id);
-    if (!definition) return res.status(400).json({ error: 'workflow definition cannot be edited' });
-    res.status(201).json(definition);
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
+router.post('/workflow-definitions/:id/edit-draft', (_req, res) => {
+  customWorkflowDefinitionsGone(res);
 });
 
-router.post('/workflow-definitions/:id/archive', (req, res) => {
-  try {
-    const definition = workflowDefinitionRepo.archive(req.params.id);
-    if (!definition) return res.status(404).json({ error: 'not found' });
-    res.json(definition);
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
+router.post('/workflow-definitions/:id/archive', (_req, res) => {
+  customWorkflowDefinitionsGone(res);
 });
 
-router.delete('/workflow-definitions/:id', (req, res) => {
-  try {
-    const deleted = workflowDefinitionRepo.deleteDraft(req.params.id);
-    if (!deleted) return res.status(404).json({ error: 'not found' });
-    res.status(204).end();
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
+router.delete('/workflow-definitions/:id', (_req, res) => {
+  customWorkflowDefinitionsGone(res);
 });
 
 router.get('/rooms/:roomId/workflow-definitions', (req, res) => {
   if (!roomRepo.get(req.params.roomId)) return res.status(404).json({ error: 'not found' });
-  res.json(workflowDefinitionRepo.listVisibleForRoom(req.params.roomId));
+  res.json(workflowDefinitionRepo.listSelectableForRoom(req.params.roomId));
 });
 
 // ---------- Projects ----------

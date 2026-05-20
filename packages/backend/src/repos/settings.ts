@@ -308,8 +308,7 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
   const openaiApiKey = normalizedOptionalString(activeAiConfig?.openai_api_key ?? settings?.openai_api_key);
   const openaiApiKeyPreview = apiKeyPreview(openaiApiKey);
   const routingMode = settings?.message_routing_mode ?? DEFAULT_SETTINGS.message_routing_mode;
-  const defaultWorkflowDefinitionId = settings?.default_workflow_definition_id
-    ?? workflowDefinitionRepo.ensureBuiltInDefinitions().id;
+  const defaultWorkflowDefinitionId = workflowDefinitionRepo.getSuperpowersDefinition().id;
   return {
     message_routing_mode: routingMode,
     fallback_agent_id: normalizeFallbackAgentId(routingMode, settings?.fallback_agent_id),
@@ -633,7 +632,8 @@ export const settingsRepo = {
     const autoDistillSource: SettingsScope = project?.auto_distill_enabled === null || project?.auto_distill_enabled === undefined
       ? 'system'
       : 'project';
-    const workflowSource: SettingsScope = project?.default_workflow_definition_id ? 'project' : 'system';
+    const workflowSource: SettingsScope = 'system';
+    const defaultWorkflowDefinitionId = workflowDefinitionRepo.getSuperpowersDefinition().id;
     return {
       system,
       project,
@@ -647,9 +647,7 @@ export const settingsRepo = {
         auto_distill_enabled: project?.auto_distill_enabled === null || project?.auto_distill_enabled === undefined
           ? system.auto_distill_enabled
           : Boolean(project.auto_distill_enabled),
-        default_workflow_definition_id: project?.default_workflow_definition_id
-          ?? system.default_workflow_definition_id
-          ?? workflowDefinitionRepo.ensureBuiltInDefinitions().id,
+        default_workflow_definition_id: defaultWorkflowDefinitionId,
       },
       sources: {
         message_routing: messageRoutingSource,
@@ -677,9 +675,8 @@ export const settingsRepo = {
       roomSettings?.auto_distill_enabled === null || roomSettings?.auto_distill_enabled === undefined
         ? projectResolution.sources.auto_distill
         : 'room';
-    const workflowSource: SettingsScope = roomSettings?.default_workflow_definition_id
-      ? 'room'
-      : projectResolution.sources.default_workflow_definition;
+    const workflowSource: SettingsScope = 'system';
+    const defaultWorkflowDefinitionId = workflowDefinitionRepo.getSuperpowersDefinition().id;
     const inheritedRoutingMode = projectResolution.effective.message_routing_mode;
     return {
       ...projectResolution,
@@ -694,9 +691,7 @@ export const settingsRepo = {
           roomSettings?.auto_distill_enabled === null || roomSettings?.auto_distill_enabled === undefined
             ? projectResolution.effective.auto_distill_enabled
             : Boolean(roomSettings.auto_distill_enabled),
-        default_workflow_definition_id: roomSettings?.default_workflow_definition_id
-          ?? projectResolution.effective.default_workflow_definition_id
-          ?? workflowDefinitionRepo.ensureBuiltInDefinitions().id,
+        default_workflow_definition_id: defaultWorkflowDefinitionId,
       },
       sources: {
         message_routing: messageRoutingSource,
