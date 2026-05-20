@@ -1,4 +1,4 @@
-import { canLeaveTddExecute, canLeaveWritingPlans } from './superpowers-gates.js';
+import { canLeaveTddExecute, canLeaveVerify, canLeaveWritingPlans } from './superpowers-gates.js';
 import type { AgentWorkflowState, SuperpowersReviewVerdict } from './state.js';
 import type { WorkflowDefinitionNodeType, WorkflowRole, WorkflowStage } from '../../types.js';
 
@@ -12,7 +12,8 @@ export type SuperpowersPlanningNodeName =
 export type SuperpowersExecutionNodeName =
   | 'tdd_execute'
   | 'spec_compliance_review'
-  | 'code_quality_review';
+  | 'code_quality_review'
+  | 'finish_branch';
 
 export type SuperpowersRouteNodeName = SuperpowersPlanningNodeName | SuperpowersExecutionNodeName;
 
@@ -34,6 +35,7 @@ export interface SuperpowersRuntimeNodes {
   tddExecute: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
   specComplianceReview: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
   codeQualityReview: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
+  finishBranch: (state: AgentWorkflowState) => Promise<AgentWorkflowState>;
 }
 
 export const SUPERPOWERS_PLANNING_PHASE_STEPS: readonly SuperpowersPhaseStep[] = [
@@ -78,6 +80,14 @@ export const SUPERPOWERS_PLANNING_PHASE_STEPS: readonly SuperpowersPhaseStep[] =
 
 const DEFAULT_DESIGN_DOC_PATH = 'docs/superpowers/specs/superpowers-design.md';
 const DEFAULT_IMPLEMENTATION_PLAN_PATH = 'docs/superpowers/plans/superpowers-implementation-plan.md';
+const DEFAULT_FINISH_BRANCH_REASON = 'awaiting explicit closeout automation';
+
+export const SUPERPOWERS_FINISH_BRANCH_OPTIONS = [
+  'merge_local',
+  'create_pr',
+  'keep_branch',
+  'discard_work',
+] as const;
 
 export function createSuperpowersRuntimeNodes(): SuperpowersRuntimeNodes {
   return {
@@ -165,6 +175,30 @@ export function createSuperpowersRuntimeNodes(): SuperpowersRuntimeNodes {
         reviewedAt: null,
       };
       return applyReviewState(state, 'code_quality_review', review.verdict, review.findings);
+    },
+
+    async finishBranch(state) {
+      if (!canLeaveVerify(state)) {
+        return {
+          ...state,
+          superpowersPhase: 'finish_branch',
+          status: 'blocked',
+          error: 'Superpowers finish branch requires fresh passed required verification evidence',
+        };
+      }
+
+      return {
+        ...state,
+        superpowersPhase: 'finish_branch',
+        finishBranchDecision: state.finishBranchDecision ?? {
+          decision: 'keep_branch',
+          options: SUPERPOWERS_FINISH_BRANCH_OPTIONS,
+          reason: DEFAULT_FINISH_BRANCH_REASON,
+          decidedAt: new Date().toISOString(),
+        } as unknown as AgentWorkflowState['finishBranchDecision'],
+        status: state.status === 'blocked' ? 'running' : state.status,
+        error: null,
+      };
     },
   };
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { AgentWorkflowState } from './state.js';
 
 const tempDir = mkdtempSync(join(tmpdir(), 'openclaw-room-graph-state-'));
 process.env.OPENCLAW_ROOM_DB = join(tempDir, 'test.db');
@@ -129,5 +130,39 @@ test('parseGraphState preserves Superpowers TDD exemption fields', () => {
     reason: 'legacy service lacks stable fixture',
     approvedBy: 'reviewer-2',
     createdAt: 1710000000000,
+  });
+});
+
+test('parseGraphState preserves Superpowers finish branch decision options', () => {
+  const options: NonNullable<AgentWorkflowState['finishBranchDecision']>['options'] = [
+    'merge_local',
+    'create_pr',
+    'keep_branch',
+    'discard_work',
+  ];
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-superpowers-finish-branch',
+      projectId: 'project-superpowers-finish-branch',
+      roomId: 'room-superpowers-finish-branch',
+      taskId: 'task-superpowers-finish-branch',
+      userGoal: 'Superpowers finish branch state',
+      projectPath: tempDir,
+    }),
+    finishBranchDecision: {
+      decision: 'keep_branch' as const,
+      options,
+      reason: 'awaiting explicit closeout automation',
+      decidedAt: '2026-05-20T00:00:00.000Z',
+    },
+  };
+
+  const parsed = parseGraphState(serializeGraphState(state));
+
+  assert.deepEqual(parsed?.finishBranchDecision, {
+    decision: 'keep_branch',
+    options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+    reason: 'awaiting explicit closeout automation',
+    decidedAt: '2026-05-20T00:00:00.000Z',
   });
 });

@@ -20,9 +20,19 @@ const { parseGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
 const { continueGraphWorkflow, createGraphWorkflowRun, enqueueGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
 const { SUPERPOWERS_GRAPH_VERSION } = await import('./superpowers-runtime.js');
+const { setVerificationCommandRunnerForTests } = await import('./verification.js');
 import type { RespondAsAgentInput } from '../../dispatcher.js';
 import type { ParsedPlan } from '../plan-parser.js';
 import type { RoomAgent, WorkflowDefinitionGraph, WorkflowRun, WorkflowStage } from '../../types.js';
+
+setVerificationCommandRunnerForTests(async (command) => ({
+  command,
+  status: 'passed',
+  exitCode: 0,
+  stdout: 'stubbed verification passed',
+  stderr: '',
+}));
+test.after(() => setVerificationCommandRunnerForTests(null));
 
 test('enqueueGraphWorkflow defers graph node execution until after the current turn', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-enqueue-${Date.now()}`);
@@ -43,8 +53,10 @@ test('enqueueGraphWorkflow defers graph node execution until after the current t
       assumptions: [],
       tasks: [],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: true,
     }),
@@ -173,8 +185,10 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
         dependsOn: [],
       }],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: true,
     }),
@@ -374,11 +388,18 @@ test('Superpowers dispatch blocks when implementation plan is missing or unappro
   assert.equal(workflowRepo.listSteps(unapprovedRun.id).some((step) => step.node_name === 'dispatch'), false);
 });
 
-test('Superpowers actual runtime executes TDD and two-stage reviews before verify', async () => {
+test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and finish branch before acceptance', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-actual-route-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Superpowers Actual Route', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Actual Route Room' });
+  const acceptor = addAcpWorkflowAgent(room.id, 'acceptor');
+  roomAgentRepo.setCapabilitiesAndRuntime(acceptor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -387,6 +408,7 @@ test('Superpowers actual runtime executes TDD and two-stage reviews before verif
   const run = createGraphWorkflowRun(task.id);
   workflowRepo.updateGraphState(run.id, JSON.stringify({
     ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    plan: createRunnableSuperpowersPlan(task.title),
     tddEvidence: [
       { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
       { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
@@ -397,17 +419,146 @@ test('Superpowers actual runtime executes TDD and two-stage reviews before verif
   const state = parseGraphState(latest.graph_state);
   const nodeNames = listRawStepNodeNames(run.id);
 
-  assert.deepEqual(nodeNames.slice(0, 5), [
+  assert.deepEqual(nodeNames.slice(0, 7), [
     'dispatch',
     'tdd_execute',
     'spec_compliance_review',
     'code_quality_review',
     'verify',
+    'finish_branch',
+    'acceptance',
   ]);
-  assert.equal(state?.superpowersPhase, 'code_quality_review');
+  assert.equal(state?.superpowersPhase, 'finish_branch');
   assert.equal(state?.specComplianceReview?.verdict, 'approved');
   assert.equal(state?.codeQualityReview?.verdict, 'approved');
+  assert.equal(state?.finishBranchDecision?.decision, 'keep_branch');
   assert.equal(nodeNames.includes('review'), false);
+});
+
+test('Superpowers actual runtime records fresh verification evidence and default finish branch decision after verify succeeds', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-verify-evidence-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Verify Evidence', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Verify Evidence Room' });
+  const acceptor = addAcpWorkflowAgent(room.id, 'acceptor');
+  roomAgentRepo.setCapabilitiesAndRuntime(acceptor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Record verification evidence',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    plan: {
+      ...createRunnableSuperpowersPlan(task.title),
+      tasks: [],
+      needsApproval: false,
+    },
+    tddEvidence: [
+      { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
+      { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
+    ],
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const nodeNames = listRawStepNodeNames(run.id);
+
+  assert.ok(nodeNames.includes('finish_branch'));
+  assert.ok(nodeNames.includes('acceptance'));
+  assert.equal(state?.verificationEvidence?.length, 1);
+  assert.equal(state?.verificationEvidence?.[0]?.command, 'npm run build');
+  assert.equal(state?.verificationEvidence?.[0]?.required, true);
+  assert.equal(state?.verificationEvidence?.[0]?.fresh, true);
+  assert.equal(state?.verificationEvidence?.[0]?.status, 'passed');
+  assert.match(state?.verificationEvidence?.[0]?.recordedAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(state?.finishBranchDecision?.decision, 'keep_branch');
+});
+
+test('Superpowers actual runtime blocks before finish branch when required verification evidence is missing, failing, or stale', async () => {
+  const baseProjectPath = join(tmpdir(), `graph-runtime-superpowers-verify-block-${Date.now()}`);
+  mkdirSync(baseProjectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Verify Block', path: baseProjectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Verify Block Room' });
+  const cases = [
+    {
+      title: 'missing required evidence',
+      verificationCommands: [],
+      verificationEvidence: [],
+      expectedError: /verification evidence/i,
+    },
+    {
+      title: 'failing required evidence',
+      verificationCommands: [],
+      verificationEvidence: [
+        {
+          command: 'npm run build',
+          status: 'failed' as const,
+          required: true,
+          fresh: true,
+          recordedAt: '2026-05-20T00:00:00.000Z',
+        },
+      ],
+      expectedError: /Verification failed|verification evidence/i,
+    },
+    {
+      title: 'stale required evidence',
+      verificationCommands: [],
+      verificationEvidence: [
+        {
+          command: 'npm run build',
+          status: 'passed' as const,
+          required: true,
+          fresh: false,
+          recordedAt: '2026-05-20T00:00:00.000Z',
+        },
+      ],
+      expectedError: /verification evidence/i,
+    },
+  ];
+
+  for (const item of cases) {
+    const task = taskRepo.create({
+      room_id: room.id,
+      project_id: project.id,
+      title: `Block ${item.title}`,
+    });
+    const run = createGraphWorkflowRun(task.id);
+    workflowRepo.updateGraphState(run.id, JSON.stringify({
+      ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+      plan: {
+        ...createApprovalPlan(task.title),
+        tasks: [],
+        verification: [],
+        verificationCommands: item.verificationCommands,
+        needsApproval: false,
+      },
+      tddEvidence: [
+        { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
+        { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
+      ],
+      verificationEvidence: item.verificationEvidence,
+    }));
+
+    const latest = await continueGraphWorkflow(run.id);
+    const state = parseGraphState(latest.graph_state);
+    const nodeNames = listRawStepNodeNames(run.id);
+
+    assert.equal(latest.status, 'blocked', item.title);
+    assert.match(latest.error ?? '', item.expectedError);
+    assert.equal(nodeNames.includes('acceptance'), false);
+    assert.equal(nodeNames.includes('finish_branch'), false);
+    assert.notEqual(state?.superpowersPhase, 'finish_branch');
+    assert.equal(state?.finishBranchDecision, null);
+  }
 });
 
 test('Superpowers actual runtime keeps TDD gate before spec review when runnable child tasks exist', async () => {
@@ -1066,8 +1217,10 @@ test('graph workflow invites required built-in agents when the room only has pla
         },
       ],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -1149,8 +1302,10 @@ test('graph workflow pre-invites domain executors when planner gives broad proje
         },
       ],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -1222,8 +1377,10 @@ test('graph dispatch keeps planner steps as workflow context instead of implemen
         },
       ],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -1296,8 +1453,10 @@ test('graph workflow skips optional executor task when no single agent covers it
         },
       ],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -1348,8 +1507,10 @@ test('graph workflow blocks required executor task when no single agent covers i
         dependsOn: [],
       }],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -1394,6 +1555,9 @@ test('planning node consumes product-manager background without calling planner 
       '2. 改造前端资源库展示与详情',
       '- 改动：packages/frontend/src/pages/FilesPage.tsx',
       '- 验收：前端显示来源类型',
+      '',
+      '验证方式：',
+      '- npm run build',
       '',
       '任务意图：implementation',
     ].join('\n'),
@@ -1489,8 +1653,10 @@ test('supervisor assignment hint is ignored when multiple executor tasks would m
         },
       ],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -1717,8 +1883,10 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
         dependsOn: [],
       }],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -1837,8 +2005,10 @@ test('no-approval graph invites built-in executor instead of selecting non-ACP e
         dependsOn: [],
       }],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -1897,8 +2067,10 @@ test('graph execute invites matching executor instead of falling back outside ru
         dependsOn: [],
       }],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
       risks: [],
       needsApproval: false,
     }),
@@ -2433,10 +2605,24 @@ function createApprovalPlan(title: string): ParsedPlan {
       dependsOn: [],
     }],
     reviewFocus: [],
-    verification: [],
-    verificationCommands: [],
+    verification: ['npm run build'],
+    verificationCommands: [
+      { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+    ],
     risks: [],
     needsApproval: true,
+  };
+}
+
+function createRunnableSuperpowersPlan(title: string): ParsedPlan {
+  return {
+    ...createApprovalPlan(title),
+    tasks: [],
+    verification: ['npm run build'],
+    verificationCommands: [
+      { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+    ],
+    needsApproval: false,
   };
 }
 
@@ -2456,11 +2642,7 @@ function createRunnableSuperpowersState(
     userGoal: title,
     projectPath,
     plan: {
-      ...createApprovalPlan(title),
-      tasks: [],
-      verification: [],
-      verificationCommands: [],
-      needsApproval: false,
+      ...createRunnableSuperpowersPlan(title),
     },
     workflowPlan: {
       workflow_name: title,

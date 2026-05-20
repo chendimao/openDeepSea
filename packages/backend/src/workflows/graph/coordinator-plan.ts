@@ -59,7 +59,11 @@ export function deriveCoordinatorPlanFromProductManagerBackground(input: {
     tasks: implementationTasks,
     reviewFocus: ['确认执行结果是否满足产品经理方案背景和用户原始需求。'],
     verification,
-    verificationCommands: [],
+    verificationCommands: verification.map((command) => ({
+      command,
+      reason: '产品经理方案背景中的验证方式',
+      required: true,
+    })),
     risks,
     needsApproval: false,
   }, { parentTitle: input.taskTitle });

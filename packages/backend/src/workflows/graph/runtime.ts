@@ -23,6 +23,7 @@ import {
 } from './superpowers-runtime.js';
 import type { SuperpowersExecutionNodeName, SuperpowersPlanningNodeName } from './superpowers-nodes.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
+import { mapVerificationResultsToEvidence } from './verification.js';
 
 const GraphState = Annotation.Root({
   workflowRunId: Annotation<string>(),
@@ -785,6 +786,17 @@ async function resumeGraphWorkflowFromState(
       nextState = await nodes.repairDecisionNode(nextState);
     } else if (nodeToRun === 'verify') {
       nextState = await nodes.verifyNode(nextState);
+      if (runtimeGraph) {
+        nextState = applySuperpowersVerificationEvidence(nextState);
+        tools.updateGraphState(nextState.workflowRunId, serializeGraphState(nextState));
+        if (!runtimeGraph.canLeaveVerify(nextState)) {
+          return blockSuperpowersVerify({
+            ...nextState,
+            status: 'blocked',
+            error: getSuperpowersVerifyGateError(nextState),
+          });
+        }
+      }
     } else if (nodeToRun === 'acceptance') {
       nextState = await nodes.acceptanceNode(nextState);
     } else if (nodeToRun === 'memory') {
@@ -925,7 +937,7 @@ async function runSuperpowersExecutionNode(
   const step = tools.createGraphStep({
     workflow_run_id: context.run.id,
     task_id: context.task.id,
-    stage: nodeToRun === 'tdd_execute' ? 'implementation' : 'code_review',
+    stage: nodeToRun === 'tdd_execute' ? 'implementation' : nodeToRun === 'finish_branch' ? 'acceptance' : 'code_review',
     node_name: nodeToRun as never,
     status: 'running',
     sort_order: tools.nextStepSortOrder(context.run.id),
@@ -935,7 +947,7 @@ async function runSuperpowersExecutionNode(
   const rawNextState = await callSuperpowersExecutionNode(nodeToRun, state, runtimeGraph);
   const nextState = normalizeSuperpowersReviewState({
     ...rawNextState,
-    currentNode: nodeToRun === 'tdd_execute' ? 'execute' : 'review',
+    currentNode: nodeToRun === 'tdd_execute' ? 'execute' : nodeToRun === 'finish_branch' ? 'acceptance' : 'review',
     currentStepId: step.id,
   }, nodeToRun);
   const blocked = nextState.status === 'blocked';
@@ -948,7 +960,7 @@ async function runSuperpowersExecutionNode(
 
   const updatedRun = tools.updateRun(context.run.id, {
     status: blocked ? 'blocked' : 'running',
-    current_stage: nodeToRun === 'tdd_execute' ? 'implementation' : 'code_review',
+    current_stage: nodeToRun === 'tdd_execute' ? 'implementation' : nodeToRun === 'finish_branch' ? 'acceptance' : 'code_review',
     error: blocked ? nextState.error : null,
   });
   if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
@@ -964,6 +976,7 @@ async function callSuperpowersExecutionNode(
   if (nodeToRun === 'tdd_execute') return runtimeGraph.nodes.tddExecute(state);
   if (nodeToRun === 'spec_compliance_review') return runtimeGraph.nodes.specComplianceReview(state);
   if (nodeToRun === 'code_quality_review') return runtimeGraph.nodes.codeQualityReview(state);
+  if (nodeToRun === 'finish_branch') return runtimeGraph.nodes.finishBranch(state);
   throw new Error(`unknown Superpowers execution node: ${nodeToRun}`);
 }
 
@@ -995,6 +1008,21 @@ function normalizeSuperpowersReviewState(
     };
   }
   return state;
+}
+
+function applySuperpowersVerificationEvidence(state: AgentWorkflowState): AgentWorkflowState {
+  const commands = state.plan?.verificationCommands?.length
+    ? state.plan.verificationCommands
+    : (state.plan?.verification ?? []).map((command) => ({ command, reason: '', required: true }));
+
+  return {
+    ...state,
+    verificationEvidence: mapVerificationResultsToEvidence(
+      state.verificationResults,
+      commands,
+      state.verificationEvidence ?? [],
+    ),
+  };
 }
 
 function applyTddEvidenceFromImplementationOutput(
@@ -1082,6 +1110,29 @@ function blockSuperpowersTddExecute(state: AgentWorkflowState): AgentWorkflowSta
   };
 }
 
+function blockSuperpowersVerify(state: AgentWorkflowState): AgentWorkflowState {
+  const error = getSuperpowersVerifyGateError(state);
+  const blockedState = blockGraphWorkflowRun(state.workflowRunId, state, error);
+  if (!blockedState) {
+    throw new Error(error);
+  }
+  return {
+    ...blockedState,
+    currentNode: 'verify',
+    superpowersPhase: 'code_quality_review',
+  };
+}
+
+function getSuperpowersVerifyGateError(state: AgentWorkflowState): string {
+  const failedRequired = (state.verificationEvidence ?? []).find((record) =>
+    record.required && record.status !== 'passed'
+  );
+  if (failedRequired) {
+    return `Verification failed: ${failedRequired.command}`;
+  }
+  return 'Superpowers verify gate requires fresh passed required verification evidence';
+}
+
 function getSuperpowersDispatchGateError(state: AgentWorkflowState): string {
   if (typeof state.implementationPlanPath !== 'string' || state.implementationPlanPath.trim().length === 0) {
     return 'Superpowers dispatch requires implementationPlanPath';
@@ -1162,6 +1213,7 @@ const SUPERPOWERS_NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, Wo
   tdd_execute: 'tdd_execute',
   spec_compliance_review: 'spec_compliance_review',
   code_quality_review: 'code_quality_review',
+  finish_branch: 'finish_branch',
 };
 
 function resolveLegacyRouteNode(
@@ -1219,6 +1271,7 @@ function isSuperpowersExecutionRouteNode(node: WorkflowRouteNode): node is Super
     node === 'tdd_execute'
     || node === 'spec_compliance_review'
     || node === 'code_quality_review'
+    || node === 'finish_branch'
   );
 }
 
@@ -1227,6 +1280,7 @@ function nextNodeFromDefinition(
   state: AgentWorkflowState,
   plan: WorkflowRoutePlan,
 ): WorkflowRouteNode | null {
+  if (isTerminalResumeState(state)) return null;
   const node = nodeJustRun ?? currentRouteNodeFromState(state, plan);
   if (!node) return plan.start;
   const outgoing = plan.next.get(node) ?? [];
@@ -1269,6 +1323,7 @@ function isSuperpowersExecutionPhase(value: unknown): value is SuperpowersExecut
     value === 'tdd_execute'
     || value === 'spec_compliance_review'
     || value === 'code_quality_review'
+    || value === 'finish_branch'
   );
 }
 
@@ -1283,7 +1338,10 @@ function routeRuntimeNode(
     if (node === 'spec_compliance_review') {
       return state.reviewVerdict === 'changes_requested' ? 'tdd_execute' : 'code_quality_review';
     }
-    return state.reviewVerdict === 'changes_requested' ? 'tdd_execute' : 'verify';
+    if (node === 'code_quality_review') {
+      return state.reviewVerdict === 'changes_requested' ? 'tdd_execute' : 'verify';
+    }
+    if (node === 'finish_branch') return state.finishBranchDecision ? 'acceptance' : null;
   }
   if (node === 'approval') {
     const route = routeAfterApproval(state);
@@ -1301,7 +1359,7 @@ function routeRuntimeNode(
     const route = routeAfterRepairDecision(state);
     return route === END ? null : route;
   }
-  if (node === 'verify') return 'acceptance';
+  if (node === 'verify') return 'finish_branch';
   if (node === 'acceptance') return state.status === 'completed' ? 'memory' : null;
   return null;
 }
@@ -1317,6 +1375,9 @@ function matchesRouteCondition(
     if (node === 'tdd_execute' && condition === 'has_runnable_child') return hasRunnableChildTask(state);
     if (condition === 'changes_requested') return state.reviewVerdict === 'changes_requested';
     if (condition === 'pass' || condition === 'approved' || condition === 'verify') return state.reviewVerdict !== 'changes_requested';
+    if (node === 'finish_branch' && (condition === 'completed' || condition === 'acceptance')) {
+      return Boolean(state.finishBranchDecision);
+    }
     return false;
   }
   if (node === 'approval') {

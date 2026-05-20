@@ -82,7 +82,8 @@ export const superpowersVerificationEvidenceSchema = z.object({
 });
 
 export const superpowersFinishBranchDecisionSchema = z.object({
-  decision: z.enum(['merge', 'pull_request', 'defer']),
+  decision: z.enum(['merge_local', 'create_pr', 'keep_branch', 'discard_work']),
+  options: z.array(z.enum(['merge_local', 'create_pr', 'keep_branch', 'discard_work'])).default([]),
   reason: z.string(),
   decidedAt: z.string().nullable().default(null),
 });

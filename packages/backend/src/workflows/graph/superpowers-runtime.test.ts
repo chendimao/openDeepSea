@@ -6,7 +6,7 @@ import {
   SUPERPOWERS_GRAPH_VERSION,
   SUPERPOWERS_RUNTIME_PROFILE,
 } from './superpowers-runtime.js';
-import { emptyAgentWorkflowState } from './state.js';
+import { emptyAgentWorkflowState, type AgentWorkflowState } from './state.js';
 
 test('buildSuperpowersRuntimeGraph exposes Superpowers runtime profile metadata', () => {
   const graph = buildSuperpowersRuntimeGraph();
@@ -56,32 +56,33 @@ test('buildSuperpowersRuntimeGraph executable definition runs Superpowers planni
   );
 });
 
-test('buildSuperpowersRuntimeGraph executable definition routes TDD execution and two-stage review before verify', () => {
+test('buildSuperpowersRuntimeGraph executable definition routes TDD execution, reviews, verify, and finish branch before acceptance', () => {
   const graph = buildSuperpowersRuntimeGraph();
 
   assert.deepEqual(Object.keys(graph.nodes).filter((name) => [
     'tddExecute',
     'specComplianceReview',
     'codeQualityReview',
+    'finishBranch',
   ].includes(name)), [
     'tddExecute',
     'specComplianceReview',
     'codeQualityReview',
+    'finishBranch',
   ]);
   assert.deepEqual(
-    graph.executableDefinition.nodes.slice(-7).map((node) => node.id),
-    ['dispatch', 'tdd_execute', 'spec_compliance_review', 'code_quality_review', 'verify', 'acceptance', 'memory'],
+    graph.executableDefinition.nodes.slice(-8).map((node) => node.id),
+    ['dispatch', 'tdd_execute', 'spec_compliance_review', 'code_quality_review', 'verify', 'finish_branch', 'acceptance', 'memory'],
   );
-  assert.deepEqual(
-    graph.executableDefinition.edges.slice(7, 12).map((edge) => `${edge.from}->${edge.to}:${edge.condition ?? 'default'}`),
-    [
-      'dispatch->tdd_execute:default',
-      'tdd_execute->tdd_execute:has_runnable_child',
-      'tdd_execute->spec_compliance_review:done',
-      'spec_compliance_review->tdd_execute:changes_requested',
-      'spec_compliance_review->code_quality_review:pass',
-    ],
-  );
+  assert.ok(graph.executableDefinition.edges.some((edge) =>
+    edge.from === 'code_quality_review' && edge.to === 'verify' && edge.condition === 'pass',
+  ));
+  assert.ok(graph.executableDefinition.edges.some((edge) =>
+    edge.from === 'verify' && edge.to === 'finish_branch',
+  ));
+  assert.ok(graph.executableDefinition.edges.some((edge) =>
+    edge.from === 'finish_branch' && edge.to === 'acceptance',
+  ));
 });
 
 test('Superpowers TDD execute node blocks without RED/GREEN evidence and proceeds with evidence or exemption', async () => {
@@ -174,6 +175,46 @@ test('Superpowers review nodes expose reroute metadata when reviews request chan
   assert.equal(afterCodeChanges.superpowersPhase, 'code_quality_review');
   assert.equal(afterCodeChanges.error, 'Superpowers code quality review requested changes');
   assert.equal(afterCodeChanges.reviewVerdict, 'changes_requested');
+});
+
+test('Superpowers finish branch node records default keep branch decision and available options', async () => {
+  const graph = buildSuperpowersRuntimeGraph();
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'run-superpowers-runtime-finish-branch',
+    projectId: 'project-superpowers-runtime-finish-branch',
+    roomId: 'room-superpowers-runtime-finish-branch',
+    taskId: 'task-superpowers-runtime-finish-branch',
+    userGoal: 'Finish branch gate',
+    projectPath: '/tmp/open-deep-sea-superpowers-runtime-finish-branch',
+  });
+
+  const afterFinishBranch = await graph.nodes.finishBranch({
+    ...state,
+    verificationEvidence: [
+      {
+        command: 'npm run build',
+        status: 'passed',
+        required: true,
+        fresh: true,
+        recordedAt: '2026-05-21T00:00:00.000Z',
+      },
+    ],
+  });
+  const finishBranchDecision = afterFinishBranch.finishBranchDecision as (
+    AgentWorkflowState['finishBranchDecision'] & { options?: string[] }
+  );
+
+  assert.equal(afterFinishBranch.superpowersPhase, 'finish_branch');
+  assert.equal(finishBranchDecision?.decision, 'keep_branch');
+  assert.deepEqual(finishBranchDecision?.options, [
+    'merge_local',
+    'create_pr',
+    'keep_branch',
+    'discard_work',
+  ]);
+  assert.equal(finishBranchDecision?.reason, 'awaiting explicit closeout automation');
+  assert.equal(afterFinishBranch.status, 'running');
+  assert.equal(afterFinishBranch.error, null);
 });
 
 test('Superpowers planning nodes record phase artifacts and review verdicts', async () => {

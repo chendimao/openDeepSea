@@ -7,7 +7,7 @@ import {
   type SuperpowersPhaseStep,
   type SuperpowersRuntimeNodes,
 } from './superpowers-nodes.js';
-import { canLeaveTddExecute } from './superpowers-gates.js';
+import { canLeaveTddExecute, canLeaveVerify } from './superpowers-gates.js';
 import type { AgentWorkflowState } from './state.js';
 
 export const SUPERPOWERS_WORKFLOW_DEFINITION_KEY = 'superpowers-development';
@@ -40,6 +40,7 @@ const SUPERPOWERS_EXECUTABLE_DEFINITION: WorkflowDefinitionGraph = {
     { id: 'spec_compliance_review', type: 'spec_compliance_review', label: '规格符合审查', stage: 'code_review', role: 'reviewer' },
     { id: 'code_quality_review', type: 'code_quality_review', label: '代码质量审查', stage: 'code_review', role: 'reviewer' },
     { id: 'verify', type: 'verify', label: '验证', stage: 'code_review' },
+    { id: 'finish_branch', type: 'finish_branch', label: '分支收口', stage: 'acceptance', role: 'coordinator' },
     { id: 'acceptance', type: 'acceptance', label: '验收', stage: 'acceptance', role: 'acceptor' },
     { id: 'memory', type: 'memory', label: '记忆', stage: 'acceptance' },
   ],
@@ -58,7 +59,8 @@ const SUPERPOWERS_EXECUTABLE_DEFINITION: WorkflowDefinitionGraph = {
     { from: 'spec_compliance_review', to: 'code_quality_review', condition: 'pass' },
     { from: 'code_quality_review', to: 'tdd_execute', condition: 'changes_requested' },
     { from: 'code_quality_review', to: 'verify', condition: 'pass' },
-    { from: 'verify', to: 'acceptance' },
+    { from: 'verify', to: 'finish_branch' },
+    { from: 'finish_branch', to: 'acceptance', condition: 'completed' },
     { from: 'acceptance', to: 'memory', condition: 'completed' },
   ],
 };
@@ -87,6 +89,7 @@ export interface SuperpowersRuntimeGraph {
   nodes: SuperpowersRuntimeNodes;
   canDispatch: (state: AgentWorkflowState) => boolean;
   canLeaveTddExecute: (state: AgentWorkflowState) => boolean;
+  canLeaveVerify: (state: AgentWorkflowState) => boolean;
   executableDefinition: WorkflowDefinitionGraph;
 }
 
@@ -99,6 +102,7 @@ export function buildSuperpowersRuntimeGraph(_deps: GraphRuntimeDeps = {}): Supe
     nodes: createSuperpowersRuntimeNodes(),
     canDispatch: canDispatchSuperpowersRuntime,
     canLeaveTddExecute,
+    canLeaveVerify,
     executableDefinition: SUPERPOWERS_EXECUTABLE_DEFINITION,
   };
 }
