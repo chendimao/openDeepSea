@@ -894,23 +894,40 @@ type WorkflowRoutePlan = {
   next: Map<WorkflowRouteNode, Array<{ to: WorkflowRouteNode; condition: string | null }>>;
 };
 
-const NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteNode> = {
+const NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteNode | null> = {
   context: 'context',
   planning: 'planning',
+  brainstorming: null,
+  spec_review: null,
+  worktree: null,
+  writing_plans: null,
+  plan_review: null,
   approval_gate: 'approval',
   dispatch: 'dispatch',
   execute: 'execute',
+  tdd_execute: null,
   review: 'review',
+  spec_compliance_review: null,
+  code_quality_review: null,
   repair_decision: 'repair_decision',
   verify: 'verify',
+  finish_branch: null,
   acceptance: 'acceptance',
   memory: 'memory',
 };
 
+function resolveLegacyRouteNode(node: { id: string; type: WorkflowDefinitionNodeType }): WorkflowRouteNode {
+  const mapped = NODE_TYPE_TO_STATE_NODE[node.type];
+  if (mapped) return mapped;
+  throw new Error(
+    `workflow definition node "${node.id}" type "${node.type}" is not supported by legacy graph runtime`,
+  );
+}
+
 function compileRoutePlan(definition: WorkflowDefinitionGraph): WorkflowRoutePlan {
   const idToStateNode = new Map<string, WorkflowRouteNode>();
   for (const node of definition.nodes) {
-    idToStateNode.set(node.id, NODE_TYPE_TO_STATE_NODE[node.type]);
+    idToStateNode.set(node.id, resolveLegacyRouteNode(node));
   }
 
   const incoming = new Map<string, number>();
