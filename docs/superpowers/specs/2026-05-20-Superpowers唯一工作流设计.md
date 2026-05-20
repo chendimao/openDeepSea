@@ -1,5 +1,7 @@
 # Superpowers 唯一工作流设计
 
+> 状态：已废弃。后续以 `docs/superpowers/specs/2026-05-20-Superpowers-C原生强门禁集成设计.md` 为准。最新决策是不移除自定义工作流，而是在现有默认/自定义工作流兼容路径之外，新增 Superpowers C 原生强门禁 runtime profile。
+
 ## 背景
 
 OpenDeepSea 当前已经具备工作流运行的核心底座：任务、子任务、智能体运行、工作流步骤、验证结果、上下文记忆、Skills 注入和前端工作流可视化。现有自定义工作流定义主要承担选择、展示和快照作用；真实运行路径由后端 LangGraph runtime 固定编排。
@@ -236,4 +238,3 @@ task -> superpowers-development -> Superpowers runtime
 4. 接入 Superpowers skills 导入与阶段 prompt 注入。
 5. 实现 spec、plan、TDD、review、verification、finish branch 门禁。
 6. 补齐后端、前端和端到端验证。
-
