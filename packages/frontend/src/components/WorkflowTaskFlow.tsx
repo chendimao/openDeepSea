@@ -117,11 +117,6 @@ export function WorkflowTaskFlow({
                 </div>
               </div>
 
-              <div className="workflow-flow-detail-description">
-                <div>{t('workflowPlan.taskFlowStageDescription')}</div>
-                <p>{activeEntry.title}</p>
-              </div>
-
               <div className="workflow-flow-stat-grid">
                 <FlowStatCard label={t('workflowPlan.taskFlowTotalTasks')} value={activeStage.entries.length} tone="neutral" />
                 <FlowStatCard label={t('workflowPlan.taskFlowCompleted')} value={activeStageStats.completed} tone="success" />

@@ -1599,7 +1599,38 @@
     align-items: start;
     min-width: 0;
     padding: 5px 14px 3px 5px;
+    border-radius: 9px;
     text-align: left;
+    transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  }
+  .workflow-flow-overview-step.is-active {
+    background: rgba(10,132,255,0.10);
+    box-shadow: inset 0 0 0 1px rgba(10,132,255,0.34), 0 10px 24px rgba(10,132,255,0.12);
+    transform: translateY(-1px);
+  }
+  .workflow-flow-overview-step.is-active::before {
+    content: "";
+    position: absolute;
+    inset: 6px auto 6px 0;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--color-primary);
+  }
+  .workflow-flow-overview-step.is-active.is-execution,
+  .workflow-flow-overview-step.is-active.is-done {
+    background: rgba(15,159,110,0.11);
+    box-shadow: inset 0 0 0 1px rgba(15,159,110,0.34), 0 10px 24px rgba(15,159,110,0.12);
+  }
+  .workflow-flow-overview-step.is-active.is-execution::before,
+  .workflow-flow-overview-step.is-active.is-done::before {
+    background: var(--color-success);
+  }
+  .workflow-flow-overview-step.is-active.is-review {
+    background: rgba(255,199,38,0.17);
+    box-shadow: inset 0 0 0 1px rgba(200,121,0,0.30), 0 10px 24px rgba(200,121,0,0.10);
+  }
+  .workflow-flow-overview-step.is-active.is-review::before {
+    background: var(--color-warning);
   }
   .workflow-flow-overview-step:not(:nth-child(4))::after {
     content: "›";
@@ -1656,6 +1687,13 @@
   }
   .workflow-flow-overview-step.is-active .workflow-flow-overview-icon {
     box-shadow: 0 10px 26px rgba(10,132,255,0.18), inset 0 0 0 1px rgba(10,132,255,0.34);
+  }
+  .workflow-flow-overview-step.is-active.is-execution .workflow-flow-overview-icon,
+  .workflow-flow-overview-step.is-active.is-done .workflow-flow-overview-icon {
+    box-shadow: 0 10px 26px rgba(15,159,110,0.18), inset 0 0 0 1px rgba(15,159,110,0.36);
+  }
+  .workflow-flow-overview-step.is-active.is-review .workflow-flow-overview-icon {
+    box-shadow: 0 10px 26px rgba(200,121,0,0.14), inset 0 0 0 1px rgba(200,121,0,0.32);
   }
   .workflow-flow-progress-card {
     display: grid;
@@ -1773,21 +1811,9 @@
   .workflow-flow-detail-meta b {
     color: var(--color-fg);
   }
-  .workflow-flow-detail-description {
-    display: grid;
-    gap: 5px;
-    color: var(--color-fg);
-    font-size: 12px;
-  }
-  .workflow-flow-detail-description div,
   .workflow-flow-section-title {
     font-size: 12px;
     font-weight: 800;
-  }
-  .workflow-flow-detail-description p {
-    margin: 0;
-    color: var(--color-fg-muted);
-    line-height: 1.45;
   }
   .workflow-flow-stat-grid {
     display: grid;
