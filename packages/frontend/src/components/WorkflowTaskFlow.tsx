@@ -137,7 +137,6 @@ export function WorkflowTaskFlow({
                       <div className="workflow-flow-task-card-copy">
                         <div className="workflow-flow-task-card-title">{entry.taskName}</div>
                         <div className="workflow-flow-task-card-meta">
-                          <span>{entry.phaseLabel}</span>
                           <span>{entry.executorName}</span>
                           <span>{formatFlowTime(entry.completedAt ?? entry.startedAt ?? entry.sortKey)}</span>
                         </div>
