@@ -56,9 +56,14 @@ export function createSkillsShPackage(raw: unknown, fallbackInstallLabel?: strin
     ?? fallbackInstallLabel
     ?? labelFromParts(source, skillId)
     ?? id;
-  const version = firstString(record.version, record.package_version, record.packageVersion);
-  const revision = firstString(record.revision, record.package_revision, record.packageRevision, record.sha, record.hash);
   const files = normalizePackageFiles(record.files ?? record.contents);
+  const metadata = readSkillsShPackageMetadataFromFiles(files);
+  const version = firstString(record.version, record.package_version, record.packageVersion)
+    ?? metadata?.version
+    ?? extractManifestVersion(files);
+  const revision = firstString(record.revision, record.package_revision, record.packageRevision, record.sha, record.hash)
+    ?? metadata?.revision
+    ?? extractManifestRevision(files);
 
   if (!installLabel.trim()) throw new Error('skills.sh package install label is required');
   if (files.length === 0) throw new Error('skills.sh package must include files');
@@ -120,6 +125,44 @@ function normalizeSkillsShMetadataRecord(record: Record<string, unknown>): Skill
     version: firstString(record.version, record.package_version, record.packageVersion) ?? null,
     revision: firstString(record.revision, record.package_revision, record.packageRevision, record.sha, record.hash) ?? null,
   };
+}
+
+function extractManifestVersion(files: SkillsShPackageFile[]): string | null {
+  for (const file of files) {
+    if (file.path !== 'SKILL.md' && file.path !== 'AGENTS.md') continue;
+    const versionMatch = file.content.match(/^\*\*Version\s+([^*\n]+)\*\*/mi);
+    if (versionMatch?.[1]) return versionMatch[1].trim();
+    const fallbackMatch = file.content.match(/^version:\s*([^\n]+)/mi);
+    if (fallbackMatch?.[1]) return fallbackMatch[1].trim();
+  }
+  return null;
+}
+
+function extractManifestRevision(files: SkillsShPackageFile[]): string | null {
+  for (const file of files) {
+    if (file.path !== 'metadata.json') continue;
+    try {
+      const parsed = JSON.parse(file.content) as unknown;
+      const record = asRecord(parsed);
+      if (!record) return null;
+      return firstString(record.revision, record.package_revision, record.packageRevision, record.sha, record.hash);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function readSkillsShPackageMetadataFromFiles(files: SkillsShPackageFile[]): SkillsShMetadata | null {
+  const metadata = files.find((file) => file.path === 'metadata.json');
+  if (!metadata) return null;
+  try {
+    const record = asRecord(JSON.parse(metadata.content) as unknown);
+    if (!record) return null;
+    return normalizeSkillsShMetadataRecord(record);
+  } catch (err) {
+    throw new Error(`invalid metadata.json: ${(err as Error).message}`);
+  }
 }
 
 export async function readSkillsShMetadata(dir: string): Promise<SkillsShMetadata | null> {

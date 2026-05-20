@@ -34,8 +34,8 @@ skillsRouter.use((req, res, next) => {
 const runtimeScopeSchema = z.enum(['planner', 'model_chat', 'workflow', 'memory', 'review']);
 const bindingScopeSchema = z.enum(['system', 'project', 'room', 'agent']);
 const triggerModeSchema = z.enum(['manual', 'keyword', 'always_for_scope']);
-const updateCheckModeSchema = z.enum(['off', 'startup', 'manual', 'scheduled']);
-const updateApplyModeSchema = z.enum(['prompt', 'download', 'auto']);
+const updateCheckModeSchema = z.enum(['off', 'startup', 'manual']);
+const updateApplyModeSchema = z.enum(['prompt']);
 
 const skillPatchSchema = z.object({
   name: z.string().min(1).optional(),
@@ -61,11 +61,8 @@ const bindingInputSchema = z.object({
 
 const runSkillSchema = z.object({
   projectId: z.string().min(1),
-  roomId: z.string().min(1).nullable().optional(),
-  agentId: z.string().min(1).nullable().optional(),
-  invokedBy: z.enum(['workflow', 'agent', 'manual']).optional(),
   input: z.unknown().optional(),
-});
+}).strict();
 
 const previewSchema = z.object({
   runtimeScopes: z.array(runtimeScopeSchema).min(1),
@@ -204,9 +201,9 @@ skillsRouter.post('/:skillId/run', async (req, res) => {
     const run = await invokeSkill({
       skillId: req.params.skillId,
       projectId: parsed.data.projectId,
-      roomId: parsed.data.roomId,
-      agentId: parsed.data.agentId,
-      invokedBy: parsed.data.invokedBy ?? 'manual',
+      roomId: null,
+      agentId: null,
+      invokedBy: 'manual',
       input: parsed.data.input ?? null,
     });
     res.status(run.status === 'completed' ? 200 : 500).json(toSkillRunDto(run));
@@ -277,7 +274,8 @@ function toSkillDto(skill: Skill): Record<string, unknown> {
     name: skill.name,
     description: skill.description,
     source_type: skill.source_type,
-    source_uri: skill.source_uri,
+    source_uri: skill.source_type === 'local_directory' ? null : skill.source_uri,
+    source_uri_set: Boolean(skill.source_uri),
     manifest_path: skill.manifest_path,
     runtime_scopes: skill.runtime_scopes,
     trigger_mode: skill.trigger_mode,
@@ -328,7 +326,8 @@ function toSkillRunDto(run: SkillRun): Record<string, unknown> {
     runtime: run.runtime,
     entrypoint: run.entrypoint,
     input: run.input,
-    allowed_paths: run.allowed_paths,
+    allowed_paths_count: run.allowed_paths.length,
+    allowed_paths_set: run.allowed_paths.length > 0,
     network_enabled: run.network_enabled,
     status: run.status,
     exit_code: run.exit_code,

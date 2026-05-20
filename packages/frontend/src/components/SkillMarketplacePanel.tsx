@@ -56,7 +56,7 @@ export function SkillMarketplacePanel({
   const installedLabels = new Set(
     (installedSkillsQuery.data ?? [])
       .filter((skill) => skill.source_type === 'skills_sh')
-      .map((skill) => skill.install_source_label ?? skill.source_uri?.replace(/^skills\.sh\//, '') ?? '')
+      .map((skill) => skill.install_source_label ?? (skill.source_uri_set ? skill.source_uri?.replace(/^skills\.sh\//, '') ?? '' : ''))
       .filter(Boolean),
   );
   const results = search.data ?? [];

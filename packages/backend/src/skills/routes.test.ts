@@ -101,28 +101,32 @@ test('skills routes import, list, detail, patch, bind, preview, and delete local
     name: string;
     install_path?: string;
     source_uri: string | null;
+    source_uri_set: boolean;
     install_path_set: boolean;
     runtime_scopes: string[];
   };
   assert.equal(imported.name, 'route-skill');
   assert.equal(imported.install_path, undefined);
-  assert.equal(imported.source_uri, sourceDir);
+  assert.equal(imported.source_uri, null);
+  assert.equal(imported.source_uri_set, true);
   assert.equal(imported.install_path_set, true);
   assert.deepEqual(imported.runtime_scopes, ['planner']);
 
   const listRes = await request('/api/skills');
   assert.equal(listRes.status, 200);
-  const listed = await listRes.json() as Array<{ id: string; name: string; install_path?: string; source_uri: string | null }>;
+  const listed = await listRes.json() as Array<{ id: string; name: string; install_path?: string; source_uri: string | null; source_uri_set: boolean }>;
   assert.equal(listed.some((skill) => skill.id === imported.id), true);
   assert.equal(listed.find((skill) => skill.id === imported.id)?.install_path, undefined);
-  assert.equal(listed.find((skill) => skill.id === imported.id)?.source_uri, sourceDir);
+  assert.equal(listed.find((skill) => skill.id === imported.id)?.source_uri, null);
+  assert.equal(listed.find((skill) => skill.id === imported.id)?.source_uri_set, true);
 
   const detailRes = await request(`/api/skills/${imported.id}`);
   assert.equal(detailRes.status, 200);
-  const detail = await detailRes.json() as { id: string; install_path?: string; source_uri: string | null; install_path_set: boolean };
+  const detail = await detailRes.json() as { id: string; install_path?: string; source_uri: string | null; source_uri_set: boolean; install_path_set: boolean };
   assert.equal(detail.id, imported.id);
   assert.equal(detail.install_path, undefined);
-  assert.equal(detail.source_uri, sourceDir);
+  assert.equal(detail.source_uri, null);
+  assert.equal(detail.source_uri_set, true);
   assert.equal(detail.install_path_set, true);
 
   const patchRes = await request(`/api/skills/${imported.id}`, {
@@ -414,13 +418,22 @@ test('skills routes import skills.sh packages, expose executable metadata, check
     method: 'PATCH',
     body: JSON.stringify({
       update_check_mode: 'manual',
-      update_apply_mode: 'download',
+      update_apply_mode: 'prompt',
     }),
   });
   assert.equal(patchRes.status, 200);
   const patched = await patchRes.json() as { update_check_mode: string; update_apply_mode: string };
   assert.equal(patched.update_check_mode, 'manual');
-  assert.equal(patched.update_apply_mode, 'download');
+  assert.equal(patched.update_apply_mode, 'prompt');
+
+  const unsupportedPatchRes = await request(`/api/skills/${imported.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      update_check_mode: 'scheduled',
+      update_apply_mode: 'auto',
+    }),
+  });
+  assert.equal(unsupportedPatchRes.status, 400);
 
   skillRepo.updateSkill(imported.id, {
     install_source_label: 'acme/skills/route-package-updated',
@@ -466,7 +479,7 @@ test('skills routes import skills.sh packages, expose executable metadata, check
   assert.deepEqual(listed.permissions, { filesystem: 'project', network: false, commands: ['bash'] });
   assert.equal(listed.install_source_label, 'acme/skills/route-package-updated');
   assert.equal(listed.update_check_mode, 'manual');
-  assert.equal(listed.update_apply_mode, 'download');
+  assert.equal(listed.update_apply_mode, 'prompt');
   assert.equal(listed.available_version, '1.1.0');
   assert.equal(listed.available_revision, 'rev-2');
 
@@ -517,14 +530,16 @@ test('skills routes execute skills and list run history', async () => {
   assert.equal(noToken.status, 403);
 
   const runRes = await request(`/api/skills/${skill.id}/run`, {
-    method: 'POST',
-    body: JSON.stringify({ projectId: project.id, invokedBy: 'workflow', input: { route: true } }),
+      method: 'POST',
+      body: JSON.stringify({ projectId: project.id, input: { route: true } }),
   });
   assert.equal(runRes.status, 200);
-  const run = await runRes.json() as { id: string; status: string; stdout: string; exit_code: number; project_id: string };
+  const run = await runRes.json() as { id: string; status: string; stdout: string; exit_code: number; project_id: string; allowed_paths_count: number; allowed_paths_set: boolean };
   assert.equal(run.status, 'completed');
   assert.equal(run.exit_code, 0);
   assert.equal(run.project_id, project.id);
+  assert.equal(run.allowed_paths_count, 1);
+  assert.equal(run.allowed_paths_set, true);
   assert.match(run.stdout, /route-ok/);
 
   const runsRes = await request(`/api/skills/runs?skillId=${skill.id}`);

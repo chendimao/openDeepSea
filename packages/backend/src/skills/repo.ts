@@ -409,11 +409,11 @@ function isSkillExecutableRuntime(value: string | null): value is SkillExecutabl
 }
 
 function isSkillUpdateCheckMode(value: string | null): value is SkillUpdateCheckMode {
-  return value === 'off' || value === 'startup' || value === 'manual' || value === 'scheduled';
+  return value === 'off' || value === 'startup' || value === 'manual';
 }
 
 function isSkillUpdateApplyMode(value: string | null): value is SkillUpdateApplyMode {
-  return value === 'prompt' || value === 'download' || value === 'auto';
+  return value === 'prompt';
 }
 
 function parsePermissions(raw: string | null): SkillPermissions | null {

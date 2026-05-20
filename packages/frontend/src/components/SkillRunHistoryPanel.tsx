@@ -122,6 +122,9 @@ function RunHistoryItem({
             <span className="font-mono text-[10px] text-[var(--color-fg-muted)]">
               {t('settings.skillsRunExitCode')}: {run.exit_code ?? t('common.none')}
             </span>
+            <span className="font-mono text-[10px] text-[var(--color-fg-muted)]">
+              {t('settings.skillsRunAllowedPaths')}: {run.allowed_paths_count}
+            </span>
           </div>
           <div className="mt-1 font-mono text-[10.5px] text-[var(--color-muted)]">
             {relativeTime} / {run.invoked_by}

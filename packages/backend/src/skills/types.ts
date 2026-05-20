@@ -3,8 +3,8 @@ export type SkillSourceType = 'local_directory' | 'git_repo' | 'manual' | 'skill
 export type SkillTriggerMode = 'manual' | 'keyword' | 'always_for_scope';
 export type SkillBindingScope = 'system' | 'project' | 'room' | 'agent';
 export type SkillExecutableRuntime = 'node' | 'python' | 'shell';
-export type SkillUpdateCheckMode = 'off' | 'startup' | 'manual' | 'scheduled';
-export type SkillUpdateApplyMode = 'prompt' | 'download' | 'auto';
+export type SkillUpdateCheckMode = 'off' | 'startup' | 'manual';
+export type SkillUpdateApplyMode = 'prompt';
 
 export interface SkillPermissions {
   filesystem: 'project';

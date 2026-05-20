@@ -151,8 +151,8 @@ export type SkillTriggerMode = 'manual' | 'keyword' | 'always_for_scope';
 export type SkillBindingScope = 'system' | 'project' | 'room' | 'agent';
 export type SkillSourceType = 'local_directory' | 'git_repo' | 'manual' | 'skills_sh';
 export type SkillExecutableRuntime = 'node' | 'python' | 'shell';
-export type SkillUpdateCheckMode = 'off' | 'startup' | 'manual' | 'scheduled';
-export type SkillUpdateApplyMode = 'prompt' | 'download' | 'auto';
+export type SkillUpdateCheckMode = 'off' | 'startup' | 'manual';
+export type SkillUpdateApplyMode = 'prompt';
 export type SkillRunInvoker = 'workflow' | 'agent' | 'manual';
 export type SkillRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -168,6 +168,7 @@ export interface Skill {
   description: string | null;
   source_type: SkillSourceType;
   source_uri: string | null;
+  source_uri_set: boolean;
   manifest_path: string | null;
   runtime_scopes: SkillRuntimeScope[];
   trigger_mode: SkillTriggerMode;
@@ -246,7 +247,8 @@ export interface SkillRun {
   runtime: SkillExecutableRuntime;
   entrypoint: string;
   input: unknown;
-  allowed_paths: string[];
+  allowed_paths_count: number;
+  allowed_paths_set: boolean;
   network_enabled: 0 | 1;
   status: SkillRunStatus;
   exit_code: number | null;

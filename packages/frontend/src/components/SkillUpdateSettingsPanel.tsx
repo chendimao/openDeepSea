@@ -9,8 +9,8 @@ import { cn } from '../lib/utils';
 import { Button } from './ui/Button';
 import { Label } from './ui/Input';
 
-const CHECK_MODES: SkillUpdateCheckMode[] = ['off', 'startup', 'manual', 'scheduled'];
-const APPLY_MODES: SkillUpdateApplyMode[] = ['prompt', 'download', 'auto'];
+const CHECK_MODES: SkillUpdateCheckMode[] = ['off', 'startup', 'manual'];
+const APPLY_MODES: SkillUpdateApplyMode[] = ['prompt'];
 
 export function SkillUpdateSettingsPanel({
   skill,
@@ -220,7 +220,6 @@ function updateCheckModeLabel(mode: SkillUpdateCheckMode, t: ReturnType<typeof u
     off: t('settings.skillsUpdateCheckOff'),
     startup: t('settings.skillsUpdateCheckStartup'),
     manual: t('settings.skillsUpdateCheckManual'),
-    scheduled: t('settings.skillsUpdateCheckScheduled'),
   };
   return labels[mode];
 }
@@ -228,8 +227,6 @@ function updateCheckModeLabel(mode: SkillUpdateCheckMode, t: ReturnType<typeof u
 function updateApplyModeLabel(mode: SkillUpdateApplyMode, t: ReturnType<typeof useI18n>['t']): string {
   const labels: Record<SkillUpdateApplyMode, string> = {
     prompt: t('settings.skillsUpdateApplyPrompt'),
-    download: t('settings.skillsUpdateApplyDownload'),
-    auto: t('settings.skillsUpdateApplyAuto'),
   };
   return labels[mode];
 }

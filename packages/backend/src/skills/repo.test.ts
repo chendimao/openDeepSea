@@ -129,7 +129,7 @@ test('skillRepo persists executable skill metadata and update policy fields', ()
     package_version: '1.2.4',
     package_revision: 'rev-2',
     update_check_mode: 'manual',
-    update_apply_mode: 'auto',
+    update_apply_mode: 'prompt',
     last_update_checked_at: 12345,
     available_version: '1.3.0',
     available_revision: 'rev-3',
@@ -138,7 +138,7 @@ test('skillRepo persists executable skill metadata and update policy fields', ()
   assert.equal(updated?.package_version, '1.2.4');
   assert.equal(updated?.package_revision, 'rev-2');
   assert.equal(updated?.update_check_mode, 'manual');
-  assert.equal(updated?.update_apply_mode, 'auto');
+  assert.equal(updated?.update_apply_mode, 'prompt');
   assert.equal(updated?.last_update_checked_at, 12345);
   assert.equal(updated?.available_version, '1.3.0');
   assert.equal(updated?.available_revision, 'rev-3');
