@@ -1,4 +1,5 @@
 import type { ParsedPlan, ParsedPlanTask } from '../plan-parser.js';
+import { normalizeParsedPlanTaskTitles } from '../plan-parser.js';
 import { deriveWorkflowPlanFromParsedPlan } from '../workflow-plan-json.js';
 import type { WorkflowPlanJson, WorkflowPlanTaskJson } from '../../types.js';
 
@@ -51,7 +52,7 @@ export function deriveCoordinatorPlanFromProductManagerBackground(input: {
   const risks = extractSectionItems(background, ['风险', '注意事项']);
   const verification = extractSectionItems(background, ['验证方式', '测试', '验收标准']);
 
-  return {
+  return normalizeParsedPlanTaskTitles({
     goal: input.taskTitle,
     summary: firstSentence(background) || input.taskTitle,
     assumptions,
@@ -61,7 +62,7 @@ export function deriveCoordinatorPlanFromProductManagerBackground(input: {
     verificationCommands: [],
     risks,
     needsApproval: false,
-  };
+  }, { parentTitle: input.taskTitle });
 }
 
 export function serializeExecutablePlanModes(plan: ParsedPlan): ParsedPlan {

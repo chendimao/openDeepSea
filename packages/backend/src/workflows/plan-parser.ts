@@ -142,9 +142,53 @@ export function parsePlanArtifact(output: string): ParsedPlan {
   const jsonText = extractJson(output);
   const parsed = JSON.parse(jsonText) as unknown;
   const modernPlan = langChainPlanSchema.safeParse(parsed);
-  if (modernPlan.success) return normalizeLangChainPlan(modernPlan.data);
+  if (modernPlan.success) return normalizeParsedPlanTaskTitles(normalizeLangChainPlan(modernPlan.data));
   if (hasModernPlanShape(parsed)) throw modernPlan.error;
-  return normalizeLegacyPlan(planSchema.parse(parsed));
+  return normalizeParsedPlanTaskTitles(normalizeLegacyPlan(planSchema.parse(parsed)));
+}
+
+export function normalizeParsedPlanTaskTitles(
+  plan: ParsedPlan,
+  options: { parentTitle?: string | null } = {},
+): ParsedPlan {
+  const parentTitles = new Set([
+    options.parentTitle,
+    plan.goal,
+  ].map((item) => normalizeTitleKey(item)).filter(Boolean));
+  const originalTitleCounts = countTitles(plan.tasks.map((task) => task.title));
+  const usedTitles = new Map<string, number>();
+  const firstResolvedTitleByOriginalTitle = new Map<string, string>();
+
+  const tasks = plan.tasks.map((task, index) => {
+    const resolvedTitle = makeUniqueTaskTitle(
+      summarizeParsedPlanTaskTitle({
+        task,
+        index,
+        isDuplicateTitle: (originalTitleCounts.get(normalizeTitleKey(task.title)) ?? 0) > 1,
+        parentTitles,
+      }),
+      usedTitles,
+    );
+    const originalKey = normalizeTitleKey(task.title);
+    if (originalKey && !firstResolvedTitleByOriginalTitle.has(originalKey)) {
+      firstResolvedTitleByOriginalTitle.set(originalKey, resolvedTitle);
+    }
+    return {
+      ...task,
+      title: resolvedTitle,
+    };
+  });
+
+  return {
+    ...plan,
+    tasks: tasks.map((task) => ({
+      ...task,
+      dependsOn: task.dependsOn.map((dependency) => {
+        const resolved = firstResolvedTitleByOriginalTitle.get(normalizeTitleKey(dependency));
+        return resolved ?? dependency;
+      }),
+    })),
+  };
 }
 
 export function parseReviewVerdict(output: string): ParsedReviewVerdict {
@@ -211,6 +255,119 @@ function normalizeLegacyPlan(plan: z.infer<typeof planSchema>): ParsedPlan {
     risks: plan.risks,
     needsApproval: true,
   };
+}
+
+function countTitles(titles: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const title of titles) {
+    const key = normalizeTitleKey(title);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function summarizeParsedPlanTaskTitle(input: {
+  task: ParsedPlanTask;
+  index: number;
+  isDuplicateTitle: boolean;
+  parentTitles: Set<string>;
+}): string {
+  const cleanTitle = compactTaskTitle(input.task.title);
+  if (cleanTitle && !input.isDuplicateTitle && !isGenericTaskTitle(cleanTitle, input.parentTitles)) {
+    return clipTaskTitle(cleanTitle);
+  }
+
+  const textCandidates = [
+    input.task.description,
+    ...input.task.acceptance,
+  ];
+  for (const candidate of textCandidates) {
+    const title = deriveTaskTitleFromText(candidate, input.parentTitles);
+    if (title) return title;
+  }
+
+  const scopeTitle = deriveTaskTitleFromScope(input.task.scopeWrite);
+  if (scopeTitle) return scopeTitle;
+
+  return `${roleTitlePrefix(input.task.suggestedRole)}子任务 ${input.index + 1}`;
+}
+
+function makeUniqueTaskTitle(title: string, usedTitles: Map<string, number>): string {
+  const base = clipTaskTitle(compactTaskTitle(title) || '执行子任务');
+  const key = normalizeTitleKey(base);
+  const count = (usedTitles.get(key) ?? 0) + 1;
+  usedTitles.set(key, count);
+  if (count === 1) return base;
+  const suffix = ` ${count}`;
+  const prefix = Array.from(base).slice(0, Math.max(1, 24 - Array.from(suffix).length)).join('');
+  return `${prefix}${suffix}`;
+}
+
+function deriveTaskTitleFromText(text: string, parentTitles: Set<string>): string | null {
+  const candidates = text
+    .split(/\r?\n|[。；;.!?]/)
+    .map((item) => compactTaskTitle(item))
+    .map(stripTaskTitleLabel)
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (!isGenericTaskTitle(candidate, parentTitles)) return clipTaskTitle(candidate);
+  }
+  return null;
+}
+
+function deriveTaskTitleFromScope(scopeWrite: string[]): string | null {
+  if (scopeWrite.length === 0) return null;
+  const text = scopeWrite.join('\n').toLowerCase();
+  const hasFrontend = /packages\/frontend|src\/components|src\/pages|\.tsx?\b/.test(text);
+  const hasBackend = /packages\/backend|src\/repos|src\/routes|\.ts\b/.test(text) && !hasFrontend;
+  const hasTests = /\.test\.|__tests__|测试|test/.test(text);
+  if (hasTests) return '补充验证测试';
+  if (hasFrontend) return '前端交互实现';
+  if (hasBackend) return '后端能力实现';
+  return '更新工程文件';
+}
+
+function stripTaskTitleLabel(value: string): string {
+  return value
+    .replace(/^(?:子任务|任务|步骤|step)\s*\d*[\s.、-]*[:：]?\s*/i, '')
+    .replace(/^(?:目标|意图|说明|描述|验收|验收标准|成功标准|范围|读范围|写范围|改动|依赖|acceptance|intent|description|scopeWrite|scopeRead|dependsOn)\s*[:：]\s*/i, '')
+    .trim();
+}
+
+function compactTaskTitle(value: string | null | undefined): string {
+  return (value ?? '')
+    .replace(/^[-*]\s+/, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[，,；;。.!?\s]+|[，,；;。.!?\s]+$/g, '')
+    .trim();
+}
+
+function clipTaskTitle(value: string): string {
+  const chars = Array.from(value);
+  if (chars.length <= 24) return value;
+  return chars.slice(0, 24).join('');
+}
+
+function isGenericTaskTitle(title: string, parentTitles: Set<string>): boolean {
+  const key = normalizeTitleKey(title);
+  if (!key) return true;
+  if (parentTitles.has(key)) return true;
+  return /^(?:确定生成任务|生成任务|启动任务|执行任务|执行|实现|开发|修复|代码审查|子任务|任务|步骤|计划|分析|分配)$/.test(key);
+}
+
+function normalizeTitleKey(value: string | null | undefined): string {
+  return compactTaskTitle(value)
+    .replace(/[「」"“”'‘’\s,，.。:：;；!！?？_-]/g, '')
+    .toLowerCase();
+}
+
+function roleTitlePrefix(role: WorkflowRole): string {
+  if (role === 'reviewer') return '审查';
+  if (role === 'acceptor') return '验收';
+  if (role === 'planner') return '规划';
+  return '执行';
 }
 
 function hasModernPlanShape(parsed: unknown): boolean {

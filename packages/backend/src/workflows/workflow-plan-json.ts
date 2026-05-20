@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowPlanTaskMode } from '../types.js';
-import type { ParsedPlan } from './plan-parser.js';
+import { normalizeParsedPlanTaskTitles, type ParsedPlan } from './plan-parser.js';
 
 export type WorkflowPlanTaskInput = Partial<Pick<WorkflowPlanTaskJson, 'mode' | 'status' | 'progress' | 'result_refs'>> & {
   id: string;
@@ -75,9 +75,10 @@ export function deriveWorkflowPlanFromParsedPlan(input: {
   sourceMessageId: string;
   plan: ParsedPlan;
 }): WorkflowPlanJson {
+  const plan = normalizeParsedPlanTaskTitles(input.plan, { parentTitle: input.workflowName });
   const taskIdsByTitle = new Map<string, string>();
   let previousTaskId: string | null = null;
-  const tasks = input.plan.tasks.map((task, index): WorkflowPlanTaskInput => {
+  const tasks = plan.tasks.map((task, index): WorkflowPlanTaskInput => {
     const id = `task-${index + 1}-${slugTaskId(task.title)}`;
     taskIdsByTitle.set(task.title, id);
     const depends_on = previousTaskId ? [previousTaskId] : [];
@@ -92,7 +93,7 @@ export function deriveWorkflowPlanFromParsedPlan(input: {
     };
   });
 
-  for (const [index, task] of input.plan.tasks.entries()) {
+  for (const [index, task] of plan.tasks.entries()) {
     tasks[index]!.depends_on = task.dependsOn.length > 0
       ? task.dependsOn.map((dependency) => taskIdsByTitle.get(dependency) ?? dependency)
       : tasks[index]!.depends_on;
@@ -101,8 +102,8 @@ export function deriveWorkflowPlanFromParsedPlan(input: {
   return normalizeWorkflowPlanObject({
     workflow_name: input.workflowName,
     source_message_id: input.sourceMessageId,
-    goal: input.plan.goal ?? input.plan.summary,
-    summary: input.plan.summary,
+    goal: plan.goal ?? plan.summary,
+    summary: plan.summary,
     tasks,
   });
 }

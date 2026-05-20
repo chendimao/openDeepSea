@@ -121,6 +121,88 @@ test('parsePlanArtifact parses modern LangChain planner shape', () => {
   assert.equal(plan.needsApproval, false);
 });
 
+test('parsePlanArtifact summarizes duplicate step titles into distinct short task names', () => {
+  const plan = parsePlanArtifact(`
+\`\`\`json
+{
+  "goal": "确定,生成任务",
+  "summary": "把用户确认的需求拆成可执行任务。",
+  "assumptions": [],
+  "steps": [
+    {
+      "title": "确定,生成任务",
+      "intent": "补充后端任务流转数据结构与接口。",
+      "assigneeRole": "executor",
+      "scopeRead": ["packages/backend/src/workflows"],
+      "scopeWrite": ["packages/backend/src/workflows/graph/nodes.ts"],
+      "acceptance": ["后端返回任务流转关系。"],
+      "dependsOn": []
+    },
+    {
+      "title": "确定,生成任务",
+      "intent": "改造前端工作流任务卡片和关系展示。",
+      "assigneeRole": "executor",
+      "scopeRead": ["packages/frontend/src/components"],
+      "scopeWrite": ["packages/frontend/src/components/WorkflowTaskFlow.tsx"],
+      "acceptance": ["前端显示清晰的子任务流转。"],
+      "dependsOn": ["确定,生成任务"]
+    }
+  ],
+  "risks": [],
+  "verification": [],
+  "needsApproval": false
+}
+\`\`\`
+`);
+
+  assert.deepEqual(plan.tasks.map((task) => task.title), [
+    '补充后端任务流转数据结构与接口',
+    '改造前端工作流任务卡片和关系展示',
+  ]);
+  assert.deepEqual(plan.tasks[1]?.dependsOn, ['补充后端任务流转数据结构与接口']);
+});
+
+test('parsePlanArtifact keeps already meaningful unique step titles', () => {
+  const plan = parsePlanArtifact(`
+\`\`\`json
+{
+  "goal": "实现任务流转展示",
+  "summary": "后端和前端分别实现。",
+  "assumptions": [],
+  "steps": [
+    {
+      "title": "实现后端流转接口",
+      "intent": "补充数据输出。",
+      "assigneeRole": "executor",
+      "scopeRead": [],
+      "scopeWrite": ["packages/backend/src/workflows/graph/nodes.ts"],
+      "acceptance": ["接口返回关系"],
+      "dependsOn": []
+    },
+    {
+      "title": "实现前端流转画布",
+      "intent": "展示任务关系。",
+      "assigneeRole": "executor",
+      "scopeRead": [],
+      "scopeWrite": ["packages/frontend/src/components/WorkflowTaskFlow.tsx"],
+      "acceptance": ["画布可见"],
+      "dependsOn": ["实现后端流转接口"]
+    }
+  ],
+  "risks": [],
+  "verification": [],
+  "needsApproval": false
+}
+\`\`\`
+`);
+
+  assert.deepEqual(plan.tasks.map((task) => task.title), [
+    '实现后端流转接口',
+    '实现前端流转画布',
+  ]);
+  assert.deepEqual(plan.tasks[1]?.dependsOn, ['实现后端流转接口']);
+});
+
 test('parsePlanArtifact normalizes common loose model metadata shapes', () => {
   const plan = parsePlanArtifact(`
 \`\`\`json

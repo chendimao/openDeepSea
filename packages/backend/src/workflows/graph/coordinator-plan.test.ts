@@ -229,6 +229,26 @@ test('deriveCoordinatorPlanFromProductManagerBackground splits inline prose impl
   assert.match(plan.tasks[1]?.description ?? '', /改造前端文件列表/);
 });
 
+test('deriveCoordinatorPlanFromProductManagerBackground summarizes fallback task title from background', () => {
+  const plan = deriveCoordinatorPlanFromProductManagerBackground({
+    taskTitle: '确定,生成任务',
+    taskDescription: [
+      '确定生成任务。',
+      '',
+      '产品经理方案背景：',
+      '补充工作流任务标题生成逻辑，避免多个子任务都显示父任务名称。',
+      '验收标准：每个子任务都有简短、可区分的名称。',
+      '',
+      '任务意图：implementation',
+    ].join('\n'),
+  });
+
+  assert.ok(plan);
+  assert.deepEqual(plan.tasks.map((task) => task.title), [
+    '补充工作流任务标题生成逻辑，避免多个子任务都显示',
+  ]);
+});
+
 function makeWorkflowPlanJson(sourceMessageId: string): WorkflowPlanJson {
   return {
     workflow_name: 'Coordinator 计划',

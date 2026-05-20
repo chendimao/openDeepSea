@@ -2,7 +2,7 @@ import { serializeGraphState, type AgentWorkflowState } from './state.js';
 import type { GraphTools } from './tools.js';
 import { getVerificationCwd, runVerificationCommand } from './verification.js';
 import { buildTaskSummaryMemoryContent, formatParsedPlanArtifact } from '../orchestrator.js';
-import { parseAcceptanceVerdict, parseReviewVerdict, type ParsedPlanTask } from '../plan-parser.js';
+import { normalizeParsedPlanTaskTitles, parseAcceptanceVerdict, parseReviewVerdict, type ParsedPlanTask } from '../plan-parser.js';
 import { buildStagePrompt } from '../prompts.js';
 import { resolveWorkflowExecutor } from '../role-resolver.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
@@ -80,7 +80,10 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         taskTitle: context.task.title,
         taskDescription: context.task.description,
       });
-      const plan = coordinatorPlan ?? await generatePlannerPlanForContext(tools, context);
+      const plan = normalizeParsedPlanTaskTitles(
+        coordinatorPlan ?? await generatePlannerPlanForContext(tools, context),
+        { parentTitle: context.task.title },
+      );
 
       const output = formatParsedPlanArtifact(plan);
       const workflowPlan = plan.tasks.length > 0

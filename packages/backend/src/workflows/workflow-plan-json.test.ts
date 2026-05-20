@@ -197,3 +197,49 @@ test('deriveWorkflowPlanFromParsedPlan maps ParsedPlan tasks to executable plan 
   assert.deepEqual(plan.tasks[2]?.depends_on, ['task-1-实现后端规则', 'task-2-实现前端入口']);
   assert.equal(plan.tasks[2]?.mode, 'serial');
 });
+
+test('deriveWorkflowPlanFromParsedPlan gives duplicate parsed tasks distinct short titles', () => {
+  const plan = deriveWorkflowPlanFromParsedPlan({
+    workflowName: '确定,生成任务',
+    sourceMessageId: 'msg-user-7',
+    plan: {
+      goal: '确定,生成任务',
+      summary: '把用户确认的需求拆成可执行任务。',
+      assumptions: [],
+      tasks: [
+        {
+          title: '确定,生成任务',
+          description: '补充后端任务流转数据结构与接口。',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['后端返回任务流转关系。'],
+          scopeRead: [],
+          scopeWrite: ['packages/backend/src/workflows/graph/nodes.ts'],
+          dependsOn: [],
+        },
+        {
+          title: '确定,生成任务',
+          description: '改造前端工作流任务卡片和关系展示。',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['前端显示清晰的子任务流转。'],
+          scopeRead: [],
+          scopeWrite: ['packages/frontend/src/components/WorkflowTaskFlow.tsx'],
+          dependsOn: ['确定,生成任务'],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+  });
+
+  assert.deepEqual(plan.tasks.map((task) => task.title), [
+    '补充后端任务流转数据结构与接口',
+    '改造前端工作流任务卡片和关系展示',
+  ]);
+  assert.equal(plan.tasks[0]?.id, 'task-1-补充后端任务流转数据结构与接口');
+  assert.deepEqual(plan.tasks[1]?.depends_on, ['task-1-补充后端任务流转数据结构与接口']);
+});
