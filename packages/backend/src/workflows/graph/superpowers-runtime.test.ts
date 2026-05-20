@@ -35,6 +35,27 @@ test('buildSuperpowersRuntimeGraph exposes ordered Superpowers planning phase st
   );
 });
 
+test('buildSuperpowersRuntimeGraph executable definition runs Superpowers planning gates before dispatch', () => {
+  const graph = buildSuperpowersRuntimeGraph();
+
+  assert.deepEqual(
+    graph.executableDefinition.nodes.slice(0, 8).map((node) => node.id),
+    ['context', 'brainstorming', 'spec_review', 'worktree', 'writing_plans', 'plan_review', 'approval', 'dispatch'],
+  );
+  assert.deepEqual(
+    graph.executableDefinition.edges.slice(0, 7).map((edge) => `${edge.from}->${edge.to}`),
+    [
+      'context->brainstorming',
+      'brainstorming->spec_review',
+      'spec_review->worktree',
+      'worktree->writing_plans',
+      'writing_plans->plan_review',
+      'plan_review->approval',
+      'approval->dispatch',
+    ],
+  );
+});
+
 test('Superpowers planning nodes record phase artifacts and review verdicts', async () => {
   const graph = buildSuperpowersRuntimeGraph();
   const state = emptyAgentWorkflowState({

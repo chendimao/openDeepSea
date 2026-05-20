@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-runtime-')), 'test.db');
 
+const { db } = await import('../../db.js');
 const { projectRepo } = await import('../../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
@@ -185,7 +186,7 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   assert.ok(detail?.run.graph_state);
   assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'plan'));
   assert.ok(detail?.steps.some((step) => step.node_name === 'context'));
-  assert.ok(detail?.steps.some((step) => step.node_name === 'planning'));
+  assert.ok(listRawStepNodeNames(run.id).includes('writing_plans'));
 });
 
 test('planning node passes planner and workflow skill context to graph planner', async () => {
@@ -215,6 +216,161 @@ test('planning node passes planner and workflow skill context to graph planner',
 
   assert.equal(workflowRepo.detail(run.id)?.run.status, 'awaiting_approval');
   assert.match(capturedSkillContext, /Skill: graph-planner-skill/);
+});
+
+test('Superpowers run records planning gate steps before dispatch', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-gates-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Gates', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Gates Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(executor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Run Superpowers gates before dispatch',
+  });
+
+  const run = await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      ...createApprovalPlan(task.title),
+      tasks: [{
+        title: 'Implement gated dispatch',
+        description: 'Dispatch only after Superpowers planning gates.',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Dispatch runs after plan review'],
+        scopeRead: ['packages/backend/src/workflows/graph/runtime.ts'],
+        scopeWrite: ['packages/backend/src/workflows/graph/runtime.ts'],
+        dependsOn: [],
+      }],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const nodeNames = listRawStepNodeNames(run.id);
+  assert.deepEqual(nodeNames.slice(0, 8), [
+    'context',
+    'brainstorming',
+    'spec_review',
+    'worktree',
+    'writing_plans',
+    'plan_review',
+    'dispatch',
+    'execute',
+  ]);
+});
+
+test('Superpowers dispatch blocks when implementation plan is missing or unapproved', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-dispatch-gate-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Dispatch Gate', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Dispatch Gate Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Block dispatch without approved plan review',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+    plan: createApprovalPlan(task.title),
+    workflowPlan: null,
+    currentNode: 'approval',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [],
+    childTaskPlanIndexes: {},
+    supervisorAssignments: [],
+    runtimeProfile: 'superpowers',
+    superpowersPhase: 'plan_review',
+    designDocPath: 'docs/superpowers/specs/superpowers-design.md',
+    designReviewVerdict: 'approved',
+    implementationPlanPath: null,
+    planReviewVerdict: 'approved',
+    worktree: null,
+    tddEvidence: [],
+    tddExemption: null,
+    specComplianceReview: null,
+    codeQualityReview: null,
+    verificationEvidence: [],
+    finishBranchDecision: null,
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  }));
+
+  const missingPlanRun = await continueGraphWorkflow(run.id);
+  const missingPlanState = parseGraphState(missingPlanRun.graph_state);
+  assert.equal(missingPlanRun.status, 'blocked');
+  assert.match(missingPlanRun.error ?? '', /implementationPlanPath/);
+  assert.equal(missingPlanState?.superpowersPhase, 'plan_review');
+  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'), false);
+
+  const unapprovedTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Block dispatch with unapproved plan review',
+  });
+  const unapprovedRun = createGraphWorkflowRun(unapprovedTask.id);
+  workflowRepo.updateGraphState(unapprovedRun.id, JSON.stringify({
+    workflowRunId: unapprovedRun.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: unapprovedTask.id,
+    userGoal: unapprovedTask.title,
+    projectPath: project.path,
+    plan: createApprovalPlan(unapprovedTask.title),
+    workflowPlan: null,
+    currentNode: 'approval',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [],
+    childTaskPlanIndexes: {},
+    supervisorAssignments: [],
+    runtimeProfile: 'superpowers',
+    superpowersPhase: 'plan_review',
+    designDocPath: 'docs/superpowers/specs/superpowers-design.md',
+    designReviewVerdict: 'approved',
+    implementationPlanPath: 'docs/superpowers/plans/test-plan.md',
+    planReviewVerdict: 'changes_requested',
+    worktree: null,
+    tddEvidence: [],
+    tddExemption: null,
+    specComplianceReview: null,
+    codeQualityReview: null,
+    verificationEvidence: [],
+    finishBranchDecision: null,
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  }));
+
+  const unapprovedLatest = await continueGraphWorkflow(unapprovedRun.id);
+  const unapprovedState = parseGraphState(unapprovedLatest.graph_state);
+  assert.equal(unapprovedLatest.status, 'blocked');
+  assert.match(unapprovedLatest.error ?? '', /plan review/i);
+  assert.equal(unapprovedState?.superpowersPhase, 'plan_review');
+  assert.equal(workflowRepo.listSteps(unapprovedRun.id).some((step) => step.node_name === 'dispatch'), false);
 });
 
 test('startGraphWorkflow always records Superpowers definition and runtime profile for new runs', async () => {
@@ -1092,7 +1248,7 @@ test('startGraphWorkflow blocks workflow and fails running graph step when plann
   assert.ok(detail?.run.graph_state?.includes('"status":"blocked"'));
   assert.ok(detail?.run.graph_state?.includes('planner unavailable'));
   assert.equal(detail?.steps.some((step) => step.status === 'running'), false);
-  assert.ok(detail?.steps.some((step) => step.node_name === 'planning' && step.status === 'failed'));
+  assert.ok(listRawSteps(run.id).some((step) => step.node_name === 'writing_plans' && step.status === 'failed'));
 });
 
 test('graph dispatch creates child tasks and assignment artifact after no-approval plan', async () => {
@@ -1872,6 +2028,16 @@ function assertSuperpowersWorkflowRun(run: WorkflowRun): void {
 
 function flushImmediate(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+function listRawStepNodeNames(workflowRunId: string): Array<string | null> {
+  return listRawSteps(workflowRunId).map((step) => step.node_name);
+}
+
+function listRawSteps(workflowRunId: string): Array<{ node_name: string | null; status: string }> {
+  return db
+    .prepare('SELECT node_name, status FROM workflow_steps WHERE workflow_run_id = ? ORDER BY sort_order ASC, created_at ASC')
+    .all(workflowRunId) as Array<{ node_name: string | null; status: string }>;
 }
 
 function createTestWorkflowDefinition(): WorkflowDefinitionGraph {

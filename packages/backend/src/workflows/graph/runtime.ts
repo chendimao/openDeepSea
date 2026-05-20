@@ -19,7 +19,9 @@ import {
   SUPERPOWERS_GRAPH_VERSION,
   SUPERPOWERS_RUNTIME_PROFILE,
   SUPERPOWERS_WORKFLOW_DEFINITION_KEY,
+  type SuperpowersRuntimeGraph,
 } from './superpowers-runtime.js';
+import type { SuperpowersPlanningNodeName } from './superpowers-nodes.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 
 const GraphState = Annotation.Root({
@@ -704,6 +706,7 @@ function tryParseGraphState(run: WorkflowRun): { ok: true; state: AgentWorkflowS
 
 function retryCurrentNode(state: AgentWorkflowState): AgentWorkflowState['currentNode'] {
   if (state.currentNode === 'planning' || (state.currentNode === 'approval' && !state.plan)) return 'context';
+  if (state.currentNode === 'approval') return 'approval';
   if (state.currentNode === 'execute') return 'dispatch';
   if (state.currentNode === 'review') return 'dispatch';
   if (state.currentNode === 'repair_decision') return 'review';
@@ -728,7 +731,7 @@ async function resumeGraphWorkflowFromState(
   const routeDefinition = runtimeGraph?.executableDefinition
     ?? snapshot?.definition
     ?? workflowDefinitionRepo.ensureBuiltInDefinitions().definition;
-  const routePlan = compileRoutePlan(routeDefinition);
+  const routePlan = compileRoutePlan(routeDefinition, Boolean(runtimeGraph));
   let nextState = state;
   let nodeToRun = nextNodeAfter(null, nextState, routePlan);
 
@@ -737,7 +740,13 @@ async function resumeGraphWorkflowFromState(
       return nextState;
     }
 
-    if (nodeToRun === 'context') {
+    if (nodeToRun === 'dispatch' && runtimeGraph && !runtimeGraph.canDispatch(nextState)) {
+      return blockSuperpowersDispatch(nextState);
+    }
+
+    if (runtimeGraph && isSuperpowersPlanningRouteNode(nodeToRun)) {
+      nextState = await runSuperpowersPlanningNode(nodeToRun, nextState, tools, nodes, runtimeGraph);
+    } else if (nodeToRun === 'context') {
       nextState = await nodes.contextNode(nextState);
     } else if (nodeToRun === 'planning') {
       nextState = await nodes.planningNode(nextState);
@@ -777,6 +786,135 @@ function inferWorkflowPromptKind(snapshot: WorkflowDefinitionSnapshot | null): '
   return 'development';
 }
 
+async function runSuperpowersPlanningNode(
+  nodeToRun: SuperpowersPlanningNodeName,
+  state: AgentWorkflowState,
+  tools: ReturnType<typeof createGraphTools>,
+  nodes: ReturnType<typeof createGraphNodes>,
+  runtimeGraph: SuperpowersRuntimeGraph,
+): Promise<AgentWorkflowState> {
+  if (nodeToRun === 'writing_plans') {
+    return runSuperpowersWritingPlansNode(state, tools, nodes, runtimeGraph);
+  }
+
+  const context = tools.readWorkflowContext(state.workflowRunId);
+  const phaseStep = runtimeGraph.phaseSteps.find((step) => step.nodeName === nodeToRun);
+  if (!phaseStep) throw new Error(`unknown Superpowers planning node: ${nodeToRun}`);
+
+  const step = tools.createGraphStep({
+    workflow_run_id: context.run.id,
+    task_id: context.task.id,
+    stage: phaseStep.stage,
+    node_name: nodeToRun as never,
+    status: 'running',
+    sort_order: tools.nextStepSortOrder(context.run.id),
+  });
+  const rawNextState = await callSuperpowersNode(nodeToRun, state, runtimeGraph);
+  const nextState: AgentWorkflowState = {
+    ...rawNextState,
+    currentNode: 'planning',
+    currentStepId: step.id,
+  };
+  const completedStep = tools.updateGraphStep(step.id, {
+    node_name: nodeToRun as never,
+    status: nextState.status === 'blocked' ? 'failed' : 'completed',
+    error: nextState.status === 'blocked' ? nextState.error : null,
+  });
+  if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+  const updatedRun = tools.updateRun(context.run.id, {
+    status: nextState.status === 'blocked' ? 'blocked' : 'running',
+    current_stage: phaseStep.stage,
+    error: nextState.status === 'blocked' ? nextState.error : null,
+  });
+  if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+  tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+  return nextState;
+}
+
+async function runSuperpowersWritingPlansNode(
+  state: AgentWorkflowState,
+  tools: ReturnType<typeof createGraphTools>,
+  nodes: ReturnType<typeof createGraphNodes>,
+  runtimeGraph: SuperpowersRuntimeGraph,
+): Promise<AgentWorkflowState> {
+  const context = tools.readWorkflowContext(state.workflowRunId);
+  const beforeStepIds = new Set(tools.listSteps(context.run.id).map((step) => step.id));
+  let plannedState: AgentWorkflowState;
+
+  try {
+    plannedState = await nodes.planningNode(state);
+  } catch (err) {
+    const planningStep = findCreatedPlanningStep(tools, context.run.id, beforeStepIds);
+    if (planningStep) {
+      tools.updateGraphStep(planningStep.id, {
+        node_name: 'writing_plans' as never,
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    throw err;
+  }
+
+  const planningStep = findCreatedPlanningStep(tools, context.run.id, beforeStepIds);
+  if (planningStep) {
+    tools.updateGraphStep(planningStep.id, { node_name: 'writing_plans' as never });
+  }
+
+  const rawNextState = await runtimeGraph.nodes.writingPlans(plannedState);
+  const nextState: AgentWorkflowState = {
+    ...rawNextState,
+    currentNode: 'planning',
+    currentStepId: planningStep?.id ?? plannedState.currentStepId,
+  };
+  tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+  return nextState;
+}
+
+function findCreatedPlanningStep(
+  tools: ReturnType<typeof createGraphTools>,
+  workflowRunId: string,
+  beforeStepIds: Set<string>,
+) {
+  return tools.listSteps(workflowRunId)
+    .filter((step) => !beforeStepIds.has(step.id) && step.node_name === 'planning')
+    .at(-1);
+}
+
+async function callSuperpowersNode(
+  nodeToRun: Exclude<SuperpowersPlanningNodeName, 'writing_plans'>,
+  state: AgentWorkflowState,
+  runtimeGraph: SuperpowersRuntimeGraph,
+): Promise<AgentWorkflowState> {
+  if (nodeToRun === 'brainstorming') return runtimeGraph.nodes.brainstorming(state);
+  if (nodeToRun === 'spec_review') return runtimeGraph.nodes.specReview(state);
+  if (nodeToRun === 'worktree') return runtimeGraph.nodes.worktree(state);
+  if (nodeToRun === 'plan_review') return runtimeGraph.nodes.planReview(state);
+  throw new Error(`unknown Superpowers planning node: ${nodeToRun}`);
+}
+
+function blockSuperpowersDispatch(state: AgentWorkflowState): AgentWorkflowState {
+  const error = getSuperpowersDispatchGateError(state);
+  const blockedState = blockGraphWorkflowRun(state.workflowRunId, state, error);
+  if (!blockedState) {
+    throw new Error(error);
+  }
+  return {
+    ...blockedState,
+    currentNode: 'planning',
+    superpowersPhase: 'plan_review',
+  };
+}
+
+function getSuperpowersDispatchGateError(state: AgentWorkflowState): string {
+  if (typeof state.implementationPlanPath !== 'string' || state.implementationPlanPath.trim().length === 0) {
+    return 'Superpowers dispatch requires implementationPlanPath';
+  }
+  if (state.planReviewVerdict !== 'approved') {
+    return 'Superpowers dispatch requires approved plan review';
+  }
+  return 'Superpowers dispatch requires approved implementation plan';
+}
+
 function isTerminalResumeState(state: AgentWorkflowState): boolean {
   return (
     state.status === 'awaiting_approval' ||
@@ -788,7 +926,7 @@ function isTerminalResumeState(state: AgentWorkflowState): boolean {
 }
 
 function shouldWaitForActiveAgentRun(
-  nodeJustRun: AgentWorkflowState['currentNode'],
+  nodeJustRun: WorkflowRouteNode,
   state: AgentWorkflowState,
 ): boolean {
   if (nodeJustRun !== 'execute') return false;
@@ -803,13 +941,13 @@ function shouldWaitForActiveAgentRun(
   );
 }
 
-type WorkflowRouteNode = AgentWorkflowState['currentNode'];
+type WorkflowRouteNode = NonNullable<AgentWorkflowState['currentNode']> | SuperpowersPlanningNodeName;
 type WorkflowRoutePlan = {
   start: WorkflowRouteNode;
   next: Map<WorkflowRouteNode, Array<{ to: WorkflowRouteNode; condition: string | null }>>;
 };
 
-const NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteNode | null> = {
+const LEGACY_NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteNode | null> = {
   context: 'context',
   planning: 'planning',
   brainstorming: null,
@@ -831,18 +969,30 @@ const NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteN
   memory: 'memory',
 };
 
-function resolveLegacyRouteNode(node: { id: string; type: WorkflowDefinitionNodeType }): WorkflowRouteNode {
-  const mapped = NODE_TYPE_TO_STATE_NODE[node.type];
+const SUPERPOWERS_NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteNode | null> = {
+  ...LEGACY_NODE_TYPE_TO_STATE_NODE,
+  brainstorming: 'brainstorming',
+  spec_review: 'spec_review',
+  worktree: 'worktree',
+  writing_plans: 'writing_plans',
+  plan_review: 'plan_review',
+};
+
+function resolveLegacyRouteNode(
+  node: { id: string; type: WorkflowDefinitionNodeType },
+  allowSuperpowersNodes: boolean,
+): WorkflowRouteNode {
+  const mapped = (allowSuperpowersNodes ? SUPERPOWERS_NODE_TYPE_TO_STATE_NODE : LEGACY_NODE_TYPE_TO_STATE_NODE)[node.type];
   if (mapped) return mapped;
   throw new Error(
     `workflow definition node "${node.id}" type "${node.type}" is not supported by legacy graph runtime`,
   );
 }
 
-function compileRoutePlan(definition: WorkflowDefinitionGraph): WorkflowRoutePlan {
+function compileRoutePlan(definition: WorkflowDefinitionGraph, allowSuperpowersNodes = false): WorkflowRoutePlan {
   const idToStateNode = new Map<string, WorkflowRouteNode>();
   for (const node of definition.nodes) {
-    idToStateNode.set(node.id, resolveLegacyRouteNode(node));
+    idToStateNode.set(node.id, resolveLegacyRouteNode(node, allowSuperpowersNodes));
   }
 
   const incoming = new Map<string, number>();
@@ -868,12 +1018,22 @@ function compileRoutePlan(definition: WorkflowDefinitionGraph): WorkflowRoutePla
   return { start, next };
 }
 
+function isSuperpowersPlanningRouteNode(node: WorkflowRouteNode): node is SuperpowersPlanningNodeName {
+  return (
+    node === 'brainstorming'
+    || node === 'spec_review'
+    || node === 'worktree'
+    || node === 'writing_plans'
+    || node === 'plan_review'
+  );
+}
+
 function nextNodeFromDefinition(
-  nodeJustRun: AgentWorkflowState['currentNode'] | null,
+  nodeJustRun: WorkflowRouteNode | null,
   state: AgentWorkflowState,
   plan: WorkflowRoutePlan,
-): AgentWorkflowState['currentNode'] | null {
-  const node = nodeJustRun ?? state.currentNode;
+): WorkflowRouteNode | null {
+  const node = nodeJustRun ?? currentRouteNodeFromState(state, plan);
   if (!node) return plan.start;
   const outgoing = plan.next.get(node) ?? [];
   if (outgoing.length === 0) return null;
@@ -890,10 +1050,28 @@ function nextNodeFromDefinition(
   return null;
 }
 
+function currentRouteNodeFromState(state: AgentWorkflowState, plan: WorkflowRoutePlan): WorkflowRouteNode | null {
+  if (state.currentNode === 'planning' && isSuperpowersPlanningPhase(state.superpowersPhase)) {
+    return plan.next.has(state.superpowersPhase) ? state.superpowersPhase : state.currentNode;
+  }
+  return state.currentNode;
+}
+
+function isSuperpowersPlanningPhase(value: unknown): value is SuperpowersPlanningNodeName {
+  return (
+    value === 'brainstorming'
+    || value === 'spec_review'
+    || value === 'worktree'
+    || value === 'writing_plans'
+    || value === 'plan_review'
+  );
+}
+
 function routeRuntimeNode(
   node: WorkflowRouteNode,
   state: AgentWorkflowState,
 ): WorkflowRouteNode | null {
+  if (isSuperpowersPlanningRouteNode(node)) return null;
   if (node === 'approval') {
     const route = routeAfterApproval(state);
     return route === END ? null : route;
@@ -921,6 +1099,7 @@ function matchesRouteCondition(
   state: AgentWorkflowState,
 ): boolean {
   if (!condition || condition === 'default' || condition === 'done') return true;
+  if (isSuperpowersPlanningRouteNode(node)) return false;
   if (node === 'approval') {
     const route = routeAfterApproval(state);
     if (condition === 'approved') return route === 'dispatch';
@@ -946,10 +1125,10 @@ function matchesRouteCondition(
 }
 
 function nextNodeAfter(
-  nodeJustRun: AgentWorkflowState['currentNode'] | null,
+  nodeJustRun: WorkflowRouteNode | null,
   state: AgentWorkflowState,
   routePlan?: WorkflowRoutePlan,
-): AgentWorkflowState['currentNode'] | null {
+): WorkflowRouteNode | null {
   if (isTerminalResumeState(state)) return null;
   if (routePlan) return nextNodeFromDefinition(nodeJustRun, state, routePlan);
   const node = nodeJustRun ?? state.currentNode;
