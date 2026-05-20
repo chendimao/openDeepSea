@@ -65,7 +65,7 @@ test('renders skipped workflow plan task from graph_state', () => {
 
   assert.match(html, /必要时同步前后端共享展示字段/);
   assert.match(html, /lucide-skip-forward/);
-  assert.match(html, /skipped/);
+  assert.doesNotMatch(html, /skipped/);
 });
 
 test('renders task table from artifact metadata workflow_plan_json', () => {
@@ -342,7 +342,7 @@ test('task flow renders staged board controls and row actions', () => {
   assert.doesNotMatch(html, /workflow-flow-substage-panel/);
   assert.match(html, /workflow-flow-detail-panel/);
   assert.match(html, /任务列表/);
-  assert.match(html, /执行日志/);
+  assert.match(html, /workflow-event-stack/);
 });
 
 test('task flow renders review and verification as ordered workflow nodes', () => {
@@ -417,7 +417,7 @@ test('task flow renders review and verification as ordered workflow nodes', () =
   assert.equal(executionIndex < reviewIndex, true);
   assert.equal(reviewIndex < doneIndex, true);
   assert.match(html, /任务列表/);
-  assert.match(html, /执行日志/);
+  assert.match(html, /workflow-event-stack/);
 });
 
 test('task flow does not render long execution content inside orchestration nodes', () => {

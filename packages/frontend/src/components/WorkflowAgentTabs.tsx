@@ -2,13 +2,12 @@ import * as Tabs from '@radix-ui/react-tabs';
 import { Bot, FileText } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../lib/i18n';
-import type { RoomAgent, TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
+import type { RoomAgent, TaskArtifact, WorkflowPlanJson, WorkflowStage, WorkflowStep } from '../lib/types';
 import { cn, truncate } from '../lib/utils';
 
 interface AgentTaskGroup {
   key: string;
   label: string;
-  tasks: WorkflowPlanTaskJson[];
   items: AgentExecutionItem[];
   latestActivityAt: number;
 }
@@ -66,8 +65,7 @@ export function WorkflowAgentTabs({
             <Bot className="h-3 w-3" />
             <span className="workflow-agent-tab-label truncate">{group.label}</span>
             <span className="workflow-agent-tab-counts">
-              <span>{t('workflowPlan.agentTabPlans', { count: group.tasks.length })}</span>
-              <span>{t('workflowPlan.agentTabRecords', { count: group.items.length })}</span>
+              <span>{t('workflowPlan.agentTabReplies', { count: group.items.length })}</span>
             </span>
           </Tabs.Trigger>
         ))}
@@ -78,8 +76,7 @@ export function WorkflowAgentTabs({
             <div className="workflow-agent-panel-header">
               <div className="workflow-agent-panel-title">{group.label}</div>
               <div className="workflow-agent-panel-meta">
-                <span>{t('workflowPlan.agentTabPlans', { count: group.tasks.length })}</span>
-                <span>{t('workflowPlan.agentTabRecords', { count: group.items.length })}</span>
+                <span>{t('workflowPlan.agentTabReplies', { count: group.items.length })}</span>
               </div>
             </div>
             <div className="space-y-2">
@@ -88,7 +85,7 @@ export function WorkflowAgentTabs({
                   <div className="flex min-w-0 items-center gap-2">
                     <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
                     <div className="min-w-0 flex-1 truncate text-[12px] font-medium">{item.title}</div>
-                    <span className="font-mono text-[10px] text-[var(--color-muted)]">{item.status}</span>
+                    <span className="font-mono text-[10px] text-[var(--color-muted)]">{getAgentItemStatusLabel(item.status, t)}</span>
                   </div>
                   <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-fg-muted)]">
                     {item.stage && <span>{workflowStageLabel(item.stage)}</span>}
@@ -144,12 +141,11 @@ function groupExecutionsByAgent(
     const key = task.agent_id ?? 'unassigned';
     const agent = task.agent_id ? agentMap.get(task.agent_id) : null;
     const label = agent?.agent_name ?? agent?.workflow_role ?? task.role ?? task.agent_id ?? unassignedLabel;
-    const group = ensureGroup(groups, key, label);
-    group.tasks.push(task);
-
+    let group: AgentTaskGroup | null = null;
     for (const artifact of task.result_refs
       .map((ref) => artifacts.find((candidate) => candidate.id === ref))
       .filter((item): item is TaskArtifact => Boolean(item))) {
+      group ??= ensureGroup(groups, key, label);
       addGroupItem(group, createArtifactItem(artifact, stepMap.get(artifact.workflow_step_id ?? ''), task.title));
     }
   }
@@ -190,7 +186,7 @@ function groupExecutionsByAgent(
 function ensureGroup(groups: Map<string, AgentTaskGroup>, key: string, label: string): AgentTaskGroup {
   const existing = groups.get(key);
   if (existing) return existing;
-  const group = { key, label, tasks: [], items: [], latestActivityAt: 0 };
+  const group = { key, label, items: [], latestActivityAt: 0 };
   groups.set(key, group);
   return group;
 }
@@ -202,15 +198,7 @@ function addGroupItem(group: AgentTaskGroup, item: AgentExecutionItem): void {
 
 function normalizeGroupItems(group: AgentTaskGroup): AgentExecutionItem[] {
   if (group.items.length > 0) return group.items;
-  return group.tasks.map((task, index) => ({
-    id: `task:${task.id}`,
-    title: task.title,
-    status: task.status,
-    stage: null,
-    content: task.description || null,
-    createdAt: index,
-    source: 'task',
-  }));
+  return [];
 }
 
 function createStepItem(step: WorkflowStep, taskTitle: string): AgentExecutionItem {
@@ -242,4 +230,23 @@ function pickDefaultGroup(groups: AgentTaskGroup[]): AgentTaskGroup | null {
     .filter((group) => group.items.some((item) => item.content?.trim()))
     .sort((a, b) => b.latestActivityAt - a.latestActivityAt);
   return withContent[0] ?? [...groups].sort((a, b) => b.latestActivityAt - a.latestActivityAt)[0] ?? null;
+}
+
+function getAgentItemStatusLabel(status: string, t: ReturnType<typeof useI18n>['t']): string {
+  switch (status) {
+    case 'completed':
+      return t('workflowPlan.status.completed');
+    case 'running':
+      return t('workflowPlan.status.running');
+    case 'pending':
+      return t('workflowPlan.status.pending');
+    case 'blocked':
+      return t('workflowPlan.status.blocked');
+    case 'failed':
+      return t('workflowPlan.status.failed');
+    case 'skipped':
+      return t('workflowPlan.status.skipped');
+    default:
+      return status;
+  }
 }

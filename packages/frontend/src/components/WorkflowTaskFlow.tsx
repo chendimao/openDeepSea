@@ -1,26 +1,28 @@
 import { CheckCircle2, ChevronDown, Copy, Eye, Loader2, PauseCircle, RotateCcw, Settings2, Sparkles, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useI18n } from '../lib/i18n';
-import type { TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
+import type { RoomAgent, TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
 import { cn } from '../lib/utils';
 
 type TranslateFn = ReturnType<typeof useI18n>['t'];
 
 export function WorkflowTaskFlow({
   plan,
+  agents,
   steps,
   artifacts,
   compact = false,
 }: {
   plan: WorkflowPlanJson;
+  agents: RoomAgent[];
   steps: WorkflowStep[];
   artifacts: TaskArtifact[];
   compact?: boolean;
 }) {
   const { t, workflowStageLabel } = useI18n();
   const flowEntries = useMemo(
-    () => buildFlowEntries(plan, steps, artifacts, workflowStageLabel, t),
-    [artifacts, plan, steps, t, workflowStageLabel],
+    () => buildFlowEntries(plan, agents, steps, artifacts, workflowStageLabel, t),
+    [agents, artifacts, plan, steps, t, workflowStageLabel],
   );
   const stagePanels = useMemo(() => buildStagePanels(flowEntries, t), [flowEntries, t]);
   const executorTaskCount = plan.tasks.filter((task) => task.role === 'executor').length;
@@ -108,10 +110,10 @@ export function WorkflowTaskFlow({
                     <b>{activeStage.label}</b>
                     <small>{activeEntry.shortTitle}</small>
                   </span>
-                  <span className={cn('workflow-flow-status-pill', `is-${activeEntry.meta}`)}>{activeEntry.meta}</span>
+                  <span className={cn('workflow-flow-status-pill', `is-${activeEntry.meta}`)}>{activeEntry.displayStatus}</span>
                 </div>
                 <div className="workflow-flow-detail-meta">
-                  <span>{t('workflowPlan.taskFlowAssignee')}</span><b>{activeEntry.executor}</b>
+                  <span>{t('workflowPlan.taskFlowAssignee')}</span><b>{activeEntry.executorName}</b>
                   <span>{t('workflowPlan.taskFlowStartTime')}</span><b>{formatFlowTime(activeEntry.startedAt ?? activeEntry.sortKey)}</b>
                   <span>{t('workflowPlan.taskFlowDuration')}</span><b>{formatFlowDuration(activeEntry.startedAt, activeEntry.completedAt)}</b>
                 </div>
@@ -127,37 +129,34 @@ export function WorkflowTaskFlow({
               </div>
 
               <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskList')}</div>
-              <div className="workflow-flow-task-table">
-                <div className="workflow-flow-task-table-head">
-                  <span />
-                  <span>{t('workflowPlan.taskFlowTaskContent')}</span>
-                  <span>{t('workflowPlan.taskFlowStatus')}</span>
-                  <span>{t('workflowPlan.taskFlowAssignee')}</span>
-                  <span>{t('workflowPlan.taskFlowUpdatedAt')}</span>
-                  <span />
-                </div>
+              <div className="workflow-flow-task-cards">
                 {activeStage.entries.map((entry) => (
-                  <div key={entry.key} className={cn('workflow-flow-task-row', `is-${entry.phase}`)}>
-                    <CheckCircle2 className={cn('h-4 w-4', entry.meta === 'completed' ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]')} />
-                    <span>{entry.title}</span>
-                    <span className={cn('workflow-flow-status-pill', `is-${entry.meta}`)}>{entry.meta}</span>
-                    <span>{entry.executor}</span>
-                    <span>{formatFlowTime(entry.completedAt ?? entry.startedAt ?? entry.sortKey)}</span>
-                    <span className="workflow-flow-task-actions">
-                      <Eye className="h-3.5 w-3.5" />
-                      <Copy className="h-3.5 w-3.5" />
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowExecutionLog')}</div>
-              <div className="workflow-flow-log-list">
-                {buildExecutionLogs(activeStage.entries, t).map((log) => (
-                  <div key={log.key} className="workflow-flow-log-row">
-                    <span>{log.time}</span>
-                    <CheckCircle2 className={cn('h-3.5 w-3.5', log.active ? 'text-[var(--color-primary)]' : 'text-[var(--color-success)]')} />
-                    <span>{log.label}</span>
+                  <div key={entry.key} className={cn('workflow-flow-task-card', `is-${entry.phase}`)}>
+                    <div className="workflow-flow-task-card-main">
+                      <CheckCircle2 className={cn('h-4 w-4', entry.meta === 'completed' ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]')} />
+                      <div className="workflow-flow-task-card-copy">
+                        <div className="workflow-flow-task-card-title">{entry.taskName}</div>
+                        <div className="workflow-flow-task-card-meta">
+                          <span>{entry.phaseLabel}</span>
+                          <span>{entry.executorName}</span>
+                          <span>{formatFlowTime(entry.completedAt ?? entry.startedAt ?? entry.sortKey)}</span>
+                        </div>
+                      </div>
+                      <span className={cn('workflow-flow-status-pill', `is-${entry.meta}`)}>{entry.displayStatus}</span>
+                      <span className="workflow-flow-task-actions">
+                        <Eye className="h-3.5 w-3.5" />
+                        <Copy className="h-3.5 w-3.5" />
+                      </span>
+                    </div>
+                    <div className="workflow-event-stack">
+                      {entry.events.map((event) => (
+                        <div key={event.key} className="workflow-event-item">
+                          <span>{event.time}</span>
+                          <CheckCircle2 className={cn('h-3.5 w-3.5', event.active ? 'text-[var(--color-primary)]' : 'text-[var(--color-success)]')} />
+                          <span>{event.label}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -191,14 +190,25 @@ interface FlowEntry {
   phaseLabel: string;
   title: string;
   shortTitle: string;
+  taskName: string;
   subtitle: string | null;
   meta: string;
+  displayStatus: string;
   content: string | null;
   icon: React.ReactNode;
   executor: string;
+  executorName: string;
   sortKey: number;
   startedAt: number | null;
   completedAt: number | null;
+  events: FlowEvent[];
+}
+
+interface FlowEvent {
+  key: string;
+  time: string;
+  label: string;
+  active: boolean;
 }
 
 function FlowStatCard({
@@ -282,17 +292,22 @@ function buildProgressStats(entries: FlowEntry[]) {
 
 function buildFlowEntries(
   plan: WorkflowPlanJson,
+  agents: RoomAgent[],
   steps: WorkflowStep[],
   artifacts: TaskArtifact[],
   workflowStageLabel: (stage: WorkflowStage) => string,
   t: TranslateFn,
 ): FlowEntry[] {
   const taskMap = new Map(plan.tasks.map((task) => [task.id, task]));
+  const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const entries: Array<FlowEntry & { sortKey: number; sequence: number }> = [];
 
   for (const [index, step] of steps.entries()) {
     const task = taskMap.get(step.task_id) ?? null;
     const sortKey = step.completed_at ?? step.started_at ?? step.updated_at ?? step.created_at ?? index;
+    const executorId = step.assigned_room_agent_id ?? step.room_agent_id ?? task?.agent_id ?? 'codex';
+    const baseEntry = createFlowEntryBase(step, task, executorId, agentMap, t);
+
     if (step.stage === 'implementation') {
       entries.push({
         key: `step:${step.id}`,
@@ -300,14 +315,12 @@ function buildFlowEntries(
         phaseLabel: t('workflowPlan.taskFlowExecutionStage'),
         sortKey,
         sequence: index,
-        title: `${workflowStageLabel(step.stage)} · ${task?.title ?? step.task_id}`,
+        title: task?.title ?? workflowStageLabel(step.stage),
         shortTitle: task?.title ?? workflowStageLabel(step.stage),
+        taskName: task?.title ?? workflowStageLabel(step.stage),
         subtitle: step.node_name ? step.node_name : null,
-        meta: step.status,
+        ...baseEntry,
         content: step.result || step.error || null,
-        executor: step.assigned_room_agent_id ?? step.room_agent_id ?? task?.agent_id ?? 'codex',
-        startedAt: step.started_at,
-        completedAt: step.completed_at,
         icon: step.status === 'completed'
           ? <CheckCircle2 className="h-3.5 w-3.5 text-[var(--color-success)]" />
           : step.status === 'running'
@@ -327,12 +340,10 @@ function buildFlowEntries(
           sequence: index,
           title: t('workflowPlan.taskFlowVerification'),
           shortTitle: t('workflowPlan.taskFlowVerification'),
+          taskName: task?.title ?? t('workflowPlan.taskFlowVerification'),
           subtitle: task?.title ?? workflowStageLabel(step.stage),
-          meta: step.status,
+          ...baseEntry,
           content: step.result || step.error || null,
-          executor: step.assigned_room_agent_id ?? step.room_agent_id ?? task?.agent_id ?? 'codex',
-          startedAt: step.started_at,
-          completedAt: step.completed_at,
           icon: step.status === 'completed'
             ? <CheckCircle2 className="h-3.5 w-3.5 text-[var(--color-success)]" />
             : step.status === 'running'
@@ -353,12 +364,10 @@ function buildFlowEntries(
           ? `${t('workflowPlan.taskFlowReviewTarget')} · ${reviewedTask}`
           : workflowStageLabel(step.stage),
         shortTitle: task?.title ?? t('workflowPlan.taskFlowReviewStage'),
+        taskName: task?.title ?? reviewedTask ?? t('workflowPlan.taskFlowReviewStage'),
         subtitle: task?.title ?? null,
-        meta: step.status,
+        ...baseEntry,
         content: step.result || step.error || null,
-        executor: step.assigned_room_agent_id ?? step.room_agent_id ?? task?.agent_id ?? 'codex',
-        startedAt: step.started_at,
-        completedAt: step.completed_at,
         icon: <Sparkles className="h-3.5 w-3.5 text-[var(--color-primary)]" />,
       });
       continue;
@@ -374,12 +383,10 @@ function buildFlowEntries(
         sequence: index,
         title: `${t('workflowPlan.taskFlowAcceptanceTarget')} · ${acceptanceTarget}`,
         shortTitle: task?.title ?? t('workflowPlan.taskFlowAcceptanceStage'),
+        taskName: task?.title ?? acceptanceTarget,
         subtitle: task?.title ?? null,
-        meta: step.status,
+        ...baseEntry,
         content: step.result || step.error || null,
-        executor: step.assigned_room_agent_id ?? step.room_agent_id ?? task?.agent_id ?? 'codex',
-        startedAt: step.started_at,
-        completedAt: step.completed_at,
         icon: <CheckCircle2 className="h-3.5 w-3.5 text-[var(--color-success)]" />,
       });
       continue;
@@ -393,12 +400,10 @@ function buildFlowEntries(
       sequence: index,
       title: workflowStageLabel(step.stage),
       shortTitle: workflowStageLabel(step.stage),
+      taskName: task?.title ?? workflowStageLabel(step.stage),
       subtitle: task?.title ?? null,
-      meta: step.status,
+      ...baseEntry,
       content: step.result || step.error || null,
-      executor: step.assigned_room_agent_id ?? step.room_agent_id ?? task?.agent_id ?? 'codex',
-      startedAt: step.started_at,
-      completedAt: step.completed_at,
       icon: step.status === 'failed' || step.status === 'interrupted'
         ? <XCircle className="h-3.5 w-3.5 text-[var(--color-danger)]" />
         : <RotateCcw className="h-3.5 w-3.5 text-[var(--color-muted)]" />,
@@ -408,6 +413,8 @@ function buildFlowEntries(
   for (const artifact of artifacts) {
     if (artifact.artifact_type !== 'review' && artifact.artifact_type !== 'acceptance') continue;
     const relatedStep = steps.find((step) => step.id === artifact.workflow_step_id);
+    const artifactTask = taskMap.get(artifact.task_id);
+    const executorId = relatedStep?.assigned_room_agent_id ?? relatedStep?.room_agent_id ?? artifactTask?.agent_id ?? 'codex';
     entries.push({
       key: `artifact:${artifact.id}`,
       phase: artifact.artifact_type === 'review' ? 'review' : 'acceptance',
@@ -418,17 +425,89 @@ function buildFlowEntries(
       sequence: steps.length + entries.length,
       title: artifact.title,
       shortTitle: artifact.title,
+      taskName: artifactTask?.title ?? artifact.title,
       subtitle: relatedStep ? workflowStageLabel(relatedStep.stage) : null,
       meta: artifact.artifact_type,
+      displayStatus: artifact.artifact_type === 'review'
+        ? t('workflowPlan.taskFlowReviewStage')
+        : t('workflowPlan.taskFlowAcceptanceStage'),
       content: artifact.content,
-      executor: relatedStep?.assigned_room_agent_id ?? relatedStep?.room_agent_id ?? 'codex',
+      executor: executorId,
+      executorName: getAgentDisplayName(executorId, agentMap),
       startedAt: relatedStep?.started_at ?? artifact.created_at,
       completedAt: relatedStep?.completed_at ?? artifact.created_at,
+      events: buildEntryEvents({
+        key: `artifact:${artifact.id}`,
+        startedAt: relatedStep?.started_at ?? artifact.created_at,
+        completedAt: relatedStep?.completed_at ?? artifact.created_at,
+        sortKey: artifact.created_at,
+        status: 'completed',
+        content: artifact.content,
+      }, t),
       icon: <Sparkles className="h-3.5 w-3.5 text-[var(--color-accent)]" />,
     });
   }
 
   return entries.sort((a, b) => a.sortKey - b.sortKey || a.sequence - b.sequence);
+}
+
+function createFlowEntryBase(
+  step: WorkflowStep,
+  task: WorkflowPlanTaskJson | null,
+  executorId: string,
+  agentMap: Map<string, RoomAgent>,
+  t: TranslateFn,
+) {
+  const sortKey = step.completed_at ?? step.started_at ?? step.updated_at ?? step.created_at;
+  return {
+    meta: step.status,
+    displayStatus: getWorkflowStatusLabel(step.status, t),
+    executor: executorId,
+    executorName: getAgentDisplayName(executorId, agentMap, task),
+    startedAt: step.started_at,
+    completedAt: step.completed_at,
+    events: buildEntryEvents({
+      key: `step:${step.id}`,
+      startedAt: step.started_at,
+      completedAt: step.completed_at,
+      sortKey,
+      status: step.status,
+      content: step.result || step.error || null,
+    }, t),
+  };
+}
+
+function getWorkflowStatusLabel(status: string, t: TranslateFn): string {
+  switch (status) {
+    case 'completed':
+      return t('workflowPlan.status.completed');
+    case 'running':
+      return t('workflowPlan.status.running');
+    case 'pending':
+      return t('workflowPlan.status.pending');
+    case 'blocked':
+      return t('workflowPlan.status.blocked');
+    case 'failed':
+      return t('workflowPlan.status.failed');
+    case 'skipped':
+      return t('workflowPlan.status.skipped');
+    default:
+      return status;
+  }
+}
+
+function getAgentDisplayName(
+  agentId: string,
+  agentMap: Map<string, RoomAgent>,
+  task?: WorkflowPlanTaskJson | null,
+): string {
+  const agent = agentMap.get(agentId);
+  return agent?.agent_name ?? agent?.preferred_user_name ?? agent?.workflow_role ?? task?.agent_id ?? shortAgentId(agentId);
+}
+
+function shortAgentId(agentId: string): string {
+  if (!agentId) return '--';
+  return agentId.length > 12 ? `${agentId.slice(0, 6)}...${agentId.slice(-4)}` : agentId;
 }
 
 function formatFlowTime(value: number | null): string {
@@ -450,19 +529,50 @@ function formatFlowDuration(startedAt: number | null, completedAt: number | null
   return `${minutes}m ${remainingSeconds}s`;
 }
 
-function buildExecutionLogs(entries: FlowEntry[], t: TranslateFn) {
-  return entries.slice(0, 6).map((entry, index) => ({
-    key: `${entry.key}:log`,
-    time: formatFlowTime(entry.startedAt ?? entry.sortKey),
-    label: index === 0
-      ? t('workflowPlan.taskFlowLogCreated')
-      : entry.meta === 'completed'
-        ? t('workflowPlan.taskFlowLogCompleted')
-        : entry.meta === 'running'
-          ? t('workflowPlan.taskFlowLogRunning')
-          : entry.title,
-    active: entry.meta === 'running',
-  }));
+function buildEntryEvents(
+  entry: {
+    key: string;
+    startedAt: number | null;
+    completedAt: number | null;
+    sortKey: number;
+    status: string;
+    content: string | null;
+  },
+  t: TranslateFn,
+): FlowEvent[] {
+  const events: FlowEvent[] = [
+    {
+      key: `${entry.key}:created`,
+      time: formatFlowTime(entry.sortKey),
+      label: t('workflowPlan.taskFlowLogCreated'),
+      active: false,
+    },
+  ];
+  if (entry.startedAt) {
+    events.push({
+      key: `${entry.key}:started`,
+      time: formatFlowTime(entry.startedAt),
+      label: t('workflowPlan.taskFlowLogRunning'),
+      active: entry.status === 'running',
+    });
+  }
+  if (entry.content?.trim()) {
+    events.push({
+      key: `${entry.key}:result`,
+      time: formatFlowTime(entry.completedAt ?? entry.startedAt ?? entry.sortKey),
+      label: t('workflowPlan.taskFlowLogResult'),
+      active: entry.status === 'running',
+    });
+  }
+  if (entry.completedAt) {
+    events.push({
+      key: `${entry.key}:completed`,
+      time: formatFlowTime(entry.completedAt),
+      label: t('workflowPlan.taskFlowLogCompleted'),
+      active: false,
+    });
+  }
+  return events;
 }
 
 function findLatestImplementationTitleBefore(

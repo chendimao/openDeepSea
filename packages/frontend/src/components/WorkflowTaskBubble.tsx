@@ -33,6 +33,7 @@ export function WorkflowTaskBubble({
           />
           <WorkflowTaskFlow
             plan={workflowPlan}
+            agents={agents}
             steps={detail.steps}
             artifacts={detail.artifacts}
             compact={compact}
