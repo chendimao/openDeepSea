@@ -1,4 +1,5 @@
 import type { Room, RoomAgent, Task, TaskExecutionIntent, WorkflowStage } from '../types.js';
+import { getSuperpowersPhaseSkills, type SuperpowersPhase } from './superpowers-skills.js';
 
 export type WorkflowPromptKind = 'development' | 'analysis_document';
 
@@ -21,6 +22,18 @@ export function buildStagePrompt(stage: WorkflowStage, context: PromptContext): 
   if (stage === 'code_review') return buildReviewPrompt(context);
   if (stage === 'acceptance') return buildAcceptancePrompt(context);
   return buildAssignmentPrompt(context);
+}
+
+export function buildSuperpowersPhasePrompt(phase: SuperpowersPhase, context: PromptContext): string {
+  return [
+    buildSuperpowersPhaseHeader(phase),
+    '',
+    formatSuperpowersSkillInstruction(phase),
+    '',
+    baseContext(context),
+    '',
+    workflowContext(context),
+  ].join('\n');
 }
 
 function formatAgents(agents: RoomAgent[]): string {
@@ -81,6 +94,25 @@ function buildAnalysisPrompt(context: PromptContext): string {
     '  ]',
     '}',
     '```',
+  ].join('\n');
+}
+
+function buildSuperpowersPhaseHeader(phase: SuperpowersPhase): string {
+  if (phase === 'brainstorming') {
+    return [
+      '你是 Superpowers 开发闭环的 brainstorming 阶段智能体。',
+      '请使用 Superpowers brainstorming 流程澄清目标、约束、验收标准、风险和开放问题。',
+      '本阶段聚焦需求与设计，不要执行代码修改。',
+    ].join('\n');
+  }
+
+  return `你是 Superpowers 开发闭环的 ${phase} 阶段智能体。请按该阶段门禁产出可追踪结果。`;
+}
+
+function formatSuperpowersSkillInstruction(phase: SuperpowersPhase): string {
+  return [
+    '本阶段必须激活并遵循以下 Superpowers skills：',
+    ...getSuperpowersPhaseSkills(phase).map((skillName) => `- ${skillName}`),
   ].join('\n');
 }
 

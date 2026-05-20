@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildStagePrompt } from './prompts.js';
+import { buildStagePrompt, buildSuperpowersPhasePrompt } from './prompts.js';
+
+test('buildSuperpowersPhasePrompt includes active brainstorming skills', () => {
+  const prompt = buildSuperpowersPhasePrompt('brainstorming', basePromptContext());
+
+  assert.match(prompt, /brainstorming/);
+  assert.match(prompt, /using-superpowers/);
+});
 
 test('buildStagePrompt uses analysis-document acceptance prompt for analysis-only intent', () => {
   const prompt = buildStagePrompt('acceptance', {
