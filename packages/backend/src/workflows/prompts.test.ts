@@ -1,12 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildStagePrompt, buildSuperpowersPhasePrompt } from './prompts.js';
+import type { SuperpowersPhase } from './superpowers-skills.js';
 
-test('buildSuperpowersPhasePrompt includes active brainstorming skills', () => {
-  const prompt = buildSuperpowersPhasePrompt('brainstorming', basePromptContext());
+test('buildSuperpowersPhasePrompt includes required skills for each phase', () => {
+  const phaseSkillExpectations: Record<SuperpowersPhase, readonly string[]> = {
+    brainstorming: ['- using-superpowers', '- brainstorming'],
+    worktree: ['- using-git-worktrees'],
+    writing_plans: ['- writing-plans'],
+    tdd_execute: ['- test-driven-development', '- subagent-driven-development'],
+    spec_compliance_review: ['- requesting-code-review'],
+    code_quality_review: ['- requesting-code-review'],
+    verify: ['- verification-before-completion'],
+    finish_branch: ['- finishing-a-development-branch'],
+  };
 
-  assert.match(prompt, /brainstorming/);
-  assert.match(prompt, /using-superpowers/);
+  for (const [phase, expectedSkills] of Object.entries(phaseSkillExpectations) as Array<[SuperpowersPhase, readonly string[]]>) {
+    const prompt = buildSuperpowersPhasePrompt(phase, basePromptContext());
+    for (const skill of expectedSkills) {
+      assert.match(prompt, new RegExp(escapeRegExp(skill)));
+    }
+  }
 });
 
 test('buildStagePrompt uses analysis-document acceptance prompt for analysis-only intent', () => {
@@ -84,4 +98,8 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
     },
     agents: [],
   };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

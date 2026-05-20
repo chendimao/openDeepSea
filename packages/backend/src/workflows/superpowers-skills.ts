@@ -27,7 +27,7 @@ export type SuperpowersPhase =
   | 'verify'
   | 'finish_branch';
 
-export const SUPERPOWERS_PHASE_SKILLS: Record<SuperpowersPhase, string[]> = {
+export const SUPERPOWERS_PHASE_SKILLS: Record<SuperpowersPhase, readonly SuperpowersCoreSkillName[]> = {
   brainstorming: ['using-superpowers', 'brainstorming'],
   worktree: ['using-git-worktrees'],
   writing_plans: ['writing-plans'],
@@ -38,6 +38,6 @@ export const SUPERPOWERS_PHASE_SKILLS: Record<SuperpowersPhase, string[]> = {
   finish_branch: ['finishing-a-development-branch'],
 };
 
-export function getSuperpowersPhaseSkills(phase: SuperpowersPhase): string[] {
+export function getSuperpowersPhaseSkills(phase: SuperpowersPhase): readonly SuperpowersCoreSkillName[] {
   return SUPERPOWERS_PHASE_SKILLS[phase];
 }
