@@ -22,6 +22,22 @@ export interface CoordinatorAgentSelection {
   assignmentReason: string;
 }
 
+export type SuperpowersAgentRole = 'implementer' | 'spec_reviewer' | 'code_quality_reviewer';
+
+export interface SuperpowersAgentSelectionInput {
+  role: SuperpowersAgentRole;
+  agents: RoomAgent[];
+  task?: CoordinatorWorkflowTask;
+}
+
+export interface SuperpowersAgentSelection extends CoordinatorAgentSelection {
+  workflowRole: CoordinatorTaskRole;
+  promptTemplateId: 'tdd-implementer' | 'spec-reviewer' | 'code-reviewer';
+  metadata: {
+    reviewStage?: 'spec_compliance_review' | 'code_quality_review';
+  };
+}
+
 type TaskDomain = 'frontend' | 'backend' | null;
 
 export function selectCoordinatorAgentForTask(input: SelectCoordinatorAgentInput): CoordinatorAgentSelection {
@@ -49,6 +65,27 @@ export function requiredTemplateIdForTask(task: CoordinatorWorkflowTask): string
   if (task.role === 'reviewer') return 'reviewer';
   if (task.role === 'acceptor') return 'acceptor';
   return inferTaskDomain(task) === 'frontend' ? 'frontend-executor' : 'backend-executor';
+}
+
+export function selectSuperpowersAgentForRole(input: SuperpowersAgentSelectionInput): SuperpowersAgentSelection {
+  const workflowRole = superpowersWorkflowRole(input.role);
+  const promptTemplateId = superpowersPromptTemplateId(input.role);
+  const metadata = superpowersSelectionMetadata(input.role);
+  const task = input.task ?? defaultSuperpowersTask(workflowRole);
+  const selection = selectCoordinatorAgentForTask({
+    task: {
+      ...task,
+      role: workflowRole,
+    },
+    agents: input.agents,
+  });
+
+  return {
+    ...selection,
+    workflowRole,
+    promptTemplateId,
+    metadata,
+  };
 }
 
 export function agentCanExecuteWorkflowTask(agent: RoomAgent, task: CoordinatorWorkflowTask): boolean {
@@ -230,4 +267,40 @@ function isAsciiPathCandidate(scope: string): boolean {
 
 function normalizeText(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function superpowersWorkflowRole(role: SuperpowersAgentRole): CoordinatorTaskRole {
+  return role === 'implementer' ? 'executor' : 'reviewer';
+}
+
+function superpowersPromptTemplateId(role: SuperpowersAgentRole): SuperpowersAgentSelection['promptTemplateId'] {
+  if (role === 'implementer') return 'tdd-implementer';
+  return role === 'spec_reviewer' ? 'spec-reviewer' : 'code-reviewer';
+}
+
+function superpowersSelectionMetadata(role: SuperpowersAgentRole): SuperpowersAgentSelection['metadata'] {
+  if (role === 'spec_reviewer') return { reviewStage: 'spec_compliance_review' };
+  if (role === 'code_quality_reviewer') return { reviewStage: 'code_quality_review' };
+  return {};
+}
+
+function defaultSuperpowersTask(role: CoordinatorTaskRole): CoordinatorWorkflowTask {
+  if (role === 'reviewer') {
+    return {
+      role,
+      title: 'Superpowers review',
+      description: 'Review implementation using normal room reviewer.',
+      scope_read: ['.'],
+      scope_write: [],
+      required_capabilities: [],
+    };
+  }
+  return {
+    role,
+    title: 'Superpowers TDD execute',
+    description: 'Implement the current plan using normal room executor.',
+    scope_read: ['.'],
+    scope_write: ['.'],
+    required_capabilities: [],
+  };
 }

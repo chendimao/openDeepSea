@@ -56,6 +56,116 @@ test('buildSuperpowersRuntimeGraph executable definition runs Superpowers planni
   );
 });
 
+test('buildSuperpowersRuntimeGraph exposes TDD execute and two-stage review state bridge before verify integration', () => {
+  const graph = buildSuperpowersRuntimeGraph();
+
+  assert.deepEqual(Object.keys(graph.nodes).filter((name) => [
+    'tddExecute',
+    'specComplianceReview',
+    'codeQualityReview',
+  ].includes(name)), [
+    'tddExecute',
+    'specComplianceReview',
+    'codeQualityReview',
+  ]);
+  assert.deepEqual(
+    graph.executableDefinition.nodes.slice(-7, -1).map((node) => node.id),
+    ['dispatch', 'execute', 'review', 'repair_decision', 'verify', 'acceptance'],
+  );
+});
+
+test('Superpowers TDD execute node blocks without RED/GREEN evidence and proceeds with evidence or exemption', async () => {
+  const graph = buildSuperpowersRuntimeGraph();
+  const nodes = graph.nodes as typeof graph.nodes & {
+    tddExecute?: (state: ReturnType<typeof emptyAgentWorkflowState>) => Promise<ReturnType<typeof emptyAgentWorkflowState>>;
+  };
+  const gates = graph as typeof graph & {
+    canLeaveTddExecute?: (state: ReturnType<typeof emptyAgentWorkflowState>) => boolean;
+  };
+  const baseState = emptyAgentWorkflowState({
+    workflowRunId: 'run-superpowers-runtime-tdd-gate',
+    projectId: 'project-superpowers-runtime-tdd-gate',
+    roomId: 'room-superpowers-runtime-tdd-gate',
+    taskId: 'task-superpowers-runtime-tdd-gate',
+    userGoal: 'TDD evidence gate',
+    projectPath: '/tmp/open-deep-sea-superpowers-runtime-tdd-gate',
+  });
+
+  assert.equal(typeof nodes.tddExecute, 'function');
+  assert.equal(typeof gates.canLeaveTddExecute, 'function');
+
+  const blocked = await nodes.tddExecute(baseState);
+  assert.equal(blocked.superpowersPhase, 'tdd_execute');
+  assert.equal(blocked.status, 'blocked');
+  assert.match(blocked.error ?? '', /RED.*GREEN|TDD evidence/i);
+  assert.equal(gates.canLeaveTddExecute(blocked), false);
+
+  const withEvidence = await nodes.tddExecute({
+    ...baseState,
+    tddEvidence: [
+      { stage: 'RED', command: 'npm test', passed: false, summary: 'failed as expected' },
+      { stage: 'GREEN', command: 'npm test', passed: true, summary: 'passed' },
+    ],
+  });
+  assert.equal(withEvidence.status, 'running');
+  assert.equal(withEvidence.error, null);
+  assert.equal(gates.canLeaveTddExecute(withEvidence), true);
+
+  const withExemption = await nodes.tddExecute({
+    ...baseState,
+    tddExemption: {
+      reason: 'documentation-only task has no executable behavior',
+      approvedBy: 'reviewer-room-agent',
+      createdAt: Date.now(),
+    },
+  });
+  assert.equal(withExemption.status, 'running');
+  assert.equal(gates.canLeaveTddExecute(withExemption), true);
+});
+
+test('Superpowers review nodes expose reroute metadata when reviews request changes', async () => {
+  const graph = buildSuperpowersRuntimeGraph();
+  const nodes = graph.nodes as typeof graph.nodes & {
+    specComplianceReview?: (state: ReturnType<typeof emptyAgentWorkflowState>) => Promise<ReturnType<typeof emptyAgentWorkflowState>>;
+    codeQualityReview?: (state: ReturnType<typeof emptyAgentWorkflowState>) => Promise<ReturnType<typeof emptyAgentWorkflowState>>;
+  };
+  const baseState = emptyAgentWorkflowState({
+    workflowRunId: 'run-superpowers-runtime-review-reroute',
+    projectId: 'project-superpowers-runtime-review-reroute',
+    roomId: 'room-superpowers-runtime-review-reroute',
+    taskId: 'task-superpowers-runtime-review-reroute',
+    userGoal: 'Review reroutes',
+    projectPath: '/tmp/open-deep-sea-superpowers-runtime-review-reroute',
+  });
+
+  assert.equal(typeof nodes.specComplianceReview, 'function');
+  assert.equal(typeof nodes.codeQualityReview, 'function');
+
+  const afterSpecChanges = await nodes.specComplianceReview({
+    ...baseState,
+    specComplianceReview: {
+      verdict: 'changes_requested',
+      findings: ['Implementation misses the plan'],
+      reviewedAt: null,
+    },
+  });
+  assert.equal(afterSpecChanges.superpowersPhase, 'spec_compliance_review');
+  assert.equal(afterSpecChanges.error, 'Superpowers spec compliance review requested changes');
+  assert.equal(afterSpecChanges.reviewVerdict, 'changes_requested');
+
+  const afterCodeChanges = await nodes.codeQualityReview({
+    ...baseState,
+    codeQualityReview: {
+      verdict: 'changes_requested',
+      findings: ['Important regression risk'],
+      reviewedAt: null,
+    },
+  });
+  assert.equal(afterCodeChanges.superpowersPhase, 'code_quality_review');
+  assert.equal(afterCodeChanges.error, 'Superpowers code quality review requested changes');
+  assert.equal(afterCodeChanges.reviewVerdict, 'changes_requested');
+});
+
 test('Superpowers planning nodes record phase artifacts and review verdicts', async () => {
   const graph = buildSuperpowersRuntimeGraph();
   const state = emptyAgentWorkflowState({

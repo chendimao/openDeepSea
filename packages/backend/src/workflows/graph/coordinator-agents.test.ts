@@ -4,6 +4,7 @@ import type { RoomAgent } from '../../types.js';
 import {
   agentCanExecuteWorkflowTask,
   requiredTemplateIdForTask,
+  selectSuperpowersAgentForRole,
   selectCoordinatorAgentForTask,
   type CoordinatorWorkflowTask,
 } from './coordinator-agents.js';
@@ -130,6 +131,98 @@ describe('coordinator agent matching', () => {
     assert.equal(result.templateId, null);
     assert.equal(typeof result.assignmentReason, 'string');
     assert.ok(result.assignmentReason.length > 0);
+  });
+
+  it('maps Superpowers implementer to normal executor RoomAgent without superpowers agent names', () => {
+    const executor = roomAgent({
+      id: 'room-executor',
+      agent_id: 'backend-executor',
+      agent_name: 'Backend Executor',
+      workflow_role: 'executor',
+      workspace_policy: { read: ['.'], write: ['packages/backend'] },
+    });
+
+    const result = selectSuperpowersAgentForRole({
+      role: 'implementer',
+      agents: [executor],
+      task: workflowTask({
+        role: 'executor',
+        title: '实现 Superpowers TDD 执行节点',
+        scope_write: ['packages/backend/src/workflows/graph/superpowers-nodes.ts'],
+      }),
+    });
+
+    assert.equal(result.agent?.id, 'room-executor');
+    assert.equal(result.workflowRole, 'executor');
+    assert.equal(result.templateId, null);
+    assert.equal(result.promptTemplateId, 'tdd-implementer');
+    assert.doesNotMatch(result.agent?.agent_id ?? '', /^superpowers:/);
+  });
+
+  it('maps Superpowers review stages to normal reviewer RoomAgent with review prompt metadata', () => {
+    const reviewer = roomAgent({
+      id: 'room-reviewer',
+      agent_id: 'reviewer',
+      agent_name: 'Reviewer',
+      workflow_role: 'reviewer',
+      capabilities: ['review'],
+      workspace_policy: { read: ['.'], write: [] },
+      tool_policy: { allowed: ['read_files'] },
+      acp_permission_mode: 'read-only',
+    });
+
+    const spec = selectSuperpowersAgentForRole({
+      role: 'spec_reviewer',
+      agents: [reviewer],
+    });
+    const quality = selectSuperpowersAgentForRole({
+      role: 'code_quality_reviewer',
+      agents: [reviewer],
+    });
+
+    assert.equal(spec.agent?.id, 'room-reviewer');
+    assert.equal(spec.workflowRole, 'reviewer');
+    assert.equal(spec.templateId, null);
+    assert.equal(spec.promptTemplateId, 'spec-reviewer');
+    assert.equal(spec.metadata.reviewStage, 'spec_compliance_review');
+    assert.doesNotMatch(spec.agent?.agent_id ?? '', /^superpowers:/);
+
+    assert.equal(quality.agent?.id, 'room-reviewer');
+    assert.equal(quality.workflowRole, 'reviewer');
+    assert.equal(quality.templateId, null);
+    assert.equal(quality.promptTemplateId, 'code-reviewer');
+    assert.equal(quality.metadata.reviewStage, 'code_quality_review');
+    assert.doesNotMatch(quality.agent?.agent_id ?? '', /^superpowers:/);
+  });
+
+  it('suggests normal built-in templates for missing Superpowers roles without superpowers templates', () => {
+    const implementer = selectSuperpowersAgentForRole({
+      role: 'implementer',
+      agents: [],
+      task: workflowTask({
+        role: 'executor',
+        title: '实现前端资源详情弹窗',
+        description: '更新 React UI。',
+      }),
+    });
+    const spec = selectSuperpowersAgentForRole({
+      role: 'spec_reviewer',
+      agents: [],
+    });
+    const quality = selectSuperpowersAgentForRole({
+      role: 'code_quality_reviewer',
+      agents: [],
+    });
+
+    assert.equal(implementer.agent, null);
+    assert.equal(implementer.templateId, 'frontend-executor');
+    assert.equal(spec.agent, null);
+    assert.equal(spec.templateId, 'reviewer');
+    assert.equal(quality.agent, null);
+    assert.equal(quality.templateId, 'reviewer');
+    for (const result of [implementer, spec, quality]) {
+      assert.doesNotMatch(result.templateId ?? '', /^superpowers:/);
+    }
   });
 });
 

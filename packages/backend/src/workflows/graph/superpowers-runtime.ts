@@ -7,6 +7,7 @@ import {
   type SuperpowersPhaseStep,
   type SuperpowersRuntimeNodes,
 } from './superpowers-nodes.js';
+import { canLeaveTddExecute } from './superpowers-gates.js';
 import type { AgentWorkflowState } from './state.js';
 
 export const SUPERPOWERS_WORKFLOW_DEFINITION_KEY = 'superpowers-development';
@@ -84,6 +85,7 @@ export interface SuperpowersRuntimeGraph {
   phaseSteps: readonly SuperpowersPhaseStep[];
   nodes: SuperpowersRuntimeNodes;
   canDispatch: (state: AgentWorkflowState) => boolean;
+  canLeaveTddExecute: (state: AgentWorkflowState) => boolean;
   executableDefinition: WorkflowDefinitionGraph;
 }
 
@@ -95,6 +97,7 @@ export function buildSuperpowersRuntimeGraph(_deps: GraphRuntimeDeps = {}): Supe
     phaseSteps: SUPERPOWERS_PLANNING_PHASE_STEPS,
     nodes: createSuperpowersRuntimeNodes(),
     canDispatch: canDispatchSuperpowersRuntime,
+    canLeaveTddExecute,
     executableDefinition: SUPERPOWERS_EXECUTABLE_DEFINITION,
   };
 }
