@@ -230,8 +230,9 @@ test('task flow renders review target and acceptance target labels', () => {
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
   assert.match(html, /任务流转/);
-  assert.match(html, /审查目标/);
-  assert.match(html, /功能验收/);
+  assert.match(html, /审查 \/ 验收/);
+  assert.match(html, /完成/);
+  assert.match(html, /任务列表/);
 });
 
 test('workflow bubble renders dual-column orchestration layout', () => {
@@ -337,12 +338,11 @@ test('task flow renders staged board controls and row actions', () => {
   assert.doesNotMatch(html, /添加任务/);
   assert.match(html, /workflow-flow-overview/);
   assert.match(html, /workflow-flow-progress-card/);
-  assert.match(html, /workflow-flow-kanban-column is-plan/);
-  assert.match(html, /workflow-flow-kanban-column is-execution/);
-  assert.match(html, /workflow-flow-kanban-column is-review/);
-  assert.match(html, /workflow-flow-kanban-column is-done/);
-  assert.match(html, /workflow-flow-stage-count/);
-  assert.match(html, /workflow-flow-row-menu/);
+  assert.match(html, /workflow-flow-detail-shell/);
+  assert.doesNotMatch(html, /workflow-flow-substage-panel/);
+  assert.match(html, /workflow-flow-detail-panel/);
+  assert.match(html, /任务列表/);
+  assert.match(html, /执行日志/);
 });
 
 test('task flow renders review and verification as ordered workflow nodes', () => {
@@ -408,18 +408,16 @@ test('task flow renders review and verification as ordered workflow nodes', () =
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
   const executionIndex = html.indexOf('is-execution');
-  const reviewIndex = html.indexOf('审查目标');
-  const verificationIndex = html.indexOf('is-verification');
-  const acceptanceIndex = html.indexOf('验收目标');
+  const reviewIndex = html.indexOf('is-review');
+  const doneIndex = html.indexOf('is-done');
 
   assert.notEqual(executionIndex, -1);
   assert.notEqual(reviewIndex, -1);
-  assert.notEqual(verificationIndex, -1);
-  assert.notEqual(acceptanceIndex, -1);
+  assert.notEqual(doneIndex, -1);
   assert.equal(executionIndex < reviewIndex, true);
-  assert.equal(reviewIndex < verificationIndex, true);
-  assert.equal(verificationIndex < acceptanceIndex, true);
-  assert.match(html, /is-verification/);
+  assert.equal(reviewIndex < doneIndex, true);
+  assert.match(html, /任务列表/);
+  assert.match(html, /执行日志/);
 });
 
 test('task flow does not render long execution content inside orchestration nodes', () => {
