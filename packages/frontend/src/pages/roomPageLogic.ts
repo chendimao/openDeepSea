@@ -77,7 +77,6 @@ function isWorkflowEventMetadata(metadata: MessageMetadata): boolean {
 }
 
 function createWorkflowEventAggregationKey(message: Message, metadata: MessageMetadata): string | null {
-  if (metadata.workflow_run_id && metadata.task_id) return `workflow:${metadata.workflow_run_id}:task:${metadata.task_id}`;
   if (metadata.workflow_run_id) return `workflow:${metadata.workflow_run_id}`;
   if (metadata.task_id) return `task:${metadata.task_id}`;
   return message.id ? `message:${message.id}` : null;

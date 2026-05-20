@@ -39,19 +39,22 @@ test('analysis-only ready messages do not expose formal workflow start', () => {
   assert.equal(state.description, '这是方案/分析输出，不会直接启动正式 workflow');
 });
 
-test('workflow task card render state dedupes events with the same workflow and task', () => {
+test('workflow task card render state dedupes events with the same workflow run', () => {
   const messages = [
     createMessage({ id: 'workflow-start', sender_type: 'system', content: '开始', created_at: 10, metadata: workflowMetadata('workflow-1', 'task-1', 'workflow_started') }),
     createMessage({ id: 'agent-note', sender_type: 'agent', content: '普通回复', created_at: 20 }),
     createMessage({ id: 'workflow-progress', sender_type: 'system', content: '执行中', created_at: 30, metadata: workflowMetadata('workflow-1', 'task-1', 'workflow_stage_changed') }),
     createMessage({ id: 'workflow-done', sender_type: 'system', content: '完成', created_at: 40, metadata: workflowMetadata('workflow-1', 'task-1', 'workflow_completed') }),
+    createMessage({ id: 'workflow-task-2', sender_type: 'system', content: '第二个任务', created_at: 50, metadata: workflowMetadata('workflow-1', 'task-2', 'workflow_stage_changed') }),
   ];
 
   const renderState = createWorkflowEventRenderStateMap(messages);
 
   assert.equal(renderState.get('workflow-start')?.showTaskCard, true);
+  assert.equal(renderState.get('workflow-start')?.key, 'workflow:workflow-1');
   assert.equal(renderState.get('workflow-progress')?.showTaskCard, false);
   assert.equal(renderState.get('workflow-done')?.showTaskCard, false);
+  assert.equal(renderState.get('workflow-task-2')?.showTaskCard, false);
   assert.equal(renderState.has('agent-note'), false);
 });
 

@@ -1,7 +1,7 @@
 import { CheckCircle2, Copy, Eye, Flag, Loader2, PauseCircle, RotateCcw, Sparkles, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useI18n } from '../lib/i18n';
-import type { RoomAgent, TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
+import type { Message, RoomAgent, TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
 import { cn } from '../lib/utils';
 
 type TranslateFn = ReturnType<typeof useI18n>['t'];
@@ -11,12 +11,14 @@ export function WorkflowTaskFlow({
   agents,
   steps,
   artifacts,
+  eventMessages = [],
   compact = false,
 }: {
   plan: WorkflowPlanJson;
   agents: RoomAgent[];
   steps: WorkflowStep[];
   artifacts: TaskArtifact[];
+  eventMessages?: Message[];
   compact?: boolean;
 }) {
   const { t, workflowStageLabel } = useI18n();
@@ -27,7 +29,10 @@ export function WorkflowTaskFlow({
   const stagePanels = useMemo(() => buildStagePanels(flowEntries, t), [flowEntries, t]);
   const executorTaskCount = plan.tasks.filter((task) => task.role === 'executor').length;
   const recordCount = steps.length + artifacts.length;
-  const timelineEvents = useMemo(() => buildTimelineEvents(flowEntries), [flowEntries]);
+  const timelineEvents = useMemo(
+    () => buildTimelineEvents(flowEntries, eventMessages),
+    [eventMessages, flowEntries],
+  );
   const [selectedStageKey, setSelectedStageKey] = useState<FlowStagePanel['key']>('plan');
   const [selectedEntryKey, setSelectedEntryKey] = useState<string | null>(null);
   const activeStage = stagePanels.find((stage) => stage.key === selectedStageKey && stage.entries.length > 0)
@@ -62,18 +67,10 @@ export function WorkflowTaskFlow({
                 <div className="workflow-flow-overview-icon">{stage.index}</div>
                 <div className="workflow-flow-overview-copy">
                   <div className="workflow-flow-overview-title">
-                    <span><span className="workflow-flow-stage-symbol">{stage.icon}</span>{stage.label}</span>
+                    <span className="workflow-flow-stage-name"><span className="workflow-flow-stage-symbol">{stage.icon}</span>{stage.label}</span>
                     <span className={cn('workflow-flow-status-pill', stage.percent === 100 ? 'is-completed' : stage.entries.length > 0 ? 'is-running' : 'is-pending')}>
                       {stage.percent === 100 ? t('workflowPlan.status.completed') : stage.entries.length > 0 ? t('workflowPlan.status.running') : t('workflowPlan.status.pending')}
                     </span>
-                  </div>
-                  <div className="workflow-flow-overview-meta">
-                    <span>{t('workflowPlan.taskFlowAssignee')}</span>
-                    <b>{stage.executorName}</b>
-                  </div>
-                  <div className="workflow-flow-overview-meta">
-                    <span>{t('workflowPlan.taskFlowUpdatedAt')}</span>
-                    <b>{formatRelativeStageTime(stage.updatedAt)}</b>
                   </div>
                   <div className="workflow-flow-stage-bar" style={{ '--workflow-stage-progress': `${stage.percent}%` } as React.CSSProperties} />
                 </div>
@@ -118,7 +115,12 @@ export function WorkflowTaskFlow({
               <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskList')}</div>
               <div className="workflow-flow-task-cards">
                 {activeStage.entries.map((entry) => (
-                  <div key={entry.key} className={cn('workflow-flow-task-card', `is-${entry.phase}`)}>
+                  <button
+                    key={entry.key}
+                    className={cn('workflow-flow-task-card', `is-${entry.phase}`, activeEntry.key === entry.key && 'is-selected')}
+                    type="button"
+                    onClick={() => setSelectedEntryKey(entry.key)}
+                  >
                     <div className="workflow-flow-task-card-main">
                       <CheckCircle2 className={cn('h-4 w-4', entry.meta === 'completed' ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]')} />
                       <div className="workflow-flow-task-card-copy">
@@ -134,7 +136,7 @@ export function WorkflowTaskFlow({
                         <Copy className="h-3.5 w-3.5" />
                       </span>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
 
@@ -198,6 +200,7 @@ interface FlowEvent {
   key: string;
   time: string;
   label: string;
+  sortKey: number;
   active: boolean;
 }
 
@@ -286,16 +289,26 @@ function buildProgressStats(entries: FlowEntry[]) {
   return { completed, running, pending, blocked, percent };
 }
 
-function buildTimelineEvents(entries: FlowEntry[]): FlowEvent[] {
+function buildTimelineEvents(entries: FlowEntry[], eventMessages: Message[]): FlowEvent[] {
   const seen = new Set<string>();
-  return entries
-    .flatMap((entry) => entry.events)
+  return [
+    ...entries.flatMap((entry) => entry.events),
+    ...eventMessages.map((message) => ({
+      key: `message:${message.id}`,
+      time: formatFlowTime(message.created_at),
+      sortKey: message.created_at,
+      label: message.content,
+      active: false,
+    })),
+  ]
+    .filter((event) => event.label.trim().length > 0)
     .filter((event) => {
       const key = `${event.time}:${event.label}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    });
+    })
+    .sort((a, b) => a.sortKey - b.sortKey || a.key.localeCompare(b.key));
 }
 
 function getStageExecutorName(entries: FlowEntry[]): string {
@@ -547,18 +560,6 @@ function formatFlowTime(value: number | null): string {
   }).format(value);
 }
 
-function formatRelativeStageTime(value: number | null): string {
-  if (!value) return '--';
-  const diffMs = Date.now() - value;
-  if (!Number.isFinite(diffMs) || diffMs < 0) return formatFlowTime(value);
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes} 分钟前`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return formatFlowTime(value);
-}
-
 function formatFlowDuration(startedAt: number | null, completedAt: number | null): string {
   if (!startedAt || !completedAt || completedAt < startedAt) return '--';
   const seconds = Math.max(Math.round((completedAt - startedAt) / 1000), 1);
@@ -583,6 +584,7 @@ function buildEntryEvents(
     {
       key: `${entry.key}:created`,
       time: formatFlowTime(entry.sortKey),
+      sortKey: entry.sortKey,
       label: t('workflowPlan.taskFlowLogCreated'),
       active: false,
     },
@@ -591,6 +593,7 @@ function buildEntryEvents(
     events.push({
       key: `${entry.key}:started`,
       time: formatFlowTime(entry.startedAt),
+      sortKey: entry.startedAt,
       label: t('workflowPlan.taskFlowLogRunning'),
       active: entry.status === 'running',
     });
@@ -599,6 +602,7 @@ function buildEntryEvents(
     events.push({
       key: `${entry.key}:result`,
       time: formatFlowTime(entry.completedAt ?? entry.startedAt ?? entry.sortKey),
+      sortKey: entry.completedAt ?? entry.startedAt ?? entry.sortKey,
       label: t('workflowPlan.taskFlowLogResult'),
       active: entry.status === 'running',
     });
@@ -607,6 +611,7 @@ function buildEntryEvents(
     events.push({
       key: `${entry.key}:completed`,
       time: formatFlowTime(entry.completedAt),
+      sortKey: entry.completedAt,
       label: t('workflowPlan.taskFlowLogCompleted'),
       active: false,
     });

@@ -3,7 +3,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
-import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowPlanJson, WorkflowRun, WorkflowStep } from '../lib/types';
+import type { Message, RoomAgent, TaskArtifact, WorkflowDetail, WorkflowPlanJson, WorkflowRun, WorkflowStep } from '../lib/types';
 import { WorkflowTaskBubble } from './WorkflowTaskBubble';
 
 setupBrowserStubs();
@@ -99,24 +99,22 @@ test('compact mode renders agent result tabs for chat embedding', () => {
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
-  assert.match(html, /工作流子任务表格/);
   assert.match(html, /按智能体查看执行结果/);
   assert.match(html, /前端执行者/);
   assert.match(html, /已完成紧凑任务表格接入/);
-  assert.match(html, /1 个计划项/);
-  assert.match(html, /1 条记录/);
+  assert.doesNotMatch(html, /工作流子任务表格/);
 });
 
-test('compact mode renders task detail actions', () => {
+test('compact mode omits legacy task table actions', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
   });
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
-  assert.match(html, /操作/);
-  assert.match(html, /aria-label="查看「实现聊天气泡」详情"/);
-  assert.match(html, />详情</);
+  assert.doesNotMatch(html, /操作/);
+  assert.doesNotMatch(html, /aria-label="查看「实现聊天气泡」详情"/);
+  assert.doesNotMatch(html, />详情</);
 });
 
 test('timeline mode keeps full task table without detail action column', () => {
@@ -126,6 +124,7 @@ test('timeline mode keeps full task table without detail action column', () => {
 
   const html = renderBubble(detail, [createAgent()]);
 
+  assert.match(html, /工作流子任务表格/);
   assert.doesNotMatch(html, /aria-label="查看「实现聊天气泡」详情"/);
 });
 
@@ -450,6 +449,37 @@ test('task flow does not render long execution content inside orchestration node
   assert.match(sideHtml, /这是很长的执行结果/);
 });
 
+test('task flow merges workflow event messages into execution log', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-impl',
+        assignedRoomAgentId: 'agent-1',
+        taskId: 'task-1',
+        stage: 'implementation',
+        nodeName: 'execute',
+        result: '执行完成。',
+        completedAt: 20,
+      }),
+    ],
+  });
+  const html = renderBubble(detail, [createAgent()], {
+    compact: true,
+    eventMessages: [
+      createWorkflowEventMessage({
+        id: 'event-review',
+        content: '代码审查任务已加入执行日志',
+        createdAt: 30,
+      }),
+    ],
+  });
+
+  assert.match(html, /执行日志/);
+  assert.match(html, /代码审查任务已加入执行日志/);
+  assert.equal(html.match(/workflow-event-stack/g)?.length, 1);
+});
+
 test('returns null when workflow plan is unavailable', () => {
   const detail = createWorkflowDetail();
 
@@ -484,11 +514,16 @@ function createWorkflowPlan(input: { workflowName?: string; tasks?: WorkflowPlan
 function renderBubble(
   detail: WorkflowDetail,
   agents: RoomAgent[],
-  options: { compact?: boolean } = {},
+  options: { compact?: boolean; eventMessages?: Message[] } = {},
 ): string {
   return renderToStaticMarkup(
     <I18nProvider>
-      <WorkflowTaskBubble detail={detail} agents={agents} compact={options.compact} />
+      <WorkflowTaskBubble
+        detail={detail}
+        agents={agents}
+        eventMessages={options.eventMessages}
+        compact={options.compact}
+      />
     </I18nProvider>,
   );
 }
@@ -619,5 +654,23 @@ function createAgent(): RoomAgent {
     acp_session_label: null,
     acp_permission_mode: 'workspace-write',
     acp_writable_dirs: [],
+  };
+}
+
+function createWorkflowEventMessage(input: { id: string; content: string; createdAt: number }): Message {
+  return {
+    id: input.id,
+    room_id: 'room-1',
+    sender_type: 'system',
+    sender_id: 'system',
+    sender_name: 'System',
+    content: input.content,
+    message_type: 'system',
+    metadata: JSON.stringify({
+      event_type: 'workflow_stage_changed',
+      workflow_run_id: 'workflow-1',
+      task_id: 'task-1',
+    }),
+    created_at: input.createdAt,
   };
 }

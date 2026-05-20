@@ -891,6 +891,10 @@ function ChatColumn({
     () => createWorkflowEventRenderStateMap(visibleMessages),
     [visibleMessages],
   );
+  const workflowEventMessagesByRunId = useMemo(
+    () => groupWorkflowEventMessagesByRunId(visibleMessages),
+    [visibleMessages],
+  );
   const canSendChat = agents.length > 0 || modelChatReady;
 
   const send = useMutation({
@@ -967,6 +971,7 @@ function ChatColumn({
                   workflowById={workflowById}
                   latestWorkflowEventMessageIds={latestWorkflowEventMessageIds}
                   workflowEventRenderState={workflowEventRenderStateByMessageId.get(m.id)}
+                  workflowEventMessages={workflowEventMessagesByRunId.get(parseMessageMetadata(m.metadata).workflow_run_id ?? '') ?? []}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
                   messageRef={(node) => registerMessageRef(m.id, node)}
@@ -1053,6 +1058,22 @@ function latestWorkflowEventMessageIdsByRun(messages: Message[]): Map<string, st
   return new Map(Array.from(latest, ([workflowId, item]) => [workflowId, item.messageId]));
 }
 
+function groupWorkflowEventMessagesByRunId(messages: Message[]): Map<string, Message[]> {
+  const grouped = new Map<string, Message[]>();
+  for (const message of messages) {
+    if (message.sender_type !== 'system') continue;
+    const metadata = parseMessageMetadata(message.metadata);
+    if (!metadata.workflow_run_id || !metadata.event_type?.startsWith('workflow_')) continue;
+    const group = grouped.get(metadata.workflow_run_id) ?? [];
+    group.push(message);
+    grouped.set(metadata.workflow_run_id, group);
+  }
+  for (const group of grouped.values()) {
+    group.sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
+  }
+  return grouped;
+}
+
 function MessageBubble({
   message,
   agentMeta,
@@ -1066,6 +1087,7 @@ function MessageBubble({
   workflowById,
   latestWorkflowEventMessageIds,
   workflowEventRenderState,
+  workflowEventMessages,
   streaming,
   displayContent,
   messageRef,
@@ -1085,6 +1107,7 @@ function MessageBubble({
   workflowById: Map<string, WorkflowRun>;
   latestWorkflowEventMessageIds: Map<string, string>;
   workflowEventRenderState?: WorkflowEventRenderState;
+  workflowEventMessages: Message[];
   streaming: boolean;
   displayContent: string;
   messageRef: (node: HTMLElement | null) => void;
@@ -1182,6 +1205,11 @@ function MessageBubble({
     metadata.task_readiness?.ready === true;
 
   if (isTaskEvent) {
+    const shouldShowWorkflowTaskCard = Boolean(metadata.workflow_run_id && workflowEventRenderState?.showTaskCard);
+    if (metadata.workflow_run_id && !shouldShowWorkflowTaskCard) {
+      return null;
+    }
+    const shouldShowInlineTaskEvent = !metadata.workflow_run_id;
     return (
       <AiMessageRow
         ref={messageRef}
@@ -1189,32 +1217,35 @@ function MessageBubble({
         data-message-id={message.id}
         className={cn(highlighted && 'is-highlighted')}
       >
-        <div className="workflow-event-stack">
-          <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
-            <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span>{message.content}</span>
-            {canRetryWorkflowEvent && metadata.workflow_run_id && (
-              <button
-                type="button"
-                className="task-event-action"
-                disabled={retryingWorkflowId === metadata.workflow_run_id}
-                title={t('agentRun.retryStage')}
-                aria-label={t('agentRun.retryStage')}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRetryWorkflow(metadata.workflow_run_id!);
-                }}
-              >
-                <RotateCcw className={cn('h-3 w-3', retryingWorkflowId === metadata.workflow_run_id && 'animate-spin')} strokeWidth={1.8} />
-                <span>{t('common.retry')}</span>
-              </button>
-            )}
-          </div>
-          {metadata.workflow_run_id && workflowEventRenderState?.showTaskCard && (
+        <div className="workflow-event-message-stack">
+          {shouldShowInlineTaskEvent && (
+            <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
+              <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
+              <span>{message.content}</span>
+              {canRetryWorkflowEvent && metadata.workflow_run_id && (
+                <button
+                  type="button"
+                  className="task-event-action"
+                  disabled={retryingWorkflowId === metadata.workflow_run_id}
+                  title={t('agentRun.retryStage')}
+                  aria-label={t('agentRun.retryStage')}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRetryWorkflow(metadata.workflow_run_id!);
+                  }}
+                >
+                  <RotateCcw className={cn('h-3 w-3', retryingWorkflowId === metadata.workflow_run_id && 'animate-spin')} strokeWidth={1.8} />
+                  <span>{t('common.retry')}</span>
+                </button>
+              )}
+            </div>
+          )}
+          {shouldShowWorkflowTaskCard && metadata.workflow_run_id && (
             <WorkflowEventBubble
               workflowId={metadata.workflow_run_id}
               agents={agents}
               initialWorkflow={eventWorkflow}
+              eventMessages={workflowEventMessages}
             />
           )}
         </div>
@@ -1397,10 +1428,12 @@ function WorkflowEventBubble({
   workflowId,
   agents,
   initialWorkflow,
+  eventMessages,
 }: {
   workflowId: string;
   agents: RoomAgent[];
   initialWorkflow?: WorkflowRun;
+  eventMessages: Message[];
 }) {
   const { workflowStatusLabel } = useI18n();
   const { data: detail } = useQuery<WorkflowDetail>({
@@ -1411,7 +1444,7 @@ function WorkflowEventBubble({
   });
 
   if (detail) {
-    return <WorkflowTaskBubble detail={detail} agents={agents} compact />;
+    return <WorkflowTaskBubble detail={detail} agents={agents} eventMessages={eventMessages} compact />;
   }
   if (!initialWorkflow) return null;
   return (

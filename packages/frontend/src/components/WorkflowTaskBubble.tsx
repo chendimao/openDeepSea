@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
+import type { Message, RoomAgent, TaskArtifact, WorkflowDetail, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
 import { WorkflowAgentTabs } from './WorkflowAgentTabs';
 import { WorkflowProgressHeader } from './WorkflowProgressHeader';
 import { WorkflowTaskTable } from './WorkflowTaskTable';
@@ -8,10 +8,12 @@ import { WorkflowTaskFlow } from './WorkflowTaskFlow';
 export function WorkflowTaskBubble({
   detail,
   agents,
+  eventMessages = [],
   compact = false,
 }: {
   detail: WorkflowDetail;
   agents: RoomAgent[];
+  eventMessages?: Message[];
   compact?: boolean;
 }) {
   const workflowPlan = useMemo(() => getWorkflowPlan(detail), [detail]);
@@ -23,19 +25,22 @@ export function WorkflowTaskBubble({
   return (
     <div className="workflow-task-bubble" data-source={compact ? 'chat' : 'timeline'}>
       <div className="workflow-task-bubble-main">
-        <WorkflowProgressHeader plan={workflowPlan} />
+        {!compact && <WorkflowProgressHeader plan={workflowPlan} />}
         <div className="workflow-task-bubble-lanes">
-          <WorkflowTaskTable
-            plan={workflowPlan}
-            agents={agents}
-            compact={compact}
-            availableTaskIds={getExecutableTaskIds(workflowPlan)}
-          />
+          {!compact && (
+            <WorkflowTaskTable
+              plan={workflowPlan}
+              agents={agents}
+              compact={compact}
+              availableTaskIds={getExecutableTaskIds(workflowPlan)}
+            />
+          )}
           <WorkflowTaskFlow
             plan={workflowPlan}
             agents={agents}
             steps={detail.steps}
             artifacts={detail.artifacts}
+            eventMessages={eventMessages}
             compact={compact}
           />
         </div>
