@@ -1,6 +1,6 @@
 # Superpowers 唯一工作流设计
 
-> 状态：已废弃。后续以 `docs/superpowers/specs/2026-05-20-Superpowers-C原生强门禁集成设计.md` 为准。最新决策是不移除自定义工作流，而是在现有默认/自定义工作流兼容路径之外，新增 Superpowers C 原生强门禁 runtime profile。
+> 状态：历史设计，核心决策已并入 `docs/superpowers/specs/2026-05-20-Superpowers-C原生强门禁集成设计.md`。最新决策是去掉默认/自定义工作流，只保留 Superpowers-C 原生强门禁方案。
 
 ## 背景
 

@@ -34,27 +34,27 @@ OpenDeepSea 已具备以下基础设施：
 
 ## 决策
 
-采用 C 级原生强门禁集成。Superpowers 不替代整个底层架构，也不要求重写 ACP、任务、agent_run 或 workflow_run 模型。它作为新的 `runtime profile` 接入现有底座。
+采用 C 级原生强门禁集成，并将 Superpowers-C 作为系统唯一开发工作流。Superpowers 不替代整个底层架构，也不要求重写 ACP、任务、agent_run 或 workflow_run 模型；它接管现有 workflow runtime 的新任务入口。
 
-保留现有默认 runtime 和自定义 workflow definition 的兼容路径：
+去掉默认/自定义工作流能力：
 
-- `default-langgraph` 和既有自定义工作流继续使用当前兼容 runtime。
-- 新增 `superpowers-development` 内置 workflow definition。
-- 只有 `builtin_key = superpowers-development`，或后续显式标记 `runtime_profile = "superpowers"` 的 definition，才走 Superpowers 强门禁 runtime。
+- 新任务只使用 `superpowers-development` 内置 workflow definition。
+- `default-langgraph`、`analysis-document` 和既有自定义 workflow definition 仅用于历史运行记录展示，不再作为新任务候选。
+- 不再支持创建、复制、编辑、发布、归档或选择自定义 workflow definition。
 
 ## 目标
 
-1. 新增内置 `Superpowers 开发闭环` workflow definition。
+1. 新增内置且唯一可用的 `Superpowers 开发闭环` workflow definition。
 2. 扩展 workflow 类型、状态和运行时，使 Superpowers 专属节点可追踪、可门禁。
 3. 内置导入 Superpowers 核心 skills，并按 runtime 阶段注入。
 4. 用系统状态机强制执行 spec、plan、TDD、review、verification、finish branch 门禁。
 5. 在 UI 中展示当前 skill gate、等待批准的 spec/plan、TDD 证据、review findings、verification results 和 finish branch 选项。
-6. 保持既有默认/自定义工作流可用，不破坏历史运行记录。
+6. 移除默认/自定义工作流的前后端入口，同时不破坏历史运行记录。
 
 ## 非目标
 
 1. 不把 workflow definition 改造成任意节点都可执行的通用 DSL。
-2. 不删除自定义 workflow 管理能力。
+2. 不物理删除历史 workflow definition 数据。
 3. 不物理删除现有数据库字段或历史 definition。
 4. 不改变 ACP provider 协议。
 5. 不在第一阶段实现所有分支收口操作的真实 merge/PR 自动化；可以先记录选项和用户选择。
@@ -68,6 +68,8 @@ OpenDeepSea 已具备以下基础设施：
 - scope：`system`
 - status：`published`
 - runtime profile：`superpowers`
+
+该 definition 是新任务唯一可选工作流。旧内置 definition 和用户自定义 definition 不再出现在新任务选择、默认设置或 supervisor 候选列表中。
 
 阶段映射：
 
@@ -115,7 +117,7 @@ context
 
 新增或扩展 definition metadata：
 
-- `runtime_profile`: `default | superpowers`
+- `runtime_profile`: `superpowers`
 - 节点级 `required_skill_names`
 - 节点级 `gate_policy`
 
@@ -123,25 +125,21 @@ context
 
 ## Runtime 设计
 
-### Profile 选择
+### Runtime 选择
 
-后端启动 workflow 时先解析 selected workflow definition：
+后端启动 workflow 时不再让 supervisor 选择 workflow definition。新任务直接使用 `superpowers-development` 并进入 `buildSuperpowersRuntimeGraph()`。
 
 ```text
-definition.builtin_key == superpowers-development
-  或 definition.metadata.runtime_profile == superpowers
-    -> buildSuperpowersRuntimeGraph()
-否则
-    -> buildDefaultRuntimeGraph()
+task -> superpowers-development -> buildSuperpowersRuntimeGraph()
 ```
 
-这保留默认/自定义工作流兼容路径，同时让 Superpowers 拥有独立强门禁执行图。
+旧 workflow run 继续根据已保存的 `workflow_definition_snapshot` 做只读展示，但不参与新运行决策。
 
 ### Superpowers 状态
 
 在 `AgentWorkflowState` 中新增可持久化字段：
 
-- `runtimeProfile`
+- `runtimeProfile`: 固定为 `superpowers`
 - `superpowersPhase`
 - `designDocPath`
 - `designReviewVerdict`
@@ -224,29 +222,30 @@ Workflow 页面需要能展示 Superpowers run 的专属状态：
 - verification results。
 - finish branch 选项和最终选择。
 
-Workflow definition 管理页继续保留：
+Workflow definition 管理能力移除：
 
-- 默认/自定义 workflow 仍可管理。
-- Superpowers 内置 definition 只读，不允许 archive/delete。
-- 如果后续支持复制 Superpowers 模板，发布校验必须保证强制门禁节点完整；本设计第一阶段不要求实现复制 Superpowers 模板。
+- 移除新建、复制、编辑、发布、归档、删除入口。
+- 移除系统、项目、房间设置中的默认工作流选择。
+- 可以保留只读说明页，展示唯一的 `Superpowers 开发闭环` 和历史 workflow run 快照。
 
-## 兼容性
+## 历史兼容
 
 1. 历史 workflow run 不迁移。
-2. 现有 default/custom workflow 的运行路径不变。
-3. 新 Superpowers runtime 只在选中 Superpowers definition 时启用。
-4. settings 中的 default workflow 仍然有效，用户可以把默认 workflow 设置成 Superpowers，也可以继续使用旧默认工作流。
-5. 如果 supervisor 选择 Superpowers definition，则运行 Superpowers runtime；如果选择其他 definition，则运行兼容 runtime。
+2. 历史 run 的 `workflow_definition_snapshot` 继续只读展示。
+3. 已存在的 default/custom workflow definition 不再作为新任务候选。
+4. `settings.default_workflow_definition_id` 字段可暂时保留，但新任务启动时忽略。
+5. supervisor 保留用于任务分析、分配和恢复决策，但不再选择 workflow definition。
 
 ## 分阶段落地
 
-### 阶段 1：骨架与兼容
+### 阶段 1：唯一入口与骨架
 
 - 新增 Superpowers definition。
 - 扩展类型和 validator。
-- runtime 按 profile 分流。
+- runtime 固定进入 Superpowers 图。
+- 禁用自定义 workflow CRUD 和默认 workflow 设置入口。
 - Skills 内置导入和阶段 prompt 注入。
-- UI 可展示 Superpowers definition。
+- UI 只读展示 Superpowers definition 和历史运行记录。
 
 ### 阶段 2：核心门禁
 
@@ -269,11 +268,11 @@ Workflow definition 管理页继续保留：
 ## 验收标准
 
 1. 系统中存在内置 `Superpowers 开发闭环` definition。
-2. 选中 Superpowers definition 后，workflow run 使用 Superpowers runtime。
-3. 选中默认/自定义 definition 后，旧 runtime 仍可运行。
+2. 新 workflow run 总是使用 Superpowers runtime。
+3. 前端不再提供默认/自定义 workflow 创建、编辑或选择入口。
 4. Superpowers run 能创建并展示专属阶段步骤。
 5. 缺失 spec、plan、TDD、review 或 verification 证据时，runtime 不会错误跳过门禁。
 6. Superpowers skills 能按阶段注入 prompt。
 7. UI 能展示 Superpowers gate 状态和关键证据。
-8. `npm run build` 通过，相关后端和前端测试通过。
-
+8. 历史 workflow run 可只读查看。
+9. `npm run build` 通过，相关后端和前端测试通过。

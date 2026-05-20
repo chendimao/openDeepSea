@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在保留现有默认/自定义工作流兼容路径的前提下，新增 Superpowers C 原生强门禁 runtime profile。
+**Goal:** 去掉默认/自定义工作流能力，让所有新任务只使用 Superpowers C 原生强门禁 runtime。
 
-**Architecture:** 新增内置 `superpowers-development` workflow definition，并扩展 workflow definition 类型、graph state、runtime profile 分流、Superpowers 专属节点和 UI 展示。默认/custom workflow 继续走现有 LangGraph runtime，Superpowers definition 走新 runtime 图。
+**Architecture:** 新增内置且唯一可用的 `superpowers-development` workflow definition，并扩展 workflow definition 类型、graph state、Superpowers 专属节点和 UI 展示。后端新任务启动时固定进入 Superpowers runtime；旧 definition 和历史 run 只保留只读兼容展示，不再参与新任务选择。
 
 **Tech Stack:** TypeScript, Node.js, Express, SQLite, LangGraph, React 18, Vite, Tailwind, node:test.
 
@@ -17,14 +17,18 @@
 - Modify: `packages/backend/src/types.ts` - 扩展 workflow node、state 相关类型。
 - Modify: `packages/backend/src/repos/workflow-definitions.ts` - 新增 Superpowers 内置 definition、validator 支持、metadata 支持。
 - Modify: `packages/backend/src/workflows/graph/state.ts` - 新增 Superpowers state schema。
-- Modify: `packages/backend/src/workflows/graph/runtime.ts` - runtime profile 分流。
+- Modify: `packages/backend/src/workflows/graph/runtime.ts` - 新任务固定进入 Superpowers runtime。
 - Create: `packages/backend/src/workflows/graph/superpowers-runtime.ts` - Superpowers runtime graph 构建。
 - Create: `packages/backend/src/workflows/graph/superpowers-nodes.ts` - Superpowers 专属节点实现。
 - Create: `packages/backend/src/workflows/graph/superpowers-gates.ts` - 门禁检查和状态更新纯函数。
 - Create: `packages/backend/src/workflows/superpowers-skills.ts` - 内置 Superpowers skill 名称、阶段映射和 prompt 注入辅助。
 - Modify: `packages/backend/src/workflows/prompts.ts` - 增加 Superpowers 阶段 prompt。
 - Modify: `packages/backend/src/workflows/agent-provisioning.ts` - 增加 Superpowers review 角色选择策略。
+- Modify: `packages/backend/src/routes.ts` - 禁用自定义 workflow CRUD 和默认 workflow 设置入口。
+- Modify: `packages/backend/src/repos/settings.ts` - 新任务忽略 `default_workflow_definition_id`。
 - Test: `packages/backend/src/repos/workflow-definitions.test.ts`
+- Test: `packages/backend/src/workflow-definitions.routes.test.ts`
+- Test: `packages/backend/src/repos/settings.test.ts`
 - Test: `packages/backend/src/workflows/graph/runtime.test.ts`
 - Test: `packages/backend/src/workflows/graph/state.test.ts`
 - Test: `packages/backend/src/workflows/graph/superpowers-gates.test.ts`
@@ -35,8 +39,8 @@
 - Modify: `packages/frontend/src/lib/types.ts` - 同步 workflow node 和 Superpowers state 类型。
 - Modify: `packages/frontend/src/components/WorkflowTaskFlow.tsx` - 展示 Superpowers 阶段。
 - Modify: `packages/frontend/src/components/WorkflowTaskBubble.tsx` - 展示 TDD/review/verification/finish branch 证据摘要。
-- Modify: `packages/frontend/src/pages/WorkflowOverflowPage.tsx` - 将 Superpowers 内置 definition 显示为只读系统模板。
-- Modify: `packages/frontend/src/components/WorkflowBuilderDialog.tsx` - 支持新 node type 展示与 Superpowers definition 只读限制。
+- Modify: `packages/frontend/src/pages/WorkflowOverflowPage.tsx` - 移除自定义 workflow 管理入口，展示 Superpowers 只读说明。
+- Modify: `packages/frontend/src/components/SettingsDialogs.tsx` - 移除默认 workflow 选择。
 - Test: `packages/frontend/src/components/WorkflowTaskBubble.test.tsx`
 
 文档：
@@ -94,7 +98,7 @@ Add optional metadata fields:
 
 ```ts
 metadata?: {
-  runtime_profile?: 'default' | 'superpowers';
+  runtime_profile?: 'superpowers';
   required_skill_names?: string[];
   gate_policy?: string;
 } | null;
@@ -108,7 +112,7 @@ In `workflow-definitions.ts`, add `BUILTIN_SUPERPOWERS_KEY = 'superpowers-develo
 
 - [ ] **Step 6: Ensure built-in definitions creates Superpowers definition**
 
-Update `ensureBuiltInDefinitions()` to create existing definitions plus Superpowers. Return behavior can remain current default for compatibility.
+Update `ensureBuiltInDefinitions()` to create Superpowers. Existing historical definitions may remain in the database, but new startup/default selection must use Superpowers.
 
 - [ ] **Step 7: Run backend test to verify pass**
 
@@ -153,7 +157,7 @@ Expected: FAIL because schema strips or rejects Superpowers fields.
 Add schemas for:
 
 ```ts
-runtimeProfile: z.enum(['default', 'superpowers']).default('default')
+runtimeProfile: z.literal('superpowers').default('superpowers')
 superpowersPhase: z.string().nullable().default(null)
 designDocPath: z.string().nullable().default(null)
 designReviewVerdict: z.enum(['pending', 'approved', 'changes_requested', 'failed']).nullable().default(null)
@@ -209,7 +213,7 @@ git add packages/backend/src/workflows/graph/state.ts packages/backend/src/workf
 git commit -m "feat(workflow): 增加Superpowers门禁状态"
 ```
 
-## Task 3: Runtime Profile 分流
+## Task 3: 固定 Superpowers Runtime 入口
 
 **Files:**
 - Modify: `packages/backend/src/workflows/graph/runtime.ts`
@@ -217,31 +221,31 @@ git commit -m "feat(workflow): 增加Superpowers门禁状态"
 - Test: `packages/backend/src/workflows/graph/runtime.test.ts`
 - Test: `packages/backend/src/workflows/graph/superpowers-runtime.test.ts`
 
-- [ ] **Step 1: Write failing runtime selection test**
+- [ ] **Step 1: Write failing runtime entry test**
 
-Add a test where supervisor selects `superpowers-development`, then assert run snapshot uses that definition and graph version/profile indicates Superpowers.
+Add a test that starts a workflow without selecting any definition, then assert run snapshot uses `superpowers-development` and graph version/profile indicates Superpowers.
 
 - [ ] **Step 2: Run test to verify fail**
 
 Run: `npm --workspace packages/backend test -- graph/runtime`
 
-Expected: FAIL because runtime always builds current default graph.
+Expected: FAIL because runtime still uses the current selected/default workflow definition path.
 
-- [ ] **Step 3: Extract default graph builder name**
+- [ ] **Step 3: Stop using supervisor for workflow definition selection**
 
-Rename current internal `buildRuntimeGraph` to `buildDefaultRuntimeGraph` without changing behavior.
+Remove or bypass the `visible definitions -> supervisor decision -> selected definition` path for new workflow runs. Supervisor can remain for assignment/recovery, but not workflow selection.
 
-- [ ] **Step 4: Add `isSuperpowersWorkflowDefinition` helper**
+- [ ] **Step 4: Always resolve Superpowers definition**
 
-Use `builtin_key === 'superpowers-development'` or graph metadata runtime profile.
+Update `resolveWorkflowDefinitionForTask()` or its replacement so it returns `superpowers-development` for every new implementation workflow.
 
 - [ ] **Step 5: Add `buildSuperpowersRuntimeGraph` placeholder**
 
 Create `superpowers-runtime.ts` that initially wires the same base nodes plus distinct Superpowers nodes as no-op completed steps where necessary. This task only proves routing/profile selection; later tasks add full gate behavior.
 
-- [ ] **Step 6: Select graph by definition**
+- [ ] **Step 6: Use Superpowers graph for new runs**
 
-In `continueGraphWorkflow` or the graph construction point, build the graph from the run snapshot/definition profile.
+In `continueGraphWorkflow` or the graph construction point, call `buildSuperpowersRuntimeGraph()` for new runs. Historical run display is not changed in this task.
 
 - [ ] **Step 7: Run tests**
 
@@ -253,10 +257,61 @@ Expected: PASS.
 
 ```bash
 git add packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/runtime.test.ts packages/backend/src/workflows/graph/superpowers-runtime.ts packages/backend/src/workflows/graph/superpowers-runtime.test.ts
-git commit -m "feat(workflow): 按profile选择运行图"
+git commit -m "feat(workflow): 固定使用Superpowers运行图"
 ```
 
-## Task 4: Superpowers Skills Mapping and Prompt Injection
+## Task 4: 禁用自定义 Workflow 与默认选择
+
+**Files:**
+- Modify: `packages/backend/src/routes.ts`
+- Modify: `packages/backend/src/repos/settings.ts`
+- Modify: `packages/backend/src/repos/workflow-definitions.ts`
+- Test: `packages/backend/src/workflow-definitions.routes.test.ts`
+- Test: `packages/backend/src/repos/settings.test.ts`
+
+- [ ] **Step 1: Write failing route tests**
+
+Assert:
+
+```ts
+assert.equal((await request('/api/workflow-definitions', { method: 'POST', body })).status, 410);
+assert.equal((await request(`/api/workflow-definitions/${id}/duplicate`, { method: 'POST' })).status, 410);
+assert.equal((await request(`/api/workflow-definitions/${id}/publish`, { method: 'POST' })).status, 410);
+assert.equal((await request(`/api/workflow-definitions/${id}/archive`, { method: 'POST' })).status, 410);
+```
+
+- [ ] **Step 2: Run test to verify fail**
+
+Run: `npm --workspace packages/backend test -- workflow-definitions.routes settings`
+
+Expected: FAIL because routes still allow custom workflow CRUD and settings still expose defaults.
+
+- [ ] **Step 3: Disable custom workflow mutation routes**
+
+Return `410 Gone` with message `custom workflow definitions have been replaced by Superpowers-C`.
+
+- [ ] **Step 4: Restrict list routes**
+
+For new selection APIs, return only `superpowers-development`. If an endpoint is used for history, document and keep it read-only.
+
+- [ ] **Step 5: Ignore default workflow settings for new runs**
+
+Keep the database field for migration safety, but make resolution return Superpowers for effective new workflow behavior.
+
+- [ ] **Step 6: Run backend tests**
+
+Run: `npm --workspace packages/backend test -- workflow-definitions.routes settings`
+
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add packages/backend/src/routes.ts packages/backend/src/repos/settings.ts packages/backend/src/repos/workflow-definitions.ts packages/backend/src/workflow-definitions.routes.test.ts packages/backend/src/repos/settings.test.ts
+git commit -m "feat(workflow): 禁用自定义工作流入口"
+```
+
+## Task 5: Superpowers Skills Mapping and Prompt Injection
 
 **Files:**
 - Create: `packages/backend/src/workflows/superpowers-skills.ts`
@@ -308,7 +363,7 @@ git add packages/backend/src/workflows/superpowers-skills.ts packages/backend/sr
 git commit -m "feat(workflow): 接入Superpowers阶段技能提示"
 ```
 
-## Task 5: Brainstorming and Planning Gate Nodes
+## Task 6: Brainstorming and Planning Gate Nodes
 
 **Files:**
 - Create: `packages/backend/src/workflows/graph/superpowers-nodes.ts`
@@ -368,7 +423,7 @@ git add packages/backend/src/workflows/graph/superpowers-nodes.ts packages/backe
 git commit -m "feat(workflow): 实现Superpowers规划门禁"
 ```
 
-## Task 6: TDD Execute and Two-Stage Review
+## Task 7: TDD Execute and Two-Stage Review
 
 **Files:**
 - Modify: `packages/backend/src/workflows/graph/superpowers-nodes.ts`
@@ -415,7 +470,7 @@ git add packages/backend/src/workflows/graph/superpowers-nodes.ts packages/backe
 git commit -m "feat(workflow): 增加TDD执行与双阶段审查"
 ```
 
-## Task 7: Verification and Finish Branch Gates
+## Task 8: Verification and Finish Branch Gates
 
 **Files:**
 - Modify: `packages/backend/src/workflows/graph/superpowers-nodes.ts`
@@ -464,14 +519,14 @@ git add packages/backend/src/workflows/graph/superpowers-nodes.ts packages/backe
 git commit -m "feat(workflow): 增加验证与分支收口门禁"
 ```
 
-## Task 8: Frontend Superpowers Visualization
+## Task 9: Frontend Superpowers Visualization
 
 **Files:**
 - Modify: `packages/frontend/src/lib/types.ts`
 - Modify: `packages/frontend/src/components/WorkflowTaskFlow.tsx`
 - Modify: `packages/frontend/src/components/WorkflowTaskBubble.tsx`
 - Modify: `packages/frontend/src/pages/WorkflowOverflowPage.tsx`
-- Modify: `packages/frontend/src/components/WorkflowBuilderDialog.tsx`
+- Modify: `packages/frontend/src/components/SettingsDialogs.tsx`
 - Test: `packages/frontend/src/components/WorkflowTaskBubble.test.tsx`
 
 - [ ] **Step 1: Write failing UI tests**
@@ -503,9 +558,9 @@ Add compact sections using existing styling.
 
 Ensure new node names map to labels and stages without layout breakage.
 
-- [ ] **Step 6: Mark Superpowers definition read-only in workflow pages**
+- [ ] **Step 6: Remove custom workflow and default selection UI**
 
-Prevent edit/archive/delete for builtin Superpowers definition; keep default/custom behavior unchanged.
+Remove workflow builder actions, custom workflow mutation actions, and default workflow selectors from settings. Keep a read-only Superpowers process view and historical run display.
 
 - [ ] **Step 7: Run frontend tests**
 
@@ -516,11 +571,11 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add packages/frontend/src/lib/types.ts packages/frontend/src/components/WorkflowTaskFlow.tsx packages/frontend/src/components/WorkflowTaskBubble.tsx packages/frontend/src/pages/WorkflowOverflowPage.tsx packages/frontend/src/components/WorkflowBuilderDialog.tsx packages/frontend/src/components/WorkflowTaskBubble.test.tsx
+git add packages/frontend/src/lib/types.ts packages/frontend/src/components/WorkflowTaskFlow.tsx packages/frontend/src/components/WorkflowTaskBubble.tsx packages/frontend/src/pages/WorkflowOverflowPage.tsx packages/frontend/src/components/SettingsDialogs.tsx packages/frontend/src/components/WorkflowTaskBubble.test.tsx
 git commit -m "feat(frontend): 展示Superpowers门禁状态"
 ```
 
-## Task 9: Integration Verification and Documentation
+## Task 10: Integration Verification and Documentation
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-05-20-Superpowers-C原生强门禁集成设计.md`
@@ -532,7 +587,7 @@ git commit -m "feat(frontend): 展示Superpowers门禁状态"
 Run:
 
 ```bash
-npm --workspace packages/backend test -- workflow-definitions graph/state superpowers-gates superpowers-runtime graph/runtime graph/verification workflows/prompts
+npm --workspace packages/backend test -- workflow-definitions workflow-definitions.routes settings graph/state superpowers-gates superpowers-runtime graph/runtime graph/verification workflows/prompts
 ```
 
 Expected: PASS.
@@ -579,4 +634,3 @@ git commit -m "docs(superpowers): 补充原生强门禁验收"
 - Use `superpowers:verification-before-completion` before claiming completion.
 - Do not overwrite unrelated dirty work in the current worktree.
 - If implementation is split across agents, keep write scopes disjoint: backend types/definitions, backend runtime/nodes, frontend visualization, docs.
-
