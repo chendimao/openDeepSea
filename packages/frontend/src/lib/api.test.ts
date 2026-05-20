@@ -85,6 +85,39 @@ test('resource list adapter preserves agent document source fields and old-data 
   assert.equal(document.reference_count, 1);
 });
 
+test('resource list adapter falls back for unknown resource types and missing source fields', () => {
+  const unknown = resourceListItemToProjectFile(createResourceListItem({
+    id: 'legacy-resource',
+    asset_type: 'unknown',
+    resource_type: 'legacy_type' as ResourceListItem['resource_type'],
+    group_key: 'agent_documents',
+    title: '',
+    name: '',
+    mime_type: null,
+    size: null,
+    url: null,
+    source: {
+      type: 'agent',
+      label: '来源未记录',
+      display_name: null,
+      agent_id: null,
+      user_id: null,
+      message_id: null,
+      room_id: null,
+      task_id: null,
+      context: null,
+    },
+  }));
+
+  assert.equal(unknown.source_type, 'unknown');
+  assert.equal(unknown.original_name, 'legacy-resource');
+  assert.equal(unknown.mime_type, 'application/octet-stream');
+  assert.equal(unknown.size, 0);
+  assert.equal(unknown.url, '');
+  assert.equal(unknown.reference_count, 0);
+  assert.equal(unknown.last_referenced_message_id, null);
+});
+
 function createResourceListItem(input: Partial<ResourceListItem>): ResourceListItem {
   return {
     id: 'resource-1',

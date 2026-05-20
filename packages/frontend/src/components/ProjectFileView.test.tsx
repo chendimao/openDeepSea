@@ -66,6 +66,39 @@ test('file view distinguishes uploaded files from agent documents', () => {
   assert.match(html, /project-file-action-label">下载/);
 });
 
+test('file view falls back clearly when resource type and source fields are missing', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ProjectFileView
+        files={[createUnknownResource()]}
+        mode="list"
+        variant="library"
+        getMeta={(file) => (
+          <>
+            <span>{file.mime_type || 'application/octet-stream'}</span>
+            <span>{file.size}</span>
+          </>
+        )}
+        getSecondaryMeta={(file) => (
+          <span>{translateFileMessage('files.sourceSummary.unknown')}</span>
+        )}
+        getActions={() => [
+          {
+            key: 'details',
+            label: '查看详情',
+            icon: <Eye />,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /未知资源/);
+  assert.match(html, /来源未记录/);
+  assert.match(html, /来源信息：未记录/);
+  assert.match(html, /aria-label="查看详情"/);
+});
+
 test('agent document preview renders markdown content without download action', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
