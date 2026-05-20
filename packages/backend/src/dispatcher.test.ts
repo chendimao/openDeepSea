@@ -1783,6 +1783,84 @@ test('respondAsAgent does not register short do_not_archive replies as resource 
   }
 });
 
+test('respondAsAgent registers structured markdown documents into resource assets', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-agent-document-resource-test-'));
+  const project = projectRepo.create({ name: `agent-document-resource-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const global = agentRepo.getByAgentId('backend-executor');
+  assert.ok(global);
+  const agent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: global.id });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({
+        stream: 'stdout',
+        text: [
+          '# 智能体生成资源库方案文档',
+          '',
+          '## 目标',
+          '',
+          '- 说明资源库需要识别智能体 Markdown 文档。',
+          '- 说明资源库需要保留来源信息。',
+          '- 说明资源记录不能被误标记为用户上传文件。',
+          '',
+          '## 背景',
+          '',
+          '本次冒烟验证要求把完成态智能体 Markdown 文档稳定进入资源库，',
+          '同时保持消息流和任务流不受影响。',
+          '',
+          '## 验证方式',
+          '',
+          '- 后端 build 通过',
+          '- 定向测试通过',
+          '- 冒烟验收覆盖资源列表和详情读取。',
+          '- 资源列表可见文档记录',
+          '- 详情页可读取 Markdown 内容',
+          '- 文档类型必须保持 agent_document。',
+          '',
+          '## 说明',
+          '',
+          '这份内容长度足够长，并且具备清晰的 Markdown 结构，用来模拟真实的智能体交付文档。',
+          '它应当在完成后被登记为资源资产，而不是仅停留在消息记录或临时产物中。',
+          '资源记录必须保留类型、来源和内容，以便后续列表与详情页统一展示。',
+          '如果这条链路失效，前端资源库只能看到用户上传文件，无法呈现智能体生成的复用材料。',
+          '这会让文档详情页缺少 Markdown 内容，也会让来源追踪无法判断文档来自哪个智能体消息。',
+          '',
+          '## 附加说明',
+          '',
+          '为了覆盖回归风险，这里额外补足多句说明，确保分类器不会因为内容过短而直接排除。',
+          '资源登记链路应当复用既有的统一资源接口，不改变用户上传文件的预览和下载行为。',
+          '本方案文档强调最小改动：只补齐完成态智能体 Markdown 文档进入资源库的链路。',
+          '用户上传文件仍然来自 files 表，智能体文档仍然来自 resource_assets 表，二者不能混淆。',
+          '后续 UI 可以依据 resource_type、source_summary 和 available_actions 展示不同操作。',
+        ].join('\n'),
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent,
+      projectPath,
+      roomId: room.id,
+      prompt: '请生成文档并归档',
+    });
+
+    const resources = resourceAssetRepo.listResources({ projectId: project.id, assetType: 'agent_document' });
+    assert.equal(resources.length, 1);
+    assert.equal(resources[0]?.resource_type, 'agent_document');
+    assert.equal(resources[0]?.source.type, 'agent');
+    assert.equal(resources[0]?.source_summary.includes('智能体生成'), true);
+    assert.match(resources[0]?.content ?? '', /智能体生成资源库方案文档/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('dispatchUserMessage replies with configured model when no agent target is available', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-test-'));
   const project = projectRepo.create({ name: `model-chat-${Date.now()}`, path: projectPath });

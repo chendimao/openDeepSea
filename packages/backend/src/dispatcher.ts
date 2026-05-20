@@ -894,7 +894,7 @@ function maybeRegisterAgentDocument(input: {
     userRequest: input.prompt,
     alreadyArchived: false,
   });
-  if (classification.decision !== 'auto_archive') {
+  if (classification.decision === 'do_not_archive') {
     return;
   }
 
