@@ -20,6 +20,12 @@ export interface WorkflowEventRenderState {
   showTaskCard: boolean;
 }
 
+export interface TaskEventVisibilityState {
+  showWorkflowTaskCard: boolean;
+  showInlineTaskEvent: boolean;
+  hideMessage: boolean;
+}
+
 export function createDefaultReplyTarget(
   messages: Message[],
   excludedMessageIds: ReadonlySet<string> = new Set(),
@@ -70,6 +76,34 @@ export function createWorkflowEventRenderStateMap(messages: Message[]): Map<stri
   }
 
   return renderStateByMessageId;
+}
+
+export function getTaskEventVisibilityState(input: {
+  hasWorkflowRun: boolean;
+  showWorkflowTaskCard: boolean;
+  canRetryWorkflowEvent: boolean;
+}): TaskEventVisibilityState {
+  if (!input.hasWorkflowRun) {
+    return {
+      showWorkflowTaskCard: false,
+      showInlineTaskEvent: true,
+      hideMessage: false,
+    };
+  }
+
+  if (input.canRetryWorkflowEvent) {
+    return {
+      showWorkflowTaskCard: input.showWorkflowTaskCard,
+      showInlineTaskEvent: true,
+      hideMessage: false,
+    };
+  }
+
+  return {
+    showWorkflowTaskCard: input.showWorkflowTaskCard,
+    showInlineTaskEvent: false,
+    hideMessage: !input.showWorkflowTaskCard,
+  };
 }
 
 function isWorkflowEventMetadata(metadata: MessageMetadata): boolean {

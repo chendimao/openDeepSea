@@ -5,6 +5,7 @@ import {
   createDefaultReplyTarget,
   createWorkflowEventRenderStateMap,
   getTaskReadinessActionState,
+  getTaskEventVisibilityState,
 } from './roomPageLogic';
 
 test('createDefaultReplyTarget returns the latest non-streaming agent message', () => {
@@ -82,6 +83,36 @@ test('workflow task card render state falls back when workflow id is missing', (
   assert.equal(renderState.get('task-only-start')?.key, 'task:task-only');
   assert.equal(renderState.get('task-only-start')?.showTaskCard, true);
   assert.equal(renderState.get('task-only-done')?.showTaskCard, false);
+});
+
+test('task event visibility keeps retry row for latest blocked workflow event', () => {
+  assert.deepEqual(
+    getTaskEventVisibilityState({
+      hasWorkflowRun: true,
+      showWorkflowTaskCard: false,
+      canRetryWorkflowEvent: true,
+    }),
+    {
+      showWorkflowTaskCard: false,
+      showInlineTaskEvent: true,
+      hideMessage: false,
+    },
+  );
+});
+
+test('task event visibility hides non-retry duplicated workflow events', () => {
+  assert.deepEqual(
+    getTaskEventVisibilityState({
+      hasWorkflowRun: true,
+      showWorkflowTaskCard: false,
+      canRetryWorkflowEvent: false,
+    }),
+    {
+      showWorkflowTaskCard: false,
+      showInlineTaskEvent: false,
+      hideMessage: true,
+    },
+  );
 });
 
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & {

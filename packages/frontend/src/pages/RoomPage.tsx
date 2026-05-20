@@ -55,6 +55,7 @@ import {
   createReplyTarget,
   createWorkflowEventRenderStateMap,
   getTaskReadinessActionState,
+  getTaskEventVisibilityState,
   type ReplyTarget,
   type WorkflowEventRenderState,
 } from './roomPageLogic';
@@ -1205,11 +1206,14 @@ function MessageBubble({
     metadata.task_readiness?.ready === true;
 
   if (isTaskEvent) {
-    const shouldShowWorkflowTaskCard = Boolean(metadata.workflow_run_id && workflowEventRenderState?.showTaskCard);
-    if (metadata.workflow_run_id && !shouldShowWorkflowTaskCard) {
+    const visibility = getTaskEventVisibilityState({
+      hasWorkflowRun: Boolean(metadata.workflow_run_id),
+      showWorkflowTaskCard: Boolean(metadata.workflow_run_id && workflowEventRenderState?.showTaskCard),
+      canRetryWorkflowEvent,
+    });
+    if (visibility.hideMessage) {
       return null;
     }
-    const shouldShowInlineTaskEvent = !metadata.workflow_run_id;
     return (
       <AiMessageRow
         ref={messageRef}
@@ -1218,7 +1222,7 @@ function MessageBubble({
         className={cn(highlighted && 'is-highlighted')}
       >
         <div className="workflow-event-message-stack">
-          {shouldShowInlineTaskEvent && (
+          {visibility.showInlineTaskEvent && (
             <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
               <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
               <span>{message.content}</span>
@@ -1240,7 +1244,7 @@ function MessageBubble({
               )}
             </div>
           )}
-          {shouldShowWorkflowTaskCard && metadata.workflow_run_id && (
+          {visibility.showWorkflowTaskCard && metadata.workflow_run_id && (
             <WorkflowEventBubble
               workflowId={metadata.workflow_run_id}
               agents={agents}
