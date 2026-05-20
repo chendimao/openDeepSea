@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { access, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { projectRepo } from '../repos/projects.js';
 import { skillRepo } from './repo.js';
@@ -67,6 +67,10 @@ export async function runSkillInProjectSandbox(input: RunSkillInput): Promise<Sk
     skillRunRepo.updateRun(run.id, { allowed_paths: [projectPath] });
 
     const command = runtimeCommand(skill.runtime_type);
+    const commandAllowlist = resolveCommandAllowlist(skill.permissions.commands);
+    if (!commandAllowlist.includes(command)) {
+      throw new Error(`runtime command ${basename(command)} is not allowed by skill permissions`);
+    }
     const args = runtimeArgs(skill.runtime_type, entrypoint, {
       projectPath,
       installPath,
@@ -77,6 +81,7 @@ export async function runSkillInProjectSandbox(input: RunSkillInput): Promise<Sk
       runtime: skill.runtime_type,
       command,
       args,
+      commandAllowlist,
       projectPath,
       installPath,
       networkEnabled: skill.permissions.network,
@@ -123,12 +128,12 @@ function runtimeArgs(runtime: 'node' | 'python' | 'shell', entrypoint: string, o
 }): string[] {
   if (runtime === 'node') {
     const args = [
-      '--permission',
+      nodePermissionFlag(),
       `--allow-fs-read=${options.projectPath}`,
       `--allow-fs-read=${options.installPath}`,
       `--allow-fs-write=${options.projectPath}`,
     ];
-    if (options.networkEnabled) args.push('--allow-net');
+    if (options.networkEnabled && supportsNodeAllowNet()) args.push('--allow-net');
     return [...args, entrypoint];
   }
   if (runtime === 'python') {
@@ -146,6 +151,7 @@ async function createProjectSandbox(options: {
   runtime: 'node' | 'python' | 'shell';
   command: string;
   args: string[];
+  commandAllowlist: string[];
   projectPath: string;
   installPath: string;
   networkEnabled: boolean;
@@ -169,6 +175,7 @@ async function createProjectSandbox(options: {
 function buildMacSandboxProfile(options: {
   runtime: 'node' | 'python' | 'shell';
   command: string;
+  commandAllowlist: string[];
   projectPath: string;
   installPath: string;
   networkEnabled: boolean;
@@ -178,7 +185,8 @@ function buildMacSandboxProfile(options: {
     '(version 1)',
     '(deny default)',
     '(import "system.sb")',
-    '(allow process*)',
+    '(allow process-fork)',
+    ...options.commandAllowlist.map((command) => `(allow process-exec (literal ${sandboxString(command)}))`),
     '(allow sysctl-read)',
     networkRule,
     '(allow file-read-metadata)',
@@ -191,6 +199,44 @@ function buildMacSandboxProfile(options: {
     '(allow file-write* (subpath "/dev"))',
     ...runtimeReadRules(options.runtime, options.command),
   ].join('\n');
+}
+
+function resolveCommandAllowlist(commands: string[]): string[] {
+  const resolved = new Set<string>();
+  for (const command of commands) {
+    const normalized = resolveCommand(command);
+    if (!normalized) continue;
+    resolved.add(normalized);
+    if (basename(normalized) === 'python3') {
+      resolved.add('/Library/Developer/CommandLineTools/usr/bin/python3');
+      resolved.add('/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9');
+      resolved.add('/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python');
+    }
+  }
+  return [...resolved];
+}
+
+function resolveCommand(command: string): string | null {
+  const trimmed = command.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes('/')) return resolve(trimmed);
+  const known: Record<string, string> = {
+    bash: '/bin/bash',
+    cat: '/bin/cat',
+    node: process.execPath,
+    python: '/usr/bin/python3',
+    python3: '/usr/bin/python3',
+    sh: '/bin/sh',
+  };
+  return known[trimmed] ?? null;
+}
+
+function nodePermissionFlag(): string {
+  return Number(process.versions.node.split('.')[0] ?? 0) >= 25 ? '--permission' : '--experimental-permission';
+}
+
+function supportsNodeAllowNet(): boolean {
+  return Number(process.versions.node.split('.')[0] ?? 0) >= 25;
 }
 
 function sandboxString(value: string): string {
@@ -289,6 +335,7 @@ function runProcess(command: string, args: string[], options: {
   timeoutMs: number;
 }): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
+    let settled = false;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: minimalEnv(),
@@ -298,8 +345,20 @@ function runProcess(command: string, args: string[], options: {
     let stderr = '';
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
-      reject(new Error('skill execution timed out'));
+      finishError(new Error('skill execution timed out'));
     }, options.timeoutMs);
+    const finishSuccess = (value: { exitCode: number; stdout: string; stderr: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise(value);
+    };
+    const finishError = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    };
 
     child.stdout.setEncoding('utf-8');
     child.stderr.setEncoding('utf-8');
@@ -310,12 +369,14 @@ function runProcess(command: string, args: string[], options: {
       stderr = truncateOutput(stderr + String(chunk));
     });
     child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
+      finishError(err);
+    });
+    child.stdin.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') return;
+      finishError(err);
     });
     child.on('close', (code) => {
-      clearTimeout(timer);
-      resolvePromise({ exitCode: code ?? 1, stdout, stderr });
+      finishSuccess({ exitCode: code ?? 1, stdout, stderr });
     });
     child.stdin.end(options.input);
   });

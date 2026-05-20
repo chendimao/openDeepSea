@@ -254,7 +254,7 @@ test('skills routes execute skills and list run history', async () => {
     trigger_mode: 'manual',
     runtime_type: 'shell',
     entrypoint: 'scripts/run.sh',
-    permissions: { filesystem: 'project', network: false, commands: ['bash'] },
+    permissions: { filesystem: 'project', network: false, commands: ['bash', 'cat'] },
   });
 
   const noToken = await request(`/api/skills/${skill.id}/run`, {

@@ -47,7 +47,7 @@ async function createShellSkill(): Promise<string> {
     trigger_mode: 'manual',
     runtime_type: 'shell',
     entrypoint: 'scripts/run.sh',
-    permissions: { filesystem: 'project', network: true, commands: ['bash'] },
+    permissions: { filesystem: 'project', network: true, commands: ['bash', 'cat'] },
   });
   return skill.id;
 }
@@ -120,7 +120,7 @@ test('runSkillInProjectSandbox blocks filesystem access outside the project dire
     trigger_mode: 'manual',
     runtime_type: 'shell',
     entrypoint: 'scripts/run.sh',
-    permissions: { filesystem: 'project', network: false, commands: ['bash'] },
+    permissions: { filesystem: 'project', network: false, commands: ['bash', 'cat'] },
   });
 
   const run = await runSkillInProjectSandbox({
@@ -137,6 +137,76 @@ test('runSkillInProjectSandbox blocks filesystem access outside the project dire
   assert.match(readFileSync(join(project.path, 'outside-read.err'), 'utf-8'), /Operation not permitted/i);
   assert.match(readFileSync(join(project.path, 'system-read.err'), 'utf-8'), /Operation not permitted/i);
   assert.match(readFileSync(join(project.path, 'outside-write.err'), 'utf-8'), /Operation not permitted/i);
+});
+
+test('runSkillInProjectSandbox ignores EPIPE when a skill exits before reading large stdin', async () => {
+  reset();
+  const project = await createProject();
+  const installPath = mkdtempSync(join(process.env.OPENDEEPSEA_SKILLS_DIR!, 'early-exit-skill-'));
+  await mkdir(join(installPath, 'scripts'), { recursive: true });
+  await writeFile(join(installPath, 'SKILL.md'), '# Early Exit Skill\n');
+  await writeFile(join(installPath, 'scripts', 'run.sh'), 'exit 0\n');
+  const skill = skillRepo.createSkill({
+    id: 'skill-early-exit-runtime',
+    name: 'early-exit-runtime-skill',
+    source_type: 'skills_sh',
+    source_uri: 'skills.sh/acme/early-exit-runtime',
+    install_path: installPath,
+    manifest_path: 'SKILL.md',
+    runtime_scopes: ['workflow'],
+    trigger_mode: 'manual',
+    runtime_type: 'shell',
+    entrypoint: 'scripts/run.sh',
+    permissions: { filesystem: 'project', network: false, commands: ['bash'] },
+  });
+
+  const run = await runSkillInProjectSandbox({
+    skillId: skill.id,
+    projectId: project.id,
+    invokedBy: 'workflow',
+    input: { payload: 'x'.repeat(2_000_000) },
+  });
+
+  assert.equal(run.status, 'completed', run.stderr ?? run.error ?? '');
+  assert.equal(run.exit_code, 0);
+});
+
+test('runSkillInProjectSandbox enforces manifest command allowlist for shell skills', async () => {
+  reset();
+  const project = await createProject();
+  const installPath = mkdtempSync(join(process.env.OPENDEEPSEA_SKILLS_DIR!, 'command-allowlist-skill-'));
+  await mkdir(join(installPath, 'scripts'), { recursive: true });
+  await writeFile(join(installPath, 'SKILL.md'), '# Command Allowlist Skill\n');
+  await writeFile(join(installPath, 'scripts', 'run.sh'), [
+    'set +e',
+    '/bin/ls . > ls-output.txt 2> ls-error.txt',
+    'status=$?',
+    'printf \'{"status":%s}\\n\' "$status"',
+  ].join('\n'));
+  const skill = skillRepo.createSkill({
+    id: 'skill-command-allowlist-runtime',
+    name: 'command-allowlist-runtime-skill',
+    source_type: 'skills_sh',
+    source_uri: 'skills.sh/acme/command-allowlist-runtime',
+    install_path: installPath,
+    manifest_path: 'SKILL.md',
+    runtime_scopes: ['workflow'],
+    trigger_mode: 'manual',
+    runtime_type: 'shell',
+    entrypoint: 'scripts/run.sh',
+    permissions: { filesystem: 'project', network: false, commands: ['bash'] },
+  });
+
+  const run = await runSkillInProjectSandbox({
+    skillId: skill.id,
+    projectId: project.id,
+    invokedBy: 'workflow',
+    input: null,
+  });
+
+  assert.equal(run.status, 'completed', run.stderr ?? run.error ?? '');
+  assert.deepEqual(run.result, { status: 126 });
+  assert.match(readFileSync(join(project.path, 'ls-error.txt'), 'utf-8'), /Operation not permitted/i);
 });
 
 test('runSkillInProjectSandbox uses node permissions to block project-external filesystem access', async () => {

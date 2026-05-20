@@ -38,7 +38,7 @@ test('invokeSkill runs an executable skill for a project', async () => {
     trigger_mode: 'manual',
     runtime_type: 'shell',
     entrypoint: 'scripts/run.sh',
-    permissions: { filesystem: 'project', network: true, commands: ['bash'] },
+    permissions: { filesystem: 'project', network: true, commands: ['bash', 'cat'] },
   });
 
   const run = await invokeSkill({
