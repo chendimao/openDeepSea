@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
 import { projectFileMatchesFilters, projectFileMatchesKeyword } from '../lib/projectFileDisplay';
 import type { ProjectFile, ResourceDetail } from '../lib/types';
-import { ProjectFilePreviewContent, ProjectFilePreviewState, ResourceDetailPreviewContent } from './ProjectFilePreviewDialog';
+import { getPreviewStateCopy, ProjectFilePreviewContent, ProjectFilePreviewState, ResourceDetailPreviewContent } from './ProjectFilePreviewDialog';
 import { ProjectFileView } from './ProjectFileView';
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
@@ -153,6 +153,19 @@ test('detail panel has clear loading and missing states', () => {
   assert.match(html, /正在读取资源详情/);
   assert.match(html, /资源不存在或已被移除/);
   assert.match(html, /重试/);
+});
+
+test('detail panel uses document-specific loading and error copy for agent documents', () => {
+  const t = (key: string) => translateFileMessage(key);
+  const agentCopy = getPreviewStateCopy(createAgentDocument(), new Error('404: not found'), t);
+  const uploadedCopy = getPreviewStateCopy(createUploadedFile(), new Error('500: failed'), t);
+
+  assert.equal(agentCopy.loadingTitle, '正在读取智能体文档…');
+  assert.equal(agentCopy.errorTitle, '智能体文档不存在或已被移除');
+  assert.equal(agentCopy.notFoundTitle, '智能体文档不存在或已被移除');
+  assert.equal(uploadedCopy.loadingTitle, '正在读取资源详情…');
+  assert.equal(uploadedCopy.errorTitle, '资源详情读取失败');
+  assert.equal(uploadedCopy.notFoundTitle, '资源不存在或已被移除');
 });
 
 test('resource detail content hides file actions for agent documents', () => {
@@ -321,6 +334,13 @@ function translateFileMessage(key: string, params?: Record<string, string | numb
     'files.sourceSummary.room': '会话：{room}',
     'files.sourceSummary.agentUnknown': '智能体来源：未记录',
     'files.sourceSummary.unknown': '来源信息：未记录',
+    'files.documentDetailLoading': '正在读取智能体文档…',
+    'files.documentDetailLoadFailed': '智能体文档读取失败',
+    'files.documentDetailNotFound': '智能体文档不存在或已被移除',
+    'files.detailLoading': '正在读取资源详情…',
+    'files.detailLoadFailed': '资源详情读取失败',
+    'files.detailNotFound': '资源不存在或已被移除',
+    'common.error': '发生错误',
   };
   return (messages[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? ''));
 }

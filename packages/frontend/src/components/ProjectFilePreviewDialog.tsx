@@ -34,17 +34,18 @@ export function ProjectFilePreviewDialog({
     enabled: !!file,
     retry: false,
   });
+  const stateCopy = file ? getPreviewStateCopy(file, error, t) : null;
 
   return (
     <Dialog open={!!file} onOpenChange={onOpenChange}>
       <DialogContent className="file-preview-dialog" title={file?.original_name}>
         {file && (
           isLoading ? (
-            <ProjectFilePreviewState title={t('files.detailLoading')} />
+            <ProjectFilePreviewState title={stateCopy!.loadingTitle} />
           ) : isError ? (
             <ProjectFilePreviewState
-              title={isNotFoundError(error) ? t('files.detailNotFound') : t('files.detailLoadFailed')}
-              description={error instanceof Error ? error.message : t('common.error')}
+              title={stateCopy!.errorTitle}
+              description={stateCopy!.errorDescription}
               actionLabel={t('common.retry')}
               onAction={() => void refetch()}
             />
@@ -56,7 +57,7 @@ export function ProjectFilePreviewDialog({
               onClose={() => onOpenChange(false)}
             />
           ) : (
-            <ProjectFilePreviewState title={t('files.detailNotFound')} />
+            <ProjectFilePreviewState title={stateCopy!.notFoundTitle} />
           )
         )}
       </DialogContent>
@@ -66,6 +67,31 @@ export function ProjectFilePreviewDialog({
 
 function isNotFoundError(error: unknown): boolean {
   return error instanceof Error && (error.message.includes('404') || error.message.toLocaleLowerCase().includes('not found'));
+}
+
+export function getPreviewStateCopy(
+  file: ProjectFile,
+  error: unknown,
+  t: ReturnType<typeof useI18n>['t'],
+): {
+  loadingTitle: string;
+  errorTitle: string;
+  errorDescription: string;
+  notFoundTitle: string;
+} {
+  const isAgentDocument = file.source_type === 'agent_document';
+  return {
+    loadingTitle: isAgentDocument ? t('files.documentDetailLoading') : t('files.detailLoading'),
+    errorTitle: isAgentDocument
+      ? isNotFoundError(error)
+        ? t('files.documentDetailNotFound')
+        : t('files.documentDetailLoadFailed')
+      : isNotFoundError(error)
+        ? t('files.detailNotFound')
+        : t('files.detailLoadFailed'),
+    errorDescription: error instanceof Error ? error.message : t('common.error'),
+    notFoundTitle: isAgentDocument ? t('files.documentDetailNotFound') : t('files.detailNotFound'),
+  };
 }
 
 export function ProjectFilePreviewState({
