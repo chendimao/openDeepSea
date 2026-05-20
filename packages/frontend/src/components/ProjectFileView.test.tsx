@@ -17,7 +17,7 @@ test('file view distinguishes uploaded files from agent documents', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <ProjectFileView
-        files={[createUploadedFile(), createAgentDocument()]}
+        files={[createUploadedFile(), createAgentDocument(), createUnknownResource()]}
         mode="list"
         variant="library"
         getMeta={(file) => (
@@ -29,7 +29,11 @@ test('file view distinguishes uploaded files from agent documents', () => {
         getActions={(file) => [
           {
             key: 'preview',
-            label: file.source_type === 'agent_document' ? '查看 Markdown' : '预览',
+            label: file.source_type === 'agent_document'
+              ? '查看 Markdown'
+              : file.source_type === 'uploaded_file'
+                ? '预览'
+                : '查看详情',
             icon: <Eye />,
           },
           ...(file.source_type === 'uploaded_file'
@@ -48,10 +52,18 @@ test('file view distinguishes uploaded files from agent documents', () => {
 
   assert.match(html, /上传文件/);
   assert.match(html, /智能体文档/);
+  assert.match(html, /未知资源/);
+  assert.match(html, /用户上传/);
+  assert.match(html, /由智能体生成/);
+  assert.match(html, /来源未记录/);
   assert.match(html, /screen\.png/);
   assert.match(html, /执行总结\.md/);
+  assert.match(html, /legacy-resource/);
   assert.match(html, /aria-label="查看 Markdown"/);
+  assert.match(html, /aria-label="查看详情"/);
   assert.match(html, /aria-label="下载"/);
+  assert.match(html, /project-file-action-label">查看 Markdown/);
+  assert.match(html, /project-file-action-label">下载/);
 });
 
 test('agent document preview renders markdown content without download action', () => {
@@ -160,6 +172,10 @@ test('keyword search matches type and source fields', () => {
     const messages: Record<string, string> = {
       'files.source.uploadedFile': '上传文件',
       'files.source.agentDocument': '智能体文档',
+      'files.source.unknown': '未知资源',
+      'files.origin.userUploaded': '用户上传',
+      'files.origin.agentGenerated': '由智能体生成',
+      'files.origin.unknown': '来源未记录',
       'files.sourceSummary.uploadedBy': '上传者：{user}',
       'files.sourceSummary.uploadedByInRoom': '上传者：{user} · 来源群聊：{room}',
       'files.sourceSummary.uploadedInRoom': '上传来源：{room}',
@@ -170,6 +186,7 @@ test('keyword search matches type and source fields', () => {
       'files.sourceSummary.task': '任务：{task}',
       'files.sourceSummary.room': '会话：{room}',
       'files.sourceSummary.agentUnknown': '智能体来源：未记录',
+      'files.sourceSummary.unknown': '来源信息：未记录',
     };
     return (messages[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? ''));
   };
@@ -177,6 +194,7 @@ test('keyword search matches type and source fields', () => {
   assert.equal(projectFileMatchesKeyword(createAgentDocument(), '智能体文档', t), true);
   assert.equal(projectFileMatchesKeyword(createAgentDocument(), 'frontend-executor', t), true);
   assert.equal(projectFileMatchesKeyword(createUploadedFile(), '大哥', t), true);
+  assert.equal(projectFileMatchesKeyword(createUnknownResource(), '来源信息', t), true);
   assert.equal(projectFileMatchesKeyword(createProjectFile({
     id: 'asset:room-only',
     source_type: 'agent_document',
@@ -184,6 +202,15 @@ test('keyword search matches type and source fields', () => {
     source_room_id: 'room-archive',
   }), 'room-archive', t), true);
 });
+
+function createUnknownResource(): ProjectFile {
+  return createProjectFile({
+    id: 'asset:legacy',
+    source_type: 'unknown',
+    original_name: 'legacy-resource',
+    mime_type: '',
+  });
+}
 
 function createUploadedFile(): ProjectFile {
   return createProjectFile({

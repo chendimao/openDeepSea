@@ -399,7 +399,7 @@ export interface MessageReplyMetadata {
 export interface ProjectFile {
   id: string;
   project_id: string;
-  source_type: 'uploaded_file' | 'agent_document';
+  source_type: ResourceType;
   original_name: string;
   stored_name: string;
   mime_type: string;
@@ -422,7 +422,7 @@ export interface ProjectFile {
   last_referenced_room_name: string | null;
 }
 
-export type ResourceType = 'uploaded_file' | 'agent_document';
+export type ResourceType = 'uploaded_file' | 'agent_document' | 'unknown';
 
 export interface ResourceSourceInfo {
   type: 'user_upload' | 'agent';

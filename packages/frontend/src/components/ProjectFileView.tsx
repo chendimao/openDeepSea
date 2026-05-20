@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useState, type ElementType, type ReactNode } from 'react';
 import { useI18n } from '../lib/i18n';
-import { getProjectFileTypeLabel } from '../lib/projectFileDisplay';
+import { getProjectFileOriginLabel, getProjectFileTypeLabel } from '../lib/projectFileDisplay';
 import type { ProjectFile } from '../lib/types';
 import { cn } from '../lib/utils';
 
@@ -75,8 +75,11 @@ export function ProjectFileView({
               <span className="project-file-name" title={file.original_name}>
                 {file.original_name}
               </span>
-              <span className="project-file-meta">
+              <span className="project-file-kind-row">
                 <ProjectFileSourceBadge file={file} />
+                <ProjectFileOriginBadge file={file} />
+              </span>
+              <span className="project-file-meta">
                 {getMeta(file)}
               </span>
             </span>
@@ -115,7 +118,8 @@ function ProjectFileActions({ actions }: { actions: ProjectFileAction[] }): JSX.
   return (
     <span className="project-file-actions">
       {actions.map((action) => {
-        const className = cn('icon-glass-button', action.danger && 'is-danger');
+        const className = cn('project-file-action-button', action.danger && 'is-danger');
+        const label = <span className="project-file-action-label">{action.label}</span>;
         if (action.href) {
           return (
             <a
@@ -128,6 +132,7 @@ function ProjectFileActions({ actions }: { actions: ProjectFileAction[] }): JSX.
               onClick={(event) => event.stopPropagation()}
             >
               {action.icon}
+              {label}
             </a>
           );
         }
@@ -146,6 +151,7 @@ function ProjectFileActions({ actions }: { actions: ProjectFileAction[] }): JSX.
             }}
           >
             {action.icon}
+            {label}
           </button>
         );
       })}
@@ -182,6 +188,7 @@ function ProjectFileThumbnail({ file }: { file: ProjectFile }): JSX.Element {
 
 function getFileTypeIcon(file: ProjectFile): ElementType {
   if (file.source_type === 'agent_document') return FilePenLine;
+  if (file.source_type === 'unknown') return FileText;
 
   const mimeType = file.mime_type.toLocaleLowerCase();
   const extension = getFileExtension(file.original_name);
@@ -217,10 +224,31 @@ function getFileTypeIcon(file: ProjectFile): ElementType {
 function ProjectFileSourceBadge({ file }: { file: ProjectFile }): JSX.Element {
   const { t } = useI18n();
   const isAgentDocument = file.source_type === 'agent_document';
+  const isUnknown = file.source_type === 'unknown';
 
   return (
-    <span className={cn('project-file-source-badge', isAgentDocument ? 'is-agent-document' : 'is-uploaded-file')}>
+    <span className={cn(
+      'project-file-source-badge',
+      isAgentDocument ? 'is-agent-document' : 'is-uploaded-file',
+      isUnknown && 'is-unknown-resource',
+    )}>
       {getProjectFileTypeLabel(file, t)}
+    </span>
+  );
+}
+
+function ProjectFileOriginBadge({ file }: { file: ProjectFile }): JSX.Element {
+  const { t } = useI18n();
+  const isAgentDocument = file.source_type === 'agent_document';
+  const isUnknown = file.source_type === 'unknown';
+
+  return (
+    <span className={cn(
+      'project-file-origin-badge',
+      isAgentDocument ? 'is-agent-generated' : 'is-user-uploaded',
+      isUnknown && 'is-unknown-origin',
+    )}>
+      {getProjectFileOriginLabel(file, t)}
     </span>
   );
 }

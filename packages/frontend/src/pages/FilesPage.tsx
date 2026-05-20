@@ -301,7 +301,11 @@ export function FilesPage(): JSX.Element {
               getActions={(file) => [
                 {
                   key: 'preview',
-                  label: file.source_type === 'agent_document' ? t('files.viewMarkdown') : t('files.preview'),
+                  label: file.source_type === 'agent_document'
+                    ? t('files.viewMarkdown')
+                    : file.source_type === 'uploaded_file'
+                      ? t('files.preview')
+                      : t('files.viewDetails'),
                   icon: <Eye className="h-4 w-4" strokeWidth={1.8} />,
                   onClick: () => setPreview(file),
                 },

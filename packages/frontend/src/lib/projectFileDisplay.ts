@@ -4,9 +4,15 @@ import type { ProjectFile, ResourceDetail } from './types';
 type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
 
 export function getProjectFileTypeLabel(file: ProjectFile, t: Translate): string {
-  return file.source_type === 'agent_document'
-    ? t('files.source.agentDocument')
-    : t('files.source.uploadedFile');
+  if (file.source_type === 'agent_document') return t('files.source.agentDocument');
+  if (file.source_type === 'uploaded_file') return t('files.source.uploadedFile');
+  return t('files.source.unknown');
+}
+
+export function getProjectFileOriginLabel(file: ProjectFile, t: Translate): string {
+  if (file.source_type === 'agent_document') return t('files.origin.agentGenerated');
+  if (file.source_type === 'uploaded_file') return t('files.origin.userUploaded');
+  return t('files.origin.unknown');
 }
 
 export function getProjectFileSourceSummary(file: ProjectFile, t: Translate): string {
@@ -34,6 +40,10 @@ export function getProjectFileSourceSummary(file: ProjectFile, t: Translate): st
       return t('files.sourceSummary.room', { room: roomSource });
     }
     return t('files.sourceSummary.agentUnknown');
+  }
+
+  if (file.source_type !== 'uploaded_file') {
+    return t('files.sourceSummary.unknown');
   }
 
   const roomSource = file.last_referenced_room_name ?? file.source_room_id;
