@@ -144,3 +144,16 @@ export function projectFileMatchesKeyword(
     ...extraValues,
   ].some((value) => (value ?? '').toLocaleLowerCase().includes(needle));
 }
+
+export function projectFileMatchesFilters(
+  file: ProjectFile,
+  filters: {
+    keyword: string;
+    sourceType?: ProjectFile['source_type'] | '';
+    extraValues?: Array<string | null | undefined>;
+  },
+  t: Translate,
+): boolean {
+  if (filters.sourceType && file.source_type !== filters.sourceType) return false;
+  return projectFileMatchesKeyword(file, filters.keyword, t, filters.extraValues ?? []);
+}

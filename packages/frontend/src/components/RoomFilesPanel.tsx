@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
-import { getProjectFileSourceSummary, projectFileMatchesKeyword } from '../lib/projectFileDisplay';
+import { getProjectFileSourceSummary, projectFileMatchesFilters } from '../lib/projectFileDisplay';
 import type { ProjectFile } from '../lib/types';
 import { ProjectFileView, type ProjectFileViewMode } from './ProjectFileView';
 import { ProjectFilePreviewDialog } from './ProjectFilePreviewDialog';
@@ -44,8 +44,11 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
   });
 
   const visibleFiles = useMemo(() => {
-    return files.filter((file) => projectFileMatchesKeyword(file, query, t));
-  }, [files, query, t]);
+    return files.filter((file) => projectFileMatchesFilters(file, {
+      keyword: query,
+      sourceType: selectedSourceType,
+    }, t));
+  }, [files, query, selectedSourceType, t]);
 
   const totalSize = useMemo(
     () => files.reduce((sum, file) => sum + file.size, 0),

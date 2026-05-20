@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
-import { getProjectFileSourceSummary, projectFileMatchesKeyword } from '../lib/projectFileDisplay';
+import { getProjectFileSourceSummary, projectFileMatchesFilters } from '../lib/projectFileDisplay';
 import type { ProjectFile } from '../lib/types';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -83,10 +83,12 @@ export function FilesPage(): JSX.Element {
   const listViewLabel = locale === 'zh' ? '列表模式' : 'List view';
   const cardViewLabel = locale === 'zh' ? 'Card 模式' : 'Card view';
   const visibleFiles = useMemo(() => {
-    return files.filter((file) => projectFileMatchesKeyword(file, query, t, [
-      projectNameById.get(file.project_id),
-    ]));
-  }, [files, projectNameById, query, t]);
+    return files.filter((file) => projectFileMatchesFilters(file, {
+      keyword: query,
+      sourceType: selectedSourceType,
+      extraValues: [projectNameById.get(file.project_id)],
+    }, t));
+  }, [files, projectNameById, query, selectedSourceType, t]);
 
   const totalSize = useMemo(
     () => files.reduce((sum, file) => sum + file.size, 0),

@@ -4,7 +4,7 @@ import { Download, Eye } from 'lucide-react';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
-import { projectFileMatchesKeyword } from '../lib/projectFileDisplay';
+import { projectFileMatchesFilters, projectFileMatchesKeyword } from '../lib/projectFileDisplay';
 import type { ProjectFile, ResourceDetail } from '../lib/types';
 import { ProjectFilePreviewContent, ProjectFilePreviewState, ResourceDetailPreviewContent } from './ProjectFilePreviewDialog';
 import { ProjectFileView } from './ProjectFileView';
@@ -169,26 +169,7 @@ test('resource detail content shows empty state for blank agent documents', () =
 
 test('keyword search matches type and source fields', () => {
   const t = (key: string, params?: Record<string, string | number>) => {
-    const messages: Record<string, string> = {
-      'files.source.uploadedFile': '上传文件',
-      'files.source.agentDocument': '智能体文档',
-      'files.source.unknown': '未知资源',
-      'files.origin.userUploaded': '用户上传',
-      'files.origin.agentGenerated': '由智能体生成',
-      'files.origin.unknown': '来源未记录',
-      'files.sourceSummary.uploadedBy': '上传者：{user}',
-      'files.sourceSummary.uploadedByInRoom': '上传者：{user} · 来源群聊：{room}',
-      'files.sourceSummary.uploadedInRoom': '上传来源：{room}',
-      'files.sourceSummary.uploadedUnknown': '上传来源：未记录',
-      'files.sourceSummary.agent': '智能体：{agent}',
-      'files.sourceSummary.agentWithTask': '智能体：{agent} · 任务：{task}',
-      'files.sourceSummary.agentWithRoom': '智能体：{agent} · 会话：{room}',
-      'files.sourceSummary.task': '任务：{task}',
-      'files.sourceSummary.room': '会话：{room}',
-      'files.sourceSummary.agentUnknown': '智能体来源：未记录',
-      'files.sourceSummary.unknown': '来源信息：未记录',
-    };
-    return (messages[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? ''));
+    return translateFileMessage(key, params);
   };
 
   assert.equal(projectFileMatchesKeyword(createAgentDocument(), '智能体文档', t), true);
@@ -202,6 +183,62 @@ test('keyword search matches type and source fields', () => {
     source_room_id: 'room-archive',
   }), 'room-archive', t), true);
 });
+
+test('keyword and type filters compose without adding full text search features', () => {
+  const t = (key: string, params?: Record<string, string | number>) => translateFileMessage(key, params);
+  const files = [
+    createUploadedFile(),
+    createAgentDocument(),
+    createProjectFile({
+      id: 'file-uploaded-report',
+      source_type: 'uploaded_file',
+      original_name: 'agent-report.png',
+      uploaded_by_name: 'planner',
+    }),
+  ];
+
+  const uploadedAgentMatches = files.filter((file) => projectFileMatchesFilters(file, {
+    keyword: 'agent',
+    sourceType: 'uploaded_file',
+  }, t));
+  const documentAgentMatches = files.filter((file) => projectFileMatchesFilters(file, {
+    keyword: 'agent',
+    sourceType: 'agent_document',
+  }, t));
+  const noMatches = files.filter((file) => projectFileMatchesFilters(file, {
+    keyword: 'screen',
+    sourceType: 'agent_document',
+  }, t));
+
+  assert.deepEqual(uploadedAgentMatches.map((file) => file.id), ['file-uploaded-report']);
+  assert.deepEqual(documentAgentMatches.map((file) => file.id), ['asset:agent-doc']);
+  assert.deepEqual(noMatches, []);
+  assert.equal(projectFileMatchesFilters(createUnknownResource(), { keyword: '', sourceType: '' }, t), true);
+  assert.equal(projectFileMatchesFilters(createUnknownResource(), { keyword: '', sourceType: 'uploaded_file' }, t), false);
+});
+
+function translateFileMessage(key: string, params?: Record<string, string | number>): string {
+  const messages: Record<string, string> = {
+    'files.source.uploadedFile': '上传文件',
+    'files.source.agentDocument': '智能体文档',
+    'files.source.unknown': '未知资源',
+    'files.origin.userUploaded': '用户上传',
+    'files.origin.agentGenerated': '由智能体生成',
+    'files.origin.unknown': '来源未记录',
+    'files.sourceSummary.uploadedBy': '上传者：{user}',
+    'files.sourceSummary.uploadedByInRoom': '上传者：{user} · 来源群聊：{room}',
+    'files.sourceSummary.uploadedInRoom': '上传来源：{room}',
+    'files.sourceSummary.uploadedUnknown': '上传来源：未记录',
+    'files.sourceSummary.agent': '智能体：{agent}',
+    'files.sourceSummary.agentWithTask': '智能体：{agent} · 任务：{task}',
+    'files.sourceSummary.agentWithRoom': '智能体：{agent} · 会话：{room}',
+    'files.sourceSummary.task': '任务：{task}',
+    'files.sourceSummary.room': '会话：{room}',
+    'files.sourceSummary.agentUnknown': '智能体来源：未记录',
+    'files.sourceSummary.unknown': '来源信息：未记录',
+  };
+  return (messages[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? ''));
+}
 
 function createUnknownResource(): ProjectFile {
   return createProjectFile({
