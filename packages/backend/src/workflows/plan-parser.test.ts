@@ -159,7 +159,35 @@ test('parsePlanArtifact summarizes duplicate step titles into distinct short tas
     '补充后端任务流转数据结构与接口',
     '改造前端工作流任务卡片和关系展示',
   ]);
-  assert.deepEqual(plan.tasks[1]?.dependsOn, ['补充后端任务流转数据结构与接口']);
+  assert.deepEqual(plan.tasks[1]?.dependsOn, []);
+});
+
+test('parsePlanArtifact derives backend fallback title from ts backend scope', () => {
+  const plan = parsePlanArtifact(`
+\`\`\`json
+{
+  "goal": "生成任务",
+  "summary": "实现后端能力。",
+  "assumptions": [],
+  "steps": [
+    {
+      "title": "生成任务",
+      "intent": "生成任务",
+      "assigneeRole": "executor",
+      "scopeRead": [],
+      "scopeWrite": ["packages/backend/src/routes.ts"],
+      "acceptance": ["生成任务"],
+      "dependsOn": []
+    }
+  ],
+  "risks": [],
+  "verification": [],
+  "needsApproval": false
+}
+\`\`\`
+`);
+
+  assert.equal(plan.tasks[0]?.title, '后端能力实现');
 });
 
 test('parsePlanArtifact keeps already meaningful unique step titles', () => {

@@ -157,7 +157,7 @@ export function normalizeParsedPlanTaskTitles(
   ].map((item) => normalizeTitleKey(item)).filter(Boolean));
   const originalTitleCounts = countTitles(plan.tasks.map((task) => task.title));
   const usedTitles = new Map<string, number>();
-  const firstResolvedTitleByOriginalTitle = new Map<string, string>();
+  const resolvedTitleByUniqueOriginalTitle = new Map<string, string>();
 
   const tasks = plan.tasks.map((task, index) => {
     const resolvedTitle = makeUniqueTaskTitle(
@@ -170,8 +170,8 @@ export function normalizeParsedPlanTaskTitles(
       usedTitles,
     );
     const originalKey = normalizeTitleKey(task.title);
-    if (originalKey && !firstResolvedTitleByOriginalTitle.has(originalKey)) {
-      firstResolvedTitleByOriginalTitle.set(originalKey, resolvedTitle);
+    if (originalKey && originalTitleCounts.get(originalKey) === 1) {
+      resolvedTitleByUniqueOriginalTitle.set(originalKey, resolvedTitle);
     }
     return {
       ...task,
@@ -183,9 +183,11 @@ export function normalizeParsedPlanTaskTitles(
     ...plan,
     tasks: tasks.map((task) => ({
       ...task,
-      dependsOn: task.dependsOn.map((dependency) => {
-        const resolved = firstResolvedTitleByOriginalTitle.get(normalizeTitleKey(dependency));
-        return resolved ?? dependency;
+      dependsOn: task.dependsOn.flatMap((dependency) => {
+        const dependencyKey = normalizeTitleKey(dependency);
+        const resolved = resolvedTitleByUniqueOriginalTitle.get(dependencyKey);
+        if (resolved) return [resolved];
+        return (originalTitleCounts.get(dependencyKey) ?? 0) > 1 ? [] : [dependency];
       }),
     })),
   };
@@ -320,8 +322,8 @@ function deriveTaskTitleFromText(text: string, parentTitles: Set<string>): strin
 function deriveTaskTitleFromScope(scopeWrite: string[]): string | null {
   if (scopeWrite.length === 0) return null;
   const text = scopeWrite.join('\n').toLowerCase();
-  const hasFrontend = /packages\/frontend|src\/components|src\/pages|\.tsx?\b/.test(text);
-  const hasBackend = /packages\/backend|src\/repos|src\/routes|\.ts\b/.test(text) && !hasFrontend;
+  const hasFrontend = /packages\/frontend|src\/components|src\/pages|\.tsx\b/.test(text);
+  const hasBackend = /packages\/backend|src\/repos|src\/routes|\.ts\b/.test(text);
   const hasTests = /\.test\.|__tests__|测试|test/.test(text);
   if (hasTests) return '补充验证测试';
   if (hasFrontend) return '前端交互实现';
