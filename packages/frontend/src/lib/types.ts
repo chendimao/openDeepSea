@@ -447,6 +447,36 @@ export interface ResourceCapabilities {
   delete: boolean;
 }
 
+export interface ResourceListItem {
+  id: string;
+  project_id: string;
+  asset_type: ResourceType;
+  resource_type: ResourceType;
+  group_key: 'uploaded_files' | 'agent_documents';
+  title: string;
+  name: string;
+  mime_type: string | null;
+  size: number | null;
+  url: string | null;
+  file_id: string | null;
+  source_message_id: string | null;
+  source_room_id: string | null;
+  source_agent_id: string | null;
+  source_task_id: string | null;
+  source_display_name: string | null;
+  source_label: string;
+  source_context_id: string | null;
+  source_context_name: string | null;
+  source_context_type: 'room' | 'task' | null;
+  source: ResourceSourceInfo;
+  capabilities: ResourceCapabilities;
+  preview_url: string | null;
+  download_url: string | null;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
 export interface ResourceDetail {
   id: string;
   project_id: string;

@@ -22,6 +22,7 @@ import type {
   MessageRoutingMode,
   ProjectFile,
   ResourceDetail,
+  ResourceListItem,
   Project,
   Room,
   RoomAgent,
@@ -122,6 +123,52 @@ export async function workspaceRequest<T>(path: string, init: RequestInit = {}):
 
 function isQueryFunctionContextLike(value: WorkflowDefinitionListFilters | QueryFunctionContextLike): value is QueryFunctionContextLike {
   return typeof value === 'object' && value !== null && 'queryKey' in value;
+}
+
+export function resourceListItemToProjectFile(resource: ResourceListItem): ProjectFile {
+  const sourceType = normalizeResourceType(resource.resource_type ?? resource.asset_type);
+  const sourceContext = resource.source?.context ?? null;
+  const fileId = resource.file_id ?? (sourceType === 'uploaded_file' ? stripFilePrefix(resource.id) : null);
+
+  return {
+    id: sourceType === 'uploaded_file' && fileId ? `file:${fileId}` : resource.id,
+    project_id: resource.project_id,
+    source_type: sourceType,
+    original_name: resource.name || resource.title || resource.id,
+    stored_name: resource.title || resource.name || resource.id,
+    mime_type: resource.mime_type ?? (sourceType === 'agent_document' ? 'text/markdown' : 'application/octet-stream'),
+    size: resource.size ?? 0,
+    url: resource.url ?? resource.preview_url ?? '',
+    storage_path: '',
+    uploaded_by_id: sourceType === 'uploaded_file' ? resource.source?.user_id ?? resource.source_agent_id : null,
+    uploaded_by_name: sourceType === 'uploaded_file' ? resource.source?.display_name ?? resource.source_display_name : null,
+    source_message_id: resource.source?.message_id ?? resource.source_message_id,
+    source_room_id: resource.source?.room_id ?? resource.source_room_id,
+    source_agent_id: sourceType === 'agent_document'
+      ? resource.source?.agent_id ?? resource.source_agent_id
+      : resource.source?.user_id ?? resource.source_agent_id,
+    source_task_id: resource.source?.task_id ?? resource.source_task_id,
+    content: null,
+    created_at: resource.created_at,
+    deleted_at: resource.deleted_at,
+    reference_count: resource.source?.message_id ? 1 : 0,
+    last_referenced_at: resource.source?.message_id ? resource.created_at : null,
+    last_referenced_message_id: resource.source?.message_id ?? resource.source_message_id,
+    last_referenced_room_id: resource.source?.room_id ?? resource.source_room_id,
+    last_referenced_room_name: sourceContext?.type === 'room'
+      ? sourceContext.name
+      : resource.source_context_type === 'room'
+        ? resource.source_context_name
+        : null,
+  };
+}
+
+function normalizeResourceType(value: unknown): ProjectFile['source_type'] {
+  return value === 'uploaded_file' || value === 'agent_document' ? value : 'unknown';
+}
+
+function stripFilePrefix(id: string): string {
+  return id.startsWith('file:') ? id.slice('file:'.length) : id;
 }
 
 export const api = {
@@ -349,12 +396,25 @@ export const api = {
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
   listFiles: (filters: { projectId?: string; roomId?: string; sourceType?: ProjectFile['source_type'] } = {}) => {
+    if (filters.projectId && !filters.roomId) {
+      return api.listResourceFiles(filters.projectId, { sourceType: filters.sourceType });
+    }
     const params = new URLSearchParams();
     if (filters.projectId) params.set('projectId', filters.projectId);
     if (filters.roomId) params.set('roomId', filters.roomId);
     if (filters.sourceType) params.set('sourceType', filters.sourceType);
     const query = params.toString();
     return request<ProjectFile[]>(`/files${query ? `?${query}` : ''}`);
+  },
+  listResourceFiles: async (
+    projectId: string,
+    filters: { sourceType?: ProjectFile['source_type'] } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (filters.sourceType) params.set('resourceType', filters.sourceType);
+    const query = params.toString();
+    const resources = await request<ResourceListItem[]>(`/projects/${projectId}/resource-assets${query ? `?${query}` : ''}`);
+    return resources.map(resourceListItemToProjectFile);
   },
   listProjectFiles: (
     projectId: string,
