@@ -232,11 +232,13 @@ function resolveCommand(command: string): string | null {
 }
 
 function nodePermissionFlag(): string {
-  return Number(process.versions.node.split('.')[0] ?? 0) >= 25 ? '--permission' : '--experimental-permission';
+  if (process.allowedNodeEnvironmentFlags.has('--permission')) return '--permission';
+  if (process.allowedNodeEnvironmentFlags.has('--experimental-permission')) return '--experimental-permission';
+  throw new Error('current Node.js runtime does not support filesystem permissions');
 }
 
 function supportsNodeAllowNet(): boolean {
-  return Number(process.versions.node.split('.')[0] ?? 0) >= 25;
+  return process.allowedNodeEnvironmentFlags.has('--allow-net');
 }
 
 function sandboxString(value: string): string {
