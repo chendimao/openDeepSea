@@ -36,8 +36,19 @@ CREATE TABLE IF NOT EXISTS settings (
   langchain_planner_model TEXT,
   openai_api_key TEXT,
   openai_base_url TEXT,
+  active_ai_config_id TEXT,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (scope, scope_id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_configs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  langchain_planner_model TEXT NOT NULL,
+  openai_api_key TEXT,
+  openai_base_url TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS skills (
@@ -901,6 +912,9 @@ if (!settingsColumnNames.has('openai_api_key')) {
 }
 if (!settingsColumnNames.has('openai_base_url')) {
   db.exec('ALTER TABLE settings ADD COLUMN openai_base_url TEXT');
+}
+if (!settingsColumnNames.has('active_ai_config_id')) {
+  db.exec('ALTER TABLE settings ADD COLUMN active_ai_config_id TEXT');
 }
 
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {

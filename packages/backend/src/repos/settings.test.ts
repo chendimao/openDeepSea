@@ -11,6 +11,12 @@ const { db } = await import('../db.js');
 const { roomRepo } = await import('./rooms.js');
 const { settingsRepo } = await import('./settings.js');
 
+function clearAiConfigs(): void {
+  for (const config of settingsRepo.listAiConfigs()) {
+    settingsRepo.deleteAiConfig(config.id);
+  }
+}
+
 test('settingsRepo defaults chat routing to planner fallback reply', () => {
   const system = settingsRepo.getSystem();
 
@@ -235,4 +241,129 @@ test('settingsRepo stores system planner settings while redacting api key respon
   assert.equal(cleared.openai_api_key_set, false);
   assert.equal(cleared.openai_api_key_preview, null);
   assert.equal(settingsRepo.getLangChainPlannerSettings().openai_api_key, null);
+});
+
+test('settingsRepo persists AI configs and exposes the active config as runtime planner settings', () => {
+  clearAiConfigs();
+  const first = settingsRepo.createAiConfig({
+    name: 'Primary',
+    langchain_planner_model: ' gpt-4.1 ',
+    openai_base_url: ' https://primary.example ',
+    openai_api_key: ' sk-primary1234 ',
+    activate: true,
+  });
+  const second = settingsRepo.createAiConfig({
+    name: 'Fallback',
+    langchain_planner_model: ' gpt-4o-mini ',
+    openai_base_url: ' https://fallback.example/v1 ',
+    openai_api_key: ' sk-fallback1234 ',
+  });
+
+  assert.equal(first.name, 'Primary');
+  assert.equal(first.langchain_planner_model, 'gpt-4.1');
+  assert.equal(first.openai_base_url, 'https://primary.example');
+  assert.equal(first.openai_api_key_set, true);
+  assert.equal(first.openai_api_key_preview, 'sk-...1234');
+  assert.equal('openai_api_key' in first, false);
+
+  const system = settingsRepo.getSystem();
+  assert.equal(system.active_ai_config_id, first.id);
+  assert.equal(system.langchain_planner_model, 'gpt-4.1');
+  assert.equal(system.openai_base_url, 'https://primary.example');
+  assert.deepEqual(settingsRepo.getLangChainPlannerSettings(), {
+    langchain_planner_model: 'gpt-4.1',
+    openai_api_key: 'sk-primary1234',
+    openai_base_url: 'https://primary.example',
+  });
+
+  settingsRepo.setActiveAiConfig(second.id);
+  assert.equal(settingsRepo.getSystem().active_ai_config_id, second.id);
+  assert.deepEqual(settingsRepo.getLangChainPlannerSettings(), {
+    langchain_planner_model: 'gpt-4o-mini',
+    openai_api_key: 'sk-fallback1234',
+    openai_base_url: 'https://fallback.example/v1',
+  });
+});
+
+test('settingsRepo updates AI configs while preserving api keys unless explicitly changed', () => {
+  clearAiConfigs();
+  const created = settingsRepo.createAiConfig({
+    name: 'Editable',
+    langchain_planner_model: 'gpt-4.1',
+    openai_base_url: 'https://editable.example/v1',
+    openai_api_key: 'sk-editable1234',
+    activate: true,
+  });
+
+  const preserved = settingsRepo.updateAiConfig(created.id, {
+    name: 'Edited',
+    langchain_planner_model: 'gpt-4o',
+  });
+
+  assert.equal(preserved?.name, 'Edited');
+  assert.equal(preserved?.langchain_planner_model, 'gpt-4o');
+  assert.equal(preserved?.openai_api_key_set, true);
+  assert.deepEqual(settingsRepo.getLangChainPlannerSettings(), {
+    langchain_planner_model: 'gpt-4o',
+    openai_api_key: 'sk-editable1234',
+    openai_base_url: 'https://editable.example/v1',
+  });
+
+  const cleared = settingsRepo.updateAiConfig(created.id, { openai_api_key: null });
+  assert.equal(cleared?.openai_api_key_set, false);
+  assert.equal(settingsRepo.getLangChainPlannerSettings().openai_api_key, null);
+});
+
+test('settingsRepo deleting the active AI config switches to the most recently updated remaining config', () => {
+  clearAiConfigs();
+  const older = settingsRepo.createAiConfig({
+    name: 'Older',
+    langchain_planner_model: 'older-model',
+    openai_base_url: 'https://older.example/v1',
+    openai_api_key: 'sk-older1234',
+    activate: true,
+  });
+  const newer = settingsRepo.createAiConfig({
+    name: 'Newer',
+    langchain_planner_model: 'newer-model',
+    openai_base_url: 'https://newer.example/v1',
+    openai_api_key: 'sk-newer1234',
+  });
+  settingsRepo.updateAiConfig(newer.id, { name: 'Newest' });
+
+  assert.equal(settingsRepo.deleteAiConfig(older.id), true);
+
+  const system = settingsRepo.getSystem();
+  assert.equal(system.active_ai_config_id, newer.id);
+  assert.equal(system.langchain_planner_model, 'newer-model');
+  assert.deepEqual(settingsRepo.getLangChainPlannerSettings(), {
+    langchain_planner_model: 'newer-model',
+    openai_api_key: 'sk-newer1234',
+    openai_base_url: 'https://newer.example/v1',
+  });
+});
+
+test('settingsRepo deleting the last active AI config clears runtime planner settings', () => {
+  clearAiConfigs();
+  const only = settingsRepo.createAiConfig({
+    name: 'Only',
+    langchain_planner_model: 'only-model',
+    openai_base_url: 'https://only.example/v1',
+    openai_api_key: 'sk-only1234',
+    activate: true,
+  });
+
+  assert.equal(settingsRepo.deleteAiConfig(only.id), true);
+
+  const system = settingsRepo.getSystem();
+  assert.equal(system.active_ai_config_id, null);
+  assert.equal(system.ai_configs.length, 0);
+  assert.equal(system.langchain_planner_model, null);
+  assert.equal(system.openai_base_url, null);
+  assert.equal(system.openai_api_key_set, false);
+  assert.deepEqual(settingsRepo.getLangChainPlannerSettings(), {
+    langchain_planner_model: null,
+    openai_api_key: null,
+    openai_base_url: null,
+  });
 });

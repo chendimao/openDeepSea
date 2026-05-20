@@ -715,10 +715,23 @@ export interface EffectiveSettings {
 }
 
 export interface SystemSettings extends EffectiveSettings {
+  active_ai_config_id: string | null;
+  ai_configs: AiConfig[];
   langchain_planner_model: string | null;
   openai_base_url: string | null;
   openai_api_key_set: boolean;
   openai_api_key_preview: string | null;
+}
+
+export interface AiConfig {
+  id: string;
+  name: string;
+  langchain_planner_model: string;
+  openai_base_url: string;
+  openai_api_key_set: boolean;
+  openai_api_key_preview: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface LangChainPlannerSettings {

@@ -1,5 +1,6 @@
 import { db, now } from '../db.js';
 import type {
+  AiConfig,
   EffectiveSettings,
   LangChainPlannerSettings,
   MessageRoutingMode,
@@ -28,6 +29,17 @@ interface SystemSettingsRow extends ScopedSettings {
   langchain_planner_model: string | null;
   openai_api_key: string | null;
   openai_base_url: string | null;
+  active_ai_config_id: string | null;
+}
+
+interface AiConfigRow {
+  id: string;
+  name: string;
+  langchain_planner_model: string;
+  openai_api_key: string | null;
+  openai_base_url: string;
+  created_at: number;
+  updated_at: number;
 }
 
 function emptyScoped(scope: SettingsScope, scopeId: string): ScopedSettings {
@@ -75,6 +87,7 @@ function getSystemRow(): SystemSettingsRow | null {
         langchain_planner_model,
         openai_api_key,
         openai_base_url,
+        active_ai_config_id,
         updated_at
       FROM settings
       WHERE scope = 'system' AND scope_id = ?`,
@@ -148,6 +161,102 @@ function apiKeyPreview(apiKey: string | null | undefined): string | null {
   return trimmed.startsWith('sk-') ? `sk-...${trimmed.slice(-4)}` : `...${trimmed.slice(-4)}`;
 }
 
+function toSafeAiConfig(row: AiConfigRow): AiConfig {
+  const apiKey = normalizedOptionalString(row.openai_api_key);
+  return {
+    id: row.id,
+    name: row.name,
+    langchain_planner_model: row.langchain_planner_model,
+    openai_base_url: row.openai_base_url,
+    openai_api_key_set: Boolean(apiKey),
+    openai_api_key_preview: apiKeyPreview(apiKey),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function listAiConfigRows(): AiConfigRow[] {
+  return db
+    .prepare(
+      `SELECT id, name, langchain_planner_model, openai_api_key, openai_base_url, created_at, updated_at
+       FROM ai_configs
+       ORDER BY updated_at DESC, created_at DESC, id DESC`,
+    )
+    .all() as AiConfigRow[];
+}
+
+function getAiConfigRow(id: string | null | undefined): AiConfigRow | null {
+  const normalizedId = normalizedOptionalString(id);
+  if (!normalizedId) return null;
+  return db
+    .prepare(
+      `SELECT id, name, langchain_planner_model, openai_api_key, openai_base_url, created_at, updated_at
+       FROM ai_configs
+       WHERE id = ?`,
+    )
+    .get(normalizedId) as AiConfigRow | undefined ?? null;
+}
+
+function setActiveAiConfigId(id: string | null): void {
+  const existing = getSystemRow();
+  const updatedAt = now();
+  db.prepare(
+    `INSERT INTO settings (
+      scope,
+      scope_id,
+      message_routing_mode,
+      fallback_agent_id,
+      interaction_mode,
+      auto_distill_enabled,
+      default_workflow_definition_id,
+      langchain_planner_model,
+      openai_api_key,
+      openai_base_url,
+      active_ai_config_id,
+      updated_at
+    )
+     VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(scope, scope_id) DO UPDATE SET
+       message_routing_mode = excluded.message_routing_mode,
+       fallback_agent_id = excluded.fallback_agent_id,
+       interaction_mode = excluded.interaction_mode,
+       auto_distill_enabled = excluded.auto_distill_enabled,
+       default_workflow_definition_id = excluded.default_workflow_definition_id,
+       langchain_planner_model = excluded.langchain_planner_model,
+       openai_api_key = excluded.openai_api_key,
+       openai_base_url = excluded.openai_base_url,
+       active_ai_config_id = excluded.active_ai_config_id,
+       updated_at = excluded.updated_at`,
+  ).run(
+    SYSTEM_SCOPE_ID,
+    existing?.message_routing_mode ?? null,
+    existing?.fallback_agent_id ?? null,
+    existing?.interaction_mode ?? null,
+    existing?.auto_distill_enabled ?? null,
+    existing?.default_workflow_definition_id ?? null,
+    existing?.langchain_planner_model ?? null,
+    existing?.openai_api_key ?? null,
+    existing?.openai_base_url ?? null,
+    id,
+    updatedAt,
+  );
+}
+
+function resolveActiveAiConfig(settings: SystemSettingsRow | null, rows = listAiConfigRows()): AiConfigRow | null {
+  if (settings?.active_ai_config_id) {
+    const active = rows.find((row) => row.id === settings.active_ai_config_id);
+    if (active) return active;
+    const fallback = rows[0] ?? null;
+    setActiveAiConfigId(fallback?.id ?? null);
+    return fallback;
+  }
+  if (rows.length === 0) return null;
+  if (settings?.langchain_planner_model || settings?.openai_base_url || settings?.openai_api_key) return null;
+  const fallback = rows[0] ?? null;
+  setActiveAiConfigId(fallback?.id ?? null);
+  return fallback;
+}
+
 function normalizedOptionalString(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -198,7 +307,9 @@ function normalizeLegacyRouting(): void {
 }
 
 function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
-  const openaiApiKey = normalizedOptionalString(settings?.openai_api_key);
+  const aiConfigRows = listAiConfigRows();
+  const activeAiConfig = resolveActiveAiConfig(settings, aiConfigRows);
+  const openaiApiKey = normalizedOptionalString(activeAiConfig?.openai_api_key ?? settings?.openai_api_key);
   const openaiApiKeyPreview = apiKeyPreview(openaiApiKey);
   const routingMode = settings?.message_routing_mode ?? DEFAULT_SETTINGS.message_routing_mode;
   const defaultWorkflowDefinitionId = settings?.default_workflow_definition_id
@@ -211,11 +322,45 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
       ? DEFAULT_SETTINGS.auto_distill_enabled
       : Boolean(settings.auto_distill_enabled),
     default_workflow_definition_id: defaultWorkflowDefinitionId,
-    langchain_planner_model: normalizedOptionalString(settings?.langchain_planner_model),
-    openai_base_url: normalizedOptionalString(settings?.openai_base_url),
+    active_ai_config_id: activeAiConfig?.id ?? null,
+    ai_configs: aiConfigRows.map(toSafeAiConfig),
+    langchain_planner_model: normalizedOptionalString(activeAiConfig?.langchain_planner_model ?? settings?.langchain_planner_model),
+    openai_base_url: normalizedOptionalString(activeAiConfig?.openai_base_url ?? settings?.openai_base_url),
     openai_api_key_set: Boolean(openaiApiKey),
     openai_api_key_preview: openaiApiKeyPreview,
   };
+}
+
+function generateAiConfigId(): string {
+  return `ai-config-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizeAiConfigInput(input: {
+  name?: string | null;
+  langchain_planner_model?: string | null;
+  openai_base_url?: string | null;
+}): {
+  name?: string | null;
+  langchain_planner_model?: string | null;
+  openai_base_url?: string | null;
+} {
+  const name = input.name === undefined ? undefined : normalizedOptionalString(input.name);
+  const model = input.langchain_planner_model === undefined
+    ? undefined
+    : normalizedOptionalString(input.langchain_planner_model);
+  const baseUrl = input.openai_base_url === undefined
+    ? undefined
+    : normalizedOptionalString(input.openai_base_url);
+  return {
+    ...(name !== undefined ? { name } : {}),
+    ...(model !== undefined ? { langchain_planner_model: model } : {}),
+    ...(baseUrl !== undefined ? { openai_base_url: baseUrl } : {}),
+  };
+}
+
+function requireAiConfigString(value: string | null | undefined, field: string): string {
+  if (!value) throw new Error(`${field} is required`);
+  return value;
 }
 
 export const settingsRepo = {
@@ -265,6 +410,10 @@ export const settingsRepo = {
       patch.openai_base_url === undefined
         ? normalizedOptionalString(existing?.openai_base_url)
         : normalizedOptionalString(patch.openai_base_url);
+    const shouldClearActiveAiConfig =
+      patch.langchain_planner_model !== undefined ||
+      patch.openai_api_key !== undefined ||
+      patch.openai_base_url !== undefined;
     const updatedAt = now();
 
     db.prepare(
@@ -279,9 +428,10 @@ export const settingsRepo = {
         langchain_planner_model,
         openai_api_key,
         openai_base_url,
+        active_ai_config_id,
         updated_at
       )
-       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(scope, scope_id) DO UPDATE SET
          message_routing_mode = excluded.message_routing_mode,
          fallback_agent_id = excluded.fallback_agent_id,
@@ -291,6 +441,7 @@ export const settingsRepo = {
          langchain_planner_model = excluded.langchain_planner_model,
          openai_api_key = excluded.openai_api_key,
          openai_base_url = excluded.openai_base_url,
+         active_ai_config_id = excluded.active_ai_config_id,
          updated_at = excluded.updated_at`,
     ).run(
       SYSTEM_SCOPE_ID,
@@ -302,6 +453,7 @@ export const settingsRepo = {
       plannerModel,
       openaiApiKey,
       openaiBaseUrl,
+      shouldClearActiveAiConfig ? null : existing?.active_ai_config_id ?? null,
       updatedAt,
     );
 
@@ -311,11 +463,128 @@ export const settingsRepo = {
   getLangChainPlannerSettings(): LangChainPlannerSettings {
     normalizeLegacyRouting();
     const settings = getSystemRow();
+    const activeAiConfig = resolveActiveAiConfig(settings);
+    if (activeAiConfig) {
+      return {
+        langchain_planner_model: normalizedOptionalString(activeAiConfig.langchain_planner_model),
+        openai_api_key: normalizedOptionalString(activeAiConfig.openai_api_key),
+        openai_base_url: normalizedOptionalString(activeAiConfig.openai_base_url),
+      };
+    }
     return {
       langchain_planner_model: normalizedOptionalString(settings?.langchain_planner_model),
       openai_api_key: normalizedOptionalString(settings?.openai_api_key),
       openai_base_url: normalizedOptionalString(settings?.openai_base_url),
     };
+  },
+
+  listAiConfigs(): AiConfig[] {
+    return listAiConfigRows().map(toSafeAiConfig);
+  },
+
+  getAiConfig(id: string): AiConfig | null {
+    const row = getAiConfigRow(id);
+    return row ? toSafeAiConfig(row) : null;
+  },
+
+  createAiConfig(input: {
+    name: string;
+    langchain_planner_model: string;
+    openai_base_url: string;
+    openai_api_key?: string | null;
+    activate?: boolean;
+  }): AiConfig {
+    const normalized = normalizeAiConfigInput(input);
+    const id = generateAiConfigId();
+    const createdAt = now();
+    const apiKey = normalizedOptionalString(input.openai_api_key);
+    db.prepare(
+      `INSERT INTO ai_configs (
+        id, name, langchain_planner_model, openai_api_key, openai_base_url, created_at, updated_at
+      )
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      requireAiConfigString(normalized.name, 'name'),
+      requireAiConfigString(normalized.langchain_planner_model, 'langchain_planner_model'),
+      apiKey,
+      requireAiConfigString(normalized.openai_base_url, 'openai_base_url'),
+      createdAt,
+      createdAt,
+    );
+    const row = getAiConfigRow(id)!;
+    if (input.activate || !getSystemRow()?.active_ai_config_id) {
+      setActiveAiConfigId(id);
+    }
+    return toSafeAiConfig(row);
+  },
+
+  updateAiConfig(
+    id: string,
+    patch: {
+      name?: string | null;
+      langchain_planner_model?: string | null;
+      openai_base_url?: string | null;
+      openai_api_key?: string | null;
+      activate?: boolean;
+    },
+  ): AiConfig | null {
+    const existing = getAiConfigRow(id);
+    if (!existing) return null;
+    const normalized = normalizeAiConfigInput(patch);
+    const updatedAt = now();
+    const apiKey = patch.openai_api_key === undefined
+      ? normalizedOptionalString(existing.openai_api_key)
+      : normalizedOptionalString(patch.openai_api_key);
+    db.prepare(
+      `UPDATE ai_configs
+       SET name = ?,
+           langchain_planner_model = ?,
+           openai_api_key = ?,
+           openai_base_url = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    ).run(
+      requireAiConfigString(normalized.name ?? existing.name, 'name'),
+      requireAiConfigString(
+        normalized.langchain_planner_model ?? existing.langchain_planner_model,
+        'langchain_planner_model',
+      ),
+      apiKey,
+      requireAiConfigString(normalized.openai_base_url ?? existing.openai_base_url, 'openai_base_url'),
+      updatedAt,
+      id,
+    );
+    if (patch.activate) {
+      setActiveAiConfigId(id);
+    }
+    return toSafeAiConfig(getAiConfigRow(id)!);
+  },
+
+  setActiveAiConfig(id: string): AiConfig | null {
+    const row = getAiConfigRow(id);
+    if (!row) return null;
+    setActiveAiConfigId(row.id);
+    return toSafeAiConfig(row);
+  },
+
+  deleteAiConfig(id: string): boolean {
+    const existing = getAiConfigRow(id);
+    if (!existing) return false;
+    const wasActive = getSystemRow()?.active_ai_config_id === id;
+    db.prepare('DELETE FROM ai_configs WHERE id = ?').run(id);
+    if (wasActive) {
+      const fallback = listAiConfigRows()[0] ?? null;
+      setActiveAiConfigId(fallback?.id ?? null);
+      if (!fallback) {
+        this.updateSystem({
+          langchain_planner_model: null,
+          openai_api_key: null,
+          openai_base_url: null,
+        });
+      }
+    }
+    return true;
   },
 
   getProject(projectId: string): ScopedSettings | null {

@@ -215,6 +215,19 @@ const systemSettingsPatchSchema = z
     { message: 'fallback_agent_id is required unless message_routing_mode is mentions_only' },
   );
 
+const aiConfigInputSchema = z.object({
+  name: z.string().trim().min(1),
+  langchain_planner_model: z.string().trim().min(1),
+  openai_base_url: z.string().trim().min(1).url(),
+  openai_api_key: nullableTrimmedStringSchema,
+  activate: z.boolean().optional(),
+});
+
+const aiConfigPatchSchema = aiConfigInputSchema.partial().refine(
+  (value) => Object.keys(value).length > 0,
+  { message: 'at least one field is required' },
+);
+
 const agentToolCapabilitySchema = z.enum([
   'read_files',
   'write_files',
@@ -512,6 +525,48 @@ router.patch('/settings/system', (req, res) => {
     openai_api_key: parsed.data.openai_api_key,
     openai_base_url: parsed.data.openai_base_url,
   }));
+});
+
+router.get('/settings/ai-configs', (_req, res) => {
+  res.json({
+    active_ai_config_id: settingsRepo.getSystem().active_ai_config_id,
+    items: settingsRepo.listAiConfigs(),
+  });
+});
+
+router.post('/settings/ai-configs', (req, res) => {
+  const parsed = aiConfigInputSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const config = settingsRepo.createAiConfig(parsed.data);
+    res.status(201).json(config);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'invalid AI config' });
+  }
+});
+
+router.patch('/settings/ai-configs/:configId', (req, res) => {
+  const parsed = aiConfigPatchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const config = settingsRepo.updateAiConfig(req.params.configId, parsed.data);
+    if (!config) return res.status(404).json({ error: 'not found' });
+    res.json(config);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'invalid AI config' });
+  }
+});
+
+router.post('/settings/ai-configs/:configId/activate', (req, res) => {
+  const config = settingsRepo.setActiveAiConfig(req.params.configId);
+  if (!config) return res.status(404).json({ error: 'not found' });
+  res.json(settingsRepo.getSystem());
+});
+
+router.delete('/settings/ai-configs/:configId', (req, res) => {
+  const deleted = settingsRepo.deleteAiConfig(req.params.configId);
+  if (!deleted) return res.status(404).json({ error: 'not found' });
+  res.status(204).end();
 });
 
 router.get('/projects/:projectId/settings', (req, res) => {
