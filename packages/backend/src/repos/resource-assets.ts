@@ -220,7 +220,7 @@ function buildResourceSourceSummary(asset: Pick<
   | 'source_context_id'
 >, source: ResourceSourceInfo): string {
   if (asset.asset_type === 'uploaded_file') {
-    return source.display_name ?? '用户上传';
+    return [source.display_name ?? '用户上传', source.context?.name].filter(Boolean).join(' · ');
   }
   const parts = [source.label];
   if (source.display_name) parts.push(source.display_name);
@@ -320,6 +320,11 @@ function listAgentDocuments(filters: ResourceAssetListFilters): ResourceAssetLis
 function listUploadedFileAssets(projectId: string, roomId?: string, query?: string): ResourceAssetListItem[] {
   const where = ['files.project_id = @projectId', 'files.deleted_at IS NULL'];
   const params: Record<string, unknown> = { projectId };
+  const roomReferenceFilter = roomId ? ' AND refs.room_id = @roomId' : '';
+  const joinRoomFilter = roomId ? ' AND message_file_refs.room_id = @roomId' : '';
+  const latestRefMessageIdSql = latestUploadedFileRefSql('refs.message_id', roomReferenceFilter);
+  const latestRefRoomIdSql = latestUploadedFileRefSql('refs.room_id', roomReferenceFilter);
+  const latestRefRoomNameSql = latestUploadedFileRefSql('rooms.name', roomReferenceFilter, 'JOIN rooms ON rooms.id = refs.room_id');
   if (roomId) {
     where.push(
       `EXISTS (
@@ -340,6 +345,13 @@ function listUploadedFileAssets(projectId: string, roomId?: string, query?: stri
         OR mime_type LIKE @query ESCAPE '\\'
         OR COALESCE(uploaded_by_name, '') LIKE @query ESCAPE '\\'
         OR COALESCE(uploaded_by_id, '') LIKE @query ESCAPE '\\'
+        OR EXISTS (
+          SELECT 1
+          FROM message_file_refs refs
+          JOIN rooms ON rooms.id = refs.room_id
+          WHERE refs.file_id = files.id
+            AND rooms.name LIKE @query ESCAPE '\\'
+        )
         OR '用户上传' LIKE @query ESCAPE '\\'
       )`,
     );
@@ -356,23 +368,50 @@ function listUploadedFileAssets(projectId: string, roomId?: string, query?: stri
        files.size,
        files.url,
        files.id AS file_id,
-       NULL AS source_message_id,
-       NULL AS source_room_id,
+       ${latestRefMessageIdSql} AS source_message_id,
+       ${latestRefRoomIdSql} AS source_room_id,
        files.uploaded_by_id AS source_agent_id,
        NULL AS source_task_id,
        COALESCE(NULLIF(files.uploaded_by_name, ''), '用户上传') AS source_display_name,
        '用户上传' AS source_label,
-       NULL AS source_context_id,
-       NULL AS source_context_name,
-       NULL AS source_context_type,
+       ${latestRefRoomIdSql} AS source_context_id,
+       ${latestRefRoomNameSql} AS source_context_name,
+       CASE
+         WHEN EXISTS (
+           SELECT 1
+           FROM message_file_refs refs
+           WHERE refs.file_id = files.id
+             ${roomReferenceFilter}
+         ) THEN 'room'
+         ELSE NULL
+       END AS source_context_type,
        NULL AS metadata,
        files.created_at,
        files.created_at AS updated_at,
-       files.deleted_at
+       files.deleted_at,
+       COUNT(message_file_refs.id) AS reference_count,
+       MAX(message_file_refs.created_at) AS last_referenced_at,
+       ${latestRefMessageIdSql} AS last_referenced_message_id,
+       ${latestRefRoomIdSql} AS last_referenced_room_id,
+       ${latestRefRoomNameSql} AS last_referenced_room_name
      FROM files
+     LEFT JOIN message_file_refs ON message_file_refs.file_id = files.id${joinRoomFilter}
      WHERE ${where.join(' AND ')}
+     GROUP BY files.id
      ORDER BY files.created_at DESC`,
   ).all(params) as ResourceAssetListItem[];
+}
+
+function latestUploadedFileRefSql(selectExpr: string, roomReferenceFilter: string, joinClause = ''): string {
+  return `(
+         SELECT ${selectExpr}
+         FROM message_file_refs refs
+         ${joinClause}
+         WHERE refs.file_id = files.id
+           ${roomReferenceFilter}
+         ORDER BY refs.created_at DESC, refs.rowid DESC
+         LIMIT 1
+       )`;
 }
 
 function getUploadedFileAsset(fileId: string): ResourceAsset | undefined {

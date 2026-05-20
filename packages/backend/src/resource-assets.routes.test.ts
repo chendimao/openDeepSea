@@ -431,6 +431,91 @@ test('resource asset routes search mixed resource types and reject empty search'
   assert.equal(invalidSearchRes.status, 400);
 });
 
+test('resource asset routes preserve uploaded file reference metadata and search by reference room', async () => {
+  const project = createProject('uploaded-file-ref-contract');
+  const firstRoom = roomRepo.create({ project_id: project.id, name: '首次引用群聊' });
+  const latestRoom = roomRepo.create({ project_id: project.id, name: '图片冒烟验证' });
+  const upload = fileRepo.create({
+    project_id: project.id,
+    original_name: 'referenced.png',
+    stored_name: 'referenced.png',
+    mime_type: 'image/png',
+    size: 256,
+    url: `/uploads/files/${project.id}/referenced.png`,
+    storage_path: join(tmpdir(), 'referenced.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const firstMessage = messageRepo.create({
+    room_id: firstRoom.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'first ref',
+    message_type: 'text',
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: firstRoom.id,
+    message_id: firstMessage.id,
+    file_ids: [upload.id],
+  });
+  const latestMessage = messageRepo.create({
+    room_id: latestRoom.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'latest ref',
+    message_type: 'text',
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: latestRoom.id,
+    message_id: latestMessage.id,
+    file_ids: [upload.id],
+  });
+
+  const listRes = await request(`/api/projects/${project.id}/resource-assets?resourceType=uploaded_file`);
+  assert.equal(listRes.status, 200);
+  const uploads = await listRes.json() as Array<{
+    id: string;
+    reference_count?: number;
+    last_referenced_message_id?: string | null;
+    last_referenced_room_id?: string | null;
+    last_referenced_room_name?: string | null;
+    source_context_id: string | null;
+    source_context_name: string | null;
+    source_context_type: string | null;
+    source: { context: { id: string; type: string; name: string | null } | null };
+  }>;
+  const uploadItem = uploads.find((asset) => asset.id === `file:${upload.id}`);
+
+  assert.equal(uploadItem?.reference_count, 2);
+  assert.equal(uploadItem?.last_referenced_message_id, latestMessage.id);
+  assert.equal(uploadItem?.last_referenced_room_id, latestRoom.id);
+  assert.equal(uploadItem?.last_referenced_room_name, latestRoom.name);
+  assert.equal(uploadItem?.source_context_id, latestRoom.id);
+  assert.equal(uploadItem?.source_context_name, latestRoom.name);
+  assert.equal(uploadItem?.source_context_type, 'room');
+  assert.equal(uploadItem?.source.context?.name, latestRoom.name);
+
+  const searchRes = await request(`/api/projects/${project.id}/resource-assets?q=${encodeURIComponent(latestRoom.name)}`);
+  assert.equal(searchRes.status, 200);
+  const matches = await searchRes.json() as Array<{ id: string; resource_type: string }>;
+  assert.deepEqual(
+    matches.map((asset) => ({ id: asset.id, resource_type: asset.resource_type })),
+    [{ id: `file:${upload.id}`, resource_type: 'uploaded_file' }],
+  );
+
+  const earlierSearchRes = await request(`/api/projects/${project.id}/resource-assets?q=${encodeURIComponent(firstRoom.name)}`);
+  assert.equal(earlierSearchRes.status, 200);
+  const earlierMatches = await earlierSearchRes.json() as Array<{ id: string; resource_type: string }>;
+  assert.deepEqual(
+    earlierMatches.map((asset) => ({ id: asset.id, resource_type: asset.resource_type })),
+    [{ id: `file:${upload.id}`, resource_type: 'uploaded_file' }],
+  );
+});
+
 test('resource asset routes return unified list and typed detail contracts', async () => {
   const project = createProject('unified-contract');
   const otherProject = createProject('unified-contract-other');

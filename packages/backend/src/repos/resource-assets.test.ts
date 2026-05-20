@@ -134,6 +134,77 @@ test('resourceAssetRepo combines uploaded files into resource list', () => {
   assert.equal(fileRepo.get(file.id)?.deleted_at, null);
 });
 
+test('resourceAssetRepo preserves uploaded file reference metadata in resource list', () => {
+  const project = createProject('uploaded-file-refs');
+  const firstRoom = roomRepo.create({ project_id: project.id, name: '首次引用群聊' });
+  const latestRoom = roomRepo.create({ project_id: project.id, name: '图片冒烟验证' });
+  const file = fileRepo.create({
+    project_id: project.id,
+    original_name: 'referenced.png',
+    stored_name: 'referenced.png',
+    mime_type: 'image/png',
+    size: 256,
+    url: `/uploads/files/${project.id}/referenced.png`,
+    storage_path: join(tmpdir(), 'referenced.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const firstMessage = messageRepo.create({
+    room_id: firstRoom.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'first ref',
+    message_type: 'text',
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: firstRoom.id,
+    message_id: firstMessage.id,
+    file_ids: [file.id],
+  });
+  const latestMessage = messageRepo.create({
+    room_id: latestRoom.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'latest ref',
+    message_type: 'text',
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: latestRoom.id,
+    message_id: latestMessage.id,
+    file_ids: [file.id],
+  });
+
+  const uploadItem = resourceAssetRepo.listResources({ projectId: project.id })
+    .find((asset) => asset.id === `file:${file.id}`) as (ReturnType<typeof resourceAssetRepo.listResources>[number] & {
+      reference_count?: number;
+      last_referenced_at?: number | null;
+      last_referenced_message_id?: string | null;
+      last_referenced_room_id?: string | null;
+      last_referenced_room_name?: string | null;
+    }) | undefined;
+
+  assert.equal(uploadItem?.reference_count, 2);
+  assert.equal(uploadItem?.last_referenced_at !== null, true);
+  assert.equal(uploadItem?.last_referenced_message_id, latestMessage.id);
+  assert.equal(uploadItem?.last_referenced_room_id, latestRoom.id);
+  assert.equal(uploadItem?.last_referenced_room_name, latestRoom.name);
+  assert.equal(uploadItem?.source_room_id, latestRoom.id);
+  assert.equal(uploadItem?.source_context_id, latestRoom.id);
+  assert.equal(uploadItem?.source_context_name, latestRoom.name);
+  assert.equal(uploadItem?.source_context_type, 'room');
+  assert.equal(uploadItem?.source.context?.name, latestRoom.name);
+  assert.equal(uploadItem?.source_summary, `You · ${latestRoom.name}`);
+
+  const roomMatches = resourceAssetRepo.listResources({ projectId: project.id, query: latestRoom.name });
+  assert.deepEqual(roomMatches.map((asset) => asset.id), [`file:${file.id}`]);
+  const earlierRoomMatches = resourceAssetRepo.listResources({ projectId: project.id, query: firstRoom.name });
+  assert.deepEqual(earlierRoomMatches.map((asset) => asset.id), [`file:${file.id}`]);
+});
+
 test('resourceAssetRepo filters unified resources by room', () => {
   const project = createProject('resource-room-filter');
   const room = roomRepo.create({ project_id: project.id, name: 'Room Filter' });

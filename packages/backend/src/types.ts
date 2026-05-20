@@ -371,6 +371,11 @@ export interface ResourceAsset {
 
 export type ResourceAssetListItem = Omit<ResourceAsset, 'content'> & {
   content?: never;
+  reference_count?: number;
+  last_referenced_at?: number | null;
+  last_referenced_message_id?: string | null;
+  last_referenced_room_id?: string | null;
+  last_referenced_room_name?: string | null;
 };
 
 export type ResourceSourceType = 'user_upload' | 'agent';
