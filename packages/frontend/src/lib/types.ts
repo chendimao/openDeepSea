@@ -149,13 +149,25 @@ export type SettingsScope = 'system' | 'project' | 'room';
 export type SkillRuntimeScope = 'planner' | 'model_chat' | 'workflow' | 'memory' | 'review';
 export type SkillTriggerMode = 'manual' | 'keyword' | 'always_for_scope';
 export type SkillBindingScope = 'system' | 'project' | 'room' | 'agent';
-export type SkillSourceType = 'local_directory' | 'git_repo' | 'manual';
+export type SkillSourceType = 'local_directory' | 'git_repo' | 'manual' | 'skills_sh';
+export type SkillExecutableRuntime = 'node' | 'python' | 'shell';
+export type SkillUpdateCheckMode = 'off' | 'startup' | 'manual' | 'scheduled';
+export type SkillUpdateApplyMode = 'prompt' | 'download' | 'auto';
+export type SkillRunInvoker = 'workflow' | 'agent' | 'manual';
+export type SkillRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface SkillPermissions {
+  filesystem: 'project';
+  network: boolean;
+  commands: string[];
+}
 
 export interface Skill {
   id: string;
   name: string;
   description: string | null;
   source_type: SkillSourceType;
+  source_uri: string | null;
   manifest_path: string | null;
   runtime_scopes: SkillRuntimeScope[];
   trigger_mode: SkillTriggerMode;
@@ -163,6 +175,17 @@ export interface Skill {
   enabled: 0 | 1;
   priority: number;
   checksum: string | null;
+  package_version: string | null;
+  package_revision: string | null;
+  runtime_type: SkillExecutableRuntime | null;
+  entrypoint: string | null;
+  permissions: SkillPermissions | null;
+  install_source_label: string | null;
+  update_check_mode: SkillUpdateCheckMode;
+  update_apply_mode: SkillUpdateApplyMode;
+  last_update_checked_at: number | null;
+  available_version: string | null;
+  available_revision: string | null;
   install_path_set: boolean;
   install_path_label?: string | null;
   created_at: number;
@@ -189,6 +212,50 @@ export interface SkillPreviewResponse {
     truncated: boolean;
   }>;
   promptPreview: string;
+}
+
+export interface SkillsShSearchResult {
+  id: string;
+  name: string;
+  skillId: string | null;
+  source: string | null;
+  installLabel: string;
+  description: string | null;
+  installs: number | null;
+  version: string | null;
+  revision: string | null;
+}
+
+export interface SkillsShUpdateResult {
+  skillId: string;
+  hasUpdate: boolean;
+  currentVersion: string | null;
+  currentRevision: string | null;
+  availableVersion: string | null;
+  availableRevision: string | null;
+  checkedAt: number;
+}
+
+export interface SkillRun {
+  id: string;
+  skill_id: string;
+  project_id: string | null;
+  room_id: string | null;
+  agent_id: string | null;
+  invoked_by: SkillRunInvoker;
+  runtime: SkillExecutableRuntime;
+  entrypoint: string;
+  input: unknown;
+  allowed_paths: string[];
+  network_enabled: 0 | 1;
+  status: SkillRunStatus;
+  exit_code: number | null;
+  stdout: string | null;
+  stderr: string | null;
+  result: unknown;
+  error: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface AgentReference {

@@ -30,7 +30,12 @@ import type {
   Skill,
   SkillBinding,
   SkillBindingScope,
+  SkillRun,
   SkillPreviewResponse,
+  SkillsShSearchResult,
+  SkillsShUpdateResult,
+  SkillUpdateApplyMode,
+  SkillUpdateCheckMode,
   SkillRuntimeScope,
   SkillTriggerMode,
   Task,
@@ -285,6 +290,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ path }),
     }),
+  searchSkillMarketplace: (query: string) => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set('q', query.trim());
+    const search = params.toString();
+    return workspaceRequest<SkillsShSearchResult[]>(`/skills/marketplace${search ? `?${search}` : ''}`);
+  },
+  importSkillsShSkill: (installLabel: string) =>
+    workspaceRequest<Skill>('/skills/import/skills-sh', {
+      method: 'POST',
+      body: JSON.stringify({ installLabel }),
+    }),
   updateSkill: (
     id: string,
     input: {
@@ -295,12 +311,25 @@ export const api = {
       trigger_keywords?: string[];
       enabled?: boolean;
       priority?: number;
+      update_check_mode?: SkillUpdateCheckMode;
+      update_apply_mode?: SkillUpdateApplyMode;
     },
   ) =>
     workspaceRequest<Skill>(`/skills/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
+  listSkillRuns: (filters: { skillId?: string; projectId?: string; roomId?: string; agentId?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filters.skillId) params.set('skillId', filters.skillId);
+    if (filters.projectId) params.set('projectId', filters.projectId);
+    if (filters.roomId) params.set('roomId', filters.roomId);
+    if (filters.agentId) params.set('agentId', filters.agentId);
+    const query = params.toString();
+    return workspaceRequest<SkillRun[]>(`/skills/runs${query ? `?${query}` : ''}`);
+  },
+  checkSkillUpdate: (id: string) =>
+    workspaceRequest<SkillsShUpdateResult>(`/skills/${id}/updates`),
   deleteSkill: (id: string) =>
     workspaceRequest<void>(`/skills/${id}`, { method: 'DELETE' }),
   listSkillBindings: (filters: { scope?: SkillBindingScope; scopeId?: string; skillId?: string } = {}) => {
