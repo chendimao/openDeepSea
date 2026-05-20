@@ -60,11 +60,12 @@ export function FilesPage(): JSX.Element {
     refetch: refetchFiles,
   } = useQuery({
     queryKey: ['files', selectedProjectId, activeRoomId, selectedSourceType],
-    queryFn: () => api.listResourceFiles(selectedProjectId, {
+    queryFn: () => listResourceLibraryFiles({
+      projectId: selectedProjectId,
       roomId: activeRoomId || undefined,
       sourceType: selectedSourceType || undefined,
     }),
-    enabled: canLoadFiles && !!selectedProjectId,
+    enabled: canLoadFiles,
   });
 
   const selectedProject = useMemo(
@@ -328,6 +329,26 @@ export function FilesPage(): JSX.Element {
       />
     </div>
   );
+}
+
+export function listResourceLibraryFiles(filters: {
+  projectId?: string;
+  roomId?: string;
+  sourceType?: ProjectFile['source_type'] | '';
+}): Promise<ProjectFile[]> {
+  const projectId = filters.projectId?.trim();
+  const roomId = filters.roomId?.trim();
+  const sourceType = filters.sourceType || undefined;
+  if (projectId) {
+    return api.listResourceFiles(projectId, {
+      roomId: roomId || undefined,
+      sourceType,
+    });
+  }
+  return api.listFiles({
+    roomId: roomId || undefined,
+    sourceType,
+  });
 }
 
 export function buildFileResourceActions(
