@@ -246,6 +246,25 @@ test('resource detail content degrades gracefully when source fields are missing
   assert.doesNotMatch(html, /null/);
 });
 
+test('resource detail content highlights agent document source metadata', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ResourceDetailPreviewContent
+        resource={createAgentDocumentResourceDetail()}
+        fallbackFile={createAgentDocument()}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /文档来源追踪/);
+  assert.match(html, /来源智能体/);
+  assert.match(html, /来源会话/);
+  assert.match(html, /来源任务/);
+  assert.match(html, /生成时间/);
+  assert.match(html, /前端开发工程师/);
+  assert.match(html, /资源详情验收/);
+});
+
 test('resource detail content shows empty state for blank agent documents', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
