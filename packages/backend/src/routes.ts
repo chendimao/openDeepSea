@@ -636,7 +636,7 @@ function customWorkflowDefinitionsGone(res: Response) {
 }
 
 function isSelectableWorkflowDefinitionRequest(query: z.infer<typeof workflowDefinitionListSchema>): boolean {
-  return Boolean((query.projectId || query.roomId) && !query.scope && !query.status);
+  return !query.scope && !query.status;
 }
 
 router.get('/workflow-definitions', (req, res) => {

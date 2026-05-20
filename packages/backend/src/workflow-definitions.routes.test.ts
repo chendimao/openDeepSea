@@ -167,16 +167,24 @@ test('workflow definition routes list filters by scope status archive flag and v
   const archivedHiddenDefinitions = await archivedHiddenRes.json() as Array<{ id: string }>;
   assert.equal(archivedHiddenDefinitions.some((definition) => definition.id === archived.id), false);
 
-  const includeArchivedRes = await request('/api/workflow-definitions?includeArchived=1');
-  assert.equal(includeArchivedRes.status, 200);
-  const includeArchivedDefinitions = await includeArchivedRes.json() as Array<{ id: string }>;
-  assert.ok(includeArchivedDefinitions.some((definition) => definition.id === archived.id));
+  const includeArchivedSelectionRes = await request('/api/workflow-definitions?includeArchived=1');
+  assert.equal(includeArchivedSelectionRes.status, 200);
+  const includeArchivedSelectionDefinitions = await includeArchivedSelectionRes.json() as Array<{ builtin_key: string | null }>;
+  assert.deepEqual(
+    includeArchivedSelectionDefinitions.map((definition) => definition.builtin_key),
+    ['superpowers-development'],
+  );
 
   const archivedStatusRes = await request('/api/workflow-definitions?status=archived');
   assert.equal(archivedStatusRes.status, 200);
   const archivedStatusDefinitions = await archivedStatusRes.json() as Array<{ id: string; status: string }>;
   assert.ok(archivedStatusDefinitions.some((definition) => definition.id === archived.id));
   assert.equal(archivedStatusDefinitions.some((definition) => definition.id === systemDraft.id), false);
+
+  const publishedSystemRes = await request('/api/workflow-definitions?scope=system&status=published');
+  assert.equal(publishedSystemRes.status, 200);
+  const publishedSystemDefinitions = await publishedSystemRes.json() as Array<{ builtin_key: string | null; scope: string; status: string }>;
+  assert.ok(publishedSystemDefinitions.some((definition) => definition.builtin_key === 'superpowers-development'));
 
   const roomContextRes = await request(`/api/workflow-definitions?projectId=${project.id}&roomId=${room.id}`);
   assert.equal(roomContextRes.status, 200);
