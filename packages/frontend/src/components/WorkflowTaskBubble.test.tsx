@@ -10,7 +10,25 @@ setupBrowserStubs();
 
 test('renders task table from graph_state workflowPlan', () => {
   const detail = createWorkflowDetail({
-    graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan({
+        tasks: [
+          ...createWorkflowPlan().tasks,
+          {
+            id: 'task-review',
+            title: '代码审查',
+            description: '审查执行结果',
+            role: 'reviewer',
+            agent_id: 'agent-review',
+            mode: 'serial',
+            depends_on: ['task-1'],
+            status: 'completed',
+            progress: 100,
+            result_refs: [],
+          },
+        ],
+      }),
+    }),
   });
 
   const html = renderBubble(detail, [createAgent()]);
@@ -18,6 +36,7 @@ test('renders task table from graph_state workflowPlan', () => {
   assert.match(html, /工作流子任务表格/);
   assert.match(html, /实现聊天气泡/);
   assert.match(html, /前端执行者/);
+  assert.doesNotMatch(html, />代码审查</);
 });
 
 test('renders skipped workflow plan task from graph_state', () => {
@@ -84,6 +103,8 @@ test('compact mode renders agent result tabs for chat embedding', () => {
   assert.match(html, /按智能体查看执行结果/);
   assert.match(html, /前端执行者/);
   assert.match(html, /已完成紧凑任务表格接入/);
+  assert.match(html, /1 个计划项/);
+  assert.match(html, /1 条记录/);
 });
 
 test('compact mode renders task detail actions', () => {
@@ -143,6 +164,74 @@ test('agent result tabs fall back to workflow role or id labels', () => {
 
   assert.match(html, /missing-agent/);
   assert.match(html, /审查内容已聚合/);
+});
+
+test('task flow renders review target and acceptance target labels', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan({
+        tasks: [
+          ...createWorkflowPlan().tasks,
+          {
+            id: 'task-review',
+            title: '代码审查',
+            description: '审查执行结果',
+            role: 'reviewer',
+            agent_id: 'agent-review',
+            mode: 'serial',
+            depends_on: ['task-1'],
+            status: 'completed',
+            progress: 100,
+            result_refs: [],
+          },
+          {
+            id: 'task-accept',
+            title: '功能验收',
+            description: '验收整体结果',
+            role: 'acceptor',
+            agent_id: 'agent-accept',
+            mode: 'serial',
+            depends_on: ['task-1', 'task-review'],
+            status: 'completed',
+            progress: 100,
+            result_refs: [],
+          },
+        ],
+      }),
+    }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-impl',
+        assignedRoomAgentId: 'agent-1',
+        result: '第一轮实现完成。',
+        completedAt: 2,
+      }),
+      createWorkflowStep({
+        id: 'step-review',
+        assignedRoomAgentId: 'agent-review',
+        taskId: 'task-root',
+        stage: 'code_review',
+        nodeName: 'review',
+        result: '代码审查要求修改。',
+        completedAt: 3,
+      }),
+      createWorkflowStep({
+        id: 'step-accept',
+        assignedRoomAgentId: 'agent-accept',
+        taskId: 'task-root',
+        stage: 'acceptance',
+        nodeName: 'acceptance',
+        result: '验收通过。',
+        completedAt: 4,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+
+  assert.match(html, /任务流转/);
+  assert.match(html, /审查目标/);
+  assert.match(html, /功能验收/);
 });
 
 test('returns null when workflow plan is unavailable', () => {
@@ -257,6 +346,8 @@ function createWorkflowStep(input: {
   id: string;
   assignedRoomAgentId: string | null;
   taskId?: string;
+  stage?: WorkflowStep['stage'];
+  nodeName?: WorkflowStep['node_name'];
   result: string;
   completedAt: number | null;
 }): WorkflowStep {
@@ -264,8 +355,8 @@ function createWorkflowStep(input: {
     id: input.id,
     workflow_run_id: 'workflow-1',
     task_id: input.taskId ?? 'task-1',
-    stage: 'implementation',
-    node_name: 'execute',
+    stage: input.stage ?? 'implementation',
+    node_name: input.nodeName ?? 'execute',
     status: input.completedAt ? 'completed' : 'running',
     room_agent_id: input.assignedRoomAgentId,
     assigned_room_agent_id: input.assignedRoomAgentId,

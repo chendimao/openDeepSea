@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowPlanJson } from '../lib/types';
+import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
 import { WorkflowAgentTabs } from './WorkflowAgentTabs';
 import { WorkflowProgressHeader } from './WorkflowProgressHeader';
 import { WorkflowTaskTable } from './WorkflowTaskTable';
+import { WorkflowTaskFlow } from './WorkflowTaskFlow';
 
 export function WorkflowTaskBubble({
   detail,
@@ -21,15 +22,30 @@ export function WorkflowTaskBubble({
 
   return (
     <div className="workflow-task-bubble" data-source={compact ? 'chat' : 'timeline'}>
-      <WorkflowProgressHeader plan={workflowPlan} />
-      <WorkflowTaskTable plan={workflowPlan} agents={agents} compact={compact} />
-      <WorkflowAgentTabs
-        plan={workflowPlan}
-        agents={agents}
-        artifacts={detail.artifacts}
-        steps={detail.steps}
-        compact={compact}
-      />
+      <div className="workflow-task-bubble-main">
+        <WorkflowProgressHeader plan={workflowPlan} />
+        <WorkflowTaskTable
+          plan={workflowPlan}
+          agents={agents}
+          compact={compact}
+          availableTaskIds={getExecutableTaskIds(workflowPlan)}
+        />
+        <WorkflowTaskFlow
+          plan={workflowPlan}
+          steps={detail.steps}
+          artifacts={detail.artifacts}
+          compact={compact}
+        />
+      </div>
+      <div className="workflow-task-bubble-side">
+        <WorkflowAgentTabs
+          plan={workflowPlan}
+          agents={agents}
+          artifacts={detail.artifacts}
+          steps={detail.steps}
+          compact={compact}
+        />
+      </div>
     </div>
   );
 }
@@ -90,4 +106,10 @@ function isWorkflowPlanJson(value: unknown): value is WorkflowPlanJson {
       );
     })
   );
+}
+
+function getExecutableTaskIds(plan: WorkflowPlanJson): string[] {
+  return plan.tasks
+    .filter((task) => task.role === 'executor')
+    .map((task) => task.id);
 }

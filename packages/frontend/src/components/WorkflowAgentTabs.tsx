@@ -64,38 +64,50 @@ export function WorkflowAgentTabs({
         {groups.map((group) => (
           <Tabs.Trigger key={group.key} value={group.key} className="workflow-agent-tab-trigger">
             <Bot className="h-3 w-3" />
-            <span className="truncate">{group.label}</span>
-            <span className="font-mono text-[9.5px] opacity-70">{Math.max(group.items.length, group.tasks.length)}</span>
+            <span className="workflow-agent-tab-label truncate">{group.label}</span>
+            <span className="workflow-agent-tab-counts">
+              <span>{t('workflowPlan.agentTabPlans', { count: group.tasks.length })}</span>
+              <span>{t('workflowPlan.agentTabRecords', { count: group.items.length })}</span>
+            </span>
           </Tabs.Trigger>
         ))}
       </Tabs.List>
       {groups.map((group) => (
         <Tabs.Content key={group.key} value={group.key} className="workflow-agent-tab-panel">
-          <div className="space-y-2">
-            {group.items.length > 0 ? group.items.map((item) => (
-              <div key={item.id} className="workflow-agent-result">
-                <div className="flex min-w-0 items-center gap-2">
-                  <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
-                  <div className="min-w-0 flex-1 truncate text-[12px] font-medium">{item.title}</div>
-                  <span className="font-mono text-[10px] text-[var(--color-muted)]">{item.status}</span>
-                </div>
-                <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-fg-muted)]">
-                  {item.stage && <span>{workflowStageLabel(item.stage)}</span>}
-                  <span>{t(`workflowPlan.executionSource.${item.source}`)}</span>
-                </div>
-                {item.content ? (
-                  <pre className="mt-2 max-h-[140px] overflow-auto whitespace-pre-wrap break-words text-[10.5px] leading-relaxed text-[var(--color-fg-muted)]">
-                    {truncate(item.content, compact ? 520 : 900)}
-                  </pre>
-                ) : (
-                  <div className="mt-1 text-[11px] text-[var(--color-fg-muted)]">{t('workflowPlan.noResult')}</div>
-                )}
+          <div className="workflow-agent-panel">
+            <div className="workflow-agent-panel-header">
+              <div className="workflow-agent-panel-title">{group.label}</div>
+              <div className="workflow-agent-panel-meta">
+                <span>{t('workflowPlan.agentTabPlans', { count: group.tasks.length })}</span>
+                <span>{t('workflowPlan.agentTabRecords', { count: group.items.length })}</span>
               </div>
-            )) : (
-              <div className="workflow-agent-result">
-                <div className="text-[11px] text-[var(--color-fg-muted)]">{t('workflowPlan.noResult')}</div>
-              </div>
-            )}
+            </div>
+            <div className="space-y-2">
+              {group.items.length > 0 ? group.items.map((item) => (
+                <div key={item.id} className="workflow-agent-result">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText className="h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
+                    <div className="min-w-0 flex-1 truncate text-[12px] font-medium">{item.title}</div>
+                    <span className="font-mono text-[10px] text-[var(--color-muted)]">{item.status}</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-[var(--color-fg-muted)]">
+                    {item.stage && <span>{workflowStageLabel(item.stage)}</span>}
+                    <span>{t(`workflowPlan.executionSource.${item.source}`)}</span>
+                  </div>
+                  {item.content ? (
+                    <pre className="mt-2 max-h-[140px] overflow-auto whitespace-pre-wrap break-words text-[10.5px] leading-relaxed text-[var(--color-fg-muted)]">
+                      {truncate(item.content, compact ? 520 : 900)}
+                    </pre>
+                  ) : (
+                    <div className="mt-1 text-[11px] text-[var(--color-fg-muted)]">{t('workflowPlan.noResult')}</div>
+                  )}
+                </div>
+              )) : (
+                <div className="workflow-agent-result">
+                  <div className="text-[11px] text-[var(--color-fg-muted)]">{t('workflowPlan.noResult')}</div>
+                </div>
+              )}
+            </div>
           </div>
         </Tabs.Content>
       ))}
