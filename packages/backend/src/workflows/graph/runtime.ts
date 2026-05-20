@@ -749,7 +749,15 @@ async function resumeGraphWorkflowFromState(
       if (shouldWaitForActiveAgentRun('execute', nextState)) {
         return nextState;
       }
-      nodeToRun = nextNodeAfter('tdd_execute', nextState, routePlan);
+      const nextNode = nextNodeAfter('tdd_execute', nextState, routePlan);
+      if (nextNode === 'spec_compliance_review') {
+        const canLeaveTddExecute = runtimeGraph.canLeaveTddExecute(nextState);
+        nextState = await runtimeGraph.nodes.tddExecute(nextState);
+        if (!canLeaveTddExecute) {
+          return blockSuperpowersTddExecute(nextState);
+        }
+      }
+      nodeToRun = nextNode;
       continue;
     }
 
@@ -1058,6 +1066,20 @@ function blockSuperpowersDispatch(state: AgentWorkflowState): AgentWorkflowState
     ...blockedState,
     currentNode: 'planning',
     superpowersPhase: 'plan_review',
+  };
+}
+
+function blockSuperpowersTddExecute(state: AgentWorkflowState): AgentWorkflowState {
+  const error = state.error
+    ?? 'Superpowers TDD evidence gate requires RED failed and GREEN passed records or an explicit exemption';
+  const blockedState = blockGraphWorkflowRun(state.workflowRunId, state, error);
+  if (!blockedState) {
+    throw new Error(error);
+  }
+  return {
+    ...blockedState,
+    currentNode: 'execute',
+    superpowersPhase: 'tdd_execute',
   };
 }
 

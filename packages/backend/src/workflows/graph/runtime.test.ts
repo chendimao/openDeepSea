@@ -410,6 +410,105 @@ test('Superpowers actual runtime executes TDD and two-stage reviews before verif
   assert.equal(nodeNames.includes('review'), false);
 });
 
+test('Superpowers actual runtime keeps TDD gate before spec review when runnable child tasks exist', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-tdd-child-gate-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers TDD Child Gate', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers TDD Child Gate Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(executor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Keep TDD gate with runnable child tasks',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: 'Runnable implementation child',
+    assigned_agent_id: executor.id,
+  });
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    childTaskIds: [child.id],
+    tddEvidence: [],
+    tddExemption: null,
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, { includeTddEvidence: false }),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const nodeNames = listRawStepNodeNames(run.id);
+
+  assert.equal(latest.status, 'blocked');
+  assert.match(latest.error ?? '', /TDD evidence/i);
+  assert.deepEqual(nodeNames.slice(0, 1), ['tdd_execute']);
+  assert.equal(nodeNames.includes('spec_compliance_review'), false);
+  assert.equal(taskRepo.get(child.id)?.status, 'review');
+  assert.equal(state?.superpowersPhase, 'tdd_execute');
+  assert.equal(state?.status, 'blocked');
+});
+
+test('Superpowers actual runtime proceeds from child-task TDD execute to spec review with RED and GREEN evidence', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-tdd-child-pass-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers TDD Child Pass', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers TDD Child Pass Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(executor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Proceed with child-task TDD evidence',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: 'Runnable implementation child with evidence',
+    assigned_agent_id: executor.id,
+  });
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    childTaskIds: [child.id],
+    tddEvidence: [
+      { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
+      { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
+    ],
+    specComplianceReview: {
+      verdict: 'pending',
+      findings: ['Stop after proving route enters spec compliance review.'],
+      reviewedAt: null,
+    },
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const nodeNames = listRawStepNodeNames(run.id);
+
+  assert.equal(latest.status, 'blocked');
+  assert.deepEqual(nodeNames.slice(0, 2), ['tdd_execute', 'spec_compliance_review']);
+  assert.equal(taskRepo.get(child.id)?.status, 'review');
+  assert.equal(state?.superpowersPhase, 'spec_compliance_review');
+  assert.match(state?.error ?? '', /spec compliance review is pending/i);
+});
+
 test('Superpowers actual runtime blocks before spec review without TDD evidence or exemption', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-tdd-block-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -2421,8 +2520,12 @@ function createTestWorkflowDefinition(): WorkflowDefinitionGraph {
   };
 }
 
-function createCompletedAgentRun(roomId: string, input: RespondAsAgentInput) {
-  const content = outputForStage(input.workflowStage);
+function createCompletedAgentRun(
+  roomId: string,
+  input: RespondAsAgentInput,
+  options: { includeTddEvidence?: boolean } = {},
+) {
+  const content = outputForStage(input.workflowStage, options);
   const run = agentRunRepo.create({
     room_id: roomId,
     room_agent_id: input.agent.id,
@@ -2446,7 +2549,10 @@ function createCompletedAgentRun(roomId: string, input: RespondAsAgentInput) {
   return Promise.resolve({ run: completedRun, message, status: 'completed' as const });
 }
 
-function outputForStage(stage: WorkflowStage | null | undefined): string {
+function outputForStage(
+  stage: WorkflowStage | null | undefined,
+  options: { includeTddEvidence?: boolean } = {},
+): string {
   if (stage === 'code_review') {
     return JSON.stringify({
       verdict: 'pass',
@@ -2461,6 +2567,11 @@ function outputForStage(stage: WorkflowStage | null | undefined): string {
       acceptedCriteria: ['Workflow completed'],
       failedCriteria: [],
       notes: 'Accepted.',
+    });
+  }
+  if (options.includeTddEvidence === false) {
+    return JSON.stringify({
+      summary: 'implementation output from ACP-only executor',
     });
   }
   return JSON.stringify({
