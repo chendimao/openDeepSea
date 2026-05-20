@@ -261,9 +261,20 @@ function applyReviewState(
     };
   }
 
+  const currentReview = phase === 'spec_compliance_review'
+    ? state.specComplianceReview
+    : state.codeQualityReview;
+  const review = currentReview ?? {
+    verdict: 'approved' as const,
+    findings,
+    reviewedAt: null,
+  };
+
   return {
     ...state,
     superpowersPhase: phase,
+    specComplianceReview: phase === 'spec_compliance_review' ? review : state.specComplianceReview,
+    codeQualityReview: phase === 'code_quality_review' ? review : state.codeQualityReview,
     reviewFindings: findings,
     reviewVerdict: 'pass',
     status: state.status === 'blocked' ? 'running' : state.status,

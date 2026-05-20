@@ -137,12 +137,21 @@ export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementa
 export type GraphNodeName =
   | 'context'
   | 'planning'
+  | 'brainstorming'
+  | 'spec_review'
+  | 'worktree'
+  | 'writing_plans'
+  | 'plan_review'
   | 'approval'
   | 'dispatch'
   | 'execute'
+  | 'tdd_execute'
   | 'review'
+  | 'spec_compliance_review'
+  | 'code_quality_review'
   | 'repair_decision'
   | 'verify'
+  | 'finish_branch'
   | 'acceptance'
   | 'memory';
 export type WorkflowDefinitionScope = 'system' | 'project' | 'room';
