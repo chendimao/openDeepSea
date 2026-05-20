@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Crosshair, Download, Eye, Filter, Grid2X2, List, Search, Trash2 } from 'lucide-react';
+import { Crosshair, Download, Eye, FileSearch, Filter, Grid2X2, List, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
@@ -56,20 +56,23 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
   );
 
   const remove = useMutation({
-    mutationFn: (fileId: string) => api.deleteProjectFile(fileId),
+    mutationFn: (file: ProjectFile) => {
+      if (file.source_type === 'agent_document') return api.deleteResourceAsset(file.id);
+      return api.deleteProjectFile(normalizeUploadedFileId(file.id));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['files'] });
       queryClient.invalidateQueries({ queryKey: ['files', projectId, roomId] });
       queryClient.invalidateQueries({ queryKey: ['project-files', projectId] });
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      toast.success(t('files.deleted'));
+      toast.success(t('files.deletedResource'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
 
   const handleDelete = (file: ProjectFile) => {
-    if (!window.confirm(t('files.deleteConfirm', { name: file.original_name }))) return;
-    remove.mutate(file.id);
+    if (!window.confirm(getDeleteConfirmMessage(file, t))) return;
+    remove.mutate(file);
   };
 
   return (
@@ -179,7 +182,9 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
                     : file.source_type === 'uploaded_file'
                       ? t('files.preview')
                       : t('files.viewDetails'),
-                  icon: <Eye className="h-4 w-4" strokeWidth={1.8} />,
+                  icon: file.source_type === 'agent_document'
+                    ? <FileSearch className="h-4 w-4" strokeWidth={1.8} />
+                    : <Eye className="h-4 w-4" strokeWidth={1.8} />,
                   onClick: () => setPreview(file),
                 },
                 ...(file.source_type === 'uploaded_file' && file.url
@@ -201,7 +206,7 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
                   : []),
                 {
                   key: 'delete',
-                  label: t('files.delete'),
+                  label: file.source_type === 'agent_document' ? t('files.deleteDocument') : t('files.deleteFile'),
                   icon: <Trash2 className="h-4 w-4" strokeWidth={1.8} />,
                   danger: true,
                   disabled: remove.isPending,
@@ -221,6 +226,17 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
       />
     </div>
   );
+}
+
+function normalizeUploadedFileId(id: string): string {
+  return id.startsWith('file:') ? id.slice('file:'.length) : id;
+}
+
+function getDeleteConfirmMessage(file: ProjectFile, t: ReturnType<typeof useI18n>['t']): string {
+  if (file.source_type === 'agent_document') {
+    return t('files.deleteDocumentConfirm', { name: file.original_name });
+  }
+  return t('files.deleteFileConfirm', { name: file.original_name });
 }
 
 function FilesState({

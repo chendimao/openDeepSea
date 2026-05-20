@@ -155,11 +155,9 @@ export function resourceListItemToProjectFile(resource: ResourceListItem): Proje
     last_referenced_at: resource.source?.message_id ? resource.created_at : null,
     last_referenced_message_id: resource.source?.message_id ?? resource.source_message_id,
     last_referenced_room_id: resource.source?.room_id ?? resource.source_room_id,
-    last_referenced_room_name: sourceContext?.type === 'room'
-      ? sourceContext.name
-      : resource.source_context_type === 'room'
-        ? resource.source_context_name
-        : null,
+    last_referenced_room_name: sourceContext?.name
+      ?? resource.source_context_name
+      ?? null,
   };
 }
 
@@ -441,6 +439,8 @@ export const api = {
   },
   deleteProjectFile: (fileId: string) =>
     request<void>(`/files/${fileId}`, { method: 'DELETE' }),
+  deleteResourceAsset: (assetId: string) =>
+    request<void>(`/resource-assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' }),
   listMemories: (
     projectId: string,
     filters: { roomId?: string; roomAgentId?: string; roomAgentIds?: string[]; taskId?: string; includeArchived?: boolean } = {},

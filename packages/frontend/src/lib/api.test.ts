@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resourceListItemToProjectFile } from './api';
+import { api, resourceListItemToProjectFile } from './api';
 import type { ResourceListItem } from './types';
 
 test('resource list adapter preserves uploaded file fields for library UI', () => {
@@ -116,6 +116,26 @@ test('resource list adapter falls back for unknown resource types and missing so
   assert.equal(unknown.url, '');
   assert.equal(unknown.reference_count, 0);
   assert.equal(unknown.last_referenced_message_id, null);
+});
+
+test('resource asset delete endpoint keeps encoded resource ids', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  let requestedMethod = '';
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input);
+    requestedMethod = init?.method ?? 'GET';
+    return new Response(null, { status: 204 });
+  }) as typeof fetch;
+
+  try {
+    await api.deleteResourceAsset('asset:agent doc');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requestedUrl, '/api/resource-assets/asset%3Aagent%20doc');
+  assert.equal(requestedMethod, 'DELETE');
 });
 
 function createResourceListItem(input: Partial<ResourceListItem>): ResourceListItem {

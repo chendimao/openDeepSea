@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, Eye, Filter, Grid2X2, List, Search, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FileSearch, Filter, Grid2X2, List, Search, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
@@ -114,18 +114,21 @@ export function FilesPage(): JSX.Element {
   });
 
   const remove = useMutation({
-    mutationFn: (fileId: string) => api.deleteProjectFile(fileId),
+    mutationFn: (file: ProjectFile) => {
+      if (file.source_type === 'agent_document') return api.deleteResourceAsset(file.id);
+      return api.deleteProjectFile(normalizeUploadedFileId(file.id));
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['files'] });
       queryClient.invalidateQueries({ queryKey: ['project-files'] });
-      toast.success(t('files.deleted'));
+      toast.success(t('files.deletedResource'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
 
   const handleDelete = (file: ProjectFile) => {
-    if (!window.confirm(t('files.deleteConfirm', { name: file.original_name }))) return;
-    remove.mutate(file.id);
+    if (!window.confirm(getDeleteConfirmMessage(file, t))) return;
+    remove.mutate(file);
   };
 
   return (
@@ -300,35 +303,12 @@ export function FilesPage(): JSX.Element {
                   </span>
                 </>
               )}
-              getActions={(file) => [
-                {
-                  key: 'preview',
-                  label: file.source_type === 'agent_document'
-                    ? t('files.viewMarkdown')
-                    : file.source_type === 'uploaded_file'
-                      ? t('files.preview')
-                      : t('files.viewDetails'),
-                  icon: <Eye className="h-4 w-4" strokeWidth={1.8} />,
-                  onClick: () => setPreview(file),
-                },
-                ...(file.source_type === 'uploaded_file' && file.url
-                  ? [{
-                    key: 'download',
-                    label: t('files.download'),
-                    icon: <Download className="h-4 w-4" strokeWidth={1.8} />,
-                    href: file.url,
-                    download: file.original_name,
-                  }]
-                  : []),
-                {
-                  key: 'delete',
-                  label: t('files.delete'),
-                  icon: <Trash2 className="h-4 w-4" strokeWidth={1.8} />,
-                  danger: true,
-                  disabled: remove.isPending,
-                  onClick: () => handleDelete(file),
-                },
-              ]}
+              getActions={(file) => buildResourceActions(file, {
+                t,
+                isRemoving: remove.isPending,
+                onPreview: () => setPreview(file),
+                onDelete: () => handleDelete(file),
+              })}
             />
           )}
         </section>
@@ -341,6 +321,64 @@ export function FilesPage(): JSX.Element {
       />
     </div>
   );
+}
+
+function buildResourceActions(
+  file: ProjectFile,
+  options: {
+    t: ReturnType<typeof useI18n>['t'];
+    isRemoving: boolean;
+    onPreview: () => void;
+    onDelete: () => void;
+  },
+) {
+  const previewLabel = file.source_type === 'agent_document'
+    ? options.t('files.viewMarkdown')
+    : file.source_type === 'uploaded_file'
+      ? options.t('files.preview')
+      : options.t('files.viewDetails');
+  const deleteLabel = file.source_type === 'agent_document'
+    ? options.t('files.deleteDocument')
+    : options.t('files.deleteFile');
+
+  return [
+    {
+      key: file.source_type === 'agent_document' ? 'view-document' : 'preview',
+      label: previewLabel,
+      icon: file.source_type === 'agent_document'
+        ? <FileSearch className="h-4 w-4" strokeWidth={1.8} />
+        : <Eye className="h-4 w-4" strokeWidth={1.8} />,
+      onClick: options.onPreview,
+    },
+    ...(file.source_type === 'uploaded_file' && file.url
+      ? [{
+        key: 'download',
+        label: options.t('files.download'),
+        icon: <Download className="h-4 w-4" strokeWidth={1.8} />,
+        href: file.url,
+        download: file.original_name,
+      }]
+      : []),
+    {
+      key: 'delete',
+      label: deleteLabel,
+      icon: <Trash2 className="h-4 w-4" strokeWidth={1.8} />,
+      danger: true,
+      disabled: options.isRemoving,
+      onClick: options.onDelete,
+    },
+  ];
+}
+
+function normalizeUploadedFileId(id: string): string {
+  return id.startsWith('file:') ? id.slice('file:'.length) : id;
+}
+
+function getDeleteConfirmMessage(file: ProjectFile, t: ReturnType<typeof useI18n>['t']): string {
+  if (file.source_type === 'agent_document') {
+    return t('files.deleteDocumentConfirm', { name: file.original_name });
+  }
+  return t('files.deleteFileConfirm', { name: file.original_name });
 }
 
 function FilesState({
