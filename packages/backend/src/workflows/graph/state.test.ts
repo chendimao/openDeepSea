@@ -105,3 +105,29 @@ test('parseGraphState preserves Superpowers workflow state fields', () => {
   assert.equal(parsed?.designDocPath, 'docs/superpowers/specs/example.md');
   assert.equal(parsed?.implementationPlanPath, null);
 });
+
+test('parseGraphState preserves Superpowers TDD exemption fields', () => {
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-superpowers-exemption',
+      projectId: 'project-superpowers-exemption',
+      roomId: 'room-superpowers-exemption',
+      taskId: 'task-superpowers-exemption',
+      userGoal: 'Superpowers exemption state',
+      projectPath: tempDir,
+    }),
+    tddExemption: {
+      reason: 'legacy service lacks stable fixture',
+      approvedBy: 'reviewer-2',
+      createdAt: 1710000000000,
+    },
+  };
+
+  const parsed = parseGraphState(serializeGraphState(state));
+
+  assert.deepEqual(parsed?.tddExemption, {
+    reason: 'legacy service lacks stable fixture',
+    approvedBy: 'reviewer-2',
+    createdAt: 1710000000000,
+  });
+});

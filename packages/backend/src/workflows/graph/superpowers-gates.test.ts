@@ -49,16 +49,29 @@ test('canLeaveTddExecute requires RED and GREEN evidence', () => {
   })), true);
 });
 
-test('canLeaveVerify requires fresh passing required verification evidence', () => {
+test('canLeaveTddExecute allows explicit exemption without RED/GREEN evidence', () => {
+  assert.equal(canLeaveTddExecute(buildState({
+    tddEvidence: [],
+    tddExemption: {
+      reason: 'legacy module without deterministic test harness',
+      approvedBy: 'reviewer-1',
+      createdAt: Date.now(),
+    },
+  })), true);
+});
+
+test('canLeaveVerify requires non-empty all-passed verification evidence', () => {
   assert.equal(canLeaveVerify(buildState({ verificationEvidence: [] })), false);
   assert.equal(canLeaveVerify(buildState({
     verificationEvidence: [
+      { command: 'npm run lint', status: 'passed', required: false, fresh: false, recordedAt: null },
       { command: 'npm test', status: 'passed', required: true, fresh: true, recordedAt: null },
     ],
   })), true);
   assert.equal(canLeaveVerify(buildState({
     verificationEvidence: [
-      { command: 'npm test', status: 'passed', required: true, fresh: false, recordedAt: null },
+      { command: 'npm run lint', status: 'failed', required: false, fresh: true, recordedAt: null },
+      { command: 'npm test', status: 'passed', required: true, fresh: true, recordedAt: null },
     ],
   })), false);
 });

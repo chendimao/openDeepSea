@@ -9,6 +9,10 @@ export function canLeaveWritingPlans(state: AgentWorkflowState): boolean {
 }
 
 export function canLeaveTddExecute(state: AgentWorkflowState): boolean {
+  if (state.tddExemption) {
+    return true;
+  }
+
   const evidence = state.tddEvidence ?? [];
   const hasRed = evidence.some((record) => record.stage === 'RED');
   const hasGreen = evidence.some((record) => record.stage === 'GREEN' && record.passed === true);
@@ -18,8 +22,5 @@ export function canLeaveTddExecute(state: AgentWorkflowState): boolean {
 
 export function canLeaveVerify(state: AgentWorkflowState): boolean {
   const evidence = state.verificationEvidence ?? [];
-  const requiredEvidence = evidence.filter((record) => record.required);
-
-  return requiredEvidence.length > 0
-    && requiredEvidence.every((record) => record.status === 'passed' && record.fresh);
+  return evidence.length > 0 && evidence.every((record) => record.status === 'passed');
 }

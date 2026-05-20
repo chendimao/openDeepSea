@@ -61,6 +61,12 @@ export const superpowersTddEvidenceSchema = z.object({
   passed: z.boolean().nullable().default(null),
 });
 
+export const superpowersTddExemptionSchema = z.object({
+  reason: z.string(),
+  approvedBy: z.string().nullable().default(null),
+  createdAt: z.number().nullable().default(null),
+});
+
 export const superpowersReviewSchema = z.object({
   verdict: superpowersReviewVerdictSchema,
   findings: z.array(z.string()).default([]),
@@ -117,7 +123,7 @@ export const workflowPlanTaskJsonSchema = z.object({
   agent_id: z.string().nullable(),
   mode: z.enum(['parallel', 'serial']),
   depends_on: z.array(z.string()),
-  status: z.enum(['pending', 'running', 'completed', 'blocked', 'failed']),
+  status: z.enum(['pending', 'running', 'completed', 'blocked', 'failed', 'skipped']),
   progress: z.number().min(0).max(100),
   result_refs: z.array(z.string()),
 });
@@ -153,6 +159,7 @@ export const agentWorkflowStateSchema = z.object({
   planReviewVerdict: superpowersReviewVerdictSchema.nullable().default(null),
   worktree: superpowersWorktreeSchema.nullable().default(null),
   tddEvidence: z.array(superpowersTddEvidenceSchema).default([]),
+  tddExemption: superpowersTddExemptionSchema.nullable().default(null),
   specComplianceReview: superpowersReviewSchema.nullable().default(null),
   codeQualityReview: superpowersReviewSchema.nullable().default(null),
   verificationEvidence: z.array(superpowersVerificationEvidenceSchema).default([]),
@@ -170,6 +177,7 @@ export type VerificationResult = z.infer<typeof verificationResultSchema>;
 export type SuperpowersReviewVerdict = z.infer<typeof superpowersReviewVerdictSchema>;
 export type SuperpowersWorktree = z.infer<typeof superpowersWorktreeSchema>;
 export type SuperpowersTddEvidence = z.infer<typeof superpowersTddEvidenceSchema>;
+export type SuperpowersTddExemption = z.infer<typeof superpowersTddExemptionSchema>;
 export type SuperpowersReview = z.infer<typeof superpowersReviewSchema>;
 export type SuperpowersVerificationEvidence = z.infer<typeof superpowersVerificationEvidenceSchema>;
 export type SuperpowersFinishBranchDecision = z.infer<typeof superpowersFinishBranchDecisionSchema>;
@@ -195,6 +203,7 @@ export type AgentWorkflowState = Omit<
   | 'planReviewVerdict'
   | 'worktree'
   | 'tddEvidence'
+  | 'tddExemption'
   | 'specComplianceReview'
   | 'codeQualityReview'
   | 'verificationEvidence'
@@ -214,6 +223,7 @@ export type AgentWorkflowState = Omit<
   planReviewVerdict?: SuperpowersReviewVerdict | null;
   worktree?: SuperpowersWorktree | null;
   tddEvidence?: SuperpowersTddEvidence[];
+  tddExemption?: SuperpowersTddExemption | null;
   specComplianceReview?: SuperpowersReview | null;
   codeQualityReview?: SuperpowersReview | null;
   verificationEvidence?: SuperpowersVerificationEvidence[];
@@ -246,6 +256,7 @@ export function emptyAgentWorkflowState(input: {
     planReviewVerdict: null,
     worktree: null,
     tddEvidence: [],
+    tddExemption: null,
     specComplianceReview: null,
     codeQualityReview: null,
     verificationEvidence: [],
