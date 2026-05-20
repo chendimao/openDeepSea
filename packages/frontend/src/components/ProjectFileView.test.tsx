@@ -130,6 +130,9 @@ test('resource detail content hides file actions for agent documents', () => {
 
   assert.match(html, /<h1>执行总结<\/h1>/);
   assert.match(html, /生成时间/);
+  assert.match(html, /文档来源追踪/);
+  assert.match(html, /前端开发工程师/);
+  assert.match(html, /heartbeat workflow 验收 1779231401898/);
   assert.match(html, /来源会话/);
   assert.doesNotMatch(html, /download="执行总结\.md"/);
   assert.doesNotMatch(html, /打开原文件/);
@@ -163,8 +166,46 @@ test('resource detail content shows empty state for blank agent documents', () =
   );
 
   assert.match(html, /该智能体文档暂无内容/);
+  assert.match(html, /文档来源追踪/);
   assert.doesNotMatch(html, /download=/);
   assert.doesNotMatch(html, /打开原文件/);
+});
+
+test('resource detail markdown escapes raw html and blocks unsafe links', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ResourceDetailPreviewContent
+        resource={{
+          ...createAgentDocumentResourceDetail(),
+          content: '# 标题\n\n<script>alert(1)</script>\n\n[危险链接](javascript:alert(1))',
+        }}
+        fallbackFile={createAgentDocument()}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /<h1>标题<\/h1>/);
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /javascript:alert\(1\)/);
+  assert.doesNotMatch(html, /<script>/);
+});
+
+test('fallback agent document detail hides original file actions and keeps source trace', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ProjectFilePreviewContent
+        file={{
+          ...createAgentDocument(),
+          url: '/uploads/files/project-1/generated-summary.md',
+        }}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /文档来源追踪/);
+  assert.match(html, /<h1>执行总结<\/h1>/);
+  assert.doesNotMatch(html, /打开原文件/);
+  assert.doesNotMatch(html, /download="执行总结\.md"/);
 });
 
 test('keyword search matches type and source fields', () => {

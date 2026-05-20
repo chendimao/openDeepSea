@@ -248,7 +248,7 @@ function renderInlineMarkdown(text: string): Array<string | JSX.Element> {
     } else if (match[4] && match[5]) {
       const href = sanitizeMarkdownHref(match[5]);
       tokens.push(href ? (
-        <a key={match.index} href={href} target="_blank" rel="noreferrer">
+        <a key={match.index} href={href} target="_blank" rel="noreferrer noopener">
           {match[4]}
         </a>
       ) : match[4]);
