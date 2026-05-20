@@ -170,6 +170,7 @@ test('resource asset routes create, list, filter, detail, and delete agent docum
     content?: string;
     source_display_name: string | null;
     source_label: string;
+    source_summary: string;
     source_context_id: string | null;
     source_context_name: string | null;
     source_context_type: string | null;
@@ -178,6 +179,7 @@ test('resource asset routes create, list, filter, detail, and delete agent docum
   assert.equal(list[0]?.title, '方案文档');
   assert.equal(list[0]?.source_display_name, '后端开发工程师');
   assert.equal(list[0]?.source_label, '智能体生成');
+  assert.equal(list[0]?.source_summary, '智能体生成 · 后端开发工程师 · Document task');
   assert.equal(list[0]?.source_context_id, task.id);
   assert.equal(list[0]?.source_context_name, task.title);
   assert.equal(list[0]?.source_context_type, 'task');
@@ -191,12 +193,14 @@ test('resource asset routes create, list, filter, detail, and delete agent docum
     metadata: string | null;
     source_display_name: string | null;
     source_label: string;
+    source_summary: string;
     source_context_id: string | null;
   };
   assert.equal(detail.id, created.id);
   assert.equal(detail.content, message.content);
   assert.equal(detail.source_display_name, '后端开发工程师');
   assert.equal(detail.source_label, '智能体生成');
+  assert.equal(detail.source_summary, '智能体生成 · 后端开发工程师 · Document task');
   assert.equal(detail.source_context_id, task.id);
   assert.deepEqual(JSON.parse(detail.metadata ?? '{}'), { summary: '方案' });
 
@@ -233,6 +237,7 @@ test('resource asset list includes uploaded files without breaking existing file
     title: string;
     source_display_name: string | null;
     source_label: string;
+    source_summary: string;
   }>;
 
   assert.ok(assets.some((asset) =>
@@ -244,6 +249,7 @@ test('resource asset list includes uploaded files without breaking existing file
     asset.source_display_name === 'You' &&
     asset.source_label === '用户上传',
   ));
+  assert.equal(assets.find((asset) => asset.id === `file:${file.id}`)?.source_summary, 'You');
   assert.equal(fileRepo.get(file.id)?.deleted_at, null);
 });
 
@@ -356,6 +362,7 @@ test('resource asset routes return unified list and typed detail contracts', asy
     resource_type: string;
     created_by: { id: string | null; name: string | null; type: string };
     source: { type: string; display_name: string | null; context: { id: string; type: string; name: string | null } | null };
+    source_summary: string;
     capabilities: { preview: boolean; download: boolean; markdown: boolean; delete: boolean };
     available_actions: string[];
     content?: string;
@@ -368,6 +375,7 @@ test('resource asset routes return unified list and typed detail contracts', asy
   assert.deepEqual(uploadItem?.capabilities, { preview: true, download: true, markdown: false, delete: false });
   assert.deepEqual(uploadItem?.available_actions, ['preview', 'download']);
   assert.deepEqual(uploadItem?.created_by, { id: 'user', name: 'You', type: 'user' });
+  assert.equal(uploadItem?.source_summary, 'You');
   assert.equal(uploadItem?.source.type, 'user_upload');
   assert.equal(uploadItem?.source.display_name, 'You');
   assert.equal(Object.hasOwn(uploadItem ?? {}, 'content'), false);
@@ -377,6 +385,7 @@ test('resource asset routes return unified list and typed detail contracts', asy
   assert.deepEqual(documentItem?.capabilities, { preview: true, download: false, markdown: true, delete: true });
   assert.deepEqual(documentItem?.available_actions, ['preview', 'view_markdown', 'delete']);
   assert.deepEqual(documentItem?.created_by, { id: 'backend-executor', name: '后端开发工程师', type: 'agent' });
+  assert.equal(documentItem?.source_summary, '智能体生成 · 后端开发工程师 · Unified Room');
   assert.equal(documentItem?.source.type, 'agent');
   assert.equal(documentItem?.source.display_name, '后端开发工程师');
   assert.equal(documentItem?.source.context?.id, room.id);
@@ -401,11 +410,13 @@ test('resource asset routes return unified list and typed detail contracts', asy
     resource_type: string;
     created_by: { id: string | null; name: string | null; type: string };
     available_actions: string[];
+    source_summary: string;
     preview_url: string | null;
     download_url: string | null;
     content: string | null;
   };
   assert.equal(uploadDetail.resource_type, 'uploaded_file');
+  assert.equal(uploadDetail.source_summary, 'You');
   assert.deepEqual(uploadDetail.created_by, { id: 'user', name: 'You', type: 'user' });
   assert.deepEqual(uploadDetail.available_actions, ['preview', 'download']);
   assert.equal(uploadDetail.preview_url, upload.url);
@@ -418,11 +429,13 @@ test('resource asset routes return unified list and typed detail contracts', asy
     resource_type: string;
     created_by: { id: string | null; name: string | null; type: string };
     available_actions: string[];
+    source_summary: string;
     content: string | null;
     preview_url: string | null;
     source: { message_id: string | null };
   };
   assert.equal(documentDetail.resource_type, 'agent_document');
+  assert.equal(documentDetail.source_summary, '智能体生成 · 后端开发工程师 · Unified Room');
   assert.deepEqual(documentDetail.created_by, { id: 'backend-executor', name: '后端开发工程师', type: 'agent' });
   assert.deepEqual(documentDetail.available_actions, ['preview', 'view_markdown', 'delete']);
   assert.equal(documentDetail.content, message.content);
@@ -516,4 +529,106 @@ test('resource asset routes reject source fields outside the project boundary', 
   });
 
   assert.equal(createRes.status, 400);
+});
+
+test('resource asset routes return complete resource payload when repeated agent document registration is deduped', async () => {
+  const project = createProject('dedupe-response');
+  const room = roomRepo.create({ project_id: project.id, name: 'Dedupe Response Room' });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# 重复注册\n\n保持完整来源字段。',
+    message_type: 'agent_stream',
+  });
+
+  const firstRes = await request(`/api/projects/${project.id}/resource-assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_type: 'agent_document',
+      title: '重复注册',
+      content: message.content,
+      mime_type: 'text/markdown',
+      source_message_id: message.id,
+      source_room_id: room.id,
+      source_agent_id: 'backend-executor',
+    }),
+  });
+  assert.equal(firstRes.status, 201);
+  const first = await firstRes.json() as {
+    id: string;
+    created_by: { id: string | null; name: string | null; type: string };
+    source: { display_name: string | null; message_id: string | null };
+  };
+  assert.deepEqual(first.created_by, { id: 'backend-executor', name: '后端开发工程师', type: 'agent' });
+  assert.equal(first.source.display_name, '后端开发工程师');
+  assert.equal(first.source.message_id, message.id);
+
+  const secondRes = await request(`/api/projects/${project.id}/resource-assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_type: 'agent_document',
+      title: '重复注册',
+      content: `${message.content}\n\n- 重放`,
+      mime_type: 'text/markdown',
+      source_message_id: message.id,
+      source_room_id: room.id,
+      source_agent_id: 'backend-executor',
+    }),
+  });
+  assert.equal(secondRes.status, 201);
+  const second = await secondRes.json() as {
+    id: string;
+    created_by: { id: string | null; name: string | null; type: string };
+    source: { display_name: string | null; message_id: string | null };
+  };
+  assert.equal(second.id, first.id);
+  assert.deepEqual(second.created_by, { id: 'backend-executor', name: '后端开发工程师', type: 'agent' });
+  assert.equal(second.source.display_name, '后端开发工程师');
+  assert.equal(second.source.message_id, message.id);
+});
+
+test('resource asset routes normalize blank source message ids without deduping agent documents', async () => {
+  const project = createProject('blank-source-route');
+  const room = roomRepo.create({ project_id: project.id, name: 'Blank Source Route Room' });
+
+  const firstRes = await request(`/api/projects/${project.id}/resource-assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_type: 'agent_document',
+      title: '空白来源 A',
+      content: '# 空白来源 A',
+      mime_type: 'text/markdown',
+      source_message_id: '   ',
+      source_room_id: room.id,
+      source_agent_id: 'backend-executor',
+    }),
+  });
+  assert.equal(firstRes.status, 201);
+  const first = await firstRes.json() as { id: string; source_message_id: string | null; source: { message_id: string | null } };
+  assert.equal(first.source_message_id, null);
+  assert.equal(first.source.message_id, null);
+
+  const secondRes = await request(`/api/projects/${project.id}/resource-assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_type: 'agent_document',
+      title: '空白来源 B',
+      content: '# 空白来源 B',
+      mime_type: 'text/markdown',
+      source_message_id: '',
+      source_room_id: room.id,
+      source_agent_id: 'backend-executor',
+    }),
+  });
+  assert.equal(secondRes.status, 201);
+  const second = await secondRes.json() as { id: string; source_message_id: string | null; source: { message_id: string | null } };
+  assert.notEqual(second.id, first.id);
+  assert.equal(second.source_message_id, null);
+  assert.equal(second.source.message_id, null);
 });

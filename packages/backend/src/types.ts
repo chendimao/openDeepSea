@@ -398,11 +398,22 @@ export interface ResourceCapabilities {
   delete: boolean;
 }
 
+export type ResourceAction = 'preview' | 'download' | 'view_markdown' | 'delete';
+
+export interface ResourceActorInfo {
+  id: string | null;
+  name: string | null;
+  type: 'user' | 'agent';
+}
+
 export interface ResourceListItem extends ResourceAssetListItem {
   resource_type: ResourceAssetType;
   name: string;
+  created_by: ResourceActorInfo;
+  source_summary: string;
   source: ResourceSourceInfo;
   capabilities: ResourceCapabilities;
+  available_actions: ResourceAction[];
   preview_url: string | null;
   download_url: string | null;
 }
@@ -410,8 +421,11 @@ export interface ResourceListItem extends ResourceAssetListItem {
 export interface ResourceDetail extends ResourceAsset {
   resource_type: ResourceAssetType;
   name: string;
+  created_by: ResourceActorInfo;
+  source_summary: string;
   source: ResourceSourceInfo;
   capabilities: ResourceCapabilities;
+  available_actions: ResourceAction[];
   preview_url: string | null;
   download_url: string | null;
 }

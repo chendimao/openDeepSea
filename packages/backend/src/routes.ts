@@ -862,23 +862,42 @@ router.post('/projects/:projectId/resource-assets', (req, res) => {
   const parsed = resourceAssetInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
-    const asset = resourceAssetRepo.create({
-      project_id: req.params.projectId,
-      asset_type: parsed.data.asset_type,
-      group_key: parsed.data.group_key,
-      title: parsed.data.title,
-      content: parsed.data.content,
-      mime_type: parsed.data.mime_type,
-      size: parsed.data.size,
-      url: parsed.data.url,
-      file_id: parsed.data.file_id,
-      source_message_id: parsed.data.source_message_id,
-      source_room_id: parsed.data.source_room_id,
-      source_agent_id: parsed.data.source_agent_id,
-      source_task_id: parsed.data.source_task_id,
-      metadata: parsed.data.metadata,
-    });
-    res.status(201).json(asset);
+    const asset = parsed.data.asset_type === 'agent_document' && parsed.data.source_message_id
+      ? resourceAssetRepo.ensure({
+          project_id: req.params.projectId,
+          asset_type: parsed.data.asset_type,
+          group_key: parsed.data.group_key,
+          title: parsed.data.title,
+          content: parsed.data.content,
+          mime_type: parsed.data.mime_type,
+          size: parsed.data.size,
+          url: parsed.data.url,
+          file_id: parsed.data.file_id,
+          source_message_id: parsed.data.source_message_id,
+          source_room_id: parsed.data.source_room_id,
+          source_agent_id: parsed.data.source_agent_id,
+          source_task_id: parsed.data.source_task_id,
+          metadata: parsed.data.metadata,
+          unique_source_message_id: parsed.data.source_message_id,
+        })
+      : resourceAssetRepo.create({
+          project_id: req.params.projectId,
+          asset_type: parsed.data.asset_type,
+          group_key: parsed.data.group_key,
+          title: parsed.data.title,
+          content: parsed.data.content,
+          mime_type: parsed.data.mime_type,
+          size: parsed.data.size,
+          url: parsed.data.url,
+          file_id: parsed.data.file_id,
+          source_message_id: parsed.data.source_message_id,
+          source_room_id: parsed.data.source_room_id,
+          source_agent_id: parsed.data.source_agent_id,
+          source_task_id: parsed.data.source_task_id,
+          metadata: parsed.data.metadata,
+        });
+    const responseAsset = resourceAssetRepo.getResource(asset.id) ?? asset;
+    res.status(201).json(responseAsset);
   } catch (err) {
     const message = (err as Error).message;
     if (message === 'project not found') return res.status(404).json({ error: message });

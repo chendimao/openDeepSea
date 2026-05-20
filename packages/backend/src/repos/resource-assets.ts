@@ -43,7 +43,8 @@ interface ResourceAssetListFilters {
 
 export const resourceAssetRepo = {
   create(input: ResourceAssetCreateInput): ResourceAsset {
-    validateProjectBoundary(input);
+    const normalizedInput = normalizeSourceFields(input);
+    validateProjectBoundary(normalizedInput);
     const id = nanoid(16);
     const timestamp = now();
     db.prepare(
@@ -63,11 +64,11 @@ export const resourceAssetRepo = {
       input.size ?? null,
       input.url ?? null,
       input.file_id ?? null,
-      input.source_message_id ?? null,
-      input.source_room_id ?? null,
-      input.source_agent_id ?? null,
-      input.source_task_id ?? null,
-      normalizeMetadata(input.metadata),
+      normalizedInput.source_message_id ?? null,
+      normalizedInput.source_room_id ?? null,
+      normalizedInput.source_agent_id ?? null,
+      normalizedInput.source_task_id ?? null,
+      normalizeMetadata(normalizedInput.metadata),
       timestamp,
       timestamp,
     );
@@ -75,15 +76,22 @@ export const resourceAssetRepo = {
   },
 
   ensure(input: ResourceAssetUpsertInput): ResourceAsset {
-    validateProjectBoundary(input);
-    const uniqueSourceMessageId = input.unique_source_message_id ?? input.source_message_id ?? null;
-    if (uniqueSourceMessageId) {
-      const existing = getAgentDocumentBySourceMessage(input.project_id, uniqueSourceMessageId);
-      if (existing) {
-        return existing;
+    const normalizedInput = normalizeSourceFields(input);
+    validateProjectBoundary(normalizedInput);
+    const uniqueSourceMessageId = normalizeNullableText(
+      input.unique_source_message_id ?? normalizedInput.source_message_id ?? null,
+    );
+    if (input.asset_type === 'agent_document' && uniqueSourceMessageId) {
+      try {
+        return this.create(normalizedInput);
+      } catch (error) {
+        if (!isUniqueSourceMessageConflict(error)) throw error;
+        const conflicted = getAgentDocumentBySourceMessage(normalizedInput.project_id, uniqueSourceMessageId);
+        if (!conflicted) throw error;
+        return getAgentDocumentAsset(conflicted.id) ?? conflicted;
       }
     }
-    return this.create(input);
+    return this.create(normalizedInput);
   },
 
   get(id: string): ResourceAsset | undefined {
@@ -123,12 +131,14 @@ export const resourceAssetRepo = {
 
 function toResourceListItem(asset: ResourceAssetListItem): ResourceListItem {
   const capabilities = buildResourceCapabilities(asset.asset_type);
+  const source = buildResourceSource(asset);
   return {
     ...asset,
     resource_type: asset.asset_type,
     name: asset.title,
     created_by: buildResourceActor(asset),
-    source: buildResourceSource(asset),
+    source_summary: buildResourceSourceSummary(asset, source),
+    source,
     capabilities,
     available_actions: buildAvailableActions(capabilities),
     preview_url: asset.asset_type === 'uploaded_file' ? asset.url : null,
@@ -138,12 +148,14 @@ function toResourceListItem(asset: ResourceAssetListItem): ResourceListItem {
 
 function toResourceDetail(asset: ResourceAsset): ResourceDetail {
   const capabilities = buildResourceCapabilities(asset.asset_type);
+  const source = buildResourceSource(asset);
   return {
     ...asset,
     resource_type: asset.asset_type,
     name: asset.title,
     created_by: buildResourceActor(asset),
-    source: buildResourceSource(asset),
+    source_summary: buildResourceSourceSummary(asset, source),
+    source,
     capabilities,
     available_actions: buildAvailableActions(capabilities),
     preview_url: asset.asset_type === 'uploaded_file' ? asset.url : null,
@@ -192,8 +204,27 @@ function buildResourceSource(asset: Pick<
           type: asset.source_context_type,
           name: asset.source_context_name,
         }
-      : null,
+    : null,
   };
+}
+
+function buildResourceSourceSummary(asset: Pick<
+  ResourceAsset,
+  | 'asset_type'
+  | 'source_label'
+  | 'source_display_name'
+  | 'source_agent_id'
+  | 'source_context_name'
+  | 'source_context_type'
+  | 'source_context_id'
+>, source: ResourceSourceInfo): string {
+  if (asset.asset_type === 'uploaded_file') {
+    return source.display_name ?? '用户上传';
+  }
+  const parts = [source.label];
+  if (source.display_name) parts.push(source.display_name);
+  if (source.context?.name) parts.push(source.context.name);
+  return parts.join(' · ');
 }
 
 function buildAvailableActions(capabilities: ResourceCapabilities): ResourceAction[] {
@@ -441,8 +472,27 @@ function normalizeMetadata(metadata: ResourceAssetCreateInput['metadata']): stri
   return typeof metadata === 'string' ? metadata : JSON.stringify(metadata);
 }
 
+function normalizeSourceFields<T extends ResourceAssetCreateInput>(input: T): T {
+  return {
+    ...input,
+    source_message_id: normalizeNullableText(input.source_message_id),
+    source_room_id: normalizeNullableText(input.source_room_id),
+    source_agent_id: normalizeNullableText(input.source_agent_id),
+    source_task_id: normalizeNullableText(input.source_task_id),
+  };
+}
+
+function normalizeNullableText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 function normalizeSearchQuery(query: string | undefined): string | undefined {
   const trimmed = query?.trim();
   if (!trimmed) return undefined;
   return `%${trimmed.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+}
+
+function isUniqueSourceMessageConflict(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('UNIQUE constraint failed: resource_assets.project_id, resource_assets.source_message_id');
 }
