@@ -19,6 +19,8 @@ const app = express();
 app.use(express.json());
 app.use('/api', router);
 
+const originalFetch = globalThis.fetch;
+
 async function request(path: string, init: RequestInit = {}, options: { localToken?: boolean } = {}): Promise<Response> {
   const server = app.listen(0);
   try {
@@ -36,6 +38,26 @@ async function request(path: string, init: RequestInit = {}, options: { localTok
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+}
+
+function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status: init.status ?? 200,
+    headers: {
+      'content-type': 'application/json',
+      ...init.headers,
+    },
+  });
+}
+
+function mockSkillsShFetch(handler: (url: URL) => Response | Promise<Response>): void {
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input.toString() : input.url);
+    if (url.origin === 'https://skills.sh') {
+      return handler(url);
+    }
+    return originalFetch(input, init);
+  }) as typeof fetch;
 }
 
 async function createLocalSkill(name: string, body = 'Follow the local instructions.'): Promise<string> {
@@ -56,6 +78,10 @@ async function createLocalSkill(name: string, body = 'Follow the local instructi
   return dir;
 }
 
+test.afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
 test('skills routes require local access token', async () => {
   const res = await request('/api/skills', {}, { localToken: false });
 
@@ -74,29 +100,29 @@ test('skills routes import, list, detail, patch, bind, preview, and delete local
     id: string;
     name: string;
     install_path?: string;
-    source_uri?: string;
+    source_uri: string | null;
     install_path_set: boolean;
     runtime_scopes: string[];
   };
   assert.equal(imported.name, 'route-skill');
   assert.equal(imported.install_path, undefined);
-  assert.equal(imported.source_uri, undefined);
+  assert.equal(imported.source_uri, sourceDir);
   assert.equal(imported.install_path_set, true);
   assert.deepEqual(imported.runtime_scopes, ['planner']);
 
   const listRes = await request('/api/skills');
   assert.equal(listRes.status, 200);
-  const listed = await listRes.json() as Array<{ id: string; name: string; install_path?: string; source_uri?: string }>;
+  const listed = await listRes.json() as Array<{ id: string; name: string; install_path?: string; source_uri: string | null }>;
   assert.equal(listed.some((skill) => skill.id === imported.id), true);
   assert.equal(listed.find((skill) => skill.id === imported.id)?.install_path, undefined);
-  assert.equal(listed.find((skill) => skill.id === imported.id)?.source_uri, undefined);
+  assert.equal(listed.find((skill) => skill.id === imported.id)?.source_uri, sourceDir);
 
   const detailRes = await request(`/api/skills/${imported.id}`);
   assert.equal(detailRes.status, 200);
-  const detail = await detailRes.json() as { id: string; install_path?: string; source_uri?: string; install_path_set: boolean };
+  const detail = await detailRes.json() as { id: string; install_path?: string; source_uri: string | null; install_path_set: boolean };
   assert.equal(detail.id, imported.id);
   assert.equal(detail.install_path, undefined);
-  assert.equal(detail.source_uri, undefined);
+  assert.equal(detail.source_uri, sourceDir);
   assert.equal(detail.install_path_set, true);
 
   const patchRes = await request(`/api/skills/${imported.id}`, {
@@ -235,6 +261,233 @@ test('skills routes reject missing manifests and unsafe local imports', async ()
   await rm(externalFile, { force: true });
 });
 
+test('skills routes search the public skills.sh marketplace', async () => {
+  const requestedUrls: string[] = [];
+  mockSkillsShFetch(async (url) => {
+    requestedUrls.push(url.toString());
+    return jsonResponse({
+      skills: [
+        {
+          id: 'acme/skills/route-marketplace',
+          skillId: 'route-marketplace',
+          name: 'route-marketplace',
+          source: 'acme/skills',
+          description: 'Marketplace route skill.',
+          installs: '42',
+          version: '1.0.0',
+          revision: 'rev-market',
+        },
+      ],
+    });
+  });
+
+  const res = await request('/api/skills/marketplace?q=route');
+
+  assert.equal(res.status, 200);
+  assert.equal(new URL(requestedUrls[0]!).origin, 'https://skills.sh');
+  assert.equal(new URL(requestedUrls[0]!).pathname, '/api/search');
+  assert.equal(new URL(requestedUrls[0]!).searchParams.get('q'), 'route');
+  const body = await res.json() as Array<{
+    id: string;
+    name: string;
+    skillId: string | null;
+    source: string | null;
+    installLabel: string;
+    description: string | null;
+    installs: number | null;
+    version: string | null;
+    revision: string | null;
+  }>;
+  assert.deepEqual(body, [
+    {
+      id: 'acme/skills/route-marketplace',
+      name: 'route-marketplace',
+      skillId: 'route-marketplace',
+      source: 'acme/skills',
+      installLabel: 'acme/skills/route-marketplace',
+      description: 'Marketplace route skill.',
+      installs: 42,
+      version: '1.0.0',
+      revision: 'rev-market',
+    },
+  ]);
+});
+
+test('skills routes import skills.sh packages, expose executable metadata, check updates, and patch update modes', async () => {
+  const requestedUrls: string[] = [];
+  mockSkillsShFetch(async (url) => {
+    requestedUrls.push(url.toString());
+    if (url.pathname === '/api/download/acme/skills/route-package') {
+      return jsonResponse({
+        id: 'acme/skills/route-package',
+        skillId: 'route-package',
+        source: 'acme/skills',
+        version: '1.0.0',
+        revision: 'rev-1',
+        files: [
+          {
+            path: 'SKILL.md',
+            content: [
+              '---',
+              'name: route-package-skill',
+              'description: Installed through the route.',
+              'runtime_scopes: [workflow]',
+              'trigger_mode: manual',
+              'priority: 60',
+              '---',
+              '',
+              'Run route package.',
+            ].join('\n'),
+          },
+          {
+            path: 'skill.json',
+            content: JSON.stringify({
+              name: 'route-package-skill',
+              description: 'Executable route package.',
+              version: '1.0.0',
+              revision: 'rev-1',
+              runtime: 'shell',
+              entrypoint: 'scripts/run.sh',
+              permissions: {
+                filesystem: 'project',
+                network: false,
+                commands: ['bash'],
+              },
+            }),
+          },
+          {
+            path: 'scripts/run.sh',
+            content: 'echo route-package\n',
+          },
+        ],
+      });
+    }
+    if (url.pathname === '/api/download/acme/skills/route-package-updated') {
+      return jsonResponse({
+        id: 'acme/skills/route-package-updated',
+        skillId: 'route-package-updated',
+        source: 'acme/skills',
+        version: '1.1.0',
+        revision: 'rev-2',
+        files: {
+          'SKILL.md': '# Route Package Updated\n',
+        },
+      });
+    }
+    throw new Error(`unexpected skills.sh request: ${url.pathname}`);
+  });
+
+  const importRes = await request('/api/skills/import/skills-sh', {
+    method: 'POST',
+    body: JSON.stringify({ installLabel: 'acme/skills/route-package' }),
+  });
+  assert.equal(importRes.status, 201);
+  const imported = await importRes.json() as {
+    id: string;
+    source_uri: string | null;
+    package_version: string | null;
+    package_revision: string | null;
+    runtime_type: string | null;
+    entrypoint: string | null;
+    permissions: { filesystem: string; network: boolean; commands: string[] } | null;
+    install_source_label: string | null;
+    update_check_mode: string;
+    update_apply_mode: string;
+    last_update_checked_at: number | null;
+    available_version: string | null;
+    available_revision: string | null;
+  };
+  assert.equal(imported.source_uri, 'skills.sh/acme/skills/route-package');
+  assert.equal(imported.package_version, '1.0.0');
+  assert.equal(imported.package_revision, 'rev-1');
+  assert.equal(imported.runtime_type, 'shell');
+  assert.equal(imported.entrypoint, 'scripts/run.sh');
+  assert.deepEqual(imported.permissions, { filesystem: 'project', network: false, commands: ['bash'] });
+  assert.equal(imported.install_source_label, 'acme/skills/route-package');
+  assert.equal(imported.update_check_mode, 'startup');
+  assert.equal(imported.update_apply_mode, 'prompt');
+  assert.equal(imported.last_update_checked_at, null);
+  assert.equal(imported.available_version, null);
+  assert.equal(imported.available_revision, null);
+
+  const patchRes = await request(`/api/skills/${imported.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      update_check_mode: 'manual',
+      update_apply_mode: 'download',
+    }),
+  });
+  assert.equal(patchRes.status, 200);
+  const patched = await patchRes.json() as { update_check_mode: string; update_apply_mode: string };
+  assert.equal(patched.update_check_mode, 'manual');
+  assert.equal(patched.update_apply_mode, 'download');
+
+  skillRepo.updateSkill(imported.id, {
+    install_source_label: 'acme/skills/route-package-updated',
+    source_uri: 'skills.sh/acme/skills/route-package-updated',
+  });
+  const updateRes = await request(`/api/skills/${imported.id}/updates`);
+  assert.equal(updateRes.status, 200);
+  const update = await updateRes.json() as {
+    skillId: string;
+    hasUpdate: boolean;
+    currentVersion: string | null;
+    currentRevision: string | null;
+    availableVersion: string | null;
+    availableRevision: string | null;
+    checkedAt: number;
+  };
+  assert.equal(update.skillId, imported.id);
+  assert.equal(update.hasUpdate, true);
+  assert.equal(update.currentVersion, '1.0.0');
+  assert.equal(update.currentRevision, 'rev-1');
+  assert.equal(update.availableVersion, '1.1.0');
+  assert.equal(update.availableRevision, 'rev-2');
+  assert.equal(typeof update.checkedAt, 'number');
+
+  const detailRes = await request(`/api/skills/${imported.id}`);
+  assert.equal(detailRes.status, 200);
+  const detail = await detailRes.json() as typeof imported;
+  assert.equal(detail.source_uri, 'skills.sh/acme/skills/route-package-updated');
+  assert.equal(detail.available_version, '1.1.0');
+  assert.equal(detail.available_revision, 'rev-2');
+  assert.equal(typeof detail.last_update_checked_at, 'number');
+
+  const listRes = await request('/api/skills');
+  assert.equal(listRes.status, 200);
+  const list = await listRes.json() as Array<typeof imported>;
+  const listed = list.find((skill) => skill.id === imported.id);
+  assert.ok(listed);
+  assert.equal(listed.source_uri, 'skills.sh/acme/skills/route-package-updated');
+  assert.equal(listed.package_version, '1.0.0');
+  assert.equal(listed.package_revision, 'rev-1');
+  assert.equal(listed.runtime_type, 'shell');
+  assert.equal(listed.entrypoint, 'scripts/run.sh');
+  assert.deepEqual(listed.permissions, { filesystem: 'project', network: false, commands: ['bash'] });
+  assert.equal(listed.install_source_label, 'acme/skills/route-package-updated');
+  assert.equal(listed.update_check_mode, 'manual');
+  assert.equal(listed.update_apply_mode, 'download');
+  assert.equal(listed.available_version, '1.1.0');
+  assert.equal(listed.available_revision, 'rev-2');
+
+  assert.equal(requestedUrls.some((url) => new URL(url).origin !== 'https://skills.sh'), false);
+});
+
+test('skills routes reject update checks for non-skills.sh skills', async () => {
+  const sourceDir = await createLocalSkill('route-local-no-update');
+  const importRes = await request('/api/skills/import/local', {
+    method: 'POST',
+    body: JSON.stringify({ path: sourceDir }),
+  });
+  assert.equal(importRes.status, 201);
+  const imported = await importRes.json() as { id: string };
+
+  const updateRes = await request(`/api/skills/${imported.id}/updates`);
+
+  assert.equal(updateRes.status, 400);
+  const body = await updateRes.json() as { error: string };
+  assert.match(body.error, /only skills\.sh skills/i);
+});
 
 test('skills routes execute skills and list run history', async () => {
   const projectDir = mkdtempSync(join(tmpdir(), 'opendeepsea-skill-route-project-'));
