@@ -18,9 +18,10 @@ const { createGraphNodes } = await import('./nodes.js');
 const { parseGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
 const { continueGraphWorkflow, createGraphWorkflowRun, enqueueGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
+const { SUPERPOWERS_GRAPH_VERSION } = await import('./superpowers-runtime.js');
 import type { RespondAsAgentInput } from '../../dispatcher.js';
 import type { ParsedPlan } from '../plan-parser.js';
-import type { RoomAgent, WorkflowDefinitionGraph, WorkflowStage } from '../../types.js';
+import type { RoomAgent, WorkflowDefinitionGraph, WorkflowRun, WorkflowStage } from '../../types.js';
 
 test('enqueueGraphWorkflow defers graph node execution until after the current turn', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-enqueue-${Date.now()}`);
@@ -180,7 +181,7 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
 
   const detail = workflowRepo.detail(run.id);
   assert.equal(detail?.run.status, 'awaiting_approval');
-  assert.equal(detail?.run.graph_version, 'phase-b-v1');
+  assert.equal(detail?.run.graph_version, SUPERPOWERS_GRAPH_VERSION);
   assert.ok(detail?.run.graph_state);
   assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'plan'));
   assert.ok(detail?.steps.some((step) => step.node_name === 'context'));
@@ -216,7 +217,57 @@ test('planning node passes planner and workflow skill context to graph planner',
   assert.match(capturedSkillContext, /Skill: graph-planner-skill/);
 });
 
-test('createGraphWorkflowRun records selected room workflow definition snapshot', () => {
+test('startGraphWorkflow always records Superpowers definition and runtime profile for new runs', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-entry-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Entry', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Entry Room' });
+  const legacyDefinition = createPublishedRoomWorkflow(room.id, 'Legacy Room Default Workflow');
+  settingsRepo.updateRoom(room.id, { default_workflow_definition_id: legacyDefinition.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Route new run through Superpowers',
+  });
+  const superpowersDefinition = workflowDefinitionRepo.getBuiltInByKey('superpowers-development');
+  assert.ok(superpowersDefinition);
+
+  let supervisorCalls = 0;
+  let supervisorWorkflowDefinitionIds: string[] = [];
+  const run = await startGraphWorkflow(task.id, {
+    supervisor: async (input) => {
+      supervisorCalls += 1;
+      supervisorWorkflowDefinitionIds = input.workflowDefinitions.map((definition) => definition.id);
+      return {
+        mode: 'select_existing_workflow',
+        workflowDefinitionId: legacyDefinition.id,
+        confidence: 0.99,
+        reason: 'Legacy selection should be ignored for new workflow runs.',
+        assignments: [],
+        fallbackMode: 'default_workflow',
+      };
+    },
+    planner: async () => createApprovalPlan(task.title),
+  });
+  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as {
+    builtinKey?: string | null;
+    definition?: WorkflowDefinitionGraph;
+    supervisorDecision?: unknown;
+  };
+  const state = parseGraphState(run.graph_state);
+
+  assert.equal(supervisorCalls, 1);
+  assert.deepEqual(supervisorWorkflowDefinitionIds, [superpowersDefinition.id]);
+  assert.equal(run.workflow_definition_id, superpowersDefinition.id);
+  assert.equal(run.workflow_definition_version, superpowersDefinition.version);
+  assert.equal(run.graph_version, SUPERPOWERS_GRAPH_VERSION);
+  assert.equal(snapshot.builtinKey, 'superpowers-development');
+  assert.equal(snapshot.definition?.metadata?.runtime_profile, 'superpowers');
+  assert.equal(snapshot.supervisorDecision, undefined);
+  assert.equal(state?.runtimeProfile, 'superpowers');
+});
+
+test('createGraphWorkflowRun ignores room default workflow and records Superpowers snapshot', () => {
   const projectPath = join(tmpdir(), `graph-runtime-definition-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Definition', path: projectPath });
@@ -238,9 +289,8 @@ test('createGraphWorkflowRun records selected room workflow definition snapshot'
 
   const run = createGraphWorkflowRun(task.id);
 
-  assert.equal(run.workflow_definition_id, definition.id);
-  assert.equal(run.workflow_definition_version, definition.version);
-  assert.match(run.workflow_definition_snapshot ?? '', /Room Defined Workflow/);
+  assert.notEqual(run.workflow_definition_id, definition.id);
+  assertSuperpowersWorkflowRun(run);
 });
 
 test('startGraphWorkflow passes workflow skill context to supervisor model', async () => {
@@ -280,11 +330,12 @@ test('startGraphWorkflow passes workflow skill context to supervisor model', asy
     planner: async () => createApprovalPlan(task.title),
   });
 
-  assert.equal(run.workflow_definition_id, workflow.id);
+  assert.notEqual(run.workflow_definition_id, workflow.id);
+  assertSuperpowersWorkflowRun(run);
   assert.match(capturedSkillContext, /Skill: workflow-supervisor-skill/);
 });
 
-test('startGraphWorkflow uses high-confidence supervisor workflow choice', async () => {
+test('startGraphWorkflow ignores high-confidence supervisor workflow choice for new runs', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-supervisor-choice-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Supervisor Choice', path: projectPath });
@@ -307,14 +358,15 @@ test('startGraphWorkflow uses high-confidence supervisor workflow choice', async
     }),
     planner: async () => createApprovalPlan(task.title),
   });
-  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: { reason?: string } };
+  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
-  assert.equal(run.workflow_definition_id, selected.id);
-  assert.match(run.workflow_definition_snapshot ?? '', /Supervisor Selected Workflow/);
-  assert.equal(snapshot.supervisorDecision?.reason, 'The selected workflow matches the task.');
+  assert.notEqual(run.workflow_definition_id, selected.id);
+  assertSuperpowersWorkflowRun(run);
+  assert.doesNotMatch(run.workflow_definition_snapshot ?? '', /Supervisor Selected Workflow/);
+  assert.equal(snapshot.supervisorDecision, undefined);
 });
 
-test('startGraphWorkflow falls back to default workflow on low confidence, invisible workflow, and supervisor failure', async () => {
+test('startGraphWorkflow keeps Superpowers workflow on low confidence, invisible workflow, and supervisor failure', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-supervisor-fallback-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Supervisor Fallback', path: projectPath });
@@ -339,7 +391,8 @@ test('startGraphWorkflow falls back to default workflow on low confidence, invis
     }),
     planner: async () => createApprovalPlan(lowConfidenceTask.title),
   });
-  assert.equal(lowConfidenceRun.workflow_definition_id, defaultDefinition.id);
+  assert.notEqual(lowConfidenceRun.workflow_definition_id, defaultDefinition.id);
+  assertSuperpowersWorkflowRun(lowConfidenceRun);
 
   const invisibleTask = taskRepo.create({
     room_id: room.id,
@@ -357,7 +410,8 @@ test('startGraphWorkflow falls back to default workflow on low confidence, invis
     }),
     planner: async () => createApprovalPlan(invisibleTask.title),
   });
-  assert.equal(invisibleRun.workflow_definition_id, defaultDefinition.id);
+  assert.notEqual(invisibleRun.workflow_definition_id, defaultDefinition.id);
+  assertSuperpowersWorkflowRun(invisibleRun);
 
   const failedTask = taskRepo.create({
     room_id: room.id,
@@ -370,18 +424,17 @@ test('startGraphWorkflow falls back to default workflow on low confidence, invis
     },
     planner: async () => createApprovalPlan(failedTask.title),
   });
-  assert.equal(failedRun.workflow_definition_id, defaultDefinition.id);
+  assert.notEqual(failedRun.workflow_definition_id, defaultDefinition.id);
+  assertSuperpowersWorkflowRun(failedRun);
 });
 
-test('startGraphWorkflow falls back to analysis document workflow for analysis-only tasks', async () => {
+test('startGraphWorkflow keeps Superpowers workflow for analysis-only tasks', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-analysis-intent-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Analysis Intent Fallback', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Analysis Intent Room' });
   const defaultDefinition = createPublishedRoomWorkflow(room.id, 'Room Default Workflow');
   settingsRepo.updateRoom(room.id, { default_workflow_definition_id: defaultDefinition.id });
-  const analysisDefinition = workflowDefinitionRepo.getBuiltInByKey('analysis-document');
-  assert.ok(analysisDefinition);
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -400,21 +453,20 @@ test('startGraphWorkflow falls back to analysis document workflow for analysis-o
     }),
     planner: async () => createApprovalPlan(task.title),
   });
-  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: { fallbackReason?: string } };
+  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
-  assert.equal(run.workflow_definition_id, analysisDefinition.id);
-  assert.match(run.workflow_definition_snapshot ?? '', /方案文档闭环/);
-  assert.equal(snapshot.supervisorDecision?.fallbackReason, 'low_confidence');
+  assert.notEqual(run.workflow_definition_id, defaultDefinition.id);
+  assertSuperpowersWorkflowRun(run);
+  assert.doesNotMatch(run.workflow_definition_snapshot ?? '', /方案文档闭环/);
+  assert.equal(snapshot.supervisorDecision, undefined);
 });
 
-test('startGraphWorkflow overrides high-confidence development workflow selection for analysis-only tasks', async () => {
+test('startGraphWorkflow ignores high-confidence development workflow selection for analysis-only tasks', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-analysis-override-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Analysis Intent Override', path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Analysis Intent Override Room' });
   const defaultDefinition = workflowDefinitionRepo.ensureBuiltInDefinitions();
-  const analysisDefinition = workflowDefinitionRepo.getBuiltInByKey('analysis-document');
-  assert.ok(analysisDefinition);
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
@@ -433,11 +485,12 @@ test('startGraphWorkflow overrides high-confidence development workflow selectio
     }),
     planner: async () => createApprovalPlan(task.title),
   });
-  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: { fallbackReason?: string } };
+  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
-  assert.equal(run.workflow_definition_id, analysisDefinition.id);
-  assert.match(run.workflow_definition_snapshot ?? '', /方案文档闭环/);
-  assert.equal(snapshot.supervisorDecision?.fallbackReason, 'intent_mismatch');
+  assert.notEqual(run.workflow_definition_id, defaultDefinition.id);
+  assertSuperpowersWorkflowRun(run);
+  assert.doesNotMatch(run.workflow_definition_snapshot ?? '', /方案文档闭环/);
+  assert.equal(snapshot.supervisorDecision, undefined);
 });
 
 test('supervisor assignment hint can assign implementation child task to executable agent', async () => {
@@ -1747,6 +1800,23 @@ function createApprovalPlan(title: string): ParsedPlan {
     risks: [],
     needsApproval: true,
   };
+}
+
+function assertSuperpowersWorkflowRun(run: WorkflowRun): void {
+  const superpowersDefinition = workflowDefinitionRepo.getBuiltInByKey('superpowers-development');
+  assert.ok(superpowersDefinition);
+  const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as {
+    builtinKey?: string | null;
+    definition?: WorkflowDefinitionGraph;
+  };
+  const state = parseGraphState(run.graph_state);
+
+  assert.equal(run.workflow_definition_id, superpowersDefinition.id);
+  assert.equal(run.workflow_definition_version, superpowersDefinition.version);
+  assert.equal(run.graph_version, SUPERPOWERS_GRAPH_VERSION);
+  assert.equal(snapshot.builtinKey, 'superpowers-development');
+  assert.equal(snapshot.definition?.metadata?.runtime_profile, 'superpowers');
+  assert.equal(state?.runtimeProfile, 'superpowers');
 }
 
 function flushImmediate(): Promise<void> {

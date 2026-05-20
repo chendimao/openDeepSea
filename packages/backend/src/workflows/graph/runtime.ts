@@ -2,17 +2,23 @@ import { Annotation, END, MemorySaver, START, StateGraph } from '@langchain/lang
 import { agentRunRepo } from '../../repos/agent-runs.js';
 import { projectRepo } from '../../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
-import { settingsRepo } from '../../repos/settings.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowDefinitionRepo } from '../../repos/workflow-definitions.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { runRegistry } from '../../run-registry.js';
 import { recordTaskEvent } from '../../task-conversation.js';
-import type { TaskExecutionIntent, WorkflowDefinition, WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
-import { generateWorkflowSupervisorDecision, type WorkflowSupervisorDecision } from '../supervisor.js';
+import type { WorkflowDefinition, WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
+import type { WorkflowSupervisorDecision } from '../supervisor.js';
 import { createGraphNodes } from './nodes.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
 import { emptyAgentWorkflowState, parseGraphState, serializeGraphState, type AgentWorkflowState } from './state.js';
+import {
+  buildSuperpowersRuntimeGraph,
+  isSuperpowersDefinitionGraph,
+  SUPERPOWERS_GRAPH_VERSION,
+  SUPERPOWERS_RUNTIME_PROFILE,
+  SUPERPOWERS_WORKFLOW_DEFINITION_KEY,
+} from './superpowers-runtime.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 
 const GraphState = Annotation.Root({
@@ -49,26 +55,11 @@ type WorkflowDefinitionSnapshot = {
   builtinKey: string | null;
   version: number;
   definition: WorkflowDefinitionGraph;
-  supervisorDecision?: WorkflowSupervisorAudit;
 };
-
-type WorkflowSupervisorAudit = WorkflowSupervisorDecision & {
-  usedWorkflowDefinitionId: string;
-  fallbackReason: WorkflowSelectionFallbackReason | null;
-  error?: string;
-};
-
-type WorkflowSelectionFallbackReason =
-  | 'low_confidence'
-  | 'workflow_not_visible'
-  | 'unsupported_mode'
-  | 'missing_workflow_definition'
-  | 'intent_mismatch'
-  | 'supervisor_failed';
 
 type WorkflowDefinitionSelection = {
   definition: WorkflowDefinition;
-  supervisorDecision?: WorkflowSupervisorAudit;
+  supervisorAssignments?: WorkflowSupervisorDecision['assignments'];
 };
 
 function requireTaskContext(taskId: string) {
@@ -127,7 +118,7 @@ export function createGraphWorkflowRun(taskId: string, selection?: WorkflowDefin
   const { task, room, project } = requireTaskContext(taskId);
   const existing = workflowRepo.getActiveByTask(task.id);
   if (existing) throw new Error('task already has an active workflow');
-  const workflowSelection = selection ?? getDefaultWorkflowDefinitionSelection(room.id);
+  const workflowSelection = resolveSuperpowersWorkflowDefinitionSelection(selection?.supervisorAssignments);
   const definition = workflowSelection.definition;
 
   const pendingState = emptyAgentWorkflowState({
@@ -146,7 +137,7 @@ export function createGraphWorkflowRun(taskId: string, selection?: WorkflowDefin
     status: 'running',
     current_stage: 'planning',
     approval_required: true,
-    graph_version: 'phase-b-v1',
+    graph_version: SUPERPOWERS_GRAPH_VERSION,
     graph_state: serializeGraphState(pendingState),
     workflow_definition_id: definition.id,
     workflow_definition_version: definition.version,
@@ -156,9 +147,8 @@ export function createGraphWorkflowRun(taskId: string, selection?: WorkflowDefin
   const initialState: AgentWorkflowState = {
     ...pendingState,
     workflowRunId: run.id,
-    supervisorAssignments: workflowSelection.supervisorDecision?.fallbackReason === null
-      ? workflowSelection.supervisorDecision.assignments
-      : [],
+    runtimeProfile: SUPERPOWERS_RUNTIME_PROFILE,
+    supervisorAssignments: workflowSelection.supervisorAssignments ?? [],
   };
   workflowRepo.updateGraphState(run.id, serializeGraphState(initialState));
   return workflowRepo.getRun(run.id) ?? run;
@@ -174,13 +164,36 @@ async function resolveWorkflowDefinitionForTask(
   taskId: string,
   deps: GraphRuntimeDeps,
 ): Promise<WorkflowDefinitionSelection> {
+  const definition = resolveSuperpowersWorkflowDefinition();
+  const supervisorAssignments = await resolveSupervisorAssignmentsForTask(taskId, deps, definition);
+  return { definition, supervisorAssignments };
+}
+
+function resolveSuperpowersWorkflowDefinitionSelection(
+  supervisorAssignments: WorkflowSupervisorDecision['assignments'] = [],
+): WorkflowDefinitionSelection {
+  return {
+    definition: resolveSuperpowersWorkflowDefinition(),
+    supervisorAssignments,
+  };
+}
+
+function resolveSuperpowersWorkflowDefinition(): WorkflowDefinition {
+  const definition = workflowDefinitionRepo.getBuiltInByKey(SUPERPOWERS_WORKFLOW_DEFINITION_KEY);
+  if (!definition) throw new Error('superpowers-development workflow definition not found');
+  return definition;
+}
+
+async function resolveSupervisorAssignmentsForTask(
+  taskId: string,
+  deps: GraphRuntimeDeps,
+  definition: WorkflowDefinition,
+): Promise<WorkflowSupervisorDecision['assignments']> {
+  if (!deps.supervisor) return [];
   const { task, room, project } = requireTaskContext(taskId);
-  const defaultSelection = getFallbackWorkflowDefinitionSelection(room.id, task.description);
-  const supervisor = deps.supervisor ?? ((input, options) => generateWorkflowSupervisorDecision(input, undefined, options));
   const tools = createGraphTools(deps);
 
   try {
-    const visibleDefinitions = workflowDefinitionRepo.listVisibleForRoom(room.id);
     const skillContext = await tools.buildSkillContext({
       runtimeScopes: ['workflow'],
       projectId: project.id,
@@ -188,150 +201,30 @@ async function resolveWorkflowDefinitionForTask(
       message: [
         task.title,
         task.description ?? '',
-        visibleDefinitions.map((definition) => `${definition.name}: ${definition.description ?? ''}`).join('\n'),
+        `${definition.name}: ${definition.description ?? ''}`,
       ].filter(Boolean).join('\n\n'),
     });
-    const decision = await supervisor({
+    const decision = await deps.supervisor({
       project,
       room,
       task,
       agents: roomAgentRepo.listByRoom(room.id),
-      workflowDefinitions: visibleDefinitions,
+      workflowDefinitions: [definition],
     }, { skillContext });
-    const selected = selectWorkflowDefinitionFromSupervisorDecision(room.id, visibleDefinitions, decision);
-    if (selected.definition) {
-      const intentMismatchFallback = selectIntentMismatchFallback(task.description, selected.definition);
-      if (intentMismatchFallback) {
-        return {
-          ...intentMismatchFallback,
-          supervisorDecision: createSupervisorAudit(decision, intentMismatchFallback.definition.id, 'intent_mismatch'),
-        };
-      }
-      return {
-        definition: selected.definition,
-        supervisorDecision: createSupervisorAudit(decision, selected.definition.id, null),
-      };
-    }
-    return {
-      ...defaultSelection,
-      supervisorDecision: createSupervisorAudit(decision, defaultSelection.definition.id, selected.fallbackReason),
-    };
-  } catch (err) {
-    return {
-      ...defaultSelection,
-      supervisorDecision: createSupervisorFailureAudit(defaultSelection.definition.id, err),
-    };
+    return decision.confidence >= SUPERVISOR_CONFIDENCE_THRESHOLD ? decision.assignments : [];
+  } catch {
+    return [];
   }
-}
-
-function selectIntentMismatchFallback(
-  taskDescription: string | null,
-  selectedDefinition: WorkflowDefinition,
-): WorkflowDefinitionSelection | null {
-  const executionIntent = extractTaskExecutionIntent(taskDescription);
-  if (!executionIntent || isImplementationIntent(executionIntent)) return null;
-  if (!isDevelopmentWorkflowDefinition(selectedDefinition)) return null;
-  const analysisDefinition = workflowDefinitionRepo.getBuiltInByKey('analysis-document');
-  return analysisDefinition ? { definition: analysisDefinition } : null;
-}
-
-function isDevelopmentWorkflowDefinition(definition: WorkflowDefinition): boolean {
-  return definition.definition.nodes.some((node) =>
-    node.type === 'execute' || node.type === 'review' || node.type === 'verify',
-  );
-}
-
-function getDefaultWorkflowDefinitionSelection(roomId: string): WorkflowDefinitionSelection {
-  const defaultDefinitionId = settingsRepo.resolveForRoom(roomId)?.effective.default_workflow_definition_id;
-  return {
-    definition: workflowDefinitionRepo.getPublishedForRoomOrDefault(defaultDefinitionId, roomId),
-  };
-}
-
-function getFallbackWorkflowDefinitionSelection(roomId: string, taskDescription: string | null): WorkflowDefinitionSelection {
-  const executionIntent = extractTaskExecutionIntent(taskDescription);
-  if (executionIntent && !isImplementationIntent(executionIntent)) {
-    const analysisDefinition = workflowDefinitionRepo.getBuiltInByKey('analysis-document');
-    if (analysisDefinition) return { definition: analysisDefinition };
-  }
-  return getDefaultWorkflowDefinitionSelection(roomId);
-}
-
-function extractTaskExecutionIntent(value: string | null): TaskExecutionIntent | null {
-  if (!value) return null;
-  const match = value.match(/任务意图[：:]\s*(analysis_only|planning_only|documentation_only|implementation|debug_fix|review_only)/);
-  return match ? match[1] as TaskExecutionIntent : null;
-}
-
-function isImplementationIntent(value: TaskExecutionIntent): boolean {
-  return value === 'implementation' || value === 'debug_fix';
-}
-
-function selectWorkflowDefinitionFromSupervisorDecision(
-  roomId: string,
-  visibleDefinitions: WorkflowDefinition[],
-  decision: WorkflowSupervisorDecision,
-): { definition: WorkflowDefinition; fallbackReason: null } | {
-  definition: null;
-  fallbackReason: WorkflowSelectionFallbackReason;
-} {
-  if (decision.mode !== 'select_existing_workflow') {
-    return { definition: null, fallbackReason: 'unsupported_mode' };
-  }
-  if (decision.confidence < SUPERVISOR_CONFIDENCE_THRESHOLD) {
-    return { definition: null, fallbackReason: 'low_confidence' };
-  }
-  if (!decision.workflowDefinitionId) {
-    return { definition: null, fallbackReason: 'missing_workflow_definition' };
-  }
-  if (!workflowDefinitionRepo.isVisibleForRoom(decision.workflowDefinitionId, roomId)) {
-    return { definition: null, fallbackReason: 'workflow_not_visible' };
-  }
-  const definition = visibleDefinitions.find((item) => item.id === decision.workflowDefinitionId)
-    ?? workflowDefinitionRepo.get(decision.workflowDefinitionId);
-  return definition
-    ? { definition, fallbackReason: null }
-    : { definition: null, fallbackReason: 'missing_workflow_definition' };
 }
 
 function createWorkflowDefinitionSnapshot(selection: WorkflowDefinitionSelection): WorkflowDefinitionSnapshot {
-  const snapshot: WorkflowDefinitionSnapshot = {
+  return {
     id: selection.definition.id,
     name: selection.definition.name,
     description: selection.definition.description,
     builtinKey: selection.definition.builtin_key,
     version: selection.definition.version,
     definition: selection.definition.definition,
-  };
-  if (selection.supervisorDecision) {
-    snapshot.supervisorDecision = selection.supervisorDecision;
-  }
-  return snapshot;
-}
-
-function createSupervisorAudit(
-  decision: WorkflowSupervisorDecision,
-  usedWorkflowDefinitionId: string,
-  fallbackReason: WorkflowSelectionFallbackReason | null,
-): WorkflowSupervisorAudit {
-  return {
-    ...decision,
-    usedWorkflowDefinitionId,
-    fallbackReason,
-  };
-}
-
-function createSupervisorFailureAudit(usedWorkflowDefinitionId: string, err: unknown): WorkflowSupervisorAudit {
-  return {
-    mode: 'use_default_workflow',
-    workflowDefinitionId: null,
-    confidence: 0,
-    reason: 'Workflow Supervisor failed; using default workflow.',
-    assignments: [],
-    fallbackMode: 'default_workflow',
-    usedWorkflowDefinitionId,
-    fallbackReason: 'supervisor_failed',
-    error: err instanceof Error ? err.message : String(err),
   };
 }
 
@@ -813,7 +706,13 @@ async function resumeGraphWorkflowFromState(
     ...tools,
     getWorkflowPromptKind: () => inferWorkflowPromptKind(snapshot),
   });
-  const routePlan = compileRoutePlan(snapshot?.definition ?? workflowDefinitionRepo.ensureBuiltInDefinitions().definition);
+  const runtimeGraph = isSuperpowersDefinitionGraph(snapshot?.definition)
+    ? buildSuperpowersRuntimeGraph(deps)
+    : null;
+  const routeDefinition = runtimeGraph?.executableDefinition
+    ?? snapshot?.definition
+    ?? workflowDefinitionRepo.ensureBuiltInDefinitions().definition;
+  const routePlan = compileRoutePlan(routeDefinition);
   let nextState = state;
   let nodeToRun = nextNodeAfter(null, nextState, routePlan);
 
