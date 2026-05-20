@@ -39,6 +39,53 @@ test('resource list adapter preserves uploaded file fields for library UI', () =
   assert.equal(file.url, '/uploads/files/project-1/screen.png');
 });
 
+test('resource list adapter preserves uploaded file reference metadata', () => {
+  const file = resourceListItemToProjectFile(createResourceListItem({
+    id: 'file:file-1',
+    asset_type: 'uploaded_file',
+    resource_type: 'uploaded_file',
+    group_key: 'uploaded_files',
+    title: 'screen.png',
+    name: 'screen.png',
+    mime_type: 'image/png',
+    size: 128,
+    url: '/uploads/files/project-1/screen.png',
+    file_id: 'file-1',
+    source_agent_id: 'user',
+    source_display_name: '大哥',
+    source_context_id: 'room-1',
+    source_context_name: '功能开发',
+    source_context_type: 'room',
+    source: {
+      type: 'user_upload',
+      label: '用户上传',
+      display_name: '大哥',
+      agent_id: null,
+      user_id: 'user',
+      message_id: null,
+      room_id: 'room-1',
+      task_id: null,
+      context: {
+        id: 'room-1',
+        type: 'room',
+        name: '功能开发',
+      },
+    },
+    reference_count: 3,
+    last_referenced_at: 123,
+    last_referenced_message_id: 'message-3',
+    last_referenced_room_id: 'room-1',
+    last_referenced_room_name: '功能开发',
+  }));
+
+  assert.equal(file.reference_count, 3);
+  assert.equal(file.last_referenced_at, 123);
+  assert.equal(file.last_referenced_message_id, 'message-3');
+  assert.equal(file.last_referenced_room_id, 'room-1');
+  assert.equal(file.last_referenced_room_name, '功能开发');
+  assert.equal(file.source_room_id, 'room-1');
+});
+
 test('resource list adapter preserves agent document source fields and old-data fallbacks', () => {
   const document = resourceListItemToProjectFile(createResourceListItem({
     id: 'asset-1',

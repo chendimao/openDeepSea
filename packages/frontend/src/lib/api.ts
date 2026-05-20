@@ -129,6 +129,8 @@ export function resourceListItemToProjectFile(resource: ResourceListItem): Proje
   const sourceType = normalizeResourceType(resource.resource_type ?? resource.asset_type);
   const sourceContext = resource.source?.context ?? null;
   const fileId = resource.file_id ?? (sourceType === 'uploaded_file' ? stripFilePrefix(resource.id) : null);
+  const sourceMessageId = resource.source?.message_id ?? resource.source_message_id;
+  const sourceRoomId = resource.source?.room_id ?? resource.source_room_id;
 
   return {
     id: sourceType === 'uploaded_file' && fileId ? `file:${fileId}` : resource.id,
@@ -142,8 +144,8 @@ export function resourceListItemToProjectFile(resource: ResourceListItem): Proje
     storage_path: '',
     uploaded_by_id: sourceType === 'uploaded_file' ? resource.source?.user_id ?? resource.source_agent_id : null,
     uploaded_by_name: sourceType === 'uploaded_file' ? resource.source?.display_name ?? resource.source_display_name : null,
-    source_message_id: resource.source?.message_id ?? resource.source_message_id,
-    source_room_id: resource.source?.room_id ?? resource.source_room_id,
+    source_message_id: sourceMessageId,
+    source_room_id: sourceRoomId,
     source_agent_id: sourceType === 'agent_document'
       ? resource.source?.agent_id ?? resource.source_agent_id
       : resource.source?.user_id ?? resource.source_agent_id,
@@ -151,11 +153,12 @@ export function resourceListItemToProjectFile(resource: ResourceListItem): Proje
     content: null,
     created_at: resource.created_at,
     deleted_at: resource.deleted_at,
-    reference_count: resource.source?.message_id ? 1 : 0,
-    last_referenced_at: resource.source?.message_id ? resource.created_at : null,
-    last_referenced_message_id: resource.source?.message_id ?? resource.source_message_id,
-    last_referenced_room_id: resource.source?.room_id ?? resource.source_room_id,
-    last_referenced_room_name: sourceContext?.name
+    reference_count: resource.reference_count ?? (sourceMessageId ? 1 : 0),
+    last_referenced_at: resource.last_referenced_at ?? (sourceMessageId ? resource.created_at : null),
+    last_referenced_message_id: resource.last_referenced_message_id ?? sourceMessageId,
+    last_referenced_room_id: resource.last_referenced_room_id ?? sourceRoomId,
+    last_referenced_room_name: resource.last_referenced_room_name
+      ?? sourceContext?.name
       ?? resource.source_context_name
       ?? null,
   };

@@ -472,6 +472,11 @@ export interface ResourceListItem {
   capabilities: ResourceCapabilities;
   preview_url: string | null;
   download_url: string | null;
+  reference_count?: number;
+  last_referenced_at?: number | null;
+  last_referenced_message_id?: string | null;
+  last_referenced_room_id?: string | null;
+  last_referenced_room_name?: string | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
