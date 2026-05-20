@@ -229,7 +229,7 @@ test('task flow renders review target and acceptance target labels', () => {
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
-  assert.match(html, /任务流转/);
+  assert.match(html, /workflow-flow-sidebar/);
   assert.match(html, /审查 \/ 验收/);
   assert.match(html, /完成/);
   assert.match(html, /任务列表/);
@@ -251,7 +251,7 @@ test('workflow bubble renders dual-column orchestration layout', () => {
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
-  assert.match(html, /任务流转/);
+  assert.match(html, /workflow-flow-layout/);
   assert.match(html, /按智能体查看执行结果/);
   assert.match(html, /计划 \/ 分析/);
   assert.match(html, /执行层/);
@@ -333,16 +333,17 @@ test('task flow renders staged board controls and row actions', () => {
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
-  assert.match(html, /全部状态/);
-  assert.match(html, /整体进度/);
+  assert.match(html, /执行日志/);
   assert.doesNotMatch(html, /添加任务/);
   assert.match(html, /workflow-flow-overview/);
-  assert.match(html, /workflow-flow-progress-card/);
-  assert.match(html, /workflow-flow-detail-shell/);
+  assert.match(html, /workflow-flow-sidebar/);
+  assert.doesNotMatch(html, /workflow-flow-progress-card/);
+  assert.doesNotMatch(html, /workflow-flow-detail-shell/);
   assert.doesNotMatch(html, /workflow-flow-substage-panel/);
   assert.match(html, /workflow-flow-detail-panel/);
   assert.match(html, /任务列表/);
   assert.match(html, /workflow-event-stack/);
+  assert.equal(html.match(/workflow-event-stack/g)?.length, 1);
   assert.match(html, /Workflow Plan/);
   assert.doesNotMatch(html, /workflow-flow-task-card-title">计划</);
 });
