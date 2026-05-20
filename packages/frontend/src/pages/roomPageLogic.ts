@@ -1,4 +1,5 @@
-import type { Message, TaskExecutionIntent } from '../lib/types';
+import { parseMessageMetadata } from '../lib/messageMetadata';
+import type { Message, MessageMetadata, TaskExecutionIntent } from '../lib/types';
 
 export interface ReplyTarget {
   messageId: string;
@@ -12,6 +13,11 @@ export interface TaskReadinessActionState {
   description: string;
   primaryLabel: string;
   pendingLabel: string;
+}
+
+export interface WorkflowEventRenderState {
+  key: string | null;
+  showTaskCard: boolean;
 }
 
 export function createDefaultReplyTarget(
@@ -46,6 +52,35 @@ export function getTaskReadinessActionState(intent: TaskExecutionIntent | undefi
     primaryLabel: implementationIntent ? '开始任务' : '继续沟通',
     pendingLabel: '启动中',
   };
+}
+
+export function createWorkflowEventRenderStateMap(messages: Message[]): Map<string, WorkflowEventRenderState> {
+  const renderStateByMessageId = new Map<string, WorkflowEventRenderState>();
+  const seenKeys = new Set<string>();
+
+  for (const message of [...messages].sort((a, b) => a.created_at - b.created_at)) {
+    if (message.sender_type !== 'system') continue;
+    const metadata = parseMessageMetadata(message.metadata);
+    if (!isWorkflowEventMetadata(metadata)) continue;
+
+    const key = createWorkflowEventAggregationKey(message, metadata);
+    const showTaskCard = Boolean(key && !seenKeys.has(key));
+    if (key) seenKeys.add(key);
+    renderStateByMessageId.set(message.id, { key, showTaskCard });
+  }
+
+  return renderStateByMessageId;
+}
+
+function isWorkflowEventMetadata(metadata: MessageMetadata): boolean {
+  return Boolean(metadata.event_type?.startsWith('workflow_') && (metadata.workflow_run_id || metadata.task_id));
+}
+
+function createWorkflowEventAggregationKey(message: Message, metadata: MessageMetadata): string | null {
+  if (metadata.workflow_run_id && metadata.task_id) return `workflow:${metadata.workflow_run_id}:task:${metadata.task_id}`;
+  if (metadata.workflow_run_id) return `workflow:${metadata.workflow_run_id}`;
+  if (metadata.task_id) return `task:${metadata.task_id}`;
+  return message.id ? `message:${message.id}` : null;
 }
 
 function isReplyableMessage(message: Message): boolean {

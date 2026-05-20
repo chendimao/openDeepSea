@@ -53,8 +53,10 @@ import {
 import {
   createDefaultReplyTarget,
   createReplyTarget,
+  createWorkflowEventRenderStateMap,
   getTaskReadinessActionState,
   type ReplyTarget,
+  type WorkflowEventRenderState,
 } from './roomPageLogic';
 
 type RoomFeatureTab = 'chat' | 'tasks' | 'files';
@@ -885,6 +887,10 @@ function ChatColumn({
     () => latestWorkflowEventMessageIdsByRun(visibleMessages),
     [visibleMessages],
   );
+  const workflowEventRenderStateByMessageId = useMemo(
+    () => createWorkflowEventRenderStateMap(visibleMessages),
+    [visibleMessages],
+  );
   const canSendChat = agents.length > 0 || modelChatReady;
 
   const send = useMutation({
@@ -960,6 +966,7 @@ function ChatColumn({
                   retryingWorkflowId={retryingWorkflowId}
                   workflowById={workflowById}
                   latestWorkflowEventMessageIds={latestWorkflowEventMessageIds}
+                  workflowEventRenderState={workflowEventRenderStateByMessageId.get(m.id)}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
                   messageRef={(node) => registerMessageRef(m.id, node)}
@@ -1058,6 +1065,7 @@ function MessageBubble({
   retryingWorkflowId,
   workflowById,
   latestWorkflowEventMessageIds,
+  workflowEventRenderState,
   streaming,
   displayContent,
   messageRef,
@@ -1076,6 +1084,7 @@ function MessageBubble({
   retryingWorkflowId?: string;
   workflowById: Map<string, WorkflowRun>;
   latestWorkflowEventMessageIds: Map<string, string>;
+  workflowEventRenderState?: WorkflowEventRenderState;
   streaming: boolean;
   displayContent: string;
   messageRef: (node: HTMLElement | null) => void;
@@ -1180,7 +1189,7 @@ function MessageBubble({
         data-message-id={message.id}
         className={cn(highlighted && 'is-highlighted')}
       >
-        <div className="space-y-2">
+        <div className="workflow-event-stack">
           <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
             <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
             <span>{message.content}</span>
@@ -1201,7 +1210,7 @@ function MessageBubble({
               </button>
             )}
           </div>
-          {metadata.workflow_run_id && (
+          {metadata.workflow_run_id && workflowEventRenderState?.showTaskCard && (
             <WorkflowEventBubble
               workflowId={metadata.workflow_run_id}
               agents={agents}
