@@ -250,11 +250,7 @@ function resolveActiveAiConfig(settings: SystemSettingsRow | null, rows = listAi
     setActiveAiConfigId(fallback?.id ?? null);
     return fallback;
   }
-  if (rows.length === 0) return null;
-  if (settings?.langchain_planner_model || settings?.openai_base_url || settings?.openai_api_key) return null;
-  const fallback = rows[0] ?? null;
-  setActiveAiConfigId(fallback?.id ?? null);
-  return fallback;
+  return null;
 }
 
 function normalizedOptionalString(value: string | null | undefined): string | null {
@@ -513,7 +509,7 @@ export const settingsRepo = {
       createdAt,
     );
     const row = getAiConfigRow(id)!;
-    if (input.activate || !getSystemRow()?.active_ai_config_id) {
+    if (input.activate) {
       setActiveAiConfigId(id);
     }
     return toSafeAiConfig(row);

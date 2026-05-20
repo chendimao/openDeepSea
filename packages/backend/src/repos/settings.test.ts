@@ -285,6 +285,36 @@ test('settingsRepo persists AI configs and exposes the active config as runtime 
   });
 });
 
+test('settingsRepo keeps saved AI configs inactive until explicitly selected', () => {
+  clearAiConfigs();
+  const created = settingsRepo.createAiConfig({
+    name: 'Candidate',
+    langchain_planner_model: 'candidate-model',
+    openai_base_url: 'https://candidate.example/v1',
+    openai_api_key: 'sk-candidate1234',
+  });
+
+  const system = settingsRepo.getSystem();
+  assert.equal(system.active_ai_config_id, null);
+  assert.equal(system.ai_configs.some((config) => config.id === created.id), true);
+  assert.equal(system.langchain_planner_model, null);
+  assert.equal(system.openai_base_url, null);
+  assert.equal(system.openai_api_key_set, false);
+  assert.deepEqual(settingsRepo.getLangChainPlannerSettings(), {
+    langchain_planner_model: null,
+    openai_api_key: null,
+    openai_base_url: null,
+  });
+
+  settingsRepo.setActiveAiConfig(created.id);
+  assert.equal(settingsRepo.getSystem().active_ai_config_id, created.id);
+  assert.deepEqual(settingsRepo.getLangChainPlannerSettings(), {
+    langchain_planner_model: 'candidate-model',
+    openai_api_key: 'sk-candidate1234',
+    openai_base_url: 'https://candidate.example/v1',
+  });
+});
+
 test('settingsRepo updates AI configs while preserving api keys unless explicitly changed', () => {
   clearAiConfigs();
   const created = settingsRepo.createAiConfig({
