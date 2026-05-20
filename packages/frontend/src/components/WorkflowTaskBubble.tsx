@@ -24,18 +24,20 @@ export function WorkflowTaskBubble({
     <div className="workflow-task-bubble" data-source={compact ? 'chat' : 'timeline'}>
       <div className="workflow-task-bubble-main">
         <WorkflowProgressHeader plan={workflowPlan} />
-        <WorkflowTaskTable
-          plan={workflowPlan}
-          agents={agents}
-          compact={compact}
-          availableTaskIds={getExecutableTaskIds(workflowPlan)}
-        />
-        <WorkflowTaskFlow
-          plan={workflowPlan}
-          steps={detail.steps}
-          artifacts={detail.artifacts}
-          compact={compact}
-        />
+        <div className="workflow-task-bubble-lanes">
+          <WorkflowTaskTable
+            plan={workflowPlan}
+            agents={agents}
+            compact={compact}
+            availableTaskIds={getExecutableTaskIds(workflowPlan)}
+          />
+          <WorkflowTaskFlow
+            plan={workflowPlan}
+            steps={detail.steps}
+            artifacts={detail.artifacts}
+            compact={compact}
+          />
+        </div>
       </div>
       <div className="workflow-task-bubble-side">
         <WorkflowAgentTabs
