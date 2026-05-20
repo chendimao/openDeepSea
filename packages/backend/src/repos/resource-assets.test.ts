@@ -134,6 +134,99 @@ test('resourceAssetRepo combines uploaded files into resource list', () => {
   assert.equal(fileRepo.get(file.id)?.deleted_at, null);
 });
 
+test('resourceAssetRepo filters unified resources by room', () => {
+  const project = createProject('resource-room-filter');
+  const room = roomRepo.create({ project_id: project.id, name: 'Room Filter' });
+  const otherRoom = roomRepo.create({ project_id: project.id, name: 'Other Room' });
+  const targetFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'target.png',
+    stored_name: 'target.png',
+    mime_type: 'image/png',
+    size: 128,
+    url: `/uploads/files/${project.id}/target.png`,
+    storage_path: join(tmpdir(), 'target.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const otherFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'other.png',
+    stored_name: 'other.png',
+    mime_type: 'image/png',
+    size: 128,
+    url: `/uploads/files/${project.id}/other.png`,
+    storage_path: join(tmpdir(), 'other.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: room.id,
+    message_id: messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: 'room ref',
+      message_type: 'text',
+    }).id,
+    file_ids: [targetFile.id],
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: otherRoom.id,
+    message_id: messageRepo.create({
+      room_id: otherRoom.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: 'other room ref',
+      message_type: 'text',
+    }).id,
+    file_ids: [otherFile.id],
+  });
+  const targetMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# Target document',
+    message_type: 'agent_stream',
+  });
+  const targetDocument = resourceAssetRepo.create({
+    project_id: project.id,
+    asset_type: 'agent_document',
+    title: 'target.md',
+    content: targetMessage.content,
+    source_message_id: targetMessage.id,
+    source_room_id: room.id,
+    source_agent_id: 'backend-executor',
+  });
+  const otherMessage = messageRepo.create({
+    room_id: otherRoom.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: 'Planner',
+    content: '# Other document',
+    message_type: 'agent_stream',
+  });
+  resourceAssetRepo.create({
+    project_id: project.id,
+    asset_type: 'agent_document',
+    title: 'other.md',
+    content: otherMessage.content,
+    source_message_id: otherMessage.id,
+    source_room_id: otherRoom.id,
+    source_agent_id: 'planner',
+  });
+
+  const listed = resourceAssetRepo.listResources({ projectId: project.id, roomId: room.id });
+
+  assert.deepEqual(new Set(listed.map((asset) => asset.id)), new Set([targetDocument.id, `file:${targetFile.id}`]));
+  assert.equal(listed.some((asset) => asset.id === `file:${otherFile.id}`), false);
+});
+
 test('resourceAssetRepo searches uploaded files and agent documents', () => {
   const project = createProject('search-assets');
   const room = roomRepo.create({ project_id: project.id, name: 'Search Room' });

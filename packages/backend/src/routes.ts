@@ -829,9 +829,17 @@ router.get('/projects/:projectId/resource-assets', (req, res) => {
     resourceType: resourceAssetTypeSchema.optional(),
     type: resourceAssetTypeSchema.optional(),
     groupKey: resourceAssetGroupKeySchema.optional(),
+    roomId: z.string().optional(),
     q: z.string().trim().min(1).optional(),
   }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (parsed.data.roomId) {
+    const room = roomRepo.get(parsed.data.roomId);
+    if (!room) return res.status(404).json({ error: 'room not found' });
+    if (room.project_id !== req.params.projectId) {
+      return res.status(400).json({ error: 'room does not belong to project' });
+    }
+  }
   const assetType = resolveResourceAssetTypeFilter(parsed.data);
   if (assetType === 'conflict') {
     return res.status(400).json({ error: 'conflicting resource type filters' });
@@ -840,6 +848,7 @@ router.get('/projects/:projectId/resource-assets', (req, res) => {
     projectId: req.params.projectId,
     assetType,
     groupKey: parsed.data.groupKey as ResourceAssetGroupKey | undefined,
+    roomId: parsed.data.roomId,
     query: parsed.data.q,
   }));
 });

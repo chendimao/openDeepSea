@@ -38,6 +38,7 @@ interface ResourceAssetListFilters {
   projectId: string;
   assetType?: ResourceAssetType;
   groupKey?: ResourceAssetGroupKey;
+  roomId?: string;
   query?: string;
 }
 
@@ -104,7 +105,7 @@ export const resourceAssetRepo = {
     const assets = listAgentDocuments(filters);
     const includeUploadedFiles = !filters.assetType || filters.assetType === 'uploaded_file';
     const uploadedFiles = includeUploadedFiles && (!filters.groupKey || filters.groupKey === 'uploaded_files')
-      ? listUploadedFileAssets(filters.projectId, filters.query)
+      ? listUploadedFileAssets(filters.projectId, filters.roomId, filters.query)
       : [];
     return [...assets, ...uploadedFiles].sort((a, b) => b.created_at - a.created_at);
   },
@@ -264,6 +265,10 @@ function listAgentDocuments(filters: ResourceAssetListFilters): ResourceAssetLis
     where.push('group_key = @groupKey');
     params.groupKey = filters.groupKey;
   }
+  if (filters.roomId) {
+    where.push('source_room_id = @roomId');
+    params.roomId = filters.roomId;
+  }
   const query = normalizeSearchQuery(filters.query);
   if (query) {
     where.push(
@@ -312,9 +317,20 @@ function listAgentDocuments(filters: ResourceAssetListFilters): ResourceAssetLis
   ).all(params) as ResourceAssetListItem[];
 }
 
-function listUploadedFileAssets(projectId: string, query?: string): ResourceAssetListItem[] {
-  const where = ['project_id = @projectId', 'deleted_at IS NULL'];
+function listUploadedFileAssets(projectId: string, roomId?: string, query?: string): ResourceAssetListItem[] {
+  const where = ['files.project_id = @projectId', 'files.deleted_at IS NULL'];
   const params: Record<string, unknown> = { projectId };
+  if (roomId) {
+    where.push(
+      `EXISTS (
+        SELECT 1
+        FROM message_file_refs room_refs
+        WHERE room_refs.file_id = files.id
+          AND room_refs.room_id = @roomId
+      )`,
+    );
+    params.roomId = roomId;
+  }
   const normalizedQuery = normalizeSearchQuery(query);
   if (normalizedQuery) {
     where.push(
@@ -331,31 +347,31 @@ function listUploadedFileAssets(projectId: string, query?: string): ResourceAsse
   }
   return db.prepare(
     `SELECT
-       'file:' || id AS id,
-       project_id,
+       'file:' || files.id AS id,
+       files.project_id,
        'uploaded_file' AS asset_type,
        'uploaded_files' AS group_key,
-       original_name AS title,
-       mime_type,
-       size,
-       url,
-       id AS file_id,
+       files.original_name AS title,
+       files.mime_type,
+       files.size,
+       files.url,
+       files.id AS file_id,
        NULL AS source_message_id,
        NULL AS source_room_id,
-       uploaded_by_id AS source_agent_id,
+       files.uploaded_by_id AS source_agent_id,
        NULL AS source_task_id,
-       COALESCE(NULLIF(uploaded_by_name, ''), '用户上传') AS source_display_name,
+       COALESCE(NULLIF(files.uploaded_by_name, ''), '用户上传') AS source_display_name,
        '用户上传' AS source_label,
        NULL AS source_context_id,
        NULL AS source_context_name,
        NULL AS source_context_type,
        NULL AS metadata,
-       created_at,
-       created_at AS updated_at,
-       deleted_at
+       files.created_at,
+       files.created_at AS updated_at,
+       files.deleted_at
      FROM files
      WHERE ${where.join(' AND ')}
-     ORDER BY created_at DESC`,
+     ORDER BY files.created_at DESC`,
   ).all(params) as ResourceAssetListItem[];
 }
 

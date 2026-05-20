@@ -253,6 +253,122 @@ test('resource asset list includes uploaded files without breaking existing file
   assert.equal(fileRepo.get(file.id)?.deleted_at, null);
 });
 
+test('resource asset list filters unified resources by room boundary', async () => {
+  const project = createProject('room-filter');
+  const room = roomRepo.create({ project_id: project.id, name: 'Room Filter' });
+  const otherRoom = roomRepo.create({ project_id: project.id, name: 'Other Room' });
+  const targetFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'target.png',
+    stored_name: 'target.png',
+    mime_type: 'image/png',
+    size: 128,
+    url: `/uploads/files/${project.id}/target.png`,
+    storage_path: join(tmpdir(), 'target.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const otherFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'other.png',
+    stored_name: 'other.png',
+    mime_type: 'image/png',
+    size: 128,
+    url: `/uploads/files/${project.id}/other.png`,
+    storage_path: join(tmpdir(), 'other.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: room.id,
+    message_id: messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: 'target ref',
+      message_type: 'text',
+    }).id,
+    file_ids: [targetFile.id],
+  });
+  fileRepo.addMessageRefs({
+    project_id: project.id,
+    room_id: otherRoom.id,
+    message_id: messageRepo.create({
+      room_id: otherRoom.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: 'other ref',
+      message_type: 'text',
+    }).id,
+    file_ids: [otherFile.id],
+  });
+  const targetMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'backend-executor',
+    sender_name: '后端开发工程师',
+    content: '# target',
+    message_type: 'agent_stream',
+  });
+  const documentRes = await request(`/api/projects/${project.id}/resource-assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_type: 'agent_document',
+      title: 'target.md',
+      content: targetMessage.content,
+      source_message_id: targetMessage.id,
+      source_room_id: room.id,
+      source_agent_id: 'backend-executor',
+    }),
+  });
+  assert.equal(documentRes.status, 201);
+  const document = await documentRes.json() as { id: string };
+  const otherMessage = messageRepo.create({
+    room_id: otherRoom.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: 'Planner',
+    content: '# other',
+    message_type: 'agent_stream',
+  });
+  const otherDocumentRes = await request(`/api/projects/${project.id}/resource-assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      asset_type: 'agent_document',
+      title: 'other.md',
+      content: otherMessage.content,
+      source_message_id: otherMessage.id,
+      source_room_id: otherRoom.id,
+      source_agent_id: 'planner',
+    }),
+  });
+  assert.equal(otherDocumentRes.status, 201);
+
+  const listRes = await request(`/api/projects/${project.id}/resource-assets?roomId=${room.id}`);
+  assert.equal(listRes.status, 200);
+  const assets = await listRes.json() as Array<{ id: string }>;
+
+  assert.deepEqual(new Set(assets.map((asset) => asset.id)), new Set([document.id, `file:${targetFile.id}`]));
+  assert.equal(assets.some((asset) => asset.id === `file:${otherFile.id}`), false);
+});
+
+test('resource asset list rejects room filters outside the project boundary', async () => {
+  const project = createProject('room-filter-boundary');
+  const otherProject = createProject('room-filter-boundary-other');
+  const otherRoom = roomRepo.create({ project_id: otherProject.id, name: 'Other Room' });
+
+  const missingRes = await request(`/api/projects/${project.id}/resource-assets?roomId=missing-room`);
+  assert.equal(missingRes.status, 404);
+
+  const crossProjectRes = await request(`/api/projects/${project.id}/resource-assets?roomId=${otherRoom.id}`);
+  assert.equal(crossProjectRes.status, 400);
+});
+
 test('resource asset routes search mixed resource types and reject empty search', async () => {
   const project = createProject('search-assets');
   const room = roomRepo.create({ project_id: project.id, name: 'Search Room' });
