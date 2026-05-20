@@ -84,6 +84,56 @@ test('renders task table from artifact metadata workflow_plan_json', () => {
   assert.match(html, /实现聊天气泡/);
 });
 
+test('compact mode renders superpowers gate summary from graph_state', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan(),
+      runtimeProfile: 'superpowers',
+      superpowersPhase: 'tdd_execute',
+      designDocPath: 'docs/superpowers/specs/task-9.md',
+      tddEvidence: [
+        { stage: 'RED', command: 'npm test', passed: false, summary: 'red', },
+        { stage: 'GREEN', command: 'npm test', passed: true, summary: 'green', },
+      ],
+      specComplianceReview: {
+        verdict: 'changes_requested',
+        findings: ['缺少设计文档路径'],
+        reviewedAt: '2026-05-21T00:00:00.000Z',
+      },
+      codeQualityReview: {
+        verdict: 'approved',
+        findings: [],
+        reviewedAt: '2026-05-21T00:00:00.000Z',
+      },
+      verificationEvidence: [
+        {
+          command: 'npm run build',
+          status: 'passed',
+          required: true,
+          fresh: true,
+          recordedAt: '2026-05-21T00:00:00.000Z',
+        },
+      ],
+      finishBranchDecision: {
+        decision: 'keep_branch',
+        options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+        reason: 'awaiting explicit closeout automation',
+        decidedAt: '2026-05-21T00:00:00.000Z',
+      },
+    }),
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+
+  assert.match(html, /当前门禁/);
+  assert.match(html, /TDD 执行/);
+  assert.match(html, /docs\/superpowers\/specs\/task-9\.md/);
+  assert.match(html, /TDD 证据/);
+  assert.match(html, /审查发现/);
+  assert.match(html, /验证证据/);
+  assert.match(html, /保留分支/);
+});
+
 test('compact mode renders agent result tabs for chat embedding', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),

@@ -52,6 +52,52 @@ export interface WorkflowPlanJson {
   summary: string;
   tasks: WorkflowPlanTaskJson[];
 }
+export type SuperpowersPhase =
+  | 'brainstorming'
+  | 'spec_review'
+  | 'worktree'
+  | 'writing_plans'
+  | 'plan_review'
+  | 'tdd_execute'
+  | 'spec_compliance_review'
+  | 'code_quality_review'
+  | 'finish_branch';
+export type SuperpowersReviewVerdict = 'pending' | 'approved' | 'changes_requested' | 'failed';
+export interface SuperpowersTddEvidence {
+  stage: 'RED' | 'GREEN' | 'REFACTOR';
+  command: string | null;
+  summary: string | null;
+  passed: boolean | null;
+}
+export interface SuperpowersReview {
+  verdict: SuperpowersReviewVerdict;
+  findings: string[];
+  reviewedAt: string | null;
+}
+export interface SuperpowersVerificationEvidence {
+  command: string;
+  status: 'passed' | 'failed' | 'skipped';
+  required: boolean;
+  fresh: boolean;
+  recordedAt: string | null;
+}
+export type SuperpowersFinishBranchDecisionValue = 'merge_local' | 'create_pr' | 'keep_branch' | 'discard_work';
+export interface SuperpowersFinishBranchDecision {
+  decision: SuperpowersFinishBranchDecisionValue;
+  options: SuperpowersFinishBranchDecisionValue[];
+  reason: string;
+  decidedAt: string | null;
+}
+export interface SuperpowersGraphStateSummary {
+  runtimeProfile?: 'superpowers';
+  superpowersPhase?: SuperpowersPhase | string | null;
+  designDocPath?: string | null;
+  tddEvidence?: SuperpowersTddEvidence[];
+  specComplianceReview?: SuperpowersReview | null;
+  codeQualityReview?: SuperpowersReview | null;
+  verificationEvidence?: SuperpowersVerificationEvidence[];
+  finishBranchDecision?: SuperpowersFinishBranchDecision | null;
+}
 export type GraphNodeName =
   | 'context'
   | 'planning'

@@ -1,7 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, Copy, Eye, GitBranch, Layers3, Pencil, Plus, Search, Send, Trash2, Workflow } from 'lucide-react';
-import { toast } from 'sonner';
+import { useQuery } from '@tanstack/react-query';
+import { Eye, Layers3, Search, Workflow } from 'lucide-react';
 import { api } from '../lib/api';
 import type { WorkflowDefinition, WorkflowDefinitionScope, WorkflowDefinitionStatus, WorkflowStage } from '../lib/types';
 import { useI18n } from '../lib/i18n';
@@ -9,16 +8,12 @@ import { Button } from '../components/ui/Button';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { Input } from '../components/ui/Input';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
-import { WorkflowBuilderDialog } from '../components/WorkflowBuilderDialog';
 
 export function WorkflowOverflowPage(): JSX.Element {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | WorkflowDefinitionStatus>('all');
   const [scopeFilter, setScopeFilter] = useState<'all' | WorkflowDefinitionScope>('all');
-  const [builderOpen, setBuilderOpen] = useState(false);
-  const [editingDefinition, setEditingDefinition] = useState<WorkflowDefinition | null>(null);
   const [viewingDefinition, setViewingDefinition] = useState<WorkflowDefinition | null>(null);
-  const queryClient = useQueryClient();
   const {
     data: definitions = [],
     error: definitionsError,
@@ -46,65 +41,6 @@ export function WorkflowOverflowPage(): JSX.Element {
     draft: definitions.filter((definition) => definition.status === 'draft').length,
     archived: definitions.filter((definition) => definition.status === 'archived').length,
   }), [definitions]);
-  const invalidateDefinitions = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['workflow-definitions'] });
-  };
-  const openCreateDialog = () => {
-    setEditingDefinition(null);
-    setBuilderOpen(true);
-  };
-  const openEditDialog = (definition: WorkflowDefinition) => {
-    setEditingDefinition(definition);
-    setBuilderOpen(true);
-  };
-  const createEditDraft = useMutation({
-    mutationFn: api.createWorkflowDefinitionEditDraft,
-    onSuccess: async (draft) => {
-      await invalidateDefinitions();
-      setEditingDefinition(draft);
-      setBuilderOpen(true);
-      toast.success('已创建编辑草稿');
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const duplicateDefinition = useMutation({
-    mutationFn: (definition: WorkflowDefinition) =>
-      api.duplicateWorkflowDefinition(definition.id, { name: `${definition.name} 副本` }),
-    onSuccess: async () => {
-      await invalidateDefinitions();
-      toast.success('工作流已复制为草稿');
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const publishDefinition = useMutation({
-    mutationFn: api.publishWorkflowDefinition,
-    onSuccess: async () => {
-      await invalidateDefinitions();
-      toast.success('工作流已发布');
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const archiveDefinition = useMutation({
-    mutationFn: api.archiveWorkflowDefinition,
-    onSuccess: async () => {
-      await invalidateDefinitions();
-      toast.success('工作流已归档');
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const deleteDefinition = useMutation({
-    mutationFn: api.deleteWorkflowDefinition,
-    onSuccess: async () => {
-      await invalidateDefinitions();
-      toast.success('草稿已删除');
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const actionsBusy = createEditDraft.isPending
-    || duplicateDefinition.isPending
-    || publishDefinition.isPending
-    || archiveDefinition.isPending
-    || deleteDefinition.isPending;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -117,14 +53,10 @@ export function WorkflowOverflowPage(): JSX.Element {
             <div>
               <h1 className="font-display text-[22px] font-semibold tracking-tight">工作流</h1>
               <p className="mt-0.5 text-[13px] text-[var(--color-fg-muted)]">
-                创建、筛选和维护工作流定义，按生命周期管理可发布的执行闭环。
+                Superpowers 只读目录，展示系统定义和历史版本，不提供创建、复制、编辑或发布入口。
               </p>
             </div>
-            <Button type="button" className="ml-auto max-sm:w-full" onClick={openCreateDialog}>
-              <Plus className="h-4 w-4" />
-              新建工作流
-            </Button>
-            <div className="grid grid-cols-4 gap-2 max-sm:w-full">
+            <div className="ml-auto grid grid-cols-4 gap-2 max-sm:w-full">
               <Metric label="总数" value={stats.total} />
               <Metric label="已发布" value={stats.published} />
               <Metric label="草稿" value={stats.draft} />
@@ -188,7 +120,7 @@ export function WorkflowOverflowPage(): JSX.Element {
             <WorkspaceEmptyState
               icon={<Search className="h-9 w-9" strokeWidth={1.75} />}
               title="没有匹配的工作流"
-              description="调整搜索或筛选条件，也可以新建系统级工作流草稿。"
+              description="调整搜索或筛选条件，查看系统定义与历史版本。"
             />
           ) : (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -196,35 +128,13 @@ export function WorkflowOverflowPage(): JSX.Element {
                 <WorkflowDefinitionCard
                   key={definition.id}
                   definition={definition}
-                  disabled={actionsBusy}
                   onView={() => setViewingDefinition(definition)}
-                  onEdit={() => openEditDialog(definition)}
-                  onCreateEditDraft={() => createEditDraft.mutate(definition.id)}
-                  onDuplicate={() => duplicateDefinition.mutate(definition)}
-                  onPublish={() => publishDefinition.mutate(definition.id)}
-                  onArchive={() => {
-                    if (!window.confirm('确认归档这个已发布工作流？归档不会影响历史运行记录。')) return;
-                    archiveDefinition.mutate(definition.id);
-                  }}
-                  onDelete={() => {
-                    if (!window.confirm('确认删除这个草稿工作流？此操作不可撤销。')) return;
-                    deleteDefinition.mutate(definition.id);
-                  }}
                 />
               ))}
             </div>
           )}
         </div>
       </section>
-      <WorkflowBuilderDialog
-        open={builderOpen}
-        onOpenChange={setBuilderOpen}
-        initialScope="system"
-        initialScopeId="default"
-        scopeOptions={[{ scope: 'system', scope_id: 'default', label: '系统' }]}
-        definition={editingDefinition}
-        mode={editingDefinition?.status === 'draft' ? 'edit-draft' : 'create'}
-      />
       <WorkflowDefinitionViewDialog definition={viewingDefinition} onOpenChange={(open) => !open && setViewingDefinition(null)} />
     </div>
   );
@@ -259,24 +169,10 @@ function Metric({ label, value }: { label: string; value: number }): JSX.Element
 
 function WorkflowDefinitionCard({
   definition,
-  disabled,
   onView,
-  onEdit,
-  onCreateEditDraft,
-  onDuplicate,
-  onPublish,
-  onArchive,
-  onDelete,
 }: {
   definition: WorkflowDefinition;
-  disabled: boolean;
   onView: () => void;
-  onEdit: () => void;
-  onCreateEditDraft: () => void;
-  onDuplicate: () => void;
-  onPublish: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
 }): JSX.Element {
   const { workflowStageLabel } = useI18n();
   const stages = [...new Set(definition.definition.nodes.map((node) => node.stage).filter(isWorkflowStage))];
@@ -284,7 +180,7 @@ function WorkflowDefinitionCard({
     <article className="surface-1 rounded-xl p-5">
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-accent)]">
-          <GitBranch className="h-4 w-4" strokeWidth={1.75} />
+          <Workflow className="h-4 w-4" strokeWidth={1.75} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -322,75 +218,9 @@ function WorkflowDefinitionCard({
         <span className="font-mono text-[10.5px] text-[var(--color-fg-muted)]">
           更新 {formatTime(definition.updated_at)}
         </span>
-        <WorkflowActions
-          definition={definition}
-          disabled={disabled}
-          onView={onView}
-          onEdit={onEdit}
-          onCreateEditDraft={onCreateEditDraft}
-          onDuplicate={onDuplicate}
-          onPublish={onPublish}
-          onArchive={onArchive}
-          onDelete={onDelete}
-        />
+        <ActionButton icon={<Eye className="h-3.5 w-3.5" />} label="查看" onClick={onView} />
       </div>
     </article>
-  );
-}
-
-function WorkflowActions({
-  definition,
-  disabled,
-  onView,
-  onEdit,
-  onCreateEditDraft,
-  onDuplicate,
-  onPublish,
-  onArchive,
-  onDelete,
-}: {
-  definition: WorkflowDefinition;
-  disabled: boolean;
-  onView: () => void;
-  onEdit: () => void;
-  onCreateEditDraft: () => void;
-  onDuplicate: () => void;
-  onPublish: () => void;
-  onArchive: () => void;
-  onDelete: () => void;
-}): JSX.Element {
-  const isBuiltIn = Boolean(definition.builtin_key);
-  return (
-    <div className="flex flex-wrap justify-end gap-1.5">
-      <ActionButton icon={<Eye className="h-3.5 w-3.5" />} label="查看" onClick={onView} disabled={disabled} />
-      {definition.status === 'draft' && !isBuiltIn && (
-        <>
-          <ActionButton icon={<Pencil className="h-3.5 w-3.5" />} label="编辑" onClick={onEdit} disabled={disabled} />
-          <ActionButton icon={<Send className="h-3.5 w-3.5" />} label="发布" onClick={onPublish} disabled={disabled} />
-        </>
-      )}
-      {definition.status === 'published' && !isBuiltIn && (
-        <>
-          <ActionButton
-            icon={<Pencil className="h-3.5 w-3.5" />}
-            label="编辑新草稿"
-            onClick={onCreateEditDraft}
-            disabled={disabled}
-          />
-          <ActionButton icon={<Archive className="h-3.5 w-3.5" />} label="归档" onClick={onArchive} disabled={disabled} />
-        </>
-      )}
-      <ActionButton icon={<Copy className="h-3.5 w-3.5" />} label="复制" onClick={onDuplicate} disabled={disabled} />
-      {definition.status === 'draft' && !isBuiltIn && (
-        <ActionButton
-          icon={<Trash2 className="h-3.5 w-3.5" />}
-          label="删除"
-          onClick={onDelete}
-          disabled={disabled}
-          danger
-        />
-      )}
-    </div>
   );
 }
 
@@ -398,24 +228,15 @@ function ActionButton({
   icon,
   label,
   onClick,
-  disabled,
-  danger = false,
 }: {
   icon: ReactNode;
   label: string;
   onClick: () => void;
-  disabled: boolean;
-  danger?: boolean;
 }): JSX.Element {
   return (
     <button
       type="button"
-      className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11.5px] transition-colors disabled:pointer-events-none disabled:opacity-50 ${
-        danger
-          ? 'border-[var(--color-danger)]/50 text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10'
-          : 'border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-fg-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]'
-      }`}
-      disabled={disabled}
+      className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-2 text-[11.5px] text-[var(--color-fg-muted)] transition-colors hover:border-[var(--color-border-strong)] hover:text-[var(--color-fg)]"
       onClick={onClick}
     >
       {icon}
