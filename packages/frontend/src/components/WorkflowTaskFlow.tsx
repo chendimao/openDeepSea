@@ -2,7 +2,7 @@ import { CheckCircle2, Loader2, PauseCircle, RotateCcw, Sparkles, XCircle } from
 import { useMemo } from 'react';
 import { useI18n } from '../lib/i18n';
 import type { TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
-import { cn, truncate } from '../lib/utils';
+import { cn } from '../lib/utils';
 
 type TranslateFn = ReturnType<typeof useI18n>['t'];
 
@@ -22,6 +22,7 @@ export function WorkflowTaskFlow({
     () => buildFlowEntries(plan, steps, artifacts, workflowStageLabel, t),
     [artifacts, plan, steps, t, workflowStageLabel],
   );
+  const swimlanes = useMemo(() => buildSwimlanes(flowEntries, t), [flowEntries, t]);
   const executorTaskCount = plan.tasks.filter((task) => task.role === 'executor').length;
   const recordCount = steps.length + artifacts.length;
 
@@ -34,24 +35,23 @@ export function WorkflowTaskFlow({
           <span>{t('workflowPlan.taskFlowRecords', { count: recordCount })}</span>
         </div>
       </div>
-      <div className="workflow-flow-phase-strip" aria-hidden="true">
-        <span>{t('workflowPlan.taskFlowPlanStage')}</span>
-        <span>{t('workflowPlan.taskFlowExecutionStage')}</span>
-        <span>{t('workflowPlan.taskFlowReviewStage')}</span>
-        <span>{t('workflowPlan.taskFlowVerification')}</span>
-        <span>{t('workflowPlan.taskFlowAcceptanceStage')}</span>
-      </div>
 
       {flowEntries.length > 0 ? (
-        <div className="workflow-flow-board" aria-label={t('workflowPlan.taskFlowTitle')}>
-          {flowEntries.map((entry, index) => (
-            <FlowEntryCard
-              key={entry.key}
-              entry={entry}
-              compact={compact}
-              isFirst={index === 0}
-              isLast={index === flowEntries.length - 1}
-            />
+        <div className="workflow-flow-swimlanes" aria-label={t('workflowPlan.taskFlowTitle')}>
+          {swimlanes.map((lane) => (
+            <div key={lane.key} className="workflow-flow-swimlane">
+              <div className={cn('workflow-flow-swimlane-label', `is-${lane.key}`)}>
+                <div>{lane.label}</div>
+                {lane.caption && <span>{lane.caption}</span>}
+              </div>
+              <div className={cn('workflow-flow-swimlane-track', `is-${lane.key}`)}>
+                {lane.entries.length > 0 ? lane.entries.map((entry) => (
+                  <FlowEntryCard key={entry.key} entry={entry} compact={compact} />
+                )) : (
+                  <div className="workflow-flow-lane-empty">{t('workflowPlan.taskFlowEmpty')}</div>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       ) : (
@@ -59,6 +59,13 @@ export function WorkflowTaskFlow({
       )}
     </section>
   );
+}
+
+interface FlowSwimlane {
+  key: 'plan' | 'execution' | 'review';
+  label: string;
+  caption: string | null;
+  entries: FlowEntry[];
 }
 
 interface FlowEntry {
@@ -75,42 +82,55 @@ interface FlowEntry {
 function FlowEntryCard({
   entry,
   compact,
-  isFirst,
-  isLast,
 }: {
   entry: FlowEntry;
   compact: boolean;
-  isFirst: boolean;
-  isLast: boolean;
 }) {
   return (
     <article
       className={cn(
         'workflow-flow-entry',
         `is-${entry.phase}`,
-        isFirst && 'is-first',
-        isLast && 'is-last',
       )}
     >
-      <div className="workflow-flow-node">
-        <div className="workflow-flow-node-line" aria-hidden="true" />
-        <div className="workflow-flow-icon" aria-hidden="true">{entry.icon}</div>
-      </div>
+      <div className="workflow-flow-icon" aria-hidden="true">{entry.icon}</div>
       <div className="workflow-flow-entry-body">
         <div className="workflow-flow-entry-phase">{entry.phaseLabel}</div>
         <div className="workflow-flow-entry-top">
-        <div className="min-w-0 flex-1">
-          <div className="workflow-flow-entry-title">{entry.title}</div>
-          {entry.subtitle && <div className="workflow-flow-entry-subtitle">{entry.subtitle}</div>}
+          <div className="min-w-0 flex-1">
+            <div className="workflow-flow-entry-title">{entry.title}</div>
+            {entry.subtitle && <div className="workflow-flow-entry-subtitle">{entry.subtitle}</div>}
+          </div>
+          <div className="workflow-flow-entry-meta">{entry.meta}</div>
         </div>
-        <div className="workflow-flow-entry-meta">{entry.meta}</div>
-      </div>
-      {entry.content && (
-        <div className="workflow-flow-entry-content">{truncate(entry.content, compact ? 260 : 420)}</div>
-      )}
       </div>
     </article>
   );
+}
+
+function buildSwimlanes(flowEntries: FlowEntry[], t: TranslateFn): FlowSwimlane[] {
+  return [
+    {
+      key: 'plan',
+      label: `${t('workflowPlan.taskFlowPlanStage')} / ${t('workflowPlan.taskFlowAnalysisStage')}`,
+      caption: t('workflowPlan.taskFlowPlanLaneCaption'),
+      entries: flowEntries.filter((entry) => entry.phase === 'plan'),
+    },
+    {
+      key: 'execution',
+      label: t('workflowPlan.taskFlowExecutionLane'),
+      caption: t('workflowPlan.taskFlowExecutionLaneCaption'),
+      entries: flowEntries.filter((entry) => entry.phase === 'execution'),
+    },
+    {
+      key: 'review',
+      label: t('workflowPlan.taskFlowReviewLane'),
+      caption: t('workflowPlan.taskFlowReviewLaneCaption'),
+      entries: flowEntries.filter((entry) =>
+        entry.phase === 'review' || entry.phase === 'verification' || entry.phase === 'acceptance',
+      ),
+    },
+  ];
 }
 
 function buildFlowEntries(

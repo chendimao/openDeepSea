@@ -252,10 +252,9 @@ test('workflow bubble renders dual-column orchestration layout', () => {
 
   assert.match(html, /任务流转/);
   assert.match(html, /按智能体查看执行结果/);
-  assert.match(html, /计划/);
-  assert.match(html, /执行/);
-  assert.match(html, /审查/);
-  assert.match(html, /验收/);
+  assert.match(html, /计划 \/ 分析/);
+  assert.match(html, /执行层/);
+  assert.match(html, /审查 \/ 验收/);
 });
 
 test('task flow renders review and verification as ordered workflow nodes', () => {
@@ -320,9 +319,9 @@ test('task flow renders review and verification as ordered workflow nodes', () =
   });
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
-  const executionIndex = html.indexOf('执行完成');
+  const executionIndex = html.indexOf('is-execution');
   const reviewIndex = html.indexOf('审查目标');
-  const verificationIndex = html.indexOf('验证命令通过');
+  const verificationIndex = html.indexOf('is-verification');
   const acceptanceIndex = html.indexOf('验收目标');
 
   assert.notEqual(executionIndex, -1);
@@ -333,6 +332,33 @@ test('task flow renders review and verification as ordered workflow nodes', () =
   assert.equal(reviewIndex < verificationIndex, true);
   assert.equal(verificationIndex < acceptanceIndex, true);
   assert.match(html, /is-verification/);
+});
+
+test('task flow does not render long execution content inside orchestration nodes', () => {
+  const longResult = '这是很长的执行结果，应该留在右侧智能体结果栏，而不是撑开左侧任务流转节点。'.repeat(12);
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-impl',
+        assignedRoomAgentId: 'agent-1',
+        taskId: 'task-1',
+        stage: 'implementation',
+        nodeName: 'execute',
+        result: longResult,
+        completedAt: 20,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+  const flowStart = html.indexOf('<section class="workflow-flow-panel">');
+  const flowEnd = html.indexOf('<div class="workflow-task-bubble-side">');
+  const flowHtml = html.slice(flowStart, flowEnd);
+  const sideHtml = html.slice(flowEnd);
+
+  assert.doesNotMatch(flowHtml, /这是很长的执行结果/);
+  assert.match(sideHtml, /这是很长的执行结果/);
 });
 
 test('returns null when workflow plan is unavailable', () => {
