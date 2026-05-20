@@ -188,6 +188,9 @@ test('deriveCoordinatorPlanFromProductManagerBackground extracts executable task
       '- 改动：packages/frontend/src/pages/FilesPage.tsx',
       '- 验收：前端显示用户上传和智能体生成文档',
       '',
+      '验证方式：',
+      '- npm run build',
+      '',
       '任务意图：implementation',
     ].join('\n'),
   });
@@ -203,6 +206,13 @@ test('deriveCoordinatorPlanFromProductManagerBackground extracts executable task
   assert.deepEqual(plan.tasks[0]?.scopeWrite, ['packages/backend/src/routes.ts']);
   assert.deepEqual(plan.tasks[1]?.dependsOn, []);
   assert.match(plan.tasks[1]?.acceptance.join('\n') ?? '', /前端显示/);
+  assert.deepEqual(plan.verificationCommands, [
+    {
+      command: 'npm run build',
+      reason: '产品经理方案背景中的验证方式',
+      required: true,
+    },
+  ]);
 });
 
 test('deriveCoordinatorPlanFromProductManagerBackground splits inline prose implementation plan into executable tasks', () => {
