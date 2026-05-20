@@ -14,8 +14,10 @@ test('file management styles keep source controls usable on desktop and mobile',
   assert.match(css, /\.project-file-action-button\s*\{[^}]*max-width:\s*150px/s);
   assert.match(css, /\.file-preview-source-trace\s*\{[^}]*min-width:\s*0/s);
   assert.match(css, /\.file-preview-source-items\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(css, /\.file-preview-details dd\.is-wrap\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   assert.match(css, /@media \(max-width: 767px\)\s*\{[\s\S]*?\.files-filters\s*\{[^}]*flex-wrap:\s*wrap/s);
   assert.match(css, /@media \(max-width: 767px\)\s*\{[\s\S]*?\.files-filter-select\s*\{[^}]*flex:\s*1 1 128px/s);
+  assert.match(css, /@media \(max-width: 767px\)\s*\{[\s\S]*?\.file-preview-details\s*\{[^}]*grid-template-columns:\s*1fr/s);
   assert.match(css, /@media \(max-width: 767px\)\s*\{[\s\S]*?\.project-file-action-button\s*\{[^}]*max-width:\s*100%/s);
   assert.match(css, /@media \(max-width: 767px\)\s*\{[\s\S]*?\.project-file-view\.is-card,[\s\S]*?grid-template-columns:\s*1fr/s);
   assert.match(css, /\.file-preview-dialog\s*\{[^}]*width:\s*min\(94vw, 1040px\)/s);

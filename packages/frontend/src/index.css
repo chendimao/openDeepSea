@@ -2715,6 +2715,12 @@
     white-space: nowrap;
   }
 
+  .file-preview-details dd.is-wrap {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .file-picker-dialog {
     width: min(92vw, 620px);
   }
@@ -3522,6 +3528,12 @@
     }
     .file-view-toggle {
       align-self: flex-start;
+    }
+    .file-preview-details {
+      grid-template-columns: 1fr;
+    }
+    .file-preview-details dd {
+      white-space: normal;
     }
     .project-file-view.is-card,
     .project-file-view.variant-picker.is-card {

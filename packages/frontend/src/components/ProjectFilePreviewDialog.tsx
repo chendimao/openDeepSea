@@ -1,9 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { Download, FileDown, FileSearch } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
-import { getProjectFileSourceSummary, getProjectFileTypeLabel, getResourceDetailSourceSummary } from '../lib/projectFileDisplay';
+import {
+  getProjectFileOriginLabel,
+  getProjectFileSourceSummary,
+  getProjectFileTypeLabel,
+  getResourceDetailSourceSummary,
+} from '../lib/projectFileDisplay';
 import type { ProjectFile, ResourceDetail } from '../lib/types';
 import { MarkdownPreview } from './MessageContent';
 import { Dialog, DialogContent } from './ui/Dialog';
@@ -137,22 +143,52 @@ export function ResourceDetailPreviewContent({
   const sourceAgentName = resource.source.display_name ?? resource.source.agent_id ?? resource.source_agent_id;
   const sourceTaskName = getResourceContextLabel(resource, 'task');
   const sourceRoomName = getResourceContextLabel(resource, 'room');
+  const sourceTraceTitle = isAgentDocument
+    ? t('files.detail.documentSourceTitle')
+    : t('files.detail.uploadSourceTitle');
+  const sourceTraceItems = [
+    sourceAgentName,
+    sourceTaskName,
+    sourceRoomName,
+    formatRelativeTime(resource.created_at),
+  ];
+  const detailFields = [
+    {
+      label: t('files.detail.resourceType'),
+      value: getProjectFileTypeLabel(fallbackFile, t),
+    },
+    {
+      label: t('files.detail.origin'),
+      value: getProjectFileOriginLabel(fallbackFile, t),
+    },
+    {
+      label: isAgentDocument ? t('files.detail.generatedAt') : t('files.detail.createdAt'),
+      value: formatRelativeTime(resource.created_at),
+    },
+    {
+      label: isAgentDocument ? t('files.detail.sourceAgent') : t('files.detail.uploadedBy'),
+      value: sourceSummary,
+      title: sourceSummary,
+      wrap: true,
+    },
+    {
+      label: t('files.detail.sourceTask'),
+      value: sourceTaskName,
+      title: sourceTaskName ?? undefined,
+      wrap: true,
+    },
+    {
+      label: t('files.detail.sourceRoom'),
+      value: sourceRoomName,
+      title: sourceRoomName ?? undefined,
+      wrap: true,
+    },
+  ];
 
   return (
     <div className="file-preview-shell">
       <ResourceCapabilityNotice type={isAgentDocument ? 'agent_document' : 'uploaded_file'} />
-      {isAgentDocument ? (
-        <ResourceSourceTrace
-          title={t('files.detail.documentSourceTitle')}
-          summary={sourceSummary}
-          items={[
-            sourceAgentName,
-            sourceTaskName,
-            sourceRoomName,
-            formatRelativeTime(resource.created_at),
-          ]}
-        />
-      ) : null}
+      <ResourceSourceTrace title={sourceTraceTitle} summary={sourceSummary} items={sourceTraceItems} />
       <ResourceDetailPreviewBody resource={resource} fallbackFile={fallbackFile} />
       <div className="file-preview-footer">
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-fg-muted)]">
@@ -183,38 +219,17 @@ export function ResourceDetailPreviewContent({
           </a>
         ) : null}
       </div>
-      <dl className="file-preview-details" aria-label={t('files.details')}>
-        <div>
-          <dt>{t('files.sourceFilter')}</dt>
-          <dd>{isAgentDocument ? t('files.source.agentDocument') : t('files.source.uploadedFile')}</dd>
-        </div>
-        <div>
-          <dt>{isAgentDocument ? t('files.detail.sourceAgent') : t('files.detail.uploadedBy')}</dt>
-          <dd title={sourceSummary}>{sourceSummary}</dd>
-        </div>
-        <div>
-          <dt>{isAgentDocument ? t('files.detail.generatedAt') : t('files.detail.createdAt')}</dt>
-          <dd>{formatRelativeTime(resource.created_at)}</dd>
-        </div>
-        {sourceAgentName ? (
-          <div>
-            <dt>{t('files.detail.sourceAgent')}</dt>
-            <dd>{sourceAgentName}</dd>
-          </div>
-        ) : null}
-        {resource.source.task_id || resource.source_task_id ? (
-          <div>
-            <dt>{t('files.detail.sourceTask')}</dt>
-            <dd>{sourceTaskName ?? resource.source.task_id ?? resource.source_task_id}</dd>
-          </div>
-        ) : null}
-        {resource.source.room_id || resource.source_room_id ? (
-          <div>
-            <dt>{t('files.detail.sourceRoom')}</dt>
-            <dd>{sourceRoomName ?? resource.source.room_id ?? resource.source_room_id}</dd>
-          </div>
-        ) : null}
-      </dl>
+      <PreviewDetails ariaLabel={t('files.details')}>
+        {detailFields.map((field) => (
+          <PreviewDetail
+            key={field.label}
+            label={field.label}
+            value={field.value}
+            title={field.title}
+            wrap={field.wrap}
+          />
+        ))}
+      </PreviewDetails>
     </div>
   );
 }
@@ -276,21 +291,57 @@ export function ProjectFilePreviewContent({
   const isAgentDocument = file.source_type === 'agent_document';
   const isUploadedFile = file.source_type === 'uploaded_file';
   const sourceSummary = getProjectFileSourceSummary(file, t);
+  const sourceTraceTitle = isAgentDocument
+    ? t('files.detail.documentSourceTitle')
+    : t('files.detail.uploadSourceTitle');
+  const sourceTraceItems = isAgentDocument
+    ? [
+      file.source_agent_id,
+      file.last_referenced_room_name ?? file.source_task_id ?? file.source_room_id,
+      formatRelativeTime(file.created_at),
+    ]
+    : [
+      file.uploaded_by_name ?? file.uploaded_by_id,
+      file.last_referenced_room_name ?? file.source_room_id,
+      formatRelativeTime(file.created_at),
+    ];
+  const detailFields = [
+    {
+      label: t('files.detail.resourceType'),
+      value: getProjectFileTypeLabel(file, t),
+    },
+    {
+      label: t('files.detail.origin'),
+      value: getProjectFileOriginLabel(file, t),
+    },
+    {
+      label: isAgentDocument ? t('files.detail.generatedAt') : t('files.detail.createdAt'),
+      value: formatRelativeTime(file.created_at),
+    },
+    {
+      label: isAgentDocument ? t('files.detail.sourceAgent') : t('files.detail.uploadedBy'),
+      value: sourceSummary,
+      title: sourceSummary,
+      wrap: true,
+    },
+    {
+      label: t('files.detail.sourceTask'),
+      value: file.source_task_id ?? null,
+      title: file.source_task_id ?? undefined,
+      wrap: true,
+    },
+    {
+      label: t('files.detail.sourceRoom'),
+      value: file.last_referenced_room_name ?? file.source_room_id,
+      title: file.last_referenced_room_name ?? file.source_room_id ?? undefined,
+      wrap: true,
+    },
+  ];
 
   return (
     <div className="file-preview-shell">
       <ResourceCapabilityNotice type={isAgentDocument ? 'agent_document' : 'uploaded_file'} />
-      {isAgentDocument ? (
-        <ResourceSourceTrace
-          title={t('files.detail.documentSourceTitle')}
-          summary={sourceSummary}
-          items={[
-            file.source_agent_id,
-            file.last_referenced_room_name ?? file.source_task_id ?? file.source_room_id,
-            formatRelativeTime(file.created_at),
-          ]}
-        />
-      ) : null}
+      <ResourceSourceTrace title={sourceTraceTitle} summary={sourceSummary} items={sourceTraceItems} />
       <ProjectFilePreviewBody file={file} />
       <div className="file-preview-footer">
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-fg-muted)]">
@@ -321,38 +372,17 @@ export function ProjectFilePreviewContent({
           </a>
         ) : null}
       </div>
-      <dl className="file-preview-details" aria-label={t('files.details')}>
-        <div>
-          <dt>{t('files.sourceFilter')}</dt>
-          <dd>{getProjectFileTypeLabel(file, t)}</dd>
-        </div>
-        <div>
-          <dt>{isAgentDocument ? t('files.detail.sourceAgent') : t('files.detail.uploadedBy')}</dt>
-          <dd title={sourceSummary}>{sourceSummary}</dd>
-        </div>
-        <div>
-          <dt>{isAgentDocument ? t('files.detail.generatedAt') : t('files.detail.createdAt')}</dt>
-          <dd>{formatRelativeTime(file.created_at)}</dd>
-        </div>
-        {file.uploaded_by_name ? (
-          <div>
-            <dt>{t('files.detail.uploadedBy')}</dt>
-            <dd>{file.uploaded_by_name}</dd>
-          </div>
-        ) : null}
-        {file.source_agent_id ? (
-          <div>
-            <dt>{t('files.detail.sourceAgent')}</dt>
-            <dd>{file.source_agent_id}</dd>
-          </div>
-        ) : null}
-        {file.source_task_id ? (
-          <div>
-            <dt>{t('files.detail.sourceTask')}</dt>
-            <dd>{file.source_task_id}</dd>
-          </div>
-        ) : null}
-      </dl>
+      <PreviewDetails ariaLabel={t('files.details')}>
+        {detailFields.map((field) => (
+          <PreviewDetail
+            key={field.label}
+            label={field.label}
+            value={field.value}
+            title={field.title}
+            wrap={field.wrap}
+          />
+        ))}
+      </PreviewDetails>
     </div>
   );
 }
@@ -414,6 +444,43 @@ function ResourceSourceTrace({
         </span>
       ) : null}
     </section>
+  );
+}
+
+function PreviewDetails({
+  ariaLabel,
+  children,
+}: {
+  ariaLabel: string;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <dl className="file-preview-details" aria-label={ariaLabel}>
+      {children}
+    </dl>
+  );
+}
+
+function PreviewDetail({
+  label,
+  value,
+  title,
+  wrap,
+}: {
+  label: string;
+  value: string | null | undefined;
+  title?: string;
+  wrap?: boolean;
+}): JSX.Element | null {
+  if (!value) return null;
+
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd className={wrap ? 'is-wrap' : undefined} title={title ?? value}>
+        {value}
+      </dd>
+    </div>
   );
 }
 

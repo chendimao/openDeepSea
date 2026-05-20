@@ -180,6 +180,8 @@ test('resource detail content hides file actions for agent documents', () => {
   );
 
   assert.match(html, /<h1>执行总结<\/h1>/);
+  assert.match(html, /资源类型/);
+  assert.match(html, /来源/);
   assert.match(html, /生成时间/);
   assert.match(html, /文档来源追踪/);
   assert.match(html, /智能体 Markdown 文档能力/);
@@ -203,11 +205,45 @@ test('resource detail content keeps preview and download for uploaded files', ()
   );
 
   assert.match(html, /上传文件/);
+  assert.match(html, /上传来源追踪/);
   assert.match(html, /上传文件能力/);
   assert.match(html, /screen\.png/);
   assert.match(html, /打开原文件/);
   assert.match(html, /download="screen\.png"/);
   assert.match(html, /src="\/uploads\/files\/project-1\/stored-screen\.png"/);
+});
+
+test('resource detail content degrades gracefully when source fields are missing', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ResourceDetailPreviewContent
+        resource={{
+          ...createAgentDocumentResourceDetail(),
+          source: {
+            ...createAgentDocumentResourceDetail().source,
+            display_name: null,
+            agent_id: null,
+            task_id: null,
+            room_id: null,
+            context: null,
+          },
+          source_agent_id: null,
+          source_task_id: null,
+          source_room_id: null,
+          source_display_name: null,
+          source_context_id: null,
+          source_context_name: null,
+          source_context_type: null,
+        }}
+        fallbackFile={createAgentDocument()}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /智能体 Markdown 文档能力/);
+  assert.match(html, /智能体来源：未记录/);
+  assert.doesNotMatch(html, /undefined/);
+  assert.doesNotMatch(html, /null/);
 });
 
 test('resource detail content shows empty state for blank agent documents', () => {
