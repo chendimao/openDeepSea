@@ -1,7 +1,12 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
+  CheckCircle2,
+  Circle,
+  KeyRound,
+  Pencil,
+  Plus,
   GitBranch,
   Globe2,
   Moon,
@@ -13,6 +18,7 @@ import {
   Sparkles,
   Sun,
   SwatchBook,
+  Trash2,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -31,6 +37,7 @@ import {
 } from '../lib/theme';
 import {
   type Agent,
+  type AiConfig,
   type EffectiveSettings,
   type MessageRoutingMode,
   type Project,
@@ -55,6 +62,17 @@ type SettingsPatch = {
   default_workflow_definition_id?: string | null;
 };
 
+type SystemSettingsSavePatch = {
+  message_routing_mode: MessageRoutingMode;
+  fallback_agent_id: string | null;
+  interaction_mode: TaskInteractionMode;
+  auto_distill_enabled: boolean;
+  default_workflow_definition_id: string | null;
+  langchain_planner_model?: string | null;
+  openai_base_url?: string | null;
+  openai_api_key?: string | null;
+};
+
 const ROUTING_OPTIONS: Array<{ value: MessageRoutingMode; descriptionKey: MessageKey }> = [
   { value: 'mentions_only', descriptionKey: 'settings.routing.mentions_only.description' },
   { value: 'fallback_reply', descriptionKey: 'settings.routing.fallback_reply.description' },
@@ -71,6 +89,8 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
   default_workflow_definition_id: null,
+  active_ai_config_id: null,
+  ai_configs: [],
   langchain_planner_model: null,
   openai_base_url: null,
   openai_api_key_set: false,
@@ -78,6 +98,14 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
 };
 
 type SystemSettingsCategory = 'general' | 'chat' | 'model' | 'skills';
+
+type AiConfigDraft = {
+  name: string;
+  plannerModel: string;
+  openaiBaseUrl: string;
+  openaiApiKey: string;
+  clearOpenaiApiKey: boolean;
+};
 
 export function SystemSettingsDialog({
   children,
@@ -96,6 +124,11 @@ export function SystemSettingsDialog({
     queryFn: api.getSystemSettings,
     enabled: open,
   });
+  const { data: aiConfigs } = useQuery({
+    queryKey: ['settings', 'ai-configs'],
+    queryFn: api.listAiConfigs,
+    enabled: open,
+  });
   const { data: agents = [] } = useQuery({
     queryKey: ['agents'],
     queryFn: api.listAgents,
@@ -110,6 +143,7 @@ export function SystemSettingsDialog({
     mutationFn: api.updateSystemSettings,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['settings', 'ai-configs'] });
       toast.success(t('settings.systemSaved'));
       setOpen(false);
     },
@@ -125,9 +159,10 @@ export function SystemSettingsDialog({
         className="max-h-[88vh] w-[min(94vw,900px)] overflow-y-auto"
       >
         <SystemSettingsForm
-          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.default_workflow_definition_id ?? ''}:${settings.langchain_planner_model ?? ''}:${settings.openai_base_url ?? ''}:${settings.openai_api_key_set}:${settings.openai_api_key_preview ?? ''}`}
+          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.default_workflow_definition_id ?? ''}:${settings.active_ai_config_id ?? ''}:${aiConfigs?.items.length ?? 0}`}
           theme={theme}
           value={settings}
+          aiConfigs={aiConfigs ?? { active_ai_config_id: settings.active_ai_config_id, items: settings.ai_configs ?? [] }}
           fallbackOptions={toGlobalFallbackOptions(agents)}
           workflowDefinitions={workflowDefinitions}
           isSaving={save.isPending}
@@ -277,6 +312,7 @@ export function RoomSettingsDialog({
 function SystemSettingsForm({
   theme,
   value,
+  aiConfigs,
   fallbackOptions,
   workflowDefinitions,
   isSaving,
@@ -285,31 +321,28 @@ function SystemSettingsForm({
 }: {
   theme: ThemeMode;
   value: SystemSettings;
+  aiConfigs: { active_ai_config_id: string | null; items: AiConfig[] };
   fallbackOptions: FallbackAgentOption[];
   workflowDefinitions: WorkflowDefinition[];
   isSaving: boolean;
   onThemeChange: (theme: ThemeMode) => void;
-  onSave: (patch: {
-    message_routing_mode: MessageRoutingMode;
-    fallback_agent_id: string | null;
-    interaction_mode: TaskInteractionMode;
-    auto_distill_enabled: boolean;
-    default_workflow_definition_id: string | null;
-    langchain_planner_model: string | null;
-    openai_base_url: string | null;
-    openai_api_key?: string | null;
-  }) => void;
+  onSave: (patch: SystemSettingsSavePatch) => void;
 }): JSX.Element {
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode>(value.message_routing_mode);
   const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? 'planner');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
   const [autoDistillEnabled, setAutoDistillEnabled] = useState(value.auto_distill_enabled);
   const [workflowDefinitionId, setWorkflowDefinitionId] = useState(value.default_workflow_definition_id ?? '');
-  const [plannerModel, setPlannerModel] = useState(value.langchain_planner_model ?? '');
-  const [openaiBaseUrl, setOpenaiBaseUrl] = useState(value.openai_base_url ?? '');
-  const [openaiApiKey, setOpenaiApiKey] = useState('');
-  const [clearOpenaiApiKey, setClearOpenaiApiKey] = useState(false);
+  const [selectedAiConfigId, setSelectedAiConfigId] = useState<string | null>(
+    aiConfigs.active_ai_config_id ?? aiConfigs.items[0]?.id ?? null,
+  );
+  const [aiConfigDraft, setAiConfigDraft] = useState<AiConfigDraft>(() =>
+    createDraftFromConfig(aiConfigs.items.find((item) => item.id === aiConfigs.active_ai_config_id) ?? aiConfigs.items[0] ?? null),
+  );
+  const [aiConfigMode, setAiConfigMode] = useState<'edit' | 'create'>(aiConfigs.items.length > 0 ? 'edit' : 'create');
+  const [aiConfigError, setAiConfigError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('general');
+  const queryClient = useQueryClient();
   const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
   const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
@@ -324,6 +357,104 @@ function SystemSettingsForm({
   );
   const selectedWorkflowDefinition = workflowDefinitions.find((definition) => definition.id === workflowDefinitionId);
   const archivedDefaultSelected = selectedWorkflowDefinition?.status === 'archived';
+  const selectedAiConfig = aiConfigs.items.find((item) => item.id === selectedAiConfigId) ?? null;
+  const activeAiConfig = aiConfigs.items.find((item) => item.id === aiConfigs.active_ai_config_id) ?? null;
+  const refreshAiConfigQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['settings', 'system'] }),
+      queryClient.invalidateQueries({ queryKey: ['settings', 'ai-configs'] }),
+      queryClient.invalidateQueries({ queryKey: ['settings'] }),
+    ]);
+  };
+  const createAiConfigMutation = useMutation({
+    mutationFn: api.createAiConfig,
+    onSuccess: async (config) => {
+      await refreshAiConfigQueries();
+      setSelectedAiConfigId(config.id);
+      setAiConfigDraft(createDraftFromConfig(config));
+      setAiConfigMode('edit');
+      setAiConfigError(null);
+      toast.success(t('settings.aiConfigCreated'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const updateAiConfigMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Parameters<typeof api.updateAiConfig>[1] }) =>
+      api.updateAiConfig(id, input),
+    onSuccess: async (config) => {
+      await refreshAiConfigQueries();
+      setSelectedAiConfigId(config.id);
+      setAiConfigDraft(createDraftFromConfig(config));
+      setAiConfigMode('edit');
+      setAiConfigError(null);
+      toast.success(t('settings.aiConfigSaved'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const activateAiConfigMutation = useMutation({
+    mutationFn: api.activateAiConfig,
+    onSuccess: async () => {
+      await refreshAiConfigQueries();
+      setAiConfigError(null);
+      toast.success(t('settings.aiConfigActivated'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const deleteAiConfigMutation = useMutation({
+    mutationFn: api.deleteAiConfig,
+    onSuccess: async (_result, deletedId) => {
+      await refreshAiConfigQueries();
+      const nextItems = aiConfigs.items.filter((item) => item.id !== deletedId);
+      const nextSelected = aiConfigs.active_ai_config_id === deletedId
+        ? nextItems.find((item) => item.id !== deletedId)?.id ?? null
+        : selectedAiConfigId === deletedId
+          ? aiConfigs.active_ai_config_id ?? nextItems[0]?.id ?? null
+          : selectedAiConfigId;
+      const nextConfig = nextItems.find((item) => item.id === nextSelected) ?? null;
+      setSelectedAiConfigId(nextSelected);
+      setAiConfigDraft(createDraftFromConfig(nextConfig));
+      setAiConfigMode(nextConfig ? 'edit' : 'create');
+      setAiConfigError(null);
+      toast.success(t('settings.aiConfigDeleted'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const aiConfigBusy =
+    createAiConfigMutation.isPending ||
+    updateAiConfigMutation.isPending ||
+    activateAiConfigMutation.isPending ||
+    deleteAiConfigMutation.isPending;
+  const saveAiConfig = (activate: boolean) => {
+    const validationError = validateAiConfigDraft(aiConfigDraft, t);
+    if (validationError) {
+      setAiConfigError(validationError);
+      return;
+    }
+    const input = {
+      name: aiConfigDraft.name.trim(),
+      langchain_planner_model: aiConfigDraft.plannerModel.trim(),
+      openai_base_url: aiConfigDraft.openaiBaseUrl.trim(),
+      activate,
+      ...(aiConfigDraft.clearOpenaiApiKey
+        ? { openai_api_key: null }
+        : aiConfigDraft.openaiApiKey.trim()
+          ? { openai_api_key: aiConfigDraft.openaiApiKey.trim() }
+          : {}),
+    };
+    if (aiConfigMode === 'edit' && selectedAiConfig) {
+      updateAiConfigMutation.mutate({ id: selectedAiConfig.id, input });
+    } else {
+      createAiConfigMutation.mutate(input);
+    }
+  };
+
+  useEffect(() => {
+    const nextSelectedId = aiConfigs.active_ai_config_id ?? aiConfigs.items[0]?.id ?? null;
+    setSelectedAiConfigId(nextSelectedId);
+    setAiConfigDraft(createDraftFromConfig(aiConfigs.items.find((item) => item.id === nextSelectedId) ?? aiConfigs.items[0] ?? null));
+    setAiConfigMode(aiConfigs.items.length > 0 ? 'edit' : 'create');
+    setAiConfigError(null);
+  }, [aiConfigs.active_ai_config_id, aiConfigs.items]);
   const categories: Array<{
     value: SystemSettingsCategory;
     title: string;
@@ -365,21 +496,13 @@ function SystemSettingsForm({
           type="button"
           disabled={isSaving || archivedDefaultSelected || (requiresFallback && !selectedFallbackAgentId)}
           onClick={() => {
-            const patch: Parameters<typeof onSave>[0] = {
+            const patch: SystemSettingsSavePatch = {
               message_routing_mode: routingMode,
               fallback_agent_id: requiresFallback ? selectedFallbackAgentId : null,
               interaction_mode: interactionMode,
               auto_distill_enabled: autoDistillEnabled,
               default_workflow_definition_id: workflowDefinitionId || null,
-              langchain_planner_model: trimmedOrNull(plannerModel),
-              openai_base_url: trimmedOrNull(openaiBaseUrl),
             };
-            const nextApiKey = openaiApiKey.trim();
-            if (clearOpenaiApiKey) {
-              patch.openai_api_key = null;
-            } else if (nextApiKey) {
-              patch.openai_api_key = nextApiKey;
-            }
             onSave(patch);
           }}
         >
@@ -501,22 +624,34 @@ function SystemSettingsForm({
                 icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />}
               >
                 <ModelSettingsSection
-                  plannerModel={plannerModel}
-                  openaiBaseUrl={openaiBaseUrl}
-                  openaiApiKey={openaiApiKey}
-                  openaiApiKeySet={value.openai_api_key_set}
-                  openaiApiKeyPreview={value.openai_api_key_preview}
-                  clearOpenaiApiKey={clearOpenaiApiKey}
-                  onPlannerModelChange={setPlannerModel}
-                  onOpenaiBaseUrlChange={setOpenaiBaseUrl}
-                  onOpenaiApiKeyChange={(nextValue) => {
-                    setOpenaiApiKey(nextValue);
-                    if (nextValue.trim()) setClearOpenaiApiKey(false);
+                  configs={aiConfigs.items}
+                  activeConfigId={aiConfigs.active_ai_config_id}
+                  selectedConfigId={selectedAiConfigId}
+                  activeConfig={activeAiConfig}
+                  draft={aiConfigDraft}
+                  mode={aiConfigMode}
+                  error={aiConfigError}
+                  isSaving={aiConfigBusy}
+                  onSelectConfig={(config) => {
+                    setSelectedAiConfigId(config.id);
+                    setAiConfigDraft(createDraftFromConfig(config));
+                    setAiConfigMode('edit');
+                    setAiConfigError(null);
                   }}
-                  onClearOpenaiApiKeyChange={(nextValue) => {
-                    setClearOpenaiApiKey(nextValue);
-                    if (nextValue) setOpenaiApiKey('');
+                  onCreateConfig={() => {
+                    setSelectedAiConfigId(null);
+                    setAiConfigDraft(createEmptyAiConfigDraft(aiConfigs.items.length));
+                    setAiConfigMode('create');
+                    setAiConfigError(null);
                   }}
+                  onDraftChange={(patch) => {
+                    setAiConfigDraft((current) => ({ ...current, ...patch }));
+                    setAiConfigError(null);
+                  }}
+                  onSaveDraft={() => saveAiConfig(false)}
+                  onUseCurrent={() => saveAiConfig(true)}
+                  onActivateConfig={(configId) => activateAiConfigMutation.mutate(configId)}
+                  onDeleteConfig={(configId) => deleteAiConfigMutation.mutate(configId)}
                 />
               </SubSettingSection>
             </div>
@@ -627,94 +762,231 @@ function LanguageSection(): JSX.Element {
 }
 
 function ModelSettingsSection({
-  plannerModel,
-  openaiBaseUrl,
-  openaiApiKey,
-  openaiApiKeySet,
-  openaiApiKeyPreview,
-  clearOpenaiApiKey,
-  onPlannerModelChange,
-  onOpenaiBaseUrlChange,
-  onOpenaiApiKeyChange,
-  onClearOpenaiApiKeyChange,
+  configs,
+  activeConfigId,
+  selectedConfigId,
+  activeConfig,
+  draft,
+  mode,
+  error,
+  isSaving,
+  onSelectConfig,
+  onCreateConfig,
+  onDraftChange,
+  onSaveDraft,
+  onUseCurrent,
+  onActivateConfig,
+  onDeleteConfig,
 }: {
-  plannerModel: string;
-  openaiBaseUrl: string;
-  openaiApiKey: string;
-  openaiApiKeySet: boolean;
-  openaiApiKeyPreview: string | null;
-  clearOpenaiApiKey: boolean;
-  onPlannerModelChange: (value: string) => void;
-  onOpenaiBaseUrlChange: (value: string) => void;
-  onOpenaiApiKeyChange: (value: string) => void;
-  onClearOpenaiApiKeyChange: (value: boolean) => void;
+  configs: AiConfig[];
+  activeConfigId: string | null;
+  selectedConfigId: string | null;
+  activeConfig: AiConfig | null;
+  draft: AiConfigDraft;
+  mode: 'edit' | 'create';
+  error: string | null;
+  isSaving: boolean;
+  onSelectConfig: (config: AiConfig) => void;
+  onCreateConfig: () => void;
+  onDraftChange: (patch: Partial<AiConfigDraft>) => void;
+  onSaveDraft: () => void;
+  onUseCurrent: () => void;
+  onActivateConfig: (configId: string) => void;
+  onDeleteConfig: (configId: string) => void;
 }): JSX.Element {
   const { t } = useI18n();
-  const apiKeyStatus = openaiApiKeySet
-    ? t('settings.openaiApiKeySaved', { preview: openaiApiKeyPreview ?? '' })
-    : t('settings.openaiApiKeyNotSaved');
+  const selectedConfig = configs.find((item) => item.id === selectedConfigId) ?? null;
+  const canDelete = mode === 'edit' && Boolean(selectedConfig);
 
   return (
-    <div className="space-y-3">
-      <div>
-        <label
-          htmlFor="system-planner-model"
-          className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]"
-        >
-          {t('settings.plannerModel')}
-        </label>
-        <Input
-          id="system-planner-model"
-          value={plannerModel}
-          onChange={(event) => onPlannerModelChange(event.target.value)}
-          placeholder={t('settings.plannerModelPlaceholder')}
-          className="font-mono"
-        />
-      </div>
-      <div>
-        <label
-          htmlFor="system-openai-base-url"
-          className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]"
-        >
-          {t('settings.openaiBaseUrl')}
-        </label>
-        <Input
-          id="system-openai-base-url"
-          value={openaiBaseUrl}
-          onChange={(event) => onOpenaiBaseUrlChange(event.target.value)}
-          placeholder={t('settings.openaiBaseUrlPlaceholder')}
-          className="font-mono"
-        />
-      </div>
-      <div>
-        <label
-          htmlFor="system-openai-api-key"
-          className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]"
-        >
-          {t('settings.openaiApiKey')}
-        </label>
-        <Input
-          id="system-openai-api-key"
-          type="password"
-          value={openaiApiKey}
-          onChange={(event) => onOpenaiApiKeyChange(event.target.value)}
-          placeholder={t('settings.openaiApiKeyPlaceholder')}
-          className="font-mono"
-          disabled={clearOpenaiApiKey}
-          autoComplete="new-password"
-        />
-        <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">{apiKeyStatus}</p>
-        {openaiApiKeySet && (
-          <label className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-[12px] text-[var(--color-fg-muted)]">
-            <input
-              type="checkbox"
-              checked={clearOpenaiApiKey}
-              onChange={(event) => onClearOpenaiApiKeyChange(event.target.checked)}
-              className="h-3.5 w-3.5 accent-[var(--color-primary)]"
-            />
-            <span>{t('settings.clearOpenaiApiKey')}</span>
-          </label>
+    <div className="grid gap-3 lg:grid-cols-[minmax(0,0.95fr)_minmax(300px,1.05fr)]">
+      <div className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h5 className="text-[12px] font-semibold text-[var(--color-fg)]">{t('settings.aiConfigList')}</h5>
+            <p className="mt-1 truncate text-[11px] text-[var(--color-fg-muted)]">
+              {activeConfig ? t('settings.aiConfigActiveSummary', { name: activeConfig.name }) : t('settings.aiConfigNoActive')}
+            </p>
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={onCreateConfig}>
+            <Plus className="h-3.5 w-3.5" />
+            {t('settings.aiConfigNew')}
+          </Button>
+        </div>
+
+        {configs.length === 0 ? (
+          <div className="rounded-md border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-raised)] px-3 py-6 text-center">
+            <Sparkles className="mx-auto h-5 w-5 text-[var(--color-accent)]" strokeWidth={1.75} />
+            <div className="mt-2 text-[12px] font-semibold text-[var(--color-fg)]">{t('settings.aiConfigEmptyTitle')}</div>
+            <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+              {t('settings.aiConfigEmptyDescription')}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {configs.map((config) => {
+              const isActive = config.id === activeConfigId;
+              const isSelected = config.id === selectedConfigId;
+              return (
+                <button
+                  key={config.id}
+                  type="button"
+                  onClick={() => onSelectConfig(config)}
+                  className={cn(
+                    'w-full rounded-md border p-3 text-left transition-colors ease-ocean',
+                    isSelected
+                      ? 'border-[var(--color-accent)] bg-[var(--color-surface-raised)]'
+                      : 'border-[var(--color-border)] bg-[var(--color-surface-raised)] hover:border-[var(--color-border-strong)]',
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        {isActive ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-[var(--color-success)]" strokeWidth={1.9} />
+                        ) : (
+                          <Circle className="h-3.5 w-3.5 flex-shrink-0 text-[var(--color-muted)]" strokeWidth={1.7} />
+                        )}
+                        <span className="truncate text-[13px] font-semibold text-[var(--color-fg)]">{config.name}</span>
+                      </div>
+                      <div className="mt-1 truncate font-mono text-[11.5px] text-[var(--color-fg-muted)]">
+                        {config.langchain_planner_model}
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        'shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold',
+                        isActive
+                          ? 'bg-[color-mix(in_srgb,var(--color-success)_14%,transparent)] text-[var(--color-success)]'
+                          : 'bg-[var(--color-surface)] text-[var(--color-fg-muted)]',
+                      )}
+                    >
+                      {isActive ? t('settings.aiConfigCurrent') : t('settings.aiConfigStandby')}
+                    </span>
+                  </div>
+                  <div className="mt-2 grid gap-1 text-[11px] text-[var(--color-fg-muted)]">
+                    <span className="truncate">{config.openai_base_url}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <KeyRound className="h-3 w-3" strokeWidth={1.75} />
+                      {config.openai_api_key_set ? t('settings.openaiApiKeySaved', { preview: config.openai_api_key_preview ?? '' }) : t('settings.openaiApiKeyNotSaved')}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )}
+      </div>
+
+      <div className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h5 className="text-[12px] font-semibold text-[var(--color-fg)]">
+              {mode === 'create' ? t('settings.aiConfigCreateTitle') : t('settings.aiConfigEditTitle')}
+            </h5>
+            <p className="mt-1 text-[11px] text-[var(--color-fg-muted)]">
+              {mode === 'create' ? t('settings.aiConfigCreateDescription') : t('settings.aiConfigEditDescription')}
+            </p>
+          </div>
+          {mode === 'edit' && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-raised)] px-2 py-1 text-[10.5px] font-semibold text-[var(--color-fg-muted)]">
+              <Pencil className="h-3 w-3" strokeWidth={1.75} />
+              {selectedConfig?.id === activeConfigId ? t('settings.aiConfigCurrent') : t('settings.aiConfigStandby')}
+            </span>
+          )}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Label>{t('settings.aiConfigName')}</Label>
+            <Input
+              value={draft.name}
+              onChange={(event) => onDraftChange({ name: event.target.value })}
+              placeholder={t('settings.aiConfigNamePlaceholder')}
+            />
+          </div>
+          <div>
+            <Label>{t('settings.plannerModel')}</Label>
+            <Input
+              value={draft.plannerModel}
+              onChange={(event) => onDraftChange({ plannerModel: event.target.value })}
+              placeholder={t('settings.plannerModelPlaceholder')}
+              className="font-mono"
+            />
+          </div>
+          <div>
+            <Label>{t('settings.openaiBaseUrl')}</Label>
+            <Input
+              value={draft.openaiBaseUrl}
+              onChange={(event) => onDraftChange({ openaiBaseUrl: event.target.value })}
+              placeholder={t('settings.openaiBaseUrlPlaceholder')}
+              className="font-mono"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Label>{t('settings.openaiApiKey')}</Label>
+            <Input
+              type="password"
+              value={draft.openaiApiKey}
+              onChange={(event) => onDraftChange({ openaiApiKey: event.target.value, clearOpenaiApiKey: false })}
+              placeholder={t('settings.openaiApiKeyPlaceholder')}
+              className="font-mono"
+              disabled={draft.clearOpenaiApiKey}
+              autoComplete="new-password"
+            />
+            <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+              {selectedConfig?.openai_api_key_set
+                ? t('settings.openaiApiKeySaved', { preview: selectedConfig.openai_api_key_preview ?? '' })
+                : t('settings.openaiApiKeyNotSaved')}
+            </p>
+            {selectedConfig?.openai_api_key_set && (
+              <label className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-[12px] text-[var(--color-fg-muted)]">
+                <input
+                  type="checkbox"
+                  checked={draft.clearOpenaiApiKey}
+                  onChange={(event) => onDraftChange({ clearOpenaiApiKey: event.target.checked, openaiApiKey: '' })}
+                  className="h-3.5 w-3.5 accent-[var(--color-primary)]"
+                />
+                <span>{t('settings.clearOpenaiApiKey')}</span>
+              </label>
+            )}
+          </div>
+        </div>
+        {error && <p className="mt-3 text-[12px] leading-relaxed text-[var(--color-danger)]">{error}</p>}
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          {canDelete && (
+            <Button type="button" size="sm" variant="danger" disabled={isSaving} onClick={() => selectedConfig && onDeleteConfig(selectedConfig.id)}>
+              <Trash2 className="h-3.5 w-3.5" />
+              {t('settings.aiConfigDelete')}
+            </Button>
+          )}
+          <Button type="button" size="sm" variant="secondary" disabled={isSaving} onClick={onSaveDraft}>
+            <Save className="h-3.5 w-3.5" />
+            {mode === 'create' ? t('settings.aiConfigCreate') : t('settings.aiConfigSave')}
+          </Button>
+          {selectedConfig && (
+            <Button
+              type="button"
+              size="sm"
+              disabled={isSaving}
+              onClick={() => {
+                if (selectedConfig.id === activeConfigId) {
+                  onUseCurrent();
+                } else {
+                  onActivateConfig(selectedConfig.id);
+                }
+              }}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {selectedConfig.id === activeConfigId ? t('settings.aiConfigReapply') : t('settings.aiConfigUse')}
+            </Button>
+          )}
+          {!selectedConfig && (
+            <Button type="button" size="sm" disabled={isSaving} onClick={onUseCurrent}>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {t('settings.aiConfigSaveAndUse')}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1460,9 +1732,42 @@ function workflowDefinitionLabel(definition: WorkflowDefinition): string {
   return `${definition.name} v${definition.version}${definition.status === 'archived' ? '（已归档）' : ''}`;
 }
 
-function trimmedOrNull(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
+function createEmptyAiConfigDraft(count: number): AiConfigDraft {
+  return {
+    name: count > 0 ? `AI 配置 ${count + 1}` : '默认 AI 配置',
+    plannerModel: '',
+    openaiBaseUrl: '',
+    openaiApiKey: '',
+    clearOpenaiApiKey: false,
+  };
+}
+
+function createDraftFromConfig(config: AiConfig | null): AiConfigDraft {
+  if (!config) return createEmptyAiConfigDraft(0);
+  return {
+    name: config.name,
+    plannerModel: config.langchain_planner_model,
+    openaiBaseUrl: config.openai_base_url,
+    openaiApiKey: '',
+    clearOpenaiApiKey: false,
+  };
+}
+
+function validateAiConfigDraft(
+  draft: AiConfigDraft,
+  t: (key: MessageKey, vars?: Record<string, string>) => string,
+): string | null {
+  if (!draft.name.trim()) return t('settings.aiConfigNameRequired');
+  if (!draft.plannerModel.trim()) return t('settings.aiConfigModelRequired');
+  const baseUrl = draft.openaiBaseUrl.trim();
+  if (!baseUrl) return t('settings.aiConfigBaseUrlRequired');
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return t('settings.aiConfigBaseUrlInvalid');
+  } catch {
+    return t('settings.aiConfigBaseUrlInvalid');
+  }
+  return null;
 }
 
 function autoDistillLabel(

@@ -1,5 +1,6 @@
 import type {
   AcpBackend,
+  AiConfig,
   Agent,
   AgentInput,
   AgentRun,
@@ -237,6 +238,37 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
+  listAiConfigs: () =>
+    request<{ active_ai_config_id: string | null; items: AiConfig[] }>('/settings/ai-configs'),
+  createAiConfig: (input: {
+    name: string;
+    langchain_planner_model: string;
+    openai_base_url: string;
+    openai_api_key?: string | null;
+    activate?: boolean;
+  }) =>
+    request<AiConfig>('/settings/ai-configs', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateAiConfig: (
+    id: string,
+    input: {
+      name?: string | null;
+      langchain_planner_model?: string | null;
+      openai_base_url?: string | null;
+      openai_api_key?: string | null;
+      activate?: boolean;
+    },
+  ) =>
+    request<AiConfig>(`/settings/ai-configs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  activateAiConfig: (id: string) =>
+    request<SettingsResolution['system']>(`/settings/ai-configs/${id}/activate`, { method: 'POST' }),
+  deleteAiConfig: (id: string) =>
+    request<void>(`/settings/ai-configs/${id}`, { method: 'DELETE' }),
   getProjectSettings: (projectId: string) =>
     request<SettingsResolution>(`/projects/${projectId}/settings`),
   updateProjectSettings: (
