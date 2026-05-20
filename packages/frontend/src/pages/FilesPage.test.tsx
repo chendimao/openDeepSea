@@ -117,6 +117,11 @@ test('resource library type filters and keyword search compose across resource f
     ['asset:summary'],
   );
   assert.deepEqual(
+    files.filter((file) => projectFileMatchesFilters(file, { keyword: '功能开发', sourceType: 'uploaded_file' }, t))
+      .map((file) => file.id),
+    ['file:screen'],
+  );
+  assert.deepEqual(
     files.filter((file) => projectFileMatchesFilters(file, { keyword: 'frontend-executor', sourceType: 'agent_document' }, t))
       .map((file) => file.id),
     ['asset:summary'],
