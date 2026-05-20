@@ -110,10 +110,13 @@ test('agent document preview renders markdown content without download action', 
   );
 
   assert.match(html, /智能体文档/);
+  assert.match(html, /智能体 Markdown 文档能力/);
+  assert.match(html, /不提供文件下载操作/);
   assert.match(html, /<h1>执行总结<\/h1>/);
   assert.match(html, /智能体：frontend-executor · 任务：task-1/);
   assert.match(html, /来源智能体/);
   assert.match(html, /frontend-executor/);
+  assert.match(html, /生成时间/);
   assert.match(html, /定位消息/);
   assert.doesNotMatch(html, /download="执行总结\.md"/);
 });
@@ -128,6 +131,8 @@ test('uploaded file preview keeps download action', () => {
   );
 
   assert.match(html, /上传文件/);
+  assert.match(html, /上传文件能力/);
+  assert.match(html, /打开原文件和下载/);
   assert.match(html, /上传者：大哥/);
   assert.match(html, /download="screen\.png"/);
   assert.match(html, /打开原文件/);
@@ -164,9 +169,12 @@ test('resource detail content hides file actions for agent documents', () => {
   assert.match(html, /<h1>执行总结<\/h1>/);
   assert.match(html, /生成时间/);
   assert.match(html, /文档来源追踪/);
+  assert.match(html, /智能体 Markdown 文档能力/);
   assert.match(html, /前端开发工程师/);
   assert.match(html, /heartbeat workflow 验收 1779231401898/);
+  assert.match(html, /资源详情验收/);
   assert.match(html, /来源会话/);
+  assert.match(html, /来源任务/);
   assert.doesNotMatch(html, /download="执行总结\.md"/);
   assert.doesNotMatch(html, /打开原文件/);
 });
@@ -182,6 +190,7 @@ test('resource detail content keeps preview and download for uploaded files', ()
   );
 
   assert.match(html, /上传文件/);
+  assert.match(html, /上传文件能力/);
   assert.match(html, /screen\.png/);
   assert.match(html, /打开原文件/);
   assert.match(html, /download="screen\.png"/);
@@ -200,6 +209,7 @@ test('resource detail content shows empty state for blank agent documents', () =
 
   assert.match(html, /该智能体文档暂无内容/);
   assert.match(html, /文档来源追踪/);
+  assert.match(html, /不提供文件下载操作/);
   assert.doesNotMatch(html, /download=/);
   assert.doesNotMatch(html, /打开原文件/);
 });
@@ -236,6 +246,7 @@ test('fallback agent document detail hides original file actions and keeps sourc
   );
 
   assert.match(html, /文档来源追踪/);
+  assert.match(html, /智能体 Markdown 文档能力/);
   assert.match(html, /<h1>执行总结<\/h1>/);
   assert.doesNotMatch(html, /打开原文件/);
   assert.doesNotMatch(html, /download="执行总结\.md"/);

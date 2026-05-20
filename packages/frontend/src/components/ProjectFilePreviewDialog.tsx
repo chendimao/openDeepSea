@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Download } from 'lucide-react';
+import { Download, FileDown, FileSearch } from 'lucide-react';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
@@ -108,16 +108,21 @@ export function ResourceDetailPreviewContent({
   const size = resource.size ?? fallbackFile.size;
   const mimeType = resource.mime_type ?? fallbackFile.mime_type;
   const sourceSummary = getResourceDetailSourceSummary(resource, t);
+  const sourceAgentName = resource.source.display_name ?? resource.source.agent_id ?? resource.source_agent_id;
+  const sourceTaskName = getResourceContextLabel(resource, 'task');
+  const sourceRoomName = getResourceContextLabel(resource, 'room');
 
   return (
     <div className="file-preview-shell">
+      <ResourceCapabilityNotice type={isAgentDocument ? 'agent_document' : 'uploaded_file'} />
       {isAgentDocument ? (
         <ResourceSourceTrace
           title={t('files.detail.documentSourceTitle')}
           summary={sourceSummary}
           items={[
-            resource.source.display_name ?? resource.source.agent_id ?? resource.source_agent_id,
-            resource.source.context?.name ?? resource.source_context_name ?? resource.source_task_id ?? resource.source_room_id,
+            sourceAgentName,
+            sourceTaskName,
+            sourceRoomName,
             formatRelativeTime(resource.created_at),
           ]}
         />
@@ -165,22 +170,22 @@ export function ResourceDetailPreviewContent({
           <dt>{isAgentDocument ? t('files.detail.generatedAt') : t('files.detail.createdAt')}</dt>
           <dd>{formatRelativeTime(resource.created_at)}</dd>
         </div>
-        {resource.source.agent_id ? (
+        {sourceAgentName ? (
           <div>
             <dt>{t('files.detail.sourceAgent')}</dt>
-            <dd>{resource.source.display_name ?? resource.source.agent_id}</dd>
+            <dd>{sourceAgentName}</dd>
           </div>
         ) : null}
-        {resource.source.task_id ? (
+        {resource.source.task_id || resource.source_task_id ? (
           <div>
             <dt>{t('files.detail.sourceTask')}</dt>
-            <dd>{resource.source.context?.type === 'task' ? resource.source.context.name ?? resource.source.task_id : resource.source.task_id}</dd>
+            <dd>{sourceTaskName ?? resource.source.task_id ?? resource.source_task_id}</dd>
           </div>
         ) : null}
-        {resource.source.room_id ? (
+        {resource.source.room_id || resource.source_room_id ? (
           <div>
             <dt>{t('files.detail.sourceRoom')}</dt>
-            <dd>{resource.source.context?.type === 'room' ? resource.source.context.name ?? resource.source.room_id : resource.source.room_id}</dd>
+            <dd>{sourceRoomName ?? resource.source.room_id ?? resource.source_room_id}</dd>
           </div>
         ) : null}
       </dl>
@@ -248,6 +253,7 @@ export function ProjectFilePreviewContent({
 
   return (
     <div className="file-preview-shell">
+      <ResourceCapabilityNotice type={isAgentDocument ? 'agent_document' : 'uploaded_file'} />
       {isAgentDocument ? (
         <ResourceSourceTrace
           title={t('files.detail.documentSourceTitle')}
@@ -299,7 +305,7 @@ export function ProjectFilePreviewContent({
           <dd title={sourceSummary}>{sourceSummary}</dd>
         </div>
         <div>
-          <dt>{t('files.detail.createdAt')}</dt>
+          <dt>{isAgentDocument ? t('files.detail.generatedAt') : t('files.detail.createdAt')}</dt>
           <dd>{formatRelativeTime(file.created_at)}</dd>
         </div>
         {file.uploaded_by_name ? (
@@ -323,6 +329,40 @@ export function ProjectFilePreviewContent({
       </dl>
     </div>
   );
+}
+
+function ResourceCapabilityNotice({
+  type,
+}: {
+  type: 'uploaded_file' | 'agent_document';
+}): JSX.Element {
+  const { t } = useI18n();
+  const isAgentDocument = type === 'agent_document';
+  const Icon = isAgentDocument ? FileSearch : FileDown;
+
+  return (
+    <section
+      className={isAgentDocument ? 'file-preview-capability is-document' : 'file-preview-capability is-upload'}
+      aria-label={t('files.detail.capabilityTitle')}
+    >
+      <Icon className="h-4 w-4" strokeWidth={1.8} />
+      <span>
+        <strong>{isAgentDocument ? t('files.detail.documentCapabilityTitle') : t('files.detail.uploadCapabilityTitle')}</strong>
+        <small>{isAgentDocument ? t('files.detail.documentCapabilityDescription') : t('files.detail.uploadCapabilityDescription')}</small>
+      </span>
+    </section>
+  );
+}
+
+function getResourceContextLabel(resource: ResourceDetail, type: 'task' | 'room'): string | null {
+  if (resource.source.context?.type === type) {
+    return resource.source.context.name ?? resource.source.context.id;
+  }
+  if (resource.source_context_type === type) {
+    return resource.source_context_name ?? resource.source_context_id;
+  }
+  if (type === 'task') return resource.source.task_id ?? resource.source_task_id;
+  return resource.source.room_id ?? resource.source_room_id;
 }
 
 function ResourceSourceTrace({
