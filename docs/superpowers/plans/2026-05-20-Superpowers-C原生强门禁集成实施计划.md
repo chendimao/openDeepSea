@@ -23,7 +23,8 @@
 - Create: `packages/backend/src/workflows/graph/superpowers-gates.ts` - 门禁检查和状态更新纯函数。
 - Create: `packages/backend/src/workflows/superpowers-skills.ts` - 内置 Superpowers skill 名称、阶段映射和 prompt 注入辅助。
 - Modify: `packages/backend/src/workflows/prompts.ts` - 增加 Superpowers 阶段 prompt。
-- Modify: `packages/backend/src/workflows/agent-provisioning.ts` - 增加 Superpowers review 角色选择策略。
+- Modify: `packages/backend/src/workflows/agent-provisioning.ts` - 将 Superpowers subagent 角色映射到当前房间智能体。
+- Modify: `packages/backend/src/workflows/graph/coordinator-agents.ts` - 按 Superpowers prompt template 选择 implementer/reviewer。
 - Modify: `packages/backend/src/routes.ts` - 禁用自定义 workflow CRUD 和默认 workflow 设置入口。
 - Modify: `packages/backend/src/repos/settings.ts` - 新任务忽略 `default_workflow_definition_id`。
 - Test: `packages/backend/src/repos/workflow-definitions.test.ts`
@@ -33,6 +34,7 @@
 - Test: `packages/backend/src/workflows/graph/state.test.ts`
 - Test: `packages/backend/src/workflows/graph/superpowers-gates.test.ts`
 - Test: `packages/backend/src/workflows/graph/superpowers-runtime.test.ts`
+- Test: `packages/backend/src/workflows/graph/coordinator-agents.test.ts`
 
 前端：
 
@@ -429,44 +431,62 @@ git commit -m "feat(workflow): 实现Superpowers规划门禁"
 - Modify: `packages/backend/src/workflows/graph/superpowers-nodes.ts`
 - Modify: `packages/backend/src/workflows/graph/superpowers-runtime.ts`
 - Modify: `packages/backend/src/workflows/agent-provisioning.ts`
+- Modify: `packages/backend/src/workflows/graph/coordinator-agents.ts`
 - Test: `packages/backend/src/workflows/graph/superpowers-runtime.test.ts`
+- Test: `packages/backend/src/workflows/graph/coordinator-agents.test.ts`
 
 - [ ] **Step 1: Write failing test for TDD evidence gate**
 
 Assert Superpowers run cannot leave `tdd_execute` unless `tddEvidence` contains RED and GREEN records for implementation tasks, or an explicit exemption.
 
-- [ ] **Step 2: Run test to verify fail**
+- [ ] **Step 2: Write failing subagent mapping test**
 
-Run: `npm --workspace packages/backend test -- superpowers-runtime`
+Assert Superpowers implementer/spec reviewer/code quality reviewer assignments use current room `RoomAgent` records and create normal child tasks / `agent_runs`; assert no independent Superpowers agent runtime or `superpowers:*` named agent is created.
 
-Expected: FAIL because TDD gate does not exist.
+- [ ] **Step 3: Run test to verify fail**
 
-- [ ] **Step 3: Implement tdd execute node**
+Run: `npm --workspace packages/backend test -- superpowers-runtime coordinator-agents`
+
+Expected: FAIL because TDD gate and Superpowers subagent mapping do not exist.
+
+- [ ] **Step 4: Implement tdd execute node**
 
 Reuse current child task execution mechanics, but augment prompt and state updates so completed child tasks produce `tddEvidence` entries.
 
-- [ ] **Step 4: Implement spec compliance review node**
+- [ ] **Step 5: Implement subagent mapping**
+
+Map Superpowers subagent roles as:
+
+```text
+implementer -> current room executor RoomAgent
+spec reviewer -> current room reviewer RoomAgent + spec-reviewer prompt template
+code quality reviewer -> current room reviewer RoomAgent + code-reviewer prompt template
+```
+
+If required role is missing, call `ensureWorkflowAgentsForRun()` to add the existing built-in template agent. Store template path/version in workflow metadata.
+
+- [ ] **Step 6: Implement spec compliance review node**
 
 Review implementation against design and plan. If `changes_requested`, route back to `tdd_execute`.
 
-- [ ] **Step 5: Implement code quality review node**
+- [ ] **Step 7: Implement code quality review node**
 
 Review bug/regression/verification risk. Critical or important issues route back to `tdd_execute`.
 
-- [ ] **Step 6: Update agent provisioning**
+- [ ] **Step 8: Update agent provisioning**
 
-Ensure reviewer exists for Superpowers review stages. Reuse reviewer template in first iteration.
+Ensure reviewer exists for Superpowers review stages. Reuse existing reviewer template and prompt templates; do not add `superpowers:code-reviewer`.
 
-- [ ] **Step 7: Run tests**
+- [ ] **Step 9: Run tests**
 
-Run: `npm --workspace packages/backend test -- superpowers-runtime`
+Run: `npm --workspace packages/backend test -- superpowers-runtime coordinator-agents`
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add packages/backend/src/workflows/graph/superpowers-nodes.ts packages/backend/src/workflows/graph/superpowers-runtime.ts packages/backend/src/workflows/agent-provisioning.ts packages/backend/src/workflows/graph/superpowers-runtime.test.ts
+git add packages/backend/src/workflows/graph/superpowers-nodes.ts packages/backend/src/workflows/graph/superpowers-runtime.ts packages/backend/src/workflows/agent-provisioning.ts packages/backend/src/workflows/graph/coordinator-agents.ts packages/backend/src/workflows/graph/superpowers-runtime.test.ts packages/backend/src/workflows/graph/coordinator-agents.test.ts
 git commit -m "feat(workflow): 增加TDD执行与双阶段审查"
 ```
 
@@ -587,7 +607,7 @@ git commit -m "feat(frontend): 展示Superpowers门禁状态"
 Run:
 
 ```bash
-npm --workspace packages/backend test -- workflow-definitions workflow-definitions.routes settings graph/state superpowers-gates superpowers-runtime graph/runtime graph/verification workflows/prompts
+npm --workspace packages/backend test -- workflow-definitions workflow-definitions.routes settings graph/state superpowers-gates superpowers-runtime graph/runtime graph/verification workflows/prompts coordinator-agents
 ```
 
 Expected: PASS.
@@ -634,3 +654,4 @@ git commit -m "docs(superpowers): 补充原生强门禁验收"
 - Use `superpowers:verification-before-completion` before claiming completion.
 - Do not overwrite unrelated dirty work in the current worktree.
 - If implementation is split across agents, keep write scopes disjoint: backend types/definitions, backend runtime/nodes, frontend visualization, docs.
+- Treat Superpowers subagents as OpenDeepSea room agents with Superpowers prompt templates. Do not create a separate Superpowers agent runtime or named `superpowers:*` agents.
