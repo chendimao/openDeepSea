@@ -88,7 +88,7 @@ git diff --cached --name-only
 git log -1 --stat
 ```
 
-结果：提交后执行，最新提交仅包含目标 Markdown 文档。
+结果：已执行，`git log -1 --stat` 显示提交 `242e5abb8d6343e82cbc710ffecfe1ffb97f27ca` 仅新增目标 Markdown 文档，统计为 `1 file changed, 107 insertions(+)`。
 
 ## 验收结论
 
@@ -96,12 +96,12 @@ git log -1 --stat
 - 本次测试目标：已记录。
 - 正式 workflow 执行步骤和子任务记录：已记录。
 - 代码审查记录：已记录。
-- 验证结果与验收结论：已记录验证方式和验收结论区域；文件级验证、暂存区验证和提交验证均需以命令输出为准。
+- 验证结果与验收结论：已记录验证方式和验收结论区域；文件级验证、暂存区验证和提交验证均已执行。
 - 提交信息区域：已提供。
 - 业务代码改动：本任务不需要业务代码改动，提交时仅纳入目标文档。
 
 ## 提交信息
 
 - Commit message：`docs: 记录Superpowers E2E冒烟验证`
-- Commit hash：由提交后的 `git log -1 --oneline` 输出确认。
+- Commit hash：`242e5abb8d6343e82cbc710ffecfe1ffb97f27ca`。
 - 提交范围：仅 `docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md`。
