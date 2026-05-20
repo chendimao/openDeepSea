@@ -1394,8 +1394,8 @@
   }
   .workflow-task-bubble {
     display: grid;
-    grid-template-columns: minmax(0, minmax(0, 1fr)) minmax(240px, 360px);
-    gap: 12px;
+    grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.95fr);
+    gap: 14px;
     border-radius: 12px;
     background: rgba(255,255,255,0.42);
     padding: 12px;
@@ -1405,6 +1405,10 @@
   .workflow-task-bubble-main,
   .workflow-task-bubble-side {
     min-width: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .workflow-task-bubble-lanes {
     display: grid;
     gap: 10px;
   }
@@ -1520,10 +1524,10 @@
   }
   .workflow-flow-panel {
     display: grid;
-    gap: 8px;
-    border-radius: 8px;
+    gap: 10px;
+    border-radius: 10px;
     background: rgba(255,255,255,0.28);
-    padding: 9px;
+    padding: 10px;
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.48);
   }
   .workflow-flow-header {
@@ -1549,9 +1553,29 @@
     background: rgba(255,255,255,0.38);
     padding: 2px 6px;
   }
-  .workflow-flow-timeline {
+  .workflow-flow-board {
+    display: grid;
+    gap: 10px;
+  }
+  .workflow-flow-row {
+    display: grid;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+  .workflow-flow-lane-label {
+    padding-top: 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--color-muted);
+  }
+  .workflow-flow-lane-track {
     display: grid;
     gap: 8px;
+    padding: 8px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.18);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.42);
   }
   .workflow-flow-entry {
     border-radius: 8px;
@@ -1596,6 +1620,72 @@
     font-size: 11px;
     color: var(--color-fg-muted);
     background: rgba(255,255,255,0.28);
+  }
+  .workflow-agent-panel {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.24);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.46);
+  }
+  .workflow-agent-panel-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .workflow-agent-panel-title {
+    min-width: 0;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .workflow-agent-panel-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--color-fg-muted);
+  }
+  .workflow-agent-tab-list {
+    display: grid;
+    gap: 8px;
+  }
+  .workflow-agent-tab-trigger {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'icon label'
+      'icon counts';
+    gap: 4px 8px;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.28);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.48);
+  }
+  .workflow-agent-tab-trigger[data-state="active"] {
+    background: rgba(10,132,255,0.12);
+    box-shadow: inset 0 0 0 1px rgba(10,132,255,0.22);
+  }
+  .workflow-agent-tab-trigger svg {
+    grid-area: icon;
+  }
+  .workflow-agent-tab-label {
+    grid-area: label;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+  .workflow-agent-tab-counts {
+    grid-area: counts;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--color-fg-muted);
   }
   .workflow-task-table th,
   .workflow-task-table td {

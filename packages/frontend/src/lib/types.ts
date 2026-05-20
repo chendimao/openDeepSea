@@ -32,7 +32,7 @@ export type WorkflowStatus =
   | 'failed';
 export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
 export type WorkflowPlanTaskMode = 'parallel' | 'serial';
-export type WorkflowPlanTaskStatus = 'pending' | 'running' | 'completed' | 'blocked' | 'failed';
+export type WorkflowPlanTaskStatus = 'pending' | 'running' | 'completed' | 'blocked' | 'failed' | 'skipped';
 export interface WorkflowPlanTaskJson {
   id: string;
   title: string;

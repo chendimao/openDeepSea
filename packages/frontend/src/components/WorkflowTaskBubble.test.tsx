@@ -234,6 +234,30 @@ test('task flow renders review target and acceptance target labels', () => {
   assert.match(html, /功能验收/);
 });
 
+test('workflow bubble renders dual-column orchestration layout', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-impl',
+        assignedRoomAgentId: 'agent-1',
+        taskId: 'task-1',
+        result: '执行完成。',
+        completedAt: 2,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+
+  assert.match(html, /任务流转/);
+  assert.match(html, /按智能体查看执行结果/);
+  assert.match(html, /计划/);
+  assert.match(html, /执行/);
+  assert.match(html, /审查/);
+  assert.match(html, /验收/);
+});
+
 test('returns null when workflow plan is unavailable', () => {
   const detail = createWorkflowDetail();
 
