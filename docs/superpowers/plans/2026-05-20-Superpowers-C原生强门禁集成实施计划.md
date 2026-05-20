@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 去掉默认/自定义工作流能力，让所有新任务只使用 Superpowers C 原生强门禁 runtime。
+**Goal:** 统一所有新任务只进入 Superpowers C 原生强门禁 runtime，历史默认/自定义工作流仅保留只读兼容展示。
 
-**Architecture:** 新增内置且唯一可用的 `superpowers-development` workflow definition，并扩展 workflow definition 类型、graph state、Superpowers 专属节点和 UI 展示。后端新任务启动时固定进入 Superpowers runtime；旧 definition 和历史 run 只保留只读兼容展示，不再参与新任务选择。
+**Architecture:** 仅保留内置且唯一可用的 `superpowers-development` workflow definition，并扩展 workflow definition 类型、graph state、Superpowers 专属节点和 UI 展示。后端新任务启动时固定进入 Superpowers runtime；旧 definition 和历史 run 仅保留只读兼容展示，不再参与新任务选择。
 
 **Tech Stack:** TypeScript, Node.js, Express, SQLite, LangGraph, React 18, Vite, Tailwind, node:test.
 
@@ -628,19 +628,30 @@ Run: `npm run build`
 
 Expected: PASS.
 
-- [ ] **Step 4: Write verification doc**
+- [ ] **Step 4: Run full browser test**
+
+After code implementation is finished, run a full browser test to verify:
+
+- workflow page rendering
+- task bubble rendering
+- status transitions
+- review / verification / finish branch display
+
+Expected: PASS.
+
+- [ ] **Step 5: Write verification doc**
 
 Create verification report with command outputs, skipped checks, and residual risks.
 
-- [ ] **Step 5: Update plan checkboxes**
+- [ ] **Step 6: Update plan checkboxes**
 
 Mark completed tasks in this plan.
 
-- [ ] **Step 6: Final code review**
+- [ ] **Step 7: Final code review**
 
 Use `superpowers:requesting-code-review` for the full implementation. Fix Critical and Important findings.
 
-- [ ] **Step 7: Commit verification docs**
+- [ ] **Step 8: Commit verification docs**
 
 ```bash
 git add docs/superpowers/specs/2026-05-20-Superpowers-C原生强门禁集成设计.md docs/superpowers/plans/2026-05-20-Superpowers-C原生强门禁集成实施计划.md docs/superpowers/verification/2026-05-20-Superpowers-C原生强门禁集成验收.md
