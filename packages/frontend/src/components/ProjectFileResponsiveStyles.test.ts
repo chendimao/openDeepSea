@@ -12,6 +12,8 @@ test('file management styles keep source controls usable on desktop and mobile',
   assert.match(css, /\.project-file-origin-badge\.is-unknown-origin\s*\{[^}]*color:\s*var\(--color-fg-muted\)/s);
   assert.match(css, /\.project-file-action-button\s*\{[^}]*display:\s*inline-flex/s);
   assert.match(css, /\.project-file-action-button\s*\{[^}]*max-width:\s*150px/s);
+  assert.match(css, /\.file-preview-source-trace\s*\{[^}]*min-width:\s*0/s);
+  assert.match(css, /\.file-preview-source-items\s*\{[^}]*flex-wrap:\s*wrap/s);
   assert.match(css, /@media \(max-width: 767px\)\s*\{[\s\S]*?\.files-filters\s*\{[^}]*flex-wrap:\s*wrap/s);
   assert.match(css, /@media \(max-width: 767px\)\s*\{[\s\S]*?\.files-filter-select\s*\{[^}]*flex:\s*1 1 128px/s);
   assert.match(css, /@media \(max-width: 767px\)\s*\{[\s\S]*?\.project-file-action-button\s*\{[^}]*max-width:\s*100%/s);

@@ -107,9 +107,21 @@ export function ResourceDetailPreviewContent({
   const isAgentDocument = resource.resource_type === 'agent_document';
   const size = resource.size ?? fallbackFile.size;
   const mimeType = resource.mime_type ?? fallbackFile.mime_type;
+  const sourceSummary = getResourceDetailSourceSummary(resource, t);
 
   return (
     <div className="file-preview-shell">
+      {isAgentDocument ? (
+        <ResourceSourceTrace
+          title={t('files.detail.documentSourceTitle')}
+          summary={sourceSummary}
+          items={[
+            resource.source.display_name ?? resource.source.agent_id ?? resource.source_agent_id,
+            resource.source.context?.name ?? resource.source_context_name ?? resource.source_task_id ?? resource.source_room_id,
+            formatRelativeTime(resource.created_at),
+          ]}
+        />
+      ) : null}
       <ResourceDetailPreviewBody resource={resource} fallbackFile={fallbackFile} />
       <div className="file-preview-footer">
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-fg-muted)]">
@@ -147,7 +159,7 @@ export function ResourceDetailPreviewContent({
         </div>
         <div>
           <dt>{isAgentDocument ? t('files.detail.sourceAgent') : t('files.detail.uploadedBy')}</dt>
-          <dd title={getResourceDetailSourceSummary(resource, t)}>{getResourceDetailSourceSummary(resource, t)}</dd>
+          <dd title={sourceSummary}>{sourceSummary}</dd>
         </div>
         <div>
           <dt>{isAgentDocument ? t('files.detail.generatedAt') : t('files.detail.createdAt')}</dt>
@@ -230,9 +242,23 @@ export function ProjectFilePreviewContent({
   onClose?: () => void;
 }): JSX.Element {
   const { t, formatRelativeTime } = useI18n();
+  const isAgentDocument = file.source_type === 'agent_document';
+  const isUploadedFile = file.source_type === 'uploaded_file';
+  const sourceSummary = getProjectFileSourceSummary(file, t);
 
   return (
     <div className="file-preview-shell">
+      {isAgentDocument ? (
+        <ResourceSourceTrace
+          title={t('files.detail.documentSourceTitle')}
+          summary={sourceSummary}
+          items={[
+            file.source_agent_id,
+            file.last_referenced_room_name ?? file.source_task_id ?? file.source_room_id,
+            formatRelativeTime(file.created_at),
+          ]}
+        />
+      ) : null}
       <ProjectFilePreviewBody file={file} />
       <div className="file-preview-footer">
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--color-fg-muted)]">
@@ -252,12 +278,12 @@ export function ProjectFilePreviewContent({
             {t('files.locateMessage')}
           </button>
         ) : null}
-        {file.url ? (
+        {isUploadedFile && file.url ? (
           <a href={file.url} target="_blank" rel="noreferrer" className="image-preview-link">
             {t('files.openOriginal')}
           </a>
         ) : null}
-        {file.url && file.source_type === 'uploaded_file' ? (
+        {isUploadedFile && file.url ? (
           <a href={file.url} download={file.original_name} className="image-preview-link">
             {t('files.download')}
           </a>
@@ -269,8 +295,8 @@ export function ProjectFilePreviewContent({
           <dd>{getProjectFileTypeLabel(file, t)}</dd>
         </div>
         <div>
-          <dt>{file.source_type === 'agent_document' ? t('files.detail.sourceAgent') : t('files.detail.uploadedBy')}</dt>
-          <dd title={getProjectFileSourceSummary(file, t)}>{getProjectFileSourceSummary(file, t)}</dd>
+          <dt>{isAgentDocument ? t('files.detail.sourceAgent') : t('files.detail.uploadedBy')}</dt>
+          <dd title={sourceSummary}>{sourceSummary}</dd>
         </div>
         <div>
           <dt>{t('files.detail.createdAt')}</dt>
@@ -296,6 +322,32 @@ export function ProjectFilePreviewContent({
         ) : null}
       </dl>
     </div>
+  );
+}
+
+function ResourceSourceTrace({
+  title,
+  summary,
+  items,
+}: {
+  title: string;
+  summary: string;
+  items: Array<string | null | undefined>;
+}): JSX.Element {
+  const visibleItems = items.filter((item): item is string => !!item);
+
+  return (
+    <section className="file-preview-source-trace" aria-label={title}>
+      <span className="file-preview-source-title">{title}</span>
+      <span className="file-preview-source-summary" title={summary}>{summary}</span>
+      {visibleItems.length > 0 ? (
+        <span className="file-preview-source-items">
+          {visibleItems.map((item) => (
+            <span key={item}>{item}</span>
+          ))}
+        </span>
+      ) : null}
+    </section>
   );
 }
 
