@@ -81,3 +81,27 @@ test('parseGraphState defaults missing workflowPlan and child task mappings for 
   assert.equal(parsed?.workflowPlan, null);
   assert.deepEqual(parsed?.childTaskPlanIndexes, {});
 });
+
+test('parseGraphState preserves Superpowers workflow state fields', () => {
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-superpowers',
+      projectId: 'project-superpowers',
+      roomId: 'room-superpowers',
+      taskId: 'task-superpowers',
+      userGoal: 'Superpowers state',
+      projectPath: tempDir,
+    }),
+    runtimeProfile: 'superpowers' as const,
+    superpowersPhase: 'brainstorming',
+    designDocPath: 'docs/superpowers/specs/example.md',
+    implementationPlanPath: null,
+  };
+
+  const parsed = parseGraphState(serializeGraphState(state));
+
+  assert.equal(parsed?.runtimeProfile, 'superpowers');
+  assert.equal(parsed?.superpowersPhase, 'brainstorming');
+  assert.equal(parsed?.designDocPath, 'docs/superpowers/specs/example.md');
+  assert.equal(parsed?.implementationPlanPath, null);
+});

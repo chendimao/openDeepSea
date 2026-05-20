@@ -41,6 +41,46 @@ export const supervisorAssignmentHintSchema = z.object({
   reason: z.string(),
 });
 
+export const superpowersReviewVerdictSchema = z.enum([
+  'pending',
+  'approved',
+  'changes_requested',
+  'failed',
+]);
+
+export const superpowersWorktreeSchema = z.object({
+  path: z.string(),
+  branchName: z.string(),
+  baseRef: z.string().nullable().default(null),
+});
+
+export const superpowersTddEvidenceSchema = z.object({
+  stage: z.enum(['RED', 'GREEN', 'REFACTOR']),
+  command: z.string().nullable().default(null),
+  summary: z.string().nullable().default(null),
+  passed: z.boolean().nullable().default(null),
+});
+
+export const superpowersReviewSchema = z.object({
+  verdict: superpowersReviewVerdictSchema,
+  findings: z.array(z.string()).default([]),
+  reviewedAt: z.string().nullable().default(null),
+});
+
+export const superpowersVerificationEvidenceSchema = z.object({
+  command: z.string(),
+  status: z.enum(['passed', 'failed', 'skipped']),
+  required: z.boolean().default(true),
+  fresh: z.boolean().default(true),
+  recordedAt: z.string().nullable().default(null),
+});
+
+export const superpowersFinishBranchDecisionSchema = z.object({
+  decision: z.enum(['merge', 'pull_request', 'defer']),
+  reason: z.string(),
+  decidedAt: z.string().nullable().default(null),
+});
+
 export const parsedPlanTaskSchema = z.object({
   title: z.string(),
   description: z.string(),
@@ -105,6 +145,18 @@ export const agentWorkflowStateSchema = z.object({
   childTaskIds: z.array(z.string()),
   childTaskPlanIndexes: z.record(z.string(), z.number().int().min(0)).default({}),
   supervisorAssignments: z.array(supervisorAssignmentHintSchema).default([]),
+  runtimeProfile: z.literal('superpowers').default('superpowers'),
+  superpowersPhase: z.string().nullable().default(null),
+  designDocPath: z.string().nullable().default(null),
+  designReviewVerdict: superpowersReviewVerdictSchema.nullable().default(null),
+  implementationPlanPath: z.string().nullable().default(null),
+  planReviewVerdict: superpowersReviewVerdictSchema.nullable().default(null),
+  worktree: superpowersWorktreeSchema.nullable().default(null),
+  tddEvidence: z.array(superpowersTddEvidenceSchema).default([]),
+  specComplianceReview: superpowersReviewSchema.nullable().default(null),
+  codeQualityReview: superpowersReviewSchema.nullable().default(null),
+  verificationEvidence: z.array(superpowersVerificationEvidenceSchema).default([]),
+  finishBranchDecision: superpowersFinishBranchDecisionSchema.nullable().default(null),
   reviewFindings: z.array(z.string()),
   reviewVerdict: z.enum(['pass', 'changes_requested', 'failed']).nullable().default(null),
   verificationResults: z.array(verificationResultSchema),
@@ -115,6 +167,12 @@ export const agentWorkflowStateSchema = z.object({
 });
 
 export type VerificationResult = z.infer<typeof verificationResultSchema>;
+export type SuperpowersReviewVerdict = z.infer<typeof superpowersReviewVerdictSchema>;
+export type SuperpowersWorktree = z.infer<typeof superpowersWorktreeSchema>;
+export type SuperpowersTddEvidence = z.infer<typeof superpowersTddEvidenceSchema>;
+export type SuperpowersReview = z.infer<typeof superpowersReviewSchema>;
+export type SuperpowersVerificationEvidence = z.infer<typeof superpowersVerificationEvidenceSchema>;
+export type SuperpowersFinishBranchDecision = z.infer<typeof superpowersFinishBranchDecisionSchema>;
 export interface SupervisorAssignmentHint {
   stage: WorkflowStage;
   role: WorkflowRole;
@@ -123,7 +181,24 @@ export interface SupervisorAssignmentHint {
 }
 export type AgentWorkflowState = Omit<
   z.infer<typeof agentWorkflowStateSchema>,
-  'plan' | 'workflowPlan' | 'currentNode' | 'status' | 'supervisorAssignments' | 'childTaskPlanIndexes'
+  | 'plan'
+  | 'workflowPlan'
+  | 'currentNode'
+  | 'status'
+  | 'supervisorAssignments'
+  | 'childTaskPlanIndexes'
+  | 'runtimeProfile'
+  | 'superpowersPhase'
+  | 'designDocPath'
+  | 'designReviewVerdict'
+  | 'implementationPlanPath'
+  | 'planReviewVerdict'
+  | 'worktree'
+  | 'tddEvidence'
+  | 'specComplianceReview'
+  | 'codeQualityReview'
+  | 'verificationEvidence'
+  | 'finishBranchDecision'
 > & {
   plan: ParsedPlan | null;
   workflowPlan?: WorkflowPlanJson | null;
@@ -131,6 +206,18 @@ export type AgentWorkflowState = Omit<
   status: WorkflowStatus;
   supervisorAssignments?: SupervisorAssignmentHint[];
   childTaskPlanIndexes?: Record<string, number>;
+  runtimeProfile?: 'superpowers';
+  superpowersPhase?: string | null;
+  designDocPath?: string | null;
+  designReviewVerdict?: SuperpowersReviewVerdict | null;
+  implementationPlanPath?: string | null;
+  planReviewVerdict?: SuperpowersReviewVerdict | null;
+  worktree?: SuperpowersWorktree | null;
+  tddEvidence?: SuperpowersTddEvidence[];
+  specComplianceReview?: SuperpowersReview | null;
+  codeQualityReview?: SuperpowersReview | null;
+  verificationEvidence?: SuperpowersVerificationEvidence[];
+  finishBranchDecision?: SuperpowersFinishBranchDecision | null;
 };
 
 export function emptyAgentWorkflowState(input: {
@@ -151,6 +238,18 @@ export function emptyAgentWorkflowState(input: {
     childTaskIds: [],
     childTaskPlanIndexes: {},
     supervisorAssignments: [],
+    runtimeProfile: 'superpowers',
+    superpowersPhase: null,
+    designDocPath: null,
+    designReviewVerdict: null,
+    implementationPlanPath: null,
+    planReviewVerdict: null,
+    worktree: null,
+    tddEvidence: [],
+    specComplianceReview: null,
+    codeQualityReview: null,
+    verificationEvidence: [],
+    finishBranchDecision: null,
     reviewFindings: [],
     reviewVerdict: null,
     verificationResults: [],
