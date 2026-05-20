@@ -52,12 +52,32 @@ test('workflow definition mutation routes return 410 Gone', async () => {
       init: { method: 'POST', body: JSON.stringify({ name: 'Copied Workflow' }) },
     },
     {
+      path: '/api/workflow-definitions/legacy-definition',
+      init: {
+        method: 'PATCH',
+        body: JSON.stringify({
+          name: 'Renamed Workflow',
+          scope: 'system',
+          scope_id: 'default',
+          definition: routeDefinition(),
+        }),
+      },
+    },
+    {
+      path: '/api/workflow-definitions/legacy-definition/edit-draft',
+      init: { method: 'POST' },
+    },
+    {
       path: '/api/workflow-definitions/legacy-definition/publish',
       init: { method: 'POST' },
     },
     {
       path: '/api/workflow-definitions/legacy-definition/archive',
       init: { method: 'POST' },
+    },
+    {
+      path: '/api/workflow-definitions/legacy-definition',
+      init: { method: 'DELETE' },
     },
   ];
 
