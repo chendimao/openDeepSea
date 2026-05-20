@@ -587,13 +587,16 @@ export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): stri
 
   if (identityLines.length <= 1) return prompt;
 
-  return [
+  const promptParts = [
     '你的智能体身份：',
     ...identityLines,
+    ...(agent.agent_id === 'planner' ? buildPlannerStructuredTaskReadinessPrompt() : []),
     '',
     '当前用户请求：',
     prompt,
-  ].join('\n');
+  ];
+
+  return promptParts.join('\n');
 }
 
 export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
@@ -862,7 +865,8 @@ function annotateTaskReadiness(input: {
   if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return;
   if (input.agent.agent_id !== 'planner') return;
 
-  const readiness = inferTaskReadiness(input.message.content, input.sourceMessageId);
+  const readiness = parseStructuredTaskReadiness(input.message.content, input.sourceMessageId)
+    ?? inferTaskReadiness(input.message.content, input.sourceMessageId);
   if (!readiness) return;
   messageRepo.mergeMetadata(input.message.id, { task_readiness: readiness });
 }
@@ -1010,6 +1014,114 @@ function hasAnalysisReadinessSignal(text: string): boolean {
 
 function matchesAny(text: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(text));
+}
+
+function parseStructuredTaskReadiness(content: string, sourceMessageId?: string | null): Record<string, unknown> | null {
+  for (const candidate of extractJsonObjectCandidates(content)) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      const readiness = readTaskReadinessObject(parsed);
+      if (readiness) {
+        return {
+          ...readiness,
+          source_message_id: readiness.source_message_id ?? sourceMessageId ?? undefined,
+        };
+      }
+    } catch {
+      // Ignore malformed JSON blocks and fall back to natural-language inference.
+    }
+  }
+  return null;
+}
+
+function readTaskReadinessObject(value: unknown): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const candidate = isRecord(value.task_readiness) ? value.task_readiness : value;
+  if (
+    candidate.ready !== true ||
+    typeof candidate.title !== 'string' ||
+    !candidate.title.trim() ||
+    typeof candidate.description !== 'string' ||
+    !candidate.description.trim() ||
+    !isRecommendedTaskReadinessMode(candidate.recommended_mode) ||
+    !isTaskReadinessIntent(candidate.execution_intent)
+  ) {
+    return null;
+  }
+  const missingQuestions = Array.isArray(candidate.missing_questions)
+    ? candidate.missing_questions.filter((item): item is string => typeof item === 'string')
+    : [];
+  const confidence = typeof candidate.confidence === 'number' && Number.isFinite(candidate.confidence)
+    ? Math.max(0, Math.min(1, candidate.confidence))
+    : 0.9;
+
+  return {
+    ready: true,
+    confidence,
+    title: truncateTaskReadinessText(candidate.title, 80),
+    description: truncateTaskReadinessText(candidate.description, 800),
+    missing_questions: missingQuestions,
+    recommended_mode: candidate.recommended_mode,
+    execution_intent: candidate.execution_intent,
+    source_message_id: typeof candidate.source_message_id === 'string' && candidate.source_message_id.trim()
+      ? candidate.source_message_id.trim()
+      : undefined,
+  };
+}
+
+function extractJsonObjectCandidates(content: string): string[] {
+  const fencedBlocks = [...content.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)]
+    .map((match) => match[1]?.trim())
+    .filter((item): item is string => Boolean(item && item.startsWith('{') && item.endsWith('}')));
+  const trimmed = content.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return [...fencedBlocks, trimmed];
+  }
+  return fencedBlocks;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isRecommendedTaskReadinessMode(value: unknown): value is 'formal_workflow' | 'chat_collaboration' {
+  return value === 'formal_workflow' || value === 'chat_collaboration';
+}
+
+function isTaskReadinessIntent(value: unknown): value is InferredTaskExecutionIntent {
+  return (
+    value === 'analysis_only' ||
+    value === 'planning_only' ||
+    value === 'documentation_only' ||
+    value === 'implementation' ||
+    value === 'debug_fix' ||
+    value === 'review_only'
+  );
+}
+
+function buildPlannerStructuredTaskReadinessPrompt(): string[] {
+  return [
+    '',
+    '任务生成结构化输出规则：',
+    '- 当你已经产出可执行任务计划，或用户明确要求“生成任务/开始任务/进入 workflow”时，必须在自然语言计划后追加一个单独的 ```json 代码块。',
+    '- 该 JSON 代码块只用于系统识别，不要把它解释给用户；字段名必须固定为 task_readiness。',
+    '- implementation/debug_fix 意图必须使用 recommended_mode="formal_workflow"，不要改写成只做分析。',
+    '- analysis_only/planning_only/documentation_only/review_only 才能使用 recommended_mode="chat_collaboration"。',
+    '- 固定 JSON 格式如下：',
+    '```json',
+    '{',
+    '  "task_readiness": {',
+    '    "ready": true,',
+    '    "confidence": 0.9,',
+    '    "title": "任务标题",',
+    '    "description": "任务目标、边界、实施拆解、风险与验证方式摘要",',
+    '    "missing_questions": [],',
+    '    "recommended_mode": "formal_workflow",',
+    '    "execution_intent": "implementation"',
+    '  }',
+    '}',
+    '```',
+  ];
 }
 
 function extractTaskReadinessTitle(content: string): string {

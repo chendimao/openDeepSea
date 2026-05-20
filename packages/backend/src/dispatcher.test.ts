@@ -762,6 +762,83 @@ test('planner completed reply marks task readiness when it contains enough imple
   }
 });
 
+test('planner completed reply reads structured task readiness json from markdown output', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-readiness-json-'));
+  const project = projectRepo.create({ name: `task-readiness-json-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'planner',
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '生成任务',
+  });
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke({ onChunk }) {
+      onChunk?.({
+        stream: 'stdout',
+        text: [
+          '大哥，建议生成这个任务：',
+          '',
+          '**任务标题**',
+          '压缩群聊任务卡片宽度与表格间距',
+          '',
+          '**目标**',
+          '让群聊中的 workflow 任务卡片最大宽度不超过普通聊天消息气泡。',
+          '',
+          '```json',
+          JSON.stringify({
+            task_readiness: {
+              ready: true,
+              confidence: 0.91,
+              title: '压缩群聊任务卡片宽度与表格间距',
+              description: '调整群聊任务卡片宽度、表格缩进与移动端滚动表现，并运行构建验证。',
+              missing_questions: [],
+              recommended_mode: 'formal_workflow',
+              execution_intent: 'implementation',
+            },
+          }, null, 2),
+          '```',
+        ].join('\n'),
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const plannerMessage = messageRepo.listByRoom(room.id, 20).find((message) => message.sender_id === 'planner');
+    assert.ok(plannerMessage);
+    const metadata = JSON.parse(plannerMessage.metadata ?? '{}') as Record<string, unknown>;
+    const readiness = metadata.task_readiness as Record<string, unknown> | undefined;
+    assert.equal(readiness?.ready, true);
+    assert.equal(readiness?.recommended_mode, 'formal_workflow');
+    assert.equal(readiness?.execution_intent, 'implementation');
+    assert.equal(readiness?.source_message_id, userMessage.id);
+    assert.equal(readiness?.title, '压缩群聊任务卡片宽度与表格间距');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner completed reply marks analysis-only readiness without formal workflow recommendation', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-analysis-readiness-'));
   const project = projectRepo.create({ name: `analysis-readiness-${Date.now()}`, path: projectPath });
@@ -1160,6 +1237,9 @@ test('built-in planner identity does not convert executable feature requests int
   assert.match(prompt, /不亲自修改代码/);
   assert.match(prompt, /不得把任务改写成“只做分析\/不进入实现”/);
   assert.match(prompt, /可进入 workflow 的执行计划/);
+  assert.match(prompt, /任务生成结构化输出规则/);
+  assert.match(prompt, /"task_readiness"/);
+  assert.match(prompt, /"recommended_mode": "formal_workflow"/);
   assert.match(prompt, /当前用户请求：\n细化文件管理功能/);
 });
 
