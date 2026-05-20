@@ -12,16 +12,26 @@ import type {
 
 const BUILTIN_DEFAULT_KEY = 'default-langgraph';
 const BUILTIN_ANALYSIS_DOCUMENT_KEY = 'analysis-document';
+const BUILTIN_SUPERPOWERS_KEY = 'superpowers-development';
 
 const ALLOWED_NODE_TYPES = new Set<WorkflowDefinitionNodeType>([
   'context',
   'planning',
+  'brainstorming',
+  'spec_review',
+  'worktree',
+  'writing_plans',
+  'plan_review',
   'approval_gate',
   'dispatch',
   'execute',
+  'tdd_execute',
   'review',
+  'spec_compliance_review',
+  'code_quality_review',
   'repair_decision',
   'verify',
+  'finish_branch',
   'acceptance',
   'memory',
 ]);
@@ -64,6 +74,164 @@ const ANALYSIS_DOCUMENT_DEFINITION: WorkflowDefinitionGraph = {
   edges: [
     { from: 'context', to: 'planning' },
     { from: 'planning', to: 'acceptance' },
+    { from: 'acceptance', to: 'memory', condition: 'completed' },
+  ],
+};
+
+const SUPERPOWERS_DEFINITION: WorkflowDefinitionGraph = {
+  metadata: {
+    runtime_profile: 'superpowers',
+    required_skill_names: [
+      'using-superpowers',
+      'brainstorming',
+      'using-git-worktrees',
+      'writing-plans',
+      'test-driven-development',
+      'subagent-driven-development',
+      'requesting-code-review',
+      'verification-before-completion',
+      'finishing-a-development-branch',
+    ],
+    gate_policy: 'superpowers-development',
+  },
+  nodes: [
+    { id: 'context', type: 'context', label: '上下文', stage: 'analysis', position: { x: 0, y: 80 } },
+    {
+      id: 'brainstorming',
+      type: 'brainstorming',
+      label: '需求澄清',
+      stage: 'analysis',
+      role: 'analyst',
+      position: { x: 220, y: 80 },
+      metadata: {
+        required_skill_names: ['using-superpowers', 'brainstorming'],
+        gate_policy: 'produce_design_doc',
+      },
+    },
+    {
+      id: 'spec_review',
+      type: 'spec_review',
+      label: '规格自审',
+      stage: 'analysis',
+      role: 'reviewer',
+      position: { x: 440, y: 80 },
+      metadata: {
+        gate_policy: 'inline_self_review',
+      },
+    },
+    {
+      id: 'worktree',
+      type: 'worktree',
+      label: '工作区隔离',
+      stage: 'planning',
+      role: 'coordinator',
+      position: { x: 660, y: 80 },
+      metadata: {
+        required_skill_names: ['using-git-worktrees'],
+        gate_policy: 'record_isolation_decision',
+      },
+    },
+    {
+      id: 'writing_plans',
+      type: 'writing_plans',
+      label: '计划编写',
+      stage: 'planning',
+      role: 'planner',
+      position: { x: 880, y: 80 },
+      metadata: {
+        required_skill_names: ['writing-plans'],
+        gate_policy: 'produce_executable_plan',
+      },
+    },
+    {
+      id: 'plan_review',
+      type: 'plan_review',
+      label: '计划自审',
+      stage: 'planning',
+      role: 'reviewer',
+      position: { x: 1100, y: 80 },
+      metadata: {
+        gate_policy: 'inline_self_review',
+      },
+    },
+    { id: 'approval', type: 'approval_gate', label: '审批', stage: 'planning', position: { x: 1320, y: 80 } },
+    { id: 'dispatch', type: 'dispatch', label: '派发', stage: 'assignment', role: 'coordinator', position: { x: 1540, y: 80 } },
+    {
+      id: 'tdd_execute',
+      type: 'tdd_execute',
+      label: 'TDD 执行',
+      stage: 'implementation',
+      role: 'executor',
+      position: { x: 1760, y: 80 },
+      metadata: {
+        required_skill_names: ['test-driven-development', 'subagent-driven-development'],
+        gate_policy: 'record_red_green_refactor',
+      },
+    },
+    {
+      id: 'spec_compliance_review',
+      type: 'spec_compliance_review',
+      label: '规格符合审查',
+      stage: 'code_review',
+      role: 'reviewer',
+      position: { x: 1980, y: 80 },
+      metadata: {
+        required_skill_names: ['requesting-code-review'],
+        gate_policy: 'block_spec_mismatch',
+      },
+    },
+    {
+      id: 'code_quality_review',
+      type: 'code_quality_review',
+      label: '代码质量审查',
+      stage: 'code_review',
+      role: 'reviewer',
+      position: { x: 2200, y: 80 },
+      metadata: {
+        required_skill_names: ['requesting-code-review'],
+        gate_policy: 'block_critical_or_important_findings',
+      },
+    },
+    {
+      id: 'verify',
+      type: 'verify',
+      label: '验证',
+      stage: 'code_review',
+      position: { x: 2420, y: 80 },
+      metadata: {
+        required_skill_names: ['verification-before-completion'],
+        gate_policy: 'fresh_verification_evidence',
+      },
+    },
+    {
+      id: 'finish_branch',
+      type: 'finish_branch',
+      label: '分支收口',
+      stage: 'acceptance',
+      role: 'coordinator',
+      position: { x: 2640, y: 80 },
+      metadata: {
+        required_skill_names: ['finishing-a-development-branch'],
+        gate_policy: 'record_closeout_choice',
+      },
+    },
+    { id: 'acceptance', type: 'acceptance', label: '验收', stage: 'acceptance', role: 'acceptor', position: { x: 2860, y: 80 } },
+    { id: 'memory', type: 'memory', label: '记忆', stage: 'acceptance', position: { x: 3080, y: 80 } },
+  ],
+  edges: [
+    { from: 'context', to: 'brainstorming' },
+    { from: 'brainstorming', to: 'spec_review' },
+    { from: 'spec_review', to: 'worktree' },
+    { from: 'worktree', to: 'writing_plans' },
+    { from: 'writing_plans', to: 'plan_review' },
+    { from: 'plan_review', to: 'approval' },
+    { from: 'approval', to: 'dispatch', condition: 'approved' },
+    { from: 'dispatch', to: 'tdd_execute' },
+    { from: 'tdd_execute', to: 'spec_compliance_review' },
+    { from: 'spec_compliance_review', to: 'code_quality_review' },
+    { from: 'code_quality_review', to: 'verify' },
+    { from: 'verify', to: 'finish_branch' },
+    { from: 'finish_branch', to: 'acceptance' },
     { from: 'acceptance', to: 'memory', condition: 'completed' },
   ],
 };
@@ -131,6 +299,12 @@ export const workflowDefinitionRepo = {
       '方案文档闭环',
       '内置轻量方案闭环：上下文、方案整理、方案验收和记忆，不执行代码修改或代码审查。',
       this.validateDefinition(ANALYSIS_DOCUMENT_DEFINITION),
+    );
+    ensureBuiltInDefinition(
+      BUILTIN_SUPERPOWERS_KEY,
+      'Superpowers 开发闭环',
+      '内置 Superpowers 开发闭环：需求澄清、规格自审、工作区隔离、计划、审批、派发、TDD 执行、审查、验证、分支收口、验收和记忆。',
+      this.validateDefinition(SUPERPOWERS_DEFINITION),
     );
     return defaultDefinition;
   },
@@ -356,7 +530,7 @@ export const workflowDefinitionRepo = {
     if (!Array.isArray(input.edges)) throw new Error('workflow definition edges must be an array');
 
     const ids = new Set<string>();
-    const nodeTypes = new Set<WorkflowDefinitionNodeType>();
+    const nodeTypeIds = new Set<string>();
     const nodes = input.nodes.map((node) => {
       const id = typeof node.id === 'string' ? node.id.trim() : '';
       if (!id) throw new Error('workflow node id is required');
@@ -365,10 +539,11 @@ export const workflowDefinitionRepo = {
       if (!ALLOWED_NODE_TYPES.has(node.type)) {
         throw new Error(`unsupported workflow node type: ${String(node.type)}`);
       }
-      if (nodeTypes.has(node.type)) {
+      if (nodeTypeIds.has(node.type)) {
         throw new Error(`duplicate workflow node type is not supported yet: ${node.type}`);
       }
-      nodeTypes.add(node.type);
+      nodeTypeIds.add(node.type);
+      const metadata = normalizeDefinitionMetadata(node.metadata);
       return {
         id,
         type: node.type,
@@ -376,6 +551,7 @@ export const workflowDefinitionRepo = {
         stage: node.stage ?? defaultStageForNodeType(node.type),
         role: node.role ?? null,
         position: normalizePosition(node.position),
+        ...(metadata ? { metadata } : {}),
       };
     });
 
@@ -391,9 +567,11 @@ export const workflowDefinitionRepo = {
       };
     });
 
-    requireSupportedWorkflowShape({ nodes, edges });
-    requireExecutableWorkflowShape({ nodes, edges });
-    return { nodes, edges };
+    const metadata = normalizeDefinitionMetadata(input.metadata);
+    const graph = metadata ? { nodes, edges, metadata } : { nodes, edges };
+    requireSupportedWorkflowShape(graph);
+    requireExecutableWorkflowShape(graph);
+    return graph;
   },
 };
 
@@ -426,6 +604,10 @@ function matchesListFilters(definition: WorkflowDefinition, filters: WorkflowDef
 
 function requireSupportedWorkflowShape(input: WorkflowDefinitionGraph): void {
   const types = new Set(input.nodes.map((node) => node.type));
+  if (input.metadata?.runtime_profile === 'superpowers' || types.has('tdd_execute')) {
+    requireSuperpowersWorkflowShape(types);
+    return;
+  }
   const hasDevelopmentNode = ['approval_gate', 'dispatch', 'execute', 'review', 'repair_decision', 'verify']
     .some((type) => types.has(type as WorkflowDefinitionNodeType));
   if (!hasDevelopmentNode) {
@@ -433,6 +615,29 @@ function requireSupportedWorkflowShape(input: WorkflowDefinitionGraph): void {
     return;
   }
   requireDevelopmentWorkflowShape(types);
+}
+
+function requireSuperpowersWorkflowShape(types: Set<WorkflowDefinitionNodeType>): void {
+  const required: WorkflowDefinitionNodeType[] = [
+    'context',
+    'brainstorming',
+    'spec_review',
+    'worktree',
+    'writing_plans',
+    'plan_review',
+    'approval_gate',
+    'dispatch',
+    'tdd_execute',
+    'spec_compliance_review',
+    'code_quality_review',
+    'verify',
+    'finish_branch',
+    'acceptance',
+    'memory',
+  ];
+  for (const type of required) {
+    if (!types.has(type)) throw new Error(`workflow definition must include ${type} node`);
+  }
 }
 
 function requireDevelopmentWorkflowShape(types: Set<WorkflowDefinitionNodeType>): void {
@@ -499,16 +704,24 @@ function isSupportedRuntimeTransition(
   to: WorkflowDefinitionNodeType,
   condition: string | null,
 ): boolean {
-  if (from === 'context') return to === 'planning';
+  if (from === 'context') return to === 'planning' || to === 'brainstorming';
+  if (from === 'brainstorming') return to === 'spec_review';
+  if (from === 'spec_review') return to === 'worktree';
+  if (from === 'worktree') return to === 'writing_plans';
+  if (from === 'writing_plans') return to === 'plan_review';
+  if (from === 'plan_review') return to === 'approval_gate';
   if (from === 'planning') return to === 'approval_gate' || to === 'acceptance';
   if (from === 'approval_gate') return to === 'dispatch' && (!condition || condition === 'approved' || condition === 'default');
-  if (from === 'dispatch') return to === 'execute';
+  if (from === 'dispatch') return to === 'execute' || to === 'tdd_execute';
   if (from === 'execute') {
     return (
       (to === 'execute' && condition === 'has_runnable_child') ||
       (to === 'review' && (!condition || condition === 'done' || condition === 'review' || condition === 'complete' || condition === 'default'))
     );
   }
+  if (from === 'tdd_execute') return to === 'spec_compliance_review';
+  if (from === 'spec_compliance_review') return to === 'code_quality_review';
+  if (from === 'code_quality_review') return to === 'verify';
   if (from === 'review') {
     return (
       (to === 'repair_decision' && condition === 'changes_requested') ||
@@ -516,18 +729,46 @@ function isSupportedRuntimeTransition(
     );
   }
   if (from === 'repair_decision') return to === 'execute' && (!condition || condition === 'repair' || condition === 'execute' || condition === 'default');
-  if (from === 'verify') return to === 'acceptance' && (!condition || condition === 'pass' || condition === 'acceptance' || condition === 'default');
+  if (from === 'verify') {
+    return (
+      (to === 'acceptance' && (!condition || condition === 'pass' || condition === 'acceptance' || condition === 'default')) ||
+      (to === 'finish_branch' && (!condition || condition === 'pass' || condition === 'default'))
+    );
+  }
+  if (from === 'finish_branch') return to === 'acceptance' && (!condition || condition === 'completed' || condition === 'default');
   if (from === 'acceptance') return to === 'memory' && (!condition || condition === 'completed' || condition === 'default');
   return false;
 }
 
 function defaultStageForNodeType(type: WorkflowDefinitionNodeType) {
-  if (type === 'context') return 'analysis';
-  if (type === 'planning' || type === 'approval_gate') return 'planning';
+  if (type === 'context' || type === 'brainstorming' || type === 'spec_review') return 'analysis';
+  if (type === 'planning' || type === 'worktree' || type === 'writing_plans' || type === 'plan_review' || type === 'approval_gate') return 'planning';
   if (type === 'dispatch' || type === 'repair_decision') return 'assignment';
-  if (type === 'execute') return 'implementation';
-  if (type === 'review' || type === 'verify') return 'code_review';
+  if (type === 'execute' || type === 'tdd_execute') return 'implementation';
+  if (type === 'review' || type === 'spec_compliance_review' || type === 'code_quality_review' || type === 'verify') return 'code_review';
   return 'acceptance';
+}
+
+function normalizeDefinitionMetadata(metadata: unknown): NonNullable<WorkflowDefinitionGraph['metadata']> | null {
+  if (!metadata || typeof metadata !== 'object') return null;
+  const value = metadata as {
+    runtime_profile?: unknown;
+    required_skill_names?: unknown;
+    gate_policy?: unknown;
+  };
+  const normalized: NonNullable<WorkflowDefinitionGraph['metadata']> = {};
+  if (value.runtime_profile === 'superpowers') normalized.runtime_profile = 'superpowers';
+  if (Array.isArray(value.required_skill_names)) {
+    const names = value.required_skill_names
+      .filter((name): name is string => typeof name === 'string')
+      .map((name) => name.trim())
+      .filter(Boolean);
+    if (names.length > 0) normalized.required_skill_names = names;
+  }
+  if (typeof value.gate_policy === 'string' && value.gate_policy.trim()) {
+    normalized.gate_policy = value.gate_policy.trim();
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
 }
 
 function normalizePosition(position: unknown): { x: number; y: number } | null {

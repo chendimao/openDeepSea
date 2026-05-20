@@ -68,14 +68,33 @@ export type WorkflowDefinitionStatus = 'draft' | 'published' | 'archived';
 export type WorkflowDefinitionNodeType =
   | 'context'
   | 'planning'
+  | 'brainstorming'
+  | 'spec_review'
+  | 'worktree'
+  | 'writing_plans'
+  | 'plan_review'
   | 'approval_gate'
   | 'dispatch'
   | 'execute'
+  | 'tdd_execute'
   | 'review'
+  | 'spec_compliance_review'
+  | 'code_quality_review'
   | 'repair_decision'
   | 'verify'
+  | 'finish_branch'
   | 'acceptance'
   | 'memory';
+export interface WorkflowDefinitionNodeMetadata {
+  runtime_profile?: 'superpowers';
+  required_skill_names?: string[];
+  gate_policy?: string;
+}
+export interface WorkflowDefinitionGraphMetadata {
+  runtime_profile?: 'superpowers';
+  required_skill_names?: string[];
+  gate_policy?: string;
+}
 export interface WorkflowDefinitionNode {
   id: string;
   type: WorkflowDefinitionNodeType;
@@ -83,6 +102,7 @@ export interface WorkflowDefinitionNode {
   stage?: WorkflowStage | null;
   role?: WorkflowRole | null;
   position?: { x: number; y: number } | null;
+  metadata?: WorkflowDefinitionNodeMetadata | null;
 }
 export interface WorkflowDefinitionEdge {
   from: string;
@@ -92,6 +112,7 @@ export interface WorkflowDefinitionEdge {
 export interface WorkflowDefinitionGraph {
   nodes: WorkflowDefinitionNode[];
   edges: WorkflowDefinitionEdge[];
+  metadata?: WorkflowDefinitionGraphMetadata | null;
 }
 export interface WorkflowDefinition {
   id: string;

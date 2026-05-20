@@ -24,6 +24,17 @@ test('workflowDefinitionRepo creates built-in default definition once', () => {
   assert.ok(definitions.some((definition) => definition.builtin_key === 'analysis-document'));
 });
 
+test('workflowDefinitionRepo creates built-in Superpowers development definition', () => {
+  const superpowers = workflowDefinitionRepo.getBuiltInByKey('superpowers-development');
+
+  assert.ok(superpowers);
+  assert.equal(superpowers.name, 'Superpowers 开发闭环');
+  assert.ok(superpowers.definition.nodes.some((node) => node.type === 'brainstorming'));
+  assert.ok(superpowers.definition.nodes.some((node) => node.type === 'tdd_execute'));
+  assert.ok(superpowers.definition.nodes.some((node) => node.type === 'finish_branch'));
+  assert.equal(superpowers.status, 'published');
+});
+
 test('workflowDefinitionRepo validates graph nodes and edges', () => {
   assert.throws(
     () => workflowDefinitionRepo.validateDefinition({
