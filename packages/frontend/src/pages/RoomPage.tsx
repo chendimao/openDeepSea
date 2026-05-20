@@ -464,7 +464,6 @@ export function RoomPage() {
                   <TaskDetailPanel
                     task={selectedTask}
                     agents={agents}
-                    projectId={projectId}
                     onLocateSourceMessage={focusMessage}
                     onClose={() => setSelectedTask(null)}
                   />
