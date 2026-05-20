@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
-import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowPlanJson, WorkflowRun } from '../lib/types';
+import type { RoomAgent, TaskArtifact, WorkflowDetail, WorkflowPlanJson, WorkflowRun, WorkflowStep } from '../lib/types';
 import { WorkflowTaskBubble } from './WorkflowTaskBubble';
 
 setupBrowserStubs();
@@ -35,15 +36,84 @@ test('renders task table from artifact metadata workflow_plan_json', () => {
   assert.match(html, /实现聊天气泡/);
 });
 
-test('compact mode omits agent result tabs for chat embedding', () => {
+test('compact mode renders agent result tabs for chat embedding', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-1',
+        assignedRoomAgentId: 'agent-1',
+        result: '已完成紧凑任务表格接入。',
+        completedAt: 3,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+
+  assert.match(html, /工作流子任务表格/);
+  assert.match(html, /按智能体查看执行结果/);
+  assert.match(html, /前端执行者/);
+  assert.match(html, /已完成紧凑任务表格接入/);
+});
+
+test('compact mode renders task detail actions', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
   });
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
-  assert.match(html, /工作流子任务表格/);
-  assert.doesNotMatch(html, /按智能体查看执行结果/);
+  assert.match(html, /操作/);
+  assert.match(html, /aria-label="查看「实现聊天气泡」详情"/);
+  assert.match(html, />详情</);
+});
+
+test('timeline mode keeps full task table without detail action column', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
+  });
+
+  const html = renderBubble(detail, [createAgent()]);
+
+  assert.doesNotMatch(html, /aria-label="查看「实现聊天气泡」详情"/);
+});
+
+test('agent result tabs fall back to workflow role or id labels', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan({
+        tasks: [
+          {
+            id: 'task-unknown',
+            title: '未知智能体任务',
+            description: '缺失 room agent 时仍可展示',
+            role: 'reviewer',
+            agent_id: 'missing-agent',
+            mode: 'serial',
+            depends_on: [],
+            status: 'completed',
+            progress: 100,
+            result_refs: [],
+          },
+        ],
+      }),
+    }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-missing',
+        taskId: 'task-unknown',
+        assignedRoomAgentId: 'missing-agent',
+        result: '审查内容已聚合。',
+        completedAt: 5,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [], { compact: true });
+
+  assert.match(html, /missing-agent/);
+  assert.match(html, /审查内容已聚合/);
 });
 
 test('returns null when workflow plan is unavailable', () => {
@@ -54,13 +124,13 @@ test('returns null when workflow plan is unavailable', () => {
   assert.equal(html, '');
 });
 
-function createWorkflowPlan(input: { workflowName?: string } = {}): WorkflowPlanJson {
+function createWorkflowPlan(input: { workflowName?: string; tasks?: WorkflowPlanJson['tasks'] } = {}): WorkflowPlanJson {
   return {
     workflow_name: input.workflowName ?? 'Workflow Plan',
     source_message_id: 'message-1',
     goal: '在聊天消息内展示 workflow 子任务',
     summary: '最小接入 workflow task bubble',
-    tasks: [
+    tasks: input.tasks ?? [
       {
         id: 'task-1',
         title: '实现聊天气泡',
@@ -90,6 +160,11 @@ function renderBubble(
 }
 
 function setupBrowserStubs(): void {
+  Object.defineProperty(globalThis, 'React', {
+    configurable: true,
+    value: React,
+  });
+
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
@@ -99,10 +174,14 @@ function setupBrowserStubs(): void {
   });
 }
 
-function createWorkflowDetail(input: { graphState?: string | null; artifacts?: TaskArtifact[] } = {}): WorkflowDetail {
+function createWorkflowDetail(input: {
+  graphState?: string | null;
+  artifacts?: TaskArtifact[];
+  steps?: WorkflowStep[];
+} = {}): WorkflowDetail {
   return {
     run: createWorkflowRun({ graphState: input.graphState ?? null }),
-    steps: [],
+    steps: input.steps ?? [],
     artifacts: input.artifacts ?? [],
   };
 }
@@ -142,6 +221,38 @@ function createArtifact(input: { metadata: string | null }): TaskArtifact {
     content: 'Plan content',
     metadata: input.metadata,
     created_at: 1,
+  };
+}
+
+function createWorkflowStep(input: {
+  id: string;
+  assignedRoomAgentId: string | null;
+  taskId?: string;
+  result: string;
+  completedAt: number | null;
+}): WorkflowStep {
+  return {
+    id: input.id,
+    workflow_run_id: 'workflow-1',
+    task_id: input.taskId ?? 'task-1',
+    stage: 'implementation',
+    node_name: 'execute',
+    status: input.completedAt ? 'completed' : 'running',
+    room_agent_id: input.assignedRoomAgentId,
+    assigned_room_agent_id: input.assignedRoomAgentId,
+    agent_run_id: null,
+    scope_read: [],
+    scope_write: [],
+    prompt: '执行任务',
+    result: input.result,
+    result_message_id: null,
+    openclaw_child_task_id: null,
+    started_at: 2,
+    completed_at: input.completedAt,
+    error: null,
+    sort_order: 1,
+    created_at: 1,
+    updated_at: input.completedAt ?? 2,
   };
 }
 
