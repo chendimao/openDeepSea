@@ -178,7 +178,7 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
                 {
                   key: 'preview',
                   label: file.source_type === 'agent_document'
-                    ? t('files.viewMarkdown')
+                    ? t('files.viewDocument')
                     : file.source_type === 'uploaded_file'
                       ? t('files.preview')
                       : t('files.viewDetails'),
@@ -187,6 +187,14 @@ export function RoomFilesPanel({ projectId, roomId, onLocateMessage }: RoomFiles
                     : <Eye className="h-4 w-4" strokeWidth={1.8} />,
                   onClick: () => setPreview(file),
                 },
+                ...(file.source_type === 'agent_document'
+                  ? [{
+                    key: 'source-trace',
+                    label: t('files.sourceTrace'),
+                    icon: <Crosshair className="h-4 w-4" strokeWidth={1.8} />,
+                    onClick: () => setPreview(file),
+                  }]
+                  : []),
                 ...(file.source_type === 'uploaded_file' && file.url
                   ? [{
                     key: 'download',

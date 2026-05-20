@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Download, Eye, FileSearch, Filter, Grid2X2, List, Search, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Crosshair, Download, Eye, FileSearch, Filter, Grid2X2, List, Search, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { formatFileSize } from '../lib/composerModel';
@@ -303,7 +303,7 @@ export function FilesPage(): JSX.Element {
                   </span>
                 </>
               )}
-              getActions={(file) => buildResourceActions(file, {
+              getActions={(file) => buildFileResourceActions(file, {
                 t,
                 isRemoving: remove.isPending,
                 onPreview: () => setPreview(file),
@@ -323,7 +323,7 @@ export function FilesPage(): JSX.Element {
   );
 }
 
-function buildResourceActions(
+export function buildFileResourceActions(
   file: ProjectFile,
   options: {
     t: ReturnType<typeof useI18n>['t'];
@@ -332,8 +332,9 @@ function buildResourceActions(
     onDelete: () => void;
   },
 ) {
-  const previewLabel = file.source_type === 'agent_document'
-    ? options.t('files.viewMarkdown')
+  const isAgentDocument = file.source_type === 'agent_document';
+  const previewLabel = isAgentDocument
+    ? options.t('files.viewDocument')
     : file.source_type === 'uploaded_file'
       ? options.t('files.preview')
       : options.t('files.viewDetails');
@@ -343,13 +344,21 @@ function buildResourceActions(
 
   return [
     {
-      key: file.source_type === 'agent_document' ? 'view-document' : 'preview',
+      key: isAgentDocument ? 'view-document' : 'preview',
       label: previewLabel,
-      icon: file.source_type === 'agent_document'
+      icon: isAgentDocument
         ? <FileSearch className="h-4 w-4" strokeWidth={1.8} />
         : <Eye className="h-4 w-4" strokeWidth={1.8} />,
       onClick: options.onPreview,
     },
+    ...(isAgentDocument
+      ? [{
+        key: 'source-trace',
+        label: options.t('files.sourceTrace'),
+        icon: <Crosshair className="h-4 w-4" strokeWidth={1.8} />,
+        onClick: options.onPreview,
+      }]
+      : []),
     ...(file.source_type === 'uploaded_file' && file.url
       ? [{
         key: 'download',
