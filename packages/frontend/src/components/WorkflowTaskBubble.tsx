@@ -84,7 +84,7 @@ function isWorkflowPlanJson(value: unknown): value is WorkflowPlanJson {
         (typeof task.agent_id === 'string' || task.agent_id === null) &&
         (task.mode === 'parallel' || task.mode === 'serial') &&
         Array.isArray(task.depends_on) &&
-        ['pending', 'running', 'completed', 'blocked', 'failed'].includes(task.status) &&
+        ['pending', 'running', 'completed', 'blocked', 'failed', 'skipped'].includes(task.status) &&
         typeof task.progress === 'number' &&
         Array.isArray(task.result_refs)
       );

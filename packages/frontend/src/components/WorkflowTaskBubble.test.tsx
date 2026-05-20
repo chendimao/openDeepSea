@@ -20,6 +20,35 @@ test('renders task table from graph_state workflowPlan', () => {
   assert.match(html, /前端执行者/);
 });
 
+test('renders skipped workflow plan task from graph_state', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan({
+        tasks: [
+          {
+            id: 'task-skipped',
+            title: '必要时同步前后端共享展示字段',
+            description: '仅当已有事件字段不足时才补充。',
+            role: 'executor',
+            agent_id: null,
+            mode: 'serial',
+            depends_on: [],
+            status: 'skipped',
+            progress: 100,
+            result_refs: [],
+          },
+        ],
+      }),
+    }),
+  });
+
+  const html = renderBubble(detail, []);
+
+  assert.match(html, /必要时同步前后端共享展示字段/);
+  assert.match(html, /lucide-skip-forward/);
+  assert.match(html, /skipped/);
+});
+
 test('renders task table from artifact metadata workflow_plan_json', () => {
   const detail = createWorkflowDetail({
     artifacts: [
