@@ -60,13 +60,13 @@ export function FilesPage(): JSX.Element {
     refetch: refetchFiles,
   } = useQuery({
     queryKey: ['files', selectedProjectId, activeRoomId, selectedSourceType],
-    queryFn: () => api.listFiles({
-      projectId: selectedProjectId || undefined,
+    queryFn: () => api.listResourceFiles(selectedProjectId, {
       roomId: activeRoomId || undefined,
       sourceType: selectedSourceType || undefined,
     }),
-    enabled: canLoadFiles,
+    enabled: canLoadFiles && !!selectedProjectId,
   });
+
   const selectedProject = useMemo(
     () => projects.find((item) => item.id === selectedProjectId) ?? project ?? null,
     [project, projects, selectedProjectId],
@@ -79,6 +79,9 @@ export function FilesPage(): JSX.Element {
     () => new Map(projects.map((item) => [item.id, item.name])),
     [projects],
   );
+  useEffect(() => {
+    document.title = `${t('files.title')} · ${t('app.name')}`;
+  }, [t]);
   const viewModeLabel = locale === 'zh' ? '展示模式' : 'View mode';
   const listViewLabel = locale === 'zh' ? '列表模式' : 'List view';
   const cardViewLabel = locale === 'zh' ? 'Card 模式' : 'Card view';
@@ -166,7 +169,7 @@ export function FilesPage(): JSX.Element {
             <p>{t('files.subtitle')}</p>
           </div>
           <div className="files-toolbar-actions">
-            <div className="files-filters" aria-label={t('files.filters')}>
+            <div className="files-filters" aria-label={t('files.libraryFilters')}>
               <Filter className="h-4 w-4 text-[var(--color-muted)]" />
               <select
                 className="files-filter-select"
@@ -276,8 +279,12 @@ export function FilesPage(): JSX.Element {
             />
           ) : visibleFiles.length === 0 ? (
             <FilesState
-              title={files.length === 0 && !query.trim() ? t('files.empty') : t('files.noResults')}
-              description={files.length === 0 && !query.trim() ? undefined : t('files.noResultsDescription')}
+              title={files.length === 0 && !query.trim() ? t('files.libraryEmptyTitle') : t('files.noResults')}
+              description={
+                files.length === 0 && !query.trim()
+                  ? t('files.libraryEmptyDescription')
+                  : t('files.noResultsDescription')
+              }
             />
           ) : (
             <ProjectFileView

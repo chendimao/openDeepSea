@@ -406,9 +406,10 @@ export const api = {
   },
   listResourceFiles: async (
     projectId: string,
-    filters: { sourceType?: ProjectFile['source_type'] } = {},
+    filters: { roomId?: string; sourceType?: ProjectFile['source_type'] } = {},
   ) => {
     const params = new URLSearchParams();
+    if (filters.roomId) params.set('roomId', filters.roomId);
     if (filters.sourceType) params.set('resourceType', filters.sourceType);
     const query = params.toString();
     const resources = await request<ResourceListItem[]>(`/projects/${projectId}/resource-assets${query ? `?${query}` : ''}`);
