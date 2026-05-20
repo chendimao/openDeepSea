@@ -333,11 +333,14 @@ test('task flow renders staged board controls and row actions', () => {
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
   assert.match(html, /全部状态/);
-  assert.match(html, /添加阶段/);
-  assert.match(html, /workflow-flow-stage-panel is-plan/);
-  assert.match(html, /workflow-flow-stage-panel is-execution/);
-  assert.match(html, /workflow-flow-stage-panel is-review/);
-  assert.match(html, /workflow-flow-stage-panel is-done/);
+  assert.match(html, /整体进度/);
+  assert.doesNotMatch(html, /添加任务/);
+  assert.match(html, /workflow-flow-overview/);
+  assert.match(html, /workflow-flow-progress-card/);
+  assert.match(html, /workflow-flow-kanban-column is-plan/);
+  assert.match(html, /workflow-flow-kanban-column is-execution/);
+  assert.match(html, /workflow-flow-kanban-column is-review/);
+  assert.match(html, /workflow-flow-kanban-column is-done/);
   assert.match(html, /workflow-flow-stage-count/);
   assert.match(html, /workflow-flow-row-menu/);
 });

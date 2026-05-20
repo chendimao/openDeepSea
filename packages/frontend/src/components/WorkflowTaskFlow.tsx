@@ -25,6 +25,7 @@ export function WorkflowTaskFlow({
   const stagePanels = useMemo(() => buildStagePanels(flowEntries, t), [flowEntries, t]);
   const executorTaskCount = plan.tasks.filter((task) => task.role === 'executor').length;
   const recordCount = steps.length + artifacts.length;
+  const progressStats = useMemo(() => buildProgressStats(flowEntries), [flowEntries]);
 
   return (
     <section className="workflow-flow-panel">
@@ -44,19 +45,46 @@ export function WorkflowTaskFlow({
       </div>
 
       {flowEntries.length > 0 ? (
-        <div className="workflow-flow-stage-board" aria-label={t('workflowPlan.taskFlowTitle')}>
+        <>
+        <div className="workflow-flow-overview">
           {stagePanels.map((stage) => (
-            <section key={stage.key} className={cn('workflow-flow-stage-panel', `is-${stage.key}`)}>
-              <div className="workflow-flow-stage-head">
-                <div className="workflow-flow-stage-title">
+            <div key={stage.key} className={cn('workflow-flow-overview-step', `is-${stage.key}`)}>
+              <div className="workflow-flow-overview-icon">{stage.icon}</div>
+              <div className="workflow-flow-overview-copy">
+                <div className="workflow-flow-overview-title">{stage.label}</div>
+                <div className="workflow-flow-overview-meta">
+                  <span className="workflow-flow-stage-count">{stage.entries.length}</span>
+                  <span>{stage.percent}%</span>
+                </div>
+              </div>
+            </div>
+          ))}
+          <div className="workflow-flow-progress-card">
+            <div className="workflow-flow-progress-ring" style={{ '--workflow-progress': `${progressStats.percent}%` } as React.CSSProperties}>
+              <span>{progressStats.percent}%</span>
+            </div>
+            <div className="workflow-flow-progress-copy">
+              <div className="workflow-flow-progress-title">{t('workflowPlan.taskFlowOverallProgress')}</div>
+              <div className="workflow-flow-progress-grid">
+                <span className="is-completed">{t('workflowPlan.taskFlowCompleted')}</span><b>{progressStats.completed}</b>
+                <span className="is-running">{t('workflowPlan.taskFlowRunning')}</span><b>{progressStats.running}</b>
+                <span className="is-pending">{t('workflowPlan.taskFlowPending')}</span><b>{progressStats.pending}</b>
+                <span className="is-blocked">{t('workflowPlan.taskFlowBlocked')}</span><b>{progressStats.blocked}</b>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="workflow-flow-kanban" aria-label={t('workflowPlan.taskFlowTitle')}>
+          {stagePanels.map((stage) => (
+            <section key={stage.key} className={cn('workflow-flow-kanban-column', `is-${stage.key}`)}>
+              <div className="workflow-flow-kanban-head">
+                <div className="workflow-flow-kanban-title">
                   <span className="workflow-flow-stage-dot" />
                   <span>{stage.label}</span>
                   <span className="workflow-flow-stage-count">{stage.entries.length}</span>
                 </div>
-                <ChevronDown className="h-4 w-4 text-[var(--color-muted)]" />
               </div>
-              <div className="workflow-flow-stage-caption">{stage.caption}</div>
-              <div className="workflow-flow-stage-list">
+              <div className="workflow-flow-kanban-list">
                 {stage.entries.length > 0 ? stage.entries.map((entry) => (
                   <FlowEntryCard key={entry.key} entry={entry} compact={compact} />
                 )) : (
@@ -65,11 +93,8 @@ export function WorkflowTaskFlow({
               </div>
             </section>
           ))}
-          <button className="workflow-flow-add-stage" type="button">
-            <span>+</span>
-            {t('workflowPlan.taskFlowAddStage')}
-          </button>
         </div>
+        </>
       ) : (
         <div className="workflow-flow-empty">{t('workflowPlan.taskFlowEmpty')}</div>
       )}
@@ -81,6 +106,8 @@ interface FlowStagePanel {
   key: 'plan' | 'execution' | 'review' | 'done';
   label: string;
   caption: string;
+  icon: React.ReactNode;
+  percent: number;
   entries: FlowEntry[];
 }
 
@@ -111,14 +138,11 @@ function FlowEntryCard({
     >
       <div className="workflow-flow-icon" aria-hidden="true">{entry.icon}</div>
       <div className="workflow-flow-entry-body">
+        <div className="workflow-flow-entry-role">{entry.phaseLabel}</div>
+        <div className="workflow-flow-entry-title">{entry.title}</div>
+        {entry.subtitle && <div className="workflow-flow-entry-subtitle">{entry.subtitle}</div>}
         <div className="workflow-flow-entry-top">
-          <div className="workflow-flow-entry-role">{entry.phaseLabel}</div>
-          <div className="min-w-0 flex-1">
-            <div className="workflow-flow-entry-title">{entry.title}</div>
-            {entry.subtitle && <div className="workflow-flow-entry-subtitle">{entry.subtitle}</div>}
-          </div>
           <span className={cn('workflow-flow-status-pill', `is-${entry.meta}`)}>{entry.meta}</span>
-          <div className="workflow-flow-entry-meta">{entry.meta}</div>
           <button className="workflow-flow-row-menu" type="button" aria-label={entry.title}>
             <MoreHorizontal className="h-3.5 w-3.5" />
           </button>
@@ -129,23 +153,26 @@ function FlowEntryCard({
 }
 
 function buildStagePanels(flowEntries: FlowEntry[], t: TranslateFn): FlowStagePanel[] {
-  return [
+  const panels = [
     {
       key: 'plan',
       label: `${t('workflowPlan.taskFlowPlanStage')} / ${t('workflowPlan.taskFlowAnalysisStage')}`,
       caption: t('workflowPlan.taskFlowPlanLaneCaption'),
+      icon: <RotateCcw className="h-5 w-5 text-[var(--color-primary)]" />,
       entries: flowEntries.filter((entry) => entry.phase === 'plan'),
     },
     {
       key: 'execution',
       label: t('workflowPlan.taskFlowExecutionLane'),
       caption: t('workflowPlan.taskFlowExecutionLaneCaption'),
+      icon: <CheckCircle2 className="h-5 w-5 text-[var(--color-success)]" />,
       entries: flowEntries.filter((entry) => entry.phase === 'execution'),
     },
     {
       key: 'review',
       label: t('workflowPlan.taskFlowReviewLane'),
       caption: t('workflowPlan.taskFlowReviewLaneCaption'),
+      icon: <Sparkles className="h-5 w-5 text-[var(--color-warning)]" />,
       entries: flowEntries.filter((entry) =>
         entry.phase === 'review' || entry.phase === 'verification',
       ),
@@ -154,9 +181,30 @@ function buildStagePanels(flowEntries: FlowEntry[], t: TranslateFn): FlowStagePa
       key: 'done',
       label: t('workflowPlan.taskFlowDoneLane'),
       caption: t('workflowPlan.taskFlowDoneLaneCaption'),
+      icon: <CheckCircle2 className="h-5 w-5 text-[var(--color-success)]" />,
       entries: flowEntries.filter((entry) => entry.phase === 'acceptance'),
     },
-  ];
+  ] satisfies Array<Omit<FlowStagePanel, 'percent'>>;
+
+  return panels.map((panel) => ({
+    ...panel,
+    percent: calculateEntryPercent(panel.entries),
+  }));
+}
+
+function calculateEntryPercent(entries: FlowEntry[]): number {
+  if (entries.length === 0) return 0;
+  const completed = entries.filter((entry) => entry.meta === 'completed').length;
+  return Math.round((completed / entries.length) * 100);
+}
+
+function buildProgressStats(entries: FlowEntry[]) {
+  const completed = entries.filter((entry) => entry.meta === 'completed').length;
+  const running = entries.filter((entry) => entry.meta === 'running').length;
+  const blocked = entries.filter((entry) => entry.meta === 'blocked' || entry.meta === 'failed').length;
+  const pending = Math.max(entries.length - completed - running - blocked, 0);
+  const percent = entries.length > 0 ? Math.round((completed / entries.length) * 100) : 0;
+  return { completed, running, pending, blocked, percent };
 }
 
 function buildFlowEntries(
