@@ -56,7 +56,7 @@ test('buildSuperpowersRuntimeGraph executable definition runs Superpowers planni
   );
 });
 
-test('buildSuperpowersRuntimeGraph exposes TDD execute and two-stage review state bridge before verify integration', () => {
+test('buildSuperpowersRuntimeGraph executable definition routes TDD execution and two-stage review before verify', () => {
   const graph = buildSuperpowersRuntimeGraph();
 
   assert.deepEqual(Object.keys(graph.nodes).filter((name) => [
@@ -69,8 +69,18 @@ test('buildSuperpowersRuntimeGraph exposes TDD execute and two-stage review stat
     'codeQualityReview',
   ]);
   assert.deepEqual(
-    graph.executableDefinition.nodes.slice(-7, -1).map((node) => node.id),
-    ['dispatch', 'execute', 'review', 'repair_decision', 'verify', 'acceptance'],
+    graph.executableDefinition.nodes.slice(-7).map((node) => node.id),
+    ['dispatch', 'tdd_execute', 'spec_compliance_review', 'code_quality_review', 'verify', 'acceptance', 'memory'],
+  );
+  assert.deepEqual(
+    graph.executableDefinition.edges.slice(7, 12).map((edge) => `${edge.from}->${edge.to}:${edge.condition ?? 'default'}`),
+    [
+      'dispatch->tdd_execute:default',
+      'tdd_execute->tdd_execute:has_runnable_child',
+      'tdd_execute->spec_compliance_review:done',
+      'spec_compliance_review->tdd_execute:changes_requested',
+      'spec_compliance_review->code_quality_review:pass',
+    ],
   );
 });
 

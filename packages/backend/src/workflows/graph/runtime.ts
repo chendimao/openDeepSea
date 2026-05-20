@@ -21,7 +21,7 @@ import {
   SUPERPOWERS_WORKFLOW_DEFINITION_KEY,
   type SuperpowersRuntimeGraph,
 } from './superpowers-runtime.js';
-import type { SuperpowersPlanningNodeName } from './superpowers-nodes.js';
+import type { SuperpowersExecutionNodeName, SuperpowersPlanningNodeName } from './superpowers-nodes.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 
 const GraphState = Annotation.Root({
@@ -740,12 +740,27 @@ async function resumeGraphWorkflowFromState(
       return nextState;
     }
 
+    if (nodeToRun === 'tdd_execute' && runtimeGraph && hasRunnableChildTask(nextState)) {
+      const executedState = await nodes.executeNode(nextState);
+      nextState = renameLatestExecuteStepAsTddExecute(
+        applyTddEvidenceFromImplementationOutput(executedState, tools),
+        tools,
+      );
+      if (shouldWaitForActiveAgentRun('execute', nextState)) {
+        return nextState;
+      }
+      nodeToRun = nextNodeAfter('tdd_execute', nextState, routePlan);
+      continue;
+    }
+
     if (nodeToRun === 'dispatch' && runtimeGraph && !runtimeGraph.canDispatch(nextState)) {
       return blockSuperpowersDispatch(nextState);
     }
 
     if (runtimeGraph && isSuperpowersPlanningRouteNode(nodeToRun)) {
       nextState = await runSuperpowersPlanningNode(nodeToRun, nextState, tools, nodes, runtimeGraph);
+    } else if (runtimeGraph && isSuperpowersExecutionRouteNode(nodeToRun)) {
+      nextState = await runSuperpowersExecutionNode(nodeToRun, nextState, tools, runtimeGraph);
     } else if (nodeToRun === 'context') {
       nextState = await nodes.contextNode(nextState);
     } else if (nodeToRun === 'planning') {
@@ -892,6 +907,147 @@ async function callSuperpowersNode(
   throw new Error(`unknown Superpowers planning node: ${nodeToRun}`);
 }
 
+async function runSuperpowersExecutionNode(
+  nodeToRun: SuperpowersExecutionNodeName,
+  state: AgentWorkflowState,
+  tools: ReturnType<typeof createGraphTools>,
+  runtimeGraph: SuperpowersRuntimeGraph,
+): Promise<AgentWorkflowState> {
+  const context = tools.readWorkflowContext(state.workflowRunId);
+  const step = tools.createGraphStep({
+    workflow_run_id: context.run.id,
+    task_id: context.task.id,
+    stage: nodeToRun === 'tdd_execute' ? 'implementation' : 'code_review',
+    node_name: nodeToRun as never,
+    status: 'running',
+    sort_order: tools.nextStepSortOrder(context.run.id),
+  });
+  tools.broadcastStepCreated(context.room.id, step);
+
+  const rawNextState = await callSuperpowersExecutionNode(nodeToRun, state, runtimeGraph);
+  const nextState = normalizeSuperpowersReviewState({
+    ...rawNextState,
+    currentNode: nodeToRun === 'tdd_execute' ? 'execute' : 'review',
+    currentStepId: step.id,
+  }, nodeToRun);
+  const blocked = nextState.status === 'blocked';
+  const completedStep = tools.updateGraphStep(step.id, {
+    node_name: nodeToRun as never,
+    status: blocked ? 'failed' : 'completed',
+    error: blocked ? nextState.error : null,
+  });
+  if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+
+  const updatedRun = tools.updateRun(context.run.id, {
+    status: blocked ? 'blocked' : 'running',
+    current_stage: nodeToRun === 'tdd_execute' ? 'implementation' : 'code_review',
+    error: blocked ? nextState.error : null,
+  });
+  if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+  tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+  return nextState;
+}
+
+async function callSuperpowersExecutionNode(
+  nodeToRun: SuperpowersExecutionNodeName,
+  state: AgentWorkflowState,
+  runtimeGraph: SuperpowersRuntimeGraph,
+): Promise<AgentWorkflowState> {
+  if (nodeToRun === 'tdd_execute') return runtimeGraph.nodes.tddExecute(state);
+  if (nodeToRun === 'spec_compliance_review') return runtimeGraph.nodes.specComplianceReview(state);
+  if (nodeToRun === 'code_quality_review') return runtimeGraph.nodes.codeQualityReview(state);
+  throw new Error(`unknown Superpowers execution node: ${nodeToRun}`);
+}
+
+function normalizeSuperpowersReviewState(
+  state: AgentWorkflowState,
+  nodeToRun: SuperpowersExecutionNodeName,
+): AgentWorkflowState {
+  if (nodeToRun === 'spec_compliance_review' && !state.specComplianceReview) {
+    return {
+      ...state,
+      specComplianceReview: {
+        verdict: state.reviewVerdict === 'changes_requested'
+          ? 'changes_requested'
+          : (state.reviewVerdict === 'failed' ? 'failed' : 'approved'),
+        findings: state.reviewFindings,
+        reviewedAt: null,
+      },
+    };
+  }
+  if (nodeToRun === 'code_quality_review' && !state.codeQualityReview) {
+    return {
+      ...state,
+      codeQualityReview: {
+        verdict: state.reviewVerdict === 'changes_requested'
+          ? 'changes_requested'
+          : (state.reviewVerdict === 'failed' ? 'failed' : 'approved'),
+        findings: state.reviewFindings,
+        reviewedAt: null,
+      },
+    };
+  }
+  return state;
+}
+
+function applyTddEvidenceFromImplementationOutput(
+  state: AgentWorkflowState,
+  tools: ReturnType<typeof createGraphTools>,
+): AgentWorkflowState {
+  if (!state.currentStepId) return state;
+  const step = tools.getStep(state.currentStepId);
+  if (!step || step.status !== 'completed') return state;
+  const evidence = parseTddEvidence(step.result ?? '');
+  if (evidence.length === 0) return state;
+  return {
+    ...state,
+    tddEvidence: [
+      ...(state.tddEvidence ?? []),
+      ...evidence,
+    ],
+  };
+}
+
+function parseTddEvidence(output: string): NonNullable<AgentWorkflowState['tddEvidence']> {
+  if (!output.trim()) return [];
+  try {
+    const parsed = JSON.parse(output) as {
+      tddEvidence?: NonNullable<AgentWorkflowState['tddEvidence']>;
+    };
+    if (!Array.isArray(parsed.tddEvidence)) return [];
+    return parsed.tddEvidence.filter((record) =>
+      (record.stage === 'RED' || record.stage === 'GREEN' || record.stage === 'REFACTOR')
+      && (record.passed === true || record.passed === false || record.passed === null)
+      && (typeof record.command === 'string' || record.command === null)
+      && (typeof record.summary === 'string' || record.summary === null),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function renameLatestExecuteStepAsTddExecute(
+  state: AgentWorkflowState,
+  tools: ReturnType<typeof createGraphTools>,
+): AgentWorkflowState {
+  if (!state.currentStepId) return state;
+  const step = tools.getStep(state.currentStepId);
+  if (!step || step.node_name !== 'execute') return state;
+  const updatedStep = tools.updateGraphStep(step.id, { node_name: 'tdd_execute' as never });
+  if (updatedStep) {
+    const context = tools.readWorkflowContext(state.workflowRunId);
+    tools.broadcastStepUpdated(context.room.id, updatedStep);
+  }
+  tools.updateGraphState(state.workflowRunId, serializeGraphState({
+    ...state,
+    superpowersPhase: 'tdd_execute',
+  }));
+  return {
+    ...state,
+    superpowersPhase: 'tdd_execute',
+  };
+}
+
 function blockSuperpowersDispatch(state: AgentWorkflowState): AgentWorkflowState {
   const error = getSuperpowersDispatchGateError(state);
   const blockedState = blockGraphWorkflowRun(state.workflowRunId, state, error);
@@ -941,7 +1097,13 @@ function shouldWaitForActiveAgentRun(
   );
 }
 
-type WorkflowRouteNode = NonNullable<AgentWorkflowState['currentNode']> | SuperpowersPlanningNodeName;
+function hasRunnableChildTask(state: AgentWorkflowState): boolean {
+  return state.childTaskIds
+    .map((id) => taskRepo.get(id))
+    .some((task) => task?.status === 'todo' || task?.status === 'in_progress');
+}
+
+type WorkflowRouteNode = NonNullable<AgentWorkflowState['currentNode']> | SuperpowersPlanningNodeName | SuperpowersExecutionNodeName;
 type WorkflowRoutePlan = {
   start: WorkflowRouteNode;
   next: Map<WorkflowRouteNode, Array<{ to: WorkflowRouteNode; condition: string | null }>>;
@@ -976,6 +1138,9 @@ const SUPERPOWERS_NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, Wo
   worktree: 'worktree',
   writing_plans: 'writing_plans',
   plan_review: 'plan_review',
+  tdd_execute: 'tdd_execute',
+  spec_compliance_review: 'spec_compliance_review',
+  code_quality_review: 'code_quality_review',
 };
 
 function resolveLegacyRouteNode(
@@ -1028,6 +1193,14 @@ function isSuperpowersPlanningRouteNode(node: WorkflowRouteNode): node is Superp
   );
 }
 
+function isSuperpowersExecutionRouteNode(node: WorkflowRouteNode): node is SuperpowersExecutionNodeName {
+  return (
+    node === 'tdd_execute'
+    || node === 'spec_compliance_review'
+    || node === 'code_quality_review'
+  );
+}
+
 function nextNodeFromDefinition(
   nodeJustRun: WorkflowRouteNode | null,
   state: AgentWorkflowState,
@@ -1054,6 +1227,9 @@ function currentRouteNodeFromState(state: AgentWorkflowState, plan: WorkflowRout
   if (state.currentNode === 'planning' && isSuperpowersPlanningPhase(state.superpowersPhase)) {
     return plan.next.has(state.superpowersPhase) ? state.superpowersPhase : state.currentNode;
   }
+  if (isSuperpowersExecutionPhase(state.superpowersPhase)) {
+    return plan.next.has(state.superpowersPhase) ? state.superpowersPhase : state.currentNode;
+  }
   return state.currentNode;
 }
 
@@ -1067,11 +1243,27 @@ function isSuperpowersPlanningPhase(value: unknown): value is SuperpowersPlannin
   );
 }
 
+function isSuperpowersExecutionPhase(value: unknown): value is SuperpowersExecutionNodeName {
+  return (
+    value === 'tdd_execute'
+    || value === 'spec_compliance_review'
+    || value === 'code_quality_review'
+  );
+}
+
 function routeRuntimeNode(
   node: WorkflowRouteNode,
   state: AgentWorkflowState,
 ): WorkflowRouteNode | null {
   if (isSuperpowersPlanningRouteNode(node)) return null;
+  if (isSuperpowersExecutionRouteNode(node)) {
+    if (state.status === 'blocked' || state.status === 'cancelled' || state.status === 'failed') return null;
+    if (node === 'tdd_execute') return hasRunnableChildTask(state) ? 'tdd_execute' : 'spec_compliance_review';
+    if (node === 'spec_compliance_review') {
+      return state.reviewVerdict === 'changes_requested' ? 'tdd_execute' : 'code_quality_review';
+    }
+    return state.reviewVerdict === 'changes_requested' ? 'tdd_execute' : 'verify';
+  }
   if (node === 'approval') {
     const route = routeAfterApproval(state);
     return route === END ? null : route;
@@ -1100,6 +1292,12 @@ function matchesRouteCondition(
 ): boolean {
   if (!condition || condition === 'default' || condition === 'done') return true;
   if (isSuperpowersPlanningRouteNode(node)) return false;
+  if (isSuperpowersExecutionRouteNode(node)) {
+    if (node === 'tdd_execute' && condition === 'has_runnable_child') return hasRunnableChildTask(state);
+    if (condition === 'changes_requested') return state.reviewVerdict === 'changes_requested';
+    if (condition === 'pass' || condition === 'approved' || condition === 'verify') return state.reviewVerdict !== 'changes_requested';
+    return false;
+  }
   if (node === 'approval') {
     const route = routeAfterApproval(state);
     if (condition === 'approved') return route === 'dispatch';
