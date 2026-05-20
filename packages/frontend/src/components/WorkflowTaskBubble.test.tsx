@@ -343,6 +343,8 @@ test('task flow renders staged board controls and row actions', () => {
   assert.match(html, /workflow-flow-detail-panel/);
   assert.match(html, /任务列表/);
   assert.match(html, /workflow-event-stack/);
+  assert.match(html, /Workflow Plan/);
+  assert.doesNotMatch(html, /workflow-flow-task-card-title">计划</);
 });
 
 test('task flow renders review and verification as ordered workflow nodes', () => {

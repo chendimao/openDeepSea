@@ -303,6 +303,7 @@ function buildFlowEntries(
 
   for (const [index, step] of steps.entries()) {
     const task = taskMap.get(step.task_id) ?? null;
+    const fallbackTaskName = resolveFallbackTaskName(plan, step);
     const sortKey = step.completed_at ?? step.started_at ?? step.updated_at ?? step.created_at ?? index;
     const executorId = step.assigned_room_agent_id ?? step.room_agent_id ?? task?.agent_id ?? 'codex';
     const baseEntry = createFlowEntryBase(step, task, executorId, agentMap, t);
@@ -314,9 +315,9 @@ function buildFlowEntries(
         phaseLabel: t('workflowPlan.taskFlowExecutionStage'),
         sortKey,
         sequence: index,
-        title: task?.title ?? workflowStageLabel(step.stage),
-        shortTitle: task?.title ?? workflowStageLabel(step.stage),
-        taskName: task?.title ?? workflowStageLabel(step.stage),
+        title: task?.title ?? fallbackTaskName,
+        shortTitle: task?.title ?? fallbackTaskName,
+        taskName: task?.title ?? fallbackTaskName,
         subtitle: step.node_name ? step.node_name : null,
         ...baseEntry,
         content: step.result || step.error || null,
@@ -339,7 +340,7 @@ function buildFlowEntries(
           sequence: index,
           title: t('workflowPlan.taskFlowVerification'),
           shortTitle: t('workflowPlan.taskFlowVerification'),
-          taskName: task?.title ?? t('workflowPlan.taskFlowVerification'),
+          taskName: task?.title ?? fallbackTaskName,
           subtitle: task?.title ?? workflowStageLabel(step.stage),
           ...baseEntry,
           content: step.result || step.error || null,
@@ -363,7 +364,7 @@ function buildFlowEntries(
           ? `${t('workflowPlan.taskFlowReviewTarget')} · ${reviewedTask}`
           : workflowStageLabel(step.stage),
         shortTitle: task?.title ?? t('workflowPlan.taskFlowReviewStage'),
-        taskName: task?.title ?? reviewedTask ?? t('workflowPlan.taskFlowReviewStage'),
+        taskName: task?.title ?? reviewedTask ?? fallbackTaskName,
         subtitle: task?.title ?? null,
         ...baseEntry,
         content: step.result || step.error || null,
@@ -382,7 +383,7 @@ function buildFlowEntries(
         sequence: index,
         title: `${t('workflowPlan.taskFlowAcceptanceTarget')} · ${acceptanceTarget}`,
         shortTitle: task?.title ?? t('workflowPlan.taskFlowAcceptanceStage'),
-        taskName: task?.title ?? acceptanceTarget,
+        taskName: task?.title ?? acceptanceTarget ?? fallbackTaskName,
         subtitle: task?.title ?? null,
         ...baseEntry,
         content: step.result || step.error || null,
@@ -399,7 +400,7 @@ function buildFlowEntries(
       sequence: index,
       title: workflowStageLabel(step.stage),
       shortTitle: workflowStageLabel(step.stage),
-      taskName: task?.title ?? workflowStageLabel(step.stage),
+      taskName: task?.title ?? fallbackTaskName,
       subtitle: task?.title ?? null,
       ...baseEntry,
       content: step.result || step.error || null,
@@ -448,6 +449,13 @@ function buildFlowEntries(
   }
 
   return entries.sort((a, b) => a.sortKey - b.sortKey || a.sequence - b.sequence);
+}
+
+function resolveFallbackTaskName(plan: WorkflowPlanJson, step: WorkflowStep): string {
+  if (step.task_id === plan.source_message_id || step.task_id === 'task-root') {
+    return plan.workflow_name || plan.summary || plan.goal;
+  }
+  return plan.tasks[0]?.title ?? plan.workflow_name ?? step.task_id;
 }
 
 function createFlowEntryBase(
