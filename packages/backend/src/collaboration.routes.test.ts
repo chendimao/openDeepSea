@@ -144,7 +144,7 @@ test('POST /rooms/:roomId/messages/:messageId/promote-to-workflow creates a task
   assert.equal(body.task.created_from, 'chat_plan');
   assert.equal(body.task.interaction_mode, 'ask_user');
   assert.equal(body.workflow.task_id, body.task.id);
-  assert.equal(body.workflow.graph_version, 'phase-b-v1');
+  assert.equal(body.workflow.graph_version, 'superpowers-v1');
   assert.deepEqual(enqueued, [body.workflow.id]);
 
   const task = taskRepo.get(body.task.id);

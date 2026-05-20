@@ -335,6 +335,57 @@ test('startGraphWorkflow passes workflow skill context to supervisor model', asy
   assert.match(capturedSkillContext, /Skill: workflow-supervisor-skill/);
 });
 
+test('startGraphWorkflow keeps high-confidence assignments from default supervisor when deps.supervisor is omitted', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-default-assignment-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Default Assignment', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Default Assignment Room' });
+  const fallbackExecutor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(fallbackExecutor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+  });
+  const hintedExecutor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(hintedExecutor.id, {
+    capabilities: ['frontend'],
+    default_runtime: 'acp',
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Use default supervisor assignment hint',
+  });
+
+  await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      ...createApprovalPlan(task.title),
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+    defaultSupervisor: async () => ({
+      mode: 'use_default_workflow',
+      workflowDefinitionId: null,
+      confidence: 0.92,
+      reason: 'Use hinted executor from default supervisor.',
+      assignments: [{
+        stage: 'implementation',
+        role: 'executor',
+        agentId: hintedExecutor.id,
+        reason: 'Prefer frontend executor.',
+      }],
+      fallbackMode: 'default_workflow',
+    }),
+  } as Parameters<typeof startGraphWorkflow>[1] & {
+    defaultSupervisor: (
+      input: Parameters<(typeof import('../supervisor.js'))['generateWorkflowSupervisorDecision']>[0],
+      options?: Parameters<(typeof import('../supervisor.js'))['generateWorkflowSupervisorDecision']>[2],
+    ) => ReturnType<(typeof import('../supervisor.js'))['generateWorkflowSupervisorDecision']>;
+  });
+
+  const child = taskRepo.listChildren(task.id)[0];
+  assert.equal(child?.assigned_agent_id, hintedExecutor.id);
+});
+
 test('startGraphWorkflow ignores high-confidence supervisor workflow choice for new runs', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-supervisor-choice-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

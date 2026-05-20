@@ -51,7 +51,7 @@ test('workflowOrchestrator.start delegates to graph runtime when enabled', async
 
   const run = await workflowOrchestrator.start(task.id);
 
-  assert.equal(run.graph_version, 'phase-b-v1');
+  assert.equal(run.graph_version, 'superpowers-v1');
   assert.equal(run.status, 'awaiting_approval');
   assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'planning'));
 });

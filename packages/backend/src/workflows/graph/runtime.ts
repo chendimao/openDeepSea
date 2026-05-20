@@ -9,6 +9,7 @@ import { runRegistry } from '../../run-registry.js';
 import { recordTaskEvent } from '../../task-conversation.js';
 import type { WorkflowDefinition, WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
 import type { WorkflowSupervisorDecision } from '../supervisor.js';
+import { generateWorkflowSupervisorDecision } from '../supervisor.js';
 import { createGraphNodes } from './nodes.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
 import { emptyAgentWorkflowState, parseGraphState, serializeGraphState, type AgentWorkflowState } from './state.js';
@@ -60,6 +61,17 @@ type WorkflowDefinitionSnapshot = {
 type WorkflowDefinitionSelection = {
   definition: WorkflowDefinition;
   supervisorAssignments?: WorkflowSupervisorDecision['assignments'];
+};
+
+type WorkflowRunSelection = {
+  supervisorAssignments?: WorkflowSupervisorDecision['assignments'];
+};
+
+type SupervisorDepsOverride = {
+  defaultSupervisor?: (
+    input: Parameters<typeof generateWorkflowSupervisorDecision>[0],
+    options?: Parameters<typeof generateWorkflowSupervisorDecision>[2],
+  ) => ReturnType<typeof generateWorkflowSupervisorDecision>;
 };
 
 function requireTaskContext(taskId: string) {
@@ -114,7 +126,7 @@ export async function startGraphWorkflow(taskId: string, deps: GraphRuntimeDeps 
   return continueGraphWorkflow(run.id, deps);
 }
 
-export function createGraphWorkflowRun(taskId: string, selection?: WorkflowDefinitionSelection): WorkflowRun {
+export function createGraphWorkflowRun(taskId: string, selection?: WorkflowRunSelection): WorkflowRun {
   const { task, room, project } = requireTaskContext(taskId);
   const existing = workflowRepo.getActiveByTask(task.id);
   if (existing) throw new Error('task already has an active workflow');
@@ -189,9 +201,13 @@ async function resolveSupervisorAssignmentsForTask(
   deps: GraphRuntimeDeps,
   definition: WorkflowDefinition,
 ): Promise<WorkflowSupervisorDecision['assignments']> {
-  if (!deps.supervisor) return [];
   const { task, room, project } = requireTaskContext(taskId);
   const tools = createGraphTools(deps);
+  const defaultSupervisor = (deps as SupervisorDepsOverride).defaultSupervisor;
+  const supervisor = deps.supervisor
+    ?? defaultSupervisor
+    ?? ((input: Parameters<typeof generateWorkflowSupervisorDecision>[0], options?: Parameters<typeof generateWorkflowSupervisorDecision>[2]) =>
+      generateWorkflowSupervisorDecision(input, undefined, options));
 
   try {
     const skillContext = await tools.buildSkillContext({
@@ -204,7 +220,7 @@ async function resolveSupervisorAssignmentsForTask(
         `${definition.name}: ${definition.description ?? ''}`,
       ].filter(Boolean).join('\n\n'),
     });
-    const decision = await deps.supervisor({
+    const decision = await supervisor({
       project,
       room,
       task,

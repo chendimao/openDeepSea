@@ -39,7 +39,7 @@ test('legacy workflow start route uses conversation short request path when grap
 
   assert.equal(res.status, 202);
   const workflow = await res.json() as { id: string; graph_version: string };
-  assert.equal(workflow.graph_version, 'phase-b-v1');
+  assert.equal(workflow.graph_version, 'superpowers-v1');
   assert.equal(workflowRepo.listSteps(workflow.id).length, 0);
   assert.deepEqual(enqueued, [workflow.id]);
 });
