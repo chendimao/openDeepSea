@@ -65,10 +65,46 @@ CREATE TABLE IF NOT EXISTS skills (
   enabled INTEGER NOT NULL DEFAULT 1,
   priority INTEGER NOT NULL DEFAULT 100,
   checksum TEXT,
+  package_version TEXT,
+  package_revision TEXT,
+  runtime_type TEXT,
+  entrypoint TEXT,
+  permissions_json TEXT,
+  install_source_label TEXT,
+  update_check_mode TEXT NOT NULL DEFAULT 'startup',
+  update_apply_mode TEXT NOT NULL DEFAULT 'prompt',
+  last_update_checked_at INTEGER,
+  available_version TEXT,
+  available_revision TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_skills_enabled ON skills(enabled, priority, updated_at);
+
+CREATE TABLE IF NOT EXISTS skill_runs (
+  id TEXT PRIMARY KEY,
+  skill_id TEXT NOT NULL,
+  project_id TEXT,
+  room_id TEXT,
+  agent_id TEXT,
+  invoked_by TEXT NOT NULL,
+  runtime TEXT NOT NULL,
+  entrypoint TEXT NOT NULL,
+  input_json TEXT,
+  allowed_paths_json TEXT,
+  network_enabled INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  exit_code INTEGER,
+  stdout TEXT,
+  stderr TEXT,
+  result_json TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(skill_id) REFERENCES skills(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_skill_runs_skill ON skill_runs(skill_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_skill_runs_project ON skill_runs(project_id, created_at);
 
 CREATE TABLE IF NOT EXISTS skill_bindings (
   id TEXT PRIMARY KEY,
@@ -589,6 +625,45 @@ if (!projectColumnNames.has('message_routing_mode')) {
 if (!projectColumnNames.has('fallback_agent_id')) {
   db.exec('ALTER TABLE projects ADD COLUMN fallback_agent_id TEXT');
 }
+
+const skillColumns = db.prepare('PRAGMA table_info(skills)').all() as { name: string }[];
+const skillColumnNames = new Set(skillColumns.map((column) => column.name));
+if (!skillColumnNames.has('package_version')) {
+  db.exec('ALTER TABLE skills ADD COLUMN package_version TEXT');
+}
+if (!skillColumnNames.has('package_revision')) {
+  db.exec('ALTER TABLE skills ADD COLUMN package_revision TEXT');
+}
+if (!skillColumnNames.has('runtime_type')) {
+  db.exec('ALTER TABLE skills ADD COLUMN runtime_type TEXT');
+}
+if (!skillColumnNames.has('entrypoint')) {
+  db.exec('ALTER TABLE skills ADD COLUMN entrypoint TEXT');
+}
+if (!skillColumnNames.has('permissions_json')) {
+  db.exec('ALTER TABLE skills ADD COLUMN permissions_json TEXT');
+}
+if (!skillColumnNames.has('install_source_label')) {
+  db.exec('ALTER TABLE skills ADD COLUMN install_source_label TEXT');
+}
+if (!skillColumnNames.has('update_check_mode')) {
+  db.exec("ALTER TABLE skills ADD COLUMN update_check_mode TEXT NOT NULL DEFAULT 'startup'");
+}
+if (!skillColumnNames.has('update_apply_mode')) {
+  db.exec("ALTER TABLE skills ADD COLUMN update_apply_mode TEXT NOT NULL DEFAULT 'prompt'");
+}
+if (!skillColumnNames.has('last_update_checked_at')) {
+  db.exec('ALTER TABLE skills ADD COLUMN last_update_checked_at INTEGER');
+}
+if (!skillColumnNames.has('available_version')) {
+  db.exec('ALTER TABLE skills ADD COLUMN available_version TEXT');
+}
+if (!skillColumnNames.has('available_revision')) {
+  db.exec('ALTER TABLE skills ADD COLUMN available_revision TEXT');
+}
+
+db.exec('CREATE INDEX IF NOT EXISTS idx_skill_runs_skill ON skill_runs(skill_id, created_at)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_skill_runs_project ON skill_runs(project_id, created_at)');
 
 const roomAgentColumns = db.prepare('PRAGMA table_info(room_agents)').all() as { name: string }[];
 const roomAgentColumnNames = new Set(roomAgentColumns.map((column) => column.name));

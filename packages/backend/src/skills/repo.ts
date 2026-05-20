@@ -4,16 +4,21 @@ import type {
   Skill,
   SkillBinding,
   SkillBindingScope,
+  SkillExecutableRuntime,
+  SkillPermissions,
   SkillRuntimeScope,
   SkillSourceType,
   SkillTriggerMode,
+  SkillUpdateApplyMode,
+  SkillUpdateCheckMode,
 } from './types.js';
 
 const SYSTEM_SCOPE_ID = 'default';
 
-interface SkillRow extends Omit<Skill, 'runtime_scopes' | 'trigger_keywords'> {
+interface SkillRow extends Omit<Skill, 'runtime_scopes' | 'trigger_keywords' | 'permissions'> {
   runtime_scopes: string;
   trigger_keywords: string | null;
+  permissions_json: string | null;
 }
 
 interface SkillBindingRow extends SkillBinding {}
@@ -32,6 +37,17 @@ interface CreateSkillInput {
   enabled?: boolean;
   priority?: number;
   checksum?: string | null;
+  package_version?: string | null;
+  package_revision?: string | null;
+  runtime_type?: SkillExecutableRuntime | null;
+  entrypoint?: string | null;
+  permissions?: SkillPermissions | null;
+  install_source_label?: string | null;
+  update_check_mode?: SkillUpdateCheckMode;
+  update_apply_mode?: SkillUpdateApplyMode;
+  last_update_checked_at?: number | null;
+  available_version?: string | null;
+  available_revision?: string | null;
 }
 
 interface UpdateSkillInput {
@@ -47,6 +63,17 @@ interface UpdateSkillInput {
   enabled?: boolean;
   priority?: number;
   checksum?: string | null;
+  package_version?: string | null;
+  package_revision?: string | null;
+  runtime_type?: SkillExecutableRuntime | null;
+  entrypoint?: string | null;
+  permissions?: SkillPermissions | null;
+  install_source_label?: string | null;
+  update_check_mode?: SkillUpdateCheckMode;
+  update_apply_mode?: SkillUpdateApplyMode;
+  last_update_checked_at?: number | null;
+  available_version?: string | null;
+  available_revision?: string | null;
 }
 
 interface UpsertBindingInput {
@@ -96,9 +123,12 @@ export const skillRepo = {
     db.prepare(
       `INSERT INTO skills (
         id, name, description, source_type, source_uri, install_path, manifest_path,
-        runtime_scopes, trigger_mode, trigger_keywords, enabled, priority, checksum, created_at, updated_at
+        runtime_scopes, trigger_mode, trigger_keywords, enabled, priority, checksum,
+        package_version, package_revision, runtime_type, entrypoint, permissions_json,
+        install_source_label, update_check_mode, update_apply_mode, last_update_checked_at,
+        available_version, available_revision, created_at, updated_at
       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       input.id,
       input.name,
@@ -113,6 +143,17 @@ export const skillRepo = {
       input.enabled === false ? 0 : 1,
       input.priority ?? 100,
       input.checksum ?? null,
+      input.package_version ?? null,
+      input.package_revision ?? null,
+      input.runtime_type ?? null,
+      input.entrypoint ?? null,
+      stringifyNullableJson(input.permissions ?? null),
+      input.install_source_label ?? null,
+      input.update_check_mode ?? 'startup',
+      input.update_apply_mode ?? 'prompt',
+      input.last_update_checked_at ?? null,
+      input.available_version ?? null,
+      input.available_revision ?? null,
       ts,
       ts,
     );
@@ -137,12 +178,26 @@ export const skillRepo = {
       ...(patch.enabled !== undefined ? { enabled: patch.enabled === false ? 0 as const : 1 as const } : {}),
       ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
       ...(patch.checksum !== undefined ? { checksum: patch.checksum } : {}),
+      ...(patch.package_version !== undefined ? { package_version: patch.package_version } : {}),
+      ...(patch.package_revision !== undefined ? { package_revision: patch.package_revision } : {}),
+      ...(patch.runtime_type !== undefined ? { runtime_type: patch.runtime_type } : {}),
+      ...(patch.entrypoint !== undefined ? { entrypoint: patch.entrypoint } : {}),
+      ...(patch.permissions !== undefined ? { permissions: patch.permissions } : {}),
+      ...(patch.install_source_label !== undefined ? { install_source_label: patch.install_source_label } : {}),
+      ...(patch.update_check_mode !== undefined ? { update_check_mode: patch.update_check_mode } : {}),
+      ...(patch.update_apply_mode !== undefined ? { update_apply_mode: patch.update_apply_mode } : {}),
+      ...(patch.last_update_checked_at !== undefined ? { last_update_checked_at: patch.last_update_checked_at } : {}),
+      ...(patch.available_version !== undefined ? { available_version: patch.available_version } : {}),
+      ...(patch.available_revision !== undefined ? { available_revision: patch.available_revision } : {}),
       updated_at: now(),
     };
     db.prepare(
       `UPDATE skills
        SET name = ?, description = ?, source_type = ?, source_uri = ?, install_path = ?, manifest_path = ?,
            runtime_scopes = ?, trigger_mode = ?, trigger_keywords = ?, enabled = ?, priority = ?, checksum = ?,
+           package_version = ?, package_revision = ?, runtime_type = ?, entrypoint = ?, permissions_json = ?,
+           install_source_label = ?, update_check_mode = ?, update_apply_mode = ?, last_update_checked_at = ?,
+           available_version = ?, available_revision = ?,
            updated_at = ?
        WHERE id = ?`,
     ).run(
@@ -158,6 +213,17 @@ export const skillRepo = {
       updated.enabled,
       updated.priority,
       updated.checksum,
+      updated.package_version,
+      updated.package_revision,
+      updated.runtime_type,
+      updated.entrypoint,
+      stringifyNullableJson(updated.permissions),
+      updated.install_source_label,
+      updated.update_check_mode,
+      updated.update_apply_mode,
+      updated.last_update_checked_at,
+      updated.available_version,
+      updated.available_revision,
       updated.updated_at,
       id,
     );
@@ -303,10 +369,15 @@ function assertUniqueSkillName(name: string, excludeId?: string): void {
 }
 
 function normalizeSkill(row: SkillRow): Skill {
+  const { permissions_json: _permissionsJson, ...skill } = row;
   return {
-    ...row,
+    ...skill,
     runtime_scopes: parseStringArray(row.runtime_scopes).filter(isSkillRuntimeScope),
     trigger_keywords: parseStringArray(row.trigger_keywords),
+    permissions: parsePermissions(row.permissions_json),
+    runtime_type: isSkillExecutableRuntime(row.runtime_type) ? row.runtime_type : null,
+    update_check_mode: isSkillUpdateCheckMode(row.update_check_mode) ? row.update_check_mode : 'startup',
+    update_apply_mode: isSkillUpdateApplyMode(row.update_apply_mode) ? row.update_apply_mode : 'prompt',
     enabled: row.enabled ? 1 : 0,
   };
 }
@@ -325,8 +396,45 @@ function stringifyArray(values: string[]): string {
   return JSON.stringify(values);
 }
 
+function stringifyNullableJson(value: unknown): string | null {
+  return value === null || value === undefined ? null : JSON.stringify(value);
+}
+
 function isSkillRuntimeScope(value: string): value is SkillRuntimeScope {
   return ['planner', 'model_chat', 'workflow', 'memory', 'review'].includes(value);
+}
+
+function isSkillExecutableRuntime(value: string | null): value is SkillExecutableRuntime {
+  return value === 'node' || value === 'python' || value === 'shell';
+}
+
+function isSkillUpdateCheckMode(value: string | null): value is SkillUpdateCheckMode {
+  return value === 'off' || value === 'startup' || value === 'manual';
+}
+
+function isSkillUpdateApplyMode(value: string | null): value is SkillUpdateApplyMode {
+  return value === 'prompt';
+}
+
+function parsePermissions(raw: string | null): SkillPermissions | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const candidate = parsed as Partial<SkillPermissions>;
+    if (candidate.filesystem !== 'project') return null;
+    if (typeof candidate.network !== 'boolean') return null;
+    if (!Array.isArray(candidate.commands) || !candidate.commands.every((item) => typeof item === 'string')) {
+      return null;
+    }
+    return {
+      filesystem: 'project',
+      network: candidate.network,
+      commands: candidate.commands,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeScopeId(scope: SkillBindingScope | undefined, scopeId: string): string {

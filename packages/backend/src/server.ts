@@ -16,6 +16,7 @@ import {
 } from './uploads.js';
 import { recoverWorkflowStartupOrphans, startWorkflowMonitorService } from './workflows/workflow-monitor-service.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
+import { runSkillsShStartupUpdateCheck } from './skills/update-service.js';
 import { wsHub } from './ws-hub.js';
 import type { AgentRun, WsClientEvent } from './types.js';
 
@@ -79,6 +80,7 @@ httpServer.listen(PORT, () => {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
   void startWorkflowMonitoringAfterStartupRecovery();
+  void runSkillsShStartupUpdateCheck();
 });
 
 async function buildInterruptedRunReason(run: AgentRun): Promise<string> {

@@ -6,6 +6,7 @@ build/
 .env
 .env.local
 *.log
+*.tsbuildinfo
 .DS_Store
 .superpowers/
 .playwright-cli/

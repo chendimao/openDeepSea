@@ -1,11 +1,29 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { importLocalSkill, installedPathLabel, removeInstalledSkill } from './installer.js';
+import {
+  checkSkillsShUpdate,
+  importLocalSkill,
+  installSkillsShSkill,
+  installedPathLabel,
+  removeInstalledSkill,
+} from './installer.js';
+import { invokeSkill } from './executor.js';
+import { skillRunRepo } from './run-repo.js';
 import { validateLocalAccess } from '../local-access.js';
 import { formatSkillPrompt } from './prompt.js';
 import { DuplicateSkillNameError, skillRepo } from './repo.js';
 import { selectSkills } from './selector.js';
-import type { Skill, SkillBinding, SkillBindingScope, SkillRuntimeScope, SkillTriggerMode } from './types.js';
+import { SkillsShClient } from './skills-sh-client.js';
+import type {
+  Skill,
+  SkillBinding,
+  SkillBindingScope,
+  SkillRun,
+  SkillRuntimeScope,
+  SkillTriggerMode,
+  SkillUpdateApplyMode,
+  SkillUpdateCheckMode,
+} from './types.js';
 
 export const skillsRouter = Router();
 skillsRouter.use((req, res, next) => {
@@ -16,6 +34,8 @@ skillsRouter.use((req, res, next) => {
 const runtimeScopeSchema = z.enum(['planner', 'model_chat', 'workflow', 'memory', 'review']);
 const bindingScopeSchema = z.enum(['system', 'project', 'room', 'agent']);
 const triggerModeSchema = z.enum(['manual', 'keyword', 'always_for_scope']);
+const updateCheckModeSchema = z.enum(['off', 'startup', 'manual']);
+const updateApplyModeSchema = z.enum(['prompt']);
 
 const skillPatchSchema = z.object({
   name: z.string().min(1).optional(),
@@ -25,6 +45,8 @@ const skillPatchSchema = z.object({
   trigger_keywords: z.array(z.string()).optional(),
   enabled: z.boolean().optional(),
   priority: z.number().int().optional(),
+  update_check_mode: updateCheckModeSchema.optional(),
+  update_apply_mode: updateApplyModeSchema.optional(),
 });
 
 const bindingInputSchema = z.object({
@@ -35,6 +57,12 @@ const bindingInputSchema = z.object({
   enabled: z.boolean().optional(),
   priority_override: z.number().int().nullable().optional(),
 });
+
+
+const runSkillSchema = z.object({
+  projectId: z.string().min(1),
+  input: z.unknown().optional(),
+}).strict();
 
 const previewSchema = z.object({
   runtimeScopes: z.array(runtimeScopeSchema).min(1),
@@ -49,11 +77,36 @@ skillsRouter.get('/', (_req, res) => {
   res.json(skillRepo.listSkills().map(toSkillDto));
 });
 
+skillsRouter.get('/marketplace', async (req, res) => {
+  const parsed = z.object({ q: z.string().optional() }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const results = await new SkillsShClient().search(parsed.data.q ?? '');
+    res.json(results);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
 skillsRouter.post('/import/local', async (req, res) => {
   const parsed = z.object({ path: z.string().min(1) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   try {
     const skill = await importLocalSkill(parsed.data.path);
+    res.status(201).json(toSkillDto(skill));
+  } catch (err) {
+    if (err instanceof DuplicateSkillNameError) {
+      return res.status(409).json({ error: err.message });
+    }
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+skillsRouter.post('/import/skills-sh', async (req, res) => {
+  const parsed = z.object({ installLabel: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const skill = await installSkillsShSkill(parsed.data.installLabel);
     res.status(201).json(toSkillDto(skill));
   } catch (err) {
     if (err instanceof DuplicateSkillNameError) {
@@ -124,6 +177,54 @@ skillsRouter.post('/preview-selection', async (req, res) => {
   });
 });
 
+
+skillsRouter.get('/runs', (req, res) => {
+  const parsed = z.object({
+    skillId: z.string().optional(),
+    projectId: z.string().optional(),
+    roomId: z.string().optional(),
+    agentId: z.string().optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  res.json(skillRunRepo.listRuns({
+    skill_id: parsed.data.skillId,
+    project_id: parsed.data.projectId,
+    room_id: parsed.data.roomId,
+    agent_id: parsed.data.agentId,
+  }).map(toSkillRunDto));
+});
+
+skillsRouter.post('/:skillId/run', async (req, res) => {
+  const parsed = runSkillSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const run = await invokeSkill({
+      skillId: req.params.skillId,
+      projectId: parsed.data.projectId,
+      roomId: null,
+      agentId: null,
+      invokedBy: 'manual',
+      input: parsed.data.input ?? null,
+    });
+    res.status(run.status === 'completed' ? 200 : 500).json(toSkillRunDto(run));
+  } catch (err) {
+    const message = (err as Error).message;
+    const status = message.includes('not found') ? 404 : 400;
+    res.status(status).json({ error: message });
+  }
+});
+
+skillsRouter.get('/:skillId/updates', async (req, res) => {
+  const skill = skillRepo.getSkill(req.params.skillId);
+  if (!skill) return res.status(404).json({ error: 'not found' });
+  try {
+    const result = await checkSkillsShUpdate(skill);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
 skillsRouter.get('/:skillId', (req, res) => {
   const skill = skillRepo.getSkill(req.params.skillId);
   if (!skill) return res.status(404).json({ error: 'not found' });
@@ -142,6 +243,8 @@ skillsRouter.patch('/:skillId', (req, res) => {
       trigger_keywords: parsed.data.trigger_keywords,
       enabled: parsed.data.enabled,
       priority: parsed.data.priority,
+      update_check_mode: parsed.data.update_check_mode as SkillUpdateCheckMode | undefined,
+      update_apply_mode: parsed.data.update_apply_mode as SkillUpdateApplyMode | undefined,
     });
     if (!updated) return res.status(404).json({ error: 'not found' });
     res.json(toSkillDto(updated));
@@ -171,6 +274,8 @@ function toSkillDto(skill: Skill): Record<string, unknown> {
     name: skill.name,
     description: skill.description,
     source_type: skill.source_type,
+    source_uri: skill.source_type === 'local_directory' ? null : skill.source_uri,
+    source_uri_set: Boolean(skill.source_uri),
     manifest_path: skill.manifest_path,
     runtime_scopes: skill.runtime_scopes,
     trigger_mode: skill.trigger_mode,
@@ -178,6 +283,17 @@ function toSkillDto(skill: Skill): Record<string, unknown> {
     enabled: skill.enabled,
     priority: skill.priority,
     checksum: skill.checksum,
+    package_version: skill.package_version,
+    package_revision: skill.package_revision,
+    runtime_type: skill.runtime_type,
+    entrypoint: skill.entrypoint,
+    permissions: skill.permissions,
+    install_source_label: skill.install_source_label,
+    update_check_mode: skill.update_check_mode,
+    update_apply_mode: skill.update_apply_mode,
+    last_update_checked_at: skill.last_update_checked_at,
+    available_version: skill.available_version,
+    available_revision: skill.available_revision,
     created_at: skill.created_at,
     updated_at: skill.updated_at,
     install_path_set: Boolean(skill.install_path),
@@ -196,6 +312,32 @@ function toBindingDto(binding: SkillBinding): {
   updated_at: number;
 } {
   return binding;
+}
+
+
+function toSkillRunDto(run: SkillRun): Record<string, unknown> {
+  return {
+    id: run.id,
+    skill_id: run.skill_id,
+    project_id: run.project_id,
+    room_id: run.room_id,
+    agent_id: run.agent_id,
+    invoked_by: run.invoked_by,
+    runtime: run.runtime,
+    entrypoint: run.entrypoint,
+    input: run.input,
+    allowed_paths_count: run.allowed_paths.length,
+    allowed_paths_set: run.allowed_paths.length > 0,
+    network_enabled: run.network_enabled,
+    status: run.status,
+    exit_code: run.exit_code,
+    stdout: run.stdout,
+    stderr: run.stderr,
+    result: run.result,
+    error: run.error,
+    created_at: run.created_at,
+    updated_at: run.updated_at,
+  };
 }
 
 function requireLocalAccess(req: Request, res: Response): boolean {

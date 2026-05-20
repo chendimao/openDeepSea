@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BookOpenCheck,
+  Box,
+  Clock3,
   Eye,
   FolderInput,
   Loader2,
@@ -25,15 +27,19 @@ const TRIGGER_MODES: SkillTriggerMode[] = ['manual', 'keyword', 'always_for_scop
 
 export function SkillsSettingsPanel({
   showUsageGuide = false,
+  selectedSkillId: controlledSelectedSkillId,
+  onSelectedSkillIdChange,
 }: {
   showUsageGuide?: boolean;
+  selectedSkillId?: string | null;
+  onSelectedSkillIdChange?: (skillId: string | null) => void;
 }): JSX.Element {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [localPath, setLocalPath] = useState('');
   const [previewScopes, setPreviewScopes] = useState<SkillRuntimeScope[]>(['planner']);
   const [previewMessage, setPreviewMessage] = useState('');
-  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [uncontrolledSelectedSkillId, setUncontrolledSelectedSkillId] = useState<string | null>(null);
 
   const skillsQuery = useQuery({
     queryKey: ['skills'],
@@ -90,7 +96,7 @@ export function SkillsSettingsPanel({
   const deleteSkill = useMutation({
     mutationFn: api.deleteSkill,
     onSuccess: async () => {
-      setSelectedSkillId(null);
+      selectSkill(null);
       toast.success(t('settings.skillsDeleted'));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['skills'] }),
@@ -109,7 +115,33 @@ export function SkillsSettingsPanel({
 
   const skills = skillsQuery.data ?? [];
   const bindings = bindingsQuery.data ?? [];
+  const selectedSkillId = controlledSelectedSkillId === undefined
+    ? uncontrolledSelectedSkillId
+    : controlledSelectedSkillId;
   const selectedSkill = skills.find((skill) => skill.id === selectedSkillId) ?? skills[0] ?? null;
+
+  useEffect(() => {
+    if (skillsQuery.isLoading) return;
+    const nextSkillId = selectedSkill?.id ?? null;
+    if (nextSkillId === selectedSkillId) return;
+    if (controlledSelectedSkillId === undefined) {
+      setUncontrolledSelectedSkillId(nextSkillId);
+    }
+    onSelectedSkillIdChange?.(nextSkillId);
+  }, [
+    controlledSelectedSkillId,
+    onSelectedSkillIdChange,
+    selectedSkill?.id,
+    selectedSkillId,
+    skillsQuery.isLoading,
+  ]);
+
+  function selectSkill(skillId: string | null): void {
+    if (controlledSelectedSkillId === undefined) {
+      setUncontrolledSelectedSkillId(skillId);
+    }
+    onSelectedSkillIdChange?.(skillId);
+  }
 
   return (
     <div className="space-y-4">
@@ -209,7 +241,7 @@ export function SkillsSettingsPanel({
                   skill={skill}
                   selected={selectedSkill?.id === skill.id}
                   binding={bindings.find((binding) => binding.skill_id === skill.id)}
-                  onSelect={() => setSelectedSkillId(skill.id)}
+                  onSelect={() => selectSkill(skill.id)}
                   onToggleEnabled={() => updateSkill.mutate({
                     id: skill.id,
                     patch: { enabled: skill.enabled !== 1 },
@@ -347,6 +379,20 @@ function SkillListItem({
           </span>
         </div>
         <div className="mt-2 flex flex-wrap gap-1">
+          <span className="rounded bg-[var(--color-surface-raised)] px-1.5 py-0.5 text-[10px] text-[var(--color-fg-muted)]">
+            {skillSourceLabel(skill.source_type, t)}
+          </span>
+          {skill.runtime_type && (
+            <span className="inline-flex items-center gap-1 rounded bg-[var(--color-surface-raised)] px-1.5 py-0.5 text-[10px] text-[var(--color-fg-muted)]">
+              <Box className="h-2.5 w-2.5" />
+              {runtimeTypeLabel(skill.runtime_type, t)}
+            </span>
+          )}
+          {skill.package_version && (
+            <span className="rounded bg-[var(--color-surface-raised)] px-1.5 py-0.5 text-[10px] text-[var(--color-fg-muted)]">
+              v{skill.package_version}
+            </span>
+          )}
           {skill.runtime_scopes.map((scope) => (
             <span key={scope} className="rounded bg-[var(--color-surface-raised)] px-1.5 py-0.5 text-[10px] text-[var(--color-fg-muted)]">
               {runtimeScopeLabel(scope, t)}
@@ -499,11 +545,33 @@ function SkillDetail({
           placeholder={t('settings.skillsKeywordsPlaceholder')}
         />
       </div>
-      <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[12px] text-[var(--color-fg-muted)]">
-        <div>{t('settings.skillsSource')}: {skillSourceLabel(skill.source_type, t)}</div>
-        <div className="mt-1">
-          {t('settings.skillsSystemBinding')}: {binding?.enabled === 1 ? t('settings.skillsStatusOn') : t('settings.skillsStatusOff')}
-        </div>
+      <div className="grid gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-[12px] text-[var(--color-fg-muted)]">
+        <MetadataRow label={t('settings.skillsSource')} value={skillSourceLabel(skill.source_type, t)} />
+        <MetadataRow label={t('settings.skillsInstallLabel')} value={skill.install_path_label ?? t('common.none')} />
+        {skill.install_source_label && (
+          <MetadataRow label={t('settings.skillsInstallSourceLabel')} value={skill.install_source_label} />
+        )}
+        <MetadataRow
+          label={t('settings.skillsPackageVersion')}
+          value={`${skill.package_version ?? t('common.none')}${skill.package_revision ? ` / ${skill.package_revision}` : ''}`}
+        />
+        <MetadataRow
+          label={t('settings.skillsRuntimeType')}
+          value={`${skill.runtime_type ? runtimeTypeLabel(skill.runtime_type, t) : t('common.none')}${skill.entrypoint ? ` / ${skill.entrypoint}` : ''}`}
+        />
+        <MetadataRow label={t('settings.skillsPermissions')} value={permissionSummary(skill, t)} />
+        <MetadataRow label={t('settings.skillsUpdateStatus')} value={updateStatusLabel(skill, t)} />
+        {skill.last_update_checked_at && (
+          <MetadataRow
+            label={t('settings.skillsLastUpdateCheck')}
+            value={new Date(skill.last_update_checked_at).toLocaleString()}
+            icon={<Clock3 className="h-3 w-3" />}
+          />
+        )}
+        <MetadataRow
+          label={t('settings.skillsSystemBinding')}
+          value={binding?.enabled === 1 ? t('settings.skillsStatusOn') : t('settings.skillsStatusOff')}
+        />
       </div>
       <div className="flex justify-end">
         <Button
@@ -521,6 +589,28 @@ function SkillDetail({
           {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
           {t('common.save')}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function MetadataRow({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div className="grid min-w-0 gap-1 sm:grid-cols-[120px_minmax(0,1fr)]">
+      <div className="flex min-w-0 items-center gap-1 text-[var(--color-fg-muted)]">
+        {icon}
+        <span className="truncate">{label}</span>
+      </div>
+      <div className="min-w-0 break-words font-mono text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+        {value}
       </div>
     </div>
   );
@@ -597,6 +687,36 @@ function skillSourceLabel(source: Skill['source_type'], t: ReturnType<typeof use
     local_directory: t('settings.skillsSourceLocal'),
     git_repo: t('settings.skillsSourceGit'),
     manual: t('settings.skillsSourceManual'),
+    skills_sh: t('settings.skillsSourceSkillsSh'),
   };
   return labels[source];
+}
+
+function runtimeTypeLabel(runtime: NonNullable<Skill['runtime_type']>, t: ReturnType<typeof useI18n>['t']): string {
+  const labels: Record<NonNullable<Skill['runtime_type']>, string> = {
+    node: t('settings.skillsRuntimeNode'),
+    python: t('settings.skillsRuntimePython'),
+    shell: t('settings.skillsRuntimeShell'),
+  };
+  return labels[runtime];
+}
+
+function permissionSummary(skill: Skill, t: ReturnType<typeof useI18n>['t']): string {
+  if (!skill.permissions) return t('common.none');
+  const network = skill.permissions.network ? t('settings.skillsNetworkOn') : t('settings.skillsNetworkOff');
+  const commands = skill.permissions.commands.length > 0
+    ? skill.permissions.commands.join(', ')
+    : t('common.none');
+  return `${t('settings.skillsFilesystemProject')} / ${network} / ${commands}`;
+}
+
+function updateStatusLabel(skill: Skill, t: ReturnType<typeof useI18n>['t']): string {
+  if (skill.source_type !== 'skills_sh') return t('settings.skillsUpdateUnsupported');
+  if (skill.available_version || skill.available_revision) {
+    const current = skill.package_version ?? skill.package_revision ?? t('common.none');
+    const available = skill.available_version ?? skill.available_revision ?? t('common.none');
+    if (current !== available) return t('settings.skillsUpdateAvailable', { version: available });
+  }
+  if (skill.last_update_checked_at) return t('settings.skillsUpdateCurrent');
+  return t('settings.skillsUpdateUnknown');
 }

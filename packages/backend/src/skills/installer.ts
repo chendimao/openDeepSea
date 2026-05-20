@@ -7,12 +7,34 @@ import { nanoid } from 'nanoid';
 import { loadSkillFromDirectory } from './loader.js';
 import { skillRepo } from './repo.js';
 import type { Skill } from './types.js';
+import {
+  readSkillsShManifest,
+  readSkillsShMetadata,
+  readSkillsShPackageMetadata,
+  writeSkillsShPackage,
+  type SkillsShPackage,
+} from './installer-runner.js';
+import { SkillsShClient } from './skills-sh-client.js';
 
 const SKIPPED_DIRS = new Set(['.git', 'node_modules']);
 const MAX_FILE_BYTES = 1024 * 1024;
 
 export function getSkillsRoot(): string {
   return process.env.OPENDEEPSEA_SKILLS_DIR?.trim() || join(homedir(), '.opendeepsea', 'skills');
+}
+
+export interface InstallSkillsShOptions {
+  client?: SkillsShClient;
+}
+
+export interface SkillsShUpdateResult {
+  skillId: string;
+  hasUpdate: boolean;
+  currentVersion: string | null;
+  currentRevision: string | null;
+  availableVersion: string | null;
+  availableRevision: string | null;
+  checkedAt: number;
 }
 
 export async function importLocalSkill(sourcePath: string): Promise<Skill> {
@@ -61,6 +83,86 @@ export async function importLocalSkill(sourcePath: string): Promise<Skill> {
   }
 }
 
+export async function installSkillsShSkill(installLabel: string, options: InstallSkillsShOptions = {}): Promise<Skill> {
+  const label = installLabel.trim();
+  if (!label) throw new Error('skills.sh install label is required');
+
+  const client = options.client ?? new SkillsShClient();
+  const pkg = await client.fetchPackage(label);
+  const id = nanoid();
+  const skillsRoot = resolve(getSkillsRoot());
+  const installPath = join(skillsRoot, id);
+  await mkdir(skillsRoot, { recursive: true });
+
+  try {
+    const materialized = await writeSkillsShPackage(pkg, installPath);
+    const loaded = await loadSkillFromDirectory(installPath);
+    const manifest = await readSkillsShManifest(installPath);
+    const metadata = await readSkillsShMetadata(installPath);
+    const version = manifest?.version ?? metadata?.version ?? pkg.version;
+    const revision = manifest?.revision ?? metadata?.revision ?? pkg.revision;
+
+    return skillRepo.createSkill({
+      id,
+      name: manifest?.name ?? loaded.name,
+      description: manifest?.description ?? loaded.description,
+      source_type: 'skills_sh',
+      source_uri: `skills.sh/${pkg.installLabel}`,
+      install_path: installPath,
+      manifest_path: loaded.manifestPath,
+      runtime_scopes: loaded.runtimeScopes,
+      trigger_mode: loaded.triggerMode,
+      trigger_keywords: loaded.triggerKeywords,
+      enabled: true,
+      priority: loaded.priority,
+      checksum: materialized.checksum,
+      package_version: version,
+      package_revision: revision,
+      runtime_type: manifest?.runtime ?? null,
+      entrypoint: manifest?.entrypoint ?? null,
+      permissions: manifest?.permissions ?? null,
+      install_source_label: pkg.installLabel,
+      update_check_mode: 'startup',
+      update_apply_mode: 'prompt',
+    });
+  } catch (err) {
+    await rm(installPath, { recursive: true, force: true });
+    throw err;
+  }
+}
+
+export async function checkSkillsShUpdate(skill: Skill, options: InstallSkillsShOptions = {}): Promise<SkillsShUpdateResult> {
+  if (skill.source_type !== 'skills_sh') {
+    throw new Error('only skills.sh skills support update checks');
+  }
+  const installLabel = skill.install_source_label ?? skill.source_uri?.replace(/^skills\.sh\//, '') ?? '';
+  if (!installLabel) throw new Error('skills.sh install source label is required');
+
+  const client = options.client ?? new SkillsShClient();
+  const remote = await client.fetchPackageMetadata(installLabel);
+  const checkedAt = Date.now();
+  const metadata = readSkillsShPackageMetadata(remote);
+  const availableVersion = metadata?.version ?? remote.version;
+  const availableRevision = metadata?.revision ?? remote.revision;
+  const hasUpdate = hasRemoteUpdate(skill, availableVersion, availableRevision);
+
+  skillRepo.updateSkill(skill.id, {
+    last_update_checked_at: checkedAt,
+    available_version: availableVersion,
+    available_revision: availableRevision,
+  });
+
+  return {
+    skillId: skill.id,
+    hasUpdate,
+    currentVersion: skill.package_version,
+    currentRevision: skill.package_revision,
+    availableVersion,
+    availableRevision,
+    checkedAt,
+  };
+}
+
 export async function removeInstalledSkill(skill: Skill): Promise<void> {
   const skillsRoot = resolve(getSkillsRoot());
   const installPath = resolve(skill.install_path);
@@ -98,4 +200,10 @@ function isPathInside(root: string, child: string): boolean {
 
 export function installedPathLabel(skill: Skill): string {
   return basename(skill.install_path);
+}
+
+function hasRemoteUpdate(skill: Skill, availableVersion: string | null, availableRevision: string | null): boolean {
+  if (availableVersion !== null && availableVersion !== skill.package_version) return true;
+  if (availableRevision !== null && availableRevision !== skill.package_revision) return true;
+  return false;
 }
