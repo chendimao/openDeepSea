@@ -258,6 +258,83 @@ test('workflow bubble renders dual-column orchestration layout', () => {
   assert.match(html, /验收/);
 });
 
+test('task flow renders review and verification as ordered workflow nodes', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan({
+        tasks: [
+          ...createWorkflowPlan().tasks,
+          {
+            id: 'task-review',
+            title: '代码审查',
+            description: '审查执行结果',
+            role: 'reviewer',
+            agent_id: 'agent-review',
+            mode: 'serial',
+            depends_on: ['task-1'],
+            status: 'completed',
+            progress: 100,
+            result_refs: [],
+          },
+        ],
+      }),
+    }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-review',
+        assignedRoomAgentId: 'agent-review',
+        taskId: 'task-root',
+        stage: 'code_review',
+        nodeName: 'review',
+        result: '代码审查通过。',
+        completedAt: 30,
+      }),
+      createWorkflowStep({
+        id: 'step-impl',
+        assignedRoomAgentId: 'agent-1',
+        taskId: 'task-1',
+        stage: 'implementation',
+        nodeName: 'execute',
+        result: '执行完成。',
+        completedAt: 20,
+      }),
+      createWorkflowStep({
+        id: 'step-verify',
+        assignedRoomAgentId: null,
+        taskId: 'task-root',
+        stage: 'code_review',
+        nodeName: 'verify',
+        result: '验证命令通过。',
+        completedAt: 40,
+      }),
+      createWorkflowStep({
+        id: 'step-accept',
+        assignedRoomAgentId: 'agent-accept',
+        taskId: 'task-root',
+        stage: 'acceptance',
+        nodeName: 'acceptance',
+        result: '验收通过。',
+        completedAt: 50,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+  const executionIndex = html.indexOf('执行完成');
+  const reviewIndex = html.indexOf('审查目标');
+  const verificationIndex = html.indexOf('验证命令通过');
+  const acceptanceIndex = html.indexOf('验收目标');
+
+  assert.notEqual(executionIndex, -1);
+  assert.notEqual(reviewIndex, -1);
+  assert.notEqual(verificationIndex, -1);
+  assert.notEqual(acceptanceIndex, -1);
+  assert.equal(executionIndex < reviewIndex, true);
+  assert.equal(reviewIndex < verificationIndex, true);
+  assert.equal(verificationIndex < acceptanceIndex, true);
+  assert.match(html, /is-verification/);
+});
+
 test('returns null when workflow plan is unavailable', () => {
   const detail = createWorkflowDetail();
 

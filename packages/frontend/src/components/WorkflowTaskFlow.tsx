@@ -34,41 +34,25 @@ export function WorkflowTaskFlow({
           <span>{t('workflowPlan.taskFlowRecords', { count: recordCount })}</span>
         </div>
       </div>
+      <div className="workflow-flow-phase-strip" aria-hidden="true">
+        <span>{t('workflowPlan.taskFlowPlanStage')}</span>
+        <span>{t('workflowPlan.taskFlowExecutionStage')}</span>
+        <span>{t('workflowPlan.taskFlowReviewStage')}</span>
+        <span>{t('workflowPlan.taskFlowVerification')}</span>
+        <span>{t('workflowPlan.taskFlowAcceptanceStage')}</span>
+      </div>
 
       {flowEntries.length > 0 ? (
-        <div className="workflow-flow-board">
-          <div className="workflow-flow-row">
-            <div className="workflow-flow-lane-label">{t('workflowPlan.taskFlowPlanStage')}</div>
-            <div className="workflow-flow-lane-track">
-              {flowEntries
-                .filter((entry) => entry.lane === 'plan')
-                .map((entry) => <FlowEntryCard key={entry.key} entry={entry} compact={compact} />)}
-            </div>
-          </div>
-          <div className="workflow-flow-row">
-            <div className="workflow-flow-lane-label">{t('workflowPlan.taskFlowExecutionStage')}</div>
-            <div className="workflow-flow-lane-track">
-              {flowEntries
-                .filter((entry) => entry.lane === 'execution')
-                .map((entry) => <FlowEntryCard key={entry.key} entry={entry} compact={compact} />)}
-            </div>
-          </div>
-          <div className="workflow-flow-row">
-            <div className="workflow-flow-lane-label">{t('workflowPlan.taskFlowReviewStage')}</div>
-            <div className="workflow-flow-lane-track">
-              {flowEntries
-                .filter((entry) => entry.lane === 'review')
-                .map((entry) => <FlowEntryCard key={entry.key} entry={entry} compact={compact} />)}
-            </div>
-          </div>
-          <div className="workflow-flow-row">
-            <div className="workflow-flow-lane-label">{t('workflowPlan.taskFlowAcceptanceStage')}</div>
-            <div className="workflow-flow-lane-track">
-              {flowEntries
-                .filter((entry) => entry.lane === 'acceptance')
-                .map((entry) => <FlowEntryCard key={entry.key} entry={entry} compact={compact} />)}
-            </div>
-          </div>
+        <div className="workflow-flow-board" aria-label={t('workflowPlan.taskFlowTitle')}>
+          {flowEntries.map((entry, index) => (
+            <FlowEntryCard
+              key={entry.key}
+              entry={entry}
+              compact={compact}
+              isFirst={index === 0}
+              isLast={index === flowEntries.length - 1}
+            />
+          ))}
         </div>
       ) : (
         <div className="workflow-flow-empty">{t('workflowPlan.taskFlowEmpty')}</div>
@@ -79,7 +63,8 @@ export function WorkflowTaskFlow({
 
 interface FlowEntry {
   key: string;
-  lane: 'plan' | 'execution' | 'review' | 'acceptance';
+  phase: 'plan' | 'execution' | 'review' | 'verification' | 'acceptance';
+  phaseLabel: string;
   title: string;
   subtitle: string | null;
   meta: string;
@@ -87,11 +72,33 @@ interface FlowEntry {
   icon: React.ReactNode;
 }
 
-function FlowEntryCard({ entry, compact }: { entry: FlowEntry; compact: boolean }) {
+function FlowEntryCard({
+  entry,
+  compact,
+  isFirst,
+  isLast,
+}: {
+  entry: FlowEntry;
+  compact: boolean;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
   return (
-    <article className={cn('workflow-flow-entry', entry.lane !== 'execution' && 'is-transition')}>
-      <div className="workflow-flow-entry-top">
-        <div className="workflow-flow-icon">{entry.icon}</div>
+    <article
+      className={cn(
+        'workflow-flow-entry',
+        `is-${entry.phase}`,
+        isFirst && 'is-first',
+        isLast && 'is-last',
+      )}
+    >
+      <div className="workflow-flow-node">
+        <div className="workflow-flow-node-line" aria-hidden="true" />
+        <div className="workflow-flow-icon" aria-hidden="true">{entry.icon}</div>
+      </div>
+      <div className="workflow-flow-entry-body">
+        <div className="workflow-flow-entry-phase">{entry.phaseLabel}</div>
+        <div className="workflow-flow-entry-top">
         <div className="min-w-0 flex-1">
           <div className="workflow-flow-entry-title">{entry.title}</div>
           {entry.subtitle && <div className="workflow-flow-entry-subtitle">{entry.subtitle}</div>}
@@ -101,6 +108,7 @@ function FlowEntryCard({ entry, compact }: { entry: FlowEntry; compact: boolean 
       {entry.content && (
         <div className="workflow-flow-entry-content">{truncate(entry.content, compact ? 260 : 420)}</div>
       )}
+      </div>
     </article>
   );
 }
@@ -113,7 +121,7 @@ function buildFlowEntries(
   t: TranslateFn,
 ): FlowEntry[] {
   const taskMap = new Map(plan.tasks.map((task) => [task.id, task]));
-  const entries: Array<FlowEntry & { sortKey: number }> = [];
+  const entries: Array<FlowEntry & { sortKey: number; sequence: number }> = [];
 
   for (const [index, step] of steps.entries()) {
     const task = taskMap.get(step.task_id) ?? null;
@@ -121,8 +129,10 @@ function buildFlowEntries(
     if (step.stage === 'implementation') {
       entries.push({
         key: `step:${step.id}`,
-        lane: 'execution',
+        phase: 'execution',
+        phaseLabel: t('workflowPlan.taskFlowExecutionStage'),
         sortKey,
+        sequence: index,
         title: `${workflowStageLabel(step.stage)} · ${task?.title ?? step.task_id}`,
         subtitle: step.node_name ? step.node_name : null,
         meta: step.status,
@@ -140,10 +150,12 @@ function buildFlowEntries(
       if (step.node_name === 'verify') {
         entries.push({
           key: `verify:${step.id}`,
-          lane: 'review',
+          phase: 'verification',
+          phaseLabel: t('workflowPlan.taskFlowVerification'),
           sortKey,
-          title: `${workflowStageLabel(step.stage)} · ${t('workflowPlan.taskFlowVerification')}`,
-          subtitle: task?.title ?? null,
+          sequence: index,
+          title: t('workflowPlan.taskFlowVerification'),
+          subtitle: task?.title ?? workflowStageLabel(step.stage),
           meta: step.status,
           content: step.result || step.error || null,
           icon: step.status === 'completed'
@@ -155,11 +167,13 @@ function buildFlowEntries(
         continue;
       }
 
-      const reviewedTask = findReviewedTaskTitle(steps, index, taskMap);
+      const reviewedTask = findLatestImplementationTitleBefore(steps, sortKey, taskMap);
       entries.push({
         key: `review:${step.id}`,
-        lane: 'review',
+        phase: 'review',
+        phaseLabel: t('workflowPlan.taskFlowReviewStage'),
         sortKey,
+        sequence: index,
         title: reviewedTask
           ? `${t('workflowPlan.taskFlowReviewTarget')} · ${reviewedTask}`
           : workflowStageLabel(step.stage),
@@ -172,11 +186,13 @@ function buildFlowEntries(
     }
 
     if (step.stage === 'acceptance') {
-      const acceptanceTarget = findLatestImplementationTitle(steps, index, taskMap) ?? plan.workflow_name;
+      const acceptanceTarget = findLatestImplementationTitleBefore(steps, sortKey, taskMap) ?? plan.workflow_name;
       entries.push({
         key: `acceptance:${step.id}`,
-        lane: 'acceptance',
+        phase: 'acceptance',
+        phaseLabel: t('workflowPlan.taskFlowAcceptanceStage'),
         sortKey,
+        sequence: index,
         title: `${t('workflowPlan.taskFlowAcceptanceTarget')} · ${acceptanceTarget}`,
         subtitle: task?.title ?? null,
         meta: step.status,
@@ -188,8 +204,10 @@ function buildFlowEntries(
 
     entries.push({
       key: `step:${step.id}`,
-      lane: 'plan',
+      phase: 'plan',
+      phaseLabel: t('workflowPlan.taskFlowPlanStage'),
       sortKey,
+      sequence: index,
       title: workflowStageLabel(step.stage),
       subtitle: task?.title ?? null,
       meta: step.status,
@@ -205,8 +223,12 @@ function buildFlowEntries(
     const relatedStep = steps.find((step) => step.id === artifact.workflow_step_id);
     entries.push({
       key: `artifact:${artifact.id}`,
-      lane: artifact.artifact_type === 'review' ? 'review' : 'acceptance',
+      phase: artifact.artifact_type === 'review' ? 'review' : 'acceptance',
+      phaseLabel: artifact.artifact_type === 'review'
+        ? t('workflowPlan.taskFlowReviewStage')
+        : t('workflowPlan.taskFlowAcceptanceStage'),
       sortKey: artifact.created_at,
+      sequence: steps.length + entries.length,
       title: artifact.title,
       subtitle: relatedStep ? workflowStageLabel(relatedStep.stage) : null,
       meta: artifact.artifact_type,
@@ -215,31 +237,24 @@ function buildFlowEntries(
     });
   }
 
-  return entries;
+  return entries.sort((a, b) => a.sortKey - b.sortKey || a.sequence - b.sequence);
 }
 
-function findReviewedTaskTitle(
+function findLatestImplementationTitleBefore(
   steps: WorkflowStep[],
-  currentIndex: number,
+  currentSortKey: number,
   taskMap: Map<string, WorkflowPlanTaskJson>,
 ): string | null {
-  for (let i = currentIndex - 1; i >= 0; i -= 1) {
-    const step = steps[i];
-    if (step.stage !== 'implementation') continue;
-    return taskMap.get(step.task_id)?.title ?? step.task_id;
-  }
-  return null;
-}
-
-function findLatestImplementationTitle(
-  steps: WorkflowStep[],
-  currentIndex: number,
-  taskMap: Map<string, WorkflowPlanTaskJson>,
-): string | null {
-  for (let i = currentIndex - 1; i >= 0; i -= 1) {
-    const step = steps[i];
-    if (step.stage !== 'implementation') continue;
-    return taskMap.get(step.task_id)?.title ?? step.task_id;
-  }
-  return null;
+  return steps
+    .filter((step) => {
+      if (step.stage !== 'implementation') return false;
+      const sortKey = step.completed_at ?? step.started_at ?? step.updated_at ?? step.created_at ?? 0;
+      return sortKey <= currentSortKey;
+    })
+    .sort((a, b) => {
+      const left = a.completed_at ?? a.started_at ?? a.updated_at ?? a.created_at ?? 0;
+      const right = b.completed_at ?? b.started_at ?? b.updated_at ?? b.created_at ?? 0;
+      return right - left;
+    })
+    .map((step) => taskMap.get(step.task_id)?.title ?? step.task_id)[0] ?? null;
 }
