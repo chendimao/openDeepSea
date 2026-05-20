@@ -88,7 +88,7 @@ git diff --cached --name-only
 git log -1 --stat
 ```
 
-结果：已执行，`git log -1 --stat` 显示提交 `242e5abb8d6343e82cbc710ffecfe1ffb97f27ca` 仅新增目标 Markdown 文档，统计为 `1 file changed, 107 insertions(+)`。
+结果：已执行。创建文档提交 `242e5abb8d6343e82cbc710ffecfe1ffb97f27ca` 仅新增目标 Markdown 文档，统计为 `1 file changed, 107 insertions(+)`；后续收口提交仅更新同一目标 Markdown 文档中的提交记录。
 
 ## 验收结论
 
@@ -103,5 +103,6 @@ git log -1 --stat
 ## 提交信息
 
 - Commit message：`docs: 记录Superpowers E2E冒烟验证`
-- Commit hash：`242e5abb8d6343e82cbc710ffecfe1ffb97f27ca`。
+- 创建文档提交：`242e5abb8d6343e82cbc710ffecfe1ffb97f27ca`。
+- 收口提交：由最终 `git log -1 --oneline` 和 `git log -1 --stat` 输出确认；范围仍仅限本目标 Markdown 文档。
 - 提交范围：仅 `docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md`。
