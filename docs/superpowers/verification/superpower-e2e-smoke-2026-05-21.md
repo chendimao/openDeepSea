@@ -90,13 +90,25 @@ git log -1 --stat
 
 结果：已执行。创建文档提交 `242e5abb8d6343e82cbc710ffecfe1ffb97f27ca` 仅新增目标 Markdown 文档，统计为 `1 file changed, 107 insertions(+)`；后续收口提交仅更新同一目标 Markdown 文档中的提交记录。
 
+### Workflow verification 补跑记录
+
+触发原因：workflow 系统层面的 verification 记录显示 5 项检查为 `skipped (exitCode=null)`。本节记录技术写作者在当前工作区手动补跑的 5 项验证命令，作为非 skipped 的可追溯验证证据。
+
+| 检查项 | 命令 | 结果 |
+| --- | --- | --- |
+| 目标文件存在 | `test -f docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md` | `exit=0` |
+| Markdown 关键章节 | `rg "测试目标\|正式 workflow 执行步骤\|子任务记录\|代码审查记录\|验证结果\|验收结论\|提交信息" docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md` | `exit=0`，关键章节均可检索 |
+| 目标文件改动范围 | `git status --short -- docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md` | `exit=0`，本次补跑前目标文件无未提交改动 |
+| 暂存区范围 | `git diff --cached --name-only` | `exit=0`，输出为空，暂存区无夹带文件 |
+| 提交范围 | `git log -1 --stat -- docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md` | `exit=0`，最新目标文档提交仅包含 `docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md` |
+
 ## 验收结论
 
 - 目标文件：已创建 `docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md`。
 - 本次测试目标：已记录。
 - 正式 workflow 执行步骤和子任务记录：已记录。
 - 代码审查记录：已记录。
-- 验证结果与验收结论：已记录验证方式和验收结论区域；文件级验证、暂存区验证和提交验证均已执行。
+- 验证结果与验收结论：已记录验证方式和验收结论区域；文件级验证、暂存区验证、提交验证和 workflow verification 补跑记录均已执行。
 - 提交信息区域：已提供。
 - 业务代码改动：本任务不需要业务代码改动，提交时仅纳入目标文档。
 
