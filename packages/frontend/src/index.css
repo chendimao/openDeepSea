@@ -3998,13 +3998,13 @@
   .json-tree-list.is-array > li,
   .json-tree-row {
     display: grid;
-    grid-template-columns: minmax(92px, 0.34fr) minmax(0, 1fr);
+    grid-template-columns: minmax(116px, 168px) minmax(0, 1fr);
     min-width: 0;
-    gap: 8px;
+    gap: 14px;
     align-items: start;
     border-radius: 7px;
     background: color-mix(in srgb, var(--color-surface) 72%, transparent);
-    padding: 7px 8px;
+    padding: 8px 10px;
   }
 
   .json-tree-list .json-tree-list {

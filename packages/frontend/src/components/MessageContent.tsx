@@ -243,6 +243,7 @@ function JsonBlock({
   const [mode, setMode] = useState<'structured' | 'source'>('structured');
   const [copied, setCopied] = useState(false);
   const { t } = useI18n();
+  const treeValue = getStructuredJsonTreeValue(data);
 
   const copyJson = async () => {
     try {
@@ -294,7 +295,7 @@ function JsonBlock({
         <>
           <TaskReadinessSummary data={data} />
           <div className="json-tree" aria-label={t('message.jsonTreeAria')}>
-            <JsonTree value={data} />
+            <JsonTree value={treeValue} />
           </div>
         </>
       ) : (
@@ -347,6 +348,14 @@ function getTaskReadiness(data: JsonValue): JsonObject | null {
   if (!isJsonObject(data)) return null;
   const value = data.task_readiness;
   return isJsonObject(value) ? value : null;
+}
+
+function getStructuredJsonTreeValue(data: JsonValue): JsonValue {
+  if (!isJsonObject(data)) return data;
+  const entries = Object.entries(data);
+  if (entries.length !== 1) return data;
+  const [key, value] = entries[0];
+  return key === 'task_readiness' && isJsonObject(value) ? value : data;
 }
 
 function JsonTree({ value }: { value: JsonValue }): JSX.Element {

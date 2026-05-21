@@ -37,6 +37,7 @@ test('renders json code fences as structured Chinese task readiness view', () =>
   assert.match(html, /推荐模式/);
   assert.match(html, /正式工作流/);
   assert.match(html, /原文/);
+  assert.doesNotMatch(html, /<small>task_readiness<\/small>/);
 });
 
 test('keeps generic json string values faithful while translating semantic summary fields', () => {
