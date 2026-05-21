@@ -6,6 +6,7 @@ import {
   createWorkflowEventRenderStateMap,
   getTaskReadinessActionState,
   getTaskEventVisibilityState,
+  shouldShowTaskReadinessActions,
 } from './roomPageLogic';
 
 test('createDefaultReplyTarget returns the latest non-streaming agent message', () => {
@@ -36,8 +37,37 @@ test('analysis-only ready messages do not expose formal workflow start', () => {
   const state = getTaskReadinessActionState('analysis_only');
 
   assert.equal(state.canGenerateTask, false);
-  assert.equal(state.primaryLabel, '继续沟通');
+  assert.equal(state.primaryLabel, '');
   assert.equal(state.description, '这是方案/分析输出，不会直接启动正式 workflow');
+});
+
+test('task readiness actions only show for latest implementation-ready agent message', () => {
+  assert.equal(shouldShowTaskReadinessActions({
+    isUser: false,
+    isSystem: false,
+    isStreaming: false,
+    ready: true,
+    hasLaterMessages: false,
+    intent: 'implementation',
+  }), true);
+
+  assert.equal(shouldShowTaskReadinessActions({
+    isUser: false,
+    isSystem: false,
+    isStreaming: false,
+    ready: true,
+    hasLaterMessages: true,
+    intent: 'implementation',
+  }), false);
+
+  assert.equal(shouldShowTaskReadinessActions({
+    isUser: false,
+    isSystem: false,
+    isStreaming: false,
+    ready: true,
+    hasLaterMessages: false,
+    intent: 'analysis_only',
+  }), false);
 });
 
 test('workflow task card render state dedupes events with the same workflow run', () => {

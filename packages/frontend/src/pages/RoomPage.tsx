@@ -56,6 +56,7 @@ import {
   createWorkflowEventRenderStateMap,
   getTaskReadinessActionState,
   getTaskEventVisibilityState,
+  shouldShowTaskReadinessActions,
   type ReplyTarget,
   type WorkflowEventRenderState,
 } from './roomPageLogic';
@@ -954,7 +955,7 @@ function ChatColumn({
               />
             </ConversationEmptyState>
           ) : (
-            visibleMessages.map((m) => {
+            visibleMessages.map((m, index) => {
               const run = runByMessageId.get(m.id);
               const isStreamingMessage = streamingMessageIds.has(m.id) || streamingDisplay.isAnimating(m.id);
               return (
@@ -973,6 +974,7 @@ function ChatColumn({
                   latestWorkflowEventMessageIds={latestWorkflowEventMessageIds}
                   workflowEventRenderState={workflowEventRenderStateByMessageId.get(m.id)}
                   workflowEventMessages={workflowEventMessagesByRunId.get(parseMessageMetadata(m.metadata).workflow_run_id ?? '') ?? []}
+                  hasLaterMessages={index < visibleMessages.length - 1}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
                   messageRef={(node) => registerMessageRef(m.id, node)}
@@ -1089,6 +1091,7 @@ function MessageBubble({
   latestWorkflowEventMessageIds,
   workflowEventRenderState,
   workflowEventMessages,
+  hasLaterMessages,
   streaming,
   displayContent,
   messageRef,
@@ -1109,6 +1112,7 @@ function MessageBubble({
   latestWorkflowEventMessageIds: Map<string, string>;
   workflowEventRenderState?: WorkflowEventRenderState;
   workflowEventMessages: Message[];
+  hasLaterMessages: boolean;
   streaming: boolean;
   displayContent: string;
   messageRef: (node: HTMLElement | null) => void;
@@ -1168,7 +1172,6 @@ function MessageBubble({
     },
     onError: (err) => toast.error((err as Error).message),
   });
-  const [readinessDismissed, setReadinessDismissed] = useState(false);
   const promoteReadyTask = useMutation({
     mutationFn: () => api.promoteMessageToWorkflow(roomId, message.id),
     onSuccess: ({ task, workflow }) => {
@@ -1198,12 +1201,14 @@ function MessageBubble({
     (!eventWorkflow || eventWorkflow.status === 'blocked');
   const isCollaborationDecision = isSystem && Boolean(metadata.collaboration_decision && metadata.source_message_id);
   const canReply = !isSystem && hasContent && !isStreaming;
-  const shouldShowTaskReadiness =
-    !isUser &&
-    !isSystem &&
-    !isStreaming &&
-    !readinessDismissed &&
-    metadata.task_readiness?.ready === true;
+  const shouldShowTaskReadiness = shouldShowTaskReadinessActions({
+    isUser,
+    isSystem,
+    isStreaming,
+    ready: metadata.task_readiness?.ready === true,
+    hasLaterMessages,
+    intent: metadata.task_readiness?.execution_intent,
+  });
 
   if (isTaskEvent) {
     const visibility = getTaskEventVisibilityState({
@@ -1363,7 +1368,6 @@ function MessageBubble({
             intent={metadata.task_readiness.execution_intent}
             starting={promoteReadyTask.isPending}
             onStart={() => promoteReadyTask.mutate()}
-            onContinue={() => setReadinessDismissed(true)}
           />
         )}
         {!isUser && run && (
@@ -1388,15 +1392,14 @@ function TaskReadinessActions({
   intent,
   starting,
   onStart,
-  onContinue,
 }: {
   title: string;
   intent?: TaskExecutionIntent;
   starting: boolean;
   onStart: () => void;
-  onContinue: () => void;
 }) {
   const actionState = getTaskReadinessActionState(intent);
+  if (!actionState.canGenerateTask) return null;
   return (
     <div className="task-readiness-actions">
       <div className="task-readiness-copy">
@@ -1404,24 +1407,14 @@ function TaskReadinessActions({
         <strong>{title}</strong>
       </div>
       <div className="task-readiness-buttons">
-        {actionState.canGenerateTask && (
-          <button
-            type="button"
-            className="task-readiness-button is-primary"
-            disabled={starting}
-            onClick={onStart}
-          >
-            <Play className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span>{starting ? actionState.pendingLabel : actionState.primaryLabel}</span>
-          </button>
-        )}
         <button
           type="button"
-          className="task-readiness-button"
+          className="task-readiness-button is-primary"
           disabled={starting}
-          onClick={onContinue}
+          onClick={onStart}
         >
-          继续沟通
+          <Play className="h-3.5 w-3.5" strokeWidth={1.8} />
+          <span>{starting ? actionState.pendingLabel : actionState.primaryLabel}</span>
         </button>
       </div>
     </div>

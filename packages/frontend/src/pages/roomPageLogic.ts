@@ -15,6 +15,15 @@ export interface TaskReadinessActionState {
   pendingLabel: string;
 }
 
+export interface TaskReadinessVisibilityInput {
+  isUser: boolean;
+  isSystem: boolean;
+  isStreaming: boolean;
+  ready: boolean;
+  hasLaterMessages: boolean;
+  intent?: TaskExecutionIntent;
+}
+
 export interface WorkflowEventRenderState {
   key: string | null;
   showTaskCard: boolean;
@@ -55,9 +64,14 @@ export function getTaskReadinessActionState(intent: TaskExecutionIntent | undefi
     description: implementationIntent
       ? '已具备创建任务的基础信息'
       : '这是方案/分析输出，不会直接启动正式 workflow',
-    primaryLabel: implementationIntent ? '开始任务' : '继续沟通',
+    primaryLabel: implementationIntent ? '开始任务' : '',
     pendingLabel: '启动中',
   };
+}
+
+export function shouldShowTaskReadinessActions(input: TaskReadinessVisibilityInput): boolean {
+  if (input.isUser || input.isSystem || input.isStreaming || input.hasLaterMessages || !input.ready) return false;
+  return getTaskReadinessActionState(input.intent).canGenerateTask;
 }
 
 export function createWorkflowEventRenderStateMap(messages: Message[]): Map<string, WorkflowEventRenderState> {
