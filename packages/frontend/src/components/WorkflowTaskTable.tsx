@@ -37,7 +37,7 @@ export function WorkflowTaskTable({
               <th>{t('workflowPlan.columnMode')}</th>
               <th>{t('workflowPlan.columnDepends')}</th>
               <th>{t('workflowPlan.columnProgress')}</th>
-              {compact && <th>{t('workflowPlan.columnAction')}</th>}
+              <th>{t('workflowPlan.columnAction')}</th>
             </tr>
           </thead>
           <tbody>
@@ -106,28 +106,26 @@ export function WorkflowTaskTable({
                       </span>
                     </div>
                   </td>
-                  {compact && (
-                    <td className="workflow-task-action-cell">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="workflow-task-detail-button"
-                        aria-label={t('workflowPlan.viewTaskDetail', { title: task.title })}
-                        title={t('workflowPlan.viewDetail')}
-                        onClick={() => setDetailTask(task)}
-                      >
-                        <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                        <span>{t('workflowPlan.viewDetail')}</span>
-                      </Button>
-                    </td>
-                  )}
+                  <td className="workflow-task-action-cell">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="workflow-task-detail-button"
+                      aria-label={t('workflowPlan.viewTaskDetail', { title: task.title })}
+                      title={t('workflowPlan.viewDetail')}
+                      onClick={() => setDetailTask(task)}
+                    >
+                      <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>{t('workflowPlan.viewDetail')}</span>
+                    </Button>
+                  </td>
                 </tr>
               );
             })}
             {visibleTasks.length === 0 && (
               <tr>
-                <td colSpan={compact ? 7 : 6} className="workflow-task-empty-cell">
+                <td colSpan={7} className="workflow-task-empty-cell">
                   {t('workflowPlan.noResult')}
                 </td>
               </tr>

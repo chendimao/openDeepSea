@@ -232,7 +232,7 @@ test('compact mode omits legacy task table actions', () => {
   assert.doesNotMatch(html, />详情</);
 });
 
-test('timeline mode keeps full task table without detail action column', () => {
+test('timeline mode exposes task detail action from full task table', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
   });
@@ -240,7 +240,8 @@ test('timeline mode keeps full task table without detail action column', () => {
   const html = renderBubble(detail, [createAgent()]);
 
   assert.match(html, /工作流子任务表格/);
-  assert.doesNotMatch(html, /aria-label="查看「实现聊天气泡」详情"/);
+  assert.match(html, /操作/);
+  assert.match(html, /aria-label="查看「实现聊天气泡」详情"/);
 });
 
 test('agent result tabs fall back to workflow role or id labels', () => {
