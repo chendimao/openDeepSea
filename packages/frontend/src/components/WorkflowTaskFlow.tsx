@@ -1,5 +1,5 @@
 import { CheckCircle2, Copy, Eye, Flag, Loader2, PauseCircle, RotateCcw, Sparkles, XCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../lib/i18n';
 import type { Message, RoomAgent, TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
 import { cn } from '../lib/utils';
@@ -33,16 +33,23 @@ export function WorkflowTaskFlow({
     () => buildTimelineEvents(flowEntries, eventMessages),
     [eventMessages, flowEntries],
   );
-  const [selectedStageKey, setSelectedStageKey] = useState<FlowStagePanel['key']>('plan');
+  const firstPopulatedStageKey = stagePanels.find((stage) => stage.entries.length > 0)?.key ?? null;
+  const [selectedStageKey, setSelectedStageKey] = useState<FlowStagePanel['key'] | null>(null);
   const [selectedEntryKey, setSelectedEntryKey] = useState<string | null>(null);
-  const activeStage = stagePanels.find((stage) => stage.key === selectedStageKey && stage.entries.length > 0)
+  const activeStage = stagePanels.find((stage) => stage.key === selectedStageKey && (selectedStageKey !== null || stage.entries.length > 0))
+    ?? (selectedStageKey === null ? stagePanels.find((stage) => stage.key === firstPopulatedStageKey) : null)
     ?? stagePanels.find((stage) => stage.entries.length > 0)
     ?? stagePanels[0];
   const activeEntry = activeStage.entries.find((entry) => entry.key === selectedEntryKey)
     ?? activeStage.entries[0]
     ?? null;
   const activeStageStats = useMemo(() => buildProgressStats(activeStage.entries), [activeStage]);
-  const activeEntryIndex = Math.max(activeStage.entries.findIndex((entry) => entry.key === activeEntry?.key), 0) + 1;
+  const activeEntryIndex = activeEntry ? activeStage.entries.findIndex((entry) => entry.key === activeEntry.key) + 1 : 0;
+  useEffect(() => {
+    if (selectedStageKey !== null) return;
+    if (firstPopulatedStageKey === null) return;
+    setSelectedStageKey(firstPopulatedStageKey);
+  }, [firstPopulatedStageKey, selectedStageKey]);
   void compact;
 
   return (
@@ -91,7 +98,7 @@ export function WorkflowTaskFlow({
                   <span className="workflow-flow-detail-index">{activeEntryIndex}</span>
                   <span className="workflow-flow-detail-title-copy">
                     <b>{activeStage.label}</b>
-                    <small>{activeEntry.shortTitle}</small>
+                    <small>{activeEntry.title}</small>
                   </span>
                   <span className={cn('workflow-flow-status-pill', `is-${activeEntry.meta}`)}>{activeEntry.displayStatus}</span>
                   <span className="workflow-flow-detail-spark"><Sparkles className="h-3.5 w-3.5" /></span>
@@ -124,7 +131,7 @@ export function WorkflowTaskFlow({
                     <div className="workflow-flow-task-card-main">
                       <CheckCircle2 className={cn('h-4 w-4', entry.meta === 'completed' ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]')} />
                       <div className="workflow-flow-task-card-copy">
-                        <div className="workflow-flow-task-card-title">{entry.taskName}</div>
+                        <div className="workflow-flow-task-card-title">{entry.title}</div>
                         <div className="workflow-flow-task-card-meta">
                           <span>{entry.executorName}</span>
                           <span>{formatFlowTime(entry.completedAt ?? entry.startedAt ?? entry.sortKey)}</span>

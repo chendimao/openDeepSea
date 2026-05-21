@@ -259,6 +259,45 @@ test('deriveCoordinatorPlanFromProductManagerBackground summarizes fallback task
   ]);
 });
 
+test('deriveCoordinatorPlanFromProductManagerBackground keeps review and acceptance titles distinct', () => {
+  const plan = deriveCoordinatorPlanFromProductManagerBackground({
+    taskTitle: '聊天室工作流修复',
+    taskDescription: [
+      '聊天室工作流修复。',
+      '',
+      '产品经理方案背景：',
+      '实施计划：',
+      '1. 补充前端侧边栏最近聊天室',
+      '- 改动：packages/frontend/src/components/Sidebar.tsx',
+      '- 验收：前端侧边栏显示最近聊天室',
+      '2. 补充后端任务分配状态',
+      '- 改动：packages/backend/src/workflows/orchestrator.ts',
+      '- 验收：后端完成状态仅在验收通过后更新',
+      '3. 代码审查',
+      '- 验收：审查结果可见且不是重复子任务名',
+      '4. 功能验收',
+      '- 验收：最终状态与子步骤一致',
+      '',
+      '任务意图：implementation',
+    ].join('\n'),
+  });
+
+  assert.ok(plan);
+  assert.deepEqual(plan.tasks.map((task) => task.title), [
+    '补充前端侧边栏最近聊天室',
+    '补充后端任务分配状态',
+    '代码审查',
+    '功能验收',
+  ]);
+  assert.deepEqual(plan.tasks.map((task) => task.suggestedRole), [
+    'executor',
+    'executor',
+    'reviewer',
+    'acceptor',
+  ]);
+  assert.notEqual(plan.tasks[2]?.title, plan.tasks[3]?.title);
+});
+
 function makeWorkflowPlanJson(sourceMessageId: string): WorkflowPlanJson {
   return {
     workflow_name: 'Coordinator 计划',

@@ -292,6 +292,9 @@ function summarizeParsedPlanTaskTitle(input: {
   const scopeTitle = deriveTaskTitleFromScope(input.task.scopeWrite);
   if (scopeTitle) return scopeTitle;
 
+  const roleTitle = deriveTaskTitleFromRole(input.task.suggestedRole);
+  if (roleTitle) return roleTitle;
+
   return `${roleTitlePrefix(input.task.suggestedRole)}子任务 ${input.index + 1}`;
 }
 
@@ -316,19 +319,44 @@ function deriveTaskTitleFromText(text: string, parentTitles: Set<string>): strin
   for (const candidate of candidates) {
     if (!isGenericTaskTitle(candidate, parentTitles)) return clipTaskTitle(candidate);
   }
-  return null;
+  return deriveTaskTitleFromSignals(text, parentTitles);
 }
 
 function deriveTaskTitleFromScope(scopeWrite: string[]): string | null {
   if (scopeWrite.length === 0) return null;
   const text = scopeWrite.join('\n').toLowerCase();
-  const hasFrontend = /packages\/frontend|src\/components|src\/pages|\.tsx\b/.test(text);
-  const hasBackend = /packages\/backend|src\/repos|src\/routes|\.ts\b/.test(text);
-  const hasTests = /\.test\.|__tests__|测试|test/.test(text);
-  if (hasTests) return '补充验证测试';
+  return deriveTaskTitleFromSignals(text, new Set()) ?? '更新工程文件';
+}
+
+function deriveTaskTitleFromSignals(text: string, parentTitles: Set<string>): string | null {
+  const normalized = compactTaskTitle(text).toLowerCase();
+  if (!normalized) return null;
+
+  if (/(审查|review|reviewer|code review)/.test(normalized)) {
+    return clipTaskTitle(isGenericTaskTitle('代码审查', parentTitles) ? '代码审查' : '代码审查');
+  }
+  if (/(验收|accept|acceptance)/.test(normalized)) {
+    return clipTaskTitle(isGenericTaskTitle('功能验收', parentTitles) ? '功能验收' : '功能验收');
+  }
+  if (/(测试|验证|verification|test)/.test(normalized)) {
+    return clipTaskTitle(isGenericTaskTitle('验证测试', parentTitles) ? '验证测试' : '验证测试');
+  }
+
+  const hasFrontend = /packages\/frontend|src\/components|src\/pages|\.tsx\b|前端|界面|页面|组件|交互|侧边栏|聊天室/.test(normalized);
+  const hasBackend = /packages\/backend|src\/repos|src\/routes|\.ts\b|后端|接口|数据库|路由|仓储/.test(normalized);
+  const hasDocs = /docs\/|\.md\b|文档|说明/.test(normalized);
+
+  if (hasFrontend && !isGenericTaskTitle('前端交互实现', parentTitles)) return '前端交互实现';
   if (hasFrontend) return '前端交互实现';
   if (hasBackend) return '后端能力实现';
-  return '更新工程文件';
+  if (hasDocs) return '文档补充';
+  return null;
+}
+
+function deriveTaskTitleFromRole(role: WorkflowRole): string | null {
+  if (role === 'reviewer') return '代码审查';
+  if (role === 'acceptor') return '功能验收';
+  return null;
 }
 
 function stripTaskTitleLabel(value: string): string {

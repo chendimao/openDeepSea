@@ -2,6 +2,7 @@ import type { ParsedPlan, ParsedPlanTask } from '../plan-parser.js';
 import { normalizeParsedPlanTaskTitles } from '../plan-parser.js';
 import { deriveWorkflowPlanFromParsedPlan } from '../workflow-plan-json.js';
 import type { WorkflowPlanJson, WorkflowPlanTaskJson } from '../../types.js';
+import type { WorkflowRole } from '../../types.js';
 
 export interface BuildCoordinatorWorkflowPlanInput {
   workflowName: string;
@@ -191,12 +192,13 @@ function extractImplementationTasks(background: string): ParsedPlanTask[] {
 
   if (current) tasks.push(current);
   const parsedTasks = tasks
-    .filter((task) => isExecutableBackgroundTask(task))
     .map((task) => ({
       ...task,
+      suggestedRole: inferSuggestedRoleForBackgroundTask(task),
       description: task.description || task.title,
       acceptance: task.acceptance.length > 0 ? task.acceptance : extractAcceptance(`${task.title}\n${task.description}`),
-    }));
+    }))
+    .filter((task) => isExecutableBackgroundTask(task) || task.suggestedRole === 'reviewer' || task.suggestedRole === 'acceptor');
   return parsedTasks.length > 0 ? parsedTasks : extractInlineImplementationTasks(background);
 }
 
@@ -231,6 +233,14 @@ function isExecutableBackgroundTask(task: ParsedPlanTask): boolean {
     '组件',
     '数据库',
   ].some((signal) => text.includes(signal));
+}
+
+function inferSuggestedRoleForBackgroundTask(task: ParsedPlanTask): WorkflowRole {
+  const text = `${task.title}\n${task.description}`.toLowerCase();
+  if (/(审查|review|reviewer|code review)/.test(text)) return 'reviewer';
+  if (/(验收|accept|acceptance)/.test(text)) return 'acceptor';
+  if (/(计划|规划|plan)/.test(text) && !isExecutableBackgroundTask(task)) return 'planner';
+  return 'executor';
 }
 
 function extractInlineImplementationTasks(background: string): ParsedPlanTask[] {
