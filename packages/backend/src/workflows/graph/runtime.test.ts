@@ -2159,6 +2159,55 @@ test('graph dispatch joins global frontend agent for frontend UI task with empty
   assert.equal(children[0]?.assigned_agent_id, frontend.id);
 });
 
+test('graph dispatch joins global writer for presentation task instead of backend executor', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-presentation-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Presentation', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Presentation Room' });
+  roomAgentRepo.ensureDefaultPlanner(room.id);
+  const backend = roomAgentRepo.ensureBuiltInAgent(room.id, 'backend-executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '制作一个项目汇报 PPT',
+    description: '整理项目目标、核心功能、截图说明和验收结论，输出演示文稿。',
+  });
+
+  await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: task.title,
+      summary: '制作项目汇报演示文稿',
+      assumptions: [],
+      tasks: [
+        {
+          title: '制作项目汇报 PPT',
+          description: '整理项目目标、核心功能、截图说明和验收结论，输出演示文稿。',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['PPT 可以用于产品汇报'],
+          scopeRead: [],
+          scopeWrite: [],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const agents = roomAgentRepo.listByRoom(room.id);
+  const writer = agents.find((agent) => agent.agent_id === 'technical-writer');
+  const children = taskRepo.listChildren(task.id);
+
+  assert.ok(writer);
+  assert.notEqual(children[0]?.assigned_agent_id, backend.id);
+  assert.equal(children[0]?.assigned_agent_id, writer.id);
+});
+
 test('no-approval graph invites built-in executor instead of selecting non-ACP executor', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-non-acp-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

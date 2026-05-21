@@ -116,6 +116,7 @@ function artifactTypesForTask(taskType: TaskProfileType): string[] {
 function requiredCapabilitiesForTask(taskType: TaskProfileType, domains: TaskProfileDomain[]): string[] {
   const capabilities = new Set<string>();
   for (const domain of domains) {
+    if (taskType === 'presentation' && domain === 'presentation') continue;
     if (domain === 'ui') capabilities.add('frontend');
     else capabilities.add(domain);
   }
