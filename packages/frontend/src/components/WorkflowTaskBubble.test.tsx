@@ -490,6 +490,7 @@ test('task flow renders staged board controls and row actions', () => {
   assert.match(html, /计划 \/ 分析/);
   assert.match(html, /workflow-flow-task-card-title">计划</);
   assert.doesNotMatch(html, /workflow-flow-task-card-title">分析</);
+  assert.match(html, /aria-label="查看「计划」详情"/);
 });
 
 test('task flow renders review and verification as ordered workflow nodes', () => {

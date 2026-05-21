@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../lib/i18n';
 import type { Message, RoomAgent, TaskArtifact, WorkflowPlanJson, WorkflowPlanTaskJson, WorkflowStage, WorkflowStep } from '../lib/types';
 import { cn } from '../lib/utils';
+import { Dialog, DialogContent } from './ui/Dialog';
 
 type TranslateFn = ReturnType<typeof useI18n>['t'];
 
@@ -36,6 +37,7 @@ export function WorkflowTaskFlow({
   const firstPopulatedStageKey = stagePanels.find((stage) => stage.entries.length > 0)?.key ?? null;
   const [selectedStageKey, setSelectedStageKey] = useState<FlowStagePanel['key'] | null>(null);
   const [selectedEntryKey, setSelectedEntryKey] = useState<string | null>(null);
+  const [detailEntry, setDetailEntry] = useState<FlowEntry | null>(null);
   const activeStage = stagePanels.find((stage) => stage.key === selectedStageKey && (selectedStageKey !== null || stage.entries.length > 0))
     ?? (selectedStageKey === null ? stagePanels.find((stage) => stage.key === firstPopulatedStageKey) : null)
     ?? stagePanels.find((stage) => stage.entries.length > 0)
@@ -122,13 +124,15 @@ export function WorkflowTaskFlow({
               <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskList')}</div>
               <div className="workflow-flow-task-cards">
                 {activeStage.entries.map((entry) => (
-                  <button
+                  <div
                     key={entry.key}
                     className={cn('workflow-flow-task-card', `is-${entry.phase}`, activeEntry.key === entry.key && 'is-selected')}
-                    type="button"
-                    onClick={() => setSelectedEntryKey(entry.key)}
                   >
-                    <div className="workflow-flow-task-card-main">
+                    <button
+                      className="workflow-flow-task-card-main"
+                      type="button"
+                      onClick={() => setSelectedEntryKey(entry.key)}
+                    >
                       <CheckCircle2 className={cn('h-4 w-4', entry.meta === 'completed' ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]')} />
                       <div className="workflow-flow-task-card-copy">
                         <div className="workflow-flow-task-card-title">{entry.title}</div>
@@ -138,12 +142,28 @@ export function WorkflowTaskFlow({
                         </div>
                       </div>
                       <span className={cn('workflow-flow-status-pill', `is-${entry.meta}`)}>{entry.displayStatus}</span>
-                      <span className="workflow-flow-task-actions">
-                        <Eye className="h-3.5 w-3.5" />
-                        <Copy className="h-3.5 w-3.5" />
-                      </span>
-                    </div>
-                  </button>
+                    </button>
+                    <span className="workflow-flow-task-actions">
+                      <button
+                        type="button"
+                        className="workflow-flow-task-action-button"
+                        aria-label={t('workflowPlan.viewTaskDetail', { title: entry.title })}
+                        title={t('workflowPlan.viewDetail')}
+                        onClick={() => setDetailEntry(entry)}
+                      >
+                        <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="workflow-flow-task-action-button"
+                        aria-label={t('message.copy')}
+                        title={t('message.copy')}
+                        onClick={() => copyFlowEntry(entry)}
+                      >
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    </span>
+                  </div>
                 ))}
               </div>
 
@@ -165,6 +185,76 @@ export function WorkflowTaskFlow({
         </div>
       ) : (
         <div className="workflow-flow-empty">{t('workflowPlan.taskFlowEmpty')}</div>
+      )}
+      <Dialog open={Boolean(detailEntry)} onOpenChange={(open) => !open && setDetailEntry(null)}>
+        <DialogContent
+          className="workflow-task-detail-dialog"
+          title={detailEntry?.title ?? t('workflowPlan.detailTitle')}
+          description={detailEntry ? t('workflowPlan.detailDescription') : undefined}
+        >
+          {detailEntry && <WorkflowFlowEntryDetail entry={detailEntry} />}
+        </DialogContent>
+      </Dialog>
+    </section>
+  );
+}
+
+function WorkflowFlowEntryDetail({ entry }: { entry: FlowEntry }) {
+  const { t } = useI18n();
+  return (
+    <div className="workflow-task-detail-content">
+      <dl className="workflow-task-detail-grid">
+        <DetailField label={t('workflowPlan.detailStatus')} value={entry.displayStatus} />
+        <DetailField label={t('workflowPlan.taskFlowAssignee')} value={entry.executorName} />
+        <DetailField label={t('workflowPlan.taskFlowStartTime')} value={formatFlowTime(entry.startedAt ?? entry.sortKey)} />
+        <DetailField label={t('workflowPlan.taskFlowDuration')} value={formatFlowDuration(entry.startedAt, entry.completedAt)} />
+      </dl>
+      <DetailSection label={t('workflowPlan.taskFlowTaskContent')}>{entry.content?.trim() || entry.subtitle || entry.taskName}</DetailSection>
+      <DetailList label={t('workflowPlan.taskFlowExecutionLog')} items={entry.events.map((event) => `${event.time} ${event.label}`)} />
+    </div>
+  );
+}
+
+function copyFlowEntry(entry: FlowEntry): void {
+  const text = [
+    entry.title,
+    entry.subtitle,
+    entry.content,
+    ...entry.events.map((event) => `${event.time} ${event.label}`),
+  ].filter((item): item is string => Boolean(item?.trim())).join('\n');
+  void navigator.clipboard?.writeText(text);
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function DetailSection({ label, children }: { label: string; children: string }) {
+  return (
+    <section className="workflow-task-detail-section">
+      <h4>{label}</h4>
+      <p>{children}</p>
+    </section>
+  );
+}
+
+function DetailList({ label, items }: { label: string; items: string[] }) {
+  return (
+    <section className="workflow-task-detail-section">
+      <h4>{label}</h4>
+      {items.length > 0 ? (
+        <ul>
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p>--</p>
       )}
     </section>
   );

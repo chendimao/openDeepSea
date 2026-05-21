@@ -1906,11 +1906,28 @@
   .workflow-flow-task-actions {
     display: inline-flex;
     justify-content: flex-end;
-    gap: 10px;
+    align-items: center;
+    gap: 8px;
     color: var(--color-primary);
+    padding-right: 9px;
+  }
+  .workflow-flow-task-action-button {
+    display: inline-flex;
+    height: 24px;
+    width: 24px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--color-primary);
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+  .workflow-flow-task-action-button:hover {
+    background: rgba(10, 132, 255, 0.10);
+    color: var(--color-primary-hover);
   }
   .workflow-flow-task-card {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 0;
     width: 100%;
     min-width: 0;
@@ -1929,12 +1946,13 @@
   }
   .workflow-flow-task-card-main {
     display: grid;
-    grid-template-columns: 18px minmax(0, 1fr) auto 38px;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
     gap: 8px;
     align-items: center;
     min-width: 0;
     min-height: 38px;
     padding: 6px 9px;
+    text-align: left;
   }
   .workflow-flow-task-card-copy {
     display: grid;
