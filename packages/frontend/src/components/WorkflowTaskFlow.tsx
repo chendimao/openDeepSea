@@ -122,7 +122,7 @@ export function WorkflowTaskFlow({
               </div>
 
               <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskContent')}</div>
-              <div className="workflow-flow-entry-content">{getFlowEntryContent(activeEntry)}</div>
+              <div className="workflow-flow-entry-content">{getFlowEntryContent(activeEntry, t)}</div>
 
               <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskList')}</div>
               <div className="workflow-flow-task-cards">
@@ -161,7 +161,7 @@ export function WorkflowTaskFlow({
                         className="workflow-flow-task-action-button"
                         aria-label={t('message.copy')}
                         title={t('message.copy')}
-                        onClick={() => copyFlowEntry(entry)}
+                        onClick={() => copyFlowEntry(entry, t)}
                       >
                         <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
@@ -212,27 +212,27 @@ function WorkflowFlowEntryDetail({ entry }: { entry: FlowEntry }) {
         <DetailField label={t('workflowPlan.taskFlowStartTime')} value={formatFlowTime(entry.startedAt ?? entry.sortKey)} />
         <DetailField label={t('workflowPlan.taskFlowDuration')} value={formatFlowDuration(entry.startedAt, entry.completedAt)} />
       </dl>
-      <DetailSection label={t('workflowPlan.taskFlowTaskContent')}>{getFlowEntryContent(entry)}</DetailSection>
+      <DetailSection label={t('workflowPlan.taskFlowTaskContent')}>{getFlowEntryContent(entry, t)}</DetailSection>
       <DetailList label={t('workflowPlan.taskFlowExecutionLog')} items={entry.events.map((event) => `${event.time} ${event.label}`)} />
     </div>
   );
 }
 
-function copyFlowEntry(entry: FlowEntry): void {
+function copyFlowEntry(entry: FlowEntry, t: TranslateFn): void {
   const text = [
     entry.title,
     entry.subtitle,
-    getFlowEntryContent(entry),
+    getFlowEntryContent(entry, t),
     ...entry.events.map((event) => `${event.time} ${event.label}`),
   ].filter((item): item is string => Boolean(item?.trim())).join('\n');
   void navigator.clipboard?.writeText(text);
 }
 
-function getFlowEntryContent(entry: FlowEntry): string {
+function getFlowEntryContent(entry: FlowEntry, t: TranslateFn): string {
   const content = entry.content?.trim();
   if (content) return content;
   if (entry.phase === 'execution') return entry.taskName;
-  return entry.subtitle ?? '该阶段没有独立输出。';
+  return entry.subtitle ?? t('workflowPlan.taskFlowNoIndependentOutput');
 }
 
 function DetailField({ label, value }: { label: string; value: string }) {

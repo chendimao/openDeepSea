@@ -590,6 +590,10 @@ test('task flow does not render long execution content inside orchestration node
   const html = renderBubble(detail, [createAgent()], { compact: true });
   const cardListStart = html.indexOf('<div class="workflow-flow-task-cards">');
   const flowEnd = html.indexOf('<div class="workflow-task-bubble-side">');
+
+  assert.notEqual(cardListStart, -1);
+  assert.notEqual(flowEnd, -1);
+
   const cardListHtml = html.slice(cardListStart, flowEnd);
   const sideHtml = html.slice(flowEnd);
 
