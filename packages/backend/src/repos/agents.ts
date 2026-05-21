@@ -70,7 +70,7 @@ export type AgentDeleteResult =
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
 const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
 const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
-const BUILT_IN_RUNTIME_PROFILE_VERSION = 1;
+const BUILT_IN_RUNTIME_PROFILE_VERSION = 3;
 const LEGACY_RUNTIME_BOUNDARY = {
   default_acp_permission_mode: 'bypass',
   default_runtime_backend: 'acp',
@@ -195,11 +195,30 @@ function isLegacyWorkspacePolicy(policy: AgentWorkspacePolicy): boolean {
   return policy.read.length === 0 && policy.write.length === 0;
 }
 
+function isTechnicalWriterDefaultBoundary(agent: AgentWithRuntimeProfileVersion): boolean {
+  const isReadOnlyDefault = agent.default_acp_permission_mode === 'read-only'
+    && agent.default_runtime_backend === 'acp'
+    && agent.default_memory_scope === 'room'
+    && agent.default_tool_policy.allowed.length === 1
+    && agent.default_tool_policy.allowed[0] === 'read_files'
+    && agent.default_workspace_policy.read.length === 1
+    && agent.default_workspace_policy.read[0] === '.'
+    && agent.default_workspace_policy.write.length === 0;
+  const isDocsOnlyDefault = agent.default_acp_permission_mode === 'workspace-write'
+    && agent.default_runtime_backend === 'acp'
+    && agent.default_memory_scope === 'agent'
+    && agent.default_tool_policy.allowed.join('\n') === ['read_files', 'write_files', 'run_shell'].join('\n')
+    && agent.default_workspace_policy.read.join('\n') === ['.'].join('\n')
+    && agent.default_workspace_policy.write.join('\n') === ['docs'].join('\n');
+  return agent.builtin_key === 'technical-writer'
+    && (isReadOnlyDefault || isDocsOnlyDefault);
+}
+
 function resolveBuiltInRuntimeBoundary(
   existing: AgentWithRuntimeProfileVersion,
   template: ReturnType<typeof listBuiltInAgentTemplates>[number],
 ) {
-  if (existing.runtime_profile_version === BUILT_IN_RUNTIME_PROFILE_VERSION) {
+  if ((existing.runtime_profile_version ?? 0) >= BUILT_IN_RUNTIME_PROFILE_VERSION) {
     return {
       default_acp_permission_mode: existing.default_acp_permission_mode,
       default_runtime_backend: existing.default_runtime_backend,
@@ -210,11 +229,13 @@ function resolveBuiltInRuntimeBoundary(
   }
 
   const shouldRefreshAll = isLegacyRuntimeBoundary(existing);
-  const shouldRefreshPermission = shouldRefreshAll;
+  const shouldUpgradeTechnicalWriter = isTechnicalWriterDefaultBoundary(existing);
+  const shouldRefreshPermission = shouldRefreshAll || shouldUpgradeTechnicalWriter;
   const shouldRefreshRuntimeBackend = existing.default_runtime_backend === LEGACY_RUNTIME_BOUNDARY.default_runtime_backend;
-  const shouldRefreshToolPolicy = isLegacyToolPolicy(existing.default_tool_policy);
-  const shouldRefreshWorkspacePolicy = isLegacyWorkspacePolicy(existing.default_workspace_policy);
-  const shouldRefreshMemoryScope = existing.default_memory_scope === LEGACY_RUNTIME_BOUNDARY.default_memory_scope;
+  const shouldRefreshToolPolicy = isLegacyToolPolicy(existing.default_tool_policy) || shouldUpgradeTechnicalWriter;
+  const shouldRefreshWorkspacePolicy = isLegacyWorkspacePolicy(existing.default_workspace_policy) || shouldUpgradeTechnicalWriter;
+  const shouldRefreshMemoryScope = existing.default_memory_scope === LEGACY_RUNTIME_BOUNDARY.default_memory_scope
+    || shouldUpgradeTechnicalWriter;
 
   return {
     default_acp_permission_mode: shouldRefreshAll || shouldRefreshPermission

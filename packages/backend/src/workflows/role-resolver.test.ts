@@ -294,6 +294,36 @@ test('selectWorkflowAgentForPlanTask falls back to domain when scopeWrite contai
   assert.equal(selected?.id, 'backend');
 });
 
+test('selectWorkflowAgentForPlanTask selects technical writer for absolute docs markdown scope', () => {
+  const backend = agent({
+    id: 'backend',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const writer = agent({
+    id: 'writer',
+    agent_id: 'technical-writer',
+    agent_name: '技术写作者',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['documentation', 'writing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['docs'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backend, writer], {
+    title: '创建 Superpowers E2E 冒烟验证文档',
+    description: '新增 Markdown 文档记录浏览器端到端测试、代码审查和验收结论。',
+    scopeRead: ['/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/'],
+    scopeWrite: ['/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/superpower-e2e-smoke.md'],
+  });
+
+  assert.equal(selected?.id, 'writer');
+});
+
 test('selectWorkflowAgentForPlanTask requires explicit write capability and non-read-only permission for write tasks', () => {
   const implicitToolPolicy = agent({
     id: 'implicit-tool-policy',

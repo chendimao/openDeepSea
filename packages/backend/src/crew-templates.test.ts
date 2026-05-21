@@ -397,6 +397,70 @@ test('listing a room migrates legacy non-planner built-in runtime policy without
   assert.deepEqual(customized?.workspace_policy, { read: [], write: [] });
 });
 
+test('listing a room upgrades default technical writer to docs and commit boundary', async () => {
+  const project = createProject('Technical Writer Runtime Migration Project');
+  const roomRes = await request(`/api/projects/${project.id}/rooms`, {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Technical Writer Room', crew_template_id: 'discussion-only' }),
+  });
+  assert.equal(roomRes.status, 201);
+  const room = await roomRes.json() as { id: string };
+  const writer = roomAgentRepo.ensureBuiltInAgent(room.id, 'technical-writer');
+  assert.ok(writer);
+
+  roomAgentRepo.setAcp(writer.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  roomAgentRepo.setCapabilitiesAndRuntime(writer.id, {
+    capabilities: writer.capabilities,
+    default_runtime: 'acp',
+    runtime_backend: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+    memory_scope: 'room',
+    runtime_profile_version: 1,
+  });
+
+  const listed = roomAgentRepo.listByRoom(room.id).find((agent) => agent.id === writer.id);
+
+  assert.equal(listed?.acp_permission_mode, 'workspace-write');
+  assert.deepEqual(listed?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] });
+  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['docs', '.git'] });
+  assert.equal(listed?.memory_scope, 'agent');
+});
+
+test('listing a room upgrades docs-only technical writer to commit-capable boundary', async () => {
+  const project = createProject('Technical Writer Commit Migration Project');
+  const roomRes = await request(`/api/projects/${project.id}/rooms`, {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Technical Writer Commit Room', crew_template_id: 'discussion-only' }),
+  });
+  assert.equal(roomRes.status, 201);
+  const room = await roomRes.json() as { id: string };
+  const writer = roomAgentRepo.ensureBuiltInAgent(room.id, 'technical-writer');
+  assert.ok(writer);
+
+  roomAgentRepo.setCapabilitiesAndRuntime(writer.id, {
+    capabilities: writer.capabilities,
+    default_runtime: 'acp',
+    runtime_backend: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['docs'] },
+    memory_scope: 'agent',
+    runtime_profile_version: 2,
+  });
+
+  const listed = roomAgentRepo.listByRoom(room.id).find((agent) => agent.id === writer.id);
+
+  assert.deepEqual(listed?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] });
+  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['docs', '.git'] });
+});
+
 test('listing a room links and migrates legacy built-in room agent without global reference', async () => {
   const project = createProject('Legacy Unlinked Builtin Migration Project');
   const roomRes = await request(`/api/projects/${project.id}/rooms`, {

@@ -54,7 +54,7 @@ const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-wr
 const DEFAULT_RUNTIMES = new Set<AgentDefaultRuntime>(['acp', 'openclaw', 'none']);
 const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
 const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
-const BUILT_IN_RUNTIME_PROFILE_VERSION = 1;
+const BUILT_IN_RUNTIME_PROFILE_VERSION = 3;
 
 function parseJsonObject<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -103,11 +103,32 @@ function isLegacyMemoryScope(scope: AgentMemoryScope | null): boolean {
   return scope === 'agent';
 }
 
+function isTechnicalWriterDefaultBoundary(
+  existing: RoomAgentWithRuntimeProfileVersion,
+  template: NonNullable<ReturnType<typeof getBuiltInAgentTemplate>>,
+): boolean {
+  const isReadOnlyDefault = existing.acp_permission_mode === 'read-only'
+    && existing.runtime_backend === 'acp'
+    && existing.memory_scope === 'room'
+    && existing.tool_policy?.allowed.length === 1
+    && existing.tool_policy.allowed[0] === 'read_files'
+    && existing.workspace_policy?.read.length === 1
+    && existing.workspace_policy.read[0] === '.'
+    && existing.workspace_policy.write.length === 0;
+  const isDocsOnlyDefault = existing.acp_permission_mode === 'workspace-write'
+    && existing.runtime_backend === 'acp'
+    && existing.memory_scope === 'agent'
+    && existing.tool_policy?.allowed.join('\n') === ['read_files', 'write_files', 'run_shell'].join('\n')
+    && existing.workspace_policy?.read.join('\n') === ['.'].join('\n')
+    && existing.workspace_policy.write.join('\n') === ['docs'].join('\n');
+  return template.id === 'technical-writer' && (isReadOnlyDefault || isDocsOnlyDefault);
+}
+
 function resolveBuiltInRoomRuntimeBoundary(
   existing: RoomAgentWithRuntimeProfileVersion,
   template: NonNullable<ReturnType<typeof getBuiltInAgentTemplate>>,
 ) {
-  if (existing.runtime_profile_version === BUILT_IN_RUNTIME_PROFILE_VERSION) {
+  if ((existing.runtime_profile_version ?? 0) >= BUILT_IN_RUNTIME_PROFILE_VERSION) {
     return {
       acp_permission_mode: existing.acp_permission_mode,
       runtime_backend: existing.runtime_backend,
@@ -117,18 +138,19 @@ function resolveBuiltInRoomRuntimeBoundary(
     };
   }
 
+  const shouldUpgradeTechnicalWriter = isTechnicalWriterDefaultBoundary(existing, template);
   return {
-    acp_permission_mode: existing.acp_permission_mode === 'bypass'
+    acp_permission_mode: existing.acp_permission_mode === 'bypass' || shouldUpgradeTechnicalWriter
       ? template.acp_permission_mode
       : existing.acp_permission_mode,
     runtime_backend: existing.runtime_backend ?? template.runtime_backend,
-    tool_policy: existing.tool_policy === null || isLegacyToolPolicy(existing.tool_policy)
+    tool_policy: existing.tool_policy === null || isLegacyToolPolicy(existing.tool_policy) || shouldUpgradeTechnicalWriter
       ? template.tool_policy
       : existing.tool_policy,
-    workspace_policy: existing.workspace_policy === null || isLegacyWorkspacePolicy(existing.workspace_policy)
+    workspace_policy: existing.workspace_policy === null || isLegacyWorkspacePolicy(existing.workspace_policy) || shouldUpgradeTechnicalWriter
       ? template.workspace_policy
       : existing.workspace_policy,
-    memory_scope: existing.memory_scope === null || isLegacyMemoryScope(existing.memory_scope)
+    memory_scope: existing.memory_scope === null || isLegacyMemoryScope(existing.memory_scope) || shouldUpgradeTechnicalWriter
       ? template.memory_scope
       : existing.memory_scope,
   };
@@ -229,9 +251,9 @@ export const roomAgentRepo = {
          )
        WHERE room_agents.room_id = ?
          AND room_agents.left_at IS NULL
-         AND room_agents.runtime_profile_version = 0
+         AND room_agents.runtime_profile_version < ?
          AND agents.builtin_key IS NOT NULL`,
-    ).all(roomId) as Array<{ id: string; global_agent_id: string; builtin_key: string }>;
+    ).all(roomId, BUILT_IN_RUNTIME_PROFILE_VERSION) as Array<{ id: string; global_agent_id: string; builtin_key: string }>;
     for (const row of rows) {
       this.addFromGlobalAgent({ room_id: roomId, global_agent_id: row.global_agent_id });
     }

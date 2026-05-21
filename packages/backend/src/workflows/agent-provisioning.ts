@@ -2,7 +2,7 @@ import type { ParsedPlanTask } from './plan-parser.js';
 import { roomAgentRepo } from '../repos/rooms.js';
 import type { RoomAgent, WorkflowRole } from '../types.js';
 
-type TaskDomain = 'frontend' | 'backend' | null;
+type TaskDomain = 'frontend' | 'backend' | 'documentation' | null;
 
 interface WorkflowAgentProvisioningInput {
   roomId: string;
@@ -54,7 +54,10 @@ export function ensureGlobalExecutorForRecovery(input: {
 }
 
 function templateIdForPlanTask(task: ParsedPlanTask): string {
-  return inferTaskDomain(task) === 'frontend' ? 'frontend-executor' : 'backend-executor';
+  const domain = inferTaskDomain(task);
+  if (domain === 'frontend') return 'frontend-executor';
+  if (domain === 'documentation') return 'technical-writer';
+  return 'backend-executor';
 }
 
 function templateIdForRecoveryContext(context: Record<string, unknown>): string {
@@ -120,6 +123,21 @@ function inferTaskDomain(task: ParsedPlanTask): TaskDomain {
     '路由',
     '仓储',
   ]);
+  const documentation = countSignals(text, [
+    'documentation',
+    'document',
+    'docs/',
+    'docs\\',
+    '.md',
+    'markdown',
+    'readme',
+    '技术文档',
+    '文档',
+    '说明',
+    '交付总结',
+    '验证文档',
+  ]);
+  if (documentation > 0 && documentation >= frontend && documentation >= backend) return 'documentation';
   if (frontend === 0 && backend === 0) return null;
   return frontend > backend ? 'frontend' : 'backend';
 }

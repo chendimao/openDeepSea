@@ -2112,7 +2112,7 @@ function buildExecutorAssignmentDiagnostic(planTask: ParsedPlanTask, agents: Roo
   ].join(' ');
 }
 
-type PlanTaskDomain = 'frontend' | 'backend' | null;
+type PlanTaskDomain = 'frontend' | 'backend' | 'documentation' | null;
 
 function planTaskHasDomainMismatch(
   planTask: ParsedPlanTask,
@@ -2172,6 +2172,21 @@ function inferPlanTaskDomain(planTask: ParsedPlanTask): PlanTaskDomain {
     '路由',
     '仓储',
   ]);
+  const documentation = countDomainSignals(text, [
+    'documentation',
+    'document',
+    'docs/',
+    'docs\\',
+    '.md',
+    'markdown',
+    'readme',
+    '技术文档',
+    '文档',
+    '说明',
+    '交付总结',
+    '验证文档',
+  ]);
+  if (documentation > 0 && documentation >= frontend && documentation >= backend) return 'documentation';
   if (frontend === 0 && backend === 0) return null;
   return frontend > backend ? 'frontend' : 'backend';
 }

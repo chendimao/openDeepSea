@@ -1,9 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { isAllowedVerificationCommand, isManualVerificationItem, mapVerificationResultsToEvidence } from './verification.js';
+import {
+  isAllowedVerificationCommand,
+  isManualVerificationItem,
+  mapVerificationResultsToEvidence,
+  runVerificationCommand,
+} from './verification.js';
 import type { MessageMetadata } from '../../types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-verification-')), 'test.db');
@@ -33,6 +39,77 @@ test('verification classifies natural language acceptance items as manual checks
   assert.equal(isManualVerificationItem('npm run build'), false);
   assert.equal(isManualVerificationItem('node --test src/example.test.ts'), false);
   assert.equal(isManualVerificationItem('npm run build && rm -rf dist'), false);
+});
+
+test('verification runs natural language file existence checks safely', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-doc-exists-'));
+  mkdirSync(join(projectPath, 'docs', 'superpowers', 'verification'), { recursive: true });
+  const markdownPath = 'docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md';
+  writeFileSync(join(projectPath, markdownPath), '# Superpowers E2E\n');
+
+  const result = await runVerificationCommand(`检查目标文件存在：${markdownPath}。`, projectPath);
+
+  assert.equal(result.status, 'passed');
+  assert.equal(result.exitCode, 0);
+});
+
+test('verification runs natural language markdown content checks safely', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-doc-content-'));
+  mkdirSync(join(projectPath, 'docs', 'superpowers', 'verification'), { recursive: true });
+  const markdownPath = 'docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md';
+  writeFileSync(join(projectPath, markdownPath), [
+    '# Superpowers E2E',
+    '## 测试目标',
+    '## 正式 workflow 执行步骤',
+    '## 代码审查',
+    '## 验收结论',
+    '## 提交信息',
+  ].join('\n'));
+
+  const result = await runVerificationCommand(
+    `检查 Markdown 内容包含：测试目标、正式 workflow 执行步骤、代码审查、验收结论、提交信息。 文件：${markdownPath}`,
+    projectPath,
+  );
+
+  assert.equal(result.status, 'passed');
+  assert.equal(result.exitCode, 0);
+});
+
+test('verification fails natural language workspace check when target file remains dirty', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-dirty-target-'));
+  const markdownPath = 'docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md';
+  mkdirSync(join(projectPath, 'docs', 'superpowers', 'verification'), { recursive: true });
+  spawnSync('git', ['init'], { cwd: projectPath });
+  writeFileSync(join(projectPath, markdownPath), '# Superpowers E2E\n');
+
+  const result = await runVerificationCommand(
+    `执行 git diff 或 git status，确认除目标验证文档外无本任务改动。 文件：${markdownPath}`,
+    projectPath,
+  );
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /Target file still has uncommitted changes/);
+});
+
+test('verification fails natural language staged check for unexpected staged files', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-unexpected-staged-'));
+  const markdownPath = 'docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md';
+  mkdirSync(join(projectPath, 'docs', 'superpowers', 'verification'), { recursive: true });
+  mkdirSync(join(projectPath, 'packages', 'backend', 'src'), { recursive: true });
+  spawnSync('git', ['init'], { cwd: projectPath });
+  writeFileSync(join(projectPath, markdownPath), '# Superpowers E2E\n');
+  writeFileSync(join(projectPath, 'packages/backend/src/routes.ts'), 'export {};\n');
+  spawnSync('git', ['add', 'packages/backend/src/routes.ts'], { cwd: projectPath });
+
+  const result = await runVerificationCommand(
+    `执行提交前暂存检查，确认 staged diff 仅包含目标验证文档。 文件：${markdownPath}`,
+    projectPath,
+  );
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /Unexpected staged files: packages\/backend\/src\/routes.ts/);
 });
 
 test('verify node records skipped result and continues when no commands are configured', async () => {

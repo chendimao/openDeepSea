@@ -75,6 +75,16 @@ test('built-in templates define hard runtime boundaries', () => {
   });
   assert.equal(templates['frontend-executor']?.memory_scope, 'agent');
 
+  assert.equal(templates['technical-writer']?.acp_permission_mode, 'workspace-write');
+  assert.deepEqual(templates['technical-writer']?.tool_policy, {
+    allowed: ['read_files', 'write_files', 'run_shell', 'commit'],
+  });
+  assert.deepEqual(templates['technical-writer']?.workspace_policy, {
+    read: ['.'],
+    write: ['docs', '.git'],
+  });
+  assert.equal(templates['technical-writer']?.memory_scope, 'agent');
+
   assert.equal(templates['reviewer']?.acp_permission_mode, 'read-only');
   assert.deepEqual(templates['reviewer']?.tool_policy, { allowed: ['read_files', 'run_shell'] });
   assert.deepEqual(templates['reviewer']?.workspace_policy, { read: ['.'], write: [] });
@@ -95,7 +105,6 @@ test('specialist built-in templates use conservative runtime boundaries', () => 
     'qa-tester',
     'devops-engineer',
     'security-reviewer',
-    'technical-writer',
     'accounting-advisor',
     'legal-assistant',
     'medical-assistant',

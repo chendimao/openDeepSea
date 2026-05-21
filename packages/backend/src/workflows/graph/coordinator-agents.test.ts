@@ -52,6 +52,12 @@ describe('coordinator agent matching', () => {
       scope_write: ['packages/backend/src/routes.ts'],
     })), 'backend-executor');
     assert.equal(requiredTemplateIdForTask(workflowTask({
+      role: 'executor',
+      title: '创建 Superpowers E2E 冒烟验证文档',
+      description: '新增 Markdown 文档记录浏览器端到端测试、代码审查和验收结论。',
+      scope_write: ['/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/superpower-e2e-smoke.md'],
+    })), 'technical-writer');
+    assert.equal(requiredTemplateIdForTask(workflowTask({
       role: 'reviewer',
       title: '审查实现结果',
     })), 'reviewer');
@@ -72,6 +78,34 @@ describe('coordinator agent matching', () => {
     assert.equal(result.agent, null);
     assert.equal(result.templateId, 'backend-executor');
     assert.match(result.assignmentReason, /suggest/i);
+  });
+
+  it('selects technical writer for absolute docs markdown scope', () => {
+    const task = workflowTask({
+      role: 'executor',
+      title: '创建 Superpowers E2E 冒烟验证文档',
+      description: '新增 Markdown 文档记录浏览器端到端测试、代码审查和验收结论。',
+      scope_write: ['/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/superpower-e2e-smoke.md'],
+    });
+    const backend = roomAgent({
+      id: 'agent-backend',
+      agent_id: 'backend-executor',
+      agent_name: 'Backend Executor',
+      capabilities: ['backend'],
+      workspace_policy: { read: ['.'], write: ['packages/backend'] },
+    });
+    const writer = roomAgent({
+      id: 'agent-writer',
+      agent_id: 'technical-writer',
+      agent_name: '技术写作者',
+      capabilities: ['documentation', 'writing'],
+      workspace_policy: { read: ['.'], write: ['docs'] },
+    });
+
+    const result = selectCoordinatorAgentForTask({ task, agents: [backend, writer] });
+
+    assert.equal(result.agent?.id, 'agent-writer');
+    assert.equal(result.templateId, null);
   });
 
   it('suggests frontend executor for UI tasks even when planner only supplied project root scope', () => {

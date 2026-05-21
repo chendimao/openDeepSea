@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
 import type { RoomAgent, WorkflowRole } from '../../types.js';
 
 export type CoordinatorTaskRole = Extract<WorkflowRole, 'executor' | 'reviewer' | 'acceptor'>;
@@ -38,7 +40,7 @@ export interface SuperpowersAgentSelection extends CoordinatorAgentSelection {
   };
 }
 
-type TaskDomain = 'frontend' | 'backend' | null;
+type TaskDomain = 'frontend' | 'backend' | 'documentation' | null;
 
 export function selectCoordinatorAgentForTask(input: SelectCoordinatorAgentInput): CoordinatorAgentSelection {
   const candidates = input.agents.filter((agent) => agentCanExecuteWorkflowTask(agent, input.task));
@@ -64,7 +66,10 @@ export function selectCoordinatorAgentForTask(input: SelectCoordinatorAgentInput
 export function requiredTemplateIdForTask(task: CoordinatorWorkflowTask): string {
   if (task.role === 'reviewer') return 'reviewer';
   if (task.role === 'acceptor') return 'acceptor';
-  return inferTaskDomain(task) === 'frontend' ? 'frontend-executor' : 'backend-executor';
+  const domain = inferTaskDomain(task);
+  if (domain === 'frontend') return 'frontend-executor';
+  if (domain === 'documentation') return 'technical-writer';
+  return 'backend-executor';
 }
 
 export function selectSuperpowersAgentForRole(input: SuperpowersAgentSelectionInput): SuperpowersAgentSelection {
@@ -217,6 +222,21 @@ function inferTaskDomain(task: CoordinatorWorkflowTask): TaskDomain {
     '路由',
     '仓储',
   ]);
+  const documentation = countSignals(text, [
+    'documentation',
+    'document',
+    'docs/',
+    'docs\\',
+    '.md',
+    'markdown',
+    'readme',
+    '技术文档',
+    '文档',
+    '说明',
+    '交付总结',
+    '验证文档',
+  ]);
+  if (documentation > 0 && documentation >= frontend && documentation >= backend) return 'documentation';
   if (frontend === 0 && backend === 0) return null;
   return frontend > backend ? 'frontend' : 'backend';
 }
@@ -252,8 +272,32 @@ function pathMatchesScope(scope: string, writable: string): boolean {
 function normalizePath(path: string): string | null {
   const trimmed = path.trim();
   if (trimmed.split(/[\\/]+/).includes('..')) return null;
-  const normalized = trimmed.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+$/, '').toLowerCase();
+  const relativePath = relativizeWorkspacePath(trimmed);
+  const normalized = relativePath.replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+$/, '').toLowerCase();
   return normalized === '.' ? '' : normalized;
+}
+
+function relativizeWorkspacePath(path: string): string {
+  if (!isAbsolute(path)) return path;
+  const root = findWorkspaceRoot();
+  const rel = relative(root, path);
+  if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) return rel || '.';
+  return path;
+}
+
+function findWorkspaceRoot(): string {
+  let current = process.cwd();
+  for (;;) {
+    if (
+      existsSync(resolve(current, 'package.json')) &&
+      existsSync(resolve(current, 'packages', 'backend', 'package.json'))
+    ) {
+      return current;
+    }
+    const parent = resolve(current, '..');
+    if (parent === current) return process.cwd();
+    current = parent;
+  }
 }
 
 function isPathLikeScope(scope: string): boolean {

@@ -202,8 +202,11 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'read-only',
-    ...CONSERVATIVE_RUNTIME_BOUNDARY,
+    acp_permission_mode: 'workspace-write',
+    runtime_backend: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] },
+    workspace_policy: { read: ['.'], write: ['docs', '.git'] },
+    memory_scope: 'agent',
     capabilities: ['documentation', 'writing', 'handoff', 'release-notes'],
   },
   {
