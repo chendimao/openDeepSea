@@ -38,6 +38,8 @@ test('renders json code fences as structured Chinese task readiness view', () =>
   assert.match(html, /正式工作流/);
   assert.match(html, /原文/);
   assert.doesNotMatch(html, /<small>task_readiness<\/small>/);
+  assert.doesNotMatch(html, /<small>ready<\/small>/);
+  assert.doesNotMatch(html, /<small>confidence<\/small>/);
 });
 
 test('keeps generic json string values faithful while translating semantic summary fields', () => {
@@ -46,14 +48,7 @@ test('keeps generic json string values faithful while translating semantic summa
     JSON.stringify({
       status: 'implementation',
       emptyValue: '',
-      task_readiness: {
-        ready: true,
-        confidence: 0.92,
-        title: '保留原始枚举值',
-        missing_questions: [],
-        recommended_mode: 'formal_workflow',
-        execution_intent: 'implementation',
-      },
+      recommended_mode: 'formal_workflow',
     }, null, 2),
     '```',
   ].join('\n');
@@ -63,9 +58,9 @@ test('keeps generic json string values faithful while translating semantic summa
   assert.match(html, /status/);
   assert.match(html, /implementation/);
   assert.match(html, /emptyValue/);
-  assert.match(html, /正式工作流/);
-  assert.match(html, /执行意图/);
-  assert.match(html, /实现/);
+  assert.match(html, /recommended_mode/);
+  assert.match(html, /formal_workflow/);
+  assert.doesNotMatch(html, /正式工作流/);
 });
 
 test('only compact-renders short scalar json rows', () => {

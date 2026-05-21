@@ -243,7 +243,7 @@ function JsonBlock({
   const [mode, setMode] = useState<'structured' | 'source'>('structured');
   const [copied, setCopied] = useState(false);
   const { t } = useI18n();
-  const treeValue = getStructuredJsonTreeValue(data);
+  const taskReadiness = getTaskReadiness(data);
 
   const copyJson = async () => {
     try {
@@ -292,12 +292,13 @@ function JsonBlock({
         </div>
       </div>
       {mode === 'structured' ? (
-        <>
-          <TaskReadinessSummary data={data} />
+        taskReadiness ? (
+          <TaskReadinessSummary readiness={taskReadiness} />
+        ) : (
           <div className="json-tree" aria-label={t('message.jsonTreeAria')}>
-            <JsonTree value={treeValue} />
+            <JsonTree value={data} />
           </div>
-        </>
+        )
       ) : (
         <pre className="code-block-pre json-source-pre"><code>{value}</code></pre>
       )}
@@ -305,10 +306,7 @@ function JsonBlock({
   );
 }
 
-function TaskReadinessSummary({ data }: { data: JsonValue }): JSX.Element | null {
-  const readiness = getTaskReadiness(data);
-  if (!readiness) return null;
-
+function TaskReadinessSummary({ readiness }: { readiness: JsonObject }): JSX.Element {
   const title = typeof readiness.title === 'string' ? readiness.title : '未命名任务';
   const ready = typeof readiness.ready === 'boolean' ? readiness.ready : null;
   const confidence = typeof readiness.confidence === 'number' ? readiness.confidence : null;
@@ -348,14 +346,6 @@ function getTaskReadiness(data: JsonValue): JsonObject | null {
   if (!isJsonObject(data)) return null;
   const value = data.task_readiness;
   return isJsonObject(value) ? value : null;
-}
-
-function getStructuredJsonTreeValue(data: JsonValue): JsonValue {
-  if (!isJsonObject(data)) return data;
-  const entries = Object.entries(data);
-  if (entries.length !== 1) return data;
-  const [key, value] = entries[0];
-  return key === 'task_readiness' && isJsonObject(value) ? value : data;
 }
 
 function JsonTree({ value }: { value: JsonValue }): JSX.Element {
