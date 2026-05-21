@@ -2108,6 +2108,57 @@ test('graph dispatch assigns child tasks by frontend and backend scope hints', a
   assert.equal(children.find((child) => child.title === 'Update API route')?.assigned_agent_id, backend.id);
 });
 
+test('graph dispatch joins global frontend agent for frontend UI task with empty scope', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-global-frontend-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Global Frontend', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Global Frontend Room' });
+  roomAgentRepo.ensureDefaultPlanner(room.id);
+  const backend = roomAgentRepo.ensureBuiltInAgent(room.id, 'backend-executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '最近群聊指的是最近访问过的群聊',
+    description: '任务目标是在侧边栏最近项目下方展示当前用户最近访问过的群聊，补充 i18n 文案、空态和跳转高亮处理。',
+  });
+
+  await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: task.title,
+      summary: '在侧边栏展示最近访问过的群聊',
+      assumptions: [],
+      tasks: [
+        {
+          title: '目标是在侧边栏最近项目下方展示当前用户最近访问过',
+          description: '在 AppShell/ProjectSidebar 读取并按 visitedAt 倒序展示最近群聊，RoomPage 进入群聊时记录访问，补充 i18n 文案、空态和跳转高亮处理。',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['侧边栏最近群聊按访问时间倒序展示'],
+          scopeRead: [],
+          scopeWrite: [],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const agents = roomAgentRepo.listByRoom(room.id);
+  const frontend = agents.find((agent) => agent.agent_id === 'frontend-executor');
+  const children = taskRepo.listChildren(task.id);
+
+  assert.ok(frontend);
+  assert.notEqual(children[0]?.assigned_agent_id, backend.id);
+  assert.equal(children[0]?.assigned_agent_id, frontend.id);
+});
+
 test('no-approval graph invites built-in executor instead of selecting non-ACP executor', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-non-acp-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
