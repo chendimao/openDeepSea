@@ -556,6 +556,85 @@ test('task flow treats analysis and dispatch steps as execution log events inste
   assert.match(logHtml, /已分配 1 个执行子任务/);
 });
 
+test('task flow maps runtime child task steps back to workflow plan tasks', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan(),
+      childTaskPlanIndexes: {
+        'child-task-1': 0,
+      },
+    }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-impl-child',
+        assignedRoomAgentId: 'agent-1',
+        taskId: 'child-task-1',
+        stage: 'implementation',
+        nodeName: 'execute',
+        result: '子任务真实执行完成。',
+        completedAt: 40,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+  const cardListStart = html.indexOf('<div class="workflow-flow-task-cards">');
+  const logStart = html.indexOf('<div class="workflow-event-stack">');
+  const flowEnd = html.indexOf('<div class="workflow-task-bubble-side">');
+  const cardListHtml = html.slice(cardListStart, logStart);
+  const logHtml = html.slice(logStart, flowEnd);
+
+  assert.match(cardListHtml, /workflow-flow-task-card-title">实现聊天气泡/);
+  assert.match(logHtml, /子任务真实执行完成。/);
+});
+
+test('task flow keeps workflow planner plan items out of child task cards', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({
+      workflowPlan: createWorkflowPlan({
+        tasks: [
+          {
+            id: 'task-planner-note',
+            title: '整理需求说明',
+            description: '作为 workflow 规划阶段处理，不生成执行子任务。',
+            role: 'planner',
+            agent_id: 'agent-planner',
+            mode: 'parallel',
+            depends_on: [],
+            status: 'completed',
+            progress: 100,
+            result_refs: [],
+          },
+          ...createWorkflowPlan().tasks,
+        ],
+      }),
+    }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-plan',
+        assignedRoomAgentId: 'agent-planner',
+        taskId: 'task-root',
+        stage: 'planning',
+        nodeName: 'planning',
+        result: '规划完成。',
+        completedAt: 20,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [
+    createAgent({ id: 'agent-planner', agent_name: '规划智能体', workflow_role: 'planner' }),
+    createAgent(),
+  ], { compact: true });
+  const cardListStart = html.indexOf('<div class="workflow-flow-task-cards">');
+  const logStart = html.indexOf('<div class="workflow-event-stack">');
+  const cardListHtml = html.slice(cardListStart, logStart);
+
+  assert.match(cardListHtml, /workflow-flow-task-card-title">任务规划/);
+  assert.match(cardListHtml, /workflow-flow-task-card-title">实现聊天气泡/);
+  assert.doesNotMatch(cardListHtml, /workflow-flow-task-card-title">整理需求说明/);
+});
+
 test('task flow renders review and verification as ordered workflow nodes', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({

@@ -13,6 +13,7 @@ export function WorkflowTaskFlow({
   steps,
   artifacts,
   eventMessages = [],
+  childTaskPlanIndexes = {},
   compact = false,
 }: {
   plan: WorkflowPlanJson;
@@ -20,12 +21,13 @@ export function WorkflowTaskFlow({
   steps: WorkflowStep[];
   artifacts: TaskArtifact[];
   eventMessages?: Message[];
+  childTaskPlanIndexes?: Record<string, number>;
   compact?: boolean;
 }) {
   const { t, workflowStageLabel } = useI18n();
   const flowEntries = useMemo(
-    () => buildFlowEntries(plan, agents, steps, artifacts, workflowStageLabel, t),
-    [agents, artifacts, plan, steps, t, workflowStageLabel],
+    () => buildFlowEntries(plan, agents, steps, artifacts, workflowStageLabel, t, childTaskPlanIndexes),
+    [agents, artifacts, childTaskPlanIndexes, plan, steps, t, workflowStageLabel],
   );
   const stagePanels = useMemo(() => buildStagePanels(flowEntries, t), [flowEntries, t]);
   const executorTaskCount = plan.tasks.filter((task) => task.role === 'executor').length;
@@ -458,9 +460,11 @@ function buildFlowEntries(
   artifacts: TaskArtifact[],
   workflowStageLabel: (stage: WorkflowStage) => string,
   t: TranslateFn,
+  childTaskPlanIndexes: Record<string, number> = {},
 ): FlowEntry[] {
   const taskMap = new Map(plan.tasks.map((task) => [task.id, task]));
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
+  const taskIndexMap = new Map(plan.tasks.map((task, index) => [task.id, index]));
   const entries: Array<FlowEntry & { sortKey: number; sequence: number }> = [];
   const planningStep = findRepresentativeStep(steps, ['planning', 'writing_plans']);
   const planningSortKey = planningStep?.completed_at ?? planningStep?.started_at ?? planningStep?.updated_at ?? planningStep?.created_at ?? 0;
@@ -490,7 +494,8 @@ function buildFlowEntries(
   });
 
   for (const [index, task] of plan.tasks.entries()) {
-    const taskSteps = steps.filter((step) => step.task_id === task.id);
+    if (task.role === 'planner') continue;
+    const taskSteps = steps.filter((step) => isStepForPlanTask(step, task, index, taskIndexMap, childTaskPlanIndexes));
     const latestStep = findLatestStep(taskSteps);
     const sortKey = latestStep?.completed_at ?? latestStep?.started_at ?? latestStep?.updated_at ?? latestStep?.created_at ?? index + 1;
     const executorId = latestStep?.assigned_room_agent_id ?? latestStep?.room_agent_id ?? task.agent_id ?? 'codex';
@@ -574,6 +579,20 @@ function findLatestStep(steps: WorkflowStep[]): WorkflowStep | null {
     const right = b.completed_at ?? b.started_at ?? b.updated_at ?? b.created_at ?? 0;
     return right - left;
   })[0] ?? null;
+}
+
+function isStepForPlanTask(
+  step: WorkflowStep,
+  task: WorkflowPlanTaskJson,
+  taskIndex: number,
+  taskIndexMap: Map<string, number>,
+  childTaskPlanIndexes: Record<string, number>,
+): boolean {
+  if (step.task_id === task.id) return true;
+  const mappedIndex = childTaskPlanIndexes[step.task_id];
+  if (mappedIndex !== undefined) return mappedIndex === taskIndex;
+  const directIndex = taskIndexMap.get(step.task_id);
+  return directIndex !== undefined && directIndex === taskIndex;
 }
 
 function flowPhaseForTask(task: WorkflowPlanTaskJson): FlowEntry['phase'] {

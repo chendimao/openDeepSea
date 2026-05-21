@@ -29,6 +29,7 @@ export function WorkflowTaskBubble({
 }) {
   const workflowPlan = useMemo(() => getWorkflowPlan(detail), [detail]);
   const superpowersSummary = useMemo(() => parseSuperpowersSummaryFromGraphState(detail.run.graph_state), [detail.run.graph_state]);
+  const childTaskPlanIndexes = useMemo(() => parseChildTaskPlanIndexesFromGraphState(detail.run.graph_state), [detail.run.graph_state]);
 
   if (!workflowPlan && !superpowersSummary) {
     return null;
@@ -55,6 +56,7 @@ export function WorkflowTaskBubble({
               steps={detail.steps}
               artifacts={detail.artifacts}
               eventMessages={eventMessages}
+              childTaskPlanIndexes={childTaskPlanIndexes}
               compact={compact}
             />
           </div>
@@ -157,6 +159,26 @@ function parseWorkflowPlanFromGraphState(raw: string | null): WorkflowPlanJson |
     return isWorkflowPlanJson(parsed.workflowPlan) ? parsed.workflowPlan : null;
   } catch {
     return null;
+  }
+}
+
+function parseChildTaskPlanIndexesFromGraphState(raw: string | null): Record<string, number> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as { childTaskPlanIndexes?: unknown };
+    if (!parsed.childTaskPlanIndexes || typeof parsed.childTaskPlanIndexes !== 'object' || Array.isArray(parsed.childTaskPlanIndexes)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed.childTaskPlanIndexes)
+        .filter((entry): entry is [string, number] =>
+          typeof entry[0] === 'string' &&
+          Number.isInteger(entry[1]) &&
+          entry[1] >= 0,
+        ),
+    );
+  } catch {
+    return {};
   }
 }
 
