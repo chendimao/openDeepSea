@@ -10,7 +10,7 @@ const { projectRepo } = await import('./projects.js');
 const { roomRepo } = await import('./rooms.js');
 const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
 
-test('workflowDefinitionRepo creates built-in default definition once', () => {
+test('workflowDefinitionRepo creates only Superpowers as built-in default definition', () => {
   const first = workflowDefinitionRepo.ensureBuiltInDefinitions();
   const second = workflowDefinitionRepo.ensureBuiltInDefinitions();
   const definitions = workflowDefinitionRepo.list();
@@ -18,10 +18,14 @@ test('workflowDefinitionRepo creates built-in default definition once', () => {
   assert.equal(first.id, second.id);
   assert.equal(first.status, 'published');
   assert.equal(first.scope, 'system');
-  assert.equal(first.builtin_key, 'default-langgraph');
-  assert.ok(first.definition.nodes.some((node) => node.type === 'planning' && node.label === '规划'));
+  assert.equal(first.builtin_key, 'superpowers-development');
+  assert.ok(first.definition.nodes.some((node) => node.type === 'brainstorming'));
+  assert.ok(first.definition.nodes.some((node) => node.type === 'tdd_execute'));
   assert.ok(first.definition.nodes.some((node) => node.type === 'context' && node.label === '上下文'));
-  assert.ok(definitions.some((definition) => definition.builtin_key === 'analysis-document'));
+  assert.deepEqual(
+    definitions.filter((definition) => definition.builtin_key).map((definition) => definition.builtin_key),
+    ['superpowers-development'],
+  );
 });
 
 test('workflowDefinitionRepo creates built-in Superpowers development definition', () => {
@@ -170,13 +174,16 @@ test('workflowDefinitionRepo lists room-visible definitions by scope', () => {
   const visible = workflowDefinitionRepo.listVisibleForRoom(room.id);
   const visibleIds = new Set(visible.map((definition) => definition.id));
 
-  assert.ok(visible.some((definition) => definition.builtin_key === 'default-langgraph'));
+  assert.deepEqual(
+    visible.filter((definition) => definition.builtin_key).map((definition) => definition.builtin_key),
+    ['superpowers-development'],
+  );
   assert.ok(visibleIds.has(projectDefinition.id));
   assert.ok(visibleIds.has(roomDefinition.id));
   assert.equal(visibleIds.has(hiddenDefinition.id), false);
 });
 
-test('workflowDefinitionRepo list always includes built-in default definition', () => {
+test('workflowDefinitionRepo list always includes built-in Superpowers definition', () => {
   const project = projectRepo.create({
     name: 'List Default Project',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-definition-list-default-')),
@@ -193,7 +200,9 @@ test('workflowDefinitionRepo list always includes built-in default definition', 
   const definitions = workflowDefinitionRepo.list();
 
   assert.ok(definitions.some((definition) => definition.id === projectDefinition.id));
-  assert.ok(definitions.some((definition) => definition.builtin_key === 'default-langgraph'));
+  assert.ok(definitions.some((definition) => definition.builtin_key === 'superpowers-development'));
+  assert.equal(definitions.some((definition) => definition.builtin_key === 'default-langgraph'), false);
+  assert.equal(definitions.some((definition) => definition.builtin_key === 'analysis-document'), false);
 });
 
 test('workflowDefinitionRepo supports user system drafts and normalizes scope id', () => {
@@ -262,7 +271,7 @@ test('workflowDefinitionRepo duplicates definitions into independent user drafts
   assert.equal(builtInDuplicate.scope, builtIn.scope);
   assert.equal(builtInDuplicate.scope_id, builtIn.scope_id);
   assert.equal(builtInDuplicate.builtin_key, null);
-  assert.equal(workflowDefinitionRepo.get(builtIn.id)?.builtin_key, 'default-langgraph');
+  assert.equal(workflowDefinitionRepo.get(builtIn.id)?.builtin_key, 'superpowers-development');
 });
 
 test('workflowDefinitionRepo archives published definitions and deletes only drafts', () => {

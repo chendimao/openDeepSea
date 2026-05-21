@@ -2186,7 +2186,9 @@ function inferPlanTaskDomain(planTask: ParsedPlanTask): PlanTaskDomain {
     '交付总结',
     '验证文档',
   ]);
-  if (documentation > 0 && documentation >= frontend && documentation >= backend) return 'documentation';
+  if (documentation > 0 && (documentation > frontend && documentation > backend || (frontend === 0 && backend === 0))) {
+    return 'documentation';
+  }
   if (frontend === 0 && backend === 0) return null;
   return frontend > backend ? 'frontend' : 'backend';
 }

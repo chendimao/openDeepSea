@@ -510,6 +510,55 @@ test('Superpowers review stages run current room reviewer agents instead of auto
   );
 });
 
+test('Superpowers review failure synchronizes workflow run as blocked', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-review-block-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Review Block', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Review Block Room' });
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  roomAgentRepo.setCapabilitiesAndRuntime(reviewer.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Block workflow run when Superpowers review fails',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    plan: createRunnableSuperpowersPlan(task.title),
+    tddEvidence: [
+      { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
+      { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
+    ],
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, {
+      codeReviewOutput: JSON.stringify({
+        verdict: 'failed',
+        findings: ['Implementation cannot be reviewed safely.'],
+        requiredFixes: ['Align implementation with plan.'],
+        riskLevel: 'high',
+      }),
+    }),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const steps = listRawSteps(run.id);
+
+  assert.equal(latest.status, 'blocked');
+  assert.equal(latest.current_stage, 'code_review');
+  assert.match(latest.error ?? '', /spec compliance review failed/i);
+  assert.equal(state?.status, 'blocked');
+  assert.equal(state?.superpowersPhase, 'spec_compliance_review');
+  assert.equal(steps.find((step) => step.node_name === 'spec_compliance_review')?.status, 'failed');
+  assert.equal(steps.filter((step) => step.node_name === 'tdd_execute').length, 1);
+});
+
 test('Superpowers actual runtime records fresh verification evidence and default finish branch decision after verify succeeds', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-verify-evidence-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -1140,7 +1189,7 @@ test('startGraphWorkflow keeps Superpowers workflow for analysis-only tasks', as
   assert.equal(snapshot.supervisorDecision, undefined);
 });
 
-test('startGraphWorkflow ignores high-confidence development workflow selection for analysis-only tasks', async () => {
+test('startGraphWorkflow keeps Superpowers workflow even for analysis-only tasks', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-analysis-override-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Analysis Intent Override', path: projectPath });
@@ -1166,7 +1215,7 @@ test('startGraphWorkflow ignores high-confidence development workflow selection 
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
-  assert.notEqual(run.workflow_definition_id, defaultDefinition.id);
+  assert.equal(run.workflow_definition_id, defaultDefinition.id);
   assertSuperpowersWorkflowRun(run);
   assert.doesNotMatch(run.workflow_definition_snapshot ?? '', /方案文档闭环/);
   assert.equal(snapshot.supervisorDecision, undefined);
@@ -2831,7 +2880,7 @@ function createTestWorkflowDefinition(): WorkflowDefinitionGraph {
 function createCompletedAgentRun(
   roomId: string,
   input: RespondAsAgentInput,
-  options: { includeTddEvidence?: boolean } = {},
+  options: { includeTddEvidence?: boolean; codeReviewOutput?: string } = {},
 ) {
   const content = outputForStage(input.workflowStage, options);
   const run = agentRunRepo.create({
@@ -2859,9 +2908,10 @@ function createCompletedAgentRun(
 
 function outputForStage(
   stage: WorkflowStage | null | undefined,
-  options: { includeTddEvidence?: boolean } = {},
+  options: { includeTddEvidence?: boolean; codeReviewOutput?: string } = {},
 ): string {
   if (stage === 'code_review') {
+    if (options.codeReviewOutput) return options.codeReviewOutput;
     return JSON.stringify({
       verdict: 'pass',
       findings: [],

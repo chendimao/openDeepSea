@@ -169,7 +169,9 @@ function agentCanWriteTaskScope(agent: RoomAgent, scopeWrite: string[]): boolean
     ...agent.acp_writable_dirs,
   ];
   if (writableScopes.length === 0) return false;
-  return pathScopeWrite.every((scope) =>
+  const boundaryScopeWrite = pathScopeWrite.filter((scope) => normalizePath(scope) !== '');
+  if (boundaryScopeWrite.length === 0) return true;
+  return boundaryScopeWrite.every((scope) =>
     writableScopes.some((writable) => pathMatchesScope(scope, writable)),
   );
 }
@@ -236,7 +238,9 @@ function inferTaskDomain(task: CoordinatorWorkflowTask): TaskDomain {
     '交付总结',
     '验证文档',
   ]);
-  if (documentation > 0 && documentation >= frontend && documentation >= backend) return 'documentation';
+  if (documentation > 0 && (documentation > frontend && documentation > backend || (frontend === 0 && backend === 0))) {
+    return 'documentation';
+  }
   if (frontend === 0 && backend === 0) return null;
   return frontend > backend ? 'frontend' : 'backend';
 }

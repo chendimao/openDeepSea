@@ -984,10 +984,23 @@ async function runSuperpowersExecutionNode(
     }
 
     const rawNextState = await callSuperpowersExecutionNode(nodeToRun, state, runtimeGraph);
-    return normalizeSuperpowersReviewState({
+    const nextState = normalizeSuperpowersReviewState({
       ...rawNextState,
       currentNode: 'review',
     }, nodeToRun);
+    const blocked = nextState.status === 'blocked';
+    const failed = nextState.status === 'failed';
+    if (blocked || failed) {
+      const context = tools.readWorkflowContext(state.workflowRunId);
+      const updatedRun = tools.updateRun(context.run.id, {
+        status: blocked ? 'blocked' : 'failed',
+        current_stage: 'code_review',
+        error: nextState.error,
+      });
+      if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+      tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+    }
+    return nextState;
   }
 
   const context = tools.readWorkflowContext(state.workflowRunId);

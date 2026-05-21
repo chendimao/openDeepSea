@@ -10,8 +10,6 @@ import type {
   WorkflowDefinitionStatus,
 } from '../types.js';
 
-const BUILTIN_DEFAULT_KEY = 'default-langgraph';
-const BUILTIN_ANALYSIS_DOCUMENT_KEY = 'analysis-document';
 const BUILTIN_SUPERPOWERS_KEY = 'superpowers-development';
 
 const ALLOWED_NODE_TYPES = new Set<WorkflowDefinitionNodeType>([
@@ -35,48 +33,6 @@ const ALLOWED_NODE_TYPES = new Set<WorkflowDefinitionNodeType>([
   'acceptance',
   'memory',
 ]);
-
-const DEFAULT_DEFINITION: WorkflowDefinitionGraph = {
-  nodes: [
-    { id: 'context', type: 'context', label: '上下文', stage: 'analysis', position: { x: 0, y: 80 } },
-    { id: 'planning', type: 'planning', label: '规划', stage: 'planning', role: 'planner', position: { x: 220, y: 80 } },
-    { id: 'approval', type: 'approval_gate', label: '审批', stage: 'planning', position: { x: 440, y: 80 } },
-    { id: 'dispatch', type: 'dispatch', label: '派发', stage: 'assignment', role: 'coordinator', position: { x: 660, y: 80 } },
-    { id: 'execute', type: 'execute', label: '执行', stage: 'implementation', role: 'executor', position: { x: 880, y: 80 } },
-    { id: 'review', type: 'review', label: '审查', stage: 'code_review', role: 'reviewer', position: { x: 1100, y: 80 } },
-    { id: 'repair_decision', type: 'repair_decision', label: '修复决策', stage: 'assignment', role: 'coordinator', position: { x: 1100, y: 240 } },
-    { id: 'verify', type: 'verify', label: '验证', stage: 'code_review', position: { x: 1320, y: 80 } },
-    { id: 'acceptance', type: 'acceptance', label: '验收', stage: 'acceptance', role: 'acceptor', position: { x: 1540, y: 80 } },
-    { id: 'memory', type: 'memory', label: '记忆', stage: 'acceptance', position: { x: 1760, y: 80 } },
-  ],
-  edges: [
-    { from: 'context', to: 'planning' },
-    { from: 'planning', to: 'approval' },
-    { from: 'approval', to: 'dispatch', condition: 'approved' },
-    { from: 'dispatch', to: 'execute' },
-    { from: 'execute', to: 'execute', condition: 'has_runnable_child' },
-    { from: 'execute', to: 'review', condition: 'done' },
-    { from: 'review', to: 'repair_decision', condition: 'changes_requested' },
-    { from: 'review', to: 'verify', condition: 'pass' },
-    { from: 'repair_decision', to: 'execute' },
-    { from: 'verify', to: 'acceptance' },
-    { from: 'acceptance', to: 'memory', condition: 'completed' },
-  ],
-};
-
-const ANALYSIS_DOCUMENT_DEFINITION: WorkflowDefinitionGraph = {
-  nodes: [
-    { id: 'context', type: 'context', label: '上下文', stage: 'analysis', position: { x: 0, y: 80 } },
-    { id: 'planning', type: 'planning', label: '方案整理', stage: 'planning', role: 'planner', position: { x: 220, y: 80 } },
-    { id: 'acceptance', type: 'acceptance', label: '方案验收', stage: 'acceptance', role: 'acceptor', position: { x: 440, y: 80 } },
-    { id: 'memory', type: 'memory', label: '记忆', stage: 'acceptance', position: { x: 660, y: 80 } },
-  ],
-  edges: [
-    { from: 'context', to: 'planning' },
-    { from: 'planning', to: 'acceptance' },
-    { from: 'acceptance', to: 'memory', condition: 'completed' },
-  ],
-};
 
 const SUPERPOWERS_DEFINITION: WorkflowDefinitionGraph = {
   metadata: {
@@ -288,25 +244,12 @@ function ensureBuiltInDefinition(
 
 export const workflowDefinitionRepo = {
   ensureBuiltInDefinitions(): WorkflowDefinition {
-    const defaultDefinition = ensureBuiltInDefinition(
-      BUILTIN_DEFAULT_KEY,
-      '默认开发闭环',
-      '内置 LangGraph 开发闭环：上下文、规划、审批、派发、执行、审查、验证、验收和记忆。',
-      this.validateDefinition(DEFAULT_DEFINITION),
-    );
-    ensureBuiltInDefinition(
-      BUILTIN_ANALYSIS_DOCUMENT_KEY,
-      '方案文档闭环',
-      '内置轻量方案闭环：上下文、方案整理、方案验收和记忆，不执行代码修改或代码审查。',
-      this.validateDefinition(ANALYSIS_DOCUMENT_DEFINITION),
-    );
-    ensureBuiltInDefinition(
+    return ensureBuiltInDefinition(
       BUILTIN_SUPERPOWERS_KEY,
       'Superpowers 开发闭环',
       '内置 Superpowers 开发闭环：需求澄清、规格自审、工作区隔离、计划、审批、派发、TDD 执行、审查、验证、分支收口、验收和记忆。',
       this.validateDefinition(SUPERPOWERS_DEFINITION),
     );
-    return defaultDefinition;
   },
 
   get(id: string): WorkflowDefinition | undefined {
