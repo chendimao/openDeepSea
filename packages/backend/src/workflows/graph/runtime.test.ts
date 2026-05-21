@@ -2034,9 +2034,23 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
   const detail = workflowRepo.detail(run.id);
   const childTasks = taskRepo.listChildren(task.id);
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
+  const assignmentArtifact = detail?.artifacts.find((artifact) => artifact.artifact_type === 'assignment');
+  const assignmentMetadata = assignmentArtifact?.metadata
+    ? JSON.parse(assignmentArtifact.metadata) as {
+      assignments?: Array<{
+        taskTitle?: string;
+        taskProfile?: { taskType?: string; domains?: string[] };
+        assignmentReason?: string;
+      }>;
+    }
+    : null;
 
   assert.ok(['implementation', 'review', 'verification', 'acceptance'].includes(detail?.run.current_stage ?? ''));
-  assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'assignment'));
+  assert.ok(assignmentArtifact);
+  assert.equal(assignmentMetadata?.assignments?.[0]?.taskTitle, 'Implement dispatch');
+  assert.equal(assignmentMetadata?.assignments?.[0]?.taskProfile?.taskType, 'backend_feature');
+  assert.deepEqual(assignmentMetadata?.assignments?.[0]?.taskProfile?.domains, ['backend']);
+  assert.match(assignmentMetadata?.assignments?.[0]?.assignmentReason ?? '', /Selected|Joined|fallback/);
   assert.equal(childTasks.length, 1);
   assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
   assert.equal(graphState?.childTaskIds.length, 1);
@@ -2106,6 +2120,166 @@ test('graph dispatch assigns child tasks by frontend and backend scope hints', a
   const children = taskRepo.listChildren(task.id);
   assert.equal(children.find((child) => child.title === 'Update React page')?.assigned_agent_id, frontend.id);
   assert.equal(children.find((child) => child.title === 'Update API route')?.assigned_agent_id, backend.id);
+});
+
+test('graph dispatch joins global frontend agent for frontend UI task with empty scope', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-global-frontend-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Global Frontend', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Global Frontend Room' });
+  roomAgentRepo.ensureDefaultPlanner(room.id);
+  const backend = roomAgentRepo.ensureBuiltInAgent(room.id, 'backend-executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '最近群聊指的是最近访问过的群聊',
+    description: '任务目标是在侧边栏最近项目下方展示当前用户最近访问过的群聊，补充 i18n 文案、空态和跳转高亮处理。',
+  });
+
+  await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: task.title,
+      summary: '在侧边栏展示最近访问过的群聊',
+      assumptions: [],
+      tasks: [
+        {
+          title: '目标是在侧边栏最近项目下方展示当前用户最近访问过',
+          description: '在 AppShell/ProjectSidebar 读取并按 visitedAt 倒序展示最近群聊，RoomPage 进入群聊时记录访问，补充 i18n 文案、空态和跳转高亮处理。',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['侧边栏最近群聊按访问时间倒序展示'],
+          scopeRead: [],
+          scopeWrite: [],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const agents = roomAgentRepo.listByRoom(room.id);
+  const frontend = agents.find((agent) => agent.agent_id === 'frontend-executor');
+  const children = taskRepo.listChildren(task.id);
+
+  assert.ok(frontend);
+  assert.notEqual(children[0]?.assigned_agent_id, backend.id);
+  assert.equal(children[0]?.assigned_agent_id, frontend.id);
+});
+
+test('graph dispatch joins global writer for presentation task instead of backend executor', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-presentation-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Presentation', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Presentation Room' });
+  roomAgentRepo.ensureDefaultPlanner(room.id);
+  const backend = roomAgentRepo.ensureBuiltInAgent(room.id, 'backend-executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '制作一个项目汇报 PPT',
+    description: '整理项目目标、核心功能、截图说明和验收结论，输出演示文稿。',
+  });
+
+  await startGraphWorkflow(task.id, {
+    planner: async () => ({
+      goal: task.title,
+      summary: '制作项目汇报演示文稿',
+      assumptions: [],
+      tasks: [
+        {
+          title: '制作项目汇报 PPT',
+          description: '整理项目目标、核心功能、截图说明和验收结论，输出演示文稿。',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['PPT 可以用于产品汇报'],
+          scopeRead: [],
+          scopeWrite: [],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const agents = roomAgentRepo.listByRoom(room.id);
+  const writer = agents.find((agent) => agent.agent_id === 'technical-writer');
+  const children = taskRepo.listChildren(task.id);
+
+  assert.ok(writer);
+  assert.notEqual(children[0]?.assigned_agent_id, backend.id);
+  assert.equal(children[0]?.assigned_agent_id, writer.id);
+});
+
+test('graph dispatch ignores supervisor backend hint for presentation task profile', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-presentation-hint-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Presentation Hint', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Presentation Hint Room' });
+  roomAgentRepo.ensureDefaultPlanner(room.id);
+  const backend = roomAgentRepo.ensureBuiltInAgent(room.id, 'backend-executor');
+  const writer = roomAgentRepo.ensureBuiltInAgent(room.id, 'technical-writer');
+  const workflow = createPublishedRoomWorkflow(room.id, 'Presentation Hint Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '制作一个项目汇报 PPT',
+    description: '整理项目目标、核心功能、截图说明和验收结论，输出演示文稿。',
+  });
+
+  await startGraphWorkflow(task.id, {
+    supervisor: async () => ({
+      mode: 'select_existing_workflow',
+      workflowDefinitionId: workflow.id,
+      confidence: 0.92,
+      reason: 'Supervisor incorrectly suggests backend executor.',
+      assignments: [{
+        stage: 'implementation',
+        role: 'executor',
+        agentId: backend.id,
+        reason: 'Incorrect backend hint for presentation task.',
+      }],
+      fallbackMode: 'default_workflow',
+    }),
+    planner: async () => ({
+      goal: task.title,
+      summary: '制作项目汇报演示文稿',
+      assumptions: [],
+      tasks: [
+        {
+          title: '制作项目汇报 PPT',
+          description: '整理项目目标、核心功能、截图说明和验收结论，输出演示文稿。',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['PPT 可以用于产品汇报'],
+          scopeRead: [],
+          scopeWrite: [],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  const child = taskRepo.listChildren(task.id)[0];
+  assert.notEqual(child?.assigned_agent_id, backend.id);
+  assert.equal(child?.assigned_agent_id, writer.id);
 });
 
 test('no-approval graph invites built-in executor instead of selecting non-ACP executor', async () => {

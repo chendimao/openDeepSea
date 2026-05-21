@@ -8,7 +8,10 @@ import { resolveWorkflowExecutor } from '../role-resolver.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
 import { buildCoordinatorWorkflowPlan, deriveCoordinatorPlanFromProductManagerBackground } from './coordinator-plan.js';
 import { selectCoordinatorAgentForTask, type CoordinatorWorkflowTask } from './coordinator-agents.js';
+import { inferTaskProfile, type TaskProfile } from '../task-profile.js';
+import { getBuiltInAgentTemplate } from '../../crew-templates.js';
 import type {
+  Agent,
   RoomAgent,
   AgentRun,
   Task,
@@ -232,34 +235,35 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const childTaskIds: string[] = [];
       const childTaskPlanIndexes: Record<string, number> = {};
       const workflowPlanAssignments: Array<{ taskId: string; agentId: string | null; assignmentReason?: string }> = [];
+      const assignmentTraces: AssignmentTrace[] = [];
       const createdChildren: Task[] = [];
       let assignmentAgents = context.agents;
       const implementationPlanTasks = state.plan.tasks
         .map((planTask, originalIndex) => ({ planTask, originalIndex }))
         .filter(({ planTask }) => isImplementationPlanTask(planTask));
       for (const { planTask } of implementationPlanTasks) {
-        const coordinatorSelection = selectCoordinatorAgentForTask({
-          task: coordinatorTaskFromPlanTask(planTask),
-          agents: assignmentAgents,
-        });
-        if (coordinatorSelection.agent) continue;
-        const provisioning = ensureWorkflowAgentsForRun({
+        const selection = selectOrJoinAgentForPlanTask({
+          tools,
           roomId: context.room.id,
-          agents: assignmentAgents,
-          planTasks: [planTask],
+          roomAgents: assignmentAgents,
+          planTask,
         });
-        assignmentAgents = provisioning.agents;
-        broadcastJoinedAgents(tools, context.room.id, provisioning.joinedAgents);
+        assignmentAgents = selection.agents;
+        broadcastJoinedAgents(tools, context.room.id, selection.joinedAgents);
       }
       const skippedAssignments: Array<{ index: number; reason: string }> = [];
       const blockedAssignments: Array<{ planTask: ParsedPlanTask; reason: string }> = [];
       for (const item of implementationPlanTasks) {
         const { planTask, originalIndex } = item;
-        const coordinatorSelection = selectCoordinatorAgentForTask({
-          task: coordinatorTaskFromPlanTask(planTask),
-          agents: assignmentAgents,
+        let selection = selectOrJoinAgentForPlanTask({
+          tools,
+          roomId: context.room.id,
+          roomAgents: assignmentAgents,
+          planTask,
         });
-        let resolved = coordinatorSelection.agent ?? tools.selectAgentForPlanTask(planTask, assignmentAgents);
+        assignmentAgents = selection.agents;
+        broadcastJoinedAgents(tools, context.room.id, selection.joinedAgents);
+        let resolved = selection.agent;
         if (!resolved && planTask.suggestedRole === 'executor') {
           const provisioning = ensureWorkflowAgentsForRun({
             roomId: context.room.id,
@@ -268,10 +272,23 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           });
           assignmentAgents = provisioning.agents;
           broadcastJoinedAgents(tools, context.room.id, provisioning.joinedAgents);
-          resolved = tools.selectAgentForPlanTask(planTask, assignmentAgents);
+          selection = selectOrJoinAgentForPlanTask({
+            tools,
+            roomId: context.room.id,
+            roomAgents: assignmentAgents,
+            planTask,
+          });
+          assignmentAgents = selection.agents;
+          broadcastJoinedAgents(tools, context.room.id, selection.joinedAgents);
+          resolved = selection.agent;
         }
-        const assigned = selectAssignmentHintForPlanTask(state, originalIndex, assignmentAgents, tools, resolved)
-          ?? resolved;
+        const hintedAssignment = selectAssignmentHintForPlanTask(state, originalIndex, assignmentAgents, tools, resolved);
+        const assigned = hintedAssignment ?? resolved;
+        const assignmentReason = assigned
+          ? hintedAssignment
+            ? `Selected supervisor assignment hint ${hintedAssignment.agent_name || hintedAssignment.agent_id}.`
+            : selection.reason
+          : `No matching in-room or global agent; suggested ${selection.templateId ?? 'workflow executor'}.`;
         if (!assigned) {
           const reason = buildExecutorAssignmentDiagnostic(planTask, assignmentAgents);
           if (isOptionalPlanTask(planTask)) {
@@ -281,6 +298,15 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
               agentId: null,
               assignmentReason: reason,
             });
+            assignmentTraces.push(buildAssignmentTrace({
+              planTask,
+              originalIndex,
+              childTaskId: null,
+              assignedAgent: null,
+              selection,
+              assignmentReason: reason,
+              source: 'skipped',
+            }));
             recordEventSafely(tools, context, {
               eventType: 'workflow_stage_changed',
               content: `条件子任务「${planTask.title}」未找到单一可覆盖写入范围的执行智能体，已标记为跳过。`,
@@ -312,10 +338,17 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         workflowPlanAssignments.push({
           taskId: state.workflowPlan?.tasks[originalIndex]?.id ?? '',
           agentId: assigned?.id ?? null,
-          assignmentReason: assigned
-            ? coordinatorSelection.assignmentReason
-            : `No matching in-room agent; suggested ${coordinatorSelection.templateId ?? 'workflow executor'}.`,
+          assignmentReason,
         });
+        assignmentTraces.push(buildAssignmentTrace({
+          planTask,
+          originalIndex,
+          childTaskId: child.id,
+          assignedAgent: assigned ?? null,
+          selection,
+          assignmentReason,
+          source: hintedAssignment ? 'supervisor_hint' : selection.joinedAgents.length > 0 ? 'global' : assigned ? 'room' : 'unassigned',
+        }));
       }
 
       if (blockedAssignments.length > 0) {
@@ -376,6 +409,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         metadata: {
           taskCount: childTaskIds.length,
           childTaskIds,
+          assignments: assignmentTraces,
         },
       });
       createContextEntrySafely(tools, context, {
@@ -1817,6 +1851,50 @@ function selectAssignmentHintForPlanTask(
   return planTaskHasDomainMismatch(planTask, runtimeEligibleHint, resolvedAgent) ? null : runtimeEligibleHint;
 }
 
+type AssignmentTraceSource = 'room' | 'global' | 'supervisor_hint' | 'skipped' | 'unassigned';
+
+interface AssignmentTrace {
+  taskIndex: number;
+  taskTitle: string;
+  childTaskId: string | null;
+  assignedAgentId: string | null;
+  assignedGlobalAgentId: string | null;
+  assignedAgentName: string | null;
+  assignmentReason: string;
+  source: AssignmentTraceSource;
+  suggestedTemplateId: string | null;
+  joinedAgentIds: string[];
+  scopeRead: string[];
+  scopeWrite: string[];
+  taskProfile: Pick<TaskProfile, 'taskType' | 'domains' | 'artifactTypes' | 'workflowTemplate' | 'requiredCapabilities' | 'recommendedTemplateId' | 'confidence' | 'reasons'>;
+}
+
+function buildAssignmentTrace(input: {
+  planTask: ParsedPlanTask;
+  originalIndex: number;
+  childTaskId: string | null;
+  assignedAgent: RoomAgent | null;
+  selection: ReturnType<typeof selectOrJoinAgentForPlanTask>;
+  assignmentReason: string;
+  source: AssignmentTraceSource;
+}): AssignmentTrace {
+  return {
+    taskIndex: input.originalIndex,
+    taskTitle: input.planTask.title,
+    childTaskId: input.childTaskId,
+    assignedAgentId: input.assignedAgent?.id ?? null,
+    assignedGlobalAgentId: input.assignedAgent?.global_agent_id ?? null,
+    assignedAgentName: input.assignedAgent?.agent_name || input.assignedAgent?.agent_id || null,
+    assignmentReason: input.assignmentReason,
+    source: input.source,
+    suggestedTemplateId: input.selection.templateId,
+    joinedAgentIds: input.selection.joinedAgents.map((agent) => agent.id),
+    scopeRead: input.planTask.scopeRead,
+    scopeWrite: input.planTask.scopeWrite,
+    taskProfile: taskProfileForPlanTask(input.planTask),
+  };
+}
+
 function coordinatorTaskFromPlanTask(planTask: ParsedPlanTask): CoordinatorWorkflowTask {
   return {
     role: planTask.suggestedRole === 'reviewer' || planTask.suggestedRole === 'acceptor'
@@ -1828,6 +1906,166 @@ function coordinatorTaskFromPlanTask(planTask: ParsedPlanTask): CoordinatorWorkf
     scope_write: planTask.scopeWrite,
     required_capabilities: inferRequiredCapabilitiesForPlanTask(planTask),
   };
+}
+
+function taskProfileForPlanTask(planTask: ParsedPlanTask): TaskProfile {
+  return inferTaskProfile({
+    title: planTask.title,
+    description: planTask.description,
+    scopeRead: planTask.scopeRead,
+    scopeWrite: planTask.scopeWrite,
+    acceptance: planTask.acceptance,
+  });
+}
+
+function selectOrJoinAgentForPlanTask(input: {
+  tools: GraphTools;
+  roomId: string;
+  roomAgents: RoomAgent[];
+  planTask: ParsedPlanTask;
+}): {
+  agent: RoomAgent | null;
+  agents: RoomAgent[];
+  joinedAgents: RoomAgent[];
+  reason: string;
+  templateId: string | null;
+} {
+  const coordinatorTask = coordinatorTaskFromPlanTask(input.planTask);
+  const profile = taskProfileForPlanTask(input.planTask);
+  const profileCompatibleRoomAgents = profile.requiredCapabilities.length > 0
+    ? input.roomAgents.filter((agent) => agentMatchesTaskProfile(agent, profile.requiredCapabilities))
+    : input.roomAgents;
+  const inRoomSelection = selectCoordinatorAgentForTask({
+    task: coordinatorTask,
+    agents: profileCompatibleRoomAgents,
+  });
+  const inRoomFallback = inRoomSelection.agent ?? input.tools.selectAgentForPlanTask(input.planTask, profileCompatibleRoomAgents);
+  if (inRoomFallback && agentMatchesTaskProfile(inRoomFallback, profile.requiredCapabilities)) {
+    return {
+      agent: inRoomFallback,
+      agents: input.roomAgents,
+      joinedAgents: [],
+      reason: inRoomSelection.agent
+        ? inRoomSelection.assignmentReason
+        : `Selected in-room fallback agent ${inRoomFallback.agent_name || inRoomFallback.agent_id}.`,
+      templateId: inRoomSelection.templateId,
+    };
+  }
+
+  const existingAgentIds = new Set(input.roomAgents.map((agent) => agent.global_agent_id ?? agent.agent_id));
+  const globalCandidates = input.tools.listGlobalAgents()
+    .filter((agent) => !existingAgentIds.has(agent.id) && !existingAgentIds.has(agent.agent_id))
+    .map((agent) => roomAgentCandidateFromGlobalAgent(input.roomId, agent))
+    .filter((agent) => agentMatchesTaskProfile(agent, profile.requiredCapabilities));
+  const globalSelection = selectCoordinatorAgentForTask({
+    task: coordinatorTask,
+    agents: globalCandidates,
+  });
+  if (globalSelection.agent) {
+    const globalAgentId = globalSelection.agent.global_agent_id;
+    if (globalAgentId) {
+      const joined = input.tools.joinGlobalAgentToRoom(input.roomId, globalAgentId);
+      return {
+        agent: joined,
+        agents: replaceOrAppendRoomAgent(input.roomAgents, joined),
+        joinedAgents: [joined],
+        reason: `Joined global agent ${joined.agent_name || joined.agent_id}; ${globalSelection.assignmentReason}`,
+        templateId: globalSelection.templateId,
+      };
+    }
+  }
+
+  if (inRoomFallback) {
+    return {
+      agent: null,
+      agents: input.roomAgents,
+      joinedAgents: [],
+      reason: `In-room agent ${inRoomFallback.agent_name || inRoomFallback.agent_id} does not satisfy task profile capabilities: ${profile.requiredCapabilities.join(', ') || 'none'}.`,
+      templateId: globalSelection.templateId ?? inRoomSelection.templateId,
+    };
+  }
+
+  return {
+    agent: null,
+    agents: input.roomAgents,
+    joinedAgents: [],
+    reason: globalSelection.assignmentReason,
+    templateId: globalSelection.templateId ?? inRoomSelection.templateId,
+  };
+}
+
+function roomAgentCandidateFromGlobalAgent(roomId: string, agent: Agent): RoomAgent {
+  const template = agent.builtin_key ? getBuiltInAgentTemplate(agent.builtin_key) : undefined;
+  return {
+    id: `global:${agent.id}`,
+    room_id: roomId,
+    global_agent_id: agent.id,
+    agent_id: agent.agent_id,
+    agent_name: agent.name,
+    agent_role: agent.description,
+    preferred_user_name: agent.preferred_user_name,
+    personality: agent.personality,
+    rules: agent.rules,
+    responsibilities: agent.responsibilities,
+    workflow_role: template?.workflow_role ?? inferGlobalAgentWorkflowRole(agent),
+    joined_at: agent.created_at,
+    left_at: null,
+    acp_enabled: agent.default_acp_backend ? 1 : 0,
+    acp_backend: agent.default_acp_backend,
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: agent.default_acp_permission_mode,
+    acp_writable_dirs: agent.default_workspace_policy.write,
+    capabilities: template?.capabilities ?? [],
+    default_runtime: agent.default_acp_backend ? 'acp' : 'none',
+    runtime_backend: agent.default_runtime_backend,
+    tool_policy: agent.default_tool_policy,
+    workspace_policy: agent.default_workspace_policy,
+    memory_scope: agent.default_memory_scope,
+    memory_max_context_chars: null,
+  };
+}
+
+function inferGlobalAgentWorkflowRole(agent: Agent): RoomAgent['workflow_role'] {
+  const text = [
+    agent.agent_id,
+    agent.name,
+    agent.description ?? '',
+    agent.responsibilities ?? '',
+  ].join(' ').toLowerCase();
+  if (text.includes('planner') || text.includes('规划')) return 'planner';
+  if (text.includes('reviewer') || text.includes('review') || text.includes('审查')) return 'reviewer';
+  if (text.includes('acceptor') || text.includes('acceptance') || text.includes('验收')) return 'acceptor';
+  return 'executor';
+}
+
+function agentMatchesTaskProfile(agent: RoomAgent, requiredCapabilities: string[]): boolean {
+  if (requiredCapabilities.length === 0) return true;
+  const text = [
+    agent.agent_id,
+    agent.agent_name,
+    agent.agent_role ?? '',
+    agent.responsibilities ?? '',
+    ...agent.capabilities,
+  ].join(' ').toLowerCase();
+  return requiredCapabilities.every((capability) => {
+    const normalized = capability.toLowerCase();
+    if (normalized === 'ui') return text.includes('ui') || text.includes('ux') || text.includes('frontend');
+    if (normalized === 'document') return text.includes('document') || text.includes('writer') || text.includes('文档');
+    return text.includes(normalized);
+  });
+}
+
+function replaceOrAppendRoomAgent(agents: RoomAgent[], agent: RoomAgent): RoomAgent[] {
+  const index = agents.findIndex((item) =>
+    item.id === agent.id ||
+    item.global_agent_id === agent.global_agent_id ||
+    item.agent_id === agent.agent_id,
+  );
+  if (index < 0) return [...agents, agent];
+  const next = [...agents];
+  next[index] = agent;
+  return next;
 }
 
 function isImplementationPlanTask(planTask: ParsedPlanTask): boolean {

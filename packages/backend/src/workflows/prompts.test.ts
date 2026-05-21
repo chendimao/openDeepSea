@@ -68,6 +68,19 @@ test('buildStagePrompt uses analysis-document acceptance prompt from workflow ki
   assert.doesNotMatch(prompt, /开发闭环的功能验收智能体/);
 });
 
+test('planning prompt instructs task profiling before workflow template selection', () => {
+  const prompt = buildStagePrompt('planning', basePromptContext());
+
+  assert.match(prompt, /先判断任务类型/);
+  assert.match(prompt, /workflow template|workflowTemplate/);
+  assert.match(prompt, /前端 UI|前端\/UI/);
+  assert.match(prompt, /packages\/frontend/);
+  assert.match(prompt, /packages\/backend/);
+  assert.match(prompt, /PPT|演示文稿/);
+  assert.match(prompt, /不要.*前后端开发模板/);
+  assert.match(prompt, /scopeWrite 为空只能用于只读|scopeWrite.*只读/);
+});
+
 function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
   return {
     projectName: 'Project',

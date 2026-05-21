@@ -6,6 +6,7 @@ import { memoryRepo } from '../../repos/memory.js';
 import { messageRepo } from '../../repos/messages.js';
 import { projectRepo } from '../../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
+import { agentRepo } from '../../repos/agents.js';
 import { settingsRepo } from '../../repos/settings.js';
 import { formatSkillPrompt } from '../../skills/prompt.js';
 import { selectSkills } from '../../skills/selector.js';
@@ -16,6 +17,7 @@ import { recordTaskEvent } from '../../task-conversation.js';
 import type {
   AgentRun,
   AgentRunStatus,
+  Agent,
   Message,
   RoomAgent,
   Task,
@@ -104,6 +106,8 @@ export interface GraphTools {
   updateRun: typeof workflowRepo.updateRun;
   updateGraphState: typeof workflowRepo.updateGraphState;
   nextStepSortOrder: (workflowRunId: string) => number;
+  listGlobalAgents: () => Agent[];
+  joinGlobalAgentToRoom: (roomId: string, globalAgentId: string) => RoomAgent;
   selectAgentForRole: (role: WorkflowRole, agents: RoomAgent[]) => RoomAgent | null;
   selectAgentForPlanTask: (planTask: ParsedPlan['tasks'][number], agents: RoomAgent[]) => RoomAgent | null;
   selectAgentForSupervisorAssignment: (hint: SupervisorAssignmentHint, agents: RoomAgent[]) => RoomAgent | null;
@@ -226,6 +230,12 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     updateGraphState: workflowRepo.updateGraphState.bind(workflowRepo),
     nextStepSortOrder(workflowRunId: string) {
       return workflowRepo.listSteps(workflowRunId).length + 1;
+    },
+    listGlobalAgents() {
+      return agentRepo.list();
+    },
+    joinGlobalAgentToRoom(roomId: string, globalAgentId: string) {
+      return roomAgentRepo.addFromGlobalAgent({ room_id: roomId, global_agent_id: globalAgentId });
     },
     selectAgentForRole(role: WorkflowRole, agents: RoomAgent[]) {
       return selectWorkflowAgentForRole(role, agents);
