@@ -379,7 +379,7 @@ function JsonTree({ value }: { value: JsonValue }): JSX.Element {
     return (
       <dl className="json-tree-list">
         {entries.map(([key, entryValue]) => (
-          <div key={key} className="json-tree-row">
+          <div key={key} className={`json-tree-row ${getJsonTreeRowClass(entryValue)}`}>
             <dt>
               <span>{jsonFieldLabels[key] ?? key}</span>
               {jsonFieldLabels[key] && <small>{key}</small>}
@@ -392,6 +392,12 @@ function JsonTree({ value }: { value: JsonValue }): JSX.Element {
   }
 
   return <JsonPrimitive value={value} />;
+}
+
+function getJsonTreeRowClass(value: JsonValue): string {
+  if (Array.isArray(value) || isJsonObject(value)) return 'is-nested';
+  if (typeof value === 'string' && value.length > 48) return 'is-long';
+  return 'is-compact';
 }
 
 function JsonPrimitive({ value }: { value: Exclude<JsonValue, JsonValue[] | JsonObject> }): JSX.Element {
