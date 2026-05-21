@@ -11,7 +11,6 @@ import type {
   WorkflowStage,
   WorkflowStep,
 } from '../lib/types';
-import { WorkflowAgentTabs } from './WorkflowAgentTabs';
 import { WorkflowProgressHeader } from './WorkflowProgressHeader';
 import { WorkflowTaskTable } from './WorkflowTaskTable';
 import { WorkflowTaskFlow } from './WorkflowTaskFlow';
@@ -62,17 +61,6 @@ export function WorkflowTaskBubble({
           </div>
         )}
       </div>
-      {workflowPlan && (
-        <div className="workflow-task-bubble-side">
-          <WorkflowAgentTabs
-            plan={workflowPlan}
-            agents={agents}
-            artifacts={detail.artifacts}
-            steps={detail.steps}
-            compact={compact}
-          />
-        </div>
-      )}
     </div>
   );
 }

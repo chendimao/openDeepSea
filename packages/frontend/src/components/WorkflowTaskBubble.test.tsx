@@ -199,7 +199,7 @@ test('compact mode ignores malformed superpowers graph_state without crashing', 
   assert.equal(html, '');
 });
 
-test('compact mode renders agent result tabs for chat embedding', () => {
+test('compact mode omits agent result tabs for chat embedding', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
     steps: [
@@ -214,7 +214,7 @@ test('compact mode renders agent result tabs for chat embedding', () => {
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
-  assert.match(html, /按智能体查看执行结果/);
+  assert.doesNotMatch(html, /按智能体查看执行结果/);
   assert.match(html, /前端执行者/);
   assert.match(html, /已完成紧凑任务表格接入/);
   assert.doesNotMatch(html, /工作流子任务表格/);
@@ -244,7 +244,7 @@ test('timeline mode exposes task detail action from full task table', () => {
   assert.match(html, /aria-label="查看「实现聊天气泡」详情"/);
 });
 
-test('agent result tabs fall back to workflow role or id labels', () => {
+test('task flow falls back to workflow role or id labels', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({
       workflowPlan: createWorkflowPlan({
@@ -381,7 +381,7 @@ test('task flow keeps empty review and acceptance stages selectable', () => {
   assert.match(html, /规划完成。/);
 });
 
-test('workflow bubble renders dual-column orchestration layout', () => {
+test('workflow bubble renders compact orchestration layout without agent tabs', () => {
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
     steps: [
@@ -398,7 +398,7 @@ test('workflow bubble renders dual-column orchestration layout', () => {
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
   assert.match(html, /workflow-flow-layout/);
-  assert.match(html, /按智能体查看执行结果/);
+  assert.doesNotMatch(html, /按智能体查看执行结果/);
   assert.match(html, /计划 \/ 分析/);
   assert.match(html, /执行层/);
   assert.match(html, /审查 \/ 验收/);
@@ -583,9 +583,8 @@ test('task flow maps runtime child task steps back to workflow plan tasks', () =
   const html = renderBubble(detail, [createAgent()], { compact: true });
   const cardListStart = html.indexOf('<div class="workflow-flow-task-cards">');
   const logStart = html.indexOf('<div class="workflow-event-stack">');
-  const flowEnd = html.indexOf('<div class="workflow-task-bubble-side">');
   const cardListHtml = html.slice(cardListStart, logStart);
-  const logHtml = html.slice(logStart, flowEnd);
+  const logHtml = html.slice(logStart);
 
   assert.match(cardListHtml, /workflow-flow-task-card-title">实现聊天气泡/);
   assert.match(logHtml, /子任务真实执行完成。/);
@@ -713,8 +712,8 @@ test('task flow renders review and verification as ordered workflow nodes', () =
   assert.match(html, /workflow-event-stack/);
 });
 
-test('task flow does not render long execution content inside orchestration nodes', () => {
-  const longResult = '这是很长的执行结果，应该留在右侧智能体结果栏，而不是撑开左侧任务流转节点。'.repeat(12);
+test('task flow does not render long execution content inline', () => {
+  const longResult = '这是很长的执行结果，隐藏默认智能体结果栏后不应该撑开任务流转节点。'.repeat(12);
   const detail = createWorkflowDetail({
     graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
     steps: [
@@ -732,16 +731,16 @@ test('task flow does not render long execution content inside orchestration node
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
   const cardListStart = html.indexOf('<div class="workflow-flow-task-cards">');
-  const flowEnd = html.indexOf('<div class="workflow-task-bubble-side">');
+  const logStart = html.indexOf('<div class="workflow-event-stack">');
 
   assert.notEqual(cardListStart, -1);
-  assert.notEqual(flowEnd, -1);
+  assert.notEqual(logStart, -1);
 
-  const cardListHtml = html.slice(cardListStart, flowEnd);
-  const sideHtml = html.slice(flowEnd);
+  const cardListHtml = html.slice(cardListStart, logStart);
 
   assert.doesNotMatch(cardListHtml, /这是很长的执行结果/);
-  assert.match(sideHtml, /这是很长的执行结果/);
+  assert.doesNotMatch(html, /这是很长的执行结果/);
+  assert.match(html, /生成中间结果/);
 });
 
 test('task flow merges workflow event messages into execution log', () => {
