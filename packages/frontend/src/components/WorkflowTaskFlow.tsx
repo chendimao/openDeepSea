@@ -124,9 +124,6 @@ export function WorkflowTaskFlow({
                 <FlowStatCard icon={<CheckCircle2 className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowCompletionRate')} value={`${activeStage.percent}%`} tone="success" strong />
               </div>
 
-              <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskContent')}</div>
-              <div className="workflow-flow-entry-content">{getFlowEntryContent(activeEntry, t)}</div>
-
               <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskList')}</div>
               <div className="workflow-flow-task-cards">
                 {flowEntries.map((entry) => (

@@ -496,7 +496,8 @@ test('task flow renders staged board controls and row actions', () => {
   assert.doesNotMatch(html, /workflow-flow-task-card-title">分配/);
   assert.match(html, /aria-label="查看「任务规划」详情"/);
   assert.doesNotMatch(html, /任务内容<\/h4><p>实现聊天气泡<\/p>/);
-  assert.match(html, /workflow-flow-section-title">任务内容<\/div><div class="workflow-flow-entry-content">规划完成。<\/div>/);
+  assert.doesNotMatch(html, /workflow-flow-entry-content/);
+  assert.doesNotMatch(html, /workflow-flow-section-title">任务内容/);
 });
 
 test('task flow treats analysis and dispatch steps as execution log events instead of task cards', () => {
