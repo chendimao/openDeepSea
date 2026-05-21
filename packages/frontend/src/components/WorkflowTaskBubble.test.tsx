@@ -92,7 +92,7 @@ test('renders skipped workflow plan task from graph_state', () => {
 
   assert.match(html, /必要时同步前后端共享展示字段/);
   assert.match(html, /lucide-skip-forward/);
-  assert.doesNotMatch(html, /skipped/);
+  assert.doesNotMatch(html, />skipped</);
 });
 
 test('renders task table from artifact metadata workflow_plan_json', () => {
@@ -228,7 +228,7 @@ test('compact mode omits legacy task table actions', () => {
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
   assert.doesNotMatch(html, /操作/);
-  assert.doesNotMatch(html, /aria-label="查看「实现聊天气泡」详情"/);
+  assert.doesNotMatch(html, /workflow-task-detail-button/);
   assert.doesNotMatch(html, />详情</);
 });
 
@@ -347,7 +347,9 @@ test('task flow renders review target and acceptance target labels', () => {
   assert.match(html, /workflow-flow-sidebar/);
   assert.match(html, /审查 \/ 验收/);
   assert.match(html, /完成/);
-  assert.match(html, /workflow-flow-status-pill is-pending/);
+  assert.match(html, /workflow-flow-status-pill is-completed/);
+  assert.match(html, /审查目标 · 实现聊天气泡/);
+  assert.match(html, /验收目标 · 实现聊天气泡/);
 });
 
 test('task flow keeps empty review and acceptance stages selectable', () => {
@@ -375,7 +377,8 @@ test('task flow keeps empty review and acceptance stages selectable', () => {
   assert.match(html, /workflow-flow-overview-step is-review/);
   assert.match(html, /workflow-flow-overview-step is-done/);
   assert.match(html, /workflow-flow-status-pill is-pending/);
-  assert.match(html, /workflow-flow-task-card-title">计划/);
+  assert.match(html, /workflow-flow-task-card-title">任务规划/);
+  assert.match(html, /规划完成。/);
 });
 
 test('workflow bubble renders dual-column orchestration layout', () => {
@@ -488,11 +491,69 @@ test('task flow renders staged board controls and row actions', () => {
   assert.match(html, /workflow-event-stack/);
   assert.equal(html.match(/workflow-event-stack/g)?.length, 1);
   assert.match(html, /计划 \/ 分析/);
-  assert.match(html, /workflow-flow-task-card-title">计划</);
+  assert.match(html, /workflow-flow-task-card-title">任务规划</);
   assert.doesNotMatch(html, /workflow-flow-task-card-title">分析</);
-  assert.match(html, /aria-label="查看「计划」详情"/);
+  assert.doesNotMatch(html, /workflow-flow-task-card-title">分配/);
+  assert.match(html, /aria-label="查看「任务规划」详情"/);
   assert.doesNotMatch(html, /任务内容<\/h4><p>实现聊天气泡<\/p>/);
   assert.match(html, /workflow-flow-section-title">任务内容<\/div><div class="workflow-flow-entry-content">规划完成。<\/div>/);
+});
+
+test('task flow treats analysis and dispatch steps as execution log events instead of task cards', () => {
+  const detail = createWorkflowDetail({
+    graphState: JSON.stringify({ workflowPlan: createWorkflowPlan() }),
+    steps: [
+      createWorkflowStep({
+        id: 'step-context',
+        assignedRoomAgentId: null,
+        taskId: 'task-root',
+        stage: 'analysis',
+        nodeName: 'context',
+        result: '已读取任务上下文。',
+        completedAt: 10,
+      }),
+      createWorkflowStep({
+        id: 'step-plan',
+        assignedRoomAgentId: null,
+        taskId: 'task-root',
+        stage: 'planning',
+        nodeName: 'planning',
+        result: '规划完成。',
+        completedAt: 20,
+      }),
+      createWorkflowStep({
+        id: 'step-dispatch',
+        assignedRoomAgentId: null,
+        taskId: 'task-root',
+        stage: 'assignment',
+        nodeName: 'dispatch',
+        result: '已分配 1 个执行子任务。',
+        completedAt: 30,
+      }),
+      createWorkflowStep({
+        id: 'step-impl',
+        assignedRoomAgentId: 'agent-1',
+        taskId: 'task-1',
+        stage: 'implementation',
+        nodeName: 'execute',
+        result: '执行完成。',
+        completedAt: 40,
+      }),
+    ],
+  });
+
+  const html = renderBubble(detail, [createAgent()], { compact: true });
+  const cardListStart = html.indexOf('<div class="workflow-flow-task-cards">');
+  const logStart = html.indexOf('<div class="workflow-event-stack">');
+  const cardListHtml = html.slice(cardListStart, logStart);
+  const logHtml = html.slice(logStart);
+
+  assert.match(cardListHtml, /workflow-flow-task-card-title">任务规划/);
+  assert.match(cardListHtml, /workflow-flow-task-card-title">实现聊天气泡/);
+  assert.doesNotMatch(cardListHtml, /已读取任务上下文/);
+  assert.doesNotMatch(cardListHtml, /已分配 1 个执行子任务/);
+  assert.match(logHtml, /已读取任务上下文/);
+  assert.match(logHtml, /已分配 1 个执行子任务/);
 });
 
 test('task flow renders review and verification as ordered workflow nodes', () => {
