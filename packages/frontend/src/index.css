@@ -317,7 +317,6 @@
   .glass-search,
   .theme-toggle,
   .sidebar-link,
-  .recent-room-link,
   .recent-project-link {
     display: flex;
     align-items: center;
@@ -341,8 +340,6 @@
   }
   .sidebar-link:hover,
   .sidebar-link.is-active,
-  .recent-room-link:hover,
-  .recent-room-link.is-active,
   .recent-project-link:hover,
   .recent-project-link.is-active {
     background: rgba(255,255,255,0.66);
@@ -360,12 +357,6 @@
     background: rgba(255,255,255,0.44);
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.62), 0 12px 28px rgba(72, 95, 125, 0.08);
   }
-  .glass-room-list-card {
-    border-radius: 14px;
-    padding: 12px;
-    background: rgba(255,255,255,0.44);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.62), 0 12px 28px rgba(72, 95, 125, 0.08);
-  }
   .metric-tile {
     min-height: 58px;
     border-radius: 10px;
@@ -376,46 +367,6 @@
   .recent-project-link {
     min-height: 34px;
     padding: 0 10px;
-  }
-  .recent-room-link {
-    min-height: 46px;
-    padding: 7px 9px;
-    align-items: flex-start;
-  }
-  .recent-room-dot {
-    margin-top: 6px;
-    height: 7px;
-    width: 7px;
-    flex-shrink: 0;
-    border-radius: 999px;
-    background: rgba(22, 200, 230, 0.72);
-    box-shadow: 0 0 0 3px rgba(22, 200, 230, 0.08);
-  }
-  .recent-room-link.is-active .recent-room-dot {
-    background: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.14);
-  }
-  .recent-room-empty {
-    display: grid;
-    justify-items: center;
-    gap: 8px;
-    padding: 16px 10px;
-    text-align: center;
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--color-fg-muted);
-  }
-  .recent-room-skeleton {
-    height: 42px;
-    border-radius: 9px;
-    background: linear-gradient(90deg, rgba(255,255,255,0.34), rgba(255,255,255,0.72), rgba(255,255,255,0.34));
-    background-size: 220% 100%;
-    animation: sidebar-skeleton-pulse 1.4s ease-in-out infinite;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.46);
-  }
-  @keyframes sidebar-skeleton-pulse {
-    0% { background-position: 100% 0; }
-    100% { background-position: -100% 0; }
   }
   .theme-toggle-stack {
     display: grid;
@@ -3899,8 +3850,6 @@
   [data-theme="minimal-dark"] .theme-toggle,
   [data-theme="minimal-light"] .sidebar-link,
   [data-theme="minimal-dark"] .sidebar-link,
-  [data-theme="minimal-light"] .recent-room-link,
-  [data-theme="minimal-dark"] .recent-room-link,
   [data-theme="minimal-light"] .recent-project-link,
   [data-theme="minimal-dark"] .recent-project-link {
     border-radius: 4px;
@@ -3938,10 +3887,6 @@
   [data-theme="minimal-dark"] .sidebar-link:hover,
   [data-theme="minimal-light"] .sidebar-link.is-active,
   [data-theme="minimal-dark"] .sidebar-link.is-active,
-  [data-theme="minimal-light"] .recent-room-link:hover,
-  [data-theme="minimal-dark"] .recent-room-link:hover,
-  [data-theme="minimal-light"] .recent-room-link.is-active,
-  [data-theme="minimal-dark"] .recent-room-link.is-active,
   [data-theme="minimal-light"] .recent-project-link:hover,
   [data-theme="minimal-dark"] .recent-project-link:hover,
   [data-theme="minimal-light"] .recent-project-link.is-active,
@@ -3953,8 +3898,6 @@
 
   [data-theme="minimal-light"] .glass-project-card,
   [data-theme="minimal-dark"] .glass-project-card,
-  [data-theme="minimal-light"] .glass-room-list-card,
-  [data-theme="minimal-dark"] .glass-room-list-card,
   [data-theme="minimal-light"] .metric-tile,
   [data-theme="minimal-dark"] .metric-tile {
     border: 1px solid var(--color-border);
