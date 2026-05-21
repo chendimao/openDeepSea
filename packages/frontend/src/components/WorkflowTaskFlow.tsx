@@ -121,6 +121,9 @@ export function WorkflowTaskFlow({
                 <FlowStatCard icon={<CheckCircle2 className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowCompletionRate')} value={`${activeStage.percent}%`} tone="success" strong />
               </div>
 
+              <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskContent')}</div>
+              <div className="workflow-flow-entry-content">{getFlowEntryContent(activeEntry)}</div>
+
               <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskList')}</div>
               <div className="workflow-flow-task-cards">
                 {activeStage.entries.map((entry) => (
@@ -209,7 +212,7 @@ function WorkflowFlowEntryDetail({ entry }: { entry: FlowEntry }) {
         <DetailField label={t('workflowPlan.taskFlowStartTime')} value={formatFlowTime(entry.startedAt ?? entry.sortKey)} />
         <DetailField label={t('workflowPlan.taskFlowDuration')} value={formatFlowDuration(entry.startedAt, entry.completedAt)} />
       </dl>
-      <DetailSection label={t('workflowPlan.taskFlowTaskContent')}>{entry.content?.trim() || entry.subtitle || entry.taskName}</DetailSection>
+      <DetailSection label={t('workflowPlan.taskFlowTaskContent')}>{getFlowEntryContent(entry)}</DetailSection>
       <DetailList label={t('workflowPlan.taskFlowExecutionLog')} items={entry.events.map((event) => `${event.time} ${event.label}`)} />
     </div>
   );
@@ -219,10 +222,17 @@ function copyFlowEntry(entry: FlowEntry): void {
   const text = [
     entry.title,
     entry.subtitle,
-    entry.content,
+    getFlowEntryContent(entry),
     ...entry.events.map((event) => `${event.time} ${event.label}`),
   ].filter((item): item is string => Boolean(item?.trim())).join('\n');
   void navigator.clipboard?.writeText(text);
+}
+
+function getFlowEntryContent(entry: FlowEntry): string {
+  const content = entry.content?.trim();
+  if (content) return content;
+  if (entry.phase === 'execution') return entry.taskName;
+  return entry.subtitle ?? '该阶段没有独立输出。';
 }
 
 function DetailField({ label, value }: { label: string; value: string }) {

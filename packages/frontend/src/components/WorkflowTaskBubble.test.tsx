@@ -491,6 +491,8 @@ test('task flow renders staged board controls and row actions', () => {
   assert.match(html, /workflow-flow-task-card-title">计划</);
   assert.doesNotMatch(html, /workflow-flow-task-card-title">分析</);
   assert.match(html, /aria-label="查看「计划」详情"/);
+  assert.doesNotMatch(html, /任务内容<\/h4><p>实现聊天气泡<\/p>/);
+  assert.match(html, /workflow-flow-section-title">任务内容<\/div><div class="workflow-flow-entry-content">规划完成。<\/div>/);
 });
 
 test('task flow renders review and verification as ordered workflow nodes', () => {
@@ -586,12 +588,12 @@ test('task flow does not render long execution content inside orchestration node
   });
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
-  const flowStart = html.indexOf('<section class="workflow-flow-panel">');
+  const cardListStart = html.indexOf('<div class="workflow-flow-task-cards">');
   const flowEnd = html.indexOf('<div class="workflow-task-bubble-side">');
-  const flowHtml = html.slice(flowStart, flowEnd);
+  const cardListHtml = html.slice(cardListStart, flowEnd);
   const sideHtml = html.slice(flowEnd);
 
-  assert.doesNotMatch(flowHtml, /这是很长的执行结果/);
+  assert.doesNotMatch(cardListHtml, /这是很长的执行结果/);
   assert.match(sideHtml, /这是很长的执行结果/);
 });
 
