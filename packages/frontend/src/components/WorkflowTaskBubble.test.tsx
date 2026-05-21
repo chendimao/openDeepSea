@@ -26,18 +26,44 @@ test('renders task table from graph_state workflowPlan', () => {
             progress: 100,
             result_refs: [],
           },
+          {
+            id: 'task-accept',
+            title: '功能验收',
+            description: '验收整体任务是否满足用户需求',
+            role: 'acceptor',
+            agent_id: 'agent-accept',
+            mode: 'serial',
+            depends_on: ['task-review'],
+            status: 'pending',
+            progress: 0,
+            result_refs: [],
+          },
         ],
       }),
     }),
   });
 
-  const html = renderBubble(detail, [createAgent()]);
+  const html = renderBubble(detail, [
+    createAgent(),
+    createAgent({
+      id: 'agent-review',
+      agent_name: '审查智能体',
+      workflow_role: 'reviewer',
+    }),
+    createAgent({
+      id: 'agent-accept',
+      agent_name: '验收智能体',
+      workflow_role: 'acceptor',
+    }),
+  ]);
 
   assert.match(html, /工作流子任务表格/);
   assert.match(html, /实现聊天气泡/);
   assert.match(html, /前端执行者/);
   assert.match(html, /代码审查/);
   assert.match(html, /审查/);
+  assert.match(html, /功能验收/);
+  assert.match(html, /验收智能体/);
 });
 
 test('renders skipped workflow plan task from graph_state', () => {
@@ -745,7 +771,7 @@ function createWorkflowStep(input: {
   };
 }
 
-function createAgent(): RoomAgent {
+function createAgent(input: Partial<RoomAgent> = {}): RoomAgent {
   return {
     id: 'agent-1',
     room_id: 'room-1',
@@ -772,6 +798,7 @@ function createAgent(): RoomAgent {
     acp_session_label: null,
     acp_permission_mode: 'workspace-write',
     acp_writable_dirs: [],
+    ...input,
   };
 }
 

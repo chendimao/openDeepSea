@@ -298,6 +298,36 @@ test('deriveCoordinatorPlanFromProductManagerBackground keeps review and accepta
   assert.notEqual(plan.tasks[2]?.title, plan.tasks[3]?.title);
 });
 
+test('deriveCoordinatorPlanFromProductManagerBackground keeps implementation tasks with review words executable', () => {
+  const plan = deriveCoordinatorPlanFromProductManagerBackground({
+    taskTitle: '工作流任务卡片修复',
+    taskDescription: [
+      '工作流任务卡片修复。',
+      '',
+      '产品经理方案背景：',
+      '实施计划：',
+      '1. 修复审查和完成功能按钮无法点击的问题',
+      '- 改动：packages/frontend/src/components/WorkflowTaskFlow.tsx',
+      '- 验收：审查和完成阶段可以点击选中',
+      '2. 更新后端验收状态同步逻辑',
+      '- 改动：packages/backend/src/workflows/graph/nodes.ts',
+      '- 验收：任务完成状态只在验收通过后更新',
+      '',
+      '任务意图：debug_fix',
+    ].join('\n'),
+  });
+
+  assert.ok(plan);
+  assert.deepEqual(plan.tasks.map((task) => task.title), [
+    '修复审查和完成功能按钮无法点击的问题',
+    '更新后端验收状态同步逻辑',
+  ]);
+  assert.deepEqual(plan.tasks.map((task) => task.suggestedRole), [
+    'executor',
+    'executor',
+  ]);
+});
+
 function makeWorkflowPlanJson(sourceMessageId: string): WorkflowPlanJson {
   return {
     workflow_name: 'Coordinator 计划',

@@ -21,8 +21,8 @@ export function WorkflowTaskTable({
   const [detailTask, setDetailTask] = useState<WorkflowPlanTaskJson | null>(null);
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const titleMap = new Map(plan.tasks.map((task) => [task.id, task.title]));
-  const executableTasks = plan.tasks.filter((task) =>
-    task.role === 'executor' && (availableTaskIds.length === 0 || availableTaskIds.includes(task.id)),
+  const visibleTasks = plan.tasks.filter((task) =>
+    availableTaskIds.length === 0 || availableTaskIds.includes(task.id) || task.role !== 'executor',
   );
 
   return (
@@ -41,8 +41,9 @@ export function WorkflowTaskTable({
             </tr>
           </thead>
           <tbody>
-            {executableTasks.map((task) => {
+            {visibleTasks.map((task) => {
               const agentName = task.agent_id ? agentMap.get(task.agent_id)?.agent_name : null;
+              const roleLabel = workflowRoleLabel(task.role);
               return (
                 <tr key={task.id}>
                   <td>
@@ -60,7 +61,7 @@ export function WorkflowTaskTable({
                       </div>
                     </div>
                   </td>
-                  <td>{workflowRoleLabel(task.role)}</td>
+                  <td>{roleLabel}</td>
                   <td>
                     <span className="block max-w-[120px] truncate" title={agentName ?? t('workflowPlan.unassigned')}>
                       {agentName ?? t('workflowPlan.unassigned')}
@@ -124,7 +125,7 @@ export function WorkflowTaskTable({
                 </tr>
               );
             })}
-            {executableTasks.length === 0 && (
+            {visibleTasks.length === 0 && (
               <tr>
                 <td colSpan={compact ? 7 : 6} className="workflow-task-empty-cell">
                   {t('workflowPlan.noResult')}

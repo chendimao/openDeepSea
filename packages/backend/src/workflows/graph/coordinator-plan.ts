@@ -236,9 +236,11 @@ function isExecutableBackgroundTask(task: ParsedPlanTask): boolean {
 }
 
 function inferSuggestedRoleForBackgroundTask(task: ParsedPlanTask): WorkflowRole {
+  const normalizedTitle = stripListMarker(task.title).trim().toLowerCase();
+  const isExecutable = isExecutableBackgroundTask(task);
+  if (!isExecutable && /^(?:代码审查|审查|评审|review|reviewer|code review)$/.test(normalizedTitle)) return 'reviewer';
+  if (!isExecutable && /^(?:功能验收|验收|完成|accept|acceptance|acceptor)$/.test(normalizedTitle)) return 'acceptor';
   const text = `${task.title}\n${task.description}`.toLowerCase();
-  if (/(审查|review|reviewer|code review)/.test(text)) return 'reviewer';
-  if (/(验收|accept|acceptance)/.test(text)) return 'acceptor';
   if (/(计划|规划|plan)/.test(text) && !isExecutableBackgroundTask(task)) return 'planner';
   return 'executor';
 }
