@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import {
   Bot,
   BriefcaseBusiness,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
+import { RECENT_ROOMS_UPDATED_EVENT, readRecentRooms, type RecentRoom } from '../lib/recentRooms';
 import { cn, truncate } from '../lib/utils';
 import { roomSocket } from '../lib/ws';
 import { LobsterMark } from './LobsterMark';
@@ -34,6 +35,7 @@ export function AppShell({
 }): JSX.Element {
   const [commandOpen, setCommandOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [recentRooms, setRecentRooms] = useState<RecentRoom[]>(() => readRecentRooms());
   const location = useLocation();
   const { t } = useI18n();
   const projectId = getProjectId(location.pathname);
@@ -50,6 +52,16 @@ export function AppShell({
   useEffect(() => {
     roomSocket.connect();
     return () => roomSocket.destroy();
+  }, []);
+
+  useEffect(() => {
+    const refreshRecentRooms = () => setRecentRooms(readRecentRooms());
+    window.addEventListener(RECENT_ROOMS_UPDATED_EVENT, refreshRecentRooms);
+    window.addEventListener('storage', refreshRecentRooms);
+    return () => {
+      window.removeEventListener(RECENT_ROOMS_UPDATED_EVENT, refreshRecentRooms);
+      window.removeEventListener('storage', refreshRecentRooms);
+    };
   }, []);
 
   useEffect(() => {
@@ -70,6 +82,7 @@ export function AppShell({
         <aside className="app-sidebar" aria-label={t('shell.sidebar.aria')}>
           <ProjectSidebar
             projects={projects}
+            recentRooms={recentRooms}
             currentProject={currentProject}
             theme={theme}
             onThemeChange={onThemeChange}
@@ -94,12 +107,14 @@ export function AppShell({
 
 function ProjectSidebar({
   projects,
+  recentRooms,
   currentProject,
   theme,
   onThemeChange,
   onOpenCommand,
 }: {
   projects: Awaited<ReturnType<typeof api.listProjects>>;
+  recentRooms: RecentRoom[];
   currentProject?: Awaited<ReturnType<typeof api.listProjects>>[number];
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
@@ -107,6 +122,37 @@ function ProjectSidebar({
 }): JSX.Element {
   const { t } = useI18n();
   const location = useLocation();
+  const currentRoomId = getRoomId(location.pathname);
+  const recentRoomProjectIds = useMemo(() => {
+    const availableProjectIds = new Set(projects.map((project) => project.id));
+    return [...new Set(recentRooms.map((room) => room.projectId))]
+      .filter((projectId) => availableProjectIds.has(projectId));
+  }, [projects, recentRooms]);
+  const recentRoomQueries = useQueries({
+    queries: recentRoomProjectIds.map((projectId) => ({
+      queryKey: ['rooms', projectId],
+      queryFn: () => api.listRooms(projectId),
+      staleTime: 30_000,
+    })),
+  });
+  const visibleRecentRooms = useMemo(() => {
+    const projectsById = new Map(projects.map((project) => [project.id, project]));
+    const roomsByProjectId = new Map(
+      recentRoomProjectIds.map((projectId, index) => [projectId, recentRoomQueries[index]?.data]),
+    );
+    return recentRooms
+      .filter((room) => projectsById.has(room.projectId))
+      .flatMap((room) => {
+        const rooms = roomsByProjectId.get(room.projectId);
+        const freshRoom = rooms?.find((item) => item.id === room.roomId);
+        if (rooms && !freshRoom) return [];
+        return [{
+          ...room,
+          roomName: freshRoom?.name ?? room.roomName,
+          projectName: projectsById.get(room.projectId)?.name ?? room.projectName,
+        }];
+      });
+  }, [projects, recentRooms, recentRoomProjectIds, recentRoomQueries]);
 
   return (
     <div className="glass-sidebar flex h-full flex-col">
@@ -185,6 +231,34 @@ function ProjectSidebar({
             )}
           </div>
         </div>
+
+        <div className="mt-6">
+          <div className="mb-2 text-[10.5px] font-medium text-[var(--color-muted)]">{t('shell.recentRooms')}</div>
+          <div className="space-y-1.5">
+            {visibleRecentRooms.map((room) => (
+              <NavLink
+                key={room.roomId}
+                to={`/projects/${room.projectId}/rooms/${room.roomId}`}
+                className={({ isActive }) =>
+                  cn('recent-project-link min-h-[44px] py-2', (isActive || currentRoomId === room.roomId) && 'is-active')
+                }
+              >
+                <MessageCircle className="h-3.5 w-3.5 flex-shrink-0 text-[#16c8e6]" strokeWidth={1.75} />
+                <span className="min-w-0">
+                  <span className="block truncate text-[12.5px]">{truncate(room.roomName, 24)}</span>
+                  <span className="mt-0.5 block truncate font-mono text-[10.5px] text-[var(--color-fg-muted)]">
+                    {truncate(room.projectName, 26)}
+                  </span>
+                </span>
+              </NavLink>
+            ))}
+            {visibleRecentRooms.length === 0 && (
+              <div className="px-2.5 py-4 text-[12px] text-[var(--color-fg-muted)]">
+                {t('shell.noRecentRooms')}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -220,4 +294,9 @@ function SidebarLink({
 function getProjectId(pathname: string): string | undefined {
   const [, first, projectId] = pathname.split('/');
   return first === 'projects' ? projectId : undefined;
+}
+
+function getRoomId(pathname: string): string | undefined {
+  const [, first, , second, roomId] = pathname.split('/');
+  return first === 'projects' && second === 'rooms' ? roomId : undefined;
 }

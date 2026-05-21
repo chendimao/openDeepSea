@@ -8,6 +8,7 @@ import { roomSocket, type WsServerEvent } from '../lib/ws';
 import type { AgentRun, Message, MessageAttachmentMetadata, Room, RoomAgent, Task, TaskExecutionIntent, WorkflowDetail, WorkflowRun } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
+import { recordRecentRoomVisit } from '../lib/recentRooms';
 import { cn } from '../lib/utils';
 import {
   createStreamingDisplayState,
@@ -149,6 +150,11 @@ export function RoomPage() {
     streamingRunMessageIds.current.clear();
     streamingEventTracker.current.clear();
   }, [roomId]);
+
+  useEffect(() => {
+    if (!project || !room || room.project_id !== project.id) return;
+    recordRecentRoomVisit({ project, room });
+  }, [project, room]);
 
   useEffect(() => {
     if (activeTab !== 'tasks') return;
