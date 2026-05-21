@@ -36,7 +36,6 @@ test('renders json code fences as structured Chinese task readiness view', () =>
   assert.match(html, /92%/);
   assert.match(html, /推荐模式/);
   assert.match(html, /正式工作流/);
-  assert.match(html, /原文/);
   assert.doesNotMatch(html, /<small>task_readiness<\/small>/);
   assert.doesNotMatch(html, /<small>ready<\/small>/);
   assert.doesNotMatch(html, /<small>confidence<\/small>/);
@@ -104,6 +103,24 @@ test('falls back to code block for non-json and invalid json fences', () => {
   assert.match(invalidJsonHtml, /code-block/);
   assert.match(invalidJsonHtml, /task_readiness/);
   assert.doesNotMatch(invalidJsonHtml, /任务准备状态/);
+});
+
+test('renders markdown source when controlled by message display mode', () => {
+  const content = [
+    '```json',
+    JSON.stringify({ ready: true }, null, 2),
+    '```',
+  ].join('\n');
+
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent content={content} mode="source" />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /code-block/);
+  assert.match(html, /&quot;ready&quot;: true/);
+  assert.doesNotMatch(html, /是否就绪/);
 });
 
 function renderMessage(content: string): string {

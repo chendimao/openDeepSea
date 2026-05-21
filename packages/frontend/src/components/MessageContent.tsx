@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Copy, Eye, FileText } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 
 type MessagePart =
@@ -63,15 +63,17 @@ function normalizeFenceLanguage(rawLanguage: string | undefined): string {
 export function MessageContent({
   content,
   streaming = false,
+  mode,
 }: {
   content: string;
   streaming?: boolean;
+  mode?: 'preview' | 'source';
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const [mode, setMode] = useState<'preview' | 'source'>('preview');
   const { t } = useI18n();
   const parts = parseMessage(content);
   const markdown = isMarkdownContent(content);
+  const activeMode = mode ?? 'preview';
   const lastTextPartIndex = findLastTextPartIndex(parts);
 
   const copyCode = async (code: string, index: number) => {
@@ -86,30 +88,7 @@ export function MessageContent({
 
   return (
     <div className="message-content">
-      {markdown && (
-        <div className="message-mode-switch" aria-label={t('message.markdownModeAria')}>
-          <button
-            type="button"
-            onClick={() => setMode('preview')}
-            className={mode === 'preview' ? 'is-active' : undefined}
-            aria-pressed={mode === 'preview'}
-          >
-            <Eye className="h-3.5 w-3.5" />
-            {t('message.preview')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('source')}
-            className={mode === 'source' ? 'is-active' : undefined}
-            aria-pressed={mode === 'source'}
-          >
-            <FileText className="h-3.5 w-3.5" />
-            {t('message.source')}
-          </button>
-        </div>
-      )}
-
-      {markdown && mode === 'preview' ? (
+      {markdown && activeMode === 'preview' ? (
         <MarkdownPreview content={content} streaming={streaming} />
       ) : (
         <>
@@ -142,6 +121,10 @@ export function MessageContent({
       )}
     </div>
   );
+}
+
+export function isMarkdownMessageContent(content: string): boolean {
+  return isMarkdownContent(content);
 }
 
 function findLastTextPartIndex(parts: MessagePart[]): number {

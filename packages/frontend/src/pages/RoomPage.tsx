@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, FileText, FolderOpen, ListTodo, MessageSquare, Play, Plus, Reply, RotateCcw, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, Eye, FileText, FolderOpen, ListTodo, MessageSquare, Play, Plus, Reply, RotateCcw, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -29,7 +29,7 @@ import { RichMessageComposer } from '../components/RichMessageComposer';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { RoomFilesPanel } from '../components/RoomFilesPanel';
-import { MessageContent } from '../components/MessageContent';
+import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { CollaborationDecisionCard } from '../components/CollaborationDecisionCard';
 import { WorkflowTaskBubble } from '../components/WorkflowTaskBubble';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
@@ -856,6 +856,7 @@ function ChatColumn({
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
   const [defaultReplySuppressedForMessageId, setDefaultReplySuppressedForMessageId] = useState<string | null>(null);
+  const [messageDisplayModes, setMessageDisplayModes] = useState<Record<string, 'preview' | 'source'>>({});
   const queryClient = useQueryClient();
   const { t } = useI18n();
   const agentMap = useMemo(
@@ -958,6 +959,7 @@ function ChatColumn({
             visibleMessages.map((m, index) => {
               const run = runByMessageId.get(m.id);
               const isStreamingMessage = streamingMessageIds.has(m.id) || streamingDisplay.isAnimating(m.id);
+              const displayMode = messageDisplayModes[m.id] ?? 'preview';
               return (
                 <MessageBubble
                   key={m.id}
@@ -977,6 +979,8 @@ function ChatColumn({
                   hasLaterMessages={index < visibleMessages.length - 1}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
+                  displayMode={displayMode}
+                  onDisplayModeChange={(mode) => setMessageDisplayModes((prev) => ({ ...prev, [m.id]: mode }))}
                   messageRef={(node) => registerMessageRef(m.id, node)}
                   highlighted={highlightMessageId === m.id}
                   onReply={() => onReplyToMessage(m)}
@@ -1094,6 +1098,8 @@ function MessageBubble({
   hasLaterMessages,
   streaming,
   displayContent,
+  displayMode,
+  onDisplayModeChange,
   messageRef,
   highlighted,
   onReply,
@@ -1115,6 +1121,8 @@ function MessageBubble({
   hasLaterMessages: boolean;
   streaming: boolean;
   displayContent: string;
+  displayMode: 'preview' | 'source';
+  onDisplayModeChange: (mode: 'preview' | 'source') => void;
   messageRef: (node: HTMLElement | null) => void;
   highlighted: boolean;
   onReply: () => void;
@@ -1185,6 +1193,7 @@ function MessageBubble({
   const attachments = metadata.attachments;
   const renderedContent = displayContent || (message.message_type === 'agent_stream' ? '…' : '');
   const hasContent = Boolean(renderedContent.trim());
+  const hasMarkdownDisplayMode = hasContent && isMarkdownMessageContent(renderedContent);
   const isStreaming = !isUser && message.message_type === 'agent_stream' && (
     streaming || run?.status === 'running' || run?.status === 'queued'
   );
@@ -1321,6 +1330,30 @@ function MessageBubble({
           )}
           {hasContent && (
             <AiMessageActions>
+              {hasMarkdownDisplayMode && (
+                <>
+                  <button
+                    type="button"
+                    className={cn('ai-message-action', displayMode === 'preview' && 'is-active')}
+                    title={t('message.preview')}
+                    aria-label={t('message.preview')}
+                    aria-pressed={displayMode === 'preview'}
+                    onClick={() => onDisplayModeChange('preview')}
+                  >
+                    <Eye className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className={cn('ai-message-action', displayMode === 'source' && 'is-active')}
+                    title={t('message.source')}
+                    aria-label={t('message.source')}
+                    aria-pressed={displayMode === 'source'}
+                    onClick={() => onDisplayModeChange('source')}
+                  >
+                    <FileText className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+                  </button>
+                </>
+              )}
               {canReply && (
                 <button
                   type="button"
@@ -1356,7 +1389,7 @@ function MessageBubble({
             </button>
           )}
           {hasContent ? (
-            <MessageContent content={renderedContent} streaming={isStreaming} />
+            <MessageContent content={renderedContent} streaming={isStreaming} mode={displayMode} />
           ) : message.message_type === 'agent_stream' ? (
             <MessageContent content="…" streaming={isStreaming} />
           ) : null}
