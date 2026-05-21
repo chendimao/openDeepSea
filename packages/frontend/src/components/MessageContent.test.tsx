@@ -68,6 +68,28 @@ test('keeps generic json string values faithful while translating semantic summa
   assert.match(html, /实现/);
 });
 
+test('only compact-renders short scalar json rows', () => {
+  const html = renderMessage([
+    '```json',
+    JSON.stringify({
+      ready: true,
+      confidence: 0.92,
+      shortLabel: 'ok',
+      mediumChinese: '这是一个中等长度的中文字段值需要按长文本展示',
+      longAscii: 'this value is long enough to stay in a block row instead of compact inline layout',
+      nested: { child: true },
+    }, null, 2),
+    '```',
+  ].join('\n'));
+
+  assert.match(html, /json-tree-row is-compact[\s\S]*是否就绪/);
+  assert.match(html, /json-tree-row is-compact[\s\S]*置信度/);
+  assert.match(html, /json-tree-row is-compact[\s\S]*shortLabel/);
+  assert.match(html, /json-tree-row is-long[\s\S]*mediumChinese/);
+  assert.match(html, /json-tree-row is-long[\s\S]*longAscii/);
+  assert.match(html, /json-tree-row is-nested[\s\S]*nested/);
+});
+
 test('recognizes application json fences with CRLF and metadata', () => {
   const content = '```application/json title="readiness"\r\n{"task_readiness":{"ready":true,"title":"CRLF JSON","confidence":1}}\r\n```';
 

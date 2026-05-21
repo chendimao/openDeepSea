@@ -4101,6 +4101,15 @@
     .json-tree-row {
       grid-template-columns: minmax(0, 1fr);
     }
+
+    .json-tree-row.is-compact {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .json-tree-row.is-compact dt {
+      min-width: 0;
+    }
   }
 
   [data-theme="minimal-light"] .liquid-backdrop,

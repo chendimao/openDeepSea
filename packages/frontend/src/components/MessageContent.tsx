@@ -396,8 +396,14 @@ function JsonTree({ value }: { value: JsonValue }): JSX.Element {
 
 function getJsonTreeRowClass(value: JsonValue): string {
   if (Array.isArray(value) || isJsonObject(value)) return 'is-nested';
-  if (typeof value === 'string' && value.length > 48) return 'is-long';
+  if (typeof value === 'string' && getTextDisplayWidth(value) > 24) return 'is-long';
   return 'is-compact';
+}
+
+function getTextDisplayWidth(value: string): number {
+  return Array.from(value).reduce((width, character) => (
+    width + (character.charCodeAt(0) > 255 ? 2 : 1)
+  ), 0);
 }
 
 function JsonPrimitive({ value }: { value: Exclude<JsonValue, JsonValue[] | JsonObject> }): JSX.Element {
