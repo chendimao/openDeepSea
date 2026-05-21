@@ -60,120 +60,126 @@ export function WorkflowTaskFlow({
   return (
     <section className="workflow-flow-panel">
       {flowEntries.length > 0 ? (
-        <div className="workflow-flow-layout">
-          <aside className="workflow-flow-sidebar">
-            <div className="workflow-flow-sidebar-title">
-              <b>{activeStage.label}</b>
-              <span>{activeStage.completedCount}/{activeStage.entries.length || 0}</span>
-            </div>
-            {stagePanels.map((stage) => (
-              <button
-                key={stage.key}
-                className={cn('workflow-flow-overview-step', `is-${stage.key}`, activeStage.key === stage.key && 'is-active')}
-                type="button"
-                onClick={() => {
-                  setSelectedStageKey(stage.key);
-                  setSelectedEntryKey(null);
-                }}
-              >
-                <div className="workflow-flow-overview-icon">{stage.index}</div>
-                <div className="workflow-flow-overview-copy">
-                  <div className="workflow-flow-overview-title">
-                    <span className="workflow-flow-stage-name"><span className="workflow-flow-stage-symbol">{stage.icon}</span>{stage.label}</span>
-                    <span className={cn('workflow-flow-status-pill', stage.percent === 100 ? 'is-completed' : stage.entries.length > 0 ? 'is-running' : 'is-pending')}>
-                      {stage.percent === 100 ? t('workflowPlan.status.completed') : stage.entries.length > 0 ? t('workflowPlan.status.running') : t('workflowPlan.status.pending')}
-                    </span>
+        <>
+          <div className="workflow-flow-layout">
+            <aside className="workflow-flow-sidebar">
+              <div className="workflow-flow-sidebar-title">
+                <b>{activeStage.label}</b>
+                <span>{activeStage.completedCount}/{activeStage.entries.length || 0}</span>
+              </div>
+              {stagePanels.map((stage) => (
+                <button
+                  key={stage.key}
+                  className={cn('workflow-flow-overview-step', `is-${stage.key}`, activeStage.key === stage.key && 'is-active')}
+                  type="button"
+                  onClick={() => {
+                    setSelectedStageKey(stage.key);
+                    setSelectedEntryKey(null);
+                  }}
+                >
+                  <div className="workflow-flow-overview-icon">{stage.index}</div>
+                  <div className="workflow-flow-overview-copy">
+                    <div className="workflow-flow-overview-title">
+                      <span className="workflow-flow-stage-name"><span className="workflow-flow-stage-symbol">{stage.icon}</span>{stage.label}</span>
+                      <span className={cn('workflow-flow-status-pill', stage.percent === 100 ? 'is-completed' : stage.entries.length > 0 ? 'is-running' : 'is-pending')}>
+                        {stage.percent === 100 ? t('workflowPlan.status.completed') : stage.entries.length > 0 ? t('workflowPlan.status.running') : t('workflowPlan.status.pending')}
+                      </span>
+                    </div>
+                    <div className="workflow-flow-stage-bar" style={{ '--workflow-stage-progress': `${stage.percent}%` } as React.CSSProperties} />
                   </div>
-                  <div className="workflow-flow-stage-bar" style={{ '--workflow-stage-progress': `${stage.percent}%` } as React.CSSProperties} />
-                </div>
-                <span className="workflow-flow-stage-arrow">›</span>
-              </button>
-            ))}
-            <div className="workflow-flow-sidebar-foot">
-              <span>{t('workflowPlan.taskFlowPlanItems', { count: executorTaskCount })}</span>
-              <span>{t('workflowPlan.taskFlowRecords', { count: recordCount })}</span>
-            </div>
-          </aside>
-
-          <section className="workflow-flow-detail-panel">
-            {activeEntry ? (
-              <>
-              <div className="workflow-flow-detail-head">
-                <div className="workflow-flow-detail-title">
-                  <span className="workflow-flow-detail-index">{activeEntryIndex}</span>
-                  <span className="workflow-flow-detail-title-copy">
-                    <b>{activeStage.label}</b>
-                    <small>{activeEntry.title}</small>
-                  </span>
-                  <span className={cn('workflow-flow-status-pill', `is-${activeEntry.meta}`)}>{activeEntry.displayStatus}</span>
-                  <span className="workflow-flow-detail-spark"><Sparkles className="h-3.5 w-3.5" /></span>
-                </div>
-                <div className="workflow-flow-detail-meta">
-                  <span>{t('workflowPlan.taskFlowAssignee')}</span><b>{activeEntry.executorName}</b>
-                  <span>{t('workflowPlan.taskFlowStartTime')}</span><b>{formatFlowTime(activeEntry.startedAt ?? activeEntry.sortKey)}</b>
-                  <span>{t('workflowPlan.taskFlowDuration')}</span><b>{formatFlowDuration(activeEntry.startedAt, activeEntry.completedAt)}</b>
-                </div>
+                  <span className="workflow-flow-stage-arrow">›</span>
+                </button>
+              ))}
+              <div className="workflow-flow-sidebar-foot">
+                <span>{t('workflowPlan.taskFlowPlanItems', { count: executorTaskCount })}</span>
+                <span>{t('workflowPlan.taskFlowRecords', { count: recordCount })}</span>
               </div>
+            </aside>
 
-              <div className="workflow-flow-stat-grid">
-                <FlowStatCard icon={<Flag className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowTotalTasks')} value={activeStage.entries.length} tone="neutral" />
-                <FlowStatCard icon={<CheckCircle2 className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowCompleted')} value={activeStageStats.completed} tone="success" />
-                <FlowStatCard icon={<Loader2 className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowRunning')} value={activeStageStats.running} tone="primary" />
-                <FlowStatCard icon={<PauseCircle className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowPending')} value={activeStageStats.pending} tone="muted" />
-                <FlowStatCard icon={<XCircle className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowBlocked')} value={activeStageStats.blocked} tone="danger" />
-                <FlowStatCard icon={<CheckCircle2 className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowCompletionRate')} value={`${activeStage.percent}%`} tone="success" strong />
-              </div>
+            <section className="workflow-flow-detail-panel">
+              {activeEntry ? (
+                <>
+                <div className="workflow-flow-detail-head">
+                  <div className="workflow-flow-detail-title">
+                    <span className="workflow-flow-detail-index">{activeEntryIndex}</span>
+                    <span className="workflow-flow-detail-title-copy">
+                      <b>{activeStage.label}</b>
+                      <small>{activeEntry.title}</small>
+                    </span>
+                    <span className={cn('workflow-flow-status-pill', `is-${activeEntry.meta}`)}>{activeEntry.displayStatus}</span>
+                    <span className="workflow-flow-detail-spark"><Sparkles className="h-3.5 w-3.5" /></span>
+                  </div>
+                  <div className="workflow-flow-detail-meta">
+                    <span>{t('workflowPlan.taskFlowAssignee')}</span><b>{activeEntry.executorName}</b>
+                    <span>{t('workflowPlan.taskFlowStartTime')}</span><b>{formatFlowTime(activeEntry.startedAt ?? activeEntry.sortKey)}</b>
+                    <span>{t('workflowPlan.taskFlowDuration')}</span><b>{formatFlowDuration(activeEntry.startedAt, activeEntry.completedAt)}</b>
+                  </div>
+                </div>
 
-              <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowTaskList')}</div>
-              <div className="workflow-flow-task-cards">
-                {flowEntries.map((entry) => (
-                  <div
-                    key={entry.key}
-                    className={cn('workflow-flow-task-card', `is-${entry.phase}`, activeEntry.key === entry.key && 'is-selected')}
-                  >
-                    <button
-                      className="workflow-flow-task-card-main"
-                      type="button"
-                      onClick={() => {
-                        setSelectedStageKey(stageKeyForPhase(entry.phase));
-                        setSelectedEntryKey(entry.key);
-                      }}
+                <div className="workflow-flow-stat-grid">
+                  <FlowStatCard icon={<Flag className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowTotalTasks')} value={activeStage.entries.length} tone="neutral" />
+                  <FlowStatCard icon={<CheckCircle2 className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowCompleted')} value={activeStageStats.completed} tone="success" />
+                  <FlowStatCard icon={<Loader2 className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowRunning')} value={activeStageStats.running} tone="primary" />
+                  <FlowStatCard icon={<PauseCircle className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowPending')} value={activeStageStats.pending} tone="muted" />
+                  <FlowStatCard icon={<XCircle className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowBlocked')} value={activeStageStats.blocked} tone="danger" />
+                  <FlowStatCard icon={<CheckCircle2 className="h-3.5 w-3.5" />} label={t('workflowPlan.taskFlowCompletionRate')} value={`${activeStage.percent}%`} tone="success" strong />
+                </div>
+
+                <div className="workflow-flow-task-cards">
+                  {flowEntries.map((entry) => (
+                    <div
+                      key={entry.key}
+                      className={cn('workflow-flow-task-card', `is-${entry.phase}`, activeEntry.key === entry.key && 'is-selected')}
                     >
-                      <CheckCircle2 className={cn('h-4 w-4', entry.meta === 'completed' ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]')} />
-                      <div className="workflow-flow-task-card-copy">
-                        <div className="workflow-flow-task-card-title">{entry.title}</div>
-                        <div className="workflow-flow-task-card-meta">
-                          <span>{entry.executorName}</span>
-                          <span>{formatFlowTime(entry.completedAt ?? entry.startedAt ?? entry.sortKey)}</span>
+                      <button
+                        className="workflow-flow-task-card-main"
+                        type="button"
+                        onClick={() => {
+                          setSelectedStageKey(stageKeyForPhase(entry.phase));
+                          setSelectedEntryKey(entry.key);
+                        }}
+                      >
+                        <CheckCircle2 className={cn('h-4 w-4', entry.meta === 'completed' ? 'text-[var(--color-primary)]' : 'text-[var(--color-muted)]')} />
+                        <div className="workflow-flow-task-card-copy">
+                          <div className="workflow-flow-task-card-title">{entry.title}</div>
+                          <div className="workflow-flow-task-card-meta">
+                            <span>{entry.executorName}</span>
+                            <span>{formatFlowTime(entry.completedAt ?? entry.startedAt ?? entry.sortKey)}</span>
+                          </div>
                         </div>
-                      </div>
-                      <span className={cn('workflow-flow-status-pill', `is-${entry.meta}`)}>{entry.displayStatus}</span>
-                    </button>
-                    <span className="workflow-flow-task-actions">
-                      <button
-                        type="button"
-                        className="workflow-flow-task-action-button"
-                        aria-label={t('workflowPlan.viewTaskDetail', { title: entry.title })}
-                        title={t('workflowPlan.viewDetail')}
-                        onClick={() => setDetailEntry(entry)}
-                      >
-                        <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span className={cn('workflow-flow-status-pill', `is-${entry.meta}`)}>{entry.displayStatus}</span>
                       </button>
-                      <button
-                        type="button"
-                        className="workflow-flow-task-action-button"
-                        aria-label={t('message.copy')}
-                        title={t('message.copy')}
-                        onClick={() => copyFlowEntry(entry, t)}
-                      >
-                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                      </button>
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="workflow-flow-section-title">{t('workflowPlan.taskFlowExecutionLog')}</div>
+                      <span className="workflow-flow-task-actions">
+                        <button
+                          type="button"
+                          className="workflow-flow-task-action-button"
+                          aria-label={t('workflowPlan.viewTaskDetail', { title: entry.title })}
+                          title={t('workflowPlan.viewDetail')}
+                          onClick={() => setDetailEntry(entry)}
+                        >
+                          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className="workflow-flow-task-action-button"
+                          aria-label={t('message.copy')}
+                          title={t('message.copy')}
+                          onClick={() => copyFlowEntry(entry, t)}
+                        >
+                          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                </>
+              ) : (
+                <div className="workflow-flow-empty">{t('workflowPlan.taskFlowEmpty')}</div>
+              )}
+            </section>
+          </div>
+          {activeEntry && (
+            <div className="workflow-flow-log-panel">
               <div className="workflow-event-stack">
                 {timelineEvents.map((event) => (
                   <div key={event.key} className="workflow-event-item">
@@ -183,12 +189,9 @@ export function WorkflowTaskFlow({
                   </div>
                 ))}
               </div>
-              </>
-            ) : (
-              <div className="workflow-flow-empty">{t('workflowPlan.taskFlowEmpty')}</div>
+            </div>
             )}
-          </section>
-        </div>
+        </>
       ) : (
         <div className="workflow-flow-empty">{t('workflowPlan.taskFlowEmpty')}</div>
       )}

@@ -479,7 +479,7 @@ test('task flow renders staged board controls and row actions', () => {
 
   const html = renderBubble(detail, [createAgent()], { compact: true });
 
-  assert.match(html, /执行日志/);
+  assert.doesNotMatch(html, /workflow-flow-section-title/);
   assert.doesNotMatch(html, /添加任务/);
   assert.match(html, /workflow-flow-overview/);
   assert.match(html, /workflow-flow-sidebar/);
@@ -490,6 +490,8 @@ test('task flow renders staged board controls and row actions', () => {
   assert.match(html, /审查 \/ 验收/);
   assert.match(html, /workflow-event-stack/);
   assert.equal(html.match(/workflow-event-stack/g)?.length, 1);
+  assert.match(html, /workflow-flow-log-panel/);
+  assert.match(html, /<\/div><div class="workflow-flow-log-panel"><div class="workflow-event-stack">/);
   assert.match(html, /计划 \/ 分析/);
   assert.match(html, /workflow-flow-task-card-title">任务规划</);
   assert.doesNotMatch(html, /workflow-flow-task-card-title">分析</);
