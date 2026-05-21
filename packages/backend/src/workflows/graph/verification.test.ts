@@ -112,6 +112,68 @@ test('verification fails natural language staged check for unexpected staged fil
   assert.match(result.stderr, /Unexpected staged files: packages\/backend\/src\/routes.ts/);
 });
 
+test('verification fails natural language git log check when latest commit does not contain target file', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-wrong-latest-'));
+  const markdownPath = 'docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md';
+  mkdirSync(join(projectPath, 'docs', 'superpowers', 'verification'), { recursive: true });
+  mkdirSync(join(projectPath, 'packages', 'backend', 'src'), { recursive: true });
+  spawnSync('git', ['init'], { cwd: projectPath });
+  spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: projectPath });
+  spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: projectPath });
+  writeFileSync(join(projectPath, markdownPath), '# Superpowers E2E\n');
+  spawnSync('git', ['add', markdownPath], { cwd: projectPath });
+  spawnSync('git', ['commit', '-m', 'docs: add verification'], { cwd: projectPath });
+  writeFileSync(join(projectPath, 'packages/backend/src/routes.ts'), 'export {};\n');
+  spawnSync('git', ['add', 'packages/backend/src/routes.ts'], { cwd: projectPath });
+  spawnSync('git', ['commit', '-m', 'fix: change backend'], { cwd: projectPath });
+
+  const result = await runVerificationCommand(
+    `执行 git log -1 --stat，确认最新 commit 包含目标验证文档且无业务代码变更。 文件：${markdownPath}`,
+    projectPath,
+  );
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /Latest commit does not contain target file/);
+});
+
+test('verification passes natural language git log check when latest commit only contains target file', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-target-latest-'));
+  const markdownPath = 'docs/superpowers/verification/superpower-e2e-smoke-2026-05-21.md';
+  mkdirSync(join(projectPath, 'docs', 'superpowers', 'verification'), { recursive: true });
+  spawnSync('git', ['init'], { cwd: projectPath });
+  spawnSync('git', ['config', 'user.email', 'test@example.com'], { cwd: projectPath });
+  spawnSync('git', ['config', 'user.name', 'Test User'], { cwd: projectPath });
+  writeFileSync(join(projectPath, markdownPath), '# Superpowers E2E\n');
+  spawnSync('git', ['add', markdownPath], { cwd: projectPath });
+  spawnSync('git', ['commit', '-m', 'docs: add verification'], { cwd: projectPath });
+
+  const result = await runVerificationCommand(
+    `执行 git log -1 --stat，确认最新 commit 包含目标验证文档且无业务代码变更。 文件：${markdownPath}`,
+    projectPath,
+  );
+
+  assert.equal(result.status, 'passed');
+  assert.equal(result.exitCode, 0);
+});
+
+test('verification parses quoted git status paths for target file with spaces', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-quoted-path-'));
+  const markdownPath = 'docs/superpowers/verification/superpower e2e smoke.md';
+  mkdirSync(join(projectPath, 'docs', 'superpowers', 'verification'), { recursive: true });
+  spawnSync('git', ['init'], { cwd: projectPath });
+  writeFileSync(join(projectPath, markdownPath), '# Superpowers E2E\n');
+
+  const result = await runVerificationCommand(
+    `执行 git diff 或 git status，确认除目标验证文档外无本任务改动。 文件：${markdownPath}`,
+    projectPath,
+  );
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /Target file still has uncommitted changes/);
+});
+
 test('verify node records skipped result and continues when no commands are configured', async () => {
   const projectPath = join(tmpdir(), `graph-verification-empty-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

@@ -178,7 +178,8 @@ async function runNaturalLanguageVerification(command: string, cwd: string): Pro
     return runGitStagedVerification(command, cwd, markdownPath);
   }
   if (/^执行\s+git\s+log\s+-1\s+--stat/.test(normalized)) {
-    return runGitVerification(command, cwd, ['log', '-1', '--stat']);
+    const markdownPath = targetPath ?? findRecentMarkdownPath(cwd);
+    return runGitLatestCommitVerification(command, cwd, markdownPath);
   }
 
   return null;
@@ -209,7 +210,7 @@ async function runGitWorkspaceCleanVerification(
       stderr: 'No target file found for workspace status check',
     };
   }
-  const result = await runSpawnedCommand('git', ['status', '--short', '--untracked-files=all', '--', targetPath], cwd);
+  const result = await runSpawnedCommand('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', targetPath], cwd);
   if (result.exitCode !== 0) {
     return {
       command,
@@ -220,7 +221,7 @@ async function runGitWorkspaceCleanVerification(
     };
   }
 
-  const changedPaths = parseGitShortStatusPaths(result.stdout);
+  const changedPaths = parseGitStatusPorcelainPaths(result.stdout);
   const targetDirty = targetPath ? changedPaths.includes(targetPath) : false;
   return {
     command,
@@ -260,17 +261,81 @@ async function runGitStagedVerification(
   };
 }
 
-function parseGitShortStatusPaths(output: string): string[] {
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter(Boolean)
-    .map((line) => {
-      const rawPath = line.slice(3);
-      const renamePath = rawPath.split(' -> ').pop() ?? rawPath;
-      return renamePath.trim();
-    })
-    .filter(Boolean);
+async function runGitLatestCommitVerification(
+  command: string,
+  cwd: string,
+  targetPath: string | null,
+): Promise<VerificationResult> {
+  if (!targetPath) {
+    return {
+      command,
+      status: 'failed',
+      exitCode: 1,
+      stdout: '',
+      stderr: 'No target file found for latest commit check',
+    };
+  }
+  const statResult = await runSpawnedCommand('git', ['log', '-1', '--stat'], cwd);
+  if (statResult.exitCode !== 0) {
+    return {
+      command,
+      status: 'failed',
+      exitCode: statResult.exitCode,
+      stdout: statResult.stdout,
+      stderr: statResult.stderr,
+    };
+  }
+  const namesResult = await runSpawnedCommand('git', ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', 'HEAD'], cwd);
+  if (namesResult.exitCode !== 0) {
+    return {
+      command,
+      status: 'failed',
+      exitCode: namesResult.exitCode,
+      stdout: statResult.stdout,
+      stderr: namesResult.stderr,
+    };
+  }
+  const changedPaths = parseNulSeparatedPaths(namesResult.stdout);
+  const containsTarget = changedPaths.includes(targetPath);
+  const unexpected = changedPaths.filter((path) => path !== targetPath);
+  const passed = containsTarget && unexpected.length === 0;
+  return {
+    command,
+    status: passed ? 'passed' : 'failed',
+    exitCode: passed ? 0 : 1,
+    stdout: statResult.stdout,
+    stderr: !containsTarget
+      ? `Latest commit does not contain target file: ${targetPath}`
+      : unexpected.length > 0
+        ? `Latest commit contains unexpected files: ${unexpected.join(', ')}`
+        : statResult.stderr,
+  };
+}
+
+function parseGitStatusPorcelainPaths(output: string): string[] {
+  const entries = parseNulSeparatedPaths(output);
+  const paths: string[] = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index] ?? '';
+    if (entry.length < 4) continue;
+    const status = entry.slice(0, 2);
+    const path = entry.slice(3);
+    if (!path) continue;
+    if (status.includes('R') || status.includes('C')) {
+      const newPath = entries[index + 1];
+      if (newPath) {
+        paths.push(newPath);
+        index += 1;
+        continue;
+      }
+    }
+    paths.push(path);
+  }
+  return paths;
+}
+
+function parseNulSeparatedPaths(output: string): string[] {
+  return output.split('\0').map((path) => path.trim()).filter(Boolean);
 }
 
 function runSpawnedCommand(bin: string, args: string[], cwd: string): Promise<{
@@ -303,9 +368,11 @@ function runSpawnedCommand(bin: string, args: string[], cwd: string): Promise<{
 }
 
 function extractWorkspaceMarkdownPath(text: string, cwd: string): string | null {
-  const match = text.match(/(?:^|[\s：:])((?:\.\/)?[a-z0-9_./@+-]+\.md)\b/i);
-  if (!match?.[1]) return null;
-  const normalized = match[1].replace(/^\.\//, '');
+  const markerMatch = text.match(/(?:文件|路径)[:：]\s*(.+?\.md)(?:\s*$|[。.]$)/i);
+  const inlineMatch = markerMatch ? null : text.match(/(?:^|[\s：:])((?:\.\/)?[a-z0-9_./@+ -]+\.md)\b/i);
+  const rawPath = markerMatch?.[1] ?? inlineMatch?.[1];
+  if (!rawPath) return null;
+  const normalized = rawPath.trim().replace(/^\.\//, '');
   return resolveWorkspacePath(cwd, normalized) ? normalized : null;
 }
 
