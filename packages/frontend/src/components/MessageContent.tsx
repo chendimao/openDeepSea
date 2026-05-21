@@ -6,20 +6,44 @@ type MessagePart =
   | { type: 'text'; value: string }
   | { type: 'code'; value: string; language: string };
 
-const fencePattern = /```(\w+)?\n([\s\S]*?)```/g;
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+type JsonObject = { [key: string]: JsonValue };
+
+const fencePattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
+
+const jsonFieldLabels: Record<string, string> = {
+  task_readiness: '任务准备状态',
+  ready: '是否就绪',
+  confidence: '置信度',
+  title: '标题',
+  description: '描述',
+  missing_questions: '缺失问题',
+  recommended_mode: '推荐模式',
+  execution_intent: '执行意图',
+};
+
+const jsonValueLabels: Record<string, string> = {
+  formal_workflow: '正式工作流',
+  lightweight_collaboration: '轻量协作',
+  analysis_only: '仅分析',
+  implementation: '实现',
+  planning: '规划',
+  discussion: '讨论',
+};
 
 function parseMessage(content: string): MessagePart[] {
   const parts: MessagePart[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
+  fencePattern.lastIndex = 0;
   while ((match = fencePattern.exec(content)) !== null) {
     if (match.index > lastIndex) {
       parts.push({ type: 'text', value: content.slice(lastIndex, match.index) });
     }
     parts.push({
       type: 'code',
-      language: match[1] || 'text',
+      language: normalizeFenceLanguage(match[1]),
       value: match[2] ?? '',
     });
     lastIndex = match.index + match[0].length;
@@ -30,6 +54,10 @@ function parseMessage(content: string): MessagePart[] {
   }
 
   return parts.length > 0 ? parts : [{ type: 'text', value: content }];
+}
+
+function normalizeFenceLanguage(rawLanguage: string | undefined): string {
+  return rawLanguage?.trim().split(/\s+/)[0] || 'text';
 }
 
 export function MessageContent({
@@ -143,18 +171,41 @@ function isMarkdownContent(content: string): boolean {
 
 export function MarkdownPreview({ content, streaming = false }: { content: string; streaming?: boolean }): JSX.Element {
   const { t } = useI18n();
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const parts = parseMessage(content);
+
+  const copyCode = async (code: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedIndex(index);
+      window.setTimeout(() => setCopiedIndex(null), 1200);
+    } catch {
+      setCopiedIndex(null);
+    }
+  };
+
   return (
     <div className="markdown-preview">
       {parts.map((part, index) => {
         if (part.type === 'code') {
+          const parsedJson = parseJsonCodeBlock(part.language, part.value);
+          if (parsedJson.ok) {
+            return (
+              <JsonBlock
+                key={`preview-json-${index}`}
+                language={part.language}
+                value={part.value}
+                data={parsedJson.value}
+              />
+            );
+          }
           return (
             <CodeBlock
               key={`preview-code-${index}`}
               language={part.language}
               value={part.value}
-              copied={false}
-              onCopy={() => void navigator.clipboard.writeText(part.value)}
+              copied={copiedIndex === index}
+              onCopy={() => void copyCode(part.value, index)}
               copyLabel={t('message.copy')}
               copiedLabel={t('message.copied')}
             />
@@ -165,6 +216,196 @@ export function MarkdownPreview({ content, streaming = false }: { content: strin
       {streaming && <StreamingCursor />}
     </div>
   );
+}
+
+function parseJsonCodeBlock(language: string, value: string): { ok: true; value: JsonValue } | { ok: false } {
+  if (!isJsonLanguage(language)) return { ok: false };
+  try {
+    return { ok: true, value: JSON.parse(value) as JsonValue };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function isJsonLanguage(language: string): boolean {
+  return ['json', 'application/json'].includes(language.trim().toLowerCase());
+}
+
+function JsonBlock({
+  language,
+  value,
+  data,
+}: {
+  language: string;
+  value: string;
+  data: JsonValue;
+}): JSX.Element {
+  const [mode, setMode] = useState<'structured' | 'source'>('structured');
+  const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
+
+  const copyJson = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="json-block">
+      <div className="json-block-header">
+        <div className="json-block-title">
+          <span>{t('message.jsonStructured')}</span>
+          <small>{language || 'json'}</small>
+        </div>
+        <div className="json-block-actions">
+          <div className="json-mode-switch" aria-label={t('message.jsonModeAria')}>
+            <button
+              type="button"
+              onClick={() => setMode('structured')}
+              className={mode === 'structured' ? 'is-active' : undefined}
+              aria-pressed={mode === 'structured'}
+            >
+              {t('message.jsonStructured')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('source')}
+              className={mode === 'source' ? 'is-active' : undefined}
+              aria-pressed={mode === 'source'}
+            >
+              {t('message.source')}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => void copyJson()}
+            className="json-copy-button"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+            {copied ? t('message.copied') : t('message.copy')}
+          </button>
+        </div>
+      </div>
+      {mode === 'structured' ? (
+        <>
+          <TaskReadinessSummary data={data} />
+          <div className="json-tree" aria-label={t('message.jsonTreeAria')}>
+            <JsonTree value={data} />
+          </div>
+        </>
+      ) : (
+        <pre className="code-block-pre json-source-pre"><code>{value}</code></pre>
+      )}
+    </div>
+  );
+}
+
+function TaskReadinessSummary({ data }: { data: JsonValue }): JSX.Element | null {
+  const readiness = getTaskReadiness(data);
+  if (!readiness) return null;
+
+  const title = typeof readiness.title === 'string' ? readiness.title : '未命名任务';
+  const ready = typeof readiness.ready === 'boolean' ? readiness.ready : null;
+  const confidence = typeof readiness.confidence === 'number' ? readiness.confidence : null;
+  const recommendedMode = typeof readiness.recommended_mode === 'string' ? readiness.recommended_mode : null;
+  const intent = typeof readiness.execution_intent === 'string' ? readiness.execution_intent : null;
+  const missingQuestions = Array.isArray(readiness.missing_questions) ? readiness.missing_questions.length : null;
+
+  return (
+    <section className="json-task-summary" aria-label="任务准备状态">
+      <div className="json-task-summary-main">
+        <span className={ready === false ? 'is-warning' : 'is-ready'}>
+          {ready === false ? '需要补充信息' : '任务准备状态'}
+        </span>
+        <strong>{title}</strong>
+      </div>
+      <dl className="json-task-summary-grid">
+        <JsonMetric label="是否就绪" value={ready === null ? '未知' : ready ? '是' : '否'} />
+        <JsonMetric label="置信度" value={confidence === null ? '未知' : formatConfidence(confidence)} />
+        <JsonMetric label="推荐模式" value={formatSemanticJsonString(recommendedMode)} />
+        <JsonMetric label="执行意图" value={formatSemanticJsonString(intent)} />
+        <JsonMetric label="缺失问题" value={missingQuestions === null ? '未知' : `${missingQuestions} 个`} />
+      </dl>
+    </section>
+  );
+}
+
+function JsonMetric({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+function getTaskReadiness(data: JsonValue): JsonObject | null {
+  if (!isJsonObject(data)) return null;
+  const value = data.task_readiness;
+  return isJsonObject(value) ? value : null;
+}
+
+function JsonTree({ value }: { value: JsonValue }): JSX.Element {
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="json-empty">[]</span>;
+    return (
+      <ol className="json-tree-list is-array">
+        {value.map((item, index) => (
+          <li key={index}>
+            <span className="json-index">{index}</span>
+            <JsonTree value={item} />
+          </li>
+        ))}
+      </ol>
+    );
+  }
+
+  if (isJsonObject(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) return <span className="json-empty">{'{}'}</span>;
+    return (
+      <dl className="json-tree-list">
+        {entries.map(([key, entryValue]) => (
+          <div key={key} className="json-tree-row">
+            <dt>
+              <span>{jsonFieldLabels[key] ?? key}</span>
+              {jsonFieldLabels[key] && <small>{key}</small>}
+            </dt>
+            <dd><JsonTree value={entryValue} /></dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
+
+  return <JsonPrimitive value={value} />;
+}
+
+function JsonPrimitive({ value }: { value: Exclude<JsonValue, JsonValue[] | JsonObject> }): JSX.Element {
+  if (value === null) return <span className="json-primitive is-null">null</span>;
+  if (typeof value === 'boolean') {
+    return <span className="json-primitive is-boolean">{value ? '是' : '否'}</span>;
+  }
+  if (typeof value === 'number') return <span className="json-primitive is-number">{String(value)}</span>;
+  return <span className="json-primitive is-string">{value}</span>;
+}
+
+function isJsonObject(value: JsonValue): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatConfidence(value: number): string {
+  if (value >= 0 && value <= 1) return `${Math.round(value * 100)}%`;
+  return `${value}%`;
+}
+
+function formatSemanticJsonString(value: string | null): string {
+  if (!value) return '未知';
+  return jsonValueLabels[value] ?? value;
 }
 
 function StreamingCursor(): JSX.Element {
@@ -296,7 +537,7 @@ function CodeBlock({
           onClick={onCopy}
           className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)] focus:outline-none focus:glow-accent ease-ocean transition-all"
         >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
           {copied ? copiedLabel : copyLabel}
         </button>
       </div>
