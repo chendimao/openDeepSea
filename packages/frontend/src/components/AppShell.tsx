@@ -23,6 +23,8 @@ import { CommandMenu } from './CommandMenu';
 import { SystemSettingsDialog } from './SettingsDialogs';
 import { type ThemeMode } from '../lib/theme';
 
+const RECENT_ROOM_LIMIT = 6;
+
 export function AppShell({
   children,
   theme,
@@ -37,6 +39,7 @@ export function AppShell({
   const location = useLocation();
   const { t } = useI18n();
   const projectId = getProjectId(location.pathname);
+  const roomId = getRoomId(location.pathname);
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -71,6 +74,8 @@ export function AppShell({
           <ProjectSidebar
             projects={projects}
             currentProject={currentProject}
+            projectId={projectId}
+            roomId={roomId}
             theme={theme}
             onThemeChange={onThemeChange}
             onOpenCommand={() => setCommandOpen(true)}
@@ -95,18 +100,32 @@ export function AppShell({
 function ProjectSidebar({
   projects,
   currentProject,
+  projectId,
+  roomId,
   theme,
   onThemeChange,
   onOpenCommand,
 }: {
   projects: Awaited<ReturnType<typeof api.listProjects>>;
   currentProject?: Awaited<ReturnType<typeof api.listProjects>>[number];
+  projectId?: string;
+  roomId?: string;
   theme: ThemeMode;
   onThemeChange: (theme: ThemeMode) => void;
   onOpenCommand: () => void;
 }): JSX.Element {
   const { t } = useI18n();
   const location = useLocation();
+  const {
+    data: rooms = [],
+    isLoading: roomsLoading,
+    isError: roomsError,
+  } = useQuery({
+    queryKey: ['rooms', projectId],
+    queryFn: () => api.listRooms(projectId!),
+    enabled: Boolean(projectId),
+  });
+  const recentRooms = rooms.slice(0, RECENT_ROOM_LIMIT);
 
   return (
     <div className="glass-sidebar flex h-full flex-col">
@@ -163,31 +182,62 @@ function ProjectSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
-        <div className="mb-3 text-[10.5px] font-medium text-[var(--color-muted)]">{t('shell.currentProject')}</div>
+        <div className="mb-3 text-[10.5px] font-medium text-[var(--color-muted)]">{t('shell.recentRooms')}</div>
         {currentProject ? (
-          <div className="glass-project-card">
-            <div className="flex items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate font-display text-[14px] font-semibold leading-snug">
-                  {currentProject.name}
-                </h2>
-                <p className="mt-1 truncate font-mono text-[10px] text-[var(--color-muted)]" title={currentProject.path}>
-                  {currentProject.path}
-                </p>
-              </div>
-              <span className="rounded-md bg-white/52 px-1.5 py-0.5 font-mono text-[10px] text-[var(--color-muted)]">
-                ⌘62
+          <div className="glass-room-list-card">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-[12.5px] font-medium text-[var(--color-fg)]">
+                {currentProject.name}
+              </span>
+              <span className="font-mono text-[10px] text-[var(--color-muted)]">
+                {t('shell.recentRoomsCount', { count: rooms.length })}
               </span>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <RailMetric label={t('shell.metric.rooms')} value={currentProject.stats?.rooms ?? 0} />
-              <RailMetric label={t('shell.metric.tasks')} value={currentProject.stats?.tasks ?? 0} />
-              <RailMetric label={t('shell.metric.inProgress')} value={currentProject.stats?.tasksInProgress ?? 0} />
-              <RailMetric label={t('shell.metric.done')} value={currentProject.stats?.tasksDone ?? 0} />
-            </div>
+            {roomsLoading ? (
+              <div className="space-y-2" aria-label={t('shell.recentRoomsLoading')}>
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="recent-room-skeleton" />
+                ))}
+              </div>
+            ) : roomsError ? (
+              <div className="recent-room-empty">
+                <MessageCircle className="h-5 w-5 text-[var(--color-primary)]" strokeWidth={1.7} />
+                <p>{t('shell.recentRoomsError')}</p>
+              </div>
+            ) : recentRooms.length > 0 ? (
+              <div className="space-y-1.5">
+                {recentRooms.map((room) => {
+                  const active = room.id === roomId;
+                  return (
+                    <NavLink
+                      key={room.id}
+                      to={`/projects/${room.project_id}/rooms/${room.id}`}
+                      className={cn('recent-room-link', active && 'is-active')}
+                      aria-current={active ? 'page' : undefined}
+                      title={room.description ?? room.name}
+                    >
+                      <span className="recent-room-dot" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-medium">{room.name}</span>
+                        {room.description ? (
+                          <span className="mt-0.5 block truncate text-[10.5px] text-[var(--color-muted)]">
+                            {room.description}
+                          </span>
+                        ) : null}
+                      </span>
+                    </NavLink>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="recent-room-empty">
+                <MessageCircle className="h-5 w-5 text-[var(--color-primary)]" strokeWidth={1.7} />
+                <p>{t('shell.recentRoomsEmpty')}</p>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="glass-project-card text-center">
+          <div className="glass-room-list-card text-center">
             <FolderKanban className="mx-auto h-6 w-6 text-[var(--color-primary)]" strokeWidth={1.75} />
             <div className="mt-3 font-display text-[13px] font-medium">{t('shell.selectProject')}</div>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
@@ -250,16 +300,12 @@ function SidebarLink({
   );
 }
 
-function RailMetric({ label, value }: { label: string; value: number }): JSX.Element {
-  return (
-    <div className="metric-tile">
-      <div className="font-mono text-[15px] text-[var(--color-fg)]">{value}</div>
-      <div className="mt-0.5 text-[10.5px] text-[var(--color-fg-muted)]">{label}</div>
-    </div>
-  );
-}
-
 function getProjectId(pathname: string): string | undefined {
   const [, first, projectId] = pathname.split('/');
   return first === 'projects' ? projectId : undefined;
+}
+
+function getRoomId(pathname: string): string | undefined {
+  const [, first, , third, roomId] = pathname.split('/');
+  return first === 'projects' && third === 'rooms' ? roomId : undefined;
 }
