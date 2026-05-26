@@ -1,6 +1,6 @@
-import type { AcpBackend, AcpPermissionMode, CliSessionSummary } from '../types.js';
+import type { AcpBackend, AcpPermissionMode, AgentTimelineEvent, CliSessionSummary } from '../types.js';
 
-export type AcpStreamChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command';
+export type AcpStreamChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command' | 'event';
 
 export type AcpStreamTrace =
   | {
@@ -26,6 +26,8 @@ export interface AcpStreamChunk {
   channel?: AcpStreamChannel;
   rawType?: string;
   trace?: AcpStreamTrace;
+  event?: AgentTimelineEvent;
+  rawEvent?: Record<string, unknown>;
 }
 
 export interface SessionAdapter {

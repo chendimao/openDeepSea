@@ -687,10 +687,43 @@ export interface MessageTraceCommand {
   output?: string;
 }
 
+export type AgentTimelineEventType =
+  | 'thinking'
+  | 'assistant_message'
+  | 'tool_call'
+  | 'tool_result'
+  | 'command'
+  | 'command_output'
+  | 'file_diff'
+  | 'plan_update'
+  | 'web_search'
+  | 'permission_request'
+  | 'error'
+  | 'raw';
+
+export type AgentTimelineEventStatus = 'started' | 'delta' | 'completed' | 'failed';
+
+export type AgentTimelinePayload = Record<string, unknown>;
+
+export interface AgentTimelineEvent {
+  id: string;
+  message_id: string;
+  run_id: string;
+  agent_id: string;
+  seq: number;
+  type: AgentTimelineEventType;
+  status: AgentTimelineEventStatus;
+  title: string;
+  payload: AgentTimelinePayload;
+  raw?: Record<string, unknown>;
+  created_at: number;
+}
+
 export interface MessageTrace {
   thinking?: MessageTraceThinking[];
   tool_calls?: MessageTraceToolCall[];
   commands?: MessageTraceCommand[];
+  events?: AgentTimelineEvent[];
 }
 
 export type TaskExecutionIntent =
@@ -965,7 +998,8 @@ export type WsServerEvent =
       done: boolean;
       seq?: number;
       runId?: string;
-      channel?: 'answer' | 'thinking' | 'tool' | 'command';
+      channel?: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      event?: AgentTimelineEvent;
       status?: 'streaming' | AgentRunStatus;
       error?: string | null;
       message?: Message;
