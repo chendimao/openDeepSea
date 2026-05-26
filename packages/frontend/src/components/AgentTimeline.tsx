@@ -165,6 +165,7 @@ function mergeTimelineEvents(
 
 function traceToEvents(trace?: MessageTrace): AgentTimelineEvent[] {
   if (!trace) return [];
+  if (trace.events?.length) return trace.events;
   const legacyEvents = [
     ...(trace.thinking ?? []).map((entry, index) => buildLegacyEvent('thinking', index, toThinking(entry))),
     ...(trace.tool_calls ?? []).map((entry, index) => buildLegacyEvent('tool_call', index, toToolCall(entry))),

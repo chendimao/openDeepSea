@@ -7,7 +7,7 @@ import { AgentTimeline } from './AgentTimeline';
 
 setupBrowserStubs();
 
-test('AgentTimeline renders structured events and preserves legacy trace compatibility', () => {
+test('AgentTimeline renders structured events as authoritative when legacy trace fields coexist', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <AgentTimeline
@@ -33,8 +33,24 @@ test('AgentTimeline renders structured events and preserves legacy trace compati
   );
 
   assert.match(html, /修改文件 src\/app\.ts/);
-  assert.match(html, /legacy thinking/);
+  assert.doesNotMatch(html, /legacy thinking/);
   assert.match(html, /agent-timeline/);
+});
+
+test('AgentTimeline falls back to legacy trace fields when structured events are absent', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        trace={{
+          thinking: [{ text: 'legacy thinking' }],
+          tool_calls: [{ name: 'Read', input: '{"path":"src/app.ts"}' }],
+        }}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /legacy thinking/);
+  assert.match(html, /调用工具 Read/);
 });
 
 test('AgentTimeline marks diff lines with add and remove classes', () => {
