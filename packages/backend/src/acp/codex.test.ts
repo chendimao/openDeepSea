@@ -12,7 +12,7 @@ test('buildCodexExecArgs defaults to bypassing approvals and sandbox', () => {
       writableDirs: ['/tmp/ignored'],
     }),
     {
-      args: ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', '-'],
+      args: ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', '-'],
       stdin: 'hello',
     },
   );
@@ -31,6 +31,7 @@ test('buildCodexExecArgs supports workspace-write with the current project direc
       args: [
         'exec',
         '--json',
+        '--skip-git-repo-check',
         '--sandbox',
         'workspace-write',
         '--add-dir',
@@ -54,7 +55,7 @@ test('buildCodexExecArgs supports read-only mode', () => {
       writableDirs: ['/tmp/ignored'],
     }),
     {
-      args: ['exec', '--json', '--sandbox', 'read-only', '-'],
+      args: ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-'],
       stdin: 'inspect',
     },
   );
@@ -73,6 +74,7 @@ test('buildCodexExecArgs attaches image paths before the prompt', () => {
       args: [
         'exec',
         '--json',
+        '--skip-git-repo-check',
         '--dangerously-bypass-approvals-and-sandbox',
         '--image',
         '/tmp/screen.png',
@@ -95,7 +97,7 @@ test('buildCodexExecArgs passes dash-prefixed chat messages through stdin', () =
       writableDirs: [],
     }),
     {
-      args: ['exec', '--json', '--dangerously-bypass-approvals-and-sandbox', 'resume', 'abc123', '-'],
+      args: ['exec', '--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox', 'resume', 'abc123', '-'],
       stdin: '- 复现群聊错误',
     },
   );

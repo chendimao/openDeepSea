@@ -133,7 +133,7 @@ export function buildCodexExecInvocation(args: {
   permissionMode: AcpPermissionMode;
   writableDirs: string[];
 }): { args: string[]; stdin: string } {
-  const cliArgs: string[] = ['exec', '--json'];
+  const cliArgs: string[] = ['exec', '--json', '--skip-git-repo-check'];
 
   if (args.permissionMode === 'bypass') {
     cliArgs.push('--dangerously-bypass-approvals-and-sandbox');
