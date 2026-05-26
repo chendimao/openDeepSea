@@ -260,6 +260,53 @@ test('normalizeStdoutChunk emits tool trace with tool name and input', () => {
   });
 });
 
+test('normalizeStdoutChunk unwraps Codex response_item payload traces', () => {
+  const events = normalizeStdoutChunk([
+    JSON.stringify({
+      type: 'response_item',
+      payload: {
+        type: 'reasoning',
+        summary: [],
+        content: null,
+        encrypted_content: 'encrypted',
+      },
+    }),
+    JSON.stringify({
+      type: 'response_item',
+      payload: {
+        type: 'function_call',
+        name: 'exec_command',
+        arguments: '{"cmd":"sed -n 1,20p AGENTS.md"}',
+        call_id: 'call-1',
+      },
+    }),
+    JSON.stringify({
+      type: 'response_item',
+      payload: {
+        type: 'function_call_output',
+        call_id: 'call-1',
+        output: 'Output:\\nAGENTS rules',
+      },
+    }),
+  ].join('\n'));
+
+  assert.equal(events.filter((event) => event.channel === 'thinking').length, 1);
+  assert.match(events.find((event) => event.channel === 'thinking')?.text ?? '', /加密 reasoning/);
+  assert.deepEqual(events.filter((event) => event.channel === 'tool').map((event) => event.trace), [
+    {
+      kind: 'tool',
+      name: 'exec_command',
+      input: '{"cmd":"sed -n 1,20p AGENTS.md"}',
+    },
+    {
+      kind: 'tool',
+      name: 'tool_result',
+      input: '',
+      output: 'Output:\nAGENTS rules',
+    },
+  ]);
+});
+
 test('normalizeStdoutChunk emits command trace for shell execution', () => {
   const events = normalizeStdoutChunk(JSON.stringify({
     type: 'item.completed',

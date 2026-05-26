@@ -6,6 +6,7 @@ export type AcpStreamTrace =
   | {
     kind: 'thinking';
     text: string;
+    encrypted?: boolean;
   }
   | {
     kind: 'tool';

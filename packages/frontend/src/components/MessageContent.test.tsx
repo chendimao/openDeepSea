@@ -84,7 +84,7 @@ test('only compact-renders short scalar json rows', () => {
   assert.match(html, /json-tree-row is-nested[\s\S]*nested/);
 });
 
-test('json tree rows include shrink-safe containers for nested planner decisions', () => {
+test('renders planner decision json as a Chinese summary card', () => {
   const html = renderMessage([
     '```json',
     JSON.stringify({
@@ -101,9 +101,14 @@ test('json tree rows include shrink-safe containers for nested planner decisions
     '```',
   ].join('\n'));
 
-  assert.match(html, /class="json-tree-row is-nested"/);
+  assert.match(html, /规划决策/);
+  assert.match(html, /建议后暂停/);
+  assert.match(html, /已建议/);
+  assert.match(html, /等待确认/);
+  assert.match(html, /下一步数量/);
   assert.match(html, /runtime-inspector/);
   assert.match(html, /检查 Codex CLI 是否加载/);
+  assert.doesNotMatch(html, /<small>planner_decision<\/small>/);
 });
 
 test('recognizes application json fences with CRLF and metadata', () => {
@@ -172,10 +177,13 @@ test('renders thinking and tool trace panels collapsed by default', () => {
 
   assert.match(html, /<details/);
   assert.doesNotMatch(html, /<details open/);
-  assert.match(html, /Thinking/);
-  assert.match(html, /工具轨迹/);
+  assert.match(html, /reasoning/);
+  assert.match(html, /tool/);
+  assert.match(html, /command/);
   assert.match(html, /完整 thinking 原文/);
   assert.match(html, /search_files/);
+  assert.match(html, /input/);
+  assert.match(html, /output/);
   assert.match(html, /rg -n &quot;model&quot; packages\/frontend\/src/);
 });
 

@@ -1567,9 +1567,9 @@ router.post('/rooms/:roomId/planner/continue', async (req, res) => {
   const room = roomRepo.get(req.params.roomId);
   if (!room) return res.status(404).json({ error: 'room not found' });
   try {
-    const accepted = await continueLatestPlannerDecision({ roomId: room.id });
-    if (!accepted) return res.status(409).json({ error: 'no planner decision ready to continue' });
-    res.status(200).json({ accepted: true });
+    const result = await continueLatestPlannerDecision({ roomId: room.id });
+    if (!result.accepted) return res.status(409).json({ error: 'no planner decision ready to continue' });
+    res.status(200).json({ accepted: true, dispatched: result.dispatched });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
@@ -1598,12 +1598,12 @@ router.post('/rooms/:roomId/planner/dispatch', async (req, res) => {
     return res.status(404).json({ error: 'source message not found' });
   }
   try {
-    await dispatchPlannerDecisionForRoom({
+    const result = await dispatchPlannerDecisionForRoom({
       roomId: room.id,
       sourceMessageId: parsed.data.source_message_id,
       decision: parsed.data.planner_decision,
     });
-    res.status(200).json({ accepted: true });
+    res.status(200).json({ accepted: true, dispatched: result.dispatched });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
@@ -1973,12 +1973,12 @@ router.post('/rooms/:roomId/planner/continue', (req, res, next) => {
       res.status(404).json({ error: 'room not found' });
       return;
     }
-    const accepted = await continueLatestPlannerDecision({ roomId: room.id });
-    if (!accepted) {
+    const result = await continueLatestPlannerDecision({ roomId: room.id });
+    if (!result.accepted) {
       res.status(404).json({ error: 'planner decision not found' });
       return;
     }
-    res.status(202).json({ accepted: true });
+    res.status(202).json({ accepted: true, dispatched: result.dispatched });
   })().catch(next);
 });
 
@@ -1999,12 +1999,12 @@ router.post('/rooms/:roomId/planner/dispatch', (req, res, next) => {
       res.status(404).json({ error: 'source message not found' });
       return;
     }
-    await dispatchPlannerDecisionForRoom({
+    const result = await dispatchPlannerDecisionForRoom({
       roomId: room.id,
       sourceMessageId: sourceMessage.id,
       decision: parsed.data.planner_decision,
     });
-    res.status(202).json({ accepted: true });
+    res.status(202).json({ accepted: true, dispatched: result.dispatched });
   })().catch(next);
 });
 

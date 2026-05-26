@@ -5,6 +5,7 @@ import { parseMessageMetadata } from '../lib/messageMetadata';
 import {
   createDefaultReplyTarget,
   createPlannerDispatchInput,
+  hasDispatchablePlannerSteps,
   createReplyTarget,
 } from './roomPageLogic';
 
@@ -127,6 +128,23 @@ test('createPlannerDispatchInput falls back to the clicked message id for legacy
   const input = createPlannerDispatchInput(message);
 
   assert.equal(input?.source_message_id, 'planner-message');
+});
+
+test('hasDispatchablePlannerSteps only enables continue when planner has concrete next steps', () => {
+  assert.equal(hasDispatchablePlannerSteps({
+    mode: 'pause_after_suggestion',
+    status: 'suggested',
+    summary: '只是说明',
+    next_steps: [],
+    awaiting_user_confirmation: true,
+  }), false);
+  assert.equal(hasDispatchablePlannerSteps({
+    mode: 'pause_after_suggestion',
+    status: 'suggested',
+    summary: '建议派发',
+    next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
+    awaiting_user_confirmation: true,
+  }), true);
 });
 
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & {

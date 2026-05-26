@@ -50,6 +50,7 @@ import {
   createDefaultReplyTarget,
   createPlannerDispatchInput,
   createReplyTarget,
+  hasDispatchablePlannerSteps,
   type ReplyTarget,
 } from './roomPageLogic';
 
@@ -950,10 +951,10 @@ function MessageBubble({
   const continuePlanner = useMutation({
     mutationFn: (input: { source_message_id: string; planner_decision: PlannerDecision }) =>
       api.dispatchPlannerDecision(roomId, input),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
-      toast.success('已按 planner 建议继续');
+      toast.success(result.dispatched > 0 ? `已派发 ${result.dispatched} 个智能体` : '没有可派发的下一步');
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -1109,6 +1110,7 @@ function PlannerDecisionPanel({
   onContinue: () => void;
   onSupplement: () => void;
 }) {
+  const canContinue = hasDispatchablePlannerSteps(decision);
   return (
     <section className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)]/70 px-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -1136,14 +1138,20 @@ function PlannerDecisionPanel({
       )}
       {decision.awaiting_user_confirmation && (
         <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="glass-button glass-button-primary"
-            disabled={continuing}
-            onClick={onContinue}
-          >
-            {continuing ? '继续中…' : '按建议继续'}
-          </button>
+          {canContinue ? (
+            <button
+              type="button"
+              className="glass-button glass-button-primary"
+              disabled={continuing}
+              onClick={onContinue}
+            >
+              {continuing ? '继续中…' : '按建议继续'}
+            </button>
+          ) : (
+            <span className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-[11.5px] text-[var(--color-fg-muted)]">
+              当前建议没有可派发的下一步
+            </span>
+          )}
           <button
             type="button"
             className="glass-button"

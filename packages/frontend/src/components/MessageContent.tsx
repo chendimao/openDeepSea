@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 import type { MessageTrace, MessageTraceCommand, MessageTraceToolCall } from '../lib/types';
@@ -14,6 +14,14 @@ const fencePattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
 
 const jsonFieldLabels: Record<string, string> = {
   task_readiness: '任务准备状态',
+  planner_decision: '规划决策',
+  mode: '模式',
+  status: '状态',
+  summary: '摘要',
+  next_steps: '下一步',
+  agent_id: '智能体',
+  goal: '目标',
+  awaiting_user_confirmation: '等待确认',
   ready: '是否就绪',
   confidence: '置信度',
   title: '标题',
@@ -25,6 +33,12 @@ const jsonFieldLabels: Record<string, string> = {
 
 const jsonValueLabels: Record<string, string> = {
   formal_workflow: '正式工作流',
+  pause_after_suggestion: '建议后暂停',
+  auto_continue: '自动继续',
+  suggested: '已建议',
+  dispatching: '派发中',
+  completed: '已完成',
+  blocked: '已阻塞',
   lightweight_collaboration: '轻量协作',
   analysis_only: '仅分析',
   implementation: '实现',
@@ -233,6 +247,7 @@ function JsonBlock({
   const [copied, setCopied] = useState(false);
   const { t } = useI18n();
   const taskReadiness = getTaskReadiness(data);
+  const plannerDecision = getPlannerDecision(data);
 
   const copyJson = async () => {
     try {
@@ -283,6 +298,8 @@ function JsonBlock({
       {mode === 'structured' ? (
         taskReadiness ? (
           <TaskReadinessSummary readiness={taskReadiness} />
+        ) : plannerDecision ? (
+          <PlannerDecisionSummary decision={plannerDecision} />
         ) : (
           <div className="json-tree" aria-label={t('message.jsonTreeAria')}>
             <JsonTree value={data} />
@@ -334,6 +351,50 @@ function JsonMetric({ label, value }: { label: string; value: string }): JSX.Ele
 function getTaskReadiness(data: JsonValue): JsonObject | null {
   if (!isJsonObject(data)) return null;
   const value = data.task_readiness;
+  return isJsonObject(value) ? value : null;
+}
+
+function PlannerDecisionSummary({ decision }: { decision: JsonObject }): JSX.Element {
+  const mode = typeof decision.mode === 'string' ? decision.mode : null;
+  const status = typeof decision.status === 'string' ? decision.status : null;
+  const summary = typeof decision.summary === 'string' ? decision.summary : '无摘要';
+  const awaiting = typeof decision.awaiting_user_confirmation === 'boolean' ? decision.awaiting_user_confirmation : null;
+  const steps = Array.isArray(decision.next_steps) ? decision.next_steps.filter(isJsonObject) : [];
+
+  return (
+    <section className="json-planner-summary" aria-label="规划决策">
+      <div className="json-planner-summary-main">
+        <span>规划决策</span>
+        <strong>{summary}</strong>
+      </div>
+      <dl className="json-task-summary-grid">
+        <JsonMetric label="模式" value={formatSemanticJsonString(mode)} />
+        <JsonMetric label="状态" value={formatSemanticJsonString(status)} />
+        <JsonMetric label="等待确认" value={awaiting === null ? '未知' : awaiting ? '是' : '否'} />
+        <JsonMetric label="下一步数量" value={`${steps.length} 个`} />
+      </dl>
+      {steps.length > 0 ? (
+        <ol className="json-planner-step-list">
+          {steps.map((step, index) => (
+            <li key={index}>
+              <div>
+                <span>#{index + 1}</span>
+                <strong>{typeof step.agent_id === 'string' ? step.agent_id : '未指定智能体'}</strong>
+              </div>
+              <p>{typeof step.goal === 'string' ? step.goal : '未指定目标'}</p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="json-planner-empty">当前规划没有可派发的下一步。</p>
+      )}
+    </section>
+  );
+}
+
+function getPlannerDecision(data: JsonValue): JsonObject | null {
+  if (!isJsonObject(data)) return null;
+  const value = data.planner_decision;
   return isJsonObject(value) ? value : null;
 }
 
@@ -414,72 +475,80 @@ function MessageTracePanels({ trace }: { trace?: MessageTrace }): JSX.Element | 
   return (
     <div className="mt-3 space-y-2">
       {trace.thinking && trace.thinking.length > 0 && (
-        <details className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)]/55 px-3 py-2">
-          <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
-            Thinking
-          </summary>
-          <div className="mt-2 space-y-2">
-            {trace.thinking.map((entry, index) => (
-              <pre
-                key={index}
-                className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--color-code-bg)] px-3 py-2 text-[11px] leading-relaxed text-[var(--color-fg)]"
-              >
-                {entry.text}
-              </pre>
-            ))}
-          </div>
-        </details>
+        trace.thinking.map((entry, index) => (
+          <TracePanel
+            key={`thinking-${index}`}
+            kind="reasoning"
+            title="思考"
+            status="✓"
+          >
+            <blockquote className="trace-reasoning-text">{entry.text}</blockquote>
+          </TracePanel>
+        ))
       )}
       {hasToolOrCommandTrace(trace) && (
-        <details className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)]/55 px-3 py-2">
-          <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
-            工具轨迹
-          </summary>
-          <div className="mt-2 space-y-2">
-            {trace.tool_calls?.map((tool, index) => (
-              <TraceToolCall key={`tool-${index}`} tool={tool} index={index} />
-            ))}
-            {trace.commands?.map((command, index) => (
-              <TraceCommand key={`command-${index}`} command={command} index={index} />
-            ))}
-          </div>
-        </details>
+        <>
+          {trace.tool_calls?.map((tool, index) => (
+            <TraceToolCall key={`tool-${index}`} tool={tool} />
+          ))}
+          {trace.commands?.map((command, index) => (
+            <TraceCommand key={`command-${index}`} command={command} index={index} />
+          ))}
+        </>
       )}
     </div>
   );
 }
 
-function TraceToolCall({ tool, index }: { tool: MessageTraceToolCall; index: number }): JSX.Element {
+function TraceToolCall({ tool }: { tool: MessageTraceToolCall }): JSX.Element {
   return (
-    <section className="rounded-md bg-[var(--color-code-bg)] px-3 py-2">
-      <div className="font-mono text-[11px] font-semibold text-[var(--color-fg)]">
-        工具调用 #{index + 1}: {tool.name}
-      </div>
+    <TracePanel kind="tool" title={`tool ${tool.name}`} status="✓">
       <TracePre label="input" value={tool.input} />
       {tool.output !== undefined && <TracePre label="output" value={tool.output} />}
-    </section>
+    </TracePanel>
   );
 }
 
 function TraceCommand({ command, index }: { command: MessageTraceCommand; index: number }): JSX.Element {
   return (
-    <section className="rounded-md bg-[var(--color-code-bg)] px-3 py-2">
-      <div className="font-mono text-[11px] font-semibold text-[var(--color-fg)]">
-        命令执行 #{index + 1}
-      </div>
+    <TracePanel kind="command" title={`command #${index + 1}`} status="✓">
       <TracePre label="command" value={command.command} />
       {command.output !== undefined && <TracePre label="output" value={command.output} />}
-    </section>
+    </TracePanel>
+  );
+}
+
+function TracePanel({
+  kind,
+  title,
+  status,
+  children,
+}: {
+  kind: 'reasoning' | 'tool' | 'command';
+  title: string;
+  status: string;
+  children: ReactNode;
+}): JSX.Element {
+  return (
+    <details className="trace-card">
+      <summary className="trace-card-summary">
+        <span className={`trace-card-icon is-${kind}`}>{kind === 'reasoning' ? '{}' : '⌁'}</span>
+        <span className="trace-card-kind">{kind === 'reasoning' ? 'reasoning' : title.split(' ')[0]}</span>
+        <strong>{kind === 'reasoning' ? title : title.replace(/^[^ ]+\s*/, '')}</strong>
+        <span className="trace-card-status">{status}</span>
+      </summary>
+      <div className="trace-card-body">{children}</div>
+    </details>
   );
 }
 
 function TracePre({ label, value }: { label: string; value: string }): JSX.Element {
   return (
-    <div className="mt-2">
-      <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)]">
+    <div className="trace-field">
+      <div className="trace-field-label">
         {label}
       </div>
-      <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+      <pre className="trace-field-pre">
         {value || '∅'}
       </pre>
     </div>

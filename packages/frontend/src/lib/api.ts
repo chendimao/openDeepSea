@@ -696,12 +696,12 @@ export const api = {
       body: JSON.stringify(input),
     }),
   continuePlannerDecision: (roomId: string) =>
-    request<{ accepted: true }>(`/rooms/${roomId}/planner/continue`, { method: 'POST' }),
+    request<{ accepted: true; dispatched: number }>(`/rooms/${roomId}/planner/continue`, { method: 'POST' }),
   dispatchPlannerDecision: (
     roomId: string,
     input: { source_message_id: string; planner_decision: PlannerDecision },
   ) =>
-    request<{ accepted: true }>(`/rooms/${roomId}/planner/dispatch`, {
+    request<{ accepted: true; dispatched: number }>(`/rooms/${roomId}/planner/dispatch`, {
       method: 'POST',
       body: JSON.stringify(input),
     }),

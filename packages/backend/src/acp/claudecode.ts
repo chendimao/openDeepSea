@@ -267,9 +267,17 @@ function normalizeStdoutChunkWithSnapshots(
   const normalized = lines.flatMap((line, index) => {
     if (!line.trim()) return [];
     try {
-      const obj = JSON.parse(line) as Record<string, unknown>;
+      const rawObj = JSON.parse(line) as Record<string, unknown>;
+      const obj = normalizeCliEventObject(rawObj);
       const traceChunks = extractTraceChunks(obj);
-      if (obj['type'] === 'assistant' || obj['type'] === 'result' || isCodexAgentMessage(obj) || isOpenCodeTextEvent(obj)) {
+      if (
+        obj['type'] === 'assistant' ||
+        obj['type'] === 'message' ||
+        obj['type'] === 'agent_message' ||
+        obj['type'] === 'result' ||
+        isCodexAgentMessage(obj) ||
+        isOpenCodeTextEvent(obj)
+      ) {
         const text = extractText(obj);
         if (!text) {
           const activity = extractActivityText(obj);
@@ -314,6 +322,10 @@ function extractTraceChunks(obj: Record<string, unknown>): NormalizedStdoutChunk
   const rawType = typeof obj['type'] === 'string' ? obj['type'] : undefined;
   const chunks: NormalizedStdoutChunk[] = [];
 
+  if (obj['type'] === 'reasoning' || obj['type'] === 'function_call' || obj['type'] === 'function_call_output') {
+    chunks.push(...extractItemTraceChunks(obj, rawType));
+  }
+
   if (obj['type'] === 'item.started' || obj['type'] === 'item.completed') {
     const item = asRecord(obj['item']);
     if (item) chunks.push(...extractItemTraceChunks(item, rawType));
@@ -338,7 +350,12 @@ function extractItemTraceChunks(item: Record<string, unknown>, rawType?: string)
   const itemType = typeof item['type'] === 'string' ? item['type'] : '';
   if (itemType === 'reasoning') {
     const text = extractReasoningText(item);
-    return text ? [buildTraceChunk('thinking', text, rawType, { kind: 'thinking', text })] : [];
+    if (text) return [buildTraceChunk('thinking', text, rawType, { kind: 'thinking', text })];
+    if (typeof item['encrypted_content'] === 'string' && item['encrypted_content']) {
+      const encryptedText = 'Codex 返回了加密 reasoning 内容，当前运行环境无法解密显示原文。';
+      return [buildTraceChunk('thinking', encryptedText, rawType, { kind: 'thinking', text: encryptedText, encrypted: true })];
+    }
+    return [];
   }
   if (itemType === 'function_call') {
     const rawName = item['name'];
@@ -423,6 +440,14 @@ function toAnswerTextDelta(obj: Record<string, unknown>, text: string, snapshots
   return toSnapshotDelta('answer', text, snapshots);
 }
 
+function normalizeCliEventObject(obj: Record<string, unknown>): Record<string, unknown> {
+  const payload = asRecord(obj['payload']);
+  if (!payload) return obj;
+  const outerType = typeof obj['type'] === 'string' ? obj['type'] : '';
+  if (outerType === 'response_item' || outerType === 'event_msg') return payload;
+  return obj;
+}
+
 function toSnapshotDelta(key: string, text: string, snapshots: Map<string, string>): string {
   const previous = snapshots.get(key) ?? '';
   snapshots.set(key, text);
@@ -465,7 +490,7 @@ function findOverlapPrefixLength(previous: string, text: string): number {
 
 function isFullAnswerSnapshot(obj: Record<string, unknown>): boolean {
   const type = typeof obj['type'] === 'string' ? obj['type'] : '';
-  return type === 'assistant' || type === 'result' || isCodexAgentMessage(obj);
+  return type === 'assistant' || type === 'message' || type === 'agent_message' || type === 'result' || isCodexAgentMessage(obj);
 }
 
 function parseJsonLines(data: string): Record<string, unknown>[] {
@@ -482,6 +507,7 @@ function parseJsonLines(data: string): Record<string, unknown>[] {
 }
 
 function extractText(obj: Record<string, unknown>): string | null {
+  if (typeof obj['message'] === 'string') return obj['message'];
   if (typeof obj['result'] === 'string') return obj['result'];
   if (typeof obj['text'] === 'string') return obj['text'];
   const data = obj['data'];
@@ -653,13 +679,17 @@ function extractCommandText(item: Record<string, unknown>): string {
 }
 
 function stringifyTraceValue(value: unknown): string {
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return normalizeEscapedTraceText(value);
   if (value === null || value === undefined) return '';
   try {
     return JSON.stringify(value);
   } catch {
     return String(value);
   }
+}
+
+function normalizeEscapedTraceText(value: string): string {
+  return value.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
 }
 
 function summarizeJsonText(value: unknown): string {

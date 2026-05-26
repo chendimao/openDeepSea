@@ -929,7 +929,7 @@ async function dispatchPlannerDecision(args: {
   roomId: string;
   sourceMessageId: string;
   decision: PlannerDecision;
-}): Promise<void> {
+}): Promise<{ dispatched: number }> {
   const room = roomRepo.get(args.roomId);
   if (!room) throw new Error('room not found');
   const project = projectRepo.get(room.project_id);
@@ -955,9 +955,10 @@ async function dispatchPlannerDecision(args: {
     roomId: args.roomId,
     sourceMessageId: args.sourceMessageId,
   });
+  return { dispatched: targets.length };
 }
 
-export async function continueLatestPlannerDecision(args: { roomId: string }): Promise<boolean> {
+export async function continueLatestPlannerDecision(args: { roomId: string }): Promise<{ accepted: boolean; dispatched: number }> {
   const plannerMessage = messageRepo
     .listByRoom(args.roomId, 200)
     .slice()
@@ -967,23 +968,23 @@ export async function continueLatestPlannerDecision(args: { roomId: string }): P
       const metadata = parsePlannerMessageMetadata(message.metadata);
       return Boolean(metadata.planner_decision);
     });
-  if (!plannerMessage) return false;
+  if (!plannerMessage) return { accepted: false, dispatched: 0 };
   const metadata = parsePlannerMessageMetadata(plannerMessage.metadata);
-  if (!metadata.planner_decision || !metadata.planner_decision.awaiting_user_confirmation) return false;
-  await dispatchPlannerDecision({
+  if (!metadata.planner_decision || !metadata.planner_decision.awaiting_user_confirmation) return { accepted: false, dispatched: 0 };
+  const result = await dispatchPlannerDecision({
     roomId: args.roomId,
     sourceMessageId: metadata.source_message_id ?? plannerMessage.id,
     decision: metadata.planner_decision,
   });
-  return true;
+  return { accepted: true, dispatched: result.dispatched };
 }
 
 export async function dispatchPlannerDecisionForRoom(args: {
   roomId: string;
   sourceMessageId: string;
   decision: PlannerDecision;
-}): Promise<void> {
-  await dispatchPlannerDecision(args);
+}): Promise<{ dispatched: number }> {
+  return dispatchPlannerDecision(args);
 }
 
 function parsePlannerMessageMetadata(raw: string | null): {

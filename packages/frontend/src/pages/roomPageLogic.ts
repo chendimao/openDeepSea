@@ -136,6 +136,10 @@ export function createPlannerDispatchInput(
   };
 }
 
+export function hasDispatchablePlannerSteps(decision: PlannerDecision): boolean {
+  return decision.awaiting_user_confirmation && decision.next_steps.length > 0;
+}
+
 function isWorkflowEventMetadata(metadata: MessageMetadata): boolean {
   return Boolean(metadata.event_type?.startsWith('workflow_') && (metadata.workflow_run_id || metadata.task_id));
 }
