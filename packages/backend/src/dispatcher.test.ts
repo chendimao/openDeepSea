@@ -29,7 +29,6 @@ const {
   buildAgentIdentityPrompt,
   buildPromptWithMessageAttachments,
   dispatchUserMessage,
-  inferTaskReadiness,
   respondAsAgent,
 } = await import('./dispatcher.js');
 const { router } = await import('./routes.js');
@@ -846,21 +845,7 @@ test('planner completed reply marks analysis-only readiness without formal workf
   }
 });
 
-test('inferTaskReadiness marks analysis-only readiness without implementation scope headings', () => {
-  const readiness = inferTaskReadiness([
-    '本轮只做产品规则设计，不进入实现。',
-    '问题分析：当前归档规则需要先明确分类口径。',
-    '修复方案：输出归档规则、边界条件、风险和后续实现输入。',
-    '验收标准：规则覆盖正常、冲突和异常路径。',
-  ].join('\n'), 'source-message-1');
-
-  assert.equal(readiness?.ready, true);
-  assert.equal(readiness?.execution_intent, 'analysis_only');
-  assert.equal(readiness?.recommended_mode, 'chat_collaboration');
-  assert.equal(readiness?.source_message_id, 'source-message-1');
-});
-
-test('message route handles /task command after persisting user message without ACP dispatch', async () => {
+test('message route treats /task content as plain chat and still dispatches ACP reply', async () => {
   const { projectPath, room } = await createRoutedRoom('task-command');
   const { restore, calls } = installCountingCodexAdapter();
 
@@ -878,20 +863,15 @@ test('message route handles /task command after persisting user message without 
     const userMessage = await res.json() as Message;
     assert.equal(userMessage.content, '/task Fix command route');
     await delay(30);
-    assert.equal(calls.count, 0);
-
-    const tasks = taskRepo.listByRoom(room.id);
-    assert.equal(tasks.length, 1);
-    assert.equal(tasks[0]?.title, 'Fix command route');
-    assert.equal(tasks[0]?.created_from, 'slash_command');
-    assert.equal(tasks[0]?.source_message_id, userMessage.id);
+    assert.equal(calls.count, 1);
+    assert.equal(taskRepo.listByRoom(room.id).length, 0);
 
     const messages = messageRepo.listByRoom(room.id, 20);
     assert.equal(messages[0]?.id, userMessage.id);
-    assert.ok(messages.some((message) => {
+    assert.equal(messages.some((message) => {
       const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
-      return metadata.event_type === 'task_created' && metadata.task_id === tasks[0]?.id;
-    }));
+      return metadata.event_type === 'task_created';
+    }), false);
   } finally {
     restore();
     await rm(projectPath, { recursive: true, force: true });
@@ -973,27 +953,15 @@ test('message route returns JSON 400 when reply target is outside the room', asy
   }
 });
 
-test('message route handles /start-task command after persisting user message without ACP dispatch', async () => {
-  const { project, projectPath, room } = await createRoutedRoom('start-task-command');
-  const task = taskRepo.create({
-    room_id: room.id,
-    project_id: project.id,
-    title: 'Start from slash',
-  });
+test('message route treats /start-task content as plain chat and does not start workflow', async () => {
+  const { projectPath, room } = await createRoutedRoom('start-task-command');
   const { restore, calls } = installCountingCodexAdapter();
-  const enqueued: string[] = [];
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
-  setWorkflowConversationDeps({
-    enqueueGraphWorkflow: (runId) => {
-      enqueued.push(runId);
-    },
-  });
 
   try {
     const res = await request(`/api/rooms/${room.id}/messages`, {
       method: 'POST',
       body: JSON.stringify({
-        content: `/start-task ${task.id}`,
+        content: '/start-task task-123',
         sender_id: 'user',
         sender_name: 'You',
       }),
@@ -1002,49 +970,29 @@ test('message route handles /start-task command after persisting user message wi
     assert.equal(res.status, 201);
     const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 0);
-
-    const runs = workflowRepo.listByTask(task.id);
-    assert.equal(runs.length, 1);
-    assert.deepEqual(enqueued, [runs[0]?.id]);
+    assert.equal(calls.count, 1);
+    assert.equal(workflowRepo.listByTask('task-123').length, 0);
     const messages = messageRepo.listByRoom(room.id, 20);
     assert.equal(messages[0]?.id, userMessage.id);
-    assert.ok(messages.some((message) => {
+    assert.equal(messages.some((message) => {
       const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
-      return (
-        metadata.event_type === 'workflow_started' &&
-        metadata.task_id === task.id &&
-        metadata.workflow_source === 'chat_command' &&
-        metadata.workflow_source_message_id === userMessage.id
-      );
-    }));
+      return metadata.event_type === 'workflow_started';
+    }), false);
   } finally {
     restore();
     await rm(projectPath, { recursive: true, force: true });
   }
 });
 
-test('message route handles Chinese start command after persisting user message without ACP dispatch', async () => {
-  const { project, projectPath, room } = await createRoutedRoom('cn-start-task-command');
-  const task = taskRepo.create({
-    room_id: room.id,
-    project_id: project.id,
-    title: 'Start from Chinese command',
-  });
+test('message route treats Chinese start command as plain chat and does not start workflow', async () => {
+  const { projectPath, room } = await createRoutedRoom('cn-start-task-command');
   const { restore, calls } = installCountingCodexAdapter();
-  const enqueued: string[] = [];
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
-  setWorkflowConversationDeps({
-    enqueueGraphWorkflow: (runId) => {
-      enqueued.push(runId);
-    },
-  });
 
   try {
     const res = await request(`/api/rooms/${room.id}/messages`, {
       method: 'POST',
       body: JSON.stringify({
-        content: `开始任务 #${task.id}`,
+        content: '开始任务 #task-123',
         sender_id: 'user',
         sender_name: 'You',
       }),
@@ -1053,30 +1001,22 @@ test('message route handles Chinese start command after persisting user message 
     assert.equal(res.status, 201);
     const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 0);
-
-    const runs = workflowRepo.listByTask(task.id);
-    assert.equal(runs.length, 1);
-    assert.deepEqual(enqueued, [runs[0]?.id]);
-    assert.ok(messageRepo.listByRoom(room.id, 20).some((message) => {
+    assert.equal(calls.count, 1);
+    assert.equal(workflowRepo.listByTask('task-123').length, 0);
+    assert.equal(messageRepo.listByRoom(room.id, 20).some((message) => {
       const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
-      return (
-        metadata.event_type === 'workflow_started' &&
-        metadata.task_id === task.id &&
-        metadata.workflow_source === 'chat_command' &&
-        metadata.workflow_source_message_id === userMessage.id
-      );
-    }));
+      return metadata.event_type === 'workflow_started';
+    }), false);
+    assert.equal(userMessage.content, '开始任务 #task-123');
   } finally {
     restore();
     await rm(projectPath, { recursive: true, force: true });
   }
 });
 
-test('message route returns JSON error when start command target is missing', async () => {
+test('message route no longer errors on missing /start-task target and treats it as chat', async () => {
   const { projectPath, room } = await createRoutedRoom('start-task-command-missing');
   const { restore, calls } = installCountingCodexAdapter();
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
 
   try {
     const res = await request(`/api/rooms/${room.id}/messages`, {
@@ -1088,11 +1028,11 @@ test('message route returns JSON error when start command target is missing', as
       }),
     });
 
-    assert.equal(res.status, 404);
-    assert.match(res.headers.get('content-type') ?? '', /application\/json/);
-    assert.deepEqual(await res.json(), { error: 'task not found' });
+    assert.equal(res.status, 201);
+    const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 0);
+    assert.equal(calls.count, 1);
+    assert.equal(userMessage.content, '/start-task missing-task');
     assert.equal(messageRepo.listByRoom(room.id, 20).filter((message) => message.sender_type === 'user').length, 1);
   } finally {
     restore();

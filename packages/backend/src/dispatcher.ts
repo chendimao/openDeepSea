@@ -1,6 +1,7 @@
 import { resolve, sep } from 'node:path';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
+import type { AcpStreamTrace } from './acp/types.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { classifyAgentDocument } from './agent-document-classifier.js';
@@ -23,7 +24,9 @@ import type {
   AgentRunStatus,
   Message,
   MessageAttachmentMetadata,
+  MessageTrace,
   MessageReplyMetadata,
+  PlannerDecision,
   RoomAgent,
   WorkflowStage,
 } from './types.js';
@@ -441,7 +444,7 @@ export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): stri
   const promptParts = [
     '你的智能体身份：',
     ...identityLines,
-    ...(agent.agent_id === 'planner' ? buildPlannerStructuredTaskReadinessPrompt() : []),
+    ...(agent.agent_id === 'planner' ? buildPlannerDecisionPrompt() : []),
     '',
     '当前用户请求：',
     prompt,
@@ -563,6 +566,26 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     if (updated) broadcastRun('agent_run:updated', updated);
   };
 
+  const onTrace = (channel: 'thinking' | 'tool' | 'command', chunk: string, trace?: AcpStreamTrace): void => {
+    const text = chunk.trim();
+    if (!text) return;
+    const updatedMessage = messageRepo.mergeTrace(placeholder.id, toTracePatch(channel, text, trace));
+    if (!args.internalMessage) {
+      wsHub.broadcast(roomId, {
+        type: 'message:stream',
+        roomId,
+        messageId: placeholder.id,
+        runId: run.id,
+        channel,
+        chunk: text,
+        done: false,
+        seq: ++streamSeq,
+        status: 'streaming',
+        message: updatedMessage,
+      });
+    }
+  };
+
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   try {
     heartbeat = setInterval(() => {
@@ -581,6 +604,9 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       acpWritableDirs: runtimeProfile.writableDirs,
       onChunk: (chunk) => {
         if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);
+        else if (chunk.stream === 'stdout' && chunk.channel === 'thinking') onTrace('thinking', chunk.text, chunk.trace);
+        else if (chunk.stream === 'stdout' && chunk.channel === 'tool') onTrace('tool', chunk.text, chunk.trace);
+        else if (chunk.stream === 'stdout' && chunk.channel === 'command') onTrace('command', chunk.text, chunk.trace);
         else if (chunk.stream === 'stdout') onStdout(chunk.text);
         else onStderr(chunk.text);
       },
@@ -638,7 +664,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     try {
       if (finalRun && finalMessage) {
         try {
-          annotateTaskReadiness({
+          annotatePlannerDecision({
             message: finalMessage,
             run: finalRun,
             sourceMessageId: args.sourceMessageId,
@@ -706,7 +732,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   }
 }
 
-function annotateTaskReadiness(input: {
+function annotatePlannerDecision(input: {
   message: Message;
   run: AgentRun;
   sourceMessageId?: string | null;
@@ -716,10 +742,12 @@ function annotateTaskReadiness(input: {
   if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return;
   if (input.agent.agent_id !== 'planner') return;
 
-  const readiness = parseStructuredTaskReadiness(input.message.content, input.sourceMessageId)
-    ?? inferTaskReadiness(input.message.content, input.sourceMessageId);
-  if (!readiness) return;
-  messageRepo.mergeMetadata(input.message.id, { task_readiness: readiness });
+  const decision = parsePlannerDecision(input.message.content);
+  if (!decision) return;
+  messageRepo.mergeMetadata(input.message.id, {
+    planner_decision: decision,
+    source_message_id: input.sourceMessageId ?? undefined,
+  });
 }
 
 function maybeRegisterAgentDocument(input: {
@@ -772,151 +800,68 @@ function maybeRegisterAgentDocument(input: {
   }
 }
 
-export function inferTaskReadiness(content: string, sourceMessageId?: string | null): Record<string, unknown> | null {
-  const text = content.trim();
-  if (!text) return null;
-  const normalized = text.toLocaleLowerCase();
-  const executionIntent = inferTaskExecutionIntent(text);
-  const hasImplementationScope = [
-    /实施目标/,
-    /实施范围/,
-    /实施顺序/,
-    /实施计划/,
-    /工程排期/,
-    /下一步交付物/,
-    /可以进入工程排期/,
-  ].some((pattern) => pattern.test(text));
-  const hasAcceptance = [
-    /验收标准/,
-    /验收口径/,
-    /验证方式/,
-    /测试/,
-    /build/,
-    /npm run build/,
-  ].some((pattern) => pattern.test(normalized));
-  const asksForMoreInput = [
-    /还需要/,
-    /需要补充/,
-    /请确认/,
-    /请补充/,
-    /缺少/,
-    /待确认/,
-  ].some((pattern) => pattern.test(text));
-  if (!executionIntent || !hasAcceptance || asksForMoreInput) return null;
-  if (isImplementationIntent(executionIntent) && !hasImplementationScope) return null;
-  if (!isImplementationIntent(executionIntent) && !hasAnalysisReadinessSignal(text)) return null;
-
-  return {
-    ready: true,
-    confidence: 0.82,
-    title: extractTaskReadinessTitle(text),
-    description: summarizeTaskReadinessDescription(text),
-    missing_questions: [],
-    recommended_mode: isImplementationIntent(executionIntent) ? 'formal_workflow' : 'chat_collaboration',
-    execution_intent: executionIntent,
-    source_message_id: sourceMessageId ?? undefined,
-  };
-}
-
-type InferredTaskExecutionIntent =
-  | 'analysis_only'
-  | 'planning_only'
-  | 'documentation_only'
-  | 'implementation'
-  | 'debug_fix'
-  | 'review_only';
-
-function inferTaskExecutionIntent(text: string): InferredTaskExecutionIntent | null {
-  if (matchesAny(text, [
-    /不进入实现/,
-    /不修改代码/,
-    /不改文件/,
-    /只做方案/,
-    /只做.*规则/,
-    /只读分析/,
-    /本轮不要求代码实现/,
-    /未进入实现/,
-  ])) return 'analysis_only';
-
-  if (matchesAny(text, [/只做文档/, /文档说明/, /产品规则说明/])) return 'documentation_only';
-  if (matchesAny(text, [/只做代码审查/, /review only/i, /审查.*不修改/])) return 'review_only';
-  if (matchesAny(text, [/修复/, /bug/i, /故障/, /报错/, /阻塞/]) && matchesAny(text, [/实现/, /修改/, /改动/, /提交/])) return 'debug_fix';
-  if (matchesAny(text, [/实施目标/, /实施范围/, /下一步可以进入工程排期/, /修改代码/, /实现/])) return 'implementation';
-  return null;
-}
-
-function isImplementationIntent(intent: InferredTaskExecutionIntent): boolean {
-  return intent === 'implementation' || intent === 'debug_fix';
-}
-
-function hasAnalysisReadinessSignal(text: string): boolean {
-  return matchesAny(text, [
-    /问题分析/,
-    /原因分析/,
-    /修复方案/,
-    /方案设计/,
-    /产品规则/,
-    /边界/,
-    /风险/,
-    /后续实现输入/,
-    /交付物/,
-  ]);
-}
-
-function matchesAny(text: string, patterns: RegExp[]): boolean {
-  return patterns.some((pattern) => pattern.test(text));
-}
-
-function parseStructuredTaskReadiness(content: string, sourceMessageId?: string | null): Record<string, unknown> | null {
+function parsePlannerDecision(content: string): PlannerDecision | null {
   for (const candidate of extractJsonObjectCandidates(content)) {
     try {
       const parsed = JSON.parse(candidate) as unknown;
-      const readiness = readTaskReadinessObject(parsed);
-      if (readiness) {
-        return {
-          ...readiness,
-          source_message_id: readiness.source_message_id ?? sourceMessageId ?? undefined,
-        };
-      }
+      const decision = readPlannerDecisionObject(parsed);
+      if (decision) return decision;
     } catch {
-      // Ignore malformed JSON blocks and fall back to natural-language inference.
+      // Ignore malformed JSON blocks.
     }
   }
-  return null;
+  const summary = content
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!summary) return null;
+  return {
+    mode: 'pause_after_suggestion',
+    status: 'suggested',
+    summary,
+    next_steps: [],
+    awaiting_user_confirmation: true,
+  };
 }
 
-function readTaskReadinessObject(value: unknown): Record<string, unknown> | null {
+function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
   if (!isRecord(value)) return null;
-  const candidate = isRecord(value.task_readiness) ? value.task_readiness : value;
+  const candidate = isRecord(value.planner_decision) ? value.planner_decision : value;
   if (
-    candidate.ready !== true ||
-    typeof candidate.title !== 'string' ||
-    !candidate.title.trim() ||
-    typeof candidate.description !== 'string' ||
-    !candidate.description.trim() ||
-    !isRecommendedTaskReadinessMode(candidate.recommended_mode) ||
-    !isTaskReadinessIntent(candidate.execution_intent)
+    !isPlannerExecutionMode(candidate.mode) ||
+    !isPlannerDecisionStatus(candidate.status) ||
+    typeof candidate.summary !== 'string' ||
+    !candidate.summary.trim() ||
+    typeof candidate.awaiting_user_confirmation !== 'boolean' ||
+    !Array.isArray(candidate.next_steps)
   ) {
     return null;
   }
-  const missingQuestions = Array.isArray(candidate.missing_questions)
-    ? candidate.missing_questions.filter((item): item is string => typeof item === 'string')
-    : [];
-  const confidence = typeof candidate.confidence === 'number' && Number.isFinite(candidate.confidence)
-    ? Math.max(0, Math.min(1, candidate.confidence))
-    : 0.9;
+
+  const next_steps = candidate.next_steps
+    .map((step) => {
+      if (!isRecord(step)) return null;
+      if (
+        typeof step.agent_id !== 'string' ||
+        !step.agent_id.trim() ||
+        typeof step.goal !== 'string' ||
+        !step.goal.trim()
+      ) {
+        return null;
+      }
+      return {
+        agent_id: step.agent_id.trim(),
+        goal: step.goal.trim(),
+      };
+    })
+    .filter((step): step is PlannerDecision['next_steps'][number] => Boolean(step));
 
   return {
-    ready: true,
-    confidence,
-    title: truncateTaskReadinessText(candidate.title, 80),
-    description: truncateTaskReadinessText(candidate.description, 800),
-    missing_questions: missingQuestions,
-    recommended_mode: candidate.recommended_mode,
-    execution_intent: candidate.execution_intent,
-    source_message_id: typeof candidate.source_message_id === 'string' && candidate.source_message_id.trim()
-      ? candidate.source_message_id.trim()
-      : undefined,
+    mode: candidate.mode,
+    status: candidate.status,
+    summary: candidate.summary.trim(),
+    next_steps,
+    awaiting_user_confirmation: candidate.awaiting_user_confirmation,
   };
 }
 
@@ -935,72 +880,119 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function isRecommendedTaskReadinessMode(value: unknown): value is 'formal_workflow' | 'chat_collaboration' {
-  return value === 'formal_workflow' || value === 'chat_collaboration';
+function isPlannerExecutionMode(value: unknown): value is PlannerDecision['mode'] {
+  return value === 'pause_after_suggestion' || value === 'auto_continue';
 }
 
-function isTaskReadinessIntent(value: unknown): value is InferredTaskExecutionIntent {
-  return (
-    value === 'analysis_only' ||
-    value === 'planning_only' ||
-    value === 'documentation_only' ||
-    value === 'implementation' ||
-    value === 'debug_fix' ||
-    value === 'review_only'
-  );
+function isPlannerDecisionStatus(value: unknown): value is PlannerDecision['status'] {
+  return value === 'suggested' || value === 'dispatching' || value === 'completed' || value === 'blocked';
 }
 
-function buildPlannerStructuredTaskReadinessPrompt(): string[] {
+function buildPlannerDecisionPrompt(): string[] {
   return [
     '',
-    '任务生成结构化输出规则：',
-    '- 当你已经产出可执行任务计划，或用户明确要求“生成任务/开始任务/进入 workflow”时，必须在自然语言计划后追加一个单独的 ```json 代码块。',
-    '- 该 JSON 代码块只用于系统识别，不要把它解释给用户；字段名必须固定为 task_readiness。',
-    '- implementation/debug_fix 意图必须使用 recommended_mode="formal_workflow"，不要改写成只做分析。',
-    '- analysis_only/planning_only/documentation_only/review_only 才能使用 recommended_mode="chat_collaboration"。',
-    '- 固定 JSON 格式如下：',
+    'Planner 决策结构化输出规则：',
+    '- 当你需要建议下一步或调度其他智能体时，请在自然语言回复后追加一个单独的 ```json 代码块。',
+    '- 字段名必须固定为 planner_decision。',
+    '- 若需要等待用户确认，mode 使用 "pause_after_suggestion"，awaiting_user_confirmation 为 true。',
+    '- 固定 JSON 结构如下：',
     '```json',
     '{',
-    '  "task_readiness": {',
-    '    "ready": true,',
-    '    "confidence": 0.9,',
-    '    "title": "任务标题",',
-    '    "description": "任务目标、边界、实施拆解、风险与验证方式摘要",',
-    '    "missing_questions": [],',
-    '    "recommended_mode": "formal_workflow",',
-    '    "execution_intent": "implementation"',
+    '  "planner_decision": {',
+    '    "mode": "pause_after_suggestion",',
+    '    "status": "suggested",',
+    '    "summary": "一句话总结下一步",',
+    '    "next_steps": [',
+    '      { "agent_id": "frontend-executor", "goal": "检查设置页测试入口" }',
+    '    ],',
+    '    "awaiting_user_confirmation": true',
     '  }',
     '}',
     '```',
   ];
 }
 
-function extractTaskReadinessTitle(content: string): string {
-  const titlePatterns = [
-    /实施目标[：:]\s*([^\n。]+)/,
-    /产品决策[：:]\s*([^\n。]+)/,
-    /已锁定范围[：:]\s*([^\n。]+)/,
-  ];
-  for (const pattern of titlePatterns) {
-    const match = content.match(pattern)?.[1]?.trim();
-    if (match) return truncateTaskReadinessText(match, 80);
+function toTracePatch(
+  channel: 'thinking' | 'tool' | 'command',
+  text: string,
+  trace?: AcpStreamTrace,
+): MessageTrace {
+  if (trace?.kind === 'thinking') return { thinking: [{ text: trace.text }] };
+  if (trace?.kind === 'tool') return { tool_calls: [{ name: trace.name, input: trace.input, output: trace.output }] };
+  if (trace?.kind === 'command') return { commands: [{ command: trace.command, output: trace.output }] };
+  if (channel === 'thinking') return { thinking: [{ text }] };
+  if (channel === 'tool') return { tool_calls: [{ name: 'trace', input: text }] };
+  return { commands: [{ command: text }] };
+}
+
+async function dispatchPlannerDecision(args: {
+  roomId: string;
+  sourceMessageId: string;
+  decision: PlannerDecision;
+}): Promise<void> {
+  const room = roomRepo.get(args.roomId);
+  if (!room) throw new Error('room not found');
+  const project = projectRepo.get(room.project_id);
+  if (!project) throw new Error('project not found');
+  const allAgents = roomAgentRepo.listByRoom(args.roomId);
+  const targets = args.decision.next_steps
+    .map((step) => {
+      const agent = allAgents.find((item) => item.agent_id === step.agent_id);
+      return agent ? { agent, prompt: step.goal } : null;
+    })
+    .filter((target): target is { agent: RoomAgent; prompt: string } => Boolean(target));
+  if (targets.length === 0) return;
+  await runTargets({
+    targets,
+    projectPath: project.path,
+    roomId: args.roomId,
+    sourceMessageId: args.sourceMessageId,
+  });
+}
+
+export async function continueLatestPlannerDecision(args: { roomId: string }): Promise<boolean> {
+  const plannerMessage = messageRepo
+    .listByRoom(args.roomId, 200)
+    .slice()
+    .reverse()
+    .find((message) => {
+      if (message.sender_type !== 'agent' || message.sender_id !== 'planner') return false;
+      const metadata = parsePlannerMessageMetadata(message.metadata);
+      return Boolean(metadata.planner_decision);
+    });
+  if (!plannerMessage) return false;
+  const metadata = parsePlannerMessageMetadata(plannerMessage.metadata);
+  if (!metadata.planner_decision || !metadata.planner_decision.awaiting_user_confirmation) return false;
+  await dispatchPlannerDecision({
+    roomId: args.roomId,
+    sourceMessageId: metadata.source_message_id ?? plannerMessage.id,
+    decision: metadata.planner_decision,
+  });
+  return true;
+}
+
+export async function dispatchPlannerDecisionForRoom(args: {
+  roomId: string;
+  sourceMessageId: string;
+  decision: PlannerDecision;
+}): Promise<void> {
+  await dispatchPlannerDecision(args);
+}
+
+function parsePlannerMessageMetadata(raw: string | null): {
+  planner_decision?: PlannerDecision;
+  source_message_id?: string;
+} {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      planner_decision: readPlannerDecisionObject(parsed) ?? undefined,
+      source_message_id: typeof parsed.source_message_id === 'string' ? parsed.source_message_id : undefined,
+    };
+  } catch {
+    return {};
   }
-  const firstMeaningfulLine = content
-    .split(/\n+/)
-    .map((line) => line.replace(/^[-*\d.\s]+/, '').trim())
-    .find((line) => line && !/^大哥[，,]/.test(line));
-  return truncateTaskReadinessText(firstMeaningfulLine || '根据 planner 方案启动任务', 80);
-}
-
-function summarizeTaskReadinessDescription(content: string): string {
-  const compact = content.replace(/\s+/g, ' ').trim();
-  return truncateTaskReadinessText(compact, 800);
-}
-
-function truncateTaskReadinessText(value: string, maxLength: number): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= maxLength) return trimmed;
-  return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
 async function buildMemorySkillContext(input: {

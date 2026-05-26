@@ -222,6 +222,64 @@ test('structured answer snapshots do not duplicate final replies', () => {
   ]);
 });
 
+test('normalizeStdoutChunk emits thinking trace with full reasoning text', () => {
+  const events = normalizeStdoutChunk(JSON.stringify({
+    type: 'item.completed',
+    item: {
+      type: 'reasoning',
+      text: '完整思考内容',
+    },
+  }));
+
+  const traceEvent = events.find((event) => event.channel === 'thinking');
+  assert.ok(traceEvent);
+  assert.equal(traceEvent?.text, '完整思考内容');
+  assert.deepEqual(traceEvent?.trace, {
+    kind: 'thinking',
+    text: '完整思考内容',
+  });
+});
+
+test('normalizeStdoutChunk emits tool trace with tool name and input', () => {
+  const events = normalizeStdoutChunk(JSON.stringify({
+    type: 'item.completed',
+    item: {
+      type: 'function_call',
+      name: 'search_files',
+      arguments: { pattern: 'model settings' },
+    },
+  }));
+
+  const traceEvent = events.find((event) => event.channel === 'tool');
+  assert.ok(traceEvent);
+  assert.equal(traceEvent?.text, 'search_files {"pattern":"model settings"}');
+  assert.deepEqual(traceEvent?.trace, {
+    kind: 'tool',
+    name: 'search_files',
+    input: '{"pattern":"model settings"}',
+  });
+});
+
+test('normalizeStdoutChunk emits command trace for shell execution', () => {
+  const events = normalizeStdoutChunk(JSON.stringify({
+    type: 'item.completed',
+    item: {
+      type: 'command_execution',
+      command: 'rg -n "model" packages/frontend/src',
+      output: 'packages/frontend/src/lib/api.ts:1',
+    },
+  }));
+
+  const traceEvent = events.find((event) => event.channel === 'command');
+  assert.ok(traceEvent);
+  assert.equal(traceEvent?.text, 'rg -n "model" packages/frontend/src\npackages/frontend/src/lib/api.ts:1');
+  assert.deepEqual(traceEvent?.trace, {
+    kind: 'command',
+    command: 'rg -n "model" packages/frontend/src',
+    output: 'packages/frontend/src/lib/api.ts:1',
+  });
+});
+
 test('Codex agent message snapshots are treated as full-answer snapshots', () => {
   const normalize = createStdoutNormalizer();
   const first = JSON.stringify({

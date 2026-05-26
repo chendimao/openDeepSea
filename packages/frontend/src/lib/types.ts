@@ -674,6 +674,12 @@ export interface ResourceDetail {
 export interface MessageMetadata {
   attachments: MessageAttachmentMetadata[];
   reply_to?: MessageReplyMetadata;
+  planner_decision?: PlannerDecision;
+  trace?: MessageTrace;
+  acp_enabled?: boolean;
+  acp_backend?: AcpBackend | null;
+  acp_session_id?: string | null;
+  internal?: boolean;
   task_id?: string;
   task_title?: string;
   workflow_run_id?: string;
@@ -684,6 +690,42 @@ export interface MessageMetadata {
   fallback_agent_id?: string;
   collaboration_decision?: CollaborationDecision;
   task_readiness?: TaskReadinessMetadata;
+}
+
+export type PlannerExecutionMode = 'pause_after_suggestion' | 'auto_continue';
+
+export interface PlannerDecisionStep {
+  agent_id: string;
+  goal: string;
+}
+
+export interface PlannerDecision {
+  mode: PlannerExecutionMode;
+  status: 'suggested' | 'dispatching' | 'completed' | 'blocked';
+  summary: string;
+  next_steps: PlannerDecisionStep[];
+  awaiting_user_confirmation: boolean;
+}
+
+export interface MessageTraceThinking {
+  text: string;
+}
+
+export interface MessageTraceToolCall {
+  name: string;
+  input: string;
+  output?: string;
+}
+
+export interface MessageTraceCommand {
+  command: string;
+  output?: string;
+}
+
+export interface MessageTrace {
+  thinking?: MessageTraceThinking[];
+  tool_calls?: MessageTraceToolCall[];
+  commands?: MessageTraceCommand[];
 }
 
 export type CollaborationIntent = 'question' | 'analysis' | 'implementation';

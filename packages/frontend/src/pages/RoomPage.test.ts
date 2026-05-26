@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Message } from '../lib/types';
+import { parseMessageMetadata } from '../lib/messageMetadata';
 import {
   createDefaultReplyTarget,
-  createWorkflowEventRenderStateMap,
-  getTaskReadinessActionState,
-  getTaskEventVisibilityState,
-  shouldShowTaskReadinessActions,
+  createReplyTarget,
 } from './roomPageLogic';
 
 test('createDefaultReplyTarget returns the latest non-streaming agent message', () => {
@@ -33,116 +31,57 @@ test('createDefaultReplyTarget returns null when default reply is suppressed for
   assert.equal(target, null);
 });
 
-test('analysis-only ready messages do not expose formal workflow start', () => {
-  const state = getTaskReadinessActionState('analysis_only');
-
-  assert.equal(state.canGenerateTask, false);
-  assert.equal(state.primaryLabel, '');
-  assert.equal(state.description, '这是方案/分析输出，不会直接启动正式 workflow');
-});
-
-test('task readiness actions only show for latest implementation-ready agent message', () => {
-  assert.equal(shouldShowTaskReadinessActions({
-    isUser: false,
-    isSystem: false,
-    isStreaming: false,
-    ready: true,
-    hasLaterMessages: false,
-    intent: 'implementation',
-  }), true);
-
-  assert.equal(shouldShowTaskReadinessActions({
-    isUser: false,
-    isSystem: false,
-    isStreaming: false,
-    ready: true,
-    hasLaterMessages: true,
-    intent: 'implementation',
-  }), false);
-
-  assert.equal(shouldShowTaskReadinessActions({
-    isUser: false,
-    isSystem: false,
-    isStreaming: false,
-    ready: true,
-    hasLaterMessages: false,
-    intent: 'analysis_only',
-  }), false);
-});
-
-test('workflow task card render state dedupes events with the same workflow run', () => {
-  const messages = [
-    createMessage({ id: 'workflow-start', sender_type: 'system', content: '开始', created_at: 10, metadata: workflowMetadata('workflow-1', 'task-1', 'workflow_started') }),
-    createMessage({ id: 'agent-note', sender_type: 'agent', content: '普通回复', created_at: 20 }),
-    createMessage({ id: 'workflow-progress', sender_type: 'system', content: '执行中', created_at: 30, metadata: workflowMetadata('workflow-1', 'task-1', 'workflow_stage_changed') }),
-    createMessage({ id: 'workflow-done', sender_type: 'system', content: '完成', created_at: 40, metadata: workflowMetadata('workflow-1', 'task-1', 'workflow_completed') }),
-    createMessage({ id: 'workflow-task-2', sender_type: 'system', content: '第二个任务', created_at: 50, metadata: workflowMetadata('workflow-1', 'task-2', 'workflow_stage_changed') }),
-  ];
-
-  const renderState = createWorkflowEventRenderStateMap(messages);
-
-  assert.equal(renderState.get('workflow-start')?.showTaskCard, true);
-  assert.equal(renderState.get('workflow-start')?.key, 'workflow:workflow-1');
-  assert.equal(renderState.get('workflow-progress')?.showTaskCard, false);
-  assert.equal(renderState.get('workflow-done')?.showTaskCard, false);
-  assert.equal(renderState.get('workflow-task-2')?.showTaskCard, false);
-  assert.equal(renderState.has('agent-note'), false);
-});
-
-test('workflow task card render state keeps different workflow runs separate', () => {
-  const messages = [
-    createMessage({ id: 'workflow-a', sender_type: 'system', content: 'A', created_at: 10, metadata: workflowMetadata('workflow-a', 'task-1', 'workflow_started') }),
-    createMessage({ id: 'workflow-b', sender_type: 'system', content: 'B', created_at: 20, metadata: workflowMetadata('workflow-b', 'task-1', 'workflow_started') }),
-  ];
-
-  const renderState = createWorkflowEventRenderStateMap(messages);
-
-  assert.equal(renderState.get('workflow-a')?.showTaskCard, true);
-  assert.equal(renderState.get('workflow-b')?.showTaskCard, true);
-  assert.notEqual(renderState.get('workflow-a')?.key, renderState.get('workflow-b')?.key);
-});
-
-test('workflow task card render state falls back when workflow id is missing', () => {
-  const messages = [
-    createMessage({ id: 'task-only-start', sender_type: 'system', content: '开始', created_at: 10, metadata: workflowMetadata(undefined, 'task-only', 'workflow_started') }),
-    createMessage({ id: 'task-only-done', sender_type: 'system', content: '完成', created_at: 20, metadata: workflowMetadata(undefined, 'task-only', 'workflow_completed') }),
-  ];
-
-  const renderState = createWorkflowEventRenderStateMap(messages);
-
-  assert.equal(renderState.get('task-only-start')?.key, 'task:task-only');
-  assert.equal(renderState.get('task-only-start')?.showTaskCard, true);
-  assert.equal(renderState.get('task-only-done')?.showTaskCard, false);
-});
-
-test('task event visibility keeps retry row for latest blocked workflow event', () => {
-  assert.deepEqual(
-    getTaskEventVisibilityState({
-      hasWorkflowRun: true,
-      showWorkflowTaskCard: false,
-      canRetryWorkflowEvent: true,
+test('createReplyTarget keeps explicit reply metadata compact', () => {
+  const target = createReplyTarget(
+    createMessage({
+      id: 'planner-message',
+      sender_type: 'agent',
+      content: '这是一段很长的 planner 建议，需要被压缩成引用摘要。'.repeat(8),
     }),
-    {
-      showWorkflowTaskCard: false,
-      showInlineTaskEvent: true,
-      hideMessage: false,
-    },
+    true,
   );
+
+  assert.equal(target.messageId, 'planner-message');
+  assert.equal(target.senderName, '产品经理');
+  assert.equal(target.explicit, true);
+  assert.ok(target.excerpt.length <= 96);
 });
 
-test('task event visibility hides non-retry duplicated workflow events', () => {
-  assert.deepEqual(
-    getTaskEventVisibilityState({
-      hasWorkflowRun: true,
-      showWorkflowTaskCard: false,
-      canRetryWorkflowEvent: false,
+test('room main path treats planner decision and trace as normal agent message metadata', () => {
+  const message = createMessage({
+    id: 'planner-message',
+    sender_type: 'agent',
+    content: '建议先让前端执行器检查设置页。',
+    metadata: JSON.stringify({
+      planner_decision: {
+        mode: 'pause_after_suggestion',
+        status: 'suggested',
+        summary: '建议先验证模型配置与连接测试链路',
+        next_steps: [{ agent_id: 'frontend-executor', goal: '检查设置页测试模型入口' }],
+        awaiting_user_confirmation: true,
+      },
+      trace: {
+        thinking: [{ text: '完整 thinking 原文' }],
+        tool_calls: [{ name: 'search_files', input: '{"pattern":"settings"}' }],
+      },
+      task_readiness: {
+        ready: true,
+        confidence: 1,
+        title: '历史兼容字段',
+        description: 'Room 主路径不再消费此字段。',
+        missing_questions: [],
+        recommended_mode: 'formal_workflow',
+      },
     }),
-    {
-      showWorkflowTaskCard: false,
-      showInlineTaskEvent: false,
-      hideMessage: true,
-    },
-  );
+  });
+
+  const metadata = parseMessageMetadata(message.metadata);
+
+  assert.equal(message.sender_type, 'agent');
+  assert.equal(metadata.planner_decision?.awaiting_user_confirmation, true);
+  assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
+  assert.equal(metadata.trace?.thinking?.[0]?.text, '完整 thinking 原文');
+  assert.equal(metadata.trace?.tool_calls?.[0]?.name, 'search_files');
 });
 
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & {
@@ -160,16 +99,4 @@ function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & 
     metadata: input.metadata ?? null,
     created_at: input.created_at ?? Date.now(),
   };
-}
-
-function workflowMetadata(
-  workflowRunId: string | undefined,
-  taskId: string | undefined,
-  eventType: string,
-): string {
-  return JSON.stringify({
-    event_type: eventType,
-    workflow_run_id: workflowRunId,
-    task_id: taskId,
-  });
 }

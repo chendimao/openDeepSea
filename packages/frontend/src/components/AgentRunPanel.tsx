@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Ban, CircleAlert, CircleCheck, LoaderCircle, RotateCcw, ScrollText } from 'lucide-react';
+import { Ban, CircleAlert, CircleCheck, LoaderCircle, ScrollText } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -12,15 +12,11 @@ export function AgentRunStatusCard({
   run,
   agent,
   compact = false,
-  onRetryWorkflow,
-  retrying = false,
 }: {
   roomId: string;
   run: AgentRun;
   agent?: RoomAgent;
   compact?: boolean;
-  onRetryWorkflow?: (workflowRunId: string) => void;
-  retrying?: boolean;
 }) {
   const queryClient = useQueryClient();
   const { agentRunStatusLabel, formatRelativeTime, t } = useI18n();
@@ -37,11 +33,6 @@ export function AgentRunStatusCard({
 
   const hasActivity = Boolean(run.activity_log?.trim());
   const hasDiagnostics = Boolean(run.stderr || run.error);
-  const canRetry = Boolean(
-    run.workflow_run_id &&
-      onRetryWorkflow &&
-      (run.status === 'failed' || run.status === 'cancelled' || run.status === 'interrupted'),
-  );
 
   return (
     <section
@@ -84,20 +75,6 @@ export function AgentRunStatusCard({
             title={t('agentRun.cancelExecution')}
           >
             <Ban className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        {canRetry && run.workflow_run_id && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => onRetryWorkflow?.(run.workflow_run_id!)}
-            disabled={retrying}
-            aria-label={t('agentRun.retryStage')}
-            title={t('agentRun.retryStage')}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            {!compact && <span>{t('common.retry')}</span>}
           </Button>
         )}
       </div>

@@ -3,9 +3,9 @@ import test from 'node:test';
 import type { RoomAgent } from '../lib/types';
 import { getExplicitReplyToMessageId } from './RichMessageComposer.model';
 import { buildComposerTriggers } from './RichMessageComposer.triggers';
-import type { TriggerSuggestion } from './prompt-area/types';
+import type { TriggerConfig, TriggerSuggestion } from './prompt-area/types';
 
-test('buildComposerTriggers registers agent mention and slash command triggers', () => {
+test('buildComposerTriggers only registers agent mention trigger in pure ACP chat mode', () => {
   const agent: RoomAgent = {
     id: 'room-agent-1',
     room_id: 'room-1',
@@ -39,10 +39,6 @@ test('buildComposerTriggers registers agent mention and slash command triggers',
     labels: {
       mentionMenuAria: 'mention menu',
       mentionEmpty: 'No agents',
-      commandMenuAria: 'command menu',
-      taskCommandDescription: 'Create a task',
-      startTaskCommandDescription: 'Start a task workflow',
-      commandEmpty: 'No commands',
     },
   });
 
@@ -53,16 +49,7 @@ test('buildComposerTriggers registers agent mention and slash command triggers',
   assert.equal(mentionResults?.[0]?.value, 'room-agent-1');
   assert.equal(mentionResults?.[0]?.label, 'Planner');
   assert.equal(mentionResults?.[0]?.data, agent);
-
-  const commandTrigger = triggers.find((trigger) => trigger.char === '/');
-  assert.equal(commandTrigger?.position, 'start');
-  assert.equal(commandTrigger?.mode, 'dropdown');
-  assert.equal(commandTrigger?.chipStyle, 'inline');
-  assert.deepEqual(asSuggestions(commandTrigger?.onSearch?.('', { signal: new AbortController().signal })), [
-    { value: 'task', label: '/task', description: 'Create a task' },
-    { value: 'start-task', label: '/start-task', description: 'Start a task workflow' },
-  ]);
-  assert.equal(commandTrigger?.onSelect?.({ value: 'task', label: '/task' }), 'task');
+  assert.equal(triggers.some((trigger) => trigger.char === '/'), false);
 });
 
 test('getExplicitReplyToMessageId only returns explicit reply targets', () => {
@@ -88,7 +75,7 @@ test('getExplicitReplyToMessageId only returns explicit reply targets', () => {
 });
 
 function asSuggestions(
-  value: TriggerSuggestion[] | Promise<TriggerSuggestion[]> | undefined,
+  value: ReturnType<NonNullable<TriggerConfig['onSearch']>> | undefined,
 ): TriggerSuggestion[] | undefined {
   assert.ok(!isPromise(value));
   return value;

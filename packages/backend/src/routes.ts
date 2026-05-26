@@ -9,7 +9,11 @@ import type { CollaborationDecision } from './collaboration-decision.js';
 import { runCollaborationStages as defaultRunCollaborationStages } from './collaboration-runner.js';
 import { getDefaultRoomCrewTemplate, getRoomCrewTemplate, listRoomCrewTemplates } from './crew-templates.js';
 import { db } from './db.js';
-import { dispatchUserMessage } from './dispatcher.js';
+import {
+  continueLatestPlannerDecision,
+  dispatchPlannerDecisionForRoom,
+  dispatchUserMessage,
+} from './dispatcher.js';
 import {
   sendGlobalChatMessage,
   type GlobalChatInvoker,
@@ -72,6 +76,7 @@ import {
   type AgentWorkspacePolicy,
   type MemoryScope,
   type MessageMetadata,
+  type PlannerDecision,
   type MessageRoutingMode,
   type ProjectFile,
   type ResourceAssetGroupKey,
@@ -1558,6 +1563,52 @@ router.post('/rooms/:roomId/messages', (req, res, next) => {
   void handleJsonMessage(req, res).catch(next);
 });
 
+router.post('/rooms/:roomId/planner/continue', async (req, res) => {
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  try {
+    const accepted = await continueLatestPlannerDecision({ roomId: room.id });
+    if (!accepted) return res.status(409).json({ error: 'no planner decision ready to continue' });
+    res.status(200).json({ accepted: true });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/rooms/:roomId/planner/dispatch', async (req, res) => {
+  const schema = z.object({
+    source_message_id: z.string().trim().min(1),
+    planner_decision: z.object({
+      mode: z.enum(['pause_after_suggestion', 'auto_continue']),
+      status: z.enum(['suggested', 'dispatching', 'completed', 'blocked']),
+      summary: z.string().trim().min(1),
+      next_steps: z.array(z.object({
+        agent_id: z.string().trim().min(1),
+        goal: z.string().trim().min(1),
+      })),
+      awaiting_user_confirmation: z.boolean(),
+    }),
+  });
+  const parsed = schema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const sourceMessage = messageRepo.get(parsed.data.source_message_id);
+  if (!sourceMessage || sourceMessage.room_id !== room.id) {
+    return res.status(404).json({ error: 'source message not found' });
+  }
+  try {
+    await dispatchPlannerDecisionForRoom({
+      roomId: room.id,
+      sourceMessageId: parsed.data.source_message_id,
+      decision: parsed.data.planner_decision,
+    });
+    res.status(200).json({ accepted: true });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
 async function handleJsonMessage(req: Request, res: Response): Promise<void> {
   const roomId = Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId;
   if (!roomId) {
@@ -1609,10 +1660,6 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     metadata,
   });
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
-  if (userMsg.commandError) {
-    res.status(userMsg.commandError.status).json({ error: userMsg.commandError.message });
-    return;
-  }
   res.status(201).json(userMsg);
 }
 
@@ -1708,10 +1755,6 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       metadata,
     });
     recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
-    if (userMsg.commandError) {
-      res.status(userMsg.commandError.status).json({ error: userMsg.commandError.message });
-      return;
-    }
     res.status(201).json(userMsg);
   } catch (err) {
     await cleanupProjectUploadedFiles(files);
@@ -1782,7 +1825,7 @@ function createAndDispatchUserMessage(input: {
   content: string;
   mentions?: string[];
   metadata?: MessageMetadata;
-}): ReturnType<typeof messageRepo.create> & { commandError?: { status: number; message: string } } {
+}): ReturnType<typeof messageRepo.create> {
   const userMsg = messageRepo.create({
     room_id: input.roomId,
     sender_type: 'user',
@@ -1793,13 +1836,6 @@ function createAndDispatchUserMessage(input: {
     metadata: input.metadata as Record<string, unknown> | undefined,
   });
   wsHub.broadcast(input.roomId, { type: 'message:new', roomId: input.roomId, message: userMsg });
-  const commandResult = handleChatCommand(input.roomId, userMsg);
-  if (commandResult.handled) {
-    if (commandResult.error) {
-      return { ...userMsg, commandError: commandResult.error };
-    }
-    return userMsg;
-  }
   // 这里是用户消息落库后触发智能体继续回复的最小入口。
   const agents = roomAgentRepo.listByRoom(input.roomId);
   const mentionedAgentRoomIds = resolveMentionedAgentRoomIds({
@@ -1814,62 +1850,6 @@ function createAndDispatchUserMessage(input: {
     mentionedAgentRoomIds,
   });
   return userMsg;
-}
-
-function handleChatCommand(
-  roomId: string,
-  userMessage: ReturnType<typeof messageRepo.create>,
-): { handled: false } | { handled: true; error?: { status: number; message: string } } {
-  try {
-    const taskTitle = parseTaskCommand(userMessage.content);
-    if (taskTitle) {
-      createTaskWithConversation({
-        roomId,
-        origin: 'slash_command',
-        createUserMessage: false,
-        sourceMessageId: userMessage.id,
-        taskInput: { title: taskTitle },
-      });
-      return { handled: true };
-    }
-
-    const taskId = parseStartTaskCommand(userMessage.content);
-    if (taskId) {
-      startWorkflowWithConversation({
-        roomId,
-        taskId,
-        source: 'chat_command',
-        sourceMessageId: userMessage.id,
-        content: userMessage.content,
-      });
-      return { handled: true };
-    }
-  } catch (err) {
-    const error = err as Error & { status?: number };
-    return {
-      handled: true,
-      error: {
-        status: error.status ?? workflowErrorStatus(error),
-        message: error.message,
-      },
-    };
-  }
-
-  return { handled: false };
-}
-
-function parseTaskCommand(content: string): string | null {
-  const match = content.match(/^\/task\s+(.+)$/i);
-  const title = match?.[1]?.trim();
-  return title || null;
-}
-
-function parseStartTaskCommand(content: string): string | null {
-  const slashMatch = content.match(/^\/start-task\s+(\S+)$/i);
-  if (slashMatch?.[1]) return slashMatch[1].trim();
-
-  const chineseMatch = content.match(/^开始任务\s*#?(\S+)$/);
-  return chineseMatch?.[1]?.trim() || null;
 }
 
 function parseMultipartMentions(rawMentions?: string): string[] | undefined {
@@ -1970,97 +1950,76 @@ const collaborationStartSchema = z.object({
   decision: collaborationDecisionSchema,
 });
 
+const plannerDecisionSchema: z.ZodType<PlannerDecision> = z.object({
+  mode: z.enum(['pause_after_suggestion', 'auto_continue']),
+  status: z.enum(['suggested', 'dispatching', 'completed', 'blocked']),
+  summary: z.string().trim().min(1),
+  next_steps: z.array(z.object({
+    agent_id: z.string().trim().min(1),
+    goal: z.string().trim().min(1),
+  })),
+  awaiting_user_confirmation: z.boolean(),
+});
+
+const plannerDispatchSchema = z.object({
+  source_message_id: z.string().trim().min(1),
+  planner_decision: plannerDecisionSchema,
+});
+
+router.post('/rooms/:roomId/planner/continue', (req, res, next) => {
+  void (async () => {
+    const room = roomRepo.get(req.params.roomId);
+    if (!room) {
+      res.status(404).json({ error: 'room not found' });
+      return;
+    }
+    const accepted = await continueLatestPlannerDecision({ roomId: room.id });
+    if (!accepted) {
+      res.status(404).json({ error: 'planner decision not found' });
+      return;
+    }
+    res.status(202).json({ accepted: true });
+  })().catch(next);
+});
+
+router.post('/rooms/:roomId/planner/dispatch', (req, res, next) => {
+  void (async () => {
+    const room = roomRepo.get(req.params.roomId);
+    if (!room) {
+      res.status(404).json({ error: 'room not found' });
+      return;
+    }
+    const parsed = plannerDispatchSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    const sourceMessage = messageRepo.get(parsed.data.source_message_id);
+    if (!sourceMessage || sourceMessage.room_id !== room.id) {
+      res.status(404).json({ error: 'source message not found' });
+      return;
+    }
+    await dispatchPlannerDecisionForRoom({
+      roomId: room.id,
+      sourceMessageId: sourceMessage.id,
+      decision: parsed.data.planner_decision,
+    });
+    res.status(202).json({ accepted: true });
+  })().catch(next);
+});
+
 router.post('/rooms/:roomId/collaborations', (req, res) => {
   const parsed = collaborationStartSchema.safeParse(req.body ?? {});
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
-  const room = roomRepo.get(req.params.roomId);
-  if (!room) return res.status(404).json({ error: 'room not found' });
-  const project = projectRepo.get(room.project_id);
-  if (!project) return res.status(404).json({ error: 'project not found' });
-  const sourceMessage = messageRepo.get(parsed.data.source_message_id);
-  if (!sourceMessage || sourceMessage.room_id !== room.id) {
-    return res.status(404).json({ error: 'source message not found' });
-  }
-
-  const dedupeKey = `${room.id}:${sourceMessage.id}`;
-  const existingRun = collaborationRunsBySource.get(dedupeKey);
-  if (existingRun) {
-    return res.status(202).json({ run: existingRun });
-  }
-
-  const run = {
-    id: nanoid(16),
-    room_id: room.id,
-    source_message_id: sourceMessage.id,
-    status: 'running' as const,
-  };
-  collaborationRunsBySource.set(dedupeKey, run);
-  const runCollaborationStages =
-    collaborationRouteDeps.runCollaborationStages ?? defaultRunCollaborationStages;
-
-  void runCollaborationStages({
-    runId: run.id,
-    projectPath: project.path,
-    roomId: room.id,
-    sourceMessage,
-    decision: parsed.data.decision,
-  })
-    .then((result) => {
-      collaborationRunsBySource.set(dedupeKey, {
-        id: run.id,
-        room_id: room.id,
-        source_message_id: sourceMessage.id,
-        status: result.status,
-      });
-    })
-    .catch((err) => {
-      console.warn(`[collaboration-routes] collaboration ${run.id} failed: ${formatUnknownError(err)}`);
-      collaborationRunsBySource.set(dedupeKey, {
-        id: run.id,
-        room_id: room.id,
-        source_message_id: sourceMessage.id,
-        status: 'blocked',
-      });
-    });
-
-  return res.status(202).json({ run });
+  return res.status(410).json({
+    error: 'pure ACP mode enabled: collaborations route is disabled; use planner dispatch instead',
+  });
 });
 
 router.post('/rooms/:roomId/messages/:messageId/promote-to-workflow', (req, res) => {
-  const room = roomRepo.get(req.params.roomId);
-  if (!room) return res.status(404).json({ error: 'room not found' });
-  const sourceMessage = messageRepo.get(req.params.messageId);
-  if (!sourceMessage || sourceMessage.room_id !== room.id) {
-    return res.status(404).json({ error: 'source message not found' });
-  }
-
-  try {
-    const promotion = resolvePromotedTaskSource(room.id, sourceMessage);
-    const taskInput = buildPromotedTaskInput(promotion);
-    const taskResult = createTaskWithConversation({
-      roomId: room.id,
-      origin: 'chat_plan',
-      sourceMessageId: promotion.taskSourceMessage.id,
-      taskInput: {
-        title: taskInput.title,
-        description: taskInput.description,
-        interaction_mode: 'ask_user',
-      },
-    });
-    ensurePromotedTaskCanStart(taskResult.task.id, promotion.taskSourceMessage.id);
-    const task = ensurePromotedTaskHasLatestPlannerBackground(taskResult.task.id, taskInput);
-    const workflow = startWorkflowWithConversation({
-      roomId: room.id,
-      taskId: task.id,
-      source: 'task_button',
-      sourceMessageId: promotion.taskSourceMessage.id,
-    });
-    return res.status(202).json({ task, workflow });
-  } catch (err) {
-    const error = err as Error & { status?: number };
-    return res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
-  }
+  return res.status(410).json({
+    error: 'pure ACP mode enabled: workflow promotion is disabled; use planner dispatch instead',
+  });
 });
 
 function ensurePromotedTaskCanStart(taskId: string, sourceMessageId: string) {

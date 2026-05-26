@@ -74,10 +74,6 @@ export function RichMessageComposer({
     labels: {
       mentionMenuAria: t('mention.menuAria'),
       mentionEmpty: t('mention.empty'),
-      commandMenuAria: t('composer.command.menuAria'),
-      taskCommandDescription: t('composer.command.task.description'),
-      startTaskCommandDescription: t('composer.command.startTask.description'),
-      commandEmpty: t('composer.command.empty'),
     },
   }), [agents, t]);
 

@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { Message, MessageMetadata, MessageType, SenderType } from '../types.js';
+import type { Message, MessageMetadata, MessageTrace, MessageType, SenderType } from '../types.js';
 
 export const messageRepo = {
   listByRoom(roomId: string, limit = 200): Message[] {
@@ -59,6 +59,16 @@ export const messageRepo = {
     return this.get(id);
   },
 
+  mergeTrace(id: string, patch: Partial<MessageTrace>): Message | undefined {
+    const message = this.get(id);
+    if (!message) return undefined;
+    const metadata = parseMetadataObject(message.metadata);
+    const nextTrace = mergeMessageTrace(metadata.trace, patch);
+    const nextMetadata = { ...metadata, trace: nextTrace };
+    db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify(nextMetadata), id);
+    return this.get(id);
+  },
+
   markFileAttachmentDeleted(fileId: string): number {
     const messages = db.prepare(
       `SELECT DISTINCT messages.*
@@ -91,6 +101,26 @@ function parseMetadataObject(rawMetadata: string | null): Record<string, unknown
   } catch {
     return {};
   }
+}
+
+function mergeMessageTrace(existing: unknown, patch: Partial<MessageTrace>): MessageTrace {
+  const current = isMessageTrace(existing) ? existing : {};
+  return {
+    ...current,
+    ...(patch.thinking ? {
+      thinking: [...(current.thinking ?? []), ...patch.thinking],
+    } : {}),
+    ...(patch.tool_calls ? {
+      tool_calls: [...(current.tool_calls ?? []), ...patch.tool_calls],
+    } : {}),
+    ...(patch.commands ? {
+      commands: [...(current.commands ?? []), ...patch.commands],
+    } : {}),
+  };
+}
+
+function isMessageTrace(value: unknown): value is MessageTrace {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function markMetadataFileDeleted(rawMetadata: string | null, fileId: string): MessageMetadata | null {

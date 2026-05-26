@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
+import type { MessageTrace, MessageTraceCommand, MessageTraceToolCall } from '../lib/types';
 
 type MessagePart =
   | { type: 'text'; value: string }
@@ -64,10 +65,12 @@ export function MessageContent({
   content,
   streaming = false,
   mode,
+  trace,
 }: {
   content: string;
   streaming?: boolean;
   mode?: 'preview' | 'source';
+  trace?: MessageTrace;
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { t } = useI18n();
@@ -88,37 +91,40 @@ export function MessageContent({
 
   return (
     <div className="message-content">
-      {markdown && activeMode === 'preview' ? (
-        <MarkdownPreview content={content} streaming={streaming} />
-      ) : (
-        <>
-          {parts.map((part, index) => {
-            if (part.type === 'text') {
-              if (!part.value) return null;
-              return (
-                <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
-                  {part.value}
-                  {streaming && index === lastTextPartIndex && <StreamingCursor />}
-                </span>
-              );
-            }
+      <div>
+        {markdown && activeMode === 'preview' ? (
+          <MarkdownPreview content={content} streaming={streaming} />
+        ) : (
+          <>
+            {parts.map((part, index) => {
+              if (part.type === 'text') {
+                if (!part.value) return null;
+                return (
+                  <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
+                    {part.value}
+                    {streaming && index === lastTextPartIndex && <StreamingCursor />}
+                  </span>
+                );
+              }
 
-            const copied = copiedIndex === index;
-            return (
-              <CodeBlock
-                key={`code-${index}`}
-                language={part.language}
-                value={part.value}
-                copied={copied}
-                onCopy={() => void copyCode(part.value, index)}
-                copyLabel={t('message.copy')}
-                copiedLabel={t('message.copied')}
-              />
-            );
-          })}
-          {streaming && lastTextPartIndex === -1 && <StreamingCursor />}
-        </>
-      )}
+              const copied = copiedIndex === index;
+              return (
+                <CodeBlock
+                  key={`code-${index}`}
+                  language={part.language}
+                  value={part.value}
+                  copied={copied}
+                  onCopy={() => void copyCode(part.value, index)}
+                  copyLabel={t('message.copy')}
+                  copiedLabel={t('message.copied')}
+                />
+              );
+            })}
+            {streaming && lastTextPartIndex === -1 && <StreamingCursor />}
+          </>
+        )}
+      </div>
+      <MessageTracePanels trace={trace} />
     </div>
   );
 }
@@ -400,6 +406,92 @@ function formatConfidence(value: number): string {
 function formatSemanticJsonString(value: string | null): string {
   if (!value) return '未知';
   return jsonValueLabels[value] ?? value;
+}
+
+function MessageTracePanels({ trace }: { trace?: MessageTrace }): JSX.Element | null {
+  if (!trace || !hasMessageTrace(trace)) return null;
+
+  return (
+    <div className="mt-3 space-y-2">
+      {trace.thinking && trace.thinking.length > 0 && (
+        <details className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)]/55 px-3 py-2">
+          <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
+            Thinking
+          </summary>
+          <div className="mt-2 space-y-2">
+            {trace.thinking.map((entry, index) => (
+              <pre
+                key={index}
+                className="max-h-[280px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--color-code-bg)] px-3 py-2 text-[11px] leading-relaxed text-[var(--color-fg)]"
+              >
+                {entry.text}
+              </pre>
+            ))}
+          </div>
+        </details>
+      )}
+      {hasToolOrCommandTrace(trace) && (
+        <details className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)]/55 px-3 py-2">
+          <summary className="cursor-pointer select-none font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
+            工具轨迹
+          </summary>
+          <div className="mt-2 space-y-2">
+            {trace.tool_calls?.map((tool, index) => (
+              <TraceToolCall key={`tool-${index}`} tool={tool} index={index} />
+            ))}
+            {trace.commands?.map((command, index) => (
+              <TraceCommand key={`command-${index}`} command={command} index={index} />
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function TraceToolCall({ tool, index }: { tool: MessageTraceToolCall; index: number }): JSX.Element {
+  return (
+    <section className="rounded-md bg-[var(--color-code-bg)] px-3 py-2">
+      <div className="font-mono text-[11px] font-semibold text-[var(--color-fg)]">
+        工具调用 #{index + 1}: {tool.name}
+      </div>
+      <TracePre label="input" value={tool.input} />
+      {tool.output !== undefined && <TracePre label="output" value={tool.output} />}
+    </section>
+  );
+}
+
+function TraceCommand({ command, index }: { command: MessageTraceCommand; index: number }): JSX.Element {
+  return (
+    <section className="rounded-md bg-[var(--color-code-bg)] px-3 py-2">
+      <div className="font-mono text-[11px] font-semibold text-[var(--color-fg)]">
+        命令执行 #{index + 1}
+      </div>
+      <TracePre label="command" value={command.command} />
+      {command.output !== undefined && <TracePre label="output" value={command.output} />}
+    </section>
+  );
+}
+
+function TracePre({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="mt-2">
+      <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--color-fg-muted)]">
+        {label}
+      </div>
+      <pre className="max-h-[220px] overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+        {value || '∅'}
+      </pre>
+    </div>
+  );
+}
+
+function hasMessageTrace(trace: MessageTrace): boolean {
+  return Boolean(trace.thinking?.length || trace.tool_calls?.length || trace.commands?.length);
+}
+
+function hasToolOrCommandTrace(trace: MessageTrace): boolean {
+  return Boolean(trace.tool_calls?.length || trace.commands?.length);
 }
 
 function StreamingCursor(): JSX.Element {

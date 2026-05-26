@@ -3,7 +3,14 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CliSessionSummary } from '../types.js';
-import type { AcpStreamChunk, SessionAdapter } from './types.js';
+import type { AcpStreamChannel, AcpStreamChunk, AcpStreamTrace, SessionAdapter } from './types.js';
+
+type NormalizedStdoutChunk = {
+  channel: AcpStreamChannel;
+  text: string;
+  rawType?: string;
+  trace?: AcpStreamTrace;
+};
 
 /** Encode an absolute path the way Claude Code stores project dirs. */
 function encodeProjectPath(p: string): string {
@@ -234,17 +241,19 @@ export function filterStderr(data: string): string {
 }
 
 export function normalizeStdoutChunk(data: string): Array<{
-  channel: 'answer' | 'activity';
+  channel: AcpStreamChannel;
   text: string;
   rawType?: string;
+  trace?: AcpStreamTrace;
 }> {
   return createStdoutNormalizer()(data);
 }
 
 export function createStdoutNormalizer(): (data: string) => Array<{
-  channel: 'answer' | 'activity';
+  channel: AcpStreamChannel;
   text: string;
   rawType?: string;
+  trace?: AcpStreamTrace;
 }> {
   const snapshots = new Map<string, string>();
   return (data: string) => normalizeStdoutChunkWithSnapshots(data, snapshots);
@@ -253,57 +262,154 @@ export function createStdoutNormalizer(): (data: string) => Array<{
 function normalizeStdoutChunkWithSnapshots(
   data: string,
   snapshots: Map<string, string>,
-): Array<{
-  channel: 'answer' | 'activity';
-  text: string;
-  rawType?: string;
-}> {
+): NormalizedStdoutChunk[] {
   const lines = data.split('\n');
-  const normalized = lines.map((line, index) => {
-    if (!line.trim()) return index === lines.length - 1 ? '' : line;
+  const normalized = lines.flatMap((line, index) => {
+    if (!line.trim()) return [];
     try {
       const obj = JSON.parse(line) as Record<string, unknown>;
+      const traceChunks = extractTraceChunks(obj);
       if (obj['type'] === 'assistant' || obj['type'] === 'result' || isCodexAgentMessage(obj) || isOpenCodeTextEvent(obj)) {
         const text = extractText(obj);
         if (!text) {
           const activity = extractActivityText(obj);
-          return activity
+          const activityChunk = activity
             ? {
                 channel: 'activity' as const,
                 text: activity,
                 rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
               }
-            : '';
+            : null;
+          return activityChunk ? [...traceChunks, activityChunk] : traceChunks;
         }
         const delta = toAnswerTextDelta(obj, text, snapshots);
-        if (!delta) return '';
-        return {
+        if (!delta) return traceChunks;
+        return [...traceChunks, {
           channel: 'answer' as const,
           text: delta,
           rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
-        };
+        }];
       }
       const activity = extractActivityText(obj);
-      return activity
+      const activityChunk = activity
         ? {
             channel: 'activity' as const,
             text: activity,
             rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
           }
-        : '';
+        : null;
+      return activityChunk ? [...traceChunks, activityChunk] : traceChunks;
     } catch {
       const snapshotText = index === lines.length - 1 ? line : `${line}\n`;
       const delta = toPlainTextDelta(snapshotText, snapshots);
-      if (!delta) return '';
+      if (!delta) return [];
       const displayText = index === lines.length - 1 ? delta : delta.replace(/\n$/, '');
-      return displayText ? { channel: 'answer' as const, text: displayText } : '';
+      return displayText ? [{ channel: 'answer' as const, text: displayText }] : [];
     }
   });
-  return normalized.filter(Boolean) as Array<{
-    channel: 'answer' | 'activity';
-    text: string;
-    rawType?: string;
-  }>;
+  return normalized;
+}
+
+function extractTraceChunks(obj: Record<string, unknown>): NormalizedStdoutChunk[] {
+  const rawType = typeof obj['type'] === 'string' ? obj['type'] : undefined;
+  const chunks: NormalizedStdoutChunk[] = [];
+
+  if (obj['type'] === 'item.started' || obj['type'] === 'item.completed') {
+    const item = asRecord(obj['item']);
+    if (item) chunks.push(...extractItemTraceChunks(item, rawType));
+  }
+
+  if (obj['type'] === 'assistant') {
+    const message = asRecord(obj['message']);
+    const content = message ? message['content'] : obj['content'];
+    chunks.push(...extractAssistantTraceChunks(content, rawType));
+  }
+
+  if (obj['type'] === 'user') {
+    const message = asRecord(obj['message']);
+    const content = message ? message['content'] : obj['content'];
+    chunks.push(...extractToolResultTraceChunks(content, rawType));
+  }
+
+  return chunks;
+}
+
+function extractItemTraceChunks(item: Record<string, unknown>, rawType?: string): NormalizedStdoutChunk[] {
+  const itemType = typeof item['type'] === 'string' ? item['type'] : '';
+  if (itemType === 'reasoning') {
+    const text = extractReasoningText(item);
+    return text ? [buildTraceChunk('thinking', text, rawType, { kind: 'thinking', text })] : [];
+  }
+  if (itemType === 'function_call') {
+    const rawName = item['name'];
+    const name = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : 'tool';
+    const input = stringifyTraceValue(item['arguments']);
+    const text = input ? `${name} ${input}` : name;
+    return [buildTraceChunk('tool', text, rawType, { kind: 'tool', name, input })];
+  }
+  if (itemType === 'function_call_output') {
+    const output = stringifyTraceValue(item['output']);
+    if (!output) return [];
+    return [buildTraceChunk('tool', output, rawType, { kind: 'tool', name: 'tool_result', input: '', output })];
+  }
+  if (itemType === 'command_execution' || itemType === 'local_shell_call') {
+    const command = extractCommandText(item);
+    const output = stringifyTraceValue(item['output']);
+    if (!command && !output) return [];
+    const text = [command, output].filter(Boolean).join('\n');
+    return [buildTraceChunk('command', text, rawType, { kind: 'command', command: command || 'command', output: output || undefined })];
+  }
+  return [];
+}
+
+function extractAssistantTraceChunks(content: unknown, rawType?: string): NormalizedStdoutChunk[] {
+  if (!Array.isArray(content)) return [];
+  const chunks: NormalizedStdoutChunk[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== 'object') continue;
+    const p = part as Record<string, unknown>;
+    const type = typeof p['type'] === 'string' ? p['type'] : '';
+    if (type === 'thinking' || type === 'reasoning') {
+      const text = extractReasoningText(p);
+      if (text) chunks.push(buildTraceChunk('thinking', text, rawType, { kind: 'thinking', text }));
+    }
+    if (type === 'tool_use') {
+      const rawName = p['name'];
+      const name = typeof rawName === 'string' && rawName.trim() ? rawName.trim() : 'tool';
+      const input = stringifyTraceValue(p['input']);
+      const text = input ? `${name} ${input}` : name;
+      chunks.push(buildTraceChunk('tool', text, rawType, { kind: 'tool', name, input }));
+    }
+  }
+  return chunks;
+}
+
+function extractToolResultTraceChunks(content: unknown, rawType?: string): NormalizedStdoutChunk[] {
+  if (!Array.isArray(content)) return [];
+  return content
+    .map((part) => {
+      if (!part || typeof part !== 'object') return null;
+      const p = part as Record<string, unknown>;
+      if (p['type'] !== 'tool_result') return null;
+      const output = stringifyTraceValue(p['content']);
+      if (!output) return null;
+      return buildTraceChunk('tool', output, rawType, {
+        kind: 'tool',
+        name: typeof p['tool_name'] === 'string' && p['tool_name'].trim() ? p['tool_name'].trim() : 'tool_result',
+        input: '',
+        output,
+      });
+    })
+    .filter((chunk): chunk is NormalizedStdoutChunk => Boolean(chunk));
+}
+
+function buildTraceChunk(
+  channel: Extract<AcpStreamChannel, 'thinking' | 'tool' | 'command'>,
+  text: string,
+  rawType: string | undefined,
+  trace: AcpStreamTrace,
+): NormalizedStdoutChunk {
+  return { channel, text, rawType, trace };
 }
 
 function toAnswerTextDelta(obj: Record<string, unknown>, text: string, snapshots: Map<string, string>): string {
@@ -489,6 +595,29 @@ function extractReasoningSummary(obj: Record<string, unknown>): string | null {
   return null;
 }
 
+function extractReasoningText(obj: Record<string, unknown>): string | null {
+  const directText = typeof obj['text'] === 'string' ? obj['text'].trim() : '';
+  if (directText) return directText;
+  const contentText = extractContentText(obj['content']);
+  if (contentText?.trim()) return contentText.trim();
+  const summary = obj['summary'];
+  if (typeof summary === 'string') return summary.trim() || null;
+  if (Array.isArray(summary)) {
+    const text = summary
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (!item || typeof item !== 'object') return '';
+        const record = item as Record<string, unknown>;
+        return typeof record['text'] === 'string' ? record['text'] : '';
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    return text || null;
+  }
+  return null;
+}
+
 function extractToolResultSummary(content: unknown): string | null {
   if (!Array.isArray(content)) return null;
   const parts = content
@@ -510,6 +639,27 @@ function summarizeCommand(item: Record<string, unknown>): string | null {
   if (typeof command === 'string') return oneLine(command, 160);
   const cmd = typeof item['cmd'] === 'string' ? item['cmd'] : '';
   return cmd ? oneLine(cmd, 160) : null;
+}
+
+function extractCommandText(item: Record<string, unknown>): string {
+  const command = item['command'];
+  if (Array.isArray(command)) return command.map(String).join(' ').trim();
+  if (typeof command === 'string') return command.trim();
+  const cmd = typeof item['cmd'] === 'string' ? item['cmd'].trim() : '';
+  if (cmd) return cmd;
+  const args = item['args'];
+  if (Array.isArray(args)) return args.map(String).join(' ').trim();
+  return '';
+}
+
+function stringifyTraceValue(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function summarizeJsonText(value: unknown): string {

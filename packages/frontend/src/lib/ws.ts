@@ -10,7 +10,7 @@ export type WsServerEvent =
       done: boolean;
       seq?: number;
       runId?: string;
-      channel?: 'answer';
+      channel?: 'answer' | 'thinking' | 'tool' | 'command';
       status?: 'streaming' | AgentRunStatus;
       error?: string | null;
       message?: Message;

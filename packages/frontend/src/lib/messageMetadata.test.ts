@@ -299,3 +299,78 @@ test('parseMessageMetadata accepts workflow recovery decision task event', () =>
   assert.equal(parsed.workflow_step_id, 'step-1');
   assert.equal(parsed.event_type, 'workflow_recovery_decided');
 });
+
+test('parseMessageMetadata accepts planner decision and structured trace metadata', () => {
+  const metadata = JSON.stringify({
+    source_message_id: 'user-message-1',
+    planner_decision: {
+      mode: 'pause_after_suggestion',
+      status: 'suggested',
+      summary: '建议先验证模型配置与连接测试链路',
+      next_steps: [
+        {
+          agent_id: 'frontend-executor',
+          goal: '检查设置页是否已有测试模型入口',
+        },
+      ],
+      awaiting_user_confirmation: true,
+    },
+    trace: {
+      thinking: [{ text: '完整 thinking 原文' }],
+      tool_calls: [
+        {
+          name: 'search_files',
+          input: '{"pattern":"model settings"}',
+          output: 'found SettingsDialogs.tsx',
+        },
+      ],
+      commands: [
+        {
+          command: 'rg -n "model" packages/frontend/src',
+          output: 'packages/frontend/src/lib/types.ts:1:model',
+        },
+      ],
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.deepEqual(parsed.planner_decision, {
+    mode: 'pause_after_suggestion',
+    status: 'suggested',
+    summary: '建议先验证模型配置与连接测试链路',
+    next_steps: [
+      {
+        agent_id: 'frontend-executor',
+        goal: '检查设置页是否已有测试模型入口',
+      },
+    ],
+    awaiting_user_confirmation: true,
+  });
+  assert.equal(parsed.source_message_id, 'user-message-1');
+  assert.equal(parsed.trace?.thinking?.[0]?.text, '完整 thinking 原文');
+  assert.equal(parsed.trace?.tool_calls?.[0]?.name, 'search_files');
+  assert.equal(parsed.trace?.commands?.[0]?.command, 'rg -n "model" packages/frontend/src');
+});
+
+test('parseMessageMetadata ignores invalid planner decisions and invalid trace rows', () => {
+  const metadata = JSON.stringify({
+    planner_decision: {
+      mode: 'legacy_mode',
+      status: 'suggested',
+      summary: 'bad',
+      next_steps: [],
+      awaiting_user_confirmation: true,
+    },
+    trace: {
+      thinking: [{ text: '' }],
+      tool_calls: [{ name: 'search_files' }],
+      commands: [{ output: 'missing command' }],
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.planner_decision, undefined);
+  assert.equal(parsed.trace, undefined);
+});

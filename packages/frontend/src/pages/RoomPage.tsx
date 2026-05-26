@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, CheckSquare, ChevronDown, ChevronLeft, Download, Eye, FileText, FolderOpen, ListTodo, MessageSquare, Play, Plus, Reply, RotateCcw, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, ChevronDown, ChevronLeft, Download, Eye, FileText, FolderOpen, MessageSquare, Reply, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { AgentRun, Message, MessageAttachmentMetadata, Room, RoomAgent, Task, TaskExecutionIntent, WorkflowDetail, WorkflowRun } from '../lib/types';
+import type { AgentRun, Message, MessageAttachmentMetadata, MessageTrace, PlannerDecision, Room, RoomAgent } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
 import { recordRecentRoomVisit } from '../lib/recentRooms';
@@ -24,15 +24,10 @@ import { AgentAvatar } from '../components/AgentAvatar';
 import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
-import { CreateTaskDialog } from '../components/CreateTaskDialog';
 import { MemoryPanel } from '../components/MemoryPanel';
 import { RichMessageComposer } from '../components/RichMessageComposer';
-import { TaskBoard } from '../components/TaskBoard';
-import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { RoomFilesPanel } from '../components/RoomFilesPanel';
 import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
-import { CollaborationDecisionCard } from '../components/CollaborationDecisionCard';
-import { WorkflowTaskBubble } from '../components/WorkflowTaskBubble';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
@@ -54,22 +49,17 @@ import {
 import {
   createDefaultReplyTarget,
   createReplyTarget,
-  createWorkflowEventRenderStateMap,
-  getTaskReadinessActionState,
-  getTaskEventVisibilityState,
-  shouldShowTaskReadinessActions,
   type ReplyTarget,
-  type WorkflowEventRenderState,
 } from './roomPageLogic';
 
-type RoomFeatureTab = 'chat' | 'tasks' | 'files';
+type RoomFeatureTab = 'chat' | 'files';
 type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[]; replyToMessageId?: string };
+type StreamTraceChannel = Exclude<NonNullable<Extract<WsServerEvent, { type: 'message:stream' }>['channel']>, 'answer'>;
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
   const queryClient = useQueryClient();
   const [configAgent, setConfigAgent] = useState<RoomAgent | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
@@ -110,21 +100,6 @@ export function RoomPage() {
     queryFn: () => api.getRoomSettings(roomId),
     enabled: !!roomId,
   });
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['room-tasks', roomId],
-    queryFn: () => api.listRoomTasks(roomId),
-    enabled: !!roomId,
-  });
-  const rootTasks = tasks.filter((task) => !task.parent_task_id);
-  const taskWorkflowKey = rootTasks.map((task) => task.id).join(',');
-  const { data: taskWorkflows = [] } = useQuery({
-    queryKey: ['room-workflows', roomId, taskWorkflowKey],
-    queryFn: async () => {
-      const all = await Promise.all(rootTasks.map((task) => api.listTaskWorkflows(task.id)));
-      return all.flat();
-    },
-    enabled: rootTasks.length > 0,
-  });
   const { data: agentRuns = [] } = useQuery({
     queryKey: ['agent-runs', roomId],
     queryFn: () => api.listAgentRuns(roomId),
@@ -135,14 +110,9 @@ export function RoomPage() {
     },
   });
   const streamingDisplay = useStreamingMessageDisplay(roomId);
-  const workflowById = useMemo(
-    () => new Map(taskWorkflows.map((workflow) => [workflow.id, workflow])),
-    [taskWorkflows],
-  );
 
   useEffect(() => {
     setActiveTab('chat');
-    setSelectedTask(null);
     setShowMemoryPanel(false);
     setHighlightMessageId(null);
     setExplicitReplyTarget(null);
@@ -155,20 +125,6 @@ export function RoomPage() {
     if (!project || !room || room.project_id !== project.id) return;
     recordRecentRoomVisit({ project, room });
   }, [project, room]);
-
-  useEffect(() => {
-    if (activeTab !== 'tasks') return;
-    const rootTasks = tasks
-      .filter((task) => !task.parent_task_id)
-      .sort((a, b) => b.updated_at - a.updated_at);
-    if (rootTasks.length === 0) {
-      setSelectedTask(null);
-      return;
-    }
-    if (!selectedTask || !rootTasks.some((task) => task.id === selectedTask.id)) {
-      setSelectedTask(rootTasks[0] ?? null);
-    }
-  }, [activeTab, selectedTask, tasks]);
 
   const registerMessageRef = useCallback((messageId: string, node: HTMLElement | null) => {
     if (node) {
@@ -207,36 +163,6 @@ export function RoomPage() {
     };
   }, [activeTab, highlightMessageId, messages.length]);
 
-  const updateTaskStatus = useMutation({
-    mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
-      api.updateTask(task.id, { status }),
-    onError: (err) => toast.error((err as Error).message),
-  });
-
-  const retryWorkflow = useMutation({
-    mutationFn: (workflowId: string) => api.retryWorkflowStep(workflowId),
-    onSuccess: (workflow) => {
-      queryClient.invalidateQueries({ queryKey: ['task-workflows', workflow.task_id] });
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflow.id] });
-      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
-      toast.success(t('room.retryStageDone'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
-  const startWorkflow = useMutation({
-    mutationFn: (task: Task) =>
-      api.startWorkflowWithConversation(task.room_id, task.id, {
-        content: t('workflow.startIntent', { title: task.title }),
-      }),
-    onSuccess: (workflow) => {
-      invalidateWorkflowConversationQueries(queryClient, workflow.room_id, workflow.task_id, workflow.id);
-      toast.success(t('taskDetail.workflowStarted'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
   // Subscribe to WS for this room
   useEffect(() => {
     if (!roomId) return;
@@ -246,7 +172,6 @@ export function RoomPage() {
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) =>
           upsertMessage(prev, event.message),
         );
-        invalidateWorkflowDetailFromMessage(queryClient, event.message);
         if (event.message.message_type === 'agent_stream') {
           setStreamingMessageIds((prev) => addStreamingMessageId(prev, event.message.id));
         }
@@ -262,12 +187,16 @@ export function RoomPage() {
           const next = prev.map((m) => {
             if (m.id !== event.messageId) return m;
             matchedMessage = true;
+            if (event.done && event.message) return event.message;
+            if (event.channel && event.channel !== 'answer') {
+              return mergeMessageStreamTrace(m, event.channel, event.chunk);
+            }
             fullContent = m.content + event.chunk;
-            return event.done && event.message ? event.message : { ...m, content: fullContent };
+            return { ...m, content: fullContent };
           });
           return dedupeMessages(next);
         });
-        if (event.chunk) {
+        if (event.chunk && (!event.channel || event.channel === 'answer')) {
           streamingDisplay.appendChunk(event.messageId, event.chunk);
         }
         if (!matchedMessage) {
@@ -306,42 +235,6 @@ export function RoomPage() {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       } else if (event.type === 'room:agent_left' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
-      } else if (
-        (event.type === 'workflow:created' || event.type === 'workflow:updated') &&
-        event.roomId === roomId
-      ) {
-        queryClient.setQueryData<WorkflowRun[] | undefined>(
-          ['task-workflows', event.workflow.task_id],
-          (prev) => upsertWorkflow(prev, event.workflow),
-        );
-        queryClient.setQueriesData<WorkflowRun[] | undefined>(
-          { queryKey: ['room-workflows', roomId] },
-          (prev) => upsertWorkflow(prev, event.workflow),
-        );
-        queryClient.invalidateQueries({ queryKey: ['workflow', event.workflow.id] });
-      } else if (
-        (event.type === 'workflow_step:created' || event.type === 'workflow_step:updated') &&
-        event.roomId === roomId
-      ) {
-        queryClient.invalidateQueries({ queryKey: ['task-workflows', event.step.task_id] });
-        queryClient.invalidateQueries({ queryKey: ['workflow', event.step.workflow_run_id] });
-      } else if (event.type === 'workflow_artifact:created' && event.roomId === roomId) {
-        queryClient.invalidateQueries({ queryKey: ['task-workflows', event.artifact.task_id] });
-        queryClient.invalidateQueries({ queryKey: ['workflow', event.artifact.workflow_run_id] });
-      } else if (event.type === 'task:created' && event.task.room_id === roomId) {
-        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
-          prev ? [event.task, ...prev.filter((task) => task.id !== event.task.id)] : [event.task],
-        );
-      } else if (event.type === 'task:updated' && event.task.room_id === roomId) {
-        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
-          prev ? prev.map((task) => (task.id === event.task.id ? event.task : task)) : [event.task],
-        );
-        setSelectedTask((current) => (current?.id === event.task.id ? event.task : current));
-      } else if (event.type === 'task:deleted') {
-        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
-          prev?.filter((task) => task.id !== event.taskId),
-        );
-        setSelectedTask((current) => (current?.id === event.taskId ? null : current));
       }
     });
     return () => {
@@ -377,18 +270,9 @@ export function RoomPage() {
           <AgentStrip
             agents={agents}
             onConfig={(agent) => {
-              setSelectedTask(null);
               setConfigAgent(agent);
             }}
           />
-          <span className="inline-flex">
-            <CreateTaskDialog roomId={roomId} agents={agents}>
-              <button type="button" className="glass-button glass-button-primary" aria-label={t('room.newTask')}>
-                <Plus className="h-3.5 w-3.5" strokeWidth={1.8} />
-                <span className="hidden sm:inline">{t('room.newTask')}</span>
-              </button>
-            </CreateTaskDialog>
-          </span>
           {project && room && (
             <RoomSettingsDialog project={project} room={room} agents={agents}>
               <button
@@ -407,7 +291,7 @@ export function RoomPage() {
             className={cn('glass-button', showMemoryPanel && 'glass-button-primary')}
             onClick={() => {
               setShowMemoryPanel((v) => !v);
-              if (!showMemoryPanel) { setConfigAgent(null); setSelectedTask(null); }
+              if (!showMemoryPanel) setConfigAgent(null);
             }}
           >
             <Brain className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -440,9 +324,6 @@ export function RoomPage() {
                 modelChatReady={Boolean(settings?.system.langchain_planner_model && settings.system.openai_api_key_set)}
                 routingMode={settings?.effective.message_routing_mode ?? project?.message_routing_mode ?? 'mentions_only'}
                 fallbackAgentId={settings?.effective.fallback_agent_id ?? project?.fallback_agent_id ?? null}
-                onRetryWorkflow={(workflowId) => retryWorkflow.mutate(workflowId)}
-                retryingWorkflowId={retryWorkflow.isPending ? retryWorkflow.variables : undefined}
-                workflowById={workflowById}
                 streamingMessageIds={streamingMessageIds}
                 streamingDisplay={streamingDisplay}
                 registerMessageRef={registerMessageRef}
@@ -452,33 +333,6 @@ export function RoomPage() {
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
                 onLocateReplyTarget={focusMessage}
               />
-            )}
-            {activeTab === 'tasks' && (
-              <div className="room-task-tab">
-                <TaskBoard
-                  tasks={tasks}
-                  agents={agents}
-                  workflows={taskWorkflows}
-                  selectedTaskId={selectedTask?.id ?? null}
-                  onSelectTask={(task) => {
-                    setConfigAgent(null);
-                    setShowMemoryPanel(false);
-                    setSelectedTask(task);
-                  }}
-                  onChangeStatus={(task, status) => updateTaskStatus.mutate({ task, status })}
-                  onStartWorkflow={(task) => startWorkflow.mutate(task)}
-                  onLocateSourceMessage={focusMessage}
-                  startingTaskId={startWorkflow.isPending ? startWorkflow.variables?.id : null}
-                />
-                {selectedTask && (
-                  <TaskDetailPanel
-                    task={selectedTask}
-                    agents={agents}
-                    onLocateSourceMessage={focusMessage}
-                    onClose={() => setSelectedTask(null)}
-                  />
-                )}
-              </div>
             )}
             {activeTab === 'files' && (
               <RoomFilesPanel
@@ -527,6 +381,49 @@ function dedupeMessages(messages: Message[]): Message[] {
   return [...byId.values()].sort(
     (a, b) => a.created_at - b.created_at,
   );
+}
+
+function mergeMessageStreamTrace(message: Message, channel: StreamTraceChannel, chunk: string): Message {
+  if (!chunk) return message;
+  const metadata = parseMessageMetadata(message.metadata);
+  const trace = appendTraceChunk(metadata.trace, channel, chunk);
+  return {
+    ...message,
+    metadata: JSON.stringify({ ...metadata, trace }),
+  };
+}
+
+function appendTraceChunk(trace: MessageTrace | undefined, channel: StreamTraceChannel, chunk: string): MessageTrace {
+  if (channel === 'thinking') {
+    const thinking = [...(trace?.thinking ?? [])];
+    const last = thinking[thinking.length - 1];
+    if (last) {
+      thinking[thinking.length - 1] = { text: `${last.text}${chunk}` };
+    } else {
+      thinking.push({ text: chunk });
+    }
+    return { ...trace, thinking };
+  }
+
+  if (channel === 'tool') {
+    const tool_calls = [...(trace?.tool_calls ?? [])];
+    const last = tool_calls[tool_calls.length - 1];
+    if (last && last.name === 'stream') {
+      tool_calls[tool_calls.length - 1] = { ...last, input: `${last.input}${chunk}` };
+    } else {
+      tool_calls.push({ name: 'stream', input: chunk });
+    }
+    return { ...trace, tool_calls };
+  }
+
+  const commands = [...(trace?.commands ?? [])];
+  const last = commands[commands.length - 1];
+  if (last && last.command === 'stream') {
+    commands[commands.length - 1] = { ...last, output: `${last.output ?? ''}${chunk}` };
+  } else {
+    commands.push({ command: 'stream', output: chunk });
+  }
+  return { ...trace, commands };
 }
 
 function addStreamingMessageId(prev: Set<string>, messageId: string): Set<string> {
@@ -670,36 +567,6 @@ function upsertAgentRun(prev: AgentRun[] | undefined, run: AgentRun): AgentRun[]
     .slice(0, 50);
 }
 
-function upsertWorkflow(prev: WorkflowRun[] | undefined, workflow: WorkflowRun): WorkflowRun[] {
-  const list = prev ?? [];
-  return [workflow, ...list.filter((item) => item.id !== workflow.id)]
-    .sort((a, b) => b.created_at - a.created_at);
-}
-
-function invalidateWorkflowConversationQueries(
-  queryClient: ReturnType<typeof useQueryClient>,
-  roomId: string,
-  taskId: string,
-  workflowId: string,
-) {
-  queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-  queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
-  queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
-  queryClient.invalidateQueries({ queryKey: ['task-workflows', taskId] });
-  queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-}
-
-function invalidateWorkflowDetailFromMessage(
-  queryClient: ReturnType<typeof useQueryClient>,
-  message: Message,
-): void {
-  const metadata = parseMessageMetadata(message.metadata);
-  const workflowId = metadata.workflow_run_id;
-  if (!workflowId || !metadata.event_type?.startsWith('workflow_')) return;
-  queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] });
-  if (metadata.task_id) queryClient.invalidateQueries({ queryKey: ['task-workflows', metadata.task_id] });
-}
-
 function RoomSwitcher({
   projectId,
   roomId,
@@ -760,7 +627,6 @@ function RoomFeatureTabs({
   const { t } = useI18n();
   const tabs: Array<{ id: RoomFeatureTab; label: string; icon: typeof MessageSquare }> = [
     { id: 'chat', label: t('room.tab.chat'), icon: MessageSquare },
-    { id: 'tasks', label: t('room.tab.tasks'), icon: ListTodo },
     { id: 'files', label: t('room.tab.files'), icon: FolderOpen },
   ];
 
@@ -828,9 +694,6 @@ function ChatColumn({
   modelChatReady,
   routingMode,
   fallbackAgentId,
-  onRetryWorkflow,
-  retryingWorkflowId,
-  workflowById,
   streamingMessageIds,
   streamingDisplay,
   registerMessageRef,
@@ -848,9 +711,6 @@ function ChatColumn({
   modelChatReady: boolean;
   routingMode: 'mentions_only' | 'fallback_reply';
   fallbackAgentId: string | null;
-  onRetryWorkflow: (workflowId: string) => void;
-  retryingWorkflowId?: string;
-  workflowById: Map<string, WorkflowRun>;
   streamingMessageIds: Set<string>;
   streamingDisplay: StreamingMessageDisplay;
   registerMessageRef: (messageId: string, node: HTMLElement | null) => void;
@@ -892,18 +752,6 @@ function ChatColumn({
     ),
     [defaultReplySuppressedForMessageId, explicitReplyTarget, streamingReplyMessageIds, visibleMessages],
   );
-  const latestWorkflowEventMessageIds = useMemo(
-    () => latestWorkflowEventMessageIdsByRun(visibleMessages),
-    [visibleMessages],
-  );
-  const workflowEventRenderStateByMessageId = useMemo(
-    () => createWorkflowEventRenderStateMap(visibleMessages),
-    [visibleMessages],
-  );
-  const workflowEventMessagesByRunId = useMemo(
-    () => groupWorkflowEventMessagesByRunId(visibleMessages),
-    [visibleMessages],
-  );
   const canSendChat = agents.length > 0 || modelChatReady;
 
   const send = useMutation({
@@ -913,8 +761,6 @@ function ChatColumn({
       setDefaultReplySuppressedForMessageId(null);
       onClearReplyTarget();
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-tasks', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       queryClient.invalidateQueries({ queryKey: ['project-files', projectId] });
       queryClient.invalidateQueries({ queryKey: ['files'] });
@@ -971,18 +817,10 @@ function ChatColumn({
                   key={m.id}
                   message={m}
                   agentMeta={agentMap.get(m.sender_id)}
-                  agents={agents}
                   run={run}
                   runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
                   roomId={roomId}
                   projectId={projectId}
-                  onRetryWorkflow={onRetryWorkflow}
-                  retryingWorkflowId={retryingWorkflowId}
-                  workflowById={workflowById}
-                  latestWorkflowEventMessageIds={latestWorkflowEventMessageIds}
-                  workflowEventRenderState={workflowEventRenderStateByMessageId.get(m.id)}
-                  workflowEventMessages={workflowEventMessagesByRunId.get(parseMessageMetadata(m.metadata).workflow_run_id ?? '') ?? []}
-                  hasLaterMessages={index < visibleMessages.length - 1}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
                   displayMode={displayMode}
@@ -1057,51 +895,13 @@ function pairRunsWithAgentMessages(messages: Message[], runs: AgentRun[]): Map<s
   return result;
 }
 
-function latestWorkflowEventMessageIdsByRun(messages: Message[]): Map<string, string> {
-  const latest = new Map<string, { messageId: string; createdAt: number }>();
-  for (const message of messages) {
-    if (message.sender_type !== 'system') continue;
-    const metadata = parseMessageMetadata(message.metadata);
-    if (!metadata.workflow_run_id || !metadata.event_type?.startsWith('workflow_')) continue;
-    const current = latest.get(metadata.workflow_run_id);
-    if (!current || message.created_at >= current.createdAt) {
-      latest.set(metadata.workflow_run_id, { messageId: message.id, createdAt: message.created_at });
-    }
-  }
-  return new Map(Array.from(latest, ([workflowId, item]) => [workflowId, item.messageId]));
-}
-
-function groupWorkflowEventMessagesByRunId(messages: Message[]): Map<string, Message[]> {
-  const grouped = new Map<string, Message[]>();
-  for (const message of messages) {
-    if (message.sender_type !== 'system') continue;
-    const metadata = parseMessageMetadata(message.metadata);
-    if (!metadata.workflow_run_id || !metadata.event_type?.startsWith('workflow_')) continue;
-    const group = grouped.get(metadata.workflow_run_id) ?? [];
-    group.push(message);
-    grouped.set(metadata.workflow_run_id, group);
-  }
-  for (const group of grouped.values()) {
-    group.sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
-  }
-  return grouped;
-}
-
 function MessageBubble({
   message,
   agentMeta,
-  agents,
   run,
   runAgent,
   roomId,
   projectId,
-  onRetryWorkflow,
-  retryingWorkflowId,
-  workflowById,
-  latestWorkflowEventMessageIds,
-  workflowEventRenderState,
-  workflowEventMessages,
-  hasLaterMessages,
   streaming,
   displayContent,
   displayMode,
@@ -1113,18 +913,10 @@ function MessageBubble({
 }: {
   message: Message;
   agentMeta?: RoomAgent;
-  agents: RoomAgent[];
   run?: AgentRun;
   runAgent?: RoomAgent;
   roomId: string;
   projectId: string;
-  onRetryWorkflow: (workflowId: string) => void;
-  retryingWorkflowId?: string;
-  workflowById: Map<string, WorkflowRun>;
-  latestWorkflowEventMessageIds: Map<string, string>;
-  workflowEventRenderState?: WorkflowEventRenderState;
-  workflowEventMessages: Message[];
-  hasLaterMessages: boolean;
   streaming: boolean;
   displayContent: string;
   displayMode: 'preview' | 'source';
@@ -1137,38 +929,6 @@ function MessageBubble({
   const { t, formatRelativeTime } = useI18n();
   const queryClient = useQueryClient();
   const metadata = parseMessageMetadata(message.metadata);
-  const startCollaboration = useMutation({
-    mutationFn: () => {
-      if (!metadata.collaboration_decision || !metadata.source_message_id) {
-        throw new Error('collaboration decision is missing source message');
-      }
-      return api.startCollaboration(roomId, {
-        source_message_id: metadata.source_message_id,
-        decision: metadata.collaboration_decision,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
-      toast.success('已启动群聊协作');
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const promoteToWorkflow = useMutation({
-    mutationFn: () => {
-      if (!metadata.collaboration_decision || !metadata.source_message_id) {
-        throw new Error('collaboration decision is missing source message');
-      }
-      return api.promoteMessageToWorkflow(roomId, metadata.source_message_id, {
-        decision: metadata.collaboration_decision,
-      });
-    },
-    onSuccess: ({ task, workflow }) => {
-      invalidateWorkflowConversationQueries(queryClient, roomId, task.id, workflow.id);
-      toast.success(t('taskDetail.workflowStarted'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
   const saveAsMemory = useMutation({
     mutationFn: () =>
       api.createMemory(projectId, {
@@ -1186,11 +946,12 @@ function MessageBubble({
     },
     onError: (err) => toast.error((err as Error).message),
   });
-  const promoteReadyTask = useMutation({
-    mutationFn: () => api.promoteMessageToWorkflow(roomId, message.id),
-    onSuccess: ({ task, workflow }) => {
-      invalidateWorkflowConversationQueries(queryClient, roomId, task.id, workflow.id);
-      toast.success(t('taskDetail.workflowStarted'));
+  const continuePlanner = useMutation({
+    mutationFn: () => api.continuePlannerDecision(roomId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
+      toast.success('已按 planner 建议继续');
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -1203,100 +964,7 @@ function MessageBubble({
   const isStreaming = !isUser && message.message_type === 'agent_stream' && (
     streaming || run?.status === 'running' || run?.status === 'queued'
   );
-  const isTaskEvent = isSystem && Boolean(metadata.event_type && metadata.task_id);
-  const eventWorkflow = metadata.workflow_run_id ? workflowById.get(metadata.workflow_run_id) : undefined;
-  const isLatestWorkflowEvent = Boolean(
-    metadata.workflow_run_id &&
-      latestWorkflowEventMessageIds.get(metadata.workflow_run_id) === message.id,
-  );
-  const canRetryWorkflowEvent = isTaskEvent &&
-    metadata.event_type === 'workflow_blocked' &&
-    Boolean(metadata.workflow_run_id) &&
-    isLatestWorkflowEvent &&
-    (!eventWorkflow || eventWorkflow.status === 'blocked');
-  const isCollaborationDecision = isSystem && Boolean(metadata.collaboration_decision && metadata.source_message_id);
   const canReply = !isSystem && hasContent && !isStreaming;
-  const shouldShowTaskReadiness = shouldShowTaskReadinessActions({
-    isUser,
-    isSystem,
-    isStreaming,
-    ready: metadata.task_readiness?.ready === true,
-    hasLaterMessages,
-    intent: metadata.task_readiness?.execution_intent,
-  });
-
-  if (isTaskEvent) {
-    const visibility = getTaskEventVisibilityState({
-      hasWorkflowRun: Boolean(metadata.workflow_run_id),
-      showWorkflowTaskCard: Boolean(metadata.workflow_run_id && workflowEventRenderState?.showTaskCard),
-      canRetryWorkflowEvent,
-    });
-    if (visibility.hideMessage) {
-      return null;
-    }
-    return (
-      <AiMessageRow
-        ref={messageRef}
-        variant="event"
-        data-message-id={message.id}
-        className={cn(highlighted && 'is-highlighted')}
-      >
-        <div className="workflow-event-message-stack">
-          {visibility.showInlineTaskEvent && (
-            <div className="task-event-row" title={message.content || metadata.task_title || metadata.task_id}>
-              <CheckSquare className="h-3.5 w-3.5" strokeWidth={1.8} />
-              <span>{message.content}</span>
-              {canRetryWorkflowEvent && metadata.workflow_run_id && (
-                <button
-                  type="button"
-                  className="task-event-action"
-                  disabled={retryingWorkflowId === metadata.workflow_run_id}
-                  title={t('agentRun.retryStage')}
-                  aria-label={t('agentRun.retryStage')}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRetryWorkflow(metadata.workflow_run_id!);
-                  }}
-                >
-                  <RotateCcw className={cn('h-3 w-3', retryingWorkflowId === metadata.workflow_run_id && 'animate-spin')} strokeWidth={1.8} />
-                  <span>{t('common.retry')}</span>
-                </button>
-              )}
-            </div>
-          )}
-          {visibility.showWorkflowTaskCard && metadata.workflow_run_id && (
-            <WorkflowEventBubble
-              workflowId={metadata.workflow_run_id}
-              agents={agents}
-              initialWorkflow={eventWorkflow}
-              eventMessages={workflowEventMessages}
-            />
-          )}
-        </div>
-      </AiMessageRow>
-    );
-  }
-
-  if (isCollaborationDecision && metadata.collaboration_decision && metadata.source_message_id) {
-    return (
-      <AiMessageRow
-        ref={messageRef}
-        variant="event"
-        data-message-id={message.id}
-        className={cn(highlighted && 'is-highlighted')}
-      >
-        <CollaborationDecisionCard
-          decision={metadata.collaboration_decision}
-          sourceMessageId={metadata.source_message_id}
-          agents={agents}
-          starting={startCollaboration.isPending}
-          promoting={promoteToWorkflow.isPending}
-          onStartCollaboration={() => startCollaboration.mutate()}
-          onPromoteToWorkflow={() => promoteToWorkflow.mutate()}
-        />
-      </AiMessageRow>
-    );
-  }
 
   if (isSystem) {
     return (
@@ -1395,18 +1063,18 @@ function MessageBubble({
             </button>
           )}
           {hasContent ? (
-            <MessageContent content={renderedContent} streaming={isStreaming} mode={displayMode} />
+            <MessageContent content={renderedContent} streaming={isStreaming} mode={displayMode} trace={metadata.trace} />
           ) : message.message_type === 'agent_stream' ? (
-            <MessageContent content="…" streaming={isStreaming} />
+            <MessageContent content="…" streaming={isStreaming} trace={metadata.trace} />
           ) : null}
           <MessageAttachments attachments={attachments} />
         </AiMessageBody>
-        {shouldShowTaskReadiness && metadata.task_readiness && (
-          <TaskReadinessActions
-            title={metadata.task_readiness.title}
-            intent={metadata.task_readiness.execution_intent}
-            starting={promoteReadyTask.isPending}
-            onStart={() => promoteReadyTask.mutate()}
+        {!isUser && metadata.planner_decision && (
+          <PlannerDecisionPanel
+            decision={metadata.planner_decision}
+            continuing={continuePlanner.isPending}
+            onContinue={() => continuePlanner.mutate()}
+            onSupplement={onReply}
           />
         )}
         {!isUser && run && (
@@ -1416,8 +1084,6 @@ function MessageBubble({
               run={run}
               agent={runAgent}
               compact
-              onRetryWorkflow={onRetryWorkflow}
-              retrying={retryingWorkflowId === run.workflow_run_id}
             />
           </AiMessageRunPanel>
         )}
@@ -1426,70 +1092,77 @@ function MessageBubble({
   );
 }
 
-function TaskReadinessActions({
-  title,
-  intent,
-  starting,
-  onStart,
+function PlannerDecisionPanel({
+  decision,
+  continuing,
+  onContinue,
+  onSupplement,
 }: {
-  title: string;
-  intent?: TaskExecutionIntent;
-  starting: boolean;
-  onStart: () => void;
+  decision: PlannerDecision;
+  continuing: boolean;
+  onContinue: () => void;
+  onSupplement: () => void;
 }) {
-  const actionState = getTaskReadinessActionState(intent);
-  if (!actionState.canGenerateTask) return null;
   return (
-    <div className="task-readiness-actions">
-      <div className="task-readiness-copy">
-        <span>{actionState.description}</span>
-        <strong>{title}</strong>
+    <section className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)]/70 px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
+          Planner
+        </span>
+        <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-fg-muted)]">
+          {formatPlannerMode(decision.mode)}
+        </span>
+        <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-fg-muted)]">
+          {formatPlannerStatus(decision.status)}
+        </span>
       </div>
-      <div className="task-readiness-buttons">
-        <button
-          type="button"
-          className="task-readiness-button is-primary"
-          disabled={starting}
-          onClick={onStart}
-        >
-          <Play className="h-3.5 w-3.5" strokeWidth={1.8} />
-          <span>{starting ? actionState.pendingLabel : actionState.primaryLabel}</span>
-        </button>
-      </div>
-    </div>
+      <p className="mt-2 text-[12px] leading-relaxed text-[var(--color-fg)]">{decision.summary}</p>
+      {decision.next_steps.length > 0 && (
+        <ol className="mt-2 space-y-1.5">
+          {decision.next_steps.map((step, index) => (
+            <li key={`${step.agent_id}-${index}`} className="rounded-lg bg-white/45 px-2.5 py-2 text-[11.5px] text-[var(--color-fg-muted)]">
+              <span className="font-mono text-[10px] text-[var(--color-muted)]">{step.agent_id}</span>
+              <span className="mx-1.5 text-[var(--color-muted)]">·</span>
+              <span>{step.goal}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {decision.awaiting_user_confirmation && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="glass-button glass-button-primary"
+            disabled={continuing}
+            onClick={onContinue}
+          >
+            {continuing ? '继续中…' : '按建议继续'}
+          </button>
+          <button
+            type="button"
+            className="glass-button"
+            onClick={onSupplement}
+          >
+            让我补充说明
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 
-function WorkflowEventBubble({
-  workflowId,
-  agents,
-  initialWorkflow,
-  eventMessages,
-}: {
-  workflowId: string;
-  agents: RoomAgent[];
-  initialWorkflow?: WorkflowRun;
-  eventMessages: Message[];
-}) {
-  const { workflowStatusLabel } = useI18n();
-  const { data: detail } = useQuery<WorkflowDetail>({
-    queryKey: ['workflow', workflowId],
-    queryFn: () => api.getWorkflow(workflowId),
-    enabled: Boolean(workflowId),
-    staleTime: 1000,
-  });
+function formatPlannerMode(mode: PlannerDecision['mode']): string {
+  return mode === 'auto_continue' ? '自动继续' : '建议后暂停';
+}
 
-  if (detail) {
-    return <WorkflowTaskBubble detail={detail} agents={agents} eventMessages={eventMessages} compact />;
-  }
-  if (!initialWorkflow) return null;
-  return (
-    <div className="workflow-task-bubble" data-source="chat">
-      <div className="text-[11px] text-[var(--color-fg-muted)]">
-        {workflowStatusLabel(initialWorkflow.status)} · {initialWorkflow.current_stage ?? 'workflow'}
-      </div>
-    </div>
-  );
+function formatPlannerStatus(status: PlannerDecision['status']): string {
+  const labels: Record<PlannerDecision['status'], string> = {
+    suggested: '已建议',
+    dispatching: '派发中',
+    completed: '已完成',
+    blocked: '已阻塞',
+  };
+  return labels[status];
 }
 
 function MessageAttachments({ attachments }: { attachments: MessageAttachmentMetadata[] }) {

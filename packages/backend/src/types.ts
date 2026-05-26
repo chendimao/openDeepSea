@@ -657,6 +657,42 @@ export interface MessageReplyMetadata {
   excerpt: string;
 }
 
+export type PlannerExecutionMode = 'pause_after_suggestion' | 'auto_continue';
+
+export interface PlannerDecisionStep {
+  agent_id: string;
+  goal: string;
+}
+
+export interface PlannerDecision {
+  mode: PlannerExecutionMode;
+  status: 'suggested' | 'dispatching' | 'completed' | 'blocked';
+  summary: string;
+  next_steps: PlannerDecisionStep[];
+  awaiting_user_confirmation: boolean;
+}
+
+export interface MessageTraceThinking {
+  text: string;
+}
+
+export interface MessageTraceToolCall {
+  name: string;
+  input: string;
+  output?: string;
+}
+
+export interface MessageTraceCommand {
+  command: string;
+  output?: string;
+}
+
+export interface MessageTrace {
+  thinking?: MessageTraceThinking[];
+  tool_calls?: MessageTraceToolCall[];
+  commands?: MessageTraceCommand[];
+}
+
 export type TaskExecutionIntent =
   | 'analysis_only'
   | 'planning_only'
@@ -668,6 +704,13 @@ export type TaskExecutionIntent =
 export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
   reply_to?: MessageReplyMetadata;
+  source_message_id?: string;
+  planner_decision?: PlannerDecision;
+  trace?: MessageTrace;
+  acp_enabled?: boolean;
+  acp_backend?: AcpBackend | null;
+  acp_session_id?: string | null;
+  internal?: boolean;
   task_readiness?: {
     ready: boolean;
     confidence: number;
@@ -922,7 +965,7 @@ export type WsServerEvent =
       done: boolean;
       seq?: number;
       runId?: string;
-      channel?: 'answer';
+      channel?: 'answer' | 'thinking' | 'tool' | 'command';
       status?: 'streaming' | AgentRunStatus;
       error?: string | null;
       message?: Message;

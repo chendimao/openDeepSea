@@ -123,6 +123,40 @@ test('renders markdown source when controlled by message display mode', () => {
   assert.doesNotMatch(html, /是否就绪/);
 });
 
+test('renders thinking and tool trace panels collapsed by default', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content="这是 agent 正文"
+        trace={{
+          thinking: [{ text: '完整 thinking 原文' }],
+          tool_calls: [
+            {
+              name: 'search_files',
+              input: '{"pattern":"model settings"}',
+              output: 'found SettingsDialogs.tsx',
+            },
+          ],
+          commands: [
+            {
+              command: 'rg -n "model" packages/frontend/src',
+              output: 'packages/frontend/src/lib/types.ts:1:model',
+            },
+          ],
+        }}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /<details/);
+  assert.doesNotMatch(html, /<details open/);
+  assert.match(html, /Thinking/);
+  assert.match(html, /工具轨迹/);
+  assert.match(html, /完整 thinking 原文/);
+  assert.match(html, /search_files/);
+  assert.match(html, /rg -n &quot;model&quot; packages\/frontend\/src/);
+});
+
 function renderMessage(content: string): string {
   return renderToStaticMarkup(
     <I18nProvider>

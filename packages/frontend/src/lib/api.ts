@@ -21,6 +21,7 @@ import type {
   MemorySearchResult,
   Message,
   MessageRoutingMode,
+  PlannerDecision,
   ProjectFile,
   ResourceDetail,
   ResourceListItem,
@@ -691,6 +692,16 @@ export const api = {
     input: { decision?: CollaborationDecision } = {},
   ) =>
     request<{ task: Task; workflow: WorkflowRun }>(`/rooms/${roomId}/messages/${messageId}/promote-to-workflow`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  continuePlannerDecision: (roomId: string) =>
+    request<{ accepted: true }>(`/rooms/${roomId}/planner/continue`, { method: 'POST' }),
+  dispatchPlannerDecision: (
+    roomId: string,
+    input: { source_message_id: string; planner_decision: PlannerDecision },
+  ) =>
+    request<{ accepted: true }>(`/rooms/${roomId}/planner/dispatch`, {
       method: 'POST',
       body: JSON.stringify(input),
     }),

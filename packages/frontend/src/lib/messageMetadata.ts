@@ -1,12 +1,20 @@
 import type {
+  AcpBackend,
   CollaborationDecision,
   CollaborationIntent,
   CollaborationMode,
   CollaborationProblemArea,
   CollaborationStage,
+  MessageTrace,
+  MessageTraceCommand,
+  MessageTraceThinking,
+  MessageTraceToolCall,
   MessageAttachmentMetadata,
   MessageMetadata,
   MessageReplyMetadata,
+  PlannerDecision,
+  PlannerDecisionStep,
+  PlannerExecutionMode,
   TaskExecutionIntent,
   TaskReadinessMetadata,
   TaskCreatedFrom,
@@ -36,6 +44,9 @@ const collaborationIntents = new Set<CollaborationIntent>(['question', 'analysis
 const collaborationModes = new Set<CollaborationMode>(['chat_collaboration', 'formal_workflow']);
 const collaborationProblemAreas = new Set<CollaborationProblemArea>(['frontend', 'backend', 'fullstack', 'unknown']);
 const collaborationStages = new Set<CollaborationStage>(['execute', 'review', 'acceptance', 'summary']);
+const plannerExecutionModes = new Set<PlannerExecutionMode>(['pause_after_suggestion', 'auto_continue']);
+const plannerDecisionStatuses = new Set<PlannerDecision['status']>(['suggested', 'dispatching', 'completed', 'blocked']);
+const acpBackends = new Set<AcpBackend>(['claudecode', 'opencode', 'codex']);
 const taskExecutionIntents = new Set<TaskExecutionIntent>([
   'analysis_only',
   'planning_only',
@@ -65,8 +76,20 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
     const taskEvent = sanitizeTaskEventMetadata(parsed);
     const collaboration = sanitizeCollaborationDecisionMetadata(parsed);
     const taskReadiness = sanitizeTaskReadinessMetadata(parsed);
+    const plannerDecision = sanitizePlannerDecisionMetadata(parsed);
+    const trace = sanitizeTraceMetadata(parsed);
+    const acp = sanitizeAcpMetadata(parsed);
     const reply = sanitizeReplyMetadata(parsed);
-    return { attachments, ...reply, ...taskEvent, ...collaboration, ...taskReadiness };
+    return {
+      attachments,
+      ...reply,
+      ...taskEvent,
+      ...collaboration,
+      ...taskReadiness,
+      ...plannerDecision,
+      ...trace,
+      ...acp,
+    };
   } catch {
     return createEmptyMessageMetadata();
   }
@@ -135,6 +158,132 @@ function sanitizeCollaborationDecisionMetadata(value: Record<string, unknown>) {
 function sanitizeTaskReadinessMetadata(value: Record<string, unknown>) {
   const readiness = sanitizeTaskReadiness(value.task_readiness);
   return readiness ? { task_readiness: readiness } : {};
+}
+
+function sanitizePlannerDecisionMetadata(value: Record<string, unknown>) {
+  const decision = sanitizePlannerDecision(value.planner_decision);
+  if (!decision) return {};
+  return {
+    ...(typeof value.source_message_id === 'string' ? { source_message_id: value.source_message_id } : {}),
+    planner_decision: decision,
+  };
+}
+
+function sanitizeTraceMetadata(value: Record<string, unknown>) {
+  const trace = sanitizeTrace(value.trace);
+  return trace ? { trace } : {};
+}
+
+function sanitizeAcpMetadata(value: Record<string, unknown>) {
+  return {
+    ...(typeof value.acp_enabled === 'boolean' ? { acp_enabled: value.acp_enabled } : {}),
+    ...(isAcpBackend(value.acp_backend) || value.acp_backend === null ? { acp_backend: value.acp_backend } : {}),
+    ...(typeof value.acp_session_id === 'string' || value.acp_session_id === null
+      ? { acp_session_id: value.acp_session_id }
+      : {}),
+    ...(typeof value.internal === 'boolean' ? { internal: value.internal } : {}),
+  };
+}
+
+function sanitizePlannerDecision(value: unknown): PlannerDecision | null {
+  if (!isRecord(value)) return null;
+  if (
+    !isPlannerExecutionMode(value.mode) ||
+    !isPlannerDecisionStatus(value.status) ||
+    typeof value.summary !== 'string' ||
+    !value.summary.trim() ||
+    typeof value.awaiting_user_confirmation !== 'boolean'
+  ) {
+    return null;
+  }
+
+  const nextSteps = sanitizePlannerDecisionSteps(value.next_steps);
+  if (!nextSteps) return null;
+
+  return {
+    mode: value.mode,
+    status: value.status,
+    summary: value.summary,
+    next_steps: nextSteps,
+    awaiting_user_confirmation: value.awaiting_user_confirmation,
+  };
+}
+
+function sanitizePlannerDecisionSteps(value: unknown): PlannerDecisionStep[] | null {
+  if (!Array.isArray(value)) return null;
+  const steps = value.map((step) => {
+    if (!isRecord(step)) return null;
+    if (
+      typeof step.agent_id !== 'string' ||
+      !step.agent_id.trim() ||
+      typeof step.goal !== 'string' ||
+      !step.goal.trim()
+    ) {
+      return null;
+    }
+    return {
+      agent_id: step.agent_id,
+      goal: step.goal,
+    };
+  });
+  if (steps.some((step) => step === null)) return null;
+  return steps as PlannerDecisionStep[];
+}
+
+function sanitizeTrace(value: unknown): MessageTrace | null {
+  if (!isRecord(value)) return null;
+  const trace: MessageTrace = {};
+  const thinking = sanitizeTraceThinking(value.thinking);
+  const toolCalls = sanitizeTraceToolCalls(value.tool_calls);
+  const commands = sanitizeTraceCommands(value.commands);
+  if (thinking) trace.thinking = thinking;
+  if (toolCalls) trace.tool_calls = toolCalls;
+  if (commands) trace.commands = commands;
+  return trace.thinking || trace.tool_calls || trace.commands ? trace : null;
+}
+
+function sanitizeTraceThinking(value: unknown): MessageTraceThinking[] | null {
+  if (!Array.isArray(value)) return null;
+  const entries = value.map((entry) => {
+    if (!isRecord(entry) || typeof entry.text !== 'string' || !entry.text.trim()) return null;
+    return { text: entry.text };
+  });
+  const validEntries = entries.filter((entry): entry is MessageTraceThinking => entry !== null);
+  return validEntries.length === entries.length && validEntries.length > 0 ? validEntries : null;
+}
+
+function sanitizeTraceToolCalls(value: unknown): MessageTraceToolCall[] | null {
+  if (!Array.isArray(value)) return null;
+  const entries = value.map((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.name !== 'string' ||
+      !entry.name.trim() ||
+      typeof entry.input !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      name: entry.name,
+      input: entry.input,
+      ...(typeof entry.output === 'string' ? { output: entry.output } : {}),
+    };
+  });
+  const validEntries = entries.filter((entry): entry is MessageTraceToolCall => entry !== null);
+  return validEntries.length === entries.length && validEntries.length > 0 ? validEntries : null;
+}
+
+function sanitizeTraceCommands(value: unknown): MessageTraceCommand[] | null {
+  if (!Array.isArray(value)) return null;
+  const entries = value.map((entry) => {
+    if (!isRecord(entry) || typeof entry.command !== 'string' || !entry.command.trim()) return null;
+    return {
+      command: entry.command,
+      ...(typeof entry.output === 'string' ? { output: entry.output } : {}),
+    };
+  });
+  const validEntries = entries.filter((entry): entry is MessageTraceCommand => entry !== null);
+  return validEntries.length === entries.length && validEntries.length > 0 ? validEntries : null;
 }
 
 function sanitizeTaskReadiness(value: unknown): TaskReadinessMetadata | null {
@@ -248,6 +397,18 @@ function isCollaborationProblemArea(value: unknown): value is CollaborationProbl
 
 function isCollaborationStage(value: unknown): value is CollaborationStage {
   return typeof value === 'string' && collaborationStages.has(value as CollaborationStage);
+}
+
+function isPlannerExecutionMode(value: unknown): value is PlannerExecutionMode {
+  return typeof value === 'string' && plannerExecutionModes.has(value as PlannerExecutionMode);
+}
+
+function isPlannerDecisionStatus(value: unknown): value is PlannerDecision['status'] {
+  return typeof value === 'string' && plannerDecisionStatuses.has(value as PlannerDecision['status']);
+}
+
+function isAcpBackend(value: unknown): value is AcpBackend {
+  return typeof value === 'string' && acpBackends.has(value as AcpBackend);
 }
 
 function isTaskExecutionIntent(value: unknown): value is TaskExecutionIntent {

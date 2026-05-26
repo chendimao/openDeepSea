@@ -1,12 +1,30 @@
 import type { AcpBackend, AcpPermissionMode, CliSessionSummary } from '../types.js';
 
-export type AcpStreamChannel = 'answer' | 'activity';
+export type AcpStreamChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command';
+
+export type AcpStreamTrace =
+  | {
+    kind: 'thinking';
+    text: string;
+  }
+  | {
+    kind: 'tool';
+    name: string;
+    input: string;
+    output?: string;
+  }
+  | {
+    kind: 'command';
+    command: string;
+    output?: string;
+  };
 
 export interface AcpStreamChunk {
   stream: 'stdout' | 'stderr';
   text: string;
   channel?: AcpStreamChannel;
   rawType?: string;
+  trace?: AcpStreamTrace;
 }
 
 export interface SessionAdapter {
