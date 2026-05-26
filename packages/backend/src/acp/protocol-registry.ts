@@ -37,30 +37,65 @@ export function parseAcpMode(value: string | undefined): AcpProtocolMode {
 export function splitCommand(input: string): { command: string; args: string[] } {
   const parts: string[] = [];
   let current = '';
-  let inDoubleQuote = false;
+  let quote: '"' | "'" | null = null;
+  let tokenStarted = false;
 
-  for (const char of input.trim()) {
-    if (char === '"') {
-      inDoubleQuote = !inDoubleQuote;
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+
+    if (char === '\\' && quote !== "'") {
+      tokenStarted = true;
+      const next = input[index + 1];
+
+      if (next === undefined) {
+        current += char;
+      } else {
+        current += next;
+        index += 1;
+      }
+
       continue;
     }
 
-    if (/\s/.test(char) && !inDoubleQuote) {
-      if (current.length > 0) {
+    if ((char === '"' || char === "'") && quote === null) {
+      quote = char;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (char === quote) {
+      quote = null;
+      tokenStarted = true;
+      continue;
+    }
+
+    if (/\s/.test(char) && quote === null) {
+      if (tokenStarted) {
         parts.push(current);
         current = '';
+        tokenStarted = false;
       }
       continue;
     }
 
+    tokenStarted = true;
     current += char;
   }
 
-  if (current.length > 0) {
+  if (quote !== null) {
+    throw new Error('ACP command has unmatched quote');
+  }
+
+  if (tokenStarted) {
     parts.push(current);
   }
 
   const [command = '', ...args] = parts;
+
+  if (command.length === 0) {
+    throw new Error('ACP command is empty');
+  }
+
   return { command, args };
 }
 

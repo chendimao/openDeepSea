@@ -30,6 +30,35 @@ test('splitCommand separates opencode ACP command', () => {
   });
 });
 
+test('splitCommand preserves single-quoted executable paths', () => {
+  assert.deepEqual(splitCommand("'/path with space/bin' acp"), {
+    command: '/path with space/bin',
+    args: ['acp'],
+  });
+});
+
+test('splitCommand preserves double-quoted executable paths', () => {
+  assert.deepEqual(splitCommand('"/path with space/bin" acp'), {
+    command: '/path with space/bin',
+    args: ['acp'],
+  });
+});
+
+test('splitCommand supports escaped whitespace outside quotes', () => {
+  assert.deepEqual(splitCommand('/path\\ with\\ space/bin acp'), {
+    command: '/path with space/bin',
+    args: ['acp'],
+  });
+});
+
+test('splitCommand rejects empty quoted command', () => {
+  assert.throws(() => splitCommand('"" --debug'), /ACP command is empty/);
+});
+
+test('splitCommand rejects unmatched quote', () => {
+  assert.throws(() => splitCommand('"/path with space/bin acp'), /ACP command has unmatched quote/);
+});
+
 test('getAcpServerConfig returns default codex protocol server config', () => {
   assert.deepEqual(getAcpServerConfig('codex', {}), {
     backend: 'codex',
