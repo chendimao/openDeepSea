@@ -821,6 +821,7 @@ function ChatColumn({
                   agentMeta={agentMap.get(m.sender_id)}
                   run={run}
                   runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
+                  roomAgents={agents}
                   roomId={roomId}
                   projectId={projectId}
                   streaming={isStreamingMessage}
@@ -902,6 +903,7 @@ function MessageBubble({
   agentMeta,
   run,
   runAgent,
+  roomAgents,
   roomId,
   projectId,
   streaming,
@@ -917,6 +919,7 @@ function MessageBubble({
   agentMeta?: RoomAgent;
   run?: AgentRun;
   runAgent?: RoomAgent;
+  roomAgents: RoomAgent[];
   roomId: string;
   projectId: string;
   streaming: boolean;
@@ -1075,6 +1078,7 @@ function MessageBubble({
         {!isUser && metadata.planner_decision && (
           <PlannerDecisionPanel
             decision={metadata.planner_decision}
+            roomAgents={roomAgents}
             continuing={continuePlanner.isPending}
             onContinue={() => {
               const input = createPlannerDispatchInput(message, metadata);
@@ -1101,16 +1105,22 @@ function MessageBubble({
 
 function PlannerDecisionPanel({
   decision,
+  roomAgents,
   continuing,
   onContinue,
   onSupplement,
 }: {
   decision: PlannerDecision;
+  roomAgents: RoomAgent[];
   continuing: boolean;
   onContinue: () => void;
   onSupplement: () => void;
 }) {
-  const canContinue = hasDispatchablePlannerSteps(decision);
+  const activeAgentIds = new Set(roomAgents.filter((agent) => agent.left_at === null).map((agent) => agent.agent_id));
+  const missingAgentIds = decision.next_steps
+    .map((step) => step.agent_id)
+    .filter((agentId) => !activeAgentIds.has(agentId));
+  const canContinue = hasDispatchablePlannerSteps(decision) && missingAgentIds.length === 0;
   return (
     <section className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)]/70 px-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -1135,6 +1145,11 @@ function PlannerDecisionPanel({
             </li>
           ))}
         </ol>
+      )}
+      {missingAgentIds.length > 0 && (
+        <div className="mt-2 rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
+          缺少建议中的智能体：<span className="font-mono text-[var(--color-warning)]">{missingAgentIds.join(', ')}</span>。请先把对应智能体加入房间，或让 planner 重新给出可执行建议。
+        </div>
       )}
       {decision.awaiting_user_confirmation && (
         <div className="mt-3 flex flex-wrap gap-2">
