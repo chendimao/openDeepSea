@@ -79,6 +79,48 @@ test('AgentTimeline marks diff lines with add and remove classes', () => {
   assert.match(html, /diff-line is-added/);
 });
 
+test('AgentTimeline renders assistant messages and translated structured fields', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'run-1:3',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 3,
+            type: 'assistant_message',
+            status: 'delta',
+            title: '助手回复',
+            payload: { text: '协议回复片段' },
+            created_at: 1000,
+          },
+          {
+            id: 'run-1:4',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 4,
+            type: 'raw',
+            status: 'completed',
+            title: '原始事件 protocol_fallback',
+            payload: { raw_type: 'protocol_fallback' },
+            raw: { type: 'protocol_fallback', backend: 'codex', reason: 'missing server' },
+            created_at: 1001,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /协议回复片段/);
+  assert.match(html, /回复/);
+  assert.match(html, /后端/);
+  assert.match(html, /原因/);
+  assert.match(html, /missing server/);
+});
+
 function setupBrowserStubs(): void {
   Object.assign(globalThis, { React });
 

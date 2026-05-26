@@ -3,7 +3,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AcpPermissionMode, CliSessionSummary } from '../types.js';
 import type { SessionAdapter } from './types.js';
-import { runStreaming } from './claudecode.js';
+import { emitProtocolFallback, runStreaming } from './claudecode.js';
+import { invokeProtocolSession } from './protocol-client.js';
+import { getAcpServerConfig } from './protocol-registry.js';
 
 async function* walkRolloutFiles(rootDir: string): AsyncGenerator<string> {
   let years: string[] = [];
@@ -115,6 +117,27 @@ export const codexAdapter: SessionAdapter = {
   },
 
   async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+    const protocolConfig = getAcpServerConfig('codex');
+    if (protocolConfig.enabled) {
+      const protocolResult = await invokeProtocolSession({
+        backend: 'codex',
+        server: protocolConfig,
+        projectPath,
+        sessionId,
+        prompt,
+        imagePaths,
+        acpPermissionMode,
+        acpWritableDirs,
+        onChunk,
+        onSession,
+        signal,
+      });
+      if (protocolResult.exitCode === 0 || protocolConfig.mode === 'protocol' || protocolResult.fallbackSafe === false) {
+        return protocolResult;
+      }
+      emitProtocolFallback(onChunk, 'codex', protocolResult.stderr);
+    }
+
     const invocation = buildCodexExecInvocation({
       sessionId,
       prompt,

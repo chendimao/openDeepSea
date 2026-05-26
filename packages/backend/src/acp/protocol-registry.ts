@@ -41,7 +41,7 @@ export function splitCommand(input: string): { command: string; args: string[] }
   let tokenStarted = false;
 
   for (let index = 0; index < input.length; index += 1) {
-    const char = input[index];
+    const char = input[index] ?? '';
 
     if (char === '\\' && quote !== "'") {
       tokenStarted = true;

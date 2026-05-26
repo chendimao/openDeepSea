@@ -10,11 +10,39 @@ import type {
 
 const planStatusLabels: Record<string, string> = {
   pending: '待处理',
+  in_progress: '进行中',
   running: '进行中',
   completed: '已完成',
   blocked: '已阻塞',
   failed: '失败',
   skipped: '已跳过',
+};
+
+const fieldLabels: Record<string, string> = {
+  id: 'ID',
+  name: '名称',
+  title: '标题',
+  kind: '类型',
+  input: '输入',
+  output: '输出',
+  content: '内容',
+  text: '文本',
+  command: '命令',
+  stdout: '标准输出',
+  stderr: '错误输出',
+  path: '文件',
+  patch: '差异',
+  diff: '差异',
+  additions: '新增行',
+  deletions: '删除行',
+  entries: '步骤',
+  locations: '位置',
+  provider: '提供方',
+  backend: '后端',
+  raw_type: '原始类型',
+  reason: '原因',
+  status: '状态',
+  encrypted: '加密',
 };
 
 const diffLinePattern = /^([+-])(?![+-])/;
@@ -72,6 +100,10 @@ function renderEventBody(event: AgentTimelineEvent): ReactNode {
     return <pre className="agent-timeline-pre">{stringifyPayload(event.payload.text ?? event.raw ?? event.payload)}</pre>;
   }
 
+  if (event.type === 'assistant_message') {
+    return <pre className="agent-timeline-pre">{stringifyPayload(event.payload.text ?? event.payload.content ?? event.payload)}</pre>;
+  }
+
   if (event.type === 'tool_call' || event.type === 'tool_result') {
     return <EventKeyValue payload={event.payload} />;
   }
@@ -89,7 +121,7 @@ function renderEventBody(event: AgentTimelineEvent): ReactNode {
   }
 
   if (event.type === 'raw') {
-    return <pre className="agent-timeline-pre">{stringifyJson(event.raw ?? event.payload)}</pre>;
+    return <EventKeyValue payload={{ ...event.payload, ...(event.raw ?? {}) }} />;
   }
 
   return <EventKeyValue payload={event.payload} />;
@@ -100,7 +132,7 @@ function EventKeyValue({ payload }: { payload: Record<string, unknown> }): JSX.E
     <dl className="agent-timeline-kv">
       {Object.entries(payload).map(([key, value]) => (
         <div key={key}>
-          <dt>{key}</dt>
+          <dt>{formatFieldLabel(key)}</dt>
           <dd>{renderValue(value)}</dd>
         </div>
       ))}
@@ -141,7 +173,9 @@ function formatPlanEntry(value: unknown): string {
   if (!value || typeof value !== 'object') return String(value);
   const record = value as Record<string, unknown>;
   const status = typeof record.status === 'string' ? planStatusLabels[record.status] ?? record.status : null;
-  const title = typeof record.title === 'string'
+  const title = typeof record.content === 'string'
+    ? record.content
+    : typeof record.title === 'string'
     ? record.title
     : typeof record.goal === 'string'
       ? record.goal
@@ -230,6 +264,8 @@ function getEventLabel(type: AgentTimelineEvent['type']): string {
   switch (type) {
     case 'thinking':
       return '思考';
+    case 'assistant_message':
+      return '回复';
     case 'tool_call':
       return '工具';
     case 'tool_result':
@@ -243,17 +279,26 @@ function getEventLabel(type: AgentTimelineEvent['type']): string {
     case 'plan_update':
       return '计划';
     case 'raw':
-      return '原始 JSON';
+      return '原始事件';
     default:
       return type;
   }
 }
 
-function renderValue(value: unknown): string {
+function renderValue(value: unknown): ReactNode {
   if (value === null || value === undefined) return '∅';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  return stringifyJson(value);
+  if (typeof value === 'string') return formatKnownValue(value);
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  return <pre className="agent-timeline-pre is-inline-json">{stringifyJson(value)}</pre>;
+}
+
+function formatFieldLabel(key: string): string {
+  return fieldLabels[key] ?? key;
+}
+
+function formatKnownValue(value: string): string {
+  return planStatusLabels[value] ?? value;
 }
 
 function readString(value: unknown): string | null {

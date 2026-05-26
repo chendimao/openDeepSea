@@ -4,6 +4,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CliSessionSummary } from '../types.js';
 import type { AcpStreamChannel, AcpStreamChunk, AcpStreamTrace, SessionAdapter } from './types.js';
+import { invokeProtocolSession } from './protocol-client.js';
+import { getAcpServerConfig } from './protocol-registry.js';
 
 type NormalizedStdoutChunk = {
   channel: AcpStreamChannel;
@@ -91,6 +93,27 @@ export const claudeCodeAdapter: SessionAdapter = {
   },
 
   async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+    const protocolConfig = getAcpServerConfig('claudecode');
+    if (protocolConfig.enabled) {
+      const protocolResult = await invokeProtocolSession({
+        backend: 'claudecode',
+        server: protocolConfig,
+        projectPath,
+        sessionId,
+        prompt,
+        imagePaths,
+        acpPermissionMode,
+        acpWritableDirs,
+        onChunk,
+        onSession,
+        signal,
+      });
+      if (protocolResult.exitCode === 0 || protocolConfig.mode === 'protocol' || protocolResult.fallbackSafe === false) {
+        return protocolResult;
+      }
+      emitProtocolFallback(onChunk, 'claudecode', protocolResult.stderr);
+    }
+
     const args = buildClaudeCodeArgs({
       sessionId,
       prompt,
@@ -210,6 +233,31 @@ function runStreaming(
     signal?.addEventListener('abort', () => {
       child.kill('SIGTERM');
     });
+  });
+}
+
+export function emitProtocolFallback(
+  onChunk: (chunk: AcpStreamChunk) => void,
+  backend: string,
+  reason: string,
+): void {
+  const message = `[ACP fallback] ${backend} protocol server unavailable, using legacy CLI. ${reason}`;
+  onChunk({
+    stream: 'stderr',
+    text: `${message}\n`,
+    channel: 'activity',
+    rawType: 'protocol_fallback',
+  });
+  onChunk({
+    stream: 'stdout',
+    text: '',
+    channel: 'event',
+    rawType: 'protocol_fallback',
+    rawEvent: {
+      type: 'protocol_fallback',
+      backend,
+      reason,
+    },
   });
 }
 

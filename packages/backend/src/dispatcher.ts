@@ -2,6 +2,7 @@ import { resolve, sep } from 'node:path';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
+import { isProtocolEvent, normalizeProtocolEvent } from './acp/protocol-events.js';
 import { normalizeKnownProviderEvent, normalizeTimelineEventFromTrace } from './acp/timeline.js';
 import type { AcpStreamChunk, AcpStreamTrace } from './acp/types.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
@@ -720,6 +721,16 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     }
 
     if (chunk.rawEvent) {
+      if (isProtocolEvent(chunk.rawEvent)) {
+        return normalizeProtocolEvent({
+          messageId: placeholder.id,
+          runId: run.id,
+          agentId: agent.agent_id,
+          seq: ++traceEventSeq,
+          provider: backend,
+          raw: chunk.rawEvent,
+        });
+      }
       return normalizeKnownProviderEvent({
         messageId: placeholder.id,
         runId: run.id,

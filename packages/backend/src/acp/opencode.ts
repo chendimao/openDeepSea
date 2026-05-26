@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import type { CliSessionSummary } from '../types.js';
 import type { AcpPermissionMode } from '../types.js';
 import type { SessionAdapter } from './types.js';
-import { runStreaming } from './claudecode.js';
+import { emitProtocolFallback, runStreaming } from './claudecode.js';
+import { invokeProtocolSession } from './protocol-client.js';
+import { getAcpServerConfig } from './protocol-registry.js';
 
 const DB_PATH = join(homedir(), '.local', 'share', 'opencode', 'opencode.db');
 const DEFAULT_OPENCODE_MODEL = 'gwenapi/gpt-5.5';
@@ -68,7 +70,28 @@ export const openCodeAdapter: SessionAdapter = {
     }
   },
 
-  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+    const protocolConfig = getAcpServerConfig('opencode');
+    if (protocolConfig.enabled) {
+      const protocolResult = await invokeProtocolSession({
+        backend: 'opencode',
+        server: protocolConfig,
+        projectPath,
+        sessionId,
+        prompt,
+        imagePaths,
+        acpPermissionMode,
+        acpWritableDirs,
+        onChunk,
+        onSession,
+        signal,
+      });
+      if (protocolResult.exitCode === 0 || protocolConfig.mode === 'protocol' || protocolResult.fallbackSafe === false) {
+        return protocolResult;
+      }
+      emitProtocolFallback(onChunk, 'opencode', protocolResult.stderr);
+    }
+
     const args = buildOpenCodeArgs({
       sessionId,
       prompt,

@@ -50,5 +50,12 @@ export interface SessionAdapter {
     onChunk: (chunk: AcpStreamChunk) => void;
     onSession?: (sessionId: string) => void;
     signal?: AbortSignal;
-  }): Promise<{ exitCode: number; sessionId: string | null; stderr: string }>;
+  }): Promise<AcpInvokeResult>;
+}
+
+export interface AcpInvokeResult {
+  exitCode: number;
+  sessionId: string | null;
+  stderr: string;
+  fallbackSafe?: boolean;
 }

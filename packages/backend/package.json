@@ -12,6 +12,7 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.22.1",
     "@langchain/core": "^1.1.46",
     "@langchain/langgraph": "^1.3.0",
     "@langchain/openai": "^1.4.5",
