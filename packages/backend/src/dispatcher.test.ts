@@ -1245,6 +1245,71 @@ test('dispatchUserMessage marks empty successful ACP output as failed', async ()
   }
 });
 
+test('respondAsAgent persists legacy raw patch event as timeline event metadata', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-raw-event-test-'));
+  const project = projectRepo.create({ name: `raw-event-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'event-agent', agent_name: 'EventAgent' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  assert.ok(acpAgent);
+
+  const events = captureRoomEvents(room.id);
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawEvent: {
+          type: 'patch',
+          payload: {
+            path: 'src/app.ts',
+            patch: '-old\n+new',
+          },
+        },
+      });
+      args.onChunk({ stream: 'stdout', text: '已完成修改' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '应用补丁',
+    });
+
+    const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === acpAgent.agent_id);
+    assert.ok(reply);
+    const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.trace?.events?.[0]?.type, 'file_diff');
+    assert.equal(metadata.trace?.events?.[0]?.payload.path, 'src/app.ts');
+    assert.equal(metadata.trace?.events?.[0]?.payload.patch, '-old\n+new');
+    assert.ok(events.some((event) =>
+      event.type === 'message:stream' &&
+      event.channel === 'event' &&
+      event.done === false &&
+      event.event?.type === 'file_diff' &&
+      event.event.payload.path === 'src/app.ts'
+    ));
+  } finally {
+    events.restore();
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke resolves', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-true-stream-test-'));
   const project = projectRepo.create({ name: `true-stream-${Date.now()}`, path: projectPath });

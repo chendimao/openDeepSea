@@ -2,8 +2,8 @@ import { resolve, sep } from 'node:path';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
-import { normalizeTimelineEventFromTrace } from './acp/timeline.js';
-import type { AcpStreamTrace } from './acp/types.js';
+import { normalizeKnownProviderEvent, normalizeTimelineEventFromTrace } from './acp/timeline.js';
+import type { AcpStreamChunk, AcpStreamTrace } from './acp/types.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, invokeConfiguredModelText, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { classifyAgentDocument } from './agent-document-classifier.js';
@@ -660,20 +660,77 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         status: 'streaming',
         message: updatedMessage,
       });
-      wsHub.broadcast(roomId, {
-        type: 'message:stream',
-        roomId,
+      broadcastTimelineEvent(timelineEvent, { stream: 'stdout', channel, text }, updatedMessage);
+    }
+  };
+
+  const persistTimelineEvent = (event: AgentTimelineEvent, chunk: AcpStreamChunk): void => {
+    const updatedMessage = messageRepo.mergeTrace(placeholder.id, { events: [event] });
+    broadcastTimelineEvent(event, chunk, updatedMessage);
+  };
+
+  const broadcastTimelineEvent = (
+    event: AgentTimelineEvent,
+    chunk: AcpStreamChunk,
+    updatedMessage: Message | undefined,
+  ): void => {
+    if (args.internalMessage) return;
+    wsHub.broadcast(roomId, {
+      type: 'message:stream',
+      roomId,
+      messageId: placeholder.id,
+      runId: run.id,
+      channel: 'event',
+      chunk: chunk.text || event.title,
+      done: false,
+      seq: ++streamSeq,
+      status: 'streaming',
+      event,
+      message: updatedMessage,
+    });
+  };
+
+  const normalizeTimelineEventChunk = (chunk: AcpStreamChunk): AgentTimelineEvent | null => {
+    if (chunk.event) {
+      const event = chunk.event;
+      const hasPendingContext =
+        event.id === 'pending' ||
+        event.id.startsWith('pending:') ||
+        event.message_id === 'pending' ||
+        event.run_id === 'pending' ||
+        event.agent_id === 'pending';
+      const hasMismatchedContext =
+        event.message_id !== placeholder.id ||
+        event.run_id !== run.id ||
+        event.agent_id !== agent.agent_id;
+      if (!hasPendingContext && !hasMismatchedContext) {
+        traceEventSeq = Math.max(traceEventSeq, event.seq);
+        return event;
+      }
+      const seq = Number.isFinite(event.seq) && event.seq > traceEventSeq ? event.seq : ++traceEventSeq;
+      traceEventSeq = Math.max(traceEventSeq, seq);
+      return {
+        ...event,
+        id: `${run.id}:${seq}`,
+        message_id: placeholder.id,
+        run_id: run.id,
+        agent_id: agent.agent_id,
+        seq,
+      };
+    }
+
+    if (chunk.rawEvent) {
+      return normalizeKnownProviderEvent({
         messageId: placeholder.id,
         runId: run.id,
-        channel: 'event',
-        chunk: text,
-        done: false,
-        seq: ++streamSeq,
-        status: 'streaming',
-        event: timelineEvent,
-        message: updatedMessage,
+        agentId: agent.agent_id,
+        seq: ++traceEventSeq,
+        provider: backend,
+        raw: chunk.rawEvent,
       });
     }
+
+    return null;
   };
 
   let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -697,6 +754,10 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         else if (chunk.stream === 'stdout' && chunk.channel === 'thinking') onTrace('thinking', chunk.text, chunk.trace);
         else if (chunk.stream === 'stdout' && chunk.channel === 'tool') onTrace('tool', chunk.text, chunk.trace);
         else if (chunk.stream === 'stdout' && chunk.channel === 'command') onTrace('command', chunk.text, chunk.trace);
+        else if (chunk.stream === 'stdout' && chunk.channel === 'event') {
+          const timelineEvent = normalizeTimelineEventChunk(chunk);
+          if (timelineEvent) persistTimelineEvent(timelineEvent, chunk);
+        }
         else if (chunk.stream === 'stdout') onStdout(chunk.text);
         else onStderr(chunk.text);
       },
