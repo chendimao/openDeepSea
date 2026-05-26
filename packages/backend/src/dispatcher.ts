@@ -941,7 +941,14 @@ async function dispatchPlannerDecision(args: {
       return agent ? { agent, prompt: step.goal } : null;
     })
     .filter((target): target is { agent: RoomAgent; prompt: string } => Boolean(target));
-  if (targets.length === 0) return;
+  if (targets.length === 0) {
+    const requestedAgentIds = args.decision.next_steps.map((step) => step.agent_id).filter(Boolean);
+    throw new Error(
+      requestedAgentIds.length > 0
+        ? `planner decision has no matching room agents: ${requestedAgentIds.join(', ')}`
+        : 'planner decision has no next steps to dispatch',
+    );
+  }
   await runTargets({
     targets,
     projectPath: project.path,

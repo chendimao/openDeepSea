@@ -48,6 +48,7 @@ import {
 } from '../components/ai-elements/Message';
 import {
   createDefaultReplyTarget,
+  createPlannerDispatchInput,
   createReplyTarget,
   type ReplyTarget,
 } from './roomPageLogic';
@@ -947,7 +948,8 @@ function MessageBubble({
     onError: (err) => toast.error((err as Error).message),
   });
   const continuePlanner = useMutation({
-    mutationFn: () => api.continuePlannerDecision(roomId),
+    mutationFn: (input: { source_message_id: string; planner_decision: PlannerDecision }) =>
+      api.dispatchPlannerDecision(roomId, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
@@ -1073,7 +1075,11 @@ function MessageBubble({
           <PlannerDecisionPanel
             decision={metadata.planner_decision}
             continuing={continuePlanner.isPending}
-            onContinue={() => continuePlanner.mutate()}
+            onContinue={() => {
+              const input = createPlannerDispatchInput(message, metadata);
+              if (!input) return;
+              continuePlanner.mutate(input);
+            }}
             onSupplement={onReply}
           />
         )}

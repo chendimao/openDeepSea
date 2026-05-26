@@ -84,6 +84,28 @@ test('only compact-renders short scalar json rows', () => {
   assert.match(html, /json-tree-row is-nested[\s\S]*nested/);
 });
 
+test('json tree rows include shrink-safe containers for nested planner decisions', () => {
+  const html = renderMessage([
+    '```json',
+    JSON.stringify({
+      planner_decision: {
+        mode: 'pause_after_suggestion',
+        status: 'suggested',
+        summary: '建议下一步对比 ACP 与 Codex CLI 的启动上下文和 skill 加载配置',
+        next_steps: [
+          { agent_id: 'runtime-inspector', goal: '检查 Codex CLI 是否加载 AGENTS.md、Superpowers skill 路径和 using-superpowers 启动规则' },
+        ],
+        awaiting_user_confirmation: true,
+      },
+    }, null, 2),
+    '```',
+  ].join('\n'));
+
+  assert.match(html, /class="json-tree-row is-nested"/);
+  assert.match(html, /runtime-inspector/);
+  assert.match(html, /检查 Codex CLI 是否加载/);
+});
+
 test('recognizes application json fences with CRLF and metadata', () => {
   const content = '```application/json title="readiness"\r\n{"task_readiness":{"ready":true,"title":"CRLF JSON","confidence":1}}\r\n```';
 

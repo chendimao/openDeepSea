@@ -1365,6 +1365,42 @@ test('respondAsAgent passes resolved workspace writable dirs and runtime prompt 
   }
 });
 
+test('planner dispatch reports missing room agents instead of accepting without work', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-missing-agent-'));
+  const project = projectRepo.create({ name: `planner-missing-agent-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '检查 Codex 上下文',
+    message_type: 'text',
+  });
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '建议检查运行上下文',
+          next_steps: [{ agent_id: 'runtime-inspector', goal: '检查 Codex CLI 启动规则' }],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+    const body = await response.json() as { error?: unknown };
+
+    assert.equal(response.status, 400);
+    assert.match(JSON.stringify(body.error), /runtime-inspector/);
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent forces read-only and empty writable dirs for reviewer runtime profile', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-runtime-readonly-test-'));
   const project = projectRepo.create({ name: `runtime-readonly-${Date.now()}`, path: projectPath });

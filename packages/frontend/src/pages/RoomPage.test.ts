@@ -4,6 +4,7 @@ import type { Message } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import {
   createDefaultReplyTarget,
+  createPlannerDispatchInput,
   createReplyTarget,
 } from './roomPageLogic';
 
@@ -82,6 +83,50 @@ test('room main path treats planner decision and trace as normal agent message m
   assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
   assert.equal(metadata.trace?.thinking?.[0]?.text, '完整 thinking 原文');
   assert.equal(metadata.trace?.tool_calls?.[0]?.name, 'search_files');
+});
+
+test('createPlannerDispatchInput targets the planner decision attached to the clicked message', () => {
+  const message = createMessage({
+    id: 'planner-message',
+    sender_type: 'agent',
+    content: '建议先检查运行上下文。',
+    metadata: JSON.stringify({
+      source_message_id: 'user-request',
+      planner_decision: {
+        mode: 'pause_after_suggestion',
+        status: 'suggested',
+        summary: '建议先检查运行上下文',
+        next_steps: [{ agent_id: 'runtime-inspector', goal: '检查 Codex CLI 启动规则' }],
+        awaiting_user_confirmation: true,
+      },
+    }),
+  });
+
+  const input = createPlannerDispatchInput(message);
+
+  assert.equal(input?.source_message_id, 'user-request');
+  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'runtime-inspector');
+});
+
+test('createPlannerDispatchInput falls back to the clicked message id for legacy planner metadata', () => {
+  const message = createMessage({
+    id: 'planner-message',
+    sender_type: 'agent',
+    content: '建议继续。',
+    metadata: JSON.stringify({
+      planner_decision: {
+        mode: 'pause_after_suggestion',
+        status: 'suggested',
+        summary: '建议继续',
+        next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
+        awaiting_user_confirmation: true,
+      },
+    }),
+  });
+
+  const input = createPlannerDispatchInput(message);
+
+  assert.equal(input?.source_message_id, 'planner-message');
 });
 
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & {

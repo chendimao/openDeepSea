@@ -1,5 +1,5 @@
 import { parseMessageMetadata } from '../lib/messageMetadata';
-import type { Message, MessageMetadata, TaskExecutionIntent } from '../lib/types';
+import type { Message, MessageMetadata, PlannerDecision, TaskExecutionIntent } from '../lib/types';
 
 export interface ReplyTarget {
   messageId: string;
@@ -33,6 +33,11 @@ export interface TaskEventVisibilityState {
   showWorkflowTaskCard: boolean;
   showInlineTaskEvent: boolean;
   hideMessage: boolean;
+}
+
+export interface PlannerDispatchInput {
+  source_message_id: string;
+  planner_decision: PlannerDecision;
 }
 
 export function createDefaultReplyTarget(
@@ -117,6 +122,17 @@ export function getTaskEventVisibilityState(input: {
     showWorkflowTaskCard: input.showWorkflowTaskCard,
     showInlineTaskEvent: false,
     hideMessage: !input.showWorkflowTaskCard,
+  };
+}
+
+export function createPlannerDispatchInput(
+  message: Message,
+  metadata: MessageMetadata = parseMessageMetadata(message.metadata),
+): PlannerDispatchInput | null {
+  if (!metadata.planner_decision) return null;
+  return {
+    source_message_id: metadata.source_message_id ?? message.id,
+    planner_decision: metadata.planner_decision,
   };
 }
 
