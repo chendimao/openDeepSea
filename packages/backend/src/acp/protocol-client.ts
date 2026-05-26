@@ -14,6 +14,8 @@ import type { AcpBackend, AcpPermissionMode } from '../types.js';
 import type { AcpInvokeResult, AcpStreamChunk } from './types.js';
 import type { AcpServerConfig } from './protocol-registry.js';
 
+const DEFAULT_PROTOCOL_STAGE_TIMEOUT_MS = 30_000;
+
 export interface InvokeProtocolSessionArgs {
   backend: AcpBackend;
   server: AcpServerConfig;
@@ -26,6 +28,7 @@ export interface InvokeProtocolSessionArgs {
   onChunk: (chunk: AcpStreamChunk) => void;
   onSession?: (sessionId: string) => void;
   signal?: AbortSignal;
+  stageTimeoutMs?: number;
 }
 
 export async function invokeProtocolSession(
@@ -37,6 +40,7 @@ export async function invokeProtocolSession(
   let initialized = false;
   let promptStarted = false;
   let eventReceived = false;
+  const stageTimeoutMs = args.stageTimeoutMs ?? readProtocolStageTimeoutMs(process.env.OPENCLAW_ACP_STAGE_TIMEOUT_MS);
 
   try {
     child = spawn(args.server.command, args.server.args, {
@@ -69,6 +73,7 @@ export async function invokeProtocolSession(
       projectPath: args.projectPath,
       allowedRoots: [args.projectPath, ...additionalDirectories],
       permissionMode: args.acpPermissionMode ?? 'bypass',
+      onChunk: args.onChunk,
       onSessionUpdate: (notification) => {
         eventReceived = true;
         const rawEvent = {
@@ -109,48 +114,64 @@ export async function invokeProtocolSession(
     };
     args.signal?.addEventListener('abort', abortHandler, { once: true });
 
-    await Promise.race([
-      connection.initialize({
-        protocolVersion: PROTOCOL_VERSION,
-        clientInfo: {
-          name: 'openclaw-room',
-          title: 'OpenClaw Room',
-          version: '0.1.0',
-        },
-        clientCapabilities: {
-          fs: {
-            readTextFile: true,
-            writeTextFile: true,
+    await withTimeout(
+      Promise.race([
+        connection.initialize({
+          protocolVersion: PROTOCOL_VERSION,
+          clientInfo: {
+            name: 'openclaw-room',
+            title: 'OpenClaw Room',
+            version: '0.1.0',
           },
-          terminal: false,
-        },
-      }),
-      spawnFailure,
-    ]);
+          clientCapabilities: {
+            fs: {
+              readTextFile: true,
+              writeTextFile: true,
+            },
+            terminal: false,
+          },
+        }),
+        spawnFailure,
+      ]),
+      stageTimeoutMs,
+      'ACP initialize timed out',
+    );
     initialized = true;
 
     if (activeSessionId) {
-      await connection.resumeSession({
-        sessionId: activeSessionId,
-        cwd: args.projectPath,
-        mcpServers: [],
-        additionalDirectories,
-      });
+      await withTimeout(
+        connection.resumeSession({
+          sessionId: activeSessionId,
+          cwd: args.projectPath,
+          mcpServers: [],
+          additionalDirectories,
+        }),
+        stageTimeoutMs,
+        'ACP resumeSession timed out',
+      );
     } else {
-      const newSession = await connection.newSession({
-        cwd: args.projectPath,
-        mcpServers: [],
-        additionalDirectories,
-      });
+      const newSession = await withTimeout(
+        connection.newSession({
+          cwd: args.projectPath,
+          mcpServers: [],
+          additionalDirectories,
+        }),
+        stageTimeoutMs,
+        'ACP newSession timed out',
+      );
       activeSessionId = newSession.sessionId;
       args.onSession?.(activeSessionId);
     }
 
     promptStarted = true;
-    const promptResult = await connection.prompt({
-      sessionId: activeSessionId,
-      prompt: buildPromptContent(args.prompt, args.imagePaths ?? []),
-    });
+    const promptResult = await withTimeout(
+      connection.prompt({
+        sessionId: activeSessionId,
+        prompt: buildPromptContent(args.prompt, args.imagePaths ?? []),
+      }),
+      stageTimeoutMs,
+      'ACP prompt timed out',
+    );
 
     await connection.closeSession({ sessionId: activeSessionId }).catch(() => undefined);
     child.kill('SIGTERM');
@@ -178,6 +199,7 @@ function createProtocolClient(args: {
   projectPath: string;
   allowedRoots: string[];
   permissionMode: AcpPermissionMode;
+  onChunk: (chunk: AcpStreamChunk) => void;
   onSessionUpdate: (notification: SessionNotification) => void;
 }): Client {
   return {
@@ -186,7 +208,7 @@ function createProtocolClient(args: {
     },
 
     async requestPermission(params) {
-      if (args.permissionMode !== 'bypass') {
+      if (args.permissionMode === 'read-only') {
         return {
           outcome: {
             outcome: 'cancelled',
@@ -204,6 +226,39 @@ function createProtocolClient(args: {
           },
         };
       }
+
+    if (args.permissionMode === 'workspace-write' && !isWorkspaceWritablePermission(params.toolCall)) {
+      args.onChunk({
+        stream: 'stdout',
+        text: '',
+        channel: 'event',
+        rawType: 'permission_request',
+        rawEvent: {
+          type: 'permission_request',
+          outcome: 'cancelled',
+          reason: 'unsupported_workspace_write_tool',
+          toolCall: params.toolCall,
+        },
+      });
+      return {
+        outcome: {
+          outcome: 'cancelled',
+          },
+        };
+      }
+
+      args.onChunk({
+        stream: 'stdout',
+        text: '',
+        channel: 'event',
+        rawType: 'permission_request',
+        rawEvent: {
+          type: 'permission_request',
+          outcome: 'selected',
+          optionId: allowOption.optionId,
+          toolCall: params.toolCall,
+        },
+      });
 
       return {
         outcome: {
@@ -301,5 +356,27 @@ function waitForChild(child: ChildProcessWithoutNullStreams): Promise<number> {
     child.on('close', (code) => {
       resolve(code ?? 0);
     });
+  });
+}
+
+function isWorkspaceWritablePermission(toolCall: { kind?: string | null; title?: string | null }): boolean {
+  const kind = toolCall.kind ?? '';
+  if (kind === 'read' || kind === 'edit' || kind === 'delete' || kind === 'move' || kind === 'search') return true;
+  const title = (toolCall.title ?? '').toLowerCase();
+  return /read|search|edit|write|delete|move|patch|file/.test(title);
+}
+
+function readProtocolStageTimeoutMs(value: string | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PROTOCOL_STAGE_TIMEOUT_MS;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
   });
 }

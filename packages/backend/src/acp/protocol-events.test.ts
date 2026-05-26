@@ -191,6 +191,70 @@ test('normalizeProtocolEvent maps ACP completed tool_call_update as tool_result'
   assert.deepEqual(event.raw, raw);
 });
 
+test('normalizeProtocolEvent maps ACP diff tool_call_update content to file_diff', () => {
+  const raw = {
+    method: 'session/update',
+    params: {
+      sessionId: 'acp-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tool-1',
+        title: 'Edit src/app.ts',
+        status: 'completed',
+        content: [
+          {
+            type: 'diff',
+            path: 'src/app.ts',
+            oldText: 'old\nline',
+            newText: 'new\nline\nextra',
+          },
+        ],
+      },
+    },
+  };
+
+  const event = normalizeProtocolEvent({
+    ...baseArgs,
+    seq: 6,
+    raw,
+  });
+
+  assert.equal(event.type, 'file_diff');
+  assert.equal(event.status, 'completed');
+  assert.equal(event.payload.path, 'src/app.ts');
+  assert.equal(event.payload.additions, 3);
+  assert.equal(event.payload.deletions, 2);
+  assert.equal(event.payload.tool_call_id, 'tool-1');
+  assert.match(String(event.payload.patch), /--- a\/src\/app\.ts/);
+  assert.match(String(event.payload.patch), /\+extra/);
+  assert.deepEqual(event.raw, raw);
+});
+
+test('normalizeProtocolEvent prefers ACP tool title over kind for display name', () => {
+  const raw = {
+    method: 'session/update',
+    params: {
+      sessionId: 'acp-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tool-1',
+        title: 'Read src/app.ts',
+        kind: 'read',
+        status: 'in_progress',
+      },
+    },
+  };
+
+  const event = normalizeProtocolEvent({
+    ...baseArgs,
+    seq: 7,
+    raw,
+  });
+
+  assert.equal(event.payload.name, 'Read src/app.ts');
+  assert.equal(event.title, '调用工具 Read src/app.ts');
+});
+
 test('normalizeProtocolEvent maps stdout command output delta to command_output', () => {
   const raw = {
     type: 'command_output_delta',

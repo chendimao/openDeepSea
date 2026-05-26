@@ -161,3 +161,87 @@ test('invokeProtocolSession rejects ACP writes through symlinks outside allowed 
   assert.match(result.stderr, /Internal error/);
   assert.equal(await readFile(outsidePath, 'utf-8'), 'secret');
 });
+
+test('invokeProtocolSession allows file permissions in workspace-write mode', async () => {
+  const chunks: Array<{ channel?: string; rawType?: string; rawEvent?: Record<string, unknown> }> = [];
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_PERMISSION: '1',
+        OPENCLAW_FAKE_ACP_PERMISSION_KIND: 'edit',
+        OPENCLAW_FAKE_ACP_PERMISSION_TITLE: 'Edit package.json',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'hello',
+    acpPermissionMode: 'workspace-write',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, 0);
+  const permissionEvent = chunks.find((chunk) => chunk.rawType === 'permission_request');
+  assert.equal(permissionEvent?.rawEvent?.outcome, 'selected');
+});
+
+test('invokeProtocolSession cancels non-file permissions in workspace-write mode', async () => {
+  const chunks: Array<{ channel?: string; rawType?: string; rawEvent?: Record<string, unknown> }> = [];
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_PERMISSION: '1',
+        OPENCLAW_FAKE_ACP_PERMISSION_KIND: 'execute',
+        OPENCLAW_FAKE_ACP_PERMISSION_TITLE: 'Run npm test',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'hello',
+    acpPermissionMode: 'workspace-write',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, 0);
+  const permissionEvent = chunks.find((chunk) => chunk.rawType === 'permission_request');
+  assert.equal(permissionEvent?.rawEvent?.outcome, 'cancelled');
+});
+
+test('invokeProtocolSession times out unresponsive initialization safely', async () => {
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_HANG_INITIALIZE: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'hello',
+    stageTimeoutMs: 25,
+    onChunk: () => undefined,
+  });
+
+  assert.equal(result.exitCode, -1);
+  assert.equal(result.fallbackSafe, true);
+  assert.match(result.stderr, /ACP initialize timed out/);
+});

@@ -23,6 +23,33 @@ export function normalizeProtocolEvent(args: {
   const type = getProtocolType(args.raw, payload, args.provider);
   const sessionUpdate = text(payload['sessionUpdate']);
   const kind = text(payload['kind']) ?? text(args.raw['kind']);
+  const diffContent = extractDiffContent(payload);
+
+  if (diffContent) {
+    const oldText = text(diffContent['oldText']) ?? '';
+    const newText = text(diffContent['newText']) ?? '';
+    const patch = createUnifiedDiffPatch(diffContent.path, oldText, newText);
+    return createTimelineEvent({
+      messageId: args.messageId,
+      runId: args.runId,
+      agentId: args.agentId,
+      seq: args.seq,
+      type: 'file_diff',
+      status: 'completed',
+      title: `修改文件 ${diffContent.path}`,
+      payload: {
+        path: diffContent.path,
+        patch,
+        oldText,
+        newText,
+        additions: countTextLines(newText),
+        deletions: countTextLines(oldText),
+        tool_call_id: text(payload['toolCallId']) ?? text(payload['id']),
+        title: text(payload['title']),
+      },
+      raw: args.raw,
+    });
+  }
 
   if (sessionUpdate === 'agent_message_chunk') {
     const messageText = getContentText(payload);
@@ -230,8 +257,8 @@ function getToolName(
 ): string {
   return text(payload['name'])
     ?? text(payload['toolName'])
-    ?? text(payload['kind'])
     ?? text(payload['title'])
+    ?? text(payload['kind'])
     ?? text(raw['name'])
     ?? fallback;
 }
@@ -266,4 +293,37 @@ function getContentText(payload: Record<string, unknown>): string | null {
     if (contentRecord['type'] === 'text') return text(contentRecord['text']);
   }
   return null;
+}
+
+function extractDiffContent(payload: Record<string, unknown>): { path: string; oldText?: string; newText: string } | null {
+  const content = payload['content'];
+  const entries = Array.isArray(content) ? content : content ? [content] : [];
+  for (const entry of entries) {
+    const item = record(entry);
+    if (!item || item['type'] !== 'diff') continue;
+    const path = text(item['path']);
+    const newText = text(item['newText']);
+    if (!path || newText === null) continue;
+    return {
+      path,
+      oldText: text(item['oldText']) ?? undefined,
+      newText,
+    };
+  }
+  return null;
+}
+
+function createUnifiedDiffPatch(path: string, oldText: string, newText: string): string {
+  return [
+    `--- a/${path}`,
+    `+++ b/${path}`,
+    '@@',
+    ...oldText.split('\n').filter((line) => line.length > 0).map((line) => `-${line}`),
+    ...newText.split('\n').filter((line) => line.length > 0).map((line) => `+${line}`),
+  ].join('\n');
+}
+
+function countTextLines(value: string): number {
+  if (!value) return 0;
+  return value.split('\n').filter((line) => line.length > 0).length;
 }

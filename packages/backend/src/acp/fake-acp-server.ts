@@ -13,6 +13,10 @@ class FakeAgent implements Agent {
   constructor(private readonly connection: AgentConnection) {}
 
   async initialize() {
+    if (process.env.OPENCLAW_FAKE_ACP_HANG_INITIALIZE === '1') {
+      await new Promise(() => undefined);
+    }
+
     return {
       protocolVersion: PROTOCOL_VERSION,
       agentCapabilities: {
@@ -33,6 +37,21 @@ class FakeAgent implements Agent {
   }
 
   async prompt(params: PromptRequest) {
+    if (process.env.OPENCLAW_FAKE_ACP_PERMISSION === '1') {
+      await this.connection.requestPermission({
+        sessionId: params.sessionId,
+        toolCall: {
+          toolCallId: 'permission-tool-1',
+          title: process.env.OPENCLAW_FAKE_ACP_PERMISSION_TITLE ?? 'Edit package.json',
+          kind: (process.env.OPENCLAW_FAKE_ACP_PERMISSION_KIND ?? 'edit') as 'edit',
+        },
+        options: [
+          { optionId: 'allow', kind: 'allow_once', name: 'Allow' },
+          { optionId: 'reject', kind: 'reject_once', name: 'Reject' },
+        ],
+      });
+    }
+
     if (process.env.OPENCLAW_FAKE_ACP_READ_PATH) {
       await this.connection.readTextFile({
         sessionId: params.sessionId,
