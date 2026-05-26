@@ -956,8 +956,16 @@ function MessageBubble({
       api.dispatchPlannerDecision(roomId, input),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
-      toast.success(result.dispatched > 0 ? `已派发 ${result.dispatched} 个智能体` : '没有可派发的下一步');
+      const addedCount = result.added_agents?.length ?? 0;
+      toast.success(
+        result.dispatched > 0
+          ? addedCount > 0
+            ? `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
+            : `已派发 ${result.dispatched} 个智能体`
+          : '没有可派发的下一步',
+      );
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -1120,7 +1128,7 @@ function PlannerDecisionPanel({
   const missingAgentIds = decision.next_steps
     .map((step) => step.agent_id)
     .filter((agentId) => !activeAgentIds.has(agentId));
-  const canContinue = hasDispatchablePlannerSteps(decision) && missingAgentIds.length === 0;
+  const canContinue = hasDispatchablePlannerSteps(decision);
   return (
     <section className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)]/70 px-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -1148,7 +1156,9 @@ function PlannerDecisionPanel({
       )}
       {missingAgentIds.length > 0 && (
         <div className="mt-2 rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
-          缺少建议中的智能体：<span className="font-mono text-[var(--color-warning)]">{missingAgentIds.join(', ')}</span>。请先把对应智能体加入房间，或让 planner 重新给出可执行建议。
+          建议中的智能体暂未在房间内：
+          <span className="font-mono text-[var(--color-warning)]">{missingAgentIds.join(', ')}</span>。
+          继续时会自动从全局智能体库查找并加入；如果不存在，后端会返回明确错误。
         </div>
       )}
       {decision.awaiting_user_confirmation && (

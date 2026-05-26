@@ -1569,7 +1569,11 @@ router.post('/rooms/:roomId/planner/continue', async (req, res) => {
   try {
     const result = await continueLatestPlannerDecision({ roomId: room.id });
     if (!result.accepted) return res.status(409).json({ error: 'no planner decision ready to continue' });
-    res.status(200).json({ accepted: true, dispatched: result.dispatched });
+    res.status(200).json({
+      accepted: true,
+      dispatched: result.dispatched,
+      added_agents: result.added_agents,
+    });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
@@ -1603,7 +1607,11 @@ router.post('/rooms/:roomId/planner/dispatch', async (req, res) => {
       sourceMessageId: parsed.data.source_message_id,
       decision: parsed.data.planner_decision,
     });
-    res.status(200).json({ accepted: true, dispatched: result.dispatched });
+    res.status(200).json({
+      accepted: true,
+      dispatched: result.dispatched,
+      added_agents: result.added_agents,
+    });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
@@ -1978,7 +1986,11 @@ router.post('/rooms/:roomId/planner/continue', (req, res, next) => {
       res.status(404).json({ error: 'planner decision not found' });
       return;
     }
-    res.status(202).json({ accepted: true, dispatched: result.dispatched });
+    res.status(202).json({
+      accepted: true,
+      dispatched: result.dispatched,
+      added_agents: result.added_agents,
+    });
   })().catch(next);
 });
 
@@ -2004,7 +2016,11 @@ router.post('/rooms/:roomId/planner/dispatch', (req, res, next) => {
       sourceMessageId: sourceMessage.id,
       decision: parsed.data.planner_decision,
     });
-    res.status(202).json({ accepted: true, dispatched: result.dispatched });
+    res.status(202).json({
+      accepted: true,
+      dispatched: result.dispatched,
+      added_agents: result.added_agents,
+    });
   })().catch(next);
 });
 

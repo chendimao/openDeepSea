@@ -12,6 +12,7 @@ import { fileRepo } from './repos/files.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
+import { agentRepo } from './repos/agents.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { formatSkillPrompt } from './skills/prompt.js';
@@ -22,6 +23,7 @@ import { wsHub } from './ws-hub.js';
 import type {
   AgentRun,
   AgentRunStatus,
+  Agent,
   Message,
   MessageAttachmentMetadata,
   MessageTrace,
@@ -32,6 +34,16 @@ import type {
 } from './types.js';
 
 const AGENT_RUN_HEARTBEAT_MS = 30_000;
+
+interface PlannerDispatchAddedAgent {
+  agent_id: string;
+  agent_name: string;
+}
+
+interface PlannerDispatchResult {
+  dispatched: number;
+  added_agents: PlannerDispatchAddedAgent[];
+}
 
 /**
  * Dispatch an incoming user message to the agents selected by project routing.
@@ -929,23 +941,19 @@ async function dispatchPlannerDecision(args: {
   roomId: string;
   sourceMessageId: string;
   decision: PlannerDecision;
-}): Promise<{ dispatched: number }> {
+}): Promise<PlannerDispatchResult> {
   const room = roomRepo.get(args.roomId);
   if (!room) throw new Error('room not found');
   const project = projectRepo.get(room.project_id);
   if (!project) throw new Error('project not found');
-  const allAgents = roomAgentRepo.listByRoom(args.roomId);
-  const targets = args.decision.next_steps
-    .map((step) => {
-      const agent = allAgents.find((item) => item.agent_id === step.agent_id);
-      return agent ? { agent, prompt: step.goal } : null;
-    })
-    .filter((target): target is { agent: RoomAgent; prompt: string } => Boolean(target));
-  if (targets.length === 0) {
+  const { targets, addedAgents, missingAgentIds } = resolvePlannerDispatchTargets(args.roomId, args.decision);
+  if (targets.length === 0 || missingAgentIds.length > 0) {
     const requestedAgentIds = args.decision.next_steps.map((step) => step.agent_id).filter(Boolean);
     throw new Error(
-      requestedAgentIds.length > 0
-        ? `planner decision has no matching room agents: ${requestedAgentIds.join(', ')}`
+      missingAgentIds.length > 0
+        ? `planner decision has no matching room or global agents: ${missingAgentIds.join(', ')}`
+        : requestedAgentIds.length > 0
+          ? `planner decision has no matching room or global agents: ${requestedAgentIds.join(', ')}`
         : 'planner decision has no next steps to dispatch',
     );
   }
@@ -955,10 +963,66 @@ async function dispatchPlannerDecision(args: {
     roomId: args.roomId,
     sourceMessageId: args.sourceMessageId,
   });
-  return { dispatched: targets.length };
+  return { dispatched: targets.length, added_agents: addedAgents };
 }
 
-export async function continueLatestPlannerDecision(args: { roomId: string }): Promise<{ accepted: boolean; dispatched: number }> {
+function resolvePlannerDispatchTargets(
+  roomId: string,
+  decision: PlannerDecision,
+): {
+  targets: { agent: RoomAgent; prompt: string }[];
+  addedAgents: PlannerDispatchAddedAgent[];
+  missingAgentIds: string[];
+} {
+  const agentsById = new Map(roomAgentRepo.listByRoom(roomId).map((agent) => [agent.agent_id, agent]));
+  const globalAgentsByRequestedId = new Map<string, Agent>();
+  const addedAgentsById = new Map<string, PlannerDispatchAddedAgent>();
+  const missingAgentIds: string[] = [];
+
+  for (const step of decision.next_steps) {
+    if (agentsById.has(step.agent_id)) {
+      continue;
+    }
+    const globalAgent = agentRepo.getByAgentId(step.agent_id) ?? agentRepo.getByBuiltinKey(step.agent_id);
+    if (globalAgent) {
+      globalAgentsByRequestedId.set(step.agent_id, globalAgent);
+      continue;
+    }
+    if (!missingAgentIds.includes(step.agent_id)) {
+      missingAgentIds.push(step.agent_id);
+    }
+  }
+
+  if (missingAgentIds.length > 0) {
+    return { targets: [], addedAgents: [], missingAgentIds };
+  }
+
+  for (const [requestedAgentId, globalAgent] of globalAgentsByRequestedId.entries()) {
+    const agent = roomAgentRepo.addFromGlobalAgent({ room_id: roomId, global_agent_id: globalAgent.id });
+    agentsById.set(requestedAgentId, agent);
+    agentsById.set(agent.agent_id, agent);
+    if (globalAgent.builtin_key) agentsById.set(globalAgent.builtin_key, agent);
+    addedAgentsById.set(agent.agent_id, {
+      agent_id: agent.agent_id,
+      agent_name: agent.agent_name,
+    });
+  }
+
+  const targets = decision.next_steps
+    .map((step) => {
+      const agent = agentsById.get(step.agent_id);
+      return agent ? { agent, prompt: step.goal } : null;
+    })
+    .filter((target): target is { agent: RoomAgent; prompt: string } => Boolean(target));
+
+  return {
+    targets,
+    addedAgents: Array.from(addedAgentsById.values()),
+    missingAgentIds,
+  };
+}
+
+export async function continueLatestPlannerDecision(args: { roomId: string }): Promise<{ accepted: boolean } & PlannerDispatchResult> {
   const plannerMessage = messageRepo
     .listByRoom(args.roomId, 200)
     .slice()
@@ -968,22 +1032,24 @@ export async function continueLatestPlannerDecision(args: { roomId: string }): P
       const metadata = parsePlannerMessageMetadata(message.metadata);
       return Boolean(metadata.planner_decision);
     });
-  if (!plannerMessage) return { accepted: false, dispatched: 0 };
+  if (!plannerMessage) return { accepted: false, dispatched: 0, added_agents: [] };
   const metadata = parsePlannerMessageMetadata(plannerMessage.metadata);
-  if (!metadata.planner_decision || !metadata.planner_decision.awaiting_user_confirmation) return { accepted: false, dispatched: 0 };
+  if (!metadata.planner_decision || !metadata.planner_decision.awaiting_user_confirmation) {
+    return { accepted: false, dispatched: 0, added_agents: [] };
+  }
   const result = await dispatchPlannerDecision({
     roomId: args.roomId,
     sourceMessageId: metadata.source_message_id ?? plannerMessage.id,
     decision: metadata.planner_decision,
   });
-  return { accepted: true, dispatched: result.dispatched };
+  return { accepted: true, dispatched: result.dispatched, added_agents: result.added_agents };
 }
 
 export async function dispatchPlannerDecisionForRoom(args: {
   roomId: string;
   sourceMessageId: string;
   decision: PlannerDecision;
-}): Promise<{ dispatched: number }> {
+}): Promise<PlannerDispatchResult> {
   return dispatchPlannerDecision(args);
 }
 
