@@ -2,6 +2,7 @@ import { resolve, sep } from 'node:path';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
+import { normalizeTimelineEventFromTrace } from './acp/timeline.js';
 import type { AcpStreamTrace } from './acp/types.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, invokeConfiguredModelText, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
@@ -24,6 +25,7 @@ import { wsHub } from './ws-hub.js';
 import type {
   AgentRun,
   AgentRunStatus,
+  AgentTimelineEvent,
   Agent,
   Message,
   MessageAttachmentMetadata,
@@ -599,6 +601,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     wsHub.broadcast(roomId, { type: 'message:new', roomId, message: placeholder });
   }
   let streamSeq = 0;
+  let traceEventSeq = 0;
 
   const onStdout = (chunk: string): void => {
     messageRepo.appendChunk(placeholder.id, chunk);
@@ -634,7 +637,16 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const onTrace = (channel: 'thinking' | 'tool' | 'command', chunk: string, trace?: AcpStreamTrace): void => {
     const text = chunk.trim();
     if (!text) return;
-    const updatedMessage = messageRepo.mergeTrace(placeholder.id, toTracePatch(channel, text, trace));
+    const timelineEvent = normalizeTimelineEventFromTrace({
+      messageId: placeholder.id,
+      runId: run.id,
+      agentId: agent.agent_id,
+      seq: ++traceEventSeq,
+      channel,
+      text,
+      trace,
+    });
+    const updatedMessage = messageRepo.mergeTrace(placeholder.id, toTracePatch(channel, text, trace, timelineEvent));
     if (!args.internalMessage) {
       wsHub.broadcast(roomId, {
         type: 'message:stream',
@@ -646,6 +658,19 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         done: false,
         seq: ++streamSeq,
         status: 'streaming',
+        message: updatedMessage,
+      });
+      wsHub.broadcast(roomId, {
+        type: 'message:stream',
+        roomId,
+        messageId: placeholder.id,
+        runId: run.id,
+        channel: 'event',
+        chunk: text,
+        done: false,
+        seq: ++streamSeq,
+        status: 'streaming',
+        event: timelineEvent,
         message: updatedMessage,
       });
     }
@@ -981,13 +1006,15 @@ function toTracePatch(
   channel: 'thinking' | 'tool' | 'command',
   text: string,
   trace?: AcpStreamTrace,
+  event?: AgentTimelineEvent,
 ): MessageTrace {
-  if (trace?.kind === 'thinking') return { thinking: [{ text: trace.text }] };
-  if (trace?.kind === 'tool') return { tool_calls: [{ name: trace.name, input: trace.input, output: trace.output }] };
-  if (trace?.kind === 'command') return { commands: [{ command: trace.command, output: trace.output }] };
-  if (channel === 'thinking') return { thinking: [{ text }] };
-  if (channel === 'tool') return { tool_calls: [{ name: 'trace', input: text }] };
-  return { commands: [{ command: text }] };
+  const next: MessageTrace = event ? { events: [event] } : {};
+  if (trace?.kind === 'thinking') return { ...next, thinking: [{ text: trace.text }] };
+  if (trace?.kind === 'tool') return { ...next, tool_calls: [{ name: trace.name, input: trace.input, output: trace.output }] };
+  if (trace?.kind === 'command') return { ...next, commands: [{ command: trace.command, output: trace.output }] };
+  if (channel === 'thinking') return { ...next, thinking: [{ text }] };
+  if (channel === 'tool') return { ...next, tool_calls: [{ name: 'trace', input: text }] };
+  return { ...next, commands: [{ command: text }] };
 }
 
 async function dispatchPlannerDecision(args: {

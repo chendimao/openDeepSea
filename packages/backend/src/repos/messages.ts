@@ -1,6 +1,13 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { Message, MessageMetadata, MessageTrace, MessageType, SenderType } from '../types.js';
+import type {
+  AgentTimelineEvent,
+  Message,
+  MessageMetadata,
+  MessageTrace,
+  MessageType,
+  SenderType,
+} from '../types.js';
 
 export const messageRepo = {
   listByRoom(roomId: string, limit = 200): Message[] {
@@ -105,6 +112,7 @@ function parseMetadataObject(rawMetadata: string | null): Record<string, unknown
 
 function mergeMessageTrace(existing: unknown, patch: Partial<MessageTrace>): MessageTrace {
   const current = isMessageTrace(existing) ? existing : {};
+  const mergedEvents = mergeTraceEvents(current.events, patch.events);
   return {
     ...current,
     ...(patch.thinking ? {
@@ -116,11 +124,64 @@ function mergeMessageTrace(existing: unknown, patch: Partial<MessageTrace>): Mes
     ...(patch.commands ? {
       commands: [...(current.commands ?? []), ...patch.commands],
     } : {}),
+    ...(mergedEvents ? { events: mergedEvents } : {}),
   };
 }
 
 function isMessageTrace(value: unknown): value is MessageTrace {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function mergeTraceEvents(
+  existingEvents: AgentTimelineEvent[] | undefined,
+  patchEvents: AgentTimelineEvent[] | undefined,
+): AgentTimelineEvent[] | undefined {
+  if (!existingEvents && !patchEvents) return undefined;
+  if (!patchEvents || patchEvents.length === 0) return existingEvents ?? [];
+  if (!existingEvents || existingEvents.length === 0) return [...patchEvents];
+
+  const merged = [...existingEvents];
+  const indexById = new Map<string, number>();
+  merged.forEach((event, index) => indexById.set(event.id, index));
+
+  for (const nextEvent of patchEvents) {
+    const existingIndex = indexById.get(nextEvent.id);
+    if (existingIndex === undefined) {
+      indexById.set(nextEvent.id, merged.length);
+      merged.push(nextEvent);
+      continue;
+    }
+    const existingEvent = merged[existingIndex];
+    if (!existingEvent) {
+      merged[existingIndex] = nextEvent;
+      continue;
+    }
+    merged[existingIndex] = mergeTimelineEvent(existingEvent, nextEvent);
+  }
+  return merged;
+}
+
+function mergeTimelineEvent(existing: AgentTimelineEvent, patch: AgentTimelineEvent): AgentTimelineEvent {
+  return {
+    ...existing,
+    ...patch,
+    payload: mergeTimelinePayload(existing.payload, patch.payload),
+  };
+}
+
+function mergeTimelinePayload(
+  existing: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...existing, ...patch };
+  for (const key of ['text', 'output', 'stdout', 'stderr']) {
+    const currentValue = existing[key];
+    const nextValue = patch[key];
+    if (typeof currentValue === 'string' && typeof nextValue === 'string') {
+      merged[key] = currentValue + nextValue;
+    }
+  }
+  return merged;
 }
 
 function markMetadataFileDeleted(rawMetadata: string | null, fileId: string): MessageMetadata | null {

@@ -1266,6 +1266,18 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
   adapters.codex = {
     ...originalAdapter,
     async invoke(args) {
+      args.onChunk({
+        stream: 'stdout',
+        channel: 'thinking',
+        text: '先分析需求',
+        trace: { kind: 'thinking', text: '先分析需求' },
+      });
+      args.onChunk({
+        stream: 'stdout',
+        channel: 'tool',
+        text: 'Read dispatcher.ts',
+        trace: { kind: 'tool', name: 'Read', input: '{"path":"dispatcher.ts"}' },
+      });
       args.onChunk({ stream: 'stdout', text: '第一段' });
       await new Promise<void>((resolve) => {
         releaseInvoke = resolve;
@@ -1296,10 +1308,24 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
       event.type === 'message:stream' &&
       event.chunk === '第一段' &&
       event.done === false &&
-      event.seq === 1 &&
+      typeof event.seq === 'number' &&
       event.runId &&
       event.channel === 'answer' &&
       event.status === 'streaming'
+    ));
+    assert.ok(events.some((event) =>
+      event.type === 'message:stream' &&
+      event.channel === 'event' &&
+      event.done === false &&
+      event.event?.type === 'thinking' &&
+      event.event.payload.text === '先分析需求'
+    ));
+    assert.ok(events.some((event) =>
+      event.type === 'message:stream' &&
+      event.channel === 'event' &&
+      event.done === false &&
+      event.event?.type === 'tool_call' &&
+      event.event.payload.name === 'Read'
     ));
 
     releaseInvoke();
@@ -1310,6 +1336,10 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
     const run = agentRunRepo.listByRoom(room.id, 1)[0];
     assert.equal(run?.stdout, '第一段第二段');
     assert.equal(run?.stderr, '');
+    const metadata = JSON.parse(reply?.metadata ?? '{}') as MessageMetadata;
+    assert.ok(Array.isArray(metadata.trace?.events));
+    assert.ok(metadata.trace?.events?.some((event) => event.type === 'thinking'));
+    assert.ok(metadata.trace?.events?.some((event) => event.type === 'tool_call'));
     assert.ok(events.some((event) =>
       event.type === 'message:stream' &&
       event.messageId === reply?.id &&
