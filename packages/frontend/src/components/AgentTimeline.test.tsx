@@ -1,0 +1,85 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nProvider } from '../lib/i18n';
+import { AgentTimeline } from './AgentTimeline';
+
+setupBrowserStubs();
+
+test('AgentTimeline renders structured events and preserves legacy trace compatibility', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        trace={{
+          thinking: [{ text: 'legacy thinking' }],
+          events: [
+            {
+              id: 'run-1:1',
+              message_id: 'message-1',
+              run_id: 'run-1',
+              agent_id: 'planner',
+              seq: 1,
+              type: 'file_diff',
+              status: 'completed',
+              title: '修改文件 src/app.ts',
+              payload: { path: 'src/app.ts', patch: '-old\n+new', additions: 1, deletions: 1 },
+              created_at: 1000,
+            },
+          ],
+        }}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /修改文件 src\/app\.ts/);
+  assert.match(html, /legacy thinking/);
+  assert.match(html, /agent-timeline/);
+});
+
+test('AgentTimeline marks diff lines with add and remove classes', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'run-1:2',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 2,
+            type: 'file_diff',
+            status: 'completed',
+            title: '修改文件 src/app.ts',
+            payload: { path: 'src/app.ts', patch: '-old\n+new', additions: 1, deletions: 1 },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /diff-line is-removed/);
+  assert.match(html, /diff-line is-added/);
+});
+
+function setupBrowserStubs(): void {
+  Object.assign(globalThis, { React });
+
+  if (!('localStorage' in globalThis)) {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: () => null,
+        setItem: () => undefined,
+      },
+      configurable: true,
+    });
+  }
+
+  if (!('document' in globalThis)) {
+    Object.defineProperty(globalThis, 'document', {
+      value: { documentElement: { lang: 'zh' } },
+      configurable: true,
+    });
+  }
+}

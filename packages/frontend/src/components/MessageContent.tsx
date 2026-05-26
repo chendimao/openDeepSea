@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { AgentTimeline } from './AgentTimeline';
 import { useI18n } from '../lib/i18n';
-import type { MessageTrace, MessageTraceCommand, MessageTraceToolCall } from '../lib/types';
+import type { MessageTrace } from '../lib/types';
 
 type MessagePart =
   | { type: 'text'; value: string }
@@ -138,7 +139,7 @@ export function MessageContent({
           </>
         )}
       </div>
-      <MessageTracePanels trace={trace} />
+      <AgentTimeline trace={trace} />
     </div>
   );
 }
@@ -467,100 +468,6 @@ function formatConfidence(value: number): string {
 function formatSemanticJsonString(value: string | null): string {
   if (!value) return '未知';
   return jsonValueLabels[value] ?? value;
-}
-
-function MessageTracePanels({ trace }: { trace?: MessageTrace }): JSX.Element | null {
-  if (!trace || !hasMessageTrace(trace)) return null;
-
-  return (
-    <div className="mt-3 space-y-2">
-      {trace.thinking && trace.thinking.length > 0 && (
-        trace.thinking.map((entry, index) => (
-          <TracePanel
-            key={`thinking-${index}`}
-            kind="reasoning"
-            title="思考"
-            status="✓"
-          >
-            <blockquote className="trace-reasoning-text">{entry.text}</blockquote>
-          </TracePanel>
-        ))
-      )}
-      {hasToolOrCommandTrace(trace) && (
-        <>
-          {trace.tool_calls?.map((tool, index) => (
-            <TraceToolCall key={`tool-${index}`} tool={tool} />
-          ))}
-          {trace.commands?.map((command, index) => (
-            <TraceCommand key={`command-${index}`} command={command} index={index} />
-          ))}
-        </>
-      )}
-    </div>
-  );
-}
-
-function TraceToolCall({ tool }: { tool: MessageTraceToolCall }): JSX.Element {
-  return (
-    <TracePanel kind="tool" title={`tool ${tool.name}`} status="✓">
-      <TracePre label="input" value={tool.input} />
-      {tool.output !== undefined && <TracePre label="output" value={tool.output} />}
-    </TracePanel>
-  );
-}
-
-function TraceCommand({ command, index }: { command: MessageTraceCommand; index: number }): JSX.Element {
-  return (
-    <TracePanel kind="command" title={`command #${index + 1}`} status="✓">
-      <TracePre label="command" value={command.command} />
-      {command.output !== undefined && <TracePre label="output" value={command.output} />}
-    </TracePanel>
-  );
-}
-
-function TracePanel({
-  kind,
-  title,
-  status,
-  children,
-}: {
-  kind: 'reasoning' | 'tool' | 'command';
-  title: string;
-  status: string;
-  children: ReactNode;
-}): JSX.Element {
-  return (
-    <details className="trace-card">
-      <summary className="trace-card-summary">
-        <span className={`trace-card-icon is-${kind}`}>{kind === 'reasoning' ? '{}' : '⌁'}</span>
-        <span className="trace-card-kind">{kind === 'reasoning' ? 'reasoning' : title.split(' ')[0]}</span>
-        <strong>{kind === 'reasoning' ? title : title.replace(/^[^ ]+\s*/, '')}</strong>
-        <span className="trace-card-status">{status}</span>
-      </summary>
-      <div className="trace-card-body">{children}</div>
-    </details>
-  );
-}
-
-function TracePre({ label, value }: { label: string; value: string }): JSX.Element {
-  return (
-    <div className="trace-field">
-      <div className="trace-field-label">
-        {label}
-      </div>
-      <pre className="trace-field-pre">
-        {value || '∅'}
-      </pre>
-    </div>
-  );
-}
-
-function hasMessageTrace(trace: MessageTrace): boolean {
-  return Boolean(trace.thinking?.length || trace.tool_calls?.length || trace.commands?.length);
-}
-
-function hasToolOrCommandTrace(trace: MessageTrace): boolean {
-  return Boolean(trace.tool_calls?.length || trace.commands?.length);
 }
 
 function StreamingCursor(): JSX.Element {

@@ -5,6 +5,10 @@ import type {
   CollaborationMode,
   CollaborationProblemArea,
   CollaborationStage,
+  AgentTimelineEvent,
+  AgentTimelineEventStatus,
+  AgentTimelineEventType,
+  AgentTimelinePayload,
   MessageTrace,
   MessageTraceCommand,
   MessageTraceThinking,
@@ -236,10 +240,12 @@ function sanitizeTrace(value: unknown): MessageTrace | null {
   const thinking = sanitizeTraceThinking(value.thinking);
   const toolCalls = sanitizeTraceToolCalls(value.tool_calls);
   const commands = sanitizeTraceCommands(value.commands);
+  const events = sanitizeTraceEvents(value.events);
   if (thinking) trace.thinking = thinking;
   if (toolCalls) trace.tool_calls = toolCalls;
   if (commands) trace.commands = commands;
-  return trace.thinking || trace.tool_calls || trace.commands ? trace : null;
+  if (events) trace.events = events;
+  return trace.thinking || trace.tool_calls || trace.commands || trace.events ? trace : null;
 }
 
 function sanitizeTraceThinking(value: unknown): MessageTraceThinking[] | null {
@@ -284,6 +290,52 @@ function sanitizeTraceCommands(value: unknown): MessageTraceCommand[] | null {
   });
   const validEntries = entries.filter((entry): entry is MessageTraceCommand => entry !== null);
   return validEntries.length === entries.length && validEntries.length > 0 ? validEntries : null;
+}
+
+function sanitizeTraceEvents(value: unknown): AgentTimelineEvent[] | null {
+  if (!Array.isArray(value)) return null;
+  const entries = value.map(sanitizeTraceEvent).filter((entry): entry is AgentTimelineEvent => entry !== null);
+  return entries.length > 0 ? entries : null;
+}
+
+function sanitizeTraceEvent(value: unknown): AgentTimelineEvent | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string' ||
+    !value.id.trim() ||
+    typeof value.message_id !== 'string' ||
+    !value.message_id.trim() ||
+    typeof value.run_id !== 'string' ||
+    !value.run_id.trim() ||
+    typeof value.agent_id !== 'string' ||
+    !value.agent_id.trim() ||
+    typeof value.seq !== 'number' ||
+    !Number.isInteger(value.seq) ||
+    value.seq < 0 ||
+    !isAgentTimelineEventType(value.type) ||
+    !isAgentTimelineEventStatus(value.status) ||
+    typeof value.title !== 'string' ||
+    !value.title.trim() ||
+    !isRecord(value.payload) ||
+    typeof value.created_at !== 'number' ||
+    !Number.isFinite(value.created_at)
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    message_id: value.message_id,
+    run_id: value.run_id,
+    agent_id: value.agent_id,
+    seq: value.seq,
+    type: value.type,
+    status: value.status,
+    title: value.title,
+    payload: value.payload as AgentTimelinePayload,
+    ...(isRecord(value.raw) ? { raw: value.raw } : {}),
+    created_at: value.created_at,
+  };
 }
 
 function sanitizeTaskReadiness(value: unknown): TaskReadinessMetadata | null {
@@ -425,6 +477,27 @@ function isSenderType(value: unknown): value is MessageReplyMetadata['sender_typ
 
 function isTaskOrigin(value: string): value is TaskCreatedFrom {
   return taskOrigins.has(value as TaskCreatedFrom);
+}
+
+function isAgentTimelineEventType(value: unknown): value is AgentTimelineEventType {
+  return typeof value === 'string' && [
+    'thinking',
+    'assistant_message',
+    'tool_call',
+    'tool_result',
+    'command',
+    'command_output',
+    'file_diff',
+    'plan_update',
+    'web_search',
+    'permission_request',
+    'error',
+    'raw',
+  ].includes(value);
+}
+
+function isAgentTimelineEventStatus(value: unknown): value is AgentTimelineEventStatus {
+  return value === 'started' || value === 'delta' || value === 'completed' || value === 'failed';
 }
 
 function sanitizeMessageAttachmentMetadata(value: unknown): MessageAttachmentMetadata | null {

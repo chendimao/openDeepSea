@@ -1,5 +1,12 @@
 import { parseMessageMetadata } from '../lib/messageMetadata';
-import type { Message, MessageMetadata, PlannerDecision, TaskExecutionIntent } from '../lib/types';
+import type {
+  AgentTimelineEvent,
+  Message,
+  MessageMetadata,
+  MessageTrace,
+  PlannerDecision,
+  TaskExecutionIntent,
+} from '../lib/types';
 
 export interface ReplyTarget {
   messageId: string;
@@ -138,6 +145,158 @@ export function createPlannerDispatchInput(
 
 export function hasDispatchablePlannerSteps(decision: PlannerDecision): boolean {
   return decision.awaiting_user_confirmation && decision.next_steps.length > 0;
+}
+
+export type StreamTraceChannel = 'thinking' | 'tool' | 'command' | 'event';
+
+export function mergeMessageStreamTrace(message: Message, channel: Exclude<StreamTraceChannel, 'event'>, chunk: string): Message {
+  if (!chunk) return message;
+  const metadata = parseMessageMetadata(message.metadata);
+  const trace = appendTraceChunk(metadata.trace, channel, chunk);
+  return {
+    ...message,
+    metadata: JSON.stringify({ ...metadata, trace }),
+  };
+}
+
+export function mergeMessageStreamEvent(message: Message, event: AgentTimelineEvent): Message {
+  const metadata = parseMessageMetadata(message.metadata);
+  const traceEvents = mergeTraceEvents(metadata.trace?.events, [event]);
+  return {
+    ...message,
+    metadata: JSON.stringify({
+      ...metadata,
+      trace: {
+        ...(metadata.trace ?? {}),
+        events: traceEvents,
+      },
+    }),
+  };
+}
+
+export function mergeStreamMessage(
+  message: Message,
+  finalMessage: Message,
+  timelineEvent?: AgentTimelineEvent,
+): Message {
+  const mergedMetadata = mergeFinalTraceMetadata(message.metadata, finalMessage.metadata, timelineEvent);
+  return {
+    ...finalMessage,
+    metadata: mergedMetadata,
+  };
+}
+
+function mergeFinalTraceMetadata(
+  currentMetadata: string | null,
+  nextMetadata: string | null,
+  timelineEvent?: AgentTimelineEvent,
+): string | null {
+  const current = parseMessageMetadata(currentMetadata);
+  const next = parseMessageMetadata(nextMetadata);
+  const currentEvents = current.trace?.events ?? [];
+  const nextEvents = next.trace?.events ?? [];
+  const mergedEvents = mergeTraceEvents(currentEvents, [...nextEvents, ...(timelineEvent ? [timelineEvent] : [])]);
+  if (!current.trace && !next.trace && !timelineEvent) return nextMetadata;
+  return JSON.stringify({
+    ...current,
+    ...next,
+    trace: {
+      ...(current.trace ?? {}),
+      ...(next.trace ?? {}),
+      events: mergedEvents,
+    },
+  });
+}
+
+export function mergeTraceEvents(
+  current: AgentTimelineEvent[] | undefined,
+  incoming: AgentTimelineEvent[],
+): AgentTimelineEvent[] {
+  const byId = new Map<string, AgentTimelineEvent>();
+  for (const event of current ?? []) {
+    if (!event?.id) continue;
+    byId.set(event.id, event);
+  }
+  for (const event of incoming) {
+    if (!event?.id) continue;
+    const existing = byId.get(event.id);
+    byId.set(event.id, existing ? mergeTimelineEvent(existing, event) : event);
+  }
+  return [...byId.values()].sort((a, b) => a.seq - b.seq || a.created_at - b.created_at);
+}
+
+export function mergeTimelineEvent(existing: AgentTimelineEvent, incoming: AgentTimelineEvent): AgentTimelineEvent {
+  return {
+    ...existing,
+    ...incoming,
+    payload: mergeTimelineEventPayload(existing.payload, incoming.payload),
+    raw: incoming.raw ?? existing.raw,
+    created_at: incoming.created_at ?? existing.created_at,
+  };
+}
+
+export function mergeTimelineEventPayload(
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...existing, ...incoming };
+  for (const key of ['text', 'output', 'stdout', 'stderr']) {
+    const existingValue = existing[key];
+    const incomingValue = incoming[key];
+    if (typeof existingValue === 'string' && typeof incomingValue === 'string' && incomingValue.startsWith(existingValue)) {
+      next[key] = incomingValue;
+      continue;
+    }
+    if (typeof existingValue === 'string' && typeof incomingValue === 'string' && existingValue.startsWith(incomingValue)) {
+      next[key] = existingValue;
+      continue;
+    }
+    if (typeof existingValue === 'string' && typeof incomingValue === 'string' && incomingValue.length >= existingValue.length) {
+      next[key] = incomingValue;
+      continue;
+    }
+    if (typeof existingValue === 'string' && typeof incomingValue === 'string') {
+      next[key] = `${existingValue}${incomingValue}`;
+    }
+  }
+  return next;
+}
+
+function appendTraceChunk(
+  trace: MessageTrace | undefined,
+  channel: Exclude<StreamTraceChannel, 'event'>,
+  chunk: string,
+): MessageTrace {
+  if (channel === 'thinking') {
+    const thinking = [...(trace?.thinking ?? [])];
+    const last = thinking[thinking.length - 1];
+    if (last) {
+      thinking[thinking.length - 1] = { text: `${last.text}${chunk}` };
+    } else {
+      thinking.push({ text: chunk });
+    }
+    return { ...trace, thinking };
+  }
+
+  if (channel === 'tool') {
+    const tool_calls = [...(trace?.tool_calls ?? [])];
+    const last = tool_calls[tool_calls.length - 1];
+    if (last && last.name === 'stream') {
+      tool_calls[tool_calls.length - 1] = { ...last, input: `${last.input}${chunk}` };
+    } else {
+      tool_calls.push({ name: 'stream', input: chunk });
+    }
+    return { ...trace, tool_calls };
+  }
+
+  const commands = [...(trace?.commands ?? [])];
+  const last = commands[commands.length - 1];
+  if (last && last.command === 'stream') {
+    commands[commands.length - 1] = { ...last, output: `${last.output ?? ''}${chunk}` };
+  } else {
+    commands.push({ command: 'stream', output: chunk });
+  }
+  return { ...trace, commands };
 }
 
 function isWorkflowEventMetadata(metadata: MessageMetadata): boolean {

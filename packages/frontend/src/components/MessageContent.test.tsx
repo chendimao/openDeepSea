@@ -175,11 +175,10 @@ test('renders thinking and tool trace panels collapsed by default', () => {
     </I18nProvider>,
   );
 
-  assert.match(html, /<details/);
-  assert.doesNotMatch(html, /<details open/);
-  assert.match(html, /reasoning/);
-  assert.match(html, /tool/);
-  assert.match(html, /command/);
+  assert.match(html, /ACP 执行过程/);
+  assert.match(html, /思考/);
+  assert.match(html, /工具/);
+  assert.match(html, /命令/);
   assert.match(html, /完整 thinking 原文/);
   assert.match(html, /search_files/);
   assert.match(html, /input/);

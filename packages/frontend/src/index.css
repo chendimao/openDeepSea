@@ -4244,6 +4244,145 @@
     line-height: 1.65;
   }
 
+  .agent-timeline {
+    margin-top: 0.75rem;
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .agent-timeline-card {
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 92%, transparent), color-mix(in srgb, var(--color-surface-muted) 72%, transparent)),
+      radial-gradient(circle at 16% 0%, color-mix(in srgb, var(--color-accent) 15%, transparent), transparent 34%);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .agent-timeline-summary {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    cursor: pointer;
+    list-style: none;
+    padding: 8px 11px;
+    user-select: none;
+  }
+
+  .agent-timeline-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .agent-timeline-chevron {
+    display: inline-flex;
+    color: var(--color-fg-muted);
+  }
+
+  .agent-timeline-kind {
+    border-radius: 999px;
+    padding: 2px 7px;
+    background: color-mix(in srgb, var(--color-code-bg) 82%, transparent);
+    color: var(--color-fg-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .agent-timeline-summary strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--color-fg);
+    font-size: 12.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .agent-timeline-status {
+    color: var(--color-success);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+  }
+
+  .agent-timeline-body {
+    border-top: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
+    padding: 10px 11px 11px;
+  }
+
+  .agent-timeline-pre,
+  .agent-timeline-kv dd {
+    margin: 0;
+    max-height: 260px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--color-fg);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.65;
+  }
+
+  .agent-timeline-kv {
+    display: grid;
+    gap: 8px;
+  }
+
+  .agent-timeline-kv > div {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .agent-timeline-kv dt {
+    color: var(--color-fg-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+  }
+
+  .agent-timeline-diff {
+    max-height: 320px;
+    overflow: auto;
+    border-radius: 10px;
+    background: var(--color-code-bg);
+    padding: 6px 0;
+  }
+
+  .diff-line {
+    display: block;
+    padding: 0 10px;
+    white-space: pre;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+
+  .diff-line.is-added {
+    background: color-mix(in srgb, var(--color-success) 14%, transparent);
+    color: var(--color-success);
+  }
+
+  .diff-line.is-removed {
+    background: color-mix(in srgb, var(--color-danger) 13%, transparent);
+    color: var(--color-danger);
+  }
+
+  .agent-timeline-plan {
+    display: grid;
+    gap: 7px;
+  }
+
+  .agent-timeline-plan-item {
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: color-mix(in srgb, var(--color-surface-muted) 76%, transparent);
+  }
+
+  .agent-timeline-plan-item strong {
+    font-size: 12.5px;
+  }
+
   @media (max-width: 640px) {
     .json-block-header {
       align-items: flex-start;
@@ -4281,6 +4420,19 @@
     }
 
     .trace-field {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 5px;
+    }
+
+    .agent-timeline-summary {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .agent-timeline-kind {
+      display: none;
+    }
+
+    .agent-timeline-kv > div {
       grid-template-columns: minmax(0, 1fr);
       gap: 5px;
     }

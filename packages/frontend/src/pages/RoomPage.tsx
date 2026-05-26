@@ -5,7 +5,14 @@ import { BookmarkPlus, Brain, ChevronDown, ChevronLeft, Download, Eye, FileText,
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
-import type { AgentRun, Message, MessageAttachmentMetadata, MessageTrace, PlannerDecision, Room, RoomAgent } from '../lib/types';
+import type {
+  AgentRun,
+  Message,
+  MessageAttachmentMetadata,
+  PlannerDecision,
+  Room,
+  RoomAgent,
+} from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
 import { recordRecentRoomVisit } from '../lib/recentRooms';
@@ -48,15 +55,18 @@ import {
 } from '../components/ai-elements/Message';
 import {
   createDefaultReplyTarget,
+  mergeMessageStreamEvent,
+  mergeMessageStreamTrace,
+  mergeStreamMessage,
   createPlannerDispatchInput,
   createReplyTarget,
   hasDispatchablePlannerSteps,
   type ReplyTarget,
+  type StreamTraceChannel,
 } from './roomPageLogic';
 
 type RoomFeatureTab = 'chat' | 'files';
 type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[]; replyToMessageId?: string };
-type StreamTraceChannel = Exclude<NonNullable<Extract<WsServerEvent, { type: 'message:stream' }>['channel']>, 'answer'>;
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -189,8 +199,11 @@ export function RoomPage() {
           const next = prev.map((m) => {
             if (m.id !== event.messageId) return m;
             matchedMessage = true;
-            if (event.done && event.message) return event.message;
-            if (event.channel && event.channel !== 'answer') {
+            if (event.done && event.message) return mergeStreamMessage(m, event.message, event.event);
+            if (event.channel === 'event' && event.event) {
+              return mergeMessageStreamEvent(m, event.event);
+            }
+            if (event.channel === 'thinking' || event.channel === 'tool' || event.channel === 'command') {
               return mergeMessageStreamTrace(m, event.channel, event.chunk);
             }
             fullContent = m.content + event.chunk;
@@ -383,49 +396,6 @@ function dedupeMessages(messages: Message[]): Message[] {
   return [...byId.values()].sort(
     (a, b) => a.created_at - b.created_at,
   );
-}
-
-function mergeMessageStreamTrace(message: Message, channel: StreamTraceChannel, chunk: string): Message {
-  if (!chunk) return message;
-  const metadata = parseMessageMetadata(message.metadata);
-  const trace = appendTraceChunk(metadata.trace, channel, chunk);
-  return {
-    ...message,
-    metadata: JSON.stringify({ ...metadata, trace }),
-  };
-}
-
-function appendTraceChunk(trace: MessageTrace | undefined, channel: StreamTraceChannel, chunk: string): MessageTrace {
-  if (channel === 'thinking') {
-    const thinking = [...(trace?.thinking ?? [])];
-    const last = thinking[thinking.length - 1];
-    if (last) {
-      thinking[thinking.length - 1] = { text: `${last.text}${chunk}` };
-    } else {
-      thinking.push({ text: chunk });
-    }
-    return { ...trace, thinking };
-  }
-
-  if (channel === 'tool') {
-    const tool_calls = [...(trace?.tool_calls ?? [])];
-    const last = tool_calls[tool_calls.length - 1];
-    if (last && last.name === 'stream') {
-      tool_calls[tool_calls.length - 1] = { ...last, input: `${last.input}${chunk}` };
-    } else {
-      tool_calls.push({ name: 'stream', input: chunk });
-    }
-    return { ...trace, tool_calls };
-  }
-
-  const commands = [...(trace?.commands ?? [])];
-  const last = commands[commands.length - 1];
-  if (last && last.command === 'stream') {
-    commands[commands.length - 1] = { ...last, output: `${last.output ?? ''}${chunk}` };
-  } else {
-    commands.push({ command: 'stream', output: chunk });
-  }
-  return { ...trace, commands };
 }
 
 function addStreamingMessageId(prev: Set<string>, messageId: string): Set<string> {

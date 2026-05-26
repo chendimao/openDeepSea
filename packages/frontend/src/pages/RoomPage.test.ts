@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Message } from '../lib/types';
+import type { AgentTimelineEvent } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import {
   createDefaultReplyTarget,
   createPlannerDispatchInput,
   hasDispatchablePlannerSteps,
   createReplyTarget,
+  mergeMessageStreamEvent,
+  mergeMessageStreamTrace,
+  mergeTimelineEventPayload,
+  mergeTraceEvents,
 } from './roomPageLogic';
 
 test('createDefaultReplyTarget returns the latest non-streaming agent message', () => {
@@ -145,6 +150,87 @@ test('hasDispatchablePlannerSteps only enables continue when planner has concret
     next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
     awaiting_user_confirmation: true,
   }), true);
+});
+
+test('mergeTraceEvents merges duplicate event ids and appends streaming text fields', () => {
+  const original: AgentTimelineEvent = {
+    id: 'run-1:1',
+    message_id: 'message-1',
+    run_id: 'run-1',
+    agent_id: 'planner',
+    seq: 1,
+    type: 'thinking',
+    status: 'delta',
+    title: '思考过程',
+    payload: { text: 'abc', stdout: 'one', stderr: 'err' },
+    created_at: 1000,
+  };
+  const incoming: AgentTimelineEvent = {
+    ...original,
+    payload: { text: 'abcd', stdout: 'one-two', stderr: 'err-two', output: 'done' },
+    created_at: 1001,
+  };
+
+  const merged = mergeTraceEvents([original], [incoming]);
+
+  assert.equal(merged[0]?.payload.text, 'abcd');
+  assert.equal(merged[0]?.payload.stdout, 'one-two');
+  assert.equal(merged[0]?.payload.stderr, 'err-two');
+  assert.equal(merged[0]?.payload.output, 'done');
+});
+
+test('mergeTimelineEventPayload preserves structured fields while appending text-like values', () => {
+  const payload = mergeTimelineEventPayload(
+    { text: 'abc', output: '1', stdout: 'x', stderr: 'y', nested: { a: 1 } },
+    { text: 'abcd', output: '12', stdout: 'xyz', stderr: 'yz', nested: { a: 2 } },
+  );
+
+  assert.equal(payload.text, 'abcd');
+  assert.equal(payload.output, '12');
+  assert.equal(payload.stdout, 'xyz');
+  assert.equal(payload.stderr, 'yz');
+  assert.deepEqual(payload.nested, { a: 2 });
+});
+
+test('mergeMessageStreamEvent appends trace events into message metadata', () => {
+  const message = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '正文',
+    metadata: JSON.stringify({ trace: { thinking: [{ text: 'keep' }] } }),
+  });
+  const event: AgentTimelineEvent = {
+    id: 'run-1:1',
+    message_id: 'agent-message',
+    run_id: 'run-1',
+    agent_id: 'planner',
+    seq: 1,
+    type: 'plan_update',
+    status: 'completed',
+    title: '计划更新',
+    payload: { status: 'completed', plan: [{ title: 'A' }] },
+    created_at: 1000,
+  };
+
+  const merged = mergeMessageStreamEvent(message, event);
+  const metadata = parseMessageMetadata(merged.metadata);
+
+  assert.equal(metadata.trace?.thinking?.[0]?.text, 'keep');
+  assert.equal(metadata.trace?.events?.[0]?.id, 'run-1:1');
+});
+
+test('mergeMessageStreamTrace keeps legacy trace channels intact', () => {
+  const message = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '正文',
+    metadata: JSON.stringify({ trace: { thinking: [{ text: 'keep' }] } }),
+  });
+
+  const merged = mergeMessageStreamTrace(message, 'thinking', '追加');
+  const metadata = parseMessageMetadata(merged.metadata);
+
+  assert.equal(metadata.trace?.thinking?.[0]?.text, 'keep追加');
 });
 
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & {

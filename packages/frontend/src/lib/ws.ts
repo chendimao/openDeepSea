@@ -1,4 +1,14 @@
-import type { AgentRun, AgentRunStatus, Message, RoomAgent, Task, TaskArtifact, WorkflowRun, WorkflowStep } from './types';
+import type {
+  AgentRun,
+  AgentRunStatus,
+  AgentTimelineEvent,
+  Message,
+  RoomAgent,
+  Task,
+  TaskArtifact,
+  WorkflowRun,
+  WorkflowStep,
+} from './types';
 
 export type WsServerEvent =
   | { type: 'message:new'; roomId: string; message: Message }
@@ -10,7 +20,8 @@ export type WsServerEvent =
       done: boolean;
       seq?: number;
       runId?: string;
-      channel?: 'answer' | 'thinking' | 'tool' | 'command';
+      channel?: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      event?: AgentTimelineEvent;
       status?: 'streaming' | AgentRunStatus;
       error?: string | null;
       message?: Message;

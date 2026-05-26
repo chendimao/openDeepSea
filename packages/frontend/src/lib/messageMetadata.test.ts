@@ -136,6 +136,70 @@ test('parseMessageMetadata accepts collaboration decision metadata', () => {
   assert.equal(parsed.collaboration_decision?.stages[1]?.stage, 'review');
 });
 
+test('parseMessageMetadata keeps valid trace events and ignores invalid ones', () => {
+  const metadata = JSON.stringify({
+    trace: {
+      events: [
+        {
+          id: 'run-1:1',
+          message_id: 'message-1',
+          run_id: 'run-1',
+          agent_id: 'planner',
+          seq: 1,
+          type: 'plan_update',
+          status: 'completed',
+          title: '更新计划',
+          payload: { status: 'completed', plan: [{ title: 'A' }] },
+          created_at: 1000,
+        },
+        {
+          id: '',
+          message_id: 'message-1',
+          run_id: 'run-1',
+          agent_id: 'planner',
+          seq: 2,
+          type: 'raw',
+          status: 'completed',
+          title: '坏事件',
+          payload: {},
+          created_at: 1001,
+        },
+      ],
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.trace?.events?.length, 1);
+  assert.equal(parsed.trace?.events?.[0]?.type, 'plan_update');
+  assert.equal(parsed.trace?.events?.[0]?.payload.status, 'completed');
+});
+
+test('parseMessageMetadata rejects trace events with invalid payload shape', () => {
+  const metadata = JSON.stringify({
+    trace: {
+      events: [
+        {
+          id: 'run-1:1',
+          message_id: 'message-1',
+          run_id: 'run-1',
+          agent_id: 'planner',
+          seq: 1,
+          type: 'plan_update',
+          status: 'completed',
+          title: '更新计划',
+          payload: null,
+          created_at: 1000,
+        },
+      ],
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.trace, undefined);
+});
+
 test('parseMessageMetadata accepts collaboration decision stages without assigned agents', () => {
   const metadata = JSON.stringify({
     event_type: 'collaboration_decision',
@@ -351,6 +415,33 @@ test('parseMessageMetadata accepts planner decision and structured trace metadat
   assert.equal(parsed.trace?.thinking?.[0]?.text, '完整 thinking 原文');
   assert.equal(parsed.trace?.tool_calls?.[0]?.name, 'search_files');
   assert.equal(parsed.trace?.commands?.[0]?.command, 'rg -n "model" packages/frontend/src');
+});
+
+test('parseMessageMetadata keeps trace events alongside legacy trace fields', () => {
+  const metadata = JSON.stringify({
+    trace: {
+      thinking: [{ text: 'keep me' }],
+      events: [
+        {
+          id: 'run-1:1',
+          message_id: 'message-1',
+          run_id: 'run-1',
+          agent_id: 'planner',
+          seq: 1,
+          type: 'raw',
+          status: 'completed',
+          title: '原始事件',
+          payload: { stdout: 'hello' },
+          created_at: 2000,
+        },
+      ],
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.trace?.thinking?.[0]?.text, 'keep me');
+  assert.equal(parsed.trace?.events?.[0]?.type, 'raw');
 });
 
 test('parseMessageMetadata ignores invalid planner decisions and invalid trace rows', () => {
