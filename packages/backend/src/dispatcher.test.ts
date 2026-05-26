@@ -30,6 +30,7 @@ const {
   buildPromptWithMessageAttachments,
   dispatchUserMessage,
   respondAsAgent,
+  setPlannerExecutionPlanInvokerForTest,
 } = await import('./dispatcher.js');
 const { router } = await import('./routes.js');
 const { setWorkflowConversationDeps } = await import('./workflows/conversation.js');
@@ -42,6 +43,7 @@ app.use('/api', router);
 test.afterEach(() => {
   process.env.LANGGRAPH_WORKFLOW_ENABLED = '0';
   setWorkflowConversationDeps({});
+  setPlannerExecutionPlanInvokerForTest(undefined);
 });
 
 test('buildPromptWithMessageAttachments appends readable attachment context', () => {
@@ -1518,6 +1520,21 @@ test('planner dispatch defers review steps until execution result returns to pla
   } satisfies SessionAdapter;
 
   try {
+    let plannerInputSeen = false;
+    setPlannerExecutionPlanInvokerForTest({
+      async invoke(input) {
+        plannerInputSeen = input.targets.length === 2 &&
+          input.targets[0]?.step.agent_id === 'frontend-executor' &&
+          input.targets[1]?.step.agent_id === 'qa-tester' &&
+          input.sourceMessage?.content.includes('计数器') === true;
+        return {
+          mode: 'serial',
+          dispatch_step_indexes: [0],
+          deferred_step_indexes: [1],
+          rationale: '测试依赖前端开发结果，必须串行。',
+        };
+      },
+    });
     const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
@@ -1538,6 +1555,7 @@ test('planner dispatch defers review steps until execution result returns to pla
     const runs = agentRunRepo.listByRoom(room.id, 20);
 
     assert.equal(response.status, 200);
+    assert.equal(plannerInputSeen, true);
     assert.equal(body.dispatched, 1);
     assert.deepEqual(body.deferred_steps?.map((step) => step.agent_id), ['qa-tester']);
     assert.equal(runs.some((run) => run.agent_id === 'frontend-executor'), true);

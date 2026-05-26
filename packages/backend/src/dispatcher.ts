@@ -1,9 +1,10 @@
 import { resolve, sep } from 'node:path';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import type { AcpStreamTrace } from './acp/types.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
-import { generateModelChatReply, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
+import { generateModelChatReply, invokeConfiguredModelText, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { classifyAgentDocument } from './agent-document-classifier.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
@@ -29,6 +30,7 @@ import type {
   MessageTrace,
   MessageReplyMetadata,
   PlannerDecision,
+  Room,
   RoomAgent,
   WorkflowStage,
 } from './types.js';
@@ -46,7 +48,32 @@ interface PlannerDispatchResult {
   deferred_steps: PlannerDecision['next_steps'];
 }
 
-type PlannerStepKind = 'execute' | 'review' | 'other';
+interface PlannerExecutionPlanDecision {
+  mode: 'parallel' | 'serial';
+  dispatch_step_indexes: number[];
+  deferred_step_indexes: number[];
+  rationale: string;
+}
+
+export interface PlannerExecutionPlanInvoker {
+  invoke(input: {
+    room: Room;
+    targets: PlannerDispatchTarget[];
+    sourceMessage: Message | undefined;
+  }): Promise<PlannerExecutionPlanDecision | null>;
+}
+
+interface PlannerDispatchTarget {
+  agent: RoomAgent;
+  prompt: string;
+  step: PlannerDecision['next_steps'][number];
+}
+
+let plannerExecutionPlanInvoker: PlannerExecutionPlanInvoker | undefined;
+
+export function setPlannerExecutionPlanInvokerForTest(invoker?: PlannerExecutionPlanInvoker): void {
+  plannerExecutionPlanInvoker = invoker;
+}
 
 const AGENT_MATCH_SYNONYMS: Record<string, string[]> = {
   runtime: ['computer', 'cli', 'troubleshooting', 'automation', 'devops', 'ci-cd', 'deployment', 'observability'],
@@ -973,7 +1000,11 @@ async function dispatchPlannerDecision(args: {
   const project = projectRepo.get(room.project_id);
   if (!project) throw new Error('project not found');
   const { targets, addedAgents, missingAgentIds } = resolvePlannerDispatchTargets(args.roomId, args.decision);
-  const executionPlan = resolvePlannerStepExecutionPlan(targets);
+  const executionPlan = await resolvePlannerStepExecutionPlan({
+    room,
+    sourceMessage: messageRepo.get(args.sourceMessageId),
+    targets,
+  });
   if (executionPlan.dispatchTargets.length === 0 || missingAgentIds.length > 0) {
     const requestedAgentIds = args.decision.next_steps.map((step) => step.agent_id).filter(Boolean);
     throw new Error(
@@ -1005,51 +1036,145 @@ async function dispatchPlannerDecision(args: {
   };
 }
 
-function resolvePlannerStepExecutionPlan(
-  targets: { agent: RoomAgent; prompt: string; step: PlannerDecision['next_steps'][number] }[],
-): {
+async function resolvePlannerStepExecutionPlan(input: {
+  room: Room;
+  sourceMessage: Message | undefined;
+  targets: PlannerDispatchTarget[];
+}): Promise<{
   dispatchTargets: { agent: RoomAgent; prompt: string }[];
   deferredSteps: PlannerDecision['next_steps'];
-} {
-  const firstReviewIndex = targets.findIndex((target) => classifyPlannerStep(target) === 'review');
-  const selected = firstReviewIndex === -1 ? targets : targets.slice(0, firstReviewIndex);
-  const deferred = firstReviewIndex === -1 ? [] : targets.slice(firstReviewIndex);
-  const dispatchTargets = selected.length > 0 ? selected : targets.slice(0, 1);
-  const deferredSteps = (selected.length > 0 ? deferred : targets.slice(1)).map((target) => target.step);
+}> {
+  const llmDecision = await resolvePlannerExecutionPlanWithModel(input);
+  const selectedIndexes = sanitizePlannerExecutionIndexes(
+    llmDecision?.dispatch_step_indexes,
+    input.targets.length,
+  );
+  const fallbackIndexes = input.targets.length > 0 ? [0] : [];
+  const dispatchIndexes = selectedIndexes.length > 0 ? selectedIndexes : fallbackIndexes;
+  const dispatchIndexSet = new Set(dispatchIndexes);
+  const deferredIndexes = sanitizePlannerExecutionIndexes(
+    llmDecision?.deferred_step_indexes,
+    input.targets.length,
+  ).filter((index) => !dispatchIndexSet.has(index));
+  const coveredIndexSet = new Set([...dispatchIndexes, ...deferredIndexes]);
+  for (let index = 0; index < input.targets.length; index += 1) {
+    if (!coveredIndexSet.has(index)) deferredIndexes.push(index);
+  }
+
   return {
-    dispatchTargets: dispatchTargets.map((target) => ({ agent: target.agent, prompt: target.prompt })),
-    deferredSteps,
+    dispatchTargets: dispatchIndexes.map((index) => input.targets[index]).filter(isPlannerDispatchTarget)
+      .map((target) => ({ agent: target.agent, prompt: target.prompt })),
+    deferredSteps: deferredIndexes.map((index) => input.targets[index]).filter(isPlannerDispatchTarget)
+      .map((target) => target.step),
   };
 }
 
-function classifyPlannerStep(target: {
-  agent: RoomAgent;
-  prompt: string;
-  step: PlannerDecision['next_steps'][number];
-}): PlannerStepKind {
-  const role = target.agent.workflow_role;
-  const text = `${target.step.agent_id} ${target.step.goal} ${target.agent.agent_name} ${target.agent.agent_role ?? ''}`.toLowerCase();
-  if (
-    role === 'reviewer' ||
-    role === 'acceptor' ||
-    /review|reviewer|qa|test|tester|accept|验收|审查|测试|回归|验证/.test(text)
-  ) {
-    return 'review';
+function isPlannerDispatchTarget(value: PlannerDispatchTarget | undefined): value is PlannerDispatchTarget {
+  return Boolean(value);
+}
+
+async function resolvePlannerExecutionPlanWithModel(input: {
+  room: Room;
+  sourceMessage: Message | undefined;
+  targets: PlannerDispatchTarget[];
+}): Promise<PlannerExecutionPlanDecision | null> {
+  const invoker = plannerExecutionPlanInvoker ?? defaultPlannerExecutionPlanInvoker;
+  try {
+    return await invoker.invoke(input);
+  } catch (err) {
+    console.warn(`[planner-dispatch] LLM execution plan failed, falling back to serial: ${(err as Error).message}`);
+    return null;
   }
-  if (
-    role === 'executor' ||
-    /execute|executor|implement|frontend|backend|dev|develop|fix|build|新增|实现|开发|修复|前端|后端/.test(text)
-  ) {
-    return 'execute';
+}
+
+const defaultPlannerExecutionPlanInvoker: PlannerExecutionPlanInvoker = {
+  async invoke(input) {
+    if (!isModelChatConfigured()) return null;
+    const text = await invokeConfiguredModelText(buildPlannerExecutionPlanMessages(input));
+    return parsePlannerExecutionPlanDecision(text);
+  },
+};
+
+function buildPlannerExecutionPlanMessages(input: {
+  room: Room;
+  sourceMessage: Message | undefined;
+  targets: PlannerDispatchTarget[];
+}): Array<SystemMessage | HumanMessage> {
+  return [
+    new SystemMessage([
+      '你是 OpenDeepSea 的调度策略模型。',
+      '任务：判断 planner_decision.next_steps 应该第一批并行执行哪些步骤，哪些步骤必须等第一批结果返回 planner 后再执行。',
+      '必须基于任务语义、智能体角色、目标依赖来判断串行或并行，不要用固定关键词规则。',
+      '如果某个步骤是在验证、测试、审查、验收另一个步骤的产物，必须暂缓到后续阶段。',
+      '如果多个步骤互不依赖、可以同时产生独立结果，可以并行执行。',
+      '只输出 JSON，不要输出 Markdown。',
+      'JSON 结构：{"mode":"parallel|serial","dispatch_step_indexes":[0],"deferred_step_indexes":[1],"rationale":"简短原因"}',
+    ].join('\n')),
+    new HumanMessage(JSON.stringify({
+      room: {
+        id: input.room.id,
+        name: input.room.name,
+        description: input.room.description,
+      },
+      source_message: input.sourceMessage
+        ? {
+          id: input.sourceMessage.id,
+          content: input.sourceMessage.content,
+        }
+        : null,
+      next_steps: input.targets.map((target, index) => ({
+        index,
+        agent_id: target.step.agent_id,
+        goal: target.step.goal,
+        resolved_agent: {
+          agent_id: target.agent.agent_id,
+          name: target.agent.agent_name,
+          role: target.agent.workflow_role,
+          description: target.agent.agent_role,
+          capabilities: target.agent.capabilities,
+          runtime_backend: target.agent.runtime_backend,
+          memory_scope: target.agent.memory_scope,
+        },
+      })),
+    }, null, 2)),
+  ];
+}
+
+function parsePlannerExecutionPlanDecision(text: string): PlannerExecutionPlanDecision | null {
+  const json = extractJsonObjectCandidates(text)[0];
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (!isRecord(parsed)) return null;
+    const mode = parsed.mode === 'parallel' || parsed.mode === 'serial' ? parsed.mode : 'serial';
+    const dispatch = Array.isArray(parsed.dispatch_step_indexes) ? parsed.dispatch_step_indexes : [];
+    const deferred = Array.isArray(parsed.deferred_step_indexes) ? parsed.deferred_step_indexes : [];
+    return {
+      mode,
+      dispatch_step_indexes: dispatch.filter((item): item is number => Number.isInteger(item)),
+      deferred_step_indexes: deferred.filter((item): item is number => Number.isInteger(item)),
+      rationale: typeof parsed.rationale === 'string' ? parsed.rationale : '',
+    };
+  } catch {
+    return null;
   }
-  return 'other';
+}
+
+function sanitizePlannerExecutionIndexes(value: unknown, length: number): number[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<number>();
+  for (const item of value) {
+    if (!Number.isInteger(item) || item < 0 || item >= length || seen.has(item)) continue;
+    seen.add(item);
+  }
+  return Array.from(seen);
 }
 
 function resolvePlannerDispatchTargets(
   roomId: string,
   decision: PlannerDecision,
 ): {
-  targets: { agent: RoomAgent; prompt: string; step: PlannerDecision['next_steps'][number] }[];
+  targets: PlannerDispatchTarget[];
   addedAgents: PlannerDispatchAddedAgent[];
   missingAgentIds: string[];
 } {
@@ -1092,7 +1217,7 @@ function resolvePlannerDispatchTargets(
       const agent = agentsById.get(step.agent_id);
       return agent ? { agent, prompt: step.goal, step } : null;
     })
-    .filter((target): target is { agent: RoomAgent; prompt: string; step: PlannerDecision['next_steps'][number] } =>
+    .filter((target): target is PlannerDispatchTarget =>
       Boolean(target),
     );
 
