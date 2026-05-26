@@ -84,9 +84,6 @@ export function ProjectPage() {
           )}
           <div className="mt-4 flex items-center gap-5 text-[12px] font-mono text-[var(--color-fg-muted)]">
             <span>{t('project.stats.rooms', { count: project.stats?.rooms ?? 0 })}</span>
-            <span>{t('project.stats.tasks', { count: project.stats?.tasks ?? 0 })}</span>
-            <span>{t('project.stats.done', { count: project.stats?.tasksDone ?? 0 })}</span>
-            <span>{t('project.stats.inProgress', { count: project.stats?.tasksInProgress ?? 0 })}</span>
           </div>
         </div>
       </header>

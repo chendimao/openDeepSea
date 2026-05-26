@@ -3,7 +3,6 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import {
   Bot,
-  BriefcaseBusiness,
   FolderKanban,
   Home,
   MessageCircle,
@@ -11,7 +10,6 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  SquareCheck,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -198,13 +196,6 @@ function ProjectSidebar({
         <SidebarLink to="/chat" icon={MessageCircle} label={t('shell.nav.chat')} />
         <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} />
         <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} />
-        <SidebarLink
-          to={currentProject ? `/projects/${currentProject.id}` : '/'}
-          icon={SquareCheck}
-          label={t('shell.nav.tasks')}
-          inactive={!currentProject}
-        />
-        <SidebarLink to="/workflow" icon={BriefcaseBusiness} label={t('shell.nav.workflow')} />
         <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} />
       </div>
 

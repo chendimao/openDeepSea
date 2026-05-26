@@ -2202,251 +2202,76 @@ function formatUnknownError(error: unknown): string {
   return String(error);
 }
 
+function respondPureAcpDisabled(res: Response, feature: string): void {
+  res.status(410).json({
+    error: `pure ACP mode enabled: ${feature} is disabled`,
+  });
+}
+
 // ---------- Workflows ----------
 router.post('/tasks/:id/workflows', async (req, res) => {
-  try {
-    if (getLangGraphWorkflowConfig().enabled) {
-      const task = taskRepo.get(req.params.id);
-      if (!task) return res.status(404).json({ error: 'task not found' });
-      const workflow = startWorkflowWithConversation({
-        roomId: task.room_id,
-        taskId: task.id,
-        source: 'task_button',
-      });
-      return res.status(202).json(workflow);
-    }
-    const workflow = await workflowOrchestrator.start(req.params.id);
-    return res.status(201).json(workflow);
-  } catch (err) {
-    const error = err as Error & { status?: number };
-    return res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
-  }
+  respondPureAcpDisabled(res, 'workflow start route');
 });
 
 router.post('/rooms/:roomId/tasks/:taskId/workflows/start-with-conversation', (req, res) => {
-  const parsed = workflowStartConversationSchema.safeParse(req.body ?? {});
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  try {
-    const workflow = startWorkflowWithConversation({
-      roomId: req.params.roomId,
-      taskId: req.params.taskId,
-      content: parsed.data.content,
-      senderId: parsed.data.sender_id,
-      senderName: parsed.data.sender_name,
-      sourceMessageId: parsed.data.source_message_id,
-      source: parsed.data.source,
-    });
-    res.status(202).json(workflow);
-  } catch (err) {
-    const error = err as Error & { status?: number };
-    res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
-  }
+  respondPureAcpDisabled(res, 'workflow conversation start route');
 });
 
 router.get('/tasks/:id/workflows', (req, res) => {
-  res.json(workflowRepo.listByTask(req.params.id));
+  respondPureAcpDisabled(res, 'task workflows route');
 });
 
 router.get('/workflows/:id', (req, res) => {
-  const detail = workflowOrchestrator.detail(req.params.id);
-  if (!detail) return res.status(404).json({ error: 'not found' });
-  res.json(detail);
+  respondPureAcpDisabled(res, 'workflow detail route');
 });
 
 router.get('/workflows/:id/context', (req, res) => {
-  const workflow = workflowRepo.getRun(req.params.id);
-  if (!workflow) return res.status(404).json({ error: 'not found' });
-  const entries = workflowContextRepo.listByWorkflow(workflow.id);
-  res.json({
-    entries,
-    total_token_estimate: entries.reduce((sum, entry) => sum + entry.token_estimate, 0),
-    total_summary_chars: entries.reduce((sum, entry) => sum + entry.summary_char_count, 0),
-  });
+  respondPureAcpDisabled(res, 'workflow context route');
 });
 
 router.post('/workflows/:id/approve-plan', async (req, res) => {
-  try {
-    const existing = workflowRepo.getRun(req.params.id);
-    if (getLangGraphWorkflowConfig().enabled && existing?.graph_version) {
-      const workflow = approveWorkflowPlanWithConversation({
-        roomId: existing.room_id,
-        workflowId: existing.id,
-        source: 'approval_button',
-      });
-      return res.status(202).json(workflow);
-    }
-    const workflow = await workflowOrchestrator.approvePlan(req.params.id, 'user');
-    return res.json(workflow);
-  } catch (err) {
-    const error = err as Error & { status?: number };
-    return res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
-  }
+  respondPureAcpDisabled(res, 'workflow approve route');
 });
 
 router.post('/rooms/:roomId/workflows/:workflowId/approve-plan-with-conversation', (req, res) => {
-  const parsed = workflowApprovalConversationSchema.safeParse(req.body ?? {});
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  try {
-    const workflow = approveWorkflowPlanWithConversation({
-      roomId: req.params.roomId,
-      workflowId: req.params.workflowId,
-      content: parsed.data.content,
-      senderId: parsed.data.sender_id,
-      senderName: parsed.data.sender_name,
-      source: parsed.data.source,
-    });
-    res.status(202).json(workflow);
-  } catch (err) {
-    const error = err as Error & { status?: number };
-    res.status(error.status ?? workflowErrorStatus(error)).json({ error: error.message });
-  }
+  respondPureAcpDisabled(res, 'workflow conversation approve route');
 });
 
 router.post('/workflows/:id/decisions', async (req, res) => {
-  const schema = z.object({
-    answers: z.array(
-      z.object({
-        decisionId: z.string().min(1),
-        optionId: z.string().min(1),
-      }),
-    ),
-  });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  try {
-    const workflow = await workflowOrchestrator.submitDecisions(req.params.id, parsed.data.answers, 'user');
-    res.json(workflow);
-  } catch (err) {
-    const error = err as Error;
-    res.status(workflowErrorStatus(error)).json({ error: error.message });
-  }
+  respondPureAcpDisabled(res, 'workflow decisions route');
 });
 
 router.post('/workflows/:id/retry-step', async (req, res) => {
-  try {
-    const workflow = await workflowOrchestrator.retryStep(req.params.id);
-    res.json(workflow);
-  } catch (err) {
-    const error = err as Error;
-    res.status(workflowErrorStatus(error)).json({ error: error.message });
-  }
+  respondPureAcpDisabled(res, 'workflow retry route');
 });
 
 router.post('/workflows/:id/cancel', async (req, res) => {
-  try {
-    const workflow = await workflowOrchestrator.cancel(req.params.id);
-    res.json(workflow);
-  } catch (err) {
-    const error = err as Error;
-    res.status(workflowErrorStatus(error)).json({ error: error.message });
-  }
+  respondPureAcpDisabled(res, 'workflow cancel route');
 });
 
 // ---------- Tasks ----------
 router.get('/projects/:projectId/tasks', (req, res) => {
-  res.json(taskRepo.listByProject(req.params.projectId));
+  respondPureAcpDisabled(res, 'project tasks route');
 });
 
 router.get('/rooms/:roomId/tasks', (req, res) => {
-  res.json(taskRepo.listByRoom(req.params.roomId));
+  respondPureAcpDisabled(res, 'room tasks route');
 });
 
 router.post('/rooms/:roomId/tasks/conversation', (req, res) => {
-  const parsed = conversationTaskCreateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  try {
-    const result = createTaskWithConversation({
-      roomId: req.params.roomId,
-      actor: {
-        sender_id: parsed.data.sender_id,
-        sender_name: parsed.data.sender_name,
-      },
-      origin: parsed.data.origin,
-      sourceMessageId: parsed.data.source_message_id ?? null,
-      userFacingContent: parsed.data.user_message,
-      taskInput: {
-        title: parsed.data.title,
-        description: parsed.data.description,
-        priority: parsed.data.priority,
-        interaction_mode: parsed.data.interaction_mode,
-        assigned_agent_id: parsed.data.assigned_agent_id,
-        parent_task_id: parsed.data.parent_task_id,
-      },
-    });
-    res.status(201).json(result);
-  } catch (err) {
-    const message = (err as Error).message;
-    res.status(message === 'room not found' ? 404 : 400).json({ error: message });
-  }
+  respondPureAcpDisabled(res, 'task conversation route');
 });
 
 router.post('/rooms/:roomId/tasks', (req, res) => {
-  const room = roomRepo.get(req.params.roomId);
-  if (!room) return res.status(404).json({ error: 'room not found' });
-  const parsed = taskCreateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const task = taskRepo.create({
-    room_id: req.params.roomId,
-    project_id: room.project_id,
-    ...parsed.data,
-    interaction_mode:
-      parsed.data.interaction_mode ?? settingsRepo.resolveForRoom(req.params.roomId)?.effective.interaction_mode,
-  });
-  wsHub.broadcast(req.params.roomId, { type: 'task:created', task });
-  res.status(201).json(task);
+  respondPureAcpDisabled(res, 'task create route');
 });
 
 router.patch('/tasks/:id', (req, res) => {
-  const schema = z.object({
-    title: z.string().min(1).optional(),
-    description: z.string().nullable().optional(),
-    priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
-    interaction_mode: z.enum(['ask_user', 'auto_recommended']).optional(),
-    assigned_agent_id: z.string().nullable().optional(),
-    status: z.enum(['todo', 'in_progress', 'review', 'done', 'failed']).optional(),
-  });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  let task = taskRepo.get(req.params.id);
-  if (!task) return res.status(404).json({ error: 'not found' });
-  const before = task;
-  if (parsed.data.status) task = taskRepo.updateStatus(req.params.id, parsed.data.status);
-  const fieldPatch: Record<string, unknown> = {};
-  if (parsed.data.title !== undefined) fieldPatch['title'] = parsed.data.title;
-  if (parsed.data.description !== undefined) fieldPatch['description'] = parsed.data.description;
-  if (parsed.data.priority !== undefined) fieldPatch['priority'] = parsed.data.priority;
-  if (parsed.data.interaction_mode !== undefined) fieldPatch['interaction_mode'] = parsed.data.interaction_mode;
-  if (parsed.data.assigned_agent_id !== undefined)
-    fieldPatch['assigned_agent_id'] = parsed.data.assigned_agent_id;
-  if (Object.keys(fieldPatch).length > 0) {
-    task = taskRepo.update(req.params.id, fieldPatch as never);
-  }
-  if (task) wsHub.broadcast(task.room_id, { type: 'task:updated', task });
-  if (task && parsed.data.status && before.status !== task.status) {
-    try {
-      recordTaskEvent({
-        roomId: task.room_id,
-        taskId: task.id,
-        taskTitle: task.title,
-        eventType: 'task_status_changed',
-        content: `任务「${task.title}」状态变更为 ${task.status}`,
-      });
-    } catch (error) {
-      console.warn('Failed to record task status event', {
-        taskId: task.id,
-        roomId: task.room_id,
-        error,
-      });
-    }
-  }
-  res.json(task);
+  respondPureAcpDisabled(res, 'task update route');
 });
 
 router.delete('/tasks/:id', (req, res) => {
-  const t = taskRepo.get(req.params.id);
-  const ok = taskRepo.delete(req.params.id);
-  if (ok && t) wsHub.broadcast(t.room_id, { type: 'task:deleted', taskId: t.id });
-  res.status(ok ? 204 : 404).end();
+  respondPureAcpDisabled(res, 'task delete route');
 });
 
 router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
