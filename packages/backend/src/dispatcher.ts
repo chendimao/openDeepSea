@@ -45,6 +45,29 @@ interface PlannerDispatchResult {
   added_agents: PlannerDispatchAddedAgent[];
 }
 
+const AGENT_MATCH_SYNONYMS: Record<string, string[]> = {
+  runtime: ['computer', 'cli', 'troubleshooting', 'automation', 'devops', 'ci-cd', 'deployment', 'observability'],
+  inspector: ['computer', 'cli', 'review', 'quality', 'troubleshooting', 'qa', 'testing', 'acceptance'],
+  inspect: ['computer', 'cli', 'review', 'quality', 'troubleshooting', 'qa', 'testing', 'acceptance'],
+  context: ['computer', 'cli', 'troubleshooting', 'planning'],
+  codex: ['computer', 'cli', 'automation'],
+  cli: ['computer', 'cli', 'automation', 'troubleshooting'],
+  frontend: ['frontend', 'ui', 'ux', 'browser'],
+  backend: ['backend', 'api', 'database', 'testing'],
+  ui: ['ui', 'ux', 'design', 'frontend'],
+  ux: ['ui', 'ux', 'design', 'frontend'],
+  design: ['design', 'ui', 'ux'],
+  review: ['review', 'quality', 'security', 'qa'],
+  reviewer: ['review', 'quality', 'security', 'qa'],
+  test: ['testing', 'qa', 'regression', 'acceptance'],
+  qa: ['testing', 'qa', 'regression', 'acceptance'],
+  security: ['security', 'privacy', 'risk'],
+  deploy: ['devops', 'deployment', 'ci-cd', 'observability'],
+  devops: ['devops', 'deployment', 'ci-cd', 'observability'],
+  docs: ['documentation', 'writing', 'handoff'],
+  document: ['documentation', 'writing', 'handoff'],
+};
+
 /**
  * Dispatch an incoming user message to the agents selected by project routing.
  * - Mentioned agents are notified directly.
@@ -983,7 +1006,7 @@ function resolvePlannerDispatchTargets(
     if (agentsById.has(step.agent_id)) {
       continue;
     }
-    const globalAgent = agentRepo.getByAgentId(step.agent_id) ?? agentRepo.getByBuiltinKey(step.agent_id);
+    const globalAgent = resolveGlobalAgentForPlannerStep(step);
     if (globalAgent) {
       globalAgentsByRequestedId.set(step.agent_id, globalAgent);
       continue;
@@ -1020,6 +1043,74 @@ function resolvePlannerDispatchTargets(
     addedAgents: Array.from(addedAgentsById.values()),
     missingAgentIds,
   };
+}
+
+function resolveGlobalAgentForPlannerStep(step: PlannerDecision['next_steps'][number]): Agent | undefined {
+  return agentRepo.getByAgentId(step.agent_id)
+    ?? agentRepo.getByBuiltinKey(step.agent_id)
+    ?? resolveGlobalAgentAlias(step.agent_id)
+    ?? findBestGlobalAgentMatch(step);
+}
+
+function resolveGlobalAgentAlias(agentId: string): Agent | undefined {
+  const normalized = agentId.toLowerCase();
+  if (
+    normalized.includes('runtime') ||
+    normalized.includes('inspector') ||
+    normalized.includes('context') ||
+    normalized.includes('cli')
+  ) {
+    return agentRepo.getByAgentId('computer-assistant') ?? agentRepo.getByBuiltinKey('computer-assistant');
+  }
+  return undefined;
+}
+
+function findBestGlobalAgentMatch(step: PlannerDecision['next_steps'][number]): Agent | undefined {
+  const queryTokens = tokenizeAgentMatchText(`${step.agent_id} ${step.goal}`);
+  if (queryTokens.length === 0) return undefined;
+
+  let best: { agent: Agent; score: number } | undefined;
+  for (const agent of agentRepo.list()) {
+    if (!agent.default_acp_backend) continue;
+    if (agent.agent_id === 'planner' || agent.builtin_key === 'planner') continue;
+    const score = scoreGlobalAgentMatch(agent, queryTokens);
+    if (!best || score > best.score) {
+      best = { agent, score };
+    }
+  }
+
+  return best && best.score >= 4 ? best.agent : undefined;
+}
+
+function scoreGlobalAgentMatch(agent: Agent, queryTokens: string[]): number {
+  const agentTokens = new Set(tokenizeAgentMatchText([
+    agent.agent_id,
+    agent.builtin_key,
+    agent.name,
+    agent.description,
+    agent.responsibilities,
+    agent.personality,
+    agent.default_tool_policy.allowed.join(' '),
+    agent.default_workspace_policy.write.join(' '),
+  ].filter(Boolean).join(' ')));
+  let score = 0;
+  for (const token of queryTokens) {
+    if (agentTokens.has(token)) score += 3;
+    for (const synonym of AGENT_MATCH_SYNONYMS[token] ?? []) {
+      if (agentTokens.has(synonym)) score += 2;
+    }
+  }
+  return score;
+}
+
+function tokenizeAgentMatchText(text: string): string[] {
+  return Array.from(new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9\u4e00-\u9fa5]+/u)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2),
+  ));
 }
 
 export async function continueLatestPlannerDecision(args: { roomId: string }): Promise<{ accepted: boolean } & PlannerDispatchResult> {

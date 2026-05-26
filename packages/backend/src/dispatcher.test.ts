@@ -1397,6 +1397,7 @@ test('planner dispatch auto-adds matching global agent before dispatching', asyn
   } satisfies SessionAdapter;
 
   try {
+    const beforeAgents = new Set(roomAgentRepo.listByRoom(room.id).map((agent) => agent.agent_id));
     const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
@@ -1427,11 +1428,66 @@ test('planner dispatch auto-adds matching global agent before dispatching', asyn
   }
 });
 
+test('planner dispatch falls back to best global agent search for unknown suggested id', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-global-search-'));
+  const project = projectRepo.create({ name: `planner-global-search-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '检查 Codex 上下文',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({ stream: 'stdout', text: '已检查运行上下文' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const beforeAgents = new Set(roomAgentRepo.listByRoom(room.id).map((agent) => agent.agent_id));
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '建议检查运行上下文',
+          next_steps: [{ agent_id: 'runtime-inspector', goal: '检查 Codex CLI 启动规则' }],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+    const body = await response.json() as {
+      dispatched?: number;
+      added_agents?: Array<{ agent_id: string; agent_name: string }>;
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.dispatched, 1);
+    assert.equal(body.added_agents?.length, 1);
+    assert.deepEqual(body.added_agents, [{ agent_id: 'computer-assistant', agent_name: '电脑助手' }]);
+    assert.ok(!beforeAgents.has(body.added_agents?.[0]?.agent_id ?? ''));
+    assert.ok(roomAgentRepo.listByRoom(room.id).some((agent) => agent.agent_id === body.added_agents?.[0]?.agent_id));
+    assert.equal(agentRunRepo.listByRoom(room.id, 20).some((run) => run.agent_id === body.added_agents?.[0]?.agent_id), true);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner dispatch reports missing room and global agents instead of accepting without work', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-missing-agent-'));
   const project = projectRepo.create({ name: `planner-missing-agent-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
-  const missingAgentId = `runtime-inspector-missing-${Date.now()}`;
+  const missingAgentId = `unmapped-specialist-${Date.now()}`;
   const sourceMessage = messageRepo.create({
     room_id: room.id,
     sender_type: 'user',
@@ -1449,8 +1505,8 @@ test('planner dispatch reports missing room and global agents instead of accepti
         planner_decision: {
           mode: 'pause_after_suggestion',
           status: 'suggested',
-          summary: '建议检查运行上下文',
-          next_steps: [{ agent_id: missingAgentId, goal: '检查 Codex CLI 启动规则' }],
+          summary: '建议执行无法匹配的专业任务',
+          next_steps: [{ agent_id: missingAgentId, goal: '分析深海声呐样本的鲸类迁徙模式' }],
           awaiting_user_confirmation: true,
         },
       }),
