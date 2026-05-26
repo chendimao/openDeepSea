@@ -10,6 +10,7 @@ type NormalizedStdoutChunk = {
   text: string;
   rawType?: string;
   trace?: AcpStreamTrace;
+  rawEvent?: Record<string, unknown>;
 };
 
 /** Encode an absolute path the way Claude Code stores project dirs. */
@@ -245,6 +246,7 @@ export function normalizeStdoutChunk(data: string): Array<{
   text: string;
   rawType?: string;
   trace?: AcpStreamTrace;
+  rawEvent?: Record<string, unknown>;
 }> {
   return createStdoutNormalizer()(data);
 }
@@ -254,6 +256,7 @@ export function createStdoutNormalizer(): (data: string) => Array<{
   text: string;
   rawType?: string;
   trace?: AcpStreamTrace;
+  rawEvent?: Record<string, unknown>;
 }> {
   const snapshots = new Map<string, string>();
   return (data: string) => normalizeStdoutChunkWithSnapshots(data, snapshots);
@@ -270,6 +273,7 @@ function normalizeStdoutChunkWithSnapshots(
       const rawObj = JSON.parse(line) as Record<string, unknown>;
       const obj = normalizeCliEventObject(rawObj);
       const traceChunks = extractTraceChunks(obj);
+      const rawType = typeof rawObj['type'] === 'string' ? rawObj['type'] : undefined;
       if (
         obj['type'] === 'assistant' ||
         obj['type'] === 'message' ||
@@ -285,17 +289,18 @@ function normalizeStdoutChunkWithSnapshots(
             ? {
                 channel: 'activity' as const,
                 text: activity,
-                rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
+                rawType,
               }
             : null;
-          return activityChunk ? [...traceChunks, activityChunk] : traceChunks;
+          if (activityChunk) return [...traceChunks, activityChunk];
+          return traceChunks;
         }
         const delta = toAnswerTextDelta(obj, text, snapshots);
         if (!delta) return traceChunks;
         return [...traceChunks, {
           channel: 'answer' as const,
           text: delta,
-          rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
+          rawType,
         }];
       }
       const activity = extractActivityText(obj);
@@ -303,10 +308,18 @@ function normalizeStdoutChunkWithSnapshots(
         ? {
             channel: 'activity' as const,
             text: activity,
-            rawType: typeof obj['type'] === 'string' ? obj['type'] : undefined,
+            rawType,
           }
         : null;
-      return activityChunk ? [...traceChunks, activityChunk] : traceChunks;
+      if (activityChunk) return [...traceChunks, activityChunk];
+      if (traceChunks.length > 0) return traceChunks;
+      if (!shouldEmitRawFallback(rawObj)) return [];
+      return [{
+        channel: 'event' as const,
+        text: '',
+        rawType,
+        rawEvent: rawObj,
+      }];
     } catch {
       const snapshotText = index === lines.length - 1 ? line : `${line}\n`;
       const delta = toPlainTextDelta(snapshotText, snapshots);
@@ -746,6 +759,15 @@ function extractContentText(content: unknown): string | null {
     })
     .filter(Boolean);
   return parts.length > 0 ? parts.join('\n') : null;
+}
+
+function shouldEmitRawFallback(rawObj: Record<string, unknown>): boolean {
+  const type = typeof rawObj['type'] === 'string' ? rawObj['type'] : '';
+  if (!type) return true;
+  if (type === 'text' || type === 'message.part.updated') return false;
+  if (type === 'assistant' || type === 'message' || type === 'agent_message' || type === 'result') return false;
+  if (type === 'system' || type === 'user' || type === 'item.started' || type === 'item.completed') return false;
+  return true;
 }
 
 export { runStreaming };

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createTimelineEvent,
+  normalizeKnownProviderEvent,
   normalizeTimelineEventFromTrace,
   normalizeRawTimelineEvent,
 } from './timeline.js';
@@ -83,4 +84,63 @@ test('createTimelineEvent creates stable payload and raw fields', () => {
   assert.equal(event.type, 'file_diff');
   assert.equal(event.payload.path, 'src/app.ts');
   assert.equal(event.raw?.type, 'patch');
+});
+
+test('normalizeKnownProviderEvent maps patch payload to file_diff', () => {
+  const event = normalizeKnownProviderEvent({
+    messageId: 'msg-1',
+    runId: 'run-1',
+    agentId: 'executor',
+    seq: 5,
+    provider: 'codex',
+    raw: {
+      type: 'patch',
+      path: 'src/app.ts',
+      patch: '-old\n+new',
+      additions: 1,
+      deletions: 1,
+    },
+  });
+
+  assert.equal(event.type, 'file_diff');
+  assert.equal(event.title, '修改文件 src/app.ts');
+  assert.equal(event.payload.patch, '-old\n+new');
+  assert.deepEqual(event.raw, {
+    type: 'patch',
+    path: 'src/app.ts',
+    patch: '-old\n+new',
+    additions: 1,
+    deletions: 1,
+  });
+});
+
+test('normalizeKnownProviderEvent maps plan_update payload to plan_update', () => {
+  const event = normalizeKnownProviderEvent({
+    messageId: 'msg-1',
+    runId: 'run-1',
+    agentId: 'planner',
+    seq: 6,
+    provider: 'codex',
+    raw: {
+      type: 'plan_update',
+      entries: [
+        { title: '开发 UI', status: 'in_progress' },
+        { title: '运行测试', status: 'pending' },
+      ],
+    },
+  });
+
+  assert.equal(event.type, 'plan_update');
+  assert.equal(event.title, '计划更新');
+  assert.deepEqual(event.payload.entries, [
+    { title: '开发 UI', status: 'in_progress' },
+    { title: '运行测试', status: 'pending' },
+  ]);
+  assert.deepEqual(event.raw, {
+    type: 'plan_update',
+    entries: [
+      { title: '开发 UI', status: 'in_progress' },
+      { title: '运行测试', status: 'pending' },
+    ],
+  });
 });

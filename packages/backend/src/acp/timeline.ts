@@ -123,3 +123,112 @@ export function normalizeRawTimelineEvent(args: {
     raw: args.raw,
   });
 }
+
+export function normalizeKnownProviderEvent(args: {
+  messageId: string;
+  runId: string;
+  agentId: string;
+  seq: number;
+  provider: string;
+  raw: Record<string, unknown>;
+}): AgentTimelineEvent {
+  const rawType = typeof args.raw['type'] === 'string' ? args.raw['type'] : undefined;
+  const payload = getProviderPayload(args.raw);
+
+  const diffPayload = extractDiffPayload(args.raw, payload);
+  if (diffPayload) {
+    return createTimelineEvent({
+      messageId: args.messageId,
+      runId: args.runId,
+      agentId: args.agentId,
+      seq: args.seq,
+      type: 'file_diff',
+      status: 'completed',
+      title: `修改文件 ${diffPayload.path}`,
+      payload: diffPayload,
+      raw: args.raw,
+    });
+  }
+
+  const planEntries = extractPlanEntries(args.raw, payload);
+  if (planEntries) {
+    return createTimelineEvent({
+      messageId: args.messageId,
+      runId: args.runId,
+      agentId: args.agentId,
+      seq: args.seq,
+      type: 'plan_update',
+      status: 'completed',
+      title: '计划更新',
+      payload: { entries: planEntries },
+      raw: args.raw,
+    });
+  }
+
+  return normalizeRawTimelineEvent({
+    messageId: args.messageId,
+    runId: args.runId,
+    agentId: args.agentId,
+    seq: args.seq,
+    provider: args.provider,
+    rawType,
+    raw: args.raw,
+  });
+}
+
+function getProviderPayload(raw: Record<string, unknown>): Record<string, unknown> {
+  const payload = raw['payload'];
+  return payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : raw;
+}
+
+function extractDiffPayload(
+  raw: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): { path: string; patch: string; additions: number; deletions: number } | null {
+  const rawType = typeof raw['type'] === 'string' ? raw['type'] : '';
+  const path = firstString(payload['path'], payload['file'], payload['file_path'], payload['filePath']);
+  const patch = firstString(payload['patch'], payload['diff'], payload['unified_diff'], payload['unifiedDiff']);
+  if (!path || !patch) return null;
+  if (!/patch|diff|edit|apply_patch|file/i.test(rawType)) return null;
+  return {
+    path,
+    patch,
+    additions: firstNumber(payload['additions']) ?? countPatchLines(patch, '+'),
+    deletions: firstNumber(payload['deletions']) ?? countPatchLines(patch, '-'),
+  };
+}
+
+function extractPlanEntries(
+  raw: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): unknown[] | null {
+  const rawType = typeof raw['type'] === 'string' ? raw['type'] : '';
+  if (!/plan|next_steps/i.test(rawType)) return null;
+  if (Array.isArray(payload['entries'])) return payload['entries'];
+  if (Array.isArray(payload['plan'])) return payload['plan'];
+  if (Array.isArray(payload['next_steps'])) return payload['next_steps'];
+  return null;
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function countPatchLines(patch: string, prefix: '+' | '-'): number {
+  return patch
+    .split('\n')
+    .filter((line) => line.startsWith(prefix) && !line.startsWith(`${prefix}${prefix}${prefix}`))
+    .length;
+}

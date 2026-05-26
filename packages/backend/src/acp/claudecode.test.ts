@@ -443,3 +443,44 @@ test('plain text lines keep newline state for later structured snapshot dedupe',
     },
   ]);
 });
+
+test('normalizeStdoutChunk preserves unknown JSON event as raw event channel', () => {
+  const chunks = normalizeStdoutChunk('{"type":"vendor.custom","value":1}\n');
+
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0]?.channel, 'event');
+  assert.equal(chunks[0]?.text, '');
+  assert.equal(chunks[0]?.rawType, 'vendor.custom');
+  assert.deepEqual(chunks[0]?.rawEvent, { type: 'vendor.custom', value: 1 });
+});
+
+test('normalizeStdoutChunk keeps patch JSON as raw event channel', () => {
+  const chunks = normalizeStdoutChunk(
+    '{"type":"patch","path":"src/app.ts","patch":"-old\\n+new","additions":1,"deletions":1}\n',
+  );
+
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0]?.channel, 'event');
+  assert.equal(chunks[0]?.rawType, 'patch');
+  assert.deepEqual(chunks[0]?.rawEvent, {
+    type: 'patch',
+    path: 'src/app.ts',
+    patch: '-old\n+new',
+    additions: 1,
+    deletions: 1,
+  });
+});
+
+test('normalizeStdoutChunk keeps plan JSON as raw event channel', () => {
+  const chunks = normalizeStdoutChunk(
+    '{"type":"plan_update","entries":[{"title":"开发 UI","status":"in_progress"}]}\n',
+  );
+
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0]?.channel, 'event');
+  assert.equal(chunks[0]?.rawType, 'plan_update');
+  assert.deepEqual(chunks[0]?.rawEvent, {
+    type: 'plan_update',
+    entries: [{ title: '开发 UI', status: 'in_progress' }],
+  });
+});
