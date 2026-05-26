@@ -1573,6 +1573,7 @@ router.post('/rooms/:roomId/planner/continue', async (req, res) => {
       accepted: true,
       dispatched: result.dispatched,
       added_agents: result.added_agents,
+      deferred_steps: result.deferred_steps,
     });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
@@ -1611,6 +1612,7 @@ router.post('/rooms/:roomId/planner/dispatch', async (req, res) => {
       accepted: true,
       dispatched: result.dispatched,
       added_agents: result.added_agents,
+      deferred_steps: result.deferred_steps,
     });
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
@@ -1990,6 +1992,7 @@ router.post('/rooms/:roomId/planner/continue', (req, res, next) => {
       accepted: true,
       dispatched: result.dispatched,
       added_agents: result.added_agents,
+      deferred_steps: result.deferred_steps,
     });
   })().catch(next);
 });
@@ -2020,6 +2023,7 @@ router.post('/rooms/:roomId/planner/dispatch', (req, res, next) => {
       accepted: true,
       dispatched: result.dispatched,
       added_agents: result.added_agents,
+      deferred_steps: result.deferred_steps,
     });
   })().catch(next);
 });

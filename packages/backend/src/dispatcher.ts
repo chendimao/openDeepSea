@@ -43,7 +43,10 @@ interface PlannerDispatchAddedAgent {
 interface PlannerDispatchResult {
   dispatched: number;
   added_agents: PlannerDispatchAddedAgent[];
+  deferred_steps: PlannerDecision['next_steps'];
 }
+
+type PlannerStepKind = 'execute' | 'review' | 'other';
 
 const AGENT_MATCH_SYNONYMS: Record<string, string[]> = {
   runtime: ['computer', 'cli', 'troubleshooting', 'automation', 'devops', 'ci-cd', 'deployment', 'observability'],
@@ -970,7 +973,8 @@ async function dispatchPlannerDecision(args: {
   const project = projectRepo.get(room.project_id);
   if (!project) throw new Error('project not found');
   const { targets, addedAgents, missingAgentIds } = resolvePlannerDispatchTargets(args.roomId, args.decision);
-  if (targets.length === 0 || missingAgentIds.length > 0) {
+  const executionPlan = resolvePlannerStepExecutionPlan(targets);
+  if (executionPlan.dispatchTargets.length === 0 || missingAgentIds.length > 0) {
     const requestedAgentIds = args.decision.next_steps.map((step) => step.agent_id).filter(Boolean);
     throw new Error(
       missingAgentIds.length > 0
@@ -980,20 +984,72 @@ async function dispatchPlannerDecision(args: {
         : 'planner decision has no next steps to dispatch',
     );
   }
-  await runTargets({
-    targets,
+  const results = await runTargets({
+    targets: executionPlan.dispatchTargets,
     projectPath: project.path,
     roomId: args.roomId,
     sourceMessageId: args.sourceMessageId,
   });
-  return { dispatched: targets.length, added_agents: addedAgents };
+  await reportDeferredPlannerSteps({
+    roomId: args.roomId,
+    projectPath: project.path,
+    sourceMessageId: args.sourceMessageId,
+    dispatchedTargets: executionPlan.dispatchTargets,
+    dispatchedResults: results,
+    deferredSteps: executionPlan.deferredSteps,
+  });
+  return {
+    dispatched: executionPlan.dispatchTargets.length,
+    added_agents: addedAgents,
+    deferred_steps: executionPlan.deferredSteps,
+  };
+}
+
+function resolvePlannerStepExecutionPlan(
+  targets: { agent: RoomAgent; prompt: string; step: PlannerDecision['next_steps'][number] }[],
+): {
+  dispatchTargets: { agent: RoomAgent; prompt: string }[];
+  deferredSteps: PlannerDecision['next_steps'];
+} {
+  const firstReviewIndex = targets.findIndex((target) => classifyPlannerStep(target) === 'review');
+  const selected = firstReviewIndex === -1 ? targets : targets.slice(0, firstReviewIndex);
+  const deferred = firstReviewIndex === -1 ? [] : targets.slice(firstReviewIndex);
+  const dispatchTargets = selected.length > 0 ? selected : targets.slice(0, 1);
+  const deferredSteps = (selected.length > 0 ? deferred : targets.slice(1)).map((target) => target.step);
+  return {
+    dispatchTargets: dispatchTargets.map((target) => ({ agent: target.agent, prompt: target.prompt })),
+    deferredSteps,
+  };
+}
+
+function classifyPlannerStep(target: {
+  agent: RoomAgent;
+  prompt: string;
+  step: PlannerDecision['next_steps'][number];
+}): PlannerStepKind {
+  const role = target.agent.workflow_role;
+  const text = `${target.step.agent_id} ${target.step.goal} ${target.agent.agent_name} ${target.agent.agent_role ?? ''}`.toLowerCase();
+  if (
+    role === 'reviewer' ||
+    role === 'acceptor' ||
+    /review|reviewer|qa|test|tester|accept|验收|审查|测试|回归|验证/.test(text)
+  ) {
+    return 'review';
+  }
+  if (
+    role === 'executor' ||
+    /execute|executor|implement|frontend|backend|dev|develop|fix|build|新增|实现|开发|修复|前端|后端/.test(text)
+  ) {
+    return 'execute';
+  }
+  return 'other';
 }
 
 function resolvePlannerDispatchTargets(
   roomId: string,
   decision: PlannerDecision,
 ): {
-  targets: { agent: RoomAgent; prompt: string }[];
+  targets: { agent: RoomAgent; prompt: string; step: PlannerDecision['next_steps'][number] }[];
   addedAgents: PlannerDispatchAddedAgent[];
   missingAgentIds: string[];
 } {
@@ -1034,15 +1090,66 @@ function resolvePlannerDispatchTargets(
   const targets = decision.next_steps
     .map((step) => {
       const agent = agentsById.get(step.agent_id);
-      return agent ? { agent, prompt: step.goal } : null;
+      return agent ? { agent, prompt: step.goal, step } : null;
     })
-    .filter((target): target is { agent: RoomAgent; prompt: string } => Boolean(target));
+    .filter((target): target is { agent: RoomAgent; prompt: string; step: PlannerDecision['next_steps'][number] } =>
+      Boolean(target),
+    );
 
   return {
     targets,
     addedAgents: Array.from(addedAgentsById.values()),
     missingAgentIds,
   };
+}
+
+async function reportDeferredPlannerSteps(args: {
+  roomId: string;
+  projectPath: string;
+  sourceMessageId: string;
+  dispatchedTargets: { agent: RoomAgent; prompt: string }[];
+  dispatchedResults: Array<Message | undefined>;
+  deferredSteps: PlannerDecision['next_steps'];
+}): Promise<void> {
+  if (args.deferredSteps.length === 0) return;
+  const planner = roomAgentRepo.listByRoom(args.roomId).find((agent) => agent.agent_id === 'planner');
+  if (!planner) return;
+  const completedSummaries = args.dispatchedTargets.map((target, index) => {
+    const message = args.dispatchedResults[index];
+    const content = message?.content?.trim() || '该智能体没有返回可用内容。';
+    return [
+      `- 已执行智能体：${target.agent.agent_name} (${target.agent.agent_id})`,
+      `  原目标：${target.prompt}`,
+      `  返回摘要：${summarizePlannerDispatchResult(content)}`,
+    ].join('\n');
+  });
+  const deferredLines = args.deferredSteps.map((step, index) =>
+    `${index + 1}. ${step.agent_id}: ${step.goal}`,
+  );
+  const prompt = [
+    '前一阶段智能体已经完成，请你作为规划师分析执行结果，并决定下一步是否应派发后续审查/测试智能体。',
+    '',
+    '已完成阶段：',
+    ...completedSummaries,
+    '',
+    '暂缓的后续步骤：',
+    ...deferredLines,
+    '',
+    '请先评估开发结果是否足以进入测试/审查。如果可以，请输出新的 planner_decision，只包含下一阶段要派发的智能体；如果不可以，请说明需要补充的事项。',
+  ].join('\n');
+  await respondAsAgent({
+    agent: planner,
+    projectPath: args.projectPath,
+    roomId: args.roomId,
+    prompt,
+    sourceMessageId: args.sourceMessageId,
+  });
+}
+
+function summarizePlannerDispatchResult(content: string): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 800) return normalized;
+  return `${normalized.slice(0, 520)} ... ${normalized.slice(-220)}`;
 }
 
 function resolveGlobalAgentForPlannerStep(step: PlannerDecision['next_steps'][number]): Agent | undefined {
@@ -1123,17 +1230,22 @@ export async function continueLatestPlannerDecision(args: { roomId: string }): P
       const metadata = parsePlannerMessageMetadata(message.metadata);
       return Boolean(metadata.planner_decision);
     });
-  if (!plannerMessage) return { accepted: false, dispatched: 0, added_agents: [] };
+  if (!plannerMessage) return { accepted: false, dispatched: 0, added_agents: [], deferred_steps: [] };
   const metadata = parsePlannerMessageMetadata(plannerMessage.metadata);
   if (!metadata.planner_decision || !metadata.planner_decision.awaiting_user_confirmation) {
-    return { accepted: false, dispatched: 0, added_agents: [] };
+    return { accepted: false, dispatched: 0, added_agents: [], deferred_steps: [] };
   }
   const result = await dispatchPlannerDecision({
     roomId: args.roomId,
     sourceMessageId: metadata.source_message_id ?? plannerMessage.id,
     decision: metadata.planner_decision,
   });
-  return { accepted: true, dispatched: result.dispatched, added_agents: result.added_agents };
+  return {
+    accepted: true,
+    dispatched: result.dispatched,
+    added_agents: result.added_agents,
+    deferred_steps: result.deferred_steps,
+  };
 }
 
 export async function dispatchPlannerDecisionForRoom(args: {

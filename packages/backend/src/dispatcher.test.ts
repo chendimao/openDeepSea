@@ -1483,6 +1483,79 @@ test('planner dispatch falls back to best global agent search for unknown sugges
   }
 });
 
+test('planner dispatch defers review steps until execution result returns to planner', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-serial-dispatch-'));
+  const project = projectRepo.create({ name: `planner-serial-dispatch-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const qa = agentRepo.getByAgentId('qa-tester');
+  assert.ok(frontend);
+  assert.ok(qa);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: qa.id });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '在侧边栏添加一个测试菜单，内容为一个计数器',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      if (args.prompt.includes('新增“测试”菜单')) {
+        args.onChunk({ stream: 'stdout', text: '前端开发完成：已新增测试菜单和计数器页面。' });
+      } else if (args.prompt.includes('前一阶段智能体已经完成')) {
+        args.onChunk({ stream: 'stdout', text: '规划师收到前端结果，下一步再安排测试工程师。' });
+      } else {
+        args.onChunk({ stream: 'stdout', text: 'unexpected' });
+      }
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '先开发再测试',
+          next_steps: [
+            { agent_id: 'frontend-executor', goal: '在真实仓库中定位侧边栏配置，新增“测试”菜单及计数器页面' },
+            { agent_id: 'qa-tester', goal: '验证侧边栏入口展示、页面跳转和计数器交互是否正常' },
+          ],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+    const body = await response.json() as { dispatched?: number; deferred_steps?: Array<{ agent_id: string; goal: string }> };
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.dispatched, 1);
+    assert.deepEqual(body.deferred_steps?.map((step) => step.agent_id), ['qa-tester']);
+    assert.equal(runs.some((run) => run.agent_id === 'frontend-executor'), true);
+    assert.equal(runs.some((run) => run.agent_id === 'qa-tester'), false);
+    assert.equal(
+      agentRunRepo.listByRoom(room.id, 20).some((run) =>
+        run.agent_id === 'planner' &&
+        run.prompt.includes('暂缓的后续步骤') &&
+        run.prompt.includes('qa-tester'),
+      ),
+      true,
+    );
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner dispatch reports missing room and global agents instead of accepting without work', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-missing-agent-'));
   const project = projectRepo.create({ name: `planner-missing-agent-${Date.now()}`, path: projectPath });

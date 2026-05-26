@@ -696,7 +696,12 @@ export const api = {
       body: JSON.stringify(input),
     }),
   continuePlannerDecision: (roomId: string) =>
-    request<{ accepted: true; dispatched: number; added_agents: Array<{ agent_id: string; agent_name: string }> }>(
+    request<{
+      accepted: true;
+      dispatched: number;
+      added_agents: Array<{ agent_id: string; agent_name: string }>;
+      deferred_steps: PlannerDecision['next_steps'];
+    }>(
       `/rooms/${roomId}/planner/continue`,
       { method: 'POST' },
     ),
@@ -704,7 +709,12 @@ export const api = {
     roomId: string,
     input: { source_message_id: string; planner_decision: PlannerDecision },
   ) =>
-    request<{ accepted: true; dispatched: number; added_agents: Array<{ agent_id: string; agent_name: string }> }>(
+    request<{
+      accepted: true;
+      dispatched: number;
+      added_agents: Array<{ agent_id: string; agent_name: string }>;
+      deferred_steps: PlannerDecision['next_steps'];
+    }>(
       `/rooms/${roomId}/planner/dispatch`,
       {
         method: 'POST',

@@ -959,11 +959,16 @@ function MessageBubble({
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
       const addedCount = result.added_agents?.length ?? 0;
+      const deferredCount = result.deferred_steps?.length ?? 0;
       toast.success(
         result.dispatched > 0
           ? addedCount > 0
-            ? `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
-            : `已派发 ${result.dispatched} 个智能体`
+            ? deferredCount > 0
+              ? `已加入 ${addedCount} 个智能体，先派发 ${result.dispatched} 个，暂缓 ${deferredCount} 个后续步骤`
+              : `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
+            : deferredCount > 0
+              ? `已先派发 ${result.dispatched} 个智能体，暂缓 ${deferredCount} 个后续步骤`
+              : `已派发 ${result.dispatched} 个智能体`
           : '没有可派发的下一步',
       );
     },
