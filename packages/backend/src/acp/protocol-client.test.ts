@@ -273,7 +273,7 @@ test('invokeProtocolSession times out unresponsive initialization safely', async
   assert.match(result.stderr, /ACP initialize timed out/);
 });
 
-test('invokeProtocolSession uses a separate prompt timeout after streaming output', async () => {
+test('invokeProtocolSession treats prompt timeout after answer text as soft completion', async () => {
   const chunks: Array<{ channel?: string; text: string }> = [];
 
   const result = await invokeProtocolSession({
@@ -297,8 +297,9 @@ test('invokeProtocolSession uses a separate prompt timeout after streaming outpu
     onChunk: (chunk) => chunks.push(chunk),
   });
 
-  assert.equal(result.exitCode, -1);
+  assert.equal(result.exitCode, 0);
   assert.equal(result.fallbackSafe, false);
-  assert.match(result.stderr, /ACP prompt timed out/);
+  assert.equal(result.stderr, '');
+  assert.equal(result.sessionId, 'fake-session-1');
   assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'partial answer before timeout');
 });

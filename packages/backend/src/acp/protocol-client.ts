@@ -43,6 +43,7 @@ export async function invokeProtocolSession(
   let initialized = false;
   let promptStarted = false;
   let eventReceived = false;
+  let answerReceived = false;
   const stageTimeoutMs = args.stageTimeoutMs ?? readProtocolStageTimeoutMs(process.env.OPENCLAW_ACP_STAGE_TIMEOUT_MS);
   const promptTimeoutMs = args.promptTimeoutMs ?? readProtocolTimeoutMs(
     process.env.OPENCLAW_ACP_PROMPT_TIMEOUT_MS,
@@ -97,6 +98,7 @@ export async function invokeProtocolSession(
 
         const answerText = extractAgentText(notification);
         if (answerText) {
+          answerReceived = true;
           args.onChunk({
             stream: 'stdout',
             text: answerText,
@@ -194,6 +196,14 @@ export async function invokeProtocolSession(
   } catch (error) {
     child?.kill('SIGTERM');
     const message = error instanceof Error ? error.message : String(error);
+    if (message === 'ACP prompt timed out' && answerReceived && activeSessionId) {
+      return {
+        exitCode: 0,
+        sessionId: activeSessionId,
+        stderr,
+        fallbackSafe: false,
+      };
+    }
     return {
       exitCode: -1,
       sessionId: activeSessionId,
