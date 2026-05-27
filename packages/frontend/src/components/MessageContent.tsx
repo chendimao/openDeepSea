@@ -177,6 +177,7 @@ export function MarkdownPreview({ content, streaming = false }: { content: strin
   const { t } = useI18n();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const parts = parseMessage(content);
+  const lastTextPartIndex = findLastTextPartIndex(parts);
 
   const copyCode = async (code: string, index: number) => {
     try {
@@ -215,9 +216,15 @@ export function MarkdownPreview({ content, streaming = false }: { content: strin
             />
           );
         }
-        return <MarkdownText key={`preview-text-${index}`} text={part.value} />;
+        return (
+          <MarkdownText
+            key={`preview-text-${index}`}
+            text={part.value}
+            streaming={streaming && index === lastTextPartIndex}
+          />
+        );
       })}
-      {streaming && <StreamingCursor />}
+      {streaming && lastTextPartIndex === -1 && <StreamingCursor />}
     </div>
   );
 }
@@ -474,28 +481,29 @@ function StreamingCursor(): JSX.Element {
   return <span className="streaming-cursor" aria-hidden="true" />;
 }
 
-function MarkdownText({ text }: { text: string }): JSX.Element {
+function MarkdownText({ text, streaming = false }: { text: string; streaming?: boolean }): JSX.Element {
   const blocks = text.split(/\n{2,}/).filter((block) => block.trim().length > 0);
   return (
     <>
-      {blocks.map((block, index) => renderMarkdownBlock(block, index))}
+      {blocks.map((block, index) => renderMarkdownBlock(block, index, streaming && index === blocks.length - 1))}
     </>
   );
 }
 
-function renderMarkdownBlock(block: string, index: number): JSX.Element {
+function renderMarkdownBlock(block: string, index: number, streaming = false): JSX.Element {
   const trimmed = block.trim();
   const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
   if (heading) {
     const level = Math.min(heading[1].length, 3);
     const Tag = (`h${level}` as keyof JSX.IntrinsicElements);
-    return <Tag key={index}>{renderInlineMarkdown(heading[2])}</Tag>;
+    return <Tag key={index}>{renderInlineMarkdown(heading[2])}{streaming && <StreamingCursor />}</Tag>;
   }
 
   if (/^>\s+/m.test(trimmed)) {
     return (
       <blockquote key={index}>
         {trimmed.replace(/^>\s?/gm, '')}
+        {streaming && <StreamingCursor />}
       </blockquote>
     );
   }
@@ -505,7 +513,10 @@ function renderMarkdownBlock(block: string, index: number): JSX.Element {
     return (
       <ul key={index}>
         {lines.map((line, i) => (
-          <li key={i}>{renderInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ''))}</li>
+          <li key={i}>
+            {renderInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ''))}
+            {streaming && i === lines.length - 1 && <StreamingCursor />}
+          </li>
         ))}
       </ul>
     );
@@ -515,14 +526,22 @@ function renderMarkdownBlock(block: string, index: number): JSX.Element {
     return (
       <ol key={index}>
         {lines.map((line, i) => (
-          <li key={i}>{renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''))}</li>
+          <li key={i}>
+            {renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''))}
+            {streaming && i === lines.length - 1 && <StreamingCursor />}
+          </li>
         ))}
       </ol>
     );
   }
 
   if (/^-{3,}$/.test(trimmed)) {
-    return <hr key={index} />;
+    return streaming ? (
+      <div key={index} className="markdown-rule-block">
+        <hr />
+        <StreamingCursor />
+      </div>
+    ) : <hr key={index} />;
   }
 
   return (
@@ -531,6 +550,7 @@ function renderMarkdownBlock(block: string, index: number): JSX.Element {
         <span key={i}>
           {i > 0 && <br />}
           {renderInlineMarkdown(line)}
+          {streaming && i === lines.length - 1 && <StreamingCursor />}
         </span>
       ))}
     </p>

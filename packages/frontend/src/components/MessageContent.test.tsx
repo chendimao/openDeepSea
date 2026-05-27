@@ -150,6 +150,28 @@ test('renders markdown source when controlled by message display mode', () => {
   assert.doesNotMatch(html, /是否就绪/);
 });
 
+test('places streaming cursor inside the final markdown text block', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent content={'优化 `ACP` 消息展示，并保持光标在流式文字后面'} streaming />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /<p><span>优化 <code>ACP<\/code> 消息展示，并保持光标在流式文字后面<span class="streaming-cursor"/);
+  assert.doesNotMatch(html, /<\/p><span class="streaming-cursor"/);
+});
+
+test('places streaming cursor inside the final markdown list item', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent content={'- 读取消息\n- 渲染 `ACP` 事件'} streaming />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /<li>渲染 <code>ACP<\/code> 事件<span class="streaming-cursor"/);
+  assert.doesNotMatch(html, /<\/ul><span class="streaming-cursor"/);
+});
+
 test('renders thinking and tool trace panels collapsed by default', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
@@ -181,8 +203,8 @@ test('renders thinking and tool trace panels collapsed by default', () => {
   assert.match(html, /命令/);
   assert.match(html, /完整 thinking 原文/);
   assert.match(html, /search_files/);
-  assert.match(html, /input/);
-  assert.match(html, /output/);
+  assert.match(html, /输入/);
+  assert.match(html, /输出/);
   assert.match(html, /rg -n &quot;model&quot; packages\/frontend\/src/);
 });
 
