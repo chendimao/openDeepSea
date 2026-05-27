@@ -2529,34 +2529,53 @@
 
   .agent-transcript {
     display: grid;
-    gap: 12px;
+    gap: 8px;
   }
 
   .agent-transcript-text {
     display: grid;
-    border-left: 2px solid color-mix(in srgb, var(--color-border) 74%, transparent);
-    padding-left: 12px;
+    border-left: 3px solid color-mix(in srgb, var(--color-accent) 44%, var(--color-border));
+    border-radius: 0 10px 10px 0;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 58%);
+    padding: 8px 10px 8px 14px;
     color: var(--color-fg);
   }
 
   .agent-transcript-text .markdown-preview {
-    gap: 6px;
+    gap: 8px;
+  }
+
+  .agent-transcript-text .markdown-preview p,
+  .agent-transcript-text .markdown-preview li,
+  .agent-transcript-text .markdown-preview blockquote {
+    color: color-mix(in srgb, var(--color-fg) 94%, var(--color-accent));
+    font-size: 15px;
+    font-weight: 520;
+    line-height: 1.72;
+  }
+
+  .agent-transcript-text .markdown-preview h1,
+  .agent-transcript-text .markdown-preview h2,
+  .agent-transcript-text .markdown-preview h3 {
+    color: var(--color-fg);
+    font-weight: 760;
   }
 
   .agent-transcript-event {
     display: grid;
+    margin-left: 8px;
   }
 
   .agent-full-timeline {
     border-top: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
-    padding-top: 8px;
+    padding-top: 6px;
   }
 
   .agent-full-timeline > summary {
     cursor: pointer;
     color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 800;
   }
 
@@ -4278,29 +4297,29 @@
   }
 
   .agent-timeline {
-    margin-top: 0.55rem;
+    margin-top: 0.28rem;
     display: grid;
-    gap: 0.28rem;
+    gap: 2px;
     position: relative;
-    padding-left: 1rem;
+    padding-left: 0.78rem;
   }
 
   .agent-timeline::before {
     content: '';
     position: absolute;
-    top: 28px;
-    bottom: 7px;
-    left: 4px;
+    top: 22px;
+    bottom: 5px;
+    left: 3px;
     width: 1px;
-    background: color-mix(in srgb, var(--color-border) 72%, transparent);
+    background: color-mix(in srgb, var(--color-border) 56%, transparent);
   }
 
   .agent-timeline-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
-    min-height: 28px;
+    gap: 8px;
+    min-height: 22px;
     color: var(--color-fg-muted);
   }
 
@@ -4308,15 +4327,15 @@
   .agent-timeline-count {
     color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10.5px;
+    font-size: 9.5px;
     font-weight: 800;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
   }
 
   .agent-timeline-title {
     color: color-mix(in srgb, var(--color-fg) 78%, transparent);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
   }
 
@@ -4324,7 +4343,7 @@
     position: relative;
     overflow: visible;
     border: 1px solid transparent;
-    border-radius: 8px;
+    border-radius: 6px;
     background: transparent;
     box-shadow: none;
     transition:
@@ -4335,11 +4354,11 @@
   .agent-timeline-card::before {
     content: '';
     position: absolute;
-    top: 15px;
-    left: -14px;
-    width: 7px;
-    height: 7px;
-    border: 1px solid color-mix(in srgb, var(--color-fg-muted) 54%, transparent);
+    top: 12px;
+    left: -11px;
+    width: 5px;
+    height: 5px;
+    border: 1px solid color-mix(in srgb, var(--color-fg-muted) 46%, transparent);
     border-radius: 999px;
     background: var(--color-bg);
   }
@@ -4364,11 +4383,11 @@
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: 8px;
-    min-height: 32px;
+    gap: 6px;
+    min-height: 26px;
     cursor: pointer;
     list-style: none;
-    padding: 5px 8px;
+    padding: 3px 6px;
     user-select: none;
   }
 
@@ -4382,10 +4401,10 @@
   }
 
   .agent-timeline-kind {
-    min-width: 72px;
+    min-width: 58px;
     color: color-mix(in srgb, var(--color-fg-muted) 88%, var(--color-fg));
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 800;
     line-height: 1;
   }
@@ -4394,8 +4413,8 @@
     min-width: 0;
     overflow: hidden;
     color: color-mix(in srgb, var(--color-fg) 86%, transparent);
-    font-size: 12.5px;
-    font-weight: 650;
+    font-size: 11.5px;
+    font-weight: 680;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -4403,13 +4422,13 @@
   .agent-timeline-status {
     color: color-mix(in srgb, var(--color-success) 82%, var(--color-fg-muted));
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .agent-timeline-body {
-    margin: 0 8px 8px 31px;
-    border-left: 2px solid color-mix(in srgb, var(--color-border) 60%, transparent);
-    padding: 7px 0 7px 10px;
+    margin: 0 6px 6px 25px;
+    border-left: 1px solid color-mix(in srgb, var(--color-border) 56%, transparent);
+    padding: 5px 0 5px 8px;
   }
 
   .agent-timeline-pre,
@@ -4421,8 +4440,8 @@
     overflow-wrap: anywhere;
     color: var(--color-fg);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 12px;
-    line-height: 1.65;
+    font-size: 11px;
+    line-height: 1.5;
   }
 
   .agent-timeline-pre.is-inline-json {
@@ -4473,19 +4492,39 @@
 
   .agent-timeline-kv {
     display: grid;
-    gap: 8px;
+    gap: 5px;
   }
 
   .agent-timeline-kv > div {
     display: grid;
-    grid-template-columns: 108px minmax(0, 1fr);
-    gap: 12px;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 8px;
   }
 
   .agent-timeline-kv dt {
+    min-width: 0;
     color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 12px;
+    font-size: 10.5px;
+  }
+
+  .agent-timeline-protocol-counts > div {
+    grid-template-columns: minmax(0, 1fr) minmax(4.5rem, auto);
+    align-items: baseline;
+  }
+
+  .agent-timeline-protocol-counts dt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .agent-timeline-protocol-counts dd {
+    min-width: 4.5rem;
+    max-height: none;
+    overflow: visible;
+    text-align: right;
+    white-space: nowrap;
   }
 
   .agent-timeline-diff {
