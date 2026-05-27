@@ -66,6 +66,17 @@ test('buildAgentTimelineModel 将 available_commands_update 与 protocol.stderr 
       raw: { method: 'protocol.stderr' },
     }),
     event({
+      id: 'usage-1',
+      type: 'raw',
+      seq: 5,
+      created_at: 1300,
+      payload: { raw_type: 'usage_update' },
+      raw: {
+        method: 'session/update',
+        params: { update: { sessionUpdate: 'usage_update' } },
+      },
+    }),
+    event({
       id: 'thinking-2',
       type: 'thinking',
       seq: 2,
@@ -76,9 +87,63 @@ test('buildAgentTimelineModel 将 available_commands_update 与 protocol.stderr 
 
   assert.equal(model.visibleEvents.length, 1);
   assert.equal(model.visibleEvents[0]?.id, 'thinking-2');
-  assert.equal(model.debugEvents.length, 2);
+  assert.equal(model.debugEvents.length, 3);
   assert.equal(model.debugEvents[0]?.id, 'stderr-1');
   assert.equal(model.debugEvents[1]?.id, 'commands-1');
+  assert.equal(model.debugEvents[2]?.id, 'usage-1');
+});
+
+test('buildAgentTimelineModel 生成 ACP thinking 流缺失诊断', () => {
+  const model = buildAgentTimelineModel([
+    event({
+      id: 'message-1',
+      type: 'assistant_message',
+      status: 'delta',
+      payload: { text: 'hello' },
+      raw: {
+        method: 'session/update',
+        params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hello' } } },
+      },
+    }),
+    event({
+      id: 'tool-1',
+      type: 'tool_call',
+      seq: 2,
+      payload: { id: 'tool-1', name: 'Read' },
+      raw: {
+        method: 'session/update',
+        params: { update: { sessionUpdate: 'tool_call', id: 'tool-1', title: 'Read package.json' } },
+      },
+    }),
+  ]);
+
+  assert.equal(model.visibleEvents.length, 1);
+  assert.equal(model.diagnostics?.thoughtStreamStatus, 'missing');
+  assert.match(model.diagnostics?.thoughtStreamMessage ?? '', /provider 没有返回 thinking/);
+  assert.deepEqual(model.diagnostics?.protocolEventCounts, [
+    { type: 'agent_message_chunk', count: 1 },
+    { type: 'tool_call', count: 1 },
+  ]);
+});
+
+test('buildAgentTimelineModel 识别已收到 agent_thought_chunk', () => {
+  const model = buildAgentTimelineModel([
+    event({
+      id: 'thinking-raw-1',
+      type: 'thinking',
+      status: 'delta',
+      payload: { text: '分析中' },
+      raw: {
+        method: 'session/update',
+        params: { update: { sessionUpdate: 'agent_thought_chunk', delta: '分析中' } },
+      },
+    }),
+  ]);
+
+  assert.equal(model.diagnostics?.thoughtStreamStatus, 'received');
+  assert.deepEqual(model.diagnostics?.protocolEventCounts, [
+    { type: 'agent_thought_chunk', count: 1 },
+  ]);
 });
 
 test('buildAgentTimelineModel 按 payload.id / payload.tool_call_id / payload.toolCallId 合并工具生命周期', () => {

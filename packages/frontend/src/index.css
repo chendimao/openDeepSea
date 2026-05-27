@@ -4336,6 +4336,45 @@
     padding: 6px 8px;
   }
 
+  .agent-timeline-protocol-diagnostics {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 10px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-code-bg) 68%, transparent);
+    padding: 9px;
+  }
+
+  .agent-timeline-protocol-diagnostics p {
+    margin: 0;
+    color: var(--color-fg-muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .agent-timeline-diagnostic-badge {
+    width: max-content;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .agent-timeline-diagnostic-badge.is-received {
+    background: color-mix(in srgb, var(--color-success) 14%, transparent);
+    color: var(--color-success);
+  }
+
+  .agent-timeline-diagnostic-badge.is-missing {
+    background: color-mix(in srgb, var(--color-warning, #c77700) 14%, transparent);
+    color: var(--color-warning, #c77700);
+  }
+
+  .agent-timeline-diagnostic-badge.is-not_applicable {
+    background: color-mix(in srgb, var(--color-fg-muted) 12%, transparent);
+    color: var(--color-fg-muted);
+  }
+
   .agent-timeline-kv {
     display: grid;
     gap: 8px;

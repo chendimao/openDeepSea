@@ -7,7 +7,7 @@ import type {
   MessageTraceThinking,
   MessageTraceToolCall,
 } from '../lib/types';
-import { buildAgentTimelineModel } from './agent-timeline/model';
+import { buildAgentTimelineModel, type AgentTimelineDiagnostics } from './agent-timeline/model';
 
 const planStatusLabels: Record<string, string> = {
   pending: '待处理',
@@ -57,7 +57,7 @@ export function AgentTimeline({
 }): JSX.Element | null {
   const mergedEvents = mergeTimelineEvents(events, traceToEvents(trace));
   const model = buildAgentTimelineModel(mergedEvents);
-  if (model.visibleEvents.length === 0 && model.debugEvents.length === 0) return null;
+  if (model.visibleEvents.length === 0 && model.debugEvents.length === 0 && !model.diagnostics) return null;
 
   return (
     <section className="agent-timeline" aria-label={model.visibleEvents.length > 0 ? 'ACP 执行过程' : 'ACP 协议调试'}>
@@ -75,7 +75,9 @@ export function AgentTimeline({
           ))}
         </>
       ) : null}
-      {model.debugEvents.length > 0 ? <DebugEventsPanel events={model.debugEvents} /> : null}
+      {model.debugEvents.length > 0 || model.diagnostics ? (
+        <DebugEventsPanel events={model.debugEvents} diagnostics={model.diagnostics} />
+      ) : null}
     </section>
   );
 }
@@ -102,8 +104,15 @@ function TimelineItem({ event }: { event: AgentTimelineEvent }): JSX.Element {
   );
 }
 
-function DebugEventsPanel({ events }: { events: AgentTimelineEvent[] }): JSX.Element {
+function DebugEventsPanel({
+  events,
+  diagnostics,
+}: {
+  events: AgentTimelineEvent[];
+  diagnostics: AgentTimelineDiagnostics | null;
+}): JSX.Element {
   const [open, setOpen] = useState(false);
+  const hiddenCount = events.length + (diagnostics ? 1 : 0);
   return (
     <details className="agent-timeline-card is-debug" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary className="agent-timeline-summary">
@@ -112,12 +121,34 @@ function DebugEventsPanel({ events }: { events: AgentTimelineEvent[] }): JSX.Ele
         </span>
         <span className="agent-timeline-kind">调试</span>
         <strong>协议调试</strong>
-        <span className="agent-timeline-status">{events.length} 条隐藏事件</span>
+        <span className="agent-timeline-status">{hiddenCount} 条隐藏事件</span>
       </summary>
       <div className="agent-timeline-body">
-        <pre className="agent-timeline-pre">{stringifyJson(events.map((event) => event.raw ?? event.payload))}</pre>
+        {diagnostics ? <ProtocolDiagnosticsView diagnostics={diagnostics} /> : null}
+        {events.length > 0 ? (
+          <pre className="agent-timeline-pre">{stringifyJson(events.map((event) => event.raw ?? event.payload))}</pre>
+        ) : null}
       </div>
     </details>
+  );
+}
+
+function ProtocolDiagnosticsView({ diagnostics }: { diagnostics: AgentTimelineDiagnostics }): JSX.Element {
+  return (
+    <div className="agent-timeline-protocol-diagnostics">
+      <div className={`agent-timeline-diagnostic-badge is-${diagnostics.thoughtStreamStatus}`}>
+        {diagnostics.thoughtStreamStatus === 'received' ? 'thinking 已收到' : diagnostics.thoughtStreamStatus === 'missing' ? 'thinking 未返回' : 'thinking 未判断'}
+      </div>
+      <p>{diagnostics.thoughtStreamMessage}</p>
+      <dl className="agent-timeline-kv">
+        {diagnostics.protocolEventCounts.map((entry) => (
+          <div key={entry.type}>
+            <dt>{entry.type}</dt>
+            <dd>{entry.count} 次</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 

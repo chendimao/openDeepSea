@@ -3,10 +3,17 @@ import type { AgentTimelineEvent } from '../../lib/types';
 export interface AgentTimelineModel {
   visibleEvents: AgentTimelineEvent[];
   debugEvents: AgentTimelineEvent[];
+  diagnostics: AgentTimelineDiagnostics | null;
   visibleCount: number;
 }
 
-const DEBUG_RAW_TYPES = new Set(['available_commands_update', 'protocol.stderr']);
+export interface AgentTimelineDiagnostics {
+  protocolEventCounts: Array<{ type: string; count: number }>;
+  thoughtStreamStatus: 'received' | 'missing' | 'not_applicable';
+  thoughtStreamMessage: string;
+}
+
+const DEBUG_RAW_TYPES = new Set(['available_commands_update', 'protocol.stderr', 'usage_update']);
 const TOOL_STATUS_PRIORITY: Record<AgentTimelineEvent['status'], number> = {
   started: 0,
   delta: 1,
@@ -30,10 +37,12 @@ export function buildAgentTimelineModel(events: AgentTimelineEvent[] = []): Agen
   const mergedVisibleEvents = mergeToolLifecycleEvents(visibleEvents);
   const sortedVisibleEvents = stableSortByTimeline(mergedVisibleEvents);
   const sortedDebugEvents = stableSortByTimeline(debugEvents);
+  const diagnostics = buildDiagnostics(events);
 
   return {
     visibleEvents: sortedVisibleEvents,
     debugEvents: sortedDebugEvents,
+    diagnostics,
     visibleCount: sortedVisibleEvents.length,
   };
 }
@@ -48,6 +57,55 @@ function isDebugEvent(event: AgentTimelineEvent): boolean {
   if (readString(event.raw?.method) === 'protocol.stderr') return true;
 
   return false;
+}
+
+function buildDiagnostics(events: AgentTimelineEvent[]): AgentTimelineDiagnostics | null {
+  const protocolCounts = new Map<string, number>();
+  let hasProtocolEvent = false;
+  let hasAssistantOrToolStream = false;
+  let hasThinking = false;
+
+  for (const event of events) {
+    if (event.type === 'thinking') hasThinking = true;
+    if (event.type === 'assistant_message' || event.type === 'tool_call' || event.type === 'tool_result') {
+      hasAssistantOrToolStream = true;
+    }
+
+    const sessionUpdate = readSessionUpdate(event.raw);
+    const protocolType = sessionUpdate
+      ?? readString(event.payload.raw_type)
+      ?? readString(event.payload.type)
+      ?? readString(event.raw?.type);
+    if (!protocolType) continue;
+
+    hasProtocolEvent = true;
+    protocolCounts.set(protocolType, (protocolCounts.get(protocolType) ?? 0) + 1);
+    if (protocolType === 'agent_thought_chunk' || /thinking|reasoning/i.test(protocolType)) {
+      hasThinking = true;
+    }
+  }
+
+  if (!hasProtocolEvent) return null;
+
+  const thoughtStreamStatus = hasThinking
+    ? 'received'
+    : hasAssistantOrToolStream
+      ? 'missing'
+      : 'not_applicable';
+
+  return {
+    protocolEventCounts: [...protocolCounts.entries()]
+      .map(([type, count]) => ({ type, count }))
+      .sort((left, right) => right.count - left.count || left.type.localeCompare(right.type)),
+    thoughtStreamStatus,
+    thoughtStreamMessage: formatThoughtStreamMessage(thoughtStreamStatus),
+  };
+}
+
+function formatThoughtStreamMessage(status: AgentTimelineDiagnostics['thoughtStreamStatus']): string {
+  if (status === 'received') return '已收到 thinking/reasoning 流。';
+  if (status === 'missing') return '本轮 ACP 返回了正文或工具事件，但 provider 没有返回 thinking/reasoning 流。';
+  return '本轮未观察到可判断 thinking 流的 ACP 消息事件。';
 }
 
 function readSessionUpdate(raw: Record<string, unknown> | undefined): string | null {

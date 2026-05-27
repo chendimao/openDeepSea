@@ -26,6 +26,9 @@ export const COMMAND_ENV: Record<AcpBackend, string> = {
   opencode: 'OPENCLAW_ACP_OPENCODE_COMMAND',
 };
 
+const CODEX_REASONING_EFFORT_ENV = 'OPENCLAW_ACP_CODEX_REASONING_EFFORT';
+const CODEX_REASONING_EFFORTS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh']);
+
 export function parseAcpMode(value: string | undefined): AcpProtocolMode {
   if (value === 'protocol' || value === 'legacy' || value === 'auto') {
     return value;
@@ -106,13 +109,34 @@ export function getAcpServerConfig(
   const mode = parseAcpMode(env.OPENCLAW_ACP_MODE);
   const commandText = env[COMMAND_ENV[backend]]?.trim() || DEFAULT_COMMANDS[backend];
   const { command, args } = splitCommand(commandText);
+  const resolvedArgs = appendBackendArgs(backend, args, env);
 
   return {
     backend,
     mode,
     command,
-    args,
+    args: resolvedArgs,
     transport: 'stdio',
     enabled: mode !== 'legacy',
   };
+}
+
+function appendBackendArgs(
+  backend: AcpBackend,
+  args: string[],
+  env: AcpProtocolEnv,
+): string[] {
+  if (backend !== 'codex') return args;
+
+  const reasoningEffort = readCodexReasoningEffort(env[CODEX_REASONING_EFFORT_ENV]);
+  if (!reasoningEffort) return args;
+  if (args.some((arg) => arg.includes('model_reasoning_effort'))) return args;
+
+  return [...args, '-c', `model_reasoning_effort=${reasoningEffort}`];
+}
+
+function readCodexReasoningEffort(value: string | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized || normalized === 'off' || normalized === 'none') return null;
+  return CODEX_REASONING_EFFORTS.has(normalized) ? normalized : null;
 }

@@ -70,6 +70,32 @@ test('getAcpServerConfig returns default codex protocol server config', () => {
   });
 });
 
+test('getAcpServerConfig appends Codex reasoning effort when configured', () => {
+  assert.deepEqual(
+    getAcpServerConfig('codex', {
+      OPENCLAW_ACP_CODEX_REASONING_EFFORT: 'high',
+    }),
+    {
+      backend: 'codex',
+      mode: 'auto',
+      command: 'npx',
+      args: ['@zed-industries/codex-acp', '-c', 'model_reasoning_effort=high'],
+      transport: 'stdio',
+      enabled: true,
+    },
+  );
+});
+
+test('getAcpServerConfig does not duplicate Codex reasoning effort args', () => {
+  assert.deepEqual(
+    getAcpServerConfig('codex', {
+      OPENCLAW_ACP_CODEX_COMMAND: 'npx @zed-industries/codex-acp -c model_reasoning_effort=medium',
+      OPENCLAW_ACP_CODEX_REASONING_EFFORT: 'high',
+    }).args,
+    ['@zed-industries/codex-acp', '-c', 'model_reasoning_effort=medium'],
+  );
+});
+
 test('getAcpServerConfig applies opencode command override in protocol mode', () => {
   assert.deepEqual(
     getAcpServerConfig('opencode', {

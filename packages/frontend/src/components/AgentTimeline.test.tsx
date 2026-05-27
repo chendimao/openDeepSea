@@ -130,8 +130,41 @@ test('AgentTimeline shows hidden debug monitor without raw events in visible cou
   );
 
   assert.match(html, /协议调试/);
-  assert.match(html, /1 条隐藏事件/);
+  assert.match(html, /2 条隐藏事件/);
   assert.doesNotMatch(html, /ACP 执行过程/);
+});
+
+test('AgentTimeline renders protocol diagnostics when ACP omits thinking stream', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'reply-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'assistant_message',
+            status: 'delta',
+            title: '助手回复',
+            payload: { text: 'hello' },
+            raw: {
+              method: 'session/update',
+              params: { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'hello' } } },
+            },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /协议调试/);
+  assert.match(html, /thinking 未返回/);
+  assert.match(html, /provider 没有返回 thinking/);
+  assert.match(html, /agent_message_chunk/);
+  assert.doesNotMatch(html, /助手回复/);
 });
 
 test('AgentTimeline hides assistant message stream chunks and renders translated structured fields', () => {
