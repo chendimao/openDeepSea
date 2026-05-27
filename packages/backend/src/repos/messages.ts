@@ -4,6 +4,7 @@ import type {
   AgentTimelineEvent,
   Message,
   MessageMetadata,
+  PlannerDecision,
   MessageTrace,
   MessageType,
   SenderType,
@@ -11,7 +12,7 @@ import type {
 
 export const messageRepo = {
   listByRoom(roomId: string, limit = 200): Message[] {
-    return db
+    const messages = db
       .prepare(
         `SELECT * FROM messages
          WHERE room_id = ?
@@ -20,6 +21,7 @@ export const messageRepo = {
          LIMIT ?`,
       )
       .all(roomId, limit) as Message[];
+    return refreshPlannerMetadataFromContent(messages);
   },
 
   get(id: string): Message | undefined {
@@ -98,6 +100,110 @@ export const messageRepo = {
     return changed;
   },
 };
+
+function refreshPlannerMetadataFromContent(messages: Message[]): Message[] {
+  const refreshed: Message[] = [];
+  for (const message of messages) {
+    const next = refreshPlannerMessageMetadata(message);
+    refreshed.push(next);
+  }
+  return refreshed;
+}
+
+function refreshPlannerMessageMetadata(message: Message): Message {
+  if (message.sender_type !== 'agent' || message.sender_id !== 'planner') return message;
+  const explicitDecision = parseExplicitPlannerDecision(message.content);
+  if (!explicitDecision) return message;
+
+  const metadata = parseMetadataObject(message.metadata);
+  const currentDecision = readPlannerDecisionObject(metadata.planner_decision);
+  if (plannerDecisionMatches(currentDecision, explicitDecision)) return message;
+
+  const nextMetadata = { ...metadata, planner_decision: explicitDecision };
+  db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify(nextMetadata), message.id);
+  return { ...message, metadata: JSON.stringify(nextMetadata) };
+}
+
+function parseExplicitPlannerDecision(content: string): PlannerDecision | null {
+  for (const candidate of extractJsonObjectCandidates(content)) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      const decision = readPlannerDecisionObject(parsed);
+      if (decision) return decision;
+    } catch {
+      // Ignore malformed JSON blocks.
+    }
+  }
+  return null;
+}
+
+function extractJsonObjectCandidates(content: string): string[] {
+  const fencedBlocks = [...content.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)]
+    .map((match) => match[1]?.trim())
+    .filter((item): item is string => Boolean(item && item.startsWith('{') && item.endsWith('}')));
+  const trimmed = content.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return [...fencedBlocks, trimmed];
+  }
+  return fencedBlocks;
+}
+
+function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
+  if (!isRecord(value)) return null;
+  const candidate = isRecord(value.planner_decision) ? value.planner_decision : value;
+  if (
+    !isPlannerExecutionMode(candidate.mode) ||
+    !isPlannerDecisionStatus(candidate.status) ||
+    typeof candidate.summary !== 'string' ||
+    !candidate.summary.trim() ||
+    typeof candidate.awaiting_user_confirmation !== 'boolean' ||
+    !Array.isArray(candidate.next_steps)
+  ) {
+    return null;
+  }
+
+  const next_steps = candidate.next_steps
+    .map((step) => {
+      if (!isRecord(step)) return null;
+      if (
+        typeof step.agent_id !== 'string' ||
+        !step.agent_id.trim() ||
+        typeof step.goal !== 'string' ||
+        !step.goal.trim()
+      ) {
+        return null;
+      }
+      return {
+        agent_id: step.agent_id.trim(),
+        goal: step.goal.trim(),
+      };
+    })
+    .filter((step): step is PlannerDecision['next_steps'][number] => Boolean(step));
+
+  return {
+    mode: candidate.mode,
+    status: candidate.status,
+    summary: candidate.summary.trim(),
+    next_steps,
+    awaiting_user_confirmation: candidate.awaiting_user_confirmation,
+  };
+}
+
+function isPlannerExecutionMode(value: unknown): value is PlannerDecision['mode'] {
+  return value === 'pause_after_suggestion' || value === 'auto_continue';
+}
+
+function isPlannerDecisionStatus(value: unknown): value is PlannerDecision['status'] {
+  return value === 'suggested' || value === 'dispatching' || value === 'completed' || value === 'blocked';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function plannerDecisionMatches(a: PlannerDecision | null, b: PlannerDecision): boolean {
+  return Boolean(a) && JSON.stringify(a) === JSON.stringify(b);
+}
 
 function parseMetadataObject(rawMetadata: string | null): Record<string, unknown> {
   if (!rawMetadata) return {};

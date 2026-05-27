@@ -1860,6 +1860,74 @@ test('respondAsAgent annotates explicit planner decision even when ACP prompt ti
   }
 });
 
+test('message list refreshes stale planner metadata from explicit decision content', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-late-decision-'));
+  const project = projectRepo.create({ name: `planner-late-decision-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '侧边栏添加一个测试菜单，菜单内容为一个计数器',
+    message_type: 'text',
+  });
+  const plannerReply = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: [
+      '建议交给前端执行。',
+      '',
+      '```json',
+      JSON.stringify({
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '实现测试计数器菜单',
+          next_steps: [
+            { agent_id: 'frontend-executor', goal: '新增测试菜单和计数器页面' },
+          ],
+          awaiting_user_confirmation: true,
+        },
+      }),
+      '```',
+    ].join('\n'),
+    message_type: 'agent_stream',
+    metadata: {
+      planner_decision: {
+        mode: 'pause_after_suggestion',
+        status: 'suggested',
+        summary: '建议交给前端执行。',
+        next_steps: [],
+        awaiting_user_confirmation: true,
+      },
+      source_message_id: userMessage.id,
+    },
+  });
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/messages`);
+    assert.equal(response.status, 200);
+    const body = await response.json() as Message[];
+    const reply = body.find((item) => item.id === plannerReply.id);
+    assert.ok(reply);
+
+    const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.planner_decision?.summary, '实现测试计数器菜单');
+    assert.equal(metadata.planner_decision?.next_steps.length, 1);
+    assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
+
+    const persisted = messageRepo.get(plannerReply.id);
+    assert.ok(persisted);
+    const persistedMetadata = JSON.parse(persisted.metadata ?? '{}') as MessageMetadata;
+    assert.equal(persistedMetadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent does not annotate failed planner plain text as dispatchable decision', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-timeout-plain-'));
   const project = projectRepo.create({ name: `planner-timeout-plain-${Date.now()}`, path: projectPath });
