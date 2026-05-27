@@ -10,10 +10,10 @@ import {
   tickStreamingDisplay,
 } from './streamingDisplay.js';
 
-test('普通中文文本进入逐字队列', () => {
+test('普通中文文本进入短片段队列', () => {
   const state = enqueueStreamingChunk(createStreamingDisplayState(), '你好世界');
   assert.equal(state.displayed, '');
-  assert.deepEqual(state.queue, ['你', '好', '世', '界']);
+  assert.deepEqual(state.queue, ['你好世界']);
 });
 
 test('代码块内 chunk 块级追加', () => {
@@ -30,7 +30,7 @@ test('多行日志块级追加', () => {
   assert.equal(classifyStreamingChunk('', chunk), 'block');
 });
 
-test('多行普通回复仍进入逐字队列', () => {
+test('多行普通回复仍进入渐进队列', () => {
   const chunk = [
     '分析边界建议先收敛到一个重点，否则会太散。',
     '架构概览：项目结构、模块职责、启动方式',
@@ -40,7 +40,7 @@ test('多行普通回复仍进入逐字队列', () => {
   assert.equal(classifyStreamingChunk('', chunk), 'typewriter');
 });
 
-test('较长的普通自然语言回复仍进入逐字队列', () => {
+test('较长的普通自然语言回复仍进入渐进队列', () => {
   const chunk = [
     '分析边界建议先收敛到一个重点，否则分析当前项目会太散。',
     '可以先建立整体地图，再深入当前记忆里提到的上传与消息机制。',
@@ -55,10 +55,10 @@ test('较长的普通自然语言回复仍进入逐字队列', () => {
 });
 
 test('tick 会释放队列并保留剩余内容', () => {
-  const state = enqueueStreamingChunk(createStreamingDisplayState(), 'abcdef');
+  const state = enqueueStreamingChunk(createStreamingDisplayState(), 'abcdefghijklmnopqrstuvwxy');
   const next = tickStreamingDisplay(state);
   assert.ok(next.displayed.length > 0);
-  assert.ok(next.queue.length < 6);
+  assert.ok(next.queue.length < state.queue.length);
 });
 
 test('done 后 flush 到真实完整内容', () => {
@@ -68,7 +68,7 @@ test('done 后 flush 到真实完整内容', () => {
   assert.deepEqual(flushed.queue, []);
 });
 
-test('显示内容保留已释放逐字状态，不直接暴露未 tick 队列', () => {
+test('显示内容保留已释放渐进状态，不直接暴露未 tick 队列', () => {
   const state = enqueueStreamingChunk(createStreamingDisplayState('截图确认'), '重叠点');
 
   assert.equal(resolveStreamingDisplayContent(state, '截图确认重叠点'), '截图确认');
