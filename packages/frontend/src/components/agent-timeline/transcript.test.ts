@@ -63,6 +63,17 @@ test('buildAgentTranscript returns null when no assistant_message events are ava
   assert.equal(model, null);
 });
 
+test('buildAgentTranscript returns null when assistant_message chunks have no readable text', () => {
+  const model = buildAgentTranscript({
+    events: [
+      event('text-1', 1, 'assistant_message', '助手回复', { text: '' }),
+      event('tool-1', 2, 'tool_result', '工具结果 Read', { id: 'read-1', name: 'Read' }),
+    ],
+  });
+
+  assert.equal(model, null);
+});
+
 function event(
   id: string,
   seq: number,

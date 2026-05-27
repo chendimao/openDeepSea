@@ -295,6 +295,49 @@ test('falls back to final content plus timeline when assistant_message events ar
   assert.match(html, /rg -n &quot;model&quot; packages\/frontend\/src/);
 });
 
+test('falls back to final content when assistant_message trace has no readable text', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content="完整最终正文仍需展示"
+        trace={{
+          events: [
+            {
+              id: 'text-empty',
+              message_id: 'message-1',
+              run_id: 'run-1',
+              agent_id: 'planner',
+              seq: 1,
+              type: 'assistant_message',
+              status: 'delta',
+              title: '助手回复',
+              payload: { text: '' },
+              created_at: 1000,
+            },
+            {
+              id: 'tool-1',
+              message_id: 'message-1',
+              run_id: 'run-1',
+              agent_id: 'planner',
+              seq: 2,
+              type: 'tool_result',
+              status: 'completed',
+              title: '工具结果 Read',
+              payload: { id: 'read-1', name: 'Read', input: '{"path":"package.json"}' },
+              created_at: 1001,
+            },
+          ],
+        }}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /完整最终正文仍需展示/);
+  assert.doesNotMatch(html, /agent-transcript/);
+  assert.match(html, /ACP 执行过程/);
+  assert.match(html, /Read · package\.json/);
+});
+
 function renderMessage(content: string): string {
   return renderToStaticMarkup(
     <I18nProvider>

@@ -53,7 +53,9 @@ export function buildAgentTranscript(trace?: MessageTrace): AgentTranscriptModel
   }
 
   flushText();
-  return { items: mergeTranscriptToolEvents(items), allEvents: events };
+  const mergedItems = mergeTranscriptToolEvents(items);
+  if (!mergedItems.some((item) => item.type === 'text')) return null;
+  return { items: mergedItems, allEvents: events };
 }
 
 function mergeTranscriptToolEvents(items: AgentTranscriptItem[]): AgentTranscriptItem[] {
