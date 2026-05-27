@@ -253,7 +253,7 @@ test('renders ACP transcript by interleaving assistant text and tool events', ()
   assert.match(html, /我切换到当前会话列出的可用技能路径读取/);
   assert.match(html, /Read · \/Users\/chendimao\/\.agents\/skills\/using-superpowers\/SKILL\.md/);
   assert.match(html, /完成/);
-  assert.match(html, /完整 ACP 轨迹/);
+  assert.doesNotMatch(html, /完整 ACP 轨迹/);
   assert.doesNotMatch(html, /最终正文不应在 transcript 模式重复展示/);
 });
 

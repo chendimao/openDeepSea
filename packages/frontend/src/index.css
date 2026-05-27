@@ -2529,54 +2529,41 @@
 
   .agent-transcript {
     display: grid;
-    gap: 8px;
+    gap: 6px;
   }
 
   .agent-transcript-text {
     display: grid;
-    border-left: 3px solid color-mix(in srgb, var(--color-accent) 44%, var(--color-border));
-    border-radius: 0 10px 10px 0;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent 58%);
-    padding: 8px 10px 8px 14px;
+    border-left: 2px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
+    border-radius: 0 8px 8px 0;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent 54%);
+    padding: 6px 9px 6px 11px;
     color: var(--color-fg);
   }
 
   .agent-transcript-text .markdown-preview {
-    gap: 8px;
+    gap: 6px;
   }
 
   .agent-transcript-text .markdown-preview p,
   .agent-transcript-text .markdown-preview li,
   .agent-transcript-text .markdown-preview blockquote {
     color: color-mix(in srgb, var(--color-fg) 94%, var(--color-accent));
-    font-size: 15px;
-    font-weight: 520;
-    line-height: 1.72;
+    font-size: 14px;
+    font-weight: 450;
+    line-height: 1.62;
   }
 
   .agent-transcript-text .markdown-preview h1,
   .agent-transcript-text .markdown-preview h2,
   .agent-transcript-text .markdown-preview h3 {
     color: var(--color-fg);
-    font-weight: 760;
+    font-weight: 680;
   }
 
   .agent-transcript-event {
     display: grid;
-    margin-left: 8px;
-  }
-
-  .agent-full-timeline {
-    border-top: 1px solid color-mix(in srgb, var(--color-border) 58%, transparent);
-    padding-top: 6px;
-  }
-
-  .agent-full-timeline > summary {
-    cursor: pointer;
-    color: var(--color-fg-muted);
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10.5px;
-    font-weight: 800;
+    margin-left: 5px;
   }
 
   .streaming-cursor {
@@ -4297,19 +4284,19 @@
   }
 
   .agent-timeline {
-    margin-top: 0.28rem;
+    margin-top: 0.18rem;
     display: grid;
-    gap: 2px;
+    gap: 1px;
     position: relative;
-    padding-left: 0.78rem;
+    padding-left: 0.62rem;
   }
 
   .agent-timeline::before {
     content: '';
     position: absolute;
-    top: 22px;
-    bottom: 5px;
-    left: 3px;
+    top: 18px;
+    bottom: 4px;
+    left: 2px;
     width: 1px;
     background: color-mix(in srgb, var(--color-border) 56%, transparent);
   }
@@ -4318,8 +4305,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    min-height: 22px;
+    gap: 6px;
+    min-height: 18px;
     color: var(--color-fg-muted);
   }
 
@@ -4327,23 +4314,23 @@
   .agent-timeline-count {
     color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 9.5px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
     text-transform: uppercase;
   }
 
   .agent-timeline-title {
     color: color-mix(in srgb, var(--color-fg) 78%, transparent);
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 10px;
+    font-weight: 620;
   }
 
   .agent-timeline-card {
     position: relative;
     overflow: visible;
     border: 1px solid transparent;
-    border-radius: 6px;
+    border-radius: 5px;
     background: transparent;
     box-shadow: none;
     transition:
@@ -4354,10 +4341,10 @@
   .agent-timeline-card::before {
     content: '';
     position: absolute;
-    top: 12px;
-    left: -11px;
-    width: 5px;
-    height: 5px;
+    top: 10px;
+    left: -9px;
+    width: 4px;
+    height: 4px;
     border: 1px solid color-mix(in srgb, var(--color-fg-muted) 46%, transparent);
     border-radius: 999px;
     background: var(--color-bg);
@@ -4383,11 +4370,11 @@
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: 6px;
-    min-height: 26px;
+    gap: 5px;
+    min-height: 22px;
     cursor: pointer;
     list-style: none;
-    padding: 3px 6px;
+    padding: 2px 5px;
     user-select: none;
   }
 
@@ -4401,11 +4388,11 @@
   }
 
   .agent-timeline-kind {
-    min-width: 58px;
+    min-width: 52px;
     color: color-mix(in srgb, var(--color-fg-muted) 88%, var(--color-fg));
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10px;
-    font-weight: 800;
+    font-size: 9.5px;
+    font-weight: 700;
     line-height: 1;
   }
 
@@ -4413,8 +4400,8 @@
     min-width: 0;
     overflow: hidden;
     color: color-mix(in srgb, var(--color-fg) 86%, transparent);
-    font-size: 11.5px;
-    font-weight: 680;
+    font-size: 10.5px;
+    font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -4422,13 +4409,13 @@
   .agent-timeline-status {
     color: color-mix(in srgb, var(--color-success) 82%, var(--color-fg-muted));
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 9.5px;
   }
 
   .agent-timeline-body {
-    margin: 0 6px 6px 25px;
+    margin: 0 5px 4px 20px;
     border-left: 1px solid color-mix(in srgb, var(--color-border) 56%, transparent);
-    padding: 5px 0 5px 8px;
+    padding: 3px 0 3px 6px;
   }
 
   .agent-timeline-pre,
@@ -4440,39 +4427,39 @@
     overflow-wrap: anywhere;
     color: var(--color-fg);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 11px;
-    line-height: 1.5;
+    font-size: 10.5px;
+    line-height: 1.42;
   }
 
   .agent-timeline-pre.is-inline-json {
     max-height: 180px;
     border-radius: 8px;
     background: color-mix(in srgb, var(--color-code-bg) 82%, transparent);
-    padding: 6px 8px;
+    padding: 5px 7px;
   }
 
   .agent-timeline-protocol-diagnostics {
     display: grid;
-    gap: 7px;
-    margin-bottom: 8px;
-    border-radius: 8px;
+    gap: 5px;
+    margin-bottom: 5px;
+    border-radius: 6px;
     background: color-mix(in srgb, var(--color-code-bg) 48%, transparent);
-    padding: 8px;
+    padding: 6px;
   }
 
   .agent-timeline-protocol-diagnostics p {
     margin: 0;
     color: var(--color-fg-muted);
-    font-size: 12px;
-    line-height: 1.6;
+    font-size: 11px;
+    line-height: 1.45;
   }
 
   .agent-timeline-diagnostic-badge {
     width: max-content;
     border-radius: 999px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 800;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
   }
 
   .agent-timeline-diagnostic-badge.is-received {
@@ -4492,20 +4479,20 @@
 
   .agent-timeline-kv {
     display: grid;
-    gap: 5px;
+    gap: 3px;
   }
 
   .agent-timeline-kv > div {
     display: grid;
-    grid-template-columns: 82px minmax(0, 1fr);
-    gap: 8px;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 6px;
   }
 
   .agent-timeline-kv dt {
     min-width: 0;
     color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10.5px;
+    font-size: 10px;
   }
 
   .agent-timeline-protocol-counts > div {

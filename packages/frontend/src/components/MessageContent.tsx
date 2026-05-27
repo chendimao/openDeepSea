@@ -172,10 +172,6 @@ function AgentTranscriptView({
           </div>
         )
       ))}
-      <details className="agent-full-timeline">
-        <summary>完整 ACP 轨迹</summary>
-        <AgentTimeline events={transcript.allEvents} />
-      </details>
     </div>
   );
 }
