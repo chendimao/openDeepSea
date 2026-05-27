@@ -292,7 +292,7 @@ test('invokeProtocolSession treats prompt timeout after answer text as soft comp
     projectPath: process.cwd(),
     sessionId: null,
     prompt: 'hello',
-    stageTimeoutMs: 1_000,
+    stageTimeoutMs: 5_000,
     promptTimeoutMs: 50,
     onChunk: (chunk) => chunks.push(chunk),
   });

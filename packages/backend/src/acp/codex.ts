@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import type { AcpPermissionMode, CliSessionSummary } from '../types.js';
 import type { SessionAdapter } from './types.js';
 import { emitProtocolFallback, runStreaming } from './claudecode.js';
-import { invokeProtocolSession } from './protocol-client.js';
+import { invokeProtocolSession, isAcpStreamDisconnected } from './protocol-client.js';
 import { getAcpServerConfig } from './protocol-registry.js';
+
+const CODEX_ACP_MAX_NETWORK_RETRIES = 1;
 
 async function* walkRolloutFiles(rootDir: string): AsyncGenerator<string> {
   let years: string[] = [];
@@ -119,7 +121,7 @@ export const codexAdapter: SessionAdapter = {
   async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('codex');
     if (protocolConfig.enabled) {
-      const protocolResult = await invokeProtocolSession({
+      let protocolResult = await invokeProtocolSession({
         backend: 'codex',
         server: protocolConfig,
         projectPath,
@@ -132,6 +134,27 @@ export const codexAdapter: SessionAdapter = {
         onSession,
         signal,
       });
+      for (let attempt = 1; shouldRetryCodexAcp(protocolResult.stderr, protocolResult.retrySafe) && attempt <= CODEX_ACP_MAX_NETWORK_RETRIES; attempt += 1) {
+        onChunk({
+          stream: 'stderr',
+          channel: 'activity',
+          text: `[ACP retry] Codex ACP stream disconnected before output, retrying ${attempt}/${CODEX_ACP_MAX_NETWORK_RETRIES}.\n`,
+          rawType: 'protocol.retry',
+        });
+        protocolResult = await invokeProtocolSession({
+          backend: 'codex',
+          server: protocolConfig,
+          projectPath,
+          sessionId: protocolResult.sessionId ?? sessionId,
+          prompt,
+          imagePaths,
+          acpPermissionMode,
+          acpWritableDirs,
+          onChunk,
+          onSession,
+          signal,
+        });
+      }
       if (protocolResult.exitCode === 0 || protocolConfig.mode === 'protocol' || protocolResult.fallbackSafe === false) {
         return protocolResult;
       }
@@ -148,6 +171,11 @@ export const codexAdapter: SessionAdapter = {
     return runStreaming('codex', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin);
   },
 };
+
+function shouldRetryCodexAcp(stderr: string, retrySafe?: boolean): boolean {
+  if (!retrySafe) return false;
+  return isAcpStreamDisconnected(stderr);
+}
 
 export function buildCodexExecInvocation(args: {
   sessionId: string | null;

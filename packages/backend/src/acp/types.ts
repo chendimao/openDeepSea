@@ -58,4 +58,5 @@ export interface AcpInvokeResult {
   sessionId: string | null;
   stderr: string;
   fallbackSafe?: boolean;
+  retrySafe?: boolean;
 }

@@ -169,3 +169,77 @@ test('codexAdapter does not fallback after ACP protocol side effects', async () 
     else process.env.OPENCLAW_FAKE_ACP_FAIL_AFTER_EVENT = previousFail;
   }
 });
+
+test('codexAdapter retries retry-safe ACP network disconnect before output', async () => {
+  const previousMode = process.env.OPENCLAW_ACP_MODE;
+  const previousCommand = process.env.OPENCLAW_ACP_CODEX_COMMAND;
+  const previousFail = process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+  process.env.OPENCLAW_ACP_MODE = 'protocol';
+  process.env.OPENCLAW_ACP_CODEX_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
+  process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT = '1';
+  let first = true;
+
+  try {
+    const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+    const result = await codexAdapter.invoke({
+      projectPath: process.cwd(),
+      sessionId: null,
+      prompt: 'hello',
+      onChunk: (chunk) => chunks.push(chunk),
+      onSession: () => {
+        if (first) {
+          first = false;
+          delete process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+        }
+      },
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
+    assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.retry'), true);
+  } finally {
+    if (previousMode === undefined) delete process.env.OPENCLAW_ACP_MODE;
+    else process.env.OPENCLAW_ACP_MODE = previousMode;
+    if (previousCommand === undefined) delete process.env.OPENCLAW_ACP_CODEX_COMMAND;
+    else process.env.OPENCLAW_ACP_CODEX_COMMAND = previousCommand;
+    if (previousFail === undefined) delete process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+    else process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT = previousFail;
+  }
+});
+
+test('codexAdapter retries promptly when ACP reports stream disconnect on stderr', async () => {
+  const previousMode = process.env.OPENCLAW_ACP_MODE;
+  const previousCommand = process.env.OPENCLAW_ACP_CODEX_COMMAND;
+  const previousDisconnect = process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT;
+  process.env.OPENCLAW_ACP_MODE = 'protocol';
+  process.env.OPENCLAW_ACP_CODEX_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
+  process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT = '1';
+  let first = true;
+
+  try {
+    const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+    const result = await codexAdapter.invoke({
+      projectPath: process.cwd(),
+      sessionId: null,
+      prompt: 'hello',
+      onChunk: (chunk) => chunks.push(chunk),
+      onSession: () => {
+        if (first) {
+          first = false;
+          delete process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT;
+        }
+      },
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
+    assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.retry'), true);
+  } finally {
+    if (previousMode === undefined) delete process.env.OPENCLAW_ACP_MODE;
+    else process.env.OPENCLAW_ACP_MODE = previousMode;
+    if (previousCommand === undefined) delete process.env.OPENCLAW_ACP_CODEX_COMMAND;
+    else process.env.OPENCLAW_ACP_CODEX_COMMAND = previousCommand;
+    if (previousDisconnect === undefined) delete process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT;
+    else process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT = previousDisconnect;
+  }
+});

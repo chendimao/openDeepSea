@@ -17,6 +17,8 @@ import type { AcpServerConfig } from './protocol-registry.js';
 
 const DEFAULT_PROTOCOL_STAGE_TIMEOUT_MS = 30_000;
 const DEFAULT_PROTOCOL_PROMPT_TIMEOUT_MS = 180_000;
+const PROMPT_TIMEOUT_EVENT_DRAIN_MS = 100;
+const ACP_STREAM_DISCONNECTED_PATTERN = /ResponseStreamDisconnected|stream disconnected before completion|Transport error|network error|error decoding response body/i;
 
 export interface InvokeProtocolSessionArgs {
   backend: AcpBackend;
@@ -44,6 +46,7 @@ export async function invokeProtocolSession(
   let promptStarted = false;
   let eventReceived = false;
   let answerReceived = false;
+  let rejectStreamDisconnect: ((error: Error) => void) | null = null;
   const stageTimeoutMs = args.stageTimeoutMs ?? readProtocolStageTimeoutMs(process.env.OPENCLAW_ACP_STAGE_TIMEOUT_MS);
   const promptTimeoutMs = args.promptTimeoutMs ?? readProtocolTimeoutMs(
     process.env.OPENCLAW_ACP_PROMPT_TIMEOUT_MS,
@@ -67,6 +70,9 @@ export async function invokeProtocolSession(
         channel: 'activity',
         rawType: 'protocol.stderr',
       });
+      if (isAcpStreamDisconnected(data)) {
+        rejectStreamDisconnect?.(new Error('ACP stream disconnected before completion'));
+      }
     });
 
     child.on('error', (error) => {
@@ -174,14 +180,21 @@ export async function invokeProtocolSession(
     }
 
     promptStarted = true;
+    const streamDisconnect = new Promise<never>((_, reject) => {
+      rejectStreamDisconnect = reject;
+    });
     const promptResult = await withTimeout(
-      connection.prompt({
-        sessionId: activeSessionId,
-        prompt: buildPromptContent(args.prompt, args.imagePaths ?? []),
-      }),
+      Promise.race([
+        connection.prompt({
+          sessionId: activeSessionId,
+          prompt: buildPromptContent(args.prompt, args.imagePaths ?? []),
+        }),
+        streamDisconnect,
+      ]),
       promptTimeoutMs,
       'ACP prompt timed out',
     );
+    rejectStreamDisconnect = null;
 
     await connection.closeSession({ sessionId: activeSessionId }).catch(() => undefined);
     child.kill('SIGTERM');
@@ -194,21 +207,30 @@ export async function invokeProtocolSession(
       fallbackSafe: false,
     };
   } catch (error) {
-    child?.kill('SIGTERM');
     const message = error instanceof Error ? error.message : String(error);
-    if (message === 'ACP prompt timed out' && answerReceived && activeSessionId) {
-      return {
-        exitCode: 0,
-        sessionId: activeSessionId,
-        stderr,
-        fallbackSafe: false,
-      };
+    if (activeSessionId && (message === 'ACP prompt timed out' || isAcpStreamDisconnected(message))) {
+      if (message === 'ACP prompt timed out') {
+        await delay(PROMPT_TIMEOUT_EVENT_DRAIN_MS);
+      }
+      if (answerReceived) {
+        child?.kill('SIGTERM');
+        return {
+          exitCode: 0,
+          sessionId: activeSessionId,
+          stderr,
+          fallbackSafe: false,
+          retrySafe: false,
+        };
+      }
     }
+    child?.kill('SIGTERM');
+    const retrySafe = initialized && promptStarted && !eventReceived;
     return {
       exitCode: -1,
       sessionId: activeSessionId,
       stderr: stderr ? `${stderr}\n${message}` : message,
       fallbackSafe: !initialized && !promptStarted && !eventReceived,
+      retrySafe,
     };
   }
 }
@@ -397,6 +419,10 @@ function readProtocolTimeoutMs(value: string | undefined, fallback: number): num
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+export function isAcpStreamDisconnected(value: string): boolean {
+  return ACP_STREAM_DISCONNECTED_PATTERN.test(value);
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -405,4 +431,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   return Promise.race([promise, timeoutPromise]).finally(() => {
     if (timeout) clearTimeout(timeout);
   });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
