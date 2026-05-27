@@ -3,6 +3,7 @@ import { Check, Copy } from 'lucide-react';
 import { AgentTimeline } from './AgentTimeline';
 import { useI18n } from '../lib/i18n';
 import type { MessageTrace } from '../lib/types';
+import { buildAgentMessagePhases, hasTraceEvents, type AgentMessagePhase } from './agent-timeline/phases';
 
 type MessagePart =
   | { type: 'text'; value: string }
@@ -93,6 +94,10 @@ export function MessageContent({
   const markdown = streaming ? isStableStreamingMarkdownContent(content) : isMarkdownContent(content);
   const activeMode = mode ?? 'preview';
   const lastTextPartIndex = findLastTextPartIndex(parts);
+  const phaseTrace = trace && hasTraceEvents(trace) && activeMode !== 'source' ? trace : null;
+  const phaseView = phaseTrace
+    ? buildAgentMessagePhases(content, phaseTrace)
+    : [];
 
   const copyCode = async (code: string, index: number) => {
     try {
@@ -106,40 +111,80 @@ export function MessageContent({
 
   return (
     <div className="message-content">
-      <div>
-        {markdown && activeMode === 'preview' ? (
-          <MarkdownPreview content={content} streaming={streaming} />
-        ) : (
-          <>
-            {parts.map((part, index) => {
-              if (part.type === 'text') {
-                if (!part.value) return null;
-                return (
-                  <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
-                    {part.value}
-                    {streaming && index === lastTextPartIndex && <StreamingCursor />}
-                  </span>
-                );
-              }
+      {phaseTrace && phaseView.length > 0 ? (
+        <AgentPhaseMessage phases={phaseView} trace={phaseTrace} streaming={streaming} />
+      ) : (
+        <>
+          <div>
+            {markdown && activeMode === 'preview' ? (
+              <MarkdownPreview content={content} streaming={streaming} />
+            ) : (
+              <>
+                {parts.map((part, index) => {
+                  if (part.type === 'text') {
+                    if (!part.value) return null;
+                    return (
+                      <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
+                        {part.value}
+                        {streaming && index === lastTextPartIndex && <StreamingCursor />}
+                      </span>
+                    );
+                  }
 
-              const copied = copiedIndex === index;
-              return (
-                <CodeBlock
-                  key={`code-${index}`}
-                  language={part.language}
-                  value={part.value}
-                  copied={copied}
-                  onCopy={() => void copyCode(part.value, index)}
-                  copyLabel={t('message.copy')}
-                  copiedLabel={t('message.copied')}
-                />
-              );
-            })}
-            {streaming && lastTextPartIndex === -1 && <StreamingCursor />}
-          </>
-        )}
-      </div>
-      <AgentTimeline trace={trace} />
+                  const copied = copiedIndex === index;
+                  return (
+                    <CodeBlock
+                      key={`code-${index}`}
+                      language={part.language}
+                      value={part.value}
+                      copied={copied}
+                      onCopy={() => void copyCode(part.value, index)}
+                      copyLabel={t('message.copy')}
+                      copiedLabel={t('message.copied')}
+                    />
+                  );
+                })}
+                {streaming && lastTextPartIndex === -1 && <StreamingCursor />}
+              </>
+            )}
+          </div>
+          <AgentTimeline trace={trace} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function AgentPhaseMessage({
+  phases,
+  trace,
+  streaming,
+}: {
+  phases: AgentMessagePhase[];
+  trace: MessageTrace;
+  streaming: boolean;
+}): JSX.Element {
+  return (
+    <div className="agent-phase-message">
+      {phases.map((phase, index) => (
+        <section key={phase.kind} className={`agent-phase-block is-${phase.kind}`}>
+          <div className="agent-phase-header">
+            <span className="agent-phase-index">{index + 1}</span>
+            <h3>{phase.title}</h3>
+            {phase.events.length > 0 ? <span>{phase.events.length} 条事件</span> : null}
+          </div>
+          {phase.body ? (
+            <div className="agent-phase-body">
+              <MarkdownPreview content={phase.body} streaming={streaming && index === phases.length - 1} />
+            </div>
+          ) : null}
+          {phase.events.length > 0 ? <AgentTimeline events={phase.events} /> : null}
+        </section>
+      ))}
+      <details className="agent-full-timeline">
+        <summary>完整 ACP 轨迹</summary>
+        <AgentTimeline trace={trace} />
+      </details>
     </div>
   );
 }
