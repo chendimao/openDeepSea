@@ -79,6 +79,61 @@ test('AgentTimeline marks diff lines with add and remove classes', () => {
   assert.match(html, /diff-line is-added/);
 });
 
+test('AgentTimeline renders file diff summary fields with readable labels', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'diff-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'file_diff',
+            status: 'completed',
+            title: '修改文件 src/app.ts',
+            payload: { path: 'src/app.ts', patch: '-old\n+new', additions: 1, deletions: 1 },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /src\/app\.ts/);
+  assert.match(html, /新增行/);
+  assert.match(html, /删除行/);
+});
+
+test('AgentTimeline shows hidden debug monitor without raw events in visible count', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'raw-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'raw',
+            status: 'completed',
+            title: '原始事件 available_commands_update',
+            payload: { raw_type: 'available_commands_update' },
+            raw: { method: 'session/update', params: { update: { sessionUpdate: 'available_commands_update' } } },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /协议调试/);
+  assert.match(html, /1 条隐藏事件/);
+  assert.doesNotMatch(html, /ACP 执行过程/);
+});
+
 test('AgentTimeline hides assistant message stream chunks and renders translated structured fields', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

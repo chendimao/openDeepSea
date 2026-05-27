@@ -4260,6 +4260,11 @@
     box-shadow: var(--shadow-glass, var(--shadow-sm));
   }
 
+  .agent-timeline-card.is-debug {
+    border-style: dashed;
+    opacity: 0.88;
+  }
+
   .agent-timeline-summary {
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto;
@@ -4354,6 +4359,17 @@
     border-radius: 10px;
     background: var(--color-code-bg);
     padding: 6px 0;
+  }
+
+  .agent-timeline-diff-wrap {
+    display: grid;
+    gap: 8px;
+  }
+
+  .agent-timeline-diff-meta {
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-code-bg) 72%, transparent);
+    padding: 8px;
   }
 
   .diff-line {

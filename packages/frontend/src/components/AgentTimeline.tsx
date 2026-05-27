@@ -7,6 +7,7 @@ import type {
   MessageTraceThinking,
   MessageTraceToolCall,
 } from '../lib/types';
+import { buildAgentTimelineModel } from './agent-timeline/model';
 
 const planStatusLabels: Record<string, string> = {
   pending: '待处理',
@@ -55,21 +56,26 @@ export function AgentTimeline({
   trace?: MessageTrace;
 }): JSX.Element | null {
   const mergedEvents = mergeTimelineEvents(events, traceToEvents(trace));
-  const visibleEvents = mergedEvents.filter((event) => event.type !== 'assistant_message');
-  if (visibleEvents.length === 0) return null;
+  const model = buildAgentTimelineModel(mergedEvents);
+  if (model.visibleEvents.length === 0 && model.debugEvents.length === 0) return null;
 
   return (
-    <section className="agent-timeline" aria-label="ACP 执行过程">
-      <div className="agent-timeline-header">
-        <div>
-          <div className="agent-timeline-eyebrow">ACP</div>
-          <div className="agent-timeline-title">执行过程</div>
-        </div>
-        <div className="agent-timeline-count">{visibleEvents.length} 条事件</div>
-      </div>
-      {visibleEvents.map((event, index) => (
-        <TimelineItem key={event.id ?? `${event.type}-${index}`} event={event} />
-      ))}
+    <section className="agent-timeline" aria-label={model.visibleEvents.length > 0 ? 'ACP 执行过程' : 'ACP 协议调试'}>
+      {model.visibleEvents.length > 0 ? (
+        <>
+          <div className="agent-timeline-header">
+            <div>
+              <div className="agent-timeline-eyebrow">ACP</div>
+              <div className="agent-timeline-title">执行过程</div>
+            </div>
+            <div className="agent-timeline-count">{model.visibleCount} 条事件</div>
+          </div>
+          {model.visibleEvents.map((event, index) => (
+            <TimelineItem key={event.id ?? `${event.type}-${index}`} event={event} />
+          ))}
+        </>
+      ) : null}
+      {model.debugEvents.length > 0 ? <DebugEventsPanel events={model.debugEvents} /> : null}
     </section>
   );
 }
@@ -96,6 +102,25 @@ function TimelineItem({ event }: { event: AgentTimelineEvent }): JSX.Element {
   );
 }
 
+function DebugEventsPanel({ events }: { events: AgentTimelineEvent[] }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="agent-timeline-card is-debug" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="agent-timeline-summary">
+        <span className="agent-timeline-chevron" aria-hidden="true">
+          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </span>
+        <span className="agent-timeline-kind">调试</span>
+        <strong>协议调试</strong>
+        <span className="agent-timeline-status">{events.length} 条隐藏事件</span>
+      </summary>
+      <div className="agent-timeline-body">
+        <pre className="agent-timeline-pre">{stringifyJson(events.map((event) => event.raw ?? event.payload))}</pre>
+      </div>
+    </details>
+  );
+}
+
 function renderEventBody(event: AgentTimelineEvent): ReactNode {
   if (event.type === 'thinking') {
     return <pre className="agent-timeline-pre">{stringifyPayload(event.payload.text ?? event.raw ?? event.payload)}</pre>;
@@ -114,7 +139,7 @@ function renderEventBody(event: AgentTimelineEvent): ReactNode {
   }
 
   if (event.type === 'file_diff') {
-    return <FileDiffView patch={readString(event.payload.patch) ?? readString(event.payload.diff) ?? ''} />;
+    return <FileDiffView payload={event.payload} />;
   }
 
   if (event.type === 'plan_update') {
@@ -141,18 +166,44 @@ function EventKeyValue({ payload }: { payload: Record<string, unknown> }): JSX.E
   );
 }
 
-function FileDiffView({ patch }: { patch: string }): JSX.Element {
+function FileDiffView({ payload }: { payload: Record<string, unknown> }): JSX.Element {
+  const patch = readString(payload.patch) ?? readString(payload.diff) ?? '';
+  const path = readString(payload.path);
+  const additions = typeof payload.additions === 'number' ? payload.additions : null;
+  const deletions = typeof payload.deletions === 'number' ? payload.deletions : null;
   const lines = patch.split('\n');
   return (
-    <div className="agent-timeline-diff">
-      {lines.map((line, index) => {
-        const className = diffLinePattern.test(line) ? (line.startsWith('+') ? 'diff-line is-added' : 'diff-line is-removed') : 'diff-line';
-        return (
-          <div key={index} className={className}>
-            {line || ' '}
+    <div className="agent-timeline-diff-wrap">
+      <dl className="agent-timeline-kv agent-timeline-diff-meta">
+        {path ? (
+          <div>
+            <dt>文件</dt>
+            <dd>{path}</dd>
           </div>
-        );
-      })}
+        ) : null}
+        {additions !== null ? (
+          <div>
+            <dt>新增行</dt>
+            <dd>{String(additions)}</dd>
+          </div>
+        ) : null}
+        {deletions !== null ? (
+          <div>
+            <dt>删除行</dt>
+            <dd>{String(deletions)}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <div className="agent-timeline-diff">
+        {lines.map((line, index) => {
+          const className = diffLinePattern.test(line) ? (line.startsWith('+') ? 'diff-line is-added' : 'diff-line is-removed') : 'diff-line';
+          return (
+            <div key={index} className={className}>
+              {line || ' '}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
