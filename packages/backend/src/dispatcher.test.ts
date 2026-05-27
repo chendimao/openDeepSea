@@ -1462,6 +1462,47 @@ test('respondAsAgent passes resolved workspace writable dirs and runtime prompt 
   }
 });
 
+test('respondAsAgent prepends using-superpowers bootstrap for ordinary ACP planner chats', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-superpowers-bootstrap-test-'));
+  const project = projectRepo.create({ name: `superpowers-bootstrap-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+
+  const originalAdapter = adapters.codex;
+  let capturedPrompt = '';
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedPrompt = args.prompt;
+      args.onChunk({ stream: 'stdout', text: 'done' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: planner,
+      projectPath,
+      roomId: room.id,
+      prompt: 'hi',
+    });
+
+    assert.match(capturedPrompt, /<EXTREMELY_IMPORTANT>/);
+    assert.match(capturedPrompt, /You have superpowers\./);
+    assert.match(capturedPrompt, /superpowers:using-superpowers/);
+    assert.match(capturedPrompt, /Invoke relevant or requested skills BEFORE any response or action/);
+    assert.ok(capturedPrompt.indexOf('You have superpowers.') < capturedPrompt.indexOf('当前用户请求：\nhi'));
+
+    const run = agentRunRepo.listByRoom(room.id, 1)[0];
+    assert.equal(run?.workflow_run_id, null);
+    assert.match(run?.prompt ?? '', /superpowers:using-superpowers/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner dispatch auto-adds matching global agent before dispatching', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-global-agent-'));
   const project = projectRepo.create({ name: `planner-global-agent-${Date.now()}`, path: projectPath });

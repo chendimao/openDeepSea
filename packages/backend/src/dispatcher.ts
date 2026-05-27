@@ -20,6 +20,7 @@ import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { formatSkillPrompt } from './skills/prompt.js';
 import { selectSkills } from './skills/selector.js';
+import { prependSuperpowersSessionBootstrap } from './superpowers-bootstrap.js';
 import { runRegistry } from './run-registry.js';
 import { messageUploadDir, messageUploadRoute, projectFileUploadRoot, projectFileUploadRoute } from './uploads.js';
 import { wsHub } from './ws-hub.js';
@@ -535,7 +536,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     '',
     buildAgentRuntimeContextPrompt(runtimeProfile),
   ].join('\n');
-  const prompt =
+  const promptWithMemory =
     room && !args.workflowRunId
       ? appendMemoryContextForPromptSafely({
           prompt: promptWithRuntime,
@@ -554,6 +555,9 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           warn: (message) => console.warn(message),
         })
       : promptWithRuntime;
+  const prompt = args.workflowRunId
+    ? promptWithMemory
+    : prependSuperpowersSessionBootstrap(promptWithMemory);
   const backend = agent.acp_enabled && agent.acp_backend ? agent.acp_backend : null;
   if (!backend) {
     throw new Error(`Agent ${agent.agent_name} has no ACP backend configured`);
