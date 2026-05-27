@@ -68,6 +68,33 @@ test('invokeProtocolSession streams ACP session updates as raw protocol events a
   ]);
 });
 
+test('invokeProtocolSession starts a new session when agent cannot resume saved session id', async () => {
+  const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+  const sessions: string[] = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+    },
+    projectPath: process.cwd(),
+    sessionId: 'old-session-id',
+    prompt: 'hello',
+    onChunk: (chunk) => chunks.push(chunk),
+    onSession: (sessionId) => sessions.push(sessionId),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.sessionId, 'fake-session-1');
+  assert.deepEqual(sessions, ['fake-session-1']);
+  assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
+});
+
 test('invokeProtocolSession returns spawn error when ACP server command is missing', async () => {
   const result = await invokeProtocolSession({
     backend: 'codex',

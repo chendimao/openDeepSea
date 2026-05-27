@@ -6,6 +6,7 @@ import {
   ClientSideConnection,
   PROTOCOL_VERSION,
   ndJsonStream,
+  type AgentCapabilities,
   type Client,
   type ContentBlock,
   type SessionNotification,
@@ -114,7 +115,7 @@ export async function invokeProtocolSession(
     };
     args.signal?.addEventListener('abort', abortHandler, { once: true });
 
-    await withTimeout(
+    const initializeResult = await withTimeout(
       Promise.race([
         connection.initialize({
           protocolVersion: PROTOCOL_VERSION,
@@ -137,8 +138,9 @@ export async function invokeProtocolSession(
       'ACP initialize timed out',
     );
     initialized = true;
+    const agentCapabilities = initializeResult.agentCapabilities;
 
-    if (activeSessionId) {
+    if (activeSessionId && canResumeSession(agentCapabilities)) {
       await withTimeout(
         connection.resumeSession({
           sessionId: activeSessionId,
@@ -364,6 +366,10 @@ function isWorkspaceWritablePermission(toolCall: { kind?: string | null; title?:
   if (kind === 'read' || kind === 'edit' || kind === 'delete' || kind === 'move' || kind === 'search') return true;
   const title = (toolCall.title ?? '').toLowerCase();
   return /read|search|edit|write|delete|move|patch|file/.test(title);
+}
+
+function canResumeSession(capabilities: AgentCapabilities | undefined): boolean {
+  return !!capabilities?.sessionCapabilities?.resume;
 }
 
 function readProtocolStageTimeoutMs(value: string | undefined): number {
