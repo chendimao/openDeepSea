@@ -71,7 +71,7 @@ export function AgentTimeline({
             <div className="agent-timeline-count">{model.visibleCount} 条事件</div>
           </div>
           {model.visibleEvents.map((event, index) => (
-            <TimelineItem key={event.id ?? `${event.type}-${index}`} event={event} />
+            <AgentTimelineItem key={event.id ?? `${event.type}-${index}`} event={event} />
           ))}
         </>
       ) : null}
@@ -82,7 +82,7 @@ export function AgentTimeline({
   );
 }
 
-function TimelineItem({ event }: { event: AgentTimelineEvent }): JSX.Element {
+export function AgentTimelineItem({ event }: { event: AgentTimelineEvent }): JSX.Element {
   const [open, setOpen] = useState(false);
   const eventLabel = getTranscriptAction(event);
   const statusLabel = planStatusLabels[String(event.payload.status ?? event.status)] ?? formatEventStatus(event.status);

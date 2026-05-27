@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { AgentTimeline } from './AgentTimeline';
+import { AgentTimeline, AgentTimelineItem } from './AgentTimeline';
 import { useI18n } from '../lib/i18n';
 import type { MessageTrace } from '../lib/types';
-import { buildAgentMessagePhases, hasTraceEvents, type AgentMessagePhase } from './agent-timeline/phases';
+import { buildAgentTranscript, type AgentTranscriptModel } from './agent-timeline/transcript';
 
 type MessagePart =
   | { type: 'text'; value: string }
@@ -94,10 +94,7 @@ export function MessageContent({
   const markdown = streaming ? isStableStreamingMarkdownContent(content) : isMarkdownContent(content);
   const activeMode = mode ?? 'preview';
   const lastTextPartIndex = findLastTextPartIndex(parts);
-  const phaseTrace = trace && hasTraceEvents(trace) && activeMode !== 'source' ? trace : null;
-  const phaseView = phaseTrace
-    ? buildAgentMessagePhases(content, phaseTrace)
-    : [];
+  const transcript = activeMode !== 'source' ? buildAgentTranscript(trace) : null;
 
   const copyCode = async (code: string, index: number) => {
     try {
@@ -111,8 +108,8 @@ export function MessageContent({
 
   return (
     <div className="message-content">
-      {phaseTrace && phaseView.length > 0 ? (
-        <AgentPhaseMessage phases={phaseView} trace={phaseTrace} streaming={streaming} />
+      {transcript ? (
+        <AgentTranscriptView transcript={transcript} streaming={streaming} />
       ) : (
         <>
           <div>
@@ -155,35 +152,29 @@ export function MessageContent({
   );
 }
 
-function AgentPhaseMessage({
-  phases,
-  trace,
+function AgentTranscriptView({
+  transcript,
   streaming,
 }: {
-  phases: AgentMessagePhase[];
-  trace: MessageTrace;
+  transcript: AgentTranscriptModel;
   streaming: boolean;
 }): JSX.Element {
   return (
-    <div className="agent-phase-message">
-      {phases.map((phase, index) => (
-        <section key={phase.kind} className={`agent-phase-block is-${phase.kind}`}>
-          <div className="agent-phase-header">
-            <span className="agent-phase-index">{index + 1}</span>
-            <h3>{phase.title}</h3>
-            {phase.events.length > 0 ? <span>{phase.events.length} 条事件</span> : null}
+    <div className="agent-transcript">
+      {transcript.items.map((item, index) => (
+        item.type === 'text' ? (
+          <div key={item.id} className="agent-transcript-text">
+            <MarkdownPreview content={item.text} streaming={streaming && index === transcript.items.length - 1} />
           </div>
-          {phase.body ? (
-            <div className="agent-phase-body">
-              <MarkdownPreview content={phase.body} streaming={streaming && index === phases.length - 1} />
-            </div>
-          ) : null}
-          {phase.events.length > 0 ? <AgentTimeline events={phase.events} /> : null}
-        </section>
+        ) : (
+          <div key={item.id} className="agent-transcript-event">
+            <AgentTimelineItem event={item.event} />
+          </div>
+        )
       ))}
       <details className="agent-full-timeline">
         <summary>完整 ACP 轨迹</summary>
-        <AgentTimeline trace={trace} />
+        <AgentTimeline events={transcript.allEvents} />
       </details>
     </div>
   );

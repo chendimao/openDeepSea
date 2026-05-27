@@ -185,57 +185,60 @@ test('keeps streaming inline-code text in plain layout to avoid markdown size fl
   assert.doesNotMatch(html, /<code>AgentTimeline\.tsx<\/code>/);
 });
 
-test('renders ACP trace as phase-based mixed message', () => {
+test('renders ACP transcript by interleaving assistant text and tool events', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <MessageContent
-        content={[
-          '## 调查',
-          '我检查了消息流。',
-          '## 修改',
-          '我调整了展示队列。',
-          '## 验证',
-          '测试和 build 已通过。',
-          '## 总结',
-          '前端渲染导致体感变慢。',
-        ].join('\n')}
+        content="最终正文不应在 transcript 模式重复展示"
         trace={{
           events: [
+            {
+              id: 'text-1',
+              message_id: 'message-1',
+              run_id: 'run-1',
+              agent_id: 'planner',
+              seq: 1,
+              type: 'assistant_message',
+              status: 'delta',
+              title: '助手回复',
+              payload: { text: '我会先读取本会话要求的工作流技能。' },
+              created_at: 1000,
+            },
             {
               id: 'read-1',
               message_id: 'message-1',
               run_id: 'run-1',
               agent_id: 'planner',
-              seq: 1,
-              type: 'tool_result',
-              status: 'completed',
-              title: '工具结果 Read',
-              payload: { id: 'read-1', name: 'Read', input: '{"path":"RoomPage.tsx"}' },
-              created_at: 1000,
-            },
-            {
-              id: 'diff-1',
-              message_id: 'message-1',
-              run_id: 'run-1',
-              agent_id: 'planner',
               seq: 2,
-              type: 'file_diff',
-              status: 'completed',
-              title: '修改文件 streamingDisplay.ts',
-              payload: { path: 'streamingDisplay.ts', patch: '-old\n+new', additions: 1, deletions: 1 },
+              type: 'tool_result',
+              status: 'failed',
+              title: '工具结果 Read',
+              payload: { id: 'read-1', name: 'Read', input: '{"path":"/Users/chendimao/.codex/skills/using-superpowers/SKILL.md"}' },
               created_at: 1001,
             },
             {
-              id: 'run-1',
+              id: 'text-2',
               message_id: 'message-1',
               run_id: 'run-1',
               agent_id: 'planner',
               seq: 3,
-              type: 'command',
-              status: 'completed',
-              title: '执行命令 npm run build',
-              payload: { command: 'npm run build', output: 'built' },
+              type: 'assistant_message',
+              status: 'delta',
+              title: '助手回复',
+              payload: { text: '我切换到当前会话列出的可用技能路径读取。' },
               created_at: 1002,
+            },
+            {
+              id: 'read-2',
+              message_id: 'message-1',
+              run_id: 'run-1',
+              agent_id: 'planner',
+              seq: 4,
+              type: 'tool_result',
+              status: 'completed',
+              title: '工具结果 Read',
+              payload: { id: 'read-2', name: 'Read', input: '{"path":"/Users/chendimao/.agents/skills/using-superpowers/SKILL.md"}' },
+              created_at: 1003,
             },
           ],
         }}
@@ -243,19 +246,18 @@ test('renders ACP trace as phase-based mixed message', () => {
     </I18nProvider>,
   );
 
-  assert.match(html, /agent-phase-message/);
-  assert.match(html, /调查阶段/);
-  assert.match(html, /我检查了消息流/);
-  assert.match(html, /Read · RoomPage\.tsx/);
-  assert.match(html, /修改阶段/);
-  assert.match(html, /修改文件 streamingDisplay\.ts/);
-  assert.match(html, /验证阶段/);
-  assert.match(html, /npm run build/);
-  assert.match(html, /总结阶段/);
+  assert.match(html, /agent-transcript/);
+  assert.match(html, /我会先读取本会话要求的工作流技能/);
+  assert.match(html, /Read · \/Users\/chendimao\/\.codex\/skills\/using-superpowers\/SKILL\.md/);
+  assert.match(html, /失败/);
+  assert.match(html, /我切换到当前会话列出的可用技能路径读取/);
+  assert.match(html, /Read · \/Users\/chendimao\/\.agents\/skills\/using-superpowers\/SKILL\.md/);
+  assert.match(html, /完成/);
   assert.match(html, /完整 ACP 轨迹/);
+  assert.doesNotMatch(html, /最终正文不应在 transcript 模式重复展示/);
 });
 
-test('renders legacy trace fields inside phase-based mixed message', () => {
+test('falls back to final content plus timeline when assistant_message events are absent', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <MessageContent
@@ -280,9 +282,8 @@ test('renders legacy trace fields inside phase-based mixed message', () => {
     </I18nProvider>,
   );
 
-  assert.match(html, /agent-phase-message/);
-  assert.match(html, /总结阶段/);
   assert.match(html, /这是 agent 正文/);
+  assert.doesNotMatch(html, /agent-transcript/);
   assert.match(html, /ACP 执行过程/);
   assert.match(html, /Thinking/);
   assert.match(html, /Explored/);
