@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { AgentTimeline, AgentTimelineItem } from './AgentTimeline';
 import { useI18n } from '../lib/i18n';
-import type { MessageTrace } from '../lib/types';
+import type { Agent, MessageTrace, RoomAgent } from '../lib/types';
 import { buildAgentTranscript, type AgentTranscriptModel } from './agent-timeline/transcript';
 
 type MessagePart =
@@ -82,14 +82,19 @@ export function MessageContent({
   streaming = false,
   mode,
   trace,
+  roomAgents = [],
+  globalAgents = [],
 }: {
   content: string;
   streaming?: boolean;
   mode?: 'preview' | 'source';
   trace?: MessageTrace;
+  roomAgents?: RoomAgent[];
+  globalAgents?: Agent[];
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { t } = useI18n();
+  const agentNameById = useMemo(() => buildAgentNameMap(roomAgents, globalAgents), [globalAgents, roomAgents]);
   const parts = parseMessage(content);
   const markdown = streaming ? isStableStreamingMarkdownContent(content) : isMarkdownContent(content);
   const activeMode = mode ?? 'preview';
@@ -109,12 +114,12 @@ export function MessageContent({
   return (
     <div className="message-content">
       {transcript ? (
-        <AgentTranscriptView transcript={transcript} streaming={streaming} />
+        <AgentTranscriptView transcript={transcript} streaming={streaming} agentNameById={agentNameById} />
       ) : (
         <>
           <div>
             {markdown && activeMode === 'preview' ? (
-              <MarkdownPreview content={content} streaming={streaming} />
+              <MarkdownPreview content={content} streaming={streaming} agentNameById={agentNameById} />
             ) : (
               <>
                 {parts.map((part, index) => {
@@ -122,7 +127,7 @@ export function MessageContent({
                     if (!part.value) return null;
                     return (
                       <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
-                        {part.value}
+                        {renderAgentNamesInText(part.value, agentNameById)}
                         {streaming && index === lastTextPartIndex && <StreamingCursor />}
                       </span>
                     );
@@ -155,16 +160,22 @@ export function MessageContent({
 function AgentTranscriptView({
   transcript,
   streaming,
+  agentNameById,
 }: {
   transcript: AgentTranscriptModel;
   streaming: boolean;
+  agentNameById?: Map<string, string>;
 }): JSX.Element {
   return (
     <div className="agent-transcript">
       {transcript.items.map((item, index) => (
         item.type === 'text' ? (
           <div key={item.id} className="agent-transcript-text">
-            <MarkdownPreview content={item.text} streaming={streaming && index === transcript.items.length - 1} />
+            <MarkdownPreview
+              content={item.text}
+              streaming={streaming && index === transcript.items.length - 1}
+              agentNameById={agentNameById}
+            />
           </div>
         ) : (
           <div key={item.id} className="agent-transcript-event">
@@ -221,7 +232,15 @@ function isStableStreamingMarkdownContent(content: string): boolean {
     || /\[[^\]]+\]\([^)]+\)/.test(trimmed);
 }
 
-export function MarkdownPreview({ content, streaming = false }: { content: string; streaming?: boolean }): JSX.Element {
+export function MarkdownPreview({
+  content,
+  streaming = false,
+  agentNameById,
+}: {
+  content: string;
+  streaming?: boolean;
+  agentNameById?: Map<string, string>;
+}): JSX.Element {
   const { t } = useI18n();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const parts = parseMessage(content);
@@ -249,6 +268,7 @@ export function MarkdownPreview({ content, streaming = false }: { content: strin
                 language={part.language}
                 value={part.value}
                 data={parsedJson.value}
+                agentNameById={agentNameById}
               />
             );
           }
@@ -269,6 +289,7 @@ export function MarkdownPreview({ content, streaming = false }: { content: strin
             key={`preview-text-${index}`}
             text={part.value}
             streaming={streaming && index === lastTextPartIndex}
+            agentNameById={agentNameById}
           />
         );
       })}
@@ -294,10 +315,12 @@ function JsonBlock({
   language,
   value,
   data,
+  agentNameById,
 }: {
   language: string;
   value: string;
   data: JsonValue;
+  agentNameById?: Map<string, string>;
 }): JSX.Element {
   const [mode, setMode] = useState<'structured' | 'source'>('structured');
   const [copied, setCopied] = useState(false);
@@ -355,7 +378,7 @@ function JsonBlock({
         taskReadiness ? (
           <TaskReadinessSummary readiness={taskReadiness} />
         ) : plannerDecision ? (
-          <PlannerDecisionSummary decision={plannerDecision} />
+          <PlannerDecisionSummary decision={plannerDecision} agentNameById={agentNameById} />
         ) : (
           <div className="json-tree" aria-label={t('message.jsonTreeAria')}>
             <JsonTree value={data} />
@@ -410,7 +433,13 @@ function getTaskReadiness(data: JsonValue): JsonObject | null {
   return isJsonObject(value) ? value : null;
 }
 
-function PlannerDecisionSummary({ decision }: { decision: JsonObject }): JSX.Element {
+function PlannerDecisionSummary({
+  decision,
+  agentNameById,
+}: {
+  decision: JsonObject;
+  agentNameById?: Map<string, string>;
+}): JSX.Element {
   const mode = typeof decision.mode === 'string' ? decision.mode : null;
   const status = typeof decision.status === 'string' ? decision.status : null;
   const summary = typeof decision.summary === 'string' ? decision.summary : '无摘要';
@@ -435,7 +464,9 @@ function PlannerDecisionSummary({ decision }: { decision: JsonObject }): JSX.Ele
             <li key={index}>
               <div>
                 <span>#{index + 1}</span>
-                <strong>{typeof step.agent_id === 'string' ? step.agent_id : '未指定智能体'}</strong>
+                <strong title={typeof step.agent_id === 'string' ? step.agent_id : undefined}>
+                  {formatAgentName(typeof step.agent_id === 'string' ? step.agent_id : null, agentNameById)}
+                </strong>
               </div>
               <p>{typeof step.goal === 'string' ? step.goal : '未指定目标'}</p>
             </li>
@@ -529,28 +560,46 @@ function StreamingCursor(): JSX.Element {
   return <span className="streaming-cursor" aria-hidden="true" />;
 }
 
-function MarkdownText({ text, streaming = false }: { text: string; streaming?: boolean }): JSX.Element {
+function MarkdownText({
+  text,
+  streaming = false,
+  agentNameById,
+}: {
+  text: string;
+  streaming?: boolean;
+  agentNameById?: Map<string, string>;
+}): JSX.Element {
   const blocks = text.split(/\n{2,}/).filter((block) => block.trim().length > 0);
   return (
     <>
-      {blocks.map((block, index) => renderMarkdownBlock(block, index, streaming && index === blocks.length - 1))}
+      {blocks.map((block, index) => renderMarkdownBlock(
+        block,
+        index,
+        streaming && index === blocks.length - 1,
+        agentNameById,
+      ))}
     </>
   );
 }
 
-function renderMarkdownBlock(block: string, index: number, streaming = false): JSX.Element {
+function renderMarkdownBlock(
+  block: string,
+  index: number,
+  streaming = false,
+  agentNameById?: Map<string, string>,
+): JSX.Element {
   const trimmed = block.trim();
   const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
   if (heading) {
     const level = Math.min(heading[1].length, 3);
     const Tag = (`h${level}` as keyof JSX.IntrinsicElements);
-    return <Tag key={index}>{renderInlineMarkdown(heading[2])}{streaming && <StreamingCursor />}</Tag>;
+    return <Tag key={index}>{renderInlineMarkdown(heading[2], agentNameById)}{streaming && <StreamingCursor />}</Tag>;
   }
 
   if (/^>\s+/m.test(trimmed)) {
     return (
       <blockquote key={index}>
-        {trimmed.replace(/^>\s?/gm, '')}
+        {renderAgentNamesInText(trimmed.replace(/^>\s?/gm, ''), agentNameById)}
         {streaming && <StreamingCursor />}
       </blockquote>
     );
@@ -562,7 +611,7 @@ function renderMarkdownBlock(block: string, index: number, streaming = false): J
       <ul key={index}>
         {lines.map((line, i) => (
           <li key={i}>
-            {renderInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ''))}
+            {renderInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ''), agentNameById)}
             {streaming && i === lines.length - 1 && <StreamingCursor />}
           </li>
         ))}
@@ -575,7 +624,7 @@ function renderMarkdownBlock(block: string, index: number, streaming = false): J
       <ol key={index}>
         {lines.map((line, i) => (
           <li key={i}>
-            {renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''))}
+            {renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''), agentNameById)}
             {streaming && i === lines.length - 1 && <StreamingCursor />}
           </li>
         ))}
@@ -597,7 +646,7 @@ function renderMarkdownBlock(block: string, index: number, streaming = false): J
       {lines.map((line, i) => (
         <span key={i}>
           {i > 0 && <br />}
-          {renderInlineMarkdown(line)}
+          {renderInlineMarkdown(line, agentNameById)}
           {streaming && i === lines.length - 1 && <StreamingCursor />}
         </span>
       ))}
@@ -605,15 +654,15 @@ function renderMarkdownBlock(block: string, index: number, streaming = false): J
   );
 }
 
-function renderInlineMarkdown(text: string): Array<string | JSX.Element> {
+function renderInlineMarkdown(text: string, agentNameById?: Map<string, string>): Array<string | JSX.Element> {
   const tokens: Array<string | JSX.Element> = [];
   const pattern = /(\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) tokens.push(text.slice(lastIndex, match.index));
+    if (match.index > lastIndex) pushTextWithAgentNames(tokens, text.slice(lastIndex, match.index), match.index, agentNameById);
     if (match[2]) {
-      tokens.push(<strong key={match.index}>{match[2]}</strong>);
+      tokens.push(<strong key={match.index}>{renderAgentNamesInText(match[2], agentNameById, `strong-${match.index}`)}</strong>);
     } else if (match[3]) {
       tokens.push(<code key={match.index}>{match[3]}</code>);
     } else if (match[4] && match[5]) {
@@ -626,8 +675,71 @@ function renderInlineMarkdown(text: string): Array<string | JSX.Element> {
     }
     lastIndex = match.index + match[0].length;
   }
-  if (lastIndex < text.length) tokens.push(text.slice(lastIndex));
+  if (lastIndex < text.length) pushTextWithAgentNames(tokens, text.slice(lastIndex), lastIndex, agentNameById);
   return tokens;
+}
+
+function buildAgentNameMap(roomAgents: RoomAgent[], globalAgents: Agent[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const agent of globalAgents) {
+    if (agent.agent_id && agent.name) map.set(agent.agent_id, agent.name);
+  }
+  for (const agent of roomAgents) {
+    if (agent.agent_id && agent.agent_name) map.set(agent.agent_id, agent.agent_name);
+  }
+  return map;
+}
+
+function formatAgentName(agentId: string | null, agentNameById?: Map<string, string>): string {
+  if (!agentId) return '未指定智能体';
+  return agentNameById?.get(agentId) ?? agentId;
+}
+
+function pushTextWithAgentNames(
+  tokens: Array<string | JSX.Element>,
+  text: string,
+  offset: number,
+  agentNameById?: Map<string, string>,
+): void {
+  const rendered = renderAgentNamesInText(text, agentNameById, `agent-${offset}`);
+  if (Array.isArray(rendered)) {
+    tokens.push(...rendered);
+  } else {
+    tokens.push(rendered);
+  }
+}
+
+function renderAgentNamesInText(
+  text: string,
+  agentNameById?: Map<string, string>,
+  keyPrefix = 'agent',
+): string | Array<string | JSX.Element> {
+  if (!agentNameById || agentNameById.size === 0 || !text) return text;
+  const ids = [...agentNameById.keys()].sort((a, b) => b.length - a.length);
+  const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_-])(${ids.map(escapeRegExp).join('|')})(?=$|[^\\p{L}\\p{N}_-])`, 'gu');
+  const parts: Array<string | JSX.Element> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const prefix = match[1] ?? '';
+    const agentId = match[2];
+    const idStart = match.index + prefix.length;
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    if (prefix) parts.push(prefix);
+    parts.push(
+      <span key={`${keyPrefix}-${idStart}`} className="agent-display-name" title={agentId}>
+        {agentNameById.get(agentId) ?? agentId}
+      </span>,
+    );
+    lastIndex = idStart + agentId.length;
+  }
+  if (lastIndex === 0) return text;
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function sanitizeMarkdownHref(href: string): string | null {

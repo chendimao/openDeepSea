@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
 import type {
+  Agent,
   AgentRun,
   Message,
   MessageAttachmentMetadata,
@@ -107,6 +108,10 @@ export function RoomPage() {
     queryKey: ['room-agents', roomId],
     queryFn: () => api.listRoomAgents(roomId),
     enabled: !!roomId,
+  });
+  const { data: globalAgents = [] } = useQuery({
+    queryKey: ['agents'],
+    queryFn: () => api.listAgents(),
   });
   const { data: settings } = useQuery({
     queryKey: ['settings', 'room', roomId],
@@ -334,6 +339,7 @@ export function RoomPage() {
               <ChatColumn
                 messages={messages}
                 agents={agents}
+                globalAgents={globalAgents}
                 agentRuns={agentRuns}
                 roomId={roomId}
                 projectId={projectId}
@@ -661,6 +667,7 @@ function AgentStrip({
 function ChatColumn({
   messages,
   agents,
+  globalAgents,
   agentRuns,
   roomId,
   projectId,
@@ -678,6 +685,7 @@ function ChatColumn({
 }: {
   messages: Message[];
   agents: RoomAgent[];
+  globalAgents: Agent[];
   agentRuns: AgentRun[];
   roomId: string;
   projectId: string;
@@ -793,6 +801,7 @@ function ChatColumn({
                   run={run}
                   runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
                   roomAgents={agents}
+                  globalAgents={globalAgents}
                   roomId={roomId}
                   projectId={projectId}
                   streaming={isStreamingMessage}
@@ -884,6 +893,7 @@ function MessageBubble({
   run,
   runAgent,
   roomAgents,
+  globalAgents,
   roomId,
   projectId,
   streaming,
@@ -901,6 +911,7 @@ function MessageBubble({
   run?: AgentRun;
   runAgent?: RoomAgent;
   roomAgents: RoomAgent[];
+  globalAgents: Agent[];
   roomId: string;
   projectId: string;
   streaming: boolean;
@@ -1094,9 +1105,22 @@ function MessageBubble({
             </button>
           )}
           {hasContent ? (
-            <MessageContent content={renderedContent} streaming={isStreaming} mode={displayMode} trace={metadata.trace} />
+            <MessageContent
+              content={renderedContent}
+              streaming={isStreaming}
+              mode={displayMode}
+              trace={metadata.trace}
+              roomAgents={roomAgents}
+              globalAgents={globalAgents}
+            />
           ) : message.message_type === 'agent_stream' ? (
-            <MessageContent content="…" streaming={isStreaming} trace={metadata.trace} />
+            <MessageContent
+              content="…"
+              streaming={isStreaming}
+              trace={metadata.trace}
+              roomAgents={roomAgents}
+              globalAgents={globalAgents}
+            />
           ) : null}
           <MessageAttachments attachments={attachments} />
         </AiMessageBody>

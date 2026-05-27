@@ -2561,6 +2561,11 @@
     font-weight: 680;
   }
 
+  .agent-display-name {
+    color: color-mix(in srgb, var(--color-fg) 92%, var(--color-accent));
+    font-weight: 600;
+  }
+
   .agent-transcript-event {
     display: grid;
     margin-left: 5px;

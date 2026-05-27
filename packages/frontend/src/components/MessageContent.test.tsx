@@ -3,6 +3,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
+import type { Agent, RoomAgent } from '../lib/types';
 import { MessageContent } from './MessageContent';
 
 setupBrowserStubs();
@@ -85,7 +86,7 @@ test('only compact-renders short scalar json rows', () => {
 });
 
 test('renders planner decision json as a Chinese summary card', () => {
-  const html = renderMessage([
+  const content = [
     '```json',
     JSON.stringify({
       planner_decision: {
@@ -99,16 +100,65 @@ test('renders planner decision json as a Chinese summary card', () => {
       },
     }, null, 2),
     '```',
-  ].join('\n'));
+  ].join('\n');
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content={content}
+        roomAgents={[
+          roomAgent({ agent_id: 'runtime-inspector', agent_name: '运行时检查员' }),
+        ]}
+      />
+    </I18nProvider>,
+  );
 
   assert.match(html, /规划决策/);
   assert.match(html, /建议后暂停/);
   assert.match(html, /已建议/);
   assert.match(html, /等待确认/);
   assert.match(html, /下一步数量/);
-  assert.match(html, /runtime-inspector/);
+  assert.match(html, /运行时检查员/);
+  assert.match(html, /title="runtime-inspector"/);
   assert.match(html, /检查 Codex CLI 是否加载/);
   assert.doesNotMatch(html, /<small>planner_decision<\/small>/);
+});
+
+test('renders known agent ids in markdown text as Chinese agent names', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content={[
+          'frontend-reviewer · 审查前端改动是否符合现有路由、样式、可访问性和构建要求',
+          '',
+          '`frontend-reviewer` 保留为代码片段',
+        ].join('\n')}
+        globalAgents={[
+          globalAgent({ agent_id: 'frontend-reviewer', name: '前端审查员' }),
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /前端审查员/);
+  assert.match(html, /title="frontend-reviewer"/);
+  assert.match(html, /<code>frontend-reviewer<\/code>/);
+});
+
+test('renders known agent ids in plain text as Chinese agent names', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content="frontend-reviewer · 审查前端改动"
+        globalAgents={[
+          globalAgent({ agent_id: 'frontend-reviewer', name: '前端审查员' }),
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /前端审查员/);
+  assert.match(html, /title="frontend-reviewer"/);
+  assert.doesNotMatch(html, /frontend-reviewer ·/);
 });
 
 test('recognizes application json fences with CRLF and metadata', () => {
@@ -344,6 +394,60 @@ function renderMessage(content: string): string {
       <MessageContent content={content} />
     </I18nProvider>,
   );
+}
+
+function roomAgent(input: Pick<RoomAgent, 'agent_id' | 'agent_name'>): RoomAgent {
+  return {
+    id: input.agent_id,
+    room_id: 'room-1',
+    global_agent_id: null,
+    agent_id: input.agent_id,
+    agent_name: input.agent_name,
+    agent_role: null,
+    preferred_user_name: null,
+    personality: null,
+    rules: null,
+    responsibilities: null,
+    workflow_role: null,
+    capabilities: [],
+    default_runtime: 'none',
+    runtime_backend: null,
+    tool_policy: null,
+    workspace_policy: null,
+    memory_scope: null,
+    joined_at: 1000,
+    left_at: null,
+    acp_enabled: 0,
+    acp_backend: null,
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  };
+}
+
+function globalAgent(input: Pick<Agent, 'agent_id' | 'name'>): Agent {
+  return {
+    id: input.agent_id,
+    agent_id: input.agent_id,
+    name: input.name,
+    description: null,
+    preferred_user_name: null,
+    personality: null,
+    rules: null,
+    responsibilities: null,
+    default_acp_backend: null,
+    default_acp_permission_mode: 'bypass',
+    default_runtime_backend: 'none',
+    default_tool_policy: { allowed: [] },
+    default_workspace_policy: { read: [], write: [] },
+    default_memory_scope: 'none',
+    is_builtin: 0,
+    builtin_key: null,
+    created_at: 1000,
+    updated_at: 1000,
+    reference_count: 0,
+  };
 }
 
 function setupBrowserStubs(): void {
