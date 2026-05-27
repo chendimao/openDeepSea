@@ -101,7 +101,7 @@ export function MessageContent({
   const markdown = streaming ? isStableStreamingMarkdownContent(content) : isMarkdownContent(content);
   const activeMode = mode ?? 'preview';
   const lastTextPartIndex = findLastTextPartIndex(parts);
-  const transcript = activeMode !== 'source' ? buildAgentTranscript(trace) : null;
+  const transcript = activeMode !== 'source' ? buildAgentTranscript(trace, content) : null;
 
   const copyCode = async (code: string, index: number) => {
     try {
@@ -116,7 +116,12 @@ export function MessageContent({
   return (
     <div className="message-content">
       {transcript ? (
-        <AgentTranscriptView transcript={transcript} streaming={streaming} agentNameById={agentNameById} />
+        <AgentTranscriptView
+          transcript={transcript}
+          streaming={streaming}
+          agentNameById={agentNameById}
+          suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+        />
       ) : (
         <>
           <div>
@@ -168,10 +173,12 @@ function AgentTranscriptView({
   transcript,
   streaming,
   agentNameById,
+  suppressPlannerDecisionSummary = false,
 }: {
   transcript: AgentTranscriptModel;
   streaming: boolean;
   agentNameById?: Map<string, string>;
+  suppressPlannerDecisionSummary?: boolean;
 }): JSX.Element {
   return (
     <div className="agent-transcript">
@@ -182,6 +189,7 @@ function AgentTranscriptView({
               content={item.text}
               streaming={streaming && index === transcript.items.length - 1}
               agentNameById={agentNameById}
+              suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
             />
           </div>
         ) : (

@@ -9,11 +9,21 @@ export interface AgentTranscriptModel {
   allEvents: AgentTimelineEvent[];
 }
 
-export function buildAgentTranscript(trace?: MessageTrace): AgentTranscriptModel | null {
-  const events = [...(trace?.events ?? [])].sort(compareEvents);
-  if (!events.some((event) => event.type === 'assistant_message')) return null;
+export function buildAgentTranscript(trace?: MessageTrace, fallbackText?: string): AgentTranscriptModel | null {
+  const events = traceToTranscriptEvents(trace).sort(compareEvents);
+  const hasAssistantMessage = events.some((event) => event.type === 'assistant_message');
+  const normalizedFallbackText = fallbackText?.trim() ?? '';
+  if (!hasAssistantMessage && (!normalizedFallbackText || events.length === 0)) return null;
 
   const items: AgentTranscriptItem[] = [];
+  if (!hasAssistantMessage && normalizedFallbackText) {
+    items.push({
+      type: 'text',
+      id: 'text:fallback',
+      text: normalizedFallbackText,
+      seq: Number.NEGATIVE_INFINITY,
+    });
+  }
   let textBuffer = '';
   let textStartSeq = 0;
   let textId = '';
@@ -56,6 +66,50 @@ export function buildAgentTranscript(trace?: MessageTrace): AgentTranscriptModel
   const mergedItems = mergeTranscriptToolEvents(items);
   if (!mergedItems.some((item) => item.type === 'text')) return null;
   return { items: mergedItems, allEvents: events };
+}
+
+function traceToTranscriptEvents(trace?: MessageTrace): AgentTimelineEvent[] {
+  if (!trace) return [];
+  if (trace.events?.length) return [...trace.events];
+  let seq = 0;
+  return [
+    ...(trace.thinking ?? []).map((entry) => buildLegacyEvent('thinking', seq++, { text: entry.text })),
+    ...(trace.tool_calls ?? []).map((entry) => buildLegacyEvent('tool_call', seq++, {
+      name: entry.name,
+      input: entry.input,
+      ...(entry.output !== undefined ? { output: entry.output } : {}),
+    })),
+    ...(trace.commands ?? []).map((entry) => buildLegacyEvent('command', seq++, {
+      command: entry.command,
+      ...(entry.output !== undefined ? { output: entry.output } : {}),
+    })),
+  ];
+}
+
+function buildLegacyEvent(
+  type: AgentTimelineEvent['type'],
+  index: number,
+  payload: Record<string, unknown>,
+): AgentTimelineEvent {
+  return {
+    id: `legacy:${type}:${index}`,
+    message_id: 'legacy',
+    run_id: 'legacy',
+    agent_id: 'legacy',
+    seq: index,
+    type,
+    status: type === 'thinking' ? 'delta' : 'completed',
+    title: getLegacyTitle(type, payload),
+    payload,
+    created_at: index,
+  };
+}
+
+function getLegacyTitle(type: AgentTimelineEvent['type'], payload: Record<string, unknown>): string {
+  if (type === 'thinking') return '思考过程';
+  if (type === 'tool_call') return `调用工具 ${readString(payload.name) ?? 'unknown'}`;
+  if (type === 'command') return `执行命令 ${readString(payload.command) ?? 'unknown'}`;
+  return '原始事件';
 }
 
 function mergeTranscriptToolEvents(items: AgentTranscriptItem[]): AgentTranscriptItem[] {

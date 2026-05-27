@@ -335,7 +335,7 @@ test('renders ACP transcript by interleaving assistant text and tool events', ()
   assert.doesNotMatch(html, /最终正文不应在 transcript 模式重复展示/);
 });
 
-test('falls back to final content plus timeline when assistant_message events are absent', () => {
+test('renders final content as transcript text when assistant_message events are absent', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <MessageContent
@@ -361,12 +361,12 @@ test('falls back to final content plus timeline when assistant_message events ar
   );
 
   assert.match(html, /这是 agent 正文/);
-  assert.doesNotMatch(html, /agent-transcript/);
-  assert.match(html, /ACP 执行过程/);
-  assert.match(html, /Thinking/);
+  assert.match(html, /agent-transcript/);
+  assert.doesNotMatch(html, /ACP 执行过程/);
+  assert.doesNotMatch(html, /Thinking/);
   assert.match(html, /Explored/);
   assert.match(html, /Ran/);
-  assert.match(html, /完整 thinking 原文/);
+  assert.doesNotMatch(html, /完整 thinking 原文/);
   assert.match(html, /search_files/);
   assert.match(html, /输入/);
   assert.match(html, /输出/);
