@@ -174,9 +174,11 @@ test('codexAdapter retries retry-safe ACP network disconnect before output', asy
   const previousMode = process.env.OPENCLAW_ACP_MODE;
   const previousCommand = process.env.OPENCLAW_ACP_CODEX_COMMAND;
   const previousFail = process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+  const previousRetryDelays = process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS;
   process.env.OPENCLAW_ACP_MODE = 'protocol';
   process.env.OPENCLAW_ACP_CODEX_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
   process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT = '1';
+  process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS = '0';
   let first = true;
 
   try {
@@ -204,6 +206,8 @@ test('codexAdapter retries retry-safe ACP network disconnect before output', asy
     else process.env.OPENCLAW_ACP_CODEX_COMMAND = previousCommand;
     if (previousFail === undefined) delete process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
     else process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT = previousFail;
+    if (previousRetryDelays === undefined) delete process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS;
+    else process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS = previousRetryDelays;
   }
 });
 
@@ -211,9 +215,11 @@ test('codexAdapter retries promptly when ACP reports stream disconnect on stderr
   const previousMode = process.env.OPENCLAW_ACP_MODE;
   const previousCommand = process.env.OPENCLAW_ACP_CODEX_COMMAND;
   const previousDisconnect = process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT;
+  const previousRetryDelays = process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS;
   process.env.OPENCLAW_ACP_MODE = 'protocol';
   process.env.OPENCLAW_ACP_CODEX_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
   process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT = '1';
+  process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS = '0';
   let first = true;
 
   try {
@@ -241,5 +247,43 @@ test('codexAdapter retries promptly when ACP reports stream disconnect on stderr
     else process.env.OPENCLAW_ACP_CODEX_COMMAND = previousCommand;
     if (previousDisconnect === undefined) delete process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT;
     else process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT = previousDisconnect;
+    if (previousRetryDelays === undefined) delete process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS;
+    else process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS = previousRetryDelays;
+  }
+});
+
+test('codexAdapter exhausts five ACP network retries with configured backoff delays', async () => {
+  const previousMode = process.env.OPENCLAW_ACP_MODE;
+  const previousCommand = process.env.OPENCLAW_ACP_CODEX_COMMAND;
+  const previousFail = process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+  const previousRetryDelays = process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS;
+  process.env.OPENCLAW_ACP_MODE = 'protocol';
+  process.env.OPENCLAW_ACP_CODEX_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
+  process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT = '1';
+  process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS = '0,0,0,0,0';
+
+  try {
+    const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+    const result = await codexAdapter.invoke({
+      projectPath: process.cwd(),
+      sessionId: null,
+      prompt: 'hello',
+      onChunk: (chunk) => chunks.push(chunk),
+    });
+
+    const retryChunks = chunks.filter((chunk) => chunk.rawType === 'protocol.retry');
+    assert.equal(result.exitCode, -1);
+    assert.equal(retryChunks.length, 5);
+    assert.match(retryChunks[0]?.text ?? '', /retrying 1\/5 after 0ms/);
+    assert.match(retryChunks[4]?.text ?? '', /retrying 5\/5 after 0ms/);
+  } finally {
+    if (previousMode === undefined) delete process.env.OPENCLAW_ACP_MODE;
+    else process.env.OPENCLAW_ACP_MODE = previousMode;
+    if (previousCommand === undefined) delete process.env.OPENCLAW_ACP_CODEX_COMMAND;
+    else process.env.OPENCLAW_ACP_CODEX_COMMAND = previousCommand;
+    if (previousFail === undefined) delete process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+    else process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT = previousFail;
+    if (previousRetryDelays === undefined) delete process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS;
+    else process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS = previousRetryDelays;
   }
 });

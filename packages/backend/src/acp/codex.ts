@@ -7,7 +7,7 @@ import { emitProtocolFallback, runStreaming } from './claudecode.js';
 import { invokeProtocolSession, isAcpStreamDisconnected } from './protocol-client.js';
 import { getAcpServerConfig } from './protocol-registry.js';
 
-const CODEX_ACP_MAX_NETWORK_RETRIES = 1;
+const CODEX_ACP_NETWORK_RETRY_DELAYS_MS = [10_000, 30_000, 60_000, 180_000, 300_000] as const;
 
 async function* walkRolloutFiles(rootDir: string): AsyncGenerator<string> {
   let years: string[] = [];
@@ -134,13 +134,18 @@ export const codexAdapter: SessionAdapter = {
         onSession,
         signal,
       });
-      for (let attempt = 1; shouldRetryCodexAcp(protocolResult.stderr, protocolResult.retrySafe) && attempt <= CODEX_ACP_MAX_NETWORK_RETRIES; attempt += 1) {
+      const retryDelaysMs = readCodexAcpRetryDelaysMs(process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS);
+      for (let attempt = 1; shouldRetryCodexAcp(protocolResult.stderr, protocolResult.retrySafe) && attempt <= retryDelaysMs.length; attempt += 1) {
+        const delayMs = retryDelaysMs[attempt - 1] ?? 0;
         onChunk({
           stream: 'stderr',
           channel: 'activity',
-          text: `[ACP retry] Codex ACP stream disconnected before output, retrying ${attempt}/${CODEX_ACP_MAX_NETWORK_RETRIES}.\n`,
+          text: `[ACP retry] Codex ACP stream disconnected before output, retrying ${attempt}/${retryDelaysMs.length} after ${formatRetryDelay(delayMs)}.\n`,
           rawType: 'protocol.retry',
         });
+        if (delayMs > 0) {
+          await delay(delayMs, signal);
+        }
         protocolResult = await invokeProtocolSession({
           backend: 'codex',
           server: protocolConfig,
@@ -175,6 +180,39 @@ export const codexAdapter: SessionAdapter = {
 function shouldRetryCodexAcp(stderr: string, retrySafe?: boolean): boolean {
   if (!retrySafe) return false;
   return isAcpStreamDisconnected(stderr);
+}
+
+function readCodexAcpRetryDelaysMs(value: string | undefined): number[] {
+  if (!value?.trim()) return [...CODEX_ACP_NETWORK_RETRY_DELAYS_MS];
+  const parsed = value
+    .split(',')
+    .map((item) => Number(item.trim()))
+    .filter((item) => Number.isFinite(item) && item >= 0);
+  return parsed.length > 0 ? parsed : [...CODEX_ACP_NETWORK_RETRY_DELAYS_MS];
+}
+
+function formatRetryDelay(ms: number): string {
+  if (ms < 1_000) return `${ms}ms`;
+  const seconds = ms / 1_000;
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = seconds / 60;
+  return Number.isInteger(minutes) ? `${minutes}m` : `${seconds}s`;
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new Error('ACP retry cancelled'));
+  return new Promise((resolve, reject) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const abort = (): void => {
+      if (timeout) clearTimeout(timeout);
+      reject(new Error('ACP retry cancelled'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    timeout = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+  });
 }
 
 export function buildCodexExecInvocation(args: {

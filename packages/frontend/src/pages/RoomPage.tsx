@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, ChevronDown, ChevronLeft, Download, Eye, FileText, FolderOpen, MessageSquare, Reply, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, ChevronDown, ChevronLeft, Download, Eye, FileText, FolderOpen, MessageSquare, Reply, RotateCcw, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -802,6 +802,7 @@ function ChatColumn({
                   messageRef={(node) => registerMessageRef(m.id, node)}
                   highlighted={highlightMessageId === m.id}
                   onReply={() => onReplyToMessage(m)}
+                  retrySourceMessage={findPreviousUserMessage(visibleMessages, index)}
                   onLocateReplyTarget={onLocateReplyTarget}
                 />
               );
@@ -869,6 +870,14 @@ function pairRunsWithAgentMessages(messages: Message[], runs: AgentRun[]): Map<s
   return result;
 }
 
+export function findPreviousUserMessage(messages: Message[], beforeIndex: number): Message | null {
+  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.sender_type === 'user' && message.content.trim()) return message;
+  }
+  return null;
+}
+
 function MessageBubble({
   message,
   agentMeta,
@@ -884,6 +893,7 @@ function MessageBubble({
   messageRef,
   highlighted,
   onReply,
+  retrySourceMessage,
   onLocateReplyTarget,
 }: {
   message: Message;
@@ -900,6 +910,7 @@ function MessageBubble({
   messageRef: (node: HTMLElement | null) => void;
   highlighted: boolean;
   onReply: () => void;
+  retrySourceMessage?: Message | null;
   onLocateReplyTarget: (messageId: string) => void;
 }) {
   const { t, formatRelativeTime } = useI18n();
@@ -919,6 +930,22 @@ function MessageBubble({
     onSuccess: () => {
       toast.success(t('memory.savedFromMessage'));
       queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const retryAgentRun = useMutation({
+    mutationFn: () => {
+      const retryContent = retrySourceMessage?.content?.trim();
+      if (!run || !retryContent) throw new Error('没有可重试的用户消息');
+      return api.sendMessage(roomId, {
+        content: retryContent,
+        mentions: [run.agent_id],
+      });
+    },
+    onSuccess: () => {
+      toast.success('已重新发送给智能体');
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -955,6 +982,7 @@ function MessageBubble({
     streaming || run?.status === 'running' || run?.status === 'queued'
   );
   const canReply = !isSystem && hasContent && !isStreaming;
+  const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
 
   if (isSystem) {
     return (
@@ -992,7 +1020,7 @@ function MessageBubble({
           {agentMeta?.acp_enabled && agentMeta.acp_backend && (
             <AiMessageBadge>ACP:{agentMeta.acp_backend}</AiMessageBadge>
           )}
-          {hasContent && (
+          {(hasContent || canRetryAgentRun) && (
             <AiMessageActions>
               {hasMarkdownDisplayMode && (
                 <>
@@ -1028,15 +1056,28 @@ function MessageBubble({
                   <Reply className="h-3.5 w-3.5" strokeWidth={1.8} />
                 </button>
               )}
-              <button
-                type="button"
-                className="ai-message-action"
-                title={t('memory.saveAsMemory')}
-                disabled={saveAsMemory.isPending}
-                onClick={() => saveAsMemory.mutate()}
-              >
-                <BookmarkPlus className="h-3.5 w-3.5" strokeWidth={1.8} />
-              </button>
+              {canRetryAgentRun && (
+                <button
+                  type="button"
+                  className="ai-message-action"
+                  title="重试此回复"
+                  disabled={retryAgentRun.isPending}
+                  onClick={() => retryAgentRun.mutate()}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
+              )}
+              {hasContent && (
+                <button
+                  type="button"
+                  className="ai-message-action"
+                  title={t('memory.saveAsMemory')}
+                  disabled={saveAsMemory.isPending}
+                  onClick={() => saveAsMemory.mutate()}
+                >
+                  <BookmarkPlus className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
+              )}
             </AiMessageActions>
           )}
         </AiMessageHeader>

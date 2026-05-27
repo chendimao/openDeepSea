@@ -4,6 +4,9 @@ import type { Message } from '../lib/types';
 import type { AgentTimelineEvent } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import {
+  findPreviousUserMessage,
+} from './RoomPage';
+import {
   createDefaultReplyTarget,
   createPlannerDispatchInput,
   hasDispatchablePlannerSteps,
@@ -150,6 +153,31 @@ test('hasDispatchablePlannerSteps only enables continue when planner has concret
     next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
     awaiting_user_confirmation: true,
   }), true);
+});
+
+test('findPreviousUserMessage selects the user prompt before a failed agent response', () => {
+  const messages = [
+    createMessage({ id: 'user-old', sender_type: 'user', content: '旧问题' }),
+    createMessage({ id: 'agent-old', sender_type: 'agent', content: '旧回复' }),
+    createMessage({ id: 'user-latest', sender_type: 'user', content: '需要重试的问题' }),
+    createMessage({ id: 'agent-failed', sender_type: 'agent', content: '' }),
+  ];
+
+  const retrySource = findPreviousUserMessage(messages, 3);
+
+  assert.equal(retrySource?.id, 'user-latest');
+});
+
+test('findPreviousUserMessage ignores blank user messages', () => {
+  const messages = [
+    createMessage({ id: 'user-valid', sender_type: 'user', content: '有效问题' }),
+    createMessage({ id: 'user-blank', sender_type: 'user', content: '   ' }),
+    createMessage({ id: 'agent-failed', sender_type: 'agent', content: '' }),
+  ];
+
+  const retrySource = findPreviousUserMessage(messages, 2);
+
+  assert.equal(retrySource?.id, 'user-valid');
 });
 
 test('mergeTraceEvents merges duplicate event ids and appends streaming text fields', () => {
