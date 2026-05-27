@@ -22,6 +22,7 @@ import {
   enqueueStreamingChunk,
   flushStreamingDisplay,
   hasQueuedStreamingContent,
+  resolveStreamingDisplayContent,
   shouldRetainStreamingDisplayState,
   tickStreamingDisplay,
   type StreamingDisplayState,
@@ -495,7 +496,7 @@ function useStreamingMessageDisplay(roomId: string): StreamingMessageDisplay {
   }, [ensureTimer]);
 
   const getDisplayedContent = useCallback((message: Message) => {
-    return displayStates.get(message.id)?.displayed ?? message.content;
+    return resolveStreamingDisplayContent(displayStates.get(message.id), message.content);
   }, [displayStates]);
 
   const isAnimating = useCallback((messageId: string) => {

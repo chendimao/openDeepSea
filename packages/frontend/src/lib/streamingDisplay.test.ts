@@ -5,6 +5,7 @@ import {
   createStreamingDisplayState,
   enqueueStreamingChunk,
   flushStreamingDisplay,
+  resolveStreamingDisplayContent,
   shouldRetainStreamingDisplayState,
   tickStreamingDisplay,
 } from './streamingDisplay.js';
@@ -65,6 +66,18 @@ test('done 后 flush 到真实完整内容', () => {
   const flushed = flushStreamingDisplay(state, '你好，完整内容');
   assert.equal(flushed.displayed, '你好，完整内容');
   assert.deepEqual(flushed.queue, []);
+});
+
+test('显示内容保留已释放逐字状态，不直接暴露未 tick 队列', () => {
+  const state = enqueueStreamingChunk(createStreamingDisplayState('截图确认'), '重叠点');
+
+  assert.equal(resolveStreamingDisplayContent(state, '截图确认重叠点'), '截图确认');
+});
+
+test('显示内容在本地状态和已提交内容分叉时选择更长内容防止回退', () => {
+  const state = createStreamingDisplayState('截图确认重叠点');
+
+  assert.equal(resolveStreamingDisplayContent(state, '截图确认其他内容'), '截图确认其他内容');
 });
 
 test('队列清空但未完成时保留已展示内容等待下一块 chunk', () => {
