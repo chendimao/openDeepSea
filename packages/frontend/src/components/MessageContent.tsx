@@ -84,6 +84,7 @@ export function MessageContent({
   trace,
   roomAgents = [],
   globalAgents = [],
+  suppressPlannerDecisionSummary = false,
 }: {
   content: string;
   streaming?: boolean;
@@ -91,6 +92,7 @@ export function MessageContent({
   trace?: MessageTrace;
   roomAgents?: RoomAgent[];
   globalAgents?: Agent[];
+  suppressPlannerDecisionSummary?: boolean;
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { t } = useI18n();
@@ -119,7 +121,12 @@ export function MessageContent({
         <>
           <div>
             {markdown && activeMode === 'preview' ? (
-              <MarkdownPreview content={content} streaming={streaming} agentNameById={agentNameById} />
+              <MarkdownPreview
+                content={content}
+                streaming={streaming}
+                agentNameById={agentNameById}
+                suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+              />
             ) : (
               <>
                 {parts.map((part, index) => {
@@ -236,10 +243,12 @@ export function MarkdownPreview({
   content,
   streaming = false,
   agentNameById,
+  suppressPlannerDecisionSummary = false,
 }: {
   content: string;
   streaming?: boolean;
   agentNameById?: Map<string, string>;
+  suppressPlannerDecisionSummary?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -262,6 +271,7 @@ export function MarkdownPreview({
         if (part.type === 'code') {
           const parsedJson = parseJsonCodeBlock(part.language, part.value);
           if (parsedJson.ok) {
+            if (suppressPlannerDecisionSummary && getPlannerDecision(parsedJson.value)) return null;
             return (
               <JsonBlock
                 key={`preview-json-${index}`}
@@ -269,6 +279,7 @@ export function MarkdownPreview({
                 value={part.value}
                 data={parsedJson.value}
                 agentNameById={agentNameById}
+                suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
               />
             );
           }
@@ -316,11 +327,13 @@ function JsonBlock({
   value,
   data,
   agentNameById,
+  suppressPlannerDecisionSummary = false,
 }: {
   language: string;
   value: string;
   data: JsonValue;
   agentNameById?: Map<string, string>;
+  suppressPlannerDecisionSummary?: boolean;
 }): JSX.Element {
   const [mode, setMode] = useState<'structured' | 'source'>('structured');
   const [copied, setCopied] = useState(false);
@@ -377,7 +390,7 @@ function JsonBlock({
       {mode === 'structured' ? (
         taskReadiness ? (
           <TaskReadinessSummary readiness={taskReadiness} />
-        ) : plannerDecision ? (
+        ) : plannerDecision && !suppressPlannerDecisionSummary ? (
           <PlannerDecisionSummary decision={plannerDecision} agentNameById={agentNameById} />
         ) : (
           <div className="json-tree" aria-label={t('message.jsonTreeAria')}>

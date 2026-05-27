@@ -123,6 +123,34 @@ test('renders planner decision json as a Chinese summary card', () => {
   assert.doesNotMatch(html, /<small>planner_decision<\/small>/);
 });
 
+test('can suppress planner decision summary when an outer action panel renders it', () => {
+  const content = [
+    '```json',
+    JSON.stringify({
+      planner_decision: {
+        mode: 'pause_after_suggestion',
+        status: 'suggested',
+        summary: '交给前端执行智能体新增测试菜单和计数器页面',
+        next_steps: [
+          { agent_id: 'frontend-executor', goal: '新增 /test 路由、侧边栏测试菜单、TestCounterPage 计数器页面和 i18n 文案' },
+        ],
+        awaiting_user_confirmation: true,
+      },
+    }, null, 2),
+    '```',
+  ].join('\n');
+
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent content={content} suppressPlannerDecisionSummary />
+    </I18nProvider>,
+  );
+
+  assert.doesNotMatch(html, /规划决策/);
+  assert.doesNotMatch(html, /交给前端执行智能体新增测试菜单和计数器页面/);
+  assert.doesNotMatch(html, /planner_decision/);
+});
+
 test('renders known agent ids in markdown text as Chinese agent names', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

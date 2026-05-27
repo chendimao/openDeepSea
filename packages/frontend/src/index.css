@@ -3929,19 +3929,17 @@
 
   .json-planner-summary {
     display: grid;
-    gap: 10px;
-    margin: 0 10px 10px;
-    border: 1px solid color-mix(in srgb, var(--color-accent) 22%, var(--color-border));
-    border-radius: 10px;
-    background:
-      linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 52%),
-      color-mix(in srgb, var(--color-surface) 86%, var(--color-code-bg));
-    padding: 11px;
+    gap: 8px;
+    margin: 0 8px 8px;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-surface) 90%, var(--color-code-bg));
+    padding: 9px;
   }
 
   .json-planner-summary-main {
     display: grid;
-    gap: 4px;
+    gap: 3px;
     min-width: 0;
   }
 
@@ -3954,13 +3952,13 @@
 
   .json-planner-summary-main strong {
     color: var(--color-fg);
-    font-size: 13px;
+    font-size: 12.5px;
     line-height: 1.5;
   }
 
   .json-planner-step-list {
     display: grid;
-    gap: 7px;
+    gap: 6px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -3968,11 +3966,11 @@
 
   .json-planner-step-list li {
     display: grid;
-    gap: 5px;
+    gap: 4px;
     min-width: 0;
-    border-radius: 8px;
+    border-radius: 7px;
     background: color-mix(in srgb, var(--color-surface-raised) 76%, transparent);
-    padding: 8px 9px;
+    padding: 7px 8px;
   }
 
   .json-planner-step-list div {

@@ -1112,6 +1112,7 @@ function MessageBubble({
               trace={metadata.trace}
               roomAgents={roomAgents}
               globalAgents={globalAgents}
+              suppressPlannerDecisionSummary={Boolean(metadata.planner_decision)}
             />
           ) : message.message_type === 'agent_stream' ? (
             <MessageContent
@@ -1134,7 +1135,6 @@ function MessageBubble({
               if (!input) return;
               continuePlanner.mutate(input);
             }}
-            onSupplement={onReply}
           />
         )}
         {!isUser && run && (
@@ -1157,13 +1157,11 @@ function PlannerDecisionPanel({
   roomAgents,
   continuing,
   onContinue,
-  onSupplement,
 }: {
   decision: PlannerDecision;
   roomAgents: RoomAgent[];
   continuing: boolean;
   onContinue: () => void;
-  onSupplement: () => void;
 }) {
   const activeAgentIds = new Set(roomAgents.filter((agent) => agent.left_at === null).map((agent) => agent.agent_id));
   const missingAgentIds = decision.next_steps
@@ -1171,39 +1169,56 @@ function PlannerDecisionPanel({
     .filter((agentId) => !activeAgentIds.has(agentId));
   const canContinue = hasDispatchablePlannerSteps(decision);
   return (
-    <section className="mt-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)]/70 px-3 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
-          Planner
-        </span>
-        <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-fg-muted)]">
-          {formatPlannerMode(decision.mode)}
-        </span>
-        <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-fg-muted)]">
-          {formatPlannerStatus(decision.status)}
-        </span>
+    <section className="mt-2.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-muted)]/55 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-[var(--color-fg-muted)]">
+            Planner
+          </span>
+          <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 text-[10px] text-[var(--color-fg-muted)]">
+            {formatPlannerMode(decision.mode)}
+          </span>
+          <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 text-[10px] text-[var(--color-fg-muted)]">
+            {formatPlannerStatus(decision.status)}
+          </span>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 font-mono text-[10px] text-[var(--color-fg-muted)]">
+            {decision.next_steps.length} 步
+          </span>
+          <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 text-[10px] text-[var(--color-fg-muted)]">
+            {decision.awaiting_user_confirmation ? '等待确认' : '无需确认'}
+          </span>
+        </div>
       </div>
       <p className="mt-2 text-[12px] leading-relaxed text-[var(--color-fg)]">{decision.summary}</p>
       {decision.next_steps.length > 0 && (
-        <ol className="mt-2 space-y-1.5">
+        <ol className="mt-2 grid gap-1.5">
           {decision.next_steps.map((step, index) => (
-            <li key={`${step.agent_id}-${index}`} className="rounded-lg bg-white/45 px-2.5 py-2 text-[11.5px] text-[var(--color-fg-muted)]">
-              <span className="font-mono text-[10px] text-[var(--color-muted)]">{step.agent_id}</span>
-              <span className="mx-1.5 text-[var(--color-muted)]">·</span>
-              <span>{step.goal}</span>
+            <li
+              key={`${step.agent_id}-${index}`}
+              className="grid gap-1 rounded-md bg-[var(--color-surface-raised)]/60 px-2.5 py-2 text-[11.5px] text-[var(--color-fg-muted)] sm:grid-cols-[minmax(128px,0.32fr)_1fr] sm:items-start"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="font-mono text-[10px] text-[var(--color-muted)]">#{index + 1}</span>
+                <span className="min-w-0 truncate font-mono text-[10.5px] text-[var(--color-fg)]" title={step.agent_id}>
+                  {step.agent_id}
+                </span>
+              </div>
+              <span className="min-w-0 leading-relaxed text-[var(--color-fg-muted)]">{step.goal}</span>
             </li>
           ))}
         </ol>
       )}
       {missingAgentIds.length > 0 && (
-        <div className="mt-2 rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
-          建议中的智能体暂未在房间内：
+        <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
+          缺席智能体：
           <span className="font-mono text-[var(--color-warning)]">{missingAgentIds.join(', ')}</span>。
-          继续时会自动从全局智能体库查找并加入；如果不存在，后端会返回明确错误。
-        </div>
+          继续时会自动从全局智能体库查找并加入。
+        </p>
       )}
       {decision.awaiting_user_confirmation && (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-2.5 flex flex-wrap gap-2">
           {canContinue ? (
             <button
               type="button"
@@ -1218,13 +1233,6 @@ function PlannerDecisionPanel({
               当前建议没有可派发的下一步
             </span>
           )}
-          <button
-            type="button"
-            className="glass-button"
-            onClick={onSupplement}
-          >
-            让我补充说明
-          </button>
         </div>
       )}
     </section>
