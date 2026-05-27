@@ -83,7 +83,7 @@ export function AgentTimeline({
 }
 
 function TimelineItem({ event }: { event: AgentTimelineEvent }): JSX.Element {
-  const [open, setOpen] = useState(event.type !== 'thinking' && event.type !== 'raw');
+  const [open, setOpen] = useState(false);
   const eventLabel = getEventLabel(event.type);
   const statusLabel = planStatusLabels[String(event.payload.status ?? event.status)] ?? formatEventStatus(event.status);
 

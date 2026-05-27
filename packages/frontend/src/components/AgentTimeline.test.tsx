@@ -106,6 +106,31 @@ test('AgentTimeline renders file diff summary fields with readable labels', () =
   assert.match(html, /删除行/);
 });
 
+test('AgentTimeline collapses all ACP event cards by default', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'tool-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果 Read package.json',
+            payload: { id: 'tool-1', name: 'Read', output: { ok: true } },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.doesNotMatch(html, /<details[^>]*open/);
+});
+
 test('AgentTimeline shows hidden debug monitor without raw events in visible count', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
