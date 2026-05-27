@@ -79,7 +79,7 @@ test('AgentTimeline marks diff lines with add and remove classes', () => {
   assert.match(html, /diff-line is-added/);
 });
 
-test('AgentTimeline renders assistant messages and translated structured fields', () => {
+test('AgentTimeline hides assistant message stream chunks and renders translated structured fields', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <AgentTimeline
@@ -114,11 +114,37 @@ test('AgentTimeline renders assistant messages and translated structured fields'
     </I18nProvider>,
   );
 
-  assert.match(html, /协议回复片段/);
-  assert.match(html, /回复/);
+  assert.doesNotMatch(html, /协议回复片段/);
+  assert.doesNotMatch(html, /助手回复/);
+  assert.match(html, /1 条事件/);
   assert.match(html, /后端/);
   assert.match(html, /原因/);
   assert.match(html, /missing server/);
+});
+
+test('AgentTimeline returns null when only assistant message stream chunks exist', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'run-1:1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'assistant_message',
+            status: 'delta',
+            title: '助手回复',
+            payload: { text: '只应显示在消息正文里' },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.equal(html, '');
 });
 
 function setupBrowserStubs(): void {

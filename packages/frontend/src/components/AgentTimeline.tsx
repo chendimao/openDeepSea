@@ -55,7 +55,8 @@ export function AgentTimeline({
   trace?: MessageTrace;
 }): JSX.Element | null {
   const mergedEvents = mergeTimelineEvents(events, traceToEvents(trace));
-  if (mergedEvents.length === 0) return null;
+  const visibleEvents = mergedEvents.filter((event) => event.type !== 'assistant_message');
+  if (visibleEvents.length === 0) return null;
 
   return (
     <section className="agent-timeline" aria-label="ACP 执行过程">
@@ -64,9 +65,9 @@ export function AgentTimeline({
           <div className="agent-timeline-eyebrow">ACP</div>
           <div className="agent-timeline-title">执行过程</div>
         </div>
-        <div className="agent-timeline-count">{mergedEvents.length} 条事件</div>
+        <div className="agent-timeline-count">{visibleEvents.length} 条事件</div>
       </div>
-      {mergedEvents.map((event, index) => (
+      {visibleEvents.map((event, index) => (
         <TimelineItem key={event.id ?? `${event.type}-${index}`} event={event} />
       ))}
     </section>
