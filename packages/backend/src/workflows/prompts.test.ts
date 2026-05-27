@@ -20,7 +20,19 @@ test('buildSuperpowersPhasePrompt includes required skills for each phase', () =
     for (const skill of expectedSkills) {
       assert.match(prompt, new RegExp(escapeRegExp(skill)));
     }
+    assert.match(prompt, /Superpowers workflow 顺序/);
+    assert.match(prompt, /"superpowers"/);
   }
+});
+
+test('implementation prompt embeds Superpowers TDD evidence protocol', () => {
+  const prompt = buildStagePrompt('implementation', basePromptContext());
+
+  assert.match(prompt, /test-driven-development/);
+  assert.match(prompt, /subagent-driven-development/);
+  assert.match(prompt, /"tddEvidence"/);
+  assert.match(prompt, /"RED"/);
+  assert.match(prompt, /"GREEN"/);
 });
 
 test('buildStagePrompt uses analysis-document acceptance prompt for analysis-only intent', () => {

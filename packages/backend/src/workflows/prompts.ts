@@ -28,7 +28,11 @@ export function buildSuperpowersPhasePrompt(phase: SuperpowersPhase, context: Pr
   return [
     buildSuperpowersPhaseHeader(phase),
     '',
+    'Superpowers workflow 顺序：using-superpowers -> brainstorming -> writing-plans -> subagent-driven-development/executing-plans -> TDD/debugging/review/verification -> finishing-a-development-branch。',
+    '',
     formatSuperpowersSkillInstruction(phase),
+    '',
+    formatSuperpowersEvidenceInstruction(phase),
     '',
     baseContext(context),
     '',
@@ -116,6 +120,112 @@ function formatSuperpowersSkillInstruction(phase: SuperpowersPhase): string {
   ].join('\n');
 }
 
+function formatSuperpowersEvidenceInstruction(phase: SuperpowersPhase): string {
+  const lines = [
+    '阶段完成时必须输出一个 fenced JSON 代码块，根字段为 superpowers，用于 workflow runtime 记录门禁证据。',
+    '不要把证据只写在自然语言里。',
+  ];
+
+  if (phase === 'brainstorming') {
+    return [
+      ...lines,
+      '```json',
+      '{',
+      '  "superpowers": {',
+      '    "designDocPath": "docs/superpowers/specs/YYYY-MM-DD-topic-design.md",',
+      '    "designReviewVerdict": "approved"',
+      '  }',
+      '}',
+      '```',
+    ].join('\n');
+  }
+
+  if (phase === 'worktree') {
+    return [
+      ...lines,
+      '```json',
+      '{',
+      '  "superpowers": {',
+      '    "worktree": {"path": "/absolute/worktree-or-project-path", "branchName": "branch-name-or-current", "baseRef": "base-ref-or-null"}',
+      '  }',
+      '}',
+      '```',
+    ].join('\n');
+  }
+
+  if (phase === 'writing_plans') {
+    return [
+      ...lines,
+      '```json',
+      '{',
+      '  "superpowers": {',
+      '    "implementationPlanPath": "docs/superpowers/plans/YYYY-MM-DD-topic.md",',
+      '    "planReviewVerdict": "approved"',
+      '  }',
+      '}',
+      '```',
+    ].join('\n');
+  }
+
+  if (phase === 'tdd_execute') {
+    return [
+      ...lines,
+      '必须记录 RED 失败与 GREEN 通过；只读/文档任务可以输出 tddExemption，但必须说明原因和批准人。',
+      '```json',
+      '{',
+      '  "superpowers": {',
+      '    "tddEvidence": [',
+      '      {"stage": "RED", "command": "npm test -- specific.test.ts", "passed": false, "summary": "测试按预期失败"},',
+      '      {"stage": "GREEN", "command": "npm test -- specific.test.ts", "passed": true, "summary": "实现后通过"}',
+      '    ]',
+      '  }',
+      '}',
+      '```',
+    ].join('\n');
+  }
+
+  if (phase === 'spec_compliance_review' || phase === 'code_quality_review') {
+    const field = phase === 'spec_compliance_review' ? 'specComplianceReview' : 'codeQualityReview';
+    return [
+      ...lines,
+      'verdict 只能是 approved、changes_requested、failed 或 pending。',
+      '```json',
+      '{',
+      '  "superpowers": {',
+      `    "${field}": {"verdict": "approved", "findings": [], "reviewedAt": "2026-05-27T00:00:00.000Z"}`,
+      '  }',
+      '}',
+      '```',
+    ].join('\n');
+  }
+
+  if (phase === 'verify') {
+    return [
+      ...lines,
+      '```json',
+      '{',
+      '  "superpowers": {',
+      '    "verificationEvidence": [',
+      '      {"command": "npm run build", "status": "passed", "required": true, "fresh": true, "recordedAt": "2026-05-27T00:00:00.000Z"}',
+      '    ]',
+      '  }',
+      '}',
+      '```',
+    ].join('\n');
+  }
+
+  return [
+    ...lines,
+    '```json',
+    '{',
+    '  "superpowers": {',
+    '    "finishBranchDecision": {"decision": "keep_branch", "options": ["merge_local", "create_pr", "keep_branch", "discard_work"], "reason": "等待用户确认最终收口方式", "decidedAt": "2026-05-27T00:00:00.000Z"}',
+    '  }',
+    '}',
+    '```',
+  ].join('\n');
+}
+
 function buildPlanningPrompt(context: PromptContext): string {
   return [
     '你是开发闭环的规划智能体。请基于任务和分析结果生成可执行计划。',
@@ -178,6 +288,8 @@ function buildAssignmentPrompt(context: PromptContext): string {
 function buildImplementationPrompt(context: PromptContext): string {
   return [
     '你是开发闭环的执行智能体。请按任务要求修改代码，并在完成后说明改动文件和验证结果。',
+    '',
+    buildSuperpowersPhasePrompt('tdd_execute', context),
     '',
     baseContext(context),
     '',

@@ -7,8 +7,16 @@ import { workflowDefinitionRepo } from '../../repos/workflow-definitions.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { runRegistry } from '../../run-registry.js';
 import { recordTaskEvent } from '../../task-conversation.js';
-import type { WorkflowDefinition, WorkflowDefinitionGraph, WorkflowDefinitionNodeType, WorkflowRun } from '../../types.js';
+import type {
+  WorkflowDefinition,
+  WorkflowDefinitionGraph,
+  WorkflowDefinitionNodeType,
+  WorkflowRole,
+  WorkflowRun,
+  WorkflowStage,
+} from '../../types.js';
 import type { WorkflowSupervisorDecision } from '../supervisor.js';
+import { buildSuperpowersPhasePrompt } from '../prompts.js';
 import { generateWorkflowSupervisorDecision } from '../supervisor.js';
 import { createGraphNodes } from './nodes.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
@@ -24,6 +32,7 @@ import {
 import type { SuperpowersExecutionNodeName, SuperpowersPlanningNodeName } from './superpowers-nodes.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 import { mapVerificationResultsToEvidence } from './verification.js';
+import { applySuperpowersEvidencePatch, parseSuperpowersEvidence } from './superpowers-evidence.js';
 
 const GraphState = Annotation.Root({
   workflowRunId: Annotation<string>(),
@@ -858,8 +867,16 @@ async function runSuperpowersPlanningNode(
     sort_order: tools.nextStepSortOrder(context.run.id),
   });
   const rawNextState = await callSuperpowersNode(nodeToRun, state, runtimeGraph);
+  const promptedState = await runSuperpowersPhaseAgentIfAvailable({
+    phase: nodeToRun,
+    state: rawNextState,
+    tools,
+    stage: phaseStep.stage,
+    role: phaseStep.role,
+    stepId: step.id,
+  });
   const nextState: AgentWorkflowState = {
-    ...rawNextState,
+    ...promptedState,
     currentNode: 'planning',
     currentStepId: step.id,
   };
@@ -909,8 +926,18 @@ async function runSuperpowersWritingPlansNode(
   }
 
   const rawNextState = await runtimeGraph.nodes.writingPlans(plannedState);
+  const promptedState = planningStep
+    ? await runSuperpowersPhaseAgentIfAvailable({
+      phase: 'writing_plans',
+      state: rawNextState,
+      tools,
+      stage: 'planning',
+      role: 'planner',
+      stepId: planningStep.id,
+    })
+    : rawNextState;
   const nextState: AgentWorkflowState = {
-    ...rawNextState,
+    ...promptedState,
     currentNode: 'planning',
     currentStepId: planningStep?.id ?? plannedState.currentStepId,
   };
@@ -926,6 +953,71 @@ function findCreatedPlanningStep(
   return tools.listSteps(workflowRunId)
     .filter((step) => !beforeStepIds.has(step.id) && step.node_name === 'planning')
     .at(-1);
+}
+
+async function runSuperpowersPhaseAgentIfAvailable(input: {
+  phase: SuperpowersPlanningNodeName;
+  state: AgentWorkflowState;
+  tools: ReturnType<typeof createGraphTools>;
+  stage: WorkflowStage;
+  role: WorkflowRole;
+  stepId: string;
+}): Promise<AgentWorkflowState> {
+  const context = input.tools.readWorkflowContext(input.state.workflowRunId);
+  const agent = input.tools.selectAgentForRole(input.role, context.agents);
+  if (!agent) return input.state;
+
+  const prompt = buildSuperpowersPhasePrompt(superpowersPlanningNodeToPhase(input.phase), {
+    projectName: context.project.name,
+    projectPath: context.project.path,
+    room: context.room,
+    task: context.task,
+    agents: context.agents,
+    workflowContext: context.workflowContext,
+    childTasks: input.tools.listChildTasks(context.task.id),
+    memoryContext: context.memories,
+  });
+  input.tools.updateGraphStep(input.stepId, {
+    room_agent_id: agent.id,
+    assigned_room_agent_id: agent.id,
+    prompt,
+  });
+
+  const runResult = await input.tools.runAcpAgent({
+    agent,
+    projectPath: context.project.path,
+    roomId: context.room.id,
+    prompt,
+    taskId: context.task.id,
+    workflowRunId: context.run.id,
+    workflowStepId: input.stepId,
+    workflowStage: input.stage,
+  });
+  const output = runResult.run.stdout || runResult.message.content;
+  input.tools.updateGraphStep(input.stepId, {
+    agent_run_id: runResult.run.id,
+    result: output,
+    result_message_id: runResult.message.id,
+    error: runResult.run.error,
+  });
+  if (runResult.status !== 'completed') {
+    return {
+      ...input.state,
+      activeAgentRunId: runResult.run.id,
+      status: runResult.status === 'cancelled' ? 'cancelled' : 'blocked',
+      error: runResult.run.error ?? 'Superpowers phase agent failed',
+    };
+  }
+  return applySuperpowersEvidencePatch({
+    ...input.state,
+    activeAgentRunId: runResult.run.id,
+  }, parseSuperpowersEvidence(output));
+}
+
+function superpowersPlanningNodeToPhase(node: SuperpowersPlanningNodeName): Parameters<typeof buildSuperpowersPhasePrompt>[0] {
+  if (node === 'writing_plans') return 'writing_plans';
+  if (node === 'worktree') return 'worktree';
+  return 'brainstorming';
 }
 
 async function callSuperpowersNode(
@@ -1015,11 +1107,11 @@ async function runSuperpowersExecutionNode(
   tools.broadcastStepCreated(context.room.id, step);
 
   const rawNextState = await callSuperpowersExecutionNode(nodeToRun, state, runtimeGraph);
-  const nextState = normalizeSuperpowersReviewState({
+  const nextState = normalizeSuperpowersReviewState(applySuperpowersEvidenceFromLatestStepResult({
     ...rawNextState,
     currentNode: nodeToRun === 'tdd_execute' ? 'execute' : nodeToRun === 'finish_branch' ? 'acceptance' : 'review',
     currentStepId: step.id,
-  }, nodeToRun);
+  }), nodeToRun);
   const blocked = nextState.status === 'blocked';
   const completedStep = tools.updateGraphStep(step.id, {
     node_name: nodeToRun as never,
@@ -1062,7 +1154,7 @@ function applySuperpowersVerificationEvidence(state: AgentWorkflowState): AgentW
     ? state.plan.verificationCommands
     : (state.plan?.verification ?? []).map((command) => ({ command, reason: '', required: true }));
 
-  return {
+  const mappedState = {
     ...state,
     verificationEvidence: mapVerificationResultsToEvidence(
       state.verificationResults,
@@ -1070,6 +1162,7 @@ function applySuperpowersVerificationEvidence(state: AgentWorkflowState): AgentW
       state.verificationEvidence ?? [],
     ),
   };
+  return applySuperpowersEvidenceFromLatestStepResult(mappedState);
 }
 
 function applyTddEvidenceFromImplementationOutput(
@@ -1080,14 +1173,24 @@ function applyTddEvidenceFromImplementationOutput(
   const step = tools.getStep(state.currentStepId);
   if (!step || step.status !== 'completed') return state;
   const evidence = parseTddEvidence(step.result ?? '');
-  if (evidence.length === 0) return state;
-  return {
+  const stateWithLegacyEvidence = evidence.length === 0 ? state : {
     ...state,
     tddEvidence: [
       ...(state.tddEvidence ?? []),
       ...evidence,
     ],
   };
+  return applySuperpowersEvidencePatch(
+    stateWithLegacyEvidence,
+    parseSuperpowersEvidence(step.result ?? ''),
+  );
+}
+
+function applySuperpowersEvidenceFromLatestStepResult(state: AgentWorkflowState): AgentWorkflowState {
+  if (!state.currentStepId) return state;
+  const step = workflowRepo.getStep(state.currentStepId);
+  if (!step?.result) return state;
+  return applySuperpowersEvidencePatch(state, parseSuperpowersEvidence(step.result));
 }
 
 function parseTddEvidence(output: string): NonNullable<AgentWorkflowState['tddEvidence']> {
