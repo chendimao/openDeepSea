@@ -1580,6 +1580,116 @@ test('planner dispatch falls back to best global agent search for unknown sugges
   }
 });
 
+test('planner dispatch maps unknown frontend reviewer request to reviewer agent', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-reviewer-alias-'));
+  const project = projectRepo.create({ name: `planner-reviewer-alias-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '侧边栏添加一个测试菜单，菜单内容为一个计数器',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({ stream: 'stdout', text: '已审查前端改动。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '审查前端改动',
+          next_steps: [
+            { agent_id: 'frontend-reviewer', goal: '审查前端计数器页面、侧边栏入口、i18n 和可访问性' },
+          ],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+    const body = await response.json() as {
+      dispatched?: number;
+      added_agents?: Array<{ agent_id: string; agent_name: string }>;
+    };
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.dispatched, 1);
+    assert.deepEqual(body.added_agents, [{ agent_id: 'reviewer', agent_name: '审查员' }]);
+    assert.equal(runs.some((run) => run.agent_id === 'reviewer'), true);
+    assert.equal(runs.some((run) => run.agent_id === 'frontend-executor'), false);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('planner dispatch maps unknown frontend tester request to qa tester agent', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-tester-alias-'));
+  const project = projectRepo.create({ name: `planner-tester-alias-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '侧边栏添加一个测试菜单，菜单内容为一个计数器',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({ stream: 'stdout', text: '已验证前端改动。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '验证前端改动',
+          next_steps: [
+            { agent_id: 'frontend-tester', goal: '验证前端计数器页面、侧边栏入口和交互路径' },
+          ],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+    const body = await response.json() as {
+      dispatched?: number;
+      added_agents?: Array<{ agent_id: string; agent_name: string }>;
+    };
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.dispatched, 1);
+    assert.deepEqual(body.added_agents, [{ agent_id: 'qa-tester', agent_name: '测试工程师' }]);
+    assert.equal(runs.some((run) => run.agent_id === 'qa-tester'), true);
+    assert.equal(runs.some((run) => run.agent_id === 'frontend-executor'), false);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner dispatch defers review steps until execution result returns to planner', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-serial-dispatch-'));
   const project = projectRepo.create({ name: `planner-serial-dispatch-${Date.now()}`, path: projectPath });

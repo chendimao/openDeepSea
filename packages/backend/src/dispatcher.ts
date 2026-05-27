@@ -1393,6 +1393,15 @@ function resolveGlobalAgentForPlannerStep(step: PlannerDecision['next_steps'][nu
 
 function resolveGlobalAgentAlias(agentId: string): Agent | undefined {
   const normalized = agentId.toLowerCase();
+  if (matchesAgentRoleAlias(normalized, ['reviewer', 'review', '审查', '评审', '复核'])) {
+    return agentRepo.getByAgentId('reviewer') ?? agentRepo.getByBuiltinKey('reviewer');
+  }
+  if (matchesAgentRoleAlias(normalized, ['tester', 'test', 'qa', '测试', '验证'])) {
+    return agentRepo.getByAgentId('qa-tester') ?? agentRepo.getByBuiltinKey('qa-tester');
+  }
+  if (matchesAgentRoleAlias(normalized, ['acceptor', 'acceptance', '验收'])) {
+    return agentRepo.getByAgentId('acceptor') ?? agentRepo.getByBuiltinKey('acceptor');
+  }
   if (
     normalized.includes('runtime') ||
     normalized.includes('inspector') ||
@@ -1402,6 +1411,10 @@ function resolveGlobalAgentAlias(agentId: string): Agent | undefined {
     return agentRepo.getByAgentId('computer-assistant') ?? agentRepo.getByBuiltinKey('computer-assistant');
   }
   return undefined;
+}
+
+function matchesAgentRoleAlias(value: string, aliases: string[]): boolean {
+  return aliases.some((alias) => value.includes(alias));
 }
 
 function findBestGlobalAgentMatch(step: PlannerDecision['next_steps'][number]): Agent | undefined {
