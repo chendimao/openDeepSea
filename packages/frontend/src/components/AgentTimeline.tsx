@@ -84,8 +84,9 @@ export function AgentTimeline({
 
 function TimelineItem({ event }: { event: AgentTimelineEvent }): JSX.Element {
   const [open, setOpen] = useState(false);
-  const eventLabel = getEventLabel(event.type);
+  const eventLabel = getTranscriptAction(event);
   const statusLabel = planStatusLabels[String(event.payload.status ?? event.status)] ?? formatEventStatus(event.status);
+  const summary = getEventSummary(event);
 
   return (
     <details className={`agent-timeline-card is-${event.type}`} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
@@ -94,7 +95,7 @@ function TimelineItem({ event }: { event: AgentTimelineEvent }): JSX.Element {
           {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </span>
         <span className="agent-timeline-kind">{eventLabel}</span>
-        <strong>{event.title}</strong>
+        <strong title={summary}>{summary}</strong>
         <span className="agent-timeline-status">{event.type === 'plan_update' ? statusLabel : formatEventStatus(event.status)}</span>
       </summary>
       <div className="agent-timeline-body">
@@ -119,7 +120,7 @@ function DebugEventsPanel({
         <span className="agent-timeline-chevron" aria-hidden="true">
           {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </span>
-        <span className="agent-timeline-kind">调试</span>
+        <span className="agent-timeline-kind">Debug</span>
         <strong>协议调试</strong>
         <span className="agent-timeline-status">{hiddenCount} 条隐藏事件</span>
       </summary>
@@ -341,6 +342,113 @@ function formatEventStatus(status: AgentTimelineEvent['status']): string {
   if (status === 'delta') return '增量';
   if (status === 'completed') return '完成';
   return '失败';
+}
+
+function getTranscriptAction(event: AgentTimelineEvent): string {
+  switch (event.type) {
+    case 'thinking':
+      return 'Thinking';
+    case 'tool_call':
+    case 'tool_result':
+      return 'Explored';
+    case 'command':
+    case 'command_output':
+      return 'Ran';
+    case 'file_diff':
+      return 'Edited';
+    case 'plan_update':
+      return 'Plan';
+    case 'permission_request':
+      return 'Permission';
+    case 'web_search':
+      return 'Searched';
+    case 'error':
+      return 'Error';
+    case 'assistant_message':
+      return 'Answer';
+    case 'raw':
+      return 'Raw';
+    default:
+      return getEventLabel(event.type);
+  }
+}
+
+function getEventSummary(event: AgentTimelineEvent): string {
+  if (event.type === 'tool_call' || event.type === 'tool_result') {
+    const name = readString(event.payload.name);
+    const title = readString(event.payload.title);
+    const locationSummary = summarizeLocations(event.payload.locations);
+    const inputSummary = summarizeToolInput(event.payload.input);
+    return compactJoin([normalizeToolTitle(title ?? event.title, name), inputSummary, locationSummary], ' · ');
+  }
+
+  if (event.type === 'command' || event.type === 'command_output') {
+    return readString(event.payload.command) ?? event.title;
+  }
+
+  if (event.type === 'file_diff') {
+    const path = readString(event.payload.path);
+    const additions = typeof event.payload.additions === 'number' ? `+${event.payload.additions}` : null;
+    const deletions = typeof event.payload.deletions === 'number' ? `-${event.payload.deletions}` : null;
+    return compactJoin([path ? `修改文件 ${path}` : event.title, compactJoin([additions, deletions], ' / ')], ' · ');
+  }
+
+  if (event.type === 'plan_update') {
+    const entries = Array.isArray(event.payload.entries) ? event.payload.entries : [];
+    return entries.length > 0 ? `计划更新 · ${entries.length} 项` : event.title;
+  }
+
+  return event.title;
+}
+
+function summarizeLocations(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const labels = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const record = entry as Record<string, unknown>;
+      const path = readString(record.path) ?? readString(record.file) ?? readString(record.uri);
+      if (!path) return null;
+      const line = typeof record.line === 'number' ? record.line : typeof record.lineNumber === 'number' ? record.lineNumber : null;
+      return line ? `${path}:${line}` : path;
+    })
+    .filter((entry): entry is string => entry !== null);
+  if (labels.length === 0) return null;
+  const suffix = labels.length > 2 ? ` +${labels.length - 2}` : '';
+  return `${labels.slice(0, 2).join(', ')}${suffix}`;
+}
+
+function summarizeToolInput(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      return summarizeToolInput(JSON.parse(trimmed) as unknown) ?? trimmed.slice(0, 120);
+    } catch {
+      return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
+    }
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return readString(record.path)
+    ?? readString(record.file)
+    ?? readString(record.pattern)
+    ?? readString(record.command)
+    ?? null;
+}
+
+function normalizeToolTitle(title: string, name: string | null): string {
+  if (!name) return title;
+  const normalized = title
+    .replace(/^调用工具\s+/u, '')
+    .replace(/^工具结果\s+/u, '')
+    .trim();
+  return normalized || name;
+}
+
+function compactJoin(values: Array<string | null>, separator: string): string {
+  return values.filter((value): value is string => Boolean(value?.trim())).join(separator);
 }
 
 function getEventLabel(type: AgentTimelineEvent['type']): string {

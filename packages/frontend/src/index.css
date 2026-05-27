@@ -4247,9 +4247,19 @@
   .agent-timeline {
     margin-top: 0.55rem;
     display: grid;
-    gap: 0.35rem;
-    border-left: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
-    padding-left: 0.65rem;
+    gap: 0.28rem;
+    position: relative;
+    padding-left: 1rem;
+  }
+
+  .agent-timeline::before {
+    content: '';
+    position: absolute;
+    top: 28px;
+    bottom: 7px;
+    left: 4px;
+    width: 1px;
+    background: color-mix(in srgb, var(--color-border) 72%, transparent);
   }
 
   .agent-timeline-header {
@@ -4278,40 +4288,54 @@
   }
 
   .agent-timeline-card {
-    overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--color-surface) 62%, transparent);
+    position: relative;
+    overflow: visible;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
     box-shadow: none;
     transition:
       border-color 160ms ease,
       background-color 160ms ease;
   }
 
+  .agent-timeline-card::before {
+    content: '';
+    position: absolute;
+    top: 15px;
+    left: -14px;
+    width: 7px;
+    height: 7px;
+    border: 1px solid color-mix(in srgb, var(--color-fg-muted) 54%, transparent);
+    border-radius: 999px;
+    background: var(--color-bg);
+  }
+
   .agent-timeline-card:hover {
-    border-color: color-mix(in srgb, var(--color-border-strong, var(--color-border)) 76%, transparent);
-    background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+    border-color: color-mix(in srgb, var(--color-border-strong, var(--color-border)) 58%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 54%, transparent);
   }
 
   .agent-timeline-card[open] {
-    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    border-color: color-mix(in srgb, var(--color-border) 64%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 78%, transparent);
   }
 
   .agent-timeline-card.is-debug {
     border-style: dashed;
-    border-color: color-mix(in srgb, var(--color-border) 58%, transparent);
-    background: color-mix(in srgb, var(--color-surface) 52%, transparent);
+    border-color: transparent;
+    background: transparent;
   }
 
   .agent-timeline-summary {
     display: grid;
     grid-template-columns: auto auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: 7px;
-    min-height: 34px;
+    gap: 8px;
+    min-height: 32px;
     cursor: pointer;
     list-style: none;
-    padding: 6px 9px;
+    padding: 5px 8px;
     user-select: none;
   }
 
@@ -4325,20 +4349,19 @@
   }
 
   .agent-timeline-kind {
-    border-radius: 999px;
-    padding: 1px 6px;
-    background: color-mix(in srgb, var(--color-code-bg) 54%, transparent);
-    color: var(--color-fg-muted);
+    min-width: 72px;
+    color: color-mix(in srgb, var(--color-fg-muted) 88%, var(--color-fg));
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10.5px;
+    font-size: 11px;
     font-weight: 800;
+    line-height: 1;
   }
 
   .agent-timeline-summary strong {
     min-width: 0;
     overflow: hidden;
     color: color-mix(in srgb, var(--color-fg) 86%, transparent);
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 650;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4351,8 +4374,9 @@
   }
 
   .agent-timeline-body {
-    border-top: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
-    padding: 8px 9px 9px;
+    margin: 0 8px 8px 31px;
+    border-left: 2px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+    padding: 7px 0 7px 10px;
   }
 
   .agent-timeline-pre,

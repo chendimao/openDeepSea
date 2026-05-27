@@ -50,7 +50,8 @@ test('AgentTimeline falls back to legacy trace fields when structured events are
   );
 
   assert.match(html, /legacy thinking/);
-  assert.match(html, /调用工具 Read/);
+  assert.match(html, /Explored/);
+  assert.match(html, /Read · src\/app\.ts/);
 });
 
 test('AgentTimeline marks diff lines with add and remove classes', () => {
@@ -104,6 +105,104 @@ test('AgentTimeline renders file diff summary fields with readable labels', () =
   assert.match(html, /src\/app\.ts/);
   assert.match(html, /新增行/);
   assert.match(html, /删除行/);
+});
+
+test('AgentTimeline renders transcript actions for tool, command, and diff events', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'tool-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果 Read',
+            payload: {
+              id: 'tool-1',
+              name: 'Read',
+              output: 'packages/frontend/src/components/AgentTimeline.tsx',
+            },
+            created_at: 1000,
+          },
+          {
+            id: 'command-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 2,
+            type: 'command',
+            status: 'completed',
+            title: '执行命令 npm run build',
+            payload: { command: 'npm run build', output: 'built' },
+            created_at: 1001,
+          },
+          {
+            id: 'diff-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 3,
+            type: 'file_diff',
+            status: 'completed',
+            title: '修改文件 src/app.ts',
+            payload: { path: 'src/app.ts', patch: '-old\n+new', additions: 1, deletions: 1 },
+            created_at: 1002,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /Explored/);
+  assert.match(html, /Ran/);
+  assert.match(html, /Edited/);
+  assert.match(html, /npm run build/);
+  assert.match(html, /修改文件 src\/app\.ts · \+1 \/ -1/);
+});
+
+test('AgentTimeline merges tool lifecycle events into one transcript row', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'run-1:1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'tool_call',
+            status: 'started',
+            title: '调用工具 Read',
+            payload: { id: 'tool-read-1', name: 'Read', input: '{"path":"package.json"}' },
+            created_at: 1000,
+          },
+          {
+            id: 'run-1:2',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 2,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果 Read',
+            payload: { id: 'tool-read-1', name: 'Read', output: '{"name":"openclaw-room"}' },
+            created_at: 1001,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /1 条事件/);
+  assert.match(html, /Explored/);
+  assert.match(html, /Read · package\.json/);
+  assert.match(html, /openclaw-room/);
+  assert.doesNotMatch(html, /2 条事件/);
 });
 
 test('AgentTimeline collapses all ACP event cards by default', () => {
