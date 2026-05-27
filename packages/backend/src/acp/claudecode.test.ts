@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildClaudeCodeArgs, buildClaudeCodePrompt, createStdoutNormalizer, filterStderr, normalizeStdoutChunk } from './claudecode.js';
+import {
+  buildClaudeCodeArgs,
+  buildClaudeCodeInvocation,
+  buildClaudeCodePrompt,
+  createStdoutNormalizer,
+  filterStderr,
+  normalizeStdoutChunk,
+} from './claudecode.js';
 
 test('buildClaudeCodeArgs maps bypass to bypassPermissions', () => {
   assert.deepEqual(
@@ -11,7 +18,7 @@ test('buildClaudeCodeArgs maps bypass to bypassPermissions', () => {
       permissionMode: 'bypass',
       writableDirs: ['/tmp/ignored'],
     }),
-    ['--print', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions', 'hello'],
+    ['--print', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions'],
   );
 });
 
@@ -35,7 +42,6 @@ test('buildClaudeCodeArgs maps workspace-write to acceptEdits with the current p
       '/Users/chendimao/WWW/openclaw-room',
       '--resume',
       'session-1',
-      'continue',
     ],
   );
 });
@@ -49,8 +55,32 @@ test('buildClaudeCodeArgs maps read-only to plan mode', () => {
       permissionMode: 'read-only',
       writableDirs: [],
     }),
-    ['--print', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', 'inspect'],
+    ['--print', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan'],
   );
+});
+
+test('buildClaudeCodeInvocation passes prompt through stdin to avoid variadic --add-dir swallowing it', () => {
+  const invocation = buildClaudeCodeInvocation({
+    sessionId: null,
+    prompt: 'continue',
+    imagePaths: [],
+    permissionMode: 'workspace-write',
+    writableDirs: ['/Users/chendimao/WWW/openclaw-room'],
+  });
+
+  assert.deepEqual(invocation, {
+    args: [
+      '--print',
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--permission-mode',
+      'acceptEdits',
+      '--add-dir',
+      '/Users/chendimao/WWW/openclaw-room',
+    ],
+    stdin: 'continue',
+  });
 });
 
 test('buildClaudeCodePrompt appends local image paths for Claude Code', () => {

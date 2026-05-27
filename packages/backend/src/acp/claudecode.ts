@@ -114,24 +114,24 @@ export const claudeCodeAdapter: SessionAdapter = {
       emitProtocolFallback(onChunk, 'claudecode', protocolResult.stderr);
     }
 
-    const args = buildClaudeCodeArgs({
+    const invocation = buildClaudeCodeInvocation({
       sessionId,
       prompt,
       imagePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
-    return runStreaming('claude', args, projectPath, onChunk, signal, onSession);
+    return runStreaming('claude', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin);
   },
 };
 
-export function buildClaudeCodeArgs(args: {
+export function buildClaudeCodeInvocation(args: {
   sessionId: string | null;
   prompt: string;
   imagePaths?: string[];
   permissionMode: 'bypass' | 'workspace-write' | 'read-only';
   writableDirs: string[];
-}): string[] {
+}): { args: string[]; stdin: string } {
   const cliArgs = ['--print', '--output-format', 'stream-json', '--verbose'];
   if (args.permissionMode === 'bypass') {
     cliArgs.push('--permission-mode', 'bypassPermissions');
@@ -144,8 +144,17 @@ export function buildClaudeCodeArgs(args: {
     cliArgs.push('--permission-mode', 'plan');
   }
   if (args.sessionId) cliArgs.push('--resume', args.sessionId);
-  cliArgs.push(buildClaudeCodePrompt(args.prompt, args.imagePaths ?? []));
-  return cliArgs;
+  return { args: cliArgs, stdin: buildClaudeCodePrompt(args.prompt, args.imagePaths ?? []) };
+}
+
+export function buildClaudeCodeArgs(args: {
+  sessionId: string | null;
+  prompt: string;
+  imagePaths?: string[];
+  permissionMode: 'bypass' | 'workspace-write' | 'read-only';
+  writableDirs: string[];
+}): string[] {
+  return buildClaudeCodeInvocation(args).args;
 }
 
 export function buildClaudeCodePrompt(prompt: string, imagePaths: string[]): string {
