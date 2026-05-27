@@ -90,7 +90,7 @@ export function MessageContent({
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { t } = useI18n();
   const parts = parseMessage(content);
-  const markdown = isMarkdownContent(content);
+  const markdown = streaming ? isStableStreamingMarkdownContent(content) : isMarkdownContent(content);
   const activeMode = mode ?? 'preview';
   const lastTextPartIndex = findLastTextPartIndex(parts);
 
@@ -171,6 +171,22 @@ function isMarkdownContent(content: string): boolean {
     || /\[[^\]]+\]\([^)]+\)/.test(trimmed)
     || /`[^`\n]+`/.test(trimmed)
     || /\*\*[^*\n]+\*\*/.test(trimmed);
+}
+
+function isStableStreamingMarkdownContent(content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) return false;
+  if (fencePattern.test(trimmed)) {
+    fencePattern.lastIndex = 0;
+    return true;
+  }
+  fencePattern.lastIndex = 0;
+  return /(^|\n)\s{0,3}#{1,6}\s+\S/.test(trimmed)
+    || /(^|\n)\s{0,3}[-*+]\s+\S/.test(trimmed)
+    || /(^|\n)\s{0,3}\d+\.\s+\S/.test(trimmed)
+    || /(^|\n)\s{0,3}>\s+\S/.test(trimmed)
+    || /(^|\n)\s{0,3}---+\s*$/.test(trimmed)
+    || /\[[^\]]+\]\([^)]+\)/.test(trimmed);
 }
 
 export function MarkdownPreview({ content, streaming = false }: { content: string; streaming?: boolean }): JSX.Element {

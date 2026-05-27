@@ -153,11 +153,11 @@ test('renders markdown source when controlled by message display mode', () => {
 test('places streaming cursor inside the final markdown text block', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
-      <MessageContent content={'优化 `ACP` 消息展示，并保持光标在流式文字后面'} streaming />
+      <MessageContent content={'优化 [ACP](https://example.com) 消息展示，并保持光标在流式文字后面'} streaming />
     </I18nProvider>,
   );
 
-  assert.match(html, /<p><span>优化 <code>ACP<\/code> 消息展示，并保持光标在流式文字后面<span class="streaming-cursor"/);
+  assert.match(html, /<p><span>优化 <a href="https:\/\/example\.com" target="_blank" rel="noreferrer noopener">ACP<\/a> 消息展示，并保持光标在流式文字后面<span class="streaming-cursor"/);
   assert.doesNotMatch(html, /<\/p><span class="streaming-cursor"/);
 });
 
@@ -170,6 +170,19 @@ test('places streaming cursor inside the final markdown list item', () => {
 
   assert.match(html, /<li>渲染 <code>ACP<\/code> 事件<span class="streaming-cursor"/);
   assert.doesNotMatch(html, /<\/ul><span class="streaming-cursor"/);
+});
+
+test('keeps streaming inline-code text in plain layout to avoid markdown size flicker', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent content={'正在修改 `AgentTimeline.tsx` 和 `index.css`'} streaming />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /whitespace-pre-wrap break-words/);
+  assert.match(html, /正在修改 `AgentTimeline\.tsx` 和 `index\.css`/);
+  assert.doesNotMatch(html, /markdown-preview/);
+  assert.doesNotMatch(html, /<code>AgentTimeline\.tsx<\/code>/);
 });
 
 test('renders thinking and tool trace panels collapsed by default', () => {
