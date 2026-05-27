@@ -7,10 +7,6 @@ export type StreamingDisplayState = {
 
 const BLOCK_CHUNK_LENGTH = 240;
 const BLOCK_NEWLINE_COUNT = 4;
-const MEDIUM_QUEUE_LENGTH = 80;
-const LARGE_QUEUE_LENGTH = 240;
-const NATURAL_TEXT_SEGMENT_LENGTH = 12;
-
 const logLikePattern = /(^\s*\[error\]|^\s*(stdout|stderr)(\s|:)|^\s*[-+]\s|^diff --git|^\$\s|^>\s)/m;
 
 export function createStreamingDisplayState(displayed = ''): StreamingDisplayState {
@@ -36,24 +32,17 @@ export function enqueueStreamingChunk(
   chunk: string,
 ): StreamingDisplayState {
   if (!chunk) return state;
-  if (classifyStreamingChunk(state.displayed, chunk) === 'block') {
-    return {
-      displayed: `${state.displayed}${state.queue.join('')}${chunk}`,
-      queue: [],
-    };
-  }
   return {
-    displayed: state.displayed,
-    queue: [...state.queue, ...segmentNaturalText(chunk)],
+    displayed: `${state.displayed}${state.queue.join('')}${chunk}`,
+    queue: [],
   };
 }
 
 export function tickStreamingDisplay(state: StreamingDisplayState): StreamingDisplayState {
   if (state.queue.length === 0) return state;
-  const releaseCount = getReleaseCount(state.queue.length);
   return {
-    displayed: `${state.displayed}${state.queue.slice(0, releaseCount).join('')}`,
-    queue: state.queue.slice(releaseCount),
+    displayed: `${state.displayed}${state.queue.join('')}`,
+    queue: [],
   };
 }
 
@@ -100,32 +89,4 @@ function countNewlines(text: string): number {
 
 function looksLikeStructuredOutput(text: string): boolean {
   return /^[\s\S]*(\n\s{2,}\S|\n\t+\S|^[\s]*[}\]\)]\s*$|;\s*$|={3,}|-{3,}|\|)/m.test(text);
-}
-
-function segmentNaturalText(text: string): string[] {
-  const chars = Array.from(text);
-  const segments: string[] = [];
-  let current = '';
-  for (const char of chars) {
-    current += char;
-    if (shouldFlushNaturalTextSegment(current, char)) {
-      segments.push(current);
-      current = '';
-    }
-  }
-  if (current) segments.push(current);
-  return segments;
-}
-
-function shouldFlushNaturalTextSegment(segment: string, latestChar: string): boolean {
-  const length = Array.from(segment).length;
-  if (length >= NATURAL_TEXT_SEGMENT_LENGTH) return true;
-  if (length >= 4 && /[。！？.!?；;，,、\n]/.test(latestChar)) return true;
-  return false;
-}
-
-function getReleaseCount(queueLength: number): number {
-  if (queueLength > LARGE_QUEUE_LENGTH) return 24;
-  if (queueLength >= MEDIUM_QUEUE_LENGTH) return 12;
-  return 4;
 }
