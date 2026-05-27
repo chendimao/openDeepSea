@@ -1797,6 +1797,112 @@ test('respondAsAgent marks final stream event failed without mixing stderr into 
   }
 });
 
+test('respondAsAgent annotates explicit planner decision even when ACP prompt times out after output', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-timeout-decision-'));
+  const project = projectRepo.create({ name: `planner-timeout-decision-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  const acpPlanner = roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  assert.ok(acpPlanner);
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({
+        stream: 'stdout',
+        text: [
+          '建议交给前端执行。',
+          '',
+          '```json',
+          JSON.stringify({
+            planner_decision: {
+              mode: 'pause_after_suggestion',
+              status: 'suggested',
+              summary: '修复协议调试重叠',
+              next_steps: [
+                { agent_id: 'frontend-executor', goal: '修复 AgentTimeline 协议调试计数布局' },
+              ],
+              awaiting_user_confirmation: true,
+            },
+          }),
+          '```',
+        ].join('\n'),
+      });
+      return { exitCode: -1, sessionId: null, stderr: 'ACP prompt timed out' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpPlanner,
+      projectPath,
+      roomId: room.id,
+      prompt: '请规划',
+    });
+
+    const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === 'planner');
+    assert.ok(reply);
+    const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.planner_decision?.summary, '修复协议调试重叠');
+    assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
+    assert.equal(agentRunRepo.listByRoom(room.id, 1)[0]?.status, 'failed');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent does not annotate failed planner plain text as dispatchable decision', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-timeout-plain-'));
+  const project = projectRepo.create({ name: `planner-timeout-plain-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  const acpPlanner = roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  assert.ok(acpPlanner);
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({ stream: 'stdout', text: '我还在分析，尚未形成下一步。' });
+      return { exitCode: -1, sessionId: null, stderr: 'ACP prompt timed out' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpPlanner,
+      projectPath,
+      roomId: room.id,
+      prompt: '请规划',
+    });
+
+    const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === 'planner');
+    assert.ok(reply);
+    const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.planner_decision, undefined);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('dispatchUserMessage triggers model distill after completed ACP reply when enabled', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-acp-distill-test-'));
   const skillPath = await mkdtemp(join(tmpdir(), 'openclaw-room-memory-skill-dir-'));

@@ -37,6 +37,20 @@ class FakeAgent implements Agent {
   }
 
   async prompt(params: PromptRequest) {
+    if (process.env.OPENCLAW_FAKE_ACP_HANG_PROMPT === '1') {
+      await this.connection.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text: 'partial answer before timeout',
+          },
+        },
+      });
+      await new Promise(() => undefined);
+    }
+
     if (process.env.OPENCLAW_FAKE_ACP_PERMISSION === '1') {
       await this.connection.requestPermission({
         sessionId: params.sessionId,

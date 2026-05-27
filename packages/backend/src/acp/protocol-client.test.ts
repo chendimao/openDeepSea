@@ -272,3 +272,33 @@ test('invokeProtocolSession times out unresponsive initialization safely', async
   assert.equal(result.fallbackSafe, true);
   assert.match(result.stderr, /ACP initialize timed out/);
 });
+
+test('invokeProtocolSession uses a separate prompt timeout after streaming output', async () => {
+  const chunks: Array<{ channel?: string; text: string }> = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_HANG_PROMPT: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'hello',
+    stageTimeoutMs: 1_000,
+    promptTimeoutMs: 50,
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, -1);
+  assert.equal(result.fallbackSafe, false);
+  assert.match(result.stderr, /ACP prompt timed out/);
+  assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'partial answer before timeout');
+});

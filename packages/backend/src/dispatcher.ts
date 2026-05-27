@@ -900,11 +900,12 @@ function annotatePlannerDecision(input: {
   sourceMessageId?: string | null;
   agent: RoomAgent;
 }): void {
-  if (input.run.status !== 'completed') return;
   if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return;
   if (input.agent.agent_id !== 'planner') return;
 
-  const decision = parsePlannerDecision(input.message.content);
+  const decision = input.run.status === 'completed'
+    ? parsePlannerDecision(input.message.content)
+    : parseExplicitPlannerDecision(input.message.content);
   if (!decision) return;
   messageRepo.mergeMetadata(input.message.id, {
     planner_decision: decision,
@@ -963,15 +964,9 @@ function maybeRegisterAgentDocument(input: {
 }
 
 function parsePlannerDecision(content: string): PlannerDecision | null {
-  for (const candidate of extractJsonObjectCandidates(content)) {
-    try {
-      const parsed = JSON.parse(candidate) as unknown;
-      const decision = readPlannerDecisionObject(parsed);
-      if (decision) return decision;
-    } catch {
-      // Ignore malformed JSON blocks.
-    }
-  }
+  const explicitDecision = parseExplicitPlannerDecision(content);
+  if (explicitDecision) return explicitDecision;
+
   const summary = content
     .split(/\n+/)
     .map((line) => line.trim())
@@ -984,6 +979,19 @@ function parsePlannerDecision(content: string): PlannerDecision | null {
     next_steps: [],
     awaiting_user_confirmation: true,
   };
+}
+
+function parseExplicitPlannerDecision(content: string): PlannerDecision | null {
+  for (const candidate of extractJsonObjectCandidates(content)) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      const decision = readPlannerDecisionObject(parsed);
+      if (decision) return decision;
+    } catch {
+      // Ignore malformed JSON blocks.
+    }
+  }
+  return null;
 }
 
 function readPlannerDecisionObject(value: unknown): PlannerDecision | null {

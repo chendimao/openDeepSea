@@ -16,6 +16,7 @@ import type { AcpInvokeResult, AcpStreamChunk } from './types.js';
 import type { AcpServerConfig } from './protocol-registry.js';
 
 const DEFAULT_PROTOCOL_STAGE_TIMEOUT_MS = 30_000;
+const DEFAULT_PROTOCOL_PROMPT_TIMEOUT_MS = 180_000;
 
 export interface InvokeProtocolSessionArgs {
   backend: AcpBackend;
@@ -30,6 +31,7 @@ export interface InvokeProtocolSessionArgs {
   onSession?: (sessionId: string) => void;
   signal?: AbortSignal;
   stageTimeoutMs?: number;
+  promptTimeoutMs?: number;
 }
 
 export async function invokeProtocolSession(
@@ -42,6 +44,10 @@ export async function invokeProtocolSession(
   let promptStarted = false;
   let eventReceived = false;
   const stageTimeoutMs = args.stageTimeoutMs ?? readProtocolStageTimeoutMs(process.env.OPENCLAW_ACP_STAGE_TIMEOUT_MS);
+  const promptTimeoutMs = args.promptTimeoutMs ?? readProtocolTimeoutMs(
+    process.env.OPENCLAW_ACP_PROMPT_TIMEOUT_MS,
+    DEFAULT_PROTOCOL_PROMPT_TIMEOUT_MS,
+  );
 
   try {
     child = spawn(args.server.command, args.server.args, {
@@ -171,7 +177,7 @@ export async function invokeProtocolSession(
         sessionId: activeSessionId,
         prompt: buildPromptContent(args.prompt, args.imagePaths ?? []),
       }),
-      stageTimeoutMs,
+      promptTimeoutMs,
       'ACP prompt timed out',
     );
 
@@ -373,8 +379,12 @@ function canResumeSession(capabilities: AgentCapabilities | undefined): boolean 
 }
 
 function readProtocolStageTimeoutMs(value: string | undefined): number {
+  return readProtocolTimeoutMs(value, DEFAULT_PROTOCOL_STAGE_TIMEOUT_MS);
+}
+
+function readProtocolTimeoutMs(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PROTOCOL_STAGE_TIMEOUT_MS;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
