@@ -118,7 +118,7 @@ export const codexAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('codex');
     if (protocolConfig.enabled) {
       let protocolResult = await invokeProtocolSession({
@@ -130,6 +130,7 @@ export const codexAdapter: SessionAdapter = {
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
+        envOverrides,
         onChunk,
         onSession,
         signal,
@@ -173,7 +174,7 @@ export const codexAdapter: SessionAdapter = {
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
-    return runStreaming('codex', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin);
+    return runStreaming('codex', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, envOverrides);
   },
 };
 

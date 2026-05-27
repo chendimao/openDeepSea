@@ -92,7 +92,7 @@ export const claudeCodeAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('claudecode');
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
@@ -104,6 +104,7 @@ export const claudeCodeAdapter: SessionAdapter = {
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
+        envOverrides,
         onChunk,
         onSession,
         signal,
@@ -121,7 +122,7 @@ export const claudeCodeAdapter: SessionAdapter = {
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
-    return runStreaming('claude', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin);
+    return runStreaming('claude', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, envOverrides);
   },
 };
 
@@ -189,9 +190,14 @@ function runStreaming(
   signal?: AbortSignal,
   onSession?: (sessionId: string) => void,
   stdin?: string,
+  envOverrides?: Record<string, string>,
 ): Promise<{ exitCode: number; sessionId: string | null; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { cwd, env: process.env, stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, {
+      cwd,
+      env: { ...process.env, ...(envOverrides ?? {}) },
+      stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+    });
     let stderr = '';
     let detectedSession: string | null = null;
     let stdoutBuffer = '';

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const {
+  applySuperpowersBootstrap,
   prependSuperpowersSessionBootstrap,
 } = await import('./superpowers-bootstrap.js');
 
@@ -23,4 +24,43 @@ test('prependSuperpowersSessionBootstrap does not duplicate an existing bootstra
   const twice = prependSuperpowersSessionBootstrap(once);
 
   assert.equal(twice, once);
+});
+
+test('applySuperpowersBootstrap injects when owner is project', () => {
+  const result = applySuperpowersBootstrap({
+    prompt: '当前用户请求：\nhi',
+    owner: 'project',
+    workflowRunId: null,
+  });
+
+  assert.equal(result.injected, true);
+  assert.equal(result.source, 'project');
+  assert.equal(result.skill, 'superpowers:using-superpowers');
+  assert.equal(result.skipReason, null);
+  assert.match(result.prompt, /You have superpowers\./);
+});
+
+test('applySuperpowersBootstrap skips when owner is provider', () => {
+  const prompt = '当前用户请求：\nhi';
+  const result = applySuperpowersBootstrap({
+    prompt,
+    owner: 'provider',
+    workflowRunId: null,
+  });
+
+  assert.equal(result.injected, false);
+  assert.equal(result.source, 'provider');
+  assert.equal(result.skipReason, 'provider_owner');
+  assert.equal(result.prompt, prompt);
+});
+
+test('applySuperpowersBootstrap skips workflow runs', () => {
+  const result = applySuperpowersBootstrap({
+    prompt: '当前用户请求：\nhi',
+    owner: 'project',
+    workflowRunId: 'workflow-1',
+  });
+
+  assert.equal(result.injected, false);
+  assert.equal(result.skipReason, 'workflow_run');
 });

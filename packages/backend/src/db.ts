@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS settings (
   interaction_mode TEXT,
   auto_distill_enabled INTEGER CHECK (auto_distill_enabled IN (0, 1)),
   default_workflow_definition_id TEXT,
+  superpowers_bootstrap_owner TEXT CHECK (superpowers_bootstrap_owner IN ('project', 'provider', 'disabled')),
   langchain_planner_model TEXT,
   openai_api_key TEXT,
   openai_base_url TEXT,
@@ -291,6 +292,10 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   stderr TEXT NOT NULL DEFAULT '',
   activity_log TEXT NOT NULL DEFAULT '',
   error TEXT,
+  superpowers_bootstrap_owner TEXT,
+  superpowers_bootstrap_injected INTEGER NOT NULL DEFAULT 0 CHECK (superpowers_bootstrap_injected IN (0, 1)),
+  superpowers_bootstrap_skill TEXT,
+  superpowers_bootstrap_skip_reason TEXT,
   started_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   completed_at INTEGER,
@@ -794,6 +799,18 @@ if (!agentRunColumnNames.has('collaboration_run_id')) {
 if (!agentRunColumnNames.has('collaboration_stage')) {
   db.exec('ALTER TABLE agent_runs ADD COLUMN collaboration_stage TEXT');
 }
+if (!agentRunColumnNames.has('superpowers_bootstrap_owner')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN superpowers_bootstrap_owner TEXT');
+}
+if (!agentRunColumnNames.has('superpowers_bootstrap_injected')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN superpowers_bootstrap_injected INTEGER NOT NULL DEFAULT 0 CHECK (superpowers_bootstrap_injected IN (0, 1))');
+}
+if (!agentRunColumnNames.has('superpowers_bootstrap_skill')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN superpowers_bootstrap_skill TEXT');
+}
+if (!agentRunColumnNames.has('superpowers_bootstrap_skip_reason')) {
+  db.exec('ALTER TABLE agent_runs ADD COLUMN superpowers_bootstrap_skip_reason TEXT');
+}
 if (!agentRunColumnNames.has('activity_log')) {
   db.exec("ALTER TABLE agent_runs ADD COLUMN activity_log TEXT NOT NULL DEFAULT ''");
 }
@@ -1033,6 +1050,12 @@ if (!settingsColumnNames.has('openai_base_url')) {
 }
 if (!settingsColumnNames.has('active_ai_config_id')) {
   db.exec('ALTER TABLE settings ADD COLUMN active_ai_config_id TEXT');
+}
+if (!settingsColumnNames.has('superpowers_bootstrap_owner')) {
+  db.exec(`
+    ALTER TABLE settings ADD COLUMN superpowers_bootstrap_owner TEXT
+      CHECK (superpowers_bootstrap_owner IN ('project', 'provider', 'disabled'))
+  `);
 }
 
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {

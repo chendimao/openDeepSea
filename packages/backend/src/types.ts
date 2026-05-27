@@ -571,6 +571,10 @@ export interface AgentRun {
   workflow_stage: WorkflowStage | null;
   collaboration_run_id: string | null;
   collaboration_stage: CollaborationStage | null;
+  superpowers_bootstrap_owner: SuperpowersBootstrapOwner | null;
+  superpowers_bootstrap_injected: 0 | 1;
+  superpowers_bootstrap_skill: string | null;
+  superpowers_bootstrap_skip_reason: string | null;
   prompt: string;
   stdout: string;
   stderr: string;
@@ -807,6 +811,7 @@ export interface GlobalChatMessage {
 export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'done' | 'failed';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
+export type SuperpowersBootstrapOwner = 'project' | 'provider' | 'disabled';
 
 export interface ScopedSettings {
   scope: SettingsScope;
@@ -816,6 +821,7 @@ export interface ScopedSettings {
   interaction_mode: TaskInteractionMode | null;
   auto_distill_enabled: 0 | 1 | null;
   default_workflow_definition_id: string | null;
+  superpowers_bootstrap_owner: SuperpowersBootstrapOwner | null;
   updated_at: number;
 }
 
@@ -825,6 +831,7 @@ export interface EffectiveSettings {
   interaction_mode: TaskInteractionMode;
   auto_distill_enabled: boolean;
   default_workflow_definition_id: string | null;
+  superpowers_bootstrap_owner: SuperpowersBootstrapOwner;
 }
 
 export interface SystemSettings extends EffectiveSettings {
@@ -863,6 +870,7 @@ export interface SettingsResolution {
     interaction_mode: SettingsScope;
     auto_distill: SettingsScope;
     default_workflow_definition: SettingsScope;
+    superpowers_bootstrap_owner: SettingsScope;
   };
 }
 

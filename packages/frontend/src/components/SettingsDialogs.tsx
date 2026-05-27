@@ -43,6 +43,7 @@ import {
   type Room,
   type RoomAgent,
   type SettingsResolution,
+  type SuperpowersBootstrapOwner,
   type SystemSettings,
   type TaskInteractionMode,
 } from '../lib/types';
@@ -56,6 +57,7 @@ type SettingsPatch = {
   fallback_agent_id?: string | null;
   interaction_mode?: TaskInteractionMode | null;
   auto_distill_enabled?: boolean | null;
+  superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
 };
 
 type SystemSettingsSavePatch = {
@@ -63,6 +65,7 @@ type SystemSettingsSavePatch = {
   fallback_agent_id: string | null;
   interaction_mode: TaskInteractionMode;
   auto_distill_enabled: boolean;
+  superpowers_bootstrap_owner: SuperpowersBootstrapOwner;
   langchain_planner_model?: string | null;
   openai_base_url?: string | null;
   openai_api_key?: string | null;
@@ -78,12 +81,19 @@ const INTERACTION_OPTIONS: Array<{ value: TaskInteractionMode; descriptionKey: M
   { value: 'auto_recommended', descriptionKey: 'settings.interaction.auto_recommended.description' },
 ];
 
+const SUPERPOWERS_BOOTSTRAP_OPTIONS: Array<{ value: SuperpowersBootstrapOwner; descriptionKey: MessageKey }> = [
+  { value: 'project', descriptionKey: 'settings.superpowersBootstrap.project.description' },
+  { value: 'provider', descriptionKey: 'settings.superpowersBootstrap.provider.description' },
+  { value: 'disabled', descriptionKey: 'settings.superpowersBootstrap.disabled.description' },
+];
+
 const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   message_routing_mode: 'fallback_reply',
   fallback_agent_id: 'planner',
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
   default_workflow_definition_id: null,
+  superpowers_bootstrap_owner: 'project',
   active_ai_config_id: null,
   ai_configs: [],
   langchain_planner_model: null,
@@ -289,6 +299,9 @@ function SystemSettingsForm({
   const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? 'planner');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
   const [autoDistillEnabled, setAutoDistillEnabled] = useState(value.auto_distill_enabled);
+  const [superpowersBootstrapOwner, setSuperpowersBootstrapOwner] = useState<SuperpowersBootstrapOwner>(
+    value.superpowers_bootstrap_owner,
+  );
   const [selectedAiConfigId, setSelectedAiConfigId] = useState<string | null>(
     aiConfigs.active_ai_config_id ?? aiConfigs.items[0]?.id ?? null,
   );
@@ -446,6 +459,7 @@ function SystemSettingsForm({
               fallback_agent_id: requiresFallback ? selectedFallbackAgentId : null,
               interaction_mode: interactionMode,
               auto_distill_enabled: autoDistillEnabled,
+              superpowers_bootstrap_owner: superpowersBootstrapOwner,
             };
             onSave(patch);
           }}
@@ -546,6 +560,13 @@ function SystemSettingsForm({
                   inheritedLabel={null}
                   onModeChange={(mode) => {
                     if (mode !== 'inherit') setAutoDistillEnabled(mode);
+                  }}
+                />
+                <SuperpowersBootstrapSection
+                  mode={superpowersBootstrapOwner}
+                  inheritedLabel={null}
+                  onModeChange={(mode) => {
+                    if (mode !== 'inherit') setSuperpowersBootstrapOwner(mode);
                   }}
                 />
               </SubSettingSection>
@@ -989,6 +1010,9 @@ function ProjectSettingsForm({
   const system = settings?.system ?? DEFAULT_SYSTEM_SETTINGS;
   const own = settings?.project;
   const { interactionModeLabel, routingModeLabel, t } = useI18n();
+  const [superpowersBootstrapOwner, setSuperpowersBootstrapOwner] = useState<SuperpowersBootstrapOwner | 'inherit'>(
+    own?.superpowers_bootstrap_owner ?? 'inherit',
+  );
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
     own?.message_routing_mode ?? 'inherit',
   );
@@ -1016,6 +1040,7 @@ function ProjectSettingsForm({
               fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : selectedFallbackAgentId,
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
               auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
+              superpowers_bootstrap_owner: superpowersBootstrapOwner === 'inherit' ? null : superpowersBootstrapOwner,
             })
           }
         >
@@ -1050,14 +1075,20 @@ function ProjectSettingsForm({
           inheritedLabel={t('settings.inheritedSystem', { value: autoDistillLabel(system.auto_distill_enabled, t) })}
           onModeChange={setAutoDistillEnabled}
         />
+        <SuperpowersBootstrapSection
+          mode={superpowersBootstrapOwner}
+          inheritedLabel={t('settings.inheritedSystem', { value: superpowersBootstrapOwnerLabel(system.superpowers_bootstrap_owner, t) })}
+          onModeChange={setSuperpowersBootstrapOwner}
+        />
       </SettingGroup>
-      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit') && (
+      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit' || superpowersBootstrapOwner !== 'inherit') && (
         <ResetInheritanceButton
           onClick={() => {
             setRoutingMode('inherit');
             setFallbackAgentId('');
             setInteractionMode('inherit');
             setAutoDistillEnabled('inherit');
+            setSuperpowersBootstrapOwner('inherit');
           }}
         />
       )}
@@ -1081,6 +1112,9 @@ function RoomSettingsForm({
   const inherited = settings ? inheritedForRoom(settings) : DEFAULT_SYSTEM_SETTINGS;
   const own = settings?.room;
   const { interactionModeLabel, routingModeLabel, t } = useI18n();
+  const [superpowersBootstrapOwner, setSuperpowersBootstrapOwner] = useState<SuperpowersBootstrapOwner | 'inherit'>(
+    own?.superpowers_bootstrap_owner ?? 'inherit',
+  );
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
     own?.message_routing_mode ?? 'inherit',
   );
@@ -1108,6 +1142,7 @@ function RoomSettingsForm({
               fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : selectedFallbackAgentId,
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
               auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
+              superpowers_bootstrap_owner: superpowersBootstrapOwner === 'inherit' ? null : superpowersBootstrapOwner,
             })
           }
         >
@@ -1142,14 +1177,20 @@ function RoomSettingsForm({
           inheritedLabel={t('settings.inheritedParent', { value: autoDistillLabel(inherited.auto_distill_enabled, t) })}
           onModeChange={setAutoDistillEnabled}
         />
+        <SuperpowersBootstrapSection
+          mode={superpowersBootstrapOwner}
+          inheritedLabel={t('settings.inheritedParent', { value: superpowersBootstrapOwnerLabel(inherited.superpowers_bootstrap_owner, t) })}
+          onModeChange={setSuperpowersBootstrapOwner}
+        />
       </SettingGroup>
-      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit') && (
+      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit' || superpowersBootstrapOwner !== 'inherit') && (
         <ResetInheritanceButton
           onClick={() => {
             setRoutingMode('inherit');
             setFallbackAgentId('');
             setInteractionMode('inherit');
             setAutoDistillEnabled('inherit');
+            setSuperpowersBootstrapOwner('inherit');
           }}
         />
       )}
@@ -1325,6 +1366,39 @@ function AutoDistillSection({
   );
 }
 
+function SuperpowersBootstrapSection({
+  mode,
+  inheritedLabel,
+  onModeChange,
+}: {
+  mode: SuperpowersBootstrapOwner | 'inherit';
+  inheritedLabel: string | null;
+  onModeChange: (mode: SuperpowersBootstrapOwner | 'inherit') => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className={cn('grid gap-2', inheritedLabel ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
+      {inheritedLabel && (
+        <OptionButton
+          active={mode === 'inherit'}
+          title={t('settings.inheritParentSettings')}
+          description={inheritedLabel}
+          onClick={() => onModeChange('inherit')}
+        />
+      )}
+      {SUPERPOWERS_BOOTSTRAP_OPTIONS.map((option) => (
+        <OptionButton
+          key={option.value}
+          active={mode === option.value}
+          title={superpowersBootstrapOwnerLabel(option.value, t)}
+          description={t(option.descriptionKey)}
+          onClick={() => onModeChange(option.value)}
+        />
+      ))}
+    </div>
+  );
+}
+
 function OptionButton({
   active,
   title,
@@ -1402,6 +1476,11 @@ function InheritanceSummary({
           value={autoDistillLabel(settings.effective.auto_distill_enabled, t)}
           source={settingsScopeLabel(settings.sources.auto_distill)}
         />
+        <SummaryItem
+          label={t('settings.superpowersBootstrapOwner')}
+          value={superpowersBootstrapOwnerLabel(settings.effective.superpowers_bootstrap_owner, t)}
+          source={settingsScopeLabel(settings.sources.superpowers_bootstrap_owner)}
+        />
       </div>
       <p className="mt-2 leading-relaxed">
         {scope === 'room'
@@ -1440,6 +1519,8 @@ function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
         : Boolean(settings.project.auto_distill_enabled),
     default_workflow_definition_id:
       settings.project?.default_workflow_definition_id ?? settings.system.default_workflow_definition_id,
+    superpowers_bootstrap_owner:
+      settings.project?.superpowers_bootstrap_owner ?? settings.system.superpowers_bootstrap_owner,
   };
 }
 
@@ -1511,4 +1592,11 @@ function autoDistillLabel(
   t: (key: MessageKey, vars?: Record<string, string>) => string,
 ): string {
   return enabled ? t('settings.autoDistill.on') : t('settings.autoDistill.off');
+}
+
+function superpowersBootstrapOwnerLabel(
+  owner: SuperpowersBootstrapOwner,
+  t: (key: MessageKey, vars?: Record<string, string>) => string,
+): string {
+  return t(`settings.superpowersBootstrap.${owner}` as MessageKey);
 }

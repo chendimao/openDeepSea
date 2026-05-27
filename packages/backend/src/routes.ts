@@ -170,6 +170,7 @@ const settingsPatchShape = {
   interaction_mode: z.enum(['ask_user', 'auto_recommended']).nullable().optional(),
   auto_distill_enabled: z.boolean().nullable().optional(),
   default_workflow_definition_id: z.string().min(1).nullable().optional(),
+  superpowers_bootstrap_owner: z.enum(['project', 'provider', 'disabled']).nullable().optional(),
 };
 
 const nullableTrimmedStringSchema = z.union([z.string(), z.null()]).optional().transform((value) => {
@@ -529,6 +530,7 @@ router.patch('/settings/system', (req, res) => {
     langchain_planner_model: parsed.data.langchain_planner_model,
     openai_api_key: parsed.data.openai_api_key,
     openai_base_url: parsed.data.openai_base_url,
+    superpowers_bootstrap_owner: parsed.data.superpowers_bootstrap_owner ?? undefined,
   }));
 });
 
@@ -595,6 +597,7 @@ router.patch('/projects/:projectId/settings', (req, res) => {
     interaction_mode: parsed.data.interaction_mode,
     auto_distill_enabled: parsed.data.auto_distill_enabled,
     default_workflow_definition_id: parsed.data.default_workflow_definition_id,
+    superpowers_bootstrap_owner: parsed.data.superpowers_bootstrap_owner,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForProject(req.params.projectId));
@@ -621,6 +624,7 @@ router.patch('/rooms/:roomId/settings', (req, res) => {
     interaction_mode: parsed.data.interaction_mode,
     auto_distill_enabled: parsed.data.auto_distill_enabled,
     default_workflow_definition_id: parsed.data.default_workflow_definition_id,
+    superpowers_bootstrap_owner: parsed.data.superpowers_bootstrap_owner,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForRoom(req.params.roomId));

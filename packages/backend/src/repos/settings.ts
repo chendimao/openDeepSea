@@ -7,6 +7,7 @@ import type {
   ScopedSettings,
   SettingsResolution,
   SettingsScope,
+  SuperpowersBootstrapOwner,
   SystemSettings,
   TaskInteractionMode,
 } from '../types.js';
@@ -23,6 +24,7 @@ const DEFAULT_SETTINGS: EffectiveSettings = {
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
   default_workflow_definition_id: null,
+  superpowers_bootstrap_owner: 'project',
 };
 
 interface SystemSettingsRow extends ScopedSettings {
@@ -51,6 +53,7 @@ function emptyScoped(scope: SettingsScope, scopeId: string): ScopedSettings {
     interaction_mode: null,
     auto_distill_enabled: null,
     default_workflow_definition_id: null,
+    superpowers_bootstrap_owner: null,
     updated_at: 0,
   };
 }
@@ -66,6 +69,7 @@ function getScoped(scope: SettingsScope, scopeId: string): ScopedSettings | null
         interaction_mode,
         auto_distill_enabled,
         default_workflow_definition_id,
+        superpowers_bootstrap_owner,
         updated_at
       FROM settings
       WHERE scope = ? AND scope_id = ?`,
@@ -84,6 +88,7 @@ function getSystemRow(): SystemSettingsRow | null {
         interaction_mode,
         auto_distill_enabled,
         default_workflow_definition_id,
+        superpowers_bootstrap_owner,
         langchain_planner_model,
         openai_api_key,
         openai_base_url,
@@ -104,6 +109,7 @@ function upsertScoped(
     interaction_mode?: TaskInteractionMode | null;
     auto_distill_enabled?: boolean | null;
     default_workflow_definition_id?: string | null;
+    superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
   },
 ): ScopedSettings {
   const existing = getScoped(scope, scopeId) ?? emptyScoped(scope, scopeId);
@@ -123,6 +129,10 @@ function upsertScoped(
     patch.default_workflow_definition_id === undefined
       ? existing.default_workflow_definition_id
       : validateDefaultWorkflowDefinition(scope, scopeId, patch.default_workflow_definition_id);
+  const superpowersBootstrapOwner =
+    patch.superpowers_bootstrap_owner === undefined
+      ? existing.superpowers_bootstrap_owner
+      : normalizeSuperpowersBootstrapOwner(patch.superpowers_bootstrap_owner);
   const rawFallbackAgentId = patch.fallback_agent_id === undefined
     ? existing.fallback_agent_id
     : patch.fallback_agent_id;
@@ -132,15 +142,16 @@ function upsertScoped(
   db.prepare(
     `INSERT INTO settings (
       scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, auto_distill_enabled,
-      default_workflow_definition_id, updated_at
+      default_workflow_definition_id, superpowers_bootstrap_owner, updated_at
     )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(scope, scope_id) DO UPDATE SET
        message_routing_mode = excluded.message_routing_mode,
        fallback_agent_id = excluded.fallback_agent_id,
        interaction_mode = excluded.interaction_mode,
        auto_distill_enabled = excluded.auto_distill_enabled,
        default_workflow_definition_id = excluded.default_workflow_definition_id,
+       superpowers_bootstrap_owner = excluded.superpowers_bootstrap_owner,
        updated_at = excluded.updated_at`,
   ).run(
     scope,
@@ -150,6 +161,7 @@ function upsertScoped(
     interactionMode,
     autoDistillEnabled,
     defaultWorkflowDefinitionId,
+    superpowersBootstrapOwner,
     updatedAt,
   );
   return getScoped(scope, scopeId)!;
@@ -213,9 +225,10 @@ function setActiveAiConfigId(id: string | null): void {
       openai_api_key,
       openai_base_url,
       active_ai_config_id,
+      superpowers_bootstrap_owner,
       updated_at
     )
-     VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(scope, scope_id) DO UPDATE SET
        message_routing_mode = excluded.message_routing_mode,
        fallback_agent_id = excluded.fallback_agent_id,
@@ -226,6 +239,7 @@ function setActiveAiConfigId(id: string | null): void {
        openai_api_key = excluded.openai_api_key,
        openai_base_url = excluded.openai_base_url,
        active_ai_config_id = excluded.active_ai_config_id,
+       superpowers_bootstrap_owner = excluded.superpowers_bootstrap_owner,
        updated_at = excluded.updated_at`,
   ).run(
     SYSTEM_SCOPE_ID,
@@ -238,6 +252,7 @@ function setActiveAiConfigId(id: string | null): void {
     existing?.openai_api_key ?? null,
     existing?.openai_base_url ?? null,
     id,
+    normalizeSuperpowersBootstrapOwner(existing?.superpowers_bootstrap_owner),
     updatedAt,
   );
 }
@@ -256,6 +271,13 @@ function resolveActiveAiConfig(settings: SystemSettingsRow | null, rows = listAi
 function normalizedOptionalString(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeSuperpowersBootstrapOwner(
+  value: SuperpowersBootstrapOwner | string | null | undefined,
+): SuperpowersBootstrapOwner | null {
+  if (value === 'project' || value === 'provider' || value === 'disabled') return value;
+  return null;
 }
 
 function validateDefaultWorkflowDefinition(
@@ -309,6 +331,9 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
   const openaiApiKeyPreview = apiKeyPreview(openaiApiKey);
   const routingMode = settings?.message_routing_mode ?? DEFAULT_SETTINGS.message_routing_mode;
   const defaultWorkflowDefinitionId = workflowDefinitionRepo.getSuperpowersDefinition().id;
+  const superpowersBootstrapOwner =
+    normalizeSuperpowersBootstrapOwner(settings?.superpowers_bootstrap_owner)
+    ?? DEFAULT_SETTINGS.superpowers_bootstrap_owner;
   return {
     message_routing_mode: routingMode,
     fallback_agent_id: normalizeFallbackAgentId(routingMode, settings?.fallback_agent_id),
@@ -317,6 +342,7 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
       ? DEFAULT_SETTINGS.auto_distill_enabled
       : Boolean(settings.auto_distill_enabled),
     default_workflow_definition_id: defaultWorkflowDefinitionId,
+    superpowers_bootstrap_owner: superpowersBootstrapOwner,
     active_ai_config_id: activeAiConfig?.id ?? null,
     ai_configs: aiConfigRows.map(toSafeAiConfig),
     langchain_planner_model: normalizedOptionalString(activeAiConfig?.langchain_planner_model ?? settings?.langchain_planner_model),
@@ -373,6 +399,7 @@ export const settingsRepo = {
     langchain_planner_model?: string | null;
     openai_api_key?: string | null;
     openai_base_url?: string | null;
+    superpowers_bootstrap_owner?: SuperpowersBootstrapOwner;
   }): SystemSettings {
     normalizeLegacyRouting();
     const existing = getSystemRow();
@@ -405,6 +432,10 @@ export const settingsRepo = {
       patch.openai_base_url === undefined
         ? normalizedOptionalString(existing?.openai_base_url)
         : normalizedOptionalString(patch.openai_base_url);
+    const superpowersBootstrapOwner =
+      patch.superpowers_bootstrap_owner === undefined
+        ? normalizeSuperpowersBootstrapOwner(existing?.superpowers_bootstrap_owner)
+        : normalizeSuperpowersBootstrapOwner(patch.superpowers_bootstrap_owner);
     const shouldClearActiveAiConfig =
       patch.langchain_planner_model !== undefined ||
       patch.openai_api_key !== undefined ||
@@ -424,9 +455,10 @@ export const settingsRepo = {
         openai_api_key,
         openai_base_url,
         active_ai_config_id,
+        superpowers_bootstrap_owner,
         updated_at
       )
-       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(scope, scope_id) DO UPDATE SET
          message_routing_mode = excluded.message_routing_mode,
          fallback_agent_id = excluded.fallback_agent_id,
@@ -437,6 +469,7 @@ export const settingsRepo = {
          openai_api_key = excluded.openai_api_key,
          openai_base_url = excluded.openai_base_url,
          active_ai_config_id = excluded.active_ai_config_id,
+         superpowers_bootstrap_owner = excluded.superpowers_bootstrap_owner,
          updated_at = excluded.updated_at`,
     ).run(
       SYSTEM_SCOPE_ID,
@@ -449,6 +482,7 @@ export const settingsRepo = {
       openaiApiKey,
       openaiBaseUrl,
       shouldClearActiveAiConfig ? null : existing?.active_ai_config_id ?? null,
+      superpowersBootstrapOwner ?? DEFAULT_SETTINGS.superpowers_bootstrap_owner,
       updatedAt,
     );
 
@@ -595,6 +629,7 @@ export const settingsRepo = {
       interaction_mode?: TaskInteractionMode | null;
       auto_distill_enabled?: boolean | null;
       default_workflow_definition_id?: string | null;
+      superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
     },
   ): ScopedSettings | null {
     normalizeLegacyRouting();
@@ -615,6 +650,7 @@ export const settingsRepo = {
       interaction_mode?: TaskInteractionMode | null;
       auto_distill_enabled?: boolean | null;
       default_workflow_definition_id?: string | null;
+      superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
     },
   ): ScopedSettings | null {
     normalizeLegacyRouting();
@@ -633,6 +669,9 @@ export const settingsRepo = {
       ? 'system'
       : 'project';
     const workflowSource: SettingsScope = 'system';
+    const projectSuperpowersBootstrapOwner = normalizeSuperpowersBootstrapOwner(project?.superpowers_bootstrap_owner);
+    const superpowersBootstrapOwner = projectSuperpowersBootstrapOwner ?? system.superpowers_bootstrap_owner;
+    const superpowersBootstrapOwnerSource: SettingsScope = projectSuperpowersBootstrapOwner ? 'project' : 'system';
     const defaultWorkflowDefinitionId = workflowDefinitionRepo.getSuperpowersDefinition().id;
     return {
       system,
@@ -648,12 +687,14 @@ export const settingsRepo = {
           ? system.auto_distill_enabled
           : Boolean(project.auto_distill_enabled),
         default_workflow_definition_id: defaultWorkflowDefinitionId,
+        superpowers_bootstrap_owner: superpowersBootstrapOwner,
       },
       sources: {
         message_routing: messageRoutingSource,
         interaction_mode: interactionSource,
         auto_distill: autoDistillSource,
         default_workflow_definition: workflowSource,
+        superpowers_bootstrap_owner: superpowersBootstrapOwnerSource,
       },
     };
   },
@@ -676,6 +717,12 @@ export const settingsRepo = {
         ? projectResolution.sources.auto_distill
         : 'room';
     const workflowSource: SettingsScope = 'system';
+    const roomSuperpowersBootstrapOwner = normalizeSuperpowersBootstrapOwner(roomSettings?.superpowers_bootstrap_owner);
+    const superpowersBootstrapOwner = roomSuperpowersBootstrapOwner
+      ?? projectResolution.effective.superpowers_bootstrap_owner;
+    const superpowersBootstrapOwnerSource: SettingsScope = roomSuperpowersBootstrapOwner
+      ? 'room'
+      : projectResolution.sources.superpowers_bootstrap_owner;
     const defaultWorkflowDefinitionId = workflowDefinitionRepo.getSuperpowersDefinition().id;
     const inheritedRoutingMode = projectResolution.effective.message_routing_mode;
     return {
@@ -692,12 +739,14 @@ export const settingsRepo = {
             ? projectResolution.effective.auto_distill_enabled
             : Boolean(roomSettings.auto_distill_enabled),
         default_workflow_definition_id: defaultWorkflowDefinitionId,
+        superpowers_bootstrap_owner: superpowersBootstrapOwner,
       },
       sources: {
         message_routing: messageRoutingSource,
         interaction_mode: interactionSource,
         auto_distill: autoDistillSource,
         default_workflow_definition: workflowSource,
+        superpowers_bootstrap_owner: superpowersBootstrapOwnerSource,
       },
     };
   },

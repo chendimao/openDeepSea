@@ -84,6 +84,27 @@ test('system settings route trims planner fields and never returns raw api key',
   assert.equal('openai_api_key' in fetched, false);
 });
 
+test('settings routes persist superpowers bootstrap owner without affecting AI config secrets', async () => {
+  const systemRes = await request('/api/settings/system', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      superpowers_bootstrap_owner: 'project',
+      openai_api_key: 'test-route-secret',
+    }),
+  });
+  assert.equal(systemRes.status, 200);
+  const system = await systemRes.json() as Record<string, unknown>;
+  assert.equal(system.superpowers_bootstrap_owner, 'project');
+  assert.equal(system.openai_api_key_set, true);
+  assert.equal(system.openai_api_key, undefined);
+
+  const invalidRes = await request('/api/settings/system', {
+    method: 'PATCH',
+    body: JSON.stringify({ superpowers_bootstrap_owner: 'both' }),
+  });
+  assert.equal(invalidRes.status, 400);
+});
+
 test('settings routes reject removed fallback_route mode', async () => {
   const res = await request('/api/settings/system', {
     method: 'PATCH',

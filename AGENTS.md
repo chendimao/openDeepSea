@@ -46,3 +46,9 @@ Pull Request 应包含变更摘要、已执行的验证、关联 issue 或任务
 ## 安全与配置提示
 
 不要硬编码凭证、API Key 或本机绝对路径。不要提交 SQLite 数据、构建产物或本地环境文件。写入数据库或调用 ACP 子进程前，应先校验不可信请求体。
+
+## Superpowers Bootstrap Ownership
+
+- OpenDeepSea 项目层默认是 Superpowers bootstrap owner，负责在会话入口判断并注入 `using-superpowers`。
+- ACP provider 只作为执行 runtime，不应重复注入 `using-superpowers` 或接管 bootstrap 决策。
+- 如 provider 无法关闭自身 Superpowers 插件，应将 `superpowers_bootstrap_owner` 配置为 `provider`，或依赖项目层 duplicate guard，并在 agent run 证据字段中记录 owner、是否注入和跳过原因。

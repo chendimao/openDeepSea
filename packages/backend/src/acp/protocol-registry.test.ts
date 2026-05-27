@@ -65,6 +65,7 @@ test('getAcpServerConfig returns default codex protocol server config', () => {
     mode: 'auto',
     command: 'npx',
     args: ['@zed-industries/codex-acp'],
+    env: {},
     transport: 'stdio',
     enabled: true,
   });
@@ -80,6 +81,7 @@ test('getAcpServerConfig appends Codex reasoning effort when configured', () => 
       mode: 'auto',
       command: 'npx',
       args: ['@zed-industries/codex-acp', '-c', 'model_reasoning_effort=high'],
+      env: {},
       transport: 'stdio',
       enabled: true,
     },
@@ -107,10 +109,21 @@ test('getAcpServerConfig applies opencode command override in protocol mode', ()
       mode: 'protocol',
       command: '/usr/local/bin/opencode',
       args: ['acp', '--debug'],
+      env: {},
       transport: 'stdio',
       enabled: true,
     },
   );
+});
+
+test('getAcpServerConfig includes project-owned superpowers disable env', () => {
+  const config = getAcpServerConfig('opencode', {
+    OPENCLAW_ACP_MODE: 'protocol',
+    OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER: 'project',
+  });
+
+  assert.equal(config.env?.OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER, 'project');
+  assert.equal(config.env?.SUPERPOWERS_BOOTSTRAP_DISABLED, '1');
 });
 
 test('getAcpServerConfig disables protocol server config in legacy mode', () => {

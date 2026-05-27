@@ -29,6 +29,7 @@ export interface InvokeProtocolSessionArgs {
   imagePaths?: string[];
   acpPermissionMode?: AcpPermissionMode | null;
   acpWritableDirs?: string[] | null;
+  envOverrides?: Record<string, string>;
   onChunk: (chunk: AcpStreamChunk) => void;
   onSession?: (sessionId: string) => void;
   signal?: AbortSignal;
@@ -56,7 +57,7 @@ export async function invokeProtocolSession(
   try {
     child = spawn(args.server.command, args.server.args, {
       cwd: args.projectPath,
-      env: { ...process.env, ...(args.server.env ?? {}) },
+      env: { ...process.env, ...(args.server.env ?? {}), ...(args.envOverrides ?? {}) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 

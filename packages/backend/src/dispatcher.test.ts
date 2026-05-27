@@ -1471,10 +1471,12 @@ test('respondAsAgent prepends using-superpowers bootstrap for ordinary ACP plann
 
   const originalAdapter = adapters.codex;
   let capturedPrompt = '';
+  let capturedEnvOverrides: Record<string, string> | undefined;
   adapters.codex = {
     ...originalAdapter,
     async invoke(args) {
       capturedPrompt = args.prompt;
+      capturedEnvOverrides = args.envOverrides;
       args.onChunk({ stream: 'stdout', text: 'done' });
       return { exitCode: 0, sessionId: null, stderr: '' };
     },
@@ -1493,10 +1495,60 @@ test('respondAsAgent prepends using-superpowers bootstrap for ordinary ACP plann
     assert.match(capturedPrompt, /superpowers:using-superpowers/);
     assert.match(capturedPrompt, /Invoke relevant or requested skills BEFORE any response or action/);
     assert.ok(capturedPrompt.indexOf('You have superpowers.') < capturedPrompt.indexOf('当前用户请求：\nhi'));
+    assert.equal(capturedEnvOverrides?.OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER, 'project');
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER, 'project');
+    assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, '1');
 
     const run = agentRunRepo.listByRoom(room.id, 1)[0];
     assert.equal(run?.workflow_run_id, null);
+    assert.equal(run?.superpowers_bootstrap_owner, 'project');
+    assert.equal(run?.superpowers_bootstrap_injected, 1);
+    assert.equal(run?.superpowers_bootstrap_skill, 'superpowers:using-superpowers');
+    assert.equal(run?.superpowers_bootstrap_skip_reason, null);
     assert.match(run?.prompt ?? '', /superpowers:using-superpowers/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent skips project bootstrap when settings owner is provider', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-superpowers-provider-owner-'));
+  const project = projectRepo.create({ name: `superpowers-provider-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  settingsRepo.updateRoom(room.id, { superpowers_bootstrap_owner: 'provider' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+
+  const originalAdapter = adapters.codex;
+  let capturedPrompt = '';
+  let capturedEnvOverrides: Record<string, string> | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedPrompt = args.prompt;
+      capturedEnvOverrides = args.envOverrides;
+      args.onChunk({ stream: 'stdout', text: 'done' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: planner,
+      projectPath,
+      roomId: room.id,
+      prompt: 'hi',
+    });
+
+    assert.doesNotMatch(capturedPrompt, /You have superpowers\./);
+    assert.equal(capturedEnvOverrides?.OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER, 'provider');
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER, 'provider');
+    assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, undefined);
+    const run = agentRunRepo.listByRoom(room.id, 1)[0];
+    assert.equal(run?.superpowers_bootstrap_owner, 'provider');
+    assert.equal(run?.superpowers_bootstrap_injected, 0);
+    assert.equal(run?.superpowers_bootstrap_skip_reason, 'provider_owner');
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

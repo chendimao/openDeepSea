@@ -20,7 +20,7 @@ import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { formatSkillPrompt } from './skills/prompt.js';
 import { selectSkills } from './skills/selector.js';
-import { prependSuperpowersSessionBootstrap } from './superpowers-bootstrap.js';
+import { applySuperpowersBootstrap } from './superpowers-bootstrap.js';
 import { runRegistry } from './run-registry.js';
 import { messageUploadDir, messageUploadRoute, projectFileUploadRoot, projectFileUploadRoute } from './uploads.js';
 import { wsHub } from './ws-hub.js';
@@ -555,9 +555,20 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           warn: (message) => console.warn(message),
         })
       : promptWithRuntime;
-  const prompt = args.workflowRunId
-    ? promptWithMemory
-    : prependSuperpowersSessionBootstrap(promptWithMemory);
+  const effectiveSettings = room ? settingsRepo.resolveForRoom(roomId)?.effective : null;
+  const superpowersBootstrap = applySuperpowersBootstrap({
+    prompt: promptWithMemory,
+    owner: effectiveSettings?.superpowers_bootstrap_owner ?? 'project',
+    workflowRunId: args.workflowRunId,
+  });
+  const prompt = superpowersBootstrap.prompt;
+  const superpowersBootstrapEnvOverrides: Record<string, string> = {
+    OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER: superpowersBootstrap.source,
+    OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER: superpowersBootstrap.source,
+  };
+  if (superpowersBootstrap.source === 'project' || superpowersBootstrap.source === 'disabled') {
+    superpowersBootstrapEnvOverrides.SUPERPOWERS_BOOTSTRAP_DISABLED = '1';
+  }
   const backend = agent.acp_enabled && agent.acp_backend ? agent.acp_backend : null;
   if (!backend) {
     throw new Error(`Agent ${agent.agent_name} has no ACP backend configured`);
@@ -575,6 +586,10 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     workflow_stage: args.workflowStage,
     collaboration_run_id: args.collaborationRunId,
     collaboration_stage: args.collaborationStage,
+    superpowers_bootstrap_owner: superpowersBootstrap.source,
+    superpowers_bootstrap_injected: superpowersBootstrap.injected,
+    superpowers_bootstrap_skill: superpowersBootstrap.skill,
+    superpowers_bootstrap_skip_reason: superpowersBootstrap.skipReason,
     prompt,
   });
   const controller = runRegistry.create(run.id);
@@ -764,6 +779,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       imagePaths: args.imagePaths,
       acpPermissionMode: runtimeProfile.acpPermissionMode,
       acpWritableDirs: runtimeProfile.writableDirs,
+      envOverrides: superpowersBootstrapEnvOverrides,
       onChunk: (chunk) => {
         if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);
         else if (chunk.stream === 'stdout' && chunk.channel === 'thinking') onTrace('thinking', chunk.text, chunk.trace);

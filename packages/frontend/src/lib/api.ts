@@ -42,6 +42,7 @@ import type {
   SkillUpdateCheckMode,
   SkillRuntimeScope,
   SkillTriggerMode,
+  SuperpowersBootstrapOwner,
   Task,
   TaskInteractionMode,
   WorkflowDetail,
@@ -236,6 +237,7 @@ export const api = {
     interaction_mode?: TaskInteractionMode;
     auto_distill_enabled?: boolean;
     default_workflow_definition_id?: string | null;
+    superpowers_bootstrap_owner?: SuperpowersBootstrapOwner;
     langchain_planner_model?: string | null;
     openai_base_url?: string | null;
     openai_api_key?: string | null;
@@ -285,6 +287,7 @@ export const api = {
       interaction_mode?: TaskInteractionMode | null;
       auto_distill_enabled?: boolean | null;
       default_workflow_definition_id?: string | null;
+      superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
     },
   ) =>
     request<SettingsResolution>(`/projects/${projectId}/settings`, {
@@ -301,6 +304,7 @@ export const api = {
       interaction_mode?: TaskInteractionMode | null;
       auto_distill_enabled?: boolean | null;
       default_workflow_definition_id?: string | null;
+      superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
     },
   ) =>
     request<SettingsResolution>(`/rooms/${roomId}/settings`, {

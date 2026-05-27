@@ -397,6 +397,7 @@ export interface Project {
 }
 
 export type MessageRoutingMode = 'mentions_only' | 'fallback_reply';
+export type SuperpowersBootstrapOwner = 'project' | 'provider' | 'disabled';
 
 export interface ScopedSettings {
   scope: SettingsScope;
@@ -406,6 +407,7 @@ export interface ScopedSettings {
   interaction_mode: TaskInteractionMode | null;
   auto_distill_enabled: 0 | 1 | null;
   default_workflow_definition_id: string | null;
+  superpowers_bootstrap_owner: SuperpowersBootstrapOwner | null;
   updated_at: number;
 }
 
@@ -415,6 +417,7 @@ export interface EffectiveSettings {
   interaction_mode: TaskInteractionMode;
   auto_distill_enabled: boolean;
   default_workflow_definition_id: string | null;
+  superpowers_bootstrap_owner: SuperpowersBootstrapOwner;
 }
 
 export interface SystemSettings extends EffectiveSettings {
@@ -447,6 +450,7 @@ export interface SettingsResolution {
     interaction_mode: SettingsScope;
     auto_distill: SettingsScope;
     default_workflow_definition: SettingsScope;
+    superpowers_bootstrap_owner: SettingsScope;
   };
 }
 

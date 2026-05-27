@@ -47,6 +47,7 @@ export interface SessionAdapter {
     acpPermissionMode?: AcpPermissionMode | null;
     /** Final absolute directories allowed for write access. Empty means no additional write scope. */
     acpWritableDirs?: string[] | null;
+    envOverrides?: Record<string, string>;
     onChunk: (chunk: AcpStreamChunk) => void;
     onSession?: (sessionId: string) => void;
     signal?: AbortSignal;

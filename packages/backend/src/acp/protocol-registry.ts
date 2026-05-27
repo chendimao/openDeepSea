@@ -116,9 +116,29 @@ export function getAcpServerConfig(
     mode,
     command,
     args: resolvedArgs,
+    env: buildSuperpowersEnv(env),
     transport: 'stdio',
     enabled: mode !== 'legacy',
   };
+}
+
+function buildSuperpowersEnv(env: AcpProtocolEnv): Record<string, string> {
+  const owner = env.OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER;
+  // Best-effort guard: provider CLIs may ignore this unless their Superpowers plugin
+  // honors SUPERPOWERS_BOOTSTRAP_DISABLED. Project prompt injection still has
+  // duplicate-bootstrap detection as the final guard.
+  if (owner === 'project' || owner === 'disabled') {
+    return {
+      OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER: owner,
+      SUPERPOWERS_BOOTSTRAP_DISABLED: '1',
+    };
+  }
+  if (owner === 'provider') {
+    return {
+      OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER: 'provider',
+    };
+  }
+  return {};
 }
 
 function appendBackendArgs(

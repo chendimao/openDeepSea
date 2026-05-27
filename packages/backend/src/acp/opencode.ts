@@ -70,7 +70,7 @@ export const openCodeAdapter: SessionAdapter = {
     }
   },
 
-  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('opencode');
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
@@ -82,6 +82,7 @@ export const openCodeAdapter: SessionAdapter = {
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
+        envOverrides,
         onChunk,
         onSession,
         signal,
@@ -99,7 +100,7 @@ export const openCodeAdapter: SessionAdapter = {
       permissionMode: acpPermissionMode ?? 'bypass',
       model: process.env.OPENCLAW_OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL,
     });
-    return runStreaming('opencode', args, projectPath, onChunk, signal, onSession);
+    return runStreaming('opencode', args, projectPath, onChunk, signal, onSession, undefined, envOverrides);
   },
 };
 
