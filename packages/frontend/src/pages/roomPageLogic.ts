@@ -144,7 +144,10 @@ export function createPlannerDispatchInput(
 }
 
 export function hasDispatchablePlannerSteps(decision: PlannerDecision): boolean {
-  return decision.awaiting_user_confirmation && decision.next_steps.length > 0;
+  return decision.mode === 'pause_after_suggestion' &&
+    decision.status === 'suggested' &&
+    decision.awaiting_user_confirmation &&
+    decision.next_steps.length > 0;
 }
 
 export type StreamTraceChannel = 'thinking' | 'tool' | 'command' | 'event';

@@ -202,7 +202,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function plannerDecisionMatches(a: PlannerDecision | null, b: PlannerDecision): boolean {
-  return Boolean(a) && JSON.stringify(a) === JSON.stringify(b);
+  if (!a) return false;
+  if (JSON.stringify(a) === JSON.stringify(b)) return true;
+  if (a.mode !== 'auto_continue' || b.status !== 'suggested') return false;
+  return JSON.stringify(a) === JSON.stringify({
+    ...b,
+    mode: 'auto_continue',
+    awaiting_user_confirmation: false,
+  });
 }
 
 function parseMetadataObject(rawMetadata: string | null): Record<string, unknown> {

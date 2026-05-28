@@ -153,6 +153,20 @@ test('hasDispatchablePlannerSteps only enables continue when planner has concret
     next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
     awaiting_user_confirmation: true,
   }), true);
+  assert.equal(hasDispatchablePlannerSteps({
+    mode: 'auto_continue',
+    status: 'suggested',
+    summary: '自动派发',
+    next_steps: [{ agent_id: 'qa-tester', goal: '验证计数器页面' }],
+    awaiting_user_confirmation: false,
+  }), false);
+  assert.equal(hasDispatchablePlannerSteps({
+    mode: 'auto_continue',
+    status: 'suggested',
+    summary: '自动派发不应显示按钮',
+    next_steps: [{ agent_id: 'qa-tester', goal: '验证计数器页面' }],
+    awaiting_user_confirmation: true,
+  }), false);
 });
 
 test('findPreviousUserMessage selects the user prompt before a failed agent response', () => {

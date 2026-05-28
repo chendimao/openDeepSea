@@ -43,6 +43,7 @@ const AGENT_RUN_HEARTBEAT_MS = 30_000;
 const ANSWER_STREAM_FLUSH_MS = 420;
 const ANSWER_STREAM_FLUSH_CHARS = 120;
 const ANSWER_STREAM_SENTENCE_END_PATTERN = /[。！？!?…]\s*$|\n$/;
+const MAX_PLANNER_AUTO_CONTINUE_DEPTH = 5;
 
 interface PlannerDispatchAddedAgent {
   agent_id: string;
@@ -1184,6 +1185,7 @@ async function dispatchPlannerDecision(args: {
   roomId: string;
   sourceMessageId: string;
   decision: PlannerDecision;
+  autoContinueDepth?: number;
 }): Promise<PlannerDispatchResult> {
   const room = roomRepo.get(args.roomId);
   if (!room) throw new Error('room not found');
@@ -1219,6 +1221,7 @@ async function dispatchPlannerDecision(args: {
     dispatchedTargets: executionPlan.dispatchTargets,
     dispatchedResults: results,
     deferredSteps: executionPlan.deferredSteps,
+    autoContinueDepth: args.autoContinueDepth ?? 0,
   });
   return {
     dispatched: executionPlan.dispatchTargets.length,
@@ -1427,6 +1430,7 @@ async function reportPlannerDispatchResults(args: {
   dispatchedTargets: PlannerDispatchedTarget[];
   dispatchedResults: Array<Message | undefined>;
   deferredSteps: PlannerDecision['next_steps'];
+  autoContinueDepth: number;
 }): Promise<void> {
   if (args.dispatchedTargets.length === 0) return;
   const planner = roomAgentRepo.listByRoom(args.roomId).find((agent) => agent.agent_id === 'planner');
@@ -1471,6 +1475,28 @@ async function reportPlannerDispatchResults(args: {
     roomId: args.roomId,
     prompt,
     sourceMessageId: args.sourceMessageId,
+    onFinished: async ({ run, message }) => {
+      if (run.status !== 'completed') return;
+      if (args.autoContinueDepth >= MAX_PLANNER_AUTO_CONTINUE_DEPTH) {
+        console.warn(`[planner-dispatch] auto-continue depth limit reached for source message ${args.sourceMessageId}`);
+        return;
+      }
+      const latestMessage = messageRepo.get(message.id) ?? message;
+      const metadata = parsePlannerMessageMetadata(latestMessage.metadata);
+      const decision = metadata.planner_decision;
+      if (!shouldAutoContinuePlannerDecision(decision)) return;
+      const autoDecision = normalizeAutoContinuePlannerDecision(decision);
+      messageRepo.mergeMetadata(latestMessage.id, {
+        planner_decision: autoDecision,
+        source_message_id: args.sourceMessageId,
+      });
+      await dispatchPlannerDecision({
+        roomId: args.roomId,
+        sourceMessageId: args.sourceMessageId,
+        decision: autoDecision,
+        autoContinueDepth: args.autoContinueDepth + 1,
+      });
+    },
   });
 }
 
@@ -1478,6 +1504,18 @@ function summarizePlannerDispatchResult(content: string): string {
   const normalized = content.replace(/\s+/g, ' ').trim();
   if (normalized.length <= 800) return normalized;
   return `${normalized.slice(0, 520)} ... ${normalized.slice(-220)}`;
+}
+
+function shouldAutoContinuePlannerDecision(decision: PlannerDecision | undefined): decision is PlannerDecision {
+  return Boolean(decision && decision.status === 'suggested' && decision.next_steps.length > 0);
+}
+
+function normalizeAutoContinuePlannerDecision(decision: PlannerDecision): PlannerDecision {
+  return {
+    ...decision,
+    mode: 'auto_continue',
+    awaiting_user_confirmation: false,
+  };
 }
 
 function resolveGlobalAgentForPlannerStep(step: PlannerDecision['next_steps'][number]): Agent | undefined {
