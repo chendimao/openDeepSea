@@ -151,4 +151,16 @@ test('platform skills routes search marketplace and install package to multiple 
   assert.equal(lstatSync(linkPath).isSymbolicLink(), true);
   assert.equal(existsSync(join(linkPath, 'SKILL.md')), true);
   assert.equal(existsSync(join(testHome, 'sources')), true);
+
+  const duplicateSymlinkRes = await request('/api/platform-skills/install', {
+    method: 'POST',
+    body: JSON.stringify({
+      installLabel: 'acme/skills/platform-demo',
+      targets: ['claudecode'],
+      installMode: 'symlink',
+    }),
+  });
+  assert.equal(duplicateSymlinkRes.status, 400);
+  assert.equal(lstatSync(linkPath).isSymbolicLink(), true);
+  assert.equal(existsSync(join(linkPath, 'SKILL.md')), true);
 });

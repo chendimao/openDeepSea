@@ -39,6 +39,18 @@ export interface InstallDirectoryInput {
   sourceLabel: string | null;
 }
 
+interface InstallTargetPlan {
+  provider: PlatformSkillProvider;
+  root: string;
+  target: string;
+}
+
+interface InstallPlan {
+  sourceDir: string;
+  safeName: string;
+  targets: InstallTargetPlan[];
+}
+
 interface ParsedSkillManifest {
   name: string;
   description: string | null;
@@ -91,47 +103,81 @@ export async function listPlatformSkills(provider: PlatformSkillProvider): Promi
 
 export async function getPlatformSkill(provider: PlatformSkillProvider, skillName: string): Promise<PlatformSkill | null> {
   const root = resolve(resolvePlatformRoot(provider));
+  try {
+    assertSafeSkillDirectoryName(skillName);
+  } catch {
+    return null;
+  }
   const target = resolve(root, skillName);
-  if (!isPathInside(root, target) || !existsSync(target)) return null;
+  if (!isPathInside(root, target)) return null;
+  const targetStats = await lstat(target).catch(() => null);
+  if (!targetStats) return null;
   return readPlatformSkill(provider, root, skillName);
 }
 
-export async function installDirectoryToPlatforms(input: InstallDirectoryInput): Promise<PlatformSkill[]> {
-  const sourceDir = resolve(input.sourceDir);
-  const sourceStats = await stat(sourceDir).catch(() => null);
-  if (!sourceStats?.isDirectory()) throw new Error('source skill path must be a directory');
+export async function assertCanInstallDirectoryToPlatforms(input: Pick<InstallDirectoryInput, 'sourceDir' | 'targets'>): Promise<void> {
+  await createInstallPlan(input.sourceDir, input.targets);
+}
 
-  const manifest = await readManifest(sourceDir).catch(() => null);
-  if (!manifest) throw new Error('SKILL.md is required');
-  const safeName = sanitizeSkillName(manifest.name || basename(sourceDir));
-  if (!safeName) throw new Error('skill name is required');
+export async function installDirectoryToPlatforms(input: InstallDirectoryInput): Promise<PlatformSkill[]> {
+  const plan = await createInstallPlan(input.sourceDir, input.targets);
 
   const installed: PlatformSkill[] = [];
-  for (const provider of input.targets) {
-    const root = resolve(resolvePlatformRoot(provider));
-    const target = resolve(root, safeName);
-    if (!isPathInside(root, target)) throw new Error('target skill path escapes platform root');
-    if (existsSync(target)) throw new Error(`${provider} skill "${safeName}" already exists`);
+  for (const { provider, root, target } of plan.targets) {
     await mkdir(root, { recursive: true });
     if (input.installMode === 'symlink') {
-      await symlink(sourceDir, target, 'dir');
+      await symlink(plan.sourceDir, target, 'dir');
     } else {
-      await copySkillDirectory(sourceDir, target, sourceDir);
+      await copySkillDirectory(plan.sourceDir, target, plan.sourceDir);
     }
-    installed.push(await readPlatformSkill(provider, root, safeName, input.sourceLabel));
+    installed.push(await readPlatformSkill(provider, root, plan.safeName, input.sourceLabel));
   }
   return installed;
 }
 
 export async function removePlatformSkill(provider: PlatformSkillProvider, skillName: string): Promise<boolean> {
   const root = resolve(resolvePlatformRoot(provider));
+  assertSafeSkillDirectoryName(skillName);
   const target = resolve(root, skillName);
   if (!isPathInside(root, target)) {
     throw new Error('refusing to remove a skill outside the platform skills directory');
   }
-  if (!existsSync(target)) return false;
+  const targetStats = await lstat(target).catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  });
+  if (!targetStats) return false;
   await rm(target, { recursive: true, force: true });
   return true;
+}
+
+async function createInstallPlan(inputSourceDir: string, targets: PlatformSkillProvider[]): Promise<InstallPlan> {
+  const sourceDir = resolve(inputSourceDir);
+  const sourceStats = await stat(sourceDir).catch(() => null);
+  if (!sourceStats?.isDirectory()) throw new Error('source skill path must be a directory');
+
+  const manifest = await readManifest(sourceDir).catch(() => null);
+  if (!manifest) throw new Error('SKILL.md is required');
+  const safeName = sanitizeSkillName(manifest.name || basename(sourceDir));
+  assertSafeSkillDirectoryName(safeName);
+
+  const seen = new Set<PlatformSkillProvider>();
+  const plans: InstallTargetPlan[] = [];
+  for (const provider of targets) {
+    if (seen.has(provider)) throw new Error(`duplicate install target: ${provider}`);
+    seen.add(provider);
+    const root = resolve(resolvePlatformRoot(provider));
+    const target = resolve(root, safeName);
+    if (!isPathInside(root, target)) throw new Error('target skill path escapes platform root');
+    const targetStats = await lstat(target).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === 'ENOENT') return null;
+      throw err;
+    });
+    if (targetStats) throw new Error(`${provider} skill "${safeName}" already exists`);
+    plans.push({ provider, root, target });
+  }
+
+  return { sourceDir, safeName, targets: plans };
 }
 
 async function readPlatformSkill(
@@ -167,7 +213,7 @@ async function readPlatformSkill(
 
   return {
     provider,
-    name: manifest?.name ?? entryName,
+    name: entryName,
     description: manifest?.description ?? null,
     path: skillPath,
     manifestPath: existsSync(manifestPath) ? manifestPath : null,
@@ -216,6 +262,16 @@ function stripQuotes(value: string): string {
 
 function sanitizeSkillName(value: string): string {
   return value.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function assertSafeSkillDirectoryName(value: string): void {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '.' || trimmed === '..') {
+    throw new Error('skill name must be a safe directory name');
+  }
+  if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('\0')) {
+    throw new Error('skill name must be a safe directory name');
+  }
 }
 
 async function copySkillDirectory(source: string, target: string, root: string): Promise<void> {

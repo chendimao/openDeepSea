@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { lstat, mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { validateLocalAccess } from '../local-access.js';
 import { writeSkillsShPackage } from '../skills/installer-runner.js';
 import { SkillsShClient } from '../skills/skills-sh-client.js';
 import {
+  assertCanInstallDirectoryToPlatforms,
   getPlatformSkill,
   installDirectoryToPlatforms,
   listPlatformSkills,
@@ -55,27 +57,42 @@ platformSkillsRouter.post('/install', async (req, res) => {
   const parsed = installSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-  const sourceDir = parsed.data.installMode === 'symlink'
-    ? await createPersistentSkillsShSourceDir(parsed.data.installLabel)
-    : await mkdtemp(join(tmpdir(), 'opendeepsea-platform-skill-'));
-  let shouldRemoveSource = true;
+  const tempSourceDir = await mkdtemp(join(tmpdir(), 'opendeepsea-platform-skill-'));
+  let shouldRemoveTempSource = true;
   try {
     const client = new SkillsShClient();
     const pkg = await client.fetchPackage(parsed.data.installLabel);
-    await writeSkillsShPackage(pkg, sourceDir);
+    await writeSkillsShPackage(pkg, tempSourceDir);
+    let sourceDir = tempSourceDir;
+    if (parsed.data.installMode === 'symlink') {
+      const persistentSourceDir = await resolvePersistentSkillsShSourceDir(parsed.data.installLabel);
+      if (existsSync(persistentSourceDir)) {
+        const persistentStats = await lstat(persistentSourceDir);
+        if (!persistentStats.isDirectory()) throw new Error('persistent skill source path is not a directory');
+        sourceDir = persistentSourceDir;
+      } else {
+        await assertCanInstallDirectoryToPlatforms({
+          sourceDir: tempSourceDir,
+          targets: parsed.data.targets as PlatformSkillProvider[],
+        });
+        await mkdir(dirname(persistentSourceDir), { recursive: true });
+        await rename(tempSourceDir, persistentSourceDir);
+        shouldRemoveTempSource = false;
+        sourceDir = persistentSourceDir;
+      }
+    }
     const installed = await installDirectoryToPlatforms({
       sourceDir,
       targets: parsed.data.targets as PlatformSkillProvider[],
       installMode: parsed.data.installMode,
       sourceLabel: pkg.installLabel,
     });
-    shouldRemoveSource = parsed.data.installMode !== 'symlink';
     res.status(201).json(installed);
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   } finally {
-    if (shouldRemoveSource) {
-      await rm(sourceDir, { recursive: true, force: true });
+    if (shouldRemoveTempSource) {
+      await rm(tempSourceDir, { recursive: true, force: true });
     }
   }
 });
@@ -129,13 +146,10 @@ function requireLocalAccess(req: Request, res: Response): boolean {
   return false;
 }
 
-async function createPersistentSkillsShSourceDir(installLabel: string): Promise<string> {
+async function resolvePersistentSkillsShSourceDir(installLabel: string): Promise<string> {
   const sourceRoot = process.env.OPENDEEPSEA_PLATFORM_SKILL_SOURCES_DIR?.trim()
     || join(homedir(), '.opendeepsea', 'platform-skill-sources');
   const digest = createHash('sha256').update(installLabel).digest('hex').slice(0, 16);
   const safeLabel = installLabel.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'skill';
-  const sourceDir = join(sourceRoot, 'skills-sh', `${safeLabel}-${digest}`);
-  await rm(sourceDir, { recursive: true, force: true });
-  await mkdir(sourceDir, { recursive: true });
-  return sourceDir;
+  return join(sourceRoot, 'skills-sh', `${safeLabel}-${digest}`);
 }

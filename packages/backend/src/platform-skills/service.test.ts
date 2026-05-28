@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, lstatSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import test from 'node:test';
@@ -61,6 +61,68 @@ test('installDirectoryToPlatforms copies a local skill and listPlatformSkills re
   assert.equal(skill.valid, true);
 });
 
+test('listPlatformSkills uses directory name as the stable API identifier', async () => {
+  const source = await createSourceSkill('Fancy Skill', 'Skill with a display name.');
+
+  const installed = await installDirectoryToPlatforms({
+    sourceDir: source,
+    targets: ['opencode'],
+    installMode: 'copy',
+    sourceLabel: `local:${basename(source)}`,
+  });
+
+  assert.equal(installed[0]?.name, 'Fancy-Skill');
+  assert.equal(existsSync(join(testHome, '.config', 'opencode', 'skills', 'Fancy-Skill')), true);
+
+  const removed = await removePlatformSkill('opencode', installed[0]!.name);
+  assert.equal(removed, true);
+  assert.equal(existsSync(join(testHome, '.config', 'opencode', 'skills', 'Fancy-Skill')), false);
+});
+
+test('installDirectoryToPlatforms rejects unsafe skill names without touching platform root', async () => {
+  const source = await createSourceSkill('.', 'Unsafe skill name.');
+  const keepDir = join(process.env.CODEX_HOME!, 'skills', 'keep-skill');
+  await mkdir(keepDir, { recursive: true });
+  await writeFile(join(keepDir, 'SKILL.md'), '---\nname: keep-skill\n---\n');
+
+  await assert.rejects(
+    () => installDirectoryToPlatforms({
+      sourceDir: source,
+      targets: ['codex'],
+      installMode: 'copy',
+      sourceLabel: `local:${basename(source)}`,
+    }),
+    /safe directory name/,
+  );
+  assert.equal(existsSync(keepDir), true);
+
+  await assert.rejects(
+    () => removePlatformSkill('codex', '.'),
+    /safe directory name/,
+  );
+  assert.equal(existsSync(keepDir), true);
+});
+
+test('installDirectoryToPlatforms preflights all targets before writing any platform', async () => {
+  const source = await createSourceSkill('partial-skill', 'Partial install should not happen.');
+  const conflictDir = join(testHome, '.config', 'opencode', 'skills', 'partial-skill');
+  await mkdir(conflictDir, { recursive: true });
+  await writeFile(join(conflictDir, 'SKILL.md'), '---\nname: partial-skill\n---\n');
+
+  await assert.rejects(
+    () => installDirectoryToPlatforms({
+      sourceDir: source,
+      targets: ['claudecode', 'opencode'],
+      installMode: 'copy',
+      sourceLabel: `local:${basename(source)}`,
+    }),
+    /already exists/,
+  );
+
+  assert.equal(existsSync(join(testHome, '.claude', 'skills', 'partial-skill')), false);
+  assert.equal(existsSync(conflictDir), true);
+});
+
 test('installDirectoryToPlatforms symlinks the whole skill directory for advanced mode', async () => {
   const source = await createSourceSkill('linked-skill', 'Linked skill.');
   const installed = await installDirectoryToPlatforms({
@@ -114,6 +176,25 @@ test('removePlatformSkill deletes copies and only unlinks symlinks', async () =>
   assert.equal(existsSync(join(sourceLinked, 'SKILL.md')), true);
 });
 
+test('removePlatformSkill can delete a broken symlink entry', async () => {
+  const root = join(testHome, '.claude', 'skills');
+  const source = await createSourceSkill('broken-linked', 'Broken linked skill.');
+  const linkPath = join(root, 'broken-linked');
+  await mkdir(root, { recursive: true });
+  await symlink(source, linkPath, 'dir');
+  await rm(source, { recursive: true, force: true });
+
+  const listed = await listPlatformSkills('claudecode');
+  const broken = listed.find((item) => item.name === 'broken-linked');
+  assert.ok(broken);
+  assert.equal(broken.installMode, 'symlink');
+  assert.equal(broken.valid, false);
+
+  const removed = await removePlatformSkill('claudecode', 'broken-linked');
+  assert.equal(removed, true);
+  assert.equal(existsSync(linkPath), false);
+});
+
 test('listPlatformSkills marks malformed entries invalid', async () => {
   const badDir = join(testHome, '.config', 'opencode', 'skills', 'bad-skill');
   await mkdir(badDir, { recursive: true });
@@ -129,7 +210,7 @@ test('listPlatformSkills marks malformed entries invalid', async () => {
 test('removePlatformSkill rejects path traversal outside platform root', async () => {
   await assert.rejects(
     () => removePlatformSkill('codex', '../outside'),
-    /outside the platform skills directory/,
+    /safe directory name/,
   );
 });
 
