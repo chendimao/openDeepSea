@@ -40,6 +40,23 @@ test('applySuperpowersBootstrap injects when owner is project', () => {
   assert.match(result.prompt, /You have superpowers\./);
 });
 
+test('applySuperpowersBootstrap injects project-builtin brainstorming for matching project-owned prompts', () => {
+  const result = applySuperpowersBootstrap({
+    prompt: '当前用户请求：\n我想新增一个很小的设置项，请先按 using-superpowers 判断是否需要进入 workflow，并做简短 brainstorming 澄清，不要修改代码。',
+    owner: 'project',
+    workflowRunId: null,
+  });
+
+  assert.equal(result.injected, true);
+  assert.match(result.prompt, /OpenDeepSea project-owned Superpowers skills are loaded below/);
+  assert.match(result.prompt, /Skill: superpowers:brainstorming/);
+  assert.match(result.prompt, /Source: project-builtin/);
+  assert.match(result.prompt, /packages\/backend\/src\/superpowers\/skills\/brainstorming\/SKILL\.md/);
+  assert.match(result.prompt, /# Brainstorming Ideas Into Designs/);
+  assert.match(result.prompt, /Do not read or invoke same-name skills from ~\/\.agents\/skills/);
+  assert.match(result.prompt, /ACP filesystem\/search\/shell tools remain available/);
+});
+
 test('applySuperpowersBootstrap skips when owner is provider', () => {
   const prompt = '当前用户请求：\nhi';
   const result = applySuperpowersBootstrap({

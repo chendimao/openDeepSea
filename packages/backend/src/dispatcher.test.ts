@@ -1512,6 +1512,49 @@ test('respondAsAgent prepends using-superpowers bootstrap for ordinary ACP plann
   }
 });
 
+test('respondAsAgent injects project-builtin brainstorming for project-owned planner chats', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-superpowers-project-skills-'));
+  const project = projectRepo.create({ name: `superpowers-project-skills-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+
+  const originalAdapter = adapters.codex;
+  let capturedPrompt = '';
+  let capturedEnvOverrides: Record<string, string> | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedPrompt = args.prompt;
+      capturedEnvOverrides = args.envOverrides;
+      args.onChunk({ stream: 'stdout', text: 'done' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: planner,
+      projectPath,
+      roomId: room.id,
+      prompt: '浏览器流程测试 2026-05-28 08:45：我想新增一个很小的设置项，请先按 using-superpowers 判断是否需要进入 workflow，并做简短 brainstorming 澄清，不要修改代码。',
+    });
+
+    assert.match(capturedPrompt, /OpenDeepSea project-owned Superpowers skills are loaded below/);
+    assert.match(capturedPrompt, /Skill: superpowers:brainstorming/);
+    assert.match(capturedPrompt, /Source: project-builtin/);
+    assert.match(capturedPrompt, /packages\/backend\/src\/superpowers\/skills\/brainstorming\/SKILL\.md/);
+    assert.match(capturedPrompt, /Do not read or invoke same-name skills from ~\/\.agents\/skills/);
+    assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, '1');
+
+    const run = agentRunRepo.listByRoom(room.id, 1)[0];
+    assert.match(run?.prompt ?? '', /Skill: superpowers:brainstorming/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent skips project bootstrap when settings owner is provider', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-superpowers-provider-owner-'));
   const project = projectRepo.create({ name: `superpowers-provider-${Date.now()}`, path: projectPath });
