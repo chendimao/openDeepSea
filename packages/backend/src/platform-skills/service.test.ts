@@ -1,0 +1,152 @@
+import assert from 'node:assert/strict';
+import { existsSync, lstatSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+import test from 'node:test';
+
+const testHome = mkdtempSync(join(tmpdir(), 'opendeepsea-platform-skills-home-'));
+process.env.HOME = testHome;
+process.env.CODEX_HOME = join(testHome, '.custom-codex');
+
+const {
+  getPlatformDefinitions,
+  installDirectoryToPlatforms,
+  listPlatformSkills,
+  removePlatformSkill,
+  resolvePlatformRoot,
+} = await import('./service.js');
+
+const tempSources: string[] = [];
+
+test.after(async () => {
+  await Promise.all(tempSources.map((dir) => rm(dir, { recursive: true, force: true })));
+  await rm(testHome, { recursive: true, force: true });
+});
+
+test('resolvePlatformRoot returns default native skill roots', () => {
+  assert.equal(resolvePlatformRoot('codex'), join(testHome, '.custom-codex', 'skills'));
+  assert.equal(resolvePlatformRoot('claudecode'), join(testHome, '.claude', 'skills'));
+  assert.equal(resolvePlatformRoot('opencode'), join(testHome, '.config', 'opencode', 'skills'));
+});
+
+test('getPlatformDefinitions exposes all supported platforms in stable order', () => {
+  assert.deepEqual(
+    getPlatformDefinitions().map((item) => item.provider),
+    ['codex', 'claudecode', 'opencode'],
+  );
+});
+
+test('installDirectoryToPlatforms copies a local skill and listPlatformSkills reads metadata', async () => {
+  const source = await createSourceSkill('copy-skill', 'Copied skill.');
+
+  const installed = await installDirectoryToPlatforms({
+    sourceDir: source,
+    targets: ['codex'],
+    installMode: 'copy',
+    sourceLabel: `local:${basename(source)}`,
+  });
+
+  assert.equal(installed.length, 1);
+  assert.equal(installed[0]?.provider, 'codex');
+  assert.equal(installed[0]?.name, 'copy-skill');
+  assert.equal(installed[0]?.installMode, 'copy');
+  assert.equal(existsSync(join(process.env.CODEX_HOME!, 'skills', 'copy-skill', 'assets', 'note.txt')), true);
+
+  const listed = await listPlatformSkills('codex');
+  const skill = listed.find((item) => item.name === 'copy-skill');
+  assert.ok(skill);
+  assert.equal(skill.description, 'Copied skill.');
+  assert.equal(skill.version, '1.2.3');
+  assert.equal(skill.valid, true);
+});
+
+test('installDirectoryToPlatforms symlinks the whole skill directory for advanced mode', async () => {
+  const source = await createSourceSkill('linked-skill', 'Linked skill.');
+  const installed = await installDirectoryToPlatforms({
+    sourceDir: source,
+    targets: ['claudecode'],
+    installMode: 'symlink',
+    sourceLabel: `local:${basename(source)}`,
+  });
+
+  assert.equal(installed.length, 1);
+  assert.equal(installed[0]?.provider, 'claudecode');
+  assert.equal(installed[0]?.installMode, 'symlink');
+  const target = join(testHome, '.claude', 'skills', 'linked-skill');
+  assert.equal(lstatSync(target).isSymbolicLink(), true);
+  assert.equal(existsSync(join(target, 'SKILL.md')), true);
+});
+
+test('installDirectoryToPlatforms rejects duplicate skill directories', async () => {
+  const source = await createSourceSkill('copy-skill', 'Duplicate skill.');
+
+  await assert.rejects(
+    () => installDirectoryToPlatforms({
+      sourceDir: source,
+      targets: ['codex'],
+      installMode: 'copy',
+      sourceLabel: `local:${basename(source)}`,
+    }),
+    /already exists/i,
+  );
+});
+
+test('removePlatformSkill deletes copies and only unlinks symlinks', async () => {
+  const removedCopy = await removePlatformSkill('codex', 'copy-skill');
+  assert.equal(removedCopy, true);
+  assert.equal(existsSync(join(process.env.CODEX_HOME!, 'skills', 'copy-skill')), false);
+
+  const sourceLinked = await createSourceSkill('source-linked', 'Source linked skill.');
+  const linkPath = join(testHome, '.claude', 'skills', 'source-linked');
+  await installDirectoryToPlatforms({
+    sourceDir: sourceLinked,
+    targets: ['claudecode'],
+    installMode: 'symlink',
+    sourceLabel: `local:${basename(sourceLinked)}`,
+  });
+  assert.equal(existsSync(join(sourceLinked, 'SKILL.md')), true);
+  assert.equal(existsSync(join(linkPath, 'SKILL.md')), true);
+
+  const removedLink = await removePlatformSkill('claudecode', 'source-linked');
+  assert.equal(removedLink, true);
+  assert.equal(existsSync(linkPath), false);
+  assert.equal(existsSync(join(sourceLinked, 'SKILL.md')), true);
+});
+
+test('listPlatformSkills marks malformed entries invalid', async () => {
+  const badDir = join(testHome, '.config', 'opencode', 'skills', 'bad-skill');
+  await mkdir(badDir, { recursive: true });
+  writeFileSync(join(badDir, 'README.md'), 'missing manifest');
+
+  const listed = await listPlatformSkills('opencode');
+  const bad = listed.find((item) => item.name === 'bad-skill');
+  assert.ok(bad);
+  assert.equal(bad.valid, false);
+  assert.match(bad.issues.join('\n'), /SKILL\.md is required/);
+});
+
+test('removePlatformSkill rejects path traversal outside platform root', async () => {
+  await assert.rejects(
+    () => removePlatformSkill('codex', '../outside'),
+    /outside the platform skills directory/,
+  );
+});
+
+async function createSourceSkill(name: string, description: string): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), `opendeepsea-platform-source-${name}-`));
+  tempSources.push(dir);
+
+  await writeFile(join(dir, 'SKILL.md'), [
+    '---',
+    `name: ${name}`,
+    `description: ${description}`,
+    'version: 1.2.3',
+    '---',
+    '',
+    'Follow platform instructions.',
+  ].join('\n'));
+  await mkdir(join(dir, 'assets'));
+  await writeFile(join(dir, 'assets', 'note.txt'), 'asset');
+  return dir;
+}
