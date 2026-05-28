@@ -126,6 +126,20 @@ export function startProviderSuperpowersStartupInstall(
       };
       return cloneStatus(status);
     })
+    .catch((err) => {
+      status = {
+        started_at: startedAt,
+        completed_at: Date.now(),
+        running: false,
+        providers: status.providers.map((provider) => ({
+          ...provider,
+          install_status: 'failed',
+          message: `Superpowers 启动检查异常：${formatError(err)}`,
+          checked_at: Date.now(),
+        })),
+      };
+      return cloneStatus(status);
+    })
     .finally(() => {
       activeRun = null;
     });
@@ -187,7 +201,7 @@ async function checkAndInstallProvider(
     cli_installed: true,
     version,
     superpowers_installed: installedAfterAttempt,
-    install_attempted: true,
+    install_attempted: installResult.attempted,
     install_status: installedAfterAttempt ? 'installed_by_startup' : installResult.status,
     message: installedAfterAttempt ? '启动时已自动安装 Superpowers。' : installResult.message,
     checked_at: checkedAt,
@@ -250,36 +264,27 @@ function isOpenCodeSuperpowersInstalled(): boolean {
 async function installSuperpowers(
   provider: ProviderSuperpowersProvider,
   runner: ProviderSuperpowersCommandRunner,
-): Promise<{ ok: boolean; status: 'failed' | 'unsupported'; message: string }> {
+): Promise<{ ok: boolean; attempted: boolean; status: 'failed' | 'unsupported'; message: string }> {
   if (provider === 'claude') {
-    const result = await runOptional(runner, 'claude', [
-      '-p',
-      '/plugin install superpowers@claude-plugins-official',
-      '--output-format',
-      'json',
-      '--max-budget-usd',
-      '0.01',
-    ]);
-    return result.ok
-      ? { ok: true, status: 'failed', message: '已请求 Claude Code 安装 Superpowers。' }
-      : {
-          ok: false,
-          status: 'failed',
-          message: `Claude Code Superpowers 自动安装失败：${result.message}`,
-        };
+    return {
+      ok: false,
+      attempted: false,
+      status: 'unsupported',
+      message: 'Claude Code 暂无受支持的非交互全局安装方式，请在 Claude Code 中执行 /plugin install superpowers@claude-plugins-official。',
+    };
   }
 
   if (provider === 'codex') {
     const result = await runOptional(runner, 'codex', ['plugin', 'add', 'superpowers@openai-curated']);
     return result.ok
-      ? { ok: true, status: 'failed', message: '已请求 Codex 安装 Superpowers。' }
-      : { ok: false, status: 'failed', message: `Codex Superpowers 自动安装失败：${result.message}` };
+      ? { ok: true, attempted: true, status: 'failed', message: '已请求 Codex 安装 Superpowers。' }
+      : { ok: false, attempted: true, status: 'failed', message: `Codex Superpowers 自动安装失败：${result.message}` };
   }
 
   const result = await runOptional(runner, 'opencode', ['plugin', '-g', OPENCODE_SUPERPOWERS_SPEC]);
   return result.ok
-    ? { ok: true, status: 'failed', message: '已请求 OpenCode 安装 Superpowers。' }
-    : { ok: false, status: 'failed', message: `OpenCode Superpowers 自动安装失败：${result.message}` };
+    ? { ok: true, attempted: true, status: 'failed', message: '已请求 OpenCode 安装 Superpowers。' }
+    : { ok: false, attempted: true, status: 'failed', message: `OpenCode Superpowers 自动安装失败：${result.message}` };
 }
 
 async function runOptional(
@@ -313,6 +318,10 @@ function stripJsonComments(value: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function cloneStatus(value: ProviderSuperpowersStatus): ProviderSuperpowersStatus {

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import {
   resetProviderSuperpowersStatusForTest,
@@ -6,8 +9,15 @@ import {
   type ProviderSuperpowersCommandRunner,
 } from './provider-superpowers.js';
 
+const originalHome = process.env.HOME;
+
 test.afterEach(() => {
   resetProviderSuperpowersStatusForTest();
+  if (originalHome === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = originalHome;
+  }
 });
 
 test('startup install adds Codex Superpowers when plugin is missing', async () => {
@@ -46,6 +56,33 @@ test('startup install adds Codex Superpowers when plugin is missing', async () =
   assert.equal(codex?.install_attempted, true);
   assert.equal(codex?.install_status, 'installed_by_startup');
   assert.ok(commands.includes('codex plugin add superpowers@openai-curated'));
+});
+
+test('startup install does not prompt Claude Code to install Superpowers', async () => {
+  process.env.HOME = mkdtempSync(join(tmpdir(), 'openclaw-room-provider-superpowers-home-'));
+  const commands: string[] = [];
+  const runner: ProviderSuperpowersCommandRunner = {
+    async run(command, args) {
+      commands.push([command, ...args].join(' '));
+      if (command === 'claude' && args.join(' ') === '--version') {
+        return { stdout: '1.0.0 (Claude Code)\n', stderr: '' };
+      }
+      if (command === 'codex' || command === 'opencode') {
+        throw new Error(`${command} missing`);
+      }
+      throw new Error(`unexpected command: ${command} ${args.join(' ')}`);
+    },
+  };
+
+  const status = await startProviderSuperpowersStartupInstall(runner);
+  const claude = status.providers.find((provider) => provider.provider === 'claude');
+
+  assert.equal(claude?.cli_installed, true);
+  assert.equal(claude?.superpowers_installed, false);
+  assert.equal(claude?.install_attempted, false);
+  assert.equal(claude?.install_status, 'unsupported');
+  assert.ok(claude?.message?.includes('暂无受支持的非交互全局安装方式'));
+  assert.ok(!commands.some((command) => command.startsWith('claude -p ')));
 });
 
 test('startup install reports missing provider CLIs without attempting install', async () => {
