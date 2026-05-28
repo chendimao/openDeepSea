@@ -29,6 +29,7 @@ const {
   buildAgentIdentityPrompt,
   buildPromptWithMessageAttachments,
   dispatchUserMessage,
+  runAgentOnce,
   respondAsAgent,
   setPlannerExecutionPlanInvokerForTest,
 } = await import('./dispatcher.js');
@@ -224,6 +225,75 @@ test('explicit mentions still dispatch directly to mentioned agent in fallback r
     assert.doesNotMatch(seenPrompts[0] ?? '', /Return ONLY valid JSON/);
     assert.doesNotMatch(seenPrompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
   } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('runAgentOnce broadcasts retrying status for ACP retry chunks and resumes running on session update', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-retry-status-'));
+  const project = projectRepo.create({ name: `retry-status-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor', agent_name: 'Executor' });
+  roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+
+  const sentEvents: string[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send(payload: string) {
+      sentEvents.push(payload);
+    },
+  };
+  wsHub.subscribe(room.id, socket as never);
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({
+        stream: 'stderr',
+        channel: 'activity',
+        text: '[ACP retry] Codex ACP stream disconnected before output, retrying 1/2 after 0ms.\n',
+        rawType: 'protocol.retry',
+      });
+      args.onSession?.('retry-session-1');
+      args.onChunk?.({ stream: 'stdout', text: 'retry recovered' });
+      return { exitCode: 0, sessionId: 'retry-session-1', stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const result = await runAgentOnce({
+      roomId: room.id,
+      agent: roomAgentRepo.get(agent.id)!,
+      projectPath,
+      prompt: 'hello',
+    });
+
+    const statuses = sentEvents
+      .map((payload) => JSON.parse(payload) as { type: string; run?: { status?: string } })
+      .filter((event) => event.type === 'agent_run:updated')
+      .map((event) => event.run?.status)
+      .filter(Boolean);
+    const updatedRun = agentRunRepo.get(result.run.id);
+
+    assert.equal(result.status, 'completed');
+    const relevantStatuses = statuses.filter((status) => ['retrying', 'running', 'completed'].includes(status!));
+    assert.equal(relevantStatuses[0], 'retrying');
+    assert.ok(relevantStatuses.includes('running'));
+    assert.equal(relevantStatuses.at(-1), 'completed');
+    assert.match(updatedRun?.activity_log ?? '', /retrying 1\/2/);
+    assert.equal(updatedRun?.stderr, '');
+  } finally {
+    wsHub.unsubscribe(room.id, socket as never);
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }

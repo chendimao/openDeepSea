@@ -124,7 +124,7 @@ export function RoomPage() {
     enabled: !!roomId,
     refetchInterval: (query) => {
       const runs = query.state.data as AgentRun[] | undefined;
-      return runs?.some((run) => run.status === 'running' || run.status === 'queued') ? 2000 : false;
+      return runs?.some((run) => run.status === 'running' || run.status === 'queued' || run.status === 'retrying') ? 2000 : false;
     },
   });
   const streamingDisplay = useStreamingMessageDisplay(roomId);
@@ -990,7 +990,7 @@ function MessageBubble({
   const hasContent = Boolean(renderedContent.trim());
   const hasMarkdownDisplayMode = hasContent && isMarkdownMessageContent(renderedContent);
   const isStreaming = !isUser && message.message_type === 'agent_stream' && (
-    streaming || run?.status === 'running' || run?.status === 'queued'
+    streaming || run?.status === 'running' || run?.status === 'queued' || run?.status === 'retrying'
   );
   const canReply = !isSystem && hasContent && !isStreaming;
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());

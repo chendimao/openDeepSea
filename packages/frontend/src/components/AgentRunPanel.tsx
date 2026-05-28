@@ -64,7 +64,7 @@ export function AgentRunStatusCard({
             {run.acp_session_id ? ` · session ${truncate(run.acp_session_id, 12)}` : ''}
           </div>
         </div>
-        {run.status === 'running' && (
+        {(run.status === 'running' || run.status === 'retrying') && (
           <Button
             type="button"
             variant="ghost"
@@ -112,7 +112,7 @@ function upsertRun(prev: AgentRun[] | undefined, run: AgentRun): AgentRun[] {
 }
 
 function RunStatusIcon({ status }: { status: AgentRun['status'] }) {
-  if (status === 'running') {
+  if (status === 'running' || status === 'retrying') {
     return <LoaderCircle className="mt-0.5 h-3.5 w-3.5 animate-spin text-[var(--color-accent)]" />;
   }
   if (status === 'completed') {
@@ -125,7 +125,7 @@ function RunStatusIcon({ status }: { status: AgentRun['status'] }) {
 }
 
 function statusClass(status: AgentRun['status']): string {
-  if (status === 'running') return 'text-[var(--color-accent)]';
+  if (status === 'running' || status === 'retrying') return 'text-[var(--color-accent)]';
   if (status === 'completed') return 'text-[var(--color-success)]';
   if (status === 'cancelled' || status === 'interrupted') return 'text-[var(--color-fg-muted)]';
   return 'text-[var(--color-danger)]';

@@ -640,6 +640,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   let answerFlushTimer: ReturnType<typeof setTimeout> | undefined;
 
   const broadcastAnswerChunk = (chunk: string): void => {
+    restoreRunStatusAfterRetry();
     messageRepo.appendChunk(placeholder.id, chunk);
     const updated = agentRunRepo.appendStdout(run.id, chunk);
     if (updated) broadcastRun('agent_run:updated', updated);
@@ -689,6 +690,13 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     if (updated) broadcastRun('agent_run:updated', updated);
   };
 
+  const onRetry = (chunk: string): void => {
+    agentRunRepo.updateStatus(run.id, 'retrying');
+    const text = formatActivityChunk(chunk);
+    const updated = text ? agentRunRepo.appendActivity(run.id, text) : agentRunRepo.get(run.id);
+    if (updated) broadcastRun('agent_run:updated', updated);
+  };
+
   const onActivity = (chunk: string): void => {
     const text = formatActivityChunk(chunk);
     if (!text) return;
@@ -697,6 +705,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   };
 
   const onTrace = (channel: 'thinking' | 'tool' | 'command', chunk: string, trace?: AcpStreamTrace): void => {
+    restoreRunStatusAfterRetry();
     const text = chunk.trim();
     if (!text) return;
     const timelineEvent = normalizeTimelineEventFromTrace({
@@ -727,6 +736,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   };
 
   const persistTimelineEvent = (event: AgentTimelineEvent, chunk: AcpStreamChunk): void => {
+    restoreRunStatusAfterRetry();
     const updatedMessage = messageRepo.mergeTrace(placeholder.id, { events: [event] });
     broadcastTimelineEvent(event, chunk, updatedMessage);
   };
@@ -823,7 +833,8 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       acpWritableDirs: runtimeProfile.writableDirs,
       envOverrides: superpowersBootstrapEnvOverrides,
       onChunk: (chunk) => {
-        if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);
+        if (chunk.rawType === 'protocol.retry') onRetry(chunk.text);
+        else if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);
         else if (chunk.stream === 'stdout' && chunk.channel === 'thinking') onTrace('thinking', chunk.text, chunk.trace);
         else if (chunk.stream === 'stdout' && chunk.channel === 'tool') onTrace('tool', chunk.text, chunk.trace);
         else if (chunk.stream === 'stdout' && chunk.channel === 'command') onTrace('command', chunk.text, chunk.trace);
@@ -955,6 +966,13 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
 
   function finishRun(id: string, status: AgentRunStatus, error?: string | null): void {
     const updated = agentRunRepo.updateStatus(id, status, { error: error ?? null });
+    if (updated) broadcastRun('agent_run:updated', updated);
+  }
+
+  function restoreRunStatusAfterRetry(): void {
+    const current = agentRunRepo.get(run.id);
+    if (current?.status !== 'retrying') return;
+    const updated = agentRunRepo.updateStatus(run.id, 'running');
     if (updated) broadcastRun('agent_run:updated', updated);
   }
 }

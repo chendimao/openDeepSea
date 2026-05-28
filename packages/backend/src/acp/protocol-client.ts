@@ -20,6 +20,7 @@ const DEFAULT_PROTOCOL_PROMPT_TIMEOUT_MS = 180_000;
 const PROMPT_TIMEOUT_EVENT_DRAIN_MS = 100;
 const PROTOCOL_SHUTDOWN_TIMEOUT_MS = 1_000;
 const ACP_STREAM_DISCONNECTED_PATTERN = /ResponseStreamDisconnected|stream disconnected before completion|Transport error|network error|error decoding response body/i;
+const ACP_HANDLED_RECONNECT_PATTERN = /Handled error during turn:\s*Reconnecting\.\.\.\s*(\d+)\/(\d+)/i;
 
 export interface InvokeProtocolSessionArgs {
   backend: AcpBackend;
@@ -65,6 +66,15 @@ export async function invokeProtocolSession(
     const childExit = waitForChild(child);
     child.stderr.setEncoding('utf-8');
     child.stderr.on('data', (data: string) => {
+      if (isAcpHandledReconnect(data)) {
+        args.onChunk({
+          stream: 'stderr',
+          text: formatHandledReconnectActivity(data, args.backend),
+          channel: 'activity',
+          rawType: 'protocol.retry',
+        });
+        return;
+      }
       stderr += data;
       args.onChunk({
         stream: 'stderr',
@@ -455,6 +465,18 @@ function readProtocolTimeoutMs(value: string | undefined, fallback: number): num
 
 export function isAcpStreamDisconnected(value: string): boolean {
   return ACP_STREAM_DISCONNECTED_PATTERN.test(value);
+}
+
+export function isAcpHandledReconnect(value: string): boolean {
+  return ACP_HANDLED_RECONNECT_PATTERN.test(value);
+}
+
+function formatHandledReconnectActivity(value: string, backend: AcpBackend): string {
+  const match = value.match(ACP_HANDLED_RECONNECT_PATTERN);
+  const attempt = match?.[1];
+  const total = match?.[2];
+  const retryLabel = attempt && total ? ` ${attempt}/${total}` : '';
+  return `[ACP retry] ${backend} ACP stream disconnected; provider reconnecting${retryLabel}.\n`;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {

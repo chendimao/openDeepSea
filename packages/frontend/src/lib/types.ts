@@ -514,7 +514,7 @@ export interface RoomAgent {
   acp_writable_dirs: string[];
 }
 
-export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export type AgentRunStatus = 'queued' | 'running' | 'retrying' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 
 export interface AgentRun {
   id: string;

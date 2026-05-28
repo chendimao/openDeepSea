@@ -9,6 +9,8 @@ import type {
   WorkflowStage,
 } from '../types.js';
 
+const ACTIVE_AGENT_RUN_STATUSES = ['running', 'queued', 'retrying'] as const;
+
 export const agentRunRepo = {
   create(input: {
     room_id: string;
@@ -79,20 +81,20 @@ export const agentRunRepo = {
     return db
       .prepare(
         `SELECT * FROM agent_runs
-         WHERE workflow_run_id = ? AND status IN ('running', 'queued')
+         WHERE workflow_run_id = ? AND status IN (${ACTIVE_AGENT_RUN_STATUSES.map(() => '?').join(', ')})
          ORDER BY started_at DESC`,
       )
-      .all(workflowRunId) as AgentRun[];
+      .all(workflowRunId, ...ACTIVE_AGENT_RUN_STATUSES) as AgentRun[];
   },
 
   listActive(): AgentRun[] {
     return db
       .prepare(
         `SELECT * FROM agent_runs
-         WHERE status IN ('running', 'queued')
+         WHERE status IN (${ACTIVE_AGENT_RUN_STATUSES.map(() => '?').join(', ')})
          ORDER BY started_at ASC`,
       )
-      .all() as AgentRun[];
+      .all(...ACTIVE_AGENT_RUN_STATUSES) as AgentRun[];
   },
 
   interruptRun(id: string, error: string): AgentRun | undefined {
@@ -143,8 +145,8 @@ export const agentRunRepo = {
     db.prepare(
       `UPDATE agent_runs
        SET updated_at = ?
-       WHERE id = ? AND status IN ('running', 'queued')`,
-    ).run(now(), id);
+       WHERE id = ? AND status IN (${ACTIVE_AGENT_RUN_STATUSES.map(() => '?').join(', ')})`,
+    ).run(now(), id, ...ACTIVE_AGENT_RUN_STATUSES);
     return this.get(id);
   },
 
@@ -153,7 +155,7 @@ export const agentRunRepo = {
     status: AgentRunStatus,
     patch: Partial<Pick<AgentRun, 'session_key' | 'acp_session_id' | 'error' | 'stdout' | 'stderr' | 'activity_log'>> = {},
   ): AgentRun | undefined {
-    const completedAt = status === 'running' || status === 'queued' ? null : now();
+    const completedAt = ACTIVE_AGENT_RUN_STATUSES.includes(status as typeof ACTIVE_AGENT_RUN_STATUSES[number]) ? null : now();
     db.prepare(
       `UPDATE agent_runs
        SET status = ?,

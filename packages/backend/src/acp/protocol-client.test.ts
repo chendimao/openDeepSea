@@ -304,6 +304,35 @@ test('invokeProtocolSession treats prompt timeout after answer text as soft comp
   assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'partial answer before timeout');
 });
 
+test('invokeProtocolSession keeps running when ACP reports handled reconnect on stderr', async () => {
+  const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_STDERR_HANDLED_RECONNECT: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'hello',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.sessionId, 'fake-session-1');
+  assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
+  assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.retry'), true);
+  assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.stderr'), false);
+});
+
 test('invokeProtocolSession completes after answer when ACP shutdown hangs', async () => {
   const root = await mkdtemp(join(tmpdir(), 'openclaw-acp-shutdown-'));
   const pidFile = join(root, 'fake-acp.pid');

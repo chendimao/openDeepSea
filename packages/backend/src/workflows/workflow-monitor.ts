@@ -339,7 +339,7 @@ function asTaskStatus(value: string | null): TaskStatus | undefined {
 }
 
 function asAgentRunStatus(value: string | null): AgentRunStatus | undefined {
-  return isOneOf(value, ['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']);
+  return isOneOf(value, ['queued', 'running', 'retrying', 'completed', 'failed', 'cancelled', 'interrupted']);
 }
 
 function isOneOf<const T extends string>(value: string | null, allowed: readonly T[]): T | undefined {

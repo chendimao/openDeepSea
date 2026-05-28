@@ -550,7 +550,7 @@ export interface RoomAgent {
   memory_max_context_chars: number | null;
 }
 
-export type AgentRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export type AgentRunStatus = 'queued' | 'running' | 'retrying' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 export const COLLABORATION_STAGES = ['execute', 'review', 'acceptance', 'summary'] as const;
 export type CollaborationStage = typeof COLLABORATION_STAGES[number];
 export type CollaborationRunStatus = 'running' | 'completed' | 'blocked';

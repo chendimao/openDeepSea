@@ -75,7 +75,7 @@ export const projectRepo = {
            FROM agent_runs
            JOIN rooms ON rooms.id = agent_runs.room_id
            WHERE rooms.project_id = ?
-             AND agent_runs.status IN ('running', 'queued')`,
+             AND agent_runs.status IN ('running', 'queued', 'retrying')`,
         )
         .get(id) as { count: number }
     ).count;

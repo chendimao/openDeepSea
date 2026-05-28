@@ -58,8 +58,12 @@ class FakeAgent implements Agent {
     }
 
     if (process.env.OPENCLAW_FAKE_ACP_STDERR_DISCONNECT === '1') {
-      process.stderr.write('Handled error during turn: Reconnecting... 1/5 Some(ResponseStreamDisconnected { http_status_code: None }) Some("stream disconnected before completion: Transport error: network error: error decoding response body")\n');
+      process.stderr.write('stream disconnected before completion: Transport error: network error: error decoding response body\n');
       await new Promise(() => undefined);
+    }
+
+    if (process.env.OPENCLAW_FAKE_ACP_STDERR_HANDLED_RECONNECT === '1') {
+      process.stderr.write('Handled error during turn: Reconnecting... 1/5 Some(ResponseStreamDisconnected { http_status_code: None }) Some("stream disconnected before completion: Transport error: network error: error decoding response body")\n');
     }
 
     if (process.env.OPENCLAW_FAKE_ACP_HANG_PROMPT === '1') {
