@@ -231,6 +231,8 @@ export type SkillUpdateCheckMode = 'off' | 'startup' | 'manual';
 export type SkillUpdateApplyMode = 'prompt';
 export type SkillRunInvoker = 'workflow' | 'agent' | 'manual';
 export type SkillRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type PlatformSkillProvider = 'codex' | 'claudecode' | 'opencode';
+export type PlatformSkillInstallMode = 'copy' | 'symlink' | 'unknown';
 
 export interface SkillPermissions {
   filesystem: 'project';
@@ -311,6 +313,30 @@ export interface SkillsShUpdateResult {
   availableVersion: string | null;
   availableRevision: string | null;
   checkedAt: number;
+}
+
+export interface PlatformSkillSummary {
+  provider: PlatformSkillProvider;
+  label: string;
+  root: string;
+  rootExists: boolean;
+  rootWritable: boolean;
+  installedCount: number;
+  issues: string[];
+}
+
+export interface PlatformSkill {
+  provider: PlatformSkillProvider;
+  name: string;
+  description: string | null;
+  path: string;
+  manifestPath: string | null;
+  installMode: PlatformSkillInstallMode;
+  sourceLabel: string | null;
+  version: string | null;
+  lastModifiedAt: number | null;
+  valid: boolean;
+  issues: string[];
 }
 
 export interface SkillRun {
