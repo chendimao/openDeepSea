@@ -7,6 +7,7 @@ import {
   findPreviousUserMessage,
 } from './RoomPage';
 import {
+  applyMessageStreamUpdate,
   createDefaultReplyTarget,
   createPlannerDispatchInput,
   hasDispatchablePlannerSteps,
@@ -259,6 +260,91 @@ test('mergeMessageStreamEvent appends trace events into message metadata', () =>
 
   assert.equal(metadata.trace?.thinking?.[0]?.text, 'keep');
   assert.equal(metadata.trace?.events?.[0]?.id, 'run-1:1');
+});
+
+test('applyMessageStreamUpdate inserts final message snapshot when placeholder is missing', () => {
+  const finalMessage = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '任务已经完成，前端现在应立即显示正文。',
+    created_at: 2000,
+    metadata: JSON.stringify({ trace: { events: [] } }),
+  });
+
+  const result = applyMessageStreamUpdate(undefined, {
+    messageId: finalMessage.id,
+    chunk: '',
+    done: true,
+    channel: 'answer',
+    message: finalMessage,
+  });
+
+  assert.equal(result.matched, true);
+  assert.equal(result.fullContent, finalMessage.content);
+  assert.equal(result.messages?.length, 1);
+  assert.equal(result.messages?.[0]?.content, finalMessage.content);
+});
+
+test('applyMessageStreamUpdate merges final message content and keeps streamed trace events', () => {
+  const placeholder = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '',
+    metadata: JSON.stringify({
+      trace: {
+        events: [
+          {
+            id: 'run-1:1',
+            message_id: 'agent-message',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'assistant_message',
+            status: 'delta',
+            title: '助手回复',
+            payload: { text: '任务' },
+            created_at: 1000,
+          },
+        ],
+      },
+    }),
+  });
+  const finalMessage = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '任务已经完成。',
+    metadata: JSON.stringify({
+      trace: {
+        events: [
+          {
+            id: 'run-1:2',
+            message_id: 'agent-message',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 2,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果',
+            payload: { name: 'Read' },
+            created_at: 1001,
+          },
+        ],
+      },
+    }),
+  });
+
+  const result = applyMessageStreamUpdate([placeholder], {
+    messageId: finalMessage.id,
+    chunk: '',
+    done: true,
+    channel: 'answer',
+    message: finalMessage,
+  });
+  const metadata = parseMessageMetadata(result.messages?.[0]?.metadata ?? null);
+
+  assert.equal(result.fullContent, '任务已经完成。');
+  assert.equal(result.messages?.[0]?.content, '任务已经完成。');
+  assert.deepEqual(metadata.trace?.events?.map((event) => event.id), ['run-1:1', 'run-1:2']);
 });
 
 test('mergeMessageStreamTrace keeps legacy trace channels intact', () => {

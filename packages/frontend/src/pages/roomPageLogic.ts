@@ -151,6 +151,63 @@ export function hasDispatchablePlannerSteps(decision: PlannerDecision): boolean 
 }
 
 export type StreamTraceChannel = 'thinking' | 'tool' | 'command' | 'event';
+export type MessageStreamChannel = 'answer' | StreamTraceChannel;
+
+export interface MessageStreamUpdate {
+  messageId: string;
+  chunk: string;
+  done: boolean;
+  channel?: MessageStreamChannel;
+  event?: AgentTimelineEvent;
+  message?: Message;
+}
+
+export interface MessageStreamUpdateResult {
+  messages: Message[] | undefined;
+  matched: boolean;
+  fullContent: string;
+}
+
+export function applyMessageStreamUpdate(
+  messages: Message[] | undefined,
+  update: MessageStreamUpdate,
+): MessageStreamUpdateResult {
+  let matched = false;
+  let fullContent = update.message?.content ?? '';
+  const list = messages ?? [];
+
+  const next = list.map((message) => {
+    if (message.id !== update.messageId) return message;
+    matched = true;
+
+    if (update.done && update.message) {
+      fullContent = update.message.content;
+      return mergeStreamMessage(message, update.message, update.event);
+    }
+
+    if (update.channel === 'event' && update.event) {
+      return mergeMessageStreamEvent(message, update.event);
+    }
+
+    if (update.channel === 'thinking' || update.channel === 'tool' || update.channel === 'command') {
+      return mergeMessageStreamTrace(message, update.channel, update.chunk);
+    }
+
+    fullContent = `${message.content}${update.chunk}`;
+    return { ...message, content: fullContent };
+  });
+
+  if (!matched && update.message) {
+    matched = true;
+    next.push(update.message);
+  }
+
+  return {
+    messages: messages || matched ? dedupeAndSortMessages(next) : undefined,
+    matched,
+    fullContent,
+  };
+}
 
 export function mergeMessageStreamTrace(message: Message, channel: Exclude<StreamTraceChannel, 'event'>, chunk: string): Message {
   if (!chunk) return message;
@@ -160,6 +217,14 @@ export function mergeMessageStreamTrace(message: Message, channel: Exclude<Strea
     ...message,
     metadata: JSON.stringify({ ...metadata, trace }),
   };
+}
+
+function dedupeAndSortMessages(messages: Message[]): Message[] {
+  const byId = new Map<string, Message>();
+  for (const message of messages) {
+    byId.set(message.id, message);
+  }
+  return [...byId.values()].sort((a, b) => a.created_at - b.created_at);
 }
 
 export function mergeMessageStreamEvent(message: Message, event: AgentTimelineEvent): Message {

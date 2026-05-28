@@ -56,10 +56,8 @@ import {
   MessageRunPanel as AiMessageRunPanel,
 } from '../components/ai-elements/Message';
 import {
+  applyMessageStreamUpdate,
   createDefaultReplyTarget,
-  mergeMessageStreamEvent,
-  mergeMessageStreamTrace,
-  mergeStreamMessage,
   createPlannerDispatchInput,
   createReplyTarget,
   hasDispatchablePlannerSteps,
@@ -201,21 +199,17 @@ export function RoomPage() {
           streamingRunMessageIds.current.set(event.runId, event.messageId);
         }
         queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) => {
-          if (!prev) return prev;
-          const next = prev.map((m) => {
-            if (m.id !== event.messageId) return m;
-            matchedMessage = true;
-            if (event.done && event.message) return mergeStreamMessage(m, event.message, event.event);
-            if (event.channel === 'event' && event.event) {
-              return mergeMessageStreamEvent(m, event.event);
-            }
-            if (event.channel === 'thinking' || event.channel === 'tool' || event.channel === 'command') {
-              return mergeMessageStreamTrace(m, event.channel, event.chunk);
-            }
-            fullContent = m.content + event.chunk;
-            return { ...m, content: fullContent };
+          const result = applyMessageStreamUpdate(prev, {
+            messageId: event.messageId,
+            chunk: event.chunk,
+            done: event.done,
+            channel: event.channel,
+            event: event.event,
+            message: event.message,
           });
-          return dedupeMessages(next);
+          matchedMessage = result.matched;
+          fullContent = result.fullContent;
+          return result.messages;
         });
         if (event.chunk && (!event.channel || event.channel === 'answer')) {
           streamingDisplay.appendChunk(event.messageId, event.chunk);
