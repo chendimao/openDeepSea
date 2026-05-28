@@ -263,7 +263,7 @@ test('keeps streaming inline-code text in plain layout to avoid markdown size fl
   assert.doesNotMatch(html, /<code>AgentTimeline\.tsx<\/code>/);
 });
 
-test('prefers final content over ACP transcript when message content is available', () => {
+test('renders ACP transcript by interleaving assistant text and tool events', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <MessageContent
@@ -324,14 +324,18 @@ test('prefers final content over ACP transcript when message content is availabl
     </I18nProvider>,
   );
 
-  assert.match(html, /最终正文不应在 transcript 模式重复展示/);
-  assert.doesNotMatch(html, /agent-transcript/);
-  assert.doesNotMatch(html, /我会先读取本会话要求的工作流技能/);
-  assert.doesNotMatch(html, /Read · \/Users\/chendimao\/\.codex\/skills\/using-superpowers\/SKILL\.md/);
-  assert.doesNotMatch(html, /ACP 执行过程/);
+  assert.match(html, /agent-transcript/);
+  assert.match(html, /我会先读取本会话要求的工作流技能/);
+  assert.match(html, /Read · \/Users\/chendimao\/\.codex\/skills\/using-superpowers\/SKILL\.md/);
+  assert.match(html, /失败/);
+  assert.match(html, /我切换到当前会话列出的可用技能路径读取/);
+  assert.match(html, /Read · \/Users\/chendimao\/\.agents\/skills\/using-superpowers\/SKILL\.md/);
+  assert.match(html, /完成/);
+  assert.doesNotMatch(html, /完整 ACP 轨迹/);
+  assert.doesNotMatch(html, /最终正文不应在 transcript 模式重复展示/);
 });
 
-test('does not build trace transcript when final content is available', () => {
+test('renders final content as transcript text when assistant_message events are absent', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <MessageContent
@@ -357,14 +361,16 @@ test('does not build trace transcript when final content is available', () => {
   );
 
   assert.match(html, /这是 agent 正文/);
-  assert.doesNotMatch(html, /agent-transcript/);
+  assert.match(html, /agent-transcript/);
   assert.doesNotMatch(html, /ACP 执行过程/);
   assert.doesNotMatch(html, /Thinking/);
-  assert.doesNotMatch(html, /Explored/);
-  assert.doesNotMatch(html, /Ran/);
+  assert.match(html, /Explored/);
+  assert.match(html, /Ran/);
   assert.doesNotMatch(html, /完整 thinking 原文/);
-  assert.doesNotMatch(html, /search_files/);
-  assert.doesNotMatch(html, /rg -n &quot;model&quot; packages\/frontend\/src/);
+  assert.match(html, /search_files/);
+  assert.match(html, /输入/);
+  assert.match(html, /输出/);
+  assert.match(html, /rg -n &quot;model&quot; packages\/frontend\/src/);
 });
 
 test('falls back to final content when assistant_message trace has no readable text', () => {
@@ -406,8 +412,8 @@ test('falls back to final content when assistant_message trace has no readable t
 
   assert.match(html, /完整最终正文仍需展示/);
   assert.doesNotMatch(html, /agent-transcript/);
-  assert.doesNotMatch(html, /ACP 执行过程/);
-  assert.doesNotMatch(html, /Read · package\.json/);
+  assert.match(html, /ACP 执行过程/);
+  assert.match(html, /Read · package\.json/);
 });
 
 function renderMessage(content: string): string {
