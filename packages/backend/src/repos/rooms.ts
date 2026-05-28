@@ -42,6 +42,11 @@ type RoomAgentRow = Omit<
 };
 
 type RoomAgentWithRuntimeProfileVersion = RoomAgent & { runtime_profile_version?: number | null };
+type ResolvedAcpConfig = {
+  acp_enabled: boolean;
+  acp_backend: AcpBackend | null;
+  acp_permission_mode: AcpPermissionMode;
+};
 
 export interface RoomAgentRemovalImpact {
   active_run_count: number;
@@ -190,6 +195,39 @@ function normalizeRoomAgentWithRuntimeProfileVersion(row: RoomAgentRow): RoomAge
   };
 }
 
+function resolveExistingAcpConfig(
+  existing: RoomAgent | undefined,
+  defaults: {
+    acp_backend: AcpBackend | null;
+    acp_permission_mode?: AcpPermissionMode | null;
+  },
+): ResolvedAcpConfig {
+  if (!existing) {
+    return {
+      acp_enabled: Boolean(defaults.acp_backend),
+      acp_backend: defaults.acp_backend,
+      acp_permission_mode: defaults.acp_permission_mode ?? 'bypass',
+    };
+  }
+  const hasCustomAcpConfig =
+    Boolean(existing.acp_session_id) ||
+    existing.acp_backend !== defaults.acp_backend ||
+    existing.acp_permission_mode !== (defaults.acp_permission_mode ?? 'bypass') ||
+    Boolean(existing.acp_enabled) !== Boolean(defaults.acp_backend);
+  if (!hasCustomAcpConfig) {
+    return {
+      acp_enabled: Boolean(defaults.acp_backend),
+      acp_backend: defaults.acp_backend,
+      acp_permission_mode: defaults.acp_permission_mode ?? 'bypass',
+    };
+  }
+  return {
+    acp_enabled: Boolean(existing.acp_enabled),
+    acp_backend: existing.acp_backend,
+    acp_permission_mode: existing.acp_permission_mode,
+  };
+}
+
 function getRoomAgentRuntimeProfileVersion(id: string): number {
   const row = db.prepare('SELECT runtime_profile_version FROM room_agents WHERE id = ?').get(id) as
     | { runtime_profile_version?: number | null }
@@ -312,6 +350,10 @@ export const roomAgentRepo = {
           workspace_policy: existingRoomAgent?.workspace_policy ?? agent.default_workspace_policy,
           memory_scope: existingRoomAgent?.memory_scope ?? agent.default_memory_scope,
         };
+      const acpConfig = resolveExistingAcpConfig(existingRoomAgent, {
+        acp_backend: agent.default_acp_backend,
+        acp_permission_mode: runtimeBoundary.acp_permission_mode,
+      });
       db.prepare(
         `UPDATE room_agents
          SET global_agent_id = ?, agent_name = ?, agent_role = ?, left_at = NULL,
@@ -323,10 +365,10 @@ export const roomAgentRepo = {
         agent.id,
         agent.name,
         agent.description,
-        agent.default_acp_backend ? 1 : 0,
-        agent.default_acp_backend,
-        runtimeBoundary.acp_permission_mode,
-        agent.default_acp_backend ? 'acp' : 'none',
+        acpConfig.acp_enabled ? 1 : 0,
+        acpConfig.acp_backend,
+        acpConfig.acp_permission_mode,
+        acpConfig.acp_backend ? 'acp' : 'none',
         runtimeBoundary.runtime_backend,
         JSON.stringify(runtimeBoundary.tool_policy),
         JSON.stringify(runtimeBoundary.workspace_policy),
@@ -400,12 +442,16 @@ export const roomAgentRepo = {
     if (!existing) return undefined;
     const runtimeBoundary = resolveBuiltInRoomRuntimeBoundary(existing, template);
     const withRole = this.setWorkflowRole(id, template.workflow_role) ?? existing;
-    const withAcp = this.setAcp(withRole.id, {
-      acp_enabled: template.acp_enabled,
+    const acpConfig = resolveExistingAcpConfig(withRole, {
       acp_backend: template.acp_backend,
+      acp_permission_mode: runtimeBoundary.acp_permission_mode,
+    });
+    const withAcp = this.setAcp(withRole.id, {
+      acp_enabled: acpConfig.acp_enabled,
+      acp_backend: acpConfig.acp_backend,
       acp_session_id: withRole.acp_session_id,
       acp_session_label: withRole.acp_session_label,
-      acp_permission_mode: runtimeBoundary.acp_permission_mode,
+      acp_permission_mode: acpConfig.acp_permission_mode,
       acp_writable_dirs: withRole.acp_writable_dirs,
     }) ?? withRole;
     return this.setCapabilitiesAndRuntime(withAcp.id, {

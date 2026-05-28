@@ -2,6 +2,7 @@ export type StreamingEventForDedupe = {
   roomId: string;
   messageId: string;
   runId?: string;
+  channel?: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
   chunk: string;
   done: boolean;
   seq?: number;
@@ -28,5 +29,5 @@ export function shouldApplyStreamingEvent(
 }
 
 function getStreamKey(event: StreamingEventForDedupe): string {
-  return `${event.roomId}:${event.runId ?? event.messageId}`;
+  return `${event.roomId}:${event.runId ?? event.messageId}:${event.channel ?? 'answer'}`;
 }

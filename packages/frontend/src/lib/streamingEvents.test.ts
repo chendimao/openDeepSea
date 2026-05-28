@@ -64,3 +64,28 @@ test('缺少 seq 的旧事件保持兼容并继续消费', () => {
   assert.equal(shouldApplyStreamingEvent(tracker, event), true);
   assert.equal(shouldApplyStreamingEvent(tracker, event), true);
 });
+
+test('同一 run 的不同流式通道独立去重', () => {
+  const tracker = createStreamingEventTracker();
+
+  assert.equal(shouldApplyStreamingEvent(tracker, {
+    roomId: 'room-1',
+    messageId: 'message-1',
+    runId: 'run-1',
+    channel: 'event',
+    chunk: '工具事件',
+    done: false,
+    seq: 50,
+    status: 'streaming',
+  }), true);
+  assert.equal(shouldApplyStreamingEvent(tracker, {
+    roomId: 'room-1',
+    messageId: 'message-1',
+    runId: 'run-1',
+    channel: 'answer',
+    chunk: '答案片段',
+    done: false,
+    seq: 10,
+    status: 'streaming',
+  }), true);
+});
