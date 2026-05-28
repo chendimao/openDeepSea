@@ -569,7 +569,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const superpowersBootstrap = applySuperpowersBootstrap({
     prompt: promptWithMemory,
     userPrompt: args.prompt,
-    owner: effectiveSettings?.superpowers_bootstrap_owner ?? 'project',
+    owner: effectiveSettings?.superpowers_bootstrap_owner ?? 'provider',
     workflowRunId: args.workflowRunId,
   });
   const prompt = superpowersBootstrap.prompt;

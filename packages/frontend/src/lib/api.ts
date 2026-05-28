@@ -22,6 +22,7 @@ import type {
   Message,
   MessageRoutingMode,
   PlannerDecision,
+  ProviderSuperpowersStatus,
   ProjectFile,
   ResourceDetail,
   ResourceListItem,
@@ -185,6 +186,8 @@ export const api = {
     request<{
       ok: boolean;
     }>('/health'),
+  getProviderSuperpowersStatus: () =>
+    request<ProviderSuperpowersStatus>('/provider-superpowers/status'),
   listAgentTemplates: () =>
     request<{ templates: BuiltInAgentTemplate[] }>('/agent-templates'),
   listCrewTemplates: () =>

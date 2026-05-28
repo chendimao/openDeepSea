@@ -1647,7 +1647,7 @@ test('respondAsAgent passes resolved workspace writable dirs and runtime prompt 
   }
 });
 
-test('respondAsAgent prepends using-superpowers bootstrap for ordinary ACP planner chats', async () => {
+test('respondAsAgent uses provider-owned Superpowers by default for ordinary ACP planner chats', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-superpowers-bootstrap-test-'));
   const project = projectRepo.create({ name: `superpowers-bootstrap-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
@@ -1675,22 +1675,20 @@ test('respondAsAgent prepends using-superpowers bootstrap for ordinary ACP plann
       prompt: 'hi',
     });
 
-    assert.match(capturedPrompt, /<EXTREMELY_IMPORTANT>/);
-    assert.match(capturedPrompt, /You have superpowers\./);
-    assert.match(capturedPrompt, /superpowers:using-superpowers/);
-    assert.match(capturedPrompt, /Invoke relevant or requested skills BEFORE any response or action/);
-    assert.ok(capturedPrompt.indexOf('You have superpowers.') < capturedPrompt.indexOf('当前用户请求：\nhi'));
-    assert.equal(capturedEnvOverrides?.OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER, 'project');
-    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER, 'project');
-    assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, '1');
+    assert.doesNotMatch(capturedPrompt, /<EXTREMELY_IMPORTANT>/);
+    assert.doesNotMatch(capturedPrompt, /You have superpowers\./);
+    assert.doesNotMatch(capturedPrompt, /superpowers:using-superpowers/);
+    assert.equal(capturedEnvOverrides?.OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER, 'provider');
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER, 'provider');
+    assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, undefined);
 
     const run = agentRunRepo.listByRoom(room.id, 1)[0];
     assert.equal(run?.workflow_run_id, null);
-    assert.equal(run?.superpowers_bootstrap_owner, 'project');
-    assert.equal(run?.superpowers_bootstrap_injected, 1);
-    assert.equal(run?.superpowers_bootstrap_skill, 'superpowers:using-superpowers');
-    assert.equal(run?.superpowers_bootstrap_skip_reason, null);
-    assert.match(run?.prompt ?? '', /superpowers:using-superpowers/);
+    assert.equal(run?.superpowers_bootstrap_owner, 'provider');
+    assert.equal(run?.superpowers_bootstrap_injected, 0);
+    assert.equal(run?.superpowers_bootstrap_skill, null);
+    assert.equal(run?.superpowers_bootstrap_skip_reason, 'provider_owner');
+    assert.doesNotMatch(run?.prompt ?? '', /superpowers:using-superpowers/);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -1701,6 +1699,7 @@ test('respondAsAgent injects project-builtin brainstorming for project-owned pla
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-superpowers-project-skills-'));
   const project = projectRepo.create({ name: `superpowers-project-skills-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  settingsRepo.updateRoom(room.id, { superpowers_bootstrap_owner: 'project' });
   const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
   assert.ok(planner);
 
@@ -1729,7 +1728,7 @@ test('respondAsAgent injects project-builtin brainstorming for project-owned pla
     assert.match(capturedPrompt, /Skill: superpowers:brainstorming/);
     assert.match(capturedPrompt, /Source: project-builtin/);
     assert.match(capturedPrompt, /packages\/backend\/src\/project-superpowers\/skills\/brainstorming\/SKILL\.md/);
-    assert.match(capturedPrompt, /Do not read or invoke same-name skills from ~\/\.agents\/skills/);
+    assert.match(capturedPrompt, /Do not read or invoke same-name skills from external personal\/plugin directories/);
     assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, '1');
 
     const run = agentRunRepo.listByRoom(room.id, 1)[0];

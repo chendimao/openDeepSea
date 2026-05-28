@@ -398,6 +398,34 @@ export interface Project {
 
 export type MessageRoutingMode = 'mentions_only' | 'fallback_reply';
 export type SuperpowersBootstrapOwner = 'project' | 'provider' | 'disabled';
+export type ProviderSuperpowersProvider = 'claude' | 'codex' | 'opencode';
+export type ProviderSuperpowersInstallStatus =
+  | 'not_started'
+  | 'installed'
+  | 'installed_by_startup'
+  | 'installing'
+  | 'failed'
+  | 'unsupported'
+  | 'cli_missing';
+
+export interface ProviderSuperpowersCheck {
+  provider: ProviderSuperpowersProvider;
+  label: string;
+  cli_installed: boolean;
+  version: string | null;
+  superpowers_installed: boolean;
+  install_attempted: boolean;
+  install_status: ProviderSuperpowersInstallStatus;
+  message: string | null;
+  checked_at: number;
+}
+
+export interface ProviderSuperpowersStatus {
+  started_at: number | null;
+  completed_at: number | null;
+  running: boolean;
+  providers: ProviderSuperpowersCheck[];
+}
 
 export interface ScopedSettings {
   scope: SettingsScope;

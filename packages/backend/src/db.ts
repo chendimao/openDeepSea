@@ -1058,6 +1058,12 @@ if (!settingsColumnNames.has('superpowers_bootstrap_owner')) {
   `);
 }
 
+db.exec(`
+UPDATE settings
+SET superpowers_bootstrap_owner = 'provider'
+WHERE superpowers_bootstrap_owner = 'project'
+`);
+
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN memory_max_context_chars INTEGER');
 }

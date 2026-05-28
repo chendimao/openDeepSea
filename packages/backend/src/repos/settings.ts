@@ -24,7 +24,7 @@ const DEFAULT_SETTINGS: EffectiveSettings = {
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
   default_workflow_definition_id: null,
-  superpowers_bootstrap_owner: 'project',
+  superpowers_bootstrap_owner: 'provider',
 };
 
 interface SystemSettingsRow extends ScopedSettings {

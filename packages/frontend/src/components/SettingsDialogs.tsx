@@ -93,7 +93,7 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   interaction_mode: 'ask_user',
   auto_distill_enabled: true,
   default_workflow_definition_id: null,
-  superpowers_bootstrap_owner: 'project',
+  superpowers_bootstrap_owner: 'provider',
   active_ai_config_id: null,
   ai_configs: [],
   langchain_planner_model: null,

@@ -28,6 +28,7 @@ import { globalChatRepo } from './repos/global-chat.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { projectRepo } from './repos/projects.js';
+import { getProviderSuperpowersStatus } from './provider-superpowers.js';
 import { resourceAssetRepo } from './repos/resource-assets.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
@@ -154,6 +155,10 @@ function requireLocalAccess(req: Request, res: Response): boolean {
 // ---------- Health ----------
 router.get('/health', (_req, res) => {
   res.json({ ok: true, time: Date.now() });
+});
+
+router.get('/provider-superpowers/status', (_req, res) => {
+  res.json(getProviderSuperpowersStatus());
 });
 
 router.get('/agent-templates', (_req, res) => {

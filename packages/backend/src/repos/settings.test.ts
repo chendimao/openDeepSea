@@ -60,12 +60,12 @@ test('settingsRepo resolves auto_distill_enabled with project and room overrides
   assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.auto_distill_enabled, true);
 });
 
-test('settingsRepo resolves superpowers bootstrap owner with project and room inheritance', () => {
+test('settingsRepo resolves superpowers bootstrap owner with provider default and inheritance', () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-settings-superpowers-owner-'));
   const project = projectRepo.create({ name: `superpowers-owner-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
 
-  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.superpowers_bootstrap_owner, 'project');
+  assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.superpowers_bootstrap_owner, 'provider');
 
   settingsRepo.updateProject(project.id, { superpowers_bootstrap_owner: 'provider' });
   assert.equal(settingsRepo.resolveForRoom(room.id)?.effective.superpowers_bootstrap_owner, 'provider');
