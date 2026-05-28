@@ -21,6 +21,7 @@ const PROMPT_TIMEOUT_EVENT_DRAIN_MS = 100;
 const PROTOCOL_SHUTDOWN_TIMEOUT_MS = 1_000;
 const ACP_STREAM_DISCONNECTED_PATTERN = /ResponseStreamDisconnected|stream disconnected before completion|Transport error|network error|error decoding response body/i;
 const ACP_HANDLED_RECONNECT_PATTERN = /Handled error during turn:\s*Reconnecting\.\.\.\s*(\d+)\/(\d+)/i;
+const CLAUDE_CODE_MISSING_POST_TOOL_HOOK_PATTERN = /^No onPostToolUseHook found for tool use ID: call_[A-Za-z0-9_-]+$/;
 
 export interface InvokeProtocolSessionArgs {
   backend: AcpBackend;
@@ -66,6 +67,8 @@ export async function invokeProtocolSession(
     const childExit = waitForChild(child);
     child.stderr.setEncoding('utf-8');
     child.stderr.on('data', (data: string) => {
+      const reportableData = filterProtocolStderr(args.backend, data);
+      if (!reportableData) return;
       if (isAcpHandledReconnect(data)) {
         args.onChunk({
           stream: 'stderr',
@@ -75,14 +78,14 @@ export async function invokeProtocolSession(
         });
         return;
       }
-      stderr += data;
+      stderr += reportableData;
       args.onChunk({
         stream: 'stderr',
-        text: data,
+        text: reportableData,
         channel: 'activity',
         rawType: 'protocol.stderr',
       });
-      if (isAcpStreamDisconnected(data)) {
+      if (isAcpStreamDisconnected(reportableData)) {
         rejectStreamDisconnect?.(new Error('ACP stream disconnected before completion'));
       }
     });
@@ -248,6 +251,17 @@ export async function invokeProtocolSession(
       retrySafe,
     };
   }
+}
+
+export function filterProtocolStderr(backend: AcpBackend, data: string): string {
+  if (backend !== 'claudecode') return data;
+  const newline = data.includes('\r\n') ? '\r\n' : '\n';
+  const endsWithNewline = data.endsWith('\n');
+  const lines = data.split(/\r?\n/);
+  if (endsWithNewline) lines.pop();
+  const kept = lines.filter((line) => !CLAUDE_CODE_MISSING_POST_TOOL_HOOK_PATTERN.test(line.trim()));
+  if (kept.length === 0) return '';
+  return `${kept.join(newline)}${endsWithNewline ? newline : ''}`;
 }
 
 function createProtocolClient(args: {

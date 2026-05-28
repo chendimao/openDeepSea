@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const PROJECT_SUPERPOWERS_SKILLS_RELATIVE_PATH = join('project-superpowers', 'skills');
 
 export const PROJECT_SUPERPOWERS_SKILL_SOURCE_WARNING =
-  'Do not read or invoke same-name skills from ~/.agents/skills, ~/.codex/skills, or ~/.codex/superpowers.';
+  'Use only the project-builtin skill blocks already injected into this prompt. Do not call provider-native Skill/use_skill/activate_skill tools or read same-name skills from ~/.agents/skills, ~/.codex/skills, ~/.claude/skills, or ~/.codex/superpowers.';
 
 export interface ProjectSuperpowersSkill {
   name: string;

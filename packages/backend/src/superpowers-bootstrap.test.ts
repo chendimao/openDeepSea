@@ -59,8 +59,10 @@ test('applySuperpowersBootstrap injects project-builtin brainstorming for matchi
   assert.match(result.prompt, /packages\/backend\/src\/project-superpowers\/skills\/brainstorming\/SKILL\.md/);
   assert.match(result.prompt, /# Brainstorming Ideas Into Designs/);
   assert.match(result.prompt, /# Writing Plans/);
-  assert.match(result.prompt, /Do not read or invoke same-name skills from ~\/\.agents\/skills/);
+  assert.match(result.prompt, /Do not call provider-native Skill\/use_skill\/activate_skill tools/);
+  assert.match(result.prompt, /Do not read or invoke same-name skills from external personal\/plugin directories/);
   assert.match(result.prompt, /ACP filesystem\/search\/shell tools remain available/);
+  assert.doesNotMatch(result.prompt, /Use the `Skill` tool/);
 });
 
 test('applySuperpowersBootstrap does not inject brainstorming based on agent identity text', () => {

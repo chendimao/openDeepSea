@@ -4,11 +4,23 @@ import { mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { invokeProtocolSession } from './protocol-client.js';
+import { filterProtocolStderr, invokeProtocolSession } from './protocol-client.js';
 import { normalizeProtocolEvent } from './protocol-events.js';
 
 const currentDir = fileURLToPath(new URL('.', import.meta.url));
 const tsxLoaderPath = join(currentDir, '../../../../node_modules/tsx/dist/loader.mjs');
+
+test('filterProtocolStderr hides Claude Code missing post-tool hook noise only', () => {
+  const input = [
+    'No onPostToolUseHook found for tool use ID: call_00_pui1c2eNAFQXRFJNRbmQ9290',
+    'real provider error',
+    'No onPostToolUseHook found for tool use ID: call_00_WVTyBHH09cviquOotrKc4783',
+    '',
+  ].join('\n');
+
+  assert.equal(filterProtocolStderr('claudecode', input), 'real provider error\n');
+  assert.equal(filterProtocolStderr('codex', input), input);
+});
 
 test('invokeProtocolSession streams ACP session updates as raw protocol events and answer text', async () => {
   const chunks: Array<{
