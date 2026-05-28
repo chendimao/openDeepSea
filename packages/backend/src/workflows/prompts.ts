@@ -1,4 +1,9 @@
 import type { Room, RoomAgent, Task, TaskExecutionIntent, WorkflowStage } from '../types.js';
+import {
+  formatProjectSuperpowersSkill,
+  loadProjectSuperpowersSkills,
+  PROJECT_SUPERPOWERS_SKILL_SOURCE_WARNING,
+} from '../project-superpowers.js';
 import { getSuperpowersPhaseSkills, type SuperpowersPhase } from './superpowers-skills.js';
 
 export type WorkflowPromptKind = 'development' | 'analysis_document';
@@ -114,9 +119,19 @@ function buildSuperpowersPhaseHeader(phase: SuperpowersPhase): string {
 }
 
 function formatSuperpowersSkillInstruction(phase: SuperpowersPhase): string {
+  const skillNames = getSuperpowersPhaseSkills(phase);
+  const skills = loadProjectSuperpowersSkills(skillNames);
   return [
     '本阶段必须激活并遵循以下 Superpowers skills：',
-    ...getSuperpowersPhaseSkills(phase).map((skillName) => `- ${skillName}`),
+    ...skillNames.map((skillName) => `- ${skillName}`),
+    '',
+    '<OPENDEEPSEA_PROJECT_SUPERPOWERS>',
+    'OpenDeepSea project-owned Superpowers skills are loaded below.',
+    'Use these project-builtin skill instructions as the source of truth for this workflow phase.',
+    PROJECT_SUPERPOWERS_SKILL_SOURCE_WARNING,
+    '',
+    ...skills.map(formatProjectSuperpowersSkill),
+    '</OPENDEEPSEA_PROJECT_SUPERPOWERS>',
   ].join('\n');
 }
 

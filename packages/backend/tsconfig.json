@@ -16,5 +16,5 @@
     "noUncheckedIndexedAccess": true
   },
   "include": ["src/**/*"],
-  "exclude": ["src/superpowers/**/*"]
+  "exclude": ["src/superpowers/**/*", "src/project-superpowers/**/*"]
 }

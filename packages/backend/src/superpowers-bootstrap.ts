@@ -1,17 +1,30 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { PROJECT_SUPERPOWERS_SKILL_CONTENT } from './project-superpowers-skills.js';
+import {
+  formatProjectSuperpowersSkill,
+  loadProjectSuperpowersSkill,
+  loadProjectSuperpowersSkills,
+  PROJECT_SUPERPOWERS_SKILL_SOURCE_WARNING,
+} from './project-superpowers.js';
 import type { SuperpowersBootstrapOwner } from './types.js';
 
-const SUPERPOWERS_SKILLS_RELATIVE_PATH = join('superpowers', 'skills');
 const USING_SUPERPOWERS_SKILL = 'using-superpowers';
-const PROJECT_SKILL_SOURCE_WARNING = 'Do not read or invoke same-name skills from ~/.agents/skills, ~/.codex/skills, or ~/.codex/superpowers.';
+const DEVELOPMENT_WORKFLOW_SKILLS = [
+  'brainstorming',
+  'writing-plans',
+  'subagent-driven-development',
+  'executing-plans',
+  'test-driven-development',
+  'systematic-debugging',
+  'requesting-code-review',
+  'receiving-code-review',
+  'verification-before-completion',
+  'finishing-a-development-branch',
+] as const;
 
 let cachedBootstrap: string | null | undefined;
 
 export interface SuperpowersBootstrapDecisionInput {
   prompt: string;
+  userPrompt?: string;
   owner: SuperpowersBootstrapOwner;
   workflowRunId?: string | null;
 }
@@ -22,42 +35,6 @@ export interface SuperpowersBootstrapDecision {
   source: SuperpowersBootstrapOwner;
   skill: 'superpowers:using-superpowers' | null;
   skipReason: 'workflow_run' | 'provider_owner' | 'disabled' | 'already_present' | 'skill_missing' | null;
-}
-
-interface ProjectSuperpowersSkill {
-  name: string;
-  path: string;
-  content: string;
-}
-
-function resolveProjectSuperpowersSkillPath(skillName: string): string | null {
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    join(moduleDir, SUPERPOWERS_SKILLS_RELATIVE_PATH, skillName, 'SKILL.md'),
-    join(moduleDir, '..', 'src', SUPERPOWERS_SKILLS_RELATIVE_PATH, skillName, 'SKILL.md'),
-    join(process.cwd(), 'packages', 'backend', 'src', SUPERPOWERS_SKILLS_RELATIVE_PATH, skillName, 'SKILL.md'),
-    join(process.cwd(), 'src', SUPERPOWERS_SKILLS_RELATIVE_PATH, skillName, 'SKILL.md'),
-  ];
-
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
-}
-
-function loadProjectSuperpowersSkill(skillName: string): ProjectSuperpowersSkill | null {
-  const path = resolveProjectSuperpowersSkillPath(skillName);
-  if (!path) {
-    const content = PROJECT_SUPERPOWERS_SKILL_CONTENT[skillName];
-    if (!content) return null;
-    return {
-      name: skillName,
-      path: join(process.cwd(), 'packages', 'backend', 'src', SUPERPOWERS_SKILLS_RELATIVE_PATH, skillName, 'SKILL.md'),
-      content,
-    };
-  }
-  return {
-    name: skillName,
-    path,
-    content: readFileSync(path, 'utf-8').trim(),
-  };
 }
 
 export function getSuperpowersSessionBootstrap(): string | null {
@@ -92,40 +69,27 @@ export function prependSuperpowersSessionBootstrap(prompt: string): string {
 
 function selectProjectSuperpowersSkillNames(prompt: string): string[] {
   const selected = [USING_SUPERPOWERS_SKILL];
-  if (shouldInjectBrainstorming(prompt)) selected.push('brainstorming');
+  if (shouldInjectDevelopmentWorkflowSkills(prompt)) selected.push(...DEVELOPMENT_WORKFLOW_SKILLS);
   return selected;
 }
 
-function shouldInjectBrainstorming(prompt: string): boolean {
+function shouldInjectDevelopmentWorkflowSkills(prompt: string): boolean {
   return /brainstorming|头脑风暴|新增|添加|设置项|功能|需求|workflow/i.test(prompt);
 }
 
 function getProjectSuperpowersSkillBlock(prompt: string): string | null {
-  const skills = selectProjectSuperpowersSkillNames(prompt)
-    .map(loadProjectSuperpowersSkill)
-    .filter((skill): skill is ProjectSuperpowersSkill => skill !== null);
+  const skills = loadProjectSuperpowersSkills(selectProjectSuperpowersSkillNames(prompt));
   if (skills.length === 0) return null;
 
   return [
     '<OPENDEEPSEA_PROJECT_SUPERPOWERS>',
     'OpenDeepSea project-owned Superpowers skills are loaded below.',
     'Use these project-builtin skill instructions as the source of truth.',
-    PROJECT_SKILL_SOURCE_WARNING,
+    PROJECT_SUPERPOWERS_SKILL_SOURCE_WARNING,
     'ACP filesystem/search/shell tools remain available according to the agent runtime permission policy.',
     '',
     ...skills.map(formatProjectSuperpowersSkill),
     '</OPENDEEPSEA_PROJECT_SUPERPOWERS>',
-  ].join('\n');
-}
-
-function formatProjectSuperpowersSkill(skill: ProjectSuperpowersSkill): string {
-  return [
-    `Skill: superpowers:${skill.name}`,
-    'Source: project-builtin',
-    `Path: ${skill.path}`,
-    'Instructions:',
-    skill.content,
-    '',
   ].join('\n');
 }
 
@@ -171,7 +135,7 @@ export function applySuperpowersBootstrap(input: SuperpowersBootstrapDecisionInp
   }
 
   const bootstrap = getSuperpowersSessionBootstrap();
-  const projectSkills = getProjectSuperpowersSkillBlock(input.prompt);
+  const projectSkills = getProjectSuperpowersSkillBlock(input.userPrompt ?? input.prompt);
   if (!bootstrap || !projectSkills) {
     return {
       prompt: input.prompt,

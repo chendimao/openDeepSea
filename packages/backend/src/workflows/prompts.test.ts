@@ -20,6 +20,10 @@ test('buildSuperpowersPhasePrompt includes required skills for each phase', () =
     for (const skill of expectedSkills) {
       assert.match(prompt, new RegExp(escapeRegExp(skill)));
     }
+    assert.match(prompt, /OpenDeepSea project-owned Superpowers skills are loaded below/);
+    assert.match(prompt, /Source: project-builtin/);
+    assert.match(prompt, /packages\/backend\/src\/project-superpowers\/skills\//);
+    assert.match(prompt, /Do not read or invoke same-name skills from ~\/\.agents\/skills/);
     assert.match(prompt, /Superpowers workflow 顺序/);
     assert.match(prompt, /"superpowers"/);
   }

@@ -1543,7 +1543,7 @@ test('respondAsAgent injects project-builtin brainstorming for project-owned pla
     assert.match(capturedPrompt, /OpenDeepSea project-owned Superpowers skills are loaded below/);
     assert.match(capturedPrompt, /Skill: superpowers:brainstorming/);
     assert.match(capturedPrompt, /Source: project-builtin/);
-    assert.match(capturedPrompt, /packages\/backend\/src\/superpowers\/skills\/brainstorming\/SKILL\.md/);
+    assert.match(capturedPrompt, /packages\/backend\/src\/project-superpowers\/skills\/brainstorming\/SKILL\.md/);
     assert.match(capturedPrompt, /Do not read or invoke same-name skills from ~\/\.agents\/skills/);
     assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, '1');
 

@@ -42,7 +42,8 @@ test('applySuperpowersBootstrap injects when owner is project', () => {
 
 test('applySuperpowersBootstrap injects project-builtin brainstorming for matching project-owned prompts', () => {
   const result = applySuperpowersBootstrap({
-    prompt: '当前用户请求：\n我想新增一个很小的设置项，请先按 using-superpowers 判断是否需要进入 workflow，并做简短 brainstorming 澄清，不要修改代码。',
+    prompt: '你的智能体身份：\n- 必须遵守的规则：如果用户提出的是实现、修复、开发、细化功能、完善功能或优化功能，应产出可进入 workflow 的执行计划。\n\n当前用户请求：\n我想新增一个很小的设置项，请先按 using-superpowers 判断是否需要进入 workflow，并做简短 brainstorming 澄清，不要修改代码。',
+    userPrompt: '我想新增一个很小的设置项，请先按 using-superpowers 判断是否需要进入 workflow，并做简短 brainstorming 澄清，不要修改代码。',
     owner: 'project',
     workflowRunId: null,
   });
@@ -50,11 +51,28 @@ test('applySuperpowersBootstrap injects project-builtin brainstorming for matchi
   assert.equal(result.injected, true);
   assert.match(result.prompt, /OpenDeepSea project-owned Superpowers skills are loaded below/);
   assert.match(result.prompt, /Skill: superpowers:brainstorming/);
+  assert.match(result.prompt, /Skill: superpowers:writing-plans/);
+  assert.match(result.prompt, /Skill: superpowers:test-driven-development/);
+  assert.match(result.prompt, /Skill: superpowers:verification-before-completion/);
+  assert.match(result.prompt, /Skill: superpowers:finishing-a-development-branch/);
   assert.match(result.prompt, /Source: project-builtin/);
-  assert.match(result.prompt, /packages\/backend\/src\/superpowers\/skills\/brainstorming\/SKILL\.md/);
+  assert.match(result.prompt, /packages\/backend\/src\/project-superpowers\/skills\/brainstorming\/SKILL\.md/);
   assert.match(result.prompt, /# Brainstorming Ideas Into Designs/);
+  assert.match(result.prompt, /# Writing Plans/);
   assert.match(result.prompt, /Do not read or invoke same-name skills from ~\/\.agents\/skills/);
   assert.match(result.prompt, /ACP filesystem\/search\/shell tools remain available/);
+});
+
+test('applySuperpowersBootstrap does not inject brainstorming based on agent identity text', () => {
+  const result = applySuperpowersBootstrap({
+    prompt: '你的智能体身份：\n- 必须遵守的规则：如果用户提出的是实现、修复、开发、细化功能、完善功能或优化功能，应产出可进入 workflow 的执行计划。\n\n当前用户请求：\nhi',
+    userPrompt: 'hi',
+    owner: 'project',
+    workflowRunId: null,
+  });
+
+  assert.equal(result.injected, true);
+  assert.doesNotMatch(result.prompt, /Skill: superpowers:brainstorming/);
 });
 
 test('applySuperpowersBootstrap skips when owner is provider', () => {

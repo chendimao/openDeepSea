@@ -558,6 +558,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const effectiveSettings = room ? settingsRepo.resolveForRoom(roomId)?.effective : null;
   const superpowersBootstrap = applySuperpowersBootstrap({
     prompt: promptWithMemory,
+    userPrompt: args.prompt,
     owner: effectiveSettings?.superpowers_bootstrap_owner ?? 'project',
     workflowRunId: args.workflowRunId,
   });
