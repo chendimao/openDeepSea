@@ -22,7 +22,7 @@ export default defineConfig({
           proxy.on('proxyReq', (proxyReq, req) => {
             if (!localAccessToken) return;
             const path = req.url ?? '';
-            if (/^\/api\/projects\/[^/]+\/workspace\/.+/.test(path)) {
+            if (/^\/api\/projects\/[^/]+\/workspace\/.+/.test(path) || path.startsWith('/api/platform-skills')) {
               proxyReq.setHeader('X-OpenDeepSea-Local-Token', localAccessToken);
             }
           });

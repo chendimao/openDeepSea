@@ -260,6 +260,8 @@ export function SkillsPage(): JSX.Element {
               </div>
               {skillsQuery.isLoading ? (
                 <LoadingLine label={t('common.loading')} />
+              ) : skillsQuery.isError ? (
+                <ErrorBox>{(skillsQuery.error as Error).message}</ErrorBox>
               ) : skills.length === 0 ? (
                 <EmptyBox>{t('platformSkills.empty')}</EmptyBox>
               ) : (
@@ -305,7 +307,9 @@ export function SkillsPage(): JSX.Element {
           </div>
           <section className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
             <h4 className="text-[13px] font-semibold text-[var(--color-fg)]">{t('platformSkills.detailsTitle')}</h4>
-            {!selectedSkill ? (
+            {skillsQuery.isError ? (
+              <ErrorBox>{(skillsQuery.error as Error).message}</ErrorBox>
+            ) : !selectedSkill ? (
               <EmptyBox>{t('platformSkills.noSelection')}</EmptyBox>
             ) : (
               <div className="mt-3 space-y-3">
@@ -459,6 +463,14 @@ function LoadingLine({ label }: { label: string }): JSX.Element {
 function EmptyBox({ children }: { children: React.ReactNode }): JSX.Element {
   return (
     <div className="rounded-md border border-dashed border-[var(--color-border)] p-4 text-[12px] text-[var(--color-fg-muted)]">
+      {children}
+    </div>
+  );
+}
+
+function ErrorBox({ children }: { children: React.ReactNode }): JSX.Element {
+  return (
+    <div className="rounded-md border border-[var(--color-danger)]/35 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] p-4 text-[12px] text-[var(--color-danger)]">
       {children}
     </div>
   );
