@@ -40,8 +40,9 @@ import type {
 } from './types.js';
 
 const AGENT_RUN_HEARTBEAT_MS = 30_000;
-const ANSWER_STREAM_FLUSH_MS = 80;
-const ANSWER_STREAM_FLUSH_CHARS = 32;
+const ANSWER_STREAM_FLUSH_MS = 420;
+const ANSWER_STREAM_FLUSH_CHARS = 120;
+const ANSWER_STREAM_SENTENCE_END_PATTERN = /[。！？!?…]\s*$|\n$/;
 
 interface PlannerDispatchAddedAgent {
   agent_id: string;
@@ -665,7 +666,10 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const onStdout = (chunk: string): void => {
     if (!chunk) return;
     answerBuffer += chunk;
-    if (answerBuffer.length >= ANSWER_STREAM_FLUSH_CHARS || chunk.includes('\n')) {
+    if (
+      answerBuffer.length >= ANSWER_STREAM_FLUSH_CHARS ||
+      ANSWER_STREAM_SENTENCE_END_PATTERN.test(answerBuffer)
+    ) {
       flushAnswerBuffer();
       return;
     }
