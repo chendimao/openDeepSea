@@ -1477,25 +1477,51 @@ async function reportPlannerDispatchResults(args: {
     sourceMessageId: args.sourceMessageId,
     onFinished: async ({ run, message }) => {
       if (run.status !== 'completed') return;
-      if (args.autoContinueDepth >= MAX_PLANNER_AUTO_CONTINUE_DEPTH) {
-        console.warn(`[planner-dispatch] auto-continue depth limit reached for source message ${args.sourceMessageId}`);
-        return;
-      }
       const latestMessage = messageRepo.get(message.id) ?? message;
       const metadata = parsePlannerMessageMetadata(latestMessage.metadata);
       const decision = metadata.planner_decision;
       if (!shouldAutoContinuePlannerDecision(decision)) return;
+      if (args.autoContinueDepth >= MAX_PLANNER_AUTO_CONTINUE_DEPTH) {
+        const blockedDecision = normalizeBlockedAutoContinuePlannerDecision(
+          decision,
+          `自动续派发已达到上限 ${MAX_PLANNER_AUTO_CONTINUE_DEPTH}，已暂停后续派发。`,
+        );
+        messageRepo.mergeMetadata(latestMessage.id, {
+          planner_decision: blockedDecision,
+          source_message_id: args.sourceMessageId,
+        });
+        console.warn(`[planner-dispatch] auto-continue depth limit reached for source message ${args.sourceMessageId}`);
+        return;
+      }
       const autoDecision = normalizeAutoContinuePlannerDecision(decision);
       messageRepo.mergeMetadata(latestMessage.id, {
         planner_decision: autoDecision,
         source_message_id: args.sourceMessageId,
       });
-      await dispatchPlannerDecision({
-        roomId: args.roomId,
-        sourceMessageId: args.sourceMessageId,
-        decision: autoDecision,
-        autoContinueDepth: args.autoContinueDepth + 1,
-      });
+      try {
+        await dispatchPlannerDecision({
+          roomId: args.roomId,
+          sourceMessageId: args.sourceMessageId,
+          decision: autoDecision,
+          autoContinueDepth: args.autoContinueDepth + 1,
+        });
+      } catch (err) {
+        const error = (err as Error).message;
+        const blockedDecision = normalizeBlockedAutoContinuePlannerDecision(autoDecision, `自动续派发失败：${error}`);
+        messageRepo.mergeMetadata(latestMessage.id, {
+          planner_decision: blockedDecision,
+          source_message_id: args.sourceMessageId,
+        });
+        const systemMessage = messageRepo.create({
+          room_id: args.roomId,
+          sender_type: 'system',
+          sender_id: 'system',
+          sender_name: 'System',
+          content: `Planner auto-continue failed: ${error}`,
+          message_type: 'system',
+        });
+        wsHub.broadcast(args.roomId, { type: 'message:new', roomId: args.roomId, message: systemMessage });
+      }
     },
   });
 }
@@ -1514,6 +1540,17 @@ function normalizeAutoContinuePlannerDecision(decision: PlannerDecision): Planne
   return {
     ...decision,
     mode: 'auto_continue',
+    awaiting_user_confirmation: false,
+  };
+}
+
+function normalizeBlockedAutoContinuePlannerDecision(decision: PlannerDecision, summary: string): PlannerDecision {
+  return {
+    ...decision,
+    mode: 'auto_continue',
+    status: 'blocked',
+    summary,
+    next_steps: [],
     awaiting_user_confirmation: false,
   };
 }

@@ -2254,6 +2254,183 @@ test('planner follow-up auto continues suggested next steps after dispatched age
   }
 });
 
+test('planner follow-up blocks auto continue when suggested agent cannot be dispatched', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-followup-auto-failure-'));
+  const project = projectRepo.create({ name: `planner-followup-auto-failure-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  assert.ok(frontend);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '先实现页面，然后继续给不存在的智能体',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      if (args.prompt.includes('本轮派发的智能体已经完成')) {
+        args.onChunk({
+          stream: 'stdout',
+          text: [
+            '前端已完成，继续派发给不存在的智能体。',
+            '',
+            '```json',
+            JSON.stringify({
+              planner_decision: {
+                mode: 'pause_after_suggestion',
+                status: 'suggested',
+                summary: '继续派发不存在的智能体',
+                next_steps: [
+                  { agent_id: 'ghost-worker-z', goal: '处理未定义步骤' },
+                ],
+                awaiting_user_confirmation: true,
+              },
+            }),
+            '```',
+          ].join('\n'),
+        });
+      } else {
+        args.onChunk({ stream: 'stdout', text: '前端执行者完成：页面已实现。' });
+      }
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '派发前端执行者',
+          next_steps: [
+            { agent_id: 'frontend-executor', goal: '实现页面' },
+          ],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+    const messages = messageRepo.listByRoom(room.id, 50);
+    const plannerReply = messages
+      .find((message) => message.sender_id === 'planner' && message.content.includes('继续派发不存在的智能体'));
+    const systemMessage = messages
+      .find((message) => message.sender_type === 'system' && message.content.includes('Planner auto-continue failed'));
+
+    assert.equal(response.status, 200);
+    assert.ok(plannerReply);
+    const metadata = JSON.parse(plannerReply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.planner_decision?.mode, 'auto_continue');
+    assert.equal(metadata.planner_decision?.status, 'blocked');
+    assert.equal(metadata.planner_decision?.awaiting_user_confirmation, false);
+    assert.equal(metadata.planner_decision?.next_steps.length, 0);
+    assert.match(metadata.planner_decision?.summary ?? '', /ghost-worker-z/);
+    assert.ok(systemMessage);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('planner follow-up blocks instead of showing continue button when auto continue depth limit is reached', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-followup-auto-depth-'));
+  const project = projectRepo.create({ name: `planner-followup-auto-depth-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const qa = agentRepo.getByAgentId('qa-tester');
+  assert.ok(frontend);
+  assert.ok(qa);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: qa.id });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '持续验证直到达到自动续派发上限',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  const plannerFollowupPrompts: string[] = [];
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      if (args.prompt.includes('本轮派发的智能体已经完成')) {
+        plannerFollowupPrompts.push(args.prompt);
+        args.onChunk({
+          stream: 'stdout',
+          text: [
+            `第 ${plannerFollowupPrompts.length} 轮继续派发测试。`,
+            '',
+            '```json',
+            JSON.stringify({
+              planner_decision: {
+                mode: 'pause_after_suggestion',
+                status: 'suggested',
+                summary: `第 ${plannerFollowupPrompts.length} 轮继续测试`,
+                next_steps: [
+                  { agent_id: 'qa-tester', goal: `继续验证第 ${plannerFollowupPrompts.length} 轮` },
+                ],
+                awaiting_user_confirmation: true,
+              },
+            }),
+            '```',
+          ].join('\n'),
+        });
+      } else if (args.prompt.includes('名称：测试工程师')) {
+        args.onChunk({ stream: 'stdout', text: '测试工程师完成一轮验证。' });
+      } else {
+        args.onChunk({ stream: 'stdout', text: '前端执行者完成初始实现。' });
+      }
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '派发前端执行者',
+          next_steps: [
+            { agent_id: 'frontend-executor', goal: '实现初始页面' },
+          ],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+    const runs = agentRunRepo.listByRoom(room.id, 100);
+    const plannerReplies = messageRepo.listByRoom(room.id, 100)
+      .filter((message) => message.sender_id === 'planner');
+    const latestPlannerReply = plannerReplies[plannerReplies.length - 1];
+
+    assert.equal(response.status, 200);
+    assert.equal(plannerFollowupPrompts.length, 6);
+    assert.equal(runs.filter((run) => run.agent_id === 'qa-tester').length, 5);
+    assert.ok(latestPlannerReply);
+    const metadata = JSON.parse(latestPlannerReply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.planner_decision?.mode, 'auto_continue');
+    assert.equal(metadata.planner_decision?.status, 'blocked');
+    assert.equal(metadata.planner_decision?.awaiting_user_confirmation, false);
+    assert.equal(metadata.planner_decision?.next_steps.length, 0);
+    assert.match(metadata.planner_decision?.summary ?? '', /自动续派发已达到上限/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner dispatch reports completed agent results back to planner even without deferred steps', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-followup-all-agents-'));
   const project = projectRepo.create({ name: `planner-followup-all-${Date.now()}`, path: projectPath });

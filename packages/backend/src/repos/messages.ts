@@ -203,13 +203,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function plannerDecisionMatches(a: PlannerDecision | null, b: PlannerDecision): boolean {
   if (!a) return false;
-  if (JSON.stringify(a) === JSON.stringify(b)) return true;
+  if (plannerDecisionFieldsEqual(a, b)) return true;
   if (a.mode !== 'auto_continue' || b.status !== 'suggested') return false;
-  return JSON.stringify(a) === JSON.stringify({
+  if (a.status === 'blocked') return true;
+  return plannerDecisionFieldsEqual(a, {
     ...b,
     mode: 'auto_continue',
     awaiting_user_confirmation: false,
   });
+}
+
+function plannerDecisionFieldsEqual(a: PlannerDecision, b: PlannerDecision): boolean {
+  return a.mode === b.mode &&
+    a.status === b.status &&
+    a.summary === b.summary &&
+    a.awaiting_user_confirmation === b.awaiting_user_confirmation &&
+    plannerNextStepsEqual(a.next_steps, b.next_steps);
+}
+
+function plannerNextStepsEqual(a: PlannerDecision['next_steps'], b: PlannerDecision['next_steps']): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((step, index) =>
+    step.agent_id === b[index]?.agent_id &&
+    step.goal === b[index]?.goal,
+  );
 }
 
 function parseMetadataObject(rawMetadata: string | null): Record<string, unknown> {
