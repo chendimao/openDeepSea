@@ -101,7 +101,8 @@ export function MessageContent({
   const markdown = streaming ? isStableStreamingMarkdownContent(content) : isMarkdownContent(content);
   const activeMode = mode ?? 'preview';
   const lastTextPartIndex = findLastTextPartIndex(parts);
-  const transcript = activeMode !== 'source' ? buildAgentTranscript(trace, content) : null;
+  const hasFinalContent = content.trim().length > 0 && content.trim() !== '…';
+  const transcript = activeMode !== 'source' && !hasFinalContent ? buildAgentTranscript(trace, content) : null;
 
   const copyCode = async (code: string, index: number) => {
     try {
@@ -162,7 +163,7 @@ export function MessageContent({
               </>
             )}
           </div>
-          <AgentTimeline trace={trace} />
+          {!hasFinalContent && <AgentTimeline trace={trace} />}
         </>
       )}
     </div>
