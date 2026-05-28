@@ -156,6 +156,7 @@ export const codexAdapter: SessionAdapter = {
           imagePaths,
           acpPermissionMode,
           acpWritableDirs,
+          envOverrides,
           onChunk,
           onSession,
           signal,

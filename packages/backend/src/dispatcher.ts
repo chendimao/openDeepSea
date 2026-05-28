@@ -566,7 +566,11 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER: superpowersBootstrap.source,
     OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER: superpowersBootstrap.source,
   };
-  if (superpowersBootstrap.source === 'project' || superpowersBootstrap.source === 'disabled') {
+  if (
+    superpowersBootstrap.source === 'project' ||
+    superpowersBootstrap.source === 'disabled' ||
+    superpowersBootstrap.skipReason === 'workflow_run'
+  ) {
     superpowersBootstrapEnvOverrides.SUPERPOWERS_BOOTSTRAP_DISABLED = '1';
   }
   const backend = agent.acp_enabled && agent.acp_backend ? agent.acp_backend : null;

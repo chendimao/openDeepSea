@@ -211,6 +211,58 @@ test('codexAdapter retries retry-safe ACP network disconnect before output', asy
   }
 });
 
+test('codexAdapter preserves env overrides across ACP retries', async () => {
+  const previousMode = process.env.OPENCLAW_ACP_MODE;
+  const previousCommand = process.env.OPENCLAW_ACP_CODEX_COMMAND;
+  const previousFail = process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+  const previousRequireDisabled = process.env.OPENCLAW_FAKE_ACP_REQUIRE_SUPERPOWERS_DISABLED;
+  const previousRetryDelays = process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS;
+  const previousBootstrapDisabled = process.env.SUPERPOWERS_BOOTSTRAP_DISABLED;
+  process.env.OPENCLAW_ACP_MODE = 'protocol';
+  process.env.OPENCLAW_ACP_CODEX_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
+  process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT = '1';
+  process.env.OPENCLAW_FAKE_ACP_REQUIRE_SUPERPOWERS_DISABLED = '1';
+  process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS = '0';
+  delete process.env.SUPERPOWERS_BOOTSTRAP_DISABLED;
+  let first = true;
+
+  try {
+    const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+    const result = await codexAdapter.invoke({
+      projectPath: process.cwd(),
+      sessionId: null,
+      prompt: 'hello',
+      envOverrides: {
+        SUPERPOWERS_BOOTSTRAP_DISABLED: '1',
+      },
+      onChunk: (chunk) => chunks.push(chunk),
+      onSession: () => {
+        if (first) {
+          first = false;
+          delete process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+        }
+      },
+    });
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
+    assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.retry'), true);
+  } finally {
+    if (previousMode === undefined) delete process.env.OPENCLAW_ACP_MODE;
+    else process.env.OPENCLAW_ACP_MODE = previousMode;
+    if (previousCommand === undefined) delete process.env.OPENCLAW_ACP_CODEX_COMMAND;
+    else process.env.OPENCLAW_ACP_CODEX_COMMAND = previousCommand;
+    if (previousFail === undefined) delete process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT;
+    else process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT = previousFail;
+    if (previousRequireDisabled === undefined) delete process.env.OPENCLAW_FAKE_ACP_REQUIRE_SUPERPOWERS_DISABLED;
+    else process.env.OPENCLAW_FAKE_ACP_REQUIRE_SUPERPOWERS_DISABLED = previousRequireDisabled;
+    if (previousRetryDelays === undefined) delete process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS;
+    else process.env.OPENCLAW_ACP_CODEX_RETRY_DELAYS_MS = previousRetryDelays;
+    if (previousBootstrapDisabled === undefined) delete process.env.SUPERPOWERS_BOOTSTRAP_DISABLED;
+    else process.env.SUPERPOWERS_BOOTSTRAP_DISABLED = previousBootstrapDisabled;
+  }
+});
+
 test('codexAdapter retries promptly when ACP reports stream disconnect on stderr', async () => {
   const previousMode = process.env.OPENCLAW_ACP_MODE;
   const previousCommand = process.env.OPENCLAW_ACP_CODEX_COMMAND;

@@ -1555,6 +1555,50 @@ test('respondAsAgent skips project bootstrap when settings owner is provider', a
   }
 });
 
+test('respondAsAgent disables provider superpowers bootstrap during workflow runs', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-superpowers-workflow-provider-'));
+  const project = projectRepo.create({ name: `superpowers-workflow-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  settingsRepo.updateRoom(room.id, { superpowers_bootstrap_owner: 'provider' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+
+  const originalAdapter = adapters.codex;
+  let capturedPrompt = '';
+  let capturedEnvOverrides: Record<string, string> | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedPrompt = args.prompt;
+      capturedEnvOverrides = args.envOverrides;
+      args.onChunk({ stream: 'stdout', text: 'done' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: planner,
+      projectPath,
+      roomId: room.id,
+      workflowRunId: 'workflow-1',
+      prompt: '执行 workflow 步骤',
+    });
+
+    assert.doesNotMatch(capturedPrompt, /You have superpowers\./);
+    assert.equal(capturedEnvOverrides?.OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER, 'provider');
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER, 'provider');
+    assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, '1');
+    const run = agentRunRepo.listByRoom(room.id, 1)[0];
+    assert.equal(run?.superpowers_bootstrap_owner, 'provider');
+    assert.equal(run?.superpowers_bootstrap_injected, 0);
+    assert.equal(run?.superpowers_bootstrap_skip_reason, 'workflow_run');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner dispatch auto-adds matching global agent before dispatching', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-global-agent-'));
   const project = projectRepo.create({ name: `planner-global-agent-${Date.now()}`, path: projectPath });
