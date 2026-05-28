@@ -303,3 +303,101 @@ test('invokeProtocolSession treats prompt timeout after answer text as soft comp
   assert.equal(result.sessionId, 'fake-session-1');
   assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'partial answer before timeout');
 });
+
+test('invokeProtocolSession completes after answer when ACP shutdown hangs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'openclaw-acp-shutdown-'));
+  const pidFile = join(root, 'fake-acp.pid');
+  const chunks: Array<{ channel?: string; text: string }> = [];
+
+  const invocation = invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_HANG_CLOSE_SESSION: '1',
+        OPENCLAW_FAKE_ACP_IGNORE_SIGTERM: '1',
+        OPENCLAW_FAKE_ACP_PID_FILE: pidFile,
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'hello',
+    stageTimeoutMs: 5_000,
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  try {
+    const result = await Promise.race([
+      invocation,
+      delay(3_500).then(() => {
+        throw new Error('invokeProtocolSession did not resolve after answer text');
+      }),
+    ]);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.sessionId, 'fake-session-1');
+    assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
+  } finally {
+    const pidText = await readFile(pidFile, 'utf-8').catch(() => '');
+    const pid = Number(pidText.trim());
+    if (Number.isInteger(pid) && pid > 0) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch {
+        // Already exited.
+      }
+    }
+    await invocation.catch(() => undefined);
+  }
+});
+
+test('invokeProtocolSession still shuts down protocol child after cancelled prompt', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'openclaw-acp-cancelled-shutdown-'));
+  const pidFile = join(root, 'fake-acp.pid');
+
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_PID_FILE: pidFile,
+        OPENCLAW_FAKE_ACP_STOP_REASON_CANCELLED: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'hello',
+    stageTimeoutMs: 5_000,
+    onChunk: () => undefined,
+  });
+
+  assert.equal(result.exitCode, 130);
+
+  const pidText = await readFile(pidFile, 'utf-8');
+  const pid = Number(pidText.trim());
+  assert.equal(Number.isInteger(pid), true);
+  assert.equal(isProcessAlive(pid), false);
+});
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}

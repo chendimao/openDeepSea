@@ -18,6 +18,7 @@ import type { AcpServerConfig } from './protocol-registry.js';
 const DEFAULT_PROTOCOL_STAGE_TIMEOUT_MS = 30_000;
 const DEFAULT_PROTOCOL_PROMPT_TIMEOUT_MS = 180_000;
 const PROMPT_TIMEOUT_EVENT_DRAIN_MS = 100;
+const PROTOCOL_SHUTDOWN_TIMEOUT_MS = 1_000;
 const ACP_STREAM_DISCONNECTED_PATTERN = /ResponseStreamDisconnected|stream disconnected before completion|Transport error|network error|error decoding response body/i;
 
 export interface InvokeProtocolSessionArgs {
@@ -197,12 +198,15 @@ export async function invokeProtocolSession(
     );
     rejectStreamDisconnect = null;
 
-    await connection.closeSession({ sessionId: activeSessionId }).catch(() => undefined);
-    child.kill('SIGTERM');
-    const exitCode = await childExit;
     args.signal?.removeEventListener('abort', abortHandler);
+    const shutdownExitCode = await shutdownProtocolChild({
+      child,
+      childExit,
+      closeSession: () => connection.closeSession({ sessionId: activeSessionId! }),
+    });
+    const exitCode = promptResult.stopReason === 'cancelled' ? 130 : shutdownExitCode;
     return {
-      exitCode: promptResult.stopReason === 'cancelled' ? 130 : exitCode,
+      exitCode,
       sessionId: activeSessionId,
       stderr,
       fallbackSafe: false,
@@ -398,6 +402,35 @@ function waitForChild(child: ChildProcessWithoutNullStreams): Promise<number> {
       resolve(code ?? 0);
     });
   });
+}
+
+async function shutdownProtocolChild(args: {
+  child: ChildProcessWithoutNullStreams;
+  childExit: Promise<number>;
+  closeSession: () => Promise<unknown>;
+}): Promise<number> {
+  await withTimeout(
+    args.closeSession().catch(() => undefined),
+    PROTOCOL_SHUTDOWN_TIMEOUT_MS,
+    'ACP closeSession timed out',
+  ).catch(() => undefined);
+
+  if (!args.child.killed) {
+    args.child.kill('SIGTERM');
+  }
+
+  const exitCode = await Promise.race([
+    args.childExit,
+    delay(PROTOCOL_SHUTDOWN_TIMEOUT_MS).then(() => null),
+  ]);
+  if (exitCode !== null) return exitCode;
+
+  args.child.kill('SIGKILL');
+  await Promise.race([
+    args.childExit,
+    delay(PROTOCOL_SHUTDOWN_TIMEOUT_MS),
+  ]);
+  return 0;
 }
 
 function isWorkspaceWritablePermission(toolCall: { kind?: string | null; title?: string | null }): boolean {

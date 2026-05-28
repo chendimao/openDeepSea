@@ -7,7 +7,16 @@ import {
   type AgentSideConnection as AgentConnection,
   type PromptRequest,
 } from '@agentclientprotocol/sdk';
+import { writeFileSync } from 'node:fs';
 import { Readable, Writable } from 'node:stream';
+
+if (process.env.OPENCLAW_FAKE_ACP_PID_FILE) {
+  writeFileSync(process.env.OPENCLAW_FAKE_ACP_PID_FILE, String(process.pid), 'utf-8');
+}
+
+if (process.env.OPENCLAW_FAKE_ACP_IGNORE_SIGTERM === '1') {
+  process.on('SIGTERM', () => undefined);
+}
 
 class FakeAgent implements Agent {
   constructor(private readonly connection: AgentConnection) {}
@@ -165,7 +174,7 @@ class FakeAgent implements Agent {
     });
 
     return {
-      stopReason: 'end_turn' as const,
+      stopReason: process.env.OPENCLAW_FAKE_ACP_STOP_REASON_CANCELLED === '1' ? 'cancelled' as const : 'end_turn' as const,
     };
   }
 
@@ -174,6 +183,9 @@ class FakeAgent implements Agent {
   }
 
   async closeSession() {
+    if (process.env.OPENCLAW_FAKE_ACP_HANG_CLOSE_SESSION === '1') {
+      await new Promise(() => undefined);
+    }
     return {};
   }
 }
