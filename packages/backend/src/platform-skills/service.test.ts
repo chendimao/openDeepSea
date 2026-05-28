@@ -57,8 +57,32 @@ test('installDirectoryToPlatforms copies a local skill and listPlatformSkills re
   const skill = listed.find((item) => item.name === 'copy-skill');
   assert.ok(skill);
   assert.equal(skill.description, 'Copied skill.');
+  assert.equal(skill.sourceLabel, `local:${basename(source)}`);
   assert.equal(skill.version, '1.2.3');
   assert.equal(skill.valid, true);
+});
+
+test('installDirectoryToPlatforms rejects concurrent copy install to the same target', async () => {
+  const source = await createSourceSkill('race-skill', 'Concurrent install.');
+  const results = await Promise.allSettled([
+    installDirectoryToPlatforms({
+      sourceDir: source,
+      targets: ['codex'],
+      installMode: 'copy',
+      sourceLabel: `local:${basename(source)}-a`,
+    }),
+    installDirectoryToPlatforms({
+      sourceDir: source,
+      targets: ['codex'],
+      installMode: 'copy',
+      sourceLabel: `local:${basename(source)}-b`,
+    }),
+  ]);
+
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
+  const listed = await listPlatformSkills('codex');
+  assert.equal(listed.filter((item) => item.name === 'race-skill').length, 1);
 });
 
 test('listPlatformSkills uses directory name as the stable API identifier', async () => {

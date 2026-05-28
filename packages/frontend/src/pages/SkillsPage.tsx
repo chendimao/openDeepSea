@@ -18,6 +18,7 @@ import { Button } from '../components/ui/Button';
 import { Input, Label } from '../components/ui/Input';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
+import type { MessageKey } from '../lib/i18n';
 import type {
   PlatformSkill,
   PlatformSkillInstallMode,
@@ -86,6 +87,7 @@ export function SkillsPage(): JSX.Element {
 
   const summaries = summariesQuery.data ?? [];
   const skills = skillsQuery.data ?? [];
+  const mutationPending = install.isPending || importLocal.isPending || deleteSkill.isPending;
   const selectedSkill = useMemo(
     () => skills.find((skill) => skill.name === selectedSkillName) ?? skills[0] ?? null,
     [selectedSkillName, skills],
@@ -170,6 +172,7 @@ export function SkillsPage(): JSX.Element {
                       key={item.id}
                       result={item}
                       installing={install.isPending && install.variables === item.installLabel}
+                      disabled={mutationPending}
                       onInstall={() => install.mutate(item.installLabel)}
                     />
                   ))
@@ -239,7 +242,7 @@ export function SkillsPage(): JSX.Element {
                 />
                 <Button
                   type="button"
-                  disabled={importLocal.isPending || !localPath.trim() || targets.length === 0}
+                  disabled={mutationPending || !localPath.trim() || targets.length === 0}
                   onClick={() => importLocal.mutate()}
                 >
                   {importLocal.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderInput className="h-3.5 w-3.5" />}
@@ -285,7 +288,7 @@ export function SkillsPage(): JSX.Element {
                         )}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1">
-                        <Pill>{skill.installMode === 'copy' ? t('platformSkills.installModeCopy') : t('platformSkills.installModeSymlink')}</Pill>
+                        <Pill>{installModeLabel(skill.installMode, t)}</Pill>
                         {skill.version ? <Pill>v{skill.version}</Pill> : null}
                         {skill.installMode === 'symlink' ? (
                           <Pill>
@@ -409,10 +412,12 @@ function PlatformTabs({
 function MarketplaceRow({
   result,
   installing,
+  disabled,
   onInstall,
 }: {
   result: SkillsShSearchResult;
   installing: boolean;
+  disabled: boolean;
   onInstall: () => void;
 }): JSX.Element {
   const { t } = useI18n();
@@ -424,7 +429,7 @@ function MarketplaceRow({
           <div className="mt-1 line-clamp-2 text-[11px] text-[var(--color-fg-muted)]">{result.description ?? result.installLabel}</div>
           <div className="mt-2 truncate font-mono text-[10px] text-[var(--color-fg-muted)]">{result.installLabel}</div>
         </div>
-        <Button type="button" size="sm" disabled={installing} onClick={onInstall}>
+        <Button type="button" size="sm" disabled={disabled} onClick={onInstall}>
           {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           {t('platformSkills.install')}
         </Button>
@@ -469,6 +474,12 @@ function Pill({ children }: { children: React.ReactNode }): JSX.Element {
 
 function platformLabel(provider: PlatformSkillProvider, summaries: PlatformSkillSummary[]): string {
   return summaries.find((item) => item.provider === provider)?.label ?? provider;
+}
+
+function installModeLabel(installMode: PlatformSkillInstallMode, t: (key: MessageKey) => string): string {
+  if (installMode === 'copy') return t('platformSkills.installModeCopy');
+  if (installMode === 'symlink') return t('platformSkills.installModeSymlink');
+  return installMode;
 }
 
 async function invalidatePlatformSkills(queryClient: QueryClient): Promise<void> {

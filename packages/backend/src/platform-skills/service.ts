@@ -5,14 +5,17 @@ import {
   copyFile,
   lstat,
   mkdir,
+  mkdtemp,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
+  writeFile,
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type {
   PlatformSkill,
   PlatformSkillDefinition,
@@ -29,6 +32,7 @@ const PLATFORM_LABELS: Record<PlatformSkillProvider, string> = {
 
 const SKIPPED_DIRS = new Set(['.git', 'node_modules']);
 const MAX_FILE_BYTES = 1024 * 1024;
+const PLATFORM_SKILL_METADATA_FILE = '.opendeepsea-platform-skill.json';
 
 export const PLATFORM_PROVIDERS: PlatformSkillProvider[] = ['codex', 'claudecode', 'opencode'];
 
@@ -128,8 +132,9 @@ export async function installDirectoryToPlatforms(input: InstallDirectoryInput):
     if (input.installMode === 'symlink') {
       await symlink(plan.sourceDir, target, 'dir');
     } else {
-      await copySkillDirectory(plan.sourceDir, target, plan.sourceDir);
+      await copySkillDirectoryAtomically(plan.sourceDir, target);
     }
+    await writePlatformSkillMetadata(target, { sourceLabel: input.sourceLabel });
     installed.push(await readPlatformSkill(provider, root, plan.safeName, input.sourceLabel));
   }
   return installed;
@@ -192,6 +197,10 @@ async function readPlatformSkill(
   let lastModifiedAt: number | null = null;
   let manifest: ParsedSkillManifest | null = null;
   const manifestPath = join(skillPath, 'SKILL.md');
+  const metadata = await readPlatformSkillMetadata(skillPath).catch((err) => {
+    issues.push((err as Error).message);
+    return null;
+  });
 
   try {
     const entryStat = await lstat(skillPath);
@@ -218,7 +227,7 @@ async function readPlatformSkill(
     path: skillPath,
     manifestPath: existsSync(manifestPath) ? manifestPath : null,
     installMode,
-    sourceLabel,
+    sourceLabel: sourceLabel ?? metadata?.sourceLabel ?? null,
     version: manifest?.version ?? null,
     lastModifiedAt,
     valid: issues.length === 0,
@@ -274,6 +283,20 @@ function assertSafeSkillDirectoryName(value: string): void {
   }
 }
 
+async function copySkillDirectoryAtomically(source: string, target: string): Promise<void> {
+  const tempTarget = await mkdtemp(join(dirname(target), `.tmp-${basename(target)}-`));
+  let published = false;
+  try {
+    await copySkillDirectory(source, tempTarget, source);
+    await rename(tempTarget, target);
+    published = true;
+  } finally {
+    if (!published) {
+      await rm(tempTarget, { recursive: true, force: true });
+    }
+  }
+}
+
 async function copySkillDirectory(source: string, target: string, root: string): Promise<void> {
   await mkdir(target, { recursive: true });
   const entries = await readdir(source);
@@ -293,6 +316,32 @@ async function copySkillDirectory(source: string, target: string, root: string):
     if (!isPathInside(root, resolved)) continue;
     await copyFile(sourceEntry, targetEntry);
   }
+}
+
+interface PlatformSkillMetadata {
+  sourceLabel: string | null;
+}
+
+async function writePlatformSkillMetadata(skillPath: string, metadata: PlatformSkillMetadata): Promise<void> {
+  await writeFile(
+    join(skillPath, PLATFORM_SKILL_METADATA_FILE),
+    `${JSON.stringify(metadata, null, 2)}\n`,
+    'utf-8',
+  );
+}
+
+async function readPlatformSkillMetadata(skillPath: string): Promise<PlatformSkillMetadata | null> {
+  const raw = await readFile(join(skillPath, PLATFORM_SKILL_METADATA_FILE), 'utf-8').catch((err: NodeJS.ErrnoException) => {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  });
+  if (raw === null) return null;
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== 'object') return null;
+  const sourceLabel = (parsed as { sourceLabel?: unknown }).sourceLabel;
+  return {
+    sourceLabel: typeof sourceLabel === 'string' && sourceLabel.trim() ? sourceLabel : null,
+  };
 }
 
 async function isWritable(path: string): Promise<boolean> {

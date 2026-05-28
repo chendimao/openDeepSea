@@ -62,10 +62,10 @@ platformSkillsRouter.post('/install', async (req, res) => {
   try {
     const client = new SkillsShClient();
     const pkg = await client.fetchPackage(parsed.data.installLabel);
-    await writeSkillsShPackage(pkg, tempSourceDir);
+    const materialized = await writeSkillsShPackage(pkg, tempSourceDir);
     let sourceDir = tempSourceDir;
     if (parsed.data.installMode === 'symlink') {
-      const persistentSourceDir = await resolvePersistentSkillsShSourceDir(parsed.data.installLabel);
+      const persistentSourceDir = await resolvePersistentSkillsShSourceDir(parsed.data.installLabel, materialized.checksum);
       if (existsSync(persistentSourceDir)) {
         const persistentStats = await lstat(persistentSourceDir);
         if (!persistentStats.isDirectory()) throw new Error('persistent skill source path is not a directory');
@@ -146,10 +146,11 @@ function requireLocalAccess(req: Request, res: Response): boolean {
   return false;
 }
 
-async function resolvePersistentSkillsShSourceDir(installLabel: string): Promise<string> {
+async function resolvePersistentSkillsShSourceDir(installLabel: string, checksum: string): Promise<string> {
   const sourceRoot = process.env.OPENDEEPSEA_PLATFORM_SKILL_SOURCES_DIR?.trim()
     || join(homedir(), '.opendeepsea', 'platform-skill-sources');
   const digest = createHash('sha256').update(installLabel).digest('hex').slice(0, 16);
+  const contentDigest = checksum.slice(0, 16);
   const safeLabel = installLabel.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'skill';
-  return join(sourceRoot, 'skills-sh', `${safeLabel}-${digest}`);
+  return join(sourceRoot, 'skills-sh', `${safeLabel}-${digest}-${contentDigest}`);
 }

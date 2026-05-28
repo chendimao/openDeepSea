@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, mkdtempSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, readlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -74,6 +74,7 @@ test('platform skills routes list platforms and scan empty roots', async () => {
 });
 
 test('platform skills routes search marketplace and install package to multiple platforms', async () => {
+  let downloadCount = 0;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input.toString() : input.url);
     if (url.origin !== 'https://skills.sh') return originalFetch(input, init);
@@ -90,10 +91,14 @@ test('platform skills routes search marketplace and install package to multiple 
       });
     }
     if (url.pathname === '/api/download/acme/skills/platform-demo') {
+      downloadCount += 1;
+      const description = downloadCount >= 2
+        ? 'Demo platform skill v2.'
+        : 'Demo platform skill.';
       return jsonResponse({
         id: 'acme/skills/platform-demo',
         name: 'platform-demo',
-        description: 'Demo platform skill.',
+        description,
         source: 'acme/skills',
         version: '1.0.0',
         files: [{
@@ -101,7 +106,7 @@ test('platform skills routes search marketplace and install package to multiple 
           content: [
             '---',
             'name: platform-demo',
-            'description: Demo platform skill.',
+            `description: ${description}`,
             'version: 1.0.0',
             '---',
             '',
@@ -138,6 +143,7 @@ test('platform skills routes search marketplace and install package to multiple 
   assert.equal(deleteRes.status, 204);
   assert.equal(existsSync(join(testHome, '.codex', 'skills', 'platform-demo')), false);
 
+  downloadCount = 0;
   const symlinkInstallRes = await request('/api/platform-skills/install', {
     method: 'POST',
     body: JSON.stringify({
@@ -150,6 +156,7 @@ test('platform skills routes search marketplace and install package to multiple 
   const linkPath = join(testHome, '.claude', 'skills', 'platform-demo');
   assert.equal(lstatSync(linkPath).isSymbolicLink(), true);
   assert.equal(existsSync(join(linkPath, 'SKILL.md')), true);
+  const firstLinkTarget = readlinkSync(linkPath);
   assert.equal(existsSync(join(testHome, 'sources')), true);
 
   const duplicateSymlinkRes = await request('/api/platform-skills/install', {
@@ -163,4 +170,17 @@ test('platform skills routes search marketplace and install package to multiple 
   assert.equal(duplicateSymlinkRes.status, 400);
   assert.equal(lstatSync(linkPath).isSymbolicLink(), true);
   assert.equal(existsSync(join(linkPath, 'SKILL.md')), true);
+
+  const updatedSymlinkInstallRes = await request('/api/platform-skills/install', {
+    method: 'POST',
+    body: JSON.stringify({
+      installLabel: 'acme/skills/platform-demo',
+      targets: ['codex'],
+      installMode: 'symlink',
+    }),
+  });
+  assert.equal(updatedSymlinkInstallRes.status, 201);
+  const updatedLinkPath = join(testHome, '.codex', 'skills', 'platform-demo');
+  assert.equal(lstatSync(updatedLinkPath).isSymbolicLink(), true);
+  assert.notEqual(readlinkSync(updatedLinkPath), firstLinkTarget);
 });
