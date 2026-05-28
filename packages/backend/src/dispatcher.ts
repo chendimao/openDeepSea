@@ -55,6 +55,12 @@ interface PlannerDispatchResult {
   deferred_steps: PlannerDecision['next_steps'];
 }
 
+interface PlannerDispatchedTarget {
+  agent: RoomAgent;
+  prompt: string;
+  step: PlannerDecision['next_steps'][number];
+}
+
 interface PlannerExecutionPlanDecision {
   mode: 'parallel' | 'serial';
   dispatch_step_indexes: number[];
@@ -1187,10 +1193,11 @@ async function dispatchPlannerDecision(args: {
     roomId: args.roomId,
     sourceMessageId: args.sourceMessageId,
   });
-  await reportDeferredPlannerSteps({
+  await reportPlannerDispatchResults({
     roomId: args.roomId,
     projectPath: project.path,
     sourceMessageId: args.sourceMessageId,
+    decision: args.decision,
     dispatchedTargets: executionPlan.dispatchTargets,
     dispatchedResults: results,
     deferredSteps: executionPlan.deferredSteps,
@@ -1207,7 +1214,7 @@ async function resolvePlannerStepExecutionPlan(input: {
   sourceMessage: Message | undefined;
   targets: PlannerDispatchTarget[];
 }): Promise<{
-  dispatchTargets: { agent: RoomAgent; prompt: string }[];
+  dispatchTargets: PlannerDispatchedTarget[];
   deferredSteps: PlannerDecision['next_steps'];
 }> {
   const llmDecision = await resolvePlannerExecutionPlanWithModel(input);
@@ -1229,7 +1236,7 @@ async function resolvePlannerStepExecutionPlan(input: {
 
   return {
     dispatchTargets: dispatchIndexes.map((index) => input.targets[index]).filter(isPlannerDispatchTarget)
-      .map((target) => ({ agent: target.agent, prompt: target.prompt })),
+      .map((target) => ({ agent: target.agent, prompt: target.prompt, step: target.step })),
     deferredSteps: deferredIndexes.map((index) => input.targets[index]).filter(isPlannerDispatchTarget)
       .map((target) => target.step),
   };
@@ -1394,15 +1401,16 @@ function resolvePlannerDispatchTargets(
   };
 }
 
-async function reportDeferredPlannerSteps(args: {
+async function reportPlannerDispatchResults(args: {
   roomId: string;
   projectPath: string;
   sourceMessageId: string;
-  dispatchedTargets: { agent: RoomAgent; prompt: string }[];
+  decision: PlannerDecision;
+  dispatchedTargets: PlannerDispatchedTarget[];
   dispatchedResults: Array<Message | undefined>;
   deferredSteps: PlannerDecision['next_steps'];
 }): Promise<void> {
-  if (args.deferredSteps.length === 0) return;
+  if (args.dispatchedTargets.length === 0) return;
   const planner = roomAgentRepo.listByRoom(args.roomId).find((agent) => agent.agent_id === 'planner');
   if (!planner) return;
   const completedSummaries = args.dispatchedTargets.map((target, index) => {
@@ -1417,16 +1425,27 @@ async function reportDeferredPlannerSteps(args: {
   const deferredLines = args.deferredSteps.map((step, index) =>
     `${index + 1}. ${step.agent_id}: ${step.goal}`,
   );
+  const originalMessage = messageRepo.get(args.sourceMessageId);
   const prompt = [
-    '前一阶段智能体已经完成，请你作为规划师分析执行结果，并决定下一步是否应派发后续审查/测试智能体。',
+    '本轮派发的智能体已经完成，请你作为规划师分析执行结果，并决定是否需要后续处理。',
     '',
-    '已完成阶段：',
+    '原始用户请求：',
+    originalMessage?.content?.trim() || '未找到原始用户请求。',
+    '',
+    '上一轮规划师决策：',
+    args.decision.summary,
+    '',
+    '本轮已完成智能体：',
     ...completedSummaries,
     '',
     '暂缓的后续步骤：',
-    ...deferredLines,
+    ...(deferredLines.length > 0 ? deferredLines : ['- 无']),
     '',
-    '请先评估开发结果是否足以进入测试/审查。如果可以，请输出新的 planner_decision，只包含下一阶段要派发的智能体；如果不可以，请说明需要补充的事项。',
+    '请判断：',
+    '- 如果任务已完成，输出 status 为 "completed" 且 next_steps 为空的 planner_decision。',
+    '- 如果还需要修复、审查、测试或验收，输出新的 planner_decision，只包含下一轮要派发的智能体。',
+    '- 如果无法继续，输出 status 为 "blocked" 并说明原因。',
+    '- 不要重复派发已经完成且不需要返工的同一目标。',
   ].join('\n');
   await respondAsAgent({
     agent: planner,

@@ -2074,6 +2074,92 @@ test('planner dispatch defers review steps until execution result returns to pla
   }
 });
 
+test('planner dispatch reports completed agent results back to planner even without deferred steps', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-followup-all-agents-'));
+  const project = projectRepo.create({ name: `planner-followup-all-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const backend = agentRepo.getByAgentId('backend-executor');
+  assert.ok(backend);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: backend.id });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '修复规划师 ACP 保存后刷新回退的问题',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  const plannerFollowupPrompts: string[] = [];
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      if (args.prompt.includes('本轮派发的智能体已经完成')) {
+        plannerFollowupPrompts.push(args.prompt);
+        args.onChunk({
+          stream: 'stdout',
+          text: [
+            '我已收到执行结果，任务完成。',
+            '',
+            '```json',
+            JSON.stringify({
+              planner_decision: {
+                mode: 'pause_after_suggestion',
+                status: 'completed',
+                summary: '后端执行者已完成修复，暂无后续派发',
+                next_steps: [],
+                awaiting_user_confirmation: false,
+              },
+            }),
+            '```',
+          ].join('\n'),
+        });
+      } else {
+        args.onChunk({ stream: 'stdout', text: '后端执行者完成：已修复保存后刷新回退问题。' });
+      }
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '派发后端执行者修复 ACP 保存回退',
+          next_steps: [
+            { agent_id: 'backend-executor', goal: '修复规划师 ACP 保存后刷新回退的问题，并补充回归测试' },
+          ],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+    const body = await response.json() as { dispatched?: number; deferred_steps?: Array<{ agent_id: string }> };
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+    const plannerReply = messageRepo.listByRoom(room.id, 20)
+      .find((message) => message.sender_id === 'planner' && message.content.includes('后端执行者已完成修复'));
+
+    assert.equal(response.status, 200);
+    assert.equal(body.dispatched, 1);
+    assert.deepEqual(body.deferred_steps, []);
+    assert.equal(runs.some((run) => run.agent_id === 'backend-executor'), true);
+    assert.equal(runs.some((run) => run.agent_id === 'planner'), true);
+    assert.equal(plannerFollowupPrompts.length, 1);
+    assert.match(plannerFollowupPrompts[0] ?? '', /本轮派发的智能体已经完成/);
+    assert.match(plannerFollowupPrompts[0] ?? '', /后端执行者完成：已修复保存后刷新回退问题/);
+    assert.ok(plannerReply);
+    const metadata = JSON.parse(plannerReply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.planner_decision?.status, 'completed');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner dispatch reports missing room and global agents instead of accepting without work', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-missing-agent-'));
   const project = projectRepo.create({ name: `planner-missing-agent-${Date.now()}`, path: projectPath });
