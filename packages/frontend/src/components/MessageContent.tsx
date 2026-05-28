@@ -279,7 +279,6 @@ export function MarkdownPreview({
         if (part.type === 'code') {
           const parsedJson = parseJsonCodeBlock(part.language, part.value);
           if (parsedJson.ok) {
-            if (suppressPlannerDecisionSummary && getPlannerDecision(parsedJson.value)) return null;
             return (
               <JsonBlock
                 key={`preview-json-${index}`}

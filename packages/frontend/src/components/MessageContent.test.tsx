@@ -130,9 +130,9 @@ test('can suppress planner decision summary when an outer action panel renders i
       planner_decision: {
         mode: 'pause_after_suggestion',
         status: 'suggested',
-        summary: '交给前端执行智能体新增测试菜单和计数器页面',
+        summary: '交给前端执行智能体优化侧边栏导航',
         next_steps: [
-          { agent_id: 'frontend-executor', goal: '新增 /test 路由、侧边栏测试菜单、TestCounterPage 计数器页面和 i18n 文案' },
+          { agent_id: 'frontend-executor', goal: '调整侧边栏入口、路由和 i18n 文案' },
         ],
         awaiting_user_confirmation: true,
       },
@@ -146,9 +146,10 @@ test('can suppress planner decision summary when an outer action panel renders i
     </I18nProvider>,
   );
 
-  assert.doesNotMatch(html, /规划决策/);
-  assert.doesNotMatch(html, /交给前端执行智能体新增测试菜单和计数器页面/);
-  assert.doesNotMatch(html, /planner_decision/);
+  assert.doesNotMatch(html, /json-planner-summary/);
+  assert.match(html, /json-tree/);
+  assert.match(html, /planner_decision/);
+  assert.match(html, /pause_after_suggestion/);
 });
 
 test('renders known agent ids in markdown text as Chinese agent names', () => {
