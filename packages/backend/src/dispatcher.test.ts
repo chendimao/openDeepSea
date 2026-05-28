@@ -1421,6 +1421,57 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
   }
 });
 
+test('respondAsAgent batches tiny stdout chunks before broadcasting answer stream', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-stream-batch-test-'));
+  const project = projectRepo.create({ name: `stream-batch-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'batch-agent', agent_name: 'BatchAgent' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  assert.ok(acpAgent);
+
+  const events = captureRoomEvents(room.id);
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      for (const chunk of ['群', '聊', '页', '现', '在', '应', '该', '更', '快']) {
+        args.onChunk({ stream: 'stdout', text: chunk });
+      }
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '请快速回复',
+    });
+
+    const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === acpAgent.agent_id);
+    assert.equal(reply?.content, '群聊页现在应该更快');
+    const answerStreamEvents = events.filter((event): event is Extract<CapturedRoomEvent, { type: 'message:stream' }> =>
+      event.type === 'message:stream' && event.channel === 'answer' && !event.done
+    );
+    assert.deepEqual(
+      answerStreamEvents.map((event) => event.chunk),
+      ['群聊页现在应该更快'],
+    );
+  } finally {
+    events.restore();
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent passes resolved workspace writable dirs and runtime prompt to ACP adapter', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-runtime-profile-test-'));
   const project = projectRepo.create({ name: `runtime-profile-${Date.now()}`, path: projectPath });

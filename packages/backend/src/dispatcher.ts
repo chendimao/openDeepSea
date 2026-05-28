@@ -40,6 +40,8 @@ import type {
 } from './types.js';
 
 const AGENT_RUN_HEARTBEAT_MS = 30_000;
+const ANSWER_STREAM_FLUSH_MS = 80;
+const ANSWER_STREAM_FLUSH_CHARS = 32;
 
 interface PlannerDispatchAddedAgent {
   agent_id: string;
@@ -627,8 +629,10 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   }
   let streamSeq = 0;
   let traceEventSeq = 0;
+  let answerBuffer = '';
+  let answerFlushTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const onStdout = (chunk: string): void => {
+  const broadcastAnswerChunk = (chunk: string): void => {
     messageRepo.appendChunk(placeholder.id, chunk);
     const updated = agentRunRepo.appendStdout(run.id, chunk);
     if (updated) broadcastRun('agent_run:updated', updated);
@@ -644,6 +648,29 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         seq: ++streamSeq,
         status: 'streaming',
       });
+    }
+  };
+
+  const flushAnswerBuffer = (): void => {
+    if (answerFlushTimer) {
+      clearTimeout(answerFlushTimer);
+      answerFlushTimer = undefined;
+    }
+    if (!answerBuffer) return;
+    const chunk = answerBuffer;
+    answerBuffer = '';
+    broadcastAnswerChunk(chunk);
+  };
+
+  const onStdout = (chunk: string): void => {
+    if (!chunk) return;
+    answerBuffer += chunk;
+    if (answerBuffer.length >= ANSWER_STREAM_FLUSH_CHARS || chunk.includes('\n')) {
+      flushAnswerBuffer();
+      return;
+    }
+    if (!answerFlushTimer) {
+      answerFlushTimer = setTimeout(flushAnswerBuffer, ANSWER_STREAM_FLUSH_MS);
     }
   };
 
@@ -805,6 +832,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       },
       signal: controller.signal,
     });
+    flushAnswerBuffer();
     if (result.sessionId) {
       const updated = agentRunRepo.updateStatus(run.id, 'running', {
         acp_session_id: result.sessionId,
@@ -839,6 +867,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       finishRun(run.id, 'failed', error);
     }
   } catch (err) {
+    flushAnswerBuffer();
     const status: AgentRunStatus = controller.signal.aborted ? 'cancelled' : 'failed';
     const message = (err as Error).message;
     onStderr(`\n[error] ${message}`);
@@ -873,6 +902,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
       }
     } finally {
+      flushAnswerBuffer();
       if (!args.internalMessage) {
         const completedMessage = messageRepo.get(placeholder.id) ?? finalMessage;
         wsHub.broadcast(roomId, {
