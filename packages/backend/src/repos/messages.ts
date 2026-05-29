@@ -45,7 +45,8 @@ export const messageRepo = {
     if (!message) return undefined;
     const metadata = parseMetadataObject(message.metadata);
     if (!isMessageTrace(metadata.trace) || !metadata.trace.events?.length) return undefined;
-    return metadata.trace.events.find((event) => event.id === eventId);
+    const event = metadata.trace.events.find((item) => item.id === eventId);
+    return event ? omitTimelineEventRaw(event) : undefined;
   },
 
   create(input: {
@@ -162,12 +163,18 @@ function compactMessageTraceForClient(trace: MessageTrace): MessageTrace {
 }
 
 function compactTimelineEventForClient(event: AgentTimelineEvent): AgentTimelineEvent {
-  if (!shouldOmitClientEventDetail(event)) return event;
+  if (!shouldOmitClientEventDetail(event)) return omitTimelineEventRaw(event);
   return {
     ...event,
     payload: buildLightweightTimelinePayload(event),
     raw: undefined,
   };
+}
+
+function omitTimelineEventRaw(event: AgentTimelineEvent): AgentTimelineEvent {
+  if (!event.raw) return event;
+  const { raw: _raw, ...withoutRaw } = event;
+  return withoutRaw;
 }
 
 function shouldOmitClientEventDetail(event: AgentTimelineEvent): boolean {

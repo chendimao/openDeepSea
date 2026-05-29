@@ -315,6 +315,7 @@ test('messageRepo listForClient omits heavy tool and command output details', ()
       status: 'delta',
       title: '助手回复',
       payload: { text: '正文必须保留' },
+      raw: { rawAssistant: true },
       created_at: 1003,
     },
   ];
@@ -367,11 +368,12 @@ test('messageRepo listForClient omits heavy tool and command output details', ()
 
   const assistant = listedEvents[3];
   assert.equal(assistant?.payload.text, '正文必须保留');
+  assert.equal(assistant?.raw, undefined);
 
   const fullEvent = messageRepo.getTraceEventForClient(room.id, message.id, 'run-1:tool-result');
   assert.ok(fullEvent);
   assert.equal(fullEvent.payload.output, 'file body'.repeat(100));
-  assert.deepEqual(fullEvent.raw, { rawResult: true });
+  assert.equal(fullEvent.raw, undefined);
   assert.equal(messageRepo.getTraceEventForClient('wrong-room', message.id, 'run-1:tool-result'), undefined);
   assert.equal(messageRepo.getTraceEventForClient(room.id, message.id, 'missing'), undefined);
 });
