@@ -85,7 +85,7 @@ test('only compact-renders short scalar json rows', () => {
   assert.match(html, /json-tree-row is-nested[\s\S]*nested/);
 });
 
-test('renders planner decision json as a Chinese summary card', () => {
+test('renders planner decision json as generic structured json without a duplicate planner summary card', () => {
   const content = [
     '```json',
     JSON.stringify({
@@ -112,18 +112,18 @@ test('renders planner decision json as a Chinese summary card', () => {
     </I18nProvider>,
   );
 
-  assert.match(html, /规划决策/);
-  assert.match(html, /建议后暂停/);
-  assert.match(html, /已建议/);
-  assert.match(html, /等待确认/);
-  assert.match(html, /下一步数量/);
-  assert.match(html, /运行时检查员/);
-  assert.match(html, /title="runtime-inspector"/);
+  assert.match(html, /json-tree/);
+  assert.match(html, /planner_decision/);
+  assert.match(html, /pause_after_suggestion/);
+  assert.match(html, /suggested/);
+  assert.match(html, /awaiting_user_confirmation/);
+  assert.doesNotMatch(html, /下一步数量/);
+  assert.match(html, /runtime-inspector/);
   assert.match(html, /检查 Codex CLI 是否加载/);
-  assert.doesNotMatch(html, /<small>planner_decision<\/small>/);
+  assert.doesNotMatch(html, /json-planner-summary/);
 });
 
-test('can suppress planner decision summary when an outer action panel renders it', () => {
+test('can suppress planner decision json when an outer action panel renders it', () => {
   const content = [
     '```json',
     JSON.stringify({
@@ -147,9 +147,9 @@ test('can suppress planner decision summary when an outer action panel renders i
   );
 
   assert.doesNotMatch(html, /json-planner-summary/);
-  assert.match(html, /json-tree/);
-  assert.match(html, /planner_decision/);
-  assert.match(html, /pause_after_suggestion/);
+  assert.doesNotMatch(html, /json-tree/);
+  assert.doesNotMatch(html, /planner_decision/);
+  assert.doesNotMatch(html, /pause_after_suggestion/);
 });
 
 test('renders known agent ids in markdown text as Chinese agent names', () => {

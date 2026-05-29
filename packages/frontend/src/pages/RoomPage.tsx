@@ -61,6 +61,7 @@ import {
   createPlannerDispatchInput,
   createReplyTarget,
   hasDispatchablePlannerSteps,
+  shouldShowPlannerDecisionPanel,
   type ReplyTarget,
   type StreamTraceChannel,
 } from './roomPageLogic';
@@ -988,6 +989,10 @@ function MessageBubble({
   );
   const canReply = !isSystem && hasContent && !isStreaming;
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
+  const showPlannerDecisionPanel = shouldShowPlannerDecisionPanel({
+    isUser,
+    decision: metadata.planner_decision,
+  });
 
   if (isSystem) {
     return (
@@ -1106,7 +1111,7 @@ function MessageBubble({
               trace={metadata.trace}
               roomAgents={roomAgents}
               globalAgents={globalAgents}
-              suppressPlannerDecisionSummary={Boolean(metadata.planner_decision)}
+              suppressPlannerDecisionSummary={showPlannerDecisionPanel}
             />
           ) : message.message_type === 'agent_stream' ? (
             <MessageContent
@@ -1119,7 +1124,7 @@ function MessageBubble({
           ) : null}
           <MessageAttachments attachments={attachments} />
         </AiMessageBody>
-        {!isUser && metadata.planner_decision && (
+        {showPlannerDecisionPanel && metadata.planner_decision && (
           <PlannerDecisionPanel
             decision={metadata.planner_decision}
             roomAgents={roomAgents}

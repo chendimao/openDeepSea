@@ -279,6 +279,9 @@ export function MarkdownPreview({
         if (part.type === 'code') {
           const parsedJson = parseJsonCodeBlock(part.language, part.value);
           if (parsedJson.ok) {
+            if (shouldHidePlannerDecisionJsonBlock(parsedJson.value, suppressPlannerDecisionSummary)) {
+              return null;
+            }
             return (
               <JsonBlock
                 key={`preview-json-${index}`}
@@ -346,7 +349,6 @@ function JsonBlock({
   const [copied, setCopied] = useState(false);
   const { t } = useI18n();
   const taskReadiness = getTaskReadiness(data);
-  const plannerDecision = getPlannerDecision(data);
 
   const copyJson = async () => {
     try {
@@ -397,8 +399,6 @@ function JsonBlock({
       {mode === 'structured' ? (
         taskReadiness ? (
           <TaskReadinessSummary readiness={taskReadiness} />
-        ) : plannerDecision && !suppressPlannerDecisionSummary ? (
-          <PlannerDecisionSummary decision={plannerDecision} agentNameById={agentNameById} />
         ) : (
           <div className="json-tree" aria-label={t('message.jsonTreeAria')}>
             <JsonTree value={data} />
@@ -453,56 +453,14 @@ function getTaskReadiness(data: JsonValue): JsonObject | null {
   return isJsonObject(value) ? value : null;
 }
 
-function PlannerDecisionSummary({
-  decision,
-  agentNameById,
-}: {
-  decision: JsonObject;
-  agentNameById?: Map<string, string>;
-}): JSX.Element {
-  const mode = typeof decision.mode === 'string' ? decision.mode : null;
-  const status = typeof decision.status === 'string' ? decision.status : null;
-  const summary = typeof decision.summary === 'string' ? decision.summary : '无摘要';
-  const awaiting = typeof decision.awaiting_user_confirmation === 'boolean' ? decision.awaiting_user_confirmation : null;
-  const steps = Array.isArray(decision.next_steps) ? decision.next_steps.filter(isJsonObject) : [];
-
-  return (
-    <section className="json-planner-summary" aria-label="规划决策">
-      <div className="json-planner-summary-main">
-        <span>规划决策</span>
-        <strong>{summary}</strong>
-      </div>
-      <dl className="json-task-summary-grid">
-        <JsonMetric label="模式" value={formatSemanticJsonString(mode)} />
-        <JsonMetric label="状态" value={formatSemanticJsonString(status)} />
-        <JsonMetric label="等待确认" value={awaiting === null ? '未知' : awaiting ? '是' : '否'} />
-        <JsonMetric label="下一步数量" value={`${steps.length} 个`} />
-      </dl>
-      {steps.length > 0 ? (
-        <ol className="json-planner-step-list">
-          {steps.map((step, index) => (
-            <li key={index}>
-              <div>
-                <span>#{index + 1}</span>
-                <strong title={typeof step.agent_id === 'string' ? step.agent_id : undefined}>
-                  {formatAgentName(typeof step.agent_id === 'string' ? step.agent_id : null, agentNameById)}
-                </strong>
-              </div>
-              <p>{typeof step.goal === 'string' ? step.goal : '未指定目标'}</p>
-            </li>
-          ))}
-        </ol>
-      ) : (
-        <p className="json-planner-empty">当前规划没有可派发的下一步。</p>
-      )}
-    </section>
-  );
-}
-
 function getPlannerDecision(data: JsonValue): JsonObject | null {
   if (!isJsonObject(data)) return null;
   const value = data.planner_decision;
   return isJsonObject(value) ? value : null;
+}
+
+function shouldHidePlannerDecisionJsonBlock(data: JsonValue, suppressPlannerDecisionSummary: boolean): boolean {
+  return suppressPlannerDecisionSummary && Boolean(getPlannerDecision(data));
 }
 
 function JsonTree({ value }: { value: JsonValue }): JSX.Element {
@@ -708,11 +666,6 @@ function buildAgentNameMap(roomAgents: RoomAgent[], globalAgents: Agent[]): Map<
     if (agent.agent_id && agent.agent_name) map.set(agent.agent_id, agent.agent_name);
   }
   return map;
-}
-
-function formatAgentName(agentId: string | null, agentNameById?: Map<string, string>): string {
-  if (!agentId) return '未指定智能体';
-  return agentNameById?.get(agentId) ?? agentId;
 }
 
 function pushTextWithAgentNames(
