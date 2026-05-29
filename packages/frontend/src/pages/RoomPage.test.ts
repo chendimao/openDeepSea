@@ -8,6 +8,7 @@ import {
   upsertAgentRun,
 } from './RoomPage';
 import {
+  applyMessageStreamBatch,
   applyMessageStreamUpdate,
   createDefaultReplyTarget,
   createPlannerDispatchInput,
@@ -346,6 +347,50 @@ test('applyMessageStreamUpdate merges final message content and keeps streamed t
   assert.equal(result.fullContent, '任务已经完成。');
   assert.equal(result.messages?.[0]?.content, '任务已经完成。');
   assert.deepEqual(metadata.trace?.events?.map((event) => event.id), ['run-1:1', 'run-1:2']);
+});
+
+test('applyMessageStreamBatch ignores stale stream updates after final snapshot', () => {
+  const placeholder = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '',
+    metadata: JSON.stringify({ trace: { events: [] } }),
+  });
+  const finalMessage = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '最终完整正文。',
+    metadata: JSON.stringify({ trace: { events: [] } }),
+  });
+
+  const result = applyMessageStreamBatch([placeholder], [
+    {
+      messageId: 'agent-message',
+      runId: 'run-1',
+      chunk: '最终',
+      done: false,
+      channel: 'answer',
+    },
+    {
+      messageId: 'agent-message',
+      runId: 'run-1',
+      chunk: '',
+      done: true,
+      channel: 'answer',
+      message: finalMessage,
+    },
+    {
+      messageId: 'agent-message',
+      runId: 'run-1',
+      chunk: '旧队列追加内容',
+      done: false,
+      channel: 'answer',
+    },
+  ]);
+
+  assert.equal(result.messages?.[0]?.content, '最终完整正文。');
+  assert.equal(result.finalizedMessageIds.has('agent-message'), true);
+  assert.equal(result.finalizedRunIds.has('run-1'), true);
 });
 
 test('mergeMessageStreamTrace keeps legacy trace channels intact', () => {

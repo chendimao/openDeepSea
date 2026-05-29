@@ -56,12 +56,13 @@ import {
   MessageRunPanel as AiMessageRunPanel,
 } from '../components/ai-elements/Message';
 import {
-  applyMessageStreamUpdate,
+  applyMessageStreamBatch,
   createDefaultReplyTarget,
   createPlannerDispatchInput,
   createReplyTarget,
   hasDispatchablePlannerSteps,
   shouldShowPlannerDecisionPanel,
+  type MessageStreamUpdate,
   type ReplyTarget,
   type StreamTraceChannel,
 } from './roomPageLogic';
@@ -81,6 +82,10 @@ export function RoomPage() {
   const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
   const streamingRunMessageIds = useRef<Map<string, string>>(new Map());
   const streamingEventTracker = useRef(createStreamingEventTracker());
+  const finalizedStreamMessageIds = useRef<Set<string>>(new Set());
+  const finalizedStreamRunIds = useRef<Set<string>>(new Set());
+  const pendingStreamUpdates = useRef<MessageStreamUpdate[]>([]);
+  const streamFlushFrame = useRef<number | null>(null);
   const { t } = useI18n();
 
   const { data: project } = useQuery({
@@ -127,6 +132,8 @@ export function RoomPage() {
     },
   });
   const streamingDisplay = useStreamingMessageDisplay(roomId);
+  const appendStreamingChunk = streamingDisplay.appendChunk;
+  const finishStreamingMessage = streamingDisplay.finishMessage;
 
   useEffect(() => {
     setActiveTab('chat');
@@ -136,6 +143,13 @@ export function RoomPage() {
     messageRefs.current.clear();
     streamingRunMessageIds.current.clear();
     streamingEventTracker.current.clear();
+    finalizedStreamMessageIds.current.clear();
+    finalizedStreamRunIds.current.clear();
+    pendingStreamUpdates.current = [];
+    if (streamFlushFrame.current !== null) {
+      window.cancelAnimationFrame(streamFlushFrame.current);
+      streamFlushFrame.current = null;
+    }
   }, [roomId]);
 
   useEffect(() => {
@@ -157,6 +171,73 @@ export function RoomPage() {
     setActiveTab('chat');
     setHighlightMessageId(messageId);
   }, []);
+
+  const flushPendingStreamUpdates = useCallback(() => {
+    streamFlushFrame.current = null;
+    const updates = pendingStreamUpdates.current.filter((update) => {
+      if (update.done && update.message) return true;
+      if (finalizedStreamMessageIds.current.has(update.messageId)) return false;
+      if (update.runId && finalizedStreamRunIds.current.has(update.runId)) return false;
+      return true;
+    });
+    pendingStreamUpdates.current = [];
+    if (updates.length === 0) return;
+
+    let matchedMessage = false;
+    let finalFullContent = '';
+    const finalDoneByMessageId = new Map<string, string>();
+    const activeMessageIds = new Set<string>();
+
+    queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) => {
+      const result = applyMessageStreamBatch(prev, updates);
+      matchedMessage = result.matched;
+      finalFullContent = result.fullContent;
+      for (const messageId of result.finalizedMessageIds) finalizedStreamMessageIds.current.add(messageId);
+      for (const runId of result.finalizedRunIds) {
+        finalizedStreamRunIds.current.add(runId);
+        streamingRunMessageIds.current.delete(runId);
+      }
+      return result.messages;
+    });
+
+    for (const update of updates) {
+      if (update.done) {
+        const fallbackContent = queryClient
+          .getQueryData<Message[]>(['messages', roomId])
+          ?.find((message) => message.id === update.messageId)
+          ?.content ?? finalFullContent;
+        finalDoneByMessageId.set(update.messageId, update.message?.content ?? fallbackContent);
+      } else {
+        if (update.chunk && (!update.channel || update.channel === 'answer')) {
+          appendStreamingChunk(update.messageId, update.chunk);
+        }
+        activeMessageIds.add(update.messageId);
+      }
+    }
+
+    for (const [messageId, content] of finalDoneByMessageId) {
+      finishStreamingMessage(messageId, content);
+      activeMessageIds.delete(messageId);
+    }
+    if (activeMessageIds.size > 0 || finalDoneByMessageId.size > 0) {
+      setStreamingMessageIds((prev) => {
+        let next = prev;
+        for (const messageId of activeMessageIds) next = addStreamingMessageId(next, messageId);
+        for (const messageId of finalDoneByMessageId.keys()) next = removeStreamingMessageId(next, messageId);
+        return next;
+      });
+    }
+
+    if (!matchedMessage) {
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+    }
+  }, [queryClient, roomId, appendStreamingChunk, finishStreamingMessage]);
+
+  const enqueueStreamUpdate = useCallback((update: MessageStreamUpdate) => {
+    pendingStreamUpdates.current.push(update);
+    if (streamFlushFrame.current !== null) return;
+    streamFlushFrame.current = window.requestAnimationFrame(flushPendingStreamUpdates);
+  }, [flushPendingStreamUpdates]);
 
   const replyToMessage = useCallback((message: Message) => {
     setExplicitReplyTarget(createReplyTarget(message, true));
@@ -194,43 +275,20 @@ export function RoomPage() {
         }
       } else if (event.type === 'message:stream' && event.roomId === roomId) {
         if (!shouldApplyStreamingEvent(streamingEventTracker.current, event)) return;
-        let matchedMessage = false;
-        let fullContent = '';
+        if (finalizedStreamMessageIds.current.has(event.messageId) && !(event.done && event.message)) return;
+        if (event.runId && finalizedStreamRunIds.current.has(event.runId) && !(event.done && event.message)) return;
         if (event.runId) {
           streamingRunMessageIds.current.set(event.runId, event.messageId);
         }
-        queryClient.setQueryData<Message[] | undefined>(['messages', roomId], (prev) => {
-          const result = applyMessageStreamUpdate(prev, {
-            messageId: event.messageId,
-            chunk: event.chunk,
-            done: event.done,
-            channel: event.channel,
-            event: event.event,
-            message: event.message,
-          });
-          matchedMessage = result.matched;
-          fullContent = result.fullContent;
-          return result.messages;
+        enqueueStreamUpdate({
+          messageId: event.messageId,
+          runId: event.runId,
+          chunk: event.chunk,
+          done: event.done,
+          channel: event.channel,
+          event: event.event,
+          message: event.message,
         });
-        if (event.chunk && (!event.channel || event.channel === 'answer')) {
-          streamingDisplay.appendChunk(event.messageId, event.chunk);
-        }
-        if (!matchedMessage) {
-          queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-        }
-        if (event.done) {
-          const fallbackContent = queryClient
-            .getQueryData<Message[]>(['messages', roomId])
-            ?.find((message) => message.id === event.messageId)
-            ?.content ?? fullContent;
-          streamingDisplay.finishMessage(event.messageId, fallbackContent);
-        }
-        setStreamingMessageIds((prev) =>
-          event.done ? removeStreamingMessageId(prev, event.messageId) : addStreamingMessageId(prev, event.messageId),
-        );
-        if (event.done && event.runId) {
-          streamingRunMessageIds.current.delete(event.runId);
-        }
       } else if (
         (event.type === 'agent_run:created' || event.type === 'agent_run:updated') &&
         event.roomId === roomId
@@ -239,13 +297,16 @@ export function RoomPage() {
           upsertAgentRun(prev, event.run),
         );
         if (event.type === 'agent_run:updated' && isTerminalAgentRunStatus(event.run.status)) {
+          finalizedStreamRunIds.current.add(event.run.id);
           const messageId =
             streamingRunMessageIds.current.get(event.run.id) ??
             findAgentRunMessageId(queryClient.getQueryData<Message[]>(['messages', roomId]), event.run);
           if (messageId) {
+            finalizedStreamMessageIds.current.add(messageId);
             setStreamingMessageIds((prev) => removeStreamingMessageId(prev, messageId));
             streamingRunMessageIds.current.delete(event.run.id);
           }
+          queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
         }
       } else if (event.type === 'room:agent_joined' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
@@ -256,8 +317,13 @@ export function RoomPage() {
     return () => {
       roomSocket.unsubscribe(roomId);
       off();
+      if (streamFlushFrame.current !== null) {
+        window.cancelAnimationFrame(streamFlushFrame.current);
+        streamFlushFrame.current = null;
+      }
+      pendingStreamUpdates.current = [];
     };
-  }, [roomId, queryClient, streamingDisplay.appendChunk, streamingDisplay.finishMessage]);
+  }, [roomId, queryClient, enqueueStreamUpdate]);
 
   return (
     <div className="workspace-root" data-testid="room-page">

@@ -155,6 +155,7 @@ export type MessageStreamChannel = 'answer' | StreamTraceChannel;
 
 export interface MessageStreamUpdate {
   messageId: string;
+  runId?: string;
   chunk: string;
   done: boolean;
   channel?: MessageStreamChannel;
@@ -166,6 +167,11 @@ export interface MessageStreamUpdateResult {
   messages: Message[] | undefined;
   matched: boolean;
   fullContent: string;
+}
+
+export interface MessageStreamBatchResult extends MessageStreamUpdateResult {
+  finalizedMessageIds: Set<string>;
+  finalizedRunIds: Set<string>;
 }
 
 export function applyMessageStreamUpdate(
@@ -206,6 +212,39 @@ export function applyMessageStreamUpdate(
     messages: messages || matched ? dedupeAndSortMessages(next) : undefined,
     matched,
     fullContent,
+  };
+}
+
+export function applyMessageStreamBatch(
+  messages: Message[] | undefined,
+  updates: MessageStreamUpdate[],
+): MessageStreamBatchResult {
+  let current = messages;
+  let matched = false;
+  let fullContent = '';
+  const finalizedMessageIds = new Set<string>();
+  const finalizedRunIds = new Set<string>();
+
+  for (const update of updates) {
+    if (finalizedMessageIds.has(update.messageId) && !(update.done && update.message)) continue;
+
+    const result = applyMessageStreamUpdate(current, update);
+    current = result.messages;
+    matched = matched || result.matched;
+    fullContent = result.fullContent || fullContent;
+
+    if (update.done) {
+      finalizedMessageIds.add(update.messageId);
+      if (update.runId) finalizedRunIds.add(update.runId);
+    }
+  }
+
+  return {
+    messages: current,
+    matched,
+    fullContent,
+    finalizedMessageIds,
+    finalizedRunIds,
   };
 }
 
