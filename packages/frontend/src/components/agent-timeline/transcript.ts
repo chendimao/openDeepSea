@@ -27,6 +27,7 @@ export function buildAgentTranscript(trace?: MessageTrace, fallbackText?: string
   let textBuffer = '';
   let textStartSeq = 0;
   let textId = '';
+  let pendingEvents: AgentTimelineEvent[] = [];
 
   const flushText = (): void => {
     const text = textBuffer.trim();
@@ -45,6 +46,13 @@ export function buildAgentTranscript(trace?: MessageTrace, fallbackText?: string
     textId = '';
   };
 
+  const flushPendingEvents = (): void => {
+    for (const event of pendingEvents) {
+      items.push({ type: 'event', id: event.id, event, seq: event.seq });
+    }
+    pendingEvents = [];
+  };
+
   for (const event of events) {
     if (event.type === 'assistant_message') {
       const text = readAssistantText(event);
@@ -54,18 +62,47 @@ export function buildAgentTranscript(trace?: MessageTrace, fallbackText?: string
         textId = `text:${event.id}`;
       }
       textBuffer += text;
+      if (pendingEvents.length > 0 && !hasOpenMarkdownCodeFence(textBuffer)) {
+        flushText();
+        flushPendingEvents();
+      }
       continue;
     }
 
     if (isHiddenTranscriptEvent(event)) continue;
+    if (hasOpenMarkdownCodeFence(textBuffer)) {
+      pendingEvents.push(event);
+      continue;
+    }
     flushText();
+    flushPendingEvents();
     items.push({ type: 'event', id: event.id, event, seq: event.seq });
   }
 
   flushText();
+  flushPendingEvents();
   const mergedItems = mergeTranscriptToolEvents(items);
   if (!mergedItems.some((item) => item.type === 'text')) return null;
   return { items: mergedItems, allEvents: events };
+}
+
+function hasOpenMarkdownCodeFence(text: string): boolean {
+  let openFence: string | null = null;
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s{0,3}(```+|~~~+)/);
+    if (!match) continue;
+    const marker = match[1];
+    if (!marker) continue;
+    const fenceKind = marker[0];
+    if (!openFence) {
+      openFence = marker;
+      continue;
+    }
+    if (fenceKind === openFence[0] && marker.length >= openFence.length) {
+      openFence = null;
+    }
+  }
+  return openFence !== null;
 }
 
 function traceToTranscriptEvents(trace?: MessageTrace): AgentTimelineEvent[] {

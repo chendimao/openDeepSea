@@ -53,6 +53,34 @@ test('buildAgentTranscript merges consecutive assistant chunks and tool lifecycl
   assert.equal(model.items[1]?.type === 'event' ? model.items[1].event.payload.output : null, 'ok');
 });
 
+test('buildAgentTranscript does not split markdown code fences around tool events', () => {
+  const model = buildAgentTranscript({
+    events: [
+      event('text-1', 1, 'assistant_message', '助手回复', { text: '计划如下：\n\n```json\n{\n' }),
+      event('tool-1', 2, 'tool_result', '工具结果 Read', {
+        id: 'read-1',
+        name: 'Read',
+        input: '{"path":"RoomPage.tsx"}',
+      }),
+      event('text-2', 3, 'assistant_message', '助手回复', {
+        text: '  "planner_decision": {\n    "awaiting_user_confirmation": true\n  }\n}\n```\n',
+      }),
+      event('tool-2', 4, 'tool_result', '工具结果 Read', {
+        id: 'read-2',
+        name: 'Read',
+        input: '{"path":"index.css"}',
+      }),
+    ],
+  });
+
+  assert.ok(model);
+  assert.deepEqual(model.items.map((item) => item.type), ['text', 'event', 'event']);
+  assert.equal(
+    model.items[0]?.type === 'text' ? model.items[0].text : '',
+    '计划如下：\n\n```json\n{\n  "planner_decision": {\n    "awaiting_user_confirmation": true\n  }\n}\n```',
+  );
+});
+
 test('buildAgentTranscript returns null when no assistant_message events are available', () => {
   const model = buildAgentTranscript({
     events: [
