@@ -14,6 +14,7 @@ import type {
   Room,
   RoomAgent,
   Task,
+  MessageLayer,
 } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
@@ -39,7 +40,7 @@ import { RichMessageComposer } from '../components/RichMessageComposer';
 import { RoomFilesPanel } from '../components/RoomFilesPanel';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
 import { TaskBoard } from '../components/TaskBoard';
-import { TaskDetailPanel } from '../components/TaskDetailPanel';
+import { TaskDetailPanel, type TaskLayerVisibility } from '../components/TaskDetailPanel';
 import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
@@ -72,6 +73,13 @@ import {
 } from './roomPageLogic';
 
 type RoomFeatureTab = 'chat' | 'files';
+const DEFAULT_TASK_LAYER_VISIBILITY: TaskLayerVisibility = {
+  chat: true,
+  activity: true,
+  timeline: true,
+  runtime: true,
+  diff: true,
+};
 type SendInput = {
   content: string;
   mentions?: string[];
@@ -89,6 +97,7 @@ export function RoomPage() {
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [layerVisibility, setLayerVisibility] = useState<TaskLayerVisibility>(DEFAULT_TASK_LAYER_VISIBILITY);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
   const [explicitReplyTarget, setExplicitReplyTarget] = useState<ReplyTarget | null>(null);
   const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -213,6 +222,9 @@ export function RoomPage() {
     setConfigAgent(null);
     setActiveTab('chat');
     setHighlightMessageId(messageId);
+  }, []);
+  const updateLayerVisibility = useCallback((layer: MessageLayer, visible: boolean) => {
+    setLayerVisibility((current) => ({ ...current, [layer]: visible }));
   }, []);
 
   const flushPendingStreamUpdates = useCallback(() => {
@@ -537,7 +549,9 @@ export function RoomPage() {
           <TaskDetailPanel
             task={activeTask}
             agents={agents}
+            layerVisibility={layerVisibility}
             onLocateSourceMessage={focusMessage}
+            onLayerVisibilityChange={updateLayerVisibility}
             onClose={() => setActiveTaskId(null)}
           />
         ) : showMemoryPanel && (

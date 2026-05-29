@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Box, ChevronRight, LocateFixed, Radio, XCircle } from 'lucide-react';
+import { Box, ChevronRight, Clock3, FileDiff, ListChecks, LocateFixed, Radio, Terminal, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n, type MessageKey } from '../lib/i18n';
@@ -8,19 +9,61 @@ import { AgentAvatar } from './AgentAvatar';
 import { Button } from './ui/Button';
 import { Label } from './ui/Input';
 
+export type TaskDetailView = 'plan' | 'timeline' | 'diff' | 'logs';
+export type TaskLayerVisibility = Record<MessageLayer, boolean>;
+
+const TASK_DETAIL_VIEWS: Array<{ id: TaskDetailView; labelKey: MessageKey; icon: typeof ListChecks }> = [
+  { id: 'plan', labelKey: 'taskDetail.view.plan', icon: ListChecks },
+  { id: 'timeline', labelKey: 'taskDetail.view.timeline', icon: Clock3 },
+  { id: 'diff', labelKey: 'taskDetail.view.diff', icon: FileDiff },
+  { id: 'logs', labelKey: 'taskDetail.view.logs', icon: Terminal },
+];
+
+const TASK_LAYER_FILTERS: MessageLayer[] = ['activity', 'timeline', 'runtime', 'diff'];
+const PLAN_EVENT_TYPES = new Set<TaskEvent['type']>([
+  'plan_proposed',
+  'workflow_plan_ready',
+  'workflow_assignment_created',
+]);
+
+export function selectTaskDetailEvents(
+  events: TaskEvent[],
+  layerVisibility: TaskLayerVisibility,
+): {
+  visibleEvents: TaskEvent[];
+  planEvents: TaskEvent[];
+  timelineEvents: TaskEvent[];
+  diffEvents: TaskEvent[];
+  logEvents: TaskEvent[];
+} {
+  const visibleEvents = events.filter((event) => layerVisibility[event.layer]);
+  return {
+    visibleEvents,
+    planEvents: events.filter((event) => PLAN_EVENT_TYPES.has(event.type)),
+    timelineEvents: visibleEvents.filter((event) => event.layer === 'activity' || event.layer === 'timeline'),
+    diffEvents: visibleEvents.filter((event) => event.layer === 'diff'),
+    logEvents: visibleEvents.filter((event) => event.layer === 'runtime'),
+  };
+}
+
 export function TaskDetailPanel({
   task,
   agents,
+  layerVisibility,
   onLocateSourceMessage,
+  onLayerVisibilityChange,
   onClose,
 }: {
   task: Task | null;
   agents: RoomAgent[];
+  layerVisibility: TaskLayerVisibility;
   onLocateSourceMessage?: (messageId: string, task: Task) => void;
+  onLayerVisibilityChange: (layer: MessageLayer, visible: boolean) => void;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const { formatRelativeTime, interactionModeLabel, t, taskPriorityLabel, taskStatusLabel } = useI18n();
+  const [activeView, setActiveView] = useState<TaskDetailView>('plan');
   const assignedAgent = task?.assigned_agent_id
     ? agents.find((agent) => agent.id === task.assigned_agent_id)
     : undefined;
@@ -30,6 +73,8 @@ export function TaskDetailPanel({
     enabled: !!task,
   });
   const events = eventResponse?.events ?? [];
+  const { visibleEvents, planEvents, timelineEvents, diffEvents, logEvents } =
+    selectTaskDetailEvents(events, layerVisibility);
 
   const update = useMutation({
     mutationFn: (patch: Partial<Pick<Task, 'status' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>>) =>
@@ -43,7 +88,7 @@ export function TaskDetailPanel({
 
   if (!task) {
     return (
-      <aside className="inspector-panel">
+      <aside className="inspector-panel" aria-label={t('taskDetail.panel')}>
         <header className="inspector-header">
           <div className="min-w-0">
             <div className="font-display text-[14px] font-semibold">Workflow Inspector</div>
@@ -66,7 +111,7 @@ export function TaskDetailPanel({
   }
 
   return (
-    <aside className="inspector-panel fade-up">
+    <aside className="inspector-panel fade-up" aria-label={t('taskDetail.panel')}>
       <header className="inspector-header">
         <div className="min-w-0">
           <div className="truncate font-display text-[14px] font-semibold leading-snug">{task.title}</div>
@@ -87,6 +132,14 @@ export function TaskDetailPanel({
       </header>
 
       <div className="inspector-content">
+        <TaskDetailViewTabs activeView={activeView} onChange={setActiveView} t={t} />
+
+        <TaskLayerToggles
+          layerVisibility={layerVisibility}
+          onChange={onLayerVisibilityChange}
+          t={t}
+        />
+
         <section className="inspector-section">
           <Label>{t('taskDetail.basicInfo')}</Label>
           <div className="glass-info-card space-y-3">
@@ -116,10 +169,45 @@ export function TaskDetailPanel({
           </div>
         </section>
 
-        <section className="inspector-section">
-          <Label>{t('taskDetail.timeline')}</Label>
-          <TaskEventTimeline events={events} formatRelativeTime={formatRelativeTime} t={t} />
-        </section>
+        {activeView === 'plan' && (
+          <TaskPlanView task={task} events={planEvents} formatRelativeTime={formatRelativeTime} t={t} />
+        )}
+
+        {activeView === 'timeline' && (
+          <section className="inspector-section">
+            <Label>{t('taskDetail.timeline')}</Label>
+            <TaskEventTimeline
+              events={timelineEvents}
+              emptyKey={visibleEvents.length === 0 ? 'taskDetail.noVisibleEvents' : 'taskDetail.noTimelineEvents'}
+              formatRelativeTime={formatRelativeTime}
+              t={t}
+            />
+          </section>
+        )}
+
+        {activeView === 'diff' && (
+          <section className="inspector-section">
+            <Label>{t('taskDetail.diff')}</Label>
+            <TaskEventTimeline
+              events={diffEvents}
+              emptyKey={layerVisibility.diff ? 'taskDetail.noDiffEvents' : 'taskDetail.diffHidden'}
+              formatRelativeTime={formatRelativeTime}
+              t={t}
+            />
+          </section>
+        )}
+
+        {activeView === 'logs' && (
+          <section className="inspector-section">
+            <Label>{t('taskDetail.logs')}</Label>
+            <TaskEventTimeline
+              events={logEvents}
+              emptyKey={layerVisibility.runtime ? 'taskDetail.noLogEvents' : 'taskDetail.logsHidden'}
+              formatRelativeTime={formatRelativeTime}
+              t={t}
+            />
+          </section>
+        )}
 
         <section className="inspector-section grid grid-cols-2 gap-3">
           <div>
@@ -223,10 +311,12 @@ export function TaskDetailPanel({
 
 function TaskEventTimeline({
   events,
+  emptyKey = 'taskDetail.noEvents',
   formatRelativeTime,
   t,
 }: {
   events: TaskEvent[];
+  emptyKey?: MessageKey;
   formatRelativeTime: (timestamp: number) => string;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
 }): JSX.Element {
@@ -234,7 +324,7 @@ function TaskEventTimeline({
     return (
       <div className="glass-info-card flex min-h-[96px] items-center gap-3 text-[12px] text-[var(--color-fg-muted)]">
         <Radio className="h-4 w-4 shrink-0 text-[var(--color-muted)]" strokeWidth={1.8} />
-        <span>{t('taskDetail.noEvents')}</span>
+        <span>{t(emptyKey)}</span>
       </div>
     );
   }
@@ -260,6 +350,94 @@ function TaskEventTimeline({
         </div>
       ))}
     </div>
+  );
+}
+
+function TaskDetailViewTabs({
+  activeView,
+  onChange,
+  t,
+}: {
+  activeView: TaskDetailView;
+  onChange: (view: TaskDetailView) => void;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}): JSX.Element {
+  return (
+    <div className="task-detail-tabs segmented-control" aria-label={t('taskDetail.views')}>
+      {TASK_DETAIL_VIEWS.map((view) => {
+        const Icon = view.icon;
+        const selected = activeView === view.id;
+        return (
+          <button
+            key={view.id}
+            type="button"
+            className={selected ? 'is-active' : undefined}
+            aria-pressed={selected}
+            onClick={() => onChange(view.id)}
+          >
+            <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
+            <span>{t(view.labelKey)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TaskLayerToggles({
+  layerVisibility,
+  onChange,
+  t,
+}: {
+  layerVisibility: TaskLayerVisibility;
+  onChange: (layer: MessageLayer, visible: boolean) => void;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}): JSX.Element {
+  return (
+    <div className="task-layer-toggles" aria-label={t('taskDetail.layers')}>
+      {TASK_LAYER_FILTERS.map((layer) => (
+        <label key={layer} className="task-layer-toggle">
+          <input
+            type="checkbox"
+            checked={layerVisibility[layer]}
+            onChange={(event) => onChange(layer, event.currentTarget.checked)}
+          />
+          <span className="task-event-dot" data-layer={layer} />
+          <span>{eventLayerLabel(layer, t)}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function TaskPlanView({
+  task,
+  events,
+  formatRelativeTime,
+  t,
+}: {
+  task: Task;
+  events: TaskEvent[];
+  formatRelativeTime: (timestamp: number) => string;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}): JSX.Element {
+  return (
+    <section className="inspector-section">
+      <Label>{t('taskDetail.plan')}</Label>
+      <div className="task-plan-summary glass-info-card">
+        <InfoRow label={t('taskDetail.status')} value={t(`task.status.${task.status}` as MessageKey)} />
+        <InfoRow label={t('taskDetail.interactionModeShort')} value={t(`task.interaction.${task.interaction_mode}` as MessageKey)} />
+        <InfoRow label={t('taskDetail.origin')} value={task.created_from ?? t('taskDetail.originUnknown')} />
+      </div>
+      <div className="mt-3">
+        <TaskEventTimeline
+          events={events}
+          emptyKey="taskDetail.noPlanEvents"
+          formatRelativeTime={formatRelativeTime}
+          t={t}
+        />
+      </div>
+    </section>
   );
 }
 

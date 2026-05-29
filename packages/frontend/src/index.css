@@ -1368,6 +1368,67 @@
     overflow-y: auto;
     padding: 14px;
   }
+  .task-detail-tabs {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .task-detail-tabs button {
+    flex: 1 1 0;
+    justify-content: center;
+    color: var(--color-fg-muted);
+    font-size: 11.5px;
+    font-weight: 650;
+    transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  }
+  .task-detail-tabs button.is-active {
+    background: rgba(255,255,255,0.82);
+    color: var(--color-fg);
+    box-shadow: 0 6px 14px rgba(67, 91, 121, 0.09);
+  }
+  .task-layer-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+  }
+  .task-layer-toggle {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    gap: 6px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.42);
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-fg-muted);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.6);
+    cursor: pointer;
+  }
+  .task-layer-toggle input {
+    position: absolute;
+    height: 1px;
+    width: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .task-layer-toggle:has(input:checked) {
+    background: rgba(255,255,255,0.76);
+    color: var(--color-fg);
+  }
+  .task-layer-toggle:has(input:focus-visible) {
+    outline: 2px solid rgba(10,132,255,0.42);
+    outline-offset: 2px;
+  }
+  .task-layer-toggle .task-event-dot {
+    margin-top: 0;
+    height: 7px;
+    width: 7px;
+  }
+  .task-layer-toggle:not(:has(input:checked)) .task-event-dot {
+    background: var(--color-muted);
+    box-shadow: 0 0 0 3px rgba(128,128,128,0.1);
+  }
   .memory-panel-shell {
     overflow-y: auto;
   }
@@ -1384,6 +1445,10 @@
   }
   .glass-info-card {
     padding: 12px;
+  }
+  .task-plan-summary {
+    display: grid;
+    gap: 10px;
   }
   .task-event-timeline {
     display: flex;
