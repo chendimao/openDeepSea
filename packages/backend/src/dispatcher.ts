@@ -931,6 +931,10 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         run_id: run.id,
         agent_id: agent.agent_id,
         seq,
+        payload: {
+          ...event.payload,
+          provider_event_id: event.id,
+        },
       };
     }
 
@@ -1387,7 +1391,11 @@ function projectTimelineEventToTaskEvent(input: {
   if (!input.taskId) return;
   const projection = mapTimelineEventToTaskEvent(input.event);
   if (!projection) return;
-  const taskEvent = taskEventRepo.create({
+  const providerEventId = typeof input.event.payload.provider_event_id === 'string'
+    ? input.event.payload.provider_event_id
+    : null;
+  const idempotencyPayloadKey = providerEventId ? 'projection_key' : 'timeline_event_id';
+  const taskEvent = taskEventRepo.createOnceByPayloadString(idempotencyPayloadKey, {
     task_id: input.taskId,
     room_id: input.roomId,
     type: projection.type,
@@ -1401,6 +1409,9 @@ function projectTimelineEventToTaskEvent(input: {
       agent_id: input.event.agent_id,
       title: input.event.title,
       ...input.event.payload,
+      projection_key: providerEventId
+        ? `${input.event.run_id}:${providerEventId}`
+        : input.event.id,
     },
   });
   wsHub.broadcast(input.roomId, { type: 'task_event:new', roomId: input.roomId, event: taskEvent });

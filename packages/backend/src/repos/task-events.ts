@@ -48,8 +48,61 @@ export const taskEventRepo = {
     return this.get(insert())!;
   },
 
+  createOnceByPayloadString(
+    payloadKey: string,
+    input: {
+      task_id: string;
+      room_id: string;
+      type: TaskEventType;
+      layer: MessageLayer;
+      payload: Record<string, unknown>;
+      source_run_id?: string | null;
+    },
+  ): TaskEvent {
+    if (!isSimpleJsonObjectKey(payloadKey)) return this.create(input);
+    const payloadValue = input.payload[payloadKey];
+    if (typeof payloadValue !== 'string' || !payloadValue.trim()) return this.create(input);
+    const existing = this.findByPayloadString({
+      taskId: input.task_id,
+      type: input.type,
+      layer: input.layer,
+      payloadKey,
+      payloadValue,
+    });
+    if (existing) return existing;
+    return this.create(input);
+  },
+
   get(id: string): TaskEvent | undefined {
     const row = db.prepare('SELECT * FROM task_events WHERE id = ?').get(id) as TaskEventRow | undefined;
+    return row ? parseTaskEventRow(row) : undefined;
+  },
+
+  findByPayloadString(input: {
+    taskId: string;
+    type: TaskEventType;
+    layer: MessageLayer;
+    payloadKey: string;
+    payloadValue: string;
+  }): TaskEvent | undefined {
+    const row = db
+      .prepare(
+        `SELECT * FROM task_events
+         WHERE task_id = ?
+           AND type = ?
+           AND layer = ?
+           AND json_valid(payload)
+           AND json_extract(payload, ?) = ?
+         ORDER BY seq ASC
+         LIMIT 1`,
+      )
+      .get(
+        input.taskId,
+        input.type,
+        input.layer,
+        `$.${input.payloadKey}`,
+        input.payloadValue,
+      ) as TaskEventRow | undefined;
     return row ? parseTaskEventRow(row) : undefined;
   },
 
@@ -94,4 +147,8 @@ function parsePayload(payload: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function isSimpleJsonObjectKey(key: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key);
 }

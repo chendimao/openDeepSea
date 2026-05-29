@@ -4016,22 +4016,29 @@ test('dispatchUserMessage binds routed task context to agent run and task event 
         channel: 'tool',
         trace: { kind: 'tool', name: 'read_file', input: 'README.md', output: 'ok' },
       });
+      const diffEvent = {
+        id: 'pending:diff',
+        message_id: 'pending',
+        run_id: 'pending',
+        agent_id: 'pending',
+        seq: 0,
+        type: 'file_diff',
+        status: 'completed',
+        title: '修改 src/index.ts',
+        payload: { path: 'src/index.ts', additions: 2, deletions: 1, diff: '@@ change' },
+        created_at: Date.now(),
+      } as const;
       onChunk({
         stream: 'stdout',
         text: '修改 src/index.ts',
         channel: 'event',
-        event: {
-          id: 'pending:diff',
-          message_id: 'pending',
-          run_id: 'pending',
-          agent_id: 'pending',
-          seq: 0,
-          type: 'file_diff',
-          status: 'completed',
-          title: '修改 src/index.ts',
-          payload: { path: 'src/index.ts', additions: 2, deletions: 1, diff: '@@ change' },
-          created_at: Date.now(),
-        },
+        event: diffEvent,
+      });
+      onChunk({
+        stream: 'stdout',
+        text: '重复修改 src/index.ts',
+        channel: 'event',
+        event: diffEvent,
       });
       onChunk({ stream: 'stdout', text: '完成。' });
       return { exitCode: 0, sessionId: null, stderr: '' };
@@ -4058,6 +4065,7 @@ test('dispatchUserMessage binds routed task context to agent run and task event 
     assert.ok(diffEvent);
     assert.equal(diffEvent.payload.path, 'src/index.ts');
     assert.equal(diffEvent.source_run_id, run.id);
+    assert.equal(events.filter((event) => event.type === 'diff_detected' && event.layer === 'diff').length, 1);
     assert.equal(
       roomEvents.some((event) => event.type === 'task_event:new' && event.event.type === 'runtime_event'),
       true,

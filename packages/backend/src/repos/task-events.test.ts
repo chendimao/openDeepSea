@@ -77,3 +77,103 @@ test('task_events table is append-only for repo callers', () => {
   } | undefined;
   assert.deepEqual(row, { id: event.id, seq: 1 });
 });
+
+test('taskEventRepo createOnceByPayloadString reuses existing projected events', () => {
+  const { room, task } = createTaskFixture();
+  const first = taskEventRepo.createOnceByPayloadString('timeline_event_id', {
+    task_id: task.id,
+    room_id: room.id,
+    type: 'runtime_event',
+    layer: 'runtime',
+    payload: {
+      timeline_event_id: 'run-1:2',
+      title: '读取文件',
+    },
+    source_run_id: 'run-1',
+  });
+  const second = taskEventRepo.createOnceByPayloadString('timeline_event_id', {
+    task_id: task.id,
+    room_id: room.id,
+    type: 'runtime_event',
+    layer: 'runtime',
+    payload: {
+      timeline_event_id: 'run-1:2',
+      title: '重复读取文件',
+    },
+    source_run_id: 'run-1',
+  });
+  const third = taskEventRepo.createOnceByPayloadString('timeline_event_id', {
+    task_id: task.id,
+    room_id: room.id,
+    type: 'runtime_event',
+    layer: 'runtime',
+    payload: {
+      timeline_event_id: 'run-1:3',
+      title: '执行命令',
+    },
+    source_run_id: 'run-1',
+  });
+
+  assert.equal(second.id, first.id);
+  assert.equal(second.payload.title, '读取文件');
+  assert.equal(third.seq, 2);
+  assert.deepEqual(taskEventRepo.listByTask(task.id).map((event) => event.id), [first.id, third.id]);
+});
+
+test('taskEventRepo createOnceByPayloadString preserves exact payload key values', () => {
+  const { room, task } = createTaskFixture();
+  const first = taskEventRepo.createOnceByPayloadString('timeline_event_id', {
+    task_id: task.id,
+    room_id: room.id,
+    type: 'runtime_event',
+    layer: 'runtime',
+    payload: {
+      timeline_event_id: ' run-1:2 ',
+      title: '读取文件',
+    },
+    source_run_id: 'run-1',
+  });
+  const second = taskEventRepo.createOnceByPayloadString('timeline_event_id', {
+    task_id: task.id,
+    room_id: room.id,
+    type: 'runtime_event',
+    layer: 'runtime',
+    payload: {
+      timeline_event_id: 'run-1:2',
+      title: '执行命令',
+    },
+    source_run_id: 'run-1',
+  });
+
+  assert.notEqual(second.id, first.id);
+  assert.deepEqual(taskEventRepo.listByTask(task.id).map((event) => event.id), [first.id, second.id]);
+});
+
+test('taskEventRepo createOnceByPayloadString falls back for unsafe payload keys', () => {
+  const { room, task } = createTaskFixture();
+  const first = taskEventRepo.createOnceByPayloadString('timeline.event.id', {
+    task_id: task.id,
+    room_id: room.id,
+    type: 'runtime_event',
+    layer: 'runtime',
+    payload: {
+      'timeline.event.id': 'run-1:2',
+      title: '读取文件',
+    },
+    source_run_id: 'run-1',
+  });
+  const second = taskEventRepo.createOnceByPayloadString('timeline.event.id', {
+    task_id: task.id,
+    room_id: room.id,
+    type: 'runtime_event',
+    layer: 'runtime',
+    payload: {
+      'timeline.event.id': 'run-1:2',
+      title: '重复读取文件',
+    },
+    source_run_id: 'run-1',
+  });
+
+  assert.notEqual(second.id, first.id);
+  assert.deepEqual(taskEventRepo.listByTask(task.id).map((event) => event.id), [first.id, second.id]);
+});
