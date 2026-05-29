@@ -2416,6 +2416,7 @@ test('planner follow-up auto continues suggested next steps after dispatched age
   });
 
   const originalAdapter = adapters.codex;
+  const events = captureRoomEvents(room.id);
   const plannerFollowupPrompts: string[] = [];
   adapters.codex = {
     ...originalAdapter,
@@ -2500,7 +2501,25 @@ test('planner follow-up auto continues suggested next steps after dispatched age
     assert.equal(metadata.planner_decision?.mode, 'auto_continue');
     assert.equal(metadata.planner_decision?.awaiting_user_confirmation, false);
     assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'qa-tester');
+
+    const plannerDoneIndex = events.findIndex((event) =>
+      event.type === 'message:stream' &&
+      event.done === true &&
+      event.messageId === plannerReply.id &&
+      event.message?.metadata?.includes('"auto_continue"') === true
+    );
+    const qaRunCreatedIndex = events.findIndex((event) =>
+      event.type === 'agent_run:created' &&
+      event.run.agent_id === 'qa-tester'
+    );
+    assert.ok(plannerDoneIndex >= 0, 'expected planner final message snapshot with auto_continue metadata');
+    assert.ok(qaRunCreatedIndex >= 0, 'expected auto-continued qa-tester run to be created');
+    assert.ok(
+      plannerDoneIndex < qaRunCreatedIndex,
+      'planner final message snapshot should reach clients before auto-continued agent starts',
+    );
   } finally {
+    events.restore();
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
@@ -2763,6 +2782,83 @@ test('planner dispatch reports completed agent results back to planner even with
     assert.ok(plannerReply);
     const metadata = JSON.parse(plannerReply.metadata ?? '{}') as MessageMetadata;
     assert.equal(metadata.planner_decision?.status, 'completed');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('planner dispatch reports failed agent status and error back to planner', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-followup-failed-agent-'));
+  const project = projectRepo.create({ name: `planner-followup-failed-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const backend = agentRepo.getByAgentId('backend-executor');
+  assert.ok(backend);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: backend.id });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '修复后端接口',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  const plannerFollowupPrompts: string[] = [];
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      if (args.prompt.includes('本轮派发的智能体已经完成')) {
+        plannerFollowupPrompts.push(args.prompt);
+        args.onChunk({
+          stream: 'stdout',
+          text: [
+            '执行失败，需要阻塞。',
+            '',
+            '```json',
+            JSON.stringify({
+              planner_decision: {
+                mode: 'pause_after_suggestion',
+                status: 'blocked',
+                summary: '后端执行失败，需要重新处理',
+                next_steps: [],
+                awaiting_user_confirmation: true,
+              },
+            }),
+            '```',
+          ].join('\n'),
+        });
+        return { exitCode: 0, sessionId: null, stderr: '' };
+      }
+      args.onChunk({ stream: 'stdout', text: '已尝试修改接口。' });
+      args.onChunk({ stream: 'stderr', text: 'TypeScript compilation failed' });
+      return { exitCode: 1, sessionId: null, stderr: 'TypeScript compilation failed' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '派发后端执行者修复接口',
+          next_steps: [
+            { agent_id: 'backend-executor', goal: '修复后端接口并运行 TypeScript 编译' },
+          ],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(plannerFollowupPrompts.length, 1);
+    assert.match(plannerFollowupPrompts[0] ?? '', /状态：failed/);
+    assert.match(plannerFollowupPrompts[0] ?? '', /错误：TypeScript compilation failed/);
+    assert.match(plannerFollowupPrompts[0] ?? '', /返回摘要：已尝试修改接口/);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

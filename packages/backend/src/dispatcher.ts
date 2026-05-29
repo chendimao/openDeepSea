@@ -29,8 +29,8 @@ import type {
   AgentRun,
   AgentRunStatus,
   AgentTimelineEvent,
-  AcpSessionHandoffReason,
   Agent,
+  AcpSessionHandoffReason,
   Message,
   MessageAttachmentMetadata,
   MessageTrace,
@@ -62,6 +62,13 @@ interface PlannerDispatchedTarget {
   agent: RoomAgent;
   prompt: string;
   step: PlannerDecision['next_steps'][number];
+}
+
+interface TargetRunResult {
+  message: Message | undefined;
+  run: AgentRun | undefined;
+  status: AgentRunStatus | 'failed';
+  error: string | null;
 }
 
 interface PlannerExecutionPlanDecision {
@@ -525,10 +532,12 @@ async function runTargets(args: {
   sourceMessageId?: string | null;
   imagePaths?: string[];
   distillModelInvoker?: MemoryDistillModelInvoker;
-}): Promise<Array<Message | undefined>> {
+}): Promise<TargetRunResult[]> {
   return Promise.all(
     args.targets.map(async (target) => {
       let finalMessage: Message | undefined;
+      let finalRun: AgentRun | undefined;
+      let finalStatus: AgentRunStatus | 'failed' = 'failed';
       await respondAsAgent({
         agent: target.agent,
         projectPath: args.projectPath,
@@ -538,8 +547,10 @@ async function runTargets(args: {
         imagePaths: args.imagePaths,
         sourceMessageId: args.sourceMessageId,
         distillModelInvoker: args.distillModelInvoker,
-        onFinished: ({ message }) => {
+        onFinished: ({ run, message, status }) => {
+          finalRun = run;
           finalMessage = message;
+          finalStatus = status;
         },
       }).catch((err) => {
         const errMsg = messageRepo.create({
@@ -552,8 +563,15 @@ async function runTargets(args: {
         });
         wsHub.broadcast(args.roomId, { type: 'message:new', roomId: args.roomId, message: errMsg });
         finalMessage = undefined;
+        finalStatus = 'failed';
+        finalRun = undefined;
       });
-      return finalMessage;
+      return {
+        message: finalMessage,
+        run: finalRun,
+        status: finalStatus,
+        error: finalRun?.error ?? null,
+      };
     }),
   );
 }
@@ -984,6 +1002,27 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     runRegistry.remove(run.id);
     const finalRun = agentRunRepo.get(run.id);
     const finalMessage = messageRepo.get(placeholder.id);
+    let finalSnapshotBroadcasted = false;
+    const broadcastFinalSnapshot = (): void => {
+      if (finalSnapshotBroadcasted) return;
+      flushAnswerBuffer();
+      finalSnapshotBroadcasted = true;
+      if (args.internalMessage) return;
+      const completedMessage = messageRepo.get(placeholder.id) ?? finalMessage;
+      wsHub.broadcast(roomId, {
+        type: 'message:stream',
+        roomId,
+        messageId: placeholder.id,
+        runId: finalRun?.id ?? run.id,
+        channel: 'answer',
+        chunk: '',
+        done: true,
+        seq: ++streamSeq,
+        status: finalRun?.status ?? (controller.signal.aborted ? 'cancelled' : 'failed'),
+        error: finalRun?.error ?? null,
+        message: completedMessage,
+      });
+    };
     try {
       if (finalRun && finalMessage) {
         try {
@@ -1004,28 +1043,13 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         } catch (err) {
           console.warn(`[agent-runs] onFinished callback failed for ${finalRun.id}: ${(err as Error).message}`);
         }
+        broadcastFinalSnapshot();
       }
       if (finalRun && finalMessage && args.onFinished) {
         await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
       }
     } finally {
-      flushAnswerBuffer();
-      if (!args.internalMessage) {
-        const completedMessage = messageRepo.get(placeholder.id) ?? finalMessage;
-        wsHub.broadcast(roomId, {
-          type: 'message:stream',
-          roomId,
-          messageId: placeholder.id,
-          runId: finalRun?.id ?? run.id,
-          channel: 'answer',
-          chunk: '',
-          done: true,
-          seq: ++streamSeq,
-          status: finalRun?.status ?? (controller.signal.aborted ? 'cancelled' : 'failed'),
-          error: finalRun?.error ?? null,
-          message: completedMessage,
-        });
-      }
+      broadcastFinalSnapshot();
       // Async memory distillation after reply completes (non-workflow only)
       const autoDistillEnabled = room
         ? settingsRepo.resolveForRoom(roomId)?.effective.auto_distill_enabled ?? true
@@ -1513,7 +1537,7 @@ async function reportPlannerDispatchResults(args: {
   sourceMessageId: string;
   decision: PlannerDecision;
   dispatchedTargets: PlannerDispatchedTarget[];
-  dispatchedResults: Array<Message | undefined>;
+  dispatchedResults: TargetRunResult[];
   deferredSteps: PlannerDecision['next_steps'];
   autoContinueDepth: number;
 }): Promise<void> {
@@ -1521,13 +1545,15 @@ async function reportPlannerDispatchResults(args: {
   const planner = roomAgentRepo.listByRoom(args.roomId).find((agent) => agent.agent_id === 'planner');
   if (!planner) return;
   const completedSummaries = args.dispatchedTargets.map((target, index) => {
-    const message = args.dispatchedResults[index];
-    const content = message?.content?.trim() || '该智能体没有返回可用内容。';
+    const result = args.dispatchedResults[index];
+    const content = result?.message?.content?.trim() || '该智能体没有返回可用内容。';
     return [
       `- 已执行智能体：${target.agent.agent_name} (${target.agent.agent_id})`,
       `  原目标：${target.prompt}`,
+      `  状态：${result?.status ?? 'unknown'}`,
+      result?.error ? `  错误：${result.error}` : null,
       `  返回摘要：${summarizePlannerDispatchResult(content)}`,
-    ].join('\n');
+    ].filter((line): line is string => Boolean(line)).join('\n');
   });
   const deferredLines = args.deferredSteps.map((step, index) =>
     `${index + 1}. ${step.agent_id}: ${step.goal}`,
@@ -1571,17 +1597,27 @@ async function reportPlannerDispatchResults(args: {
           decision,
           `自动续派发已达到上限 ${MAX_PLANNER_AUTO_CONTINUE_DEPTH}，已暂停后续派发。`,
         );
-        messageRepo.mergeMetadata(latestMessage.id, {
+        const updatedMessage = messageRepo.mergeMetadata(latestMessage.id, {
           planner_decision: blockedDecision,
           source_message_id: args.sourceMessageId,
+        });
+        if (updatedMessage) broadcastAgentMessageSnapshot({
+          roomId: args.roomId,
+          message: updatedMessage,
+          run,
         });
         console.warn(`[planner-dispatch] auto-continue depth limit reached for source message ${args.sourceMessageId}`);
         return;
       }
       const autoDecision = normalizeAutoContinuePlannerDecision(decision);
-      messageRepo.mergeMetadata(latestMessage.id, {
+      const updatedMessage = messageRepo.mergeMetadata(latestMessage.id, {
         planner_decision: autoDecision,
         source_message_id: args.sourceMessageId,
+      });
+      if (updatedMessage) broadcastAgentMessageSnapshot({
+        roomId: args.roomId,
+        message: updatedMessage,
+        run,
       });
       try {
         await dispatchPlannerDecision({
@@ -1593,9 +1629,14 @@ async function reportPlannerDispatchResults(args: {
       } catch (err) {
         const error = (err as Error).message;
         const blockedDecision = normalizeBlockedAutoContinuePlannerDecision(autoDecision, `自动续派发失败：${error}`);
-        messageRepo.mergeMetadata(latestMessage.id, {
+        const blockedMessage = messageRepo.mergeMetadata(latestMessage.id, {
           planner_decision: blockedDecision,
           source_message_id: args.sourceMessageId,
+        });
+        if (blockedMessage) broadcastAgentMessageSnapshot({
+          roomId: args.roomId,
+          message: blockedMessage,
+          run,
         });
         const systemMessage = messageRepo.create({
           room_id: args.roomId,
@@ -1608,6 +1649,25 @@ async function reportPlannerDispatchResults(args: {
         wsHub.broadcast(args.roomId, { type: 'message:new', roomId: args.roomId, message: systemMessage });
       }
     },
+  });
+}
+
+function broadcastAgentMessageSnapshot(input: {
+  roomId: string;
+  message: Message;
+  run: AgentRun;
+}): void {
+  wsHub.broadcast(input.roomId, {
+    type: 'message:stream',
+    roomId: input.roomId,
+    messageId: input.message.id,
+    runId: input.run.id,
+    channel: 'answer',
+    chunk: '',
+    done: true,
+    status: input.run.status,
+    error: input.run.error ?? null,
+    message: input.message,
   });
 }
 
