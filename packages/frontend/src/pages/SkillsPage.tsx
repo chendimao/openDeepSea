@@ -152,6 +152,7 @@ export function SkillsPage(): JSX.Element {
       mode: input.mode ?? 'online',
       targets: input.targets?.length ? input.targets : ['codex'],
       skillName: input.skillName ?? null,
+      localPath: input.localPath ?? null,
     });
   }
 
