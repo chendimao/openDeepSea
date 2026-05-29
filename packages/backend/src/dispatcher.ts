@@ -736,8 +736,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const broadcastAnswerChunk = (chunk: string): void => {
     restoreRunStatusAfterRetry();
     messageRepo.appendChunk(placeholder.id, chunk);
-    const updated = agentRunRepo.appendStdout(run.id, chunk);
-    if (updated) broadcastRun('agent_run:updated', updated);
+    agentRunRepo.appendStdout(run.id, chunk);
     if (!args.internalMessage) {
       wsHub.broadcast(roomId, {
         type: 'message:stream',

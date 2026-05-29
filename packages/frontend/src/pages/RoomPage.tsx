@@ -534,11 +534,18 @@ function findAgentRunMessageId(messages: Message[] | undefined, run: AgentRun): 
   return message?.id ?? null;
 }
 
-function upsertAgentRun(prev: AgentRun[] | undefined, run: AgentRun): AgentRun[] {
+export function upsertAgentRun(prev: AgentRun[] | undefined, run: AgentRun): AgentRun[] {
   const list = prev ?? [];
-  return [run, ...list.filter((item) => item.id !== run.id)]
+  const existing = list.find((item) => item.id === run.id);
+  const nextRun = existing && shouldKeepExistingAgentRun(existing, run) ? existing : run;
+  return [nextRun, ...list.filter((item) => item.id !== run.id)]
     .sort((a, b) => b.started_at - a.started_at)
     .slice(0, 50);
+}
+
+function shouldKeepExistingAgentRun(existing: AgentRun, incoming: AgentRun): boolean {
+  if (incoming.updated_at < existing.updated_at) return true;
+  return isTerminalAgentRunStatus(existing.status) && !isTerminalAgentRunStatus(incoming.status);
 }
 
 function RoomSwitcher({

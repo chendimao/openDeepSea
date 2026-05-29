@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Message } from '../lib/types';
+import type { AgentRun, Message } from '../lib/types';
 import type { AgentTimelineEvent } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import {
   findPreviousUserMessage,
+  upsertAgentRun,
 } from './RoomPage';
 import {
   applyMessageStreamUpdate,
@@ -361,6 +362,42 @@ test('mergeMessageStreamTrace keeps legacy trace channels intact', () => {
   assert.equal(metadata.trace?.thinking?.[0]?.text, 'keep追加');
 });
 
+test('upsertAgentRun does not regress a terminal run to running from a stale update', () => {
+  const completed = createAgentRun({
+    status: 'completed',
+    updated_at: 2000,
+    completed_at: 2000,
+  });
+  const staleRunning = createAgentRun({
+    status: 'running',
+    updated_at: 1500,
+    completed_at: null,
+  });
+
+  const result = upsertAgentRun([completed], staleRunning);
+
+  assert.equal(result[0]?.status, 'completed');
+  assert.equal(result[0]?.updated_at, 2000);
+});
+
+test('upsertAgentRun keeps terminal status even if a later non-terminal snapshot arrives', () => {
+  const completed = createAgentRun({
+    status: 'completed',
+    updated_at: 2000,
+    completed_at: 2000,
+  });
+  const running = createAgentRun({
+    status: 'running',
+    updated_at: 2500,
+    completed_at: null,
+  });
+
+  const result = upsertAgentRun([completed], running);
+
+  assert.equal(result[0]?.status, 'completed');
+  assert.equal(result[0]?.updated_at, 2000);
+});
+
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & {
   created_at?: number;
   metadata?: string | null;
@@ -375,5 +412,30 @@ function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & 
     message_type: input.sender_type === 'agent' ? 'agent_stream' : 'text',
     metadata: input.metadata ?? null,
     created_at: input.created_at ?? Date.now(),
+  };
+}
+
+function createAgentRun(input: Partial<AgentRun> = {}): AgentRun {
+  return {
+    id: input.id ?? 'run-1',
+    room_id: input.room_id ?? 'room-1',
+    room_agent_id: input.room_agent_id ?? 'room-agent-1',
+    agent_id: input.agent_id ?? 'planner',
+    backend: input.backend ?? 'codex',
+    status: input.status ?? 'running',
+    session_key: input.session_key ?? null,
+    acp_session_id: input.acp_session_id ?? null,
+    task_id: input.task_id ?? null,
+    workflow_run_id: input.workflow_run_id ?? null,
+    workflow_step_id: input.workflow_step_id ?? null,
+    workflow_stage: input.workflow_stage ?? null,
+    prompt: input.prompt ?? 'prompt',
+    stdout: input.stdout ?? '',
+    stderr: input.stderr ?? '',
+    activity_log: input.activity_log ?? '',
+    error: input.error ?? null,
+    started_at: input.started_at ?? 1000,
+    updated_at: input.updated_at ?? 1000,
+    completed_at: input.completed_at ?? null,
   };
 }

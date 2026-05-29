@@ -299,6 +299,70 @@ test('runAgentOnce broadcasts retrying status for ACP retry chunks and resumes r
   }
 });
 
+test('runAgentOnce does not broadcast agent run updates for answer stdout chunks', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-stdout-status-'));
+  const project = projectRepo.create({ name: `stdout-status-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor-stdout', agent_name: 'ExecutorStdout' });
+  roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+
+  const sentEvents: string[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send(payload: string) {
+      sentEvents.push(payload);
+    },
+  };
+  wsHub.subscribe(room.id, socket as never);
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({ stream: 'stdout', text: '第一段。' });
+      args.onChunk?.({ stream: 'stdout', text: '第二段。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const result = await runAgentOnce({
+      roomId: room.id,
+      agent: roomAgentRepo.get(agent.id)!,
+      projectPath,
+      prompt: 'hello',
+    });
+
+    const events = sentEvents.map((payload) => JSON.parse(payload) as {
+      type: string;
+      done?: boolean;
+      run?: { status?: string };
+    });
+    const runUpdatedStatuses = events
+      .filter((event) => event.type === 'agent_run:updated')
+      .map((event) => event.run?.status)
+      .filter(Boolean);
+    const streamChunks = events.filter((event) => event.type === 'message:stream' && !event.done);
+
+    assert.equal(result.status, 'completed');
+    assert.deepEqual(runUpdatedStatuses, ['completed']);
+    assert.equal(streamChunks.length, 2);
+    assert.match(agentRunRepo.get(result.run.id)?.stdout ?? '', /第一段。第二段。/);
+  } finally {
+    wsHub.unsubscribe(room.id, socket as never);
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner fallback reply keeps executable requests in planner chat without collaboration decision', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-decision-'));
   const project = projectRepo.create({ name: `planner-decision-${Date.now()}`, path: projectPath });
