@@ -868,7 +868,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         acp_session_id: result.sessionId,
         acp_session_label: agent.acp_session_label,
         acp_permission_mode: agent.acp_permission_mode,
-        acp_writable_dirs: [],
+        acp_writable_dirs: agent.acp_writable_dirs,
       });
     }
     if (controller.signal.aborted) {

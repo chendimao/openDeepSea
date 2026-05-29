@@ -1315,6 +1315,50 @@ test('dispatchUserMessage marks empty successful ACP output as failed', async ()
   }
 });
 
+test('respondAsAgent preserves writable dirs when ACP session id changes', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-session-preserve-dirs-'));
+  const writeDir = join(projectPath, 'packages/backend');
+  await mkdir(writeDir, { recursive: true });
+  const project = projectRepo.create({ name: `session-preserve-dirs-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'session-agent', agent_name: 'SessionAgent' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'old-session',
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [writeDir],
+  });
+  assert.ok(acpAgent);
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({ stream: 'stdout', text: 'session updated' });
+      return { exitCode: 0, sessionId: 'new-session', stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '更新 session',
+    });
+
+    const updated = roomAgentRepo.get(agent.id);
+    assert.equal(updated?.acp_session_id, 'new-session');
+    assert.equal(updated?.acp_permission_mode, 'workspace-write');
+    assert.deepEqual(updated?.acp_writable_dirs, [writeDir]);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent persists legacy raw patch event as timeline event metadata', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-raw-event-test-'));
   const project = projectRepo.create({ name: `raw-event-${Date.now()}`, path: projectPath });
