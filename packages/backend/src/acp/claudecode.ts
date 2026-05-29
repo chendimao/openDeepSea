@@ -92,7 +92,7 @@ export const claudeCodeAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('claudecode');
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
@@ -101,6 +101,7 @@ export const claudeCodeAdapter: SessionAdapter = {
         projectPath,
         sessionId,
         prompt,
+        sessionHandoff,
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
@@ -115,9 +116,10 @@ export const claudeCodeAdapter: SessionAdapter = {
       emitProtocolFallback(onChunk, 'claudecode', protocolResult.stderr);
     }
 
+    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff);
     const invocation = buildClaudeCodeInvocation({
       sessionId,
-      prompt,
+      prompt: legacyPrompt,
       imagePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
@@ -146,6 +148,16 @@ export function buildClaudeCodeInvocation(args: {
   }
   if (args.sessionId) cliArgs.push('--resume', args.sessionId);
   return { args: cliArgs, stdin: buildClaudeCodePrompt(args.prompt, args.imagePaths ?? []) };
+}
+
+export function withSessionHandoffForNewSession(
+  prompt: string,
+  sessionId: string | null,
+  sessionHandoff?: string | null,
+): string {
+  const normalized = sessionHandoff?.trim();
+  if (sessionId || !normalized) return prompt;
+  return `${normalized}\n\n当前请求：\n${prompt}`;
 }
 
 export function buildClaudeCodeArgs(args: {

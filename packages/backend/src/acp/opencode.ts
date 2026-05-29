@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { CliSessionSummary } from '../types.js';
 import type { AcpPermissionMode } from '../types.js';
 import type { SessionAdapter } from './types.js';
-import { emitProtocolFallback, runStreaming } from './claudecode.js';
+import { emitProtocolFallback, runStreaming, withSessionHandoffForNewSession } from './claudecode.js';
 import { invokeProtocolSession } from './protocol-client.js';
 import { getAcpServerConfig } from './protocol-registry.js';
 
@@ -70,7 +70,7 @@ export const openCodeAdapter: SessionAdapter = {
     }
   },
 
-  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('opencode');
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
@@ -79,6 +79,7 @@ export const openCodeAdapter: SessionAdapter = {
         projectPath,
         sessionId,
         prompt,
+        sessionHandoff,
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
@@ -93,9 +94,10 @@ export const openCodeAdapter: SessionAdapter = {
       emitProtocolFallback(onChunk, 'opencode', protocolResult.stderr);
     }
 
+    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff);
     const args = buildOpenCodeArgs({
       sessionId,
-      prompt,
+      prompt: legacyPrompt,
       filePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       model: process.env.OPENCLAW_OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL,

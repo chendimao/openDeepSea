@@ -11,7 +11,7 @@ import {
   type ContentBlock,
   type SessionNotification,
 } from '@agentclientprotocol/sdk';
-import type { AcpBackend, AcpPermissionMode } from '../types.js';
+import type { AcpBackend, AcpPermissionMode, AcpSessionHandoffReason } from '../types.js';
 import type { AcpInvokeResult, AcpStreamChunk } from './types.js';
 import type { AcpServerConfig } from './protocol-registry.js';
 
@@ -30,6 +30,7 @@ export interface InvokeProtocolSessionArgs {
   projectPath: string;
   sessionId: string | null;
   prompt: string;
+  sessionHandoff?: string | null;
   imagePaths?: string[];
   acpPermissionMode?: AcpPermissionMode | null;
   acpWritableDirs?: string[] | null;
@@ -52,6 +53,9 @@ export async function invokeProtocolSession(
   let promptStarted = false;
   let eventReceived = false;
   let answerReceived = false;
+  let promptShouldIncludeHandoff = false;
+  let sessionHandoffPending = false;
+  let sessionHandoffReason: AcpSessionHandoffReason | undefined;
   let rejectStreamDisconnect: ((error: Error) => void) | null = null;
   const stageTimeoutMs = args.stageTimeoutMs ?? readProtocolStageTimeoutMs(process.env.OPENCLAW_ACP_STAGE_TIMEOUT_MS);
   const promptTimeoutMs = args.promptTimeoutMs ?? readProtocolTimeoutMs(
@@ -184,6 +188,7 @@ export async function invokeProtocolSession(
         'ACP resumeSession timed out',
       );
     } else {
+      promptShouldIncludeHandoff = true;
       const newSession = await withTimeout(
         connection.newSession({
           cwd: args.projectPath,
@@ -226,7 +231,7 @@ export async function invokeProtocolSession(
     let promptResult = await promptActiveSession({
       connection,
       sessionId: activeSessionId,
-      prompt: args.prompt,
+      prompt: promptShouldIncludeHandoff ? withSessionHandoff(args.prompt, args.sessionHandoff) : args.prompt,
       imagePaths: args.imagePaths ?? [],
       promptTimeoutMs,
       streamDisconnect,
@@ -244,6 +249,8 @@ export async function invokeProtocolSession(
         await resetClaudeAcpSessionAfterSystemRoleError(
           '[ACP session reset] Claude Code ACP hit an unsupported system-role message after streaming events; the current turn failed, but the next turn will use a fresh session.\n',
         );
+        sessionHandoffPending = true;
+        sessionHandoffReason = 'automatic_rotation_after_events';
         throw error;
       }
 
@@ -253,7 +260,7 @@ export async function invokeProtocolSession(
       return promptActiveSession({
         connection,
         sessionId: newSessionId,
-        prompt: args.prompt,
+        prompt: withSessionHandoff(args.prompt, args.sessionHandoff),
         imagePaths: args.imagePaths ?? [],
         promptTimeoutMs,
         streamDisconnect,
@@ -288,6 +295,8 @@ export async function invokeProtocolSession(
           stderr,
           fallbackSafe: false,
           retrySafe: false,
+          sessionHandoffPending,
+          sessionHandoffReason,
         };
       }
     }
@@ -299,6 +308,8 @@ export async function invokeProtocolSession(
       stderr: stderr ? `${stderr}\n${message}` : message,
       fallbackSafe: !initialized && !promptStarted && !eventReceived,
       retrySafe,
+      sessionHandoffPending,
+      sessionHandoffReason,
     };
   }
 }
@@ -444,6 +455,12 @@ function buildPromptContent(prompt: string, imagePaths: string[]): ContentBlock[
   }
 
   return content;
+}
+
+function withSessionHandoff(prompt: string, handoff?: string | null): string {
+  const normalized = handoff?.trim();
+  if (!normalized) return prompt;
+  return `${normalized}\n\n当前请求：\n${prompt}`;
 }
 
 function extractAgentText(notification: SessionNotification): string | null {

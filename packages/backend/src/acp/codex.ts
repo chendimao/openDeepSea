@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AcpPermissionMode, CliSessionSummary } from '../types.js';
 import type { SessionAdapter } from './types.js';
-import { emitProtocolFallback, runStreaming } from './claudecode.js';
+import { emitProtocolFallback, runStreaming, withSessionHandoffForNewSession } from './claudecode.js';
 import { invokeProtocolSession, isAcpStreamDisconnected } from './protocol-client.js';
 import { getAcpServerConfig } from './protocol-registry.js';
 
@@ -118,7 +118,7 @@ export const codexAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('codex');
     if (protocolConfig.enabled) {
       let protocolResult = await invokeProtocolSession({
@@ -127,6 +127,7 @@ export const codexAdapter: SessionAdapter = {
         projectPath,
         sessionId,
         prompt,
+        sessionHandoff,
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
@@ -153,6 +154,7 @@ export const codexAdapter: SessionAdapter = {
           projectPath,
           sessionId: protocolResult.sessionId ?? sessionId,
           prompt,
+          sessionHandoff,
           imagePaths,
           acpPermissionMode,
           acpWritableDirs,
@@ -168,9 +170,10 @@ export const codexAdapter: SessionAdapter = {
       emitProtocolFallback(onChunk, 'codex', protocolResult.stderr);
     }
 
+    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff);
     const invocation = buildCodexExecInvocation({
       sessionId,
-      prompt,
+      prompt: legacyPrompt,
       imagePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],

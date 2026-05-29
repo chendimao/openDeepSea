@@ -121,6 +121,36 @@ test('invokeProtocolSession starts a new session when agent cannot resume saved 
   assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
 });
 
+test('invokeProtocolSession prepends handoff when ACP creates a new session', async () => {
+  const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_ECHO_PROMPT: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'current prompt',
+    sessionHandoff: 'handoff context',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.sessionId, 'fake-session-1');
+  const answer = chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join('');
+  assert.match(answer, /handoff context/);
+  assert.match(answer, /当前请求：\s*current prompt/);
+});
+
 test('invokeProtocolSession retries Claude ACP with a fresh session when resumed history contains system role', async () => {
   const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
   const sessions: string[] = [];
@@ -152,6 +182,34 @@ test('invokeProtocolSession retries Claude ACP with a fresh session when resumed
   assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
   assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.session_reset'), true);
   assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.stderr'), false);
+});
+
+test('invokeProtocolSession marks handoff pending after evented Claude system-role rotation', async () => {
+  const result = await invokeProtocolSession({
+    backend: 'claudecode',
+    server: {
+      backend: 'claudecode',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_CAN_RESUME: '1',
+        OPENCLAW_FAKE_ACP_FAIL_AFTER_EVENT_SYSTEM_ROLE: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: 'old-claude-session',
+    prompt: 'hello',
+    sessionHandoff: 'handoff context',
+    onChunk: () => undefined,
+  });
+
+  assert.equal(result.exitCode, -1);
+  assert.equal(result.sessionId, 'fake-session-1');
+  assert.equal(result.sessionHandoffPending, true);
+  assert.equal(result.sessionHandoffReason, 'automatic_rotation_after_events');
 });
 
 test('invokeProtocolSession rotates Claude ACP session after system role error once events streamed', async () => {

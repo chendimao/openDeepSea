@@ -124,6 +124,23 @@ class FakeAgent implements Agent {
       });
     }
 
+    if (process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT === '1') {
+      const firstText = params.prompt.find((block) => block.type === 'text');
+      await this.connection.sessionUpdate({
+        sessionId: params.sessionId,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: {
+            type: 'text',
+            text: firstText?.text ?? '',
+          },
+        },
+      });
+      return {
+        stopReason: 'end_turn' as const,
+      };
+    }
+
     await this.connection.sessionUpdate({
       sessionId: params.sessionId,
       update: {

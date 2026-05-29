@@ -1,4 +1,10 @@
-import type { AcpBackend, AcpPermissionMode, AgentTimelineEvent, CliSessionSummary } from '../types.js';
+import type {
+  AcpBackend,
+  AcpPermissionMode,
+  AcpSessionHandoffReason,
+  AgentTimelineEvent,
+  CliSessionSummary,
+} from '../types.js';
 
 export type AcpStreamChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command' | 'event';
 
@@ -43,6 +49,7 @@ export interface SessionAdapter {
     projectPath: string;
     sessionId: string | null;
     prompt: string;
+    sessionHandoff?: string | null;
     imagePaths?: string[];
     acpPermissionMode?: AcpPermissionMode | null;
     /** Final absolute directories allowed for write access. Empty means no additional write scope. */
@@ -60,4 +67,6 @@ export interface AcpInvokeResult {
   stderr: string;
   fallbackSafe?: boolean;
   retrySafe?: boolean;
+  sessionHandoffPending?: boolean;
+  sessionHandoffReason?: AcpSessionHandoffReason;
 }
