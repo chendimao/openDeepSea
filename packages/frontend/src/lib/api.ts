@@ -721,6 +721,9 @@ export const api = {
       if (input.fileIds && input.fileIds.length > 0) {
         form.append('fileIds', JSON.stringify(input.fileIds));
       }
+      if (input.activeTaskId) {
+        form.append('active_task_id', input.activeTaskId);
+      }
       input.files.forEach((file) => form.append('files', file));
       return request<Message>(`/rooms/${roomId}/messages`, {
         method: 'POST',

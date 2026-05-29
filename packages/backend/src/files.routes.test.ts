@@ -14,8 +14,14 @@ const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { fileRepo } = await import('./repos/files.js');
 const { messageRepo } = await import('./repos/messages.js');
-const { router } = await import('./routes.js');
+const { taskRepo } = await import('./repos/tasks.js');
+const { taskEventRepo } = await import('./repos/task-events.js');
+const { router, setMessageRouteDeps } = await import('./routes.js');
 const express = (await import('express')).default;
+
+setMessageRouteDeps({
+  dispatchUserMessage: async () => {},
+});
 
 const app = express();
 app.use(express.json());
@@ -561,4 +567,58 @@ test('multipart message rejects invalid project file ids without leaving uploade
 
   assert.equal(messageRes.status, 400);
   assert.equal(fileRepo.listByProject(project.id).length, before);
+});
+
+test('multipart message creates a task for clear create-task intent', async () => {
+  const project = createProject('multipart-create-task');
+  const room = roomRepo.create({ project_id: project.id, name: 'File Room' });
+  const form = new FormData();
+  form.append('content', '新建任务：整理附件验收');
+  form.append('files', new Blob(['acceptance'], { type: 'text/plain' }), 'acceptance.txt');
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: form,
+  });
+
+  assert.equal(res.status, 201);
+  const message = await res.json() as { id: string; metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: { action: string; taskId: string | null };
+  };
+  assert.equal(metadata.route_result?.action, 'create_task');
+  assert.ok(metadata.task_id);
+
+  const tasks = taskRepo.listByRoom(room.id);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0]?.title, '整理附件验收');
+  assert.equal(tasks[0]?.source_message_id, message.id);
+  assert.equal(tasks[0]?.created_from, 'chat_plan');
+  assert.equal(taskEventRepo.listByTask(tasks[0]!.id).some((event) => event.type === 'message_routed'), true);
+});
+
+test('multipart message routes to the active task', async () => {
+  const project = createProject('multipart-active-task');
+  const room = roomRepo.create({ project_id: project.id, name: 'File Room' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: '附件审查' });
+  const form = new FormData();
+  form.append('content', '补充一份附件说明');
+  form.append('active_task_id', task.id);
+  form.append('files', new Blob(['details'], { type: 'text/plain' }), 'details.txt');
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: form,
+  });
+
+  assert.equal(res.status, 201);
+  const message = await res.json() as { id: string; metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: { action: string; taskId: string | null };
+  };
+  assert.equal(metadata.task_id, task.id);
+  assert.equal(metadata.route_result?.action, 'append_to_task');
+  assert.equal(metadata.route_result?.taskId, task.id);
 });

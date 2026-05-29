@@ -1632,6 +1632,7 @@ const multipartMessageSchema = z.object({
   mentions: z.string().optional(),
   fileIds: z.string().optional(),
   reply_to_message_id: z.string().optional(),
+  active_task_id: z.string().trim().min(1).nullable().optional(),
 });
 
 router.post('/rooms/:roomId/messages', (req, res, next) => {
@@ -1749,11 +1750,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     res.status(error.status ?? 400).json({ error: error.message });
     return;
   }
-  const routeResult = routeMessage({
-    roomId,
-    message: content,
-    activeTaskId: parsed.data.active_task_id ?? null,
-  });
+  const routeResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
   metadata.route_result = routeResult;
   if (routeResult.taskId) {
     metadata.task_id = routeResult.taskId;
@@ -1766,15 +1763,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     mentions: parsed.data.mentions,
     metadata,
   });
-  const finalRouteResult = routeResult.action === 'create_task'
-    ? createTaskFromRoutedMessage({
-        roomId,
-        userMessageId: userMsg.id,
-        content,
-        routeResult,
-      })
-    : routeResult;
-  recordTaskRoutingEvent(roomId, userMsg.id, finalRouteResult);
+  finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
   res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
 }
@@ -1855,12 +1844,17 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
         roomId,
         attachments: messageFiles.map(buildAttachmentMetadataFromProjectFile),
         replyToMessageId,
-      });
+      }) ?? {};
     } catch (err) {
       await cleanupProjectUploadedFiles(files);
       const error = err as Error & { status?: number };
       res.status(error.status ?? 400).json({ error: error.message });
       return;
+    }
+    const routeResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
+    metadata.route_result = routeResult;
+    if (routeResult.taskId) {
+      metadata.task_id = routeResult.taskId;
     }
     const userMsg = createAndDispatchUserMessage({
       roomId,
@@ -1870,8 +1864,9 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       mentions,
       metadata,
     });
+    finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
     recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
-    res.status(201).json(userMsg);
+    res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
   } catch (err) {
     await cleanupProjectUploadedFiles(files);
     throw err;
@@ -1989,6 +1984,18 @@ function recordTaskRoutingEvent(
       route_reason: routeResult.reason,
     },
   });
+}
+
+function finalizeUserMessageRouting(input: {
+  roomId: string;
+  userMessageId: string;
+  content: string;
+  routeResult: import('./types.js').RouteResult;
+}): void {
+  const finalRouteResult = input.routeResult.action === 'create_task'
+    ? createTaskFromRoutedMessage(input)
+    : input.routeResult;
+  recordTaskRoutingEvent(input.roomId, input.userMessageId, finalRouteResult);
 }
 
 function createTaskFromRoutedMessage(input: {
