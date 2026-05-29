@@ -326,6 +326,14 @@ test('renders ACP transcript by interleaving assistant text and tool events', ()
   );
 
   assert.match(html, /agent-transcript/);
+  assert.match(html, /agent-transcript-text-row/);
+  assert.match(html, /agent-transcript-star/);
+  assert.match(html, /agent-transcript-time/);
+  assert.match(html, /dateTime="1970-01-01T00:00:01\.000Z"/);
+  assert.match(html, /agent-transcript-event-group/);
+  assert.match(html, /agent-timeline-card is-tool_result/);
+  assert.match(html, /调用工具/);
+  assert.match(html, /1 个/);
   assert.match(html, /我会先读取本会话要求的工作流技能/);
   assert.match(html, /Read · \/Users\/chendimao\/\.codex\/skills\/using-superpowers\/SKILL\.md/);
   assert.match(html, /失败/);

@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { AgentTimeline, AgentTimelineItem } from './AgentTimeline';
 import { useI18n } from '../lib/i18n';
-import type { Agent, MessageTrace, RoomAgent } from '../lib/types';
+import type { Agent, AgentTimelineEvent, MessageTrace, RoomAgent } from '../lib/types';
 import { buildAgentTranscript, type AgentTranscriptModel } from './agent-timeline/transcript';
 
 type MessagePart =
@@ -180,26 +180,110 @@ function AgentTranscriptView({
   agentNameById?: Map<string, string>;
   suppressPlannerDecisionSummary?: boolean;
 }): JSX.Element {
+  const groupedItems = groupTranscriptItems(transcript.items);
   return (
     <div className="agent-transcript">
-      {transcript.items.map((item, index) => (
+      {groupedItems.map((item, index) => (
         item.type === 'text' ? (
-          <div key={item.id} className="agent-transcript-text">
-            <MarkdownPreview
-              content={item.text}
-              streaming={streaming && index === transcript.items.length - 1}
-              agentNameById={agentNameById}
-              suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
-            />
+          <div key={item.id} className="agent-transcript-text-row">
+            <span className="agent-transcript-star" aria-hidden="true" />
+            <div className="agent-transcript-text">
+              <MarkdownPreview
+                content={item.text}
+                streaming={streaming && index === groupedItems.length - 1}
+                agentNameById={agentNameById}
+                suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+              />
+            </div>
+            {item.createdAt ? (
+              <time className="agent-transcript-time" dateTime={new Date(item.createdAt).toISOString()}>
+                {formatTranscriptTime(item.createdAt)}
+              </time>
+            ) : null}
           </div>
         ) : (
-          <div key={item.id} className="agent-transcript-event">
-            <AgentTimelineItem event={item.event} />
+          <div key={item.id} className="agent-transcript-event-group">
+            <div className="agent-transcript-event-header">
+              <span className="agent-transcript-event-icon" aria-hidden="true">{getTranscriptGroupIcon(item.events[0])}</span>
+              <span>{formatTranscriptGroupTitle(item.events)}</span>
+              <small>{item.events.length} 个</small>
+            </div>
+            <div className="agent-transcript-event-list">
+              {item.events.map((event) => (
+                <div key={event.id} className="agent-transcript-event">
+                  <AgentTimelineItem event={event} />
+                </div>
+              ))}
+            </div>
           </div>
         )
       ))}
     </div>
   );
+}
+
+type GroupedTranscriptItem =
+  | { type: 'text'; id: string; text: string; createdAt?: number }
+  | { type: 'events'; id: string; events: AgentTimelineEvent[] };
+
+function groupTranscriptItems(items: AgentTranscriptModel['items']): GroupedTranscriptItem[] {
+  const groups: GroupedTranscriptItem[] = [];
+  let eventBuffer: AgentTimelineEvent[] = [];
+
+  const flushEvents = () => {
+    if (eventBuffer.length === 0) return;
+    groups.push({
+      type: 'events',
+      id: `events:${eventBuffer[0]?.id ?? groups.length}`,
+      events: eventBuffer,
+    });
+    eventBuffer = [];
+  };
+
+  for (const item of items) {
+    if (item.type === 'text') {
+      flushEvents();
+      groups.push({
+        type: 'text',
+        id: item.id,
+        text: item.text,
+        createdAt: item.createdAt,
+      });
+    } else {
+      eventBuffer.push(item.event);
+    }
+  }
+  flushEvents();
+  return groups;
+}
+
+function formatTranscriptGroupTitle(events: AgentTimelineEvent[]): string {
+  if (events.length === 0) return '执行事件';
+  if (events.every((event) => event.type === 'plan_update')) return '生成计划';
+  if (events.every((event) => event.type === 'file_diff')) return '文件变更';
+  if (events.every((event) => event.type === 'command' || event.type === 'command_output')) return '运行命令';
+  if (events.every((event) => event.type === 'tool_call' || event.type === 'tool_result')) return '调用工具';
+  return '执行过程';
+}
+
+function getTranscriptGroupIcon(event: AgentTimelineEvent | undefined): string {
+  if (!event) return '□';
+  if (event.type === 'plan_update') return '□';
+  if (event.type === 'file_diff') return '▤';
+  if (event.type === 'command' || event.type === 'command_output') return '○';
+  if (event.type === 'tool_call' || event.type === 'tool_result') return '□';
+  return '□';
+}
+
+function formatTranscriptTime(value: number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
 export function isMarkdownMessageContent(content: string): boolean {

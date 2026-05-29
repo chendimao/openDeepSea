@@ -1,7 +1,7 @@
 import type { AgentTimelineEvent, MessageTrace } from '../../lib/types';
 
 export type AgentTranscriptItem =
-  | { type: 'text'; id: string; text: string; seq: number }
+  | { type: 'text'; id: string; text: string; seq: number; createdAt?: number }
   | { type: 'event'; id: string; event: AgentTimelineEvent; seq: number };
 
 export interface AgentTranscriptModel {
@@ -26,6 +26,7 @@ export function buildAgentTranscript(trace?: MessageTrace, fallbackText?: string
   }
   let textBuffer = '';
   let textStartSeq = 0;
+  let textStartCreatedAt: number | undefined;
   let textId = '';
 
   const flushText = (): void => {
@@ -40,8 +41,10 @@ export function buildAgentTranscript(trace?: MessageTrace, fallbackText?: string
       id: textId || `text:${textStartSeq}`,
       text,
       seq: textStartSeq,
+      createdAt: textStartCreatedAt,
     });
     textBuffer = '';
+    textStartCreatedAt = undefined;
     textId = '';
   };
 
@@ -51,6 +54,7 @@ export function buildAgentTranscript(trace?: MessageTrace, fallbackText?: string
       if (!text) continue;
       if (!textBuffer) {
         textStartSeq = event.seq;
+        textStartCreatedAt = event.created_at;
         textId = `text:${event.id}`;
       }
       textBuffer += text;
