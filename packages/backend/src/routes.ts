@@ -42,7 +42,7 @@ import { skillsRouter } from './skills/routes.js';
 import { platformSkillsRouter } from './platform-skills/routes.js';
 import { pickDirectory } from './system-dialogs.js';
 import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
-import { routeMessage } from './task-router.js';
+import { extractCreateTaskTitle, routeMessage } from './task-router.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
 import {
@@ -1766,9 +1766,17 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     mentions: parsed.data.mentions,
     metadata,
   });
-  recordTaskRoutingEvent(roomId, userMsg.id, routeResult);
+  const finalRouteResult = routeResult.action === 'create_task'
+    ? createTaskFromRoutedMessage({
+        roomId,
+        userMessageId: userMsg.id,
+        content,
+        routeResult,
+      })
+    : routeResult;
+  recordTaskRoutingEvent(roomId, userMsg.id, finalRouteResult);
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
-  res.status(201).json(userMsg);
+  res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
 }
 
 async function handleMultipartMessage(req: Request, res: Response): Promise<void> {
@@ -1981,6 +1989,36 @@ function recordTaskRoutingEvent(
       route_reason: routeResult.reason,
     },
   });
+}
+
+function createTaskFromRoutedMessage(input: {
+  roomId: string;
+  userMessageId: string;
+  content: string;
+  routeResult: import('./types.js').RouteResult;
+}): import('./types.js').RouteResult {
+  const title = extractCreateTaskTitle(input.content);
+  if (!title) return input.routeResult;
+  const result = createTaskWithConversation({
+    roomId: input.roomId,
+    taskInput: {
+      title,
+      description: input.content,
+    },
+    origin: 'chat_plan',
+    sourceMessageId: input.userMessageId,
+    createUserMessage: false,
+  });
+  const nextRouteResult: import('./types.js').RouteResult = {
+    ...input.routeResult,
+    taskId: result.task.id,
+    reason: `${input.routeResult.reason}，已自动创建任务：${result.task.title}`,
+  };
+  messageRepo.mergeMetadata(input.userMessageId, {
+    task_id: result.task.id,
+    route_result: nextRouteResult,
+  });
+  return nextRouteResult;
 }
 
 function parseMultipartMentions(rawMentions?: string): string[] | undefined {
@@ -2451,6 +2489,15 @@ router.post('/rooms/:roomId/tasks/conversation', (req, res) => {
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
+});
+
+router.post('/rooms/:roomId/tasks/:taskId/activate', (req, res) => {
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const task = taskRepo.get(req.params.taskId);
+  if (!task || task.room_id !== room.id) return res.status(404).json({ error: 'task not found' });
+  wsHub.broadcast(room.id, { type: 'task:activated', roomId: room.id, taskId: task.id });
+  res.json({ roomId: room.id, taskId: task.id });
 });
 
 router.post('/rooms/:roomId/tasks', (req, res) => {

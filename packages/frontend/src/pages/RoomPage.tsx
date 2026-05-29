@@ -155,6 +155,14 @@ export function RoomPage() {
     },
     onError: (err) => toast.error((err as Error).message),
   });
+  const activateTask = useMutation({
+    mutationFn: (task: Task) => api.activateTask(roomId, task.id),
+    onMutate: (task) => {
+      setActiveTaskId(task.id);
+      setShowMemoryPanel(false);
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
   const { data: agentRuns = [] } = useQuery({
     queryKey: ['agent-runs', roomId],
     queryFn: () => api.listAgentRuns(roomId),
@@ -361,6 +369,9 @@ export function RoomPage() {
           (prev ?? []).filter((task) => task.id !== event.taskId),
         );
         setActiveTaskId((current) => (current === event.taskId ? null : current));
+      } else if (event.type === 'task:activated' && event.roomId === roomId) {
+        setActiveTaskId(event.taskId);
+        setShowMemoryPanel(false);
       } else if (event.type === 'task_event:new' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
       }
@@ -473,8 +484,7 @@ export function RoomPage() {
           workflows={workflows}
           selectedTaskId={activeTaskId}
           onSelectTask={(task) => {
-            setActiveTaskId(task.id);
-            setShowMemoryPanel(false);
+            activateTask.mutate(task);
           }}
           onChangeStatus={(task, status) => {
             updateTaskStatus.mutate({ task, status });

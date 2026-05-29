@@ -126,5 +126,19 @@ function cjkBigrams(value: string): string[] {
 }
 
 function looksLikeCreateTaskIntent(message: string): boolean {
-  return createTaskPatterns.some((pattern) => pattern.test(message));
+  return createTaskPatterns.some((pattern) => pattern.test(message)) && extractCreateTaskTitle(message) !== null;
+}
+
+export function extractCreateTaskTitle(message: string): string | null {
+  const trimmed = message.trim();
+  const chinese = /(?:新建|创建|新增)\s*任务[:：]\s*(.+)$/u.exec(trimmed);
+  if (chinese?.[1]?.trim()) return truncateTaskTitle(chinese[1].trim());
+  const slash = /^\/task\b\s*(.+)$/u.exec(trimmed);
+  if (slash?.[1]?.trim()) return truncateTaskTitle(slash[1].trim());
+  return null;
+}
+
+function truncateTaskTitle(value: string): string {
+  const normalized = value.replace(/\s+/gu, ' ').trim();
+  return normalized.length <= 160 ? normalized : `${normalized.slice(0, 157).trimEnd()}...`;
 }

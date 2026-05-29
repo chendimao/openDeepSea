@@ -831,6 +831,8 @@ export const api = {
     patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id' | 'status'>>,
   ) =>
     request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  activateTask: (roomId: string, taskId: string) =>
+    request<{ roomId: string; taskId: string }>(`/rooms/${roomId}/tasks/${taskId}/activate`, { method: 'POST' }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   startWorkflow: (taskId: string) =>

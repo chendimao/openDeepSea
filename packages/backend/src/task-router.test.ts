@@ -9,7 +9,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-ta
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
-const { routeMessage } = await import('./task-router.js');
+const { extractCreateTaskTitle, routeMessage } = await import('./task-router.js');
 
 function createRoomFixture() {
   const project = projectRepo.create({
@@ -96,4 +96,22 @@ test('routeMessage creates a task for clear standalone work when no task matches
   assert.equal(result.action, 'create_task');
   assert.ok(result.confidence >= 0.75);
   assert.match(result.reason, /新任务/);
+});
+
+test('extractCreateTaskTitle parses slash and Chinese create-task commands', () => {
+  assert.equal(extractCreateTaskTitle('新建任务：整理发布说明'), '整理发布说明');
+  assert.equal(extractCreateTaskTitle('/task Fix release notes'), 'Fix release notes');
+  assert.equal(extractCreateTaskTitle('帮我看一下'), null);
+});
+
+test('routeMessage asks the user when create-task command has no title', () => {
+  const { room } = createRoomFixture();
+
+  const result = routeMessage({
+    roomId: room.id,
+    message: '新建任务：',
+  });
+
+  assert.equal(result.action, 'ask_user');
+  assert.equal(result.taskId, null);
 });
