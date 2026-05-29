@@ -11,8 +11,6 @@ import type {
   SenderType,
 } from '../types.js';
 
-const CLIENT_TRACE_EVENT_LIMIT = 80;
-
 export const messageRepo = {
   listByRoom(roomId: string, limit = 200): Message[] {
     const messages = db
@@ -142,20 +140,88 @@ function compactMessageForClient(message: Message): Message {
 
 function compactMessageTraceForClient(trace: MessageTrace): MessageTrace {
   const events = trace.events ?? [];
-  if (events.length <= CLIENT_TRACE_EVENT_LIMIT) return trace;
-  const visibleEvents = events
-    .filter(isVisibleClientTraceEvent)
-    .slice(-CLIENT_TRACE_EVENT_LIMIT);
+  if (events.length === 0) return trace;
+
+  const compactEvents = compactClientTraceEvents(events);
+  if (compactEvents.length === events.length && compactEvents.every((event, index) => event === events[index])) {
+    return trace;
+  }
+
   return {
     ...trace,
-    events: visibleEvents,
+    events: compactEvents,
     events_total: events.length,
-    events_omitted: events.length - visibleEvents.length,
+    events_omitted: 0,
   };
 }
 
-function isVisibleClientTraceEvent(event: AgentTimelineEvent): boolean {
-  return event.type !== 'assistant_message';
+function compactClientTraceEvents(events: AgentTimelineEvent[]): AgentTimelineEvent[] {
+  const compacted: AgentTimelineEvent[] = [];
+  let assistantBuffer: AgentTimelineEvent | null = null;
+
+  const flushAssistantBuffer = (): void => {
+    if (!assistantBuffer) return;
+    compacted.push(assistantBuffer);
+    assistantBuffer = null;
+  };
+
+  for (const event of events) {
+    if (event.type !== 'assistant_message') {
+      flushAssistantBuffer();
+      compacted.push(event);
+      continue;
+    }
+
+    const text = readAssistantEventText(event);
+    if (text === null) continue;
+    if (!assistantBuffer) {
+      assistantBuffer = {
+        ...event,
+        payload: {
+          ...event.payload,
+          text,
+        },
+        raw: undefined,
+      };
+      continue;
+    }
+
+    assistantBuffer = {
+      ...assistantBuffer,
+      status: mergeAssistantEventStatus(assistantBuffer.status, event.status),
+      created_at: event.created_at,
+      payload: {
+        ...assistantBuffer.payload,
+        text: `${readAssistantEventText(assistantBuffer) ?? ''}${text}`,
+      },
+    };
+  }
+
+  flushAssistantBuffer();
+  return compacted;
+}
+
+function readAssistantEventText(event: AgentTimelineEvent): string | null {
+  const content = event.payload.content;
+  if (content && typeof content === 'object' && !Array.isArray(content)) {
+    const record = content as Record<string, unknown>;
+    if (record.type === 'text' && typeof record.text === 'string') return record.text;
+  }
+  if (typeof content === 'string') return content;
+  return typeof event.payload.text === 'string' ? event.payload.text : null;
+}
+
+function mergeAssistantEventStatus(
+  current: AgentTimelineEvent['status'],
+  next: AgentTimelineEvent['status'],
+): AgentTimelineEvent['status'] {
+  const priority: Record<AgentTimelineEvent['status'], number> = {
+    started: 0,
+    delta: 1,
+    completed: 2,
+    failed: 3,
+  };
+  return priority[next] >= priority[current] ? next : current;
 }
 
 function refreshPlannerMessageMetadata(message: Message): Message {

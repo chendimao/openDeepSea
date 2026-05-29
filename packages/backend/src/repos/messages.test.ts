@@ -81,7 +81,7 @@ test('messageRepo returns compact trace events for historical oversized metadata
   assert.match(JSON.stringify(event.payload), /rg -n/);
 });
 
-test('messageRepo listForClient keeps only the latest trace events and records omitted count', () => {
+test('messageRepo listForClient keeps every timeline-visible trace event', () => {
   const project = projectRepo.create({
     name: `messages-client-${Date.now()}`,
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-client-project-')),
@@ -119,7 +119,6 @@ test('messageRepo listForClient keeps only the latest trace events and records o
 
   const [listed] = messageRepo.listForClientByRoom(room.id);
   assert.ok(listed);
-  assert.ok((listed.metadata ?? '').length < (internal?.metadata ?? '').length);
   const metadata = JSON.parse(listed.metadata ?? '{}') as {
     trace?: {
       events?: Array<{ seq: number }>;
@@ -127,14 +126,14 @@ test('messageRepo listForClient keeps only the latest trace events and records o
       events_omitted?: number;
     };
   };
-  assert.equal(metadata.trace?.events?.length, 80);
-  assert.equal(metadata.trace?.events?.[0]?.seq, 41);
-  assert.equal(metadata.trace?.events?.[79]?.seq, 120);
-  assert.equal(metadata.trace?.events_total, 120);
-  assert.equal(metadata.trace?.events_omitted, 40);
+  assert.equal(metadata.trace?.events?.length, 120);
+  assert.equal(metadata.trace?.events?.[0]?.seq, 1);
+  assert.equal(metadata.trace?.events?.[119]?.seq, 120);
+  assert.equal(metadata.trace?.events_total, undefined);
+  assert.equal(metadata.trace?.events_omitted, undefined);
 });
 
-test('messageRepo listForClient omits partial assistant deltas when compacting trace events', () => {
+test('messageRepo listForClient coalesces assistant deltas without dropping timeline text', () => {
   const project = projectRepo.create({
     name: `messages-client-assistant-${Date.now()}`,
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-client-assistant-project-')),
@@ -161,24 +160,50 @@ test('messageRepo listForClient omits partial assistant deltas when compacting t
       run_id: 'run-1',
       agent_id: 'planner',
       seq: 1,
+      type: 'assistant_message',
+      status: 'delta',
+      title: '助手回复',
+      payload: { text: '开头正文。' },
+      created_at: 1000,
+    },
+    {
+      id: 'run-1:2',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 2,
       type: 'tool_result',
       status: 'completed',
       title: '工具结果 Read',
       payload: { text: 'read RoomPage.tsx' },
-      created_at: 1000,
+      created_at: 1001,
     },
     ...Array.from({ length: 100 }, (_, index) => ({
-      id: `run-1:${index + 2}`,
+      id: `run-1:${index + 3}`,
       message_id: message.id,
       run_id: 'run-1',
       agent_id: 'planner',
-      seq: index + 2,
+      seq: index + 3,
       type: 'assistant_message',
       status: 'delta',
       title: '助手回复',
-      payload: { text: index === 99 ? 'awaiting_user_confirmation": true\n}\n```' : `token-${index}` },
-      created_at: 1001 + index,
+      payload: index === 50
+        ? { text: '', content: { type: 'text', text: ' ' } }
+        : { text: index === 99 ? 'awaiting_user_confirmation": true\n}\n```' : `token-${index}` },
+      created_at: 1002 + index,
     })),
+    {
+      id: 'run-1:103',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 103,
+      type: 'tool_result',
+      status: 'completed',
+      title: '工具结果 Build',
+      payload: { text: 'npm run build' },
+      created_at: 1103,
+    },
   ];
   db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify({
     trace: { events },
@@ -188,13 +213,21 @@ test('messageRepo listForClient omits partial assistant deltas when compacting t
   assert.ok(listed);
   const metadata = JSON.parse(listed.metadata ?? '{}') as {
     trace?: {
-      events?: Array<{ type: string; seq: number }>;
+      events?: Array<{ type: string; seq: number; payload: { text?: string } }>;
       events_total?: number;
       events_omitted?: number;
     };
   };
-  assert.deepEqual(metadata.trace?.events?.map((event) => event.type), ['tool_result']);
+  assert.deepEqual(metadata.trace?.events?.map((event) => event.type), [
+    'assistant_message',
+    'tool_result',
+    'assistant_message',
+    'tool_result',
+  ]);
   assert.equal(metadata.trace?.events?.[0]?.seq, 1);
-  assert.equal(metadata.trace?.events_total, 101);
-  assert.equal(metadata.trace?.events_omitted, 100);
+  assert.equal(metadata.trace?.events?.[2]?.seq, 3);
+  assert.match(metadata.trace?.events?.[2]?.payload.text ?? '', /token-49 token-51/);
+  assert.match(metadata.trace?.events?.[2]?.payload.text ?? '', /awaiting_user_confirmation/);
+  assert.equal(metadata.trace?.events_total, 103);
+  assert.equal(metadata.trace?.events_omitted, 0);
 });
