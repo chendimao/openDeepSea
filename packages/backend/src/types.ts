@@ -61,6 +61,12 @@ export interface RoomSearchResponse {
 
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
 export type AcpPermissionMode = 'bypass' | 'workspace-write' | 'read-only';
+export type AcpSessionHandoffReason =
+  | 'manual_new_session'
+  | 'first_session'
+  | 'resume_unavailable'
+  | 'automatic_rotation'
+  | 'automatic_rotation_after_events';
 export type AgentDefaultRuntime = 'acp' | 'openclaw' | 'none';
 export type AgentRuntimeBackend = 'acp' | 'model' | 'none';
 export type AgentMemoryScope = 'project' | 'room' | 'agent' | 'task' | 'none';
@@ -539,6 +545,8 @@ export interface RoomAgent {
   acp_backend: AcpBackend | null;
   acp_session_id: string | null;
   acp_session_label: string | null;
+  acp_session_handoff_pending: 0 | 1;
+  acp_session_handoff_reason: AcpSessionHandoffReason | null;
   acp_permission_mode: AcpPermissionMode;
   acp_writable_dirs: string[];
   capabilities: string[];

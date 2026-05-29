@@ -167,6 +167,8 @@ CREATE TABLE IF NOT EXISTS room_agents (
   acp_backend TEXT,
   acp_session_id TEXT,
   acp_session_label TEXT,
+  acp_session_handoff_pending INTEGER NOT NULL DEFAULT 0 CHECK (acp_session_handoff_pending IN (0, 1)),
+  acp_session_handoff_reason TEXT,
   acp_permission_mode TEXT NOT NULL DEFAULT 'bypass',
   acp_writable_dirs TEXT NOT NULL DEFAULT '[]',
   capabilities TEXT NOT NULL DEFAULT '[]',
@@ -750,6 +752,12 @@ if (!roomAgentColumnNames.has('global_agent_id')) {
 }
 if (!roomAgentColumnNames.has('left_at')) {
   db.exec('ALTER TABLE room_agents ADD COLUMN left_at INTEGER');
+}
+if (!roomAgentColumnNames.has('acp_session_handoff_pending')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN acp_session_handoff_pending INTEGER NOT NULL DEFAULT 0 CHECK (acp_session_handoff_pending IN (0, 1))');
+}
+if (!roomAgentColumnNames.has('acp_session_handoff_reason')) {
+  db.exec('ALTER TABLE room_agents ADD COLUMN acp_session_handoff_reason TEXT');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_room_agents_global_agent ON room_agents(global_agent_id)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_room_agents_active ON room_agents(room_id, left_at)');

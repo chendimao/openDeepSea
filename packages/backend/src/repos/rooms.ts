@@ -8,6 +8,7 @@ import { db, now } from '../db.js';
 import type {
   AcpBackend,
   AcpPermissionMode,
+  AcpSessionHandoffReason,
   AgentDefaultRuntime,
   AgentMemoryScope,
   AgentRuntimeBackend,
@@ -39,6 +40,8 @@ type RoomAgentRow = Omit<
   workspace_policy?: string | null;
   memory_scope?: string | null;
   runtime_profile_version?: number | null;
+  acp_session_handoff_pending?: 0 | 1 | null;
+  acp_session_handoff_reason?: AcpSessionHandoffReason | null;
 };
 
 type RoomAgentWithRuntimeProfileVersion = RoomAgent & { runtime_profile_version?: number | null };
@@ -185,6 +188,8 @@ function normalizeRoomAgent(row: RoomAgentRow): RoomAgent {
     memory_scope: memoryScope && MEMORY_SCOPES.has(memoryScope as AgentMemoryScope)
       ? (memoryScope as AgentMemoryScope)
       : null,
+    acp_session_handoff_pending: row.acp_session_handoff_pending ?? 0,
+    acp_session_handoff_reason: row.acp_session_handoff_reason ?? null,
   };
 }
 
@@ -534,6 +539,19 @@ export const roomAgentRepo = {
       JSON.stringify(config.acp_writable_dirs ?? []),
       id,
     );
+    return this.get(id);
+  },
+
+  setAcpSessionHandoffPending(
+    id: string,
+    pending: boolean,
+    reason: AcpSessionHandoffReason | null,
+  ): RoomAgent | undefined {
+    db.prepare(
+      `UPDATE room_agents
+       SET acp_session_handoff_pending = ?, acp_session_handoff_reason = ?
+       WHERE id = ?`,
+    ).run(pending ? 1 : 0, pending ? reason : null, id);
     return this.get(id);
   },
 
