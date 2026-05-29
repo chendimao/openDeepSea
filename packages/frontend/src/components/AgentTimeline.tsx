@@ -140,7 +140,10 @@ export function AgentTimelineItem({ event, roomId }: { event: AgentTimelineEvent
 
 function shouldLoadEventDetail(event: AgentTimelineEvent, roomId: string | undefined): boolean {
   if (!roomId || event.payload.detail_omitted !== true) return false;
-  return event.type === 'tool_call' || event.type === 'tool_result' || event.type === 'command_output';
+  return event.type === 'tool_call'
+    || event.type === 'tool_result'
+    || event.type === 'command_output'
+    || event.type === 'file_diff';
 }
 
 function getEventDetailId(event: AgentTimelineEvent): string {

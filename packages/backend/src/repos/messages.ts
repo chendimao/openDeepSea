@@ -155,11 +155,44 @@ function compactMessageForClient(message: Message): Message {
 }
 
 function compactMessageTraceForClient(trace: MessageTrace): MessageTrace {
-  if (!trace.events?.length) return trace;
+  const { thinking: _thinking, tool_calls: _toolCalls, commands: _commands, ...clientTrace } = trace;
+  if (!trace.events?.length) return clientTrace;
   return {
-    ...trace,
-    events: trace.events.map(compactTimelineEventForClient),
+    ...clientTrace,
+    events: compactTimelineEventsForClient(trace.events),
   };
+}
+
+function compactTimelineEventsForClient(events: AgentTimelineEvent[]): AgentTimelineEvent[] {
+  const compacted: AgentTimelineEvent[] = [];
+  let pendingAssistant: AgentTimelineEvent | null = null;
+
+  const flushAssistant = (): void => {
+    if (!pendingAssistant) return;
+    compacted.push(pendingAssistant);
+    pendingAssistant = null;
+  };
+
+  for (const event of events) {
+    if (shouldDropClientTraceEvent(event)) continue;
+
+    if (event.type === 'assistant_message') {
+      const assistant = compactAssistantMessageEventForClient(event);
+      if (!assistant) continue;
+      if (pendingAssistant) {
+        pendingAssistant = mergeAssistantMessageEvents(pendingAssistant, assistant);
+      } else {
+        pendingAssistant = assistant;
+      }
+      continue;
+    }
+
+    flushAssistant();
+    compacted.push(compactTimelineEventForClient(event));
+  }
+
+  flushAssistant();
+  return compacted;
 }
 
 function compactTimelineEventForClient(event: AgentTimelineEvent): AgentTimelineEvent {
@@ -178,7 +211,19 @@ function omitTimelineEventRaw(event: AgentTimelineEvent): AgentTimelineEvent {
 }
 
 function shouldOmitClientEventDetail(event: AgentTimelineEvent): boolean {
-  return event.type === 'tool_call' || event.type === 'tool_result' || event.type === 'command_output';
+  return event.type === 'tool_call'
+    || event.type === 'tool_result'
+    || event.type === 'command_output'
+    || event.type === 'file_diff';
+}
+
+function shouldDropClientTraceEvent(event: AgentTimelineEvent): boolean {
+  if (event.type === 'thinking' || event.type === 'raw') return true;
+  const rawType = readNonEmptyString(event.payload.raw_type)
+    ?? readNonEmptyString(event.payload.type)
+    ?? readNonEmptyString(event.raw?.type);
+  if (rawType === 'usage_update' || rawType === 'available_commands_update' || rawType === 'protocol.stderr') return true;
+  return false;
 }
 
 function buildLightweightTimelinePayload(event: AgentTimelineEvent): Record<string, unknown> {
@@ -193,6 +238,9 @@ function buildLightweightTimelinePayload(event: AgentTimelineEvent): Record<stri
     'command',
     'tool_call_id',
     'toolCallId',
+    'locations',
+    'additions',
+    'deletions',
   ];
   const lightweight: Record<string, unknown> = {};
   for (const key of allowedKeys) {
@@ -203,6 +251,58 @@ function buildLightweightTimelinePayload(event: AgentTimelineEvent): Record<stri
     detail_omitted: true,
     detail_event_id: event.id,
   };
+}
+
+function compactAssistantMessageEventForClient(event: AgentTimelineEvent): AgentTimelineEvent | null {
+  const text = readAssistantMessageText(event);
+  if (!text) return null;
+  return {
+    ...event,
+    payload: { text },
+    raw: undefined,
+  };
+}
+
+function mergeAssistantMessageEvents(
+  current: AgentTimelineEvent,
+  next: AgentTimelineEvent,
+): AgentTimelineEvent {
+  return {
+    ...current,
+    status: mergeTimelineStatus(current.status, next.status),
+    payload: {
+      text: `${readNonEmptyString(current.payload.text) ?? ''}${readNonEmptyString(next.payload.text) ?? ''}`,
+    },
+    created_at: next.created_at,
+  };
+}
+
+function readAssistantMessageText(event: AgentTimelineEvent): string | null {
+  const directText = readNonEmptyString(event.payload.text);
+  if (directText !== null) return directText;
+
+  const content = event.payload.content;
+  if (typeof content === 'string') return content;
+  if (isRecord(content)) return readNonEmptyString(content.text);
+  return null;
+}
+
+function mergeTimelineStatus(
+  current: AgentTimelineEvent['status'],
+  next: AgentTimelineEvent['status'],
+): AgentTimelineEvent['status'] {
+  const priority: Record<AgentTimelineEvent['status'], number> = {
+    started: 0,
+    delta: 1,
+    completed: 2,
+    failed: 3,
+  };
+  return priority[next] >= priority[current] ? next : current;
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  return value.length > 0 ? value : null;
 }
 
 function refreshPlannerMessageMetadata(message: Message): Message {
