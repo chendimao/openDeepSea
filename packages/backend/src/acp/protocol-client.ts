@@ -22,6 +22,7 @@ const PROTOCOL_SHUTDOWN_TIMEOUT_MS = 1_000;
 const ACP_STREAM_DISCONNECTED_PATTERN = /ResponseStreamDisconnected|stream disconnected before completion|Transport error|network error|error decoding response body/i;
 const ACP_HANDLED_RECONNECT_PATTERN = /Handled error during turn:\s*Reconnecting\.\.\.\s*(\d+)\/(\d+)/i;
 const CLAUDE_CODE_MISSING_POST_TOOL_HOOK_PATTERN = /^No onPostToolUseHook found for tool use ID: call_[A-Za-z0-9_-]+$/;
+const CLAUDE_ACP_SYSTEM_ROLE_DESERIALIZE_PATTERN = /messages\[\d+\]\.role:\s*unknown variant `system`, expected `user` or `assistant`/i;
 
 export interface InvokeProtocolSessionArgs {
   backend: AcpBackend;
@@ -45,6 +46,7 @@ export async function invokeProtocolSession(
 ): Promise<AcpInvokeResult> {
   let child: ChildProcessWithoutNullStreams | null = null;
   let stderr = '';
+  let rawStderr = '';
   let activeSessionId = args.sessionId;
   let initialized = false;
   let promptStarted = false;
@@ -67,6 +69,7 @@ export async function invokeProtocolSession(
     const childExit = waitForChild(child);
     child.stderr.setEncoding('utf-8');
     child.stderr.on('data', (data: string) => {
+      rawStderr += data;
       const reportableData = filterProtocolStderr(args.backend, data);
       if (!reportableData) return;
       if (isAcpHandledReconnect(data)) {
@@ -198,17 +201,50 @@ export async function invokeProtocolSession(
     const streamDisconnect = new Promise<never>((_, reject) => {
       rejectStreamDisconnect = reject;
     });
-    const promptResult = await withTimeout(
-      Promise.race([
-        connection.prompt({
-          sessionId: activeSessionId,
-          prompt: buildPromptContent(args.prompt, args.imagePaths ?? []),
-        }),
-        streamDisconnect,
-      ]),
+    let promptResult = await promptActiveSession({
+      connection,
+      sessionId: activeSessionId,
+      prompt: args.prompt,
+      imagePaths: args.imagePaths ?? [],
       promptTimeoutMs,
-      'ACP prompt timed out',
-    );
+      streamDisconnect,
+    }).catch(async (error) => {
+      if (
+        args.backend !== 'claudecode' ||
+        !args.sessionId ||
+        eventReceived ||
+        !isClaudeAcpSystemRoleDeserializeError(`${error instanceof Error ? error.message : String(error)}\n${rawStderr}`)
+      ) {
+        throw error;
+      }
+
+      await connection.closeSession({ sessionId: activeSessionId! }).catch(() => undefined);
+      const newSession = await withTimeout(
+        connection.newSession({
+          cwd: args.projectPath,
+          mcpServers: [],
+          additionalDirectories,
+        }),
+        stageTimeoutMs,
+        'ACP newSession timed out',
+      );
+      activeSessionId = newSession.sessionId;
+      args.onSession?.(activeSessionId);
+      args.onChunk({
+        stream: 'stdout',
+        text: '[ACP session reset] Claude Code ACP could not resume the previous session because its history contains unsupported system-role messages; started a fresh session.\n',
+        channel: 'activity',
+        rawType: 'protocol.session_reset',
+      });
+      return promptActiveSession({
+        connection,
+        sessionId: activeSessionId,
+        prompt: args.prompt,
+        imagePaths: args.imagePaths ?? [],
+        promptTimeoutMs,
+        streamDisconnect,
+      });
+    });
     rejectStreamDisconnect = null;
 
     args.signal?.removeEventListener('abort', abortHandler);
@@ -253,8 +289,30 @@ export async function invokeProtocolSession(
   }
 }
 
+async function promptActiveSession(args: {
+  connection: ClientSideConnection;
+  sessionId: string;
+  prompt: string;
+  imagePaths: string[];
+  promptTimeoutMs: number;
+  streamDisconnect: Promise<never>;
+}) {
+  return withTimeout(
+    Promise.race([
+      args.connection.prompt({
+        sessionId: args.sessionId,
+        prompt: buildPromptContent(args.prompt, args.imagePaths),
+      }),
+      args.streamDisconnect,
+    ]),
+    args.promptTimeoutMs,
+    'ACP prompt timed out',
+  );
+}
+
 export function filterProtocolStderr(backend: AcpBackend, data: string): string {
   if (backend !== 'claudecode') return data;
+  if (CLAUDE_ACP_SYSTEM_ROLE_DESERIALIZE_PATTERN.test(data)) return '';
   const newline = data.includes('\r\n') ? '\r\n' : '\n';
   const endsWithNewline = data.endsWith('\n');
   const lines = data.split(/\r?\n/);
@@ -483,6 +541,11 @@ export function isAcpStreamDisconnected(value: string): boolean {
 
 export function isAcpHandledReconnect(value: string): boolean {
   return ACP_HANDLED_RECONNECT_PATTERN.test(value);
+}
+
+function isClaudeAcpSystemRoleDeserializeError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return CLAUDE_ACP_SYSTEM_ROLE_DESERIALIZE_PATTERN.test(message);
 }
 
 function formatHandledReconnectActivity(value: string, backend: AcpBackend): string {

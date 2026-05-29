@@ -861,8 +861,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       });
       if (updated) broadcastRun('agent_run:updated', updated);
     }
-    // Persist newly minted session id if previously null
-    if (!agent.acp_session_id && result.sessionId) {
+    if (result.sessionId && result.sessionId !== agent.acp_session_id) {
       roomAgentRepo.setAcp(agent.id, {
         acp_enabled: true,
         acp_backend: agent.acp_backend,

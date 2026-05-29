@@ -30,6 +30,9 @@ class FakeAgent implements Agent {
       protocolVersion: PROTOCOL_VERSION,
       agentCapabilities: {
         loadSession: false,
+        sessionCapabilities: process.env.OPENCLAW_FAKE_ACP_CAN_RESUME === '1'
+          ? { resume: {} }
+          : undefined,
       },
       authMethods: [],
     };
@@ -41,6 +44,10 @@ class FakeAgent implements Agent {
     };
   }
 
+  async resumeSession() {
+    return {};
+  }
+
   async authenticate() {
     return {};
   }
@@ -48,6 +55,13 @@ class FakeAgent implements Agent {
   async prompt(params: PromptRequest) {
     if (process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_BEFORE_EVENT === '1') {
       throw new Error(process.env.OPENCLAW_FAKE_ACP_FAIL_PROMPT_MESSAGE ?? 'stream disconnected before completion: Transport error: network error: error decoding response body');
+    }
+
+    if (
+      process.env.OPENCLAW_FAKE_ACP_FAIL_OLD_SESSION_SYSTEM_ROLE === '1' &&
+      params.sessionId !== 'fake-session-1'
+    ) {
+      throw new Error('Internal error: API Error: 400 Failed to deserialize the JSON body into the target type: messages[1].role: unknown variant `system`, expected `user` or `assistant` at line 1 column 19981');
     }
 
     if (
