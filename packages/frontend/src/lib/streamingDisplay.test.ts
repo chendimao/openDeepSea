@@ -80,6 +80,12 @@ test('显示内容使用已追加的本地显示状态', () => {
   assert.equal(resolveStreamingDisplayContent(state, '截图确认重叠点'), '截图确认重叠点');
 });
 
+test('已提交内容补齐本地前缀时优先显示完整内容', () => {
+  const state = createStreamingDisplayState('最终回复还差');
+
+  assert.equal(resolveStreamingDisplayContent(state, '最终回复还差几个字符'), '最终回复还差几个字符');
+});
+
 test('显示内容在本地状态和已提交内容分叉时选择更长内容防止回退', () => {
   const state = createStreamingDisplayState('截图确认重叠点');
 

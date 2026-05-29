@@ -62,7 +62,7 @@ export function resolveStreamingDisplayContent(
 ): string {
   if (!state) return committedContent;
   if (!state.displayed) return '';
-  if (committedContent.startsWith(state.displayed)) return state.displayed;
+  if (committedContent.startsWith(state.displayed)) return committedContent;
   if (state.displayed.startsWith(committedContent)) return state.displayed;
   return state.displayed.length >= committedContent.length ? state.displayed : committedContent;
 }
