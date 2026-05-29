@@ -1515,11 +1515,11 @@ router.get('/projects/:projectId/acp-sessions', async (req, res) => {
 
 // ---------- Messages ----------
 router.get('/rooms/:roomId/messages', (req, res) => {
-  res.json(messageRepo.listByRoom(req.params.roomId));
+  res.json(messageRepo.listForClientByRoom(req.params.roomId));
 });
 
 router.get('/rooms/:roomId/agent-runs', (req, res) => {
-  res.json(agentRunRepo.listByRoom(req.params.roomId));
+  res.json(agentRunRepo.listForClientByRoom(req.params.roomId));
 });
 
 router.post('/agent-runs/:id/cancel', (req, res) => {

@@ -11,6 +11,8 @@ import type {
   SenderType,
 } from '../types.js';
 
+const CLIENT_TRACE_EVENT_LIMIT = 20;
+
 export const messageRepo = {
   listByRoom(roomId: string, limit = 200): Message[] {
     const messages = db
@@ -23,6 +25,10 @@ export const messageRepo = {
       )
       .all(roomId, limit) as Message[];
     return compactTraceMetadataForList(refreshPlannerMetadataFromContent(messages));
+  },
+
+  listForClientByRoom(roomId: string, limit = 200): Message[] {
+    return this.listByRoom(roomId, limit).map(compactMessageForClient);
   },
 
   get(id: string): Message | undefined {
@@ -122,6 +128,28 @@ function compactTraceMetadataForList(messages: Message[]): Message[] {
       metadata: JSON.stringify({ ...metadata, trace: compactTrace }),
     };
   });
+}
+
+function compactMessageForClient(message: Message): Message {
+  const metadata = parseMetadataObject(message.metadata);
+  if (!isMessageTrace(metadata.trace)) return message;
+  const compactTrace = compactMessageTraceForClient(metadata.trace);
+  return {
+    ...message,
+    metadata: JSON.stringify({ ...metadata, trace: compactTrace }),
+  };
+}
+
+function compactMessageTraceForClient(trace: MessageTrace): MessageTrace {
+  const events = trace.events ?? [];
+  if (events.length <= CLIENT_TRACE_EVENT_LIMIT) return trace;
+  const visibleEvents = events.slice(-CLIENT_TRACE_EVENT_LIMIT);
+  return {
+    ...trace,
+    events: visibleEvents,
+    events_total: events.length,
+    events_omitted: events.length - visibleEvents.length,
+  };
 }
 
 function refreshPlannerMessageMetadata(message: Message): Message {

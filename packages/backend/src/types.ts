@@ -728,6 +728,8 @@ export interface MessageTrace {
   tool_calls?: MessageTraceToolCall[];
   commands?: MessageTraceCommand[];
   events?: AgentTimelineEvent[];
+  events_total?: number;
+  events_omitted?: number;
 }
 
 export type TaskExecutionIntent =

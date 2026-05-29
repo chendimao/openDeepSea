@@ -10,6 +10,7 @@ import type {
 } from '../types.js';
 
 const ACTIVE_AGENT_RUN_STATUSES = ['running', 'queued', 'retrying'] as const;
+const CLIENT_PROMPT_PREVIEW_CHARS = 120;
 
 export const agentRunRepo = {
   create(input: {
@@ -75,6 +76,10 @@ export const agentRunRepo = {
     return db
       .prepare('SELECT * FROM agent_runs WHERE room_id = ? ORDER BY started_at DESC LIMIT ?')
       .all(roomId, limit) as AgentRun[];
+  },
+
+  listForClientByRoom(roomId: string, limit = 50): AgentRun[] {
+    return this.listByRoom(roomId, limit).map(compactAgentRunForClient);
   },
 
   listActiveByWorkflow(workflowRunId: string): AgentRun[] {
@@ -183,3 +188,15 @@ export const agentRunRepo = {
     return this.get(id);
   },
 };
+
+function compactAgentRunForClient(run: AgentRun): AgentRun {
+  return {
+    ...run,
+    prompt: truncateText(run.prompt, CLIENT_PROMPT_PREVIEW_CHARS),
+  };
+}
+
+function truncateText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars)}\n...[truncated ${value.length - maxChars} chars]`;
+}
