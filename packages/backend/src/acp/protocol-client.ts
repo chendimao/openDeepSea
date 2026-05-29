@@ -53,7 +53,7 @@ export async function invokeProtocolSession(
   let promptStarted = false;
   let eventReceived = false;
   let answerReceived = false;
-  let promptShouldIncludeHandoff = false;
+  let promptShouldIncludeHandoff = Boolean(args.sessionHandoff?.trim());
   let sessionHandoffPending = false;
   let sessionHandoffReason: AcpSessionHandoffReason | undefined;
   let rejectStreamDisconnect: ((error: Error) => void) | null = null;

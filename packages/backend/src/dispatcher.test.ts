@@ -1359,6 +1359,159 @@ test('respondAsAgent preserves writable dirs when ACP session id changes', async
   }
 });
 
+test('respondAsAgent passes handoff context when agent starts first ACP session', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-first-handoff-'));
+  const project = projectRepo.create({ name: `first-handoff-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner', agent_name: '规划师' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '帮我在侧边栏添加一个测试菜单，内容是一个计数器',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  let capturedHandoff: string | null | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedHandoff = args.sessionHandoff;
+      args.onChunk({ stream: 'stdout', text: '开始处理。' });
+      return { exitCode: 0, sessionId: 'first-session', stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '继续',
+    });
+
+    assert.match(capturedHandoff ?? '', /新会话接续上下文/);
+    assert.match(capturedHandoff ?? '', /帮我在侧边栏添加一个测试菜单/);
+    assert.match(capturedHandoff ?? '', /首次 session/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent clears pending handoff after passing it to the next ACP turn', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-pending-handoff-clear-'));
+  const project = projectRepo.create({ name: `pending-handoff-clear-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner', agent_name: '规划师' });
+  let acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'fresh-session-after-reset',
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+  acpAgent = roomAgentRepo.setAcpSessionHandoffPending(
+    acpAgent.id,
+    true,
+    'automatic_rotation_after_events',
+  );
+  assert.ok(acpAgent);
+  agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: acpAgent.id,
+    agent_id: acpAgent.agent_id,
+    backend: 'codex',
+    acp_session_id: 'old-session',
+    prompt: '上一轮 prompt',
+  });
+
+  const originalAdapter = adapters.codex;
+  let capturedSessionId: string | null | undefined;
+  let capturedHandoff: string | null | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedSessionId = args.sessionId;
+      capturedHandoff = args.sessionHandoff;
+      args.onChunk({ stream: 'stdout', text: '继续完成。' });
+      return { exitCode: 0, sessionId: args.sessionId, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '继续',
+    });
+
+    const updated = roomAgentRepo.get(acpAgent.id);
+    assert.equal(capturedSessionId, 'fresh-session-after-reset');
+    assert.match(capturedHandoff ?? '', /事件流出后自动轮换 session/);
+    assert.equal(updated?.acp_session_handoff_pending, 0);
+    assert.equal(updated?.acp_session_handoff_reason, null);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent stores pending handoff after evented ACP session rotation', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-pending-handoff-store-'));
+  const project = projectRepo.create({ name: `pending-handoff-store-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner', agent_name: '规划师' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'old-session',
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke() {
+      return {
+        exitCode: 1,
+        sessionId: 'fresh-session-after-reset',
+        stderr: 'system-role history is not supported',
+        sessionHandoffPending: true,
+        sessionHandoffReason: 'automatic_rotation_after_events',
+      };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '继续',
+    });
+
+    const updated = roomAgentRepo.get(acpAgent.id);
+    assert.equal(updated?.acp_session_id, 'fresh-session-after-reset');
+    assert.equal(updated?.acp_session_handoff_pending, 1);
+    assert.equal(updated?.acp_session_handoff_reason, 'automatic_rotation_after_events');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent persists legacy raw patch event as timeline event metadata', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-raw-event-test-'));
   const project = projectRepo.create({ name: `raw-event-${Date.now()}`, path: projectPath });

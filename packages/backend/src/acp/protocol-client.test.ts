@@ -151,6 +151,37 @@ test('invokeProtocolSession prepends handoff when ACP creates a new session', as
   assert.match(answer, /当前请求：\s*current prompt/);
 });
 
+test('invokeProtocolSession prepends handoff when caller marks resumed session pending', async () => {
+  const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'claudecode',
+    server: {
+      backend: 'claudecode',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_CAN_RESUME: '1',
+        OPENCLAW_FAKE_ACP_ECHO_PROMPT: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: 'fresh-session-after-rotation',
+    prompt: 'current prompt',
+    sessionHandoff: 'pending handoff context',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.sessionId, 'fresh-session-after-rotation');
+  const answer = chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join('');
+  assert.match(answer, /pending handoff context/);
+  assert.match(answer, /当前请求：\s*current prompt/);
+});
+
 test('invokeProtocolSession retries Claude ACP with a fresh session when resumed history contains system role', async () => {
   const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
   const sessions: string[] = [];

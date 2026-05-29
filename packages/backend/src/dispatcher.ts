@@ -20,6 +20,7 @@ import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { formatSkillPrompt } from './skills/prompt.js';
 import { selectSkills } from './skills/selector.js';
+import { buildSessionHandoffContext } from './session-handoff.js';
 import { applySuperpowersBootstrap } from './superpowers-bootstrap.js';
 import { runRegistry } from './run-registry.js';
 import { messageUploadDir, messageUploadRoute, projectFileUploadRoot, projectFileUploadRoute } from './uploads.js';
@@ -28,6 +29,7 @@ import type {
   AgentRun,
   AgentRunStatus,
   AgentTimelineEvent,
+  AcpSessionHandoffReason,
   Agent,
   Message,
   MessageAttachmentMetadata,
@@ -87,6 +89,70 @@ let plannerExecutionPlanInvoker: PlannerExecutionPlanInvoker | undefined;
 
 export function setPlannerExecutionPlanInvokerForTest(invoker?: PlannerExecutionPlanInvoker): void {
   plannerExecutionPlanInvoker = invoker;
+}
+
+function buildSessionHandoffForAgent(input: {
+  roomId: string;
+  agent: RoomAgent;
+  currentPrompt: string;
+}): string | null {
+  const runs = agentRunRepo.listByRoom(input.roomId, 30);
+  const sameAgentRuns = runs.filter((run) => run.room_agent_id === input.agent.id);
+  const previousSessionId = input.agent.acp_session_id ?? sameAgentRuns.find((run) => run.acp_session_id)?.acp_session_id ?? null;
+  const reason = resolveSessionHandoffReason(input.agent, previousSessionId);
+  if (!reason) return null;
+
+  const recentUserMessages = messageRepo
+    .listByRoom(input.roomId, 20)
+    .filter((message) => message.sender_type === 'user')
+    .slice(-3)
+    .map((message) => ({
+      id: message.id,
+      content: message.content,
+    }));
+
+  const context = buildSessionHandoffContext({
+    agentName: input.agent.agent_name,
+    agentId: input.agent.agent_id,
+    roomId: input.roomId,
+    reason,
+    previousSessionId,
+    currentUserPrompt: input.currentPrompt,
+    sameAgentRuns: sameAgentRuns.slice(0, 5).map((run) => ({
+      id: run.id,
+      status: run.status,
+      prompt: run.prompt,
+      stdout: run.stdout,
+      stderr: run.stderr,
+      activityLog: run.activity_log,
+    })),
+    otherAgentRuns: runs
+      .filter((run) => run.room_agent_id !== input.agent.id)
+      .slice(0, 3)
+      .map((run) => ({
+        id: run.id,
+        agentName: run.agent_id,
+        status: run.status,
+        stdout: run.stdout,
+        stderr: run.stderr,
+      })),
+    recentUserMessages,
+    maxChars: 8_000,
+  });
+  return context || null;
+}
+
+function resolveSessionHandoffReason(
+  agent: RoomAgent,
+  previousSessionId: string | null,
+): AcpSessionHandoffReason | null {
+  if (agent.acp_session_handoff_pending) {
+    return agent.acp_session_handoff_reason ?? 'automatic_rotation';
+  }
+  if (!agent.acp_session_id) {
+    return previousSessionId ? 'manual_new_session' : 'first_session';
+  }
+  return null;
 }
 
 const AGENT_MATCH_SYNONYMS: Record<string, string[]> = {
@@ -588,6 +654,11 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   if (!backend) {
     throw new Error(`Agent ${agent.agent_name} has no ACP backend configured`);
   }
+  const sessionHandoff = buildSessionHandoffForAgent({
+    roomId,
+    agent,
+    currentPrompt: args.prompt,
+  });
   const run = agentRunRepo.create({
     room_id: roomId,
     room_agent_id: agent.id,
@@ -829,6 +900,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       projectPath,
       sessionId: agent.acp_session_id,
       prompt,
+      sessionHandoff,
       imagePaths: args.imagePaths,
       acpPermissionMode: runtimeProfile.acpPermissionMode,
       acpWritableDirs: runtimeProfile.writableDirs,
@@ -870,6 +942,15 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         acp_permission_mode: agent.acp_permission_mode,
         acp_writable_dirs: agent.acp_writable_dirs,
       });
+    }
+    if (result.sessionHandoffPending) {
+      roomAgentRepo.setAcpSessionHandoffPending(
+        agent.id,
+        true,
+        result.sessionHandoffReason ?? 'automatic_rotation_after_events',
+      );
+    } else if (agent.acp_session_handoff_pending) {
+      roomAgentRepo.setAcpSessionHandoffPending(agent.id, false, null);
     }
     if (controller.signal.aborted) {
       finishRun(run.id, 'cancelled');
