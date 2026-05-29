@@ -2512,19 +2512,23 @@ router.post('/rooms/:roomId/tasks', (req, res) => {
   if (!room) return res.status(404).json({ error: 'room not found' });
   const parsed = taskCreateSchema.safeParse(req.body ?? {});
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const task = taskRepo.create({
-    room_id: room.id,
-    project_id: room.project_id,
-    title: parsed.data.title,
-    description: parsed.data.description,
-    priority: parsed.data.priority,
-    interaction_mode: parsed.data.interaction_mode,
-    assigned_agent_id: parsed.data.assigned_agent_id,
-    parent_task_id: parsed.data.parent_task_id,
-    created_from: 'manual',
-  });
-  wsHub.broadcast(room.id, { type: 'task:created', task });
-  res.status(201).json(task);
+  try {
+    const result = createTaskWithConversation({
+      roomId: room.id,
+      taskInput: {
+        title: parsed.data.title,
+        description: parsed.data.description,
+        priority: parsed.data.priority,
+        interaction_mode: parsed.data.interaction_mode,
+        assigned_agent_id: parsed.data.assigned_agent_id,
+        parent_task_id: parsed.data.parent_task_id,
+      },
+      origin: 'manual',
+    });
+    res.status(201).json(result.task);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
 });
 
 router.patch('/tasks/:id', (req, res) => {

@@ -10,6 +10,7 @@ const express = (await import('express')).default;
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
+const { taskEventRepo } = await import('./repos/task-events.js');
 const { router } = await import('./routes.js');
 
 const app = express();
@@ -51,6 +52,10 @@ test('task CRUD routes list, create, update, and delete room tasks', async () =>
   const created = await createRes.json() as { id: string; title: string; priority: string };
   assert.equal(created.title, 'Created task');
   assert.equal(created.priority, 'high');
+  assert.equal(
+    taskEventRepo.listByTask(created.id).some((event) => event.type === 'task_created' && event.layer === 'activity'),
+    true,
+  );
 
   const updateRes = await request(`/api/tasks/${created.id}`, {
     method: 'PATCH',
