@@ -4,6 +4,7 @@ import { compactMessageTrace } from '../trace-compaction.js';
 import type {
   AgentTimelineEvent,
   Message,
+  MessageLayer,
   MessageMetadata,
   PlannerDecision,
   MessageTrace,
@@ -65,12 +66,13 @@ export const messageRepo = {
     sender_name?: string;
     content: string;
     message_type?: MessageType;
+    layer?: MessageLayer;
     metadata?: Record<string, unknown>;
   }): Message {
     const id = nanoid(16);
     db.prepare(
-      `INSERT INTO messages (id, room_id, sender_type, sender_id, sender_name, content, message_type, metadata, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, room_id, sender_type, sender_id, sender_name, content, message_type, layer, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id,
       input.room_id,
@@ -79,6 +81,7 @@ export const messageRepo = {
       input.sender_name ?? null,
       input.content,
       input.message_type ?? 'text',
+      input.layer ?? 'chat',
       input.metadata ? JSON.stringify(input.metadata) : null,
       now(),
     );

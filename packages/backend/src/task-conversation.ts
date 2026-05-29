@@ -3,12 +3,15 @@ import { isMemorySourceConflictError, memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
+import { taskEventRepo } from './repos/task-events.js';
 import { taskRepo } from './repos/tasks.js';
 import type {
   Message,
+  MessageLayer,
   MessageMetadata,
   Task,
   TaskCreatedFrom,
+  TaskEvent,
   TaskEventType,
   TaskInteractionMode,
   TaskPriority,
@@ -40,6 +43,7 @@ export interface CreateTaskWithConversationResult {
   task: Task;
   userMessage: Message | null;
   systemMessage: Message;
+  taskEvent?: TaskEvent;
 }
 
 interface RecordTaskEventInput {
@@ -116,7 +120,7 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
       sourceMessageContent: sourceMessage?.content ?? userMessage?.content ?? null,
     });
 
-    const systemMessage = createTaskEventMessage({
+    const taskEventResult = createTaskEventMessage({
       roomId: input.roomId,
       taskId: task.id,
       taskTitle: task.title,
@@ -125,7 +129,7 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
       content: buildTaskCreatedMessage(task),
     });
 
-    return { task, userMessage, systemMessage };
+    return { task, userMessage, systemMessage: taskEventResult.message, taskEvent: taskEventResult.event };
   });
   const result = runCreate();
 
@@ -133,6 +137,9 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
     broadcastMessageCreated(input.roomId, result.userMessage);
   }
   wsHub.broadcast(input.roomId, { type: 'task:created', task: result.task });
+  if (result.taskEvent) {
+    broadcastTaskEventCreated(input.roomId, result.taskEvent);
+  }
   broadcastMessageCreated(input.roomId, result.systemMessage);
   maybeAutoStartTaskWorkflow(input.roomId, result.task);
 
@@ -148,7 +155,7 @@ function maybeAutoStartTaskWorkflow(roomId: string, task: Task): void {
       source: 'auto_start',
     });
   } catch (err) {
-    const message = createTaskEventMessage({
+    const taskEventResult = createTaskEventMessage({
       roomId,
       taskId: task.id,
       taskTitle: task.title,
@@ -158,7 +165,8 @@ function maybeAutoStartTaskWorkflow(roomId: string, task: Task): void {
         workflow_source: 'auto_start',
       },
     });
-    broadcastMessageCreated(roomId, message);
+    broadcastTaskEventCreated(roomId, taskEventResult.event);
+    broadcastMessageCreated(roomId, taskEventResult.message);
   }
 }
 
@@ -210,14 +218,15 @@ export function createTaskCreationMemorySafely(input: {
 }
 
 export function recordTaskEvent(input: RecordTaskEventInput, options?: { broadcast?: boolean }): Message {
-  const message = createTaskEventMessage(input);
+  const taskEventResult = db.transaction(() => createTaskEventMessage(input))();
   if (options?.broadcast !== false) {
-    broadcastMessageCreated(input.roomId, message);
+    broadcastTaskEventCreated(input.roomId, taskEventResult.event);
+    broadcastMessageCreated(input.roomId, taskEventResult.message);
   }
-  return message;
+  return taskEventResult.message;
 }
 
-function createTaskEventMessage(input: RecordTaskEventInput): Message {
+function createTaskEventMessage(input: RecordTaskEventInput): { message: Message; event: TaskEvent } {
   const metadata: MessageMetadata = {
     ...(input.metadata ?? {}),
     task_id: input.taskId,
@@ -227,15 +236,31 @@ function createTaskEventMessage(input: RecordTaskEventInput): Message {
     event_type: input.eventType,
     origin: input.origin,
   };
-  return messageRepo.create({
+  const layer = inferTaskEventLayer(input.eventType);
+  const message = messageRepo.create({
     room_id: input.roomId,
     sender_type: 'system',
     sender_id: 'system',
     sender_name: 'System',
     content: input.content,
     message_type: 'system',
+    layer,
     metadata: metadata as Record<string, unknown>,
   });
+  const event = taskEventRepo.create({
+    task_id: input.taskId,
+    room_id: input.roomId,
+    type: input.eventType,
+    layer,
+    source_run_id: typeof input.metadata?.source_run_id === 'string' ? input.metadata.source_run_id : null,
+    payload: {
+      ...metadata,
+      message_id: typeof metadata.message_id === 'string' ? metadata.message_id : message.id,
+      event_message_id: message.id,
+      content: input.content,
+    },
+  });
+  return { message, event };
 }
 
 function createUserIntentMessage(input: {
@@ -264,6 +289,22 @@ function createUserIntentMessage(input: {
 
 function broadcastMessageCreated(roomId: string, message: Message): void {
   wsHub.broadcast(roomId, { type: 'message:new', roomId, message });
+}
+
+function broadcastTaskEventCreated(roomId: string, event: TaskEvent): void {
+  wsHub.broadcast(roomId, { type: 'task_event:new', roomId, event });
+}
+
+function inferTaskEventLayer(eventType: TaskEventType): MessageLayer {
+  if (
+    eventType === 'workflow_started' ||
+    eventType === 'workflow_stage_changed' ||
+    eventType === 'workflow_plan_ready' ||
+    eventType === 'workflow_assignment_created'
+  ) {
+    return 'timeline';
+  }
+  return 'activity';
 }
 
 function buildTaskCreatedMessage(task: Task): string {

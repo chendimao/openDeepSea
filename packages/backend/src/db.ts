@@ -192,6 +192,7 @@ CREATE TABLE IF NOT EXISTS messages (
   sender_name TEXT,
   content TEXT NOT NULL,
   message_type TEXT NOT NULL DEFAULT 'text',
+  layer TEXT NOT NULL DEFAULT 'chat',
   metadata TEXT,
   created_at INTEGER NOT NULL,
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
@@ -621,6 +622,42 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_room ON tasks(room_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+
+CREATE TABLE IF NOT EXISTS task_events (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  room_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  layer TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  source_run_id TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  UNIQUE(task_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_task_events_task_seq ON task_events(task_id, seq);
+CREATE INDEX IF NOT EXISTS idx_task_events_room_created ON task_events(room_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_task_events_layer ON task_events(task_id, layer, seq);
+
+CREATE TABLE IF NOT EXISTS task_executors (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  room_id TEXT NOT NULL,
+  room_agent_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  acp_session_id TEXT,
+  status TEXT NOT NULL DEFAULT 'idle',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE CASCADE,
+  UNIQUE(task_id, room_agent_id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_executors_task ON task_executors(task_id, status);
+CREATE INDEX IF NOT EXISTS idx_task_executors_room_agent ON task_executors(room_agent_id, updated_at);
 `);
 
 export function migrateUniqueAgentDocumentSourceMessage(database: Database.Database = db): void {
@@ -867,6 +904,50 @@ if (!taskColumnNames.has('source_message_id')) {
 if (!taskColumnNames.has('created_from')) {
   db.exec('ALTER TABLE tasks ADD COLUMN created_from TEXT');
 }
+
+const messageColumns = db.prepare('PRAGMA table_info(messages)').all() as { name: string }[];
+const messageColumnNames = new Set(messageColumns.map((column) => column.name));
+if (!messageColumnNames.has('layer')) {
+  db.exec("ALTER TABLE messages ADD COLUMN layer TEXT NOT NULL DEFAULT 'chat'");
+}
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS task_events (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  room_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  layer TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  source_run_id TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  UNIQUE(task_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_task_events_task_seq ON task_events(task_id, seq);
+CREATE INDEX IF NOT EXISTS idx_task_events_room_created ON task_events(room_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_task_events_layer ON task_events(task_id, layer, seq);
+
+CREATE TABLE IF NOT EXISTS task_executors (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  room_id TEXT NOT NULL,
+  room_agent_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  acp_session_id TEXT,
+  status TEXT NOT NULL DEFAULT 'idle',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_agent_id) REFERENCES room_agents(id) ON DELETE CASCADE,
+  UNIQUE(task_id, room_agent_id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_executors_task ON task_executors(task_id, status);
+CREATE INDEX IF NOT EXISTS idx_task_executors_room_agent ON task_executors(room_agent_id, updated_at);
+`);
 
 const memoryColumns = db.prepare('PRAGMA table_info(memory_entries)').all() as { name: string }[];
 const memoryColumnNames = new Set(memoryColumns.map((column) => column.name));

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, ChevronDown, ChevronLeft, Download, Eye, FileText, FolderOpen, MessageSquare, Reply, RotateCcw, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, ChevronDown, ChevronLeft, Download, Eye, FileText, FolderOpen, MessageSquare, Plus, Reply, RotateCcw, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -13,6 +13,7 @@ import type {
   PlannerDecision,
   Room,
   RoomAgent,
+  Task,
 } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
@@ -36,6 +37,9 @@ import { AddAgentDialog } from '../components/AddAgentDialog';
 import { MemoryPanel } from '../components/MemoryPanel';
 import { RichMessageComposer } from '../components/RichMessageComposer';
 import { RoomFilesPanel } from '../components/RoomFilesPanel';
+import { CreateTaskDialog } from '../components/CreateTaskDialog';
+import { TaskBoard } from '../components/TaskBoard';
+import { TaskDetailPanel } from '../components/TaskDetailPanel';
 import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
@@ -68,7 +72,14 @@ import {
 } from './roomPageLogic';
 
 type RoomFeatureTab = 'chat' | 'files';
-type SendInput = { content: string; mentions?: string[]; files?: File[]; fileIds?: string[]; replyToMessageId?: string };
+type SendInput = {
+  content: string;
+  mentions?: string[];
+  files?: File[];
+  fileIds?: string[];
+  replyToMessageId?: string;
+  activeTaskId?: string | null;
+};
 
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
@@ -77,6 +88,7 @@ export function RoomPage() {
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
   const [explicitReplyTarget, setExplicitReplyTarget] = useState<ReplyTarget | null>(null);
   const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -122,6 +134,27 @@ export function RoomPage() {
     queryFn: () => api.getRoomSettings(roomId),
     enabled: !!roomId,
   });
+  const { data: tasks = [] } = useQuery({
+    queryKey: ['room-tasks', roomId],
+    queryFn: () => api.listRoomTasks(roomId),
+    enabled: !!roomId,
+  });
+  const { data: workflows = [] } = useQuery({
+    queryKey: ['room-workflows', roomId],
+    queryFn: () => api.listRoomWorkflows(roomId),
+    enabled: !!roomId,
+  });
+  const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
+  const updateTaskStatus = useMutation({
+    mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
+      api.updateTask(task.id, { status }),
+    onSuccess: (task) => {
+      queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
+        upsertTask(prev, task),
+      );
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
   const { data: agentRuns = [] } = useQuery({
     queryKey: ['agent-runs', roomId],
     queryFn: () => api.listAgentRuns(roomId),
@@ -141,6 +174,7 @@ export function RoomPage() {
     setShowMemoryPanel(false);
     setHighlightMessageId(null);
     setExplicitReplyTarget(null);
+    setActiveTaskId(null);
     messageRefs.current.clear();
     streamingRunMessageIds.current.clear();
     streamingEventTracker.current.clear();
@@ -314,6 +348,21 @@ export function RoomPage() {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       } else if (event.type === 'room:agent_left' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      } else if (event.type === 'task:created' && event.task.room_id === roomId) {
+        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
+          upsertTask(prev, event.task),
+        );
+      } else if (event.type === 'task:updated' && event.task.room_id === roomId) {
+        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
+          upsertTask(prev, event.task),
+        );
+      } else if (event.type === 'task:deleted') {
+        queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
+          (prev ?? []).filter((task) => task.id !== event.taskId),
+        );
+        setActiveTaskId((current) => (current === event.taskId ? null : current));
+      } else if (event.type === 'task_event:new' && event.roomId === roomId) {
+        queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
       }
     });
     return () => {
@@ -417,9 +466,31 @@ export function RoomPage() {
         </div>
       </header>
 
-      <div className={cn('workspace-grid', showMemoryPanel && 'has-inspector')}>
+      <div className={cn('workspace-grid task-os-grid', (showMemoryPanel || activeTask) && 'has-inspector')}>
+        <TaskBoard
+          tasks={tasks}
+          agents={agents}
+          workflows={workflows}
+          selectedTaskId={activeTaskId}
+          onSelectTask={(task) => {
+            setActiveTaskId(task.id);
+            setShowMemoryPanel(false);
+          }}
+          onChangeStatus={(task, status) => {
+            updateTaskStatus.mutate({ task, status });
+          }}
+          onLocateSourceMessage={focusMessage}
+        />
         <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
-          <RoomFeatureTabs activeTab={activeTab} onChange={setActiveTab} />
+          <div className="room-main-heading">
+            <RoomFeatureTabs activeTab={activeTab} onChange={setActiveTab} />
+            <CreateTaskDialog roomId={roomId} agents={agents}>
+              <button type="button" className="glass-button" aria-label={t('createTask.trigger')}>
+                <Plus className="h-3.5 w-3.5" />
+                <span>{t('createTask.trigger')}</span>
+              </button>
+            </CreateTaskDialog>
+          </div>
           <div className="room-tab-content">
             {activeTab === 'chat' && (
               <ChatColumn
@@ -437,6 +508,7 @@ export function RoomPage() {
                 registerMessageRef={registerMessageRef}
                 highlightMessageId={highlightMessageId}
                 explicitReplyTarget={explicitReplyTarget}
+                activeTaskId={activeTaskId}
                 onReplyToMessage={replyToMessage}
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
                 onLocateReplyTarget={focusMessage}
@@ -451,7 +523,14 @@ export function RoomPage() {
             )}
           </div>
         </section>
-        {showMemoryPanel && (
+        {activeTask ? (
+          <TaskDetailPanel
+            task={activeTask}
+            agents={agents}
+            onLocateSourceMessage={focusMessage}
+            onClose={() => setActiveTaskId(null)}
+          />
+        ) : showMemoryPanel && (
           <aside className="workbench-panel inspector-panel memory-panel-shell p-4">
             <MemoryPanel
               projectId={projectId}
@@ -479,6 +558,12 @@ export function RoomPage() {
 function upsertMessage(prev: Message[] | undefined, message: Message): Message[] {
   const list = prev ?? [];
   return dedupeMessages([...list.filter((item) => item.id !== message.id), message]);
+}
+
+function upsertTask(prev: Task[] | undefined, task: Task): Task[] {
+  const list = prev ?? [];
+  return [task, ...list.filter((item) => item.id !== task.id)]
+    .sort((a, b) => b.updated_at - a.updated_at);
 }
 
 function dedupeMessages(messages: Message[]): Message[] {
@@ -795,6 +880,7 @@ function ChatColumn({
   registerMessageRef,
   highlightMessageId,
   explicitReplyTarget,
+  activeTaskId,
   onReplyToMessage,
   onClearReplyTarget,
   onLocateReplyTarget,
@@ -813,6 +899,7 @@ function ChatColumn({
   registerMessageRef: (messageId: string, node: HTMLElement | null) => void;
   highlightMessageId: string | null;
   explicitReplyTarget: ReplyTarget | null;
+  activeTaskId: string | null;
   onReplyToMessage: (message: Message) => void;
   onClearReplyTarget: () => void;
   onLocateReplyTarget: (messageId: string) => void;
@@ -872,8 +959,15 @@ function ChatColumn({
     const files = input.files;
     const fileIds = input.fileIds;
     if (!content && (!files || files.length === 0) && (!fileIds || fileIds.length === 0)) return;
-    send.mutate({ content, mentions: input.mentions, files, fileIds, replyToMessageId: input.replyToMessageId });
-  }, [send]);
+    send.mutate({
+      content,
+      mentions: input.mentions,
+      files,
+      fileIds,
+      replyToMessageId: input.replyToMessageId,
+      activeTaskId,
+    });
+  }, [activeTaskId, send]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

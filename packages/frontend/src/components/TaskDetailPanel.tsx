@@ -1,21 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Box, ChevronRight, LocateFixed, RotateCcw, XCircle } from 'lucide-react';
+import { Box, ChevronRight, LocateFixed, Radio, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import { useI18n } from '../lib/i18n';
-import type { RoomAgent, Task, WorkflowDetail, WorkflowRun, WorkflowStatus } from '../lib/types';
+import { useI18n, type MessageKey } from '../lib/i18n';
+import type { MessageLayer, RoomAgent, Task, TaskEvent } from '../lib/types';
 import { AgentAvatar } from './AgentAvatar';
-import { WorkflowTimeline } from './WorkflowTimeline';
 import { Button } from './ui/Button';
 import { Label } from './ui/Input';
-
-const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowStatus>([
-  'draft',
-  'running',
-  'awaiting_decision',
-  'awaiting_approval',
-  'blocked',
-]);
 
 export function TaskDetailPanel({
   task,
@@ -33,27 +24,12 @@ export function TaskDetailPanel({
   const assignedAgent = task?.assigned_agent_id
     ? agents.find((agent) => agent.id === task.assigned_agent_id)
     : undefined;
-  const { data: workflows = [] } = useQuery({
-    queryKey: ['task-workflows', task?.id],
-    queryFn: () => api.listTaskWorkflows(task!.id),
+  const { data: eventResponse } = useQuery({
+    queryKey: ['room-task-events', task?.room_id, task?.id],
+    queryFn: () => api.listRoomTaskEvents(task!.room_id, { taskId: task!.id, limit: 80 }),
     enabled: !!task,
   });
-  const activeWorkflow = workflows.find((workflow) => ACTIVE_WORKFLOW_STATUSES.has(workflow.status)) ?? null;
-  const displayWorkflow = activeWorkflow ?? workflows[0] ?? null;
-  const { data: workflowDetail = null } = useQuery({
-    queryKey: ['workflow', displayWorkflow?.id],
-    queryFn: () => api.getWorkflow(displayWorkflow!.id),
-    enabled: !!displayWorkflow,
-  });
-
-  const refreshWorkflow = (workflow?: WorkflowRun) => {
-    if (!task) return;
-    queryClient.invalidateQueries({ queryKey: ['messages', task.room_id] });
-    queryClient.invalidateQueries({ queryKey: ['room-tasks', task.room_id] });
-    queryClient.invalidateQueries({ queryKey: ['room-workflows', task.room_id] });
-    queryClient.invalidateQueries({ queryKey: ['task-workflows', task.id] });
-    if (workflow?.id) queryClient.invalidateQueries({ queryKey: ['workflow', workflow.id] });
-  };
+  const events = eventResponse?.events ?? [];
 
   const update = useMutation({
     mutationFn: (patch: Partial<Pick<Task, 'status' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>>) =>
@@ -61,58 +37,6 @@ export function TaskDetailPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['room-tasks', task?.room_id] });
       toast.success(t('taskDetail.updated'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
-  const startWorkflow = useMutation({
-    mutationFn: () =>
-      api.startWorkflowWithConversation(task!.room_id, task!.id, {
-        content: t('workflow.startIntent', { title: task!.title }),
-      }),
-    onSuccess: (workflow) => {
-      refreshWorkflow(workflow);
-      toast.success(t('taskDetail.workflowStarted'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
-  const approvePlan = useMutation({
-    mutationFn: (workflowId: string) =>
-      api.approveWorkflowPlanWithConversation(task!.room_id, workflowId, {
-        content: t('workflow.approveIntent', { title: task!.title }),
-      }),
-    onSuccess: (workflow) => {
-      refreshWorkflow(workflow);
-      toast.success(t('taskDetail.planApproved'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
-  const submitDecisions = useMutation({
-    mutationFn: (input: { workflowId: string; answers: Array<{ decisionId: string; optionId: string }> }) =>
-      api.submitWorkflowDecisions(input.workflowId, input.answers),
-    onSuccess: (workflow) => {
-      refreshWorkflow(workflow);
-      toast.success(t('taskDetail.decisionSubmitted'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
-  const retryWorkflow = useMutation({
-    mutationFn: (workflowId: string) => api.retryWorkflowStep(workflowId),
-    onSuccess: (workflow) => {
-      refreshWorkflow(workflow);
-      toast.success(t('taskDetail.workflowRetried'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
-  const cancelWorkflow = useMutation({
-    mutationFn: (workflowId: string) => api.cancelWorkflow(workflowId),
-    onSuccess: (workflow) => {
-      refreshWorkflow(workflow);
-      toast.success(t('taskDetail.workflowCancelled'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -193,25 +117,8 @@ export function TaskDetailPanel({
         </section>
 
         <section className="inspector-section">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <Label className="mb-0">{t('taskDetail.workflow')}</Label>
-            {!activeWorkflow && (
-              <Button size="sm" onClick={() => startWorkflow.mutate()} disabled={startWorkflow.isPending}>
-                {startWorkflow.isPending ? t('taskDetail.starting') : t('taskDetail.startWorkflow')}
-              </Button>
-            )}
-          </div>
-          <WorkflowTimeline
-            detail={workflowDetail as WorkflowDetail | null}
-            agents={agents}
-            busy={approvePlan.isPending || submitDecisions.isPending || retryWorkflow.isPending || cancelWorkflow.isPending}
-            onApprove={() => displayWorkflow && approvePlan.mutate(displayWorkflow.id)}
-            onSubmitDecisions={(answers) =>
-              displayWorkflow && submitDecisions.mutate({ workflowId: displayWorkflow.id, answers })
-            }
-            onRetry={() => displayWorkflow && retryWorkflow.mutate(displayWorkflow.id)}
-            onCancel={() => displayWorkflow && cancelWorkflow.mutate(displayWorkflow.id)}
-          />
+          <Label>{t('taskDetail.timeline')}</Label>
+          <TaskEventTimeline events={events} formatRelativeTime={formatRelativeTime} t={t} />
         </section>
 
         <section className="inspector-section grid grid-cols-2 gap-3">
@@ -306,26 +213,80 @@ export function TaskDetailPanel({
       </div>
 
       <footer className="inspector-footer">
-        {displayWorkflow && (
-          <Button variant="secondary" onClick={() => retryWorkflow.mutate(displayWorkflow.id)} disabled={retryWorkflow.isPending}>
-            <RotateCcw className="h-3.5 w-3.5" />
-            {t('common.retry')}
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          onClick={() => displayWorkflow && cancelWorkflow.mutate(displayWorkflow.id)}
-          disabled={!displayWorkflow || cancelWorkflow.isPending}
-        >
-          <XCircle className="h-3.5 w-3.5" />
-          {cancelWorkflow.isPending ? t('taskDetail.canceling') : t('common.cancel')}
-        </Button>
         <Button variant="danger" onClick={onClose}>
           {t('common.close')}
         </Button>
       </footer>
     </aside>
   );
+}
+
+function TaskEventTimeline({
+  events,
+  formatRelativeTime,
+  t,
+}: {
+  events: TaskEvent[];
+  formatRelativeTime: (timestamp: number) => string;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}): JSX.Element {
+  if (events.length === 0) {
+    return (
+      <div className="glass-info-card flex min-h-[96px] items-center gap-3 text-[12px] text-[var(--color-fg-muted)]">
+        <Radio className="h-4 w-4 shrink-0 text-[var(--color-muted)]" strokeWidth={1.8} />
+        <span>{t('taskDetail.noEvents')}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="task-event-timeline glass-info-card">
+      {events.map((event) => (
+        <div key={event.id} className="task-event-row">
+          <span className="task-event-dot" data-layer={event.layer} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-[12.5px] font-semibold text-[var(--color-fg)]">
+                {eventTitle(event, t)}
+              </span>
+              <span className="shrink-0 font-mono text-[10.5px] text-[var(--color-muted)]">
+                {formatRelativeTime(event.created_at)}
+              </span>
+            </div>
+            <div className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
+              {eventDescription(event, t)}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function eventTitle(event: TaskEvent, t: (key: MessageKey) => string): string {
+  const key = `taskEvent.${event.type}` as MessageKey;
+  const translated = t(key);
+  return translated === key ? event.type : translated;
+}
+
+function eventDescription(event: TaskEvent, t: (key: MessageKey) => string): string {
+  const payload = event.payload;
+  const values = [
+    payload.reason,
+    payload.route_action,
+    payload.status,
+    payload.summary,
+    payload.title,
+    payload.message_id ? `${t('taskDetail.messageRef')} ${String(payload.message_id).slice(0, 6)}` : null,
+  ];
+  return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    ?? eventLayerLabel(event.layer, t);
+}
+
+function eventLayerLabel(layer: MessageLayer, t: (key: MessageKey) => string): string {
+  const key = `taskLayer.${layer}` as MessageKey;
+  const translated = t(key);
+  return translated === key ? layer : translated;
 }
 
 function InfoRow({ label, value }: { label: string; value: string }): JSX.Element {

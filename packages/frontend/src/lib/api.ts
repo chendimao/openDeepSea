@@ -51,6 +51,7 @@ import type {
   SkillTriggerMode,
   SuperpowersBootstrapOwner,
   Task,
+  TaskEvent,
   TaskInteractionMode,
   WorkflowDetail,
   WorkflowDefinition,
@@ -699,7 +700,14 @@ export const api = {
     request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),
   sendMessage: (
     roomId: string,
-    input: { content: string; mentions?: string[]; files?: File[]; fileIds?: string[]; replyToMessageId?: string },
+    input: {
+      content: string;
+      mentions?: string[];
+      files?: File[];
+      fileIds?: string[];
+      replyToMessageId?: string;
+      activeTaskId?: string | null;
+    },
   ) => {
     if (input.files && input.files.length > 0) {
       const form = new FormData();
@@ -726,6 +734,7 @@ export const api = {
         mentions: input.mentions,
         fileIds: input.fileIds,
         reply_to_message_id: input.replyToMessageId,
+        active_task_id: input.activeTaskId,
       }),
     });
   },
@@ -775,6 +784,17 @@ export const api = {
 
   listProjectTasks: (projectId: string) => request<Task[]>(`/projects/${projectId}/tasks`),
   listRoomTasks: (roomId: string) => request<Task[]>(`/rooms/${roomId}/tasks`),
+  listRoomTaskEvents: (
+    roomId: string,
+    input: { taskId?: string; layer?: TaskEvent['layer']; limit?: number } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (input.taskId) params.set('taskId', input.taskId);
+    if (input.layer) params.set('layer', input.layer);
+    if (input.limit) params.set('limit', String(input.limit));
+    const query = params.toString();
+    return request<{ events: TaskEvent[] }>(`/rooms/${roomId}/task-events${query ? `?${query}` : ''}`);
+  },
   createTask: (
     roomId: string,
     input: {
@@ -832,6 +852,8 @@ export const api = {
     }),
   listTaskWorkflows: (taskId: string) =>
     request<WorkflowRun[]>(`/tasks/${taskId}/workflows`),
+  listRoomWorkflows: (roomId: string) =>
+    request<WorkflowRun[]>(`/rooms/${roomId}/workflows`),
   getWorkflow: (id: string) =>
     request<WorkflowDetail>(`/workflows/${id}`),
   approveWorkflowPlan: (id: string) =>

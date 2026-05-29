@@ -33,6 +33,7 @@ import { getProviderSuperpowersStatus } from './provider-superpowers.js';
 import { resourceAssetRepo } from './repos/resource-assets.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
+import { taskEventRepo } from './repos/task-events.js';
 import { taskRepo } from './repos/tasks.js';
 import { workflowContextRepo } from './repos/workflow-context.js';
 import { workflowDefinitionRepo } from './repos/workflow-definitions.js';
@@ -41,6 +42,7 @@ import { skillsRouter } from './skills/routes.js';
 import { platformSkillsRouter } from './platform-skills/routes.js';
 import { pickDirectory } from './system-dialogs.js';
 import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
+import { routeMessage } from './task-router.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
 import {
@@ -78,6 +80,7 @@ import {
   type AgentToolPolicy,
   type AgentWorkspacePolicy,
   type MemoryScope,
+  type MessageLayer,
   type MessageMetadata,
   type PlannerDecision,
   type MessageRoutingMode,
@@ -106,9 +109,14 @@ interface AiConfigTestRouteDeps {
   tester?: ConfiguredModelTester;
 }
 
+interface MessageRouteDeps {
+  dispatchUserMessage?: typeof dispatchUserMessage;
+}
+
 let collaborationRouteDeps: CollaborationRouteDeps = {};
 let globalChatRouteDeps: GlobalChatRouteDeps = {};
 let aiConfigTestRouteDeps: AiConfigTestRouteDeps = {};
+let messageRouteDeps: MessageRouteDeps = {};
 const collaborationRunsBySource = new Map<string, {
   id: string;
   room_id: string;
@@ -127,6 +135,10 @@ export function setGlobalChatRouteDeps(deps: GlobalChatRouteDeps): void {
 
 export function setAiConfigTestRouteDeps(deps: AiConfigTestRouteDeps): void {
   aiConfigTestRouteDeps = deps;
+}
+
+export function setMessageRouteDeps(deps: MessageRouteDeps): void {
+  messageRouteDeps = deps;
 }
 
 function workflowErrorStatus(error: Error): number {
@@ -1556,6 +1568,36 @@ router.get('/rooms/:roomId/agent-runs', (req, res) => {
   res.json(agentRunRepo.listForClientByRoom(req.params.roomId));
 });
 
+const messageLayerSchema = z.enum(['chat', 'activity', 'timeline', 'runtime', 'diff']);
+
+router.get('/rooms/:roomId/task-events', (req, res) => {
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+
+  const layerResult = req.query.layer === undefined
+    ? { success: true as const, data: undefined }
+    : messageLayerSchema.safeParse(req.query.layer);
+  if (!layerResult.success) return res.status(400).json({ error: 'invalid layer' });
+
+  const taskId = typeof req.query.taskId === 'string' && req.query.taskId.trim()
+    ? req.query.taskId.trim()
+    : null;
+  const limit = parseTaskEventsLimit(req.query.limit);
+  const layer = layerResult.data as MessageLayer | undefined;
+  const events = taskId
+    ? taskEventRepo.listByTask(taskId, { layer, limit })
+    : taskEventRepo.listByRoom(room.id, { layer, limit });
+
+  res.json({ events: events.filter((event) => event.room_id === room.id) });
+});
+
+function parseTaskEventsLimit(value: unknown): number {
+  if (typeof value !== 'string') return 500;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 500;
+  return Math.min(parsed, 1000);
+}
+
 router.post('/agent-runs/:id/cancel', (req, res) => {
   const run = agentRunRepo.get(req.params.id);
   if (!run) return res.status(404).json({ error: 'not found' });
@@ -1580,6 +1622,7 @@ const jsonMessageSchema = z.object({
   mentions: z.array(z.string()).optional(),
   fileIds: z.array(z.string()).optional(),
   reply_to_message_id: z.string().trim().min(1).optional(),
+  active_task_id: z.string().trim().min(1).nullable().optional(),
 });
 
 const multipartMessageSchema = z.object({
@@ -1694,17 +1737,26 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  let metadata: MessageMetadata | undefined;
+  let metadata: MessageMetadata;
   try {
     metadata = buildUserMessageMetadata({
       roomId,
       attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile),
       replyToMessageId: parsed.data.reply_to_message_id,
-    });
+    }) ?? {};
   } catch (err) {
     const error = err as Error & { status?: number };
     res.status(error.status ?? 400).json({ error: error.message });
     return;
+  }
+  const routeResult = routeMessage({
+    roomId,
+    message: content,
+    activeTaskId: parsed.data.active_task_id ?? null,
+  });
+  metadata.route_result = routeResult;
+  if (routeResult.taskId) {
+    metadata.task_id = routeResult.taskId;
   }
   const userMsg = createAndDispatchUserMessage({
     roomId,
@@ -1714,6 +1766,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     mentions: parsed.data.mentions,
     metadata,
   });
+  recordTaskRoutingEvent(roomId, userMsg.id, routeResult);
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
   res.status(201).json(userMsg);
 }
@@ -1899,12 +1952,35 @@ function createAndDispatchUserMessage(input: {
     explicitRoomAgentIds: input.mentions,
   });
   // Fire-and-forget dispatch
-  void dispatchUserMessage({
+  void (messageRouteDeps.dispatchUserMessage ?? dispatchUserMessage)({
     roomId: input.roomId,
     userMessage: userMsg,
     mentionedAgentRoomIds,
   });
   return userMsg;
+}
+
+function recordTaskRoutingEvent(
+  roomId: string,
+  messageId: string,
+  routeResult: import('./types.js').RouteResult,
+): void {
+  if (!routeResult.taskId) return;
+  const task = taskRepo.get(routeResult.taskId);
+  if (!task || task.room_id !== roomId) return;
+  recordTaskEvent({
+    roomId,
+    taskId: task.id,
+    taskTitle: task.title,
+    eventType: 'message_routed',
+    content: `消息已路由到任务：${task.title}`,
+    metadata: {
+      message_id: messageId,
+      route_action: routeResult.action,
+      route_confidence: routeResult.confidence,
+      route_reason: routeResult.reason,
+    },
+  });
 }
 
 function parseMultipartMentions(rawMentions?: string): string[] | undefined {
@@ -1955,6 +2031,18 @@ const taskCreateSchema = z.object({
   assigned_agent_id: z.string().optional(),
   parent_task_id: z.string().optional(),
 });
+
+const taskPatchSchema = z
+  .object({
+    title: z.string().min(1).optional(),
+    description: z.string().optional(),
+    priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
+    interaction_mode: z.enum(['ask_user', 'auto_recommended']).optional(),
+    assigned_agent_id: z.string().nullable().optional(),
+    status: z.enum(['todo', 'in_progress', 'review', 'done', 'failed']).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, { message: 'at least one field is required' });
 
 const conversationTaskCreateSchema = taskCreateSchema.extend({
   origin: z.enum(['manual', 'slash_command', 'chat_plan']).default('manual'),
@@ -2283,7 +2371,15 @@ router.post('/rooms/:roomId/tasks/:taskId/workflows/start-with-conversation', (r
 });
 
 router.get('/tasks/:id/workflows', (req, res) => {
-  respondPureAcpDisabled(res, 'task workflows route');
+  const task = taskRepo.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'task not found' });
+  res.json(workflowRepo.listByTask(task.id));
+});
+
+router.get('/rooms/:roomId/workflows', (req, res) => {
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  res.json(workflowRepo.listByRoom(room.id));
 });
 
 router.get('/workflows/:id', (req, res) => {
@@ -2316,27 +2412,95 @@ router.post('/workflows/:id/cancel', async (req, res) => {
 
 // ---------- Tasks ----------
 router.get('/projects/:projectId/tasks', (req, res) => {
-  respondPureAcpDisabled(res, 'project tasks route');
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  res.json(taskRepo.listByProject(project.id));
 });
 
 router.get('/rooms/:roomId/tasks', (req, res) => {
-  respondPureAcpDisabled(res, 'room tasks route');
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  res.json(taskRepo.listByRoom(room.id));
 });
 
 router.post('/rooms/:roomId/tasks/conversation', (req, res) => {
-  respondPureAcpDisabled(res, 'task conversation route');
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const parsed = conversationTaskCreateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const result = createTaskWithConversation({
+      roomId: room.id,
+      actor: {
+        sender_id: parsed.data.sender_id,
+        sender_name: parsed.data.sender_name,
+      },
+      taskInput: {
+        title: parsed.data.title,
+        description: parsed.data.description,
+        priority: parsed.data.priority,
+        interaction_mode: parsed.data.interaction_mode,
+        assigned_agent_id: parsed.data.assigned_agent_id,
+        parent_task_id: parsed.data.parent_task_id,
+      },
+      origin: parsed.data.origin,
+      sourceMessageId: parsed.data.source_message_id ?? undefined,
+      userFacingContent: parsed.data.user_message,
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
 });
 
 router.post('/rooms/:roomId/tasks', (req, res) => {
-  respondPureAcpDisabled(res, 'task create route');
+  const room = roomRepo.get(req.params.roomId);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const parsed = taskCreateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: room.project_id,
+    title: parsed.data.title,
+    description: parsed.data.description,
+    priority: parsed.data.priority,
+    interaction_mode: parsed.data.interaction_mode,
+    assigned_agent_id: parsed.data.assigned_agent_id,
+    parent_task_id: parsed.data.parent_task_id,
+    created_from: 'manual',
+  });
+  wsHub.broadcast(room.id, { type: 'task:created', task });
+  res.status(201).json(task);
 });
 
 router.patch('/tasks/:id', (req, res) => {
-  respondPureAcpDisabled(res, 'task update route');
+  const task = taskRepo.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'task not found' });
+  const parsed = taskPatchSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const updated = parsed.data.status
+    ? taskRepo.updateStatus(task.id, parsed.data.status)
+    : task;
+  const taskPatch: Partial<Pick<typeof task, 'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>> = {};
+  if (parsed.data.title !== undefined) taskPatch.title = parsed.data.title;
+  if (parsed.data.description !== undefined) taskPatch.description = parsed.data.description;
+  if (parsed.data.priority !== undefined) taskPatch.priority = parsed.data.priority;
+  if (parsed.data.interaction_mode !== undefined) taskPatch.interaction_mode = parsed.data.interaction_mode;
+  if (parsed.data.assigned_agent_id !== undefined) taskPatch.assigned_agent_id = parsed.data.assigned_agent_id;
+  const finalTask = Object.keys(taskPatch).length > 0
+    ? taskRepo.update(updated?.id ?? task.id, taskPatch) ?? updated
+    : updated;
+  if (!finalTask) return res.status(404).json({ error: 'task not found' });
+  wsHub.broadcast(finalTask.room_id, { type: 'task:updated', task: finalTask });
+  res.json(finalTask);
 });
 
 router.delete('/tasks/:id', (req, res) => {
-  respondPureAcpDisabled(res, 'task delete route');
+  const task = taskRepo.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'task not found' });
+  taskRepo.delete(task.id);
+  wsHub.broadcast(task.room_id, { type: 'task:deleted', taskId: task.id });
+  res.status(204).end();
 });
 
 router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {

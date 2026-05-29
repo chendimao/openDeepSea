@@ -207,6 +207,7 @@ export type MemorySourceType = 'manual' | 'message' | 'workflow' | 'task';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
 export type TaskCreatedFrom = 'manual' | 'chat_plan' | 'slash_command' | 'workflow_assignment';
 export type TaskEventType =
+  | 'message_routed'
   | 'plan_proposed'
   | 'task_created'
   | 'task_updated'
@@ -900,7 +901,22 @@ export interface Message {
   sender_name: string | null;
   content: string;
   message_type: 'text' | 'task' | 'system' | 'code' | 'agent_stream';
+  layer?: MessageLayer;
   metadata: string | null;
+  created_at: number;
+}
+
+export type MessageLayer = 'chat' | 'activity' | 'timeline' | 'runtime' | 'diff';
+
+export interface TaskEvent {
+  id: string;
+  task_id: string;
+  room_id: string;
+  seq: number;
+  type: TaskEventType;
+  layer: MessageLayer;
+  payload: Record<string, unknown>;
+  source_run_id: string | null;
   created_at: number;
 }
 

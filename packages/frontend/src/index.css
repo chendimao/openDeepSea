@@ -502,6 +502,12 @@
   .workspace-grid.has-inspector {
     grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
   }
+  .task-os-grid {
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  }
+  .task-os-grid.has-inspector {
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(320px, 390px);
+  }
   .room-switcher {
     justify-self: stretch;
   }
@@ -550,6 +556,15 @@
     min-height: 0;
     flex-direction: column;
   }
+  .room-main-heading {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.48);
+    padding-right: 12px;
+  }
   .room-feature-tabs {
     display: flex;
     min-height: 48px;
@@ -557,6 +572,11 @@
     justify-content: flex-start;
     border-bottom: 1px solid rgba(255,255,255,0.48);
     padding: 8px 12px;
+  }
+  .room-main-heading .room-feature-tabs {
+    min-height: auto;
+    border-bottom: 0;
+    padding-right: 0;
   }
   .room-tab-content {
     display: flex;
@@ -609,8 +629,18 @@
       grid-template-columns: minmax(0, 1fr);
     }
     .workspace-grid.has-inspector,
+    .task-os-grid,
+    .task-os-grid.has-inspector,
     .room-task-tab {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .task-os-grid .task-board-panel {
+      min-height: 220px;
+      max-height: 34dvh;
+    }
+    .task-os-grid .inspector-panel {
+      min-height: 260px;
+      max-height: 42dvh;
     }
   }
   .agents-page {
@@ -1354,6 +1384,42 @@
   }
   .glass-info-card {
     padding: 12px;
+  }
+  .task-event-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 6px 10px;
+  }
+  .task-event-row {
+    position: relative;
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+  }
+  .task-event-row + .task-event-row {
+    border-top: 1px solid rgba(255,255,255,0.58);
+  }
+  .task-event-dot {
+    margin-top: 5px;
+    height: 9px;
+    width: 9px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(10,132,255,0.13);
+  }
+  .task-event-dot[data-layer="activity"] {
+    background: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(255,149,0,0.14);
+  }
+  .task-event-dot[data-layer="runtime"] {
+    background: var(--color-success);
+    box-shadow: 0 0 0 3px rgba(52,199,89,0.14);
+  }
+  .task-event-dot[data-layer="diff"] {
+    background: var(--color-danger);
+    box-shadow: 0 0 0 3px rgba(255,59,48,0.13);
   }
   .glass-select {
     height: 38px;

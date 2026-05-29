@@ -622,9 +622,11 @@ export interface CollaborationRunResult {
 }
 
 export type MessageType = 'text' | 'task' | 'system' | 'code' | 'agent_stream';
+export type MessageLayer = 'chat' | 'activity' | 'timeline' | 'runtime' | 'diff';
 export type SenderType = 'user' | 'agent' | 'system';
 export type TaskCreatedFrom = 'manual' | 'chat_plan' | 'slash_command' | 'workflow_assignment';
 export type TaskEventType =
+  | 'message_routed'
   | 'plan_proposed'
   | 'task_created'
   | 'task_updated'
@@ -778,8 +780,40 @@ export interface Message {
   sender_name: string | null;
   content: string;
   message_type: MessageType;
+  layer?: MessageLayer;
   metadata: string | null;
   created_at: number;
+}
+
+export interface TaskEvent {
+  id: string;
+  task_id: string;
+  room_id: string;
+  seq: number;
+  type: TaskEventType;
+  layer: MessageLayer;
+  payload: Record<string, unknown>;
+  source_run_id: string | null;
+  created_at: number;
+}
+
+export interface RouteResult {
+  taskId: string | null;
+  action: 'append_to_task' | 'switch_task' | 'create_task' | 'ask_user';
+  confidence: number;
+  reason: string;
+}
+
+export interface TaskExecutor {
+  id: string;
+  task_id: string;
+  room_id: string;
+  room_agent_id: string;
+  agent_id: string;
+  acp_session_id: string | null;
+  status: 'idle' | 'running' | 'blocked' | 'failed';
+  created_at: number;
+  updated_at: number;
 }
 
 export type GlobalChatRole = 'user' | 'assistant' | 'system';
@@ -1008,6 +1042,8 @@ export interface CliSessionSummary {
 
 export type WsServerEvent =
   | { type: 'message:new'; roomId: string; message: Message }
+  | { type: 'task_event:new'; roomId: string; event: TaskEvent }
+  | { type: 'task:activated'; roomId: string; taskId: string }
   | {
       type: 'message:stream';
       roomId: string;

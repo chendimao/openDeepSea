@@ -3669,14 +3669,14 @@ test('respondAsAgent registers structured markdown documents into resource asset
   }
 });
 
-test('dispatchUserMessage replies with configured model when no agent target is available', async () => {
+test('dispatchUserMessage replies with configured model when fallback reply has no agent target', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-test-'));
   const project = projectRepo.create({ name: `model-chat-${Date.now()}`, path: projectPath });
-  projectRepo.updateRouting(project.id, { message_routing_mode: 'mentions_only', fallback_agent_id: null });
+  projectRepo.updateRouting(project.id, { message_routing_mode: 'fallback_reply', fallback_agent_id: 'missing-planner' });
   const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
   settingsRepo.updateRoom(room.id, {
-    message_routing_mode: 'mentions_only',
-    fallback_agent_id: null,
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'missing-planner',
   });
   const message = messageRepo.create({
     room_id: room.id,
@@ -3710,6 +3710,45 @@ test('dispatchUserMessage replies with configured model when no agent target is 
   }
 });
 
+test('dispatchUserMessage stays silent in mentions-only mode without mentions', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-mentions-only-silent-'));
+  const project = projectRepo.create({ name: `mentions-only-silent-${Date.now()}`, path: projectPath });
+  projectRepo.updateRouting(project.id, { message_routing_mode: 'mentions_only', fallback_agent_id: null });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  settingsRepo.updateRoom(room.id, {
+    message_routing_mode: 'mentions_only',
+    fallback_agent_id: null,
+  });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '无 @ 时不要回复',
+    message_type: 'text',
+  });
+  let invoked = false;
+
+  try {
+    await dispatchUserMessage({
+      roomId: room.id,
+      userMessage: message,
+      modelChatInvoker: {
+        async invoke() {
+          invoked = true;
+          return '不应该出现';
+        },
+      },
+    });
+
+    assert.equal(invoked, false);
+    const messages = messageRepo.listByRoom(room.id);
+    assert.equal(messages.some((item) => item.sender_id === 'model-chat'), false);
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('dispatchUserMessage passes model_chat skill context to configured model fallback', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-skill-runtime-'));
   const skillPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-skill-dir-'));
@@ -3724,8 +3763,8 @@ test('dispatchUserMessage passes model_chat skill context to configured model fa
   const project = projectRepo.create({ name: `model-chat-runtime-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
   settingsRepo.updateRoom(room.id, {
-    message_routing_mode: 'mentions_only',
-    fallback_agent_id: null,
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'missing-planner',
   });
   const skill = skillRepo.createSkill({
     id: `skill-model-chat-${Date.now()}`,

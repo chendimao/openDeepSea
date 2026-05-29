@@ -6,12 +6,15 @@ import type {
   RoomAgent,
   Task,
   TaskArtifact,
+  TaskEvent,
   WorkflowRun,
   WorkflowStep,
 } from './types';
 
 export type WsServerEvent =
   | { type: 'message:new'; roomId: string; message: Message }
+  | { type: 'task_event:new'; roomId: string; event: TaskEvent }
+  | { type: 'task:activated'; roomId: string; taskId: string }
   | {
       type: 'message:stream';
       roomId: string;

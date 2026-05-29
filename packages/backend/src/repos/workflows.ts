@@ -136,6 +136,12 @@ export const workflowRepo = {
       .all(taskId) as WorkflowRun[];
   },
 
+  listByRoom(roomId: string): WorkflowRun[] {
+    return db
+      .prepare('SELECT * FROM workflow_runs WHERE room_id = ? ORDER BY created_at DESC')
+      .all(roomId) as WorkflowRun[];
+  },
+
   listGraphAwaitingApprovalRuns(): WorkflowRun[] {
     return db
       .prepare('SELECT * FROM workflow_runs WHERE graph_version IS NOT NULL AND status = ? ORDER BY created_at ASC')

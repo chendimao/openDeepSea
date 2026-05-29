@@ -14,8 +14,10 @@ let recordTaskEvent: typeof import('./task-conversation.js').recordTaskEvent;
 let memoryRepo: typeof import('./repos/memory.js').memoryRepo;
 let messageRepo: typeof import('./repos/messages.js').messageRepo;
 let settingsRepo: typeof import('./repos/settings.js').settingsRepo;
+let taskEventRepo: typeof import('./repos/task-events.js').taskEventRepo;
 let workflowRepo: typeof import('./repos/workflows.js').workflowRepo;
 let setWorkflowConversationDeps: typeof import('./workflows/conversation.js').setWorkflowConversationDeps;
+let wsHub: typeof import('./ws-hub.js').wsHub;
 
 test.before(async () => {
   tempRootDir = await mkdtemp(join(tmpdir(), 'openclaw-room-task-conversation-'));
@@ -28,8 +30,10 @@ test.before(async () => {
   ({ memoryRepo } = await import('./repos/memory.js'));
   ({ messageRepo } = await import('./repos/messages.js'));
   ({ settingsRepo } = await import('./repos/settings.js'));
+  ({ taskEventRepo } = await import('./repos/task-events.js'));
   ({ workflowRepo } = await import('./repos/workflows.js'));
   ({ setWorkflowConversationDeps } = await import('./workflows/conversation.js'));
+  ({ wsHub } = await import('./ws-hub.js'));
 });
 
 test.afterEach(() => {
@@ -89,6 +93,33 @@ test('createTaskWithConversation creates user message, task, and system task eve
   assert.equal(metadata.task_id, result.task.id);
   assert.equal(metadata.task_title, result.task.title);
   assert.equal(metadata.origin, 'manual');
+});
+
+test('createTaskWithConversation appends and broadcasts a task_created activity event', () => {
+  const { roomId } = insertProjectAndRoom();
+  const events = captureRoomEvents(roomId);
+  try {
+    const result = createTaskWithConversation({
+      roomId,
+      origin: 'manual',
+      taskInput: { title: '事件流任务', description: '验证 task event 写入' },
+    });
+
+    const taskEvents = taskEventRepo.listByTask(result.task.id);
+    assert.equal(taskEvents.length, 1);
+    assert.equal(taskEvents[0]?.seq, 1);
+    assert.equal(taskEvents[0]?.type, 'task_created');
+    assert.equal(taskEvents[0]?.layer, 'activity');
+    assert.equal(taskEvents[0]?.payload.task_title, result.task.title);
+    assert.equal(taskEvents[0]?.payload.message_id, result.systemMessage.id);
+
+    const broadcast = events.find((event) => event.type === 'task_event:new');
+    assert.ok(broadcast);
+    assert.equal(broadcast.roomId, roomId);
+    assert.equal(broadcast.event.id, taskEvents[0]?.id);
+  } finally {
+    events.restore();
+  }
 });
 
 test('createTaskWithConversation stores task creation memory with task background', () => {
@@ -313,6 +344,36 @@ test('recordTaskEvent persists workflow metadata on a system message', () => {
   assert.equal(metadata.event_type, 'workflow_stage_changed');
 });
 
+test('recordTaskEvent appends a timeline task event for workflow metadata', () => {
+  const { roomId } = insertProjectAndRoom();
+  const task = createTaskWithConversation({
+    roomId,
+    origin: 'slash_command',
+    taskInput: { title: '工作流事件流测试' },
+  }).task;
+
+  const message = recordTaskEvent({
+    roomId,
+    taskId: task.id,
+    taskTitle: task.title,
+    workflowRunId: 'workflow-2',
+    workflowStepId: 'step-2',
+    eventType: 'workflow_stage_changed',
+    content: '任务进入实现阶段',
+    metadata: { stage: 'implementation' },
+  });
+
+  const taskEvents = taskEventRepo.listByTask(task.id);
+  const event = taskEvents.find((item) => item.type === 'workflow_stage_changed');
+  assert.ok(event);
+  assert.equal(event.seq, 2);
+  assert.equal(event.layer, 'timeline');
+  assert.equal(event.payload.message_id, message.id);
+  assert.equal(event.payload.workflow_run_id, 'workflow-2');
+  assert.equal(event.payload.workflow_step_id, 'step-2');
+  assert.equal(event.payload.stage, 'implementation');
+});
+
 test('createTaskWithConversation rejects unknown source message', () => {
   const { roomId } = insertProjectAndRoom();
   assert.throws(
@@ -356,3 +417,17 @@ test('createTaskWithConversation rejects empty source message id', () => {
     /source message id is empty/,
   );
 });
+
+function captureRoomEvents(roomId: string): import('./types.js').WsServerEvent[] & { restore: () => void } {
+  const original = wsHub.broadcast.bind(wsHub);
+  const events: import('./types.js').WsServerEvent[] = [];
+  wsHub.broadcast = ((targetRoomId, event) => {
+    if (targetRoomId === roomId) events.push(event);
+    original(targetRoomId, event);
+  }) as typeof wsHub.broadcast;
+  return Object.assign(events, {
+    restore: () => {
+      wsHub.broadcast = original as typeof wsHub.broadcast;
+    },
+  });
+}

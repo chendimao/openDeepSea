@@ -18,6 +18,7 @@ import { projectRepo } from './repos/projects.js';
 import { agentRepo } from './repos/agents.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
+import { taskExecutorRepo } from './repos/task-executors.js';
 import { formatSkillPrompt } from './skills/prompt.js';
 import { selectSkills } from './skills/selector.js';
 import { buildSessionHandoffContext } from './session-handoff.js';
@@ -231,7 +232,7 @@ export async function dispatchUserMessage(args: {
     prompt: promptWithAttachments,
     imagePaths,
   });
-  if (routing.targets.length === 0) {
+  if (routing.targets.length === 0 && settings.message_routing_mode === 'fallback_reply') {
     await respondWithConfiguredModel({
       project,
       room,
@@ -676,6 +677,16 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   if (!backend) {
     throw new Error(`Agent ${agent.agent_name} has no ACP backend configured`);
   }
+  const taskExecutor = args.taskId
+    ? taskExecutorRepo.ensure({
+        task_id: args.taskId,
+        room_id: roomId,
+        room_agent_id: agent.id,
+        agent_id: agent.agent_id,
+        acp_session_id: null,
+      })
+    : null;
+  const acpSessionId = taskExecutor?.acp_session_id ?? agent.acp_session_id;
   const sessionHandoff = buildSessionHandoffForAgent({
     roomId,
     agent,
@@ -687,7 +698,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     agent_id: agent.agent_id,
     backend,
     session_key: null,
-    acp_session_id: agent.acp_session_id,
+    acp_session_id: acpSessionId,
     task_id: args.taskId,
     workflow_run_id: args.workflowRunId,
     workflow_step_id: args.workflowStepId,
@@ -721,7 +732,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     metadata: {
       acp_enabled: !!agent.acp_enabled,
       acp_backend: agent.acp_backend,
-      acp_session_id: agent.acp_session_id,
+      acp_session_id: acpSessionId,
       internal: args.internalMessage ? true : undefined,
     },
   });
@@ -919,7 +930,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     const adapter = getAdapter(backend);
     const result = await adapter.invoke({
       projectPath,
-      sessionId: agent.acp_session_id,
+      sessionId: acpSessionId,
       prompt,
       sessionHandoff: sessionHandoff?.text ?? null,
       sessionHandoffMode: sessionHandoff?.mode,
@@ -941,6 +952,9 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         else onStderr(chunk.text);
       },
       onSession: (sessionId) => {
+        if (taskExecutor) {
+          taskExecutorRepo.updateSession(taskExecutor.id, sessionId);
+        }
         const updated = agentRunRepo.updateStatus(run.id, 'running', {
           acp_session_id: sessionId,
         });
@@ -950,12 +964,15 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     });
     flushAnswerBuffer();
     if (result.sessionId) {
+      if (taskExecutor) {
+        taskExecutorRepo.updateSession(taskExecutor.id, result.sessionId);
+      }
       const updated = agentRunRepo.updateStatus(run.id, 'running', {
         acp_session_id: result.sessionId,
       });
       if (updated) broadcastRun('agent_run:updated', updated);
     }
-    if (result.sessionId && result.sessionId !== agent.acp_session_id) {
+    if (!taskExecutor && result.sessionId && result.sessionId !== agent.acp_session_id) {
       roomAgentRepo.setAcp(agent.id, {
         acp_enabled: true,
         acp_backend: agent.acp_backend,
