@@ -19,6 +19,8 @@ function agent(input: Partial<RoomAgent> & Pick<RoomAgent, 'id' | 'agent_id' | '
     acp_backend: null,
     acp_session_id: null,
     acp_session_label: null,
+    acp_session_handoff_pending: 0,
+    acp_session_handoff_reason: null,
     acp_permission_mode: 'bypass',
     acp_writable_dirs: [],
     capabilities: [],

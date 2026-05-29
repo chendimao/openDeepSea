@@ -452,6 +452,8 @@ function agent(patch: Partial<RoomAgent>): RoomAgent {
     acp_backend: patch.acp_backend === undefined ? 'codex' : patch.acp_backend,
     acp_session_id: patch.acp_session_id ?? null,
     acp_session_label: patch.acp_session_label ?? null,
+    acp_session_handoff_pending: patch.acp_session_handoff_pending ?? 0,
+    acp_session_handoff_reason: patch.acp_session_handoff_reason ?? null,
     acp_permission_mode: patch.acp_permission_mode ?? 'bypass',
     acp_writable_dirs: patch.acp_writable_dirs ?? [],
     capabilities: patch.capabilities ?? [],

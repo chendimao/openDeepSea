@@ -23,6 +23,8 @@ function roomAgent(overrides: Partial<RoomAgent> = {}): RoomAgent {
     acp_backend: 'codex',
     acp_session_id: null,
     acp_session_label: null,
+    acp_session_handoff_pending: 0,
+    acp_session_handoff_reason: null,
     acp_permission_mode: 'workspace-write',
     acp_writable_dirs: [],
     capabilities: ['backend'],

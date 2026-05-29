@@ -2014,6 +2014,8 @@ function roomAgentCandidateFromGlobalAgent(roomId: string, agent: Agent): RoomAg
     acp_backend: agent.default_acp_backend,
     acp_session_id: null,
     acp_session_label: null,
+    acp_session_handoff_pending: 0,
+    acp_session_handoff_reason: null,
     acp_permission_mode: agent.default_acp_permission_mode,
     acp_writable_dirs: agent.default_workspace_policy.write,
     capabilities: template?.capabilities ?? [],
