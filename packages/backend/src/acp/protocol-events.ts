@@ -4,6 +4,7 @@ import {
   normalizeKnownProviderEvent,
   normalizeRawTimelineEvent,
 } from './timeline.js';
+import { compactTimelineEvent } from '../trace-compaction.js';
 
 export function isProtocolEvent(raw: Record<string, unknown>): boolean {
   if (raw['method'] === 'session/update') return true;
@@ -29,7 +30,7 @@ export function normalizeProtocolEvent(args: {
     const oldText = text(diffContent['oldText']) ?? '';
     const newText = text(diffContent['newText']) ?? '';
     const patch = createUnifiedDiffPatch(diffContent.path, oldText, newText);
-    return createTimelineEvent({
+    return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -48,12 +49,12 @@ export function normalizeProtocolEvent(args: {
         title: text(payload['title']),
       },
       raw: args.raw,
-    });
+    }));
   }
 
   if (sessionUpdate === 'agent_message_chunk') {
     const messageText = getContentText(payload);
-    return createTimelineEvent({
+    return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -66,11 +67,11 @@ export function normalizeProtocolEvent(args: {
         content: payload['content'],
       },
       raw: args.raw,
-    });
+    }));
   }
 
   if (sessionUpdate === 'agent_thought_chunk' || kind === 'thinking' || /thinking|reasoning/i.test(type)) {
-    return createTimelineEvent({
+    return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -84,12 +85,12 @@ export function normalizeProtocolEvent(args: {
         content: payload['content'],
       },
       raw: args.raw,
-    });
+    }));
   }
 
   if (sessionUpdate === 'tool_call' || /tool_call_started|tool.*started|tool_use|^tool_call$/i.test(type)) {
     const name = getToolName(payload, args.raw, 'tool');
-    return createTimelineEvent({
+    return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -107,14 +108,14 @@ export function normalizeProtocolEvent(args: {
         locations: payload['locations'],
       },
       raw: args.raw,
-    });
+    }));
   }
 
   if (sessionUpdate === 'tool_call_update') {
     const name = getToolName(payload, args.raw, 'tool');
     const status = resolveStatus(payload, payload['rawOutput'] !== undefined ? 'completed' : 'delta');
     const hasResult = status === 'completed' || status === 'failed' || payload['rawOutput'] !== undefined;
-    return createTimelineEvent({
+    return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -133,12 +134,12 @@ export function normalizeProtocolEvent(args: {
         locations: payload['locations'],
       },
       raw: args.raw,
-    });
+    }));
   }
 
   if (/tool_result|tool_call_completed|tool.*completed|function_call_output/i.test(type)) {
     const name = getToolName(payload, args.raw, 'tool_result');
-    return createTimelineEvent({
+    return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -152,13 +153,13 @@ export function normalizeProtocolEvent(args: {
         output: payload['output'] ?? payload['content'] ?? args.raw['output'],
       },
       raw: args.raw,
-    });
+    }));
   }
 
   if (/command_output|stdout|stderr/i.test(type)) {
     const stream = text(payload['stream']) ?? text(args.raw['stream']);
     const output = text(payload['delta']) ?? text(payload['text']) ?? text(payload['content']) ?? '';
-    return createTimelineEvent({
+    return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -171,11 +172,11 @@ export function normalizeProtocolEvent(args: {
         ...(stream === 'stderr' ? { stderr: output } : { stdout: output }),
       },
       raw: args.raw,
-    });
+    }));
   }
 
   if (sessionUpdate === 'plan') {
-    return createTimelineEvent({
+    return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -187,7 +188,7 @@ export function normalizeProtocolEvent(args: {
         entries: Array.isArray(payload['entries']) ? payload['entries'] : [],
       },
       raw: args.raw,
-    });
+    }));
   }
 
   if (/patch|diff|edit|file|plan|next_steps/i.test(type)) {
@@ -200,13 +201,13 @@ export function normalizeProtocolEvent(args: {
       raw: toKnownProviderRaw(args.raw, payload, type),
     });
 
-    return {
+    return compactTimelineEvent({
       ...event,
       raw: args.raw,
-    };
+    });
   }
 
-  return normalizeRawTimelineEvent({
+  return compactTimelineEvent(normalizeRawTimelineEvent({
     messageId: args.messageId,
     runId: args.runId,
     agentId: args.agentId,
@@ -214,7 +215,7 @@ export function normalizeProtocolEvent(args: {
     provider: args.provider,
     rawType: type,
     raw: args.raw,
-  });
+  }));
 }
 
 function getProtocolPayload(raw: Record<string, unknown>): Record<string, unknown> {

@@ -191,6 +191,40 @@ test('normalizeProtocolEvent maps ACP completed tool_call_update as tool_result'
   assert.deepEqual(event.raw, raw);
 });
 
+test('normalizeProtocolEvent truncates oversized tool output and drops oversized raw event', () => {
+  const largeOutput = 'x'.repeat(40_000);
+  const raw = {
+    method: 'session/update',
+    params: {
+      sessionId: 'acp-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tool-1',
+        title: 'rg search',
+        status: 'completed',
+        rawOutput: {
+          command: ['/bin/zsh', '-lc', 'rg -n "settings" packages'],
+          output: largeOutput,
+        },
+      },
+    },
+  };
+
+  const event = normalizeProtocolEvent({
+    ...baseArgs,
+    seq: 5,
+    raw,
+  });
+
+  assert.equal(event.type, 'tool_result');
+  assert.equal(event.raw, undefined);
+  assert.equal(event.payload.truncated, true);
+  assert.equal(typeof event.payload.original_bytes, 'number');
+  assert.ok(Number(event.payload.original_bytes) > 40_000);
+  assert.match(JSON.stringify(event.payload), /rg -n/);
+  assert.ok(JSON.stringify(event.payload).length < 20_000);
+});
+
 test('normalizeProtocolEvent maps ACP diff tool_call_update content to file_diff', () => {
   const raw = {
     method: 'session/update',

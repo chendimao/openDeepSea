@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
+import { compactMessageTrace } from '../trace-compaction.js';
 import type {
   AgentTimelineEvent,
   Message,
@@ -21,7 +22,7 @@ export const messageRepo = {
          LIMIT ?`,
       )
       .all(roomId, limit) as Message[];
-    return refreshPlannerMetadataFromContent(messages);
+    return compactTraceMetadataForList(refreshPlannerMetadataFromContent(messages));
   },
 
   get(id: string): Message | undefined {
@@ -73,7 +74,7 @@ export const messageRepo = {
     if (!message) return undefined;
     const metadata = parseMetadataObject(message.metadata);
     const nextTrace = mergeMessageTrace(metadata.trace, patch);
-    const nextMetadata = { ...metadata, trace: nextTrace };
+    const nextMetadata = { ...metadata, trace: compactMessageTrace(nextTrace) };
     db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify(nextMetadata), id);
     return this.get(id);
   },
@@ -108,6 +109,19 @@ function refreshPlannerMetadataFromContent(messages: Message[]): Message[] {
     refreshed.push(next);
   }
   return refreshed;
+}
+
+function compactTraceMetadataForList(messages: Message[]): Message[] {
+  return messages.map((message) => {
+    const metadata = parseMetadataObject(message.metadata);
+    if (!isMessageTrace(metadata.trace)) return message;
+    const compactTrace = compactMessageTrace(metadata.trace);
+    if (compactTrace === metadata.trace) return message;
+    return {
+      ...message,
+      metadata: JSON.stringify({ ...metadata, trace: compactTrace }),
+    };
+  });
 }
 
 function refreshPlannerMessageMetadata(message: Message): Message {
