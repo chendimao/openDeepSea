@@ -139,6 +139,10 @@ class FakeAgent implements Agent {
       throw new Error('fake failure after event');
     }
 
+    if (process.env.OPENCLAW_FAKE_ACP_FAIL_AFTER_EVENT_SYSTEM_ROLE === '1') {
+      throw new Error("Internal error: API Error: 400 messages[1].role must be either 'user' or 'assistant', but got 'system'");
+    }
+
     await this.connection.sessionUpdate({
       sessionId: params.sessionId,
       update: {

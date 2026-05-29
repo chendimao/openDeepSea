@@ -29,6 +29,13 @@ test('filterProtocolStderr hides Claude ACP system-role resume incompatibility n
   assert.equal(filterProtocolStderr('codex', input), input);
 });
 
+test('filterProtocolStderr hides Claude ACP system-role prompt role validation noise', () => {
+  const input = 'Error handling request { method: \'session/prompt\' } { message: "Internal error: API Error: 400 messages[1].role must be either \'user\' or \'assistant\', but got \'system\'" }\n';
+
+  assert.equal(filterProtocolStderr('claudecode', input), '');
+  assert.equal(filterProtocolStderr('codex', input), input);
+});
+
 test('invokeProtocolSession streams ACP session updates as raw protocol events and answer text', async () => {
   const chunks: Array<{
     channel?: string;
@@ -143,6 +150,38 @@ test('invokeProtocolSession retries Claude ACP with a fresh session when resumed
   assert.equal(result.sessionId, 'fake-session-1');
   assert.deepEqual(sessions, ['fake-session-1']);
   assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
+  assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.session_reset'), true);
+  assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.stderr'), false);
+});
+
+test('invokeProtocolSession rotates Claude ACP session after system role error once events streamed', async () => {
+  const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+  const sessions: string[] = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'claudecode',
+    server: {
+      backend: 'claudecode',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_CAN_RESUME: '1',
+        OPENCLAW_FAKE_ACP_FAIL_AFTER_EVENT_SYSTEM_ROLE: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: 'old-claude-session',
+    prompt: 'hello',
+    onChunk: (chunk) => chunks.push(chunk),
+    onSession: (sessionId) => sessions.push(sessionId),
+  });
+
+  assert.equal(result.exitCode, -1);
+  assert.equal(result.sessionId, 'fake-session-1');
+  assert.deepEqual(sessions, ['fake-session-1']);
   assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.session_reset'), true);
   assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.stderr'), false);
 });

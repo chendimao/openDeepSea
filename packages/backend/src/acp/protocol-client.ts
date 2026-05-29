@@ -22,7 +22,7 @@ const PROTOCOL_SHUTDOWN_TIMEOUT_MS = 1_000;
 const ACP_STREAM_DISCONNECTED_PATTERN = /ResponseStreamDisconnected|stream disconnected before completion|Transport error|network error|error decoding response body/i;
 const ACP_HANDLED_RECONNECT_PATTERN = /Handled error during turn:\s*Reconnecting\.\.\.\s*(\d+)\/(\d+)/i;
 const CLAUDE_CODE_MISSING_POST_TOOL_HOOK_PATTERN = /^No onPostToolUseHook found for tool use ID: call_[A-Za-z0-9_-]+$/;
-const CLAUDE_ACP_SYSTEM_ROLE_DESERIALIZE_PATTERN = /messages\[\d+\]\.role:\s*unknown variant `system`, expected `user` or `assistant`/i;
+const CLAUDE_ACP_SYSTEM_ROLE_DESERIALIZE_PATTERN = /messages\[\d+\]\.role(?:[^\n]*unknown variant `system`[^\n]*expected `user` or `assistant`|[^\n]*must be either ['"`]user['"`] or ['"`]assistant['"`][^\n]*got ['"`]system['"`])/i;
 
 export interface InvokeProtocolSessionArgs {
   backend: AcpBackend;
@@ -201,23 +201,7 @@ export async function invokeProtocolSession(
     const streamDisconnect = new Promise<never>((_, reject) => {
       rejectStreamDisconnect = reject;
     });
-    let promptResult = await promptActiveSession({
-      connection,
-      sessionId: activeSessionId,
-      prompt: args.prompt,
-      imagePaths: args.imagePaths ?? [],
-      promptTimeoutMs,
-      streamDisconnect,
-    }).catch(async (error) => {
-      if (
-        args.backend !== 'claudecode' ||
-        !args.sessionId ||
-        eventReceived ||
-        !isClaudeAcpSystemRoleDeserializeError(`${error instanceof Error ? error.message : String(error)}\n${rawStderr}`)
-      ) {
-        throw error;
-      }
-
+    const resetClaudeAcpSessionAfterSystemRoleError = async (message: string): Promise<string> => {
       await connection.closeSession({ sessionId: activeSessionId! }).catch(() => undefined);
       const newSession = await withTimeout(
         connection.newSession({
@@ -232,13 +216,43 @@ export async function invokeProtocolSession(
       args.onSession?.(activeSessionId);
       args.onChunk({
         stream: 'stdout',
-        text: '[ACP session reset] Claude Code ACP could not resume the previous session because its history contains unsupported system-role messages; started a fresh session.\n',
+        text: message,
         channel: 'activity',
         rawType: 'protocol.session_reset',
       });
+      return activeSessionId;
+    };
+
+    let promptResult = await promptActiveSession({
+      connection,
+      sessionId: activeSessionId,
+      prompt: args.prompt,
+      imagePaths: args.imagePaths ?? [],
+      promptTimeoutMs,
+      streamDisconnect,
+    }).catch(async (error) => {
+      const errorText = `${error instanceof Error ? error.message : String(error)}\n${rawStderr}`;
+      if (
+        args.backend !== 'claudecode' ||
+        !args.sessionId ||
+        !isClaudeAcpSystemRoleDeserializeError(errorText)
+      ) {
+        throw error;
+      }
+
+      if (eventReceived) {
+        await resetClaudeAcpSessionAfterSystemRoleError(
+          '[ACP session reset] Claude Code ACP hit an unsupported system-role message after streaming events; the current turn failed, but the next turn will use a fresh session.\n',
+        );
+        throw error;
+      }
+
+      const newSessionId = await resetClaudeAcpSessionAfterSystemRoleError(
+        '[ACP session reset] Claude Code ACP could not resume the previous session because its history contains unsupported system-role messages; started a fresh session.\n',
+      );
       return promptActiveSession({
         connection,
-        sessionId: activeSessionId,
+        sessionId: newSessionId,
         prompt: args.prompt,
         imagePaths: args.imagePaths ?? [],
         promptTimeoutMs,
