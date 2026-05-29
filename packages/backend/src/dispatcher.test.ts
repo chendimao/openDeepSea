@@ -1382,10 +1382,12 @@ test('respondAsAgent passes handoff context when agent starts first ACP session'
 
   const originalAdapter = adapters.codex;
   let capturedHandoff: string | null | undefined;
+  let capturedHandoffMode: string | undefined;
   adapters.codex = {
     ...originalAdapter,
     async invoke(args) {
       capturedHandoff = args.sessionHandoff;
+      capturedHandoffMode = args.sessionHandoffMode;
       args.onChunk({ stream: 'stdout', text: '开始处理。' });
       return { exitCode: 0, sessionId: 'first-session', stderr: '' };
     },
@@ -1402,6 +1404,57 @@ test('respondAsAgent passes handoff context when agent starts first ACP session'
     assert.match(capturedHandoff ?? '', /新会话接续上下文/);
     assert.match(capturedHandoff ?? '', /帮我在侧边栏添加一个测试菜单/);
     assert.match(capturedHandoff ?? '', /首次 session/);
+    assert.equal(capturedHandoffMode, 'new_session');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent prepares resume-unavailable handoff without forcing normal resume', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-resume-unavailable-handoff-'));
+  const project = projectRepo.create({ name: `resume-unavailable-handoff-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner', agent_name: '规划师' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'old-session',
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '继续刚才的实现',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  let capturedHandoff: string | null | undefined;
+  let capturedHandoffMode: string | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedHandoff = args.sessionHandoff;
+      capturedHandoffMode = args.sessionHandoffMode;
+      args.onChunk({ stream: 'stdout', text: '继续处理。' });
+      return { exitCode: 0, sessionId: args.sessionId, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '继续',
+    });
+
+    assert.match(capturedHandoff ?? '', /provider 不支持 resume 后新建 session/);
+    assert.equal(capturedHandoffMode, 'new_session');
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -1438,11 +1491,13 @@ test('respondAsAgent clears pending handoff after passing it to the next ACP tur
   const originalAdapter = adapters.codex;
   let capturedSessionId: string | null | undefined;
   let capturedHandoff: string | null | undefined;
+  let capturedHandoffMode: string | undefined;
   adapters.codex = {
     ...originalAdapter,
     async invoke(args) {
       capturedSessionId = args.sessionId;
       capturedHandoff = args.sessionHandoff;
+      capturedHandoffMode = args.sessionHandoffMode;
       args.onChunk({ stream: 'stdout', text: '继续完成。' });
       return { exitCode: 0, sessionId: args.sessionId, stderr: '' };
     },
@@ -1459,6 +1514,7 @@ test('respondAsAgent clears pending handoff after passing it to the next ACP tur
     const updated = roomAgentRepo.get(acpAgent.id);
     assert.equal(capturedSessionId, 'fresh-session-after-reset');
     assert.match(capturedHandoff ?? '', /事件流出后自动轮换 session/);
+    assert.equal(capturedHandoffMode, 'force');
     assert.equal(updated?.acp_session_handoff_pending, 0);
     assert.equal(updated?.acp_session_handoff_reason, null);
   } finally {

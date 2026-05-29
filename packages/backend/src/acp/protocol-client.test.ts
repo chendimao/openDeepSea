@@ -121,6 +121,37 @@ test('invokeProtocolSession starts a new session when agent cannot resume saved 
   assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
 });
 
+test('invokeProtocolSession prepends handoff only after resume-unavailable new session', async () => {
+  const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_ECHO_PROMPT: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: 'old-session-id',
+    prompt: 'current prompt',
+    sessionHandoff: 'resume unavailable handoff',
+    sessionHandoffMode: 'new_session',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.sessionId, 'fake-session-1');
+  const answer = chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join('');
+  assert.match(answer, /resume unavailable handoff/);
+  assert.match(answer, /当前请求：\s*current prompt/);
+});
+
 test('invokeProtocolSession prepends handoff when ACP creates a new session', async () => {
   const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
 
@@ -172,6 +203,7 @@ test('invokeProtocolSession prepends handoff when caller marks resumed session p
     sessionId: 'fresh-session-after-rotation',
     prompt: 'current prompt',
     sessionHandoff: 'pending handoff context',
+    sessionHandoffMode: 'force',
     onChunk: (chunk) => chunks.push(chunk),
   });
 

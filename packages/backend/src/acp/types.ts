@@ -7,6 +7,7 @@ import type {
 } from '../types.js';
 
 export type AcpStreamChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command' | 'event';
+export type AcpSessionHandoffMode = 'new_session' | 'force';
 
 export type AcpStreamTrace =
   | {
@@ -50,6 +51,7 @@ export interface SessionAdapter {
     sessionId: string | null;
     prompt: string;
     sessionHandoff?: string | null;
+    sessionHandoffMode?: AcpSessionHandoffMode;
     imagePaths?: string[];
     acpPermissionMode?: AcpPermissionMode | null;
     /** Final absolute directories allowed for write access. Empty means no additional write scope. */

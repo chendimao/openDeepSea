@@ -92,7 +92,7 @@ export const claudeCodeAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, sessionHandoff, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('claudecode');
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
@@ -102,6 +102,7 @@ export const claudeCodeAdapter: SessionAdapter = {
         sessionId,
         prompt,
         sessionHandoff,
+        sessionHandoffMode,
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
@@ -116,7 +117,7 @@ export const claudeCodeAdapter: SessionAdapter = {
       emitProtocolFallback(onChunk, 'claudecode', protocolResult.stderr);
     }
 
-    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff);
+    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff, sessionHandoffMode);
     const invocation = buildClaudeCodeInvocation({
       sessionId,
       prompt: legacyPrompt,
@@ -154,9 +155,10 @@ export function withSessionHandoffForNewSession(
   prompt: string,
   sessionId: string | null,
   sessionHandoff?: string | null,
+  sessionHandoffMode: 'new_session' | 'force' = 'new_session',
 ): string {
   const normalized = sessionHandoff?.trim();
-  if (sessionId || !normalized) return prompt;
+  if (!normalized || (sessionId && sessionHandoffMode !== 'force')) return prompt;
   return `${normalized}\n\n当前请求：\n${prompt}`;
 }
 

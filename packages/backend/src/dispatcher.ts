@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { getAdapter } from './acp/index.js';
 import { isProtocolEvent, normalizeProtocolEvent } from './acp/protocol-events.js';
 import { normalizeKnownProviderEvent, normalizeTimelineEventFromTrace } from './acp/timeline.js';
-import type { AcpStreamChunk, AcpStreamTrace } from './acp/types.js';
+import type { AcpSessionHandoffMode, AcpStreamChunk, AcpStreamTrace } from './acp/types.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, invokeConfiguredModelText, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { classifyAgentDocument } from './agent-document-classifier.js';
@@ -95,7 +95,7 @@ function buildSessionHandoffForAgent(input: {
   roomId: string;
   agent: RoomAgent;
   currentPrompt: string;
-}): string | null {
+}): { text: string; mode: AcpSessionHandoffMode } | null {
   const runs = agentRunRepo.listByRoom(input.roomId, 30);
   const sameAgentRuns = runs.filter((run) => run.room_agent_id === input.agent.id);
   const previousSessionId = input.agent.acp_session_id ?? sameAgentRuns.find((run) => run.acp_session_id)?.acp_session_id ?? null;
@@ -139,7 +139,11 @@ function buildSessionHandoffForAgent(input: {
     recentUserMessages,
     maxChars: 8_000,
   });
-  return context || null;
+  if (!context) return null;
+  return {
+    text: context,
+    mode: input.agent.acp_session_handoff_pending ? 'force' : 'new_session',
+  };
 }
 
 function resolveSessionHandoffReason(
@@ -152,7 +156,7 @@ function resolveSessionHandoffReason(
   if (!agent.acp_session_id) {
     return previousSessionId ? 'manual_new_session' : 'first_session';
   }
-  return null;
+  return 'resume_unavailable';
 }
 
 const AGENT_MATCH_SYNONYMS: Record<string, string[]> = {
@@ -900,7 +904,8 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       projectPath,
       sessionId: agent.acp_session_id,
       prompt,
-      sessionHandoff,
+      sessionHandoff: sessionHandoff?.text ?? null,
+      sessionHandoffMode: sessionHandoff?.mode,
       imagePaths: args.imagePaths,
       acpPermissionMode: runtimeProfile.acpPermissionMode,
       acpWritableDirs: runtimeProfile.writableDirs,

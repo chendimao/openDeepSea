@@ -70,7 +70,7 @@ export const openCodeAdapter: SessionAdapter = {
     }
   },
 
-  async invoke({ projectPath, sessionId, prompt, sessionHandoff, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('opencode');
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
@@ -80,6 +80,7 @@ export const openCodeAdapter: SessionAdapter = {
         sessionId,
         prompt,
         sessionHandoff,
+        sessionHandoffMode,
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
@@ -94,7 +95,7 @@ export const openCodeAdapter: SessionAdapter = {
       emitProtocolFallback(onChunk, 'opencode', protocolResult.stderr);
     }
 
-    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff);
+    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff, sessionHandoffMode);
     const args = buildOpenCodeArgs({
       sessionId,
       prompt: legacyPrompt,

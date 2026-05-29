@@ -118,7 +118,7 @@ export const codexAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, sessionHandoff, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('codex');
     if (protocolConfig.enabled) {
       let protocolResult = await invokeProtocolSession({
@@ -128,6 +128,7 @@ export const codexAdapter: SessionAdapter = {
         sessionId,
         prompt,
         sessionHandoff,
+        sessionHandoffMode,
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
@@ -155,6 +156,7 @@ export const codexAdapter: SessionAdapter = {
           sessionId: protocolResult.sessionId ?? sessionId,
           prompt,
           sessionHandoff,
+          sessionHandoffMode,
           imagePaths,
           acpPermissionMode,
           acpWritableDirs,
@@ -170,7 +172,7 @@ export const codexAdapter: SessionAdapter = {
       emitProtocolFallback(onChunk, 'codex', protocolResult.stderr);
     }
 
-    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff);
+    const legacyPrompt = withSessionHandoffForNewSession(prompt, sessionId, sessionHandoff, sessionHandoffMode);
     const invocation = buildCodexExecInvocation({
       sessionId,
       prompt: legacyPrompt,

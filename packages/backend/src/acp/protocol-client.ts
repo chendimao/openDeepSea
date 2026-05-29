@@ -12,7 +12,7 @@ import {
   type SessionNotification,
 } from '@agentclientprotocol/sdk';
 import type { AcpBackend, AcpPermissionMode, AcpSessionHandoffReason } from '../types.js';
-import type { AcpInvokeResult, AcpStreamChunk } from './types.js';
+import type { AcpInvokeResult, AcpSessionHandoffMode, AcpStreamChunk } from './types.js';
 import type { AcpServerConfig } from './protocol-registry.js';
 
 const DEFAULT_PROTOCOL_STAGE_TIMEOUT_MS = 30_000;
@@ -31,6 +31,7 @@ export interface InvokeProtocolSessionArgs {
   sessionId: string | null;
   prompt: string;
   sessionHandoff?: string | null;
+  sessionHandoffMode?: AcpSessionHandoffMode;
   imagePaths?: string[];
   acpPermissionMode?: AcpPermissionMode | null;
   acpWritableDirs?: string[] | null;
@@ -53,7 +54,7 @@ export async function invokeProtocolSession(
   let promptStarted = false;
   let eventReceived = false;
   let answerReceived = false;
-  let promptShouldIncludeHandoff = Boolean(args.sessionHandoff?.trim());
+  let promptShouldIncludeHandoff = Boolean(args.sessionHandoff?.trim() && args.sessionHandoffMode === 'force');
   let sessionHandoffPending = false;
   let sessionHandoffReason: AcpSessionHandoffReason | undefined;
   let rejectStreamDisconnect: ((error: Error) => void) | null = null;
