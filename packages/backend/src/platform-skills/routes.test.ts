@@ -184,3 +184,69 @@ test('platform skills routes search marketplace and install package to multiple 
   assert.equal(lstatSync(updatedLinkPath).isSymbolicLink(), true);
   assert.notEqual(readlinkSync(updatedLinkPath), firstLinkTarget);
 });
+
+test('platform skills routes list aggregated skills across providers', async () => {
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input.toString() : input.url);
+    if (url.origin !== 'https://skills.sh') return originalFetch(input, init);
+    if (url.pathname === '/api/download/acme/skills/route-matrix') {
+      return jsonResponse({
+        id: 'acme/skills/route-matrix',
+        name: 'route-matrix',
+        source: 'acme/skills',
+        version: '1.0.0',
+        files: [{
+          path: 'SKILL.md',
+          content: [
+            '---',
+            'name: route-matrix',
+            'description: Route matrix skill.',
+            'version: 1.0.0',
+            '---',
+            '',
+            'Follow route matrix instructions.',
+          ].join('\n'),
+        }],
+      });
+    }
+    throw new Error(`unexpected skills.sh request ${url.pathname}`);
+  }) as typeof fetch;
+
+  const installCopyRes = await request('/api/platform-skills/install', {
+    method: 'POST',
+    body: JSON.stringify({
+      installLabel: 'acme/skills/route-matrix',
+      targets: ['codex', 'opencode'],
+      installMode: 'copy',
+    }),
+  });
+  assert.equal(installCopyRes.status, 201);
+
+  const installSymlinkRes = await request('/api/platform-skills/install', {
+    method: 'POST',
+    body: JSON.stringify({
+      installLabel: 'acme/skills/route-matrix',
+      targets: ['claudecode'],
+      installMode: 'symlink',
+    }),
+  });
+  assert.equal(installSymlinkRes.status, 201);
+
+  const aggregateRes = await request('/api/platform-skills');
+  assert.equal(aggregateRes.status, 200);
+  const aggregates = await aggregateRes.json() as Array<{
+    name: string;
+    providers: string[];
+    missingProviders: string[];
+    installModes: Partial<Record<string, string>>;
+    valid: boolean;
+  }>;
+  const routeMatrix = aggregates.find((item) => item.name === 'route-matrix');
+  assert.ok(routeMatrix);
+  assert.deepEqual(routeMatrix.providers, ['codex', 'claudecode', 'opencode']);
+  assert.deepEqual(routeMatrix.missingProviders, []);
+  assert.equal(routeMatrix.installModes.codex, 'copy');
+  assert.equal(routeMatrix.installModes.claudecode, 'symlink');
+  assert.equal(routeMatrix.installModes.opencode, 'copy');
+  assert.equal(routeMatrix.valid, true);
+});

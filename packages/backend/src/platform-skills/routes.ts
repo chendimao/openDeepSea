@@ -11,6 +11,7 @@ import { SkillsShClient } from '../skills/skills-sh-client.js';
 import {
   assertCanInstallDirectoryToPlatforms,
   getPlatformSkill,
+  listPlatformSkillAggregates,
   installDirectoryToPlatforms,
   listPlatformSkills,
   listPlatformSummaries,
@@ -111,6 +112,10 @@ platformSkillsRouter.post('/import-local', async (req, res) => {
   } catch (err) {
     res.status(400).json({ error: (err as Error).message });
   }
+});
+
+platformSkillsRouter.get('/', async (_req, res) => {
+  res.json(await listPlatformSkillAggregates());
 });
 
 platformSkillsRouter.get('/:provider', async (req, res) => {

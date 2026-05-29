@@ -31,6 +31,24 @@ export interface PlatformSkill {
   issues: string[];
 }
 
+export interface PlatformSkillAggregateIssue {
+  provider: PlatformSkillProvider;
+  message: string;
+}
+
+export interface PlatformSkillAggregate {
+  name: string;
+  displayName: string;
+  description: string | null;
+  providers: PlatformSkillProvider[];
+  missingProviders: PlatformSkillProvider[];
+  installations: Partial<Record<PlatformSkillProvider, PlatformSkill>>;
+  installModes: Partial<Record<PlatformSkillProvider, PlatformSkillInstallMode>>;
+  valid: boolean;
+  issues: PlatformSkillAggregateIssue[];
+  lastModifiedAt: number | null;
+}
+
 export interface InstallPlatformSkillInput {
   installLabel: string;
   targets: PlatformSkillProvider[];

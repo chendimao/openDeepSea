@@ -12,6 +12,7 @@ process.env.CODEX_HOME = join(testHome, '.custom-codex');
 const {
   getPlatformDefinitions,
   installDirectoryToPlatforms,
+  listPlatformSkillAggregates,
   listPlatformSkills,
   removePlatformSkill,
   resolvePlatformRoot,
@@ -229,6 +230,49 @@ test('listPlatformSkills marks malformed entries invalid', async () => {
   assert.ok(bad);
   assert.equal(bad.valid, false);
   assert.match(bad.issues.join('\n'), /SKILL\.md is required/);
+});
+
+test('listPlatformSkillAggregates merges skills across platforms with stable provider ordering', async () => {
+  const codexSource = await createSourceSkill('matrix-shared', 'Codex matrix skill.');
+  const claudeSource = await createSourceSkill('matrix-shared', 'Claude matrix skill.');
+  const invalidDir = join(testHome, '.config', 'opencode', 'skills', 'matrix-invalid');
+  await mkdir(invalidDir, { recursive: true });
+  writeFileSync(join(invalidDir, 'README.md'), 'missing manifest');
+
+  await installDirectoryToPlatforms({
+    sourceDir: codexSource,
+    targets: ['codex'],
+    installMode: 'copy',
+    sourceLabel: `local:${basename(codexSource)}`,
+  });
+  await installDirectoryToPlatforms({
+    sourceDir: claudeSource,
+    targets: ['claudecode'],
+    installMode: 'symlink',
+    sourceLabel: `local:${basename(claudeSource)}`,
+  });
+
+  const aggregates = await listPlatformSkillAggregates();
+  const shared = aggregates.find((item) => item.name === 'matrix-shared');
+  assert.ok(shared);
+  assert.deepEqual(shared.providers, ['codex', 'claudecode']);
+  assert.deepEqual(shared.missingProviders, ['opencode']);
+  assert.equal(shared.installModes.codex, 'copy');
+  assert.equal(shared.installModes.claudecode, 'symlink');
+  assert.equal(shared.description, 'Codex matrix skill.');
+  assert.equal(shared.valid, true);
+  assert.equal(shared.lastModifiedAt !== null, true);
+
+  const invalid = aggregates.find((item) => item.name === 'matrix-invalid');
+  assert.ok(invalid);
+  assert.deepEqual(invalid.providers, ['opencode']);
+  assert.deepEqual(invalid.missingProviders, ['codex', 'claudecode']);
+  assert.equal(invalid.valid, false);
+  assert.equal(invalid.issues[0]?.provider, 'opencode');
+  assert.match(invalid.issues[0]?.message ?? '', /SKILL\.md is required/);
+
+  const names = aggregates.map((item) => item.name);
+  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
 });
 
 test('removePlatformSkill rejects path traversal outside platform root', async () => {

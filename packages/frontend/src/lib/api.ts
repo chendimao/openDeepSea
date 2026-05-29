@@ -23,6 +23,7 @@ import type {
   MessageRoutingMode,
   PlannerDecision,
   PlatformSkill,
+  PlatformSkillAggregate,
   PlatformSkillInstallMode,
   PlatformSkillProvider,
   PlatformSkillSummary,
@@ -396,6 +397,8 @@ export const api = {
     }),
   listPlatformSkillSummaries: () =>
     workspaceRequest<PlatformSkillSummary[]>('/platform-skills/platforms'),
+  listPlatformSkillAggregates: () =>
+    workspaceRequest<PlatformSkillAggregate[]>('/platform-skills'),
   listPlatformSkills: (provider: PlatformSkillProvider) =>
     workspaceRequest<PlatformSkill[]>(`/platform-skills/${provider}`),
   getPlatformSkill: (provider: PlatformSkillProvider, skillName: string) =>

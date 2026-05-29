@@ -18,6 +18,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import type {
   PlatformSkill,
+  PlatformSkillAggregate,
   PlatformSkillDefinition,
   PlatformSkillInstallMode,
   PlatformSkillProvider,
@@ -103,6 +104,41 @@ export async function listPlatformSkills(provider: PlatformSkillProvider): Promi
     .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
     .map((entry) => readPlatformSkill(provider, root, entry.name)));
   return skills.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function listPlatformSkillAggregates(): Promise<PlatformSkillAggregate[]> {
+  const byProvider = await Promise.all(
+    PLATFORM_PROVIDERS.map(async (provider) => ({
+      provider,
+      skills: await listPlatformSkills(provider),
+    })),
+  );
+  const byName = new Map<string, PlatformSkillAggregate>();
+
+  for (const { provider, skills } of byProvider) {
+    for (const skill of skills) {
+      const aggregate = byName.get(skill.name) ?? createEmptyAggregate(skill.name);
+      aggregate.installations[provider] = skill;
+      aggregate.installModes[provider] = skill.installMode;
+      if (aggregate.description === null) {
+        aggregate.description = skill.description;
+      }
+      aggregate.lastModifiedAt = maxTimestamp(aggregate.lastModifiedAt, skill.lastModifiedAt);
+      for (const issue of skill.issues) {
+        aggregate.issues.push({ provider, message: issue });
+      }
+      byName.set(skill.name, aggregate);
+    }
+  }
+
+  const aggregates = [...byName.values()];
+  for (const aggregate of aggregates) {
+    aggregate.providers = PLATFORM_PROVIDERS.filter((provider) => Boolean(aggregate.installations[provider]));
+    aggregate.missingProviders = PLATFORM_PROVIDERS.filter((provider) => !aggregate.installations[provider]);
+    aggregate.valid = aggregate.providers.length > 0 && aggregate.issues.length === 0;
+  }
+
+  return aggregates.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getPlatformSkill(provider: PlatformSkillProvider, skillName: string): Promise<PlatformSkill | null> {
@@ -233,6 +269,27 @@ async function readPlatformSkill(
     valid: issues.length === 0,
     issues,
   };
+}
+
+function createEmptyAggregate(name: string): PlatformSkillAggregate {
+  return {
+    name,
+    displayName: name,
+    description: null,
+    providers: [],
+    missingProviders: [],
+    installations: {},
+    installModes: {},
+    valid: false,
+    issues: [],
+    lastModifiedAt: null,
+  };
+}
+
+function maxTimestamp(current: number | null, next: number | null): number | null {
+  if (current === null) return next;
+  if (next === null) return current;
+  return Math.max(current, next);
 }
 
 async function readManifest(dir: string): Promise<ParsedSkillManifest | null> {
