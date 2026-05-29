@@ -1119,6 +1119,7 @@ function MessageBubble({
               roomAgents={roomAgents}
               globalAgents={globalAgents}
               suppressPlannerDecisionSummary={showPlannerDecisionPanel}
+              roomId={roomId}
             />
           ) : message.message_type === 'agent_stream' ? (
             <MessageContent
@@ -1127,6 +1128,7 @@ function MessageBubble({
               trace={metadata.trace}
               roomAgents={roomAgents}
               globalAgents={globalAgents}
+              roomId={roomId}
             />
           ) : null}
           <MessageAttachments attachments={attachments} />

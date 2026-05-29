@@ -230,6 +230,42 @@ test('AgentTimeline collapses all ACP event cards by default', () => {
   assert.doesNotMatch(html, /<details[^>]*open/);
 });
 
+test('AgentTimeline renders lightweight tool detail placeholders without heavy payload content', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        roomId="room-1"
+        events={[
+          {
+            id: 'tool-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果 Read',
+            payload: {
+              id: 'call-1',
+              name: 'Read',
+              path: 'packages/frontend/src/pages/RoomPage.tsx',
+              detail_omitted: true,
+              detail_event_id: 'tool-result-1',
+            },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /Explored/);
+  assert.match(html, /Read · packages\/frontend\/src\/pages\/RoomPage\.tsx/);
+  assert.match(html, /展开后加载完整详情/);
+  assert.doesNotMatch(html, /文件正文/);
+  assert.doesNotMatch(html, /输出/);
+});
+
 test('AgentTimeline shows hidden debug monitor without raw events in visible count', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

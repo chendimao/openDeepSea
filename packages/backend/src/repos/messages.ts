@@ -33,6 +33,21 @@ export const messageRepo = {
     return db.prepare('SELECT * FROM messages WHERE id = ?').get(id) as Message | undefined;
   },
 
+  getTraceEventForClient(roomId: string, messageId: string, eventId: string): AgentTimelineEvent | undefined {
+    const message = db
+      .prepare(
+        `SELECT * FROM messages
+         WHERE id = ?
+           AND room_id = ?
+           AND COALESCE(json_extract(metadata, '$.internal'), 0) <> 1`,
+      )
+      .get(messageId, roomId) as Message | undefined;
+    if (!message) return undefined;
+    const metadata = parseMetadataObject(message.metadata);
+    if (!isMessageTrace(metadata.trace) || !metadata.trace.events?.length) return undefined;
+    return metadata.trace.events.find((event) => event.id === eventId);
+  },
+
   create(input: {
     room_id: string;
     sender_type: SenderType;
@@ -139,7 +154,48 @@ function compactMessageForClient(message: Message): Message {
 }
 
 function compactMessageTraceForClient(trace: MessageTrace): MessageTrace {
-  return trace;
+  if (!trace.events?.length) return trace;
+  return {
+    ...trace,
+    events: trace.events.map(compactTimelineEventForClient),
+  };
+}
+
+function compactTimelineEventForClient(event: AgentTimelineEvent): AgentTimelineEvent {
+  if (!shouldOmitClientEventDetail(event)) return event;
+  return {
+    ...event,
+    payload: buildLightweightTimelinePayload(event),
+    raw: undefined,
+  };
+}
+
+function shouldOmitClientEventDetail(event: AgentTimelineEvent): boolean {
+  return event.type === 'tool_call' || event.type === 'tool_result' || event.type === 'command_output';
+}
+
+function buildLightweightTimelinePayload(event: AgentTimelineEvent): Record<string, unknown> {
+  const payload = event.payload;
+  const allowedKeys = [
+    'id',
+    'name',
+    'title',
+    'kind',
+    'status',
+    'path',
+    'command',
+    'tool_call_id',
+    'toolCallId',
+  ];
+  const lightweight: Record<string, unknown> = {};
+  for (const key of allowedKeys) {
+    if (payload[key] !== undefined) lightweight[key] = payload[key];
+  }
+  return {
+    ...lightweight,
+    detail_omitted: true,
+    detail_event_id: event.id,
+  };
 }
 
 function refreshPlannerMessageMetadata(message: Message): Message {

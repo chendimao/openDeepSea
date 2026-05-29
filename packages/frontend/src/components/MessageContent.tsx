@@ -85,6 +85,7 @@ export function MessageContent({
   roomAgents = [],
   globalAgents = [],
   suppressPlannerDecisionSummary = false,
+  roomId,
 }: {
   content: string;
   streaming?: boolean;
@@ -93,6 +94,7 @@ export function MessageContent({
   roomAgents?: RoomAgent[];
   globalAgents?: Agent[];
   suppressPlannerDecisionSummary?: boolean;
+  roomId?: string;
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { t } = useI18n();
@@ -121,6 +123,7 @@ export function MessageContent({
           streaming={streaming}
           agentNameById={agentNameById}
           suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+          roomId={roomId}
         />
       ) : (
         <>
@@ -162,7 +165,7 @@ export function MessageContent({
               </>
             )}
           </div>
-          <AgentTimeline trace={trace} />
+          <AgentTimeline trace={trace} roomId={roomId} />
         </>
       )}
     </div>
@@ -174,11 +177,13 @@ function AgentTranscriptView({
   streaming,
   agentNameById,
   suppressPlannerDecisionSummary = false,
+  roomId,
 }: {
   transcript: AgentTranscriptModel;
   streaming: boolean;
   agentNameById?: Map<string, string>;
   suppressPlannerDecisionSummary?: boolean;
+  roomId?: string;
 }): JSX.Element {
   return (
     <div className="agent-transcript">
@@ -194,7 +199,7 @@ function AgentTranscriptView({
           </div>
         ) : (
           <div key={item.id} className="agent-transcript-event">
-            <AgentTimelineItem event={item.event} />
+            <AgentTimelineItem event={item.event} roomId={roomId} />
           </div>
         )
       ))}

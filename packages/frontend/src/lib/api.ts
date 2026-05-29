@@ -2,6 +2,7 @@ import type {
   AcpBackend,
   AiConfig,
   Agent,
+  AgentTimelineEvent,
   AgentInput,
   AgentRun,
   AgentMemoryScope,
@@ -689,6 +690,10 @@ export const api = {
     request<CliSession[]>(`/projects/${projectId}/acp-sessions?backend=${backend}`),
 
   listMessages: (roomId: string) => request<Message[]>(`/rooms/${roomId}/messages`),
+  getMessageTraceEvent: (roomId: string, messageId: string, eventId: string) =>
+    request<AgentTimelineEvent>(
+      `/rooms/${roomId}/messages/${encodeURIComponent(messageId)}/trace-events/${encodeURIComponent(eventId)}`,
+    ),
   listAgentRuns: (roomId: string) => request<AgentRun[]>(`/rooms/${roomId}/agent-runs`),
   cancelAgentRun: (id: string) =>
     request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),

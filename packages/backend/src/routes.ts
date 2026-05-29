@@ -1518,6 +1518,12 @@ router.get('/rooms/:roomId/messages', (req, res) => {
   res.json(messageRepo.listForClientByRoom(req.params.roomId));
 });
 
+router.get('/rooms/:roomId/messages/:messageId/trace-events/:eventId', (req, res) => {
+  const event = messageRepo.getTraceEventForClient(req.params.roomId, req.params.messageId, req.params.eventId);
+  if (!event) return res.status(404).json({ error: 'not found' });
+  res.json(event);
+});
+
 router.get('/rooms/:roomId/agent-runs', (req, res) => {
   res.json(agentRunRepo.listForClientByRoom(req.params.roomId));
 });
