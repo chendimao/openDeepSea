@@ -84,7 +84,7 @@ test('messageRepo listByRoom omits heavy trace event details from historical ove
   assert.doesNotMatch(JSON.stringify(event.payload), /rg -n/);
 });
 
-test('messageRepo mergeTrace stores only page-needed trace metadata', () => {
+test('messageRepo mergeTrace stores lossless tool, command, and diff details', () => {
   const project = projectRepo.create({
     name: `messages-storage-${Date.now()}`,
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-storage-project-')),
@@ -169,10 +169,10 @@ test('messageRepo mergeTrace stores only page-needed trace metadata', () => {
       payload: {
         id: 'call-1',
         name: 'Read',
-        output: 'file body'.repeat(1000),
-        content: 'file content'.repeat(1000),
-        stdout: 'stdout'.repeat(1000),
-        stderr: 'stderr'.repeat(1000),
+        output: 'file body\nline 2',
+        content: 'file content',
+        stdout: 'stdout line',
+        stderr: 'stderr line',
         path: 'packages/frontend/src/pages/RoomPage.tsx',
       },
       raw: { rawResult: true },
@@ -191,7 +191,7 @@ test('messageRepo mergeTrace stores only page-needed trace metadata', () => {
         path: 'packages/frontend/src/pages/RoomPage.tsx',
         additions: 2,
         deletions: 1,
-        patch: 'diff --git'.repeat(100),
+        patch: 'diff --git a/RoomPage.tsx b/RoomPage.tsx\n-old\n+new',
         oldText: 'old'.repeat(100),
         newText: 'new'.repeat(100),
       },
@@ -250,18 +250,19 @@ test('messageRepo mergeTrace stores only page-needed trace metadata', () => {
   assert.equal(storedEvents[0]?.payload.text, '第一段第二段');
   assert.equal(storedEvents[0]?.payload.content, undefined);
   assert.equal(storedEvents[0]?.created_at, 1002);
-  assert.equal(storedEvents[1]?.payload.input, undefined);
+  assert.deepEqual(storedEvents[1]?.payload.input, { path: 'packages/frontend/src/pages/RoomPage.tsx' });
   assert.equal(storedEvents[1]?.payload.content, undefined);
+  assert.equal(storedEvents[2]?.payload.name, 'Read');
   assert.equal(storedEvents[2]?.payload.path, 'packages/frontend/src/pages/RoomPage.tsx');
-  assert.equal(storedEvents[2]?.payload.output, undefined);
+  assert.equal(storedEvents[2]?.payload.output, 'file body\nline 2');
   assert.equal(storedEvents[2]?.payload.content, undefined);
-  assert.equal(storedEvents[2]?.payload.stdout, undefined);
-  assert.equal(storedEvents[2]?.payload.stderr, undefined);
+  assert.equal(storedEvents[2]?.payload.stdout, 'stdout line');
+  assert.equal(storedEvents[2]?.payload.stderr, 'stderr line');
   assert.equal(storedEvents[2]?.payload.detail_omitted, undefined);
   assert.equal(storedEvents[3]?.payload.path, 'packages/frontend/src/pages/RoomPage.tsx');
   assert.equal(storedEvents[3]?.payload.additions, 2);
   assert.equal(storedEvents[3]?.payload.deletions, 1);
-  assert.equal(storedEvents[3]?.payload.patch, undefined);
+  assert.equal(storedEvents[3]?.payload.patch, 'diff --git a/RoomPage.tsx b/RoomPage.tsx\n-old\n+new');
   assert.equal(storedEvents[3]?.payload.oldText, undefined);
   assert.equal(storedEvents[3]?.payload.newText, undefined);
   assert.equal(storedEvents[3]?.payload.detail_omitted, undefined);
@@ -275,11 +276,24 @@ test('messageRepo mergeTrace stores only page-needed trace metadata', () => {
   };
   const listedToolResult = listedMetadata.trace?.events?.find((event) => event.type === 'tool_result');
   const listedFileDiff = listedMetadata.trace?.events?.find((event) => event.type === 'file_diff');
-  assert.equal(listedToolResult?.payload.detail_omitted, undefined);
-  assert.equal(listedFileDiff?.payload.detail_omitted, undefined);
+  assert.equal(listedToolResult?.payload.detail_omitted, true);
+  assert.equal(listedToolResult?.payload.output, undefined);
+  assert.equal(listedToolResult?.payload.stdout, undefined);
+  assert.equal(listedToolResult?.payload.stderr, undefined);
+  assert.equal(listedFileDiff?.payload.detail_omitted, true);
+  assert.equal(listedFileDiff?.payload.patch, undefined);
+
+  const fullToolResult = messageRepo.getTraceEventForClient(room.id, message.id, 'run-1:tool-result');
+  assert.ok(fullToolResult);
+  assert.equal(fullToolResult.payload.output, 'file body\nline 2');
+  assert.equal(fullToolResult.payload.stdout, 'stdout line');
+  assert.equal(fullToolResult.payload.stderr, 'stderr line');
+  const fullFileDiff = messageRepo.getTraceEventForClient(room.id, message.id, 'run-1:file-diff');
+  assert.ok(fullFileDiff);
+  assert.equal(fullFileDiff.payload.patch, 'diff --git a/RoomPage.tsx b/RoomPage.tsx\n-old\n+new');
 });
 
-test('messageRepo mergeTrace does not reintroduce omitted output when compacted payload remains large', () => {
+test('messageRepo mergeTrace preserves large lossless output', () => {
   const project = projectRepo.create({
     name: `messages-storage-large-summary-${Date.now()}`,
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-storage-large-summary-project-')),
@@ -294,6 +308,7 @@ test('messageRepo mergeTrace does not reintroduce omitted output when compacted 
     message_type: 'agent_stream',
   });
 
+  const largeOutput = 'heavy output'.repeat(100);
   messageRepo.mergeTrace(message.id, {
     events: [{
       id: 'run-1:tool-result',
@@ -307,8 +322,7 @@ test('messageRepo mergeTrace does not reintroduce omitted output when compacted 
       payload: {
         id: 'call-1',
         name: 'Search',
-        locations: Array.from({ length: 1200 }, (_, index) => ({ path: `very-long-file-name-${index}.ts`, line: index })),
-        output: 'heavy output'.repeat(10_000),
+        output: largeOutput,
       },
       raw: { rawResult: true },
       created_at: 1000,
@@ -322,11 +336,11 @@ test('messageRepo mergeTrace does not reintroduce omitted output when compacted 
   };
   const event = metadata.trace?.events?.[0];
   assert.ok(event);
-  assert.equal(event.payload.output, undefined);
+  assert.equal(event.payload.output, largeOutput);
   assert.equal(event.raw, undefined);
-  assert.equal(event.payload.truncated, true);
-  assert.equal(typeof event.payload.original_bytes, 'number');
-  assert.doesNotMatch(JSON.stringify(event.payload), /heavy output/);
+  assert.equal(event.payload.truncated, undefined);
+  assert.equal(event.payload.original_bytes, undefined);
+  assert.equal(String(event.payload.output).startsWith('heavy output'), true);
 });
 
 test('messageRepo listForClient keeps timeline-visible trace events as lightweight summaries', () => {

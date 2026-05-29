@@ -48,6 +48,7 @@ const fieldLabels: Record<string, string> = {
 };
 
 const diffLinePattern = /^([+-])(?![+-])/;
+const detailFieldKeys = new Set(['input', 'output', 'stdout', 'stderr', 'patch', 'diff']);
 
 export function AgentTimeline({
   events,
@@ -257,15 +258,36 @@ function renderEventBody(event: AgentTimelineEvent): ReactNode {
 }
 
 function EventKeyValue({ payload }: { payload: Record<string, unknown> }): JSX.Element {
+  const entries = Object.entries(payload);
+  const summaryEntries = entries.filter(([key]) => !detailFieldKeys.has(key));
+  const detailEntries = entries.filter(([key]) => detailFieldKeys.has(key));
   return (
-    <dl className="agent-timeline-kv">
-      {Object.entries(payload).map(([key, value]) => (
-        <div key={key}>
-          <dt>{formatFieldLabel(key)}</dt>
-          <dd>{renderValue(value)}</dd>
+    <div className="agent-timeline-detail-stack">
+      {summaryEntries.length > 0 ? (
+        <dl className="agent-timeline-kv">
+          {summaryEntries.map(([key, value]) => (
+            <div key={key}>
+              <dt>{formatFieldLabel(key)}</dt>
+              <dd>{renderValue(value)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {detailEntries.length > 0 ? (
+        <div className="agent-timeline-detail-fields">
+          {detailEntries.map(([key, value]) => (
+            <section key={key} className={`agent-timeline-detail-field is-${key}`}>
+              <div className="agent-timeline-detail-label">{formatFieldLabel(key)}</div>
+              {key === 'patch' || key === 'diff' ? (
+                <DiffLines value={stringifyPayload(value)} />
+              ) : (
+                <pre className="agent-timeline-pre agent-timeline-detail-pre">{stringifyPayload(value)}</pre>
+              )}
+            </section>
+          ))}
         </div>
-      ))}
-    </dl>
+      ) : null}
+    </div>
   );
 }
 
@@ -298,16 +320,25 @@ function FileDiffView({ payload }: { payload: Record<string, unknown> }): JSX.El
         ) : null}
       </dl>
       <div className="agent-timeline-diff">
-        {lines.map((line, index) => {
-          const className = diffLinePattern.test(line) ? (line.startsWith('+') ? 'diff-line is-added' : 'diff-line is-removed') : 'diff-line';
-          return (
-            <div key={index} className={className}>
-              {line || ' '}
-            </div>
-          );
-        })}
+        <DiffLines value={patch} />
       </div>
     </div>
+  );
+}
+
+function DiffLines({ value }: { value: string }): JSX.Element {
+  const lines = value.split('\n');
+  return (
+    <>
+      {lines.map((line, index) => {
+        const className = diffLinePattern.test(line) ? (line.startsWith('+') ? 'diff-line is-added' : 'diff-line is-removed') : 'diff-line';
+        return (
+          <div key={index} className={className}>
+            {line || ' '}
+          </div>
+        );
+      })}
+    </>
   );
 }
 

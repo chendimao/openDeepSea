@@ -144,7 +144,7 @@ function compactTraceMetadataForList(messages: Message[]): Message[] {
   return messages.map((message) => {
     const metadata = parseMetadataObject(message.metadata);
     if (!isMessageTrace(metadata.trace)) return message;
-    const compactTrace = compactMessageTrace(metadata.trace);
+    const compactTrace = compactMessageTraceForClient(metadata.trace);
     if (compactTrace === metadata.trace) return message;
     return {
       ...message,

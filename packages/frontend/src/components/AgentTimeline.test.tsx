@@ -266,6 +266,64 @@ test('AgentTimeline renders lightweight tool detail placeholders without heavy p
   assert.doesNotMatch(html, /输出/);
 });
 
+test('AgentTimeline renders lossless execution details as dedicated detail fields', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'tool-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果 Shell',
+            payload: {
+              id: 'call-1',
+              name: 'Shell',
+              input: { command: 'npm test' },
+              output: 'all tests passed',
+              stdout: 'ok 1',
+              stderr: 'warning only',
+            },
+            created_at: 1000,
+          },
+          {
+            id: 'diff-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 2,
+            type: 'file_diff',
+            status: 'completed',
+            title: '修改文件 src/app.ts',
+            payload: {
+              path: 'src/app.ts',
+              diff: '-old\n+new',
+              additions: 1,
+              deletions: 1,
+            },
+            created_at: 1001,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /agent-timeline-detail-field is-input/);
+  assert.match(html, /agent-timeline-detail-field is-output/);
+  assert.match(html, /agent-timeline-detail-field is-stdout/);
+  assert.match(html, /agent-timeline-detail-field is-stderr/);
+  assert.match(html, /npm test/);
+  assert.match(html, /all tests passed/);
+  assert.match(html, /ok 1/);
+  assert.match(html, /warning only/);
+  assert.match(html, /diff-line is-removed/);
+  assert.match(html, /diff-line is-added/);
+});
+
 test('AgentTimeline renders concrete event time in timeline summaries', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

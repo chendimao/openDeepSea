@@ -4,6 +4,14 @@ const MAX_TRACE_PAYLOAD_BYTES = 12_000;
 const MAX_TRACE_STRING_CHARS = 4_000;
 const MAX_TRACE_ARRAY_ITEMS = 50;
 const MAX_TRACE_OBJECT_KEYS = 40;
+const LOSSLESS_PAYLOAD_KEYS = new Set([
+  'input',
+  'output',
+  'patch',
+  'diff',
+  'stdout',
+  'stderr',
+]);
 
 export function compactTimelineEvent(event: AgentTimelineEvent): AgentTimelineEvent {
   const baseEvent = compactTimelineEventForStorage(event);
@@ -82,19 +90,25 @@ function compactPayloadForStorage(event: AgentTimelineEvent): Record<string, unk
       'kind',
       'status',
       'path',
+      'input',
+      'output',
+      'stdout',
+      'stderr',
       'tool_call_id',
       'toolCallId',
       'locations',
     ]);
   }
   if (event.type === 'command' || event.type === 'command_output') {
-    return pickPayload(event.payload, ['command', 'status']);
+    return pickPayload(event.payload, ['command', 'status', 'output', 'stdout', 'stderr']);
   }
   if (event.type === 'file_diff') {
     return pickPayload(event.payload, [
       'path',
       'additions',
       'deletions',
+      'patch',
+      'diff',
       'title',
       'status',
       'tool_call_id',
@@ -175,7 +189,7 @@ function compactPayload(payload: Record<string, unknown>, originalBytes: number)
 function compactValue(value: unknown): unknown {
   if (typeof value === 'string') return compactString(value);
   if (Array.isArray(value)) {
-    const compacted = value.slice(0, MAX_TRACE_ARRAY_ITEMS).map(compactValue);
+    const compacted = value.slice(0, MAX_TRACE_ARRAY_ITEMS).map((item) => compactValue(item));
     if (value.length > MAX_TRACE_ARRAY_ITEMS) {
       compacted.push(`[truncated ${value.length - MAX_TRACE_ARRAY_ITEMS} items]`);
     }
@@ -189,7 +203,9 @@ function compactRecord(value: Record<string, unknown>): Record<string, unknown> 
   const entries = Object.entries(value);
   const compacted: Record<string, unknown> = {};
   for (const [key, item] of entries.slice(0, MAX_TRACE_OBJECT_KEYS)) {
-    compacted[key] = compactValue(item);
+    compacted[key] = LOSSLESS_PAYLOAD_KEYS.has(key)
+      ? item
+      : compactValue(item);
   }
   if (entries.length > MAX_TRACE_OBJECT_KEYS) {
     compacted.__truncated_keys = entries.length - MAX_TRACE_OBJECT_KEYS;

@@ -4493,6 +4493,50 @@
     gap: 3px;
   }
 
+  .agent-timeline-detail-stack {
+    display: grid;
+    gap: 8px;
+  }
+
+  .agent-timeline-detail-fields {
+    display: grid;
+    gap: 8px;
+  }
+
+  .agent-timeline-detail-field {
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-code-bg) 72%, transparent);
+  }
+
+  .agent-timeline-detail-label {
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border) 48%, transparent);
+    padding: 5px 8px;
+    color: var(--color-fg-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .agent-timeline-detail-pre {
+    max-height: 360px;
+    padding: 8px;
+    background: transparent;
+  }
+
+  .agent-timeline-detail-field .diff-line {
+    background: var(--color-code-bg);
+  }
+
+  .agent-timeline-detail-field .diff-line.is-added {
+    background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  }
+
+  .agent-timeline-detail-field .diff-line.is-removed {
+    background: color-mix(in srgb, var(--color-danger) 13%, transparent);
+  }
+
   .agent-timeline-kv > div {
     display: grid;
     grid-template-columns: 72px minmax(0, 1fr);
