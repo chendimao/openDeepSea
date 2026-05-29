@@ -93,6 +93,7 @@ export function AgentTimelineItem({ event, roomId }: { event: AgentTimelineEvent
   const eventLabel = getTranscriptAction(event);
   const statusLabel = planStatusLabels[String(event.payload.status ?? event.status)] ?? formatEventStatus(event.status);
   const summary = getEventSummary(event);
+  const eventTime = formatEventTime(event.created_at);
   const displayEvent = detailEvent ?? event;
   const shouldLoadDetail = shouldLoadEventDetail(event, roomId);
 
@@ -122,6 +123,7 @@ export function AgentTimelineItem({ event, roomId }: { event: AgentTimelineEvent
           {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </span>
         <span className="agent-timeline-kind">{eventLabel}</span>
+        <time className="agent-timeline-time" dateTime={new Date(event.created_at).toISOString()}>{eventTime}</time>
         <strong title={summary}>{summary}</strong>
         <span className="agent-timeline-status">{event.type === 'plan_update' ? statusLabel : formatEventStatus(event.status)}</span>
       </summary>
@@ -411,6 +413,16 @@ function formatEventStatus(status: AgentTimelineEvent['status']): string {
   if (status === 'delta') return '增量';
   if (status === 'completed') return '完成';
   return '失败';
+}
+
+function formatEventTime(timestamp: number): string {
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return '--:--:--';
+  return new Intl.DateTimeFormat(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(timestamp));
 }
 
 function getTranscriptAction(event: AgentTimelineEvent): string {

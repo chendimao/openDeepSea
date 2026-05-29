@@ -26,7 +26,16 @@ export const messageRepo = {
   },
 
   listForClientByRoom(roomId: string, limit = 200): Message[] {
-    return this.listByRoom(roomId, limit).map(compactMessageForClient);
+    const messages = db
+      .prepare(
+        `SELECT * FROM messages
+         WHERE room_id = ?
+           AND COALESCE(json_extract(metadata, '$.internal'), 0) <> 1
+         ORDER BY created_at ASC
+         LIMIT ?`,
+      )
+      .all(roomId, limit) as Message[];
+    return refreshPlannerMetadataFromContent(messages).map(compactMessageForClient);
   },
 
   get(id: string): Message | undefined {
@@ -197,9 +206,10 @@ function compactTimelineEventsForClient(events: AgentTimelineEvent[]): AgentTime
 
 function compactTimelineEventForClient(event: AgentTimelineEvent): AgentTimelineEvent {
   if (!shouldOmitClientEventDetail(event)) return omitTimelineEventRaw(event);
+  const detailOmitted = hasClientEventDetail(event);
   return {
     ...event,
-    payload: buildLightweightTimelinePayload(event),
+    payload: buildLightweightTimelinePayload(event, detailOmitted),
     raw: undefined,
   };
 }
@@ -226,7 +236,13 @@ function shouldDropClientTraceEvent(event: AgentTimelineEvent): boolean {
   return false;
 }
 
-function buildLightweightTimelinePayload(event: AgentTimelineEvent): Record<string, unknown> {
+function hasClientEventDetail(event: AgentTimelineEvent): boolean {
+  if (event.raw) return true;
+  const detailKeys = ['input', 'output', 'content', 'text', 'stdout', 'stderr', 'patch', 'diff', 'oldText', 'newText'];
+  return detailKeys.some((key) => event.payload[key] !== undefined);
+}
+
+function buildLightweightTimelinePayload(event: AgentTimelineEvent, detailOmitted: boolean): Record<string, unknown> {
   const payload = event.payload;
   const allowedKeys = [
     'id',
@@ -246,11 +262,8 @@ function buildLightweightTimelinePayload(event: AgentTimelineEvent): Record<stri
   for (const key of allowedKeys) {
     if (payload[key] !== undefined) lightweight[key] = payload[key];
   }
-  return {
-    ...lightweight,
-    detail_omitted: true,
-    detail_event_id: event.id,
-  };
+  if (!detailOmitted) return lightweight;
+  return { ...lightweight, detail_omitted: true, detail_event_id: event.id };
 }
 
 function compactAssistantMessageEventForClient(event: AgentTimelineEvent): AgentTimelineEvent | null {

@@ -266,6 +266,32 @@ test('AgentTimeline renders lightweight tool detail placeholders without heavy p
   assert.doesNotMatch(html, /输出/);
 });
 
+test('AgentTimeline renders concrete event time in timeline summaries', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'tool-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果 Read',
+            payload: { id: 'call-1', name: 'Read' },
+            created_at: Date.UTC(2026, 0, 1, 8, 9, 10),
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /agent-timeline-time/);
+  assert.match(html, /08:09:10/);
+});
+
 test('AgentTimeline shows hidden debug monitor without raw events in visible count', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
@@ -325,6 +351,35 @@ test('AgentTimeline renders protocol diagnostics when ACP omits thinking stream'
   assert.match(html, /provider 没有返回 thinking/);
   assert.match(html, /agent_message_chunk/);
   assert.doesNotMatch(html, /助手回复/);
+});
+
+test('AgentTimeline marks protocol diagnostics counts as a fixed count list', () => {
+  const longType = 'agent_extremely_long_protocol_event_name_that_should_not_overlap_count_column';
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'long-protocol-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'raw',
+            status: 'completed',
+            title: `原始事件 ${longType}`,
+            payload: { raw_type: longType },
+            raw: { method: 'session/update', params: { update: { sessionUpdate: longType } } },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /agent-timeline-protocol-counts/);
+  assert.match(html, new RegExp(`title="${longType}"`));
+  assert.match(html, />1 次</);
 });
 
 test('AgentTimeline hides assistant message stream chunks and renders translated structured fields', () => {

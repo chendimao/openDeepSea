@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import type { AgentTimelineEvent } from '../types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-messages-')), 'test.db');
 
@@ -11,7 +12,7 @@ const { messageRepo } = await import('./messages.js');
 const { projectRepo } = await import('./projects.js');
 const { roomRepo } = await import('./rooms.js');
 
-test('messageRepo returns compact trace events for historical oversized metadata', () => {
+test('messageRepo listByRoom omits heavy trace event details from historical oversized metadata', () => {
   const project = projectRepo.create({
     name: `messages-${Date.now()}`,
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-project-')),
@@ -76,9 +77,256 @@ test('messageRepo returns compact trace events for historical oversized metadata
   const event = metadata.trace?.events?.[0];
   assert.ok(event);
   assert.equal(event.raw, undefined);
+  assert.equal(event.payload.id, 'tool-1');
+  assert.equal(event.payload.name, 'rg search');
+  assert.equal(event.payload.output, undefined);
+  assert.equal(event.payload.content, undefined);
+  assert.doesNotMatch(JSON.stringify(event.payload), /rg -n/);
+});
+
+test('messageRepo mergeTrace stores only page-needed trace metadata', () => {
+  const project = projectRepo.create({
+    name: `messages-storage-${Date.now()}`,
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-storage-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: 'Planner',
+    content: '完成',
+    message_type: 'agent_stream',
+  });
+
+  const events: AgentTimelineEvent[] = [
+    {
+      id: 'run-1:thinking',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 1,
+      type: 'thinking',
+      status: 'delta',
+      title: '思考过程',
+      payload: { text: 'private thinking'.repeat(100), content: { text: 'private thinking' } },
+      raw: { rawThinking: true },
+      created_at: 1000,
+    },
+    {
+      id: 'run-1:assistant-1',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 2,
+      type: 'assistant_message',
+      status: 'delta',
+      title: '助手回复',
+      payload: { text: '第一段', content: { type: 'text', text: '重复第一段' } },
+      raw: { rawAssistant: true },
+      created_at: 1001,
+    },
+    {
+      id: 'run-1:assistant-2',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 3,
+      type: 'assistant_message',
+      status: 'delta',
+      title: '助手回复',
+      payload: { text: '第二段' },
+      raw: { rawAssistant: true },
+      created_at: 1002,
+    },
+    {
+      id: 'run-1:tool-call',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 4,
+      type: 'tool_call',
+      status: 'started',
+      title: '调用工具 Read',
+      payload: {
+        id: 'call-1',
+        name: 'Read',
+        input: { path: 'packages/frontend/src/pages/RoomPage.tsx' },
+        content: 'large call content'.repeat(100),
+      },
+      raw: { rawCall: true },
+      created_at: 1003,
+    },
+    {
+      id: 'run-1:tool-result',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 5,
+      type: 'tool_result',
+      status: 'completed',
+      title: '工具结果 Read',
+      payload: {
+        id: 'call-1',
+        name: 'Read',
+        output: 'file body'.repeat(1000),
+        content: 'file content'.repeat(1000),
+        stdout: 'stdout'.repeat(1000),
+        stderr: 'stderr'.repeat(1000),
+        path: 'packages/frontend/src/pages/RoomPage.tsx',
+      },
+      raw: { rawResult: true },
+      created_at: 1004,
+    },
+    {
+      id: 'run-1:file-diff',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 6,
+      type: 'file_diff',
+      status: 'completed',
+      title: '修改文件 RoomPage.tsx',
+      payload: {
+        path: 'packages/frontend/src/pages/RoomPage.tsx',
+        additions: 2,
+        deletions: 1,
+        patch: 'diff --git'.repeat(100),
+        oldText: 'old'.repeat(100),
+        newText: 'new'.repeat(100),
+      },
+      raw: { rawDiff: true },
+      created_at: 1005,
+    },
+    {
+      id: 'run-1:raw',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 7,
+      type: 'raw',
+      status: 'completed',
+      title: '原始事件 usage_update',
+      payload: { raw_type: 'usage_update' },
+      raw: { usage: true },
+      created_at: 1006,
+    },
+  ];
+
+  messageRepo.mergeTrace(message.id, {
+    thinking: [{ text: 'legacy thinking'.repeat(100) }],
+    tool_calls: [{ name: 'Read', input: 'input'.repeat(100), output: 'output'.repeat(100) }],
+    commands: [{ command: 'npm test', output: 'output'.repeat(100) }],
+    events,
+  });
+
+  const stored = messageRepo.get(message.id);
+  assert.ok(stored);
+  const metadata = JSON.parse(stored.metadata ?? '{}') as {
+    trace?: {
+      thinking?: unknown[];
+      tool_calls?: unknown[];
+      commands?: unknown[];
+      events?: Array<{
+        id: string;
+        type: string;
+        payload: Record<string, unknown>;
+        raw?: Record<string, unknown>;
+        created_at: number;
+      }>;
+    };
+  };
+  const storedEvents = metadata.trace?.events ?? [];
+
+  assert.equal(metadata.trace?.thinking, undefined);
+  assert.equal(metadata.trace?.tool_calls, undefined);
+  assert.equal(metadata.trace?.commands, undefined);
+  assert.deepEqual(storedEvents.map((event) => event.type), [
+    'assistant_message',
+    'tool_call',
+    'tool_result',
+    'file_diff',
+  ]);
+  assert.equal(storedEvents[0]?.payload.text, '第一段第二段');
+  assert.equal(storedEvents[0]?.payload.content, undefined);
+  assert.equal(storedEvents[0]?.created_at, 1002);
+  assert.equal(storedEvents[1]?.payload.input, undefined);
+  assert.equal(storedEvents[1]?.payload.content, undefined);
+  assert.equal(storedEvents[2]?.payload.path, 'packages/frontend/src/pages/RoomPage.tsx');
+  assert.equal(storedEvents[2]?.payload.output, undefined);
+  assert.equal(storedEvents[2]?.payload.content, undefined);
+  assert.equal(storedEvents[2]?.payload.stdout, undefined);
+  assert.equal(storedEvents[2]?.payload.stderr, undefined);
+  assert.equal(storedEvents[2]?.payload.detail_omitted, undefined);
+  assert.equal(storedEvents[3]?.payload.path, 'packages/frontend/src/pages/RoomPage.tsx');
+  assert.equal(storedEvents[3]?.payload.additions, 2);
+  assert.equal(storedEvents[3]?.payload.deletions, 1);
+  assert.equal(storedEvents[3]?.payload.patch, undefined);
+  assert.equal(storedEvents[3]?.payload.oldText, undefined);
+  assert.equal(storedEvents[3]?.payload.newText, undefined);
+  assert.equal(storedEvents[3]?.payload.detail_omitted, undefined);
+  assert.equal(storedEvents.some((event) => event.raw), false);
+  assert.ok((stored.metadata ?? '').length < 6_000);
+
+  const [listed] = messageRepo.listForClientByRoom(room.id);
+  assert.ok(listed);
+  const listedMetadata = JSON.parse(listed.metadata ?? '{}') as {
+    trace?: { events?: Array<{ type: string; payload: Record<string, unknown> }> };
+  };
+  const listedToolResult = listedMetadata.trace?.events?.find((event) => event.type === 'tool_result');
+  const listedFileDiff = listedMetadata.trace?.events?.find((event) => event.type === 'file_diff');
+  assert.equal(listedToolResult?.payload.detail_omitted, undefined);
+  assert.equal(listedFileDiff?.payload.detail_omitted, undefined);
+});
+
+test('messageRepo mergeTrace does not reintroduce omitted output when compacted payload remains large', () => {
+  const project = projectRepo.create({
+    name: `messages-storage-large-summary-${Date.now()}`,
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-storage-large-summary-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: 'Planner',
+    content: '完成',
+    message_type: 'agent_stream',
+  });
+
+  messageRepo.mergeTrace(message.id, {
+    events: [{
+      id: 'run-1:tool-result',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 1,
+      type: 'tool_result',
+      status: 'completed',
+      title: '工具结果 Search',
+      payload: {
+        id: 'call-1',
+        name: 'Search',
+        locations: Array.from({ length: 1200 }, (_, index) => ({ path: `very-long-file-name-${index}.ts`, line: index })),
+        output: 'heavy output'.repeat(10_000),
+      },
+      raw: { rawResult: true },
+      created_at: 1000,
+    }],
+  });
+
+  const stored = messageRepo.get(message.id);
+  assert.ok(stored);
+  const metadata = JSON.parse(stored.metadata ?? '{}') as {
+    trace?: { events?: Array<{ payload: Record<string, unknown>; raw?: Record<string, unknown> }> };
+  };
+  const event = metadata.trace?.events?.[0];
+  assert.ok(event);
+  assert.equal(event.payload.output, undefined);
+  assert.equal(event.raw, undefined);
   assert.equal(event.payload.truncated, true);
   assert.equal(typeof event.payload.original_bytes, 'number');
-  assert.match(JSON.stringify(event.payload), /rg -n/);
+  assert.doesNotMatch(JSON.stringify(event.payload), /heavy output/);
 });
 
 test('messageRepo listForClient keeps timeline-visible trace events as lightweight summaries', () => {
@@ -143,7 +391,7 @@ test('messageRepo listForClient keeps timeline-visible trace events as lightweig
   const internalMetadata = JSON.parse(internal?.metadata ?? '{}') as {
     trace?: { events?: unknown[] };
   };
-  assert.equal(internalMetadata.trace?.events?.length, 122);
+  assert.equal(internalMetadata.trace?.events?.length, 120);
 
   const [listed] = messageRepo.listForClientByRoom(room.id);
   assert.ok(listed);
