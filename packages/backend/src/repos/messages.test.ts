@@ -133,7 +133,7 @@ test('messageRepo listForClient keeps every timeline-visible trace event', () =>
   assert.equal(metadata.trace?.events_omitted, undefined);
 });
 
-test('messageRepo listForClient coalesces assistant deltas without dropping timeline text', () => {
+test('messageRepo listForClient keeps assistant deltas unchanged for the client', () => {
   const project = projectRepo.create({
     name: `messages-client-assistant-${Date.now()}`,
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-client-assistant-project-')),
@@ -218,16 +218,13 @@ test('messageRepo listForClient coalesces assistant deltas without dropping time
       events_omitted?: number;
     };
   };
-  assert.deepEqual(metadata.trace?.events?.map((event) => event.type), [
-    'assistant_message',
-    'tool_result',
-    'assistant_message',
-    'tool_result',
-  ]);
+  assert.deepEqual(metadata.trace?.events?.map((event) => event.type), events.map((event) => event.type));
+  assert.equal(metadata.trace?.events?.length, 103);
   assert.equal(metadata.trace?.events?.[0]?.seq, 1);
   assert.equal(metadata.trace?.events?.[2]?.seq, 3);
-  assert.match(metadata.trace?.events?.[2]?.payload.text ?? '', /token-49 token-51/);
-  assert.match(metadata.trace?.events?.[2]?.payload.text ?? '', /awaiting_user_confirmation/);
-  assert.equal(metadata.trace?.events_total, 103);
-  assert.equal(metadata.trace?.events_omitted, 0);
+  assert.equal(metadata.trace?.events?.[52]?.payload.text, '');
+  assert.equal(metadata.trace?.events?.[52]?.seq, 53);
+  assert.match(metadata.trace?.events?.[102]?.payload.text ?? '', /npm run build/);
+  assert.equal(metadata.trace?.events_total, undefined);
+  assert.equal(metadata.trace?.events_omitted, undefined);
 });
