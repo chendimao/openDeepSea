@@ -95,7 +95,7 @@ test('messageRepo listForClient keeps only the latest trace events and records o
     content: '完成',
     message_type: 'agent_stream',
   });
-  const events = Array.from({ length: 80 }, (_, index) => ({
+  const events = Array.from({ length: 120 }, (_, index) => ({
     id: `run-1:${index + 1}`,
     message_id: message.id,
     run_id: 'run-1',
@@ -115,7 +115,7 @@ test('messageRepo listForClient keeps only the latest trace events and records o
   const internalMetadata = JSON.parse(internal?.metadata ?? '{}') as {
     trace?: { events?: unknown[] };
   };
-  assert.equal(internalMetadata.trace?.events?.length, 80);
+  assert.equal(internalMetadata.trace?.events?.length, 120);
 
   const [listed] = messageRepo.listForClientByRoom(room.id);
   assert.ok(listed);
@@ -127,9 +127,74 @@ test('messageRepo listForClient keeps only the latest trace events and records o
       events_omitted?: number;
     };
   };
-  assert.equal(metadata.trace?.events?.length, 20);
-  assert.equal(metadata.trace?.events?.[0]?.seq, 61);
-  assert.equal(metadata.trace?.events?.[19]?.seq, 80);
-  assert.equal(metadata.trace?.events_total, 80);
-  assert.equal(metadata.trace?.events_omitted, 60);
+  assert.equal(metadata.trace?.events?.length, 80);
+  assert.equal(metadata.trace?.events?.[0]?.seq, 41);
+  assert.equal(metadata.trace?.events?.[79]?.seq, 120);
+  assert.equal(metadata.trace?.events_total, 120);
+  assert.equal(metadata.trace?.events_omitted, 40);
+});
+
+test('messageRepo listForClient omits partial assistant deltas when compacting trace events', () => {
+  const project = projectRepo.create({
+    name: `messages-client-assistant-${Date.now()}`,
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-messages-client-assistant-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const message = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: 'Planner',
+    content: [
+      '完整规划正文。',
+      '',
+      '```json',
+      '{"planner_decision":{"awaiting_user_confirmation":true}}',
+      '```',
+    ].join('\n'),
+    message_type: 'agent_stream',
+  });
+  const events = [
+    {
+      id: 'run-1:1',
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: 1,
+      type: 'tool_result',
+      status: 'completed',
+      title: '工具结果 Read',
+      payload: { text: 'read RoomPage.tsx' },
+      created_at: 1000,
+    },
+    ...Array.from({ length: 100 }, (_, index) => ({
+      id: `run-1:${index + 2}`,
+      message_id: message.id,
+      run_id: 'run-1',
+      agent_id: 'planner',
+      seq: index + 2,
+      type: 'assistant_message',
+      status: 'delta',
+      title: '助手回复',
+      payload: { text: index === 99 ? 'awaiting_user_confirmation": true\n}\n```' : `token-${index}` },
+      created_at: 1001 + index,
+    })),
+  ];
+  db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify({
+    trace: { events },
+  }), message.id);
+
+  const [listed] = messageRepo.listForClientByRoom(room.id);
+  assert.ok(listed);
+  const metadata = JSON.parse(listed.metadata ?? '{}') as {
+    trace?: {
+      events?: Array<{ type: string; seq: number }>;
+      events_total?: number;
+      events_omitted?: number;
+    };
+  };
+  assert.deepEqual(metadata.trace?.events?.map((event) => event.type), ['tool_result']);
+  assert.equal(metadata.trace?.events?.[0]?.seq, 1);
+  assert.equal(metadata.trace?.events_total, 101);
+  assert.equal(metadata.trace?.events_omitted, 100);
 });

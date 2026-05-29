@@ -11,7 +11,7 @@ import type {
   SenderType,
 } from '../types.js';
 
-const CLIENT_TRACE_EVENT_LIMIT = 20;
+const CLIENT_TRACE_EVENT_LIMIT = 80;
 
 export const messageRepo = {
   listByRoom(roomId: string, limit = 200): Message[] {
@@ -143,13 +143,19 @@ function compactMessageForClient(message: Message): Message {
 function compactMessageTraceForClient(trace: MessageTrace): MessageTrace {
   const events = trace.events ?? [];
   if (events.length <= CLIENT_TRACE_EVENT_LIMIT) return trace;
-  const visibleEvents = events.slice(-CLIENT_TRACE_EVENT_LIMIT);
+  const visibleEvents = events
+    .filter(isVisibleClientTraceEvent)
+    .slice(-CLIENT_TRACE_EVENT_LIMIT);
   return {
     ...trace,
     events: visibleEvents,
     events_total: events.length,
     events_omitted: events.length - visibleEvents.length,
   };
+}
+
+function isVisibleClientTraceEvent(event: AgentTimelineEvent): boolean {
+  return event.type !== 'assistant_message';
 }
 
 function refreshPlannerMessageMetadata(message: Message): Message {
