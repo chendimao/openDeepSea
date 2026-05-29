@@ -21,6 +21,7 @@ const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { settingsRepo } = await import('./repos/settings.js');
 const { skillRepo } = await import('./skills/repo.js');
 const { taskRepo } = await import('./repos/tasks.js');
+const { taskEventRepo } = await import('./repos/task-events.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { resourceAssetRepo } = await import('./repos/resource-assets.js');
 const { messageUploadDir } = await import('./uploads.js');
@@ -3745,6 +3746,101 @@ test('dispatchUserMessage stays silent in mentions-only mode without mentions', 
     const messages = messageRepo.listByRoom(room.id);
     assert.equal(messages.some((item) => item.sender_id === 'model-chat'), false);
   } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('dispatchUserMessage binds routed task context to agent run and task event projections', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-trace-projection-'));
+  const project = projectRepo.create({ name: `task-trace-projection-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const global = agentRepo.getByAgentId('backend-executor');
+  assert.ok(global);
+  const agent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: global.id });
+  roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: agent.agent_id,
+  });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Trace projection task' });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '执行并记录 trace',
+    metadata: { task_id: task.id },
+  });
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke({ onChunk }) {
+      onChunk({
+        stream: 'stdout',
+        text: '读取文件',
+        channel: 'tool',
+        trace: { kind: 'tool', name: 'read_file', input: 'README.md', output: 'ok' },
+      });
+      onChunk({
+        stream: 'stdout',
+        text: '修改 src/index.ts',
+        channel: 'event',
+        event: {
+          id: 'pending:diff',
+          message_id: 'pending',
+          run_id: 'pending',
+          agent_id: 'pending',
+          seq: 0,
+          type: 'file_diff',
+          status: 'completed',
+          title: '修改 src/index.ts',
+          payload: { path: 'src/index.ts', additions: 2, deletions: 1, diff: '@@ change' },
+          created_at: Date.now(),
+        },
+      });
+      onChunk({ stream: 'stdout', text: '完成。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+  const roomEvents = captureRoomEvents(room.id);
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const run = agentRunRepo.listByRoom(room.id, 10).find((item) => item.agent_id === agent.agent_id);
+    assert.ok(run);
+    assert.equal(run.task_id, task.id);
+
+    const agentMessage = messageRepo.listByRoom(room.id, 20).find((item) => item.sender_id === agent.agent_id);
+    assert.ok(agentMessage);
+    const metadata = JSON.parse(agentMessage.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.task_id, task.id);
+    assert.equal(metadata.trace?.events?.some((event) => event.type === 'file_diff'), true);
+
+    const events = taskEventRepo.listByTask(task.id);
+    assert.equal(events.some((event) => event.type === 'runtime_event' && event.layer === 'runtime'), true);
+    const diffEvent = events.find((event) => event.type === 'diff_detected' && event.layer === 'diff');
+    assert.ok(diffEvent);
+    assert.equal(diffEvent.payload.path, 'src/index.ts');
+    assert.equal(diffEvent.source_run_id, run.id);
+    assert.equal(
+      roomEvents.some((event) => event.type === 'task_event:new' && event.event.type === 'runtime_event'),
+      true,
+    );
+    assert.equal(
+      roomEvents.some((event) => event.type === 'task_event:new' && event.event.type === 'diff_detected'),
+      true,
+    );
+  } finally {
+    roomEvents.restore();
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });

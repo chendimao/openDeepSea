@@ -18,6 +18,7 @@ import { projectRepo } from './repos/projects.js';
 import { agentRepo } from './repos/agents.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
+import { taskEventRepo } from './repos/task-events.js';
 import { taskExecutorRepo } from './repos/task-executors.js';
 import { formatSkillPrompt } from './skills/prompt.js';
 import { selectSkills } from './skills/selector.js';
@@ -36,9 +37,11 @@ import type {
   MessageAttachmentMetadata,
   MessageTrace,
   MessageReplyMetadata,
+  MessageLayer,
   PlannerDecision,
   Room,
   RoomAgent,
+  TaskEventType,
   WorkflowStage,
 } from './types.js';
 
@@ -247,6 +250,7 @@ export async function dispatchUserMessage(args: {
     projectPath: project.path,
     roomId,
     sourceMessageId: userMessage.id,
+    taskId: getMessageTaskId(userMessage.metadata),
     imagePaths,
     distillModelInvoker: args.distillModelInvoker,
   });
@@ -531,6 +535,7 @@ async function runTargets(args: {
   projectPath: string;
   roomId: string;
   sourceMessageId?: string | null;
+  taskId?: string | null;
   imagePaths?: string[];
   distillModelInvoker?: MemoryDistillModelInvoker;
 }): Promise<TargetRunResult[]> {
@@ -546,6 +551,7 @@ async function runTargets(args: {
         prompt: target.prompt,
         internalMessage: target.internalMessage,
         imagePaths: args.imagePaths,
+        taskId: args.taskId,
         sourceMessageId: args.sourceMessageId,
         distillModelInvoker: args.distillModelInvoker,
         onFinished: ({ run, message, status }) => {
@@ -733,6 +739,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       acp_enabled: !!agent.acp_enabled,
       acp_backend: agent.acp_backend,
       acp_session_id: acpSessionId,
+      task_id: args.taskId ?? undefined,
       internal: args.internalMessage ? true : undefined,
     },
   });
@@ -822,6 +829,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       trace,
     });
     const updatedMessage = messageRepo.mergeTrace(placeholder.id, toTracePatch(channel, text, trace, timelineEvent));
+    projectTimelineEventToTaskEvent({ roomId, taskId: args.taskId, event: timelineEvent });
     if (!args.internalMessage) {
       wsHub.broadcast(roomId, {
         type: 'message:stream',
@@ -842,6 +850,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const persistTimelineEvent = (event: AgentTimelineEvent, chunk: AcpStreamChunk): void => {
     restoreRunStatusAfterRetry();
     const updatedMessage = messageRepo.mergeTrace(placeholder.id, { events: [event] });
+    projectTimelineEventToTaskEvent({ roomId, taskId: args.taskId, event });
     broadcastTimelineEvent(event, chunk, updatedMessage);
   };
 
@@ -1317,6 +1326,62 @@ function toTracePatch(
   if (channel === 'thinking') return { ...next, thinking: [{ text }] };
   if (channel === 'tool') return { ...next, tool_calls: [{ name: 'trace', input: text }] };
   return { ...next, commands: [{ command: text }] };
+}
+
+function getMessageTaskId(rawMetadata: string | null): string | null {
+  if (!rawMetadata) return null;
+  try {
+    const parsed = JSON.parse(rawMetadata) as unknown;
+    if (!isRecord(parsed)) return null;
+    return typeof parsed.task_id === 'string' && parsed.task_id.trim() ? parsed.task_id.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function projectTimelineEventToTaskEvent(input: {
+  roomId: string;
+  taskId?: string | null;
+  event: AgentTimelineEvent;
+}): void {
+  if (!input.taskId) return;
+  const projection = mapTimelineEventToTaskEvent(input.event);
+  if (!projection) return;
+  const taskEvent = taskEventRepo.create({
+    task_id: input.taskId,
+    room_id: input.roomId,
+    type: projection.type,
+    layer: projection.layer,
+    source_run_id: input.event.run_id,
+    payload: {
+      timeline_event_id: input.event.id,
+      timeline_type: input.event.type,
+      timeline_status: input.event.status,
+      message_id: input.event.message_id,
+      agent_id: input.event.agent_id,
+      title: input.event.title,
+      ...input.event.payload,
+    },
+  });
+  wsHub.broadcast(input.roomId, { type: 'task_event:new', roomId: input.roomId, event: taskEvent });
+}
+
+function mapTimelineEventToTaskEvent(event: AgentTimelineEvent): { type: TaskEventType; layer: MessageLayer } | null {
+  if (event.type === 'thinking' || event.type === 'assistant_message' || event.type === 'raw') return null;
+  if (event.type === 'file_diff') return { type: 'diff_detected', layer: 'diff' };
+  if (event.type === 'plan_update') return { type: 'plan_proposed', layer: 'timeline' };
+  if (
+    event.type === 'tool_call' ||
+    event.type === 'tool_result' ||
+    event.type === 'command' ||
+    event.type === 'command_output' ||
+    event.type === 'web_search' ||
+    event.type === 'permission_request' ||
+    event.type === 'error'
+  ) {
+    return { type: 'runtime_event', layer: 'runtime' };
+  }
+  return null;
 }
 
 async function dispatchPlannerDecision(args: {

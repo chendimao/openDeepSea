@@ -209,6 +209,8 @@ export type TaskCreatedFrom = 'manual' | 'chat_plan' | 'slash_command' | 'workfl
 export type TaskEventType =
   | 'message_routed'
   | 'plan_proposed'
+  | 'runtime_event'
+  | 'diff_detected'
   | 'task_created'
   | 'task_updated'
   | 'task_status_changed'
