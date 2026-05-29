@@ -1,7 +1,12 @@
 import { HumanMessage, SystemMessage, type MessageContent } from '@langchain/core/messages';
 import { ChatOpenAI } from '@langchain/openai';
-import { buildChatOpenAIFields, extractPlannerText, getRuntimeLangChainPlannerConfig } from './workflows/langchain-planner.js';
-import type { Message, Project, Room } from './types.js';
+import {
+  buildChatOpenAIFields,
+  extractPlannerText,
+  getLangChainPlannerConfig,
+  getRuntimeLangChainPlannerConfig,
+} from './workflows/langchain-planner.js';
+import type { LangChainPlannerSettings, Message, Project, Room } from './types.js';
 
 export interface ModelChatInput {
   project: Project;
@@ -16,6 +21,25 @@ export interface ModelChatInvoker {
 
 export interface ModelChatOptions {
   skillContext?: string;
+}
+
+export interface ConfiguredModelTestResult {
+  ok: boolean;
+  status: 'success' | 'missing_credentials' | 'failed';
+  model: string | null;
+  baseURL: string | null;
+  output: string | null;
+  error: string | null;
+  tested_at: number;
+}
+
+export interface ConfiguredModelTester {
+  invoke(messages: Array<SystemMessage | HumanMessage>): Promise<MessageContent>;
+}
+
+export interface ConfiguredModelTestOptions {
+  prompt?: string | null;
+  tester?: ConfiguredModelTester;
 }
 
 export function isModelChatConfigured(): boolean {
@@ -81,6 +105,49 @@ export async function invokeConfiguredModelText(messages: Array<SystemMessage | 
   }
 }
 
+export async function testConfiguredModel(
+  settings: LangChainPlannerSettings,
+  options: ConfiguredModelTestOptions = {},
+): Promise<ConfiguredModelTestResult> {
+  const config = getLangChainPlannerConfig({}, settings);
+  if (!config.enabled || !config.model || !config.apiKey) {
+    return {
+      ok: false,
+      status: 'missing_credentials',
+      model: config.model,
+      baseURL: config.baseURL,
+      output: null,
+      error: 'AI config requires both model and API key',
+      tested_at: Date.now(),
+    };
+  }
+
+  try {
+    const tester = options.tester ?? createDefaultConfiguredModelTester(settings);
+    const response = await tester.invoke(buildConfiguredModelTestMessages(options.prompt));
+    const output = extractPlannerText(response).trim();
+    return {
+      ok: true,
+      status: 'success',
+      model: config.model,
+      baseURL: config.baseURL,
+      output,
+      error: null,
+      tested_at: Date.now(),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 'failed',
+      model: config.model,
+      baseURL: config.baseURL,
+      output: null,
+      error: sanitizeModelErrorMessage(err),
+      tested_at: Date.now(),
+    };
+  }
+}
+
 function createDefaultModelChatInvoker(): ModelChatInvoker {
   const config = getRuntimeLangChainPlannerConfig();
   if (!config.enabled || !config.model || !config.apiKey) {
@@ -91,6 +158,27 @@ function createDefaultModelChatInvoker(): ModelChatInvoker {
       return invokeConfiguredModelText(messages);
     },
   };
+}
+
+function createDefaultConfiguredModelTester(settings: LangChainPlannerSettings): ConfiguredModelTester {
+  const config = getLangChainPlannerConfig({}, settings);
+  if (!config.enabled || !config.model || !config.apiKey) {
+    throw new Error('AI config requires both model and API key');
+  }
+  const model = new ChatOpenAI(buildChatOpenAIFields(config));
+  return {
+    async invoke(messages) {
+      const response = await model.invoke(messages);
+      return response.content;
+    },
+  };
+}
+
+function buildConfiguredModelTestMessages(prompt: string | null | undefined): Array<SystemMessage | HumanMessage> {
+  return [
+    new SystemMessage('You are testing an OpenAI-compatible chat model connection. Reply with a brief confirmation.'),
+    new HumanMessage(prompt?.trim() || 'Reply with OK.'),
+  ];
 }
 
 const SECRET_PATTERNS: Array<[RegExp, string]> = [

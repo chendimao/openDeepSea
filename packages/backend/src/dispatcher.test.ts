@@ -1954,10 +1954,10 @@ test('respondAsAgent passes resolved workspace writable dirs and runtime prompt 
       prompt: '修改后端',
     });
 
-    assert.deepEqual(capturedWritableDirs, [join(projectPath, 'packages/backend')]);
+    assert.deepEqual(capturedWritableDirs, [projectPath]);
     assert.equal(capturedPermissionMode, 'workspace-write');
     assert.match(capturedPrompt, /智能体运行边界：/);
-    assert.match(capturedPrompt, /可写目录：.*packages\/backend/);
+    assert.match(capturedPrompt, new RegExp(`可写目录：.*${escapeRegExp(projectPath)}`));
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -2394,10 +2394,10 @@ test('planner dispatch defers review steps until execution result returns to pla
   adapters.codex = {
     ...originalAdapter,
     async invoke(args) {
-      if (args.prompt.includes('新增“测试”菜单')) {
-        args.onChunk({ stream: 'stdout', text: '前端开发完成：已新增测试菜单和计数器页面。' });
-      } else if (args.prompt.includes('前一阶段智能体已经完成')) {
+      if (args.prompt.includes('本轮派发的智能体已经完成')) {
         args.onChunk({ stream: 'stdout', text: '规划师收到前端结果，下一步再安排测试工程师。' });
+      } else if (args.prompt.includes('新增“测试”菜单')) {
+        args.onChunk({ stream: 'stdout', text: '前端开发完成：已新增测试菜单和计数器页面。' });
       } else {
         args.onChunk({ stream: 'stdout', text: 'unexpected' });
       }
@@ -2450,7 +2450,8 @@ test('planner dispatch defers review steps until execution result returns to pla
       agentRunRepo.listByRoom(room.id, 20).some((run) =>
         run.agent_id === 'planner' &&
         run.prompt.includes('暂缓的后续步骤') &&
-        run.prompt.includes('qa-tester'),
+        run.prompt.includes('qa-tester') &&
+        run.stdout.includes('规划师收到前端结果'),
       ),
       true,
     );

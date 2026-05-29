@@ -34,6 +34,13 @@ const CONSERVATIVE_RUNTIME_BOUNDARY = {
   memory_scope: 'room',
 } satisfies Pick<BuiltInAgentTemplate, 'runtime_backend' | 'tool_policy' | 'workspace_policy' | 'memory_scope'>;
 
+const ROOT_WRITE_RUNTIME_BOUNDARY = {
+  runtime_backend: 'acp',
+  tool_policy: { allowed: ['read_files'] },
+  workspace_policy: { read: ['.'], write: ['.'] },
+  memory_scope: 'agent',
+} satisfies Pick<BuiltInAgentTemplate, 'runtime_backend' | 'tool_policy' | 'workspace_policy' | 'memory_scope'>;
+
 const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
   {
     id: 'planner',
@@ -64,7 +71,7 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     acp_permission_mode: 'workspace-write',
     runtime_backend: 'acp',
     tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
-    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
     memory_scope: 'agent',
     capabilities: ['backend', 'testing'],
   },
@@ -82,7 +89,7 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     acp_permission_mode: 'workspace-write',
     runtime_backend: 'acp',
     tool_policy: { allowed: ['read_files', 'write_files', 'run_shell', 'browser', 'image_input'] },
-    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
     memory_scope: 'agent',
     capabilities: ['frontend', 'testing'],
   },
@@ -127,8 +134,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'read-only',
-    ...CONSERVATIVE_RUNTIME_BOUNDARY,
+    acp_permission_mode: 'workspace-write',
+    ...ROOT_WRITE_RUNTIME_BOUNDARY,
     capabilities: ['computer-help', 'cli', 'automation', 'troubleshooting'],
   },
   {
@@ -172,8 +179,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'read-only',
-    ...CONSERVATIVE_RUNTIME_BOUNDARY,
+    acp_permission_mode: 'workspace-write',
+    ...ROOT_WRITE_RUNTIME_BOUNDARY,
     capabilities: ['devops', 'ci-cd', 'deployment', 'observability'],
   },
   {
@@ -205,7 +212,7 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     acp_permission_mode: 'workspace-write',
     runtime_backend: 'acp',
     tool_policy: { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] },
-    workspace_policy: { read: ['.'], write: ['docs', '.git'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
     memory_scope: 'agent',
     capabilities: ['documentation', 'writing', 'handoff', 'release-notes'],
   },
@@ -313,8 +320,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'executor',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'read-only',
-    ...CONSERVATIVE_RUNTIME_BOUNDARY,
+    acp_permission_mode: 'workspace-write',
+    ...ROOT_WRITE_RUNTIME_BOUNDARY,
     capabilities: ['sales', 'crm', 'communication', 'follow-up'],
   },
 ];

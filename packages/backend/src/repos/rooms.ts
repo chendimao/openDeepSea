@@ -62,7 +62,7 @@ const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-wr
 const DEFAULT_RUNTIMES = new Set<AgentDefaultRuntime>(['acp', 'openclaw', 'none']);
 const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
 const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
-const BUILT_IN_RUNTIME_PROFILE_VERSION = 3;
+const BUILT_IN_RUNTIME_PROFILE_VERSION = 4;
 
 function parseJsonObject<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -126,9 +126,15 @@ function isTechnicalWriterDefaultBoundary(
   const isDocsOnlyDefault = existing.acp_permission_mode === 'workspace-write'
     && existing.runtime_backend === 'acp'
     && existing.memory_scope === 'agent'
-    && existing.tool_policy?.allowed.join('\n') === ['read_files', 'write_files', 'run_shell'].join('\n')
+    && (
+      existing.tool_policy?.allowed.join('\n') === ['read_files', 'write_files', 'run_shell'].join('\n')
+      || existing.tool_policy?.allowed.join('\n') === ['read_files', 'write_files', 'run_shell', 'commit'].join('\n')
+    )
     && existing.workspace_policy?.read.join('\n') === ['.'].join('\n')
-    && existing.workspace_policy.write.join('\n') === ['docs'].join('\n');
+    && (
+      existing.workspace_policy.write.join('\n') === ['docs'].join('\n')
+      || existing.workspace_policy.write.join('\n') === ['docs', '.git'].join('\n')
+    );
   return template.id === 'technical-writer' && (isReadOnlyDefault || isDocsOnlyDefault);
 }
 

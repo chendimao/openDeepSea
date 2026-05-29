@@ -70,7 +70,7 @@ export type AgentDeleteResult =
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
 const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
 const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
-const BUILT_IN_RUNTIME_PROFILE_VERSION = 3;
+const BUILT_IN_RUNTIME_PROFILE_VERSION = 4;
 const LEGACY_RUNTIME_BOUNDARY = {
   default_acp_permission_mode: 'bypass',
   default_runtime_backend: 'acp',
@@ -207,9 +207,15 @@ function isTechnicalWriterDefaultBoundary(agent: AgentWithRuntimeProfileVersion)
   const isDocsOnlyDefault = agent.default_acp_permission_mode === 'workspace-write'
     && agent.default_runtime_backend === 'acp'
     && agent.default_memory_scope === 'agent'
-    && agent.default_tool_policy.allowed.join('\n') === ['read_files', 'write_files', 'run_shell'].join('\n')
+    && (
+      agent.default_tool_policy.allowed.join('\n') === ['read_files', 'write_files', 'run_shell'].join('\n')
+      || agent.default_tool_policy.allowed.join('\n') === ['read_files', 'write_files', 'run_shell', 'commit'].join('\n')
+    )
     && agent.default_workspace_policy.read.join('\n') === ['.'].join('\n')
-    && agent.default_workspace_policy.write.join('\n') === ['docs'].join('\n');
+    && (
+      agent.default_workspace_policy.write.join('\n') === ['docs'].join('\n')
+      || agent.default_workspace_policy.write.join('\n') === ['docs', '.git'].join('\n')
+    );
   return agent.builtin_key === 'technical-writer'
     && (isReadOnlyDefault || isDocsOnlyDefault);
 }

@@ -213,10 +213,10 @@ function ProtocolDiagnosticsView({ diagnostics }: { diagnostics: AgentTimelineDi
         {diagnostics.thoughtStreamStatus === 'received' ? 'thinking 已收到' : diagnostics.thoughtStreamStatus === 'missing' ? 'thinking 未返回' : 'thinking 未判断'}
       </div>
       <p>{diagnostics.thoughtStreamMessage}</p>
-      <dl className="agent-timeline-kv">
+      <dl className="agent-timeline-kv agent-timeline-protocol-counts">
         {diagnostics.protocolEventCounts.map((entry) => (
           <div key={entry.type}>
-            <dt>{entry.type}</dt>
+            <dt title={entry.type}>{entry.type}</dt>
             <dd>{entry.count} 次</dd>
           </div>
         ))}

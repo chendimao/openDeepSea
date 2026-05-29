@@ -61,7 +61,7 @@ test('built-in templates define hard runtime boundaries', () => {
   });
   assert.deepEqual(templates['backend-executor']?.workspace_policy, {
     read: ['.'],
-    write: ['packages/backend'],
+    write: ['.'],
   });
   assert.equal(templates['backend-executor']?.memory_scope, 'agent');
 
@@ -71,7 +71,7 @@ test('built-in templates define hard runtime boundaries', () => {
   });
   assert.deepEqual(templates['frontend-executor']?.workspace_policy, {
     read: ['.'],
-    write: ['packages/frontend'],
+    write: ['.'],
   });
   assert.equal(templates['frontend-executor']?.memory_scope, 'agent');
 
@@ -81,7 +81,7 @@ test('built-in templates define hard runtime boundaries', () => {
   });
   assert.deepEqual(templates['technical-writer']?.workspace_policy, {
     read: ['.'],
-    write: ['docs', '.git'],
+    write: ['.'],
   });
   assert.equal(templates['technical-writer']?.memory_scope, 'agent');
 
@@ -96,24 +96,21 @@ test('built-in templates define hard runtime boundaries', () => {
   assert.equal(templates['acceptor']?.memory_scope, 'room');
 });
 
-test('specialist built-in templates use conservative runtime boundaries', () => {
-  const specialTemplateIds = [
+test('non-executor specialist built-in templates use conservative runtime boundaries', () => {
+  const readOnlySpecialistTemplateIds = [
     'ui-designer',
     'data-analyst',
-    'computer-assistant',
     'product-manager',
     'qa-tester',
-    'devops-engineer',
     'security-reviewer',
     'accounting-advisor',
     'legal-assistant',
     'medical-assistant',
     'marketing-strategist',
-    'sales-assistant',
   ];
   const templates = new Map(listBuiltInAgentTemplates().map((template) => [template.id, template]));
 
-  for (const id of specialTemplateIds) {
+  for (const id of readOnlySpecialistTemplateIds) {
     const template = templates.get(id);
     assert.ok(template);
     assert.equal(template.runtime_backend, 'acp');
@@ -121,6 +118,28 @@ test('specialist built-in templates use conservative runtime boundaries', () => 
     assert.deepEqual(template.tool_policy, { allowed: ['read_files'] });
     assert.deepEqual(template.workspace_policy, { read: ['.'], write: [] });
     assert.equal(template.memory_scope, 'room');
+  }
+});
+
+test('executor built-in templates can write the project root by default', () => {
+  const executorTemplateIds = [
+    'backend-executor',
+    'frontend-executor',
+    'computer-assistant',
+    'devops-engineer',
+    'technical-writer',
+    'sales-assistant',
+  ];
+  const templates = new Map(listBuiltInAgentTemplates().map((template) => [template.id, template]));
+
+  for (const id of executorTemplateIds) {
+    const template = templates.get(id);
+    assert.ok(template);
+    assert.equal(template.workflow_role, 'executor');
+    assert.equal(template.runtime_backend, 'acp');
+    assert.equal(template.acp_permission_mode, 'workspace-write');
+    assert.deepEqual(template.workspace_policy, { read: ['.'], write: ['.'] });
+    assert.equal(template.memory_scope, 'agent');
   }
 });
 
@@ -227,7 +246,7 @@ test('agent template routes list and create ACP-only room agents', async () => {
   assert.equal(agent.default_runtime, 'acp');
   assert.equal(agent.runtime_backend, 'acp');
   assert.deepEqual(agent.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(agent.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(agent.workspace_policy, { read: ['.'], write: ['.'] });
   assert.equal(agent.memory_scope, 'agent');
   assert.deepEqual(agent.capabilities, ['backend', 'testing']);
 
@@ -243,7 +262,7 @@ test('agent template routes list and create ACP-only room agents', async () => {
   };
   assert.equal(duplicate.agent_id, 'backend-executor');
   assert.equal(duplicate.runtime_backend, 'acp');
-  assert.deepEqual(duplicate.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(duplicate.workspace_policy, { read: ['.'], write: ['.'] });
 });
 
 test('agent template route rejects unknown templates and mirrors missing room errors', async () => {

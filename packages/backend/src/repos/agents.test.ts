@@ -122,6 +122,10 @@ test('built-in agent seeding persists template runtime boundaries', () => {
   const planner = agentRepo.getByAgentId('planner');
   const backend = agentRepo.getByAgentId('backend-executor');
   const frontend = agentRepo.getByAgentId('frontend-executor');
+  const computerAssistant = agentRepo.getByAgentId('computer-assistant');
+  const devopsEngineer = agentRepo.getByAgentId('devops-engineer');
+  const technicalWriter = agentRepo.getByAgentId('technical-writer');
+  const salesAssistant = agentRepo.getByAgentId('sales-assistant');
   const reviewer = agentRepo.getByAgentId('reviewer');
   const acceptor = agentRepo.getByAgentId('acceptor');
 
@@ -131,18 +135,24 @@ test('built-in agent seeding persists template runtime boundaries', () => {
   assert.deepEqual(planner?.default_workspace_policy, { read: ['.'], write: [] });
   assert.equal(planner?.default_memory_scope, 'room');
 
-  assert.equal(backend?.default_acp_permission_mode, 'workspace-write');
+  for (const agent of [backend, frontend, computerAssistant, devopsEngineer, technicalWriter, salesAssistant]) {
+    assert.ok(agent);
+    assert.equal(agent.default_acp_permission_mode, 'workspace-write');
+    assert.deepEqual(agent.default_workspace_policy, { read: ['.'], write: ['.'] });
+    assert.equal(agent.default_memory_scope, 'agent');
+  }
   assert.deepEqual(backend?.default_tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(backend?.default_workspace_policy, { read: ['.'], write: ['packages/backend'] });
-  assert.equal(backend?.default_memory_scope, 'agent');
   assert.equal(Object.hasOwn(backend as object, 'runtime_profile_version'), false);
 
-  assert.equal(frontend?.default_acp_permission_mode, 'workspace-write');
   assert.deepEqual(frontend?.default_tool_policy, {
     allowed: ['read_files', 'write_files', 'run_shell', 'browser', 'image_input'],
   });
-  assert.deepEqual(frontend?.default_workspace_policy, { read: ['.'], write: ['packages/frontend'] });
-  assert.equal(frontend?.default_memory_scope, 'agent');
+  assert.deepEqual(computerAssistant?.default_tool_policy, { allowed: ['read_files'] });
+  assert.deepEqual(devopsEngineer?.default_tool_policy, { allowed: ['read_files'] });
+  assert.deepEqual(technicalWriter?.default_tool_policy, {
+    allowed: ['read_files', 'write_files', 'run_shell', 'commit'],
+  });
+  assert.deepEqual(salesAssistant?.default_tool_policy, { allowed: ['read_files'] });
 
   assert.equal(reviewer?.default_acp_permission_mode, 'read-only');
   assert.deepEqual(reviewer?.default_tool_policy, { allowed: ['read_files', 'run_shell'] });
@@ -177,7 +187,7 @@ test('built-in seed keeps customized global runtime boundaries until restore def
   const restored = agentRepo.restoreBuiltInDefaults(backend.id);
   assert.equal(restored?.default_acp_permission_mode, 'workspace-write');
   assert.deepEqual(restored?.default_tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(restored?.default_workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(restored?.default_workspace_policy, { read: ['.'], write: ['.'] });
   assert.equal(restored?.default_memory_scope, 'agent');
 });
 
@@ -201,7 +211,7 @@ test('built-in seed refreshes legacy empty runtime policy even when permission w
 
   assert.equal(afterSeed?.default_acp_permission_mode, 'read-only');
   assert.deepEqual(afterSeed?.default_tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(afterSeed?.default_workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(afterSeed?.default_workspace_policy, { read: ['.'], write: ['.'] });
   assert.equal(afterSeed?.default_memory_scope, 'agent');
 });
 
@@ -289,12 +299,32 @@ test('built-in agents expose default runtime boundary fields', () => {
     },
     'backend-executor': {
       default_tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
-      default_workspace_policy: { read: ['.'], write: ['packages/backend'] },
+      default_workspace_policy: { read: ['.'], write: ['.'] },
       default_memory_scope: 'agent',
     },
     'frontend-executor': {
       default_tool_policy: { allowed: ['read_files', 'write_files', 'run_shell', 'browser', 'image_input'] },
-      default_workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+      default_workspace_policy: { read: ['.'], write: ['.'] },
+      default_memory_scope: 'agent',
+    },
+    'computer-assistant': {
+      default_tool_policy: { allowed: ['read_files'] },
+      default_workspace_policy: { read: ['.'], write: ['.'] },
+      default_memory_scope: 'agent',
+    },
+    'devops-engineer': {
+      default_tool_policy: { allowed: ['read_files'] },
+      default_workspace_policy: { read: ['.'], write: ['.'] },
+      default_memory_scope: 'agent',
+    },
+    'technical-writer': {
+      default_tool_policy: { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] },
+      default_workspace_policy: { read: ['.'], write: ['.'] },
+      default_memory_scope: 'agent',
+    },
+    'sales-assistant': {
+      default_tool_policy: { allowed: ['read_files'] },
+      default_workspace_policy: { read: ['.'], write: ['.'] },
       default_memory_scope: 'agent',
     },
     reviewer: {

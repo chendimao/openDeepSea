@@ -152,6 +152,34 @@ test('can suppress planner decision json when an outer action panel renders it',
   assert.doesNotMatch(html, /pause_after_suggestion/);
 });
 
+test('recognizes json fences whose opening brace is glued to the language tag', () => {
+  // 复现 codex 原始流式输出：```json{ 把左花括号粘在语言行（无换行）
+  const json = JSON.stringify({
+    planner_decision: {
+      mode: 'pause_after_suggestion',
+      status: 'suggested',
+      summary: '派发前端执行者局部调小群聊消息预览模式字号和间距',
+      next_steps: [
+        { agent_id: 'frontend-executor', goal: '局部降低 Markdown/ACP transcript 正文字号、标题层级和间距' },
+      ],
+      awaiting_user_confirmation: true,
+    },
+  }, null, 2);
+  // json === '{\n  "planner_decision"...\n}'，把开头的 { 挪到围栏行
+  const content = `\`\`\`json${json.slice(0, 1)}\n${json.slice(2)}\n\`\`\``;
+
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent content={content} suppressPlannerDecisionSummary />
+    </I18nProvider>,
+  );
+
+  // 应被识别为 planner 决策 JSON 并隐藏，而非当作裸代码/文本吐出乱码
+  assert.doesNotMatch(html, /awaiting_user_confirmation/);
+  assert.doesNotMatch(html, /planner_decision/);
+  assert.doesNotMatch(html, /pause_after_suggestion/);
+});
+
 test('renders known agent ids in markdown text as Chinese agent names', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

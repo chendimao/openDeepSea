@@ -48,8 +48,8 @@ const collaborationIntents = new Set<CollaborationIntent>(['question', 'analysis
 const collaborationModes = new Set<CollaborationMode>(['chat_collaboration', 'formal_workflow']);
 const collaborationProblemAreas = new Set<CollaborationProblemArea>(['frontend', 'backend', 'fullstack', 'unknown']);
 const collaborationStages = new Set<CollaborationStage>(['execute', 'review', 'acceptance', 'summary']);
-const plannerExecutionModes = new Set<PlannerExecutionMode>(['pause_after_suggestion', 'auto_continue']);
-const plannerDecisionStatuses = new Set<PlannerDecision['status']>(['suggested', 'dispatching', 'completed', 'blocked']);
+const plannerExecutionModes = new Set<PlannerExecutionMode>(['pause_after_suggestion', 'auto_continue', 'dispatch_next']);
+const plannerDecisionStatuses = new Set<PlannerDecision['status']>(['suggested', 'dispatching', 'completed', 'blocked', 'needs_fix']);
 const acpBackends = new Set<AcpBackend>(['claudecode', 'opencode', 'codex']);
 const taskExecutionIntents = new Set<TaskExecutionIntent>([
   'analysis_only',
@@ -192,8 +192,6 @@ function sanitizeAcpMetadata(value: Record<string, unknown>) {
 function sanitizePlannerDecision(value: unknown): PlannerDecision | null {
   if (!isRecord(value)) return null;
   if (
-    !isPlannerExecutionMode(value.mode) ||
-    !isPlannerDecisionStatus(value.status) ||
     typeof value.summary !== 'string' ||
     !value.summary.trim() ||
     typeof value.awaiting_user_confirmation !== 'boolean'
@@ -204,9 +202,16 @@ function sanitizePlannerDecision(value: unknown): PlannerDecision | null {
   const nextSteps = sanitizePlannerDecisionSteps(value.next_steps);
   if (!nextSteps) return null;
 
+  const mode: PlannerExecutionMode = isPlannerExecutionMode(value.mode)
+    ? value.mode
+    : 'pause_after_suggestion';
+  const status: PlannerDecision['status'] = isPlannerDecisionStatus(value.status)
+    ? value.status
+    : 'suggested';
+
   return {
-    mode: value.mode,
-    status: value.status,
+    mode,
+    status,
     summary: value.summary,
     next_steps: nextSteps,
     awaiting_user_confirmation: value.awaiting_user_confirmation,

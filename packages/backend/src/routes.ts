@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
+import { testConfiguredModel, type ConfiguredModelTester } from './chat-model.js';
 import type { CollaborationDecision } from './collaboration-decision.js';
 import { runCollaborationStages as defaultRunCollaborationStages } from './collaboration-runner.js';
 import { getDefaultRoomCrewTemplate, getRoomCrewTemplate, listRoomCrewTemplates } from './crew-templates.js';
@@ -101,8 +102,13 @@ interface GlobalChatRouteDeps {
   settingsSummary?: SafeGlobalChatSettingsSummary;
 }
 
+interface AiConfigTestRouteDeps {
+  tester?: ConfiguredModelTester;
+}
+
 let collaborationRouteDeps: CollaborationRouteDeps = {};
 let globalChatRouteDeps: GlobalChatRouteDeps = {};
+let aiConfigTestRouteDeps: AiConfigTestRouteDeps = {};
 const collaborationRunsBySource = new Map<string, {
   id: string;
   room_id: string;
@@ -117,6 +123,10 @@ export function setCollaborationRouteDeps(deps: CollaborationRouteDeps): void {
 
 export function setGlobalChatRouteDeps(deps: GlobalChatRouteDeps): void {
   globalChatRouteDeps = deps;
+}
+
+export function setAiConfigTestRouteDeps(deps: AiConfigTestRouteDeps): void {
+  aiConfigTestRouteDeps = deps;
 }
 
 function workflowErrorStatus(error: Error): number {
@@ -240,6 +250,10 @@ const aiConfigPatchSchema = aiConfigInputSchema.partial().refine(
   (value) => Object.keys(value).length > 0,
   { message: 'at least one field is required' },
 );
+
+const aiConfigTestSchema = z.object({
+  prompt: nullableTrimmedStringSchema,
+});
 
 const agentToolCapabilitySchema = z.enum([
   'read_files',
@@ -575,6 +589,20 @@ router.post('/settings/ai-configs/:configId/activate', (req, res) => {
   const config = settingsRepo.setActiveAiConfig(req.params.configId);
   if (!config) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.getSystem());
+});
+
+router.post('/settings/ai-configs/:configId/test', async (req, res) => {
+  const parsed = aiConfigTestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const runtimeSettings = settingsRepo.getAiConfigRuntimeSettings(req.params.configId);
+  if (!runtimeSettings) return res.status(404).json({ error: 'not found' });
+
+  const result = await testConfiguredModel(runtimeSettings, {
+    prompt: parsed.data.prompt,
+    tester: aiConfigTestRouteDeps.tester,
+  });
+  const status = result.ok ? 200 : result.status === 'missing_credentials' ? 400 : 502;
+  res.status(status).json(result);
 });
 
 router.delete('/settings/ai-configs/:configId', (req, res) => {
@@ -1978,8 +2006,8 @@ const collaborationStartSchema = z.object({
 });
 
 const plannerDecisionSchema: z.ZodType<PlannerDecision> = z.object({
-  mode: z.enum(['pause_after_suggestion', 'auto_continue']),
-  status: z.enum(['suggested', 'dispatching', 'completed', 'blocked']),
+  mode: z.enum(['pause_after_suggestion', 'auto_continue', 'dispatch_next']),
+  status: z.enum(['suggested', 'dispatching', 'completed', 'blocked', 'needs_fix']),
   summary: z.string().trim().min(1),
   next_steps: z.array(z.object({
     agent_id: z.string().trim().min(1),

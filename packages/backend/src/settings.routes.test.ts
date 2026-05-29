@@ -1,33 +1,114 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
+import { IncomingMessage, ServerResponse, type OutgoingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Duplex } from 'node:stream';
 import test from 'node:test';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-settings-routes-')), 'test.db');
 
-const { router } = await import('./routes.js');
+const { settingsRepo } = await import('./repos/settings.js');
+const { router, setAiConfigTestRouteDeps } = await import('./routes.js');
 const express = (await import('express')).default;
 
 const app = express();
 app.use(express.json());
 app.use('/api', router);
 
+class InMemorySocket extends Duplex {
+  _read(): void {}
+
+  _write(_chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    callback();
+  }
+}
+
+function toResponseHeaders(headers: OutgoingHttpHeaders): Headers {
+  const responseHeaders = new Headers();
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) responseHeaders.append(name, item);
+    } else {
+      responseHeaders.set(name, String(value));
+    }
+  }
+  return responseHeaders;
+}
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  const server = app.listen(0, '127.0.0.1');
-  try {
-    await new Promise<void>((resolve, reject) => {
-      server.once('listening', () => resolve());
-      server.once('error', reject);
+  const serializedRequest = new Request(`http://127.0.0.1${path}`, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+  });
+  const body = init.body === undefined || init.body === null
+    ? null
+    : Buffer.from(await serializedRequest.arrayBuffer());
+  const socket = new InMemorySocket();
+  const req = new IncomingMessage(socket as unknown as import('node:net').Socket);
+  req.method = init.method ?? 'GET';
+  req.url = path;
+  req.headers = Object.fromEntries(serializedRequest.headers);
+  req.httpVersion = '1.1';
+  req.httpVersionMajor = 1;
+  req.httpVersionMinor = 1;
+  if (body) {
+    req.headers['content-length'] = String(body.byteLength);
+  }
+
+  const res = new ServerResponse(req);
+  res.assignSocket(socket as unknown as import('node:net').Socket);
+
+  const chunks: Buffer[] = [];
+  res.write = ((chunk: unknown, encoding?: BufferEncoding | ((error?: Error | null) => void), callback?: (error?: Error | null) => void) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') encoding();
+    if (callback) callback();
+    return true;
+  }) as typeof res.write;
+  res.end = ((chunk?: unknown, encoding?: BufferEncoding | (() => void), callback?: () => void) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') encoding();
+    if (callback) callback();
+    res.emit('finish');
+    res.emit('close');
+    return res;
+  }) as typeof res.end;
+
+  const responsePromise = new Promise<Response>((resolve, reject) => {
+    res.once('finish', () => {
+      const responseBody = res.statusCode === 204 || res.statusCode === 304 ? null : Buffer.concat(chunks);
+      resolve(new Response(responseBody, {
+        status: res.statusCode,
+        headers: toResponseHeaders(res.getHeaders()),
+      }));
     });
-    const address = server.address();
-    assert(address && typeof address === 'object');
-    return await fetch(`http://127.0.0.1:${address.port}${path}`, {
-      ...init,
-      headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+    (app as unknown as { handle: (...args: unknown[]) => void }).handle(req, res, (error: unknown) => {
+      if (error) reject(error);
     });
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  if (body) {
+    req.push(body);
+  }
+  req.push(null);
+  req.complete = true;
+
+  return responsePromise;
+}
+
+test.afterEach(() => {
+  setAiConfigTestRouteDeps({});
+});
+
+function clearAiConfigs(): void {
+  for (const config of settingsRepo.listAiConfigs()) {
+    settingsRepo.deleteAiConfig(config.id);
   }
 }
 
@@ -118,6 +199,8 @@ test('settings routes reject removed fallback_route mode', async () => {
 });
 
 test('settings routes persist AI configs and keep the selected config after refetch', async () => {
+  clearAiConfigs();
+
   const createPrimaryRes = await request('/api/settings/ai-configs', {
     method: 'POST',
     body: JSON.stringify({
@@ -176,6 +259,8 @@ test('settings routes persist AI configs and keep the selected config after refe
 });
 
 test('settings routes preserve config api key on edit and auto-switch when deleting active config', async () => {
+  clearAiConfigs();
+
   const firstRes = await request('/api/settings/ai-configs', {
     method: 'POST',
     body: JSON.stringify({
@@ -223,4 +308,148 @@ test('settings routes preserve config api key on edit and auto-switch when delet
   assert.equal(fetched.active_ai_config_id, second.id);
   assert.equal(fetched.langchain_planner_model, 'second-edited-model');
   assert.equal(fetched.ai_configs.length, 1);
+});
+
+test('settings route tests a saved AI config without exposing api key or activating it', async () => {
+  clearAiConfigs();
+
+  const invocations: string[] = [];
+  setAiConfigTestRouteDeps({
+    tester: {
+      async invoke(messages) {
+        invocations.push(String(messages[1]?.content ?? ''));
+        return ' route model ok ';
+      },
+    },
+  });
+
+  const createActiveRes = await request('/api/settings/ai-configs', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Active route test',
+      langchain_planner_model: 'active-route-model',
+      openai_base_url: 'https://active-route.example/v1',
+      openai_api_key: 'sk-active-route1234',
+      activate: true,
+    }),
+  });
+  assert.equal(createActiveRes.status, 201);
+  const active = await createActiveRes.json() as Record<string, unknown>;
+
+  const createCandidateRes = await request('/api/settings/ai-configs', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Candidate route test',
+      langchain_planner_model: 'candidate-route-model',
+      openai_base_url: 'https://candidate-route.example/v1',
+      openai_api_key: 'sk-candidate-route5678',
+    }),
+  });
+  assert.equal(createCandidateRes.status, 201);
+  const candidate = await createCandidateRes.json() as Record<string, unknown>;
+
+  const testRes = await request(`/api/settings/ai-configs/${candidate.id}/test`, {
+    method: 'POST',
+    body: JSON.stringify({ prompt: 'route connectivity check' }),
+  });
+  assert.equal(testRes.status, 200);
+  const result = await testRes.json() as Record<string, unknown>;
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'success');
+  assert.equal(result.model, 'candidate-route-model');
+  assert.equal(result.baseURL, 'https://candidate-route.example/v1');
+  assert.equal(result.output, 'route model ok');
+  assert.equal(typeof result.tested_at, 'number');
+  assert.deepEqual(invocations, ['route connectivity check']);
+  assert.equal('openai_api_key' in result, false);
+  assert.equal(JSON.stringify(result).includes('sk-candidate-route5678'), false);
+
+  const systemRes = await request('/api/settings/system');
+  assert.equal(systemRes.status, 200);
+  const system = await systemRes.json() as Record<string, unknown>;
+  assert.equal(system.active_ai_config_id, active.id);
+});
+
+test('settings route returns sanitized model test failures and missing configs', async () => {
+  clearAiConfigs();
+
+  setAiConfigTestRouteDeps({
+    tester: {
+      async invoke() {
+        throw new Error('Authorization: Bearer sk-failing-route9999 failed');
+      },
+    },
+  });
+
+  const createRes = await request('/api/settings/ai-configs', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'Failing route test',
+      langchain_planner_model: 'failing-route-model',
+      openai_base_url: 'https://failing-route.example/v1',
+      openai_api_key: 'sk-failing-route9999',
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const config = await createRes.json() as Record<string, unknown>;
+
+  const testRes = await request(`/api/settings/ai-configs/${config.id}/test`, {
+    method: 'POST',
+    body: JSON.stringify({ prompt: 'fail with sk-failing-route9999' }),
+  });
+  assert.equal(testRes.status, 502);
+  const failure = await testRes.json() as Record<string, unknown>;
+  assert.equal(failure.ok, false);
+  assert.equal(failure.status, 'failed');
+  assert.equal(failure.model, 'failing-route-model');
+  assert.equal(failure.output, null);
+  assert.equal(typeof failure.tested_at, 'number');
+  assert.match(String(failure.error), /\[REDACTED/);
+  assert.equal(String(failure.error).includes('sk-failing-route9999'), false);
+
+  const missingRes = await request('/api/settings/ai-configs/missing-config/test', {
+    method: 'POST',
+  });
+  assert.equal(missingRes.status, 404);
+});
+
+test('settings route reports missing API key without invoking model tester', async () => {
+  clearAiConfigs();
+
+  let invoked = false;
+  setAiConfigTestRouteDeps({
+    tester: {
+      async invoke() {
+        invoked = true;
+        return 'unexpected';
+      },
+    },
+  });
+
+  const createRes = await request('/api/settings/ai-configs', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: 'No key route test',
+      langchain_planner_model: 'no-key-route-model',
+      openai_base_url: 'https://no-key-route.example/v1',
+      openai_api_key: null,
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const config = await createRes.json() as Record<string, unknown>;
+
+  const testRes = await request(`/api/settings/ai-configs/${config.id}/test`, {
+    method: 'POST',
+  });
+  assert.equal(testRes.status, 400);
+  const result = await testRes.json() as Record<string, unknown>;
+  assert.equal(invoked, false);
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'missing_credentials');
+  assert.equal(result.model, 'no-key-route-model');
+  assert.equal(result.baseURL, 'https://no-key-route.example/v1');
+  assert.equal(result.output, null);
+  assert.equal(result.error, 'AI config requires both model and API key');
+  assert.equal(typeof result.tested_at, 'number');
+  assert.equal('openai_api_key' in result, false);
 });

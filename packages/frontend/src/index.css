@@ -769,8 +769,8 @@
     width: 100%;
     min-height: 100%;
     flex-direction: column;
-    gap: 14px;
-    padding: 18px 20px 20px;
+    gap: 10px;
+    padding: 14px 16px 16px;
   }
   .ai-conversation-empty {
     display: grid;
@@ -846,11 +846,11 @@
   }
   .ai-message-header {
     display: flex;
-    min-height: 34px;
+    min-height: 30px;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     border-bottom: 1px solid rgba(255,255,255,0.42);
-    padding: 7px 10px 6px;
+    padding: 5px 9px 4px;
   }
   .ai-message-row--user .ai-message-header {
     border-bottom-color: rgba(255,255,255,0.20);
@@ -914,33 +914,35 @@
     color: var(--color-accent);
   }
   .ai-message-body {
-    padding: 10px 12px 11px;
-    font-size: 13.5px;
-    line-height: 1.58;
+    padding: 8px 10px 9px;
+    font-size: 13px;
+    line-height: 1.52;
   }
   .message-reply-reference {
     display: grid;
     width: 100%;
-    gap: 2px;
-    margin-bottom: 9px;
+    gap: 1px;
+    margin-bottom: 6px;
     border-left: 2px solid var(--color-accent);
-    border-radius: 7px;
+    border-radius: 6px;
     background: var(--color-surface-raised);
-    padding: 7px 9px;
+    padding: 4px 7px;
     text-align: left;
   }
   .message-reply-reference span {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: var(--color-accent);
   }
   .message-reply-reference small {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     overflow: hidden;
     color: var(--color-muted);
-    font-size: 12px;
-    line-height: 1.4;
+    font-size: 10.5px;
+    line-height: 1.25;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .ai-message-body--stream {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -2537,21 +2539,21 @@
     border-left: 2px solid color-mix(in srgb, var(--color-accent) 42%, var(--color-border));
     border-radius: 0 8px 8px 0;
     background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 6%, transparent), transparent 54%);
-    padding: 6px 9px 6px 11px;
+    padding: 4px 8px 4px 9px;
     color: var(--color-fg);
   }
 
   .agent-transcript-text .markdown-preview {
-    gap: 6px;
+    gap: 4px;
   }
 
   .agent-transcript-text .markdown-preview p,
   .agent-transcript-text .markdown-preview li,
   .agent-transcript-text .markdown-preview blockquote {
     color: color-mix(in srgb, var(--color-fg) 94%, var(--color-accent));
-    font-size: 14px;
+    font-size: 12.5px;
     font-weight: 450;
-    line-height: 1.62;
+    line-height: 1.48;
   }
 
   .agent-transcript-text .markdown-preview h1,
@@ -3728,7 +3730,7 @@
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     word-break: break-word;
   }
 

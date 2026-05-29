@@ -360,8 +360,6 @@ function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
   if (!isRecord(value)) return null;
   const candidate = isRecord(value.planner_decision) ? value.planner_decision : value;
   if (
-    !isPlannerExecutionMode(candidate.mode) ||
-    !isPlannerDecisionStatus(candidate.status) ||
     typeof candidate.summary !== 'string' ||
     !candidate.summary.trim() ||
     typeof candidate.awaiting_user_confirmation !== 'boolean' ||
@@ -369,6 +367,14 @@ function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
   ) {
     return null;
   }
+
+  const hasValidNextSteps = Array.isArray(candidate.next_steps) && candidate.next_steps.length > 0;
+  const mode: PlannerDecision['mode'] = isPlannerExecutionMode(candidate.mode)
+    ? candidate.mode
+    : 'pause_after_suggestion';
+  const status: PlannerDecision['status'] = isPlannerDecisionStatus(candidate.status)
+    ? candidate.status
+    : hasValidNextSteps ? 'suggested' : 'suggested';
 
   const next_steps = candidate.next_steps
     .map((step) => {
@@ -389,8 +395,8 @@ function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
     .filter((step): step is PlannerDecision['next_steps'][number] => Boolean(step));
 
   return {
-    mode: candidate.mode,
-    status: candidate.status,
+    mode,
+    status,
     summary: candidate.summary.trim(),
     next_steps,
     awaiting_user_confirmation: candidate.awaiting_user_confirmation,
@@ -398,11 +404,11 @@ function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
 }
 
 function isPlannerExecutionMode(value: unknown): value is PlannerDecision['mode'] {
-  return value === 'pause_after_suggestion' || value === 'auto_continue';
+  return value === 'pause_after_suggestion' || value === 'auto_continue' || value === 'dispatch_next';
 }
 
 function isPlannerDecisionStatus(value: unknown): value is PlannerDecision['status'] {
-  return value === 'suggested' || value === 'dispatching' || value === 'completed' || value === 'blocked';
+  return value === 'suggested' || value === 'dispatching' || value === 'completed' || value === 'blocked' || value === 'needs_fix';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

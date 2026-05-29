@@ -47,6 +47,13 @@ export interface PlannerDispatchInput {
   planner_decision: PlannerDecision;
 }
 
+export function shouldShowPlannerDecisionPanel(input: {
+  isUser: boolean;
+  decision?: PlannerDecision;
+}): boolean {
+  return !input.isUser && Boolean(input.decision?.awaiting_user_confirmation);
+}
+
 export function createDefaultReplyTarget(
   messages: Message[],
   excludedMessageIds: ReadonlySet<string> = new Set(),
@@ -144,8 +151,10 @@ export function createPlannerDispatchInput(
 }
 
 export function hasDispatchablePlannerSteps(decision: PlannerDecision): boolean {
-  return decision.mode === 'pause_after_suggestion' &&
-    decision.status === 'suggested' &&
+  const isDispatchableMode = decision.mode === 'pause_after_suggestion' || decision.mode === 'dispatch_next';
+  const isDispatchableStatus = decision.status === 'suggested' || decision.status === 'needs_fix';
+  return isDispatchableMode &&
+    isDispatchableStatus &&
     decision.awaiting_user_confirmation &&
     decision.next_steps.length > 0;
 }

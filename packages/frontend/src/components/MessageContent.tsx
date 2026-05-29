@@ -58,10 +58,13 @@ function parseMessage(content: string): MessagePart[] {
     if (match.index > lastIndex) {
       parts.push({ type: 'text', value: content.slice(lastIndex, match.index) });
     }
+    // info string 里语言标记后可能紧跟正文首字符（如 ```json{ 把 { 粘在语言行），
+    // 需拆出语言前缀，把余下内容拼回正文，避免误把 "json{" 当语言名、并丢失开头的 {。
+    const { language, extra } = splitFenceInfo(match[1]);
     parts.push({
       type: 'code',
-      language: normalizeFenceLanguage(match[1]),
-      value: match[2] ?? '',
+      language,
+      value: extra + (match[2] ?? ''),
     });
     lastIndex = match.index + match[0].length;
   }
@@ -75,6 +78,17 @@ function parseMessage(content: string): MessagePart[] {
 
 function normalizeFenceLanguage(rawLanguage: string | undefined): string {
   return rawLanguage?.trim().split(/\s+/)[0] || 'text';
+}
+
+// 拆分围栏 info string：取合法语言标识前缀作为语言；若其后紧贴非空白字符（如 ```json{ 的 {），
+// 视为被粘进围栏行的正文并拼回正文；空白分隔的部分按围栏元信息丢弃。
+function splitFenceInfo(rawInfo: string | undefined): { language: string; extra: string } {
+  const info = rawInfo ?? '';
+  const langMatch = info.match(/^\s*([A-Za-z0-9_.+#/-]+)/);
+  if (!langMatch) return { language: normalizeFenceLanguage(info), extra: '' };
+  const afterLang = info.slice(langMatch[0].length);
+  const gluedMatch = afterLang.match(/^\S+/);
+  return { language: normalizeFenceLanguage(langMatch[1]), extra: gluedMatch?.[0] ?? '' };
 }
 
 export function MessageContent({

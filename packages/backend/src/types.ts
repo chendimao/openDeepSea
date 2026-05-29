@@ -669,7 +669,7 @@ export interface MessageReplyMetadata {
   excerpt: string;
 }
 
-export type PlannerExecutionMode = 'pause_after_suggestion' | 'auto_continue';
+export type PlannerExecutionMode = 'pause_after_suggestion' | 'auto_continue' | 'dispatch_next';
 
 export interface PlannerDecisionStep {
   agent_id: string;
@@ -678,7 +678,7 @@ export interface PlannerDecisionStep {
 
 export interface PlannerDecision {
   mode: PlannerExecutionMode;
-  status: 'suggested' | 'dispatching' | 'completed' | 'blocked';
+  status: 'suggested' | 'dispatching' | 'completed' | 'blocked' | 'needs_fix';
   summary: string;
   next_steps: PlannerDecisionStep[];
   awaiting_user_confirmation: boolean;

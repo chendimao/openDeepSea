@@ -362,6 +362,31 @@ test('settingsRepo updates AI configs while preserving api keys unless explicitl
   assert.equal(settingsRepo.getLangChainPlannerSettings().openai_api_key, null);
 });
 
+test('settingsRepo reads a specific AI config as runtime planner settings without activating it', () => {
+  clearAiConfigs();
+  const active = settingsRepo.createAiConfig({
+    name: 'Active',
+    langchain_planner_model: 'active-model',
+    openai_base_url: 'https://active.example/v1',
+    openai_api_key: 'sk-active1234',
+    activate: true,
+  });
+  const candidate = settingsRepo.createAiConfig({
+    name: 'Candidate',
+    langchain_planner_model: ' candidate-model ',
+    openai_base_url: ' https://candidate.example/v1 ',
+    openai_api_key: ' sk-candidate1234 ',
+  });
+
+  assert.deepEqual(settingsRepo.getAiConfigRuntimeSettings(candidate.id), {
+    langchain_planner_model: 'candidate-model',
+    openai_api_key: 'sk-candidate1234',
+    openai_base_url: 'https://candidate.example/v1',
+  });
+  assert.equal(settingsRepo.getSystem().active_ai_config_id, active.id);
+  assert.deepEqual(settingsRepo.getAiConfigRuntimeSettings('missing-config'), null);
+});
+
 test('settingsRepo deleting the active AI config switches to the most recently updated remaining config', () => {
   clearAiConfigs();
   const older = settingsRepo.createAiConfig({

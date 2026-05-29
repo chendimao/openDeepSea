@@ -14,6 +14,7 @@ import {
   createDefaultReplyTarget,
   createPlannerDispatchInput,
   hasDispatchablePlannerSteps,
+  shouldShowPlannerDecisionPanel,
   createReplyTarget,
   mergeMessageStreamEvent,
   mergeMessageStreamTrace,
@@ -161,16 +162,36 @@ test('hasDispatchablePlannerSteps only enables continue when planner has concret
     mode: 'auto_continue',
     status: 'suggested',
     summary: '自动派发',
-    next_steps: [{ agent_id: 'qa-tester', goal: '验证计数器页面' }],
+    next_steps: [{ agent_id: 'qa-tester', goal: '验证导航页面' }],
     awaiting_user_confirmation: false,
   }), false);
   assert.equal(hasDispatchablePlannerSteps({
     mode: 'auto_continue',
     status: 'suggested',
     summary: '自动派发不应显示按钮',
-    next_steps: [{ agent_id: 'qa-tester', goal: '验证计数器页面' }],
+    next_steps: [{ agent_id: 'qa-tester', goal: '验证导航页面' }],
     awaiting_user_confirmation: true,
   }), false);
+});
+
+test('shouldShowPlannerDecisionPanel only shows pending non-user decisions', () => {
+  const pendingDecision = {
+    mode: 'pause_after_suggestion' as const,
+    status: 'suggested' as const,
+    summary: '建议派发',
+    next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
+    awaiting_user_confirmation: true,
+  };
+  const completedDecision = {
+    ...pendingDecision,
+    status: 'completed' as const,
+    awaiting_user_confirmation: false,
+  };
+
+  assert.equal(shouldShowPlannerDecisionPanel({ isUser: false, decision: pendingDecision }), true);
+  assert.equal(shouldShowPlannerDecisionPanel({ isUser: false, decision: completedDecision }), false);
+  assert.equal(shouldShowPlannerDecisionPanel({ isUser: true, decision: pendingDecision }), false);
+  assert.equal(shouldShowPlannerDecisionPanel({ isUser: false }), false);
 });
 
 test('findPreviousUserMessage selects the user prompt before a failed agent response', () => {

@@ -1361,7 +1361,12 @@ function PlannerDecisionPanel({
 }
 
 function formatPlannerMode(mode: PlannerDecision['mode']): string {
-  return mode === 'auto_continue' ? '自动继续' : '建议后暂停';
+  const labels: Record<PlannerDecision['mode'], string> = {
+    pause_after_suggestion: '建议后暂停',
+    auto_continue: '自动继续',
+    dispatch_next: '继续派发',
+  };
+  return labels[mode] ?? mode;
 }
 
 function formatPlannerStatus(status: PlannerDecision['status']): string {
@@ -1370,8 +1375,9 @@ function formatPlannerStatus(status: PlannerDecision['status']): string {
     dispatching: '派发中',
     completed: '已完成',
     blocked: '已阻塞',
+    needs_fix: '需修复',
   };
-  return labels[status];
+  return labels[status] ?? status;
 }
 
 function MessageAttachments({ attachments }: { attachments: MessageAttachmentMetadata[] }) {

@@ -76,7 +76,7 @@ test('room creation applies the selected crew template with executable workflow 
   assert.equal(planner?.memory_scope, 'room');
   assert.equal(backend?.acp_permission_mode, 'workspace-write');
   assert.deepEqual(backend?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(backend?.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(backend?.workspace_policy, { read: ['.'], write: ['.'] });
   assert.equal(backend?.memory_scope, 'agent');
   assert.equal(reviewer?.acp_permission_mode, 'read-only');
   assert.deepEqual(reviewer?.tool_policy, { allowed: ['read_files', 'run_shell'] });
@@ -123,7 +123,7 @@ test('batch-adding built-in global agents preserves workflow metadata', async ()
   assert.equal(executor?.acp_permission_mode, 'workspace-write');
   assert.equal(executor?.runtime_backend, 'acp');
   assert.deepEqual(executor?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(executor?.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(executor?.workspace_policy, { read: ['.'], write: ['.'] });
   assert.equal(executor?.memory_scope, 'agent');
   assert.equal(Object.hasOwn(executor as object, 'runtime_profile_version'), false);
 });
@@ -226,7 +226,7 @@ test('built-in template migrates legacy room runtime policy once without overwri
   const migrated = roomAgentRepo.applyBuiltInTemplate(agent.id, 'backend-executor');
   assert.equal(migrated?.acp_permission_mode, 'workspace-write');
   assert.deepEqual(migrated?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(migrated?.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(migrated?.workspace_policy, { read: ['.'], write: ['.'] });
 
   roomAgentRepo.setAcp(agent.id, {
     acp_enabled: true,
@@ -292,7 +292,7 @@ test('re-adding an existing built-in agent migrates legacy room runtime policy o
   const migrated = roomAgentRepo.get(agent.id);
   assert.equal(migrated?.acp_permission_mode, 'workspace-write');
   assert.deepEqual(migrated?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(migrated?.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(migrated?.workspace_policy, { read: ['.'], write: ['.'] });
 
   roomAgentRepo.setAcp(agent.id, {
     acp_enabled: true,
@@ -356,7 +356,7 @@ test('listing a room migrates legacy non-planner built-in runtime policy without
   const listed = roomAgentRepo.listByRoom(room.id).find((agent) => agent.id === backend.id);
   assert.equal(listed?.acp_permission_mode, 'workspace-write');
   assert.deepEqual(listed?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['.'] });
   assert.equal(Object.hasOwn(listed as object, 'runtime_profile_version'), false);
 
   const reviewer = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'reviewer');
@@ -397,7 +397,7 @@ test('listing a room migrates legacy non-planner built-in runtime policy without
   assert.deepEqual(customized?.workspace_policy, { read: [], write: [] });
 });
 
-test('listing a room upgrades default technical writer to docs and commit boundary', async () => {
+test('listing a room upgrades default technical writer to root write and commit boundary', async () => {
   const project = createProject('Technical Writer Runtime Migration Project');
   const roomRes = await request(`/api/projects/${project.id}/rooms`, {
     method: 'POST',
@@ -430,11 +430,11 @@ test('listing a room upgrades default technical writer to docs and commit bounda
 
   assert.equal(listed?.acp_permission_mode, 'workspace-write');
   assert.deepEqual(listed?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] });
-  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['docs', '.git'] });
+  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['.'] });
   assert.equal(listed?.memory_scope, 'agent');
 });
 
-test('listing a room upgrades docs-only technical writer to commit-capable boundary', async () => {
+test('listing a room upgrades docs-only technical writer to root write boundary', async () => {
   const project = createProject('Technical Writer Commit Migration Project');
   const roomRes = await request(`/api/projects/${project.id}/rooms`, {
     method: 'POST',
@@ -458,7 +458,7 @@ test('listing a room upgrades docs-only technical writer to commit-capable bound
   const listed = roomAgentRepo.listByRoom(room.id).find((agent) => agent.id === writer.id);
 
   assert.deepEqual(listed?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] });
-  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['docs', '.git'] });
+  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['.'] });
 });
 
 test('listing a room links and migrates legacy built-in room agent without global reference', async () => {
@@ -499,7 +499,7 @@ test('listing a room links and migrates legacy built-in room agent without globa
   assert.equal(listed?.global_agent_id, backend.id);
   assert.equal(listed?.acp_permission_mode, 'workspace-write');
   assert.deepEqual(listed?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
-  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['packages/backend'] });
+  assert.deepEqual(listed?.workspace_policy, { read: ['.'], write: ['.'] });
   assert.equal(Object.hasOwn(listed as object, 'runtime_profile_version'), false);
 });
 

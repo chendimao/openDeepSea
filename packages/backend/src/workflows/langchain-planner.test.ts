@@ -50,6 +50,21 @@ test('getLangChainPlannerConfig falls back to database settings and lets env ove
   assert.equal(overridden.baseURL, 'https://env.example/v1');
 });
 
+test('getLangChainPlannerConfig can read an explicit runtime settings object without env', () => {
+  const config = getLangChainPlannerConfig({}, {
+    langchain_planner_model: ' runtime-model ',
+    openai_api_key: ' runtime-key ',
+    openai_base_url: ' https://runtime.example ',
+  });
+
+  assert.deepEqual(config, {
+    enabled: true,
+    model: 'runtime-model',
+    apiKey: 'runtime-key',
+    baseURL: 'https://runtime.example/v1',
+  });
+});
+
 test('buildChatOpenAIFields passes api key and baseURL to ChatOpenAI configuration', () => {
   assert.deepEqual(
     buildChatOpenAIFields({

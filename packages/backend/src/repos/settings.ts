@@ -507,6 +507,16 @@ export const settingsRepo = {
     };
   },
 
+  getAiConfigRuntimeSettings(id: string): LangChainPlannerSettings | null {
+    const row = getAiConfigRow(id);
+    if (!row) return null;
+    return {
+      langchain_planner_model: normalizedOptionalString(row.langchain_planner_model),
+      openai_api_key: normalizedOptionalString(row.openai_api_key),
+      openai_base_url: normalizedOptionalString(row.openai_base_url),
+    };
+  },
+
   listAiConfigs(): AiConfig[] {
     return listAiConfigRows().map(toSafeAiConfig);
   },
