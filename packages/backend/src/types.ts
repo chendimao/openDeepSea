@@ -814,6 +814,8 @@ export interface TaskExecutor {
   agent_id: string;
   acp_session_id: string | null;
   status: 'idle' | 'running' | 'blocked' | 'failed';
+  acp_session_handoff_pending: 0 | 1;
+  acp_session_handoff_reason: AcpSessionHandoffReason | null;
   created_at: number;
   updated_at: number;
 }

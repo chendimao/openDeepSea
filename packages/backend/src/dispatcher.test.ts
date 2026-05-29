@@ -22,6 +22,7 @@ const { settingsRepo } = await import('./repos/settings.js');
 const { skillRepo } = await import('./skills/repo.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
+const { taskExecutorRepo } = await import('./repos/task-executors.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { resourceAssetRepo } = await import('./repos/resource-assets.js');
 const { messageUploadDir } = await import('./uploads.js');
@@ -1582,6 +1583,233 @@ test('respondAsAgent clears pending handoff after passing it to the next ACP tur
     assert.equal(capturedHandoffMode, 'force');
     assert.equal(updated?.acp_session_handoff_pending, 0);
     assert.equal(updated?.acp_session_handoff_reason, null);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent builds handoff from the active task context only', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-handoff-scope-'));
+  const project = projectRepo.create({ name: `task-handoff-scope-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor', agent_name: '执行者' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'global-room-session',
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+  const activeTask = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Active task' });
+  const otherTask = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Other task' });
+  taskExecutorRepo.ensure({
+    task_id: activeTask.id,
+    room_id: room.id,
+    room_agent_id: acpAgent.id,
+    agent_id: acpAgent.agent_id,
+    acp_session_id: 'active-task-session',
+  });
+  taskExecutorRepo.ensure({
+    task_id: otherTask.id,
+    room_id: room.id,
+    room_agent_id: acpAgent.id,
+    agent_id: acpAgent.agent_id,
+    acp_session_id: 'other-task-session',
+  });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'ACTIVE_TASK_USER_CONTEXT',
+    message_type: 'text',
+    metadata: { task_id: activeTask.id },
+  });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'OTHER_TASK_USER_CONTEXT',
+    message_type: 'text',
+    metadata: { task_id: otherTask.id },
+  });
+  agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: acpAgent.id,
+    agent_id: acpAgent.agent_id,
+    backend: 'codex',
+    acp_session_id: 'active-task-session',
+    task_id: activeTask.id,
+    prompt: 'active old prompt',
+  });
+  const activeRun = agentRunRepo.listByRoom(room.id, 10).find((run) => run.task_id === activeTask.id);
+  assert.ok(activeRun);
+  agentRunRepo.appendStdout(activeRun.id, 'ACTIVE_TASK_RUN_CONTEXT');
+  agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: acpAgent.id,
+    agent_id: acpAgent.agent_id,
+    backend: 'codex',
+    acp_session_id: 'other-task-session',
+    task_id: otherTask.id,
+    prompt: 'other old prompt',
+  });
+  const otherRun = agentRunRepo.listByRoom(room.id, 10).find((run) => run.task_id === otherTask.id);
+  assert.ok(otherRun);
+  agentRunRepo.appendStdout(otherRun.id, 'OTHER_TASK_RUN_CONTEXT');
+
+  const originalAdapter = adapters.codex;
+  let capturedSessionId: string | null | undefined;
+  let capturedHandoff: string | null | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedSessionId = args.sessionId;
+      capturedHandoff = args.sessionHandoff;
+      args.onChunk({ stream: 'stdout', text: '继续 active task。' });
+      return { exitCode: 0, sessionId: args.sessionId, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      taskId: activeTask.id,
+      prompt: '继续 active task',
+    });
+
+    assert.equal(capturedSessionId, 'active-task-session');
+    assert.match(capturedHandoff ?? '', /旧 session：active-task-session/);
+    assert.match(capturedHandoff ?? '', /ACTIVE_TASK_USER_CONTEXT/);
+    assert.match(capturedHandoff ?? '', /ACTIVE_TASK_RUN_CONTEXT/);
+    assert.doesNotMatch(capturedHandoff ?? '', /OTHER_TASK_USER_CONTEXT/);
+    assert.doesNotMatch(capturedHandoff ?? '', /OTHER_TASK_RUN_CONTEXT/);
+    assert.doesNotMatch(capturedHandoff ?? '', /global-room-session/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent stores pending handoff on task executor after task session rotation', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-pending-handoff-store-'));
+  const project = projectRepo.create({ name: `task-pending-handoff-store-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor', agent_name: '执行者' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'global-room-session',
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Task with rotated session' });
+  const executor = taskExecutorRepo.ensure({
+    task_id: task.id,
+    room_id: room.id,
+    room_agent_id: acpAgent.id,
+    agent_id: acpAgent.agent_id,
+    acp_session_id: 'old-task-session',
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke() {
+      return {
+        exitCode: 1,
+        sessionId: 'fresh-task-session-after-reset',
+        stderr: 'system-role history is not supported',
+        sessionHandoffPending: true,
+        sessionHandoffReason: 'automatic_rotation_after_events',
+      };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      taskId: task.id,
+      prompt: '继续',
+    });
+
+    const updatedExecutor = taskExecutorRepo.get(executor.id);
+    const updatedAgent = roomAgentRepo.get(acpAgent.id);
+    assert.equal(updatedExecutor?.acp_session_id, 'fresh-task-session-after-reset');
+    assert.equal(updatedExecutor?.acp_session_handoff_pending, 1);
+    assert.equal(updatedExecutor?.acp_session_handoff_reason, 'automatic_rotation_after_events');
+    assert.equal(updatedAgent?.acp_session_id, 'global-room-session');
+    assert.equal(updatedAgent?.acp_session_handoff_pending, 0);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent does not force task handoff from room agent pending state', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-handoff-room-pending-'));
+  const project = projectRepo.create({ name: `task-handoff-room-pending-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor', agent_name: '执行者' });
+  let acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'global-room-session',
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+  acpAgent = roomAgentRepo.setAcpSessionHandoffPending(
+    acpAgent.id,
+    true,
+    'automatic_rotation_after_events',
+  );
+  assert.ok(acpAgent);
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Task without task pending' });
+  taskExecutorRepo.ensure({
+    task_id: task.id,
+    room_id: room.id,
+    room_agent_id: acpAgent.id,
+    agent_id: acpAgent.agent_id,
+    acp_session_id: 'task-session',
+  });
+  agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: acpAgent.id,
+    agent_id: acpAgent.agent_id,
+    backend: 'codex',
+    task_id: task.id,
+    acp_session_id: 'task-session',
+    prompt: '上一轮 task prompt',
+  });
+
+  const originalAdapter = adapters.codex;
+  let capturedHandoffMode: string | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedHandoffMode = args.sessionHandoffMode;
+      args.onChunk({ stream: 'stdout', text: '继续 task。' });
+      return { exitCode: 0, sessionId: args.sessionId, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      taskId: task.id,
+      prompt: '继续 task',
+    });
+
+    assert.equal(capturedHandoffMode, 'new_session');
+    assert.equal(roomAgentRepo.get(acpAgent.id)?.acp_session_handoff_pending, 1);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

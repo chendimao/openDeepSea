@@ -649,6 +649,8 @@ CREATE TABLE IF NOT EXISTS task_executors (
   agent_id TEXT NOT NULL,
   acp_session_id TEXT,
   status TEXT NOT NULL DEFAULT 'idle',
+  acp_session_handoff_pending INTEGER NOT NULL DEFAULT 0 CHECK (acp_session_handoff_pending IN (0, 1)),
+  acp_session_handoff_reason TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
@@ -938,6 +940,8 @@ CREATE TABLE IF NOT EXISTS task_executors (
   agent_id TEXT NOT NULL,
   acp_session_id TEXT,
   status TEXT NOT NULL DEFAULT 'idle',
+  acp_session_handoff_pending INTEGER NOT NULL DEFAULT 0 CHECK (acp_session_handoff_pending IN (0, 1)),
+  acp_session_handoff_reason TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
@@ -948,6 +952,15 @@ CREATE TABLE IF NOT EXISTS task_executors (
 CREATE INDEX IF NOT EXISTS idx_task_executors_task ON task_executors(task_id, status);
 CREATE INDEX IF NOT EXISTS idx_task_executors_room_agent ON task_executors(room_agent_id, updated_at);
 `);
+
+const taskExecutorColumns = db.prepare('PRAGMA table_info(task_executors)').all() as { name: string }[];
+const taskExecutorColumnNames = new Set(taskExecutorColumns.map((column) => column.name));
+if (!taskExecutorColumnNames.has('acp_session_handoff_pending')) {
+  db.exec('ALTER TABLE task_executors ADD COLUMN acp_session_handoff_pending INTEGER NOT NULL DEFAULT 0 CHECK (acp_session_handoff_pending IN (0, 1))');
+}
+if (!taskExecutorColumnNames.has('acp_session_handoff_reason')) {
+  db.exec('ALTER TABLE task_executors ADD COLUMN acp_session_handoff_reason TEXT');
+}
 
 const memoryColumns = db.prepare('PRAGMA table_info(memory_entries)').all() as { name: string }[];
 const memoryColumnNames = new Set(memoryColumns.map((column) => column.name));

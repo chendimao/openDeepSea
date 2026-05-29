@@ -105,17 +105,28 @@ export function setPlannerExecutionPlanInvokerForTest(invoker?: PlannerExecution
 function buildSessionHandoffForAgent(input: {
   roomId: string;
   agent: RoomAgent;
+  taskExecutor?: ReturnType<typeof taskExecutorRepo.ensure> | null;
   currentPrompt: string;
 }): { text: string; mode: AcpSessionHandoffMode } | null {
   const runs = agentRunRepo.listByRoom(input.roomId, 30);
-  const sameAgentRuns = runs.filter((run) => run.room_agent_id === input.agent.id);
-  const previousSessionId = input.agent.acp_session_id ?? sameAgentRuns.find((run) => run.acp_session_id)?.acp_session_id ?? null;
-  const reason = resolveSessionHandoffReason(input.agent, previousSessionId);
+  const sameAgentRuns = runs.filter((run) =>
+    run.room_agent_id === input.agent.id &&
+    (input.taskExecutor ? run.task_id === input.taskExecutor.task_id : !run.task_id)
+  );
+  const previousSessionId = input.taskExecutor
+    ? input.taskExecutor.acp_session_id ?? sameAgentRuns.find((run) => run.acp_session_id)?.acp_session_id ?? null
+    : input.agent.acp_session_id ?? sameAgentRuns.find((run) => run.acp_session_id)?.acp_session_id ?? null;
+  const reason = input.taskExecutor
+    ? resolveTaskExecutorSessionHandoffReason(input.taskExecutor, previousSessionId)
+    : resolveSessionHandoffReason(input.agent, previousSessionId);
   if (!reason) return null;
 
   const recentUserMessages = messageRepo
     .listByRoom(input.roomId, 20)
-    .filter((message) => message.sender_type === 'user')
+    .filter((message) =>
+      message.sender_type === 'user' &&
+      (!input.taskExecutor || getMessageTaskId(message.metadata) === input.taskExecutor.task_id)
+    )
     .slice(-3)
     .map((message) => ({
       id: message.id,
@@ -138,7 +149,10 @@ function buildSessionHandoffForAgent(input: {
       activityLog: run.activity_log,
     })),
     otherAgentRuns: runs
-      .filter((run) => run.room_agent_id !== input.agent.id)
+      .filter((run) =>
+        run.room_agent_id !== input.agent.id &&
+        (!input.taskExecutor || run.task_id === input.taskExecutor.task_id)
+      )
       .slice(0, 3)
       .map((run) => ({
         id: run.id,
@@ -151,9 +165,12 @@ function buildSessionHandoffForAgent(input: {
     maxChars: 8_000,
   });
   if (!context) return null;
+  const forceHandoff = input.taskExecutor
+    ? input.taskExecutor.acp_session_handoff_pending
+    : input.agent.acp_session_handoff_pending;
   return {
     text: context,
-    mode: input.agent.acp_session_handoff_pending ? 'force' : 'new_session',
+    mode: forceHandoff ? 'force' : 'new_session',
   };
 }
 
@@ -165,6 +182,19 @@ function resolveSessionHandoffReason(
     return agent.acp_session_handoff_reason ?? 'automatic_rotation';
   }
   if (!agent.acp_session_id) {
+    return previousSessionId ? 'manual_new_session' : 'first_session';
+  }
+  return 'resume_unavailable';
+}
+
+function resolveTaskExecutorSessionHandoffReason(
+  executor: ReturnType<typeof taskExecutorRepo.ensure>,
+  previousSessionId: string | null,
+): AcpSessionHandoffReason | null {
+  if (executor.acp_session_handoff_pending) {
+    return executor.acp_session_handoff_reason ?? 'automatic_rotation';
+  }
+  if (!executor.acp_session_id) {
     return previousSessionId ? 'manual_new_session' : 'first_session';
   }
   return 'resume_unavailable';
@@ -689,13 +719,13 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         room_id: roomId,
         room_agent_id: agent.id,
         agent_id: agent.agent_id,
-        acp_session_id: null,
       })
     : null;
   const acpSessionId = taskExecutor?.acp_session_id ?? agent.acp_session_id;
   const sessionHandoff = buildSessionHandoffForAgent({
     roomId,
     agent,
+    taskExecutor,
     currentPrompt: args.prompt,
   });
   const run = agentRunRepo.create({
@@ -992,12 +1022,22 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       });
     }
     if (result.sessionHandoffPending) {
-      roomAgentRepo.setAcpSessionHandoffPending(
-        agent.id,
-        true,
-        result.sessionHandoffReason ?? 'automatic_rotation_after_events',
-      );
-    } else if (agent.acp_session_handoff_pending) {
+      if (taskExecutor) {
+        taskExecutorRepo.setHandoffPending(
+          taskExecutor.id,
+          true,
+          result.sessionHandoffReason ?? 'automatic_rotation_after_events',
+        );
+      } else {
+        roomAgentRepo.setAcpSessionHandoffPending(
+          agent.id,
+          true,
+          result.sessionHandoffReason ?? 'automatic_rotation_after_events',
+        );
+      }
+    } else if (taskExecutor?.acp_session_handoff_pending) {
+      taskExecutorRepo.setHandoffPending(taskExecutor.id, false, null);
+    } else if (!taskExecutor && agent.acp_session_handoff_pending) {
       roomAgentRepo.setAcpSessionHandoffPending(agent.id, false, null);
     }
     if (controller.signal.aborted) {

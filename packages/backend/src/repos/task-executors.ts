@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { TaskExecutor } from '../types.js';
+import type { AcpSessionHandoffReason, TaskExecutor } from '../types.js';
 
 export const taskExecutorRepo = {
   ensure(input: {
@@ -52,6 +52,19 @@ export const taskExecutorRepo = {
        SET acp_session_id = ?, status = 'idle', updated_at = ?
        WHERE id = ?`,
     ).run(acpSessionId, now(), id);
+    return this.get(id);
+  },
+
+  setHandoffPending(
+    id: string,
+    pending: boolean,
+    reason: AcpSessionHandoffReason | null,
+  ): TaskExecutor | undefined {
+    db.prepare(
+      `UPDATE task_executors
+       SET acp_session_handoff_pending = ?, acp_session_handoff_reason = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(pending ? 1 : 0, pending ? reason : null, now(), id);
     return this.get(id);
   },
 
