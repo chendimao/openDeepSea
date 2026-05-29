@@ -5,6 +5,7 @@ import type { AgentTimelineEvent } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import {
   findPreviousUserMessage,
+  shouldUseStreamingDisplayForMessage,
   upsertAgentRun,
 } from './RoomPage';
 import {
@@ -195,6 +196,27 @@ test('findPreviousUserMessage ignores blank user messages', () => {
   const retrySource = findPreviousUserMessage(messages, 2);
 
   assert.equal(retrySource?.id, 'user-valid');
+});
+
+test('shouldUseStreamingDisplayForMessage ignores local streaming state after terminal run', () => {
+  const message = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '后端完整正文',
+  });
+
+  assert.equal(
+    shouldUseStreamingDisplayForMessage(message, createAgentRun({ status: 'completed' }), true),
+    false,
+  );
+  assert.equal(
+    shouldUseStreamingDisplayForMessage(message, createAgentRun({ status: 'running' }), false),
+    true,
+  );
+  assert.equal(
+    shouldUseStreamingDisplayForMessage(message, undefined, true),
+    true,
+  );
 });
 
 test('mergeTraceEvents merges duplicate event ids and appends streaming text fields', () => {

@@ -134,6 +134,7 @@ export function RoomPage() {
   const streamingDisplay = useStreamingMessageDisplay(roomId);
   const appendStreamingChunk = streamingDisplay.appendChunk;
   const finishStreamingMessage = streamingDisplay.finishMessage;
+  const clearStreamingMessage = streamingDisplay.clearMessage;
 
   useEffect(() => {
     setActiveTab('chat');
@@ -303,6 +304,7 @@ export function RoomPage() {
             findAgentRunMessageId(queryClient.getQueryData<Message[]>(['messages', roomId]), event.run);
           if (messageId) {
             finalizedStreamMessageIds.current.add(messageId);
+            clearStreamingMessage(messageId);
             setStreamingMessageIds((prev) => removeStreamingMessageId(prev, messageId));
             streamingRunMessageIds.current.delete(event.run.id);
           }
@@ -323,7 +325,30 @@ export function RoomPage() {
       }
       pendingStreamUpdates.current = [];
     };
-  }, [roomId, queryClient, enqueueStreamUpdate]);
+  }, [roomId, queryClient, enqueueStreamUpdate, clearStreamingMessage]);
+
+  useEffect(() => {
+    if (streamingMessageIds.size === 0 || messages.length === 0) return;
+    const runByMessageId = pairRunsWithAgentMessages(messages, agentRuns);
+    const terminalMessageIds = new Set<string>();
+
+    for (const messageId of streamingMessageIds) {
+      const run = runByMessageId.get(messageId);
+      if (!run || !isTerminalAgentRunStatus(run.status)) continue;
+      terminalMessageIds.add(messageId);
+      finalizedStreamMessageIds.current.add(messageId);
+      finalizedStreamRunIds.current.add(run.id);
+      streamingRunMessageIds.current.delete(run.id);
+    }
+
+    if (terminalMessageIds.size === 0) return;
+    for (const messageId of terminalMessageIds) clearStreamingMessage(messageId);
+    setStreamingMessageIds((prev) => {
+      let next = prev;
+      for (const messageId of terminalMessageIds) next = removeStreamingMessageId(next, messageId);
+      return next;
+    });
+  }, [agentRuns, clearStreamingMessage, messages, streamingMessageIds]);
 
   return (
     <div className="workspace-root" data-testid="room-page">
@@ -483,6 +508,7 @@ function removeStreamingMessageId(prev: Set<string>, messageId: string): Set<str
 type StreamingMessageDisplay = {
   appendChunk: (messageId: string, chunk: string) => void;
   finishMessage: (messageId: string, fullContent: string) => void;
+  clearMessage: (messageId: string) => void;
   getDisplayedContent: (message: Message) => string;
   isAnimating: (messageId: string) => boolean;
 };
@@ -562,6 +588,16 @@ function useStreamingMessageDisplay(roomId: string): StreamingMessageDisplay {
     ensureTimer();
   }, [ensureTimer]);
 
+  const clearMessage = useCallback((messageId: string) => {
+    finalContentRef.current.delete(messageId);
+    setDisplayStates((prev) => {
+      if (!prev.has(messageId)) return prev;
+      const next = new Map(prev);
+      next.delete(messageId);
+      return next;
+    });
+  }, []);
+
   const getDisplayedContent = useCallback((message: Message) => {
     return resolveStreamingDisplayContent(displayStates.get(message.id), message.content);
   }, [displayStates]);
@@ -580,13 +616,25 @@ function useStreamingMessageDisplay(roomId: string): StreamingMessageDisplay {
   return useMemo(() => ({
     appendChunk,
     finishMessage,
+    clearMessage,
     getDisplayedContent,
     isAnimating,
-  }), [appendChunk, finishMessage, getDisplayedContent, isAnimating]);
+  }), [appendChunk, finishMessage, clearMessage, getDisplayedContent, isAnimating]);
 }
 
 function isTerminalAgentRunStatus(status: AgentRun['status']): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'interrupted';
+}
+
+export function shouldUseStreamingDisplayForMessage(
+  message: Message,
+  run: AgentRun | undefined,
+  hasLocalStreamingState: boolean,
+): boolean {
+  if (message.sender_type === 'user' || message.message_type !== 'agent_stream') return false;
+  if (run && isTerminalAgentRunStatus(run.status)) return false;
+  if (run && (run.status === 'running' || run.status === 'queued' || run.status === 'retrying')) return true;
+  return hasLocalStreamingState;
 }
 
 function findAgentRunMessageId(messages: Message[] | undefined, run: AgentRun): string | null {
@@ -859,7 +907,8 @@ function ChatColumn({
           ) : (
             visibleMessages.map((m, index) => {
               const run = runByMessageId.get(m.id);
-              const isStreamingMessage = streamingMessageIds.has(m.id) || streamingDisplay.isAnimating(m.id);
+              const hasLocalStreamingState = streamingMessageIds.has(m.id) || streamingDisplay.isAnimating(m.id);
+              const isStreamingMessage = shouldUseStreamingDisplayForMessage(m, run, hasLocalStreamingState);
               const displayMode = messageDisplayModes[m.id] ?? 'preview';
               return (
                 <MessageBubble
@@ -1057,9 +1106,7 @@ function MessageBubble({
   const renderedContent = displayContent || (message.message_type === 'agent_stream' ? '…' : '');
   const hasContent = Boolean(renderedContent.trim());
   const hasMarkdownDisplayMode = hasContent && isMarkdownMessageContent(renderedContent);
-  const isStreaming = !isUser && message.message_type === 'agent_stream' && (
-    streaming || run?.status === 'running' || run?.status === 'queued' || run?.status === 'retrying'
-  );
+  const isStreaming = shouldUseStreamingDisplayForMessage(message, run, streaming);
   const canReply = !isSystem && hasContent && !isStreaming;
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
   const showPlannerDecisionPanel = shouldShowPlannerDecisionPanel({
