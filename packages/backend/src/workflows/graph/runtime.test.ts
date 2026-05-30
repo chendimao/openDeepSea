@@ -14,11 +14,12 @@ const { workflowRepo } = await import('../../repos/workflows.js');
 const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { messageRepo } = await import('../../repos/messages.js');
 const { settingsRepo } = await import('../../repos/settings.js');
+const { taskEventRepo } = await import('../../repos/task-events.js');
 const { workflowDefinitionRepo } = await import('../../repos/workflow-definitions.js');
 const { createGraphNodes } = await import('./nodes.js');
-const { parseGraphState } = await import('./state.js');
+const { emptyAgentWorkflowState, parseGraphState, serializeGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
-const { continueGraphWorkflow, createGraphWorkflowRun, enqueueGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
+const { continueGraphWorkflow, createGraphWorkflowRun, enqueueGraphWorkflow, retryGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
 const { SUPERPOWERS_GRAPH_VERSION } = await import('./superpowers-runtime.js');
 const { setVerificationCommandRunnerForTests } = await import('./verification.js');
 import type { RespondAsAgentInput } from '../../dispatcher.js';
@@ -44,7 +45,13 @@ test('enqueueGraphWorkflow defers graph node execution until after the current t
     project_id: project.id,
     title: 'Enqueue without synchronous steps',
   });
-  const run = createGraphWorkflowRun(task.id);
+  const run = createLegacyGraphWorkflowRun({
+    projectId: project.id,
+    projectPath: project.path,
+    roomId: room.id,
+    taskId: task.id,
+    taskTitle: task.title,
+  });
 
   enqueueGraphWorkflow(run.id, {
     planner: async () => ({
@@ -77,7 +84,13 @@ test('enqueueGraphWorkflow retries background errors with configured backoff del
     project_id: project.id,
     title: 'Retry transient planner error',
   });
-  const run = createGraphWorkflowRun(task.id);
+  const run = createLegacyGraphWorkflowRun({
+    projectId: project.id,
+    projectPath: project.path,
+    roomId: room.id,
+    taskId: task.id,
+    taskTitle: task.title,
+  });
   const scheduled: Array<{ delayMs: number; retry: () => void }> = [];
   let plannerCalls = 0;
 
@@ -92,19 +105,19 @@ test('enqueueGraphWorkflow retries background errors with configured backoff del
     },
   });
 
-  await flushImmediate();
+  await waitForGraphRuntime(() => plannerCalls === 1 && scheduled.length === 1);
   assert.equal(plannerCalls, 1);
   assert.equal(workflowRepo.getRun(run.id)?.status, 'running');
   assert.deepEqual(scheduled.map((item) => item.delayMs), [10_000]);
 
   scheduled[0]!.retry();
-  await flushImmediate();
+  await waitForGraphRuntime(() => plannerCalls === 2 && scheduled.length === 2);
   assert.equal(plannerCalls, 2);
   assert.equal(workflowRepo.getRun(run.id)?.status, 'running');
   assert.deepEqual(scheduled.map((item) => item.delayMs), [10_000, 20_000]);
 
   scheduled[1]!.retry();
-  await flushImmediate();
+  await waitForGraphRuntime(() => plannerCalls === 3);
 
   const latest = workflowRepo.getRun(run.id);
   const state = parseGraphState(latest?.graph_state ?? null);
@@ -126,7 +139,13 @@ test('enqueueGraphWorkflow blocks background errors after retry backoff is exhau
     project_id: project.id,
     title: 'Retry exhausted planner error',
   });
-  const run = createGraphWorkflowRun(task.id);
+  const run = createLegacyGraphWorkflowRun({
+    projectId: project.id,
+    projectPath: project.path,
+    roomId: room.id,
+    taskId: task.id,
+    taskTitle: task.title,
+  });
   const scheduled: Array<{ delayMs: number; retry: () => void }> = [];
   let plannerCalls = 0;
 
@@ -140,10 +159,13 @@ test('enqueueGraphWorkflow blocks background errors after retry backoff is exhau
     },
   });
 
-  await flushImmediate();
+  await waitForGraphRuntime(() => plannerCalls === 1 && scheduled.length === 1);
   for (let index = 0; index < 4; index += 1) {
     scheduled[index]!.retry();
-    await flushImmediate();
+    await waitForGraphRuntime(() =>
+      plannerCalls === index + 2 &&
+      (index < 3 ? scheduled.length === index + 2 : workflowRepo.getRun(run.id)?.status === 'blocked'),
+    );
   }
 
   const latest = workflowRepo.getRun(run.id);
@@ -2054,6 +2076,8 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
   assert.equal(childTasks.length, 1);
   assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
   assert.equal(graphState?.childTaskIds.length, 1);
+  const childEvents = taskEventRepo.listByTask(childTasks[0]!.id);
+  assert.ok(childEvents.some((event) => event.type === 'task_created'));
 });
 
 test('graph dispatch assigns child tasks by frontend and backend scope hints', async () => {
@@ -2639,6 +2663,102 @@ test('continueGraphWorkflow waits without looping when implementation agent run 
   assert.equal(agentRunRepo.listActiveByWorkflow(run.id).length, 1);
 });
 
+test('retryGraphWorkflow resets active child tasks and records status events', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-retry-child-events-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Retry Child Events', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Runtime Retry Child Events Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  const acceptor = addAcpWorkflowAgent(room.id, 'acceptor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Retry child event recording',
+  });
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: 'Reset me on retry',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'blocked',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+    workflow_definition_snapshot: JSON.stringify({
+      id: 'test-retry-child-events',
+      name: 'Test Retry Child Events',
+      description: null,
+      builtinKey: null,
+      version: 1,
+      definition: createTestWorkflowDefinition(),
+    }),
+  });
+  workflowRepo.updateRun(run.id, { error: 'previous implementation failed' });
+  taskRepo.updateStatus(child.id, 'failed');
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+    plan: {
+      goal: task.title,
+      summary: 'Retry a failed child',
+      assumptions: [],
+      tasks: [{
+        title: child.title,
+        description: child.description ?? '',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Child is retried'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    currentNode: 'execute',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [child.id],
+    supervisorAssignments: [],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'blocked',
+    error: 'previous implementation failed',
+    workflowPlan: null,
+  }));
+
+  const latest = await retryGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  assert.equal(latest.status, 'running');
+  assert.equal(taskRepo.get(child.id)?.status, 'review');
+  const statusEvents = taskEventRepo.listByTask(child.id).filter((event) => event.type === 'task_status_changed');
+  assert.ok(statusEvents.some((event) => event.payload.next_status === 'todo' && event.payload.graph_retry === true));
+  assert.ok(statusEvents.some((event) => event.payload.next_status === 'in_progress'));
+  assert.ok(statusEvents.some((event) => event.payload.next_status === 'review'));
+  assert.equal(roomAgentRepo.get(executor.id)?.id, executor.id);
+  assert.equal(roomAgentRepo.get(reviewer.id)?.id, reviewer.id);
+  assert.equal(roomAgentRepo.get(acceptor.id)?.id, acceptor.id);
+});
+
 test('dispatch node is idempotent when replayed with existing child task ids', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-dispatch-idempotent-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -3011,6 +3131,51 @@ function assertSuperpowersWorkflowRun(run: WorkflowRun): void {
 
 function flushImmediate(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function waitForGraphRuntime(predicate: () => boolean, attempts = 20): Promise<void> {
+  for (let index = 0; index < attempts; index += 1) {
+    await flushImmediate();
+    if (predicate()) return;
+  }
+  throw new Error('timed out waiting for graph runtime condition');
+}
+
+function createLegacyGraphWorkflowRun(input: {
+  projectId: string;
+  projectPath: string;
+  roomId: string;
+  taskId: string;
+  taskTitle: string;
+}): WorkflowRun {
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: input.projectId,
+    roomId: input.roomId,
+    taskId: input.taskId,
+    userGoal: input.taskTitle,
+    projectPath: input.projectPath,
+  });
+  const run = workflowRepo.createRun({
+    room_id: input.roomId,
+    project_id: input.projectId,
+    task_id: input.taskId,
+    status: 'running',
+    current_stage: 'planning',
+    graph_version: 'phase-b-v1',
+    graph_state: serializeGraphState(state),
+    workflow_definition_snapshot: JSON.stringify({
+      id: 'test-legacy-graph',
+      name: 'Test Legacy Graph',
+      description: null,
+      builtinKey: null,
+      version: 1,
+      definition: createTestWorkflowDefinition(),
+    }),
+  });
+  const nextState = { ...state, workflowRunId: run.id };
+  workflowRepo.updateGraphState(run.id, serializeGraphState(nextState));
+  return workflowRepo.getRun(run.id) ?? run;
 }
 
 function listRawStepNodeNames(workflowRunId: string): Array<string | null> {

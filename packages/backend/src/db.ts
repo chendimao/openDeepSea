@@ -623,7 +623,6 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_room ON tasks(room_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_deleted ON tasks(deleted_at);
 
 CREATE TABLE IF NOT EXISTS task_events (
   id TEXT PRIMARY KEY,

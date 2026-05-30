@@ -327,7 +327,7 @@ test('recordTaskEvent persists workflow metadata on a system message', () => {
     taskInput: { title: '补充测试' },
   }).task;
 
-  const message = recordTaskEvent({
+  const { message } = recordTaskEvent({
     roomId,
     taskId: task.id,
     taskTitle: task.title,
@@ -352,7 +352,7 @@ test('recordTaskEvent appends a timeline task event for workflow metadata', () =
     taskInput: { title: '工作流事件流测试' },
   }).task;
 
-  const message = recordTaskEvent({
+  const { message } = recordTaskEvent({
     roomId,
     taskId: task.id,
     taskTitle: task.title,

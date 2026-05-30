@@ -1,6 +1,7 @@
 import { formatMemoryContext } from '../../memory/context.js';
 import { distillFromTask } from '../../memory/distill.js';
 import { runAgentOnce, type RespondAsAgentInput } from '../../dispatcher.js';
+import { db } from '../../db.js';
 import { agentRunRepo } from '../../repos/agent-runs.js';
 import { memoryRepo } from '../../repos/memory.js';
 import { messageRepo } from '../../repos/messages.js';
@@ -13,7 +14,7 @@ import { selectSkills } from '../../skills/selector.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { formatWorkflowContextEntries, workflowContextRepo } from '../../repos/workflow-context.js';
 import { workflowRepo } from '../../repos/workflows.js';
-import { recordTaskEvent } from '../../task-conversation.js';
+import { recordTaskCreatedEvent, recordTaskEvent, recordTaskStatusChanged } from '../../task-conversation.js';
 import type {
   AgentRun,
   AgentRunStatus,
@@ -24,6 +25,7 @@ import type {
   TaskArtifact,
   TaskCreatedFrom,
   TaskEventType,
+  TaskStatus,
   WorkflowRole,
   WorkflowRun,
   WorkflowStep,
@@ -72,6 +74,8 @@ interface WorkflowRuntimeContext {
   recentMessages: string[];
 }
 
+type CreateChildTaskInput = Parameters<typeof taskRepo.create>[0];
+
 export interface GraphTools {
   readWorkflowContext: (workflowRunId: string) => WorkflowRuntimeContext;
   generatePlan: (input: LangChainPlannerInput, options?: LangChainPlannerOptions) => Promise<ParsedPlan>;
@@ -79,8 +83,8 @@ export interface GraphTools {
   createGraphStep: typeof workflowRepo.createStep;
   updateGraphStep: typeof workflowRepo.updateStep;
   createArtifact: typeof workflowRepo.createArtifact;
-  createChildTask: typeof taskRepo.create;
-  updateTaskStatus: typeof taskRepo.updateStatus;
+  createChildTask: (input: CreateChildTaskInput) => Task;
+  updateTaskStatus: (taskId: string, status: TaskStatus) => Task | undefined;
   listChildTasks: typeof taskRepo.listChildren;
   listSteps: typeof workflowRepo.listSteps;
   listArtifacts: typeof workflowRepo.listArtifacts;
@@ -186,8 +190,30 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     createGraphStep: workflowRepo.createStep.bind(workflowRepo),
     updateGraphStep: workflowRepo.updateStep.bind(workflowRepo),
     createArtifact: workflowRepo.createArtifact.bind(workflowRepo),
-    createChildTask: taskRepo.create.bind(taskRepo),
-    updateTaskStatus: taskRepo.updateStatus.bind(taskRepo),
+    createChildTask(input: CreateChildTaskInput) {
+      return db.transaction(() => {
+        const task = taskRepo.create(input);
+        recordTaskCreatedEvent({
+          roomId: task.room_id,
+          task,
+          origin: task.created_from ?? undefined,
+          metadata: {
+            parent_task_id: task.parent_task_id,
+          },
+        });
+        return task;
+      })();
+    },
+    updateTaskStatus(taskId: string, status: TaskStatus) {
+      return db.transaction(() => {
+        const before = taskRepo.get(taskId);
+        const after = taskRepo.updateStatus(taskId, status);
+        if (before && after) {
+          recordTaskStatusChanged({ before, after });
+        }
+        return after;
+      })();
+    },
     listChildTasks: taskRepo.listChildren.bind(taskRepo),
     listSteps: workflowRepo.listSteps.bind(workflowRepo),
     listArtifacts: workflowRepo.listArtifacts.bind(workflowRepo),

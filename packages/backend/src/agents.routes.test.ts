@@ -11,6 +11,7 @@ const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { agentRepo } = await import('./repos/agents.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { taskRepo } = await import('./repos/tasks.js');
+const { taskEventRepo } = await import('./repos/task-events.js');
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
 
@@ -398,6 +399,16 @@ test('removing room agents protects active runs and requires task handling for o
   assert.equal(unassignRes.status, 204);
   assert.equal(taskRepo.get(openTask.id)?.assigned_agent_id, null);
   assert.equal(taskRepo.get(doneTask.id)?.assigned_agent_id, backendRoomAgent.id);
+  assert.equal(
+    taskEventRepo.listByTask(openTask.id).some((event) =>
+      event.type === 'task_updated' &&
+      Array.isArray(event.payload.changed_fields) &&
+      event.payload.changed_fields.includes('assigned_agent_id') &&
+      event.payload.previous_assigned_agent_id === backendRoomAgent.id &&
+      event.payload.next_assigned_agent_id === null,
+    ),
+    true,
+  );
 
   const listedAfterRemove = await request(`/api/rooms/${room.id}/agents`);
   assert.equal(listedAfterRemove.status, 200);
@@ -431,4 +442,14 @@ test('removing room agents protects active runs and requires task handling for o
   });
   assert.equal(transferRes.status, 204);
   assert.equal(taskRepo.get(transferTask.id)?.assigned_agent_id, reviewerRoomAgent.id);
+  assert.equal(
+    taskEventRepo.listByTask(transferTask.id).some((event) =>
+      event.type === 'task_updated' &&
+      Array.isArray(event.payload.changed_fields) &&
+      event.payload.changed_fields.includes('assigned_agent_id') &&
+      event.payload.previous_assigned_agent_id === backendRoomAgent.id &&
+      event.payload.next_assigned_agent_id === reviewerRoomAgent.id,
+    ),
+    true,
+  );
 });

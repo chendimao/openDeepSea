@@ -5361,6 +5361,12 @@
     .workspace-grid.has-inspector {
       grid-template-columns: minmax(300px, 1fr) minmax(320px, 360px);
     }
+    .task-os-grid {
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+    }
+    .task-os-grid.has-inspector {
+      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(320px, 360px);
+    }
     .task-card {
       padding: 10px;
     }

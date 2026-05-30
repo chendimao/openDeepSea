@@ -46,6 +46,11 @@ export interface CreateTaskWithConversationResult {
   taskEvent?: TaskEvent;
 }
 
+export interface RecordedTaskEvent {
+  message: Message;
+  event: TaskEvent;
+}
+
 interface RecordTaskEventInput {
   roomId: string;
   taskId: string;
@@ -56,6 +61,82 @@ interface RecordTaskEventInput {
   origin?: TaskCreatedFrom;
   content: string;
   metadata?: Record<string, unknown>;
+}
+
+export function recordTaskCreatedEvent(input: {
+  roomId: string;
+  task: Task;
+  origin?: TaskCreatedFrom;
+  content?: string;
+  metadata?: Record<string, unknown>;
+}, options?: { broadcast?: boolean }): RecordedTaskEvent {
+  return recordTaskEvent(buildTaskCreatedEventInput(input), options);
+}
+
+export function recordTaskStatusChanged(input: {
+  before: Task;
+  after: Task;
+  metadata?: Record<string, unknown>;
+}, options?: { broadcast?: boolean }): RecordedTaskEvent | null {
+  if (input.before.status === input.after.status) return null;
+  return recordTaskEvent({
+    roomId: input.after.room_id,
+    taskId: input.after.id,
+    taskTitle: input.after.title,
+    eventType: 'task_status_changed',
+    content: `任务「${input.after.title}」状态变更为 ${input.after.status}`,
+    metadata: {
+      ...(input.metadata ?? {}),
+      previous_status: input.before.status,
+      next_status: input.after.status,
+    },
+  }, options);
+}
+
+export function recordTaskUpdated(input: {
+  before: Task;
+  after: Task;
+  changedFields: Array<'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>;
+  metadata?: Record<string, unknown>;
+}, options?: { broadcast?: boolean }): RecordedTaskEvent | null {
+  const changedFields = input.changedFields.filter((field) => input.before[field] !== input.after[field]);
+  if (changedFields.length === 0) return null;
+  const assignmentMetadata = changedFields.includes('assigned_agent_id')
+    ? {
+        previous_assigned_agent_id: input.before.assigned_agent_id,
+        next_assigned_agent_id: input.after.assigned_agent_id,
+      }
+    : {};
+  return recordTaskEvent({
+    roomId: input.after.room_id,
+    taskId: input.after.id,
+    taskTitle: input.after.title,
+    eventType: 'task_updated',
+    content: `任务「${input.after.title}」已更新：${changedFields.join(', ')}`,
+    metadata: {
+      ...(input.metadata ?? {}),
+      ...assignmentMetadata,
+      changed_fields: changedFields,
+    },
+  }, options);
+}
+
+function buildTaskCreatedEventInput(input: {
+  roomId: string;
+  task: Task;
+  origin?: TaskCreatedFrom;
+  content?: string;
+  metadata?: Record<string, unknown>;
+}): RecordTaskEventInput {
+  return {
+    roomId: input.roomId,
+    taskId: input.task.id,
+    taskTitle: input.task.title,
+    eventType: 'task_created',
+    origin: input.origin,
+    content: input.content ?? buildTaskCreatedMessage(input.task),
+    metadata: input.metadata,
+  };
 }
 
 export function createTaskWithConversation(input: CreateTaskWithConversationInput): CreateTaskWithConversationResult {
@@ -120,14 +201,11 @@ export function createTaskWithConversation(input: CreateTaskWithConversationInpu
       sourceMessageContent: sourceMessage?.content ?? userMessage?.content ?? null,
     });
 
-    const taskEventResult = createTaskEventMessage({
+    const taskEventResult = createTaskEventMessage(buildTaskCreatedEventInput({
       roomId: input.roomId,
-      taskId: task.id,
-      taskTitle: task.title,
-      eventType: 'task_created',
+      task,
       origin: input.origin,
-      content: buildTaskCreatedMessage(task),
-    });
+    }));
 
     return { task, userMessage, systemMessage: taskEventResult.message, taskEvent: taskEventResult.event };
   });
@@ -155,7 +233,7 @@ function maybeAutoStartTaskWorkflow(roomId: string, task: Task): void {
       source: 'auto_start',
     });
   } catch (err) {
-    const taskEventResult = createTaskEventMessage({
+    recordTaskEvent({
       roomId,
       taskId: task.id,
       taskTitle: task.title,
@@ -165,8 +243,6 @@ function maybeAutoStartTaskWorkflow(roomId: string, task: Task): void {
         workflow_source: 'auto_start',
       },
     });
-    broadcastTaskEventCreated(roomId, taskEventResult.event);
-    broadcastMessageCreated(roomId, taskEventResult.message);
   }
 }
 
@@ -217,13 +293,13 @@ export function createTaskCreationMemorySafely(input: {
   }
 }
 
-export function recordTaskEvent(input: RecordTaskEventInput, options?: { broadcast?: boolean }): Message {
+export function recordTaskEvent(input: RecordTaskEventInput, options?: { broadcast?: boolean }): RecordedTaskEvent {
   const taskEventResult = db.transaction(() => createTaskEventMessage(input))();
   if (options?.broadcast !== false) {
     broadcastTaskEventCreated(input.roomId, taskEventResult.event);
     broadcastMessageCreated(input.roomId, taskEventResult.message);
   }
-  return taskEventResult.message;
+  return taskEventResult;
 }
 
 function createTaskEventMessage(input: RecordTaskEventInput): { message: Message; event: TaskEvent } {

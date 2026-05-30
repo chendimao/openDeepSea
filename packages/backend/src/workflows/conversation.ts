@@ -114,13 +114,13 @@ export function startWorkflowWithConversation(input: StartWorkflowWithConversati
     return { status: 'started' as const, run, userMessage, event };
   })();
   if (start.status === 'conflict') {
-    broadcastMessage(input.roomId, start.event);
+    broadcastMessage(input.roomId, start.event.message);
     throw new WorkflowConversationError(409, start.message);
   }
   const { run } = start;
   if (start.userMessage) broadcastMessage(input.roomId, start.userMessage);
   wsHub.broadcast(run.room_id, { type: 'workflow:created', roomId: run.room_id, workflow: run });
-  broadcastMessage(input.roomId, start.event);
+  broadcastMessage(input.roomId, start.event.message);
   enqueue(run.id);
   return run;
 }

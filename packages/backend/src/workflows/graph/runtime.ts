@@ -1,4 +1,5 @@
 import { Annotation, END, MemorySaver, START, StateGraph } from '@langchain/langgraph';
+import { db } from '../../db.js';
 import { agentRunRepo } from '../../repos/agent-runs.js';
 import { projectRepo } from '../../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
@@ -6,7 +7,7 @@ import { taskRepo } from '../../repos/tasks.js';
 import { workflowDefinitionRepo } from '../../repos/workflow-definitions.js';
 import { workflowRepo } from '../../repos/workflows.js';
 import { runRegistry } from '../../run-registry.js';
-import { recordTaskEvent } from '../../task-conversation.js';
+import { recordTaskEvent, recordTaskStatusChanged } from '../../task-conversation.js';
 import type {
   WorkflowDefinition,
   WorkflowDefinitionGraph,
@@ -439,7 +440,20 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
   for (const child of taskRepo.listChildren(run.task_id).filter((item) =>
     state.childTaskIds.includes(item.id) && (item.status === 'failed' || item.status === 'in_progress'),
   )) {
-    const resetChild = taskRepo.updateStatus(child.id, 'todo');
+    const resetChild = db.transaction(() => {
+      const after = taskRepo.updateStatus(child.id, 'todo');
+      if (after) {
+        recordTaskStatusChanged({
+          before: child,
+          after,
+          metadata: {
+            workflow_run_id: run.id,
+            graph_retry: true,
+          },
+        });
+      }
+      return after;
+    })();
     if (resetChild) tools.broadcastTaskUpdated(resetChild);
   }
   for (const step of workflowRepo.listSteps(run.id).filter((item) =>

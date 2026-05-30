@@ -12,7 +12,7 @@ import { selectSkills } from '../skills/selector.js';
 import { taskRepo } from '../repos/tasks.js';
 import { workflowRepo } from '../repos/workflows.js';
 import { runRegistry } from '../run-registry.js';
-import { recordTaskEvent } from '../task-conversation.js';
+import { recordTaskCreatedEvent, recordTaskEvent, recordTaskStatusChanged } from '../task-conversation.js';
 import { wsHub } from '../ws-hub.js';
 import {
   parseAcceptanceVerdict,
@@ -340,23 +340,16 @@ function block(run: WorkflowRun, error: string): void {
 }
 
 function updateTaskStatus(taskId: string, status: TaskStatus): Task | undefined {
-  const before = taskRepo.get(taskId);
-  const task = taskRepo.updateStatus(taskId, status);
+  const task = db.transaction(() => {
+    const before = taskRepo.get(taskId);
+    const after = taskRepo.updateStatus(taskId, status);
+    if (before && after) {
+      recordTaskStatusChanged({ before, after });
+    }
+    return after;
+  })();
   if (task) {
     broadcastTask('task:updated', task);
-    if (before && before.status !== task.status) {
-      try {
-        recordTaskEvent({
-          roomId: task.room_id,
-          taskId: task.id,
-          taskTitle: task.title,
-          eventType: 'task_status_changed',
-          content: `任务「${task.title}」状态变更为 ${task.status}`,
-        });
-      } catch (err) {
-        console.warn(`[workflow] failed to record task status event: ${(err as Error).message}`);
-      }
-    }
   }
   return task;
 }
@@ -965,16 +958,29 @@ function assignFromPlan(run: WorkflowRun): void {
 
   for (const item of plan.tasks) {
     const assigned = selectWorkflowAgentForPlanTask(item.suggestedRole, context.agents, item);
-    const child = taskRepo.create({
-      room_id: task.room_id,
-      project_id: task.project_id,
-      parent_task_id: task.id,
-      title: item.title,
-      description: `${item.description}\n\n验收点：\n${item.acceptance.map((point) => `- ${point}`).join('\n')}`,
-      priority: item.priority,
-      assigned_agent_id: assigned?.id,
-      created_from: 'workflow_assignment',
-    });
+    const child = db.transaction(() => {
+      const created = taskRepo.create({
+        room_id: task.room_id,
+        project_id: task.project_id,
+        parent_task_id: task.id,
+        title: item.title,
+        description: `${item.description}\n\n验收点：\n${item.acceptance.map((point) => `- ${point}`).join('\n')}`,
+        priority: item.priority,
+        assigned_agent_id: assigned?.id,
+        created_from: 'workflow_assignment',
+      });
+      recordTaskCreatedEvent({
+        roomId: task.room_id,
+        task: created,
+        origin: 'workflow_assignment',
+        metadata: {
+          workflow_run_id: run.id,
+          workflow_step_id: step.id,
+          parent_task_id: task.id,
+        },
+      });
+      return created;
+    })();
     broadcastTask('task:created', child);
   }
 

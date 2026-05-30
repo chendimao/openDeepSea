@@ -41,7 +41,12 @@ import { searchProjectRooms } from './room-search.js';
 import { skillsRouter } from './skills/routes.js';
 import { platformSkillsRouter } from './platform-skills/routes.js';
 import { pickDirectory } from './system-dialogs.js';
-import { createTaskWithConversation, recordTaskEvent } from './task-conversation.js';
+import {
+  createTaskWithConversation,
+  recordTaskEvent,
+  recordTaskStatusChanged,
+  recordTaskUpdated,
+} from './task-conversation.js';
 import { extractCreateTaskTitle, routeMessage } from './task-router.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
@@ -1465,14 +1470,47 @@ router.delete('/rooms/:roomId/agents/:agentId', (req, res) => {
       return res.status(409).json({ error: 'agent has open tasks', ...impact });
     }
     if (parsed.data.task_action === 'unassign') {
-      taskRepo.unassignOpenByAgent(req.params.agentId);
+      db.transaction(() => {
+        const affectedTasks = taskRepo.listOpenByAssignedAgent(req.params.agentId);
+        taskRepo.unassignOpenByAgent(req.params.agentId);
+        for (const before of affectedTasks) {
+          const after = taskRepo.get(before.id);
+          if (!after) continue;
+          recordTaskUpdated({
+            before,
+            after,
+            changedFields: ['assigned_agent_id'],
+            metadata: {
+              agent_removal_action: 'unassign',
+              removed_room_agent_id: req.params.agentId,
+            },
+          });
+        }
+      })();
     } else {
       const targetId = parsed.data.transfer_to_room_agent_id;
       const target = targetId ? roomAgentRepo.get(targetId) : undefined;
       if (!target || target.room_id !== req.params.roomId || target.left_at) {
         return res.status(400).json({ error: 'transfer target is invalid' });
       }
-      taskRepo.transferOpenByAgent(req.params.agentId, target.id);
+      db.transaction(() => {
+        const affectedTasks = taskRepo.listOpenByAssignedAgent(req.params.agentId);
+        taskRepo.transferOpenByAgent(req.params.agentId, target.id);
+        for (const before of affectedTasks) {
+          const after = taskRepo.get(before.id);
+          if (!after) continue;
+          recordTaskUpdated({
+            before,
+            after,
+            changedFields: ['assigned_agent_id'],
+            metadata: {
+              agent_removal_action: 'transfer',
+              removed_room_agent_id: req.params.agentId,
+              transfer_to_room_agent_id: target.id,
+            },
+          });
+        }
+      })();
     }
   }
 
@@ -2290,11 +2328,24 @@ function ensurePromotedTaskHasLatestPlannerBackground(
   if (!task) throw workflowPromotionError(404, 'task not found');
   if (task.description === taskInput.description && task.title === taskInput.title) return task;
   if (!taskInput.description.includes('产品经理方案背景：')) return task;
-  const updated = taskRepo.update(task.id, {
-    title: taskInput.title,
-    description: taskInput.description,
-    interaction_mode: 'ask_user',
-  });
+  const updated = db.transaction(() => {
+    const next = taskRepo.update(task.id, {
+      title: taskInput.title,
+      description: taskInput.description,
+      interaction_mode: 'ask_user',
+    });
+    if (next) {
+      recordTaskUpdated({
+        before: task,
+        after: next,
+        changedFields: ['title', 'description', 'interaction_mode'],
+        metadata: {
+          source: 'workflow_promotion',
+        },
+      });
+    }
+    return next;
+  })();
   return updated ?? task;
 }
 
@@ -2564,20 +2615,24 @@ router.patch('/tasks/:id', (req, res) => {
   if (!task) return res.status(404).json({ error: 'task not found' });
   const parsed = taskPatchSchema.safeParse(req.body ?? {});
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const updated = parsed.data.status
-    ? taskRepo.updateStatus(task.id, parsed.data.status)
-    : task;
   const taskPatch: Partial<Pick<typeof task, 'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>> = {};
   if (parsed.data.title !== undefined) taskPatch.title = parsed.data.title;
   if (parsed.data.description !== undefined) taskPatch.description = parsed.data.description;
   if (parsed.data.priority !== undefined) taskPatch.priority = parsed.data.priority;
   if (parsed.data.interaction_mode !== undefined) taskPatch.interaction_mode = parsed.data.interaction_mode;
   if (parsed.data.assigned_agent_id !== undefined) taskPatch.assigned_agent_id = parsed.data.assigned_agent_id;
-  const finalTask = Object.keys(taskPatch).length > 0
-    ? taskRepo.update(updated?.id ?? task.id, taskPatch) ?? updated
-    : updated;
+  const finalTask = db.transaction(() => {
+    const statusUpdated = parsed.data.status
+      ? taskRepo.updateStatus(task.id, parsed.data.status)
+      : task;
+    const patchedTask = Object.keys(taskPatch).length > 0
+      ? taskRepo.update(statusUpdated?.id ?? task.id, taskPatch) ?? statusUpdated
+      : statusUpdated;
+    if (!patchedTask) return undefined;
+    recordTaskPatchEvents(task, patchedTask, parsed.data);
+    return patchedTask;
+  })();
   if (!finalTask) return res.status(404).json({ error: 'task not found' });
-  recordTaskPatchEvents(task, finalTask, parsed.data);
   wsHub.broadcast(finalTask.room_id, { type: 'task:updated', task: finalTask });
   res.json(finalTask);
 });
@@ -2585,8 +2640,8 @@ router.patch('/tasks/:id', (req, res) => {
 router.delete('/tasks/:id', (req, res) => {
   const task = taskRepo.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'task not found' });
-  const eventMessage = db.transaction(() => {
-    const message = recordTaskEvent({
+  const deletedTaskEvent = db.transaction(() => {
+    const recorded = recordTaskEvent({
       roomId: task.room_id,
       taskId: task.id,
       taskTitle: task.title,
@@ -2597,15 +2652,9 @@ router.delete('/tasks/:id', (req, res) => {
       },
     }, { broadcast: false });
     taskRepo.delete(task.id);
-    return message;
+    return recorded.event;
   })();
-  const deletedEvent = taskEventRepo.listByTask(task.id).find((event) => {
-    const eventMessageId = typeof event.payload.event_message_id === 'string' ? event.payload.event_message_id : null;
-    return event.type === 'task_deleted' && eventMessageId === eventMessage.id;
-  });
-  if (deletedEvent) {
-    wsHub.broadcast(task.room_id, { type: 'task_event:new', roomId: task.room_id, event: deletedEvent });
-  }
+  wsHub.broadcast(task.room_id, { type: 'task_event:new', roomId: task.room_id, event: deletedTaskEvent });
   wsHub.broadcast(task.room_id, { type: 'task:deleted', taskId: task.id });
   res.status(204).end();
 });
@@ -2616,32 +2665,17 @@ function recordTaskPatchEvents(
   patch: z.infer<typeof taskPatchSchema>,
 ): void {
   if (patch.status !== undefined && before.status !== after.status) {
-    recordTaskEvent({
-      roomId: after.room_id,
-      taskId: after.id,
-      taskTitle: after.title,
-      eventType: 'task_status_changed',
-      content: `任务「${after.title}」状态变更为 ${after.status}`,
-      metadata: {
-        previous_status: before.status,
-        next_status: after.status,
-      },
-    });
+    recordTaskStatusChanged({ before, after });
   }
 
   const changedFields = (['title', 'description', 'priority', 'interaction_mode', 'assigned_agent_id'] as const)
     .filter((field) => patch[field] !== undefined && before[field] !== after[field]);
   if (changedFields.length === 0) return;
 
-  recordTaskEvent({
-    roomId: after.room_id,
-    taskId: after.id,
-    taskTitle: after.title,
-    eventType: 'task_updated',
-    content: `任务「${after.title}」已更新：${changedFields.join(', ')}`,
-    metadata: {
-      changed_fields: changedFields,
-    },
+  recordTaskUpdated({
+    before,
+    after,
+    changedFields,
   });
 }
 

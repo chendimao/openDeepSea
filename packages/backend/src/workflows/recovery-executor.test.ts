@@ -15,6 +15,7 @@ const { messageRepo } = await import('../repos/messages.js');
 const { projectRepo } = await import('../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../repos/rooms.js');
 const { taskRepo } = await import('../repos/tasks.js');
+const { taskEventRepo } = await import('../repos/task-events.js');
 const { workflowIncidentRepo } = await import('../repos/workflow-incidents.js');
 const { workflowRepo } = await import('../repos/workflows.js');
 const { executeRecoveryDecision } = await import('./recovery-executor.js');
@@ -49,6 +50,15 @@ test('executeRecoveryDecision retries same agent and records recovery message', 
   assert.equal(workflowIncidentRepo.get(incident.id)?.attempt_count, 1);
   assert.equal(workflowRepo.getStep(step.id)?.status, 'skipped');
   assert.equal(taskRepo.get(fixture.childTask.id)?.status, 'todo');
+  assert.equal(
+    taskEventRepo.listByTask(fixture.childTask.id).some((event) =>
+      event.type === 'task_status_changed' &&
+      event.payload.previous_status === 'in_progress' &&
+      event.payload.next_status === 'todo' &&
+      event.payload.recovery_action === 'retry_same_agent',
+    ),
+    true,
+  );
   assert.match(latestRecoveryMessage(fixture.room.id), /产品经理检测到子任务/);
   assert.match(latestRecoveryMessage(fixture.room.id), /retry_same_agent/);
 });
@@ -77,6 +87,7 @@ test('executeRecoveryDecision provisions global executor then retries workflow',
 test('executeRecoveryDecision reassigns child task before retrying', async () => {
   const fixture = createFixture('reassign');
   assert.ok(fixture.agent);
+  const originalAgent = fixture.agent;
   const other = configureExecutor(roomAgentRepo.add({
     room_id: fixture.room.id,
     agent_id: 'backend-reassign',
@@ -98,6 +109,17 @@ test('executeRecoveryDecision reassigns child task before retrying', async () =>
 
   assert.equal(result.status, 'executed');
   assert.equal(taskRepo.get(fixture.childTask.id)?.assigned_agent_id, other.id);
+  assert.equal(
+    taskEventRepo.listByTask(fixture.childTask.id).some((event) =>
+      event.type === 'task_updated' &&
+      Array.isArray(event.payload.changed_fields) &&
+      event.payload.changed_fields.includes('assigned_agent_id') &&
+      event.payload.previous_assigned_agent_id === originalAgent.id &&
+      event.payload.next_assigned_agent_id === other.id &&
+      event.payload.recovery_action === 'reassign_agent',
+    ),
+    true,
+  );
 });
 
 test('executeRecoveryDecision splits task idempotently', async () => {
@@ -119,6 +141,13 @@ test('executeRecoveryDecision splits task idempotently', async () => {
 
   const children = taskRepo.listChildren(fixture.task.id).filter((task) => task.title.startsWith('拆分'));
   assert.equal(children.length, 2);
+  assert.equal(children.every((child) =>
+    taskEventRepo.listByTask(child.id).some((event) =>
+      event.type === 'task_created' &&
+      event.payload.origin === 'workflow_assignment' &&
+      event.payload.incident_id === incident.id,
+    ),
+  ), true);
   assert.equal(workflowRepo.getRun(fixture.workflow.id)?.status, 'awaiting_decision');
 });
 

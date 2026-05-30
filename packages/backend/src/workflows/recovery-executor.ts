@@ -1,10 +1,16 @@
 import { agentRunRepo } from '../repos/agent-runs.js';
+import { db } from '../db.js';
 import { messageRepo } from '../repos/messages.js';
 import { roomAgentRepo } from '../repos/rooms.js';
 import { taskRepo } from '../repos/tasks.js';
 import { workflowIncidentRepo } from '../repos/workflow-incidents.js';
 import { workflowRepo } from '../repos/workflows.js';
-import { recordTaskEvent } from '../task-conversation.js';
+import {
+  recordTaskCreatedEvent,
+  recordTaskEvent,
+  recordTaskStatusChanged,
+  recordTaskUpdated,
+} from '../task-conversation.js';
 import type { Task, WorkflowIncident, WorkflowRun } from '../types.js';
 import { ensureGlobalExecutorForRecovery } from './agent-provisioning.js';
 import type { WorkflowRecoveryDecision } from './recovery-supervisor.js';
@@ -69,9 +75,9 @@ async function retryWorkflow(
   task: Task,
 ): Promise<WorkflowRecoveryExecutionResult> {
   if (agentRunRepo.listActiveByWorkflow(run.id).length > 0) {
-    const message = writeRecoveryMessage(incident, decision, run, task, '检测到已有运行中的智能体，本次恢复不重复启动。');
-    workflowIncidentRepo.markResolved(incident.id, message.id);
-    return { status: 'noop', messageId: message.id, detail: 'active agent run exists' };
+    const recorded = writeRecoveryMessage(incident, decision, run, task, '检测到已有运行中的智能体，本次恢复不重复启动。');
+    workflowIncidentRepo.markResolved(incident.id, recorded.message.id);
+    return { status: 'noop', messageId: recorded.message.id, detail: 'active agent run exists' };
   }
 
   const refreshedRun = workflowRepo.getRun(run.id) ?? run;
@@ -88,12 +94,28 @@ async function retryWorkflow(
     });
   }
   const childTaskId = incident.child_task_id ?? retryableStep?.task_id ?? null;
-  if (childTaskId) taskRepo.updateStatus(childTaskId, 'todo');
+  if (childTaskId) {
+    db.transaction(() => {
+      const before = taskRepo.get(childTaskId);
+      const after = taskRepo.updateStatus(childTaskId, 'todo');
+      if (before && after) {
+        recordTaskStatusChanged({
+          before,
+          after,
+          metadata: {
+            incident_id: incident.id,
+            recovery_action: decision.action,
+            workflow_run_id: run.id,
+          },
+        });
+      }
+    })();
+  }
 
   await workflowOrchestrator.retryStep(run.id);
-  const message = writeRecoveryMessage(incident, decision, run, task, '已决定恢复执行并重新推进工作流。');
-  workflowIncidentRepo.markResolved(incident.id, message.id);
-  return { status: 'executed', messageId: message.id };
+  const recorded = writeRecoveryMessage(incident, decision, run, task, '已决定恢复执行并重新推进工作流。');
+  workflowIncidentRepo.markResolved(incident.id, recorded.message.id);
+  return { status: 'executed', messageId: recorded.message.id };
 }
 
 function reassignChildTask(incident: WorkflowIncident, decision: WorkflowRecoveryDecision): void {
@@ -102,7 +124,21 @@ function reassignChildTask(incident: WorkflowIncident, decision: WorkflowRecover
   if (!target) throw new Error('target room agent not found');
   const childTaskId = incident.child_task_id;
   if (!childTaskId) throw new Error('child_task_id is required for reassign_agent');
-  taskRepo.update(childTaskId, { assigned_agent_id: target.id });
+  db.transaction(() => {
+    const before = taskRepo.get(childTaskId);
+    const after = taskRepo.update(childTaskId, { assigned_agent_id: target.id });
+    if (before && after) {
+      recordTaskUpdated({
+        before,
+        after,
+        changedFields: ['assigned_agent_id'],
+        metadata: {
+          incident_id: incident.id,
+          recovery_action: decision.action,
+        },
+      });
+    }
+  })();
 }
 
 function splitTask(
@@ -115,26 +151,37 @@ function splitTask(
   for (const split of splitTasks) {
     const title = split.title.trim();
     if (!title || splitChildExists(task.id, incident.id, title)) continue;
-    taskRepo.create({
-      room_id: task.room_id,
-      project_id: task.project_id,
-      parent_task_id: task.id,
-      title,
-      description: [
-        split.description,
-        '',
-        `恢复事件：${incident.id}`,
-        `读取范围：${split.scopeRead.join(', ') || '未指定'}`,
-        `写入范围：${split.scopeWrite.join(', ') || '未指定'}`,
-      ].join('\n'),
-      interaction_mode: 'auto_recommended',
-      created_from: 'workflow_assignment',
-    });
+    db.transaction(() => {
+      const child = taskRepo.create({
+        room_id: task.room_id,
+        project_id: task.project_id,
+        parent_task_id: task.id,
+        title,
+        description: [
+          split.description,
+          '',
+          `恢复事件：${incident.id}`,
+          `读取范围：${split.scopeRead.join(', ') || '未指定'}`,
+          `写入范围：${split.scopeWrite.join(', ') || '未指定'}`,
+        ].join('\n'),
+        interaction_mode: 'auto_recommended',
+        created_from: 'workflow_assignment',
+      });
+      recordTaskCreatedEvent({
+        roomId: task.room_id,
+        task: child,
+        origin: 'workflow_assignment',
+        metadata: {
+          incident_id: incident.id,
+          recovery_action: decision.action,
+        },
+      });
+    })();
   }
   workflowRepo.updateRun(run.id, { status: 'awaiting_decision', error: decision.reason });
-  const message = writeRecoveryMessage(incident, decision, run, task, '已拆分子任务，等待用户确认后继续推进。');
-  workflowIncidentRepo.markResolved(incident.id, message.id);
-  return { status: 'executed', messageId: message.id };
+  const recorded = writeRecoveryMessage(incident, decision, run, task, '已拆分子任务，等待用户确认后继续推进。');
+  workflowIncidentRepo.markResolved(incident.id, recorded.message.id);
+  return { status: 'executed', messageId: recorded.message.id };
 }
 
 function askUser(
@@ -149,9 +196,9 @@ function askUser(
     workflowIncidentRepo.markResolved(incident.id, existing.id);
     return { status: 'noop', messageId: existing.id };
   }
-  const message = writeRecoveryMessage(incident, decision, run, task, decision.userQuestion ?? '需要用户确认下一步恢复策略。');
-  workflowIncidentRepo.markResolved(incident.id, message.id);
-  return { status: 'executed', messageId: message.id };
+  const recorded = writeRecoveryMessage(incident, decision, run, task, decision.userQuestion ?? '需要用户确认下一步恢复策略。');
+  workflowIncidentRepo.markResolved(incident.id, recorded.message.id);
+  return { status: 'executed', messageId: recorded.message.id };
 }
 
 function markBlocked(
@@ -161,9 +208,9 @@ function markBlocked(
   task: Task,
 ): WorkflowRecoveryExecutionResult {
   workflowRepo.updateRun(run.id, { status: 'blocked', error: decision.reason });
-  const message = writeRecoveryMessage(incident, decision, run, task, '已将工作流标记为阻塞，等待人工处理。');
-  workflowIncidentRepo.markBlocked(incident.id, decisionToJson(decision), message.id);
-  return { status: 'blocked', messageId: message.id };
+  const recorded = writeRecoveryMessage(incident, decision, run, task, '已将工作流标记为阻塞，等待人工处理。');
+  workflowIncidentRepo.markBlocked(incident.id, decisionToJson(decision), recorded.message.id);
+  return { status: 'blocked', messageId: recorded.message.id };
 }
 
 function writeRecoveryMessage(
