@@ -515,6 +515,13 @@ function eventTitle(event: TaskEvent, t: (key: MessageKey) => string): string {
 
 export function describeTaskEvent(event: TaskEvent, t: (key: MessageKey) => string): string {
   const payload = event.payload;
+  if (event.type === 'message_routed' || event.type === 'message_route_uncertain') {
+    const routeReason = readString(payload.route_reason) ?? readString(payload.reason);
+    const routeConfidence = readNumber(payload.route_confidence);
+    const confidenceSummary = routeConfidence !== null ? `${Math.round(routeConfidence * 100)}%` : null;
+    const summary = compactJoin([routeReason, confidenceSummary], ' · ');
+    if (summary) return summary;
+  }
   if (event.type === 'diff_detected') {
     const path = readString(payload.path);
     const additions = readNumber(payload.additions);

@@ -1,4 +1,4 @@
-import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import React, { forwardRef, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { cn } from '../../lib/utils';
 
 const baseClass =
@@ -22,7 +22,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   },
 );
 
-export function Label({ children, className }: { children: React.ReactNode; className?: string }) {
+export function Label({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <label className={cn('text-[12px] font-medium text-[var(--color-fg-muted)] mb-1.5 block', className)}>
       {children}

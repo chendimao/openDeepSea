@@ -1,6 +1,6 @@
 'use client'
 
-import { cn } from '@/lib/utils'
+import { cn } from '../../lib/utils'
 import { RemoveButton } from './remove-button'
 import type { PromptAreaImage } from './types'
 

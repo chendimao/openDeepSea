@@ -58,6 +58,16 @@ test('describeTaskEvent summarizes runtime tool and command payloads', () => {
   assert.equal(describeTaskEvent(command, t), 'npm test');
 });
 
+test('describeTaskEvent explains message routing decisions from route payload', () => {
+  const event = createEvent('message_routed', 'activity', {
+    route_action: 'append_to_task',
+    route_confidence: 0.9,
+    route_reason: '使用当前激活任务：浏览器闭环测试',
+  });
+
+  assert.equal(describeTaskEvent(event, t), '使用当前激活任务：浏览器闭环测试 · 90%');
+});
+
 function createEvent(type: TaskEventType, layer: MessageLayer, payload: Record<string, unknown> = {}): TaskEvent {
   return {
     id: `${type}-${layer}`,

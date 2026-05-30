@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { cn } from '@/lib/utils'
+import { cn } from '../../lib/utils'
 import type { PromptAreaProps, PromptAreaHandle } from './types'
 import { usePromptArea } from './use-prompt-area'
 import { BLUR_DELAY_MS } from './use-prompt-area-events'

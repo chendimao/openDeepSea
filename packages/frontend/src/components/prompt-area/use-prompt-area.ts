@@ -1,6 +1,6 @@
 'use client'
 
-import { cn } from '@/lib/utils'
+import { cn } from '../../lib/utils'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   Segment,
