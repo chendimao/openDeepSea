@@ -119,7 +119,7 @@ function AgentStrip({
   }
 
   return (
-    <div className="mr-2 flex items-center -space-x-2">
+    <div className="room-agent-strip mr-2 flex items-center -space-x-2">
       {agents.slice(0, 6).map((agent) => (
         <button
           key={agent.id}

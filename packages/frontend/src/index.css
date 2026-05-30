@@ -7515,7 +7515,7 @@
     }
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 768px) {
     .app-grid {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -7526,9 +7526,34 @@
       border-radius: 0;
     }
     .workspace-toolbar {
-      min-height: 72px;
-      grid-template-columns: minmax(0, 1fr);
+      min-height: 64px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      column-gap: 10px;
       padding: 10px 12px;
+    }
+    .room-toolbar-identity {
+      grid-column: 1;
+      grid-row: 1;
+    }
+    .room-toolbar-actions {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    .room-agent-strip {
+      display: none;
+    }
+    .room-toolbar-actions .glass-button {
+      width: 36px;
+      min-width: 36px;
+      border-radius: 11px;
+    }
+    .room-user-avatar {
+      width: 32px;
+      height: 32px;
+    }
+    .room-global-search {
+      grid-column: 1 / -1;
+      grid-row: 2;
     }
     .workspace-drawer {
       width: 100%;
