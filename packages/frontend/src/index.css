@@ -3169,6 +3169,26 @@
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10px;
   }
+  .room-toolbar-actions {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    overflow: hidden;
+  }
+  .room-toolbar-actions .glass-button {
+    width: 40px;
+    min-width: 40px;
+    flex: 0 0 auto;
+    gap: 0;
+    border-radius: 12px;
+    padding: 0;
+    white-space: nowrap;
+  }
+  .room-toolbar-actions .glass-button svg {
+    flex: 0 0 auto;
+  }
+  .room-toolbar-actions .glass-button span {
+    display: none !important;
+  }
   .room-user-avatar {
     display: grid;
     width: 34px;
@@ -3486,9 +3506,10 @@
     display: grid;
     min-width: 0;
     min-height: 0;
-    gap: 9px;
+    gap: 6px;
     border-bottom: 1px solid var(--room-border);
-    padding: 14px 18px 12px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.46), rgba(255,255,255,0.18));
+    padding: 10px 14px 9px;
   }
   .active-task-breadcrumb {
     display: flex;
@@ -3506,27 +3527,27 @@
   .active-task-title-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 16px;
+    gap: 12px;
     align-items: start;
   }
   .active-task-title-row h3 {
     margin: 0;
     overflow: hidden;
     color: #0f172a;
-    font-size: 20px;
+    font-size: 17px;
     font-weight: 760;
-    line-height: 1.1;
+    line-height: 1.16;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .active-task-title-row p {
     display: -webkit-box;
-    margin: 6px 0 0;
+    margin: 3px 0 0;
     overflow: hidden;
     color: #64748b;
-    font-size: 12.5px;
-    line-height: 1.45;
-    -webkit-line-clamp: 2;
+    font-size: 11.5px;
+    line-height: 1.36;
+    -webkit-line-clamp: 1;
     -webkit-box-orient: vertical;
   }
   .active-task-header-actions {
@@ -3536,11 +3557,11 @@
   }
   .active-task-header-actions button {
     display: grid;
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
     place-items: center;
     border: 1px solid rgba(0,0,0,0.06);
-    border-radius: 11px;
+    border-radius: 10px;
     background: rgba(255,255,255,0.72);
     color: #64748b;
     transition: transform 160ms ease, background 160ms ease, color 160ms ease;
@@ -3553,46 +3574,50 @@
   .active-task-meta-grid {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.15fr);
-    gap: 7px;
+    gap: 5px;
     align-items: stretch;
   }
   .active-task-meta-cell,
   .active-task-progress {
     min-width: 0;
     border: 1px solid var(--room-border-subtle);
-    border-radius: 12px;
+    border-radius: 10px;
     background: color-mix(in srgb, var(--room-card-bg) 82%, transparent);
-    padding: 7px 9px;
+    padding: 5px 7px;
   }
   .active-task-meta-cell span {
     display: block;
+    overflow: hidden;
     color: var(--room-text-muted);
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .active-task-meta-cell strong {
     display: block;
-    margin-top: 3px;
+    margin-top: 1px;
     overflow: hidden;
     color: var(--room-text-heading);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 720;
+    line-height: 1.25;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .active-task-progress {
     display: grid;
     align-content: center;
-    gap: 6px;
+    gap: 4px;
   }
   .active-task-progress span {
     color: var(--color-primary);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 800;
   }
   .liquid-progress {
-    height: 6px;
+    height: 5px;
     overflow: hidden;
     border-radius: 999px;
     background: rgba(37,99,235,0.12);
@@ -3606,9 +3631,9 @@
   }
   .active-task-actions {
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     border-bottom: 1px solid var(--room-border-subtle);
-    padding: 8px 16px;
+    padding: 6px 14px;
   }
   .active-task-actions .task-layer-toggles {
     margin-top: 0;
@@ -3617,8 +3642,8 @@
   .task-workspace-canvas {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    padding: 12px;
+    gap: 9px;
+    padding: 10px 12px 12px;
   }
   .task-workspace-empty {
     display: grid;
@@ -3643,7 +3668,7 @@
     border: 1px solid rgba(0,0,0,0.06);
     border-radius: 16px;
     background: rgba(255,255,255,0.82);
-    padding: 12px;
+    padding: 10px;
     box-shadow: 0 14px 34px rgba(15,23,42,0.045), inset 0 1px 0 rgba(255,255,255,0.86);
     transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -3657,8 +3682,8 @@
   .task-detail-card-title {
     display: flex;
     align-items: center;
-    gap: 9px;
-    margin-bottom: 10px;
+    gap: 8px;
+    margin-bottom: 8px;
     color: var(--color-primary);
   }
   .task-detail-card-title h4 {
@@ -3678,29 +3703,29 @@
   .workspace-timeline-list,
   .file-change-list {
     display: grid;
-    gap: 7px;
+    gap: 6px;
   }
   .execution-step {
     position: relative;
     display: grid;
-    grid-template-columns: 22px minmax(0, 1fr);
-    gap: 9px;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 8px;
     align-items: start;
-    min-height: 40px;
+    min-height: 34px;
   }
   .execution-step:not(:last-child)::after {
     content: "";
     position: absolute;
-    top: 25px;
+    top: 22px;
     bottom: -5px;
-    left: 10px;
+    left: 9px;
     width: 1px;
     background: rgba(148,163,184,0.28);
   }
   .execution-step-node {
     display: grid;
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
     place-items: center;
     border-radius: 999px;
     background: rgba(148,163,184,0.14);
@@ -3724,7 +3749,7 @@
   .current-agent-row strong {
     overflow: hidden;
     color: #1f2937;
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 720;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -3734,7 +3759,7 @@
   .tool-call-card span,
   .tool-call-card time {
     display: block;
-    margin-top: 3px;
+    margin-top: 2px;
     color: #94a3b8;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10px;
@@ -3742,11 +3767,11 @@
   .current-agent-row {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) 9px;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
     border-radius: 13px;
     background: rgba(248,250,252,0.76);
-    padding: 10px;
+    padding: 8px;
   }
   .current-agent-row > i {
     width: 9px;
@@ -3760,13 +3785,13 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
-    margin-top: 10px;
+    margin-top: 8px;
   }
   .resource-metric {
     min-width: 0;
     border-radius: 11px;
     background: rgba(255,255,255,0.66);
-    padding: 8px;
+    padding: 6px;
     box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
   }
   .resource-metric span {
@@ -3780,7 +3805,7 @@
   }
   .resource-metric strong {
     display: block;
-    margin-top: 4px;
+    margin-top: 2px;
     color: #111827;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 12px;
@@ -3790,7 +3815,7 @@
     grid-template-columns: 64px 10px minmax(0, 1fr);
     gap: 8px;
     align-items: center;
-    min-height: 30px;
+    min-height: 26px;
   }
   .workspace-timeline-row time {
     color: #94a3b8;
@@ -3802,7 +3827,7 @@
     grid-template-columns: minmax(0, 1fr) 42px 42px;
     gap: 8px;
     align-items: center;
-    min-height: 30px;
+    min-height: 26px;
     border-radius: 10px;
     padding: 0 8px;
     transition: background 160ms ease;
@@ -3821,16 +3846,16 @@
   }
   .file-change-empty {
     display: grid;
-    gap: 8px;
+    gap: 6px;
   }
   .file-change-empty p {
     margin: 0;
     border-radius: 10px;
     background: rgba(248,250,252,0.66);
-    padding: 10px;
+    padding: 8px;
     color: #94a3b8;
-    font-size: 11.5px;
-    line-height: 1.5;
+    font-size: 11px;
+    line-height: 1.35;
   }
   .tool-call-strip {
     display: grid;
@@ -3851,7 +3876,7 @@
     border: 1px solid rgba(0,0,0,0.05);
     border-radius: 13px;
     background: rgba(248,250,252,0.74);
-    padding: 10px;
+    padding: 8px;
     color: var(--color-primary);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.78);
     transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
@@ -3863,8 +3888,8 @@
   }
   .tool-call-card svg {
     grid-area: icon;
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     border-radius: 10px;
     background: rgba(37,99,235,0.08);
     padding: 6px;
@@ -3887,7 +3912,7 @@
   }
   .tool-call-card time {
     grid-area: time;
-    margin-top: 3px;
+    margin-top: 1px;
   }
   .tool-call-card[data-status="running"] span {
     background: rgba(37,99,235,0.12);
