@@ -29,6 +29,14 @@ test('projectRoomActivityMessages turns room activity messages into activity fee
   const messages = [
     createMessage({ id: 'chat', layer: 'chat' }),
     createMessage({
+      id: 'task-created',
+      layer: 'activity',
+      metadata: JSON.stringify({
+        event_type: 'task_created',
+        task_id: 'task-1',
+      }),
+    }),
+    createMessage({
       id: 'route-uncertain',
       layer: 'activity',
       content: '无法确定消息应归属哪个任务',

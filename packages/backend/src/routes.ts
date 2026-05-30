@@ -2007,6 +2007,7 @@ function createAndDispatchUserMessage(input: {
 }
 
 function shouldDispatchRoutedUserMessage(routeResult: import('./types.js').RouteResult, mentions?: string[]): boolean {
+  if (routeResult.action === 'create_task') return false;
   if (routeResult.action !== 'ask_user') return true;
   return Boolean(mentions?.length);
 }

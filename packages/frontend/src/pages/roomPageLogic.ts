@@ -92,12 +92,13 @@ export function selectChatLayerMessages(messages: Message[]): Message[] {
 export function projectRoomActivityMessages(messages: Message[]): TaskEvent[] {
   return messages
     .filter((message) => message.layer === 'activity')
-    .map((message) => {
+    .flatMap((message) => {
       const metadata = parseMessageMetadata(message.metadata);
+      if (metadata.task_id) return [];
       const type = metadata.event_type ?? 'task_updated';
       const taskId = metadata.task_id ?? `room:${message.room_id}`;
       const sourceMessageId = metadata.message_id;
-      return {
+      return [{
         id: `message:${message.id}`,
         task_id: taskId,
         room_id: message.room_id,
@@ -112,7 +113,7 @@ export function projectRoomActivityMessages(messages: Message[]): TaskEvent[] {
         },
         source_run_id: null,
         created_at: message.created_at,
-      };
+      }];
     });
 }
 

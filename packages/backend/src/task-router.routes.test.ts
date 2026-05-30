@@ -123,6 +123,7 @@ test('POST /rooms/:roomId/messages broadcasts activation when explicit routing s
 });
 
 test('POST /rooms/:roomId/messages creates a task for clear create-task intent', async () => {
+  resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Task Router Create Route',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-create-route-project-')),
@@ -135,6 +136,7 @@ test('POST /rooms/:roomId/messages creates a task for clear create-task intent',
   });
 
   assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 0);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
