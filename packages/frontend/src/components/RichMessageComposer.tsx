@@ -1,5 +1,5 @@
 import { type DragEvent, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Files, Image, Paperclip, Send, X } from 'lucide-react';
+import { Files, Image, Paperclip, Send, Wrench, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   MAX_MESSAGE_FILES,
@@ -227,6 +227,16 @@ export function RichMessageComposer({
     addFiles(Array.from(event.dataTransfer.files));
   };
 
+  const insertToolWorkflowPrompt = () => {
+    if (isBusy) return;
+    setSegments((current) => {
+      const plainText = segmentsToPlainText(current);
+      const separator = plainText && !/\s$/.test(plainText) ? ' ' : '';
+      return [...current, { type: 'text', text: `${separator}/workflow ` }];
+    });
+    requestAnimationFrame(() => promptAreaRef.current?.focus());
+  };
+
   return (
     <form
       className="rich-composer-box relative"
@@ -333,6 +343,19 @@ export function RichMessageComposer({
             }}
             disabled={isBusy}
           />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="composer-action-button composer-tool-button"
+            onClick={insertToolWorkflowPrompt}
+            disabled={isBusy}
+            aria-label="Tool"
+            title="Tool"
+          >
+            <Wrench className="h-4 w-4" strokeWidth={1.75} />
+            <span>Tool</span>
+          </Button>
           <Button
             type="button"
             variant="ghost"
