@@ -465,3 +465,88 @@ test('parseMessageMetadata ignores invalid planner decisions and invalid trace r
   assert.equal(parsed.planner_decision, undefined);
   assert.equal(parsed.trace, undefined);
 });
+
+test('parseMessageMetadata accepts valid intent_result metadata and sanitizes signals', () => {
+  const metadata = JSON.stringify({
+    intent_result: {
+      intent: 'workflow',
+      source: 'classifier',
+      confidence: 0.92,
+      reason: '用户明确要求实现与修复',
+      suggested_action: 'start_workflow',
+      signals: ['实现', '', '修复', '  ', '任务', '前端', 1, null, 'A', 'B', 'C', 'D', 'E'],
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.deepEqual(parsed.intent_result, {
+    intent: 'workflow',
+    source: 'classifier',
+    confidence: 0.92,
+    reason: '用户明确要求实现与修复',
+    suggestedAction: 'start_workflow',
+    signals: ['实现', '修复', '任务', '前端', 'A', 'B', 'C', 'D'],
+  });
+});
+
+test('parseMessageMetadata rejects invalid intent_result metadata', () => {
+  const cases = [
+    {
+      name: 'invalid intent',
+      value: {
+        intent: 'invalid',
+        source: 'classifier',
+        confidence: 0.8,
+        reason: 'bad',
+        suggestedAction: 'start_workflow',
+      },
+    },
+    {
+      name: 'invalid source',
+      value: {
+        intent: 'workflow',
+        source: 'unknown',
+        confidence: 0.8,
+        reason: 'bad',
+        suggestedAction: 'start_workflow',
+      },
+    },
+    {
+      name: 'invalid action',
+      value: {
+        intent: 'workflow',
+        source: 'classifier',
+        confidence: 0.8,
+        reason: 'bad',
+        suggestedAction: 'do_anything',
+      },
+    },
+    {
+      name: 'invalid confidence',
+      value: {
+        intent: 'workflow',
+        source: 'classifier',
+        confidence: 1.2,
+        reason: 'bad',
+        suggestedAction: 'start_workflow',
+      },
+    },
+    {
+      name: 'invalid reason',
+      value: {
+        intent: 'workflow',
+        source: 'classifier',
+        confidence: 0.8,
+        reason: '   ',
+        suggestedAction: 'start_workflow',
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    const metadata = JSON.stringify({ intent_result: item.value });
+    const parsed = parseMessageMetadata(metadata);
+    assert.equal(parsed.intent_result, undefined, item.name);
+  }
+});

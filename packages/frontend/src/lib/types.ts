@@ -761,6 +761,7 @@ export interface ResourceDetail {
 export interface MessageMetadata {
   attachments: MessageAttachmentMetadata[];
   reply_to?: MessageReplyMetadata;
+  intent_result?: MessageIntentResult;
   planner_decision?: PlannerDecision;
   trace?: MessageTrace;
   acp_enabled?: boolean;
@@ -786,6 +787,26 @@ export interface RouteResult {
   action: 'append_to_task' | 'switch_task' | 'create_task' | 'ask_user';
   confidence: number;
   reason: string;
+}
+
+export type MessageIntent = 'chat' | 'light_task' | 'debugger' | 'brainstorming' | 'workflow';
+export type MessageIntentSource = 'rule' | 'classifier';
+export type MessageIntentSuggestedAction =
+  | 'reply_in_chat'
+  | 'create_light_task'
+  | 'enter_debugger'
+  | 'start_brainstorming'
+  | 'start_workflow'
+  | 'create_task'
+  | 'ask_user';
+
+export interface MessageIntentResult {
+  intent: MessageIntent;
+  source?: MessageIntentSource;
+  suggestedAction: MessageIntentSuggestedAction;
+  confidence: number;
+  reason: string;
+  signals?: string[];
 }
 
 export type PlannerExecutionMode = 'pause_after_suggestion' | 'auto_continue' | 'dispatch_next';

@@ -14,6 +14,10 @@ import type {
   MessageTraceThinking,
   MessageTraceToolCall,
   MessageAttachmentMetadata,
+  MessageIntent,
+  MessageIntentResult,
+  MessageIntentSource,
+  MessageIntentSuggestedAction,
   MessageMetadata,
   MessageReplyMetadata,
   PlannerDecision,
@@ -62,6 +66,17 @@ const taskExecutionIntents = new Set<TaskExecutionIntent>([
   'debug_fix',
   'review_only',
 ]);
+const messageIntents = new Set<MessageIntent>(['chat', 'light_task', 'debugger', 'brainstorming', 'workflow']);
+const messageIntentSources = new Set<MessageIntentSource>(['rule', 'classifier']);
+const messageIntentSuggestedActions = new Set<MessageIntentSuggestedAction>([
+  'reply_in_chat',
+  'create_light_task',
+  'enter_debugger',
+  'start_brainstorming',
+  'start_workflow',
+  'create_task',
+  'ask_user',
+]);
 
 function createEmptyMessageMetadata(): MessageMetadata {
   return { attachments: [] };
@@ -84,12 +99,14 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
     const collaboration = sanitizeCollaborationDecisionMetadata(parsed);
     const taskReadiness = sanitizeTaskReadinessMetadata(parsed);
     const plannerDecision = sanitizePlannerDecisionMetadata(parsed);
+    const intentResult = sanitizeIntentResultMetadata(parsed);
     const trace = sanitizeTraceMetadata(parsed);
     const acp = sanitizeAcpMetadata(parsed);
     const reply = sanitizeReplyMetadata(parsed);
     return {
       attachments,
       ...reply,
+      ...intentResult,
       ...taskEvent,
       ...collaboration,
       ...taskReadiness,
@@ -168,6 +185,11 @@ function sanitizeTaskReadinessMetadata(value: Record<string, unknown>) {
   return readiness ? { task_readiness: readiness } : {};
 }
 
+function sanitizeIntentResultMetadata(value: Record<string, unknown>) {
+  const intentResult = sanitizeIntentResult(value.intent_result);
+  return intentResult ? { intent_result: intentResult } : {};
+}
+
 function sanitizePlannerDecisionMetadata(value: Record<string, unknown>) {
   const decision = sanitizePlannerDecision(value.planner_decision);
   if (!decision) return {};
@@ -191,6 +213,52 @@ function sanitizeAcpMetadata(value: Record<string, unknown>) {
       : {}),
     ...(typeof value.internal === 'boolean' ? { internal: value.internal } : {}),
   };
+}
+
+function sanitizeIntentResult(value: unknown): MessageIntentResult | null {
+  if (!isRecord(value)) return null;
+  const suggestedAction = sanitizeIntentSuggestedAction(value);
+  if (
+    !isMessageIntent(value.intent) ||
+    !isMessageIntentSource(value.source) ||
+    !suggestedAction ||
+    typeof value.confidence !== 'number' ||
+    !Number.isFinite(value.confidence) ||
+    value.confidence < 0 ||
+    value.confidence > 1 ||
+    typeof value.reason !== 'string' ||
+    !value.reason.trim()
+  ) {
+    return null;
+  }
+
+  const signals = sanitizeIntentSignals(value.signals);
+  return {
+    intent: value.intent,
+    source: value.source,
+    suggestedAction,
+    confidence: value.confidence,
+    reason: value.reason,
+    ...(signals.length > 0 ? { signals } : {}),
+  };
+}
+
+function sanitizeIntentSuggestedAction(value: Record<string, unknown>): MessageIntentSuggestedAction | null {
+  const action = typeof value.suggestedAction === 'string'
+    ? value.suggestedAction
+    : typeof value.suggested_action === 'string'
+      ? value.suggested_action
+      : null;
+  return isMessageIntentSuggestedAction(action) ? action : null;
+}
+
+function sanitizeIntentSignals(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .slice(0, 8);
 }
 
 function sanitizePlannerDecision(value: unknown): PlannerDecision | null {
@@ -475,6 +543,18 @@ function isAcpBackend(value: unknown): value is AcpBackend {
 
 function isTaskExecutionIntent(value: unknown): value is TaskExecutionIntent {
   return typeof value === 'string' && taskExecutionIntents.has(value as TaskExecutionIntent);
+}
+
+function isMessageIntent(value: unknown): value is MessageIntent {
+  return typeof value === 'string' && messageIntents.has(value as MessageIntent);
+}
+
+function isMessageIntentSource(value: unknown): value is MessageIntentSource {
+  return typeof value === 'string' && messageIntentSources.has(value as MessageIntentSource);
+}
+
+function isMessageIntentSuggestedAction(value: unknown): value is MessageIntentSuggestedAction {
+  return typeof value === 'string' && messageIntentSuggestedActions.has(value as MessageIntentSuggestedAction);
 }
 
 function isTaskEventType(value: string): value is TaskEventType {
