@@ -370,6 +370,9 @@ export function RoomPage() {
         queryClient.setQueryData<AgentRun[] | undefined>(['agent-runs', roomId], (prev) =>
           upsertAgentRun(prev, event.run),
         );
+        if (event.run.task_id) {
+          queryClient.invalidateQueries({ queryKey: ['task-executors', event.run.task_id] });
+        }
         if (event.type === 'agent_run:updated' && isTerminalAgentRunStatus(event.run.status)) {
           finalizedStreamRunIds.current.add(event.run.id);
           const messageId =

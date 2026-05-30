@@ -206,6 +206,12 @@ export type MemoryType = 'decision' | 'fact' | 'preference' | 'lesson' | 'task_s
 export type MemorySourceType = 'manual' | 'message' | 'workflow' | 'task';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
 export type TaskCreatedFrom = 'manual' | 'chat_plan' | 'slash_command' | 'workflow_assignment';
+export type AcpSessionHandoffReason =
+  | 'manual_new_session'
+  | 'first_session'
+  | 'resume_unavailable'
+  | 'automatic_rotation'
+  | 'automatic_rotation_after_events';
 export type TaskEventType =
   | 'message_routed'
   | 'message_route_uncertain'
@@ -945,6 +951,22 @@ export interface TaskEventReplayState {
 export interface TaskEventListResponse {
   events: TaskEvent[];
   replay?: TaskEventReplayState | null;
+}
+
+export interface TaskExecutorListItem {
+  id: string;
+  task_id: string;
+  room_id: string;
+  room_agent_id: string;
+  agent_id: string;
+  agent_name: string | null;
+  acp_backend: AcpBackend | null;
+  acp_session_id: string | null;
+  status: 'idle' | 'running' | 'blocked' | 'failed';
+  acp_session_handoff_pending: 0 | 1;
+  acp_session_handoff_reason: AcpSessionHandoffReason | null;
+  created_at: number;
+  updated_at: number;
 }
 
 export interface Task {

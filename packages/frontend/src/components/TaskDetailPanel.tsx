@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Box, ChevronRight, Clock3, FileDiff, ListChecks, LocateFixed, Radio, Terminal, XCircle } from 'lucide-react';
+import { Box, ChevronRight, Clock3, FileDiff, ListChecks, LocateFixed, Radio, ServerCog, Terminal, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n, type MessageKey } from '../lib/i18n';
-import type { MessageLayer, RoomAgent, Task, TaskEvent } from '../lib/types';
+import type { MessageLayer, RoomAgent, Task, TaskEvent, TaskExecutorListItem } from '../lib/types';
 import { AgentAvatar } from './AgentAvatar';
 import { Button } from './ui/Button';
 import { Label } from './ui/Input';
@@ -70,6 +70,11 @@ export function TaskDetailPanel({
   const { data: eventResponse } = useQuery({
     queryKey: ['room-task-events', task?.room_id, task?.id],
     queryFn: () => api.listRoomTaskEvents(task!.room_id, { taskId: task!.id, limit: 80 }),
+    enabled: !!task,
+  });
+  const { data: executors = [], isLoading: executorsLoading } = useQuery({
+    queryKey: ['task-executors', task?.id],
+    queryFn: () => api.listTaskExecutors(task!.id),
     enabled: !!task,
   });
   const events = eventResponse?.events ?? [];
@@ -168,6 +173,8 @@ export function TaskDetailPanel({
             {task.description || t('taskDetail.noDescription')}
           </div>
         </section>
+
+        <TaskExecutorSessions executors={executors} isLoading={executorsLoading} t={t} />
 
         {activeView === 'plan' && (
           <TaskPlanView task={task} events={planEvents} formatRelativeTime={formatRelativeTime} t={t} />
@@ -410,6 +417,64 @@ export function TaskLayerToggles({
   );
 }
 
+export function TaskExecutorSessions({
+  executors,
+  isLoading,
+  t,
+}: {
+  executors: TaskExecutorListItem[];
+  isLoading: boolean;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}): JSX.Element {
+  return (
+    <section className="inspector-section">
+      <Label>{t('taskDetail.executors')}</Label>
+      <div className="task-executor-list glass-info-card">
+        {isLoading && (
+          <div className="task-executor-empty">
+            <ServerCog className="h-4 w-4 shrink-0 text-[var(--color-muted)]" strokeWidth={1.8} />
+            <span>{t('taskDetail.executorsLoading')}</span>
+          </div>
+        )}
+
+        {!isLoading && executors.length === 0 && (
+          <div className="task-executor-empty">
+            <ServerCog className="h-4 w-4 shrink-0 text-[var(--color-muted)]" strokeWidth={1.8} />
+            <span>{t('taskDetail.noExecutors')}</span>
+          </div>
+        )}
+
+        {!isLoading && executors.map((executor) => (
+          <div key={executor.id} className="task-executor-row">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-[12.5px] font-semibold text-[var(--color-fg)]">
+                  {executor.agent_name ?? executor.agent_id}
+                </span>
+                <span className="task-executor-status" data-status={executor.status}>
+                  {taskExecutorStatusLabel(executor.status, t)}
+                </span>
+              </div>
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10.5px] text-[var(--color-muted)]">
+                <span className="truncate">{executor.acp_backend ?? t('taskDetail.executorBackendUnknown')}</span>
+                <span>·</span>
+                <span className="truncate">
+                  {executor.acp_session_id ? shortSessionId(executor.acp_session_id) : t('taskDetail.noSession')}
+                </span>
+              </div>
+              {executor.acp_session_handoff_pending === 1 && (
+                <div className="mt-2 rounded bg-[var(--color-warning-soft)] px-2 py-1 text-[10.5px] font-semibold text-[var(--color-warning)]">
+                  {t('taskExecutor.handoffPending')}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function TaskPlanView({
   task,
   events,
@@ -465,6 +530,19 @@ function eventLayerLabel(layer: MessageLayer, t: (key: MessageKey) => string): s
   const key = `taskLayer.${layer}` as MessageKey;
   const translated = t(key);
   return translated === key ? layer : translated;
+}
+
+function taskExecutorStatusLabel(
+  status: TaskExecutorListItem['status'],
+  t: (key: MessageKey) => string,
+): string {
+  const key = `taskExecutor.status.${status}` as MessageKey;
+  const translated = t(key);
+  return translated === key ? status : translated;
+}
+
+function shortSessionId(sessionId: string): string {
+  return sessionId.length > 12 ? `${sessionId.slice(0, 8)}…${sessionId.slice(-4)}` : sessionId;
 }
 
 function InfoRow({ label, value }: { label: string; value: string }): JSX.Element {

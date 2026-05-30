@@ -35,6 +35,7 @@ import { resourceAssetRepo } from './repos/resource-assets.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskEventRepo } from './repos/task-events.js';
+import { taskExecutorRepo } from './repos/task-executors.js';
 import { taskRepo } from './repos/tasks.js';
 import { workflowContextRepo } from './repos/workflow-context.js';
 import { workflowDefinitionRepo } from './repos/workflow-definitions.js';
@@ -2678,6 +2679,12 @@ router.patch('/tasks/:id', (req, res) => {
   if (!finalTask) return res.status(404).json({ error: 'task not found' });
   wsHub.broadcast(finalTask.room_id, { type: 'task:updated', task: finalTask });
   res.json(finalTask);
+});
+
+router.get('/tasks/:id/executors', (req, res) => {
+  const task = taskRepo.get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'task not found' });
+  res.json(taskExecutorRepo.listByTask(task.id));
 });
 
 router.delete('/tasks/:id', (req, res) => {

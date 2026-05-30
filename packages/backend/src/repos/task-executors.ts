@@ -2,6 +2,11 @@ import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
 import type { AcpSessionHandoffReason, TaskExecutor } from '../types.js';
 
+export interface TaskExecutorListItem extends TaskExecutor {
+  agent_name: string | null;
+  acp_backend: string | null;
+}
+
 export const taskExecutorRepo = {
   ensure(input: {
     task_id: string;
@@ -44,6 +49,21 @@ export const taskExecutorRepo = {
     return db
       .prepare('SELECT * FROM task_executors WHERE task_id = ? AND room_agent_id = ?')
       .get(taskId, roomAgentId) as TaskExecutor | undefined;
+  },
+
+  listByTask(taskId: string): TaskExecutorListItem[] {
+    return db
+      .prepare(
+        `SELECT
+          task_executors.*,
+          room_agents.agent_name AS agent_name,
+          room_agents.acp_backend AS acp_backend
+         FROM task_executors
+         LEFT JOIN room_agents ON room_agents.id = task_executors.room_agent_id
+         WHERE task_executors.task_id = ?
+         ORDER BY task_executors.updated_at DESC, task_executors.id ASC`,
+      )
+      .all(taskId) as TaskExecutorListItem[];
   },
 
   updateSession(id: string, acpSessionId: string | null): TaskExecutor | undefined {

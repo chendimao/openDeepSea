@@ -53,6 +53,7 @@ import type {
   Task,
   TaskEvent,
   TaskEventListResponse,
+  TaskExecutorListItem,
   TaskInteractionMode,
   WorkflowDetail,
   WorkflowDefinition,
@@ -836,6 +837,8 @@ export const api = {
     patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id' | 'status'>>,
   ) =>
     request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  listTaskExecutors: (taskId: string) =>
+    request<TaskExecutorListItem[]>(`/tasks/${taskId}/executors`),
   activateTask: (roomId: string, taskId: string) =>
     request<{ roomId: string; taskId: string }>(`/rooms/${roomId}/tasks/${taskId}/activate`, { method: 'POST' }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),

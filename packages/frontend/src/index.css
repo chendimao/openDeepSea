@@ -1529,6 +1529,44 @@
   .task-event-row + .task-event-row {
     border-top: 1px solid rgba(255,255,255,0.58);
   }
+  .task-executor-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 6px 10px;
+  }
+  .task-executor-empty {
+    display: flex;
+    min-height: 72px;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--color-fg-muted);
+  }
+  .task-executor-row {
+    display: flex;
+    gap: 10px;
+    padding: 10px 0;
+  }
+  .task-executor-row + .task-executor-row {
+    border-top: 1px solid rgba(255,255,255,0.58);
+  }
+  .task-executor-status {
+    flex-shrink: 0;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.72);
+    padding: 2px 7px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--color-fg-muted);
+  }
+  .task-executor-status[data-status="running"] {
+    color: var(--color-success);
+  }
+  .task-executor-status[data-status="blocked"],
+  .task-executor-status[data-status="failed"] {
+    color: var(--color-danger);
+  }
   .task-event-dot {
     margin-top: 5px;
     height: 9px;

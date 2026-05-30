@@ -233,6 +233,44 @@ test('listRoomTaskEvents requests replay projection when enabled', async () => {
   }
 });
 
+test('listTaskExecutors requests task-scoped executor sessions', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify([
+      {
+        id: 'executor-1',
+        task_id: 'task-1',
+        room_id: 'room-1',
+        room_agent_id: 'agent-row-1',
+        agent_id: 'codex',
+        agent_name: 'Codex Agent',
+        acp_backend: 'codex',
+        acp_session_id: 'session-123456',
+        status: 'running',
+        acp_session_handoff_pending: 0,
+        acp_session_handoff_reason: null,
+        created_at: 1,
+        updated_at: 2,
+      },
+    ]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    const response = await api.listTaskExecutors('task-1');
+
+    assert.equal(requestedUrl, '/api/tasks/task-1/executors');
+    assert.equal(response[0]?.agent_name, 'Codex Agent');
+    assert.equal(response[0]?.status, 'running');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function createResourceListItem(input: Partial<ResourceListItem>): ResourceListItem {
   return {
     id: 'resource-1',

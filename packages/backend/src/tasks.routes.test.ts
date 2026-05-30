@@ -9,8 +9,10 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-ta
 const express = (await import('express')).default;
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
+const { roomAgentRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
+const { taskExecutorRepo } = await import('./repos/task-executors.js');
 const { wsHub } = await import('./ws-hub.js');
 const { router } = await import('./routes.js');
 
@@ -135,6 +137,40 @@ test('task patch route rejects unsupported fields instead of ignoring them', asy
   assert.equal(res.status, 400);
   const unchanged = taskRepo.get(task.id);
   assert.equal(unchanged?.parent_task_id, null);
+});
+
+test('task executors route lists task-scoped executor sessions', async () => {
+  const project = projectRepo.create({
+    name: 'Task Executors Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-executors-route-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'codex', agent_name: 'Codex Agent' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Executor visible task' });
+  taskExecutorRepo.ensure({
+    task_id: task.id,
+    room_id: room.id,
+    room_agent_id: agent.id,
+    agent_id: agent.agent_id,
+    acp_session_id: 'task-session',
+  });
+
+  const res = await request(`/api/tasks/${task.id}/executors`);
+
+  assert.equal(res.status, 200);
+  const body = await res.json() as Array<{
+    task_id: string;
+    room_agent_id: string;
+    agent_name: string;
+    acp_session_id: string;
+    status: string;
+  }>;
+  assert.equal(body.length, 1);
+  assert.equal(body[0]?.task_id, task.id);
+  assert.equal(body[0]?.room_agent_id, agent.id);
+  assert.equal(body[0]?.agent_name, 'Codex Agent');
+  assert.equal(body[0]?.acp_session_id, 'task-session');
+  assert.equal(body[0]?.status, 'idle');
 });
 
 test('conversation task route creates task and system event', async () => {

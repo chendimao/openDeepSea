@@ -82,3 +82,45 @@ test('taskExecutorRepo stores handoff pending state per task executor', () => {
   assert.equal(taskExecutorRepo.get(first.id)?.acp_session_handoff_pending, 0);
   assert.equal(taskExecutorRepo.get(first.id)?.acp_session_handoff_reason, null);
 });
+
+test('taskExecutorRepo lists task executors with room agent display fields', () => {
+  const project = projectRepo.create({
+    name: 'Task Executor List',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-executors-list-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const codex = roomAgentRepo.add({ room_id: room.id, agent_id: 'codex', agent_name: 'Codex Agent' });
+  const reviewer = roomAgentRepo.add({ room_id: room.id, agent_id: 'reviewer', agent_name: 'Reviewer Agent' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Visible executors' });
+  const otherTask = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Other task' });
+  const first = taskExecutorRepo.ensure({
+    task_id: task.id,
+    room_id: room.id,
+    room_agent_id: codex.id,
+    agent_id: codex.agent_id,
+    acp_session_id: 'codex-session',
+  });
+  taskExecutorRepo.updateStatus(first.id, 'running');
+  taskExecutorRepo.ensure({
+    task_id: task.id,
+    room_id: room.id,
+    room_agent_id: reviewer.id,
+    agent_id: reviewer.agent_id,
+    acp_session_id: 'review-session',
+  });
+  taskExecutorRepo.ensure({
+    task_id: otherTask.id,
+    room_id: room.id,
+    room_agent_id: codex.id,
+    agent_id: codex.agent_id,
+    acp_session_id: 'other-session',
+  });
+
+  const executors = taskExecutorRepo.listByTask(task.id);
+  const sortedExecutors = [...executors].sort((a, b) => String(a.agent_name).localeCompare(String(b.agent_name)));
+
+  assert.deepEqual(sortedExecutors.map((executor) => executor.agent_name), ['Codex Agent', 'Reviewer Agent']);
+  assert.deepEqual(sortedExecutors.map((executor) => executor.acp_session_id), ['codex-session', 'review-session']);
+  assert.deepEqual(sortedExecutors.map((executor) => executor.status), ['running', 'idle']);
+  assert.equal(executors.some((executor) => executor.acp_session_id === 'other-session'), false);
+});
