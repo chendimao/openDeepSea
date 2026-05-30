@@ -1801,6 +1801,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     content,
     mentions: parsed.data.mentions,
     metadata,
+    dispatch: shouldDispatchRoutedUserMessage(routeResult, parsed.data.mentions),
   });
   finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
@@ -1902,6 +1903,7 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       content,
       mentions,
       metadata,
+      dispatch: shouldDispatchRoutedUserMessage(routeResult, mentions),
     });
     finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
     recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
@@ -1975,6 +1977,7 @@ function createAndDispatchUserMessage(input: {
   content: string;
   mentions?: string[];
   metadata?: MessageMetadata;
+  dispatch?: boolean;
 }): ReturnType<typeof messageRepo.create> {
   const userMsg = messageRepo.create({
     room_id: input.roomId,
@@ -1986,6 +1989,7 @@ function createAndDispatchUserMessage(input: {
     metadata: input.metadata as Record<string, unknown> | undefined,
   });
   wsHub.broadcast(input.roomId, { type: 'message:new', roomId: input.roomId, message: userMsg });
+  if (input.dispatch === false) return userMsg;
   // 这里是用户消息落库后触发智能体继续回复的最小入口。
   const agents = roomAgentRepo.listByRoom(input.roomId);
   const mentionedAgentRoomIds = resolveMentionedAgentRoomIds({
@@ -2000,6 +2004,11 @@ function createAndDispatchUserMessage(input: {
     mentionedAgentRoomIds,
   });
   return userMsg;
+}
+
+function shouldDispatchRoutedUserMessage(routeResult: import('./types.js').RouteResult, mentions?: string[]): boolean {
+  if (routeResult.action !== 'ask_user') return true;
+  return Boolean(mentions?.length);
 }
 
 function recordTaskRoutingEvent(

@@ -14,8 +14,16 @@ const { taskEventRepo } = await import('./repos/task-events.js');
 const { wsHub } = await import('./ws-hub.js');
 const { router, setMessageRouteDeps } = await import('./routes.js');
 
+const dispatchCalls: Array<{
+  roomId: string;
+  userMessage: { id: string; content: string };
+  mentionedAgentRoomIds?: string[];
+}> = [];
+
 setMessageRouteDeps({
-  dispatchUserMessage: async () => {},
+  dispatchUserMessage: async (input) => {
+    dispatchCalls.push(input);
+  },
 });
 
 const app = express();
@@ -34,6 +42,10 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+}
+
+function resetDispatchCalls(): void {
+  dispatchCalls.length = 0;
 }
 
 test('POST /rooms/:roomId/messages records task routing metadata and activity event', async () => {
@@ -143,6 +155,7 @@ test('POST /rooms/:roomId/messages creates a task for clear create-task intent',
 });
 
 test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', async () => {
+  resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Task Router Ask User Route',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-ask-user-route-project-')),
@@ -156,6 +169,7 @@ test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', a
   });
 
   assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 0);
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     route_result?: { action: string; taskId: string | null; reason: string };
@@ -178,7 +192,30 @@ test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', a
   assert.ok(routePrompt);
 });
 
+test('POST /rooms/:roomId/messages still dispatches ask_user messages with explicit mentions', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Ask User Mention Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-ask-user-mention-route-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: '这个事情还要再看一下',
+      mentions: ['room-agent-1'],
+    }),
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 1);
+  assert.equal(dispatchCalls[0]?.roomId, room.id);
+  assert.deepEqual(dispatchCalls[0]?.mentionedAgentRoomIds, ['room-agent-1']);
+});
+
 test('POST /rooms/:roomId/messages ignores terminal active task when routing', async () => {
+  resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Task Router Terminal Active Route',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-terminal-active-route-project-')),
@@ -196,6 +233,7 @@ test('POST /rooms/:roomId/messages ignores terminal active task when routing', a
   });
 
   assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 0);
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
@@ -208,6 +246,7 @@ test('POST /rooms/:roomId/messages ignores terminal active task when routing', a
 });
 
 test('POST /rooms/:roomId/messages rejects explicit terminal task routing', async () => {
+  resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Task Router Explicit Terminal Route',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-explicit-terminal-route-project-')),
@@ -224,6 +263,7 @@ test('POST /rooms/:roomId/messages rejects explicit terminal task routing', asyn
   });
 
   assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 0);
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
