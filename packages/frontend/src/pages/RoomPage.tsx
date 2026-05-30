@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, ChevronDown, Eye, FileText, MessageSquare, Reply, RotateCcw } from 'lucide-react';
+import { ChevronDown, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -9,15 +9,12 @@ import type {
   Agent,
   AgentRun,
   Message,
-  MessageIntent,
-  PlannerDecision,
   Room,
   RoomAgent,
   Task,
   MessageLayer,
   WorkflowRun,
 } from '../lib/types';
-import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
 import { recordRecentRoomVisit } from '../lib/recentRooms';
 import { cn } from '../lib/utils';
@@ -32,8 +29,6 @@ import {
   type StreamingDisplayState,
 } from '../lib/streamingDisplay';
 import { createStreamingEventTracker, shouldApplyStreamingEvent } from '../lib/streamingEvents';
-import { AgentAvatar } from '../components/AgentAvatar';
-import { AgentRunStatusCard } from '../components/AgentRunPanel';
 import { AcpConfigPanel } from '../components/AcpConfigPanel';
 import { AddAgentDialog } from '../components/AddAgentDialog';
 import { MemoryPanel } from '../components/MemoryPanel';
@@ -42,12 +37,14 @@ import { RoomFilesPanel } from '../components/RoomFilesPanel';
 import type { TaskLayerVisibility } from '../components/TaskDetailPanel';
 import { TaskWorkspacePanel } from '../components/TaskWorkspacePanel';
 import type { TaskStatusFilter } from '../components/taskBoardLogic';
-import { MessageIntentCard } from '../components/MessageIntentCard';
-import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
+import { ChatMessageBubble } from '../components/chat/ChatMessageBubble';
 import { ChatPanelHeader, type RoomFeatureTab } from '../components/chat/ChatPanelHeader';
-import { MessageAttachments } from '../components/chat/MessageAttachments';
-import { PlannerDecisionPanel } from '../components/chat/PlannerDecisionPanel';
+import {
+  findPreviousUserMessage,
+  pairRunsWithAgentMessages,
+  shouldUseStreamingDisplayForMessage,
+} from '../components/chat/chatMessageModel';
 import { RoomTopNavigation } from '../components/layout/RoomTopNavigation';
 import {
   Conversation,
@@ -56,23 +53,12 @@ import {
   ConversationScrollButton,
 } from '../components/ai-elements/Conversation';
 import {
-  MessageActions as AiMessageActions,
-  MessageBadge as AiMessageBadge,
-  MessageBody as AiMessageBody,
-  MessageHeader as AiMessageHeader,
-  MessageMeta as AiMessageMeta,
-  MessageRow as AiMessageRow,
-  MessageRunPanel as AiMessageRunPanel,
-} from '../components/ai-elements/Message';
-import {
   applyMessageStreamBatch,
   createDefaultReplyTarget,
-  createPlannerDispatchInput,
   createReplyTarget,
   getRoutableActiveTaskId,
   projectRoomActivityMessages,
   selectChatLayerMessages,
-  shouldShowPlannerDecisionPanel,
   type MessageStreamUpdate,
   type ReplyTarget,
   type StreamTraceChannel,
@@ -746,17 +732,6 @@ function isTerminalAgentRunStatus(status: AgentRun['status']): boolean {
   return status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'interrupted';
 }
 
-export function shouldUseStreamingDisplayForMessage(
-  message: Message,
-  run: AgentRun | undefined,
-  hasLocalStreamingState: boolean,
-): boolean {
-  if (message.sender_type === 'user' || message.message_type !== 'agent_stream') return false;
-  if (run && isTerminalAgentRunStatus(run.status)) return false;
-  if (run && (run.status === 'running' || run.status === 'queued' || run.status === 'retrying')) return true;
-  return hasLocalStreamingState;
-}
-
 function findAgentRunMessageId(messages: Message[] | undefined, run: AgentRun): string | null {
   if (!messages) return null;
   const message = messages.find((item) =>
@@ -986,7 +961,7 @@ function ChatColumn({
               const isStreamingMessage = shouldUseStreamingDisplayForMessage(m, run, hasLocalStreamingState);
               const displayMode = messageDisplayModes[m.id] ?? 'preview';
               return (
-                <MessageBubble
+                <ChatMessageBubble
                   key={m.id}
                   message={m}
                   agentMeta={agentMap.get(m.sender_id)}
@@ -1048,325 +1023,6 @@ function ChatColumn({
         }
       />
     </div>
-  );
-}
-
-function pairRunsWithAgentMessages(messages: Message[], runs: AgentRun[]): Map<string, AgentRun> {
-  const result = new Map<string, AgentRun>();
-  const usedRunIds = new Set<string>();
-  const sortedRuns = [...runs].sort((a, b) => a.started_at - b.started_at);
-
-  for (const message of messages) {
-    if (message.sender_type !== 'agent' || message.message_type !== 'agent_stream') continue;
-    const run = sortedRuns.find((candidate) => {
-      if (usedRunIds.has(candidate.id)) return false;
-      if (candidate.agent_id !== message.sender_id) return false;
-      const distance = Math.abs(candidate.started_at - message.created_at);
-      return distance <= 5000;
-    });
-    if (!run) continue;
-    result.set(message.id, run);
-    usedRunIds.add(run.id);
-  }
-
-  return result;
-}
-
-export function findPreviousUserMessage(messages: Message[], beforeIndex: number): Message | null {
-  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.sender_type === 'user' && message.content.trim()) return message;
-  }
-  return null;
-}
-
-function MessageBubble({
-  message,
-  agentMeta,
-  run,
-  runAgent,
-  roomAgents,
-  globalAgents,
-  roomId,
-  projectId,
-  streaming,
-  displayContent,
-  displayMode,
-  onDisplayModeChange,
-  messageRef,
-  highlighted,
-  onReply,
-  retrySourceMessage,
-  onLocateReplyTarget,
-}: {
-  message: Message;
-  agentMeta?: RoomAgent;
-  run?: AgentRun;
-  runAgent?: RoomAgent;
-  roomAgents: RoomAgent[];
-  globalAgents: Agent[];
-  roomId: string;
-  projectId: string;
-  streaming: boolean;
-  displayContent: string;
-  displayMode: 'preview' | 'source';
-  onDisplayModeChange: (mode: 'preview' | 'source') => void;
-  messageRef: (node: HTMLElement | null) => void;
-  highlighted: boolean;
-  onReply: () => void;
-  retrySourceMessage?: Message | null;
-  onLocateReplyTarget: (messageId: string) => void;
-}) {
-  const { t, formatRelativeTime } = useI18n();
-  const queryClient = useQueryClient();
-  const metadata = parseMessageMetadata(message.metadata);
-  const saveAsMemory = useMutation({
-    mutationFn: () =>
-      api.createMemory(projectId, {
-        scope: 'room',
-        memory_type: 'fact',
-        title: `${message.sender_name ?? message.sender_id}: ${(message.content ?? '').slice(0, 80)}`,
-        content: message.content ?? '',
-        room_id: roomId,
-        source_type: 'message',
-        source_id: message.id,
-      }),
-    onSuccess: () => {
-      toast.success(t('memory.savedFromMessage'));
-      queryClient.invalidateQueries({ queryKey: ['memories', projectId] });
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const retryAgentRun = useMutation({
-    mutationFn: () => {
-      const retryContent = retrySourceMessage?.content?.trim();
-      if (!run || !retryContent) throw new Error('没有可重试的用户消息');
-      return api.sendMessage(roomId, {
-        content: retryContent,
-        mentions: [run.agent_id],
-      });
-    },
-    onSuccess: () => {
-      toast.success('已重新发送给智能体');
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const continuePlanner = useMutation({
-    mutationFn: (input: { source_message_id: string; planner_decision: PlannerDecision }) =>
-      api.dispatchPlannerDecision(roomId, input),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
-      const addedCount = result.added_agents?.length ?? 0;
-      const deferredCount = result.deferred_steps?.length ?? 0;
-      toast.success(
-        result.dispatched > 0
-          ? addedCount > 0
-            ? deferredCount > 0
-              ? `已加入 ${addedCount} 个智能体，先派发 ${result.dispatched} 个，暂缓 ${deferredCount} 个后续步骤`
-              : `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
-            : deferredCount > 0
-              ? `已先派发 ${result.dispatched} 个智能体，暂缓 ${deferredCount} 个后续步骤`
-              : `已派发 ${result.dispatched} 个智能体`
-          : '没有可派发的下一步',
-      );
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const isUser = message.sender_type === 'user';
-  const isSystem = message.sender_type === 'system';
-  const attachments = metadata.attachments;
-  const renderedContent = displayContent || (message.message_type === 'agent_stream' ? '…' : '');
-  const hasContent = Boolean(renderedContent.trim());
-  const hasMarkdownDisplayMode = hasContent && isMarkdownMessageContent(renderedContent);
-  const isStreaming = shouldUseStreamingDisplayForMessage(message, run, streaming);
-  const canReply = !isSystem && hasContent && !isStreaming;
-  const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
-  const showPlannerDecisionPanel = shouldShowPlannerDecisionPanel({
-    isUser,
-    decision: metadata.planner_decision,
-  });
-  const chooseIntent = (intent: MessageIntent) => {
-    const prefixByIntent: Record<MessageIntent, string> = {
-      chat: '/chat ',
-      light_task: '新建任务：',
-      debugger: 'debugger：',
-      brainstorming: '头脑风暴：',
-      workflow: 'workflow：',
-    };
-    const content = `${prefixByIntent[intent]}${message.content}`.trim();
-    void api.sendMessage(roomId, {
-      content,
-      activeTaskId: metadata.task_id,
-    }).then(() => {
-      toast.success('已按选择的消息类型重新发送');
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['tasks', roomId] });
-    }).catch((err) => toast.error((err as Error).message));
-  };
-
-  if (isSystem) {
-    return (
-      <AiMessageRow
-        ref={messageRef}
-        variant="system"
-        data-message-id={message.id}
-        className={cn(highlighted && 'is-highlighted')}
-      >
-        {message.content}
-      </AiMessageRow>
-    );
-  }
-
-  return (
-    <AiMessageRow
-      ref={messageRef}
-      variant={isUser ? 'user' : 'agent'}
-      data-message-id={message.id}
-      className={cn('fade-up', highlighted && 'is-highlighted')}
-    >
-      {!isUser && (
-        <AgentAvatar name={message.sender_name ?? message.sender_id} size={32} active={!!agentMeta?.acp_enabled} />
-      )}
-      <div className="ai-message-card group">
-        <AiMessageHeader>
-          <AiMessageMeta>
-            <span className="ai-message-sender">
-              {isUser ? t('room.currentUser') : message.sender_name ?? message.sender_id}
-            </span>
-            <span className="ai-message-time">
-              {formatRelativeTime(message.created_at)}
-            </span>
-          </AiMessageMeta>
-          {agentMeta?.acp_enabled && agentMeta.acp_backend && (
-            <AiMessageBadge>ACP:{agentMeta.acp_backend}</AiMessageBadge>
-          )}
-          {(hasContent || canRetryAgentRun) && (
-            <AiMessageActions>
-              {hasMarkdownDisplayMode && (
-                <>
-                  <button
-                    type="button"
-                    className={cn('ai-message-action', displayMode === 'preview' && 'is-active')}
-                    title={t('message.preview')}
-                    aria-label={t('message.preview')}
-                    aria-pressed={displayMode === 'preview'}
-                    onClick={() => onDisplayModeChange('preview')}
-                  >
-                    <Eye className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    className={cn('ai-message-action', displayMode === 'source' && 'is-active')}
-                    title={t('message.source')}
-                    aria-label={t('message.source')}
-                    aria-pressed={displayMode === 'source'}
-                    onClick={() => onDisplayModeChange('source')}
-                  >
-                    <FileText className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-                  </button>
-                </>
-              )}
-              {canReply && (
-                <button
-                  type="button"
-                  className="ai-message-action"
-                  title="回复此消息"
-                  onClick={onReply}
-                >
-                  <Reply className="h-3.5 w-3.5" strokeWidth={1.8} />
-                </button>
-              )}
-              {canRetryAgentRun && (
-                <button
-                  type="button"
-                  className="ai-message-action"
-                  title="重试此回复"
-                  disabled={retryAgentRun.isPending}
-                  onClick={() => retryAgentRun.mutate()}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.8} />
-                </button>
-              )}
-              {hasContent && (
-                <button
-                  type="button"
-                  className="ai-message-action"
-                  title={t('memory.saveAsMemory')}
-                  disabled={saveAsMemory.isPending}
-                  onClick={() => saveAsMemory.mutate()}
-                >
-                  <BookmarkPlus className="h-3.5 w-3.5" strokeWidth={1.8} />
-                </button>
-              )}
-            </AiMessageActions>
-          )}
-        </AiMessageHeader>
-        <AiMessageBody stream={isStreaming}>
-          {metadata.reply_to && (
-            <button
-              type="button"
-              className="message-reply-reference"
-              onClick={() => onLocateReplyTarget(metadata.reply_to!.message_id)}
-              title="跳转到引用消息"
-            >
-              <span>{metadata.reply_to.sender_name ?? metadata.reply_to.sender_id}</span>
-              <small>{metadata.reply_to.excerpt}</small>
-            </button>
-          )}
-          {hasContent ? (
-            <MessageContent
-              content={renderedContent}
-              streaming={isStreaming}
-              mode={displayMode}
-              trace={metadata.trace}
-              roomAgents={roomAgents}
-              globalAgents={globalAgents}
-              suppressPlannerDecisionSummary={showPlannerDecisionPanel}
-              roomId={roomId}
-            />
-          ) : message.message_type === 'agent_stream' ? (
-            <MessageContent
-              content="…"
-              streaming={isStreaming}
-              trace={metadata.trace}
-              roomAgents={roomAgents}
-              globalAgents={globalAgents}
-              roomId={roomId}
-            />
-          ) : null}
-          <MessageAttachments attachments={attachments} />
-          {isUser && metadata.intent_result && (
-            <MessageIntentCard intentResult={metadata.intent_result} onChooseIntent={chooseIntent} />
-          )}
-        </AiMessageBody>
-        {showPlannerDecisionPanel && metadata.planner_decision && (
-          <PlannerDecisionPanel
-            decision={metadata.planner_decision}
-            roomAgents={roomAgents}
-            continuing={continuePlanner.isPending}
-            onContinue={() => {
-              const input = createPlannerDispatchInput(message, metadata);
-              if (!input) return;
-              continuePlanner.mutate(input);
-            }}
-          />
-        )}
-        {!isUser && run && (
-          <AiMessageRunPanel>
-            <AgentRunStatusCard
-              roomId={roomId}
-              run={run}
-              agent={runAgent}
-              compact
-            />
-          </AiMessageRunPanel>
-        )}
-      </div>
-    </AiMessageRow>
   );
 }
 

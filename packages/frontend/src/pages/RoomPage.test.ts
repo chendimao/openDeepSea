@@ -3,11 +3,11 @@ import test from 'node:test';
 import type { AgentRun, Message } from '../lib/types';
 import type { AgentTimelineEvent } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
+import { upsertAgentRun } from './RoomPage';
 import {
   findPreviousUserMessage,
   shouldUseStreamingDisplayForMessage,
-  upsertAgentRun,
-} from './RoomPage';
+} from '../components/chat/chatMessageModel';
 import {
   applyMessageStreamBatch,
   applyMessageStreamUpdate,
