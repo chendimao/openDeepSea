@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Box, ChevronRight, Clock3, FileDiff, ListChecks, LocateFixed, Radio, Terminal, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
@@ -39,7 +39,7 @@ export function selectTaskDetailEvents(
   const visibleEvents = events.filter((event) => layerVisibility[event.layer]);
   return {
     visibleEvents,
-    planEvents: events.filter((event) => PLAN_EVENT_TYPES.has(event.type)),
+    planEvents: visibleEvents.filter((event) => PLAN_EVENT_TYPES.has(event.type)),
     timelineEvents: visibleEvents.filter((event) => event.layer === 'activity' || event.layer === 'timeline'),
     diffEvents: visibleEvents.filter((event) => event.layer === 'diff'),
     logEvents: visibleEvents.filter((event) => event.layer === 'runtime'),
@@ -384,7 +384,7 @@ function TaskDetailViewTabs({
   );
 }
 
-function TaskLayerToggles({
+export function TaskLayerToggles({
   layerVisibility,
   onChange,
   t,

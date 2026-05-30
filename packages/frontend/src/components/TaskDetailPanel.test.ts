@@ -21,12 +21,13 @@ test('selectTaskDetailEvents groups task events by detail view and layer visibil
 
   const result = selectTaskDetailEvents(events, {
     ...visible,
+    timeline: false,
     runtime: false,
   });
 
-  assert.deepEqual(result.visibleEvents.map((event) => event.layer), ['activity', 'timeline', 'diff']);
-  assert.deepEqual(result.planEvents.map((event) => event.type), ['workflow_plan_ready']);
-  assert.deepEqual(result.timelineEvents.map((event) => event.layer), ['activity', 'timeline']);
+  assert.deepEqual(result.visibleEvents.map((event) => event.layer), ['activity', 'diff']);
+  assert.deepEqual(result.planEvents, []);
+  assert.deepEqual(result.timelineEvents.map((event) => event.layer), ['activity']);
   assert.deepEqual(result.diffEvents.map((event) => event.layer), ['diff']);
   assert.deepEqual(result.logEvents, []);
 });
