@@ -33,6 +33,11 @@ interface RichMessageComposerProps {
   routingHint: string;
   resetKey: number;
   replyTarget?: ComposerReplyTarget | null;
+  taskRouteTarget?: {
+    kind: 'task' | 'global';
+    label: string;
+    onClear?: () => void;
+  } | null;
   onClearReplyTarget?: () => void;
   onSend: (input: {
     content: string;
@@ -56,6 +61,7 @@ export function RichMessageComposer({
   routingHint,
   resetKey,
   replyTarget,
+  taskRouteTarget,
   onClearReplyTarget,
   onSend,
 }: RichMessageComposerProps): JSX.Element {
@@ -246,6 +252,20 @@ export function RichMessageComposer({
               disabled={isBusy}
             >
               <X className="h-3.5 w-3.5" strokeWidth={1.9} />
+            </button>
+          )}
+        </div>
+      )}
+      {taskRouteTarget && (
+        <div className="composer-task-target" data-kind={taskRouteTarget.kind}>
+          <span className="truncate">{taskRouteTarget.label}</span>
+          {taskRouteTarget.kind === 'task' && taskRouteTarget.onClear && (
+            <button
+              type="button"
+              onClick={taskRouteTarget.onClear}
+              disabled={isBusy}
+            >
+              {t('taskWorkspace.clearActiveTask')}
             </button>
           )}
         </div>

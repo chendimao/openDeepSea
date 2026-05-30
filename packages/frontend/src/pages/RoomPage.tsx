@@ -15,6 +15,7 @@ import type {
   RoomAgent,
   Task,
   MessageLayer,
+  WorkflowRun,
 } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { useI18n } from '../lib/i18n';
@@ -39,8 +40,8 @@ import { MemoryPanel } from '../components/MemoryPanel';
 import { RichMessageComposer } from '../components/RichMessageComposer';
 import { RoomFilesPanel } from '../components/RoomFilesPanel';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
-import { TaskBoard } from '../components/TaskBoard';
-import { TaskDetailPanel, type TaskLayerVisibility } from '../components/TaskDetailPanel';
+import type { TaskLayerVisibility } from '../components/TaskDetailPanel';
+import { TaskWorkspacePanel } from '../components/TaskWorkspacePanel';
 import type { TaskStatusFilter } from '../components/taskBoardLogic';
 import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
@@ -113,7 +114,14 @@ export function RoomPage() {
   const finalizedStreamRunIds = useRef<Set<string>>(new Set());
   const pendingStreamUpdates = useRef<MessageStreamUpdate[]>([]);
   const streamFlushFrame = useRef<number | null>(null);
-  const { t } = useI18n();
+  const {
+    t,
+    formatRelativeTime,
+    interactionModeLabel,
+    taskPriorityLabel,
+    taskStatusLabel,
+    workflowStatusLabel,
+  } = useI18n();
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId],
@@ -164,6 +172,17 @@ export function RoomPage() {
     queryFn: () => api.listRoomTaskEvents(roomId, { layer: 'activity', limit: 80 }),
     enabled: !!roomId,
   });
+  const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
+  const { data: activeTaskEventResponse, isLoading: activeTaskEventsLoading } = useQuery({
+    queryKey: ['room-task-events', activeTask?.room_id, activeTask?.id],
+    queryFn: () => api.listRoomTaskEvents(activeTask!.room_id, { taskId: activeTask!.id, limit: 80 }),
+    enabled: !!activeTask,
+  });
+  const { data: taskExecutors = [], isLoading: taskExecutorsLoading } = useQuery({
+    queryKey: ['task-executors', activeTask?.id],
+    queryFn: () => api.listTaskExecutors(activeTask!.id),
+    enabled: !!activeTask,
+  });
   const roomActivityEvents = useMemo(() => {
     const byId = new Map((roomTaskEventResponse?.events ?? []).map((event) => [event.id, event]));
     for (const event of projectRoomActivityMessages(messages)) {
@@ -171,7 +190,6 @@ export function RoomPage() {
     }
     return [...byId.values()];
   }, [messages, roomTaskEventResponse?.events]);
-  const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
   const routableActiveTaskId = getRoutableActiveTaskId(activeTask);
   const updateTaskStatus = useMutation({
     mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
@@ -180,6 +198,17 @@ export function RoomPage() {
       queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
         upsertTask(prev, task),
       );
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const startWorkflow = useMutation({
+    mutationFn: (task: Task) => api.startWorkflow(task.id),
+    onSuccess: (workflow) => {
+      queryClient.setQueryData<WorkflowRun[] | undefined>(['room-workflows', roomId], (prev) =>
+        upsertWorkflow(prev, workflow),
+      );
+      queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
+      toast.success(t('taskDetail.workflowStarted'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -511,22 +540,38 @@ export function RoomPage() {
         </div>
       </header>
 
-      <div className={cn('workspace-grid task-os-grid', (showMemoryPanel || activeTask) && 'has-inspector')}>
-        <TaskBoard
+      <div className={cn('workspace-grid task-os-grid', showMemoryPanel && 'has-inspector')}>
+        <TaskWorkspacePanel
           tasks={tasks}
+          activeTask={activeTask}
+          activeTaskId={activeTaskId}
           statusFilters={taskStatusFilters}
           onStatusFiltersChange={setTaskStatusFilters}
           activityEvents={roomActivityEvents}
+          taskEvents={activeTaskEventResponse?.events ?? []}
+          taskEventsLoading={activeTaskEventsLoading}
+          executors={taskExecutors}
+          executorsLoading={taskExecutorsLoading}
           agents={agents}
           workflows={workflows}
-          selectedTaskId={activeTaskId}
+          layerVisibility={layerVisibility}
           onSelectTask={(task) => {
             activateTask.mutate(task);
           }}
           onChangeStatus={(task, status) => {
             updateTaskStatus.mutate({ task, status });
           }}
+          onStartWorkflow={(task) => startWorkflow.mutate(task)}
+          startingTaskId={startWorkflow.variables?.id ?? null}
           onLocateSourceMessage={focusMessage}
+          onLayerVisibilityChange={updateLayerVisibility}
+          onClearActiveTask={() => setActiveTaskId(null)}
+          t={t}
+          formatRelativeTime={formatRelativeTime}
+          taskStatusLabel={taskStatusLabel}
+          taskPriorityLabel={taskPriorityLabel}
+          interactionModeLabel={interactionModeLabel}
+          workflowStatusLabel={workflowStatusLabel}
         />
         <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
           <div className="room-main-heading">
@@ -555,9 +600,11 @@ export function RoomPage() {
                 registerMessageRef={registerMessageRef}
                 highlightMessageId={highlightMessageId}
                 explicitReplyTarget={explicitReplyTarget}
+                activeTask={activeTask}
                 activeTaskId={routableActiveTaskId}
                 onReplyToMessage={replyToMessage}
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
+                onClearActiveTask={() => setActiveTaskId(null)}
                 onLocateReplyTarget={focusMessage}
               />
             )}
@@ -570,16 +617,7 @@ export function RoomPage() {
             )}
           </div>
         </section>
-        {activeTask ? (
-          <TaskDetailPanel
-            task={activeTask}
-            agents={agents}
-            layerVisibility={layerVisibility}
-            onLocateSourceMessage={focusMessage}
-            onLayerVisibilityChange={updateLayerVisibility}
-            onClose={() => setActiveTaskId(null)}
-          />
-        ) : showMemoryPanel && (
+        {showMemoryPanel && (
           <aside className="workbench-panel inspector-panel memory-panel-shell p-4">
             <MemoryPanel
               projectId={projectId}
@@ -612,6 +650,12 @@ function upsertMessage(prev: Message[] | undefined, message: Message): Message[]
 function upsertTask(prev: Task[] | undefined, task: Task): Task[] {
   const list = prev ?? [];
   return [task, ...list.filter((item) => item.id !== task.id)]
+    .sort((a, b) => b.updated_at - a.updated_at);
+}
+
+function upsertWorkflow(prev: WorkflowRun[] | undefined, workflow: WorkflowRun): WorkflowRun[] {
+  const list = prev ?? [];
+  return [workflow, ...list.filter((item) => item.id !== workflow.id)]
     .sort((a, b) => b.updated_at - a.updated_at);
 }
 
@@ -929,9 +973,11 @@ function ChatColumn({
   registerMessageRef,
   highlightMessageId,
   explicitReplyTarget,
+  activeTask,
   activeTaskId,
   onReplyToMessage,
   onClearReplyTarget,
+  onClearActiveTask,
   onLocateReplyTarget,
 }: {
   messages: Message[];
@@ -948,9 +994,11 @@ function ChatColumn({
   registerMessageRef: (messageId: string, node: HTMLElement | null) => void;
   highlightMessageId: string | null;
   explicitReplyTarget: ReplyTarget | null;
+  activeTask: Task | null;
   activeTaskId: string | null;
   onReplyToMessage: (message: Message) => void;
   onClearReplyTarget: () => void;
+  onClearActiveTask: () => void;
   onLocateReplyTarget: (messageId: string) => void;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
@@ -986,6 +1034,16 @@ function ChatColumn({
     [defaultReplySuppressedForMessageId, explicitReplyTarget, streamingReplyMessageIds, visibleMessages],
   );
   const canSendChat = agents.length > 0 || modelChatReady;
+  const taskRouteTarget = activeTaskId && activeTask
+    ? {
+      kind: 'task' as const,
+      label: t('composer.targetTask', { id: activeTask.id.slice(0, 6), title: activeTask.title }),
+      onClear: onClearActiveTask,
+    }
+    : {
+      kind: 'global' as const,
+      label: t('composer.targetGlobal'),
+    };
 
   const send = useMutation({
     mutationFn: (input: SendInput) => api.sendMessage(roomId, input),
@@ -1089,6 +1147,7 @@ function ChatColumn({
         disabled={!canSendChat}
         agents={agents}
         replyTarget={defaultReplyTarget}
+        taskRouteTarget={taskRouteTarget}
         onClearReplyTarget={
           explicitReplyTarget
             ? onClearReplyTarget

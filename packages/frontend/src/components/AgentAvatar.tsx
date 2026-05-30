@@ -1,3 +1,4 @@
+import React from 'react';
 import { cn } from '../lib/utils';
 
 const PALETTE = ['#FF6B47', '#22D3EE', '#10B981', '#F59E0B', '#A78BFA', '#F472B6', '#34D399'];

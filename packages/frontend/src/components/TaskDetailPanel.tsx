@@ -361,7 +361,7 @@ export function TaskEventTimeline({
   );
 }
 
-function TaskDetailViewTabs({
+export function TaskDetailViewTabs({
   activeView,
   onChange,
   t,
@@ -476,7 +476,7 @@ export function TaskExecutorSessions({
   );
 }
 
-function TaskPlanView({
+export function TaskPlanView({
   task,
   events,
   formatRelativeTime,
@@ -584,7 +584,7 @@ function eventLayerLabel(layer: MessageLayer, t: (key: MessageKey) => string): s
   return translated === key ? layer : translated;
 }
 
-function taskExecutorStatusLabel(
+export function taskExecutorStatusLabel(
   status: TaskExecutorListItem['status'],
   t: (key: MessageKey) => string,
 ): string {
@@ -593,7 +593,7 @@ function taskExecutorStatusLabel(
   return translated === key ? status : translated;
 }
 
-function shortSessionId(sessionId: string): string {
+export function shortSessionId(sessionId: string): string {
   return sessionId.length > 12 ? `${sessionId.slice(0, 8)}…${sessionId.slice(-4)}` : sessionId;
 }
 
