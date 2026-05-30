@@ -7446,6 +7446,15 @@
     }
   }
 
+  @media (min-width: 769px) and (max-width: 1200px) {
+    .app-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .app-sidebar {
+      display: none;
+    }
+  }
+
   @media (max-width: 1023px) {
     .app-grid {
       grid-template-columns: minmax(0, 1fr);
