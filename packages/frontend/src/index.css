@@ -3664,6 +3664,13 @@
     .task-workspace-panel {
       min-height: 52dvh;
     }
+    .task-queue-rail {
+      overflow: hidden;
+    }
+    .task-activity-feed {
+      max-height: 16dvh;
+      overflow-y: auto;
+    }
   }
   @media (max-width: 768px) {
     .workspace-toolbar {
@@ -6806,6 +6813,13 @@
     .task-os-grid,
     .task-os-grid.has-inspector {
       grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(260px, 34dvh) minmax(0, 1fr);
+    }
+    .task-os-grid .room-main-panel {
+      min-height: 260px;
+    }
+    .task-os-grid .task-workspace-panel {
+      min-height: 0;
     }
     .task-workspace-grid {
       grid-template-columns: minmax(0, 1fr);
@@ -6814,6 +6828,11 @@
       max-height: 28dvh;
       border-right: 0;
       border-bottom: 1px solid rgba(0,0,0,0.06);
+      overflow: hidden;
+    }
+    .task-activity-feed {
+      max-height: 12dvh;
+      overflow-y: auto;
     }
   }
 }
