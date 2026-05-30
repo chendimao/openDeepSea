@@ -1695,6 +1695,88 @@ test('respondAsAgent builds handoff from the active task context only', async ()
   }
 });
 
+test('respondAsAgent builds global handoff without task-scoped user messages', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-global-handoff-scope-'));
+  const project = projectRepo.create({ name: `global-handoff-scope-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner', agent_name: '规划师' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'global-room-session',
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+  const otherAgent = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor', agent_name: '执行者' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Task context' });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'GLOBAL_USER_CONTEXT',
+    message_type: 'text',
+  });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'TASK_SCOPED_USER_CONTEXT',
+    message_type: 'text',
+    metadata: { task_id: task.id },
+  });
+  agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: otherAgent.id,
+    agent_id: otherAgent.agent_id,
+    backend: 'codex',
+    prompt: 'global other prompt',
+  });
+  const globalOtherRun = agentRunRepo.listByRoom(room.id, 10).find((run) => run.prompt === 'global other prompt');
+  assert.ok(globalOtherRun);
+  agentRunRepo.appendStdout(globalOtherRun.id, 'GLOBAL_OTHER_AGENT_RUN_CONTEXT');
+  agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: otherAgent.id,
+    agent_id: otherAgent.agent_id,
+    backend: 'codex',
+    task_id: task.id,
+    prompt: 'task other prompt',
+  });
+  const taskOtherRun = agentRunRepo.listByRoom(room.id, 10).find((run) => run.prompt === 'task other prompt');
+  assert.ok(taskOtherRun);
+  agentRunRepo.appendStdout(taskOtherRun.id, 'TASK_SCOPED_RUN_CONTEXT');
+
+  const originalAdapter = adapters.codex;
+  let capturedHandoff: string | null | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedHandoff = args.sessionHandoff;
+      args.onChunk({ stream: 'stdout', text: '继续 global chat。' });
+      return { exitCode: 0, sessionId: args.sessionId, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: acpAgent,
+      projectPath,
+      roomId: room.id,
+      prompt: '继续 global chat',
+    });
+
+    assert.match(capturedHandoff ?? '', /GLOBAL_USER_CONTEXT/);
+    assert.match(capturedHandoff ?? '', /GLOBAL_OTHER_AGENT_RUN_CONTEXT/);
+    assert.doesNotMatch(capturedHandoff ?? '', /TASK_SCOPED_USER_CONTEXT/);
+    assert.doesNotMatch(capturedHandoff ?? '', /TASK_SCOPED_RUN_CONTEXT/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent stores pending handoff on task executor after task session rotation', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-pending-handoff-store-'));
   const project = projectRepo.create({ name: `task-pending-handoff-store-${Date.now()}`, path: projectPath });

@@ -125,7 +125,11 @@ function buildSessionHandoffForAgent(input: {
     .listByRoom(input.roomId, 20)
     .filter((message) =>
       message.sender_type === 'user' &&
-      (!input.taskExecutor || getMessageTaskId(message.metadata) === input.taskExecutor.task_id)
+      (
+        input.taskExecutor
+          ? getMessageTaskId(message.metadata) === input.taskExecutor.task_id
+          : !getMessageTaskId(message.metadata)
+      )
     )
     .slice(-3)
     .map((message) => ({
@@ -151,7 +155,7 @@ function buildSessionHandoffForAgent(input: {
     otherAgentRuns: runs
       .filter((run) =>
         run.room_agent_id !== input.agent.id &&
-        (!input.taskExecutor || run.task_id === input.taskExecutor.task_id)
+        (input.taskExecutor ? run.task_id === input.taskExecutor.task_id : !run.task_id)
       )
       .slice(0, 3)
       .map((run) => ({
