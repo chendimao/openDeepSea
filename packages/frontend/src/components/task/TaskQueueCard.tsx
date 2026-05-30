@@ -2,7 +2,6 @@ import { motion } from 'framer-motion';
 import { ArrowRight, LocateFixed, Play } from 'lucide-react';
 import type { RoomAgent, Task, WorkflowRun } from '../../lib/types';
 import { cn } from '../../lib/utils';
-import { AgentAvatar } from '../AgentAvatar';
 import { Button } from '../ui/Button';
 import { taskProgressPercent } from './taskWorkspaceModel';
 
@@ -93,33 +92,26 @@ export function TaskQueueCard({
             {priorityLabel}
           </span>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="task-meta-pill">{statusLabel}</span>
-          {workflow && (
-            <span className="task-meta-pill text-[var(--color-accent)]">
-              <span className="truncate">{workflowStatusLabel(workflow.status)}</span>
-            </span>
-          )}
-        </div>
         {task.description && (
           <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
             {task.description}
           </p>
         )}
-        <div className="mt-3 flex items-center gap-2">
-          {agent ? (
-            <>
-              <AgentAvatar name={agent.agent_name} size={20} active={!!agent.acp_enabled} />
-              <span className="text-[11px] text-[var(--color-fg-muted)] truncate">
-                {agent.agent_name}
-              </span>
-            </>
-          ) : (
-            <span className="text-[11px] text-[var(--color-muted)]">{unassignedLabel}</span>
-          )}
-          <span className="ml-auto text-[10px] font-mono text-[var(--color-muted)]">
-            {progress}%
-          </span>
+        <div className="task-card-meta-grid">
+          <TaskQueueMeta label="Status" value={statusLabel} />
+          <TaskQueueMeta label="Owner" value={agent?.agent_name ?? unassignedLabel} />
+          <TaskQueueMeta label="Priority" value={priorityLabel} valueClassName={QUEUE_PRIORITY_TONE[task.priority]} />
+          <TaskQueueMeta label="Time" value={updatedLabel} />
+        </div>
+        {workflow && (
+          <div className="task-card-workflow-pill">
+            <span>Workflow</span>
+            <strong>{workflowStatusLabel(workflow.status)}</strong>
+          </div>
+        )}
+        <div className="task-card-progress-label">
+          <span>Progress</span>
+          <strong>{progress}%</strong>
         </div>
         <div className="task-card-progress" aria-hidden="true">
           <i style={{ width: `${progress}%` }} />
@@ -149,5 +141,22 @@ export function TaskQueueCard({
         )}
       </div>
     </motion.article>
+  );
+}
+
+function TaskQueueMeta({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+}): JSX.Element {
+  return (
+    <div className="task-card-meta-item">
+      <span>{label}</span>
+      <strong className={valueClassName}>{value}</strong>
+    </div>
   );
 }

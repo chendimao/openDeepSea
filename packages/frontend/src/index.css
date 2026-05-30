@@ -3299,16 +3299,18 @@
     padding: 0 16px;
   }
   .task-workspace-grid {
-    grid-template-columns: minmax(190px, 0.34fr) minmax(0, 1fr);
+    grid-template-columns: minmax(230px, 0.38fr) minmax(0, 1fr);
   }
   .task-queue-rail {
     border-right: 1px solid var(--room-border);
     background: var(--room-card-muted-bg);
   }
   .active-task-surface {
+    container-type: inline-size;
     background: transparent;
   }
   .task-list-scroll {
+    overflow-x: hidden;
     padding: 10px;
   }
   .task-card,
@@ -3337,6 +3339,7 @@
     font-weight: 700;
   }
   .task-card-progress {
+    position: relative;
     height: 4px;
     overflow: hidden;
     margin-top: 10px;
@@ -3344,16 +3347,91 @@
     background: rgba(37,99,235,0.12);
   }
   .task-card-progress i {
+    position: relative;
     display: block;
     height: 100%;
     border-radius: inherit;
     background: linear-gradient(90deg, var(--color-primary), rgba(96,165,250,0.92));
+    animation: progress-glow 1.8s ease-in-out infinite;
+  }
+  .task-card-progress i::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.36), transparent);
+    transform: translateX(-100%);
+    animation: progress-sheen 2.4s ease-in-out infinite;
+  }
+  .task-card-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .task-card-meta-item,
+  .task-card-progress-label,
+  .task-card-workflow-pill {
+    min-width: 0;
+    border: 1px solid var(--room-border-subtle);
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--room-card-muted-bg) 78%, transparent);
+    padding: 6px 7px;
+  }
+  .task-card-meta-item span,
+  .task-card-progress-label span,
+  .task-card-workflow-pill span {
+    display: block;
+    color: var(--room-text-muted);
+    font-size: 9.5px;
+    font-weight: 720;
+    line-height: 1;
+  }
+  .task-card-meta-item strong,
+  .task-card-progress-label strong,
+  .task-card-workflow-pill strong {
+    display: block;
+    margin-top: 5px;
+    overflow: hidden;
+    color: var(--room-text-heading);
+    font-size: 11px;
+    font-weight: 720;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-card-progress-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 7px;
+    border: 0;
+    background: transparent;
+    padding: 0 1px;
+  }
+  .task-card-progress-label strong {
+    margin-top: 0;
+    color: var(--color-primary);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .task-card-workflow-pill {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    margin-top: 7px;
+  }
+  .task-card-workflow-pill strong {
+    margin-top: 0;
+    color: var(--color-accent);
+    text-align: right;
   }
   .active-task-header {
     display: grid;
+    min-width: 0;
     min-height: 0;
     gap: 12px;
-    border-bottom: 1px solid rgba(0,0,0,0.06);
+    border-bottom: 1px solid var(--room-border);
     padding: 18px 20px 16px;
   }
   .active-task-breadcrumb {
@@ -3418,21 +3496,21 @@
   }
   .active-task-meta-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(78px, 1fr)) minmax(128px, 1.15fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.15fr);
     gap: 8px;
     align-items: stretch;
   }
   .active-task-meta-cell,
   .active-task-progress {
     min-width: 0;
-    border: 1px solid rgba(0,0,0,0.05);
+    border: 1px solid var(--room-border-subtle);
     border-radius: 14px;
-    background: rgba(255,255,255,0.66);
+    background: color-mix(in srgb, var(--room-card-bg) 82%, transparent);
     padding: 9px 10px;
   }
   .active-task-meta-cell span {
     display: block;
-    color: #94a3b8;
+    color: var(--room-text-muted);
     font-size: 10px;
     font-weight: 700;
   }
@@ -3440,7 +3518,7 @@
     display: block;
     margin-top: 4px;
     overflow: hidden;
-    color: #1f2937;
+    color: var(--room-text-heading);
     font-size: 12px;
     font-weight: 720;
     text-overflow: ellipsis;
@@ -3473,7 +3551,7 @@
   .active-task-actions {
     align-items: center;
     gap: 8px;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
+    border-bottom: 1px solid var(--room-border-subtle);
     padding: 10px 16px;
   }
   .active-task-actions .task-layer-toggles {
@@ -3717,9 +3795,30 @@
     0%, 100% { filter: saturate(1); opacity: 0.92; }
     50% { filter: saturate(1.18); opacity: 1; }
   }
+  @keyframes progress-sheen {
+    0% { transform: translateX(-100%); opacity: 0; }
+    35% { opacity: 0.75; }
+    70%, 100% { transform: translateX(100%); opacity: 0; }
+  }
   @keyframes status-pulse {
     0%, 100% { transform: scale(0.86); opacity: 0.68; }
     50% { transform: scale(1); opacity: 1; }
+  }
+  @container (max-width: 420px) {
+    .active-task-meta-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .active-task-progress {
+      grid-column: 1 / -1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .task-card-progress i,
+    .task-card-progress i::after,
+    .liquid-progress i,
+    .current-agent-row > i {
+      animation: none;
+    }
   }
   @media (max-width: 1200px) {
     .workspace-toolbar {
