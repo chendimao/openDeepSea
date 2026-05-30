@@ -3868,19 +3868,19 @@
   }
   .tool-call-card {
     display: grid;
-    grid-template-columns: 28px minmax(0, 1fr);
+    grid-template-columns: 22px minmax(0, 1fr);
     grid-template-areas:
-      "icon name"
       "icon status"
+      "name name"
       "time time";
     align-items: center;
-    column-gap: 8px;
+    column-gap: 6px;
     row-gap: 4px;
     min-width: 0;
     border: 1px solid rgba(0,0,0,0.05);
     border-radius: 13px;
     background: rgba(248,250,252,0.74);
-    padding: 8px;
+    padding: 7px 8px;
     color: var(--color-primary);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.78);
     transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
@@ -3892,23 +3892,24 @@
   }
   .tool-call-card svg {
     grid-area: icon;
-    width: 26px;
-    height: 26px;
-    border-radius: 10px;
+    width: 22px;
+    height: 22px;
+    border-radius: 9px;
     background: rgba(37,99,235,0.08);
-    padding: 6px;
+    padding: 5px;
   }
   .tool-call-card strong {
     grid-area: name;
     display: block;
     min-width: 0;
-    font-size: 11px;
+    font-size: 10px;
     line-height: 1.14;
-    overflow-wrap: anywhere;
-    white-space: normal;
+    overflow-wrap: normal;
+    white-space: nowrap;
   }
   .tool-call-card span {
     grid-area: status;
+    justify-self: end;
     width: max-content;
     max-width: 100%;
     border-radius: 999px;
