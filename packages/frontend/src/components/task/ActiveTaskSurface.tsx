@@ -77,6 +77,13 @@ export function ActiveTaskSurface({
   const timelineEvents = eventGroups.timelineEvents.slice(0, 5);
   const fileChanges = buildFileChanges(eventGroups.diffEvents);
   const toolCalls = buildToolCalls(eventGroups.logEvents, eventGroups.timelineEvents);
+  const displayToolCalls = toolCalls.length > 0
+    ? toolCalls
+    : [
+        { name: 'search_files', status: 'waiting', time: task.created_at },
+        { name: 'read_file', status: 'waiting', time: task.created_at },
+        { name: 'generate_preview', status: 'waiting', time: task.created_at },
+      ];
   const currentAgent = assignedAgent?.agent_name ?? t('common.unassigned');
   const currentStep = planSteps.find((step) => step.state === 'running') ?? planSteps[0];
 
@@ -203,15 +210,26 @@ export function ActiveTaskSurface({
                 <strong className="text-[var(--color-danger)]">-{file.removed}</strong>
               </div>
             )) : (
-              <div className="workspace-empty-row">{layerVisibility.diff ? t('taskDetail.noDiffEvents') : t('taskDetail.diffHidden')}</div>
+              <div className="file-change-empty">
+                <div className="file-change-row is-empty">
+                  <span>{layerVisibility.diff ? 'working-tree.diff' : 'diff-layer.hidden'}</span>
+                  <strong className="text-[var(--color-success)]">+0</strong>
+                  <strong className="text-[var(--color-danger)]">-0</strong>
+                </div>
+                <p>{layerVisibility.diff ? t('taskDetail.noDiffEvents') : t('taskDetail.diffHidden')}</p>
+              </div>
             )}
           </div>
         </motion.section>
 
         <motion.section className="task-detail-card tool-calls-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}>
-          <TaskWorkspacePanelTitle icon={GitBranch} title="Tool Calls" subtitle={`${toolCalls.length} recent`} />
+          <TaskWorkspacePanelTitle
+            icon={GitBranch}
+            title="Tool Calls"
+            subtitle={toolCalls.length > 0 ? `${toolCalls.length} recent` : 'preview'}
+          />
           <div className="tool-call-strip">
-            {(toolCalls.length > 0 ? toolCalls : [{ name: 'search_files', status: 'waiting', time: task.created_at }, { name: 'read_file', status: 'waiting', time: task.created_at }, { name: 'generate_preview', status: 'waiting', time: task.created_at }]).map((tool) => (
+            {displayToolCalls.map((tool) => (
               <div key={`${tool.name}:${tool.time}`} className="tool-call-card" data-status={tool.status}>
                 <Search className="h-4 w-4" strokeWidth={1.8} />
                 <strong>{tool.name}</strong>

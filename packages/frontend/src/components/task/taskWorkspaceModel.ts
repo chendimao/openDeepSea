@@ -66,9 +66,12 @@ export function buildFileChanges(events: TaskEvent[]): TaskWorkspaceFileChange[]
 }
 
 export function buildToolCalls(logEvents: TaskEvent[], timelineEvents: TaskEvent[]): TaskWorkspaceToolCall[] {
-  const source = [...logEvents, ...timelineEvents].slice(-5);
+  void timelineEvents;
+  const source = logEvents
+    .filter((event) => readToolCallName(event.payload))
+    .slice(-3);
   return source.map((event) => ({
-    name: readPayloadString(event.payload, 'tool') ?? readPayloadString(event.payload, 'command') ?? event.type,
+    name: readToolCallName(event.payload) ?? event.type,
     status: readPayloadString(event.payload, 'status') ?? 'done',
     time: event.created_at,
   }));
@@ -88,4 +91,13 @@ function readPayloadString(payload: Record<string, unknown>, key: string): strin
 function readPayloadNumber(payload: Record<string, unknown>, key: string): number | null {
   const value = payload[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function readToolCallName(payload: Record<string, unknown>): string | null {
+  const value =
+    readPayloadString(payload, 'tool') ??
+    readPayloadString(payload, 'command') ??
+    readPayloadString(payload, 'name');
+  if (!value) return null;
+  return value === 'tool' || value === 'runtime_event' ? null : value;
 }
