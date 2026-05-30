@@ -182,7 +182,7 @@ export function ActiveTaskSurface({
           <div className="workspace-timeline-list">
             {(timelineEvents.length > 0 ? timelineEvents : eventGroups.visibleEvents.slice(0, 4)).map((event) => (
               <div key={event.id} className="workspace-timeline-row">
-                <time>{formatRelativeTime(event.created_at)}</time>
+                <time dateTime={new Date(event.created_at).toISOString()}>{formatClockTime(event.created_at)}</time>
                 <span className="task-event-dot" data-layer={event.layer} />
                 <strong>{taskEventTypeLabel(event.type, t)}</strong>
               </div>
@@ -216,7 +216,7 @@ export function ActiveTaskSurface({
                 <Search className="h-4 w-4" strokeWidth={1.8} />
                 <strong>{tool.name}</strong>
                 <span>{tool.status}</span>
-                <time>{formatRelativeTime(tool.time)}</time>
+                <time dateTime={new Date(tool.time).toISOString()}>{formatClockTime(tool.time)}</time>
               </div>
             ))}
           </div>
@@ -224,4 +224,12 @@ export function ActiveTaskSurface({
       </div>
     </>
   );
+}
+
+function formatClockTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}`;
 }
