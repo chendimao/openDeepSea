@@ -68,6 +68,7 @@ import {
   createReplyTarget,
   getRoutableActiveTaskId,
   hasDispatchablePlannerSteps,
+  selectChatLayerMessages,
   shouldShowPlannerDecisionPanel,
   type MessageStreamUpdate,
   type ReplyTarget,
@@ -959,7 +960,7 @@ function ChatColumn({
     () => pairRunsWithAgentMessages(messages, agentRuns),
     [messages, agentRuns],
   );
-  const visibleMessages = useMemo(() => dedupeMessages(messages), [messages]);
+  const visibleMessages = useMemo(() => selectChatLayerMessages(dedupeMessages(messages)), [messages]);
   const streamingReplyMessageIds = useMemo(
     () => new Set(Array.from(streamingMessageIds)),
     [streamingMessageIds],
@@ -1011,7 +1012,7 @@ function ChatColumn({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <Conversation className="flex-1">
         <ConversationContent>
-          {messages.length === 0 ? (
+          {visibleMessages.length === 0 ? (
             <ConversationEmptyState>
               <WorkspaceEmptyState
                 icon={<MessageSquare className="h-9 w-9" strokeWidth={1.75} />}

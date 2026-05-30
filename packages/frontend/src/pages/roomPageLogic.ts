@@ -84,6 +84,10 @@ export function getRoutableActiveTaskId(task: Pick<Task, 'id' | 'status'> | null
     : null;
 }
 
+export function selectChatLayerMessages(messages: Message[]): Message[] {
+  return messages.filter((message) => message.layer === undefined || message.layer === 'chat');
+}
+
 export function getTaskReadinessActionState(intent: TaskExecutionIntent | undefined): TaskReadinessActionState {
   const implementationIntent = intent === undefined || intent === 'implementation' || intent === 'debug_fix';
   return {
