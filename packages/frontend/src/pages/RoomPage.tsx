@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, ChevronDown, ChevronLeft, Download, Eye, FileText, FolderOpen, MessageSquare, Plus, Reply, RotateCcw, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, Brain, ChevronDown, Download, Eye, FileText, FolderOpen, MessageSquare, Plus, Reply, RotateCcw, Search, Settings2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -480,25 +480,29 @@ export function RoomPage() {
   return (
     <div className="workspace-root" data-testid="room-page">
       <header className="workspace-toolbar">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="room-toolbar-identity">
           <Link
             to={`/projects/${projectId}`}
-            className="toolbar-back"
+            className="toolbar-logo"
             aria-label={t('room.backToProject')}
           >
-            <ChevronLeft className="h-4 w-4" />
+            <img src="/lobster.svg" alt="" className="h-5 w-5" />
           </Link>
           <div className="min-w-0">
-            <div className="font-display text-[15px] font-semibold leading-tight">
+            <div className="room-toolbar-title">
               {room?.name ?? t('room.defaultName')}
             </div>
-            <div className="mt-1 hidden truncate font-mono text-[11px] text-[var(--color-fg-muted)] sm:block">
+            <div className="room-toolbar-subtitle">
               {project?.name ?? t('room.defaultName')} · {project?.path ?? t('room.projectPathUnknown')}
             </div>
           </div>
         </div>
 
-        <RoomSwitcher projectId={projectId} roomId={roomId} rooms={rooms} />
+        <label className="room-global-search" aria-label="全局搜索">
+          <Search className="h-4 w-4" strokeWidth={1.8} />
+          <input type="search" placeholder="搜索消息、任务、文件" />
+          <span>⌘K</span>
+        </label>
 
         <div className="room-toolbar-actions ml-auto flex min-w-0 items-center gap-2">
           <AgentStrip
@@ -541,44 +545,17 @@ export function RoomPage() {
               <span className="hidden sm:inline">{t('room.inviteAgent')}</span>
             </button>
           </AddAgentDialog>
+          <div className="room-user-avatar" aria-label="Current user">U</div>
         </div>
       </header>
 
       <div className={cn('workspace-grid task-os-grid', showMemoryPanel && 'has-inspector')}>
-        <TaskWorkspacePanel
-          tasks={tasks}
-          activeTask={activeTask}
-          activeTaskId={activeTaskId}
-          statusFilters={taskStatusFilters}
-          onStatusFiltersChange={setTaskStatusFilters}
-          activityEvents={roomActivityEvents}
-          taskEvents={activeTaskEventResponse?.events ?? []}
-          taskEventsLoading={activeTaskEventsLoading}
-          executors={taskExecutors}
-          executorsLoading={taskExecutorsLoading}
-          agents={agents}
-          workflows={workflows}
-          layerVisibility={layerVisibility}
-          onSelectTask={(task) => {
-            activateTask.mutate(task);
-          }}
-          onChangeStatus={(task, status) => {
-            updateTaskStatus.mutate({ task, status });
-          }}
-          onStartWorkflow={(task) => startTaskLoop.mutate(task)}
-          startingTaskId={startTaskLoop.variables?.id ?? null}
-          onLocateSourceMessage={focusMessage}
-          onLayerVisibilityChange={updateLayerVisibility}
-          onClearActiveTask={() => setActiveTaskId(null)}
-          t={t}
-          formatRelativeTime={formatRelativeTime}
-          taskStatusLabel={taskStatusLabel}
-          taskPriorityLabel={taskPriorityLabel}
-          interactionModeLabel={interactionModeLabel}
-          workflowStatusLabel={workflowStatusLabel}
-        />
         <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
           <div className="room-main-heading">
+            <div className="chat-heading-copy">
+              <div className="chat-heading-title">聊天</div>
+              <div className="chat-heading-subtitle">Conversation Flow</div>
+            </div>
             <RoomFeatureTabs activeTab={activeTab} onChange={setActiveTab} />
             <CreateTaskDialog roomId={roomId} agents={agents}>
               <button type="button" className="glass-button" aria-label={t('createTask.trigger')}>
@@ -621,6 +598,38 @@ export function RoomPage() {
             )}
           </div>
         </section>
+        <TaskWorkspacePanel
+          tasks={tasks}
+          activeTask={activeTask}
+          activeTaskId={activeTaskId}
+          statusFilters={taskStatusFilters}
+          onStatusFiltersChange={setTaskStatusFilters}
+          activityEvents={roomActivityEvents}
+          taskEvents={activeTaskEventResponse?.events ?? []}
+          taskEventsLoading={activeTaskEventsLoading}
+          executors={taskExecutors}
+          executorsLoading={taskExecutorsLoading}
+          agents={agents}
+          workflows={workflows}
+          layerVisibility={layerVisibility}
+          onSelectTask={(task) => {
+            activateTask.mutate(task);
+          }}
+          onChangeStatus={(task, status) => {
+            updateTaskStatus.mutate({ task, status });
+          }}
+          onStartWorkflow={(task) => startTaskLoop.mutate(task)}
+          startingTaskId={startTaskLoop.variables?.id ?? null}
+          onLocateSourceMessage={focusMessage}
+          onLayerVisibilityChange={updateLayerVisibility}
+          onClearActiveTask={() => setActiveTaskId(null)}
+          t={t}
+          formatRelativeTime={formatRelativeTime}
+          taskStatusLabel={taskStatusLabel}
+          taskPriorityLabel={taskPriorityLabel}
+          interactionModeLabel={interactionModeLabel}
+          workflowStatusLabel={workflowStatusLabel}
+        />
         {showMemoryPanel && (
           <aside className="workbench-panel inspector-panel memory-panel-shell p-4">
             <MemoryPanel
