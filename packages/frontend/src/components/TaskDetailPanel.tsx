@@ -316,7 +316,7 @@ export function TaskDetailPanel({
   );
 }
 
-function TaskEventTimeline({
+export function TaskEventTimeline({
   events,
   emptyKey = 'taskDetail.noEvents',
   formatRelativeTime,
@@ -351,8 +351,9 @@ function TaskEventTimeline({
               </span>
             </div>
             <div className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
-              {eventDescription(event, t)}
+              {describeTaskEvent(event, t)}
             </div>
+            <TaskEventPayloadDetails event={event} />
           </div>
         </div>
       ))}
@@ -512,8 +513,27 @@ function eventTitle(event: TaskEvent, t: (key: MessageKey) => string): string {
   return translated === key ? event.type : translated;
 }
 
-function eventDescription(event: TaskEvent, t: (key: MessageKey) => string): string {
+export function describeTaskEvent(event: TaskEvent, t: (key: MessageKey) => string): string {
   const payload = event.payload;
+  if (event.type === 'diff_detected') {
+    const path = readString(payload.path);
+    const additions = readNumber(payload.additions);
+    const deletions = readNumber(payload.deletions);
+    const stats = compactJoin([
+      additions !== null ? `+${additions}` : null,
+      deletions !== null ? `-${deletions}` : null,
+    ], ' / ');
+    const summary = compactJoin([path, stats], ' · ');
+    if (summary) return summary;
+  }
+  if (event.type === 'runtime_event') {
+    const command = readString(payload.command);
+    if (command) return command;
+    const toolName = readString(payload.name) ?? readString(payload.tool_name);
+    const inputSummary = summarizeRuntimeInput(payload.input);
+    const summary = compactJoin([toolName, inputSummary], ' · ');
+    if (summary) return summary;
+  }
   const values = [
     payload.reason,
     payload.route_action,
@@ -524,6 +544,31 @@ function eventDescription(event: TaskEvent, t: (key: MessageKey) => string): str
   ];
   return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0)
     ?? eventLayerLabel(event.layer, t);
+}
+
+function TaskEventPayloadDetails({ event }: { event: TaskEvent }): JSX.Element | null {
+  if (event.type === 'diff_detected') {
+    const diff = readString(event.payload.diff) ?? readString(event.payload.patch);
+    if (!diff) return null;
+    return (
+      <div className="task-event-detail-block task-event-diff-block" aria-label="diff detail">
+        {diff.split('\n').slice(0, 8).map((line, index) => (
+          <div key={index} className={diffLineClassName(line)}>
+            {line || ' '}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (event.type !== 'runtime_event') return null;
+  const output = readString(event.payload.output) ?? readString(event.payload.stdout) ?? readString(event.payload.stderr);
+  if (!output) return null;
+  return (
+    <pre className="task-event-detail-block task-event-runtime-output">
+      {output.length > 360 ? `${output.slice(0, 357)}...` : output}
+    </pre>
+  );
 }
 
 function eventLayerLabel(layer: MessageLayer, t: (key: MessageKey) => string): string {
@@ -543,6 +588,43 @@ function taskExecutorStatusLabel(
 
 function shortSessionId(sessionId: string): string {
   return sessionId.length > 12 ? `${sessionId.slice(0, 8)}…${sessionId.slice(-4)}` : sessionId;
+}
+
+function summarizeRuntimeInput(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      return summarizeRuntimeInput(JSON.parse(trimmed) as unknown) ?? trimmed.slice(0, 96);
+    } catch {
+      return trimmed.length > 96 ? `${trimmed.slice(0, 93)}...` : trimmed;
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return readString(record.path)
+    ?? readString(record.file)
+    ?? readString(record.command)
+    ?? readString(record.pattern)
+    ?? null;
+}
+
+function compactJoin(values: Array<string | null>, separator: string): string {
+  return values.filter((value): value is string => Boolean(value?.trim())).join(separator);
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function diffLineClassName(line: string): string {
+  if (line.startsWith('+') && !line.startsWith('+++')) return 'task-event-diff-line is-added';
+  if (line.startsWith('-') && !line.startsWith('---')) return 'task-event-diff-line is-removed';
+  return 'task-event-diff-line';
 }
 
 function InfoRow({ label, value }: { label: string; value: string }): JSX.Element {
