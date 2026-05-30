@@ -753,11 +753,24 @@ export type TaskExecutionIntent =
   | 'debug_fix'
   | 'review_only';
 
+export type MessageIntent = 'chat' | 'light_task' | 'debugger' | 'brainstorming' | 'workflow';
+export type MessageIntentSource = 'rule' | 'classifier';
+export type MessageIntentSuggestedAction = 'keep_route' | 'create_task' | 'ask_user';
+
+export interface MessageIntentResult {
+  intent: MessageIntent;
+  confidence: number;
+  source: MessageIntentSource;
+  suggested_action: MessageIntentSuggestedAction;
+  reason: string;
+}
+
 export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
   reply_to?: MessageReplyMetadata;
   source_message_id?: string;
   route_result?: RouteResult;
+  intent_result?: MessageIntentResult;
   planner_decision?: PlannerDecision;
   trace?: MessageTrace;
   acp_enabled?: boolean;
