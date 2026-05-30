@@ -7152,6 +7152,19 @@
     backdrop-filter: blur(20px) saturate(1.18);
   }
 
+  [data-theme="minimal-light"] .workspace-root .ai-message-row--user,
+  [data-theme="minimal-dark"] .workspace-root .ai-message-row--user {
+    justify-content: flex-end;
+    padding-left: 16%;
+    padding-right: 0;
+  }
+
+  [data-theme="minimal-light"] .workspace-root .ai-message-row--agent,
+  [data-theme="minimal-dark"] .workspace-root .ai-message-row--agent {
+    justify-content: flex-start;
+    padding-right: 10%;
+  }
+
   [data-theme="minimal-light"] .workspace-root .ai-message-row--agent .ai-message-card,
   [data-theme="minimal-dark"] .workspace-root .ai-message-row--agent .ai-message-card {
     border-color: transparent;
@@ -7729,6 +7742,27 @@
   }
 
   @media (max-width: 768px) {
+    [data-theme="minimal-light"] .workspace-root .ai-message-row--user,
+    [data-theme="minimal-dark"] .workspace-root .ai-message-row--user {
+      justify-content: flex-end;
+      padding-left: 12%;
+      padding-right: 0;
+    }
+
+    [data-theme="minimal-light"] .workspace-root .ai-message-row--agent,
+    [data-theme="minimal-dark"] .workspace-root .ai-message-row--agent {
+      justify-content: flex-start;
+      padding-right: 0;
+    }
+
+    [data-theme="minimal-light"] .workspace-root .ai-message-row--user .ai-message-card,
+    [data-theme="minimal-dark"] .workspace-root .ai-message-row--user .ai-message-card,
+    [data-theme="minimal-light"] .workspace-root .ai-message-row--agent .ai-message-card,
+    [data-theme="minimal-dark"] .workspace-root .ai-message-row--agent .ai-message-card {
+      width: auto;
+      max-width: 88%;
+    }
+
     .workspace-grid.task-os-grid,
     .workspace-grid.task-os-grid.has-inspector {
       grid-template-rows: minmax(520px, 62dvh) minmax(680px, max-content);
