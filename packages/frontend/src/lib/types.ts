@@ -208,6 +208,7 @@ export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
 export type TaskCreatedFrom = 'manual' | 'chat_plan' | 'slash_command' | 'workflow_assignment';
 export type TaskEventType =
   | 'message_routed'
+  | 'message_route_uncertain'
   | 'plan_proposed'
   | 'runtime_event'
   | 'diff_detected'
@@ -762,6 +763,7 @@ export interface MessageMetadata {
   internal?: boolean;
   task_id?: string;
   task_title?: string;
+  message_id?: string;
   workflow_run_id?: string;
   workflow_step_id?: string;
   event_type?: TaskEventType;

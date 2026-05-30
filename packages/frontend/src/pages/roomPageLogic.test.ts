@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getRoutableActiveTaskId, selectChatLayerMessages } from './roomPageLogic';
+import { getRoutableActiveTaskId, projectRoomActivityMessages, selectChatLayerMessages } from './roomPageLogic';
 import type { Message } from '../lib/types';
 
 test('getRoutableActiveTaskId only returns active tasks that can receive new messages', () => {
@@ -25,17 +25,48 @@ test('selectChatLayerMessages keeps chat and legacy messages out of task event l
   assert.deepEqual(selectChatLayerMessages(messages).map((message) => message.id), ['legacy', 'chat']);
 });
 
-function createMessage(input: { id: string; layer?: Message['layer'] }): Message {
+test('projectRoomActivityMessages turns room activity messages into activity feed events', () => {
+  const messages = [
+    createMessage({ id: 'chat', layer: 'chat' }),
+    createMessage({
+      id: 'route-uncertain',
+      layer: 'activity',
+      content: '无法确定消息应归属哪个任务',
+      metadata: JSON.stringify({
+        event_type: 'message_route_uncertain',
+        message_id: 'user-message',
+        route_action: 'ask_user',
+      }),
+    }),
+  ];
+
+  const events = projectRoomActivityMessages(messages);
+
+  assert.equal(events.length, 1);
+  assert.equal(events[0]?.id, 'message:route-uncertain');
+  assert.equal(events[0]?.type, 'message_route_uncertain');
+  assert.equal(events[0]?.layer, 'activity');
+  assert.equal(events[0]?.payload.message_id, 'user-message');
+  assert.equal(events[0]?.payload.event_message_id, 'route-uncertain');
+  assert.equal(events[0]?.payload.content, '无法确定消息应归属哪个任务');
+});
+
+function createMessage(input: {
+  id: string;
+  layer?: Message['layer'];
+  content?: string;
+  metadata?: string | null;
+}): Message {
   return {
     id: input.id,
     room_id: 'room-1',
     sender_type: 'system',
     sender_id: 'system',
     sender_name: 'System',
-    content: input.id,
+    content: input.content ?? input.id,
     message_type: 'system',
     layer: input.layer,
-    metadata: null,
+    metadata: input.metadata ?? null,
     created_at: 1,
   };
 }

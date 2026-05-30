@@ -21,6 +21,14 @@ export function routeMessage(input: {
   if (explicitTaskId) {
     const task = taskRepo.get(explicitTaskId);
     if (task && task.room_id === input.roomId) {
+      if (!isRoutableTask(task)) {
+        return {
+          taskId: null,
+          action: 'ask_user',
+          confidence: 0,
+          reason: `显式任务引用不可接收新消息：${task.id}（${task.status}）`,
+        };
+      }
       const shouldSwitchTask = Boolean(input.activeTaskId && input.activeTaskId !== task.id && isRoutableTask(task));
       return {
         taskId: task.id,

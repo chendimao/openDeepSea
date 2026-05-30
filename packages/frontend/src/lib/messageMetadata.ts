@@ -28,6 +28,8 @@ import type {
 const messageAttachmentUrlPrefix = '/uploads/messages/';
 const projectFileAttachmentUrlPrefix = '/uploads/files/';
 const taskEventTypes = new Set<TaskEventType>([
+  'message_routed',
+  'message_route_uncertain',
   'plan_proposed',
   'task_created',
   'task_updated',
@@ -139,6 +141,7 @@ function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
   return {
     task_id: typeof value.task_id === 'string' ? value.task_id : undefined,
     task_title: typeof value.task_title === 'string' ? value.task_title : undefined,
+    message_id: typeof value.message_id === 'string' ? value.message_id : undefined,
     workflow_run_id: typeof value.workflow_run_id === 'string' ? value.workflow_run_id : undefined,
     workflow_step_id: typeof value.workflow_step_id === 'string' ? value.workflow_step_id : undefined,
     event_type: eventType,

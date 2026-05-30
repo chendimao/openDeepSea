@@ -68,6 +68,7 @@ import {
   createReplyTarget,
   getRoutableActiveTaskId,
   hasDispatchablePlannerSteps,
+  projectRoomActivityMessages,
   selectChatLayerMessages,
   shouldShowPlannerDecisionPanel,
   type MessageStreamUpdate,
@@ -163,7 +164,13 @@ export function RoomPage() {
     queryFn: () => api.listRoomTaskEvents(roomId, { layer: 'activity', limit: 80 }),
     enabled: !!roomId,
   });
-  const roomActivityEvents = roomTaskEventResponse?.events ?? [];
+  const roomActivityEvents = useMemo(() => {
+    const byId = new Map((roomTaskEventResponse?.events ?? []).map((event) => [event.id, event]));
+    for (const event of projectRoomActivityMessages(messages)) {
+      byId.set(event.id, event);
+    }
+    return [...byId.values()];
+  }, [messages, roomTaskEventResponse?.events]);
   const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
   const routableActiveTaskId = getRoutableActiveTaskId(activeTask);
   const updateTaskStatus = useMutation({

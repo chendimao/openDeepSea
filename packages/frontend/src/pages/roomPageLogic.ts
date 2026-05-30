@@ -6,6 +6,7 @@ import type {
   MessageTrace,
   PlannerDecision,
   Task,
+  TaskEvent,
   TaskExecutionIntent,
 } from '../lib/types';
 
@@ -86,6 +87,33 @@ export function getRoutableActiveTaskId(task: Pick<Task, 'id' | 'status'> | null
 
 export function selectChatLayerMessages(messages: Message[]): Message[] {
   return messages.filter((message) => message.layer === undefined || message.layer === 'chat');
+}
+
+export function projectRoomActivityMessages(messages: Message[]): TaskEvent[] {
+  return messages
+    .filter((message) => message.layer === 'activity')
+    .map((message) => {
+      const metadata = parseMessageMetadata(message.metadata);
+      const type = metadata.event_type ?? 'task_updated';
+      const taskId = metadata.task_id ?? `room:${message.room_id}`;
+      const sourceMessageId = metadata.message_id;
+      return {
+        id: `message:${message.id}`,
+        task_id: taskId,
+        room_id: message.room_id,
+        seq: 0,
+        type,
+        layer: 'activity',
+        payload: {
+          ...metadata,
+          message_id: sourceMessageId,
+          event_message_id: message.id,
+          content: message.content,
+        },
+        source_run_id: null,
+        created_at: message.created_at,
+      };
+    });
 }
 
 export function getTaskReadinessActionState(intent: TaskExecutionIntent | undefined): TaskReadinessActionState {

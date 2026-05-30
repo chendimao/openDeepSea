@@ -207,6 +207,35 @@ test('POST /rooms/:roomId/messages ignores terminal active task when routing', a
   assert.equal(taskEventRepo.listByTask(failed.id).some((event) => event.type === 'message_routed'), false);
 });
 
+test('POST /rooms/:roomId/messages rejects explicit terminal task routing', async () => {
+  const project = projectRepo.create({
+    name: 'Task Router Explicit Terminal Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-explicit-terminal-route-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const done = taskRepo.create({ project_id: project.id, room_id: room.id, title: '已完成任务' });
+  taskRepo.updateStatus(done.id, 'done');
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: `继续处理 #task:${done.id}`,
+    }),
+  });
+
+  assert.equal(res.status, 201);
+  const message = await res.json() as { metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: { action: string; taskId: string | null; reason: string };
+  };
+  assert.equal(metadata.task_id, undefined);
+  assert.equal(metadata.route_result?.action, 'ask_user');
+  assert.equal(metadata.route_result?.taskId, null);
+  assert.match(metadata.route_result?.reason ?? '', /不可接收新消息/);
+  assert.equal(taskEventRepo.listByTask(done.id).some((event) => event.type === 'message_routed'), false);
+});
+
 test('POST /rooms/:roomId/tasks/:taskId/activate broadcasts task activation', async () => {
   const project = projectRepo.create({
     name: 'Task Activate Route',
