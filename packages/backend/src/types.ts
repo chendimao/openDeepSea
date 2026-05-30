@@ -627,6 +627,8 @@ export type SenderType = 'user' | 'agent' | 'system';
 export type TaskCreatedFrom = 'manual' | 'chat_plan' | 'slash_command' | 'workflow_assignment';
 export type TaskEventType =
   | 'message_routed'
+  | 'message_route_uncertain'
+  | 'message_intent_uncertain'
   | 'plan_proposed'
   | 'runtime_event'
   | 'diff_detected'
@@ -754,15 +756,22 @@ export type TaskExecutionIntent =
   | 'review_only';
 
 export type MessageIntent = 'chat' | 'light_task' | 'debugger' | 'brainstorming' | 'workflow';
-export type MessageIntentSource = 'rule' | 'classifier';
-export type MessageIntentSuggestedAction = 'keep_route' | 'create_task' | 'ask_user';
+export type MessageIntentSource = 'rule' | 'classifier' | 'user_override';
+export type MessageIntentSuggestedAction =
+  | 'reply_in_chat'
+  | 'create_light_task'
+  | 'start_debugger'
+  | 'start_brainstorming'
+  | 'start_workflow'
+  | 'ask_user';
 
 export interface MessageIntentResult {
   intent: MessageIntent;
   confidence: number;
   source: MessageIntentSource;
-  suggested_action: MessageIntentSuggestedAction;
+  suggestedAction: MessageIntentSuggestedAction;
   reason: string;
+  signals?: string[];
 }
 
 export interface MessageMetadata extends MessageTaskEventMetadata {
@@ -819,7 +828,17 @@ export interface RouteResult {
   action: 'append_to_task' | 'switch_task' | 'create_task' | 'ask_user';
   confidence: number;
   reason: string;
+  reason_code?: RouteReasonCode;
 }
+
+export type RouteReasonCode =
+  | 'explicit_task'
+  | 'explicit_task_terminal'
+  | 'explicit_task_not_found'
+  | 'active_task'
+  | 'title_match'
+  | 'create_task_intent'
+  | 'ambiguous';
 
 export interface TaskExecutor {
   id: string;

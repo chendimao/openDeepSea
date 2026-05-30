@@ -10,6 +10,7 @@ import type {
   AgentRun,
   Message,
   MessageAttachmentMetadata,
+  MessageIntent,
   PlannerDecision,
   Room,
   RoomAgent,
@@ -43,6 +44,7 @@ import { CreateTaskDialog } from '../components/CreateTaskDialog';
 import type { TaskLayerVisibility } from '../components/TaskDetailPanel';
 import { TaskWorkspacePanel } from '../components/TaskWorkspacePanel';
 import type { TaskStatusFilter } from '../components/taskBoardLogic';
+import { MessageIntentCard } from '../components/MessageIntentCard';
 import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
@@ -1311,6 +1313,24 @@ function MessageBubble({
     isUser,
     decision: metadata.planner_decision,
   });
+  const chooseIntent = (intent: MessageIntent) => {
+    const prefixByIntent: Record<MessageIntent, string> = {
+      chat: '/chat ',
+      light_task: '新建任务：',
+      debugger: 'debugger：',
+      brainstorming: '头脑风暴：',
+      workflow: 'workflow：',
+    };
+    const content = `${prefixByIntent[intent]}${message.content}`.trim();
+    void api.sendMessage(roomId, {
+      content,
+      activeTaskId: metadata.task_id,
+    }).then(() => {
+      toast.success('已按选择的消息类型重新发送');
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks', roomId] });
+    }).catch((err) => toast.error((err as Error).message));
+  };
 
   if (isSystem) {
     return (
@@ -1443,6 +1463,9 @@ function MessageBubble({
             />
           ) : null}
           <MessageAttachments attachments={attachments} />
+          {isUser && metadata.intent_result && (
+            <MessageIntentCard intentResult={metadata.intent_result} onChooseIntent={chooseIntent} />
+          )}
         </AiMessageBody>
         {showPlannerDecisionPanel && metadata.planner_decision && (
           <PlannerDecisionPanel

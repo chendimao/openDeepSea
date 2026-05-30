@@ -7,6 +7,16 @@ import type {
 
 const LOW_CONFIDENCE_THRESHOLD = 0.85;
 
+const INTENTS: MessageIntent[] = ['chat', 'light_task', 'debugger', 'brainstorming', 'workflow'];
+const ACTIONS: MessageIntentSuggestedAction[] = [
+  'reply_in_chat',
+  'create_light_task',
+  'start_debugger',
+  'start_brainstorming',
+  'start_workflow',
+  'ask_user',
+];
+
 const PRIORITY: MessageIntent[] = [
   'debugger',
   'brainstorming',
@@ -16,6 +26,8 @@ const PRIORITY: MessageIntent[] = [
 ];
 
 const DEBUGGER_PATTERNS = [
+  /^debugger[：:\s]/iu,
+  /^debug[：:\s]/iu,
   /\bdebug\b/iu,
   /调试/u,
   /报错/u,
@@ -24,17 +36,24 @@ const DEBUGGER_PATTERNS = [
   /堆栈/u,
   /stack trace/iu,
   /\bbug\b/iu,
+  /找根因/u,
+  /根因/u,
+  /没有任何变化/u,
+  /没有变化/u,
 ];
 
 const BRAINSTORMING_PATTERNS = [
+  /^头脑风暴[：:\s]/u,
+  /^brainstorm(?:ing)?[：:\s]/iu,
   /头脑风暴/u,
   /\bbrainstorm(?:ing)?\b/iu,
   /发散/u,
-  /方案/u,
+  /(?:多个|几个|三个|备选|对比)\s*方案/u,
   /选型/u,
 ];
 
 const WORKFLOW_PATTERNS = [
+  /^workflow[：:\s]/iu,
   /\bworkflow\b/iu,
   /工作流/u,
   /writing-plans/iu,
@@ -42,9 +61,14 @@ const WORKFLOW_PATTERNS = [
   /implementation/iu,
   /验收/u,
   /代码审查/u,
+  /完整闭环/u,
+  /浏览器实际测试/u,
+  /自动提交/u,
 ];
 
 const LIGHT_TASK_PATTERNS = [
+  /^新建任务[：:\s]/u,
+  /^\/task\b/iu,
   /轻量任务/u,
   /小任务/u,
   /简单(?:改动|任务)/u,
@@ -53,15 +77,24 @@ const LIGHT_TASK_PATTERNS = [
   /整理/u,
   /补充/u,
   /微调/u,
+  /临时插入/u,
+  /一点修改/u,
+  /修改/u,
+  /改成/u,
+  /默认主题/u,
 ];
 
 const CHAT_PATTERNS = [
+  /^\/chat\b/iu,
   /聊/u,
   /讨论/u,
   /请问/u,
+  /解释/u,
+  /是什么/u,
   /\bhow\b/iu,
   /\bwhy\b/iu,
   /\bwhat\b/iu,
+  /为什么/u,
   /思路/u,
 ];
 
@@ -74,13 +107,28 @@ export type MessageIntentClassifierInvoker = (
 
 export function classifyMessageIntent(input: { message: string }): MessageIntentResult {
   const message = input.message.trim();
-  const signalCount: Record<MessageIntent, number> = {
-    chat: countSignals(message, CHAT_PATTERNS),
-    light_task: countSignals(message, LIGHT_TASK_PATTERNS),
-    debugger: countSignals(message, DEBUGGER_PATTERNS),
-    brainstorming: countSignals(message, BRAINSTORMING_PATTERNS),
-    workflow: countSignals(message, WORKFLOW_PATTERNS),
+  const explicitIntent = readExplicitIntentOverride(message);
+  if (explicitIntent) {
+    return {
+      intent: explicitIntent.intent,
+      confidence: 1,
+      source: 'user_override',
+      suggestedAction: deriveSuggestedAction(explicitIntent.intent, 1),
+      reason: `用户使用显式前缀选择 ${explicitIntent.intent}`,
+      signals: [explicitIntent.signal],
+    };
+  }
+
+  const signals: Record<MessageIntent, string[]> = {
+    chat: collectSignals(message, CHAT_PATTERNS),
+    light_task: collectSignals(message, LIGHT_TASK_PATTERNS),
+    debugger: collectSignals(message, DEBUGGER_PATTERNS),
+    brainstorming: collectSignals(message, BRAINSTORMING_PATTERNS),
+    workflow: collectSignals(message, WORKFLOW_PATTERNS),
   };
+  const signalCount = Object.fromEntries(
+    INTENTS.map((intent) => [intent, signals[intent].length]),
+  ) as Record<MessageIntent, number>;
 
   const hasTaskLikeSignal = signalCount.debugger + signalCount.brainstorming + signalCount.workflow + signalCount.light_task > 0;
   const intent = pickIntentByPriority(signalCount, hasTaskLikeSignal);
@@ -92,8 +140,9 @@ export function classifyMessageIntent(input: { message: string }): MessageIntent
     intent,
     confidence,
     source: 'rule',
-    suggested_action: suggestedAction,
+    suggestedAction,
     reason,
+    signals: signals[intent],
   };
 }
 
@@ -111,60 +160,72 @@ export async function classifyMessageIntentWithClassifier(input: {
       message: input.message,
       ruleResult,
     });
-    return parseClassifierIntentResult(output);
+    return parseClassifierIntentResult(output) ?? ruleResult;
   } catch {
     return ruleResult;
   }
 }
 
-export function parseClassifierIntentResult(output: string): MessageIntentResult {
+export function parseClassifierIntentResult(output: string): MessageIntentResult | null {
   const trimmed = output.trim();
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
-    throw new Error('classifier intent result must be a raw JSON object');
+    return null;
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(trimmed) as unknown;
-  } catch (error) {
-    throw new Error(`classifier intent result is not valid JSON: ${(error as Error).message}`);
+  } catch {
+    return null;
   }
 
-  const root = asRecord(parsed, 'classifier intent result');
+  const root = asRecord(parsed);
+  if (!root) return null;
   const intent = readIntent(root, 'intent');
   const confidence = readConfidence(root, 'confidence');
-  const suggestedAction = readSuggestedAction(root, 'suggested_action') ?? deriveSuggestedAction(intent, confidence);
+  if (!intent || confidence === null) return null;
+  const suggestedAction = readSuggestedAction(root) ?? deriveSuggestedAction(intent, confidence);
   const reason = readOptionalReason(root, 'reason') ?? 'classifier provided intent result';
+  const signals = readOptionalSignals(root, 'signals');
 
   return {
     intent,
     confidence,
     source: 'classifier',
-    suggested_action: suggestedAction,
+    suggestedAction,
     reason,
+    ...(signals.length > 0 ? { signals } : {}),
   };
 }
 
 export function shouldAskUserForIntent(intentResult: MessageIntentResult): boolean {
-  return intentResult.confidence < LOW_CONFIDENCE_THRESHOLD;
+  return intentResult.suggestedAction === 'ask_user' || intentResult.confidence < LOW_CONFIDENCE_THRESHOLD;
 }
 
 export function applyIntentToRouteResult(routeResult: RouteResult, intentResult: MessageIntentResult): RouteResult {
-  if (routeResult.action !== 'ask_user') return routeResult;
   if (shouldAskUserForIntent(intentResult)) return routeResult;
   if (!isTaskLikeIntent(intentResult.intent)) return routeResult;
+  if (routeResult.reason_code === 'explicit_task' ||
+    routeResult.reason_code === 'explicit_task_terminal' ||
+    routeResult.reason_code === 'explicit_task_not_found' ||
+    routeResult.reason_code === 'title_match') {
+    return routeResult;
+  }
+  if (routeResult.action === 'create_task') return routeResult;
 
   return {
     ...routeResult,
+    taskId: null,
     action: 'create_task',
     confidence: Math.max(routeResult.confidence, intentResult.confidence),
     reason: `${routeResult.reason}；高置信意图判定为 ${intentResult.intent}，建议创建任务`,
+    reason_code: 'create_task_intent',
   };
 }
 
 export function buildIntentActivityContent(intentResult: MessageIntentResult): string {
   const confidence = Math.round(intentResult.confidence * 100);
-  return `消息意图：${intentResult.intent}（${confidence}%）来源：${intentResult.source}，建议：${intentResult.suggested_action}。${intentResult.reason}`;
+  return `无法确定消息类型：当前判断为 ${intentResult.intent}（${confidence}%），来源：${intentResult.source}，建议：${intentResult.suggestedAction}。${intentResult.reason}`;
 }
 
 function pickIntentByPriority(
@@ -194,12 +255,35 @@ function deriveConfidence(
 
 function deriveSuggestedAction(intent: MessageIntent, confidence: number): MessageIntentSuggestedAction {
   if (confidence < LOW_CONFIDENCE_THRESHOLD) return 'ask_user';
-  if (!isTaskLikeIntent(intent)) return 'keep_route';
-  return 'create_task';
+  if (intent === 'chat') return 'reply_in_chat';
+  if (intent === 'light_task') return 'create_light_task';
+  if (intent === 'debugger') return 'start_debugger';
+  if (intent === 'brainstorming') return 'start_brainstorming';
+  return 'start_workflow';
 }
 
 function isTaskLikeIntent(intent: MessageIntent): boolean {
   return intent !== 'chat';
+}
+
+function readExplicitIntentOverride(message: string): { intent: MessageIntent; signal: string } | null {
+  const patterns: Array<{ intent: MessageIntent; pattern: RegExp }> = [
+    { intent: 'chat', pattern: /^\/chat\b/iu },
+    { intent: 'light_task', pattern: /^新建任务[：:\s]/u },
+    { intent: 'light_task', pattern: /^\/task\b/iu },
+    { intent: 'debugger', pattern: /^debugger[：:\s]/iu },
+    { intent: 'debugger', pattern: /^debug[：:\s]/iu },
+    { intent: 'brainstorming', pattern: /^头脑风暴[：:\s]/u },
+    { intent: 'brainstorming', pattern: /^brainstorm(?:ing)?[：:\s]/iu },
+    { intent: 'workflow', pattern: /^workflow[：:\s]/iu },
+  ];
+
+  for (const { intent, pattern } of patterns) {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(message);
+    if (match?.[0]) return { intent, signal: match[0].trim() };
+  }
+  return null;
 }
 
 function buildRuleReason(
@@ -213,46 +297,50 @@ function buildRuleReason(
   return `命中 ${intent} 规则信号`;
 }
 
-function countSignals(message: string, patterns: RegExp[]): number {
-  return patterns.reduce((count, pattern) => (pattern.test(message) ? count + 1 : count), 0);
+function collectSignals(message: string, patterns: RegExp[]): string[] {
+  return patterns.reduce<string[]>((matches, pattern) => {
+    pattern.lastIndex = 0;
+    const match = pattern.exec(message);
+    if (!match?.[0]) return matches;
+    matches.push(match[0].trim());
+    return matches;
+  }, []);
 }
 
-function asRecord(value: unknown, path: string): Record<string, unknown> {
+function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`${path} must be an object`);
+    return null;
   }
   return value as Record<string, unknown>;
 }
 
-function readIntent(source: Record<string, unknown>, field: string): MessageIntent {
+function readIntent(source: Record<string, unknown>, field: string): MessageIntent | null {
   const value = source[field];
-  const intents: MessageIntent[] = ['chat', 'light_task', 'debugger', 'brainstorming', 'workflow'];
-  if (typeof value !== 'string' || !intents.includes(value as MessageIntent)) {
-    throw new Error(`${field} must be one of ${intents.join(', ')}`);
+  if (typeof value !== 'string' || !INTENTS.includes(value as MessageIntent)) {
+    return null;
   }
   return value as MessageIntent;
 }
 
-function readConfidence(source: Record<string, unknown>, field: string): number {
+function readConfidence(source: Record<string, unknown>, field: string): number | null {
   const value = source[field];
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new Error(`${field} must be a finite number`);
+    return null;
   }
   if (value < 0 || value > 1) {
-    throw new Error(`${field} must be between 0 and 1`);
+    return null;
   }
   return value;
 }
 
-function readSuggestedAction(
-  source: Record<string, unknown>,
-  field: string,
-): MessageIntentSuggestedAction | null {
-  const value = source[field];
-  if (value === undefined) return null;
-  const actions: MessageIntentSuggestedAction[] = ['keep_route', 'create_task', 'ask_user'];
-  if (typeof value !== 'string' || !actions.includes(value as MessageIntentSuggestedAction)) {
-    throw new Error(`${field} must be one of ${actions.join(', ')}`);
+function readSuggestedAction(source: Record<string, unknown>): MessageIntentSuggestedAction | null {
+  const value = typeof source.suggestedAction === 'string'
+    ? source.suggestedAction
+    : typeof source.suggested_action === 'string'
+      ? source.suggested_action
+      : undefined;
+  if (value === undefined || !ACTIONS.includes(value as MessageIntentSuggestedAction)) {
+    return null;
   }
   return value as MessageIntentSuggestedAction;
 }
@@ -260,8 +348,18 @@ function readSuggestedAction(
 function readOptionalReason(source: Record<string, unknown>, field: string): string | null {
   const value = source[field];
   if (value === undefined) return null;
-  if (typeof value !== 'string') throw new Error(`${field} must be a string`);
+  if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  if (!trimmed) throw new Error(`${field} must be a non-empty string`);
+  if (!trimmed) return null;
   return trimmed;
+}
+
+function readOptionalSignals(source: Record<string, unknown>, field: string): string[] {
+  const value = source[field];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8);
 }

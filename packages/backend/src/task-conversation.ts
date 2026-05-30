@@ -247,6 +247,7 @@ function maybeAutoStartTaskWorkflow(roomId: string, task: Task): void {
       roomId,
       taskId: task.id,
       source: 'auto_start',
+      sourceMessageId: task.source_message_id ?? undefined,
     });
   } catch (err) {
     recordTaskEvent({

@@ -49,6 +49,13 @@ import {
   recordTaskStatusChanged,
   recordTaskUpdated,
 } from './task-conversation.js';
+import {
+  applyIntentToRouteResult,
+  buildIntentActivityContent,
+  classifyMessageIntentWithClassifier,
+  shouldAskUserForIntent,
+  type MessageIntentClassifierInvoker,
+} from './message-intent-router.js';
 import { extractCreateTaskTitle, routeMessage } from './task-router.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
@@ -98,6 +105,8 @@ import {
   type Task,
   type TaskExecutionIntent,
   type TaskInteractionMode,
+  type MessageIntent,
+  type MessageIntentResult,
   type WorkflowRole,
 } from './types.js';
 
@@ -120,6 +129,7 @@ interface AiConfigTestRouteDeps {
 
 interface MessageRouteDeps {
   dispatchUserMessage?: typeof dispatchUserMessage;
+  intentClassifier?: MessageIntentClassifierInvoker;
 }
 
 let collaborationRouteDeps: CollaborationRouteDeps = {};
@@ -1796,7 +1806,13 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     res.status(error.status ?? 400).json({ error: error.message });
     return;
   }
-  const routeResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
+  const intentResult = await classifyMessageIntentWithClassifier({
+    message: content,
+    classifier: messageRouteDeps.intentClassifier,
+  });
+  const initialRouteResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
+  const routeResult = applyIntentToRouteResult(initialRouteResult, intentResult);
+  metadata.intent_result = intentResult;
   metadata.route_result = routeResult;
   if (routeResult.taskId) {
     metadata.task_id = routeResult.taskId;
@@ -1808,9 +1824,9 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     content,
     mentions: parsed.data.mentions,
     metadata,
-    dispatch: shouldDispatchRoutedUserMessage(routeResult, parsed.data.mentions),
+    dispatch: shouldDispatchRoutedUserMessage(routeResult, parsed.data.mentions, intentResult),
   });
-  finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
+  finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
   res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
 }
@@ -1898,7 +1914,13 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       res.status(error.status ?? 400).json({ error: error.message });
       return;
     }
-    const routeResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
+    const intentResult = await classifyMessageIntentWithClassifier({
+      message: content,
+      classifier: messageRouteDeps.intentClassifier,
+    });
+    const initialRouteResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
+    const routeResult = applyIntentToRouteResult(initialRouteResult, intentResult);
+    metadata.intent_result = intentResult;
     metadata.route_result = routeResult;
     if (routeResult.taskId) {
       metadata.task_id = routeResult.taskId;
@@ -1910,9 +1932,9 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       content,
       mentions,
       metadata,
-      dispatch: shouldDispatchRoutedUserMessage(routeResult, mentions),
+      dispatch: shouldDispatchRoutedUserMessage(routeResult, mentions, intentResult),
     });
-    finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
+    finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
     recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
     res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
   } catch (err) {
@@ -2013,9 +2035,14 @@ function createAndDispatchUserMessage(input: {
   return userMsg;
 }
 
-function shouldDispatchRoutedUserMessage(routeResult: import('./types.js').RouteResult, mentions?: string[]): boolean {
+function shouldDispatchRoutedUserMessage(
+  routeResult: import('./types.js').RouteResult,
+  mentions?: string[],
+  intentResult?: import('./types.js').MessageIntentResult,
+): boolean {
   if (routeResult.action === 'create_task') return false;
   if (routeResult.action !== 'ask_user') return true;
+  if (intentResult?.intent === 'chat' && !shouldAskUserForIntent(intentResult)) return true;
   return Boolean(mentions?.length);
 }
 
@@ -2047,11 +2074,17 @@ function finalizeUserMessageRouting(input: {
   userMessageId: string;
   content: string;
   routeResult: import('./types.js').RouteResult;
+  intentResult?: MessageIntentResult;
 }): void {
   const finalRouteResult = input.routeResult.action === 'create_task'
     ? createTaskFromRoutedMessage(input)
     : input.routeResult;
-  if (finalRouteResult.action === 'ask_user') {
+  if (input.intentResult && shouldAskUserForIntent(input.intentResult)) {
+    recordUncertainMessageIntent(input.roomId, input.userMessageId, input.intentResult);
+  }
+  const isHighConfidenceChat = input.intentResult?.intent === 'chat' &&
+    !shouldAskUserForIntent(input.intentResult);
+  if (finalRouteResult.action === 'ask_user' && !isHighConfidenceChat) {
     recordUncertainMessageRoute(input.roomId, input.userMessageId, finalRouteResult);
   }
   recordTaskRoutingEvent(input.roomId, input.userMessageId, finalRouteResult);
@@ -2088,19 +2121,43 @@ function recordUncertainMessageRoute(
   wsHub.broadcast(roomId, { type: 'message:new', roomId, message });
 }
 
+function recordUncertainMessageIntent(
+  roomId: string,
+  messageId: string,
+  intentResult: MessageIntentResult,
+): void {
+  const message = messageRepo.create({
+    room_id: roomId,
+    sender_type: 'system',
+    sender_id: 'system',
+    sender_name: 'System',
+    content: buildIntentActivityContent(intentResult),
+    message_type: 'system',
+    layer: 'activity',
+    metadata: {
+      event_type: 'message_intent_uncertain',
+      message_id: messageId,
+      intent_result: intentResult,
+    },
+  });
+  wsHub.broadcast(roomId, { type: 'message:new', roomId, message });
+}
+
 function createTaskFromRoutedMessage(input: {
   roomId: string;
   userMessageId: string;
   content: string;
   routeResult: import('./types.js').RouteResult;
+  intentResult?: MessageIntentResult;
 }): import('./types.js').RouteResult {
-  const title = extractCreateTaskTitle(input.content);
-  if (!title) return input.routeResult;
+  const title = extractCreateTaskTitle(input.content) ?? inferTaskTitleFromIntentMessage(input.content);
+  const intent = input.intentResult?.intent ?? 'light_task';
   const result = createTaskWithConversation({
     roomId: input.roomId,
     taskInput: {
       title,
-      description: input.content,
+      description: buildIntentTaskDescription(input.content, intent),
+      interaction_mode: shouldAutoStartWorkflowForIntent(intent) ? 'auto_recommended' : 'ask_user',
     },
     origin: 'chat_plan',
     sourceMessageId: input.userMessageId,
@@ -2124,6 +2181,40 @@ function createTaskFromRoutedMessage(input: {
     taskId: result.task.id,
   });
   return nextRouteResult;
+}
+
+function shouldAutoStartWorkflowForIntent(intent: MessageIntent): boolean {
+  return intent === 'debugger' || intent === 'brainstorming' || intent === 'workflow';
+}
+
+function buildIntentTaskDescription(content: string, intent: MessageIntent): string {
+  const executionIntent = taskExecutionIntentForMessageIntent(intent);
+  const modeLine = `消息模式：${intent}`;
+  const intentLine = executionIntent ? `任务意图：${executionIntent}` : null;
+  return [
+    modeLine,
+    intentLine,
+    '',
+    content,
+  ].filter((line): line is string => line !== null).join('\n');
+}
+
+function taskExecutionIntentForMessageIntent(intent: MessageIntent): TaskExecutionIntent | null {
+  if (intent === 'debugger') return 'debug_fix';
+  if (intent === 'brainstorming') return 'planning_only';
+  if (intent === 'workflow') return 'implementation';
+  if (intent === 'light_task') return 'implementation';
+  return null;
+}
+
+function inferTaskTitleFromIntentMessage(content: string): string {
+  const normalized = content
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.replace(/\s+/gu, ' ')
+    .trim() ?? '自动识别任务';
+  return normalized.length <= 120 ? normalized : `${normalized.slice(0, 117).trimEnd()}...`;
 }
 
 function broadcastUserMessageSnapshot(roomId: string, message: Message): void {

@@ -93,6 +93,25 @@ test('parseMessageMetadata rejects unsafe attachment URLs', () => {
   assert.deepEqual(parseMessageMetadata(metadata).attachments, []);
 });
 
+test('parseMessageMetadata accepts message intent uncertain event type', () => {
+  const metadata = JSON.stringify({
+    event_type: 'message_intent_uncertain',
+    message_id: 'msg-1',
+    intent_result: {
+      intent: 'chat',
+      source: 'classifier',
+      confidence: 0.54,
+      reason: '上下文不足',
+      suggestedAction: 'ask_user',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.event_type, 'message_intent_uncertain');
+  assert.equal(parsed.intent_result?.intent, 'chat');
+});
+
 test('parseMessageMetadata accepts collaboration decision metadata', () => {
   const metadata = JSON.stringify({
     event_type: 'collaboration_decision',

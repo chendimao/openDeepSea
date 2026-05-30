@@ -215,6 +215,7 @@ export type AcpSessionHandoffReason =
 export type TaskEventType =
   | 'message_routed'
   | 'message_route_uncertain'
+  | 'message_intent_uncertain'
   | 'plan_proposed'
   | 'runtime_event'
   | 'diff_detected'
@@ -787,17 +788,26 @@ export interface RouteResult {
   action: 'append_to_task' | 'switch_task' | 'create_task' | 'ask_user';
   confidence: number;
   reason: string;
+  reason_code?: RouteReasonCode;
 }
 
+export type RouteReasonCode =
+  | 'explicit_task'
+  | 'explicit_task_terminal'
+  | 'explicit_task_not_found'
+  | 'active_task'
+  | 'title_match'
+  | 'create_task_intent'
+  | 'ambiguous';
+
 export type MessageIntent = 'chat' | 'light_task' | 'debugger' | 'brainstorming' | 'workflow';
-export type MessageIntentSource = 'rule' | 'classifier';
+export type MessageIntentSource = 'rule' | 'classifier' | 'user_override';
 export type MessageIntentSuggestedAction =
   | 'reply_in_chat'
   | 'create_light_task'
-  | 'enter_debugger'
+  | 'start_debugger'
   | 'start_brainstorming'
   | 'start_workflow'
-  | 'create_task'
   | 'ask_user';
 
 export interface MessageIntentResult {

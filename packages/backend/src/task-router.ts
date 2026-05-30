@@ -27,6 +27,7 @@ export function routeMessage(input: {
           action: 'ask_user',
           confidence: 0,
           reason: `显式任务引用不可接收新消息：${task.id}（${task.status}）`,
+          reason_code: 'explicit_task_terminal',
         };
       }
       const shouldSwitchTask = Boolean(input.activeTaskId && input.activeTaskId !== task.id && isRoutableTask(task));
@@ -35,6 +36,7 @@ export function routeMessage(input: {
         action: shouldSwitchTask ? 'switch_task' : 'append_to_task',
         confidence: 1,
         reason: shouldSwitchTask ? `显式任务引用，切换到任务：${task.id}` : `显式任务引用：${task.id}`,
+        reason_code: 'explicit_task',
       };
     }
     return {
@@ -42,6 +44,7 @@ export function routeMessage(input: {
       action: 'ask_user',
       confidence: 0,
       reason: `显式任务引用不存在或不属于当前房间：${explicitTaskId}`,
+      reason_code: 'explicit_task_not_found',
     };
   }
 
@@ -53,6 +56,7 @@ export function routeMessage(input: {
         action: 'append_to_task',
         confidence: 0.9,
         reason: `使用当前激活任务：${activeTask.title}`,
+        reason_code: 'active_task',
       };
     }
   }
@@ -64,6 +68,7 @@ export function routeMessage(input: {
       action: 'append_to_task',
       confidence: matched.confidence,
       reason: `标题匹配任务：${matched.task.title}`,
+      reason_code: 'title_match',
     };
   }
 
@@ -73,6 +78,7 @@ export function routeMessage(input: {
       action: 'create_task',
       confidence: 0.8,
       reason: '消息表达了明确的新任务意图',
+      reason_code: 'create_task_intent',
     };
   }
 
@@ -81,6 +87,7 @@ export function routeMessage(input: {
     action: 'ask_user',
     confidence: 0,
     reason: '无法确定消息应归属哪个任务',
+    reason_code: 'ambiguous',
   };
 }
 

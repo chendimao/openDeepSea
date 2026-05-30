@@ -34,6 +34,7 @@ const projectFileAttachmentUrlPrefix = '/uploads/files/';
 const taskEventTypes = new Set<TaskEventType>([
   'message_routed',
   'message_route_uncertain',
+  'message_intent_uncertain',
   'plan_proposed',
   'task_created',
   'task_updated',
@@ -67,14 +68,13 @@ const taskExecutionIntents = new Set<TaskExecutionIntent>([
   'review_only',
 ]);
 const messageIntents = new Set<MessageIntent>(['chat', 'light_task', 'debugger', 'brainstorming', 'workflow']);
-const messageIntentSources = new Set<MessageIntentSource>(['rule', 'classifier']);
+const messageIntentSources = new Set<MessageIntentSource>(['rule', 'classifier', 'user_override']);
 const messageIntentSuggestedActions = new Set<MessageIntentSuggestedAction>([
   'reply_in_chat',
   'create_light_task',
-  'enter_debugger',
+  'start_debugger',
   'start_brainstorming',
   'start_workflow',
-  'create_task',
   'ask_user',
 ]);
 
