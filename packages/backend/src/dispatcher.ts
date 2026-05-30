@@ -38,9 +38,11 @@ import type {
   MessageTrace,
   MessageReplyMetadata,
   MessageLayer,
+  MessageMetadata,
   PlannerDecision,
   Room,
   RoomAgent,
+  TaskExecutionIntent,
   TaskEventType,
   WorkflowStage,
 } from './types.js';
@@ -1108,6 +1110,12 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
             sourceMessageId: args.sourceMessageId,
             agent,
           });
+          annotateTaskReadiness({
+            message: finalMessage,
+            run: finalRun,
+            sourceMessageId: args.sourceMessageId,
+            agent,
+          });
           maybeRegisterAgentDocument({
             run: finalRun,
             message: finalMessage,
@@ -1183,6 +1191,153 @@ function annotatePlannerDecision(input: {
     planner_decision: decision,
     source_message_id: input.sourceMessageId ?? undefined,
   });
+}
+
+function annotateTaskReadiness(input: {
+  message: Message;
+  run: AgentRun;
+  sourceMessageId?: string | null;
+  agent: RoomAgent;
+}): void {
+  if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return;
+  if (input.run.status !== 'completed') return;
+  if (input.message.sender_type !== 'agent') return;
+  if (input.agent.agent_id !== 'planner') return;
+
+  const readiness = parseTaskReadiness(input.message.content);
+  if (!readiness) return;
+  messageRepo.mergeMetadata(input.message.id, {
+    task_readiness: {
+      ...readiness,
+      source_message_id: input.sourceMessageId ?? readiness.source_message_id,
+    },
+  });
+}
+
+function parseTaskReadiness(content: string): MessageMetadata['task_readiness'] | null {
+  const explicit = parseExplicitTaskReadiness(content);
+  if (explicit) return explicit;
+  return inferTaskReadinessFromPlannerReply(content);
+}
+
+function parseExplicitTaskReadiness(content: string): MessageMetadata['task_readiness'] | null {
+  for (const candidate of extractJsonObjectCandidates(content)) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      const readiness = readTaskReadinessObject(parsed);
+      if (readiness) return readiness;
+    } catch {
+      // Ignore malformed JSON blocks.
+    }
+  }
+  return null;
+}
+
+function readTaskReadinessObject(value: unknown): MessageMetadata['task_readiness'] | null {
+  if (!isRecord(value)) return null;
+  const candidate = isRecord(value.task_readiness) ? value.task_readiness : value;
+  const ready = typeof candidate.ready === 'boolean' ? candidate.ready : false;
+  if (!ready) return null;
+  const title = readNonEmptyString(candidate.title) ?? '待生成任务';
+  const description = readNonEmptyString(candidate.description) ?? title;
+  const missingQuestions = Array.isArray(candidate.missing_questions)
+    ? candidate.missing_questions.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  const executionIntent = readTaskExecutionIntent(candidate.execution_intent) ?? 'implementation';
+  const recommendedMode = candidate.recommended_mode === 'chat_collaboration' || isAnalysisIntent(executionIntent)
+    ? 'chat_collaboration'
+    : 'formal_workflow';
+  const confidence = typeof candidate.confidence === 'number' && Number.isFinite(candidate.confidence)
+    ? Math.max(0, Math.min(1, candidate.confidence))
+    : 0.8;
+  return {
+    ready,
+    confidence,
+    title,
+    description,
+    missing_questions: missingQuestions,
+    recommended_mode: recommendedMode,
+    execution_intent: executionIntent,
+    source_message_id: readNonEmptyString(candidate.source_message_id) ?? undefined,
+  };
+}
+
+function inferTaskReadinessFromPlannerReply(content: string): MessageMetadata['task_readiness'] | null {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return null;
+  if (!hasTaskReadinessSignals(content)) return null;
+  const executionIntent = inferTaskExecutionIntent(normalized);
+  const title = inferTaskReadinessTitle(content);
+  return {
+    ready: true,
+    confidence: executionIntent === 'analysis_only' ? 0.72 : 0.76,
+    title,
+    description: normalized.length <= 500 ? normalized : `${normalized.slice(0, 497)}...`,
+    missing_questions: [],
+    recommended_mode: isAnalysisIntent(executionIntent) ? 'chat_collaboration' : 'formal_workflow',
+    execution_intent: executionIntent,
+  };
+}
+
+function hasTaskReadinessSignals(content: string): boolean {
+  const signals = [
+    /实施目标[:：]/u,
+    /实施范围[:：]/u,
+    /验收标准[:：]/u,
+    /下一步.*(工程排期|实现|执行|workflow|工作流)/u,
+    /可进入.*(工程排期|实现|执行|workflow|工作流)/u,
+  ];
+  return signals.filter((pattern) => pattern.test(content)).length >= 2;
+}
+
+function inferTaskExecutionIntent(content: string): TaskExecutionIntent {
+  if (/不进入实现|不要实现|只做方案|只做分析|先生成.*方案|只读分析/u.test(content)) {
+    return 'analysis_only';
+  }
+  if (/修复|bug|报错|失败|回归|恢复/u.test(content)) return 'debug_fix';
+  return 'implementation';
+}
+
+function inferTaskReadinessTitle(content: string): string {
+  const lines = content
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const objective = lines.find((line) => /^实施目标[:：]/u.test(line));
+  if (objective) return truncateReadinessTitle(objective.replace(/^实施目标[:：]\s*/u, ''));
+  const taskTitleIndex = lines.findIndex((line) => /^(\*\*)?任务标题(\*\*)?$/u.test(line));
+  if (taskTitleIndex >= 0 && lines[taskTitleIndex + 1]) {
+    return truncateReadinessTitle(lines[taskTitleIndex + 1]!);
+  }
+  return truncateReadinessTitle(lines[0] ?? '待生成任务');
+}
+
+function truncateReadinessTitle(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '待生成任务';
+  return normalized.length <= 120 ? normalized : `${normalized.slice(0, 117).trimEnd()}...`;
+}
+
+function readTaskExecutionIntent(value: unknown): TaskExecutionIntent | null {
+  if (
+    value === 'analysis_only' ||
+    value === 'planning_only' ||
+    value === 'documentation_only' ||
+    value === 'implementation' ||
+    value === 'debug_fix' ||
+    value === 'review_only'
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function isAnalysisIntent(intent: TaskExecutionIntent): boolean {
+  return intent === 'analysis_only' || intent === 'planning_only' || intent === 'documentation_only' || intent === 'review_only';
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function maybeRegisterAgentDocument(input: {
@@ -1361,6 +1516,25 @@ function buildPlannerDecisionPrompt(): string[] {
     '      { "agent_id": "frontend-executor", "goal": "检查设置页测试入口" }',
     '    ],',
     '    "awaiting_user_confirmation": true',
+    '  }',
+    '}',
+    '```',
+    '',
+    '任务生成结构化输出规则：',
+    '- 当用户请求已具备生成正式任务或 workflow 的条件时，请在自然语言回复后追加 task_readiness JSON。',
+    '- 如果用户要求实现、修复、开发、细化功能或优化功能，recommended_mode 使用 "formal_workflow"，execution_intent 使用 "implementation" 或 "debug_fix"。',
+    '- 如果用户明确只要方案/分析且不要实现，recommended_mode 使用 "chat_collaboration"，execution_intent 使用 "analysis_only"。',
+    '- 固定 JSON 结构如下：',
+    '```json',
+    '{',
+    '  "task_readiness": {',
+    '    "ready": true,',
+    '    "confidence": 0.9,',
+    '    "title": "一句话任务标题",',
+    '    "description": "任务目标、边界和验收方式",',
+    '    "missing_questions": [],',
+    '    "recommended_mode": "formal_workflow",',
+    '    "execution_intent": "implementation"',
     '  }',
     '}',
     '```',

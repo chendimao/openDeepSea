@@ -848,6 +848,56 @@ test('planner completed reply marks task readiness when it contains enough imple
   }
 });
 
+test('planner completed reply does not mark ordinary chat as task readiness', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-readiness-ordinary-'));
+  const project = projectRepo.create({ name: `task-readiness-ordinary-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'planner',
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '今天先聊聊思路',
+  });
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke({ onChunk }) {
+      onChunk?.({
+        stream: 'stdout',
+        text: '可以，我们先把背景、限制和你关心的问题列出来，再决定是否需要形成正式任务。',
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const plannerMessage = messageRepo.listByRoom(room.id, 20).find((message) => message.sender_id === 'planner');
+    assert.ok(plannerMessage);
+    const metadata = JSON.parse(plannerMessage.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.task_readiness, undefined);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner completed reply reads structured task readiness json from markdown output', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-readiness-json-'));
   const project = projectRepo.create({ name: `task-readiness-json-${Date.now()}`, path: projectPath });
@@ -983,7 +1033,7 @@ test('planner completed reply marks analysis-only readiness without formal workf
   }
 });
 
-test('message route treats /task content as plain chat and still dispatches ACP reply', async () => {
+test('message route creates task for /task intent without fallback ACP dispatch', async () => {
   const { projectPath, room } = await createRoutedRoom('task-command');
   const { restore, calls } = installCountingCodexAdapter();
 
@@ -1001,15 +1051,17 @@ test('message route treats /task content as plain chat and still dispatches ACP 
     const userMessage = await res.json() as Message;
     assert.equal(userMessage.content, '/task Fix command route');
     await delay(30);
-    assert.equal(calls.count, 1);
-    assert.equal(taskRepo.listByRoom(room.id).length, 0);
+    assert.equal(calls.count, 0);
+    const tasks = taskRepo.listByRoom(room.id);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0]?.title, 'Fix command route');
 
     const messages = messageRepo.listByRoom(room.id, 20);
     assert.equal(messages[0]?.id, userMessage.id);
-    assert.equal(messages.some((message) => {
-      const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
-      return metadata.event_type === 'task_created';
-    }), false);
+    const metadata = JSON.parse(userMessage.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.task_id, tasks[0]?.id);
+    assert.equal(metadata.route_result?.action, 'create_task');
+    assert.equal(taskEventRepo.listByTask(tasks[0]!.id).some((event) => event.type === 'message_routed'), true);
   } finally {
     restore();
     await rm(projectPath, { recursive: true, force: true });
@@ -1108,7 +1160,7 @@ test('message route treats /start-task content as plain chat and does not start 
     assert.equal(res.status, 201);
     const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 1);
+    assert.equal(calls.count, 0);
     assert.equal(workflowRepo.listByTask('task-123').length, 0);
     const messages = messageRepo.listByRoom(room.id, 20);
     assert.equal(messages[0]?.id, userMessage.id);
@@ -1139,7 +1191,7 @@ test('message route treats Chinese start command as plain chat and does not star
     assert.equal(res.status, 201);
     const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 1);
+    assert.equal(calls.count, 0);
     assert.equal(workflowRepo.listByTask('task-123').length, 0);
     assert.equal(messageRepo.listByRoom(room.id, 20).some((message) => {
       const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
@@ -1169,7 +1221,7 @@ test('message route no longer errors on missing /start-task target and treats it
     assert.equal(res.status, 201);
     const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 1);
+    assert.equal(calls.count, 0);
     assert.equal(userMessage.content, '/start-task missing-task');
     assert.equal(messageRepo.listByRoom(room.id, 20).filter((message) => message.sender_type === 'user').length, 1);
   } finally {
@@ -2056,7 +2108,9 @@ test('respondAsAgent persists legacy raw patch event as timeline event metadata'
     const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
     assert.equal(metadata.trace?.events?.[0]?.type, 'file_diff');
     assert.equal(metadata.trace?.events?.[0]?.payload.path, 'src/app.ts');
-    assert.equal(metadata.trace?.events?.[0]?.payload.patch, '-old\n+new');
+    assert.equal(metadata.trace?.events?.[0]?.payload.detail_omitted, true);
+    const fullEvent = messageRepo.getTraceEventForClient(room.id, reply.id, metadata.trace?.events?.[0]?.id ?? '');
+    assert.equal(fullEvent?.payload.patch, '-old\n+new');
     assert.ok(events.some((event) =>
       event.type === 'message:stream' &&
       event.channel === 'event' &&
@@ -2089,6 +2143,7 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
   const events = captureRoomEvents(room.id);
   const originalAdapter = adapters.codex;
   let releaseInvoke!: () => void;
+  let invokeReleased = false;
   adapters.codex = {
     ...originalAdapter,
     async invoke(args) {
@@ -2106,7 +2161,10 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
       });
       args.onChunk({ stream: 'stdout', text: '第一段' });
       await new Promise<void>((resolve) => {
-        releaseInvoke = resolve;
+        releaseInvoke = () => {
+          invokeReleased = true;
+          resolve();
+        };
       });
       args.onChunk({ stream: 'stdout', text: '第二段' });
       return { exitCode: 0, sessionId: null, stderr: '' };
@@ -2164,7 +2222,7 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
     assert.equal(run?.stderr, '');
     const metadata = JSON.parse(reply?.metadata ?? '{}') as MessageMetadata;
     assert.ok(Array.isArray(metadata.trace?.events));
-    assert.ok(metadata.trace?.events?.some((event) => event.type === 'thinking'));
+    assert.equal(metadata.trace?.events?.some((event) => event.type === 'thinking'), false);
     assert.ok(metadata.trace?.events?.some((event) => event.type === 'tool_call'));
     assert.ok(events.some((event) =>
       event.type === 'message:stream' &&
@@ -2176,6 +2234,7 @@ test('respondAsAgent appends and broadcasts stdout chunks before ACP invoke reso
       event.chunk === ''
     ));
   } finally {
+    if (!invokeReleased) releaseInvoke?.();
     events.restore();
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

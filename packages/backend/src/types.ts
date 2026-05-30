@@ -757,6 +757,7 @@ export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
   reply_to?: MessageReplyMetadata;
   source_message_id?: string;
+  route_result?: RouteResult;
   planner_decision?: PlannerDecision;
   trace?: MessageTrace;
   acp_enabled?: boolean;

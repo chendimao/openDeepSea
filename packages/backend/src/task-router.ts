@@ -144,11 +144,18 @@ function looksLikeCreateTaskIntent(message: string): boolean {
 
 export function extractCreateTaskTitle(message: string): string | null {
   const trimmed = message.trim();
-  const chinese = /(?:新建|创建|新增)\s*任务[:：]\s*(.+)$/u.exec(trimmed);
-  if (chinese?.[1]?.trim()) return truncateTaskTitle(chinese[1].trim());
-  const slash = /^\/task\b\s*(.+)$/u.exec(trimmed);
-  if (slash?.[1]?.trim()) return truncateTaskTitle(slash[1].trim());
+  const chinese = /(?:新建|创建|新增)\s*任务[:：]\s*([^\r\n]+)/u.exec(trimmed);
+  if (chinese?.[1]?.trim()) return truncateTaskTitle(firstContentLine(chinese[1]));
+  const slash = /^\/task\b\s*([^\r\n]+)/u.exec(trimmed);
+  if (slash?.[1]?.trim()) return truncateTaskTitle(firstContentLine(slash[1]));
   return null;
+}
+
+function firstContentLine(value: string): string {
+  return value
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean) ?? '';
 }
 
 function truncateTaskTitle(value: string): string {

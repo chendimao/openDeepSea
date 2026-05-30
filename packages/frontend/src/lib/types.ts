@@ -777,7 +777,15 @@ export interface MessageMetadata {
   source_message_id?: string;
   fallback_agent_id?: string;
   collaboration_decision?: CollaborationDecision;
+  route_result?: RouteResult;
   task_readiness?: TaskReadinessMetadata;
+}
+
+export interface RouteResult {
+  taskId: string | null;
+  action: 'append_to_task' | 'switch_task' | 'create_task' | 'ask_user';
+  confidence: number;
+  reason: string;
 }
 
 export type PlannerExecutionMode = 'pause_after_suggestion' | 'auto_continue' | 'dispatch_next';

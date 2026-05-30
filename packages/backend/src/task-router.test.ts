@@ -153,6 +153,17 @@ test('extractCreateTaskTitle parses slash and Chinese create-task commands', () 
   assert.equal(extractCreateTaskTitle('帮我看一下'), null);
 });
 
+test('extractCreateTaskTitle uses the first content line for multiline create-task messages', () => {
+  assert.equal(
+    extractCreateTaskTitle('新建任务：浏览器闭环测试\n目标：验证任务状态流转'),
+    '浏览器闭环测试',
+  );
+  assert.equal(
+    extractCreateTaskTitle('/task Browser smoke\nGoal: verify task routing'),
+    'Browser smoke',
+  );
+});
+
 test('routeMessage asks the user when create-task command has no title', () => {
   const { room } = createRoomFixture();
 

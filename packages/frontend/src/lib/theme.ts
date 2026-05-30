@@ -7,6 +7,8 @@ export const THEME_STYLES: ThemeStyle[] = ['apple', 'minimal'];
 
 export const THEME_TONES: ThemeTone[] = ['light', 'dark'];
 
+export const DEFAULT_THEME_MODE: ThemeMode = 'minimal-light';
+
 const THEME_MODES = new Set<ThemeMode>([
   'apple-light',
   'apple-dark',
@@ -20,10 +22,10 @@ export function isThemeMode(value: string | null): value is ThemeMode {
 
 export function parseThemeMode(value: string | null): ThemeMode {
   if (isThemeMode(value)) return value;
-  if (value === 'light') return 'apple-light';
+  if (value === 'light') return DEFAULT_THEME_MODE;
   if (value === 'dark') return 'apple-dark';
-  if (value === 'minimal' || value === 'console') return 'minimal-light';
-  return 'minimal-light';
+  if (value === 'minimal' || value === 'console') return DEFAULT_THEME_MODE;
+  return DEFAULT_THEME_MODE;
 }
 
 export function getThemeStyle(theme: ThemeMode): ThemeStyle {

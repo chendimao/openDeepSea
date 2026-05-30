@@ -187,7 +187,7 @@ function extractDiffPayload(
   raw: Record<string, unknown>,
   payload: Record<string, unknown>,
 ): { path: string; patch: string; additions: number; deletions: number } | null {
-  const rawType = typeof raw['type'] === 'string' ? raw['type'] : '';
+  const rawType = firstString(raw['type'], payload['type']) ?? '';
   const path = firstString(payload['path'], payload['file'], payload['file_path'], payload['filePath']);
   const patch = firstString(payload['patch'], payload['diff'], payload['unified_diff'], payload['unifiedDiff']);
   if (!path || !patch) return null;
