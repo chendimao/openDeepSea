@@ -5,6 +5,7 @@ import type {
   MessageMetadata,
   MessageTrace,
   PlannerDecision,
+  Task,
   TaskExecutionIntent,
 } from '../lib/types';
 
@@ -74,6 +75,13 @@ export function createReplyTarget(message: Message, explicit: boolean): ReplyTar
     excerpt: summarizeMessageExcerpt(message.content),
     explicit,
   };
+}
+
+export function getRoutableActiveTaskId(task: Pick<Task, 'id' | 'status'> | null): string | null {
+  if (!task) return null;
+  return task.status === 'todo' || task.status === 'in_progress' || task.status === 'review'
+    ? task.id
+    : null;
 }
 
 export function getTaskReadinessActionState(intent: TaskExecutionIntent | undefined): TaskReadinessActionState {

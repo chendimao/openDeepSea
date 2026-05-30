@@ -53,6 +53,22 @@ test('routeMessage uses active task when there is no explicit task reference', (
   assert.match(result.reason, /激活任务/);
 });
 
+test('routeMessage does not append to terminal active tasks', () => {
+  const { project, room } = createRoomFixture();
+  const failed = taskRepo.create({ project_id: project.id, room_id: room.id, title: '失败任务' });
+  taskRepo.updateStatus(failed.id, 'failed');
+
+  const result = routeMessage({
+    roomId: room.id,
+    message: '继续按刚才的方案实现',
+    activeTaskId: failed.id,
+  });
+
+  assert.equal(result.taskId, null);
+  assert.equal(result.action, 'ask_user');
+  assert.match(result.reason, /无法确定/);
+});
+
 test('routeMessage matches an open task by title tokens when no task is active', () => {
   const { project, room } = createRoomFixture();
   const matched = taskRepo.create({ project_id: project.id, room_id: room.id, title: '修复登录错误' });

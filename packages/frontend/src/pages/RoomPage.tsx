@@ -66,6 +66,7 @@ import {
   createDefaultReplyTarget,
   createPlannerDispatchInput,
   createReplyTarget,
+  getRoutableActiveTaskId,
   hasDispatchablePlannerSteps,
   shouldShowPlannerDecisionPanel,
   type MessageStreamUpdate,
@@ -163,6 +164,7 @@ export function RoomPage() {
   });
   const roomActivityEvents = roomTaskEventResponse?.events ?? [];
   const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
+  const routableActiveTaskId = getRoutableActiveTaskId(activeTask);
   const updateTaskStatus = useMutation({
     mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
       api.updateTask(task.id, { status }),
@@ -542,7 +544,7 @@ export function RoomPage() {
                 registerMessageRef={registerMessageRef}
                 highlightMessageId={highlightMessageId}
                 explicitReplyTarget={explicitReplyTarget}
-                activeTaskId={activeTaskId}
+                activeTaskId={routableActiveTaskId}
                 onReplyToMessage={replyToMessage}
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
                 onLocateReplyTarget={focusMessage}

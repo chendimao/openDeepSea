@@ -38,7 +38,7 @@ export function routeMessage(input: {
 
   if (input.activeTaskId) {
     const activeTask = taskRepo.get(input.activeTaskId);
-    if (activeTask && activeTask.room_id === input.roomId && activeTask.status !== 'done') {
+    if (activeTask && activeTask.room_id === input.roomId && isRoutableTask(activeTask)) {
       return {
         taskId: activeTask.id,
         action: 'append_to_task',
@@ -89,7 +89,7 @@ function findBestTaskMatch(roomId: string, message: string): { task: Task; confi
 
   let best: { task: Task; confidence: number } | null = null;
   for (const task of taskRepo.listByRoom(roomId)) {
-    if (task.status === 'done') continue;
+    if (!isRoutableTask(task)) continue;
     const titleTokens = tokenize(task.title);
     if (titleTokens.length === 0) continue;
     const hitCount = titleTokens.filter((token) => messageTokens.includes(token)).length;
@@ -100,6 +100,10 @@ function findBestTaskMatch(roomId: string, message: string): { task: Task; confi
     }
   }
   return best;
+}
+
+function isRoutableTask(task: Task): boolean {
+  return task.status === 'todo' || task.status === 'in_progress' || task.status === 'review';
 }
 
 function tokenize(value: string): string[] {
