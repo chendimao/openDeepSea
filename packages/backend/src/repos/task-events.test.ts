@@ -8,6 +8,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-ta
 
 const { db } = await import('../db.js');
 const { taskEventRepo } = await import('./task-events.js');
+const { replayTaskEvents } = await import('./task-event-replay.js');
 const { projectRepo } = await import('./projects.js');
 const { roomRepo } = await import('./rooms.js');
 const { taskRepo } = await import('./tasks.js');
@@ -176,4 +177,75 @@ test('taskEventRepo createOnceByPayloadString falls back for unsafe payload keys
 
   assert.notEqual(second.id, first.id);
   assert.deepEqual(taskEventRepo.listByTask(task.id).map((event) => event.id), [first.id, second.id]);
+});
+
+test('replayTaskEvents rebuilds task read model from append-only events', () => {
+  const { room, task } = createTaskFixture();
+  const created = taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_created',
+    layer: 'activity',
+    payload: {
+      task_id: task.id,
+      task_title: '初始标题',
+      title: '初始标题',
+      description: '初始描述',
+      priority: 'normal',
+      interaction_mode: 'ask_user',
+      assigned_agent_id: null,
+      source_message_id: 'message-1',
+      created_from: 'chat_plan',
+    },
+  });
+  taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_updated',
+    layer: 'activity',
+    payload: {
+      changed_fields: ['title', 'priority', 'assigned_agent_id'],
+      next_title: '更新后标题',
+      next_priority: 'high',
+      next_assigned_agent_id: 'agent-1',
+    },
+  });
+  taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_status_changed',
+    layer: 'activity',
+    payload: {
+      previous_status: 'todo',
+      next_status: 'done',
+    },
+  });
+  const deleted = taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_deleted',
+    layer: 'activity',
+    payload: {
+      previous_status: 'done',
+    },
+  });
+
+  const replayed = replayTaskEvents(taskEventRepo.listByTask(task.id));
+
+  assert.deepEqual(replayed, {
+    task_id: task.id,
+    room_id: room.id,
+    title: '更新后标题',
+    description: '初始描述',
+    status: 'done',
+    priority: 'high',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: 'agent-1',
+    source_message_id: 'message-1',
+    created_from: 'chat_plan',
+    deleted: true,
+    created_event_id: created.id,
+    last_event_id: deleted.id,
+    last_seq: deleted.seq,
+  });
 });

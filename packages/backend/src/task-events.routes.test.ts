@@ -70,3 +70,68 @@ test('GET /rooms/:roomId/task-events returns task event projections filtered by 
   assert.equal(body.events[0]?.layer, 'activity');
   assert.deepEqual(body.events[0]?.payload, { task_title: firstTask.title });
 });
+
+test('GET /rooms/:roomId/task-events can include replayed task state for a task event stream', async () => {
+  const project = projectRepo.create({
+    name: 'Task Events Replay Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-events-replay-route-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Initial title' });
+  taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_created',
+    layer: 'activity',
+    payload: {
+      title: 'Initial title',
+      description: 'Original description',
+      priority: 'normal',
+      interaction_mode: 'ask_user',
+      status: 'todo',
+      created_from: 'manual',
+    },
+  });
+  taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_updated',
+    layer: 'activity',
+    payload: {
+      changed_fields: ['title'],
+      next_title: 'Replayed title',
+    },
+  });
+  taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_status_changed',
+    layer: 'activity',
+    payload: {
+      previous_status: 'todo',
+      next_status: 'review',
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/task-events?taskId=${task.id}&replay=1`);
+
+  assert.equal(res.status, 200);
+  const body = await res.json() as {
+    replay: {
+      task_id: string;
+      title: string;
+      description: string;
+      status: string;
+      priority: string;
+      deleted: boolean;
+      last_seq: number;
+    };
+  };
+  assert.equal(body.replay.task_id, task.id);
+  assert.equal(body.replay.title, 'Replayed title');
+  assert.equal(body.replay.description, 'Original description');
+  assert.equal(body.replay.status, 'review');
+  assert.equal(body.replay.priority, 'normal');
+  assert.equal(body.replay.deleted, false);
+  assert.equal(body.replay.last_seq, 3);
+});

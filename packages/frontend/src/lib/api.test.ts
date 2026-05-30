@@ -185,6 +185,54 @@ test('resource asset delete endpoint keeps encoded resource ids', async () => {
   assert.equal(requestedMethod, 'DELETE');
 });
 
+test('listRoomTaskEvents requests replay projection when enabled', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify({
+      events: [],
+      replay: {
+        task_id: 'task-1',
+        room_id: 'room-1',
+        title: 'Replayed task',
+        description: null,
+        status: 'review',
+        priority: 'normal',
+        interaction_mode: 'ask_user',
+        assigned_agent_id: null,
+        source_message_id: null,
+        created_from: 'manual',
+        deleted: false,
+        created_event_id: 'event-1',
+        last_event_id: 'event-3',
+        last_seq: 3,
+      },
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    const response = await api.listRoomTaskEvents('room-1', {
+      taskId: 'task-1',
+      layer: 'activity',
+      limit: 20,
+      replay: true,
+    });
+
+    assert.equal(
+      requestedUrl,
+      '/api/rooms/room-1/task-events?taskId=task-1&layer=activity&limit=20&replay=1',
+    );
+    assert.equal(response.replay?.title, 'Replayed task');
+    assert.equal(response.replay?.last_seq, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 function createResourceListItem(input: Partial<ResourceListItem>): ResourceListItem {
   return {
     id: 'resource-1',

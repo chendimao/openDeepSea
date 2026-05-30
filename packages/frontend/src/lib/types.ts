@@ -925,6 +925,28 @@ export interface TaskEvent {
   created_at: number;
 }
 
+export interface TaskEventReplayState {
+  task_id: string;
+  room_id: string;
+  title: string | null;
+  description: string | null;
+  status: Task['status'] | null;
+  priority: Task['priority'] | null;
+  interaction_mode: TaskInteractionMode | null;
+  assigned_agent_id: string | null;
+  source_message_id: string | null;
+  created_from: TaskCreatedFrom | null;
+  deleted: boolean;
+  created_event_id: string | null;
+  last_event_id: string | null;
+  last_seq: number;
+}
+
+export interface TaskEventListResponse {
+  events: TaskEvent[];
+  replay?: TaskEventReplayState | null;
+}
+
 export interface Task {
   id: string;
   room_id: string;

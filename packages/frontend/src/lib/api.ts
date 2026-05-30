@@ -52,6 +52,7 @@ import type {
   SuperpowersBootstrapOwner,
   Task,
   TaskEvent,
+  TaskEventListResponse,
   TaskInteractionMode,
   WorkflowDetail,
   WorkflowDefinition,
@@ -789,14 +790,15 @@ export const api = {
   listRoomTasks: (roomId: string) => request<Task[]>(`/rooms/${roomId}/tasks`),
   listRoomTaskEvents: (
     roomId: string,
-    input: { taskId?: string; layer?: TaskEvent['layer']; limit?: number } = {},
+    input: { taskId?: string; layer?: TaskEvent['layer']; limit?: number; replay?: boolean } = {},
   ) => {
     const params = new URLSearchParams();
     if (input.taskId) params.set('taskId', input.taskId);
     if (input.layer) params.set('layer', input.layer);
     if (input.limit) params.set('limit', String(input.limit));
+    if (input.replay) params.set('replay', '1');
     const query = params.toString();
-    return request<{ events: TaskEvent[] }>(`/rooms/${roomId}/task-events${query ? `?${query}` : ''}`);
+    return request<TaskEventListResponse>(`/rooms/${roomId}/task-events${query ? `?${query}` : ''}`);
   },
   createTask: (
     roomId: string,

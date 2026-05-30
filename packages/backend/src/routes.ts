@@ -28,6 +28,7 @@ import { fileRepo } from './repos/files.js';
 import { globalChatRepo } from './repos/global-chat.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
+import { replayTaskEvents } from './repos/task-event-replay.js';
 import { projectRepo } from './repos/projects.js';
 import { getProviderSuperpowersStatus } from './provider-superpowers.js';
 import { resourceAssetRepo } from './repos/resource-assets.js';
@@ -1628,7 +1629,11 @@ router.get('/rooms/:roomId/task-events', (req, res) => {
     ? taskEventRepo.listByTask(taskId, { layer, limit })
     : taskEventRepo.listByRoom(room.id, { layer, limit });
 
-  res.json({ events: events.filter((event) => event.room_id === room.id) });
+  const roomEvents = events.filter((event) => event.room_id === room.id);
+  res.json({
+    events: roomEvents,
+    ...(taskId && req.query.replay === '1' ? { replay: replayTaskEvents(roomEvents) } : {}),
+  });
 });
 
 function parseTaskEventsLimit(value: unknown): number {

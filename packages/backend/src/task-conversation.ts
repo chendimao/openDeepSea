@@ -117,6 +117,11 @@ export function recordTaskUpdated(input: {
       ...(input.metadata ?? {}),
       ...assignmentMetadata,
       changed_fields: changedFields,
+      next_title: input.after.title,
+      next_description: input.after.description,
+      next_priority: input.after.priority,
+      next_interaction_mode: input.after.interaction_mode,
+      next_assigned_agent_id: input.after.assigned_agent_id,
     },
   }, options);
 }
@@ -135,7 +140,18 @@ function buildTaskCreatedEventInput(input: {
     eventType: 'task_created',
     origin: input.origin,
     content: input.content ?? buildTaskCreatedMessage(input.task),
-    metadata: input.metadata,
+    metadata: {
+      ...(input.metadata ?? {}),
+      title: input.task.title,
+      description: input.task.description,
+      status: input.task.status,
+      priority: input.task.priority,
+      interaction_mode: input.task.interaction_mode,
+      assigned_agent_id: input.task.assigned_agent_id,
+      source_message_id: input.task.source_message_id,
+      created_from: input.task.created_from,
+      parent_task_id: input.task.parent_task_id,
+    },
   };
 }
 
