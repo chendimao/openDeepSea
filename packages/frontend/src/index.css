@@ -41,6 +41,30 @@
     --glass-edge: inset 0 1px 0 rgba(255,255,255,0.82), inset 1px 0 0 rgba(255,255,255,0.36), 0 18px 48px rgba(79, 103, 132, 0.12);
     --sidebar-bg: linear-gradient(180deg, rgba(222, 235, 249, 0.86), rgba(203, 221, 239, 0.70));
     --main-bg: linear-gradient(145deg, rgba(255,255,255,0.72), rgba(245,247,251,0.86));
+    --room-bg-gradient:
+      radial-gradient(circle at 22% 0%, rgba(219,234,254,0.72), transparent 34%),
+      linear-gradient(180deg, #f8fafc 0%, var(--color-bg) 100%);
+    --room-topbar-bg: rgba(255,255,255,0.72);
+    --room-panel-bg: rgba(255,255,255,0.68);
+    --room-card-bg: rgba(255,255,255,0.82);
+    --room-card-hover-bg: rgba(255,255,255,0.94);
+    --room-card-muted-bg: rgba(248,250,252,0.52);
+    --room-composer-bg: rgba(255,255,255,0.48);
+    --room-composer-box-bg: rgba(255,255,255,0.78);
+    --room-agent-message-bg: rgba(255,255,255,0.58);
+    --room-user-message-bg: rgba(243,244,246,0.92);
+    --room-border: rgba(0,0,0,0.06);
+    --room-border-subtle: rgba(0,0,0,0.05);
+    --room-text-heading: #111827;
+    --room-text-muted: #94a3b8;
+    --room-topbar-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
+    --room-panel-shadow: 0 18px 48px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255,255,255,0.84);
+    --room-card-shadow: 0 8px 24px rgba(15,23,42,0.04);
+    --room-card-hover-shadow: 0 16px 34px rgba(37,99,235,0.10), inset 0 0 0 1px rgba(37,99,235,0.18);
+    --room-composer-shadow: inset 0 1px 4px rgba(15,23,42,0.06), inset 0 0 0 1px rgba(0,0,0,0.06), 0 14px 36px rgba(15,23,42,0.06);
+    --room-primary-gradient: linear-gradient(135deg, #2563EB, #60A5FA);
+    --room-primary-progress: linear-gradient(90deg, #2563EB, #60A5FA);
+    --room-primary-shadow: 0 10px 24px rgba(37,99,235,0.22);
     color-scheme: light;
   }
 
@@ -82,6 +106,30 @@
     --glass-bg: linear-gradient(145deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.56));
     --glass-bg-strong: linear-gradient(145deg, rgba(42, 55, 78, 0.86), rgba(18, 27, 42, 0.64));
     --glass-edge: inset 0 1px 0 rgba(255,255,255,0.08), inset 1px 0 0 rgba(255,255,255,0.04), 0 18px 54px rgba(0, 0, 0, 0.28);
+    --room-bg-gradient:
+      radial-gradient(circle at 22% 0%, rgba(37,99,235,0.18), transparent 36%),
+      linear-gradient(180deg, #0f172a 0%, var(--color-bg) 100%);
+    --room-topbar-bg: rgba(15,23,42,0.74);
+    --room-panel-bg: rgba(17,24,39,0.72);
+    --room-card-bg: rgba(30,41,59,0.78);
+    --room-card-hover-bg: rgba(37,50,72,0.92);
+    --room-card-muted-bg: rgba(15,23,42,0.52);
+    --room-composer-bg: rgba(15,23,42,0.56);
+    --room-composer-box-bg: rgba(30,41,59,0.78);
+    --room-agent-message-bg: rgba(30,41,59,0.38);
+    --room-user-message-bg: rgba(37,50,72,0.9);
+    --room-border: rgba(148,163,184,0.18);
+    --room-border-subtle: rgba(148,163,184,0.14);
+    --room-text-heading: #f8fafc;
+    --room-text-muted: #94a3b8;
+    --room-topbar-shadow: 0 8px 28px rgba(0,0,0,0.24);
+    --room-panel-shadow: 0 18px 48px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.08);
+    --room-card-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    --room-card-hover-shadow: 0 16px 34px rgba(37,99,235,0.18), inset 0 0 0 1px rgba(96,165,250,0.22);
+    --room-composer-shadow: inset 0 1px 4px rgba(255,255,255,0.05), inset 0 0 0 1px rgba(148,163,184,0.18), 0 14px 36px rgba(0,0,0,0.22);
+    --room-primary-gradient: linear-gradient(135deg, #2563EB, #60A5FA);
+    --room-primary-progress: linear-gradient(90deg, #2563EB, #60A5FA);
+    --room-primary-shadow: 0 10px 24px rgba(37,99,235,0.28);
     color-scheme: dark;
   }
 
@@ -164,6 +212,28 @@
     --glass-edge: inset 0 0 0 1px var(--color-border);
     --sidebar-bg: #15181e;
     --main-bg: #0f1115;
+    --room-bg-gradient: linear-gradient(180deg, #11141a 0%, var(--color-bg) 100%);
+    --room-topbar-bg: rgba(21,24,30,0.84);
+    --room-panel-bg: #15181e;
+    --room-card-bg: #1b1f27;
+    --room-card-hover-bg: #202631;
+    --room-card-muted-bg: #15181e;
+    --room-composer-bg: #15181e;
+    --room-composer-box-bg: #1b1f27;
+    --room-agent-message-bg: transparent;
+    --room-user-message-bg: #202631;
+    --room-border: #2b313b;
+    --room-border-subtle: #242a33;
+    --room-text-heading: #e7eaf0;
+    --room-text-muted: #a6afbc;
+    --room-topbar-shadow: none;
+    --room-panel-shadow: none;
+    --room-card-shadow: none;
+    --room-card-hover-shadow: inset 2px 0 0 var(--color-primary);
+    --room-composer-shadow: none;
+    --room-primary-gradient: linear-gradient(135deg, var(--color-primary), #8bbaff);
+    --room-primary-progress: linear-gradient(90deg, var(--color-primary), #8bbaff);
+    --room-primary-shadow: none;
     color-scheme: dark;
   }
 
@@ -3007,9 +3077,7 @@
 
   .workspace-root {
     border-radius: 0;
-    background:
-      radial-gradient(circle at 22% 0%, rgba(219,234,254,0.72), transparent 34%),
-      linear-gradient(180deg, #f8fafc 0%, var(--color-bg) 100%);
+    background: var(--room-bg-gradient);
     box-shadow: none;
   }
   .workspace-toolbar {
@@ -3018,9 +3086,9 @@
     min-height: 64px;
     gap: 18px;
     border-bottom: 1px solid var(--color-border);
-    background: rgba(255,255,255,0.72);
+    background: var(--room-topbar-bg);
     padding: 0 20px;
-    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
+    box-shadow: var(--room-topbar-shadow);
     backdrop-filter: blur(24px) saturate(1.35);
   }
   .room-toolbar-identity {
@@ -3035,14 +3103,14 @@
     height: 38px;
     flex: 0 0 auto;
     place-items: center;
-    border: 1px solid rgba(0,0,0,0.06);
+    border: 1px solid var(--room-border);
     border-radius: 14px;
-    background: rgba(255,255,255,0.88);
+    background: var(--color-surface-raised);
     box-shadow: 0 10px 24px rgba(37,99,235,0.08), inset 0 1px 0 rgba(255,255,255,0.9);
   }
   .room-toolbar-title {
     overflow: hidden;
-    color: #111827;
+    color: var(--room-text-heading);
     font-size: 15px;
     font-weight: 700;
     line-height: 1.1;
@@ -3052,7 +3120,7 @@
   .room-toolbar-subtitle {
     margin-top: 4px;
     overflow: hidden;
-    color: #6b7280;
+    color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 11px;
     line-height: 1.1;
@@ -3066,11 +3134,11 @@
     align-items: center;
     gap: 10px;
     justify-self: stretch;
-    border: 1px solid rgba(0,0,0,0.06);
+    border: 1px solid var(--room-border);
     border-radius: 999px;
-    background: rgba(255,255,255,0.74);
+    background: var(--room-topbar-bg);
     padding: 0 12px 0 14px;
-    color: #94a3b8;
+    color: var(--room-text-muted);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.78), 0 10px 24px rgba(15,23,42,0.04);
   }
   .room-global-search input {
@@ -3085,9 +3153,9 @@
   .room-global-search span {
     flex: 0 0 auto;
     border-radius: 7px;
-    background: rgba(15,23,42,0.04);
+    background: color-mix(in srgb, var(--color-fg) 4%, transparent);
     padding: 2px 6px;
-    color: #94a3b8;
+    color: var(--room-text-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10px;
   }
@@ -3099,11 +3167,11 @@
     place-items: center;
     border: 2px solid rgba(255,255,255,0.9);
     border-radius: 999px;
-    background: linear-gradient(135deg, #2563EB, #60A5FA);
+    background: var(--room-primary-gradient);
     color: white;
     font-size: 12px;
     font-weight: 800;
-    box-shadow: 0 10px 24px rgba(37,99,235,0.22);
+    box-shadow: var(--room-primary-shadow);
   }
   .room-agent-empty-label {
     max-width: 72px;
@@ -3127,27 +3195,27 @@
   .inspector-panel {
     border: 1px solid var(--color-border);
     border-radius: 18px;
-    background: rgba(255,255,255,0.68);
-    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255,255,255,0.84);
+    background: var(--room-panel-bg);
+    box-shadow: var(--room-panel-shadow);
     backdrop-filter: blur(28px) saturate(1.35);
   }
   .room-main-heading {
     min-height: 72px;
-    border-bottom: 1px solid rgba(0,0,0,0.06);
+    border-bottom: 1px solid var(--room-border);
     padding: 0 14px 0 18px;
   }
   .chat-heading-copy {
     min-width: 128px;
   }
   .chat-heading-title {
-    color: #111827;
+    color: var(--room-text-heading);
     font-size: 18px;
     font-weight: 750;
     line-height: 1;
   }
   .chat-heading-subtitle {
     margin-top: 6px;
-    color: #94a3b8;
+    color: var(--room-text-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10.5px;
   }
@@ -3157,11 +3225,11 @@
   }
   .room-feature-tabs .segmented-control {
     border-radius: 999px;
-    background: rgba(248,250,252,0.76);
-    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05);
+    background: var(--room-card-muted-bg);
+    box-shadow: inset 0 0 0 1px var(--room-border-subtle);
   }
   .ai-conversation {
-    background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(248,250,252,0.32));
+    background: linear-gradient(180deg, color-mix(in srgb, var(--room-panel-bg) 26%, transparent), color-mix(in srgb, var(--room-card-muted-bg) 62%, transparent));
   }
   .ai-conversation-content {
     gap: 16px;
@@ -3179,9 +3247,9 @@
     padding-right: 10%;
   }
   .ai-message-card {
-    border-color: rgba(0,0,0,0.06);
+    border-color: var(--room-border);
     border-radius: 20px;
-    background: rgba(255,255,255,0.58);
+    background: var(--room-agent-message-bg);
     box-shadow: none;
   }
   .ai-message-row--agent .ai-message-card {
@@ -3193,9 +3261,9 @@
   .ai-message-row--user .ai-message-card {
     width: auto;
     max-width: min(75%, 680px);
-    border-color: rgba(0,0,0,0.05);
-    background: rgba(243,244,246,0.92);
-    box-shadow: 0 10px 24px rgba(15,23,42,0.045), inset 0 1px 0 rgba(255,255,255,0.78);
+    border-color: var(--room-border-subtle);
+    background: var(--room-user-message-bg);
+    box-shadow: var(--room-card-shadow);
   }
   .ai-message-header {
     min-height: 28px;
@@ -3212,30 +3280,30 @@
     padding-left: 0;
   }
   .composer-shell {
-    border-top: 1px solid rgba(0,0,0,0.05);
-    background: rgba(255,255,255,0.48);
+    border-top: 1px solid var(--room-border-subtle);
+    background: var(--room-composer-bg);
     backdrop-filter: blur(22px) saturate(1.2);
   }
   .composer-box,
   .ai-prompt-shell {
     border-radius: 24px;
-    background: rgba(255,255,255,0.78);
-    box-shadow: inset 0 1px 4px rgba(15,23,42,0.06), inset 0 0 0 1px rgba(0,0,0,0.06), 0 14px 36px rgba(15,23,42,0.06);
+    background: var(--room-composer-box-bg);
+    box-shadow: var(--room-composer-shadow);
   }
   .task-workspace-panel {
-    background: rgba(255,255,255,0.64);
+    background: color-mix(in srgb, var(--room-panel-bg) 94%, transparent);
   }
   .task-workspace-header {
     min-height: 52px;
-    border-bottom: 1px solid rgba(0,0,0,0.06);
+    border-bottom: 1px solid var(--room-border);
     padding: 0 16px;
   }
   .task-workspace-grid {
     grid-template-columns: minmax(190px, 0.34fr) minmax(0, 1fr);
   }
   .task-queue-rail {
-    border-right: 1px solid rgba(0,0,0,0.06);
-    background: rgba(248,250,252,0.52);
+    border-right: 1px solid var(--room-border);
+    background: var(--room-card-muted-bg);
   }
   .active-task-surface {
     background: transparent;
@@ -3245,17 +3313,17 @@
   }
   .task-card,
   .task-list-item {
-    border: 1px solid rgba(0,0,0,0.06);
+    border: 1px solid var(--room-border);
     border-radius: 16px;
-    background: rgba(255,255,255,0.82);
-    box-shadow: 0 8px 24px rgba(15,23,42,0.04);
+    background: var(--room-card-bg);
+    box-shadow: var(--room-card-shadow);
     transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease;
   }
   .task-card:hover,
   .task-card.is-selected {
     transform: translateY(-2px);
-    background: rgba(255,255,255,0.94);
-    box-shadow: 0 16px 34px rgba(37,99,235,0.10), inset 0 0 0 1px rgba(37,99,235,0.18);
+    background: var(--room-card-hover-bg);
+    box-shadow: var(--room-card-hover-shadow);
   }
   .task-card-kicker {
     display: flex;
@@ -3399,7 +3467,7 @@
     display: block;
     height: 100%;
     border-radius: inherit;
-    background: linear-gradient(90deg, #2563EB, #60A5FA);
+    background: var(--room-primary-progress);
     animation: progress-glow 1.8s ease-in-out infinite;
   }
   .active-task-actions {
