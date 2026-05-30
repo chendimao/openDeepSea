@@ -42,6 +42,13 @@ const statusMeta: Record<Task['status'], { label: string; progress: number; icon
   failed: { label: '失败', progress: 100, icon: AlertTriangle, tone: 'danger' },
 };
 
+const priorityLabels: Record<Task['priority'], string> = {
+  low: '低',
+  normal: '普通',
+  high: '高',
+  urgent: '紧急',
+};
+
 export function ChatTaskCard({
   message,
   metadata,
@@ -55,6 +62,7 @@ export function ChatTaskCard({
   const StatusIcon = status?.icon ?? ClipboardList;
   const canOpen = Boolean(task && onSelectTask);
   const title = task?.title ?? metadata.task_title ?? summarizeTaskTitle(message.content, metadata.task_id);
+  const description = summarizeTaskDescription(task?.description, message.content, title);
   const assignee = task?.assigned_agent_id
     ? findAgentName(roomAgents, task.assigned_agent_id)
     : null;
@@ -74,7 +82,6 @@ export function ChatTaskCard({
         if (task && onSelectTask) onSelectTask(task);
       }}
     >
-      <span className="chat-task-card-progress" style={{ width: `${progress}%` }} aria-hidden="true" />
       <span className="chat-task-card-top">
         <span className="chat-task-card-identity">
           <span className="chat-task-card-icon" aria-hidden="true">
@@ -89,10 +96,17 @@ export function ChatTaskCard({
           {status?.label ?? '已记录'}
         </span>
       </span>
+      <span className="chat-task-card-description" title={description}>
+        {description}
+      </span>
       <span className="chat-task-card-meta">
-        <span>#{shortTaskId}</span>
-        <span>{assignee ?? '未分配'}</span>
-        <span>{formatRelativeTime(message.created_at)}</span>
+        <span><b>Task ID</b>#{shortTaskId}</span>
+        <span><b>Owner</b>{assignee ?? '未分配'}</span>
+        <span><b>Priority</b>{task ? priorityLabels[task.priority] : '普通'}</span>
+        <span><b>Time</b>{formatRelativeTime(message.created_at)}</span>
+      </span>
+      <span className="chat-task-card-progress-track" aria-hidden="true">
+        <span className="chat-task-card-progress" style={{ width: `${progress}%` }} />
       </span>
     </button>
   );
@@ -120,4 +134,24 @@ function summarizeTaskTitle(content: string, taskId: string | undefined): string
     .trim();
   const title = withoutPrefix || taskId || '未命名任务';
   return title.length > 92 ? `${title.slice(0, 89).trimEnd()}...` : title;
+}
+
+function summarizeTaskDescription(description: string | null | undefined, content: string, title: string): string {
+  const source = description || content;
+  const normalized = source
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) =>
+      line &&
+      !line.startsWith('消息模式：') &&
+      !line.startsWith('任务意图：') &&
+      line !== title
+    )
+    .join(' ')
+    .replace(/^已创建任务\s*#[^：:]+[：:]\s*/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const fallback = title || '任务详情待补充';
+  const result = normalized || fallback;
+  return result.length > 150 ? `${result.slice(0, 147).trimEnd()}...` : result;
 }

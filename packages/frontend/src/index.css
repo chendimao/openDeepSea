@@ -4406,7 +4406,7 @@
     width: min(520px, 100%);
     min-width: 0;
     flex-direction: column;
-    gap: 10px;
+    gap: 9px;
     overflow: hidden;
     border: 1px solid var(--room-border, rgba(0,0,0,0.06));
     border-radius: 16px;
@@ -4437,13 +4437,12 @@
   }
 
   .chat-task-card-progress {
-    position: absolute;
-    top: 0;
-    left: 0;
+    display: block;
     height: 4px;
     max-width: 100%;
     border-radius: 999px;
     background: linear-gradient(90deg, #2563EB, color-mix(in srgb, #2563EB 58%, #00B8A9));
+    transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .chat-task-card-top {
@@ -4512,6 +4511,16 @@
     white-space: nowrap;
   }
 
+  .chat-task-card-description {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--room-text-muted, #64748b);
+    font-size: 11.5px;
+    line-height: 1.42;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
   .chat-task-card-status {
     flex: 0 0 auto;
     border: 1px solid color-mix(in srgb, var(--color-primary) 20%, var(--room-border, rgba(0,0,0,0.06)));
@@ -4543,13 +4552,13 @@
   }
 
   .chat-task-card-meta {
-    display: flex;
+    display: grid;
     min-width: 0;
-    flex-wrap: wrap;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
     color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10.5px;
+    font-size: 10px;
     line-height: 1.3;
   }
 
@@ -4563,6 +4572,21 @@
     padding: 4px 7px;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .chat-task-card-meta b {
+    margin-right: 4px;
+    color: color-mix(in srgb, var(--room-text-muted, #64748b) 84%, transparent);
+    font-size: 8.5px;
+    font-weight: 800;
+  }
+
+  .chat-task-card-progress-track {
+    display: block;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(37,99,235,0.10);
   }
 
   .message-intent-header {
@@ -7495,6 +7519,9 @@
     }
     .chat-task-card-status {
       align-self: flex-start;
+    }
+    .chat-task-card-meta {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .message-intent-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
