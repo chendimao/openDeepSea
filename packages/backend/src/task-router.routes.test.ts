@@ -98,6 +98,42 @@ test('POST /rooms/:roomId/messages creates a task for clear create-task intent',
   assert.equal(events.some((event) => event.type === 'task_created'), true);
 });
 
+test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', async () => {
+  const project = projectRepo.create({
+    name: 'Task Router Ask User Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-ask-user-route-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  taskRepo.create({ project_id: project.id, room_id: room.id, title: '修复登录错误' });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '这个事情还要再看一下' }),
+  });
+
+  assert.equal(res.status, 201);
+  const message = await res.json() as { metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    route_result?: { action: string; taskId: string | null; reason: string };
+  };
+  assert.equal(metadata.route_result?.action, 'ask_user');
+  assert.equal(metadata.route_result?.taskId, null);
+
+  const systemMessages = await (await request(`/api/rooms/${room.id}/messages`)).json() as Array<{
+    sender_type: string;
+    layer?: string;
+    metadata: string | null;
+  }>;
+  const routePrompt = systemMessages.find((item) => {
+    const itemMetadata = JSON.parse(item.metadata ?? '{}') as { event_type?: string; route_action?: string };
+    return item.sender_type === 'system' &&
+      item.layer === 'activity' &&
+      itemMetadata.event_type === 'message_route_uncertain' &&
+      itemMetadata.route_action === 'ask_user';
+  });
+  assert.ok(routePrompt);
+});
+
 test('POST /rooms/:roomId/tasks/:taskId/activate broadcasts task activation', async () => {
   const project = projectRepo.create({
     name: 'Task Activate Route',

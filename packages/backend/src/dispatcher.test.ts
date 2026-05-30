@@ -1742,6 +1742,7 @@ test('respondAsAgent stores pending handoff on task executor after task session 
     const updatedExecutor = taskExecutorRepo.get(executor.id);
     const updatedAgent = roomAgentRepo.get(acpAgent.id);
     assert.equal(updatedExecutor?.acp_session_id, 'fresh-task-session-after-reset');
+    assert.equal(updatedExecutor?.status, 'failed');
     assert.equal(updatedExecutor?.acp_session_handoff_pending, 1);
     assert.equal(updatedExecutor?.acp_session_handoff_reason, 'automatic_rotation_after_events');
     assert.equal(updatedAgent?.acp_session_id, 'global-room-session');

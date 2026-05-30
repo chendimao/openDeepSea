@@ -498,6 +498,7 @@
     overflow: hidden;
     flex: 1;
     padding: 8px;
+    isolation: isolate;
   }
   .workspace-grid.has-inspector {
     grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
@@ -741,8 +742,17 @@
   .chat-workspace,
   .task-board-panel,
   .inspector-panel {
+    position: relative;
     display: flex;
     flex-direction: column;
+  }
+  .task-board-panel {
+    z-index: 3;
+  }
+  .chat-workspace,
+  .room-main-panel,
+  .inspector-panel {
+    z-index: 1;
   }
   .chat-stream-header,
   .task-board-toolbar,
@@ -1335,6 +1345,59 @@
     gap: 6px;
     overflow-y: auto;
     padding: 8px;
+  }
+  .task-board-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.46);
+    padding: 8px;
+  }
+  .task-filter-chip {
+    border-radius: 6px;
+    padding: 4px 7px;
+    background: rgba(255,255,255,0.42);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-fg-muted);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.58);
+  }
+  .task-filter-chip.is-active {
+    background: rgba(10,132,255,0.12);
+    color: var(--color-primary);
+    box-shadow: inset 0 0 0 1px rgba(10,132,255,0.28);
+  }
+  .task-activity-feed {
+    border-top: 1px solid rgba(255,255,255,0.46);
+    padding: 9px 10px 10px;
+  }
+  .task-activity-title {
+    margin-bottom: 7px;
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .task-activity-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    border-radius: 7px;
+    padding: 6px 7px;
+    background: rgba(255,255,255,0.38);
+    font-size: 11px;
+    color: var(--color-fg-muted);
+  }
+  .task-activity-row + .task-activity-row {
+    margin-top: 5px;
+  }
+  .task-activity-empty {
+    border-radius: 7px;
+    padding: 9px;
+    background: rgba(255,255,255,0.32);
+    text-align: center;
+    font-size: 11px;
+    color: var(--color-muted);
   }
   .task-card {
     border-radius: 12px;

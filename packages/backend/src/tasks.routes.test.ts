@@ -65,6 +65,15 @@ test('task CRUD routes list, create, update, and delete room tasks', async () =>
   const updated = await updateRes.json() as { status: string; priority: string };
   assert.equal(updated.status, 'in_progress');
   assert.equal(updated.priority, 'urgent');
+  const updatedEvents = taskEventRepo.listByTask(created.id);
+  assert.equal(
+    updatedEvents.some((event) => event.type === 'task_status_changed' && event.layer === 'activity'),
+    true,
+  );
+  assert.equal(
+    updatedEvents.some((event) => event.type === 'task_updated' && event.layer === 'activity'),
+    true,
+  );
 
   const deleteRes = await request(`/api/tasks/${created.id}`, { method: 'DELETE' });
   assert.equal(deleteRes.status, 204);

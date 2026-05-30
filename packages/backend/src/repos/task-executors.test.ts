@@ -40,8 +40,9 @@ test('taskExecutorRepo keeps ACP sessions isolated per task and agent', () => {
   assert.equal(taskExecutorRepo.getByTaskAndAgent(firstTask.id, agent.id)?.acp_session_id, 'session-first');
   assert.equal(taskExecutorRepo.getByTaskAndAgent(secondTask.id, agent.id)?.acp_session_id, 'session-second');
 
+  taskExecutorRepo.updateStatus(first.id, 'running');
   const updated = taskExecutorRepo.updateSession(first.id, 'session-first-next');
-  assert.equal(updated?.status, 'idle');
+  assert.equal(updated?.status, 'running');
   assert.equal(taskExecutorRepo.getByTaskAndAgent(firstTask.id, agent.id)?.acp_session_id, 'session-first-next');
   assert.equal(taskExecutorRepo.getByTaskAndAgent(secondTask.id, agent.id)?.acp_session_id, 'session-second');
 });

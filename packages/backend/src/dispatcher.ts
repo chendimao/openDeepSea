@@ -748,6 +748,9 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     prompt,
   });
   const controller = runRegistry.create(run.id);
+  if (taskExecutor) {
+    taskExecutorRepo.updateStatus(taskExecutor.id, 'running');
+  }
   broadcastRun('agent_run:created', run);
   if (args.onRunCreated) {
     try {
@@ -1145,6 +1148,9 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
 
   function finishRun(id: string, status: AgentRunStatus, error?: string | null): void {
     const updated = agentRunRepo.updateStatus(id, status, { error: error ?? null });
+    if (taskExecutor) {
+      taskExecutorRepo.updateStatus(taskExecutor.id, status === 'completed' ? 'idle' : 'failed');
+    }
     if (updated) broadcastRun('agent_run:updated', updated);
   }
 

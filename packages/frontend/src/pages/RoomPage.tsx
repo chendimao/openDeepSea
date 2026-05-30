@@ -41,6 +41,7 @@ import { RoomFilesPanel } from '../components/RoomFilesPanel';
 import { CreateTaskDialog } from '../components/CreateTaskDialog';
 import { TaskBoard } from '../components/TaskBoard';
 import { TaskDetailPanel, type TaskLayerVisibility } from '../components/TaskDetailPanel';
+import type { TaskStatusFilter } from '../components/taskBoardLogic';
 import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { RoomSettingsDialog } from '../components/SettingsDialogs';
@@ -80,6 +81,7 @@ const DEFAULT_TASK_LAYER_VISIBILITY: TaskLayerVisibility = {
   runtime: true,
   diff: true,
 };
+const DEFAULT_TASK_STATUS_FILTERS: TaskStatusFilter[] = ['todo', 'in_progress', 'review', 'done', 'failed'];
 type SendInput = {
   content: string;
   mentions?: string[];
@@ -98,6 +100,7 @@ export function RoomPage() {
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<TaskLayerVisibility>(DEFAULT_TASK_LAYER_VISIBILITY);
+  const [taskStatusFilters, setTaskStatusFilters] = useState<TaskStatusFilter[]>(DEFAULT_TASK_STATUS_FILTERS);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
   const [explicitReplyTarget, setExplicitReplyTarget] = useState<ReplyTarget | null>(null);
   const messageRefs = useRef<Map<string, HTMLElement>>(new Map());
@@ -153,6 +156,12 @@ export function RoomPage() {
     queryFn: () => api.listRoomWorkflows(roomId),
     enabled: !!roomId,
   });
+  const { data: roomTaskEventResponse } = useQuery({
+    queryKey: ['room-task-events', roomId, 'activity'],
+    queryFn: () => api.listRoomTaskEvents(roomId, { layer: 'activity', limit: 80 }),
+    enabled: !!roomId,
+  });
+  const roomActivityEvents = roomTaskEventResponse?.events ?? [];
   const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
   const updateTaskStatus = useMutation({
     mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
@@ -492,6 +501,9 @@ export function RoomPage() {
       <div className={cn('workspace-grid task-os-grid', (showMemoryPanel || activeTask) && 'has-inspector')}>
         <TaskBoard
           tasks={tasks}
+          statusFilters={taskStatusFilters}
+          onStatusFiltersChange={setTaskStatusFilters}
+          activityEvents={roomActivityEvents}
           agents={agents}
           workflows={workflows}
           selectedTaskId={activeTaskId}

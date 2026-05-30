@@ -87,6 +87,7 @@ import {
   type ProjectFile,
   type ResourceAssetGroupKey,
   type ResourceAssetType,
+  type Task,
   type TaskExecutionIntent,
   type TaskInteractionMode,
   type WorkflowRole,
@@ -1995,7 +1996,34 @@ function finalizeUserMessageRouting(input: {
   const finalRouteResult = input.routeResult.action === 'create_task'
     ? createTaskFromRoutedMessage(input)
     : input.routeResult;
+  if (finalRouteResult.action === 'ask_user') {
+    recordUncertainMessageRoute(input.roomId, input.userMessageId, finalRouteResult);
+  }
   recordTaskRoutingEvent(input.roomId, input.userMessageId, finalRouteResult);
+}
+
+function recordUncertainMessageRoute(
+  roomId: string,
+  messageId: string,
+  routeResult: import('./types.js').RouteResult,
+): void {
+  const message = messageRepo.create({
+    room_id: roomId,
+    sender_type: 'system',
+    sender_id: 'system',
+    sender_name: 'System',
+    content: `无法确定消息应归属哪个任务：${routeResult.reason}`,
+    message_type: 'system',
+    layer: 'activity',
+    metadata: {
+      event_type: 'message_route_uncertain',
+      message_id: messageId,
+      route_action: routeResult.action,
+      route_confidence: routeResult.confidence,
+      route_reason: routeResult.reason,
+    },
+  });
+  wsHub.broadcast(roomId, { type: 'message:new', roomId, message });
 }
 
 function createTaskFromRoutedMessage(input: {
@@ -2549,6 +2577,7 @@ router.patch('/tasks/:id', (req, res) => {
     ? taskRepo.update(updated?.id ?? task.id, taskPatch) ?? updated
     : updated;
   if (!finalTask) return res.status(404).json({ error: 'task not found' });
+  recordTaskPatchEvents(task, finalTask, parsed.data);
   wsHub.broadcast(finalTask.room_id, { type: 'task:updated', task: finalTask });
   res.json(finalTask);
 });
@@ -2560,6 +2589,41 @@ router.delete('/tasks/:id', (req, res) => {
   wsHub.broadcast(task.room_id, { type: 'task:deleted', taskId: task.id });
   res.status(204).end();
 });
+
+function recordTaskPatchEvents(
+  before: Task,
+  after: Task,
+  patch: z.infer<typeof taskPatchSchema>,
+): void {
+  if (patch.status !== undefined && before.status !== after.status) {
+    recordTaskEvent({
+      roomId: after.room_id,
+      taskId: after.id,
+      taskTitle: after.title,
+      eventType: 'task_status_changed',
+      content: `任务「${after.title}」状态变更为 ${after.status}`,
+      metadata: {
+        previous_status: before.status,
+        next_status: after.status,
+      },
+    });
+  }
+
+  const changedFields = (['title', 'description', 'priority', 'interaction_mode', 'assigned_agent_id'] as const)
+    .filter((field) => patch[field] !== undefined && before[field] !== after[field]);
+  if (changedFields.length === 0) return;
+
+  recordTaskEvent({
+    roomId: after.room_id,
+    taskId: after.id,
+    taskTitle: after.title,
+    eventType: 'task_updated',
+    content: `任务「${after.title}」已更新：${changedFields.join(', ')}`,
+    metadata: {
+      changed_fields: changedFields,
+    },
+  });
+}
 
 router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
   const multerCode =

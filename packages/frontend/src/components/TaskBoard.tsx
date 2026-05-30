@@ -1,9 +1,10 @@
 import { ArrowRight, CheckCircle2, LocateFixed, Loader2, Play } from 'lucide-react';
-import type { RoomAgent, Task, WorkflowRun } from '../lib/types';
-import { useI18n } from '../lib/i18n';
+import type { RoomAgent, Task, TaskEvent, WorkflowRun } from '../lib/types';
+import { useI18n, type MessageKey } from '../lib/i18n';
 import { cn } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 import { Button } from './ui/Button';
+import { filterRootTasks, selectActivityEvents, type TaskStatusFilter } from './taskBoardLogic';
 
 const NEXT_STATUS: Partial<Record<Task['status'], Task['status']>> = {
   todo: 'in_progress',
@@ -28,6 +29,9 @@ const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>([
 
 export function TaskBoard({
   tasks,
+  statusFilters,
+  onStatusFiltersChange,
+  activityEvents,
   agents,
   workflows,
   selectedTaskId,
@@ -38,6 +42,9 @@ export function TaskBoard({
   startingTaskId,
 }: {
   tasks: Task[];
+  statusFilters?: TaskStatusFilter[];
+  onStatusFiltersChange?: (filters: TaskStatusFilter[]) => void;
+  activityEvents?: TaskEvent[];
   agents: RoomAgent[];
   workflows?: WorkflowRun[];
   selectedTaskId?: string | null;
@@ -47,12 +54,19 @@ export function TaskBoard({
   onLocateSourceMessage?: (messageId: string, task: Task) => void;
   startingTaskId?: string | null;
 }) {
-  const { t, taskStatusLabel } = useI18n();
+  const { formatRelativeTime, t, taskStatusLabel } = useI18n();
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const workflowByTaskId = createWorkflowByTaskId(workflows ?? []);
-  const rootTasks = tasks
-    .filter((task) => !task.parent_task_id)
-    .sort((a, b) => b.updated_at - a.updated_at);
+  const activeFilters = statusFilters ?? TASK_STATUS_FILTERS;
+  const rootTasks = filterRootTasks(tasks, activeFilters);
+  const visibleActivity = selectActivityEvents(activityEvents ?? [], 6);
+  const toggleFilter = (status: TaskStatusFilter): void => {
+    if (!onStatusFiltersChange) return;
+    const next = activeFilters.includes(status)
+      ? activeFilters.filter((item) => item !== status)
+      : [...activeFilters, status];
+    onStatusFiltersChange(next);
+  };
 
   return (
     <aside className="workbench-panel task-board-panel" data-testid="task-panel">
@@ -68,6 +82,18 @@ export function TaskBoard({
           {rootTasks.length}
         </span>
       </header>
+      <div className="task-board-filters" aria-label={t('taskBoard.filters')}>
+        {TASK_STATUS_FILTERS.map((status) => (
+          <button
+            key={status}
+            type="button"
+            className={cn('task-filter-chip', activeFilters.includes(status) && 'is-active')}
+            onClick={() => toggleFilter(status)}
+          >
+            {taskStatusLabel(status)}
+          </button>
+        ))}
+      </div>
       <div className="task-list-scroll">
         {rootTasks.length === 0 ? (
           <div className="px-4 py-10 text-center text-[12px] text-[var(--color-muted)]">
@@ -95,9 +121,27 @@ export function TaskBoard({
           ))
         )}
       </div>
+      <section className="task-activity-feed" aria-label={t('taskBoard.activityFeed')}>
+        <div className="task-activity-title">{t('taskBoard.activityFeed')}</div>
+        {visibleActivity.length === 0 ? (
+          <div className="task-activity-empty">{t('taskBoard.noActivity')}</div>
+        ) : (
+          visibleActivity.map((event) => (
+            <div key={event.id} className="task-activity-row">
+              <span className="task-event-dot" data-layer={event.layer} />
+              <span className="min-w-0 flex-1 truncate">{taskEventLabel(event.type, t)}</span>
+              <span className="text-[10px] font-mono text-[var(--color-muted)]">
+                {formatRelativeTime(event.created_at)}
+              </span>
+            </div>
+          ))
+        )}
+      </section>
     </aside>
   );
 }
+
+const TASK_STATUS_FILTERS: TaskStatusFilter[] = ['todo', 'in_progress', 'review', 'done', 'failed'];
 
 function TaskCard({
   task,
@@ -227,4 +271,8 @@ function createWorkflowByTaskId(workflows: WorkflowRun[]): Map<string, WorkflowR
     byTaskId.set(taskId, sorted.find((workflow) => ACTIVE_WORKFLOW_STATUSES.has(workflow.status)) ?? sorted[0]);
   }
   return byTaskId;
+}
+
+function taskEventLabel(type: TaskEvent['type'], t: (key: MessageKey) => string): string {
+  return t(`taskEvent.${type}` as MessageKey);
 }

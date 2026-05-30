@@ -49,7 +49,7 @@ export const taskExecutorRepo = {
   updateSession(id: string, acpSessionId: string | null): TaskExecutor | undefined {
     db.prepare(
       `UPDATE task_executors
-       SET acp_session_id = ?, status = 'idle', updated_at = ?
+       SET acp_session_id = ?, updated_at = ?
        WHERE id = ?`,
     ).run(acpSessionId, now(), id);
     return this.get(id);
