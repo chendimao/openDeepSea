@@ -129,31 +129,53 @@ test('POST /rooms/:roomId/messages creates a task for clear create-task intent',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-create-route-project-')),
   });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const events = captureRoomEvents(room.id);
 
-  const res = await request(`/api/rooms/${room.id}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content: '新建任务：整理发布说明' }),
-  });
+  try {
+    const res = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content: '新建任务：整理发布说明' }),
+    });
 
-  assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
-  const message = await res.json() as { id: string; metadata: string | null };
-  const metadata = JSON.parse(message.metadata ?? '{}') as {
-    task_id?: string;
-    route_result?: { action: string; taskId: string | null; reason: string };
-  };
-  assert.equal(metadata.route_result?.action, 'create_task');
-  assert.ok(metadata.task_id);
+    assert.equal(res.status, 201);
+    assert.equal(dispatchCalls.length, 0);
+    const message = await res.json() as { id: string; metadata: string | null };
+    const metadata = JSON.parse(message.metadata ?? '{}') as {
+      task_id?: string;
+      route_result?: { action: string; taskId: string | null; reason: string };
+    };
+    assert.equal(metadata.route_result?.action, 'create_task');
+    assert.ok(metadata.task_id);
 
-  const tasks = taskRepo.listByRoom(room.id);
-  assert.equal(tasks.length, 1);
-  assert.equal(tasks[0]?.id, metadata.task_id);
-  assert.equal(tasks[0]?.title, '整理发布说明');
-  assert.equal(tasks[0]?.source_message_id, message.id);
-  assert.equal(tasks[0]?.created_from, 'chat_plan');
+    const tasks = taskRepo.listByRoom(room.id);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0]?.id, metadata.task_id);
+    assert.equal(tasks[0]?.title, '整理发布说明');
+    assert.equal(tasks[0]?.source_message_id, message.id);
+    assert.equal(tasks[0]?.created_from, 'chat_plan');
 
-  const events = taskEventRepo.listByTask(tasks[0]!.id, { layer: 'activity' });
-  assert.equal(events.some((event) => event.type === 'task_created'), true);
+    const taskEvents = taskEventRepo.listByTask(tasks[0]!.id, { layer: 'activity' });
+    assert.equal(taskEvents.some((event) => event.type === 'task_created'), true);
+    assert.equal(
+      events.some((event) =>
+        event.type === 'task:activated' &&
+        event.roomId === room.id &&
+        event.taskId === tasks[0]!.id
+      ),
+      true,
+    );
+    const messageSnapshot = events.find(
+      (event): event is Extract<import('./types.js').WsServerEvent, { type: 'message:stream' }> =>
+        event.type === 'message:stream' && event.messageId === message.id,
+    );
+    assert.ok(messageSnapshot);
+    assert.equal(messageSnapshot.done, true);
+    assert.ok(messageSnapshot.message?.metadata);
+    const snapshotMetadata = JSON.parse(messageSnapshot.message!.metadata ?? '{}') as { task_id?: string };
+    assert.equal(snapshotMetadata.task_id, tasks[0]!.id);
+  } finally {
+    events.restore();
+  }
 });
 
 test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', async () => {

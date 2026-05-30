@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getRoutableActiveTaskId, projectRoomActivityMessages, selectChatLayerMessages } from './roomPageLogic';
+import {
+  applyMessageStreamBatch,
+  getRoutableActiveTaskId,
+  projectRoomActivityMessages,
+  selectChatLayerMessages,
+} from './roomPageLogic';
 import type { Message } from '../lib/types';
 
 test('getRoutableActiveTaskId only returns active tasks that can receive new messages', () => {
@@ -23,6 +28,40 @@ test('selectChatLayerMessages keeps chat and legacy messages out of task event l
   ];
 
   assert.deepEqual(selectChatLayerMessages(messages).map((message) => message.id), ['legacy', 'chat']);
+});
+
+test('applyMessageStreamBatch merges task ownership snapshots for routed user messages', () => {
+  const messages = [
+    createMessage({
+      id: 'user-message',
+      layer: 'chat',
+      metadata: JSON.stringify({
+        route_result: { action: 'create_task', taskId: null },
+      }),
+    }),
+  ];
+
+  const result = applyMessageStreamBatch(messages, [{
+    messageId: 'user-message',
+    chunk: '',
+    done: true,
+    message: createMessage({
+      id: 'user-message',
+      layer: 'chat',
+      metadata: JSON.stringify({
+        task_id: 'task-1',
+        route_result: { action: 'create_task', taskId: 'task-1' },
+      }),
+    }),
+  }]);
+
+  assert.equal(result.matched, true);
+  const metadata = JSON.parse(result.messages?.[0]?.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: { taskId?: string | null };
+  };
+  assert.equal(metadata.task_id, 'task-1');
+  assert.equal(metadata.route_result?.taskId, 'task-1');
 });
 
 test('projectRoomActivityMessages turns room activity messages into activity feed events', () => {

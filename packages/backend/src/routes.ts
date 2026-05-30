@@ -85,6 +85,7 @@ import {
   type AgentToolPolicy,
   type AgentWorkspacePolicy,
   type MemoryScope,
+  type Message,
   type MessageLayer,
   type MessageMetadata,
   type PlannerDecision,
@@ -2104,11 +2105,31 @@ function createTaskFromRoutedMessage(input: {
     taskId: result.task.id,
     reason: `${input.routeResult.reason}，已自动创建任务：${result.task.title}`,
   };
-  messageRepo.mergeMetadata(input.userMessageId, {
+  const updatedMessage = messageRepo.mergeMetadata(input.userMessageId, {
     task_id: result.task.id,
     route_result: nextRouteResult,
   });
+  if (updatedMessage) {
+    broadcastUserMessageSnapshot(input.roomId, updatedMessage);
+  }
+  wsHub.broadcast(input.roomId, {
+    type: 'task:activated',
+    roomId: input.roomId,
+    taskId: result.task.id,
+  });
   return nextRouteResult;
+}
+
+function broadcastUserMessageSnapshot(roomId: string, message: Message): void {
+  wsHub.broadcast(roomId, {
+    type: 'message:stream',
+    roomId,
+    messageId: message.id,
+    channel: 'answer',
+    chunk: '',
+    done: true,
+    message,
+  });
 }
 
 function parseMultipartMentions(rawMentions?: string): string[] | undefined {

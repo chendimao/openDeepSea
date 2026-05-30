@@ -1456,9 +1456,11 @@ async function dispatchPlannerDecision(args: {
   const project = projectRepo.get(room.project_id);
   if (!project) throw new Error('project not found');
   const { targets, addedAgents, missingAgentIds } = resolvePlannerDispatchTargets(args.roomId, args.decision);
+  const sourceMessage = messageRepo.get(args.sourceMessageId);
+  const taskId = getMessageTaskId(sourceMessage?.metadata ?? null);
   const executionPlan = await resolvePlannerStepExecutionPlan({
     room,
-    sourceMessage: messageRepo.get(args.sourceMessageId),
+    sourceMessage,
     targets,
   });
   if (executionPlan.dispatchTargets.length === 0 || missingAgentIds.length > 0) {
@@ -1476,11 +1478,13 @@ async function dispatchPlannerDecision(args: {
     projectPath: project.path,
     roomId: args.roomId,
     sourceMessageId: args.sourceMessageId,
+    taskId,
   });
   await reportPlannerDispatchResults({
     roomId: args.roomId,
     projectPath: project.path,
     sourceMessageId: args.sourceMessageId,
+    taskId,
     decision: args.decision,
     dispatchedTargets: executionPlan.dispatchTargets,
     dispatchedResults: results,
@@ -1690,6 +1694,7 @@ async function reportPlannerDispatchResults(args: {
   roomId: string;
   projectPath: string;
   sourceMessageId: string;
+  taskId?: string | null;
   decision: PlannerDecision;
   dispatchedTargets: PlannerDispatchedTarget[];
   dispatchedResults: TargetRunResult[];
@@ -1740,6 +1745,7 @@ async function reportPlannerDispatchResults(args: {
     projectPath: args.projectPath,
     roomId: args.roomId,
     prompt,
+    taskId: args.taskId,
     sourceMessageId: args.sourceMessageId,
     onFinished: async ({ run, message }) => {
       if (run.status !== 'completed') return;

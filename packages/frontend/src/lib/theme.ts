@@ -23,7 +23,7 @@ export function parseThemeMode(value: string | null): ThemeMode {
   if (value === 'light') return 'apple-light';
   if (value === 'dark') return 'apple-dark';
   if (value === 'minimal' || value === 'console') return 'minimal-light';
-  return 'apple-light';
+  return 'minimal-light';
 }
 
 export function getThemeStyle(theme: ThemeMode): ThemeStyle {

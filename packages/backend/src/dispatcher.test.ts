@@ -1695,6 +1695,68 @@ test('respondAsAgent builds handoff from the active task context only', async ()
   }
 });
 
+test('planner dispatch runs source task steps through task executor sessions', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-task-executor-'));
+  const project = projectRepo.create({ name: `planner-task-executor-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor', agent_name: '执行者' });
+  const acpAgent = roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'global-room-session',
+    acp_session_label: null,
+  });
+  assert.ok(acpAgent);
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Task dispatch context' });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '请执行这个任务',
+    message_type: 'text',
+    metadata: { task_id: task.id },
+  });
+
+  const originalAdapter = adapters.codex;
+  let capturedSessionId: string | null | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedSessionId = args.sessionId;
+      args.onChunk({ stream: 'stdout', text: '任务执行完成' });
+      return { exitCode: 0, sessionId: 'task-dispatch-session', stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '派发执行者处理任务',
+          next_steps: [{ agent_id: acpAgent.agent_id, goal: '处理 task 范围内的工作' }],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(capturedSessionId, null);
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+    assert.equal(runs.some((run) => run.agent_id === acpAgent.agent_id && run.task_id === task.id), true);
+    const executor = taskExecutorRepo.getByTaskAndAgent(task.id, acpAgent.id);
+    assert.equal(executor?.acp_session_id, 'task-dispatch-session');
+    assert.equal(roomAgentRepo.get(acpAgent.id)?.acp_session_id, 'global-room-session');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent builds global handoff without task-scoped user messages', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-global-handoff-scope-'));
   const project = projectRepo.create({ name: `global-handoff-scope-${Date.now()}`, path: projectPath });
