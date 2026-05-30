@@ -201,14 +201,16 @@ export function RoomPage() {
     },
     onError: (err) => toast.error((err as Error).message),
   });
-  const startWorkflow = useMutation({
-    mutationFn: (task: Task) => api.startWorkflow(task.id),
-    onSuccess: (workflow) => {
-      queryClient.setQueryData<WorkflowRun[] | undefined>(['room-workflows', roomId], (prev) =>
-        upsertWorkflow(prev, workflow),
-      );
+  const startTaskLoop = useMutation({
+    mutationFn: (task: Task) => api.sendMessage(roomId, {
+      content: t('taskWorkspace.startLoopPrompt', { id: task.id, title: task.title }),
+      activeTaskId: task.id,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
-      toast.success(t('taskDetail.workflowStarted'));
+      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      toast.success(t('taskWorkspace.loopStarted'));
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -561,8 +563,8 @@ export function RoomPage() {
           onChangeStatus={(task, status) => {
             updateTaskStatus.mutate({ task, status });
           }}
-          onStartWorkflow={(task) => startWorkflow.mutate(task)}
-          startingTaskId={startWorkflow.variables?.id ?? null}
+          onStartWorkflow={(task) => startTaskLoop.mutate(task)}
+          startingTaskId={startTaskLoop.variables?.id ?? null}
           onLocateSourceMessage={focusMessage}
           onLayerVisibilityChange={updateLayerVisibility}
           onClearActiveTask={() => setActiveTaskId(null)}
@@ -650,12 +652,6 @@ function upsertMessage(prev: Message[] | undefined, message: Message): Message[]
 function upsertTask(prev: Task[] | undefined, task: Task): Task[] {
   const list = prev ?? [];
   return [task, ...list.filter((item) => item.id !== task.id)]
-    .sort((a, b) => b.updated_at - a.updated_at);
-}
-
-function upsertWorkflow(prev: WorkflowRun[] | undefined, workflow: WorkflowRun): WorkflowRun[] {
-  const list = prev ?? [];
-  return [workflow, ...list.filter((item) => item.id !== workflow.id)]
     .sort((a, b) => b.updated_at - a.updated_at);
 }
 
