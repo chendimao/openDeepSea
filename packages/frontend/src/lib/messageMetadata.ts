@@ -32,6 +32,7 @@ const taskEventTypes = new Set<TaskEventType>([
   'task_created',
   'task_updated',
   'task_status_changed',
+  'task_deleted',
   'workflow_started',
   'workflow_stage_changed',
   'workflow_plan_ready',
@@ -220,6 +221,7 @@ function sanitizePlannerDecision(value: unknown): PlannerDecision | null {
 
 function sanitizePlannerDecisionSteps(value: unknown): PlannerDecisionStep[] | null {
   if (!Array.isArray(value)) return null;
+  if (value.length === 0) return null;
   const steps = value.map((step) => {
     if (!isRecord(step)) return null;
     if (

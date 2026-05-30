@@ -45,6 +45,7 @@ function createTask(input: Partial<Task>): Task {
     created_at: 1,
     updated_at: input.updated_at ?? 1,
     completed_at: null,
+    deleted_at: null,
   };
 }
 

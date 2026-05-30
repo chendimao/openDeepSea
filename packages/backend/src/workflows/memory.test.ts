@@ -270,6 +270,7 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
       created_at: 1,
       updated_at: 1,
       completed_at: null,
+      deleted_at: null,
     },
     agents: [],
     workflowContext: '已有工作流上下文：暂无。',

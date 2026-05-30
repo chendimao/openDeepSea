@@ -2585,7 +2585,27 @@ router.patch('/tasks/:id', (req, res) => {
 router.delete('/tasks/:id', (req, res) => {
   const task = taskRepo.get(req.params.id);
   if (!task) return res.status(404).json({ error: 'task not found' });
-  taskRepo.delete(task.id);
+  const eventMessage = db.transaction(() => {
+    const message = recordTaskEvent({
+      roomId: task.room_id,
+      taskId: task.id,
+      taskTitle: task.title,
+      eventType: 'task_deleted',
+      content: `任务「${task.title}」已删除`,
+      metadata: {
+        previous_status: task.status,
+      },
+    }, { broadcast: false });
+    taskRepo.delete(task.id);
+    return message;
+  })();
+  const deletedEvent = taskEventRepo.listByTask(task.id).find((event) => {
+    const eventMessageId = typeof event.payload.event_message_id === 'string' ? event.payload.event_message_id : null;
+    return event.type === 'task_deleted' && eventMessageId === eventMessage.id;
+  });
+  if (deletedEvent) {
+    wsHub.broadcast(task.room_id, { type: 'task_event:new', roomId: task.room_id, event: deletedEvent });
+  }
   wsHub.broadcast(task.room_id, { type: 'task:deleted', taskId: task.id });
   res.status(204).end();
 });

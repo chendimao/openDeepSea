@@ -84,6 +84,7 @@ test('buildSupervisorMessages includes task, workflows, and executable agents', 
       created_at: 1,
       updated_at: 1,
       completed_at: null,
+      deleted_at: null,
     },
     agents: [
       {
@@ -217,6 +218,7 @@ function baseSupervisorInput(): WorkflowSupervisorInput {
       created_at: 1,
       updated_at: 1,
       completed_at: null,
+      deleted_at: null,
     },
     agents: [],
     workflowDefinitions: [],

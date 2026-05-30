@@ -11,6 +11,7 @@ const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
+const { wsHub } = await import('./ws-hub.js');
 const { router } = await import('./routes.js');
 
 const app = express();
@@ -80,6 +81,44 @@ test('task CRUD routes list, create, update, and delete room tasks', async () =>
   assert.equal(taskRepo.get(created.id), undefined);
 });
 
+test('task delete route hides task while preserving append-only task event history', async () => {
+  const project = projectRepo.create({
+    name: 'Tasks Delete Event History Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-tasks-delete-history-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+
+  const createRes = await request(`/api/rooms/${room.id}/tasks`, {
+    method: 'POST',
+    body: JSON.stringify({ title: 'Delete history task' }),
+  });
+  assert.equal(createRes.status, 201);
+  const created = await createRes.json() as { id: string };
+  const beforeDeleteEvents = taskEventRepo.listByTask(created.id);
+  assert.equal(beforeDeleteEvents.some((event) => event.type === 'task_created'), true);
+  const events = captureRoomEvents(room.id);
+
+  try {
+    const deleteRes = await request(`/api/tasks/${created.id}`, { method: 'DELETE' });
+    assert.equal(deleteRes.status, 204);
+  } finally {
+    events.restore();
+  }
+
+  const listAfterDelete = await request(`/api/rooms/${room.id}/tasks`);
+  assert.equal(listAfterDelete.status, 200);
+  const visibleTasks = await listAfterDelete.json() as Array<{ id: string }>;
+  assert.equal(visibleTasks.some((task) => task.id === created.id), false);
+
+  const afterDeleteEvents = taskEventRepo.listByTask(created.id);
+  assert.equal(afterDeleteEvents.some((event) => event.type === 'task_created'), true);
+  assert.equal(afterDeleteEvents.some((event) => event.type === 'task_deleted'), true);
+  assert.equal(
+    events.some((event) => event.type === 'task_event:new' && event.event.type === 'task_deleted'),
+    true,
+  );
+});
+
 test('task patch route rejects unsupported fields instead of ignoring them', async () => {
   const project = projectRepo.create({
     name: 'Tasks Patch Validation Route',
@@ -116,3 +155,16 @@ test('conversation task route creates task and system event', async () => {
   const metadata = JSON.parse(body.systemMessage.metadata ?? '{}') as { event_type?: string };
   assert.equal(metadata.event_type, 'task_created');
 });
+
+function captureRoomEvents(roomId: string): import('./types.js').WsServerEvent[] & { restore: () => void } {
+  const original = wsHub.broadcast.bind(wsHub);
+  const events: import('./types.js').WsServerEvent[] & { restore: () => void } = [] as never;
+  wsHub.broadcast = ((targetRoomId, event) => {
+    if (targetRoomId === roomId) events.push(event);
+    return original(targetRoomId, event);
+  }) as typeof wsHub.broadcast;
+  events.restore = () => {
+    wsHub.broadcast = original as typeof wsHub.broadcast;
+  };
+  return events;
+}

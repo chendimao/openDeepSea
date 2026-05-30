@@ -615,6 +615,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   completed_at INTEGER,
+  deleted_at INTEGER,
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (parent_task_id) REFERENCES tasks(id) ON DELETE CASCADE
@@ -622,6 +623,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_room ON tasks(room_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_deleted ON tasks(deleted_at);
 
 CREATE TABLE IF NOT EXISTS task_events (
   id TEXT PRIMARY KEY,
@@ -906,6 +908,10 @@ if (!taskColumnNames.has('source_message_id')) {
 if (!taskColumnNames.has('created_from')) {
   db.exec('ALTER TABLE tasks ADD COLUMN created_from TEXT');
 }
+if (!taskColumnNames.has('deleted_at')) {
+  db.exec('ALTER TABLE tasks ADD COLUMN deleted_at INTEGER');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_deleted ON tasks(deleted_at)');
 
 const messageColumns = db.prepare('PRAGMA table_info(messages)').all() as { name: string }[];
 const messageColumnNames = new Set(messageColumns.map((column) => column.name));

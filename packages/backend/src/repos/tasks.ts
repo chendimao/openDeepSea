@@ -5,41 +5,45 @@ import type { Task, TaskCreatedFrom, TaskInteractionMode, TaskPriority, TaskStat
 export const taskRepo = {
   listByProject(projectId: string): Task[] {
     return db
-      .prepare('SELECT * FROM tasks WHERE project_id = ? ORDER BY created_at DESC')
+      .prepare('SELECT * FROM tasks WHERE project_id = ? AND deleted_at IS NULL ORDER BY created_at DESC')
       .all(projectId) as Task[];
   },
 
   listByRoom(roomId: string): Task[] {
     return db
-      .prepare('SELECT * FROM tasks WHERE room_id = ? ORDER BY created_at DESC')
+      .prepare('SELECT * FROM tasks WHERE room_id = ? AND deleted_at IS NULL ORDER BY created_at DESC')
       .all(roomId) as Task[];
   },
 
   listOpenByAssignedAgent(roomAgentId: string): Task[] {
     return db
-      .prepare("SELECT * FROM tasks WHERE assigned_agent_id = ? AND status <> 'done' ORDER BY created_at DESC")
+      .prepare("SELECT * FROM tasks WHERE assigned_agent_id = ? AND status <> 'done' AND deleted_at IS NULL ORDER BY created_at DESC")
       .all(roomAgentId) as Task[];
   },
 
   listChildren(parentTaskId: string): Task[] {
     return db
-      .prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC')
+      .prepare('SELECT * FROM tasks WHERE parent_task_id = ? AND deleted_at IS NULL ORDER BY created_at ASC')
       .all(parentTaskId) as Task[];
   },
 
   listRootByRoom(roomId: string): Task[] {
     return db
-      .prepare('SELECT * FROM tasks WHERE room_id = ? AND parent_task_id IS NULL ORDER BY created_at DESC')
+      .prepare('SELECT * FROM tasks WHERE room_id = ? AND parent_task_id IS NULL AND deleted_at IS NULL ORDER BY created_at DESC')
       .all(roomId) as Task[];
   },
 
   get(id: string): Task | undefined {
+    return db.prepare('SELECT * FROM tasks WHERE id = ? AND deleted_at IS NULL').get(id) as Task | undefined;
+  },
+
+  getIncludingDeleted(id: string): Task | undefined {
     return db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as Task | undefined;
   },
 
   getBySourceMessage(roomId: string, sourceMessageId: string): Task | undefined {
     return db
-      .prepare('SELECT * FROM tasks WHERE room_id = ? AND source_message_id = ? ORDER BY created_at ASC LIMIT 1')
+      .prepare('SELECT * FROM tasks WHERE room_id = ? AND source_message_id = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1')
       .get(roomId, sourceMessageId) as Task | undefined;
   },
 
@@ -84,7 +88,7 @@ export const taskRepo = {
   updateStatus(id: string, status: TaskStatus): Task | undefined {
     const completed_at = status === 'done' ? now() : null;
     db.prepare(
-      `UPDATE tasks SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?`,
+      `UPDATE tasks SET status = ?, updated_at = ?, completed_at = ? WHERE id = ? AND deleted_at IS NULL`,
     ).run(status, now(), completed_at, id);
     return this.get(id);
   },
@@ -99,24 +103,29 @@ export const taskRepo = {
     db.prepare(
       `UPDATE tasks
        SET title = ?, description = ?, priority = ?, interaction_mode = ?, assigned_agent_id = ?, updated_at = ?
-       WHERE id = ?`,
+       WHERE id = ? AND deleted_at IS NULL`,
     ).run(next.title, next.description, next.priority, next.interaction_mode, next.assigned_agent_id, now(), id);
     return this.get(id);
   },
 
   unassignOpenByAgent(roomAgentId: string): number {
     return db.prepare(
-      "UPDATE tasks SET assigned_agent_id = NULL, updated_at = ? WHERE assigned_agent_id = ? AND status <> 'done'",
+      "UPDATE tasks SET assigned_agent_id = NULL, updated_at = ? WHERE assigned_agent_id = ? AND status <> 'done' AND deleted_at IS NULL",
     ).run(now(), roomAgentId).changes;
   },
 
   transferOpenByAgent(fromRoomAgentId: string, toRoomAgentId: string): number {
     return db.prepare(
-      "UPDATE tasks SET assigned_agent_id = ?, updated_at = ? WHERE assigned_agent_id = ? AND status <> 'done'",
+      "UPDATE tasks SET assigned_agent_id = ?, updated_at = ? WHERE assigned_agent_id = ? AND status <> 'done' AND deleted_at IS NULL",
     ).run(toRoomAgentId, now(), fromRoomAgentId).changes;
   },
 
   delete(id: string): boolean {
-    return db.prepare('DELETE FROM tasks WHERE id = ?').run(id).changes > 0;
+    const timestamp = now();
+    return db.prepare(
+      `UPDATE tasks
+       SET deleted_at = ?, updated_at = ?
+       WHERE id = ? AND deleted_at IS NULL`,
+    ).run(timestamp, timestamp, id).changes > 0;
   },
 };

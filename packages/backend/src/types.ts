@@ -633,6 +633,7 @@ export type TaskEventType =
   | 'task_created'
   | 'task_updated'
   | 'task_status_changed'
+  | 'task_deleted'
   | 'workflow_started'
   | 'workflow_stage_changed'
   | 'workflow_plan_ready'
@@ -938,6 +939,7 @@ export interface Task {
   created_at: number;
   updated_at: number;
   completed_at: number | null;
+  deleted_at: number | null;
 }
 
 export interface WorkflowRun {

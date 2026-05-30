@@ -384,6 +384,7 @@ function fakeTask(overrides: Partial<Task> = {}): Task {
     created_at: 1,
     updated_at: 1,
     completed_at: null,
+    deleted_at: null,
     ...overrides,
   };
 }

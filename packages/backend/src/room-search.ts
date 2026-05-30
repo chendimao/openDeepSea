@@ -208,7 +208,7 @@ function listRoomCandidates(projectId: string): RoomCandidate[] {
     )
     .all(projectId) as Message[];
   const tasks = db
-    .prepare('SELECT * FROM tasks WHERE project_id = ? ORDER BY created_at DESC')
+    .prepare('SELECT * FROM tasks WHERE project_id = ? AND deleted_at IS NULL ORDER BY created_at DESC')
     .all(projectId) as Task[];
 
   const messagesByRoom = groupByRoomId(messages);

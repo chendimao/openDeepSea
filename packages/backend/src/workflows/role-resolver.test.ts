@@ -483,5 +483,6 @@ function task(patch: Partial<Task>): Task {
     created_at: patch.created_at ?? 1,
     updated_at: patch.updated_at ?? 1,
     completed_at: patch.completed_at ?? null,
+    deleted_at: patch.deleted_at ?? null,
   };
 }
