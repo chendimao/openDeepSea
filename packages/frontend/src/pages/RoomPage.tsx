@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Brain, ChevronDown, Download, Eye, FileText, FolderOpen, MessageSquare, Plus, Reply, RotateCcw, Search, Settings2, Users } from 'lucide-react';
+import { BookmarkPlus, ChevronDown, Download, Eye, FileText, MessageSquare, Reply, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -40,15 +40,15 @@ import { AddAgentDialog } from '../components/AddAgentDialog';
 import { MemoryPanel } from '../components/MemoryPanel';
 import { RichMessageComposer } from '../components/RichMessageComposer';
 import { RoomFilesPanel } from '../components/RoomFilesPanel';
-import { CreateTaskDialog } from '../components/CreateTaskDialog';
 import type { TaskLayerVisibility } from '../components/TaskDetailPanel';
 import { TaskWorkspacePanel } from '../components/TaskWorkspacePanel';
 import type { TaskStatusFilter } from '../components/taskBoardLogic';
 import { MessageIntentCard } from '../components/MessageIntentCard';
 import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
-import { RoomSettingsDialog } from '../components/SettingsDialogs';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
+import { ChatPanelHeader, type RoomFeatureTab } from '../components/chat/ChatPanelHeader';
+import { RoomTopNavigation } from '../components/layout/RoomTopNavigation';
 import {
   Conversation,
   ConversationContent,
@@ -79,7 +79,6 @@ import {
   type StreamTraceChannel,
 } from './roomPageLogic';
 
-type RoomFeatureTab = 'chat' | 'files';
 const DEFAULT_TASK_LAYER_VISIBILITY: TaskLayerVisibility = {
   chat: true,
   activity: true,
@@ -479,101 +478,28 @@ export function RoomPage() {
 
   return (
     <div className="workspace-root" data-testid="room-page">
-      <header className="workspace-toolbar">
-        <div className="room-toolbar-identity">
-          <Link
-            to={`/projects/${projectId}`}
-            className="toolbar-logo"
-            aria-label={t('room.backToProject')}
-          >
-            <img src="/lobster.svg" alt="" className="h-5 w-5" />
-          </Link>
-          <div className="min-w-0">
-            <div className="room-toolbar-title">
-              {room?.name ?? t('room.defaultName')}
-            </div>
-            <div className="room-toolbar-subtitle">
-              {project?.name ?? t('room.defaultName')} · {project?.path ?? t('room.projectPathUnknown')}
-            </div>
-          </div>
-        </div>
-
-        <label className="room-global-search" aria-label="全局搜索">
-          <Search className="h-4 w-4" strokeWidth={1.8} />
-          <input type="search" placeholder="搜索消息、任务、文件" />
-          <span>⌘K</span>
-        </label>
-
-        <div className="room-toolbar-actions ml-auto flex min-w-0 items-center gap-2">
-          <AgentStrip
-            agents={agents}
-            onConfig={(agent) => {
-              setConfigAgent(agent);
-            }}
-          />
-          {project && room ? (
-            <RoomSettingsDialog project={project} room={room} agents={agents}>
-              <button
-                type="button"
-                aria-label={t('room.roomSettings')}
-                className="glass-button"
-              >
-                <Settings2 className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{t('room.tab.settings')}</span>
-              </button>
-            </RoomSettingsDialog>
-          ) : (
-            <button
-              type="button"
-              aria-label={t('room.roomSettings')}
-              className="glass-button"
-              disabled
-            >
-              <Settings2 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{t('room.tab.settings')}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            aria-label={t('memory.tab')}
-            className={cn('glass-button', showMemoryPanel && 'glass-button-primary')}
-            onClick={() => {
-              setShowMemoryPanel((v) => !v);
-              if (!showMemoryPanel) setConfigAgent(null);
-            }}
-          >
-            <Brain className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span className="hidden sm:inline">{t('memory.tab')}</span>
-          </button>
-          <AddAgentDialog
-            roomId={roomId}
-            roomAgentGlobalIds={agents.map((agent) => agent.global_agent_id ?? '')}
-            roomAgentIds={agents.map((agent) => agent.agent_id)}
-          >
-            <button type="button" className="glass-button" aria-label={t('room.inviteAgent')}>
-              <Users className="h-3.5 w-3.5" strokeWidth={1.8} />
-              <span className="hidden sm:inline">{t('room.inviteAgent')}</span>
-            </button>
-          </AddAgentDialog>
-          <div className="room-user-avatar" aria-label="Current user">U</div>
-        </div>
-      </header>
+      <RoomTopNavigation
+        projectId={projectId}
+        roomId={roomId}
+        project={project}
+        room={room}
+        agents={agents}
+        showMemoryPanel={showMemoryPanel}
+        onSelectAgent={setConfigAgent}
+        onToggleMemoryPanel={() => {
+          setShowMemoryPanel((v) => !v);
+          if (!showMemoryPanel) setConfigAgent(null);
+        }}
+      />
 
       <div className={cn('workspace-grid task-os-grid', showMemoryPanel && 'has-inspector')}>
         <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
-          <div className="room-main-heading">
-            <div className="chat-heading-copy">
-              <div className="chat-heading-title">聊天</div>
-              <div className="chat-heading-subtitle">Conversation Flow</div>
-            </div>
-            <RoomFeatureTabs activeTab={activeTab} onChange={setActiveTab} />
-            <CreateTaskDialog roomId={roomId} agents={agents}>
-              <button type="button" className="glass-button" aria-label={t('createTask.trigger')}>
-                <Plus className="h-3.5 w-3.5" />
-                <span>{t('createTask.trigger')}</span>
-              </button>
-            </CreateTaskDialog>
-          </div>
+          <ChatPanelHeader
+            roomId={roomId}
+            agents={agents}
+            activeTab={activeTab}
+            onChange={setActiveTab}
+          />
           <div className="room-tab-content">
             {activeTab === 'chat' && (
               <ChatColumn
@@ -904,74 +830,6 @@ function RoomSwitcher({
         </details>
       )}
     </nav>
-  );
-}
-
-function RoomFeatureTabs({
-  activeTab,
-  onChange,
-}: {
-  activeTab: RoomFeatureTab;
-  onChange: (tab: RoomFeatureTab) => void;
-}) {
-  const { t } = useI18n();
-  const tabs: Array<{ id: RoomFeatureTab; label: string; icon: typeof MessageSquare }> = [
-    { id: 'chat', label: t('room.tab.chat'), icon: MessageSquare },
-    { id: 'files', label: t('room.tab.files'), icon: FolderOpen },
-  ];
-
-  return (
-    <div className="room-feature-tabs" aria-label={t('room.viewLabel')}>
-      <div className="segmented-control">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              className={activeTab === tab.id ? 'is-active' : ''}
-              aria-pressed={activeTab === tab.id}
-              onClick={() => onChange(tab.id)}
-            >
-              <Icon className="h-3.5 w-3.5" strokeWidth={1.7} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function AgentStrip({
-  agents,
-  onConfig,
-}: {
-  agents: RoomAgent[];
-  onConfig: (a: RoomAgent) => void;
-}) {
-  const { t } = useI18n();
-
-  if (agents.length === 0)
-    return <span className="room-agent-empty-label">{t('room.noAgents')}</span>;
-  return (
-    <div className="mr-2 flex items-center -space-x-2">
-      {agents.slice(0, 6).map((a) => (
-        <button
-          key={a.id}
-          type="button"
-          onClick={() => onConfig(a)}
-          aria-label={t('room.configureAgent', { name: a.agent_name })}
-          className="rounded-full ring-2 ring-white/80 transition-transform ease-ocean hover:scale-105"
-          title={`${a.agent_name}${a.acp_enabled ? ` · ACP: ${a.acp_backend}` : ''}`}
-        >
-          <AgentAvatar name={a.agent_name} size={26} active={!!a.acp_enabled} />
-        </button>
-      ))}
-      {agents.length > 6 && (
-        <span className="ml-3 text-[11px] font-mono text-[var(--color-fg-muted)]">+{agents.length - 6}</span>
-      )}
-    </div>
   );
 }
 
