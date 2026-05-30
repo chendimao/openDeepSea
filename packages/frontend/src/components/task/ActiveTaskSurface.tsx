@@ -16,6 +16,7 @@ import {
   buildToolCalls,
   taskEventTypeLabel,
   taskProgressPercent,
+  type TaskWorkspaceToolCall,
 } from './taskWorkspaceModel';
 
 const NEXT_STATUS: Partial<Record<Task['status'], Task['status']>> = {
@@ -77,13 +78,7 @@ export function ActiveTaskSurface({
   const timelineEvents = eventGroups.timelineEvents.slice(0, 5);
   const fileChanges = buildFileChanges(eventGroups.diffEvents);
   const toolCalls = buildToolCalls(eventGroups.logEvents, eventGroups.timelineEvents);
-  const displayToolCalls = toolCalls.length > 0
-    ? toolCalls
-    : [
-        { name: 'search_files', status: 'waiting', time: task.created_at },
-        { name: 'read_file', status: 'waiting', time: task.created_at },
-        { name: 'generate_preview', status: 'waiting', time: task.created_at },
-      ];
+  const displayToolCalls = completeToolCallPreview(toolCalls, task.created_at);
   const currentAgent = assignedAgent?.agent_name ?? t('common.unassigned');
   const currentStep = planSteps.find((step) => step.state === 'running') ?? planSteps[0];
 
@@ -250,4 +245,14 @@ function formatClockTime(timestamp: number): string {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
   return `${hours}:${minutes}:${seconds}`;
+}
+
+function completeToolCallPreview(toolCalls: TaskWorkspaceToolCall[], fallbackTime: number): TaskWorkspaceToolCall[] {
+  const canonicalNames = ['search_files', 'read_file', 'generate_preview'];
+  const byName = new Map(toolCalls.map((tool) => [tool.name, tool]));
+  const canonicalTools = canonicalNames.map((name) =>
+    byName.get(name) ?? { name, status: 'waiting', time: fallbackTime }
+  );
+  const extras = toolCalls.filter((tool) => !canonicalNames.includes(tool.name));
+  return [...canonicalTools, ...extras].slice(0, 3);
 }

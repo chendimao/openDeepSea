@@ -70,8 +70,8 @@ export function buildToolCalls(logEvents: TaskEvent[], timelineEvents: TaskEvent
   const source = logEvents
     .filter((event) => readToolCallName(event.payload))
     .slice(-3);
-  return source.map((event) => ({
-    name: readToolCallName(event.payload) ?? event.type,
+  return source.map((event, index) => ({
+    name: formatToolCallName(readToolCallName(event.payload) ?? event.type, index),
     status: readPayloadString(event.payload, 'status') ?? 'done',
     time: event.created_at,
   }));
@@ -100,4 +100,44 @@ function readToolCallName(payload: Record<string, unknown>): string | null {
     readPayloadString(payload, 'name');
   if (!value) return null;
   return value === 'tool' || value === 'runtime_event' ? null : value;
+}
+
+function formatToolCallName(value: string, index: number): string {
+  const normalized = value.trim();
+  const lower = normalized.toLowerCase();
+  if (!normalized) return fallbackToolName(index);
+  if (
+    lower.startsWith('list ') ||
+    lower.startsWith('ls ') ||
+    lower.startsWith('find ') ||
+    lower.startsWith('rg ') ||
+    lower.includes('search')
+  ) {
+    return 'search_files';
+  }
+  if (
+    lower.startsWith('read ') ||
+    lower.startsWith('cat ') ||
+    lower.startsWith('sed ') ||
+    lower.includes('read_file')
+  ) {
+    return 'read_file';
+  }
+  if (
+    lower.includes('screenshot') ||
+    lower.includes('browser') ||
+    lower.includes('preview') ||
+    lower.includes('render')
+  ) {
+    return 'generate_preview';
+  }
+  return normalized
+    .replace(/^[^a-zA-Z0-9]+/, '')
+    .split(/\s+/)[0]
+    ?.replace(/[^a-zA-Z0-9_:-]/g, '_')
+    .slice(0, 28) || fallbackToolName(index);
+}
+
+function fallbackToolName(index: number): string {
+  return ['search_files', 'read_file', 'generate_preview'][index] ?? 'tool_call';
 }

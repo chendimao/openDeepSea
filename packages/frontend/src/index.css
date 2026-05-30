@@ -3902,6 +3902,10 @@
     grid-area: name;
     display: block;
     min-width: 0;
+    font-size: 11px;
+    line-height: 1.14;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
   .tool-call-card span {
     grid-area: status;
