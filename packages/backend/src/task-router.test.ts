@@ -32,9 +32,26 @@ test('routeMessage prefers explicit task id references over active task', () => 
   });
 
   assert.equal(result.taskId, explicit.id);
-  assert.equal(result.action, 'append_to_task');
+  assert.equal(result.action, 'switch_task');
   assert.equal(result.confidence, 1);
   assert.match(result.reason, /显式/);
+});
+
+test('routeMessage switches active task for explicit references to another routable task', () => {
+  const { project, room } = createRoomFixture();
+  const explicit = taskRepo.create({ project_id: project.id, room_id: room.id, title: '显式任务' });
+  const active = taskRepo.create({ project_id: project.id, room_id: room.id, title: '激活任务' });
+
+  const result = routeMessage({
+    roomId: room.id,
+    message: `切到 #task:${explicit.id} 继续`,
+    activeTaskId: active.id,
+  });
+
+  assert.equal(result.taskId, explicit.id);
+  assert.equal(result.action, 'switch_task');
+  assert.equal(result.confidence, 1);
+  assert.match(result.reason, /切换/);
 });
 
 test('routeMessage uses active task when there is no explicit task reference', () => {

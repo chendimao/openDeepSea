@@ -2038,6 +2038,13 @@ function finalizeUserMessageRouting(input: {
     recordUncertainMessageRoute(input.roomId, input.userMessageId, finalRouteResult);
   }
   recordTaskRoutingEvent(input.roomId, input.userMessageId, finalRouteResult);
+  if (finalRouteResult.action === 'switch_task' && finalRouteResult.taskId) {
+    wsHub.broadcast(input.roomId, {
+      type: 'task:activated',
+      roomId: input.roomId,
+      taskId: finalRouteResult.taskId,
+    });
+  }
 }
 
 function recordUncertainMessageRoute(

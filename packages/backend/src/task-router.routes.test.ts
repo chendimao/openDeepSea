@@ -66,6 +66,50 @@ test('POST /rooms/:roomId/messages records task routing metadata and activity ev
   assert.equal(routeEvent.payload.route_action, 'append_to_task');
 });
 
+test('POST /rooms/:roomId/messages broadcasts activation when explicit routing switches task', async () => {
+  const project = projectRepo.create({
+    name: 'Task Router Switch Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-switch-route-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const active = taskRepo.create({ project_id: project.id, room_id: room.id, title: '当前任务' });
+  const explicit = taskRepo.create({ project_id: project.id, room_id: room.id, title: '切换目标' });
+  const events = captureRoomEvents(room.id);
+
+  try {
+    const res = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: `请切到 #task:${explicit.id} 继续`,
+        active_task_id: active.id,
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const message = await res.json() as { id: string; metadata: string | null };
+    const metadata = JSON.parse(message.metadata ?? '{}') as {
+      task_id?: string;
+      route_result?: { action: string; taskId: string | null; reason: string };
+    };
+    assert.equal(metadata.task_id, explicit.id);
+    assert.equal(metadata.route_result?.action, 'switch_task');
+    assert.equal(
+      events.some((event) =>
+        event.type === 'task:activated' &&
+        event.roomId === room.id &&
+        event.taskId === explicit.id
+      ),
+      true,
+    );
+
+    const routeEvent = taskEventRepo.listByTask(explicit.id, { layer: 'activity' })
+      .find((event) => event.type === 'message_routed');
+    assert.equal(routeEvent?.payload.route_action, 'switch_task');
+  } finally {
+    events.restore();
+  }
+});
+
 test('POST /rooms/:roomId/messages creates a task for clear create-task intent', async () => {
   const project = projectRepo.create({
     name: 'Task Router Create Route',

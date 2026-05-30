@@ -21,11 +21,12 @@ export function routeMessage(input: {
   if (explicitTaskId) {
     const task = taskRepo.get(explicitTaskId);
     if (task && task.room_id === input.roomId) {
+      const shouldSwitchTask = Boolean(input.activeTaskId && input.activeTaskId !== task.id && isRoutableTask(task));
       return {
         taskId: task.id,
-        action: 'append_to_task',
+        action: shouldSwitchTask ? 'switch_task' : 'append_to_task',
         confidence: 1,
-        reason: `显式任务引用：${task.id}`,
+        reason: shouldSwitchTask ? `显式任务引用，切换到任务：${task.id}` : `显式任务引用：${task.id}`,
       };
     }
     return {
