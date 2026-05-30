@@ -13,6 +13,7 @@ import { GlobalChatPage } from './pages/GlobalChatPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { RoomPage } from './pages/RoomPage';
 import { SkillsPage } from './pages/SkillsPage';
+import { TestPage } from './pages/TestPage';
 import { getThemeTone, parseThemeMode, type ThemeMode } from './lib/theme';
 import './index.css';
 
@@ -51,6 +52,7 @@ function RootApp(): JSX.Element {
               <Route path="/agents" element={<AgentsPage />} />
               <Route path="/files" element={<FilesPage />} />
               <Route path="/skills" element={<SkillsPage />} />
+              <Route path="/test" element={<TestPage />} />
               <Route path="/projects/:projectId" element={<ProjectPage />} />
               <Route path="/projects/:projectId/files" element={<FilesPage />} />
               <Route path="/projects/:projectId/rooms/:roomId" element={<RoomPage />} />

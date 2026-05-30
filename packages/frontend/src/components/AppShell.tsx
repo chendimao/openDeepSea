@@ -10,6 +10,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  TestTube2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -197,6 +198,7 @@ function ProjectSidebar({
         <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} />
         <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} />
         <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} />
+        <SidebarLink to="/test" icon={TestTube2} label={t('shell.nav.test')} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
