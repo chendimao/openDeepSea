@@ -4039,9 +4039,14 @@
     .task-workspace-grid,
     .task-workspace-canvas,
     .task-workspace-empty-preview,
-    .active-task-meta-grid,
     .tool-call-strip {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .active-task-meta-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .active-task-progress {
+      grid-column: 1 / -1;
     }
     .task-queue-rail {
       max-height: 28dvh;
@@ -7712,7 +7717,7 @@
       grid-template-columns: minmax(0, 1fr);
     }
     .task-queue-rail {
-      max-height: 28dvh;
+      max-height: clamp(132px, 18dvh, 180px);
       border-right: 0;
       border-bottom: 1px solid rgba(0,0,0,0.06);
       overflow: hidden;
@@ -7726,7 +7731,7 @@
   @media (max-width: 768px) {
     .workspace-grid.task-os-grid,
     .workspace-grid.task-os-grid.has-inspector {
-      grid-template-rows: minmax(520px, 62dvh) minmax(520px, max-content);
+      grid-template-rows: minmax(520px, 62dvh) minmax(680px, max-content);
       overflow-y: auto;
     }
 
@@ -7735,7 +7740,7 @@
     }
 
     .task-os-grid .task-workspace-panel {
-      min-height: 520px;
+      min-height: 680px;
     }
   }
 }
