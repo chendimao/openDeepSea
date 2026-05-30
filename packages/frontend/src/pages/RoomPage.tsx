@@ -5,6 +5,7 @@ import { ChevronDown, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
+import { parseMessageMetadata } from '../lib/messageMetadata';
 import type {
   Agent,
   AgentRun,
@@ -58,7 +59,7 @@ import {
   createReplyTarget,
   getRoutableActiveTaskId,
   projectRoomActivityMessages,
-  selectChatLayerMessages,
+  selectConversationMessages,
   type MessageStreamUpdate,
   type ReplyTarget,
   type StreamTraceChannel,
@@ -507,6 +508,7 @@ export function RoomPage() {
             {activeTab === 'chat' && (
               <ChatColumn
                 messages={messages}
+                tasks={tasks}
                 agents={agents}
                 globalAgents={globalAgents}
                 agentRuns={agentRuns}
@@ -526,6 +528,10 @@ export function RoomPage() {
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
                 onClearActiveTask={clearActiveTask}
                 onLocateReplyTarget={focusMessage}
+                onSelectTask={(task) => {
+                  setAutoActiveTaskDismissedRoomId(null);
+                  activateTask.mutate(task);
+                }}
               />
             )}
             {activeTab === 'files' && (
@@ -828,6 +834,7 @@ function RoomSwitcher({
 
 function ChatColumn({
   messages,
+  tasks,
   agents,
   globalAgents,
   agentRuns,
@@ -847,8 +854,10 @@ function ChatColumn({
   onClearReplyTarget,
   onClearActiveTask,
   onLocateReplyTarget,
+  onSelectTask,
 }: {
   messages: Message[];
+  tasks: Task[];
   agents: RoomAgent[];
   globalAgents: Agent[];
   agentRuns: AgentRun[];
@@ -868,6 +877,7 @@ function ChatColumn({
   onClearReplyTarget: () => void;
   onClearActiveTask: () => void;
   onLocateReplyTarget: (messageId: string) => void;
+  onSelectTask: (task: Task) => void;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
   const [defaultReplySuppressedForMessageId, setDefaultReplySuppressedForMessageId] = useState<string | null>(null);
@@ -886,7 +896,11 @@ function ChatColumn({
     () => pairRunsWithAgentMessages(messages, agentRuns),
     [messages, agentRuns],
   );
-  const visibleMessages = useMemo(() => selectChatLayerMessages(dedupeMessages(messages)), [messages]);
+  const taskById = useMemo(
+    () => new Map(tasks.map((task) => [task.id, task])),
+    [tasks],
+  );
+  const visibleMessages = useMemo(() => selectConversationMessages(dedupeMessages(messages)), [messages]);
   const streamingReplyMessageIds = useMemo(
     () => new Set(Array.from(streamingMessageIds)),
     [streamingMessageIds],
@@ -979,6 +993,8 @@ function ChatColumn({
               const hasLocalStreamingState = streamingMessageIds.has(m.id) || streamingDisplay.isAnimating(m.id);
               const isStreamingMessage = shouldUseStreamingDisplayForMessage(m, run, hasLocalStreamingState);
               const displayMode = messageDisplayModes[m.id] ?? 'preview';
+              const metadata = parseMessageMetadata(m.metadata);
+              const task = metadata.task_id ? taskById.get(metadata.task_id) : undefined;
               return (
                 <ChatMessageBubble
                   key={m.id}
@@ -990,6 +1006,8 @@ function ChatColumn({
                   globalAgents={globalAgents}
                   roomId={roomId}
                   projectId={projectId}
+                  task={task}
+                  activeTaskId={activeTaskId}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
                   displayMode={displayMode}
@@ -999,6 +1017,7 @@ function ChatColumn({
                   onReply={() => onReplyToMessage(m)}
                   retrySourceMessage={findPreviousUserMessage(visibleMessages, index)}
                   onLocateReplyTarget={onLocateReplyTarget}
+                  onSelectTask={onSelectTask}
                 />
               );
             })

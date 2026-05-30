@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, Eye, FileText, Reply, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
-import type { Agent, AgentRun, Message, MessageIntent, PlannerDecision, RoomAgent } from '../../lib/types';
+import type { Agent, AgentRun, Message, MessageIntent, PlannerDecision, RoomAgent, Task, TaskEventType } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
@@ -22,6 +22,7 @@ import {
 import { createPlannerDispatchInput, shouldShowPlannerDecisionPanel } from '../../pages/roomPageLogic';
 import { MessageAttachments } from './MessageAttachments';
 import { PlannerDecisionPanel } from './PlannerDecisionPanel';
+import { ChatTaskCard } from './ChatTaskCard';
 import { shouldUseStreamingDisplayForMessage } from './chatMessageModel';
 
 export interface ChatMessageBubbleProps {
@@ -33,6 +34,8 @@ export interface ChatMessageBubbleProps {
   globalAgents: Agent[];
   roomId: string;
   projectId: string;
+  task?: Task;
+  activeTaskId?: string | null;
   streaming: boolean;
   displayContent: string;
   displayMode: 'preview' | 'source';
@@ -42,6 +45,7 @@ export interface ChatMessageBubbleProps {
   onReply: () => void;
   retrySourceMessage?: Message | null;
   onLocateReplyTarget: (messageId: string) => void;
+  onSelectTask?: (task: Task) => void;
 }
 
 export function ChatMessageBubble({
@@ -53,6 +57,8 @@ export function ChatMessageBubble({
   globalAgents,
   roomId,
   projectId,
+  task,
+  activeTaskId,
   streaming,
   displayContent,
   displayMode,
@@ -62,6 +68,7 @@ export function ChatMessageBubble({
   onReply,
   retrySourceMessage,
   onLocateReplyTarget,
+  onSelectTask,
 }: ChatMessageBubbleProps): JSX.Element {
   const { t, formatRelativeTime } = useI18n();
   const queryClient = useQueryClient();
@@ -153,6 +160,26 @@ export function ChatMessageBubble({
       queryClient.invalidateQueries({ queryKey: ['tasks', roomId] });
     }).catch((err) => toast.error((err as Error).message));
   };
+
+  if (isSystem && shouldRenderInlineTaskCard(metadata.event_type, metadata.task_id)) {
+    return (
+      <AiMessageRow
+        ref={messageRef}
+        variant="event"
+        data-message-id={message.id}
+        className={cn('chat-task-card-row', highlighted && 'is-highlighted')}
+      >
+        <ChatTaskCard
+          message={message}
+          metadata={metadata}
+          task={task}
+          roomAgents={roomAgents}
+          active={Boolean(task && activeTaskId === task.id)}
+          onSelectTask={onSelectTask}
+        />
+      </AiMessageRow>
+    );
+  }
 
   if (isSystem) {
     return (
@@ -314,4 +341,14 @@ export function ChatMessageBubble({
       </div>
     </AiMessageRow>
   );
+}
+
+function shouldRenderInlineTaskCard(eventType: TaskEventType | undefined, taskId: string | undefined): boolean {
+  if (!taskId || !eventType) return false;
+  return eventType === 'task_created' ||
+    eventType === 'task_updated' ||
+    eventType === 'task_status_changed' ||
+    eventType === 'task_deleted' ||
+    eventType === 'message_routed' ||
+    eventType.startsWith('workflow_');
 }

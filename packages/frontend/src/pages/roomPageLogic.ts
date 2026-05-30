@@ -89,6 +89,14 @@ export function selectChatLayerMessages(messages: Message[]): Message[] {
   return messages.filter((message) => message.layer === undefined || message.layer === 'chat');
 }
 
+export function selectConversationMessages(messages: Message[]): Message[] {
+  return messages.filter((message) =>
+    message.layer === undefined ||
+    message.layer === 'chat' ||
+    isInlineTaskCardMessage(message)
+  );
+}
+
 export function projectRoomActivityMessages(messages: Message[]): TaskEvent[] {
   return messages
     .filter((message) => message.layer === 'activity')
@@ -458,6 +466,15 @@ function appendTraceChunk(
 
 function isWorkflowEventMetadata(metadata: MessageMetadata): boolean {
   return Boolean(metadata.event_type?.startsWith('workflow_') && (metadata.workflow_run_id || metadata.task_id));
+}
+
+function isInlineTaskCardMessage(message: Message): boolean {
+  if (message.sender_type !== 'system' || message.layer !== 'activity') return false;
+  const metadata = parseMessageMetadata(message.metadata);
+  return Boolean(metadata.task_id && (
+    metadata.event_type === 'task_created' ||
+    metadata.event_type === 'task_status_changed'
+  ));
 }
 
 function createWorkflowEventAggregationKey(message: Message, metadata: MessageMetadata): string | null {

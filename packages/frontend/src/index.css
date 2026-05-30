@@ -4366,6 +4366,180 @@
     box-shadow: var(--room-card-hover-shadow, 0 16px 34px rgba(37,99,235,0.10));
   }
 
+  .chat-task-card-row {
+    justify-content: center;
+    padding: 6px 0;
+  }
+
+  .ai-message-row.is-highlighted .chat-task-card {
+    box-shadow: 0 0 0 2px rgba(37,99,235,0.28), 0 18px 38px rgba(37,99,235,0.14);
+  }
+
+  .chat-task-card {
+    position: relative;
+    display: flex;
+    width: min(520px, 100%);
+    min-width: 0;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+    border: 1px solid var(--room-border, rgba(0,0,0,0.06));
+    border-radius: 16px;
+    background: var(--room-card-bg, rgba(255,255,255,0.85));
+    box-shadow: var(--room-card-shadow, 0 8px 24px rgba(15,23,42,0.04)), inset 0 1px 0 rgba(255,255,255,0.82);
+    color: var(--color-fg);
+    padding: 13px 13px 12px;
+    text-align: left;
+    backdrop-filter: blur(18px) saturate(1.14);
+    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease, border-color 180ms ease;
+  }
+
+  .chat-task-card:not(:disabled) {
+    cursor: pointer;
+  }
+
+  .chat-task-card:disabled {
+    cursor: default;
+    opacity: 1;
+  }
+
+  .chat-task-card:not(:disabled):hover,
+  .chat-task-card.is-active {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--color-primary) 24%, var(--room-border, rgba(0,0,0,0.06)));
+    background: var(--room-card-hover-bg, rgba(255,255,255,0.96));
+    box-shadow: var(--room-card-hover-shadow, 0 16px 34px rgba(37,99,235,0.10));
+  }
+
+  .chat-task-card-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 4px;
+    max-width: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #2563EB, color-mix(in srgb, #2563EB 58%, #00B8A9));
+  }
+
+  .chat-task-card-top {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .chat-task-card-identity {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+  }
+
+  .chat-task-card-icon {
+    display: grid;
+    height: 34px;
+    width: 34px;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--room-border, rgba(0,0,0,0.06)));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-primary) 10%, rgba(255,255,255,0.92));
+    color: var(--color-primary);
+  }
+
+  .chat-task-card[data-status="success"] .chat-task-card-icon {
+    border-color: rgba(16,185,129,0.22);
+    background: rgba(16,185,129,0.10);
+    color: #059669;
+  }
+
+  .chat-task-card[data-status="danger"] .chat-task-card-icon,
+  .chat-task-card[data-status="workflow_failed"] .chat-task-card-icon,
+  .chat-task-card[data-status="workflow_cancelled"] .chat-task-card-icon {
+    border-color: rgba(239,68,68,0.22);
+    background: rgba(239,68,68,0.10);
+    color: #DC2626;
+  }
+
+  .chat-task-card-copy {
+    display: block;
+    min-width: 0;
+  }
+
+  .chat-task-card-kicker {
+    display: block;
+    color: var(--color-fg-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .chat-task-card-title {
+    display: block;
+    margin-top: 3px;
+    overflow: hidden;
+    color: var(--color-fg);
+    font-size: 13px;
+    font-weight: 750;
+    line-height: 1.28;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chat-task-card-status {
+    flex: 0 0 auto;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 20%, var(--room-border, rgba(0,0,0,0.06)));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 6px 8px;
+  }
+
+  .chat-task-card[data-status="muted"] .chat-task-card-status {
+    border-color: var(--room-border-subtle, rgba(0,0,0,0.05));
+    background: rgba(100,116,139,0.08);
+    color: var(--color-fg-muted);
+  }
+
+  .chat-task-card[data-status="success"] .chat-task-card-status {
+    border-color: rgba(16,185,129,0.22);
+    background: rgba(16,185,129,0.10);
+    color: #047857;
+  }
+
+  .chat-task-card[data-status="danger"] .chat-task-card-status {
+    border-color: rgba(239,68,68,0.22);
+    background: rgba(239,68,68,0.10);
+    color: #B91C1C;
+  }
+
+  .chat-task-card-meta {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+    color: var(--color-fg-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10.5px;
+    line-height: 1.3;
+  }
+
+  .chat-task-card-meta span {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--room-border-subtle, rgba(0,0,0,0.05));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--room-card-muted-bg, rgba(248,250,252,0.78)) 84%, transparent);
+    padding: 4px 7px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .message-intent-header {
     display: flex;
     min-width: 0;
@@ -7283,6 +7457,20 @@
       align-items: flex-start;
       flex-wrap: wrap;
     }
+    .chat-task-card-row {
+      justify-content: flex-start;
+    }
+    .chat-task-card {
+      width: 100%;
+    }
+    .chat-task-card-top {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 9px;
+    }
+    .chat-task-card-status {
+      align-self: flex-start;
+    }
     .message-intent-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -7386,6 +7574,14 @@
       grid-template-columns: minmax(0, 1fr);
     }
 
+    .chat-task-card {
+      padding: 12px 11px 11px;
+    }
+
+    .chat-task-card-title {
+      white-space: normal;
+    }
+
     .message-intent-reason {
       gap: 3px;
     }
@@ -7430,6 +7626,22 @@
     .task-activity-feed {
       max-height: 12dvh;
       overflow-y: auto;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .workspace-grid.task-os-grid,
+    .workspace-grid.task-os-grid.has-inspector {
+      grid-template-rows: minmax(520px, 62dvh) minmax(520px, max-content);
+      overflow-y: auto;
+    }
+
+    .task-os-grid .room-main-panel {
+      min-height: 520px;
+    }
+
+    .task-os-grid .task-workspace-panel {
+      min-height: 520px;
     }
   }
 }

@@ -5,6 +5,7 @@ import {
   getRoutableActiveTaskId,
   projectRoomActivityMessages,
   selectChatLayerMessages,
+  selectConversationMessages,
 } from './roomPageLogic';
 import type { Message } from '../lib/types';
 
@@ -28,6 +29,38 @@ test('selectChatLayerMessages keeps chat and legacy messages out of task event l
   ];
 
   assert.deepEqual(selectChatLayerMessages(messages).map((message) => message.id), ['legacy', 'chat']);
+});
+
+test('selectConversationMessages includes task cards without flooding activity events', () => {
+  const messages = [
+    createMessage({ id: 'legacy' }),
+    createMessage({ id: 'chat', layer: 'chat' }),
+    createMessage({
+      id: 'task-created',
+      layer: 'activity',
+      metadata: JSON.stringify({ event_type: 'task_created', task_id: 'task-1' }),
+    }),
+    createMessage({
+      id: 'task-status',
+      layer: 'activity',
+      metadata: JSON.stringify({ event_type: 'task_status_changed', task_id: 'task-1' }),
+    }),
+    createMessage({
+      id: 'message-routed',
+      layer: 'activity',
+      metadata: JSON.stringify({ event_type: 'message_routed', task_id: 'task-1' }),
+    }),
+    createMessage({
+      id: 'workflow-failed',
+      layer: 'activity',
+      metadata: JSON.stringify({ event_type: 'workflow_failed', task_id: 'task-1' }),
+    }),
+  ];
+
+  assert.deepEqual(
+    selectConversationMessages(messages).map((message) => message.id),
+    ['legacy', 'chat', 'task-created', 'task-status'],
+  );
 });
 
 test('applyMessageStreamBatch merges task ownership snapshots for routed user messages', () => {
