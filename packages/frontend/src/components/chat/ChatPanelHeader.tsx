@@ -1,4 +1,4 @@
-import { FolderOpen, MessageSquare, Plus } from 'lucide-react';
+import { ChevronDown, Plus } from 'lucide-react';
 import type { RoomAgent } from '../../lib/types';
 import { useI18n } from '../../lib/i18n';
 import { CreateTaskDialog } from '../CreateTaskDialog';
@@ -19,9 +19,9 @@ export function ChatPanelHeader({
   onChange,
 }: ChatPanelHeaderProps): JSX.Element {
   const { t } = useI18n();
-  const tabs: Array<{ id: RoomFeatureTab; label: string; icon: typeof MessageSquare }> = [
-    { id: 'chat', label: t('room.tab.chat'), icon: MessageSquare },
-    { id: 'files', label: t('room.tab.files'), icon: FolderOpen },
+  const filters: Array<{ id: RoomFeatureTab; label: string }> = [
+    { id: 'chat', label: t('room.tab.chat') },
+    { id: 'files', label: t('room.tab.files') },
   ];
 
   return (
@@ -30,25 +30,19 @@ export function ChatPanelHeader({
         <div className="chat-heading-title">聊天</div>
         <div className="chat-heading-subtitle">Conversation Flow</div>
       </div>
-      <div className="room-feature-tabs" aria-label={t('room.viewLabel')}>
-        <div className="segmented-control">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                className={activeTab === tab.id ? 'is-active' : ''}
-                aria-pressed={activeTab === tab.id}
-                onClick={() => onChange(tab.id)}
-              >
-                <Icon className="h-3.5 w-3.5" strokeWidth={1.7} />
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <label className="chat-filter-control">
+        <span>{t('room.viewLabel')}</span>
+        <select
+          value={activeTab}
+          aria-label={t('room.viewLabel')}
+          onChange={(event) => onChange(event.currentTarget.value as RoomFeatureTab)}
+        >
+          {filters.map((filter) => (
+            <option key={filter.id} value={filter.id}>{filter.label}</option>
+          ))}
+        </select>
+        <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+      </label>
       <CreateTaskDialog roomId={roomId} agents={agents}>
         <button type="button" className="glass-button" aria-label={t('createTask.trigger')}>
           <Plus className="h-3.5 w-3.5" />
