@@ -6718,6 +6718,181 @@
     box-shadow: inset 3px 0 0 var(--color-primary);
   }
 
+  [data-theme="minimal-light"] .workspace-root {
+    --room-bg-gradient:
+      radial-gradient(circle at 14% 12%, rgba(96,165,250,0.12), transparent 28%),
+      linear-gradient(180deg, #F5F7FB 0%, #EEF3FA 100%);
+    --room-topbar-bg: rgba(255,255,255,0.72);
+    --room-panel-bg: rgba(255,255,255,0.68);
+    --room-card-bg: rgba(255,255,255,0.85);
+    --room-card-hover-bg: rgba(255,255,255,0.96);
+    --room-card-muted-bg: rgba(248,250,252,0.58);
+    --room-composer-bg: rgba(255,255,255,0.52);
+    --room-composer-box-bg: rgba(255,255,255,0.82);
+    --room-agent-message-bg: rgba(255,255,255,0.58);
+    --room-user-message-bg: rgba(243,244,246,0.92);
+    --room-border: rgba(0,0,0,0.06);
+    --room-border-subtle: rgba(0,0,0,0.05);
+    --room-text-heading: #111827;
+    --room-text-muted: #94a3b8;
+    --room-topbar-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
+    --room-panel-shadow: 0 18px 48px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255,255,255,0.84);
+    --room-card-shadow: 0 8px 24px rgba(15,23,42,0.04);
+    --room-card-hover-shadow: 0 16px 34px rgba(37,99,235,0.10), inset 0 0 0 1px rgba(37,99,235,0.18);
+    --room-composer-shadow: inset 0 1px 4px rgba(15,23,42,0.06), inset 0 0 0 1px rgba(0,0,0,0.06), 0 14px 36px rgba(15,23,42,0.06);
+    --room-primary-gradient: linear-gradient(135deg, #2563EB, #60A5FA);
+    --room-primary-progress: linear-gradient(90deg, #2563EB, #60A5FA);
+    --room-primary-shadow: 0 10px 24px rgba(37,99,235,0.22);
+  }
+
+  [data-theme="minimal-dark"] .workspace-root {
+    --room-bg-gradient:
+      radial-gradient(circle at 14% 12%, rgba(96,165,250,0.18), transparent 30%),
+      linear-gradient(180deg, #0f172a 0%, #111827 100%);
+    --room-topbar-bg: rgba(15,23,42,0.74);
+    --room-panel-bg: rgba(17,24,39,0.72);
+    --room-card-bg: rgba(30,41,59,0.78);
+    --room-card-hover-bg: rgba(37,50,72,0.92);
+    --room-card-muted-bg: rgba(15,23,42,0.52);
+    --room-composer-bg: rgba(15,23,42,0.56);
+    --room-composer-box-bg: rgba(30,41,59,0.78);
+    --room-agent-message-bg: rgba(30,41,59,0.38);
+    --room-user-message-bg: rgba(37,50,72,0.9);
+    --room-border: rgba(148,163,184,0.18);
+    --room-border-subtle: rgba(148,163,184,0.14);
+    --room-text-heading: #f8fafc;
+    --room-text-muted: #94a3b8;
+    --room-topbar-shadow: 0 8px 28px rgba(0,0,0,0.24);
+    --room-panel-shadow: 0 18px 48px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.08);
+    --room-card-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    --room-card-hover-shadow: 0 16px 34px rgba(37,99,235,0.18), inset 0 0 0 1px rgba(96,165,250,0.22);
+    --room-composer-shadow: inset 0 1px 4px rgba(255,255,255,0.05), inset 0 0 0 1px rgba(148,163,184,0.18), 0 14px 36px rgba(0,0,0,0.22);
+    --room-primary-gradient: linear-gradient(135deg, #2563EB, #60A5FA);
+    --room-primary-progress: linear-gradient(90deg, #2563EB, #60A5FA);
+    --room-primary-shadow: 0 10px 24px rgba(37,99,235,0.28);
+  }
+
+  [data-theme="minimal-light"] .workspace-root,
+  [data-theme="minimal-dark"] .workspace-root {
+    background: var(--room-bg-gradient);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .workspace-toolbar,
+  [data-theme="minimal-dark"] .workspace-root .workspace-toolbar {
+    border-bottom: 1px solid var(--room-border);
+    background: var(--room-topbar-bg);
+    box-shadow: var(--room-topbar-shadow);
+    backdrop-filter: blur(24px) saturate(1.35);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .workbench-panel,
+  [data-theme="minimal-dark"] .workspace-root .workbench-panel,
+  [data-theme="minimal-light"] .workspace-root .inspector-panel,
+  [data-theme="minimal-dark"] .workspace-root .inspector-panel {
+    border: 1px solid var(--room-border);
+    border-radius: 18px;
+    background: var(--room-panel-bg);
+    box-shadow: var(--room-panel-shadow);
+    backdrop-filter: blur(28px) saturate(1.35);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .room-main-heading,
+  [data-theme="minimal-dark"] .workspace-root .room-main-heading,
+  [data-theme="minimal-light"] .workspace-root .task-workspace-header,
+  [data-theme="minimal-dark"] .workspace-root .task-workspace-header,
+  [data-theme="minimal-light"] .workspace-root .active-task-header,
+  [data-theme="minimal-dark"] .workspace-root .active-task-header {
+    border-bottom: 1px solid var(--room-border);
+    background: transparent;
+  }
+
+  [data-theme="minimal-light"] .workspace-root .ai-conversation,
+  [data-theme="minimal-dark"] .workspace-root .ai-conversation {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--room-panel-bg) 26%, transparent), color-mix(in srgb, var(--room-card-muted-bg) 62%, transparent));
+  }
+
+  [data-theme="minimal-light"] .workspace-root .ai-message-card,
+  [data-theme="minimal-dark"] .workspace-root .ai-message-card {
+    border-color: var(--room-border);
+    border-radius: 20px;
+    background: var(--room-agent-message-bg);
+    box-shadow: none;
+    backdrop-filter: blur(20px) saturate(1.18);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .ai-message-row--agent .ai-message-card,
+  [data-theme="minimal-dark"] .workspace-root .ai-message-row--agent .ai-message-card {
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  [data-theme="minimal-light"] .workspace-root .ai-message-row--user .ai-message-card,
+  [data-theme="minimal-dark"] .workspace-root .ai-message-row--user .ai-message-card {
+    border-color: var(--room-border-subtle);
+    background: var(--room-user-message-bg);
+    box-shadow: var(--room-card-shadow);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .composer-shell,
+  [data-theme="minimal-dark"] .workspace-root .composer-shell {
+    border-top: 1px solid var(--room-border-subtle);
+    background: var(--room-composer-bg);
+    backdrop-filter: blur(22px) saturate(1.2);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .composer-box,
+  [data-theme="minimal-dark"] .workspace-root .composer-box,
+  [data-theme="minimal-light"] .workspace-root .ai-prompt-shell,
+  [data-theme="minimal-dark"] .workspace-root .ai-prompt-shell {
+    border: 1px solid var(--room-border-subtle);
+    border-radius: 24px;
+    background: var(--room-composer-box-bg);
+    box-shadow: var(--room-composer-shadow);
+    backdrop-filter: blur(22px) saturate(1.2);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .task-workspace-panel,
+  [data-theme="minimal-dark"] .workspace-root .task-workspace-panel {
+    background: color-mix(in srgb, var(--room-panel-bg) 94%, transparent);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .task-queue-rail,
+  [data-theme="minimal-dark"] .workspace-root .task-queue-rail {
+    border-right: 1px solid var(--room-border);
+    background: var(--room-card-muted-bg);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .active-task-surface,
+  [data-theme="minimal-dark"] .workspace-root .active-task-surface {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  [data-theme="minimal-light"] .workspace-root .task-card,
+  [data-theme="minimal-dark"] .workspace-root .task-card,
+  [data-theme="minimal-light"] .workspace-root .task-list-item,
+  [data-theme="minimal-dark"] .workspace-root .task-list-item {
+    border: 1px solid var(--room-border);
+    border-radius: 16px;
+    background: var(--room-card-bg);
+    box-shadow: var(--room-card-shadow);
+    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease;
+  }
+
+  [data-theme="minimal-light"] .workspace-root .task-card:hover,
+  [data-theme="minimal-dark"] .workspace-root .task-card:hover,
+  [data-theme="minimal-light"] .workspace-root .task-card.is-selected,
+  [data-theme="minimal-dark"] .workspace-root .task-card.is-selected,
+  [data-theme="minimal-light"] .workspace-root .task-list-item.is-selected,
+  [data-theme="minimal-dark"] .workspace-root .task-list-item.is-selected {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--color-primary) 32%, var(--room-border));
+    background: var(--room-card-hover-bg);
+    box-shadow: var(--room-card-hover-shadow);
+  }
+
   [data-theme="minimal-light"] .glass-info-card,
   [data-theme="minimal-dark"] .glass-info-card,
   [data-theme="minimal-light"] .workflow-step-card,
