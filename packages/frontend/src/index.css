@@ -7576,9 +7576,9 @@
       justify-content: flex-end;
     }
     .composer-task-target {
-      align-items: flex-start;
-      flex-direction: column;
-      padding: 7px 9px;
+      align-items: center;
+      flex-direction: row;
+      padding: 0 9px;
     }
     .files-page {
       border-radius: 0;
