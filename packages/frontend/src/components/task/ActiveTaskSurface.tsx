@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, Bot, Clock3, FileDiff, Gauge, GitBranch, ListChecks, LocateFixed, Pencil, Play, Radio, Search, XCircle } from 'lucide-react';
+import { ArrowRight, Bot, Clock3, FileDiff, FileText, Gauge, GitBranch, ListChecks, LocateFixed, MonitorPlay, Pencil, Play, Radio, Search, XCircle } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { MessageKey } from '../../lib/i18n';
 import type { MessageLayer, RoomAgent, Task, WorkflowRun } from '../../lib/types';
 import { AgentAvatar } from '../AgentAvatar';
@@ -224,14 +225,18 @@ export function ActiveTaskSurface({
             subtitle={toolCalls.length > 0 ? `${toolCalls.length} recent` : 'preview'}
           />
           <div className="tool-call-strip">
-            {displayToolCalls.map((tool) => (
-              <div key={`${tool.name}:${tool.time}`} className="tool-call-card" data-status={tool.status}>
-                <Search className="h-4 w-4" strokeWidth={1.8} />
-                <strong>{tool.name}</strong>
-                <span>{tool.status}</span>
-                <time dateTime={new Date(tool.time).toISOString()}>{formatClockTime(tool.time)}</time>
-              </div>
-            ))}
+            {displayToolCalls.map((tool) => {
+              const ToolIcon = toolIconForName(tool.name);
+
+              return (
+                <div key={`${tool.name}:${tool.time}`} className="tool-call-card" data-status={tool.status}>
+                  <ToolIcon className="h-4 w-4" strokeWidth={1.8} />
+                  <strong>{tool.name}</strong>
+                  <span>{tool.status}</span>
+                  <time dateTime={new Date(tool.time).toISOString()}>{formatClockTime(tool.time)}</time>
+                </div>
+              );
+            })}
           </div>
         </motion.section>
       </div>
@@ -255,4 +260,16 @@ function completeToolCallPreview(toolCalls: TaskWorkspaceToolCall[], fallbackTim
   );
   const extras = toolCalls.filter((tool) => !canonicalNames.includes(tool.name));
   return [...canonicalTools, ...extras].slice(0, 3);
+}
+
+function toolIconForName(name: string): LucideIcon {
+  if (name === 'read_file') {
+    return FileText;
+  }
+
+  if (name === 'generate_preview') {
+    return MonitorPlay;
+  }
+
+  return Search;
 }
