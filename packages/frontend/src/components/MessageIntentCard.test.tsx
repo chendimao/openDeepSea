@@ -21,12 +21,14 @@ test('high confidence intent shows auto-recognized summary without confirmation 
 
   assert.match(html, /已自动识别/);
   assert.match(html, /workflow/);
+  assert.match(html, /Classifier/);
+  assert.match(html, /启动 Workflow/);
   assert.match(html, /92%/);
   assert.doesNotMatch(html, /需要确认/);
   assert.doesNotMatch(html, /按 Brainstorming 继续/);
 });
 
-test('low confidence intent shows confirmation actions and only first 3 signals', () => {
+test('low confidence intent shows confirmation actions and compact signal details', () => {
   const html = renderToStaticMarkup(
     <MessageIntentCard
       intentResult={{
@@ -51,5 +53,6 @@ test('low confidence intent shows confirmation actions and only first 3 signals'
   assert.match(html, /signal-a/);
   assert.match(html, /signal-b/);
   assert.match(html, /signal-c/);
-  assert.doesNotMatch(html, /signal-d/);
+  assert.match(html, /signal-d/);
+  assert.match(html, /询问确认/);
 });
