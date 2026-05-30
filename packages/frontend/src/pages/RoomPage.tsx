@@ -511,7 +511,7 @@ export function RoomPage() {
               setConfigAgent(agent);
             }}
           />
-          {project && room && (
+          {project && room ? (
             <RoomSettingsDialog project={project} room={room} agents={agents}>
               <button
                 type="button"
@@ -522,6 +522,16 @@ export function RoomPage() {
                 <span className="hidden sm:inline">{t('room.tab.settings')}</span>
               </button>
             </RoomSettingsDialog>
+          ) : (
+            <button
+              type="button"
+              aria-label={t('room.roomSettings')}
+              className="glass-button"
+              disabled
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{t('room.tab.settings')}</span>
+            </button>
           )}
           <button
             type="button"
@@ -943,7 +953,7 @@ function AgentStrip({
   const { t } = useI18n();
 
   if (agents.length === 0)
-    return <span className="text-[12px] text-[var(--color-fg-muted)]">{t('room.noAgents')}</span>;
+    return <span className="room-agent-empty-label">{t('room.noAgents')}</span>;
   return (
     <div className="mr-2 flex items-center -space-x-2">
       {agents.slice(0, 6).map((a) => (

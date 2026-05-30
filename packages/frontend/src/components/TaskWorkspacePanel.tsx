@@ -1,30 +1,24 @@
-import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, Bot, CheckCircle2, CircleDot, Clock3, FileDiff, Gauge, GitBranch, ListChecks, LocateFixed, Pencil, Play, Radio, Search, Terminal, XCircle } from 'lucide-react';
+import { ArrowRight, Bot, CheckCircle2, CircleDot, Clock3, FileDiff, Gauge, GitBranch, ListChecks, LocateFixed, Pencil, Play, Radio, Search, XCircle } from 'lucide-react';
 import type { MessageKey } from '../lib/i18n';
 import type { MessageLayer, RoomAgent, Task, TaskEvent, TaskExecutorListItem, WorkflowRun } from '../lib/types';
 import { cn } from '../lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 import {
   selectTaskDetailEvents,
-  TaskEventTimeline,
-  TaskExecutorSessions,
   TaskLayerToggles,
-  TaskPlanView,
   type TaskLayerVisibility,
 } from './TaskDetailPanel';
 import { filterRootTasks, selectActivityEvents, type TaskStatusFilter } from './taskBoardLogic';
+import { TaskMetaCell, TaskResourceMetric, TaskWorkspacePanelTitle } from './task/TaskWorkspaceCards';
+import {
+  buildFileChanges,
+  buildPlanSteps,
+  buildToolCalls,
+  taskEventTypeLabel,
+  taskProgressPercent,
+} from './task/taskWorkspaceModel';
 import { Button } from './ui/Button';
-import { Label } from './ui/Input';
-
-type TaskWorkspaceView = 'overview' | 'timeline' | 'diff' | 'logs';
-
-const TASK_WORKSPACE_VIEWS: Array<{ id: TaskWorkspaceView; labelKey: MessageKey; icon: typeof ListChecks }> = [
-  { id: 'overview', labelKey: 'taskWorkspace.overview', icon: ListChecks },
-  { id: 'timeline', labelKey: 'taskDetail.view.timeline', icon: Clock3 },
-  { id: 'diff', labelKey: 'taskDetail.view.diff', icon: FileDiff },
-  { id: 'logs', labelKey: 'taskDetail.view.logs', icon: Terminal },
-];
 
 const TASK_STATUS_FILTERS: TaskStatusFilter[] = ['todo', 'in_progress', 'review', 'done', 'failed'];
 const NEXT_STATUS: Partial<Record<Task['status'], Task['status']>> = {
@@ -84,8 +78,6 @@ export function TaskWorkspacePanel({
   activityEvents,
   taskEvents,
   taskEventsLoading,
-  executors,
-  executorsLoading,
   agents,
   workflows,
   layerVisibility,
@@ -109,11 +101,6 @@ export function TaskWorkspacePanel({
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const workflowByTaskId = createWorkflowByTaskId(workflows);
   const eventGroups = selectTaskDetailEvents(taskEvents, layerVisibility);
-  const [activeView, setActiveView] = useState<TaskWorkspaceView>('overview');
-
-  useEffect(() => {
-    setActiveView('overview');
-  }, [activeTaskId]);
 
   const toggleFilter = (status: TaskStatusFilter): void => {
     const next = statusFilters.includes(status)
@@ -203,11 +190,7 @@ export function TaskWorkspacePanel({
               workflow={workflowByTaskId.get(activeTask.id)}
               layerVisibility={layerVisibility}
               taskEventsLoading={taskEventsLoading}
-              executors={executors}
-              executorsLoading={executorsLoading}
               eventGroups={eventGroups}
-              activeView={activeView}
-              onActiveViewChange={setActiveView}
               onChangeStatus={(status) => onChangeStatus(activeTask, status)}
               onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(activeTask) : undefined}
               onLocateSourceMessage={
@@ -279,6 +262,7 @@ function QueueTaskCard({
   const nextStatus = NEXT_STATUS[task.status];
   const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
   const canStartWorkflow = !hasActiveWorkflow && task.status !== 'done';
+  const progress = taskProgressPercent(task.status);
 
   return (
     <motion.article
@@ -288,6 +272,10 @@ function QueueTaskCard({
       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
     >
       <button type="button" onClick={onSelect} className="block w-full text-left">
+        <div className="task-card-kicker">
+          <span>#{task.id.slice(0, 6)}</span>
+          <time>{updatedLabel}</time>
+        </div>
         <div className="flex items-start gap-2">
           <h4 className="min-w-0 flex-1 font-display text-[12.5px] font-semibold leading-snug">
             {task.title}
@@ -321,8 +309,11 @@ function QueueTaskCard({
             <span className="text-[11px] text-[var(--color-muted)]">{unassignedLabel}</span>
           )}
           <span className="ml-auto text-[10px] font-mono text-[var(--color-muted)]">
-            {updatedLabel}
+            {progress}%
           </span>
+        </div>
+        <div className="task-card-progress" aria-hidden="true">
+          <i style={{ width: `${progress}%` }} />
         </div>
       </button>
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -358,11 +349,7 @@ function ActiveTaskSurface({
   workflow,
   layerVisibility,
   taskEventsLoading,
-  executors,
-  executorsLoading,
   eventGroups,
-  activeView,
-  onActiveViewChange,
   onChangeStatus,
   onStartWorkflow,
   onLocateSourceMessage,
@@ -379,11 +366,7 @@ function ActiveTaskSurface({
   workflow?: WorkflowRun;
   layerVisibility: TaskLayerVisibility;
   taskEventsLoading: boolean;
-  executors: TaskExecutorListItem[];
-  executorsLoading: boolean;
   eventGroups: ReturnType<typeof selectTaskDetailEvents>;
-  activeView: TaskWorkspaceView;
-  onActiveViewChange: (view: TaskWorkspaceView) => void;
   onChangeStatus: (status: Task['status']) => void;
   onStartWorkflow?: () => void;
   onLocateSourceMessage?: () => void;
@@ -434,11 +417,11 @@ function ActiveTaskSurface({
           </div>
         </div>
         <div className="active-task-meta-grid">
-          <MetaCell label="Status" value={taskStatusLabel(task.status)} />
-          <MetaCell label="Owner" value={currentAgent} />
-          <MetaCell label="Priority" value={taskPriorityLabel(task.priority)} />
-          <MetaCell label="ETA" value={workflow?.current_stage ?? interactionModeLabel(task.interaction_mode)} />
-          <MetaCell label="Create Time" value={formatRelativeTime(task.created_at)} />
+          <TaskMetaCell label="Status" value={taskStatusLabel(task.status)} />
+          <TaskMetaCell label="Owner" value={currentAgent} />
+          <TaskMetaCell label="Priority" value={taskPriorityLabel(task.priority)} />
+          <TaskMetaCell label="ETA" value={workflow?.current_stage ?? interactionModeLabel(task.interaction_mode)} />
+          <TaskMetaCell label="Create Time" value={formatRelativeTime(task.created_at)} />
           <div className="active-task-progress">
             <span>{progress}%</span>
             <div className="liquid-progress"><i style={{ width: `${progress}%` }} /></div>
@@ -471,7 +454,7 @@ function ActiveTaskSurface({
         )}
 
         <motion.section className="task-detail-card execution-plan-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}>
-          <PanelTitle icon={ListChecks} title="Execution Plan" subtitle={`${planSteps.length} steps`} />
+          <TaskWorkspacePanelTitle icon={ListChecks} title="Execution Plan" subtitle={`${planSteps.length} steps`} />
           <div className="execution-step-list">
             {planSteps.map((step, index) => (
               <div key={`${step.title}:${index}`} className="execution-step" data-state={step.state}>
@@ -486,7 +469,7 @@ function ActiveTaskSurface({
         </motion.section>
 
         <motion.section className="task-detail-card realtime-status-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.03, ease: [0.16, 1, 0.3, 1] }}>
-          <PanelTitle icon={Gauge} title="Realtime Status" subtitle={workflow?.status ?? taskStatusLabel(task.status)} />
+          <TaskWorkspacePanelTitle icon={Gauge} title="Realtime Status" subtitle={workflow?.status ?? taskStatusLabel(task.status)} />
           <div className="current-agent-row">
             {assignedAgent ? <AgentAvatar name={assignedAgent.agent_name} size={34} active={!!assignedAgent.acp_enabled} /> : <Bot className="h-7 w-7 text-[var(--color-muted)]" />}
             <div className="min-w-0">
@@ -496,21 +479,21 @@ function ActiveTaskSurface({
             <i />
           </div>
           <div className="resource-metrics">
-            <Metric label="Tokens" value={String(Math.max(0, eventGroups.visibleEvents.length * 418))} />
-            <Metric label="Tool Calls" value={String(toolCalls.length)} />
-            <Metric label="File Reads" value={String(eventGroups.timelineEvents.length)} />
-            <Metric label="File Changes" value={String(fileChanges.length)} />
+            <TaskResourceMetric label="Tokens" value={String(Math.max(0, eventGroups.visibleEvents.length * 418))} />
+            <TaskResourceMetric label="Tool Calls" value={String(toolCalls.length)} />
+            <TaskResourceMetric label="File Reads" value={String(eventGroups.timelineEvents.length)} />
+            <TaskResourceMetric label="File Changes" value={String(fileChanges.length)} />
           </div>
         </motion.section>
 
         <motion.section className="task-detail-card timeline-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}>
-          <PanelTitle icon={Clock3} title="Timeline" subtitle="Activity stream" />
+          <TaskWorkspacePanelTitle icon={Clock3} title="Timeline" subtitle="Activity stream" />
           <div className="workspace-timeline-list">
             {(timelineEvents.length > 0 ? timelineEvents : eventGroups.visibleEvents.slice(0, 4)).map((event) => (
               <div key={event.id} className="workspace-timeline-row">
                 <time>{formatRelativeTime(event.created_at)}</time>
                 <span className="task-event-dot" data-layer={event.layer} />
-                <strong>{taskEventLabel(event.type, t)}</strong>
+                <strong>{taskEventTypeLabel(event.type, t)}</strong>
               </div>
             ))}
             {eventGroups.visibleEvents.length === 0 && (
@@ -520,7 +503,7 @@ function ActiveTaskSurface({
         </motion.section>
 
         <motion.section className="task-detail-card file-changes-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.09, ease: [0.16, 1, 0.3, 1] }}>
-          <PanelTitle icon={FileDiff} title="File Changes" subtitle={`${fileChanges.length} files`} />
+          <TaskWorkspacePanelTitle icon={FileDiff} title="File Changes" subtitle={`${fileChanges.length} files`} />
           <div className="file-change-list">
             {fileChanges.length > 0 ? fileChanges.map((file) => (
               <div key={file.name} className="file-change-row">
@@ -535,7 +518,7 @@ function ActiveTaskSurface({
         </motion.section>
 
         <motion.section className="task-detail-card tool-calls-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}>
-          <PanelTitle icon={GitBranch} title="Tool Calls" subtitle={`${toolCalls.length} recent`} />
+          <TaskWorkspacePanelTitle icon={GitBranch} title="Tool Calls" subtitle={`${toolCalls.length} recent`} />
           <div className="tool-call-strip">
             {(toolCalls.length > 0 ? toolCalls : [{ name: 'search_files', status: 'waiting', time: task.created_at }, { name: 'read_file', status: 'waiting', time: task.created_at }, { name: 'generate_preview', status: 'waiting', time: task.created_at }]).map((tool) => (
               <div key={`${tool.name}:${tool.time}`} className="tool-call-card" data-status={tool.status}>
@@ -549,208 +532,6 @@ function ActiveTaskSurface({
         </motion.section>
       </div>
     </>
-  );
-}
-
-function MetaCell({ label, value }: { label: string; value: string }): JSX.Element {
-  return (
-    <div className="active-task-meta-cell">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function PanelTitle({
-  icon: Icon,
-  title,
-  subtitle,
-}: {
-  icon: typeof ListChecks;
-  title: string;
-  subtitle: string;
-}): JSX.Element {
-  return (
-    <div className="task-detail-card-title">
-      <Icon className="h-4 w-4" strokeWidth={1.85} />
-      <div className="min-w-0">
-        <h4>{title}</h4>
-        <p>{subtitle}</p>
-      </div>
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }): JSX.Element {
-  return (
-    <div className="resource-metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-type PlanStep = {
-  title: string;
-  state: 'completed' | 'running' | 'waiting';
-  time: number | null;
-};
-
-function buildPlanSteps(
-  task: Task,
-  events: TaskEvent[],
-  t: (key: MessageKey) => string,
-): PlanStep[] {
-  const eventSteps = events.slice(0, 5).map((event, index): PlanStep => ({
-    title: taskEventLabel(event.type, t),
-    state: index === events.length - 1 && task.status !== 'done' ? 'running' : 'completed',
-    time: event.created_at,
-  }));
-  if (eventSteps.length > 0) {
-    return [
-      ...eventSteps,
-      ...(task.status === 'done' ? [] : [{ title: '等待验证与收口', state: 'waiting' as const, time: null }]),
-    ];
-  }
-  return [
-    { title: '分析需求与任务边界', state: task.status === 'todo' ? 'running' : 'completed', time: task.created_at },
-    { title: '执行核心改动', state: task.status === 'in_progress' ? 'running' : task.status === 'todo' ? 'waiting' : 'completed', time: null },
-    { title: '验证输出结果', state: task.status === 'review' ? 'running' : task.status === 'done' ? 'completed' : 'waiting', time: null },
-  ];
-}
-
-function taskProgressPercent(status: Task['status']): number {
-  if (status === 'done') return 100;
-  if (status === 'review') return 78;
-  if (status === 'in_progress') return 46;
-  if (status === 'failed') return 18;
-  return 12;
-}
-
-type FileChangeRow = {
-  name: string;
-  added: number;
-  removed: number;
-};
-
-function buildFileChanges(events: TaskEvent[]): FileChangeRow[] {
-  const rows = events.slice(0, 6).map((event, index) => {
-    const name =
-      readPayloadString(event.payload, 'file') ??
-      readPayloadString(event.payload, 'path') ??
-      readPayloadString(event.payload, 'filename') ??
-      `change-${index + 1}.diff`;
-    return {
-      name,
-      added: readPayloadNumber(event.payload, 'added') ?? readPayloadNumber(event.payload, 'additions') ?? 0,
-      removed: readPayloadNumber(event.payload, 'removed') ?? readPayloadNumber(event.payload, 'deletions') ?? 0,
-    };
-  });
-  return rows;
-}
-
-type ToolCallRow = {
-  name: string;
-  status: string;
-  time: number;
-};
-
-function buildToolCalls(logEvents: TaskEvent[], timelineEvents: TaskEvent[]): ToolCallRow[] {
-  const source = [...logEvents, ...timelineEvents].slice(-5);
-  return source.map((event) => ({
-    name: readPayloadString(event.payload, 'tool') ?? readPayloadString(event.payload, 'command') ?? event.type,
-    status: readPayloadString(event.payload, 'status') ?? 'done',
-    time: event.created_at,
-  }));
-}
-
-function readPayloadString(payload: Record<string, unknown>, key: string): string | null {
-  const value = payload[key];
-  return typeof value === 'string' && value.trim() ? value : null;
-}
-
-function readPayloadNumber(payload: Record<string, unknown>, key: string): number | null {
-  const value = payload[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function TaskOverview({
-  task,
-  assignedAgent,
-  events,
-  recentEvents,
-  formatRelativeTime,
-  t,
-}: {
-  task: Task;
-  assignedAgent?: RoomAgent;
-  events: TaskEvent[];
-  recentEvents: TaskEvent[];
-  formatRelativeTime: (timestamp: number) => string;
-  t: (key: MessageKey, values?: Record<string, string | number>) => string;
-}): JSX.Element {
-  return (
-    <>
-      <section className="inspector-section">
-        <Label>{t('taskDetail.description')}</Label>
-        <div className="glass-info-card min-h-[72px] whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed">
-          {task.description || t('taskDetail.noDescription')}
-        </div>
-      </section>
-      {assignedAgent && (
-        <section className="inspector-section">
-          <Label>{t('taskDetail.assignedAgent')}</Label>
-          <div className="glass-info-card flex items-center gap-2">
-            <AgentAvatar name={assignedAgent.agent_name} size={28} active={!!assignedAgent.acp_enabled} />
-            <div className="min-w-0">
-              <div className="truncate font-display text-[12.5px] font-semibold">{assignedAgent.agent_name}</div>
-              <div className="truncate font-mono text-[10.5px] text-[var(--color-muted)]">{assignedAgent.agent_id}</div>
-            </div>
-          </div>
-        </section>
-      )}
-      <TaskPlanView task={task} events={events} formatRelativeTime={formatRelativeTime} t={t} />
-      <section className="inspector-section">
-        <Label>{t('taskDetail.timeline')}</Label>
-        <TaskEventTimeline
-          events={recentEvents.slice(0, 4)}
-          emptyKey="taskDetail.noEvents"
-          formatRelativeTime={formatRelativeTime}
-          t={t}
-        />
-      </section>
-    </>
-  );
-}
-
-function TaskWorkspaceTabs({
-  activeView,
-  onChange,
-  t,
-}: {
-  activeView: TaskWorkspaceView;
-  onChange: (view: TaskWorkspaceView) => void;
-  t: (key: MessageKey, values?: Record<string, string | number>) => string;
-}): JSX.Element {
-  return (
-    <div className="task-workspace-tabs segmented-control" aria-label={t('taskDetail.views')}>
-      {TASK_WORKSPACE_VIEWS.map((view) => {
-        const Icon = view.icon;
-        const selected = activeView === view.id;
-        return (
-          <button
-            key={view.id}
-            type="button"
-            className={selected ? 'is-active' : undefined}
-            aria-pressed={selected}
-            onClick={() => onChange(view.id)}
-          >
-            <Icon className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span>{t(view.labelKey)}</span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -774,7 +555,7 @@ function TaskSelectionEmptyState({
       </div>
       <div className="task-workspace-empty-preview" aria-hidden="true">
         <div className="task-detail-card execution-plan-card">
-          <PanelTitle icon={ListChecks} title="Execution Plan" subtitle="3 steps" />
+          <TaskWorkspacePanelTitle icon={ListChecks} title="Execution Plan" subtitle="3 steps" />
           <div className="execution-step-list">
             {[
               ['分析需求与上下文', 'completed'],
@@ -792,7 +573,7 @@ function TaskSelectionEmptyState({
           </div>
         </div>
         <div className="task-detail-card realtime-status-card">
-          <PanelTitle icon={Gauge} title="Realtime Status" subtitle="waiting" />
+          <TaskWorkspacePanelTitle icon={Gauge} title="Realtime Status" subtitle="waiting" />
           <div className="current-agent-row">
             <Bot className="h-7 w-7 text-[var(--color-muted)]" />
             <div className="min-w-0">
@@ -802,14 +583,14 @@ function TaskSelectionEmptyState({
             <i />
           </div>
           <div className="resource-metrics">
-            <Metric label="Tokens" value="0" />
-            <Metric label="Tool Calls" value="0" />
-            <Metric label="File Reads" value="0" />
-            <Metric label="File Changes" value="0" />
+            <TaskResourceMetric label="Tokens" value="0" />
+            <TaskResourceMetric label="Tool Calls" value="0" />
+            <TaskResourceMetric label="File Reads" value="0" />
+            <TaskResourceMetric label="File Changes" value="0" />
           </div>
         </div>
         <div className="task-detail-card tool-calls-card">
-          <PanelTitle icon={GitBranch} title="Tool Calls" subtitle="preview" />
+          <TaskWorkspacePanelTitle icon={GitBranch} title="Tool Calls" subtitle="preview" />
           <div className="tool-call-strip">
             {['search_files', 'read_file', 'generate_preview'].map((tool) => (
               <div key={tool} className="tool-call-card" data-status="waiting">
@@ -858,7 +639,7 @@ function ActivityFeed({
         events.map((event) => (
           <div key={event.id} className="task-activity-row">
             <span className="task-event-dot" data-layer={event.layer} />
-            <span className="min-w-0 flex-1 truncate">{taskEventLabel(event.type, t)}</span>
+            <span className="min-w-0 flex-1 truncate">{taskEventTypeLabel(event.type, t)}</span>
             <span className="text-[10px] font-mono text-[var(--color-muted)]">
               {formatRelativeTime(event.created_at)}
             </span>
@@ -879,10 +660,4 @@ function createWorkflowByTaskId(workflows: WorkflowRun[]): Map<string, WorkflowR
     }
   }
   return byTaskId;
-}
-
-function taskEventLabel(type: TaskEvent['type'], t: (key: MessageKey) => string): string {
-  const key = `taskEvent.${type}` as MessageKey;
-  const translated = t(key);
-  return translated === key ? type : translated;
 }
