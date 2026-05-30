@@ -86,7 +86,15 @@ export function AgentTimeline({
   );
 }
 
-export function AgentTimelineItem({ event, roomId }: { event: AgentTimelineEvent; roomId?: string }): JSX.Element {
+export function AgentTimelineItem({
+  event,
+  roomId,
+  presentation = 'timeline',
+}: {
+  event: AgentTimelineEvent;
+  roomId?: string;
+  presentation?: 'timeline' | 'activity';
+}): JSX.Element {
   const [open, setOpen] = useState(false);
   const [detailEvent, setDetailEvent] = useState<AgentTimelineEvent | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -95,8 +103,15 @@ export function AgentTimelineItem({ event, roomId }: { event: AgentTimelineEvent
   const statusLabel = planStatusLabels[String(event.payload.status ?? event.status)] ?? formatEventStatus(event.status);
   const summary = getEventSummary(event);
   const eventTime = formatEventTime(event.created_at);
+  const activityCopy = getActivityCopy(event, summary);
   const displayEvent = detailEvent ?? event;
   const shouldLoadDetail = shouldLoadEventDetail(event, roomId);
+  const cardClassName = [
+    'agent-timeline-card',
+    `is-${event.type}`,
+    `is-status-${event.status}`,
+    presentation === 'activity' ? 'is-activity' : null,
+  ].filter(Boolean).join(' ');
 
   const loadDetail = async (): Promise<void> => {
     if (!roomId || detailEvent || detailLoading) return;
@@ -118,15 +133,32 @@ export function AgentTimelineItem({ event, roomId }: { event: AgentTimelineEvent
   };
 
   return (
-    <details className={`agent-timeline-card is-${event.type}`} open={open} onToggle={handleToggle}>
+    <details className={cardClassName} open={open} onToggle={handleToggle}>
       <summary className="agent-timeline-summary">
-        <span className="agent-timeline-chevron" aria-hidden="true">
-          {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        </span>
-        <span className="agent-timeline-kind">{eventLabel}</span>
-        <time className="agent-timeline-time" dateTime={new Date(event.created_at).toISOString()}>{eventTime}</time>
-        <strong title={summary}>{summary}</strong>
-        <span className="agent-timeline-status">{event.type === 'plan_update' ? statusLabel : formatEventStatus(event.status)}</span>
+        {presentation === 'activity' ? (
+          <>
+            <span className="agent-timeline-chevron" aria-hidden="true">
+              {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </span>
+            <span className="agent-activity-dot" aria-hidden="true" />
+            <span className="agent-activity-copy">
+              <strong title={activityCopy.headline}>{activityCopy.headline}</strong>
+              {activityCopy.detail ? <small title={activityCopy.detail}>{activityCopy.detail}</small> : null}
+            </span>
+            <time className="agent-timeline-time" dateTime={new Date(event.created_at).toISOString()}>{eventTime}</time>
+            <span className="agent-timeline-status">{event.type === 'plan_update' ? statusLabel : formatEventStatus(event.status)}</span>
+          </>
+        ) : (
+          <>
+            <span className="agent-timeline-chevron" aria-hidden="true">
+              {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </span>
+            <span className="agent-timeline-kind">{eventLabel}</span>
+            <time className="agent-timeline-time" dateTime={new Date(event.created_at).toISOString()}>{eventTime}</time>
+            <strong title={summary}>{summary}</strong>
+            <span className="agent-timeline-status">{event.type === 'plan_update' ? statusLabel : formatEventStatus(event.status)}</span>
+          </>
+        )}
       </summary>
       <div className="agent-timeline-body">
         {shouldLoadDetail && !detailEvent ? (
@@ -454,6 +486,54 @@ function formatEventTime(timestamp: number): string {
     second: '2-digit',
     hour12: false,
   }).format(new Date(timestamp));
+}
+
+function getActivityCopy(event: AgentTimelineEvent, summary: string): { headline: string; detail: string | null } {
+  const verb = getActivityVerb(event, summary);
+  if (event.status === 'failed') {
+    return { headline: `AI 在${verb}时遇到问题`, detail: summary || null };
+  }
+  if (event.status === 'completed') {
+    return { headline: `AI 已${verb}`, detail: summary || null };
+  }
+  return { headline: `AI 正在${verb}`, detail: summary || null };
+}
+
+function getActivityVerb(event: AgentTimelineEvent, summary: string): string {
+  if (event.type === 'thinking') return '梳理思路';
+  if (event.type === 'assistant_message') return '整理回复';
+  if (event.type === 'command' || event.type === 'command_output') return '运行命令';
+  if (event.type === 'file_diff') return '更新文件';
+  if (event.type === 'plan_update') return '更新计划';
+  if (event.type === 'permission_request') return '请求权限';
+  if (event.type === 'web_search') return '检索资料';
+  if (event.type === 'error') return '处理异常';
+  if (event.type === 'tool_call' || event.type === 'tool_result') {
+    const toolName = readString(event.payload.name)?.toLowerCase() ?? '';
+    const title = event.title.toLowerCase();
+    const summaryText = summary.toLowerCase();
+    const commandLike = /^(pwd|ls|git|npm|pnpm|yarn|node|npx|tsx|rg|grep|sed|cat)\b/.test(summaryText);
+    if (toolName.includes('read') || title.includes('read') || /^read\b/.test(summaryText)) return '读取上下文';
+    if (
+      toolName.includes('search') ||
+      toolName.includes('find') ||
+      title.includes('search') ||
+      /^search\b/.test(summaryText) ||
+      /^(rg|grep|find)\b/.test(summaryText)
+    ) return '检索上下文';
+    if (toolName.includes('list') || title.includes('list') || /^(list|ls)\b/.test(summaryText)) return '浏览目录';
+    if (
+      toolName.includes('edit') ||
+      toolName.includes('write') ||
+      title.includes('edit') ||
+      title.includes('write') ||
+      /^(apply_patch|patch)\b/.test(summaryText)
+    ) return '更新内容';
+    if (toolName.includes('browser') || toolName.includes('playwright') || /playwright|browser|screenshot/.test(summaryText)) return '检查页面';
+    if (commandLike) return '运行命令';
+    return '调用工具';
+  }
+  return '处理事件';
 }
 
 function getTranscriptAction(event: AgentTimelineEvent): string {

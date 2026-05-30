@@ -3951,7 +3951,111 @@
 
   .agent-transcript-event {
     display: grid;
-    margin-left: 5px;
+    margin-left: 3px;
+  }
+
+  .agent-transcript-event .agent-timeline-card {
+    border-color: transparent;
+    border-radius: 8px;
+    background: transparent;
+  }
+
+  .agent-transcript-event .agent-timeline-card::before {
+    display: none;
+  }
+
+  .agent-transcript-event .agent-timeline-card:hover {
+    border-color: rgba(37, 99, 235, 0.10);
+    background: rgba(255,255,255,0.36);
+  }
+
+  .agent-transcript-event .agent-timeline-card[open] {
+    border-color: rgba(37, 99, 235, 0.14);
+    background: rgba(255,255,255,0.58);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.54);
+  }
+
+  .agent-transcript-event .agent-timeline-summary {
+    grid-template-columns: auto 8px minmax(0, 1fr) auto auto;
+    min-height: 28px;
+    gap: 7px;
+    padding: 4px 6px;
+  }
+
+  .agent-transcript-event .agent-timeline-chevron {
+    opacity: 0.46;
+  }
+
+  .agent-activity-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-primary) 64%, white);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+  }
+
+  .agent-timeline-card.is-status-completed .agent-activity-dot {
+    background: color-mix(in srgb, var(--color-success) 76%, white);
+    box-shadow: 0 0 0 3px rgba(52,199,89,0.10);
+  }
+
+  .agent-timeline-card.is-status-failed .agent-activity-dot {
+    background: color-mix(in srgb, var(--color-danger) 78%, white);
+    box-shadow: 0 0 0 3px rgba(255,59,48,0.10);
+  }
+
+  .agent-timeline-card.is-status-started .agent-activity-dot,
+  .agent-timeline-card.is-status-delta .agent-activity-dot {
+    animation: agent-activity-pulse 1.4s ease-in-out infinite;
+  }
+
+  .agent-activity-copy {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .agent-activity-copy strong {
+    overflow: hidden;
+    color: color-mix(in srgb, var(--color-fg) 80%, var(--color-primary));
+    font-size: 11.5px;
+    font-weight: 620;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .agent-activity-copy small {
+    overflow: hidden;
+    color: color-mix(in srgb, var(--color-fg-muted) 82%, transparent);
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 1.22;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .agent-transcript-event .agent-timeline-time,
+  .agent-transcript-event .agent-timeline-status {
+    color: color-mix(in srgb, var(--color-fg-muted) 72%, transparent);
+    font-size: 9.5px;
+  }
+
+  .agent-transcript-event .agent-timeline-body {
+    margin: 0 7px 6px 28px;
+    border-left-color: rgba(37, 99, 235, 0.12);
+    padding-left: 8px;
+  }
+
+  @keyframes agent-activity-pulse {
+    0%, 100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.10);
+    }
+    50% {
+      transform: scale(0.86);
+      box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.04);
+    }
   }
 
   .streaming-cursor {
@@ -6765,7 +6869,7 @@
   .modal-pop { animation: modal-pop 180ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 
   @media (prefers-reduced-motion: reduce) {
-    .heartbeat, .fade-up, .modal-pop, .ai-message-row.is-highlighted { animation: none !important; }
+    .heartbeat, .fade-up, .modal-pop, .ai-message-row.is-highlighted, .agent-activity-dot { animation: none !important; }
     *, *::before, *::after { transition-duration: 0ms !important; }
   }
 

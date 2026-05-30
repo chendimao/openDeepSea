@@ -393,8 +393,10 @@ test('renders final content as transcript text when assistant_message events are
   assert.match(html, /agent-transcript/);
   assert.doesNotMatch(html, /ACP 执行过程/);
   assert.doesNotMatch(html, /Thinking/);
-  assert.match(html, /Explored/);
-  assert.match(html, /Ran/);
+  assert.doesNotMatch(html, /Explored/);
+  assert.doesNotMatch(html, /Ran/);
+  assert.match(html, /AI 已检索上下文/);
+  assert.match(html, /AI 已运行命令/);
   assert.doesNotMatch(html, /完整 thinking 原文/);
   assert.match(html, /search_files/);
   assert.match(html, /输入/);

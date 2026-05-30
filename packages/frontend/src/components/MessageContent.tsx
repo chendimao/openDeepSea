@@ -213,7 +213,7 @@ function AgentTranscriptView({
           </div>
         ) : (
           <div key={item.id} className="agent-transcript-event">
-            <AgentTimelineItem event={item.event} roomId={roomId} />
+            <AgentTimelineItem event={item.event} roomId={roomId} presentation="activity" />
           </div>
         )
       ))}
