@@ -89,6 +89,7 @@ export function RoomPage() {
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [autoActiveTaskDismissedRoomId, setAutoActiveTaskDismissedRoomId] = useState<string | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<TaskLayerVisibility>(DEFAULT_TASK_LAYER_VISIBILITY);
   const [taskStatusFilters, setTaskStatusFilters] = useState<TaskStatusFilter[]>(DEFAULT_TASK_STATUS_FILTERS);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
@@ -228,6 +229,7 @@ export function RoomPage() {
     setHighlightMessageId(null);
     setExplicitReplyTarget(null);
     setActiveTaskId(null);
+    setAutoActiveTaskDismissedRoomId(null);
     messageRefs.current.clear();
     streamingRunMessageIds.current.clear();
     streamingEventTracker.current.clear();
@@ -245,6 +247,17 @@ export function RoomPage() {
     recordRecentRoomVisit({ project, room });
   }, [project, room]);
 
+  useEffect(() => {
+    if (tasks.length === 0) return;
+    if (activeTaskId && tasks.some((task) => task.id === activeTaskId)) return;
+    if (activeTaskId) {
+      setActiveTaskId(null);
+      return;
+    }
+    if (autoActiveTaskDismissedRoomId === roomId) return;
+    setActiveTaskId(tasks[0].id);
+  }, [activeTaskId, autoActiveTaskDismissedRoomId, roomId, tasks]);
+
   const registerMessageRef = useCallback((messageId: string, node: HTMLElement | null) => {
     if (node) {
       messageRefs.current.set(messageId, node);
@@ -259,6 +272,10 @@ export function RoomPage() {
     setActiveTab('chat');
     setHighlightMessageId(messageId);
   }, []);
+  const clearActiveTask = useCallback(() => {
+    setActiveTaskId(null);
+    setAutoActiveTaskDismissedRoomId(roomId);
+  }, [roomId]);
   const updateLayerVisibility = useCallback((layer: MessageLayer, visible: boolean) => {
     setLayerVisibility((current) => ({ ...current, [layer]: visible }));
   }, []);
@@ -422,6 +439,7 @@ export function RoomPage() {
         setActiveTaskId((current) => (current === event.taskId ? null : current));
       } else if (event.type === 'task:activated' && event.roomId === roomId) {
         setActiveTaskId(event.taskId);
+        setAutoActiveTaskDismissedRoomId(null);
         setShowMemoryPanel(false);
       } else if (event.type === 'task_event:new' && event.roomId === roomId) {
         queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
@@ -506,7 +524,7 @@ export function RoomPage() {
                 activeTaskId={routableActiveTaskId}
                 onReplyToMessage={replyToMessage}
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
-                onClearActiveTask={() => setActiveTaskId(null)}
+                onClearActiveTask={clearActiveTask}
                 onLocateReplyTarget={focusMessage}
               />
             )}
@@ -534,6 +552,7 @@ export function RoomPage() {
           workflows={workflows}
           layerVisibility={layerVisibility}
           onSelectTask={(task) => {
+            setAutoActiveTaskDismissedRoomId(null);
             activateTask.mutate(task);
           }}
           onChangeStatus={(task, status) => {
@@ -543,7 +562,7 @@ export function RoomPage() {
           startingTaskId={startTaskLoop.variables?.id ?? null}
           onLocateSourceMessage={focusMessage}
           onLayerVisibilityChange={updateLayerVisibility}
-          onClearActiveTask={() => setActiveTaskId(null)}
+          onClearActiveTask={clearActiveTask}
           t={t}
           formatRelativeTime={formatRelativeTime}
           taskStatusLabel={taskStatusLabel}
