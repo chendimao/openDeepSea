@@ -1232,10 +1232,14 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 8px;
-    border-radius: 8px;
-    background: var(--color-surface-raised);
-    padding: 7px 8px;
-    box-shadow: inset 0 0 0 1px var(--color-border);
+    align-self: flex-start;
+    width: fit-content;
+    max-width: min(100%, 420px);
+    min-height: 28px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--room-card-muted-bg, var(--color-surface-raised)) 78%, transparent);
+    padding: 0 8px;
+    box-shadow: inset 0 0 0 1px var(--room-border-subtle, var(--color-border));
   }
   .composer-reply-label {
     font-size: 11px;
@@ -1264,22 +1268,29 @@
   }
   .composer-task-target {
     display: flex;
-    min-height: 30px;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 28px;
     min-width: 0;
     align-items: center;
+    align-self: flex-start;
     justify-content: space-between;
     gap: 10px;
-    border-radius: 8px;
-    background: rgba(255,255,255,0.42);
-    padding: 0 9px;
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.62);
+    max-width: min(100%, 420px);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--room-card-muted-bg, rgba(255,255,255,0.42)) 78%, transparent);
+    padding: 0 8px;
+    box-shadow: inset 0 0 0 1px var(--room-border-subtle, rgba(255,255,255,0.62));
     color: var(--color-fg-muted);
     font-size: 11.5px;
   }
+  .composer-task-target > span {
+    min-width: 0;
+  }
   .composer-task-target[data-kind="task"] {
     color: var(--color-primary);
-    background: rgba(37,99,235,0.055);
-    box-shadow: inset 2px 0 0 rgba(37,99,235,0.58), inset 0 0 0 1px rgba(37,99,235,0.14), inset 0 1px 0 rgba(255,255,255,0.72);
+    background: color-mix(in srgb, var(--color-primary) 7%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, var(--room-border-subtle, rgba(0,0,0,0.05)));
   }
   .composer-task-target button {
     flex: 0 0 auto;
@@ -7231,16 +7242,16 @@
   [data-theme="minimal-light"] .workspace-root .composer-task-target,
   [data-theme="minimal-dark"] .workspace-root .composer-task-target {
     border: 0;
-    border-radius: 8px;
-    background: rgba(255,255,255,0.42);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.62);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--room-card-muted-bg) 78%, transparent);
+    box-shadow: inset 0 0 0 1px var(--room-border-subtle);
   }
 
   [data-theme="minimal-light"] .workspace-root .composer-task-target[data-kind="task"],
   [data-theme="minimal-dark"] .workspace-root .composer-task-target[data-kind="task"] {
     color: var(--color-primary);
-    background: rgba(37,99,235,0.055);
-    box-shadow: inset 2px 0 0 rgba(37,99,235,0.58), inset 0 0 0 1px rgba(37,99,235,0.14), inset 0 1px 0 rgba(255,255,255,0.72);
+    background: color-mix(in srgb, var(--color-primary) 7%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, var(--room-border-subtle));
   }
 
   [data-theme="minimal-light"] .workspace-root .task-workspace-panel,
