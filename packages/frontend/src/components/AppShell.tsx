@@ -76,8 +76,20 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]">
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]">
       <div className="liquid-backdrop" aria-hidden="true" />
+      {!isRoomRoute && (
+        <header className="shell-public-header" aria-label={t('shell.sidebar.aria')}>
+          <nav className="shell-public-nav" aria-label={t('shell.sidebar.aria')}>
+            <SidebarLink to="/" active={location.pathname === '/'} icon={Home} label={t('shell.nav.development')} exact className="shell-public-link" />
+            <SidebarLink to="/chat" icon={MessageCircle} label={t('shell.nav.chat')} className="shell-public-link" />
+            <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} className="shell-public-link" />
+            <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} className="shell-public-link" />
+            <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} className="shell-public-link" />
+            <SidebarLink to="/test" icon={TestTube2} label={t('shell.nav.test')} className="shell-public-link" />
+          </nav>
+        </header>
+      )}
       <div className={cn('app-grid h-full', isRoomRoute && 'app-grid--room')}>
         <aside className="app-sidebar" aria-label={t('shell.sidebar.aria')}>
           <ProjectSidebar
@@ -193,15 +205,6 @@ function ProjectSidebar({
         </button>
       </div>
 
-      <div className="sidebar-nav px-4">
-        <SidebarLink to="/" active={location.pathname === '/'} icon={Home} label={t('shell.nav.development')} exact />
-        <SidebarLink to="/chat" icon={MessageCircle} label={t('shell.nav.chat')} />
-        <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} />
-        <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} />
-        <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} />
-        <SidebarLink to="/test" icon={TestTube2} label={t('shell.nav.test')} />
-      </div>
-
       <div className="flex-1 overflow-y-auto px-5 py-5">
         <div>
           <div className="mb-2 text-[10.5px] font-medium text-[var(--color-muted)]">{t('shell.recentProjects')}</div>
@@ -265,6 +268,7 @@ function SidebarLink({
   active = false,
   exact = false,
   inactive = false,
+  className,
 }: {
   to: string;
   label: string;
@@ -272,12 +276,15 @@ function SidebarLink({
   active?: boolean;
   exact?: boolean;
   inactive?: boolean;
+  className?: string;
 }): JSX.Element {
   return (
     <NavLink
       to={to}
       end={exact}
-      className={({ isActive }) => cn('sidebar-link', ((isActive && !inactive) || active) && 'is-active')}
+      className={({ isActive }) =>
+        cn('sidebar-link', className, ((isActive && !inactive) || active) && 'is-active')
+      }
     >
       <Icon className="h-4 w-4" strokeWidth={1.65} />
       <span>{label}</span>
