@@ -5,6 +5,7 @@ interface WorkspaceEmptyStateProps {
   title: string;
   description: string;
   action?: ReactNode;
+  children?: ReactNode;
 }
 
 export function WorkspaceEmptyState({
@@ -12,6 +13,7 @@ export function WorkspaceEmptyState({
   title,
   description,
   action,
+  children,
 }: WorkspaceEmptyStateProps): JSX.Element {
   return (
     <div className="workspace-empty surface-1">
@@ -20,6 +22,7 @@ export function WorkspaceEmptyState({
       <p className="mt-2 max-w-md text-[13px] leading-relaxed text-[var(--color-fg-muted)]">
         {description}
       </p>
+      {children}
       {action && <div className="mt-5">{action}</div>}
     </div>
   );

@@ -985,7 +985,13 @@ function ChatColumn({
                     )
                     : undefined
                 }
-              />
+              >
+                <div className="room-empty-activity" aria-hidden="true">
+                  <span><i />AI 正在等待第一条协作消息</span>
+                  <span><i />Task Card 会在对话中自动浮现</span>
+                  <span><i />Execution Plan 将同步到右侧工作区</span>
+                </div>
+              </WorkspaceEmptyState>
             </ConversationEmptyState>
           ) : (
             visibleMessages.map((m, index) => {
