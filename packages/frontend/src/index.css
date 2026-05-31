@@ -4038,9 +4038,18 @@
     }
     .task-workspace-grid,
     .task-workspace-canvas,
-    .task-workspace-empty-preview,
-    .tool-call-strip {
+    .task-workspace-empty-preview {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .tool-call-strip {
+      display: flex;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scroll-snap-type: x proximity;
+    }
+    .tool-call-card {
+      flex: 0 0 min(196px, 74vw);
+      scroll-snap-align: start;
     }
     .active-task-meta-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
