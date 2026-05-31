@@ -3933,9 +3933,39 @@
     box-shadow: inset 0 0 0 1px var(--room-border-subtle);
   }
   .file-change-row strong {
+    min-width: 0;
+    border-radius: 7px;
+    padding: 2px 4px;
+    background: color-mix(in srgb, currentColor 9%, transparent);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10.5px;
     text-align: right;
+  }
+  .file-change-row span {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .file-change-row span::before {
+    content: "M";
+    display: grid;
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+    color: var(--color-primary);
+    font-size: 9px;
+    font-weight: 850;
+    line-height: 1;
+  }
+  .file-change-row.is-empty span::before {
+    content: "--";
+    background: color-mix(in srgb, var(--room-text-muted) 12%, transparent);
+    color: var(--room-text-muted);
   }
   .file-change-empty {
     display: grid;
