@@ -115,7 +115,7 @@ export function TaskWorkspacePanel({
           </div>
           <div className="task-list-scroll">
             {rootTasks.length === 0 ? (
-              <div className="px-4 py-10 text-center text-[12px] text-[var(--color-muted)]">
+              <div className="task-list-empty">
                 {t('taskBoard.empty')}
               </div>
             ) : (
