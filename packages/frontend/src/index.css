@@ -57,6 +57,13 @@
     --room-control-border: rgba(255,255,255,0.58);
     --room-control-active-bg: rgba(37,99,235,0.10);
     --room-control-active-border: rgba(37,99,235,0.24);
+    --room-step-connector: rgba(148,163,184,0.28);
+    --room-step-waiting-bg: rgba(148,163,184,0.14);
+    --room-step-completed-bg: rgba(16,185,129,0.14);
+    --room-step-completed-connector: rgba(15,159,110,0.34);
+    --room-step-running-bg: rgba(37,99,235,0.13);
+    --room-step-running-connector: rgba(37,99,235,0.30);
+    --room-step-running-ring: rgba(37,99,235,0.08);
     --room-composer-bg: rgba(255,255,255,0.48);
     --room-composer-box-bg: rgba(255,255,255,0.78);
     --room-agent-message-bg: rgba(255,255,255,0.58);
@@ -130,6 +137,13 @@
     --room-control-border: rgba(148,163,184,0.16);
     --room-control-active-bg: rgba(37,99,235,0.18);
     --room-control-active-border: rgba(96,165,250,0.26);
+    --room-step-connector: rgba(148,163,184,0.22);
+    --room-step-waiting-bg: rgba(148,163,184,0.12);
+    --room-step-completed-bg: rgba(16,185,129,0.16);
+    --room-step-completed-connector: rgba(16,185,129,0.34);
+    --room-step-running-bg: rgba(96,165,250,0.18);
+    --room-step-running-connector: rgba(96,165,250,0.34);
+    --room-step-running-ring: rgba(96,165,250,0.12);
     --room-composer-bg: rgba(15,23,42,0.56);
     --room-composer-box-bg: rgba(30,41,59,0.78);
     --room-agent-message-bg: rgba(30,41,59,0.38);
@@ -3936,37 +3950,40 @@
   .execution-step:not(:last-child)::after {
     content: "";
     position: absolute;
-    top: 22px;
-    bottom: -5px;
+    top: 24px;
+    bottom: -7px;
     left: 9px;
     width: 1px;
-    background: rgba(148,163,184,0.28);
+    background: var(--room-step-connector);
   }
   .execution-step[data-state="completed"]:not(:last-child)::after {
-    background: color-mix(in srgb, var(--color-success) 36%, transparent);
+    background: var(--room-step-completed-connector);
   }
   .execution-step[data-state="running"]:not(:last-child)::after {
-    background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+    background: var(--room-step-running-connector);
   }
   .execution-step-node {
     display: grid;
     width: 20px;
     height: 20px;
     place-items: center;
+    border: 1px solid var(--room-border-subtle);
     border-radius: 999px;
-    background: rgba(148,163,184,0.14);
+    background: var(--room-step-waiting-bg);
     color: var(--room-text-muted);
     font-size: 10px;
     font-weight: 800;
   }
   .execution-step[data-state="completed"] .execution-step-node {
-    background: rgba(16,185,129,0.14);
+    border-color: color-mix(in srgb, var(--color-success) 24%, var(--room-border-subtle));
+    background: var(--room-step-completed-bg);
     color: var(--color-success);
   }
   .execution-step[data-state="running"] .execution-step-node {
-    background: rgba(37,99,235,0.13);
+    border-color: color-mix(in srgb, var(--color-primary) 26%, var(--room-border-subtle));
+    background: var(--room-step-running-bg);
     color: var(--color-primary);
-    box-shadow: 0 0 0 4px rgba(37,99,235,0.08);
+    box-shadow: 0 0 0 4px var(--room-step-running-ring);
     animation: status-pulse 1.35s ease-in-out infinite;
   }
   .execution-step strong,
