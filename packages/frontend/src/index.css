@@ -8143,7 +8143,7 @@
       min-height: 700px;
     }
     .task-workspace-grid {
-      grid-template-rows: clamp(212px, 28dvh, 252px) minmax(0, 1fr);
+      grid-template-rows: clamp(160px, 22dvh, 204px) minmax(0, 1fr);
     }
     .task-queue-rail {
       max-height: none;
@@ -8152,7 +8152,7 @@
       min-height: 96px;
     }
     .task-activity-feed {
-      max-height: 72px;
+      max-height: 60px;
       padding-top: 7px;
       padding-bottom: 8px;
     }
