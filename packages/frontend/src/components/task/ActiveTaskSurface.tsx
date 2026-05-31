@@ -17,6 +17,7 @@ import {
   buildToolCalls,
   taskEventTypeLabel,
   taskProgressPercent,
+  type TaskWorkspacePlanStep,
   type TaskWorkspaceToolCall,
 } from './taskWorkspaceModel';
 
@@ -158,7 +159,7 @@ export function ActiveTaskSurface({
                 <span className="execution-step-node">{index + 1}</span>
                 <div className="min-w-0">
                   <strong>{step.title}</strong>
-                  <small>{step.time ? formatRelativeTime(step.time) : step.state}</small>
+                  <small>{formatPlanStepMeta(step, formatRelativeTime)}</small>
                 </div>
               </div>
             ))}
@@ -258,6 +259,18 @@ function formatClockTime(timestamp: number): string {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
   return `${hours}:${minutes}:${seconds}`;
+}
+
+function formatPlanStepMeta(
+  step: TaskWorkspacePlanStep,
+  formatRelativeTime: (timestamp: number) => string,
+): string {
+  const stateLabel = step.state === 'completed'
+    ? 'Completed'
+    : step.state === 'running'
+      ? 'Running'
+      : 'Waiting';
+  return step.time ? `${stateLabel} · ${formatRelativeTime(step.time)}` : stateLabel;
 }
 
 function completeToolCallPreview(toolCalls: TaskWorkspaceToolCall[], fallbackTime: number): TaskWorkspaceToolCall[] {
