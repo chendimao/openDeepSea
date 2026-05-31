@@ -134,7 +134,7 @@
   }
 
   [data-theme="minimal-light"] {
-    --color-bg: #f8fafc;
+    --color-bg: #F5F7FB;
     --color-surface: #ffffff;
     --color-surface-raised: #f4f6f8;
     --color-border: #e0e4e8;
@@ -143,12 +143,12 @@
     --color-fg-muted: #5f6b78;
     --color-muted: #8a94a0;
 
-    --color-primary: #1f6feb;
-    --color-primary-hover: #1557c0;
+    --color-primary: #2563EB;
+    --color-primary-hover: #1D4ED8;
     --color-primary-fg: #ffffff;
 
-    --color-accent: #1f6feb;
-    --color-accent-hover: #1557c0;
+    --color-accent: #2563EB;
+    --color-accent-hover: #1D4ED8;
 
     --color-success: #15865d;
     --color-warning: #a76500;
@@ -7060,9 +7060,7 @@
   }
 
   [data-theme="minimal-light"] .workspace-root {
-    --room-bg-gradient:
-      radial-gradient(circle at 14% 12%, rgba(96,165,250,0.12), transparent 28%),
-      linear-gradient(180deg, #F5F7FB 0%, #EEF3FA 100%);
+    --room-bg-gradient: linear-gradient(180deg, #F5F7FB 0%, #F5F7FB 100%);
     --room-topbar-bg: rgba(255,255,255,0.72);
     --room-panel-bg: rgba(255,255,255,0.68);
     --room-card-bg: rgba(255,255,255,0.85);
