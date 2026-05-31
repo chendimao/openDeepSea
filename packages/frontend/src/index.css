@@ -4313,19 +4313,19 @@
     gap: 2px;
   }
 
-  .agent-activity-copy strong {
+  .agent-transcript-event .agent-activity-copy strong {
     overflow: hidden;
-    color: color-mix(in srgb, var(--color-fg) 80%, var(--color-primary));
+    color: color-mix(in srgb, var(--room-text-muted) 88%, var(--room-text-heading));
     font-size: 11.5px;
-    font-weight: 620;
+    font-weight: 580;
     line-height: 1.2;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .agent-activity-copy small {
+  .agent-transcript-event .agent-activity-copy small {
     overflow: hidden;
-    color: color-mix(in srgb, var(--color-fg-muted) 82%, transparent);
+    color: color-mix(in srgb, var(--room-text-muted) 82%, transparent);
     font-size: 10px;
     font-weight: 500;
     line-height: 1.22;
