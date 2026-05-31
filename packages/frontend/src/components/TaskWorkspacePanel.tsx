@@ -8,11 +8,9 @@ import {
 } from './TaskDetailPanel';
 import { filterRootTasks, selectActivityEvents, type TaskStatusFilter } from './taskBoardLogic';
 import { ActiveTaskSurface } from './task/ActiveTaskSurface';
+import { TaskActivityFeed } from './task/TaskActivityFeed';
 import { TaskQueueCard } from './task/TaskQueueCard';
 import { TaskWorkspaceEmptyState } from './task/TaskWorkspaceEmptyState';
-import {
-  taskEventTypeLabel,
-} from './task/taskWorkspaceModel';
 
 const TASK_STATUS_FILTERS: TaskStatusFilter[] = ['todo', 'in_progress', 'review', 'done', 'failed'];
 
@@ -148,7 +146,7 @@ export function TaskWorkspacePanel({
               ))
             )}
           </div>
-          <ActivityFeed
+          <TaskActivityFeed
             events={visibleActivity}
             emptyLabel={t('taskBoard.noActivity')}
             title={t('taskBoard.activityFeed')}
@@ -192,39 +190,6 @@ export function TaskWorkspacePanel({
         </section>
       </div>
     </aside>
-  );
-}
-
-function ActivityFeed({
-  events,
-  emptyLabel,
-  title,
-  formatRelativeTime,
-  t,
-}: {
-  events: TaskEvent[];
-  emptyLabel: string;
-  title: string;
-  formatRelativeTime: (timestamp: number) => string;
-  t: (key: MessageKey) => string;
-}): JSX.Element {
-  return (
-    <section className="task-activity-feed" aria-label={title}>
-      <div className="task-activity-title">{title}</div>
-      {events.length === 0 ? (
-        <div className="task-activity-empty">{emptyLabel}</div>
-      ) : (
-        events.map((event) => (
-          <div key={event.id} className="task-activity-row">
-            <span className="task-event-dot" data-layer={event.layer} />
-            <span className="min-w-0 flex-1 truncate">{taskEventTypeLabel(event.type, t)}</span>
-            <span className="text-[10px] font-mono text-[var(--color-muted)]">
-              {formatRelativeTime(event.created_at)}
-            </span>
-          </div>
-        ))
-      )}
-    </section>
   );
 }
 
