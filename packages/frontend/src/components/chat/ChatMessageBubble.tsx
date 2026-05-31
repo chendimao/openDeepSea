@@ -22,6 +22,7 @@ import {
 import { createPlannerDispatchInput, shouldShowPlannerDecisionPanel } from '../../pages/roomPageLogic';
 import { MessageAttachments } from './MessageAttachments';
 import { PlannerDecisionPanel } from './PlannerDecisionPanel';
+import { ChatActivityMessage } from './ChatActivityMessage';
 import { ChatTaskCard } from './ChatTaskCard';
 import { shouldUseStreamingDisplayForMessage } from './chatMessageModel';
 
@@ -182,6 +183,8 @@ export function ChatMessageBubble({
   }
 
   if (isSystem) {
+    const isActivityMessage = message.layer === 'activity';
+
     return (
       <AiMessageRow
         ref={messageRef}
@@ -189,7 +192,11 @@ export function ChatMessageBubble({
         data-message-id={message.id}
         className={cn(highlighted && 'is-highlighted')}
       >
-        {message.content}
+        {isActivityMessage ? (
+          <ChatActivityMessage content={message.content} loading={isLoadingActivityCopy(message.content)} />
+        ) : (
+          message.content
+        )}
       </AiMessageRow>
     );
   }
@@ -351,4 +358,20 @@ function shouldRenderInlineTaskCard(eventType: TaskEventType | undefined, taskId
     eventType === 'task_deleted' ||
     eventType === 'message_routed' ||
     eventType.startsWith('workflow_');
+}
+
+function isLoadingActivityCopy(content: string): boolean {
+  const normalized = content.trim().toLowerCase();
+  if (!normalized) return false;
+  return [
+    '正在',
+    '生成中',
+    '处理中',
+    '执行中',
+    '启动中',
+    'running',
+    'loading',
+    'generating',
+    'processing',
+  ].some((token) => normalized.includes(token));
 }
