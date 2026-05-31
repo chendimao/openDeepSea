@@ -48,6 +48,10 @@
     --room-panel-bg: rgba(255,255,255,0.68);
     --room-card-bg: rgba(255,255,255,0.82);
     --room-card-hover-bg: rgba(255,255,255,0.94);
+    --room-activity-card-hover-bg: rgba(255,255,255,0.34);
+    --room-activity-card-open-bg: rgba(255,255,255,0.59);
+    --room-activity-card-hover-border: rgba(37,99,235,0.10);
+    --room-activity-card-open-border: rgba(37,99,235,0.14);
     --room-card-muted-bg: rgba(248,250,252,0.52);
     --room-composer-bg: rgba(255,255,255,0.48);
     --room-composer-box-bg: rgba(255,255,255,0.78);
@@ -113,6 +117,10 @@
     --room-panel-bg: rgba(17,24,39,0.72);
     --room-card-bg: rgba(30,41,59,0.78);
     --room-card-hover-bg: rgba(37,50,72,0.92);
+    --room-activity-card-hover-bg: rgba(30,41,59,0.33);
+    --room-activity-card-open-bg: rgba(30,41,59,0.56);
+    --room-activity-card-hover-border: rgba(96,165,250,0.14);
+    --room-activity-card-open-border: rgba(96,165,250,0.18);
     --room-card-muted-bg: rgba(15,23,42,0.52);
     --room-composer-bg: rgba(15,23,42,0.56);
     --room-composer-box-bg: rgba(30,41,59,0.78);
@@ -4270,17 +4278,6 @@
     display: none;
   }
 
-  .agent-transcript-event .agent-timeline-card:hover {
-    border-color: rgba(37, 99, 235, 0.10);
-    background: rgba(255,255,255,0.36);
-  }
-
-  .agent-transcript-event .agent-timeline-card[open] {
-    border-color: rgba(37, 99, 235, 0.14);
-    background: rgba(255,255,255,0.58);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.54);
-  }
-
   .agent-transcript-event .agent-timeline-summary {
     grid-template-columns: auto 8px minmax(0, 1fr) auto auto;
     min-height: 28px;
@@ -6601,6 +6598,17 @@
     background: color-mix(in srgb, var(--color-surface) 78%, transparent);
   }
 
+  .agent-transcript-event .agent-timeline-card:hover {
+    border-color: var(--room-activity-card-hover-border);
+    background-color: var(--room-activity-card-hover-bg);
+  }
+
+  .agent-transcript-event .agent-timeline-card[open] {
+    border-color: var(--room-activity-card-open-border);
+    background-color: var(--room-activity-card-open-bg);
+    box-shadow: inset 0 0 0 1px var(--room-activity-card-open-bg);
+  }
+
   .agent-timeline-card.is-debug {
     border-style: dashed;
     border-color: transparent;
@@ -7275,6 +7283,10 @@
     --room-panel-bg: rgba(255,255,255,0.68);
     --room-card-bg: rgba(255,255,255,0.85);
     --room-card-hover-bg: rgba(255,255,255,0.96);
+    --room-activity-card-hover-bg: rgba(255,255,255,0.36);
+    --room-activity-card-open-bg: rgba(255,255,255,0.61);
+    --room-activity-card-hover-border: rgba(37,99,235,0.10);
+    --room-activity-card-open-border: rgba(37,99,235,0.14);
     --room-card-muted-bg: rgba(248,250,252,0.58);
     --room-composer-bg: rgba(255,255,255,0.52);
     --room-composer-box-bg: rgba(255,255,255,0.82);
@@ -7302,6 +7314,10 @@
     --room-panel-bg: rgba(17,24,39,0.72);
     --room-card-bg: rgba(30,41,59,0.78);
     --room-card-hover-bg: rgba(37,50,72,0.92);
+    --room-activity-card-hover-bg: rgba(30,41,59,0.33);
+    --room-activity-card-open-bg: rgba(30,41,59,0.56);
+    --room-activity-card-hover-border: rgba(96,165,250,0.14);
+    --room-activity-card-open-border: rgba(96,165,250,0.18);
     --room-card-muted-bg: rgba(15,23,42,0.52);
     --room-composer-bg: rgba(15,23,42,0.56);
     --room-composer-box-bg: rgba(30,41,59,0.78);
