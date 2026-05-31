@@ -45,7 +45,7 @@ export function RoomTopNavigation({
             {room?.name ?? t('room.defaultName')}
           </div>
           <div className="room-toolbar-subtitle">
-            {project?.name ?? t('room.defaultName')} · {project?.path ?? t('room.projectPathUnknown')}
+            {project?.name ?? t('room.defaultName')}
           </div>
         </div>
       </div>
