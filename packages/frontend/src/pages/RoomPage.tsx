@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, ChevronDown, ClipboardList, GitBranch, MessagesSquare } from 'lucide-react';
+import { Bot, ClipboardList, GitBranch, MessagesSquare } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
@@ -40,6 +40,7 @@ import type { TaskLayerVisibility } from '../components/TaskDetailPanel';
 import { TaskWorkspacePanel } from '../components/TaskWorkspacePanel';
 import type { TaskStatusFilter } from '../components/taskBoardLogic';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
+import { RoomTabsBar, sortRoomsForTabs } from '../components/RoomTabsBar';
 import { ChatMessageBubble } from '../components/chat/ChatMessageBubble';
 import { ChatPanelHeader, type RoomFeatureTab } from '../components/chat/ChatPanelHeader';
 import {
@@ -47,7 +48,6 @@ import {
   pairRunsWithAgentMessages,
   shouldUseStreamingDisplayForMessage,
 } from '../components/chat/chatMessageModel';
-import { RoomTopNavigation } from '../components/layout/RoomTopNavigation';
 import {
   Conversation,
   ConversationContent,
@@ -91,6 +91,7 @@ type SendInput = {
 export function RoomPage() {
   const { projectId = '', roomId = '' } = useParams();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [configAgent, setConfigAgent] = useState<RoomAgent | null>(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
@@ -229,6 +230,37 @@ export function RoomPage() {
   const appendStreamingChunk = streamingDisplay.appendChunk;
   const finishStreamingMessage = streamingDisplay.finishMessage;
   const clearStreamingMessage = streamingDisplay.clearMessage;
+  const updateRoom = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: { name?: string; last_opened_at?: number | null; pinned_at?: number | null } }) =>
+      api.updateRoom(id, patch),
+    onSuccess: (updatedRoom) => {
+      queryClient.setQueryData<Room | undefined>(['room', updatedRoom.id], updatedRoom);
+      queryClient.setQueryData<Room[] | undefined>(['rooms', updatedRoom.project_id], (prev) =>
+        prev?.map((item) => (item.id === updatedRoom.id ? updatedRoom : item)),
+      );
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const createRoom = useMutation({
+    mutationFn: () => api.createRoom(projectId, { name: '新群聊' }),
+    onSuccess: (createdRoom) => {
+      queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
+      navigate(`/projects/${projectId}/rooms/${createdRoom.id}`);
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const deleteRoom = useMutation({
+    mutationFn: (targetRoom: Room) => api.deleteRoom(targetRoom.id).then(() => targetRoom),
+    onSuccess: (deletedRoom) => {
+      const remainingRooms = sortRoomsForTabs(rooms.filter((item) => item.id !== deletedRoom.id));
+      queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
+      if (deletedRoom.id === roomId) {
+        const nextRoom = remainingRooms[0];
+        navigate(nextRoom ? `/projects/${projectId}/rooms/${nextRoom.id}` : `/projects/${projectId}`);
+      }
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
 
   useEffect(() => {
     setActiveTab('chat');
@@ -252,7 +284,11 @@ export function RoomPage() {
   useEffect(() => {
     if (!project || !room || room.project_id !== project.id) return;
     recordRecentRoomVisit({ project, room });
-  }, [project, room]);
+    updateRoom.mutate({
+      id: room.id,
+      patch: { last_opened_at: Date.now() },
+    });
+  }, [project?.id, room?.id]);
 
   useEffect(() => {
     if (tasks.length === 0) return;
@@ -488,17 +524,31 @@ export function RoomPage() {
 
   return (
     <div className="workspace-root" data-testid="room-page">
-      <RoomTopNavigation
+      <RoomTabsBar
         projectId={projectId}
         roomId={roomId}
-        project={project}
-        room={room}
-        agents={agents}
-        showMemoryPanel={showMemoryPanel}
-        onSelectAgent={setConfigAgent}
-        onToggleMemoryPanel={() => {
-          setShowMemoryPanel((v) => !v);
-          if (!showMemoryPanel) setConfigAgent(null);
+        rooms={rooms}
+        busyRoomId={
+          updateRoom.isPending
+            ? updateRoom.variables?.id ?? null
+            : deleteRoom.isPending
+              ? deleteRoom.variables?.id ?? null
+              : null
+        }
+        creating={createRoom.isPending}
+        onCreateRoom={() => createRoom.mutate()}
+        onRenameRoom={(targetRoom, name) =>
+          updateRoom.mutateAsync({ id: targetRoom.id, patch: { name } }).then(() => undefined)
+        }
+        onTogglePin={(targetRoom) => {
+          updateRoom.mutate({
+            id: targetRoom.id,
+            patch: { pinned_at: targetRoom.pinned_at ? null : Date.now() },
+          });
+        }}
+        onDeleteRoom={(targetRoom) => {
+          const ok = window.confirm(`删除群聊「${targetRoom.name}」？此操作不可撤销。`);
+          if (ok) deleteRoom.mutate(targetRoom);
         }}
       />
 
@@ -539,9 +589,17 @@ export function RoomPage() {
         <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
           <ChatPanelHeader
             roomId={roomId}
+            project={project}
+            room={room}
             agents={agents}
             activeTab={activeTab}
             onChange={setActiveTab}
+            showMemoryPanel={showMemoryPanel}
+            onToggleMemoryPanel={() => {
+              setShowMemoryPanel((v) => !v);
+              if (!showMemoryPanel) setConfigAgent(null);
+            }}
+            onSelectAgent={setConfigAgent}
           />
           <div className="room-tab-content">
             {activeTab === 'chat' && (
@@ -786,56 +844,6 @@ export function upsertAgentRun(prev: AgentRun[] | undefined, run: AgentRun): Age
 function shouldKeepExistingAgentRun(existing: AgentRun, incoming: AgentRun): boolean {
   if (incoming.updated_at < existing.updated_at) return true;
   return isTerminalAgentRunStatus(existing.status) && !isTerminalAgentRunStatus(incoming.status);
-}
-
-function RoomSwitcher({
-  projectId,
-  roomId,
-  rooms,
-}: {
-  projectId: string;
-  roomId: string;
-  rooms: Room[];
-}) {
-  const { t } = useI18n();
-  const currentRoom = rooms.find((item) => item.id === roomId) ?? null;
-  const visibleRooms = [
-    ...(currentRoom ? [currentRoom] : []),
-    ...rooms.filter((item) => item.id !== roomId).slice(0, 4),
-  ];
-  const visibleIds = new Set(visibleRooms.map((item) => item.id));
-  const hiddenRooms = rooms.filter((item) => !visibleIds.has(item.id));
-
-  return (
-    <nav className="toolbar-tabs room-switcher" aria-label={t('room.switcherLabel')}>
-      {visibleRooms.map((item) => (
-        <Link
-          key={item.id}
-          to={`/projects/${projectId}/rooms/${item.id}`}
-          className={cn('toolbar-tab', item.id === roomId && 'is-active')}
-          aria-current={item.id === roomId ? 'page' : undefined}
-          title={item.name}
-        >
-          {item.name}
-        </Link>
-      ))}
-      {hiddenRooms.length > 0 && (
-        <details className="room-more-menu">
-          <summary className="toolbar-tab">
-            <span>{t('room.moreRooms')}</span>
-            <ChevronDown className="h-3.5 w-3.5" />
-          </summary>
-          <div className="room-more-list">
-            {hiddenRooms.map((item) => (
-              <Link key={item.id} to={`/projects/${projectId}/rooms/${item.id}`}>
-                {item.name}
-              </Link>
-            ))}
-          </div>
-        </details>
-      )}
-    </nav>
-  );
 }
 
 function ChatColumn({

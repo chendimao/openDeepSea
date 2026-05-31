@@ -169,6 +169,7 @@ function RoomItem({ projectId, room }: { projectId: string; room: Room }) {
       toast.success(t('project.roomDeleted'));
       setConfirmOpen(false);
     },
+    onError: (err) => toast.error((err as Error).message),
   });
 
   return (

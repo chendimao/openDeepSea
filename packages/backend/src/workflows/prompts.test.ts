@@ -23,7 +23,8 @@ test('buildSuperpowersPhasePrompt includes required skills for each phase', () =
     assert.match(prompt, /OpenDeepSea project-owned Superpowers skills are loaded below/);
     assert.match(prompt, /Source: project-builtin/);
     assert.match(prompt, /packages\/backend\/src\/project-superpowers\/skills\//);
-    assert.match(prompt, /Do not read or invoke same-name skills from ~\/\.agents\/skills/);
+    assert.match(prompt, /Do not call provider-native Skill\/use_skill\/activate_skill tools/);
+    assert.match(prompt, /read same-name skills from ~\/\.agents\/skills, ~\/\.codex\/skills/);
     assert.match(prompt, /Superpowers workflow 顺序/);
     assert.match(prompt, /"superpowers"/);
   }
@@ -49,6 +50,8 @@ test('buildStagePrompt uses analysis-document acceptance prompt for analysis-onl
       name: 'Room',
       description: null,
       created_at: 1,
+      last_opened_at: null,
+      pinned_at: null,
     },
     task: {
       id: 'task',
@@ -108,6 +111,8 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
       name: 'Room',
       description: null,
       created_at: 1,
+      last_opened_at: null,
+      pinned_at: null,
     },
     task: {
       id: 'task',

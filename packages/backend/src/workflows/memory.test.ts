@@ -253,6 +253,8 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
       name: 'Memory Room',
       description: null,
       created_at: 1,
+      last_opened_at: null,
+      pinned_at: null,
     },
     task: {
       id: 'task-1',

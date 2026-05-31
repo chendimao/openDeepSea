@@ -363,6 +363,8 @@ function fakeRoom(overrides: Partial<Room> = {}): Room {
     name: 'Engineering',
     description: 'Implementation room',
     created_at: 1,
+    last_opened_at: null,
+    pinned_at: null,
     ...overrides,
   };
 }

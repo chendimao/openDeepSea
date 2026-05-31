@@ -623,6 +623,14 @@ export const api = {
   createRoom: (projectId: string, input: { name: string; description?: string; crew_template_id?: string }) =>
     request<Room>(`/projects/${projectId}/rooms`, { method: 'POST', body: JSON.stringify(input) }),
   getRoom: (id: string) => request<Room>(`/rooms/${id}`),
+  updateRoom: (
+    id: string,
+    input: { name?: string; last_opened_at?: number | null; pinned_at?: number | null },
+  ) =>
+    request<Room>(`/rooms/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
   deleteRoom: (id: string) => request<void>(`/rooms/${id}`, { method: 'DELETE' }),
 
   listRoomAgents: (roomId: string) => request<RoomAgent[]>(`/rooms/${roomId}/agents`),

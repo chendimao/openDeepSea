@@ -58,11 +58,22 @@ export interface RoomAgentRemovalImpact {
   message_count: number;
 }
 
+export type DeleteRoomResult =
+  | { ok: true }
+  | { ok: false; reason: 'not_found' }
+  | {
+      ok: false;
+      reason: 'active_runs';
+      activeAgentRunCount: number;
+      activeWorkflowRunCount: number;
+    };
+
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
 const DEFAULT_RUNTIMES = new Set<AgentDefaultRuntime>(['acp', 'openclaw', 'none']);
 const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
 const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
 const BUILT_IN_RUNTIME_PROFILE_VERSION = 4;
+const ACTIVE_WORKFLOW_STATUSES = ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked'];
 
 function parseJsonObject<T>(value: string | null | undefined, fallback: T): T {
   if (!value) return fallback;
@@ -292,25 +303,73 @@ export const roomRepo = {
     const existing = this.get(id);
     if (!existing) return undefined;
 
-    const nextName = patch.name !== undefined ? patch.name.trim() : existing.name;
-    if (!nextName) throw new Error('room name is required');
+    const setClauses: string[] = [];
+    const values: Array<string | number | null> = [];
+
+    if (patch.name !== undefined) {
+      const nextName = patch.name.trim();
+      if (!nextName) throw new Error('room name is required');
+      setClauses.push('name = ?');
+      values.push(nextName);
+    }
+
+    if (patch.last_opened_at !== undefined) {
+      setClauses.push('last_opened_at = ?');
+      values.push(patch.last_opened_at);
+    }
+
+    if (patch.pinned_at !== undefined) {
+      setClauses.push('pinned_at = ?');
+      values.push(patch.pinned_at);
+    }
+
+    if (setClauses.length === 0) return existing;
 
     db.prepare(
       `UPDATE rooms
-       SET name = ?, last_opened_at = ?, pinned_at = ?
+       SET ${setClauses.join(', ')}
        WHERE id = ?`,
-    ).run(
-      nextName,
-      patch.last_opened_at !== undefined ? patch.last_opened_at : existing.last_opened_at,
-      patch.pinned_at !== undefined ? patch.pinned_at : existing.pinned_at,
-      id,
-    );
+    ).run(...values, id);
 
     return this.get(id);
   },
 
-  delete(id: string): boolean {
-    return db.prepare('DELETE FROM rooms WHERE id = ?').run(id).changes > 0;
+  delete(id: string): DeleteRoomResult {
+    if (!this.get(id)) return { ok: false, reason: 'not_found' };
+
+    const activeAgentRunCount = (
+      db.prepare(
+        `SELECT COUNT(*) AS count
+         FROM agent_runs
+         WHERE room_id = ?
+           AND status IN ('running', 'queued', 'retrying')`,
+      ).get(id) as { count: number }
+    ).count;
+    const activeWorkflowRunCount = (
+      db.prepare(
+        `SELECT COUNT(*) AS count
+         FROM workflow_runs
+         WHERE room_id = ?
+           AND status IN (${ACTIVE_WORKFLOW_STATUSES.map(() => '?').join(', ')})`,
+      ).get(id, ...ACTIVE_WORKFLOW_STATUSES) as { count: number }
+    ).count;
+
+    if (activeAgentRunCount > 0 || activeWorkflowRunCount > 0) {
+      return {
+        ok: false,
+        reason: 'active_runs',
+        activeAgentRunCount,
+        activeWorkflowRunCount,
+      };
+    }
+
+    const removeRoom = db.transaction((roomId: string) => {
+      db.prepare("DELETE FROM settings WHERE scope = 'room' AND scope_id = ?").run(roomId);
+      db.prepare('DELETE FROM rooms WHERE id = ?').run(roomId);
+    });
+
+    removeRoom(id);
+    return { ok: true };
   },
 };
 

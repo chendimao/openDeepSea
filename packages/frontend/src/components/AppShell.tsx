@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import {
   Bot,
+  ChevronDown,
   FolderKanban,
+  FolderOpen,
   Home,
   MessageCircle,
   Plus,
@@ -78,18 +80,17 @@ export function AppShell({
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]">
       <div className="liquid-backdrop" aria-hidden="true" />
-      {!isRoomRoute && (
-        <header className="shell-public-header" aria-label={t('shell.sidebar.aria')}>
-          <nav className="shell-public-nav" aria-label={t('shell.sidebar.aria')}>
-            <SidebarLink to="/" active={location.pathname === '/'} icon={Home} label={t('shell.nav.development')} exact className="shell-public-link" />
-            <SidebarLink to="/chat" icon={MessageCircle} label={t('shell.nav.chat')} className="shell-public-link" />
-            <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} className="shell-public-link" />
-            <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} className="shell-public-link" />
-            <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} className="shell-public-link" />
-            <SidebarLink to="/test" icon={TestTube2} label={t('shell.nav.test')} className="shell-public-link" />
-          </nav>
-        </header>
-      )}
+      <header className="shell-public-header" aria-label={t('shell.sidebar.aria')}>
+        <nav className="shell-public-nav" aria-label={t('shell.sidebar.aria')}>
+          <SidebarLink to="/" active={location.pathname === '/'} icon={Home} label={t('shell.nav.development')} exact className="shell-public-link" />
+          <SidebarLink to="/chat" icon={MessageCircle} label={t('shell.nav.chat')} className="shell-public-link" />
+          <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} className="shell-public-link" />
+          <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} className="shell-public-link" />
+          <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} className="shell-public-link" />
+          <SidebarLink to="/test" icon={TestTube2} label={t('shell.nav.test')} className="shell-public-link" />
+        </nav>
+        <HeaderProjectMenu projects={projects} currentProject={currentProject} />
+      </header>
       <div className={cn('app-grid h-full', isRoomRoute && 'app-grid--room')}>
         <aside className="app-sidebar" aria-label={t('shell.sidebar.aria')}>
           <ProjectSidebar
@@ -113,6 +114,83 @@ export function AppShell({
         }}
       />
       <CreateProjectDialog open={createProjectOpen} onOpenChange={setCreateProjectOpen} />
+    </div>
+  );
+}
+
+function HeaderProjectMenu({
+  projects,
+  currentProject,
+}: {
+  projects: Awaited<ReturnType<typeof api.listProjects>>;
+  currentProject?: Awaited<ReturnType<typeof api.listProjects>>[number];
+}): JSX.Element {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
+
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current === null) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+  const openMenu = () => {
+    clearCloseTimer();
+    setOpen(true);
+  };
+  const scheduleClose = () => {
+    clearCloseTimer();
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false);
+      closeTimerRef.current = null;
+    }, 140);
+  };
+
+  useEffect(() => clearCloseTimer, []);
+
+  return (
+    <div
+      className={cn('shell-project-menu', open && 'is-open')}
+      onMouseEnter={openMenu}
+      onMouseLeave={scheduleClose}
+    >
+      <button
+        type="button"
+        className="shell-project-trigger"
+        aria-expanded={open}
+        onClick={() => {
+          clearCloseTimer();
+          setOpen((value) => !value);
+        }}
+      >
+        <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.8} />
+        <span>{currentProject ? truncate(currentProject.name, 24) : t('shell.recentProjects')}</span>
+        <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.8} />
+      </button>
+      {open && (
+        <div className="shell-project-dropdown" role="menu">
+          {projects.map((project) => (
+            <NavLink
+              key={project.id}
+              to={`/projects/${project.id}`}
+              className={({ isActive }) =>
+                cn('shell-project-option', (isActive || currentProject?.id === project.id) && 'is-active')
+              }
+              role="menuitem"
+              onClick={() => {
+                clearCloseTimer();
+                setOpen(false);
+              }}
+            >
+              <span className="shell-project-dot" />
+              <span className="truncate">{project.name}</span>
+            </NavLink>
+          ))}
+          {projects.length === 0 && (
+            <div className="shell-project-empty">{t('shell.noProjects')}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

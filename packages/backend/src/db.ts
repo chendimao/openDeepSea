@@ -132,7 +132,6 @@ CREATE TABLE IF NOT EXISTS rooms (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_rooms_project ON rooms(project_id);
-CREATE INDEX IF NOT EXISTS idx_rooms_project_usage ON rooms(project_id, pinned_at DESC, last_opened_at DESC, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,

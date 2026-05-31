@@ -283,8 +283,7 @@ function RoomTabMenu({
         <DropdownMenu.Content className="room-tab-menu" align="start" sideOffset={8}>
           <DropdownMenu.Item
             className="room-tab-menu-item"
-            onSelect={(event) => {
-              event.preventDefault();
+            onSelect={() => {
               onRename();
             }}
           >
@@ -293,8 +292,7 @@ function RoomTabMenu({
           </DropdownMenu.Item>
           <DropdownMenu.Item
             className="room-tab-menu-item"
-            onSelect={(event) => {
-              event.preventDefault();
+            onSelect={() => {
               onTogglePin();
             }}
           >
@@ -307,8 +305,7 @@ function RoomTabMenu({
           </DropdownMenu.Item>
           <DropdownMenu.Item
             className="room-tab-menu-item is-danger"
-            onSelect={(event) => {
-              event.preventDefault();
+            onSelect={() => {
               onDelete();
             }}
           >
