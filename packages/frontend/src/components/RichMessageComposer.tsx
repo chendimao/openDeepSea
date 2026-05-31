@@ -249,34 +249,38 @@ export function RichMessageComposer({
       }}
       onDrop={handleFileDrop}
     >
-      {replyTarget && (
-        <div className="composer-reply-preview">
-          <ReplyPreviewLabel explicit={replyTarget.explicit} senderName={replyTarget.senderName} />
-          <span className="composer-reply-excerpt">{replyTarget.excerpt}</span>
-          {onClearReplyTarget && (
-            <button
-              type="button"
-              className="composer-reply-clear"
-              onClick={onClearReplyTarget}
-              aria-label="取消引用"
-              disabled={isBusy}
-            >
-              <X className="h-3.5 w-3.5" strokeWidth={1.9} />
-            </button>
+      {(replyTarget || taskRouteTarget) && (
+        <div className="composer-context-row">
+          {replyTarget && (
+            <div className="composer-reply-preview">
+              <ReplyPreviewLabel explicit={replyTarget.explicit} senderName={replyTarget.senderName} />
+              <span className="composer-reply-excerpt">{replyTarget.excerpt}</span>
+              {onClearReplyTarget && (
+                <button
+                  type="button"
+                  className="composer-reply-clear"
+                  onClick={onClearReplyTarget}
+                  aria-label="取消引用"
+                  disabled={isBusy}
+                >
+                  <X className="h-3.5 w-3.5" strokeWidth={1.9} />
+                </button>
+              )}
+            </div>
           )}
-        </div>
-      )}
-      {taskRouteTarget && (
-        <div className="composer-task-target" data-kind={taskRouteTarget.kind}>
-          <span className="truncate">{taskRouteTarget.label}</span>
-          {taskRouteTarget.kind === 'task' && taskRouteTarget.onClear && (
-            <button
-              type="button"
-              onClick={taskRouteTarget.onClear}
-              disabled={isBusy}
-            >
-              {t('taskWorkspace.clearActiveTask')}
-            </button>
+          {taskRouteTarget && (
+            <div className="composer-task-target" data-kind={taskRouteTarget.kind}>
+              <span className="truncate">{taskRouteTarget.label}</span>
+              {taskRouteTarget.kind === 'task' && taskRouteTarget.onClear && (
+                <button
+                  type="button"
+                  onClick={taskRouteTarget.onClear}
+                  disabled={isBusy}
+                >
+                  {t('taskWorkspace.clearActiveTask')}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
