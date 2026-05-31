@@ -53,6 +53,10 @@
     --room-activity-card-hover-border: rgba(37,99,235,0.10);
     --room-activity-card-open-border: rgba(37,99,235,0.14);
     --room-card-muted-bg: rgba(248,250,252,0.52);
+    --room-control-bg: rgba(255,255,255,0.42);
+    --room-control-border: rgba(255,255,255,0.58);
+    --room-control-active-bg: rgba(37,99,235,0.10);
+    --room-control-active-border: rgba(37,99,235,0.24);
     --room-composer-bg: rgba(255,255,255,0.48);
     --room-composer-box-bg: rgba(255,255,255,0.78);
     --room-agent-message-bg: rgba(255,255,255,0.58);
@@ -122,6 +126,10 @@
     --room-activity-card-hover-border: rgba(96,165,250,0.14);
     --room-activity-card-open-border: rgba(96,165,250,0.18);
     --room-card-muted-bg: rgba(15,23,42,0.52);
+    --room-control-bg: rgba(30,41,59,0.46);
+    --room-control-border: rgba(148,163,184,0.16);
+    --room-control-active-bg: rgba(37,99,235,0.18);
+    --room-control-active-border: rgba(96,165,250,0.26);
     --room-composer-bg: rgba(15,23,42,0.56);
     --room-composer-box-bg: rgba(30,41,59,0.78);
     --room-agent-message-bg: rgba(30,41,59,0.38);
@@ -1559,22 +1567,22 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    border-bottom: 1px solid rgba(255,255,255,0.46);
+    border-bottom: 1px solid var(--room-border-subtle);
     padding: 8px;
   }
   .task-filter-chip {
     border-radius: 6px;
     padding: 4px 7px;
-    background: rgba(255,255,255,0.42);
+    background: var(--room-control-bg);
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--color-fg-muted);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.58);
+    box-shadow: inset 0 0 0 1px var(--room-control-border);
   }
   .task-filter-chip.is-active {
-    background: rgba(10,132,255,0.12);
+    background: var(--room-control-active-bg);
     color: var(--color-primary);
-    box-shadow: inset 0 0 0 1px rgba(10,132,255,0.28);
+    box-shadow: inset 0 0 0 1px var(--room-control-active-border);
   }
   .task-list-empty {
     display: grid;
