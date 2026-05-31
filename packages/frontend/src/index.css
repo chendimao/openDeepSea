@@ -3876,16 +3876,37 @@
     line-height: 1;
   }
   .workspace-timeline-row {
+    position: relative;
     display: grid;
     grid-template-columns: 64px 10px minmax(0, 1fr);
     gap: 8px;
     align-items: center;
     min-height: 26px;
+    border-radius: 10px;
+    padding-right: 6px;
+    transition: background 160ms ease;
+  }
+  .workspace-timeline-row:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    top: 18px;
+    bottom: -8px;
+    left: 77px;
+    width: 1px;
+    background: color-mix(in srgb, var(--room-text-muted) 28%, transparent);
+  }
+  .workspace-timeline-row:hover {
+    background: rgba(37,99,235,0.045);
   }
   .workspace-timeline-row time {
     color: var(--room-text-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10px;
+  }
+  .workspace-timeline-row .task-event-dot {
+    z-index: 1;
+    justify-self: center;
+    margin-top: 0;
   }
   .file-change-row {
     display: grid;
