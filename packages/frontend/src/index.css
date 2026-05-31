@@ -3726,9 +3726,35 @@
     background: color-mix(in srgb, var(--room-panel-bg) 94%, transparent);
   }
   .task-workspace-header {
-    min-height: 52px;
+    min-height: 56px;
     border-bottom: 1px solid var(--room-border);
+    background: color-mix(in srgb, var(--room-card-bg) 54%, transparent);
     padding: 0 16px;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent), 0 8px 18px rgba(15,23,42,0.025);
+    backdrop-filter: blur(18px) saturate(1.16);
+  }
+  .task-workspace-header > svg {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 14%, var(--room-border-subtle));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    padding: 6px;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 86%, transparent);
+  }
+  .task-workspace-header > span {
+    display: inline-flex;
+    min-width: 28px;
+    height: 24px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--room-border-subtle);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--room-card-muted-bg) 80%, transparent);
+    padding: 0 8px;
+    color: var(--color-primary);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 76%, transparent);
   }
   .task-workspace-grid {
     grid-template-columns: minmax(215px, 0.34fr) minmax(0, 1fr);
@@ -7821,12 +7847,18 @@
 
   [data-theme="minimal-light"] .workspace-root .room-main-heading,
   [data-theme="minimal-dark"] .workspace-root .room-main-heading,
-  [data-theme="minimal-light"] .workspace-root .task-workspace-header,
-  [data-theme="minimal-dark"] .workspace-root .task-workspace-header,
   [data-theme="minimal-light"] .workspace-root .active-task-header,
   [data-theme="minimal-dark"] .workspace-root .active-task-header {
     border-bottom: 1px solid var(--room-border);
     background: transparent;
+  }
+
+  [data-theme="minimal-light"] .workspace-root .task-workspace-header,
+  [data-theme="minimal-dark"] .workspace-root .task-workspace-header {
+    border-bottom: 1px solid var(--room-border);
+    background: color-mix(in srgb, var(--room-card-bg) 54%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent), 0 8px 18px rgba(15,23,42,0.025);
+    backdrop-filter: blur(18px) saturate(1.16);
   }
 
   [data-theme="minimal-light"] .workspace-root .ai-conversation,
