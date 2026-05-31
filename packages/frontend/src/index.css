@@ -708,10 +708,10 @@
     grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
   }
   .task-os-grid {
-    grid-template-columns: clamp(440px, 34vw, 520px) minmax(520px, 1fr);
+    grid-template-columns: minmax(520px, 1fr) clamp(360px, 34vw, 520px);
   }
   .task-os-grid.has-inspector {
-    grid-template-columns: clamp(440px, 32vw, 500px) minmax(460px, 1fr) minmax(300px, 360px);
+    grid-template-columns: minmax(460px, 1fr) clamp(340px, 32vw, 500px) minmax(300px, 360px);
   }
   .room-switcher {
     justify-self: stretch;
@@ -3650,10 +3650,10 @@
     padding: 12px;
   }
   .task-os-grid {
-    grid-template-columns: minmax(360px, 40fr) minmax(560px, 60fr);
+    grid-template-columns: minmax(560px, 60fr) minmax(360px, 40fr);
   }
   .task-os-grid.has-inspector {
-    grid-template-columns: minmax(340px, 36fr) minmax(480px, 46fr) minmax(300px, 18fr);
+    grid-template-columns: minmax(480px, 46fr) minmax(340px, 36fr) minmax(300px, 18fr);
   }
   .workbench-panel,
   .inspector-panel {
@@ -8866,10 +8866,10 @@
       grid-template-columns: minmax(300px, 1fr) minmax(320px, 360px);
     }
     .task-os-grid {
-      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
     }
     .task-os-grid.has-inspector {
-      grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(320px, 360px);
+      grid-template-columns: minmax(0, 1fr) minmax(220px, 280px) minmax(320px, 360px);
     }
     .task-card {
       padding: 10px;
@@ -9203,10 +9203,10 @@
       padding-right: 20px;
     }
     .task-os-grid {
-      grid-template-columns: minmax(360px, 40fr) minmax(560px, 60fr);
+      grid-template-columns: minmax(560px, 60fr) minmax(360px, 40fr);
     }
     .task-os-grid.has-inspector {
-      grid-template-columns: minmax(340px, 36fr) minmax(480px, 46fr) minmax(300px, 18fr);
+      grid-template-columns: minmax(480px, 46fr) minmax(340px, 36fr) minmax(300px, 18fr);
     }
   }
   @media (max-width: 1200px) {
