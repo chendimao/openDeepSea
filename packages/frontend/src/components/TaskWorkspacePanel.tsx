@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, CheckCircle2, CircleDot, Gauge, GitBranch, ListChecks, Search } from 'lucide-react';
+import { ArrowRight, Bot, CheckCircle2, CircleDot, Clock3, FileDiff, Gauge, GitBranch, ListChecks, Search } from 'lucide-react';
 import type { MessageKey } from '../lib/i18n';
 import type { MessageLayer, RoomAgent, Task, TaskEvent, TaskExecutorListItem, WorkflowRun } from '../lib/types';
 import { cn } from '../lib/utils';
@@ -253,6 +253,37 @@ function TaskSelectionEmptyState({
             <TaskResourceMetric label="Tool Calls" value="0" />
             <TaskResourceMetric label="File Reads" value="0" />
             <TaskResourceMetric label="File Changes" value="0" />
+          </div>
+        </div>
+        <div className="task-detail-card timeline-card">
+          <TaskWorkspacePanelTitle icon={Clock3} title="Timeline" subtitle="Activity stream" />
+          <div className="workspace-timeline-list">
+            {[
+              ['21:42:13', '任务启动'],
+              ['21:42:18', '分析需求'],
+              ['21:42:25', '收集资料'],
+            ].map(([time, label]) => (
+              <div key={`${time}:${label}`} className="workspace-timeline-row">
+                <time>{time}</time>
+                <span className="task-event-dot" data-layer="timeline" />
+                <strong>{label}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="task-detail-card file-changes-card">
+          <TaskWorkspacePanelTitle icon={FileDiff} title="File Changes" subtitle="0 files" />
+          <div className="file-change-list">
+            <div className="file-change-header" aria-hidden="true">
+              <span>File</span>
+              <strong>+</strong>
+              <strong>-</strong>
+            </div>
+            <div className="file-change-row is-empty">
+              <span>preview.diff</span>
+              <strong className="text-[var(--color-success)]">+0</strong>
+              <strong className="text-[var(--color-danger)]">-0</strong>
+            </div>
           </div>
         </div>
         <div className="task-detail-card tool-calls-card">
