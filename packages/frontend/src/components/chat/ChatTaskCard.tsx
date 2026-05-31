@@ -105,6 +105,10 @@ export function ChatTaskCard({
         <span><b>Priority</b>{task ? priorityLabels[task.priority] : '普通'}</span>
         <span><b>Time</b>{formatRelativeTime(message.created_at)}</span>
       </span>
+      <span className="chat-task-card-progress-label">
+        <b>Progress</b>
+        <strong>{progress}%</strong>
+      </span>
       <span className="chat-task-card-progress-track" aria-hidden="true">
         <span className="chat-task-card-progress" style={{ width: `${progress}%` }} />
       </span>

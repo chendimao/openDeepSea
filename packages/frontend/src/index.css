@@ -4744,6 +4744,30 @@
     line-height: 1;
   }
 
+  .chat-task-card-progress-label {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--room-text-muted, #64748b);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    line-height: 1;
+  }
+
+  .chat-task-card-progress-label b {
+    color: color-mix(in srgb, var(--room-text-muted, #64748b) 86%, transparent);
+    font-size: 8.5px;
+    font-weight: 800;
+  }
+
+  .chat-task-card-progress-label strong {
+    color: var(--color-primary);
+    font-size: 10.5px;
+    font-weight: 800;
+  }
+
   .chat-task-card-progress-track {
     display: block;
     height: 4px;
