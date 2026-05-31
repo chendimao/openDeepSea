@@ -3581,7 +3581,12 @@
     min-height: 0;
     gap: 6px;
     border-bottom: 1px solid var(--room-border);
-    background: linear-gradient(180deg, rgba(255,255,255,0.46), rgba(255,255,255,0.18));
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 64%, transparent),
+        color-mix(in srgb, var(--room-panel-bg) 46%, transparent)
+      );
     padding: 10px 14px 9px;
   }
   .active-task-breadcrumb {
@@ -3638,13 +3643,13 @@
     place-items: center;
     border: 1px solid var(--room-border);
     border-radius: 10px;
-    background: var(--room-card-bg);
+    background-color: var(--room-card-bg);
     color: var(--color-fg-muted);
-    transition: transform 160ms ease, background 160ms ease, color 160ms ease;
+    transition: transform 160ms ease, color 160ms ease;
   }
   .active-task-header-actions button:hover {
     transform: translateY(-1px);
-    background: white;
+    background-color: var(--room-card-hover-bg);
     color: var(--color-primary);
   }
   .active-task-meta-grid {
