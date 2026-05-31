@@ -127,9 +127,12 @@ CREATE TABLE IF NOT EXISTS rooms (
   name TEXT NOT NULL,
   description TEXT,
   created_at INTEGER NOT NULL,
+  last_opened_at INTEGER,
+  pinned_at INTEGER,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_rooms_project ON rooms(project_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_project_usage ON rooms(project_id, pinned_at DESC, last_opened_at DESC, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
@@ -754,6 +757,16 @@ if (!skillColumnNames.has('available_revision')) {
 
 db.exec('CREATE INDEX IF NOT EXISTS idx_skill_runs_skill ON skill_runs(skill_id, created_at)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_skill_runs_project ON skill_runs(project_id, created_at)');
+
+const roomColumns = db.prepare('PRAGMA table_info(rooms)').all() as { name: string }[];
+const roomColumnNames = new Set(roomColumns.map((column) => column.name));
+if (!roomColumnNames.has('last_opened_at')) {
+  db.exec('ALTER TABLE rooms ADD COLUMN last_opened_at INTEGER');
+}
+if (!roomColumnNames.has('pinned_at')) {
+  db.exec('ALTER TABLE rooms ADD COLUMN pinned_at INTEGER');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_rooms_project_usage ON rooms(project_id, pinned_at DESC, last_opened_at DESC, created_at DESC)');
 
 const roomAgentColumns = db.prepare('PRAGMA table_info(room_agents)').all() as { name: string }[];
 const roomAgentColumnNames = new Set(roomAgentColumns.map((column) => column.name));

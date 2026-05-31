@@ -33,6 +33,8 @@ export interface Room {
   name: string;
   description: string | null;
   created_at: number;
+  last_opened_at: number | null;
+  pinned_at: number | null;
 }
 
 export type RoomSearchMode = 'semantic' | 'keyword';

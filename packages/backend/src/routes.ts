@@ -1313,7 +1313,7 @@ router.get('/projects/:projectId/rooms', (req, res) => {
 
 router.post('/projects/:projectId/rooms', (req, res) => {
   const schema = z.object({
-    name: z.string().min(1),
+    name: z.string().trim().min(1),
     description: z.string().optional(),
     crew_template_id: z.string().min(1).optional(),
   });
@@ -1337,6 +1337,28 @@ router.get('/rooms/:id', (req, res) => {
   const room = roomRepo.get(req.params.id);
   if (!room) return res.status(404).json({ error: 'not found' });
   res.json(room);
+});
+
+router.patch('/rooms/:id', (req, res) => {
+  const schema = z
+    .object({
+      name: z.string().optional(),
+      last_opened_at: z.number().int().nullable().optional(),
+      pinned_at: z.number().int().nullable().optional(),
+    })
+    .strict();
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const room = roomRepo.update(req.params.id, parsed.data);
+    if (!room) return res.status(404).json({ error: 'not found' });
+    res.json(room);
+  } catch (err) {
+    if ((err as Error).message === 'room name is required') {
+      return res.status(400).json({ error: 'room name is required' });
+    }
+    throw err;
+  }
 });
 
 router.delete('/rooms/:id', (req, res) => {

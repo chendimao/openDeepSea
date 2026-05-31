@@ -249,7 +249,15 @@ function getRoomAgentRuntimeProfileVersion(id: string): number {
 export const roomRepo = {
   listByProject(projectId: string): Room[] {
     return db
-      .prepare('SELECT * FROM rooms WHERE project_id = ? ORDER BY created_at DESC')
+      .prepare(`
+        SELECT * FROM rooms
+        WHERE project_id = ?
+        ORDER BY
+          pinned_at IS NULL ASC,
+          pinned_at DESC,
+          COALESCE(last_opened_at, created_at) DESC,
+          created_at DESC
+      `)
       .all(projectId) as Room[];
   },
 
@@ -258,15 +266,47 @@ export const roomRepo = {
   },
 
   create(input: { project_id: string; name: string; description?: string; ensureDefaultPlanner?: boolean }): Room {
+    const name = input.name.trim();
+    if (!name) throw new Error('room name is required');
+
     const id = nanoid(12);
+    const createdAt = now();
     db.prepare(
-      `INSERT INTO rooms (id, project_id, name, description, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(id, input.project_id, input.name, input.description ?? null, now());
+      `INSERT INTO rooms (id, project_id, name, description, created_at, last_opened_at, pinned_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+    ).run(id, input.project_id, name, input.description ?? null, createdAt, createdAt);
     if (input.ensureDefaultPlanner !== false) {
       roomAgentRepo.ensureDefaultPlanner(id);
     }
     return this.get(id)!;
+  },
+
+  update(
+    id: string,
+    patch: {
+      name?: string;
+      last_opened_at?: number | null;
+      pinned_at?: number | null;
+    },
+  ): Room | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+
+    const nextName = patch.name !== undefined ? patch.name.trim() : existing.name;
+    if (!nextName) throw new Error('room name is required');
+
+    db.prepare(
+      `UPDATE rooms
+       SET name = ?, last_opened_at = ?, pinned_at = ?
+       WHERE id = ?`,
+    ).run(
+      nextName,
+      patch.last_opened_at !== undefined ? patch.last_opened_at : existing.last_opened_at,
+      patch.pinned_at !== undefined ? patch.pinned_at : existing.pinned_at,
+      id,
+    );
+
+    return this.get(id);
   },
 
   delete(id: string): boolean {
