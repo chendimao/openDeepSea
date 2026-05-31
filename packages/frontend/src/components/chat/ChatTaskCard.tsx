@@ -103,6 +103,7 @@ export function ChatTaskCard({
         <span><b>Task ID</b>#{shortTaskId}</span>
         <span><b>Owner</b>{assignee ?? '未分配'}</span>
         <span><b>Priority</b>{task ? priorityLabels[task.priority] : '普通'}</span>
+        <span><b>Status</b>{status?.label ?? eventLabel}</span>
         <span><b>Time</b>{formatRelativeTime(message.created_at)}</span>
       </span>
       <span className="chat-task-card-progress-label">
