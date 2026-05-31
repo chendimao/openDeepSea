@@ -3189,6 +3189,10 @@
     justify-content: flex-end;
     overflow: hidden;
   }
+  .room-toolbar-actions .room-agent-strip,
+  .room-toolbar-actions .room-agent-empty-label {
+    display: none;
+  }
   .room-toolbar-actions .glass-button {
     width: 40px;
     min-width: 40px;
