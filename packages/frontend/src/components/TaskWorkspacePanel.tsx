@@ -236,9 +236,15 @@ function TaskSelectionEmptyState({
           <TaskWorkspacePanelTitle icon={Gauge} title="Realtime Status" subtitle="waiting" />
           <div className="current-agent-row">
             <Bot className="h-7 w-7 text-[var(--color-muted)]" />
-            <div className="min-w-0">
-              <strong>AI Agent</strong>
-              <span>AI 正在生成 UI 预览...</span>
+            <div className="current-agent-copy">
+              <div className="current-status-line">
+                <span>Current Agent</span>
+                <strong>AI Agent</strong>
+              </div>
+              <div className="current-status-line">
+                <span>Current Step</span>
+                <strong>AI 正在生成 UI 预览...</strong>
+              </div>
             </div>
             <i />
           </div>

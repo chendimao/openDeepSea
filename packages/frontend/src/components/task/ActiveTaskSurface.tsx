@@ -170,9 +170,15 @@ export function ActiveTaskSurface({
           <TaskWorkspacePanelTitle icon={Gauge} title="Realtime Status" subtitle={workflow?.status ?? taskStatusLabel(task.status)} />
           <div className="current-agent-row">
             {assignedAgent ? <AgentAvatar name={assignedAgent.agent_name} size={34} active={!!assignedAgent.acp_enabled} /> : <Bot className="h-7 w-7 text-[var(--color-muted)]" />}
-            <div className="min-w-0">
-              <strong>{currentAgent}</strong>
-              <span>{currentStep?.title ?? t('taskWorkspace.selectTaskDescription')}</span>
+            <div className="current-agent-copy">
+              <div className="current-status-line">
+                <span>Current Agent</span>
+                <strong>{currentAgent}</strong>
+              </div>
+              <div className="current-status-line">
+                <span>Current Step</span>
+                <strong>{currentStep?.title ?? t('taskWorkspace.selectTaskDescription')}</strong>
+              </div>
             </div>
             <i />
           </div>

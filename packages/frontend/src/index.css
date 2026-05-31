@@ -3859,8 +3859,7 @@
   .execution-step strong,
   .workspace-timeline-row strong,
   .file-change-row span,
-  .tool-call-card strong,
-  .current-agent-row strong {
+  .tool-call-card strong {
     overflow: hidden;
     color: var(--room-text-heading);
     font-size: 12px;
@@ -3869,7 +3868,6 @@
     white-space: nowrap;
   }
   .execution-step small,
-  .current-agent-row span,
   .tool-call-card span,
   .tool-call-card time {
     display: block;
@@ -3886,6 +3884,40 @@
     border-radius: 13px;
     background: var(--room-card-muted-bg);
     padding: 8px;
+  }
+  .current-agent-copy {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+  }
+  .current-status-line {
+    display: grid;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 8px;
+    align-items: baseline;
+    min-width: 0;
+  }
+  .current-status-line span {
+    display: block;
+    overflow: hidden;
+    color: var(--room-text-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9px;
+    font-weight: 760;
+    letter-spacing: 0;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .current-status-line strong {
+    display: block;
+    overflow: hidden;
+    color: var(--room-text-heading);
+    font-size: 12px;
+    font-weight: 720;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .current-agent-row > i {
     width: 9px;
