@@ -199,6 +199,11 @@ export function ActiveTaskSurface({
         <motion.section className="task-detail-card file-changes-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.09, ease: [0.16, 1, 0.3, 1] }}>
           <TaskWorkspacePanelTitle icon={FileDiff} title="File Changes" subtitle={`${fileChanges.length} files`} />
           <div className="file-change-list">
+            <div className="file-change-header" aria-hidden="true">
+              <span>File</span>
+              <strong>+</strong>
+              <strong>-</strong>
+            </div>
             {fileChanges.length > 0 ? fileChanges.map((file) => (
               <div key={file.name} className="file-change-row">
                 <span>{file.name}</span>

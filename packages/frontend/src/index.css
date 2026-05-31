@@ -3940,6 +3940,22 @@
     padding: 0 7px;
     transition: background 160ms ease;
   }
+  .file-change-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 30px 30px;
+    gap: 5px;
+    align-items: center;
+    min-height: 20px;
+    padding: 0 7px;
+    color: var(--room-text-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9px;
+    font-weight: 760;
+    line-height: 1;
+  }
+  .file-change-header strong {
+    text-align: right;
+  }
   .file-change-row:hover {
     background: rgba(37,99,235,0.06);
   }
