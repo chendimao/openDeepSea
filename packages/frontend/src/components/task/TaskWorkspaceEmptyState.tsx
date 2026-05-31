@@ -1,3 +1,4 @@
+import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Bot, CircleDot, Clock3, FileDiff, FileText, Gauge, GitBranch, ListChecks, MonitorPlay, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Task } from '../../lib/types';
@@ -16,6 +17,14 @@ export function TaskWorkspaceEmptyState({
   title,
   description,
 }: TaskWorkspaceEmptyStateProps): JSX.Element {
+  const prefersReducedMotion = useReducedMotion();
+  const cardMotion = (delay = 0) => ({
+    initial: prefersReducedMotion ? false as const : { opacity: 0, y: 8 },
+    animate: { opacity: 1, y: 0 },
+    whileHover: prefersReducedMotion ? undefined : { y: -2 },
+    transition: { duration: prefersReducedMotion ? 0 : 0.18, delay: prefersReducedMotion ? 0 : delay, ease: [0.16, 1, 0.3, 1] as const },
+  });
+
   return (
     <div className="task-workspace-empty">
       <div className="task-workspace-empty-copy">
@@ -24,7 +33,7 @@ export function TaskWorkspaceEmptyState({
         <p className="mt-1 max-w-[32ch] text-[12px] leading-relaxed text-[var(--color-fg-muted)]">{description}</p>
       </div>
       <div className="task-workspace-empty-preview" aria-hidden="true">
-        <div className="task-detail-card execution-plan-card">
+        <motion.div className="task-detail-card execution-plan-card" {...cardMotion(0)}>
           <TaskWorkspacePanelTitle icon={ListChecks} title="Execution Plan" subtitle="3 steps" />
           <div className="execution-step-list">
             {[
@@ -41,8 +50,8 @@ export function TaskWorkspaceEmptyState({
               </div>
             ))}
           </div>
-        </div>
-        <div className="task-detail-card realtime-status-card">
+        </motion.div>
+        <motion.div className="task-detail-card realtime-status-card" {...cardMotion(0.03)}>
           <TaskWorkspacePanelTitle icon={Gauge} title="Realtime Status" subtitle="waiting" />
           <div className="current-agent-row">
             <Bot className="h-7 w-7 text-[var(--color-muted)]" />
@@ -64,8 +73,8 @@ export function TaskWorkspaceEmptyState({
             <TaskResourceMetric label="File Reads" value="0" />
             <TaskResourceMetric label="File Changes" value="0" />
           </div>
-        </div>
-        <div className="task-detail-card timeline-card">
+        </motion.div>
+        <motion.div className="task-detail-card timeline-card" {...cardMotion(0.06)}>
           <TaskWorkspacePanelTitle icon={Clock3} title="Timeline" subtitle="Activity stream" />
           <div className="workspace-timeline-list">
             {[
@@ -80,8 +89,8 @@ export function TaskWorkspaceEmptyState({
               </div>
             ))}
           </div>
-        </div>
-        <div className="task-detail-card file-changes-card">
+        </motion.div>
+        <motion.div className="task-detail-card file-changes-card" {...cardMotion(0.09)}>
           <TaskWorkspacePanelTitle icon={FileDiff} title="File Changes" subtitle="0 files" />
           <div className="file-change-list">
             <div className="file-change-header" aria-hidden="true">
@@ -95,8 +104,8 @@ export function TaskWorkspaceEmptyState({
               <strong className="text-[var(--color-danger)]">-0</strong>
             </div>
           </div>
-        </div>
-        <div className="task-detail-card tool-calls-card">
+        </motion.div>
+        <motion.div className="task-detail-card tool-calls-card" {...cardMotion(0.12)}>
           <TaskWorkspacePanelTitle icon={GitBranch} title="Tool Calls" subtitle="preview" />
           <div className="tool-call-strip">
             {['search_files', 'read_file', 'generate_preview'].map((tool) => {
@@ -112,7 +121,7 @@ export function TaskWorkspaceEmptyState({
               );
             })}
           </div>
-        </div>
+        </motion.div>
       </div>
       {tasks.length > 0 && (
         <div className="mt-4 w-full space-y-2">
