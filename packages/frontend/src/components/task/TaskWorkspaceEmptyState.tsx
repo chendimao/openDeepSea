@@ -1,4 +1,5 @@
-import { ArrowRight, Bot, CircleDot, Clock3, FileDiff, Gauge, GitBranch, ListChecks, Search } from 'lucide-react';
+import { ArrowRight, Bot, CircleDot, Clock3, FileDiff, FileText, Gauge, GitBranch, ListChecks, MonitorPlay, Search } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { Task } from '../../lib/types';
 import { TaskResourceMetric, TaskWorkspacePanelTitle } from './TaskWorkspaceCards';
 
@@ -98,14 +99,18 @@ export function TaskWorkspaceEmptyState({
         <div className="task-detail-card tool-calls-card">
           <TaskWorkspacePanelTitle icon={GitBranch} title="Tool Calls" subtitle="preview" />
           <div className="tool-call-strip">
-            {['search_files', 'read_file', 'generate_preview'].map((tool) => (
-              <div key={tool} className="tool-call-card" data-status="waiting">
-                <Search className="h-4 w-4" strokeWidth={1.8} />
-                <strong>{tool}</strong>
-                <span>waiting</span>
-                <time>--:--</time>
-              </div>
-            ))}
+            {['search_files', 'read_file', 'generate_preview'].map((tool) => {
+              const ToolIcon = toolIconForName(tool);
+
+              return (
+                <div key={tool} className="tool-call-card" data-status="waiting" data-tool={tool}>
+                  <ToolIcon className="h-4 w-4" strokeWidth={1.8} />
+                  <strong>{tool}</strong>
+                  <span>waiting</span>
+                  <time>--:--</time>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -121,4 +126,16 @@ export function TaskWorkspaceEmptyState({
       )}
     </div>
   );
+}
+
+function toolIconForName(name: string): LucideIcon {
+  if (name === 'read_file') {
+    return FileText;
+  }
+
+  if (name === 'generate_preview') {
+    return MonitorPlay;
+  }
+
+  return Search;
 }

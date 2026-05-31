@@ -244,7 +244,7 @@ export function ActiveTaskSurface({
               const ToolIcon = toolIconForName(tool.name);
 
               return (
-                <div key={`${tool.name}:${tool.time}`} className="tool-call-card" data-status={tool.status}>
+                <div key={`${tool.name}:${tool.time}`} className="tool-call-card" data-status={tool.status} data-tool={tool.name}>
                   <ToolIcon className="h-4 w-4" strokeWidth={1.8} />
                   <strong>{tool.name}</strong>
                   <span>{tool.status}</span>

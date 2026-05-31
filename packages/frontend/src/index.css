@@ -69,6 +69,17 @@
     --room-diff-file-badge-bg: rgba(37,99,235,0.09);
     --room-diff-added-bg: rgba(15,159,110,0.10);
     --room-diff-removed-bg: rgba(217,68,53,0.10);
+    --room-tool-card-bg: rgba(255,255,255,0.62);
+    --room-tool-card-hover-bg: rgba(255,255,255,0.88);
+    --room-tool-card-border: rgba(0,0,0,0.055);
+    --room-tool-card-shadow: inset 0 1px 0 rgba(255,255,255,0.82), 0 8px 20px rgba(15,23,42,0.035);
+    --room-tool-card-hover-shadow: 0 14px 30px rgba(15,23,42,0.075), inset 0 1px 0 rgba(255,255,255,0.92);
+    --room-tool-icon-bg: rgba(37,99,235,0.09);
+    --room-tool-icon-border: rgba(37,99,235,0.12);
+    --room-tool-running-bg: rgba(37,99,235,0.12);
+    --room-tool-done-bg: rgba(15,159,110,0.12);
+    --room-tool-failed-bg: rgba(217,68,53,0.11);
+    --room-tool-waiting-bg: rgba(148,163,184,0.14);
     --room-composer-bg: rgba(255,255,255,0.48);
     --room-composer-box-bg: rgba(255,255,255,0.78);
     --room-agent-message-bg: rgba(255,255,255,0.58);
@@ -154,6 +165,17 @@
     --room-diff-file-badge-bg: rgba(96,165,250,0.14);
     --room-diff-added-bg: rgba(16,185,129,0.14);
     --room-diff-removed-bg: rgba(239,68,68,0.14);
+    --room-tool-card-bg: rgba(15,23,42,0.48);
+    --room-tool-card-hover-bg: rgba(30,41,59,0.76);
+    --room-tool-card-border: rgba(148,163,184,0.15);
+    --room-tool-card-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 10px 24px rgba(0,0,0,0.14);
+    --room-tool-card-hover-shadow: 0 14px 30px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+    --room-tool-icon-bg: rgba(96,165,250,0.14);
+    --room-tool-icon-border: rgba(96,165,250,0.16);
+    --room-tool-running-bg: rgba(96,165,250,0.16);
+    --room-tool-done-bg: rgba(16,185,129,0.16);
+    --room-tool-failed-bg: rgba(239,68,68,0.15);
+    --room-tool-waiting-bg: rgba(148,163,184,0.13);
     --room-composer-bg: rgba(15,23,42,0.56);
     --room-composer-box-bg: rgba(30,41,59,0.78);
     --room-agent-message-bg: rgba(30,41,59,0.38);
@@ -258,6 +280,17 @@
     --room-card-bg: #1b1f27;
     --room-card-hover-bg: #202631;
     --room-card-muted-bg: #15181e;
+    --room-tool-card-bg: #15181e;
+    --room-tool-card-hover-bg: #202631;
+    --room-tool-card-border: #242a33;
+    --room-tool-card-shadow: none;
+    --room-tool-card-hover-shadow: inset 2px 0 0 var(--color-primary);
+    --room-tool-icon-bg: color-mix(in srgb, var(--color-primary) 14%, transparent);
+    --room-tool-icon-border: color-mix(in srgb, var(--color-primary) 16%, transparent);
+    --room-tool-running-bg: color-mix(in srgb, var(--color-primary) 18%, transparent);
+    --room-tool-done-bg: color-mix(in srgb, var(--color-success) 16%, transparent);
+    --room-tool-failed-bg: color-mix(in srgb, var(--color-danger) 16%, transparent);
+    --room-tool-waiting-bg: color-mix(in srgb, var(--color-muted) 16%, transparent);
     --room-composer-bg: #15181e;
     --room-composer-box-bg: #1b1f27;
     --room-agent-message-bg: transparent;
@@ -4232,42 +4265,46 @@
   }
   .tool-call-card {
     display: grid;
-    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-columns: 28px minmax(0, 1fr);
     grid-template-areas:
+      "icon name"
       "icon status"
-      "name name"
       "time time";
     align-items: center;
-    column-gap: 6px;
+    column-gap: 9px;
     row-gap: 4px;
     min-width: 0;
-    border: 1px solid var(--room-border-subtle);
-    border-radius: 13px;
-    background: color-mix(in srgb, var(--room-card-muted-bg) 88%, transparent);
-    padding: 7px 8px;
+    min-height: 76px;
+    border: 1px solid var(--room-tool-card-border);
+    border-radius: 14px;
+    background: var(--room-tool-card-bg);
+    padding: 9px 10px 8px;
     color: var(--color-primary);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 80%, transparent);
-    transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+    box-shadow: var(--room-tool-card-shadow);
+    backdrop-filter: blur(16px) saturate(1.12);
+    transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms ease, box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .tool-call-card:hover {
-    transform: translateY(-1px);
-    background: var(--room-card-hover-bg);
-    box-shadow: 0 12px 24px rgba(15,23,42,0.06), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent);
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--color-primary) 16%, var(--room-tool-card-border));
+    background: var(--room-tool-card-hover-bg);
+    box-shadow: var(--room-tool-card-hover-shadow);
   }
   .tool-call-card svg {
     grid-area: icon;
-    width: 22px;
-    height: 22px;
-    border-radius: 9px;
-    background: rgba(37,99,235,0.08);
-    padding: 5px;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--room-tool-icon-border);
+    border-radius: 10px;
+    background: var(--room-tool-icon-bg);
+    padding: 6px;
   }
   .tool-call-card strong {
     grid-area: name;
     display: block;
     min-width: 0;
-    font-size: 10px;
-    line-height: 1.14;
+    font-size: 11px;
+    line-height: 1.18;
     overflow-wrap: normal;
     white-space: nowrap;
   }
@@ -4276,15 +4313,16 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    justify-self: end;
+    justify-self: start;
     width: max-content;
     max-width: 100%;
     border-radius: 999px;
-    background: rgba(148,163,184,0.14);
-    padding: 2px 7px;
+    background: var(--room-tool-waiting-bg);
+    padding: 2px 6px;
     color: var(--color-fg-muted);
     font-size: 9.5px;
     line-height: 1.1;
+    text-transform: lowercase;
   }
   .tool-call-card span::before {
     content: "";
@@ -4297,13 +4335,13 @@
   }
   .tool-call-card time {
     grid-area: time;
-    margin-top: 1px;
+    margin-top: 3px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .tool-call-card[data-status="running"] span {
-    background: rgba(37,99,235,0.12);
+    background: var(--room-tool-running-bg);
     color: var(--color-primary);
   }
   .tool-call-card[data-status="running"] span::before {
@@ -4311,11 +4349,11 @@
   }
   .tool-call-card[data-status="done"] span,
   .tool-call-card[data-status="completed"] span {
-    background: rgba(16,185,129,0.12);
+    background: var(--room-tool-done-bg);
     color: var(--color-success);
   }
   .tool-call-card[data-status="failed"] span {
-    background: rgba(239,68,68,0.11);
+    background: var(--room-tool-failed-bg);
     color: var(--color-danger);
   }
   .workspace-empty-row,
@@ -7770,19 +7808,19 @@
 
   [data-theme="minimal-light"] .workspace-root .tool-call-card,
   [data-theme="minimal-dark"] .workspace-root .tool-call-card {
-    border-color: var(--room-border-subtle);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 80%, transparent);
+    border-color: var(--room-tool-card-border);
+    box-shadow: var(--room-tool-card-shadow);
   }
 
   [data-theme="minimal-light"] .workspace-root .tool-call-card,
   [data-theme="minimal-dark"] .workspace-root .tool-call-card {
-    background: color-mix(in srgb, var(--room-card-muted-bg) 88%, transparent);
+    background: var(--room-tool-card-bg);
   }
 
   [data-theme="minimal-light"] .workspace-root .tool-call-card:hover,
   [data-theme="minimal-dark"] .workspace-root .tool-call-card:hover {
-    background: var(--room-card-hover-bg);
-    box-shadow: 0 12px 24px rgba(15,23,42,0.06), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent);
+    background: var(--room-tool-card-hover-bg);
+    box-shadow: var(--room-tool-card-hover-shadow);
   }
 
   [data-theme="minimal-light"] .glass-info-card,
