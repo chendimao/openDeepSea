@@ -4083,6 +4083,14 @@
     opacity: 0.92;
     scrollbar-width: thin;
   }
+  .task-workspace-empty-preview::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .task-workspace-empty-preview::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--room-text-muted) 28%, transparent);
+  }
   .task-detail-card {
     min-width: 0;
     border: 1px solid var(--room-border);
@@ -4650,6 +4658,18 @@
     .task-workspace-canvas,
     .task-workspace-empty-preview {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .task-workspace-empty {
+      gap: 14px;
+      padding: 18px 20px 20px;
+    }
+    .task-workspace-empty-preview {
+      gap: 10px;
+      padding-right: 0;
+    }
+    .task-workspace-empty-preview .task-detail-card {
+      padding: 9px;
+      box-shadow: 0 10px 26px rgba(15,23,42,0.04), inset 0 1px 0 rgba(255,255,255,0.84);
     }
     .tool-call-strip {
       display: flex;
@@ -8552,13 +8572,56 @@
   @media (min-width: 769px) and (max-width: 1200px) {
     .workspace-grid.task-os-grid,
     .workspace-grid.task-os-grid.has-inspector {
-      grid-template-rows: minmax(440px, 48dvh) minmax(700px, max-content);
+      grid-template-rows: minmax(440px, 48dvh) minmax(820px, max-content);
     }
     .task-os-grid .task-workspace-panel {
-      min-height: 700px;
+      min-height: 820px;
     }
     .task-workspace-grid {
-      grid-template-rows: clamp(188px, 24dvh, 224px) minmax(0, 1fr);
+      grid-template-rows: clamp(148px, 18dvh, 170px) minmax(0, 1fr);
+    }
+    .task-workspace-empty {
+      gap: 14px;
+      padding: 18px 22px 22px;
+    }
+    .task-workspace-empty-copy {
+      max-height: 84px;
+      overflow: hidden;
+    }
+    .task-workspace-empty-preview {
+      max-height: none;
+      gap: 10px;
+      overflow-y: auto;
+    }
+    .task-workspace-empty-preview .task-detail-card {
+      padding: 9px;
+    }
+    .task-workspace-empty-preview .task-detail-card-title {
+      margin-bottom: 7px;
+    }
+    .task-workspace-empty-preview .execution-step {
+      min-height: 29px;
+    }
+    .task-workspace-empty-preview .execution-step:not(:last-child)::after {
+      top: 22px;
+      bottom: -5px;
+    }
+    .task-workspace-empty-preview .current-agent-row {
+      padding: 7px;
+    }
+    .task-workspace-empty-preview .resource-metrics {
+      gap: 5px;
+      margin-top: 7px;
+    }
+    .task-workspace-empty-preview .resource-metric {
+      padding: 5px 6px;
+    }
+    .task-workspace-empty-preview .workspace-timeline-row,
+    .task-workspace-empty-preview .file-change-row {
+      min-height: 24px;
+    }
+    .task-workspace-empty-preview .tool-call-card {
+      min-height: 70px;
     }
     .task-queue-rail {
       max-height: none;
