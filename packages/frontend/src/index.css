@@ -1179,8 +1179,14 @@
     align-items: center;
     justify-content: center;
     gap: 7px;
+    border: 1px solid var(--room-border-subtle);
     border-radius: 999px;
+    background: color-mix(in srgb, var(--room-card-bg) 42%, transparent);
+    padding: 5px 10px;
     color: var(--room-text-muted);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 76%, transparent);
+    backdrop-filter: blur(14px) saturate(1.08);
+    font-size: 11px;
     line-height: 1.35;
   }
   .chat-activity-copy {
@@ -1197,6 +1203,7 @@
     border-radius: 999px;
     background: var(--color-primary);
     opacity: 0.72;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 10%, transparent);
   }
   .chat-activity-message.is-loading .chat-activity-pulse {
     display: block;
@@ -1282,6 +1289,11 @@
     flex: 0 0 auto;
     align-items: center;
     gap: 4px;
+    opacity: 0.46;
+    transition: opacity 160ms ease;
+  }
+  .ai-message-card:hover .ai-message-actions,
+  .ai-message-card:focus-within .ai-message-actions {
     opacity: 1;
   }
   .ai-message-action {
@@ -1289,16 +1301,21 @@
     height: 24px;
     width: 24px;
     place-items: center;
-    border-radius: 6px;
+    border: 1px solid transparent;
+    border-radius: 8px;
     color: var(--color-fg-muted);
+    transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .ai-message-action:hover {
-    background: var(--color-surface-raised);
-    color: var(--color-accent);
+    transform: translateY(-1px);
+    border-color: var(--room-border-subtle);
+    background: color-mix(in srgb, var(--room-card-bg) 80%, transparent);
+    color: var(--color-primary);
   }
   .ai-message-action.is-active {
-    background: var(--color-surface-raised);
-    color: var(--color-accent);
+    border-color: color-mix(in srgb, var(--color-primary) 18%, var(--room-border-subtle));
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    color: var(--color-primary);
   }
   .ai-message-body {
     padding: 9px 12px 10px;
@@ -4687,6 +4704,7 @@
     .task-card-progress i,
     .task-card-progress i::after,
     .chat-task-card-progress,
+    .chat-task-card-progress::after,
     .liquid-progress i,
     .current-agent-row > i,
     .execution-step[data-state="running"] .execution-step-node,
@@ -5187,16 +5205,21 @@
     width: min(520px, 100%);
     min-width: 0;
     flex-direction: column;
-    gap: 9px;
+    gap: 10px;
     overflow: hidden;
     border: 1px solid var(--room-border, rgba(0,0,0,0.06));
     border-radius: 16px;
-    background: var(--room-card-bg, rgba(255,255,255,0.85));
-    box-shadow: var(--room-card-shadow, 0 8px 24px rgba(15,23,42,0.04)), inset 0 1px 0 rgba(255,255,255,0.82);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg, rgba(255,255,255,0.85)) 96%, transparent),
+        color-mix(in srgb, var(--room-card-bg, rgba(255,255,255,0.85)) 82%, transparent)
+      );
+    box-shadow: 0 10px 28px rgba(15,23,42,0.045), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg, white) 94%, transparent);
     color: var(--color-fg);
-    padding: 13px 13px 12px;
+    padding: 14px 14px 12px;
     text-align: left;
-    backdrop-filter: blur(18px) saturate(1.14);
+    backdrop-filter: blur(22px) saturate(1.18);
     transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease, border-color 180ms ease;
   }
 
@@ -5212,8 +5235,13 @@
   .chat-task-card:not(:disabled):hover {
     transform: translateY(-2px);
     border-color: color-mix(in srgb, var(--color-primary) 16%, var(--room-border, rgba(0,0,0,0.06)));
-    background: var(--room-card-hover-bg, rgba(255,255,255,0.96));
-    box-shadow: var(--room-card-hover-shadow, 0 16px 34px rgba(37,99,235,0.10));
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-hover-bg, rgba(255,255,255,0.96)) 98%, transparent),
+        color-mix(in srgb, var(--room-card-hover-bg, rgba(255,255,255,0.96)) 88%, transparent)
+      );
+    box-shadow: 0 16px 34px rgba(37,99,235,0.08), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg, white) 96%, transparent);
   }
 
   .chat-task-card.is-active {
@@ -5229,13 +5257,24 @@
   }
 
   .chat-task-card-progress {
+    position: relative;
     display: block;
     height: 4px;
     max-width: 100%;
+    overflow: hidden;
     border-radius: 999px;
     background: var(--room-primary-progress, linear-gradient(90deg, #2563EB, #60A5FA));
     animation: progress-glow 1.8s ease-in-out infinite;
     transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .chat-task-card-progress::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.38), transparent);
+    transform: translateX(-100%);
+    animation: progress-sheen 2.4s ease-in-out infinite;
   }
 
   .chat-task-card-top {
@@ -5260,7 +5299,7 @@
     width: 34px;
     place-items: center;
     border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--room-border, rgba(0,0,0,0.06)));
-    border-radius: 12px;
+    border-radius: 11px;
     background: color-mix(in srgb, var(--color-primary) 10%, rgba(255,255,255,0.92));
     color: var(--color-primary);
   }
@@ -5286,9 +5325,10 @@
 
   .chat-task-card-kicker {
     display: block;
-    color: var(--color-fg-muted);
+    color: var(--room-text-muted, var(--color-fg-muted));
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 9.5px;
+    font-weight: 760;
     line-height: 1.2;
   }
 
@@ -5297,7 +5337,7 @@
     margin-top: 3px;
     overflow: hidden;
     color: var(--color-fg);
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 750;
     line-height: 1.28;
     text-overflow: ellipsis;
@@ -5308,8 +5348,8 @@
     display: -webkit-box;
     overflow: hidden;
     color: var(--room-text-muted, #64748b);
-    font-size: 11.5px;
-    line-height: 1.42;
+    font-size: 12px;
+    line-height: 1.48;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
   }
@@ -5347,11 +5387,11 @@
   .chat-task-card-meta {
     display: grid;
     min-width: 0;
-    grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
     gap: 6px;
     color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 10.5px;
     line-height: 1.3;
   }
 
@@ -5361,9 +5401,10 @@
     max-width: 100%;
     overflow: hidden;
     border: 1px solid var(--room-border-subtle, rgba(0,0,0,0.05));
-    border-radius: 10px;
-    background: color-mix(in srgb, var(--room-card-muted-bg, rgba(248,250,252,0.78)) 84%, transparent);
-    padding: 6px 7px;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--room-card-muted-bg, rgba(248,250,252,0.78)) 78%, transparent);
+    padding: 6px 8px;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg, white) 74%, transparent);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -5403,7 +5444,7 @@
 
   .chat-task-card-progress-track {
     display: block;
-    height: 4px;
+    height: 5px;
     overflow: hidden;
     border-radius: 999px;
     background: rgba(37,99,235,0.10);
@@ -8107,8 +8148,13 @@
   [data-theme="minimal-light"] .workspace-root .chat-task-card,
   [data-theme="minimal-dark"] .workspace-root .chat-task-card {
     border-color: var(--room-border);
-    background: var(--room-card-bg);
-    box-shadow: var(--room-card-shadow), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 96%, transparent),
+        color-mix(in srgb, var(--room-card-bg) 82%, transparent)
+      );
+    box-shadow: 0 10px 28px rgba(15,23,42,0.045), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 94%, transparent);
   }
 
   [data-theme="minimal-light"] .workspace-root .chat-task-card:not(:disabled):hover,
@@ -8116,8 +8162,13 @@
   [data-theme="minimal-light"] .workspace-root .chat-task-card.is-active,
   [data-theme="minimal-dark"] .workspace-root .chat-task-card.is-active {
     border-color: color-mix(in srgb, var(--color-primary) 18%, var(--room-border));
-    background: var(--room-card-hover-bg);
-    box-shadow: var(--room-card-hover-shadow);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-hover-bg) 98%, transparent),
+        color-mix(in srgb, var(--room-card-hover-bg) 88%, transparent)
+      );
+    box-shadow: 0 16px 34px rgba(37,99,235,0.08), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent);
   }
 
   [data-theme="minimal-light"] .workspace-root .chat-task-card-meta span,
@@ -8550,6 +8601,8 @@
     }
     .chat-task-card {
       width: 100%;
+      gap: 8px;
+      padding: 12px 11px 11px;
     }
     .chat-task-card-top {
       align-items: stretch;
@@ -8561,6 +8614,10 @@
     }
     .chat-task-card-meta {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px;
+    }
+    .chat-task-card-meta span {
+      padding: 5px 6px;
     }
     .message-intent-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
