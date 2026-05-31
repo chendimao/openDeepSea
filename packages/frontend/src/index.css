@@ -3692,8 +3692,25 @@
     gap: 4px;
   }
   .active-task-progress span {
-    color: var(--color-primary);
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
+    line-height: 1;
+  }
+  .active-task-progress b {
+    overflow: hidden;
+    color: var(--room-text-muted);
+    font-size: 8.5px;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .active-task-progress strong {
+    flex: 0 0 auto;
+    color: var(--color-primary);
     font-size: 11px;
     font-weight: 800;
   }

@@ -117,7 +117,10 @@ export function ActiveTaskSurface({
           <TaskMetaCell label="ETA" value={workflow?.current_stage ?? interactionModeLabel(task.interaction_mode)} />
           <TaskMetaCell label="Create Time" value={formatRelativeTime(task.created_at)} />
           <div className="active-task-progress">
-            <span>{progress}%</span>
+            <span>
+              <b>Progress</b>
+              <strong>{progress}%</strong>
+            </span>
             <div className="liquid-progress"><i style={{ width: `${progress}%` }} /></div>
           </div>
         </div>
