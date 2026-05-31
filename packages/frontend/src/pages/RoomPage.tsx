@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, MessageSquare } from 'lucide-react';
+import { Bot, ChevronDown, ClipboardList, GitBranch, MessagesSquare } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { roomSocket, type WsServerEvent } from '../lib/ws';
@@ -73,6 +74,11 @@ const DEFAULT_TASK_LAYER_VISIBILITY: TaskLayerVisibility = {
   diff: true,
 };
 const DEFAULT_TASK_STATUS_FILTERS: TaskStatusFilter[] = ['todo', 'in_progress', 'review', 'done', 'failed'];
+const CHAT_EMPTY_ACTIVITY_ITEMS: Array<{ icon: LucideIcon; label: string; tone: string }> = [
+  { icon: Bot, label: 'AI 正在等待第一条协作消息', tone: 'ready' },
+  { icon: ClipboardList, label: 'Task Card 会在对话中自动浮现', tone: 'task' },
+  { icon: GitBranch, label: 'Execution Plan 将同步到右侧工作区', tone: 'sync' },
+];
 type SendInput = {
   content: string;
   mentions?: string[];
@@ -965,7 +971,7 @@ function ChatColumn({
           {visibleMessages.length === 0 ? (
             <ConversationEmptyState>
               <WorkspaceEmptyState
-                icon={<MessageSquare className="h-9 w-9" strokeWidth={1.75} />}
+                icon={<MessagesSquare className="h-8 w-8" strokeWidth={1.75} />}
                 title={t('room.emptyMessagesTitle')}
                 description={
                   agents.length === 0
@@ -987,9 +993,12 @@ function ChatColumn({
                 }
               >
                 <div className="room-empty-activity" aria-hidden="true">
-                  <span><i />AI 正在等待第一条协作消息</span>
-                  <span><i />Task Card 会在对话中自动浮现</span>
-                  <span><i />Execution Plan 将同步到右侧工作区</span>
+                  {CHAT_EMPTY_ACTIVITY_ITEMS.map(({ icon: Icon, label, tone }) => (
+                    <span key={label} data-tone={tone}>
+                      <Icon className="room-empty-activity-icon" strokeWidth={1.8} />
+                      <b>{label}</b>
+                    </span>
+                  ))}
                 </div>
               </WorkspaceEmptyState>
             </ConversationEmptyState>
