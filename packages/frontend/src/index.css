@@ -7983,6 +7983,30 @@
     }
   }
 
+  @media (min-width: 769px) and (max-width: 1200px) {
+    .workspace-grid.task-os-grid,
+    .workspace-grid.task-os-grid.has-inspector {
+      grid-template-rows: minmax(440px, 48dvh) minmax(700px, max-content);
+    }
+    .task-os-grid .task-workspace-panel {
+      min-height: 700px;
+    }
+    .task-workspace-grid {
+      grid-template-rows: clamp(212px, 28dvh, 252px) minmax(0, 1fr);
+    }
+    .task-queue-rail {
+      max-height: none;
+    }
+    .task-list-scroll {
+      min-height: 96px;
+    }
+    .task-activity-feed {
+      max-height: 72px;
+      padding-top: 7px;
+      padding-bottom: 8px;
+    }
+  }
+
   @media (max-width: 768px) {
     [data-theme="minimal-light"] .workspace-root .ai-message-row--user,
     [data-theme="minimal-dark"] .workspace-root .ai-message-row--user {
