@@ -448,6 +448,8 @@
 
   .shell-public-header {
     display: flex;
+    position: relative;
+    z-index: 2;
     align-items: center;
     gap: 12px;
     flex: 0 0 auto;
