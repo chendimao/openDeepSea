@@ -7799,12 +7799,15 @@
       padding-right: 0;
     }
 
-    [data-theme="minimal-light"] .workspace-root .ai-message-row--user .ai-message-card,
-    [data-theme="minimal-dark"] .workspace-root .ai-message-row--user .ai-message-card,
     [data-theme="minimal-light"] .workspace-root .ai-message-row--agent .ai-message-card,
     [data-theme="minimal-dark"] .workspace-root .ai-message-row--agent .ai-message-card {
       width: auto;
       max-width: 88%;
+    }
+    [data-theme="minimal-light"] .workspace-root .ai-message-row--user .ai-message-card,
+    [data-theme="minimal-dark"] .workspace-root .ai-message-row--user .ai-message-card {
+      width: auto;
+      max-width: 75%;
     }
 
     .workspace-grid.task-os-grid,
