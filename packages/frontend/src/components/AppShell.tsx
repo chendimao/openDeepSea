@@ -38,6 +38,7 @@ export function AppShell({
   const location = useLocation();
   const { t } = useI18n();
   const projectId = getProjectId(location.pathname);
+  const isRoomRoute = Boolean(getRoomId(location.pathname));
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -77,7 +78,7 @@ export function AppShell({
   return (
     <div className="h-screen w-screen overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]">
       <div className="liquid-backdrop" aria-hidden="true" />
-      <div className="app-grid h-full">
+      <div className={cn('app-grid h-full', isRoomRoute && 'app-grid--room')}>
         <aside className="app-sidebar" aria-label={t('shell.sidebar.aria')}>
           <ProjectSidebar
             projects={projects}

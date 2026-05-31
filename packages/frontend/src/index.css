@@ -344,6 +344,20 @@
     padding: 8px 0 0;
   }
 
+  .app-grid--room {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+  }
+
+  .app-grid--room .app-sidebar {
+    display: none;
+  }
+
+  .app-grid--room .app-main {
+    padding: 0;
+  }
+
   .glow-primary { box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18); }
   .glow-accent  { box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.18); }
 
