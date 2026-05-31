@@ -117,7 +117,7 @@ export function TaskQueueCard({
           <i style={{ width: `${progress}%` }} />
         </div>
       </button>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="task-card-actions">
         {canStartWorkflow && onStartWorkflow && (
           <Button size="sm" variant="secondary" onClick={onStartWorkflow} disabled={startingWorkflow} title={startWorkflowLabel} aria-label={startWorkflowLabel} className="w-7 px-0">
             <Play className={cn('h-3.5 w-3.5', startingWorkflow && 'animate-spin')} />

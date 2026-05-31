@@ -3532,6 +3532,34 @@
     color: var(--color-accent);
     text-align: right;
   }
+  .task-card-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 4px;
+    margin-top: 8px;
+    overflow: hidden;
+    opacity: 0.72;
+    transition: opacity 160ms ease;
+  }
+  .task-card:hover .task-card-actions,
+  .task-card.is-selected .task-card-actions {
+    opacity: 1;
+  }
+  .task-card-actions button {
+    height: 26px;
+    min-height: 26px;
+    flex: 0 1 auto;
+    border-radius: 8px;
+    padding: 0 7px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .task-card-actions button.w-7 {
+    width: 26px;
+    min-width: 26px;
+    padding: 0;
+  }
   .active-task-header {
     display: grid;
     min-width: 0;
