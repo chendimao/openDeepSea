@@ -757,9 +757,11 @@
   }
   .room-main-panel {
     display: flex;
+    position: relative;
     min-width: 0;
     min-height: 0;
     flex-direction: column;
+    overflow: hidden;
   }
   .room-main-heading {
     display: flex;
@@ -1097,6 +1099,36 @@
   .room-empty-activity span:first-child i {
     animation: chat-activity-pulse 1.35s ease-in-out infinite;
   }
+  @media (max-height: 820px) {
+    .ai-conversation-empty {
+      place-items: start center;
+      padding-top: 14px;
+      padding-bottom: 18px;
+    }
+    .ai-conversation-empty .workspace-empty {
+      padding: 18px 18px 16px;
+    }
+    .ai-conversation-empty .workspace-empty-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 8px;
+      border-radius: 13px;
+    }
+    .ai-conversation-empty .workspace-empty p {
+      margin-top: 6px;
+      line-height: 1.48;
+    }
+    .ai-conversation-empty .workspace-empty .mt-5 {
+      margin-top: 12px;
+    }
+    .room-empty-activity {
+      gap: 5px;
+      margin-top: 12px;
+    }
+    .room-empty-activity span {
+      padding: 6px 9px;
+    }
+  }
   .ai-scroll-button {
     position: absolute;
     left: 50%;
@@ -1433,8 +1465,8 @@
     display: flex;
     flex-shrink: 0;
     flex-direction: column;
-    gap: 8px;
-    padding: 10px;
+    gap: 7px;
+    padding: 9px;
   }
   .composer-context-row {
     display: flex;
@@ -1486,7 +1518,7 @@
     display: flex;
     width: fit-content;
     max-width: 100%;
-    min-height: 28px;
+    min-height: 26px;
     min-width: 0;
     align-items: center;
     align-self: flex-start;
@@ -1536,16 +1568,16 @@
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 9px;
+    gap: 7px;
     border-radius: 13px;
     background: rgba(255,255,255,0.64);
-    padding: 9px;
+    padding: 8px;
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.76), 0 12px 34px rgba(67, 91, 121, 0.10);
     backdrop-filter: blur(32px) saturate(1.5);
   }
   .rich-composer-box .prompt-area-editor {
     display: block;
-    min-height: 44px;
+    min-height: 40px;
     max-height: 152px;
     min-width: 0;
     width: 100%;
@@ -1554,7 +1586,7 @@
     border: 0;
     border-radius: 10px;
     background: transparent;
-    padding: 6px 7px;
+    padding: 5px 7px;
     color: var(--color-fg);
     font-size: 13px;
     line-height: 1.55;
@@ -1676,9 +1708,9 @@
     color: var(--color-danger);
   }
   .composer-action-button {
-    min-height: 40px;
+    min-height: 36px;
     border: 1px solid var(--room-composer-action-border);
-    border-radius: 13px;
+    border-radius: 12px;
     background: var(--room-composer-action-bg);
     padding-left: 12px;
     padding-right: 12px;
@@ -1724,9 +1756,9 @@
     min-width: 0;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
     border-top: 1px solid rgba(255,255,255,0.42);
-    padding-top: 8px;
+    padding-top: 6px;
   }
   .ai-prompt-hint {
     min-width: 0;
@@ -1740,7 +1772,7 @@
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
   }
   .task-column {
     overflow: hidden;
@@ -3579,7 +3611,15 @@
   .room-main-heading {
     min-height: 72px;
     border-bottom: 1px solid var(--room-border);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 68%, transparent),
+        color-mix(in srgb, var(--room-panel-bg) 42%, transparent)
+      );
     padding: 0 14px 0 18px;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent), 0 8px 18px rgba(15,23,42,0.025);
+    backdrop-filter: blur(18px) saturate(1.16);
   }
   .chat-heading-copy {
     min-width: 128px;
@@ -3589,12 +3629,14 @@
     font-size: 18px;
     font-weight: 750;
     line-height: 1;
+    letter-spacing: 0;
   }
   .chat-heading-subtitle {
     margin-top: 6px;
     color: var(--room-text-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10.5px;
+    font-weight: 650;
   }
   .room-main-heading .room-feature-tabs {
     margin-right: auto;
@@ -3609,9 +3651,11 @@
     margin-right: auto;
     border: 1px solid var(--room-border);
     border-radius: 999px;
-    background: var(--room-card-muted-bg);
+    background: color-mix(in srgb, var(--room-card-bg) 70%, transparent);
     color: var(--room-text-heading);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.72), 0 8px 20px rgba(15,23,42,0.035);
+    backdrop-filter: blur(16px) saturate(1.16);
+    transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   .chat-filter-control > span {
     position: absolute;
@@ -3646,17 +3690,65 @@
     border-color: color-mix(in srgb, var(--color-primary) 34%, var(--room-border));
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.78), 0 0 0 3px rgba(37,99,235,0.10);
   }
+  .chat-filter-control:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--color-primary) 14%, var(--room-border));
+    background: color-mix(in srgb, var(--room-card-bg) 86%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.82), 0 10px 22px rgba(15,23,42,0.055);
+  }
+  .room-main-heading .glass-button {
+    height: 36px;
+    min-height: 36px;
+    border: 1px solid var(--room-border);
+    border-radius: 13px;
+    background: color-mix(in srgb, var(--room-card-bg) 72%, transparent);
+    color: var(--room-text-heading);
+    font-weight: 680;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent), 0 8px 20px rgba(15,23,42,0.04);
+    backdrop-filter: blur(14px) saturate(1.12);
+  }
+  .room-main-heading .glass-button:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--color-primary) 18%, var(--room-border));
+    background: color-mix(in srgb, var(--room-card-bg) 92%, transparent);
+    color: var(--color-primary);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent), 0 12px 24px rgba(37,99,235,0.08);
+  }
   .room-feature-tabs .segmented-control {
     border-radius: 999px;
     background: var(--room-card-muted-bg);
     box-shadow: inset 0 0 0 1px var(--room-border-subtle);
   }
   .ai-conversation {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--room-panel-bg) 26%, transparent), color-mix(in srgb, var(--room-card-muted-bg) 62%, transparent));
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 22%, transparent),
+        color-mix(in srgb, var(--room-card-muted-bg) 58%, transparent)
+      );
   }
   .ai-conversation-content {
     gap: 16px;
     padding: 18px 18px 20px;
+  }
+  .ai-conversation-content:has(.ai-conversation-empty) {
+    padding: 0;
+  }
+  .ai-conversation-empty {
+    align-items: start;
+    justify-items: center;
+    padding: 18px 16px 24px;
+  }
+  .ai-conversation-empty .workspace-empty {
+    width: min(100%, 368px);
+    border-color: var(--room-border);
+    border-radius: 22px;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 92%, transparent),
+        color-mix(in srgb, var(--room-card-bg) 72%, transparent)
+      );
+    box-shadow: 0 18px 42px rgba(15,23,42,0.06), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent);
   }
   .ai-message-row {
     gap: 12px;
@@ -3704,14 +3796,24 @@
   }
   .composer-shell {
     border-top: 1px solid var(--room-border-subtle);
-    background: var(--room-composer-bg);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 44%, transparent),
+        var(--room-composer-bg)
+      );
     backdrop-filter: blur(22px) saturate(1.2);
   }
   .workspace-root .rich-composer-box {
     border-top: 1px solid var(--room-border-subtle);
     border-radius: 0 0 18px 18px;
-    background: var(--room-composer-bg);
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 70%, transparent);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 48%, transparent),
+        var(--room-composer-bg)
+      );
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 76%, transparent), 0 -8px 20px rgba(15,23,42,0.025);
     backdrop-filter: blur(22px) saturate(1.2);
   }
   .composer-box,
@@ -3721,6 +3823,10 @@
     background: var(--room-composer-box-bg);
     box-shadow: var(--room-composer-shadow);
     backdrop-filter: blur(26px) saturate(1.22);
+  }
+  .ai-prompt-shell {
+    gap: 7px;
+    padding: 8px;
   }
   .task-workspace-panel {
     background: color-mix(in srgb, var(--room-panel-bg) 94%, transparent);
@@ -7846,7 +7952,18 @@
   }
 
   [data-theme="minimal-light"] .workspace-root .room-main-heading,
-  [data-theme="minimal-dark"] .workspace-root .room-main-heading,
+  [data-theme="minimal-dark"] .workspace-root .room-main-heading {
+    border-bottom: 1px solid var(--room-border);
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 68%, transparent),
+        color-mix(in srgb, var(--room-panel-bg) 42%, transparent)
+      );
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent), 0 8px 18px rgba(15,23,42,0.025);
+    backdrop-filter: blur(18px) saturate(1.16);
+  }
+
   [data-theme="minimal-light"] .workspace-root .active-task-header,
   [data-theme="minimal-dark"] .workspace-root .active-task-header {
     border-bottom: 1px solid var(--room-border);
@@ -7863,7 +7980,12 @@
 
   [data-theme="minimal-light"] .workspace-root .ai-conversation,
   [data-theme="minimal-dark"] .workspace-root .ai-conversation {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--room-panel-bg) 26%, transparent), color-mix(in srgb, var(--room-card-muted-bg) 62%, transparent));
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 22%, transparent),
+        color-mix(in srgb, var(--room-card-muted-bg) 58%, transparent)
+      );
   }
 
   [data-theme="minimal-light"] .workspace-root .ai-message-card,
@@ -8138,12 +8260,17 @@
   [data-theme="minimal-light"] .workspace-root .ai-conversation-empty .workspace-empty,
   [data-theme="minimal-dark"] .workspace-root .ai-conversation-empty .workspace-empty {
     min-height: 0;
-    width: min(100%, 360px);
-    border: 1px solid var(--room-border-subtle);
-    border-radius: 20px;
-    background: color-mix(in srgb, var(--room-card-bg) 72%, transparent);
-    padding: 28px 22px 22px;
-    box-shadow: 0 16px 36px rgba(15,23,42,0.055), inset 0 1px 0 rgba(255,255,255,0.82);
+    width: min(100%, 368px);
+    border: 1px solid var(--room-border);
+    border-radius: 22px;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--room-card-bg) 92%, transparent),
+        color-mix(in srgb, var(--room-card-bg) 72%, transparent)
+      );
+    padding: 24px 20px 20px;
+    box-shadow: 0 18px 42px rgba(15,23,42,0.06), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent);
     backdrop-filter: blur(22px) saturate(1.18);
   }
 
@@ -8577,11 +8704,11 @@
     .task-os-grid,
     .task-os-grid.has-inspector {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: minmax(440px, 48dvh) minmax(520px, max-content);
+      grid-template-rows: minmax(560px, 58dvh) minmax(520px, max-content);
       overflow-y: auto;
     }
     .task-os-grid .room-main-panel {
-      min-height: 440px;
+      min-height: 560px;
     }
     .task-os-grid .task-workspace-panel {
       min-height: 520px;
@@ -8604,7 +8731,7 @@
   @media (min-width: 769px) and (max-width: 1200px) {
     .workspace-grid.task-os-grid,
     .workspace-grid.task-os-grid.has-inspector {
-      grid-template-rows: minmax(440px, 48dvh) minmax(820px, max-content);
+      grid-template-rows: minmax(560px, 58dvh) minmax(820px, max-content);
     }
     .task-os-grid .task-workspace-panel {
       min-height: 820px;
@@ -8776,12 +8903,12 @@
 
     .workspace-grid.task-os-grid,
     .workspace-grid.task-os-grid.has-inspector {
-      grid-template-rows: minmax(520px, 62dvh) minmax(1020px, max-content);
+      grid-template-rows: minmax(620px, 70dvh) minmax(1020px, max-content);
       overflow-y: auto;
     }
 
     .task-os-grid .room-main-panel {
-      min-height: 520px;
+      min-height: 620px;
     }
 
     .task-os-grid .task-workspace-panel {
