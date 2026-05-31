@@ -3978,6 +3978,7 @@
   @media (prefers-reduced-motion: reduce) {
     .task-card-progress i,
     .task-card-progress i::after,
+    .chat-task-card-progress,
     .liquid-progress i,
     .current-agent-row > i {
       animation: none;
@@ -4482,7 +4483,8 @@
     height: 4px;
     max-width: 100%;
     border-radius: 999px;
-    background: linear-gradient(90deg, #2563EB, color-mix(in srgb, #2563EB 58%, #00B8A9));
+    background: var(--room-primary-progress, linear-gradient(90deg, #2563EB, #60A5FA));
+    animation: progress-glow 1.8s ease-in-out infinite;
     transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
