@@ -4028,6 +4028,9 @@
   }
   .tool-call-card span {
     grid-area: status;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     justify-self: end;
     width: max-content;
     max-width: 100%;
@@ -4038,13 +4041,28 @@
     font-size: 9.5px;
     line-height: 1.1;
   }
+  .tool-call-card span::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: currentColor;
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 13%, transparent);
+  }
   .tool-call-card time {
     grid-area: time;
     margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tool-call-card[data-status="running"] span {
     background: rgba(37,99,235,0.12);
     color: var(--color-primary);
+  }
+  .tool-call-card[data-status="running"] span::before {
+    animation: status-pulse 1.35s ease-in-out infinite;
   }
   .tool-call-card[data-status="done"] span,
   .tool-call-card[data-status="completed"] span {
@@ -4095,7 +4113,8 @@
     .task-card-progress i::after,
     .chat-task-card-progress,
     .liquid-progress i,
-    .current-agent-row > i {
+    .current-agent-row > i,
+    .tool-call-card span::before {
       animation: none;
     }
   }
