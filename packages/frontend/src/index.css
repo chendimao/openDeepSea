@@ -3790,6 +3790,12 @@
     width: 1px;
     background: rgba(148,163,184,0.28);
   }
+  .execution-step[data-state="completed"]:not(:last-child)::after {
+    background: color-mix(in srgb, var(--color-success) 36%, transparent);
+  }
+  .execution-step[data-state="running"]:not(:last-child)::after {
+    background: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
   .execution-step-node {
     display: grid;
     width: 20px;
@@ -3809,6 +3815,7 @@
     background: rgba(37,99,235,0.13);
     color: var(--color-primary);
     box-shadow: 0 0 0 4px rgba(37,99,235,0.08);
+    animation: status-pulse 1.35s ease-in-out infinite;
   }
   .execution-step strong,
   .workspace-timeline-row strong,
@@ -4114,6 +4121,7 @@
     .chat-task-card-progress,
     .liquid-progress i,
     .current-agent-row > i,
+    .execution-step[data-state="running"] .execution-step-node,
     .tool-call-card span::before {
       animation: none;
     }
