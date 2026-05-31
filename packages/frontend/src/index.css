@@ -9213,8 +9213,11 @@
     .task-os-grid,
     .task-os-grid.has-inspector {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: minmax(560px, 58dvh) minmax(520px, max-content);
+      grid-template-rows: minmax(520px, max-content) minmax(560px, 58dvh);
       overflow-y: auto;
+    }
+    .task-os-grid.has-inspector {
+      grid-template-rows: minmax(520px, max-content) minmax(560px, 58dvh) minmax(260px, 42dvh);
     }
     .task-os-grid .room-main-panel {
       min-height: 560px;
@@ -9287,7 +9290,10 @@
   @media (min-width: 769px) and (max-width: 1200px) {
     .workspace-grid.task-os-grid,
     .workspace-grid.task-os-grid.has-inspector {
-      grid-template-rows: minmax(560px, 58dvh) minmax(820px, max-content);
+      grid-template-rows: minmax(820px, max-content) minmax(560px, 58dvh);
+    }
+    .workspace-grid.task-os-grid.has-inspector {
+      grid-template-rows: minmax(820px, max-content) minmax(560px, 58dvh) minmax(260px, 42dvh);
     }
     .task-os-grid .task-workspace-panel {
       min-height: 820px;
@@ -9554,8 +9560,11 @@
 
     .workspace-grid.task-os-grid,
     .workspace-grid.task-os-grid.has-inspector {
-      grid-template-rows: minmax(620px, 70dvh) minmax(1020px, max-content);
+      grid-template-rows: minmax(1020px, max-content) minmax(620px, 70dvh);
       overflow-y: auto;
+    }
+    .workspace-grid.task-os-grid.has-inspector {
+      grid-template-rows: minmax(1020px, max-content) minmax(620px, 70dvh) minmax(260px, 42dvh);
     }
 
     .task-os-grid .room-main-panel {

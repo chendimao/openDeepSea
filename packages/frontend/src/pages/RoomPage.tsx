@@ -503,6 +503,39 @@ export function RoomPage() {
       />
 
       <div className={cn('workspace-grid task-os-grid', showMemoryPanel && 'has-inspector')}>
+        <TaskWorkspacePanel
+          tasks={tasks}
+          activeTask={activeTask}
+          activeTaskId={activeTaskId}
+          statusFilters={taskStatusFilters}
+          onStatusFiltersChange={setTaskStatusFilters}
+          activityEvents={roomActivityEvents}
+          taskEvents={activeTaskEventResponse?.events ?? []}
+          taskEventsLoading={activeTaskEventsLoading}
+          executors={taskExecutors}
+          executorsLoading={taskExecutorsLoading}
+          agents={agents}
+          workflows={workflows}
+          layerVisibility={layerVisibility}
+          onSelectTask={(task) => {
+            setAutoActiveTaskDismissedRoomId(null);
+            activateTask.mutate(task);
+          }}
+          onChangeStatus={(task, status) => {
+            updateTaskStatus.mutate({ task, status });
+          }}
+          onStartWorkflow={(task) => startTaskLoop.mutate(task)}
+          startingTaskId={startTaskLoop.variables?.id ?? null}
+          onLocateSourceMessage={focusMessage}
+          onLayerVisibilityChange={updateLayerVisibility}
+          onClearActiveTask={clearActiveTask}
+          t={t}
+          formatRelativeTime={formatRelativeTime}
+          taskStatusLabel={taskStatusLabel}
+          taskPriorityLabel={taskPriorityLabel}
+          interactionModeLabel={interactionModeLabel}
+          workflowStatusLabel={workflowStatusLabel}
+        />
         <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
           <ChatPanelHeader
             roomId={roomId}
@@ -549,39 +582,6 @@ export function RoomPage() {
             )}
           </div>
         </section>
-        <TaskWorkspacePanel
-          tasks={tasks}
-          activeTask={activeTask}
-          activeTaskId={activeTaskId}
-          statusFilters={taskStatusFilters}
-          onStatusFiltersChange={setTaskStatusFilters}
-          activityEvents={roomActivityEvents}
-          taskEvents={activeTaskEventResponse?.events ?? []}
-          taskEventsLoading={activeTaskEventsLoading}
-          executors={taskExecutors}
-          executorsLoading={taskExecutorsLoading}
-          agents={agents}
-          workflows={workflows}
-          layerVisibility={layerVisibility}
-          onSelectTask={(task) => {
-            setAutoActiveTaskDismissedRoomId(null);
-            activateTask.mutate(task);
-          }}
-          onChangeStatus={(task, status) => {
-            updateTaskStatus.mutate({ task, status });
-          }}
-          onStartWorkflow={(task) => startTaskLoop.mutate(task)}
-          startingTaskId={startTaskLoop.variables?.id ?? null}
-          onLocateSourceMessage={focusMessage}
-          onLayerVisibilityChange={updateLayerVisibility}
-          onClearActiveTask={clearActiveTask}
-          t={t}
-          formatRelativeTime={formatRelativeTime}
-          taskStatusLabel={taskStatusLabel}
-          taskPriorityLabel={taskPriorityLabel}
-          interactionModeLabel={interactionModeLabel}
-          workflowStatusLabel={workflowStatusLabel}
-        />
         {showMemoryPanel && (
           <aside className="workbench-panel inspector-panel memory-panel-shell p-4">
             <MemoryPanel
