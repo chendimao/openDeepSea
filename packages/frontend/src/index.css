@@ -3739,9 +3739,13 @@
     background:
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--room-card-bg) 22%, transparent),
-        color-mix(in srgb, var(--room-card-muted-bg) 58%, transparent)
+        color-mix(in srgb, var(--room-card-bg) 34%, transparent) 0%,
+        color-mix(in srgb, var(--room-card-muted-bg) 48%, transparent) 56%,
+        color-mix(in srgb, var(--room-card-bg) 28%, transparent) 100%
       );
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 72%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--room-border-subtle) 70%, transparent);
   }
   .ai-conversation-content {
     gap: 16px;
@@ -3753,19 +3757,41 @@
   .ai-conversation-empty {
     align-items: start;
     justify-items: center;
-    padding: 18px 16px 24px;
+    padding: 18px 18px 24px;
   }
   .ai-conversation-empty .workspace-empty {
-    width: min(100%, 368px);
+    position: relative;
+    width: min(100%, 366px);
+    overflow: hidden;
     border-color: var(--room-border);
-    border-radius: 22px;
+    border-radius: 20px;
     background:
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--room-card-bg) 92%, transparent),
-        color-mix(in srgb, var(--room-card-bg) 72%, transparent)
+        color-mix(in srgb, var(--room-card-bg) 94%, transparent),
+        color-mix(in srgb, var(--room-card-bg) 74%, transparent)
       );
-    box-shadow: 0 18px 42px rgba(15,23,42,0.06), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent);
+    box-shadow: 0 16px 38px rgba(15,23,42,0.052), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent);
+  }
+  .ai-conversation-empty .workspace-empty::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent);
+  }
+  .room-empty-activity {
+    gap: 7px;
+    margin-top: 18px;
+  }
+  .room-empty-activity span {
+    min-height: 26px;
+    border-color: transparent;
+    background: color-mix(in srgb, var(--room-card-muted-bg) 66%, transparent);
+    padding: 6px 10px;
+    box-shadow:
+      inset 0 0 0 1px var(--room-border-subtle),
+      inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 74%, transparent);
   }
   .ai-message-row {
     gap: 12px;
@@ -3786,7 +3812,7 @@
   }
   .ai-message-row--agent .ai-message-card {
     width: auto;
-    max-width: min(75%, 720px);
+    max-width: min(76%, 720px);
     border-color: transparent;
     background: transparent;
   }
@@ -3795,7 +3821,7 @@
     max-width: min(75%, 680px);
     border-color: var(--room-border-subtle);
     background: var(--room-user-message-bg);
-    box-shadow: var(--room-card-shadow);
+    box-shadow: 0 10px 24px rgba(15,23,42,0.038), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 66%, transparent);
   }
   .ai-message-header {
     min-height: 28px;
@@ -3810,6 +3836,36 @@
   .ai-message-row--agent .ai-message-header,
   .ai-message-row--agent .ai-message-body {
     padding-left: 0;
+  }
+  .ai-message-row--agent .ai-message-header {
+    min-height: 24px;
+    padding-top: 4px;
+  }
+  .ai-message-row--agent .ai-message-body {
+    padding-top: 5px;
+  }
+  .ai-message-row--user .ai-message-header {
+    min-height: 24px;
+    padding-top: 7px;
+  }
+  .ai-message-sender {
+    color: var(--room-text-heading);
+    font-size: 12px;
+    font-weight: 720;
+  }
+  .ai-message-time {
+    color: var(--room-text-muted);
+    font-size: 10px;
+  }
+  .chat-task-card-row {
+    padding: 5px 0 6px;
+  }
+  .chat-task-card {
+    width: min(520px, calc(100% - 6px));
+    box-shadow: 0 12px 30px rgba(15,23,42,0.05), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 94%, transparent);
+  }
+  .chat-task-card:not(:disabled):hover {
+    box-shadow: 0 18px 38px rgba(37,99,235,0.09), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent);
   }
   .composer-shell {
     border-top: 1px solid var(--room-border-subtle);
@@ -5387,7 +5443,7 @@
   .chat-task-card-meta {
     display: grid;
     min-width: 0;
-    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
     gap: 6px;
     color: var(--color-fg-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -8024,9 +8080,13 @@
     background:
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--room-card-bg) 22%, transparent),
-        color-mix(in srgb, var(--room-card-muted-bg) 58%, transparent)
+        color-mix(in srgb, var(--room-card-bg) 34%, transparent) 0%,
+        color-mix(in srgb, var(--room-card-muted-bg) 48%, transparent) 56%,
+        color-mix(in srgb, var(--room-card-bg) 28%, transparent) 100%
       );
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 72%, transparent),
+      inset 0 -1px 0 color-mix(in srgb, var(--room-border-subtle) 70%, transparent);
   }
 
   [data-theme="minimal-light"] .workspace-root .ai-message-card,
@@ -8063,7 +8123,7 @@
   [data-theme="minimal-dark"] .workspace-root .ai-message-row--user .ai-message-card {
     border-color: var(--room-border-subtle);
     background: var(--room-user-message-bg);
-    box-shadow: var(--room-card-shadow);
+    box-shadow: 0 10px 24px rgba(15,23,42,0.038), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 66%, transparent);
   }
 
   [data-theme="minimal-light"] .workspace-root .composer-shell,
@@ -8310,19 +8370,30 @@
 
   [data-theme="minimal-light"] .workspace-root .ai-conversation-empty .workspace-empty,
   [data-theme="minimal-dark"] .workspace-root .ai-conversation-empty .workspace-empty {
+    position: relative;
     min-height: 0;
-    width: min(100%, 368px);
+    width: min(100%, 366px);
+    overflow: hidden;
     border: 1px solid var(--room-border);
-    border-radius: 22px;
+    border-radius: 20px;
     background:
       linear-gradient(
         180deg,
-        color-mix(in srgb, var(--room-card-bg) 92%, transparent),
-        color-mix(in srgb, var(--room-card-bg) 72%, transparent)
+        color-mix(in srgb, var(--room-card-bg) 94%, transparent),
+        color-mix(in srgb, var(--room-card-bg) 74%, transparent)
       );
     padding: 24px 20px 20px;
-    box-shadow: 0 18px 42px rgba(15,23,42,0.06), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent);
+    box-shadow: 0 16px 38px rgba(15,23,42,0.052), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 96%, transparent);
     backdrop-filter: blur(22px) saturate(1.18);
+  }
+
+  [data-theme="minimal-light"] .workspace-root .ai-conversation-empty .workspace-empty::before,
+  [data-theme="minimal-dark"] .workspace-root .ai-conversation-empty .workspace-empty::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent);
   }
 
   [data-theme="minimal-light"] .message-mode-switch,
@@ -8766,6 +8837,27 @@
     }
     .task-os-grid .room-main-panel {
       min-height: 560px;
+    }
+    .ai-conversation-empty {
+      padding: 14px 16px 18px;
+    }
+    .ai-conversation-empty .workspace-empty {
+      padding: 18px 18px 16px;
+    }
+    .ai-conversation-empty .workspace-empty-icon {
+      width: 42px;
+      height: 42px;
+      margin-bottom: 10px;
+      border-radius: 14px;
+    }
+    .room-empty-activity {
+      gap: 5px;
+      margin-top: 12px;
+    }
+    .room-empty-activity span {
+      min-height: 24px;
+      padding-top: 5px;
+      padding-bottom: 5px;
     }
     .task-os-grid .task-workspace-panel {
       min-height: 520px;
