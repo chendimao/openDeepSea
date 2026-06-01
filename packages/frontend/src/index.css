@@ -5466,7 +5466,12 @@
   .task-record-list,
   .task-resource-list {
     display: grid;
+    min-width: 0;
     gap: 8px;
+  }
+  .task-record-list > *,
+  .task-resource-list > * {
+    min-width: 0;
   }
   .task-record-item,
   .task-resource-row,
@@ -5476,7 +5481,20 @@
     background: color-mix(in srgb, var(--room-card-muted-bg) 72%, transparent);
   }
   .task-record-item {
+    min-width: 0;
+    overflow: hidden;
     padding: 9px 10px;
+  }
+  .task-record-item .agent-run-console {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    box-shadow: none;
+  }
+  .task-record-item .agent-run-console pre {
+    max-width: 100%;
   }
   .task-record-item-header {
     display: flex;

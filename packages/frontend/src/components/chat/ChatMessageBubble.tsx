@@ -111,6 +111,7 @@ export function ChatMessageBubble({
   const canReply = !isSystem && hasContent && !isStreaming;
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
   const showPlannerDecisionPanel = !isUser && Boolean(metadata.planner_decision);
+  const showRecordOnlyBody = !isUser && Boolean(run);
   const chooseIntent = (intent: MessageIntent) => {
     const prefixByIntent: Record<MessageIntent, string> = {
       chat: '/chat ',
@@ -253,44 +254,46 @@ export function ChatMessageBubble({
             </AiMessageActions>
           )}
         </AiMessageHeader>
-        <AiMessageBody stream={isStreaming}>
-          {metadata.reply_to && (
-            <button
-              type="button"
-              className="message-reply-reference"
-              onClick={() => onLocateReplyTarget(metadata.reply_to!.message_id)}
-              title="跳转到引用消息"
-            >
-              <span>{metadata.reply_to.sender_name ?? metadata.reply_to.sender_id}</span>
-              <small>{metadata.reply_to.excerpt}</small>
-            </button>
-          )}
-          {hasContent ? (
-            <MessageContent
-              content={renderedContent}
-              streaming={isStreaming}
-              mode={displayMode}
-              trace={metadata.trace}
-              roomAgents={roomAgents}
-              globalAgents={globalAgents}
-              suppressPlannerDecisionSummary={showPlannerDecisionPanel}
-              roomId={roomId}
-            />
-          ) : message.message_type === 'agent_stream' ? (
-            <MessageContent
-              content="…"
-              streaming={isStreaming}
-              trace={metadata.trace}
-              roomAgents={roomAgents}
-              globalAgents={globalAgents}
-              roomId={roomId}
-            />
-          ) : null}
-          <MessageAttachments attachments={attachments} />
-          {isUser && metadata.intent_result && (
-            <MessageIntentCard intentResult={metadata.intent_result} onChooseIntent={chooseIntent} />
-          )}
-        </AiMessageBody>
+        {!showRecordOnlyBody && (
+          <AiMessageBody stream={isStreaming}>
+            {metadata.reply_to && (
+              <button
+                type="button"
+                className="message-reply-reference"
+                onClick={() => onLocateReplyTarget(metadata.reply_to!.message_id)}
+                title="跳转到引用消息"
+              >
+                <span>{metadata.reply_to.sender_name ?? metadata.reply_to.sender_id}</span>
+                <small>{metadata.reply_to.excerpt}</small>
+              </button>
+            )}
+            {hasContent ? (
+              <MessageContent
+                content={renderedContent}
+                streaming={isStreaming}
+                mode={displayMode}
+                trace={metadata.trace}
+                roomAgents={roomAgents}
+                globalAgents={globalAgents}
+                suppressPlannerDecisionSummary={showPlannerDecisionPanel}
+                roomId={roomId}
+              />
+            ) : message.message_type === 'agent_stream' ? (
+              <MessageContent
+                content="…"
+                streaming={isStreaming}
+                trace={metadata.trace}
+                roomAgents={roomAgents}
+                globalAgents={globalAgents}
+                roomId={roomId}
+              />
+            ) : null}
+            <MessageAttachments attachments={attachments} />
+            {isUser && metadata.intent_result && (
+              <MessageIntentCard intentResult={metadata.intent_result} onChooseIntent={chooseIntent} />
+            )}
+          </AiMessageBody>
+        )}
         {showPlannerDecisionPanel && metadata.planner_decision && (
           <TaskRecordSummaryEntry
             label="规划决策"
