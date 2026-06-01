@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1426,6 +1426,63 @@ test('dispatchUserMessage passes uploaded image paths to ACP adapters', async ()
     await dispatchUserMessage({ roomId: room.id, userMessage: message });
 
     assert.deepEqual(captured.imagePaths, [join(messageUploadDir, 'stored.png')]);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('dispatchUserMessage injects workspace file refs into ACP prompt and images', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-dispatch-fileref-'));
+  await writeFile(join(projectPath, 'note.txt'), 'workspace note');
+  await writeFile(join(projectPath, 'screen.png'), 'image-bytes');
+  const project = projectRepo.create({ name: `dispatch-fileref-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'codex-agent', agent_name: 'CodexAgent' });
+  roomAgentRepo.setAcp(agent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'codex-agent',
+  });
+
+  const captured: { prompt?: string; imagePaths?: string[] } = {};
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      captured.prompt = args.prompt;
+      captured.imagePaths = args.imagePaths;
+      return { exitCode: 1, sessionId: null, stderr: 'stubbed failure' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const message = messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: '结合这些文件',
+      message_type: 'text',
+      metadata: {
+        file_refs: ['note.txt', 'screen.png', '../secret.txt'],
+      },
+    });
+
+    await dispatchUserMessage({ roomId: room.id, userMessage: message });
+
+    assert.match(captured.prompt ?? '', /工作区引用文件：/);
+    assert.match(captured.prompt ?? '', /引用文件 note\.txt/);
+    assert.match(captured.prompt ?? '', /workspace note/);
+    assert.doesNotMatch(captured.prompt ?? '', /secret/);
+    assert.deepEqual(captured.imagePaths, [realpathSync(join(projectPath, 'screen.png'))]);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

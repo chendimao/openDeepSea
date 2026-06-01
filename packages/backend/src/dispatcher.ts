@@ -26,6 +26,7 @@ import { buildSessionHandoffContext } from './session-handoff.js';
 import { applySuperpowersBootstrap } from './superpowers-bootstrap.js';
 import { runRegistry } from './run-registry.js';
 import { messageUploadDir, messageUploadRoute, projectFileUploadRoot, projectFileUploadRoute } from './uploads.js';
+import { buildWorkspaceFileRefContext, type WorkspaceFileRefContext } from './workspace-file-refs.js';
 import { wsHub } from './ws-hub.js';
 import type {
   AgentRun,
@@ -255,14 +256,19 @@ export async function dispatchUserMessage(args: {
     fallback_agent_id: project.fallback_agent_id,
   };
   const messageAttachments = getResolvedMessageAttachments(userMessage);
+  const fileRefContext = await buildWorkspaceFileRefContext(project.path, getMessageFileRefs(userMessage.metadata));
   const promptWithAttachments = buildPromptWithResolvedMessageContext(
     userMessage.content,
     messageAttachments,
     getResolvedMessageReply(userMessage),
+    fileRefContext,
   );
-  const imagePaths = messageAttachments
-    .filter((attachment) => attachment.metadata.isImage && attachment.localPath)
-    .map((attachment) => attachment.localPath!);
+  const imagePaths = [
+    ...messageAttachments
+      .filter((attachment) => attachment.metadata.isImage && attachment.localPath)
+      .map((attachment) => attachment.localPath!),
+    ...fileRefContext.imagePaths,
+  ];
   const routing = resolveInitialTargets({
     allAgents,
     explicitlyMentionedAgents,
@@ -407,6 +413,7 @@ function buildPromptWithResolvedMessageContext(
   userPrompt: string,
   attachments: ResolvedMessageAttachment[],
   replyTo: ResolvedMessageReply | null,
+  fileRefContext?: WorkspaceFileRefContext,
 ): string {
   const content = userPrompt.trim() || '用户发送了一条仅包含附件的消息。';
   const sections = [content];
@@ -427,6 +434,15 @@ function buildPromptWithResolvedMessageContext(
         replyTo.body,
       );
     }
+  }
+
+  if (fileRefContext?.promptAddition) {
+    sections.push(
+      '',
+      '---',
+      '工作区引用文件：',
+      fileRefContext.promptAddition,
+    );
   }
 
   if (attachments.length === 0) return sections.join('\n');
@@ -469,6 +485,18 @@ function getResolvedMessageReply(userMessage: Message): ResolvedMessageReply | n
     body: summarized.body,
     bodyTruncated: summarized.truncated,
   };
+}
+
+function getMessageFileRefs(rawMetadata: string | null): string[] {
+  if (!rawMetadata) return [];
+  try {
+    const parsed = JSON.parse(rawMetadata) as MessageMetadata;
+    return Array.isArray(parsed.file_refs)
+      ? parsed.file_refs.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function normalizeReplyBody(content: string): string {

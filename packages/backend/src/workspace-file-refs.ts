@@ -1,5 +1,5 @@
-import { join } from 'node:path';
-import { normalizeWorkspacePath, readWorkspaceFilePreview } from './workspace-files.js';
+import { lstat } from 'node:fs/promises';
+import { normalizeWorkspacePath, readWorkspaceFilePreview, resolveWorkspacePath } from './workspace-files.js';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
 
@@ -31,7 +31,15 @@ export async function buildWorkspaceFileRefContext(
     if (!safePath) continue;
 
     if (isImagePath(safePath)) {
-      imagePaths.push(join(projectPath, safePath));
+      try {
+        const resolved = await resolveWorkspacePath(projectPath, safePath);
+        const stats = await lstat(resolved.absolutePath);
+        if (stats.isFile()) {
+          imagePaths.push(resolved.absolutePath);
+        }
+      } catch {
+        continue;
+      }
       continue;
     }
 
