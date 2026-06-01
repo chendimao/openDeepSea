@@ -8,7 +8,7 @@ import {
   validatePendingFiles,
 } from '../lib/composerModel';
 import { useI18n } from '../lib/i18n';
-import type { ProjectFile, RoomAgent } from '../lib/types';
+import type { ProjectFile, RoomAgent, Task } from '../lib/types';
 import { FilePickerDialog } from './FilePickerDialog';
 import { PromptArea } from './prompt-area/prompt-area';
 import { getChipsByTrigger, isSegmentsEmpty, segmentsToPlainText } from './prompt-area/segment-helpers';
@@ -27,6 +27,7 @@ import { getExplicitReplyToMessageId, type ComposerReplyTarget } from './RichMes
 interface RichMessageComposerProps {
   projectId: string;
   agents: RoomAgent[];
+  tasks: Task[];
   sending: boolean;
   disabled: boolean;
   placeholder: string;
@@ -56,6 +57,7 @@ type ComposerAttachment =
 export function RichMessageComposer({
   projectId,
   agents,
+  tasks,
   sending,
   disabled,
   placeholder,
@@ -78,11 +80,14 @@ export function RichMessageComposer({
 
   const triggers = useMemo(() => buildComposerTriggers({
     projectId,
+    tasks,
     labels: {
       fileMenuAria: t('composer.fileMenuAria'),
       fileEmpty: t('composer.fileEmpty'),
+      taskMenuAria: t('composer.taskMenuAria'),
+      taskEmpty: t('composer.taskEmpty'),
     },
-  }), [projectId, t]);
+  }), [projectId, tasks, t]);
 
   const revokeAttachment = (attachment: ComposerAttachment) => {
     if (attachment.kind === 'local' && attachment.previewUrl) {

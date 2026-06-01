@@ -1,13 +1,16 @@
 import { api } from '../lib/api';
-import type { ProjectFile, WorkspaceSearchResult } from '../lib/types';
+import type { ProjectFile, Task, WorkspaceSearchResult } from '../lib/types';
 import type { TriggerConfig, TriggerSuggestion } from './prompt-area/types';
 
 export const FILE_TRIGGER = '@';
+export const TASK_TRIGGER = '#';
 const SUGGESTION_LIMIT = 8;
 
 export interface ComposerTriggerLabels {
   fileMenuAria: string;
   fileEmpty: string;
+  taskMenuAria: string;
+  taskEmpty: string;
 }
 
 export type FileChipKind = 'project' | 'workspace';
@@ -62,8 +65,39 @@ export function buildFileSuggestions(
   return suggestions.slice(0, SUGGESTION_LIMIT);
 }
 
+export function encodeTaskChipValue(taskId: string): string {
+  return `task:${taskId}`;
+}
+
+export function parseTaskChipValue(value: string): string | null {
+  return value.startsWith('task:') && value.length > 5 ? value.slice(5) : null;
+}
+
+export function buildTaskSuggestions(tasks: Task[], query: string): TriggerSuggestion[] {
+  const needle = query.trim().toLowerCase();
+  return tasks
+    .filter((task) => isRoutableTask(task))
+    .filter((task) => {
+      if (!needle) return true;
+      const haystack = `${task.id} ${task.title} ${task.status}`.toLowerCase();
+      return haystack.includes(needle);
+    })
+    .slice(0, SUGGESTION_LIMIT)
+    .map((task) => ({
+      value: encodeTaskChipValue(task.id),
+      label: task.title,
+      description: `${task.status} · #${task.id.slice(0, 6)}`,
+      data: { kind: 'task', task },
+    }));
+}
+
+function isRoutableTask(task: Task): boolean {
+  return task.status === 'todo' || task.status === 'in_progress' || task.status === 'review';
+}
+
 interface BuildComposerTriggersInput {
   projectId: string;
+  tasks: Task[];
   labels: ComposerTriggerLabels;
 }
 
@@ -71,9 +105,19 @@ const EMPTY_WORKSPACE_RESULT = { entries: [] as WorkspaceSearchResult[], truncat
 
 export function buildComposerTriggers({
   projectId,
+  tasks,
   labels,
 }: BuildComposerTriggersInput): TriggerConfig[] {
   return [
+    {
+      char: TASK_TRIGGER,
+      position: 'any',
+      mode: 'dropdown',
+      accessibilityLabel: labels.taskMenuAria,
+      onSearch: (query) => buildTaskSuggestions(tasks, query),
+      onSelect: (suggestion) => `task:${parseTaskChipValue(suggestion.value) ?? suggestion.value}`,
+      emptyMessage: labels.taskEmpty,
+    },
     {
       char: FILE_TRIGGER,
       position: 'any',

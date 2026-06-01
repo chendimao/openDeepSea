@@ -939,6 +939,7 @@ function ChatColumn({
         sending={send.isPending}
         disabled={!canSendChat}
         agents={agents}
+        tasks={tasks}
         replyTarget={defaultReplyTarget}
         taskRouteTarget={taskRouteTarget}
         onClearReplyTarget={
