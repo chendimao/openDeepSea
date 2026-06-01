@@ -4163,7 +4163,7 @@
     backdrop-filter: blur(28px) saturate(1.35);
   }
   .room-main-heading {
-    min-height: 72px;
+    min-height: 56px;
     border-bottom: 1px solid var(--room-border);
     background:
       linear-gradient(
@@ -4171,7 +4171,7 @@
         color-mix(in srgb, var(--room-card-bg) 68%, transparent),
         color-mix(in srgb, var(--room-panel-bg) 42%, transparent)
       );
-    padding: 0 14px 0 18px;
+    padding: 0 16px;
     box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 92%, transparent), 0 8px 18px rgba(15,23,42,0.025);
     backdrop-filter: blur(18px) saturate(1.16);
   }
@@ -4180,7 +4180,7 @@
   }
   .chat-heading-title {
     color: var(--room-text-heading);
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 750;
     line-height: 1;
     letter-spacing: 0;
