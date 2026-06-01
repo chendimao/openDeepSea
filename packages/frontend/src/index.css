@@ -5506,6 +5506,31 @@
     min-width: 0;
     max-width: 100%;
   }
+  .task-record-message-body {
+    margin-top: 8px;
+    min-width: 0;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--room-card-bg) 68%, transparent);
+    padding: 8px;
+  }
+  .task-record-message-body .message-content {
+    min-width: 0;
+    color: var(--room-text);
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .task-record-section {
+    margin-top: 9px;
+    min-width: 0;
+  }
+  .task-record-section-title {
+    margin-bottom: 5px;
+    color: var(--room-text-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    font-weight: 760;
+    text-transform: uppercase;
+  }
   .task-record-item-header {
     display: flex;
     min-width: 0;

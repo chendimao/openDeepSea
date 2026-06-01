@@ -66,9 +66,11 @@ test('TaskWorkspacePanel renders queue and active task surface together', () => 
   assert.match(html, /taskWorkspace.activeTask/);
   assert.match(html, /Records/);
   assert.match(html, /规划决策/);
+  assert.match(html, /规划完成/);
   assert.match(html, /ACP 流转记录/);
   assert.match(html, /ACP 执行过程/);
   assert.match(html, /Read · package\.json/);
+  assert.match(html, /已完成文件读取/);
   assert.match(html, /Codex/);
   assert.doesNotMatch(html, /src\/index\.ts/);
   assert.doesNotMatch(html, /npm run build/);

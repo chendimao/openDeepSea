@@ -13,6 +13,7 @@ import { AgentRunStatusCard } from '../AgentRunPanel';
 import { AgentTimeline } from '../AgentTimeline';
 import { pairRunsWithAgentMessages } from '../chat/chatMessageModel';
 import { PlannerDecisionPanel } from '../chat/PlannerDecisionPanel';
+import { MessageContent } from '../MessageContent';
 import { selectTaskDetailEvents, type TaskLayerVisibility } from '../TaskDetailPanel';
 import { TaskMetaCell, TaskResourceMetric, TaskWorkspacePanelTitle } from './TaskWorkspaceCards';
 import {
@@ -86,24 +87,6 @@ export function ActiveTaskSurface({
   const taskMessages = useMemo(
     () => messages.filter((message) => messageBelongsToTask(message, task)),
     [messages, task],
-  );
-  const plannerRecords = useMemo(
-    () => taskMessages
-      .map((message) => {
-        const metadata = parseMessageMetadata(message.metadata);
-        return metadata.planner_decision ? { message, decision: metadata.planner_decision } : null;
-      })
-      .filter((record): record is { message: Message; decision: PlannerDecision } => Boolean(record)),
-    [taskMessages],
-  );
-  const traceRecords = useMemo(
-    () => taskMessages
-      .map((message) => {
-        const metadata = parseMessageMetadata(message.metadata);
-        return hasMessageTraceEvents(metadata.trace) ? { message, trace: metadata.trace } : null;
-      })
-      .filter((record): record is { message: Message; trace: MessageTrace } => Boolean(record)),
-    [taskMessages],
   );
   const taskAgentRuns = useMemo(
     () => {
@@ -222,8 +205,7 @@ export function ActiveTaskSurface({
 
         {activeTab === 'records' && (
           <TaskRecordsTab
-            plannerRecords={plannerRecords}
-            traceRecords={traceRecords}
+            messages={taskMessages}
             agentRuns={taskAgentRuns}
             agentByRoomId={agentByRoomId}
             roomId={roomId}
@@ -373,8 +355,7 @@ export function ActiveTaskSurface({
 }
 
 function TaskRecordsTab({
-  plannerRecords,
-  traceRecords,
+  messages,
   agentRuns,
   agentByRoomId,
   roomId,
@@ -384,8 +365,7 @@ function TaskRecordsTab({
   onContinue,
   emptyLabel,
 }: {
-  plannerRecords: Array<{ message: Message; decision: PlannerDecision }>;
-  traceRecords: Array<{ message: Message; trace: MessageTrace }>;
+  messages: Message[];
   agentRuns: AgentRun[];
   agentByRoomId: Map<string, RoomAgent>;
   roomId: string;
@@ -395,46 +375,94 @@ function TaskRecordsTab({
   onContinue: (message: Message) => void;
   emptyLabel: string;
 }): JSX.Element {
-  const hasRecords = plannerRecords.length > 0 || traceRecords.length > 0 || agentRuns.length > 0;
-  const recordCount = plannerRecords.length + traceRecords.length + agentRuns.length;
+  const runByMessageId = useMemo(() => pairRunsWithAgentMessages(messages, agentRuns), [agentRuns, messages]);
+  const pairedRunIds = useMemo(
+    () => new Set(Array.from(runByMessageId.values()).map((run) => run.id)),
+    [runByMessageId],
+  );
+  const records = useMemo(
+    () => [
+      ...messages.map((message) => ({ type: 'message' as const, message, time: message.created_at })),
+      ...agentRuns
+        .filter((run) => !pairedRunIds.has(run.id))
+        .map((run) => ({ type: 'run' as const, run, time: run.started_at })),
+    ].sort((left, right) => left.time - right.time),
+    [agentRuns, messages, pairedRunIds],
+  );
+  const hasRecords = records.length > 0;
+  const recordCount = records.length;
 
   return (
     <section className="task-detail-card task-records-card task-tab-section">
       <TaskWorkspacePanelTitle icon={ScrollText} title="Records" subtitle={`${recordCount} items`} />
       <div className="task-record-list">
-        {plannerRecords.map(({ message, decision }) => (
-          <article key={message.id} className="task-record-item">
-            <div className="task-record-item-header">
-              <strong>规划决策</strong>
-              <time>{formatRelativeTime(message.created_at)}</time>
-            </div>
-            <PlannerDecisionPanel
-              decision={decision}
-              roomAgents={roomAgents}
-              continuing={continuing}
-              onContinue={() => onContinue(message)}
-            />
-          </article>
-        ))}
-        {traceRecords.map(({ message, trace }) => (
-          <article key={`trace:${message.id}`} className="task-record-item task-record-trace-item">
-            <div className="task-record-item-header">
-              <strong>ACP 流转记录</strong>
-              <time>{formatRelativeTime(message.created_at)}</time>
-            </div>
-            <AgentTimeline trace={trace} roomId={roomId} />
-          </article>
-        ))}
-        {agentRuns.map((run) => (
-          <AgentRunStatusCard
-            key={run.id}
-            roomId={roomId}
-            run={run}
-            agent={agentByRoomId.get(run.room_agent_id)}
-            compact
-            defaultExpanded
-          />
-        ))}
+        {records.map((record) => {
+          if (record.type === 'run') {
+            return (
+              <AgentRunStatusCard
+                key={`run:${record.run.id}`}
+                roomId={roomId}
+                run={record.run}
+                agent={agentByRoomId.get(record.run.room_agent_id)}
+                compact
+                defaultExpanded
+              />
+            );
+          }
+
+          const { message } = record;
+          const metadata = parseMessageMetadata(message.metadata);
+          const run = runByMessageId.get(message.id);
+          const hasContent = Boolean(message.content.trim()) || hasMessageTraceEvents(metadata.trace);
+
+          return (
+            <article key={`message:${message.id}`} className="task-record-item task-record-message-item">
+              <div className="task-record-item-header">
+                <strong>{message.sender_name ?? message.sender_id}</strong>
+                <time>{formatRelativeTime(message.created_at)}</time>
+              </div>
+              {hasContent && (
+                <div className="task-record-message-body">
+                  <MessageContent
+                    content={message.content}
+                    trace={metadata.trace}
+                    roomAgents={roomAgents}
+                    suppressTraceEvents
+                    roomId={roomId}
+                  />
+                </div>
+              )}
+              {metadata.planner_decision && (
+                <div className="task-record-section">
+                  <div className="task-record-section-title">规划决策</div>
+                  <PlannerDecisionPanel
+                    decision={metadata.planner_decision}
+                    roomAgents={roomAgents}
+                    continuing={continuing}
+                    onContinue={() => onContinue(message)}
+                  />
+                </div>
+              )}
+              {hasMessageTraceEvents(metadata.trace) && (
+                <div className="task-record-section task-record-trace-item">
+                  <div className="task-record-section-title">ACP 流转记录</div>
+                  <AgentTimeline trace={metadata.trace} roomId={roomId} />
+                </div>
+              )}
+              {run && (
+                <div className="task-record-section">
+                  <AgentRunStatusCard
+                    roomId={roomId}
+                    run={run}
+                    agent={agentByRoomId.get(run.room_agent_id)}
+                    compact
+                    defaultExpanded
+                  />
+                </div>
+              )}
+            </article>
+          );
+        })}
         {!hasRecords && <div className="workspace-empty-row">{emptyLabel}</div>}
       </div>
     </section>
