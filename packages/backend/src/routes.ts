@@ -75,6 +75,7 @@ import {
   type WorkspaceFileErrorCode,
   WorkspaceFileError,
   listWorkspaceDirectory,
+  normalizeWorkspacePath,
   readWorkspaceFilePreview,
   searchWorkspaceFiles,
 } from './workspace-files.js';
@@ -1754,6 +1755,7 @@ const jsonMessageSchema = z.object({
   sender_name: z.string().optional(),
   mentions: z.array(z.string()).optional(),
   fileIds: z.array(z.string()).optional(),
+  fileRefs: z.array(z.string()).optional(),
   reply_to_message_id: z.string().trim().min(1).optional(),
   active_task_id: z.string().trim().min(1).nullable().optional(),
 });
@@ -1764,6 +1766,7 @@ const multipartMessageSchema = z.object({
   sender_name: z.string().optional(),
   mentions: z.string().optional(),
   fileIds: z.string().optional(),
+  fileRefs: z.string().optional(),
   reply_to_message_id: z.string().optional(),
   active_task_id: z.string().trim().min(1).nullable().optional(),
 });
@@ -1855,7 +1858,8 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
   }
   const content = parsed.data.content.trim();
   const fileIds = dedupeIds(parsed.data.fileIds ?? []);
-  if (content.length === 0 && fileIds.length === 0) {
+  const fileRefs = sanitizeFileRefs(parsed.data.fileRefs ?? []);
+  if (content.length === 0 && fileIds.length === 0 && fileRefs.length === 0) {
     res.status(400).json({ error: 'content or files is required' });
     return;
   }
@@ -1877,6 +1881,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
       roomId,
       attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile),
       replyToMessageId: parsed.data.reply_to_message_id,
+      fileRefs,
     }) ?? {};
   } catch (err) {
     const error = err as Error & { status?: number };
@@ -1939,7 +1944,16 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       return;
     }
 
-    if (content.length === 0 && files.length === 0 && fileIds.length === 0) {
+    let fileRefs: string[];
+    try {
+      fileRefs = parseMultipartFileRefs(parsed.data.fileRefs);
+    } catch (err) {
+      await cleanupProjectUploadedFiles(files);
+      res.status(400).json({ error: (err as Error).message });
+      return;
+    }
+
+    if (content.length === 0 && files.length === 0 && fileIds.length === 0 && fileRefs.length === 0) {
       await cleanupProjectUploadedFiles(files);
       res.status(400).json({ error: 'content or files is required' });
       return;
@@ -1983,6 +1997,7 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
         roomId,
         attachments: messageFiles.map(buildAttachmentMetadataFromProjectFile),
         replyToMessageId,
+        fileRefs,
       }) ?? {};
     } catch (err) {
       await cleanupProjectUploadedFiles(files);
@@ -2341,6 +2356,33 @@ function parseMultipartFileIds(rawFileIds?: string): string[] {
 
 function dedupeIds(ids: string[]): string[] {
   return [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+}
+
+function sanitizeFileRefs(rawRefs: string[]): string[] {
+  const normalized = rawRefs
+    .map((ref) => {
+      try {
+        return normalizeWorkspacePath(ref);
+      } catch {
+        return '';
+      }
+    })
+    .filter((ref) => ref.length > 0);
+  return dedupeIds(normalized);
+}
+
+function parseMultipartFileRefs(raw: string | undefined): string[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('invalid fileRefs');
+  }
+  if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
+    throw new Error('invalid fileRefs');
+  }
+  return sanitizeFileRefs(parsed as string[]);
 }
 
 const taskCreateSchema = z.object({
