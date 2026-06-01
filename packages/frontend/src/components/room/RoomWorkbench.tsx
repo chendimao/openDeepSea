@@ -531,12 +531,9 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
         />
         <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
           <ChatPanelHeader
-            roomId={roomId}
             project={project}
             room={room}
             agents={agents}
-            activeTab={activeTab}
-            onChange={setActiveTab}
             showMemoryPanel={showMemoryPanel}
             onToggleMemoryPanel={() => {
               setShowMemoryPanel((v) => !v);

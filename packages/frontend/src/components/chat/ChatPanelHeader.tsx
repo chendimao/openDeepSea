@@ -1,68 +1,36 @@
-import { Brain, ChevronDown, Plus, Settings2, Users } from 'lucide-react';
+import { Brain, Settings2 } from 'lucide-react';
 import type { Project, Room, RoomAgent } from '../../lib/types';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
-import { AddAgentDialog } from '../AddAgentDialog';
 import { AgentAvatar } from '../AgentAvatar';
-import { CreateTaskDialog } from '../CreateTaskDialog';
 import { RoomSettingsDialog } from '../SettingsDialogs';
 
 export type RoomFeatureTab = 'chat' | 'files';
 
 interface ChatPanelHeaderProps {
-  roomId: string;
   project?: Project | null;
   room?: Room | null;
   agents: RoomAgent[];
-  activeTab: RoomFeatureTab;
-  onChange: (tab: RoomFeatureTab) => void;
   showMemoryPanel: boolean;
   onToggleMemoryPanel: () => void;
   onSelectAgent: (agent: RoomAgent | null) => void;
 }
 
 export function ChatPanelHeader({
-  roomId,
   project,
   room,
   agents,
-  activeTab,
-  onChange,
   showMemoryPanel,
   onToggleMemoryPanel,
   onSelectAgent,
 }: ChatPanelHeaderProps): JSX.Element {
   const { t } = useI18n();
-  const filters: Array<{ id: RoomFeatureTab; label: string }> = [
-    { id: 'chat', label: t('room.tab.chat') },
-    { id: 'files', label: t('room.tab.files') },
-  ];
 
   return (
     <div className="room-main-heading">
       <div className="chat-heading-copy">
         <div className="chat-heading-title">聊天</div>
-        <div className="chat-heading-subtitle">Conversation Flow</div>
       </div>
-      <label className="chat-filter-control">
-        <span>{t('room.viewLabel')}</span>
-        <select
-          value={activeTab}
-          aria-label={t('room.viewLabel')}
-          onChange={(event) => onChange(event.currentTarget.value as RoomFeatureTab)}
-        >
-          {filters.map((filter) => (
-            <option key={filter.id} value={filter.id}>{filter.label}</option>
-          ))}
-        </select>
-        <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
-      </label>
-      <CreateTaskDialog roomId={roomId} agents={agents}>
-        <button type="button" className="glass-button" aria-label={t('createTask.trigger')}>
-          <Plus className="h-3.5 w-3.5" />
-          <span>{t('createTask.trigger')}</span>
-        </button>
-      </CreateTaskDialog>
       <div className="room-heading-actions">
         <ChatAgentStrip agents={agents} onConfig={onSelectAgent} />
         {project && room ? (
@@ -87,16 +55,6 @@ export function ChatPanelHeader({
           <Brain className="h-3.5 w-3.5" strokeWidth={1.8} />
           <span className="hidden sm:inline">{t('memory.tab')}</span>
         </button>
-        <AddAgentDialog
-          roomId={roomId}
-          roomAgentGlobalIds={agents.map((agent) => agent.global_agent_id ?? '')}
-          roomAgentIds={agents.map((agent) => agent.agent_id)}
-        >
-          <button type="button" className="glass-button" aria-label={t('room.inviteAgent')}>
-            <Users className="h-3.5 w-3.5" strokeWidth={1.8} />
-            <span className="hidden sm:inline">{t('room.inviteAgent')}</span>
-          </button>
-        </AddAgentDialog>
       </div>
     </div>
   );
