@@ -111,7 +111,7 @@ export function ChatMessageBubble({
   const canReply = !isSystem && hasContent && !isStreaming;
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
   const showPlannerDecisionPanel = !isUser && Boolean(metadata.planner_decision);
-  const showRecordOnlyBody = !isUser && Boolean(run);
+  const showRecordOnlyBody = !isUser && Boolean(run) && !hasContent;
   const chooseIntent = (intent: MessageIntent) => {
     const prefixByIntent: Record<MessageIntent, string> = {
       chat: '/chat ',
@@ -345,6 +345,7 @@ function TaskRecordSummaryEntry({
     </button>
   );
 }
+
 
 function shouldRenderInlineTaskCard(eventType: TaskEventType | undefined, taskId: string | undefined): boolean {
   if (!taskId || !eventType) return false;

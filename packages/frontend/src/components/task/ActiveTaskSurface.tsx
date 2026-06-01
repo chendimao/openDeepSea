@@ -409,6 +409,7 @@ function TaskRecordsTab({
             run={run}
             agent={agentByRoomId.get(run.room_agent_id)}
             compact
+            defaultExpanded
           />
         ))}
         {!hasRecords && <div className="workspace-empty-row">{emptyLabel}</div>}

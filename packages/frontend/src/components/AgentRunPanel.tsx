@@ -12,11 +12,13 @@ export function AgentRunStatusCard({
   run,
   agent,
   compact = false,
+  defaultExpanded = false,
 }: {
   roomId: string;
   run: AgentRun;
   agent?: RoomAgent;
   compact?: boolean;
+  defaultExpanded?: boolean;
 }) {
   const queryClient = useQueryClient();
   const { agentRunStatusLabel, formatRelativeTime, t } = useI18n();
@@ -32,6 +34,7 @@ export function AgentRunStatusCard({
   });
 
   const hasActivity = Boolean(run.activity_log?.trim());
+  const hasStdout = Boolean(run.stdout?.trim());
   const hasDiagnostics = Boolean(run.stderr || run.error);
 
   return (
@@ -80,7 +83,7 @@ export function AgentRunStatusCard({
       </div>
 
       {hasActivity && (
-        <details className="mt-2">
+        <details className="mt-2" open={defaultExpanded}>
           <summary className="flex cursor-pointer items-center gap-1.5 text-[11px] font-mono text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]">
             <ScrollText className="h-3.5 w-3.5" />
             {t('agentRun.activityLog')}
@@ -91,8 +94,20 @@ export function AgentRunStatusCard({
         </details>
       )}
 
+      {hasStdout && (
+        <details className="mt-2" open={defaultExpanded}>
+          <summary className="flex cursor-pointer items-center gap-1.5 text-[11px] font-mono text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]">
+            <ScrollText className="h-3.5 w-3.5" />
+            stdout / reply
+          </summary>
+          <pre className="mt-2 max-h-[220px] overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--color-code-bg)] px-2.5 py-2 text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+            {run.stdout}
+          </pre>
+        </details>
+      )}
+
       {hasDiagnostics && (
-        <details className="mt-2">
+        <details className="mt-2" open={defaultExpanded}>
           <summary className="cursor-pointer text-[11px] font-mono text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]">
             {t('agentRun.diagnostics')}
           </summary>
