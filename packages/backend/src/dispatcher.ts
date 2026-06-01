@@ -730,7 +730,9 @@ export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): stri
 export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const { agent, projectPath, roomId } = args;
   const room = roomRepo.get(roomId);
-  const promptWithIdentity = buildAgentIdentityPrompt(agent, args.prompt);
+  const sourceMessage = args.sourceMessageId ? messageRepo.get(args.sourceMessageId) : undefined;
+  const promptWithCasualContract = buildPlannerCasualChatPrompt(args.prompt, agent, sourceMessage);
+  const promptWithIdentity = buildAgentIdentityPrompt(agent, promptWithCasualContract);
   const runtimeProfile = resolveAgentRuntimeProfile({
     agent,
     projectPath,
@@ -1345,6 +1347,17 @@ function extractConciseCasualReply(content: string): string | null {
 function isShortGreeting(content: string): boolean {
   const normalized = content.trim().toLowerCase();
   return /^(hi|hello|hey|你好|您好|嗨|在吗|在不在)[。.!！?？\s]*$/u.test(normalized);
+}
+
+function buildPlannerCasualChatPrompt(prompt: string, agent: RoomAgent, sourceMessage?: Message): string {
+  if (agent.agent_id !== 'planner') return prompt;
+  if (!sourceMessage || !isCasualChatSourceMessage(sourceMessage)) return prompt;
+  return [
+    '本轮消息类型：普通闲聊/问候。',
+    '回复契约：只输出一句简短自然回复，例如“我在。”；不要解释 workflow、任务规划、内部流程或技能加载；不要输出 planner_decision、task_readiness 或任何 JSON。',
+    '',
+    prompt,
+  ].join('\n');
 }
 
 function parseMessageMetadata(raw: string | null): MessageMetadata {

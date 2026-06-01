@@ -290,6 +290,8 @@ test('planner prompt tells ACP to keep casual chat concise without workflow narr
   try {
     await dispatchUserMessage({ roomId: room.id, userMessage });
 
+    assert.match(capturedPrompt, /本轮消息类型：普通闲聊\/问候/u);
+    assert.match(capturedPrompt, /回复契约：只输出一句简短自然回复/u);
     assert.match(capturedPrompt, /普通问候、闲聊或信息不足时，只输出简短自然回复/u);
     assert.match(capturedPrompt, /不要解释内部流程、workflow 判断、技能使用或 using-superpowers/u);
     assert.match(capturedPrompt, /不要追加 planner_decision 或 task_readiness JSON/u);
