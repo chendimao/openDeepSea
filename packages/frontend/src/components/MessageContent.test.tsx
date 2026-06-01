@@ -218,6 +218,22 @@ test('renders known agent ids in plain text as Chinese agent names', () => {
   assert.doesNotMatch(html, /frontend-reviewer ·/);
 });
 
+test('renders task references as compact chips in message text', () => {
+  const html = renderMessage('继续处理 #task:task-abcdef123456 并通知 planner');
+
+  assert.match(html, /message-task-ref-chip/);
+  assert.match(html, /#task:task-a/);
+  assert.match(html, /title="#task:task-abcdef123456"/);
+});
+
+test('renders task reference chips inside markdown preview text', () => {
+  const html = renderMessage('**目标**：处理 #task:task-xyz987654321');
+
+  assert.match(html, /<strong>目标<\/strong>/);
+  assert.match(html, /message-task-ref-chip/);
+  assert.match(html, /#task:task-x/);
+});
+
 test('recognizes application json fences with CRLF and metadata', () => {
   const content = '```application/json title="readiness"\r\n{"task_readiness":{"ready":true,"title":"CRLF JSON","confidence":1}}\r\n```';
 

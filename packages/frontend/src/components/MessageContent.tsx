@@ -159,7 +159,7 @@ export function MessageContent({
                     if (!part.value) return null;
                     return (
                       <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
-                        {renderAgentNamesInText(part.value, agentNameById)}
+                        {renderInlineTextReferences(part.value, agentNameById)}
                         {streaming && index === lastTextPartIndex && <StreamingCursor />}
                       </span>
                     );
@@ -603,7 +603,7 @@ function renderMarkdownBlock(
   if (/^>\s+/m.test(trimmed)) {
     return (
       <blockquote key={index}>
-        {renderAgentNamesInText(trimmed.replace(/^>\s?/gm, ''), agentNameById)}
+        {renderInlineTextReferences(trimmed.replace(/^>\s?/gm, ''), agentNameById)}
         {streaming && <StreamingCursor />}
       </blockquote>
     );
@@ -666,7 +666,7 @@ function renderInlineMarkdown(text: string, agentNameById?: Map<string, string>)
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > lastIndex) pushTextWithAgentNames(tokens, text.slice(lastIndex, match.index), match.index, agentNameById);
     if (match[2]) {
-      tokens.push(<strong key={match.index}>{renderAgentNamesInText(match[2], agentNameById, `strong-${match.index}`)}</strong>);
+      tokens.push(<strong key={match.index}>{renderInlineTextReferences(match[2], agentNameById, `strong-${match.index}`)}</strong>);
     } else if (match[3]) {
       tokens.push(<code key={match.index}>{match[3]}</code>);
     } else if (match[4] && match[5]) {
@@ -700,12 +700,64 @@ function pushTextWithAgentNames(
   offset: number,
   agentNameById?: Map<string, string>,
 ): void {
-  const rendered = renderAgentNamesInText(text, agentNameById, `agent-${offset}`);
+  const rendered = renderInlineTextReferences(text, agentNameById, `inline-${offset}`);
   if (Array.isArray(rendered)) {
     tokens.push(...rendered);
   } else {
     tokens.push(rendered);
   }
+}
+
+function renderInlineTextReferences(
+  text: string,
+  agentNameById?: Map<string, string>,
+  keyPrefix = 'inline',
+): string | Array<string | JSX.Element> {
+  if (!text) return text;
+  const pattern = /(^|[^\p{L}\p{N}_-])#task:([\p{L}\p{N}_-]+)/gu;
+  const parts: Array<string | JSX.Element> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    const prefix = match[1] ?? '';
+    const taskId = match[2];
+    const refStart = match.index + prefix.length;
+    if (match.index > lastIndex) {
+      pushMaybeAgentNames(parts, text.slice(lastIndex, match.index), `${keyPrefix}-agent-${lastIndex}`, agentNameById);
+    }
+    if (prefix) parts.push(prefix);
+    parts.push(<TaskReferenceChip key={`${keyPrefix}-task-${refStart}`} taskId={taskId} />);
+    lastIndex = refStart + `#task:${taskId}`.length;
+  }
+
+  if (lastIndex === 0) return renderAgentNamesInText(text, agentNameById, keyPrefix);
+  if (lastIndex < text.length) {
+    pushMaybeAgentNames(parts, text.slice(lastIndex), `${keyPrefix}-agent-${lastIndex}`, agentNameById);
+  }
+  return parts;
+}
+
+function pushMaybeAgentNames(
+  tokens: Array<string | JSX.Element>,
+  text: string,
+  keyPrefix: string,
+  agentNameById?: Map<string, string>,
+): void {
+  const rendered = renderAgentNamesInText(text, agentNameById, keyPrefix);
+  if (Array.isArray(rendered)) {
+    tokens.push(...rendered);
+  } else if (rendered) {
+    tokens.push(rendered);
+  }
+}
+
+function TaskReferenceChip({ taskId }: { taskId: string }): JSX.Element {
+  return (
+    <span className="message-task-ref-chip" title={`#task:${taskId}`}>
+      {`#task:${taskId.slice(0, 6)}`}
+    </span>
+  );
 }
 
 function renderAgentNamesInText(
