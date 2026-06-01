@@ -7,6 +7,7 @@ import test from 'node:test';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-routes-')), 'test.db');
 process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
 process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER = '0';
+process.env.OPENCLAW_ACP_TASK_ANALYZER = '0';
 
 const express = (await import('express')).default;
 const { projectRepo } = await import('./repos/projects.js');
@@ -152,7 +153,7 @@ test('POST /rooms/:roomId/messages creates a task for clear create-task intent',
     });
 
     assert.equal(res.status, 201);
-    assert.equal(dispatchCalls.length, 1);
+    assert.equal(dispatchCalls.length, 0);
     const message = await res.json() as { id: string; metadata: string | null };
     const metadata = JSON.parse(message.metadata ?? '{}') as {
       task_id?: string;
@@ -282,7 +283,7 @@ test('POST /rooms/:roomId/messages creates task for high-confidence light task i
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 1);
+  assert.equal(dispatchCalls.length, 0);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
@@ -297,6 +298,81 @@ test('POST /rooms/:roomId/messages creates task for high-confidence light task i
   const tasks = taskRepo.listByRoom(room.id);
   assert.equal(tasks.length, 1);
   assert.equal(tasks[0]?.source_message_id, message.id);
+  assert.equal(tasks[0]?.interaction_mode, 'ask_user');
+  assert.equal(workflowRepo.listByTask(tasks[0]!.id).length, 0);
+});
+
+test('POST /rooms/:roomId/messages creates waiting task from ACP structured analysis without auto execution', async () => {
+  let analysisCalls = 0;
+  setMessageRouteDeps({
+    dispatchUserMessage: async (input) => {
+      dispatchCalls.push(input);
+    },
+    intentClassifier: async () => JSON.stringify({
+      intent: 'light_task',
+      confidence: 0.92,
+      source: 'classifier',
+      suggestedAction: 'create_light_task',
+      reason: 'ACP 判断用户要求移除 header 测试菜单，属于明确轻量任务',
+      signals: ['去掉', 'header 菜单', '测试菜单'],
+    }),
+    taskAnalyzer: async ({ message, intentResult, routeResult }) => {
+      analysisCalls += 1;
+      assert.equal(message, '去掉 header 菜单中的测试菜单');
+      assert.equal(intentResult.intent, 'light_task');
+      assert.equal(routeResult.action, 'create_task');
+      return {
+        task_type: 'light_task',
+        execution_intent: 'implementation',
+        confidence: 0.94,
+        title: '移除 header 测试菜单',
+        description: '删除 header 菜单里的“测试”入口，其他菜单保持不变。',
+        acceptance: [
+          'header 菜单不再显示“测试”入口',
+          '其他菜单项保持不变',
+          '前端构建通过',
+        ],
+        missing_questions: [],
+        recommended_next_action: 'create_task',
+        requires_confirmation: false,
+      };
+    },
+  });
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'ACP Task Analysis Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-acp-task-analysis-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '去掉 header 菜单中的测试菜单' }),
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(analysisCalls, 1);
+  assert.equal(dispatchCalls.length, 0);
+  const message = await res.json() as { id: string; metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    task_analysis?: {
+      title: string;
+      recommended_next_action: string;
+    };
+    route_result?: { action: string; taskId: string | null };
+  };
+  assert.equal(metadata.route_result?.action, 'create_task');
+  assert.equal(metadata.task_analysis?.title, '移除 header 测试菜单');
+  assert.equal(metadata.task_analysis?.recommended_next_action, 'create_task');
+  assert.ok(metadata.task_id);
+
+  const tasks = taskRepo.listByRoom(room.id);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0]?.title, '移除 header 测试菜单');
+  assert.match(tasks[0]?.description ?? '', /删除 header 菜单里的“测试”入口/);
+  assert.match(tasks[0]?.description ?? '', /验收标准：/);
+  assert.match(tasks[0]?.description ?? '', /header 菜单不再显示“测试”入口/);
   assert.equal(tasks[0]?.interaction_mode, 'ask_user');
   assert.equal(workflowRepo.listByTask(tasks[0]!.id).length, 0);
 });
@@ -324,7 +400,7 @@ test('POST /rooms/:roomId/messages creates new workflow task for high-confidence
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 1);
+  assert.equal(dispatchCalls.length, 0);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
@@ -341,9 +417,9 @@ test('POST /rooms/:roomId/messages creates new workflow task for high-confidence
   assert.equal(tasks.length, 2);
   const created = tasks.find((task) => task.id === metadata.task_id);
   assert.ok(created);
-  assert.equal(created.interaction_mode, 'auto_recommended');
+  assert.equal(created.interaction_mode, 'ask_user');
   assert.equal(created.source_message_id, message.id);
-  assert.equal(workflowRepo.listByTask(created.id).length, 1);
+  assert.equal(workflowRepo.listByTask(created.id).length, 0);
   assert.equal(taskEventRepo.listByTask(active.id).some((event) => event.type === 'message_routed'), false);
 });
 
@@ -367,7 +443,7 @@ for (const scenario of [
     executionIntent: 'implementation',
   },
 ] as const) {
-  test(`POST /rooms/:roomId/messages creates auto-start workflow task for ${scenario.name} intent`, async () => {
+  test(`POST /rooms/:roomId/messages creates waiting workflow task for ${scenario.name} intent`, async () => {
     resetDispatchCalls();
     const project = projectRepo.create({
       name: `Message Intent ${scenario.name} Route`,
@@ -383,7 +459,7 @@ for (const scenario of [
       });
 
       assert.equal(res.status, 201);
-      assert.equal(dispatchCalls.length, 1);
+      assert.equal(dispatchCalls.length, 0);
       const message = await res.json() as { id: string; metadata: string | null };
       const metadata = JSON.parse(message.metadata ?? '{}') as {
         task_id?: string;
@@ -399,26 +475,12 @@ for (const scenario of [
       assert.equal(tasks.length, 1);
       assert.equal(tasks[0]?.id, metadata.task_id);
       assert.equal(tasks[0]?.source_message_id, message.id);
-      assert.equal(tasks[0]?.interaction_mode, 'auto_recommended');
+      assert.equal(tasks[0]?.interaction_mode, 'ask_user');
       assert.match(tasks[0]?.description ?? '', new RegExp(`消息模式：${scenario.name}`, 'u'));
       assert.match(tasks[0]?.description ?? '', new RegExp(`任务意图：${scenario.executionIntent}`, 'u'));
 
-      const runs = workflowRepo.listByTask(tasks[0]!.id);
-      assert.equal(runs.length, 1);
-      assert.equal(runs[0]?.status, 'running');
-      const workflowStarted = taskEventRepo.listByTask(tasks[0]!.id, { layer: 'timeline' })
-        .find((event) => event.type === 'workflow_started');
-      assert.ok(workflowStarted);
-      assert.equal(workflowStarted.payload.workflow_source, 'auto_start');
-      assert.equal(workflowStarted.payload.workflow_source_message_id, message.id);
-      assert.equal(
-        events.some((event) =>
-          event.type === 'workflow:created' &&
-          event.roomId === room.id &&
-          event.workflow.id === runs[0]?.id
-        ),
-        true,
-      );
+      assert.equal(workflowRepo.listByTask(tasks[0]!.id).length, 0);
+      assert.equal(events.some((event) => event.type === 'workflow:created'), false);
     } finally {
       events.restore();
     }

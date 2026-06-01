@@ -5,6 +5,11 @@ import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
 import { createAcpMessageIntentClassifier } from './acp-message-intent-classifier.js';
+import {
+  createAcpTaskAnalyzer,
+  type TaskAnalysisResult,
+  type TaskAnalyzerInvoker,
+} from './acp-task-analyzer.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
 import { testConfiguredModel, type ConfiguredModelTester } from './chat-model.js';
 import type { CollaborationDecision } from './collaboration-decision.js';
@@ -132,6 +137,7 @@ interface AiConfigTestRouteDeps {
 interface MessageRouteDeps {
   dispatchUserMessage?: typeof dispatchUserMessage;
   intentClassifier?: MessageIntentClassifierInvoker;
+  taskAnalyzer?: TaskAnalyzerInvoker;
 }
 
 let collaborationRouteDeps: CollaborationRouteDeps = {};
@@ -1910,9 +1916,9 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     content,
     metadata,
   });
-  finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
+  const finalRouteResult = await finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
-  dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions: parsed.data.mentions });
+  dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions: parsed.data.mentions, routeResult: finalRouteResult });
   res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
 }
 
@@ -2027,9 +2033,9 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       content,
       metadata,
     });
-    finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
+    const finalRouteResult = await finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
     recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
-    dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions });
+    dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions, routeResult: finalRouteResult });
     res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
   } catch (err) {
     await cleanupProjectUploadedFiles(files);
@@ -2138,9 +2144,11 @@ function dispatchUserMessageFromRoute(input: {
   userMessageId: string;
   content: string;
   mentions?: string[];
+  routeResult?: import('./types.js').RouteResult;
 }): void {
   const userMessage = messageRepo.get(input.userMessageId);
   if (!userMessage) return;
+  if (input.routeResult?.action === 'create_task') return;
   // 群聊不再按正文 @ 文本解析智能体（避免 @文件名 误命中同名 agent），仅用显式 mentions
   const mentionedAgentRoomIds = dedupeIds(input.mentions ?? []);
   // Fire-and-forget dispatch
@@ -2174,15 +2182,15 @@ function recordTaskRoutingEvent(
   });
 }
 
-function finalizeUserMessageRouting(input: {
+async function finalizeUserMessageRouting(input: {
   roomId: string;
   userMessageId: string;
   content: string;
   routeResult: import('./types.js').RouteResult;
   intentResult?: MessageIntentResult;
-}): void {
+}): Promise<import('./types.js').RouteResult> {
   const finalRouteResult = input.routeResult.action === 'create_task'
-    ? createTaskFromRoutedMessage(input)
+    ? await createTaskFromRoutedMessage(input)
     : input.routeResult;
   if (input.intentResult && shouldAskUserForIntent(input.intentResult)) {
     recordUncertainMessageIntent(input.roomId, input.userMessageId, input.intentResult);
@@ -2200,6 +2208,7 @@ function finalizeUserMessageRouting(input: {
       taskId: finalRouteResult.taskId,
     });
   }
+  return finalRouteResult;
 }
 
 function recordUncertainMessageRoute(
@@ -2248,21 +2257,38 @@ function recordUncertainMessageIntent(
   wsHub.broadcast(roomId, { type: 'message:new', roomId, message });
 }
 
-function createTaskFromRoutedMessage(input: {
+async function createTaskFromRoutedMessage(input: {
   roomId: string;
   userMessageId: string;
   content: string;
   routeResult: import('./types.js').RouteResult;
   intentResult?: MessageIntentResult;
-}): import('./types.js').RouteResult {
-  const title = extractCreateTaskTitle(input.content) ?? inferTaskTitleFromIntentMessage(input.content);
+}): Promise<import('./types.js').RouteResult> {
   const intent = input.intentResult?.intent ?? 'light_task';
+  const analysis = await analyzeRoutedTaskMessage(input);
+  if (analysis && analysis.recommended_next_action !== 'create_task') {
+    const nextRouteResult: import('./types.js').RouteResult = {
+      ...input.routeResult,
+      action: analysis.recommended_next_action === 'reply_in_chat' ? 'reply_in_chat' : 'ask_user',
+      taskId: null,
+      reason: analysis.missing_questions.length > 0
+        ? `ACP 任务分析认为需要先澄清：${analysis.missing_questions.join('；')}`
+        : `ACP 任务分析建议：${analysis.recommended_next_action}`,
+    };
+    const updatedMessage = messageRepo.mergeMetadata(input.userMessageId, {
+      task_analysis: analysis,
+      route_result: nextRouteResult,
+    });
+    if (updatedMessage) broadcastUserMessageSnapshot(input.roomId, updatedMessage);
+    return nextRouteResult;
+  }
+  const title = analysis?.title ?? extractCreateTaskTitle(input.content) ?? inferTaskTitleFromIntentMessage(input.content);
   const result = createTaskWithConversation({
     roomId: input.roomId,
     taskInput: {
       title,
-      description: buildIntentTaskDescription(input.content, intent),
-      interaction_mode: shouldAutoStartWorkflowForIntent(intent) ? 'auto_recommended' : 'ask_user',
+      description: analysis ? buildAnalyzedTaskDescription(analysis) : buildIntentTaskDescription(input.content, intent),
+      interaction_mode: 'ask_user',
     },
     origin: 'chat_plan',
     sourceMessageId: input.userMessageId,
@@ -2275,6 +2301,7 @@ function createTaskFromRoutedMessage(input: {
   };
   const updatedMessage = messageRepo.mergeMetadata(input.userMessageId, {
     task_id: result.task.id,
+    task_analysis: analysis ?? undefined,
     route_result: nextRouteResult,
   });
   if (updatedMessage) {
@@ -2288,8 +2315,54 @@ function createTaskFromRoutedMessage(input: {
   return nextRouteResult;
 }
 
-function shouldAutoStartWorkflowForIntent(intent: MessageIntent): boolean {
-  return intent === 'debugger' || intent === 'brainstorming' || intent === 'workflow';
+async function analyzeRoutedTaskMessage(input: {
+  roomId: string;
+  content: string;
+  routeResult: import('./types.js').RouteResult;
+  intentResult?: MessageIntentResult;
+}): Promise<TaskAnalysisResult | null> {
+  const intentResult = input.intentResult;
+  if (!intentResult) return null;
+  const analyzer = getTaskAnalyzerForRoom(input.roomId);
+  if (!analyzer) return null;
+  try {
+    return await analyzer({
+      message: input.content,
+      intentResult,
+      routeResult: input.routeResult,
+    });
+  } catch (err) {
+    console.warn(`[task-analysis] ACP task analysis failed, falling back to route result: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+function getTaskAnalyzerForRoom(roomId: string): TaskAnalyzerInvoker | undefined {
+  if (messageRouteDeps.taskAnalyzer) return messageRouteDeps.taskAnalyzer;
+  if (process.env.OPENCLAW_ACP_TASK_ANALYZER === '0') return undefined;
+  const room = roomRepo.get(roomId);
+  if (!room) return undefined;
+  const project = projectRepo.get(room.project_id);
+  if (!project) return undefined;
+  const agent = roomAgentRepo
+    .listByRoom(room.id)
+    .find((item) => item.left_at === null && item.acp_enabled === 1 && item.acp_backend);
+  if (!agent?.acp_backend) return undefined;
+  return createAcpTaskAnalyzer({
+    projectPath: project.path,
+    agent,
+    adapter: getAdapter(agent.acp_backend),
+  });
+}
+
+function buildAnalyzedTaskDescription(analysis: TaskAnalysisResult): string {
+  return [
+    `消息模式：${analysis.task_type}`,
+    `任务意图：${analysis.execution_intent}`,
+    '',
+    analysis.description,
+    analysis.acceptance.length > 0 ? ['验收标准：', ...analysis.acceptance.map((item) => `- ${item}`)].join('\n') : null,
+  ].filter((line): line is string => Boolean(line)).join('\n');
 }
 
 function buildIntentTaskDescription(content: string, intent: MessageIntent): string {

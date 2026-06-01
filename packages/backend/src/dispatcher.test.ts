@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-dispatch-')), 'test.db');
+process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER = '0';
+process.env.OPENCLAW_ACP_TASK_ANALYZER = '0';
 
 import type { SessionAdapter } from './acp/types.js';
 import type { Message, MessageMetadata } from './types.js';
@@ -1208,7 +1210,7 @@ test('planner completed reply marks analysis-only readiness without formal workf
   }
 });
 
-test('message route creates task for /task intent and still dispatches to planner', async () => {
+test('message route creates waiting task for /task intent without dispatching execution', async () => {
   const { projectPath, room } = await createRoutedRoom('task-command');
   const { restore, calls } = installCountingCodexAdapter();
 
@@ -1226,7 +1228,7 @@ test('message route creates task for /task intent and still dispatches to planne
     const userMessage = await res.json() as Message;
     assert.equal(userMessage.content, '/task Fix command route');
     await delay(30);
-    assert.equal(calls.count, 1);
+    assert.equal(calls.count, 0);
     const tasks = taskRepo.listByRoom(room.id);
     assert.equal(tasks.length, 1);
     assert.equal(tasks[0]?.title, 'Fix command route');

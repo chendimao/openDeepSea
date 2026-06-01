@@ -802,6 +802,17 @@ export interface MessageMetadata extends MessageTaskEventMetadata {
     execution_intent?: TaskExecutionIntent;
     source_message_id?: string;
   };
+  task_analysis?: {
+    task_type: MessageIntent;
+    execution_intent: TaskExecutionIntent;
+    confidence: number;
+    title: string;
+    description: string;
+    acceptance: string[];
+    missing_questions: string[];
+    recommended_next_action: 'reply_in_chat' | 'ask_user' | 'create_task';
+    requires_confirmation: boolean;
+  };
 }
 
 export interface Message {

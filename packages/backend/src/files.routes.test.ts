@@ -9,6 +9,8 @@ import { Duplex } from 'node:stream';
 import test from 'node:test';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-file-routes-')), 'test.db');
+process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER = '0';
+process.env.OPENCLAW_ACP_TASK_ANALYZER = '0';
 
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
