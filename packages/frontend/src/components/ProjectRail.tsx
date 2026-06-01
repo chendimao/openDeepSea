@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { DragEvent } from 'react';
 import type { Project } from '../lib/types';
 import { isPinnedItem, layerIds, reorderWithinLayer, sortPinnedItems } from '../lib/sortableItems';
-import { cn, truncate } from '../lib/utils';
+import { cn } from '../lib/utils';
 import { Input } from './ui/Input';
 
 export function ProjectRail({
@@ -163,9 +163,9 @@ function ProjectRailItem({
       onDrop={onDrop}
       onDragEnd={onDragEnd}
     >
-      <button type="button" className="project-rail-select" onClick={onSelect} disabled={busy}>
+      <button type="button" className="project-rail-select" onClick={onSelect} disabled={busy} title={project.name}>
         <FolderOpen className="h-4 w-4" />
-        <span>{truncate(project.name, 28)}</span>
+        <span>{project.name}</span>
         {isPinnedItem(project) ? <Pin className="h-3.5 w-3.5" /> : null}
       </button>
       <DropdownMenu.Root>

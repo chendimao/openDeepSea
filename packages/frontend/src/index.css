@@ -940,7 +940,7 @@
   }
   .development-workspace {
     display: grid;
-    grid-template-columns: minmax(260px, 28%) minmax(0, 1fr);
+    grid-template-columns: clamp(220px, 18vw, 300px) minmax(0, 1fr);
     height: 100%;
     min-height: 0;
     overflow: hidden;
@@ -1013,6 +1013,9 @@
     gap: 8px;
     padding: 9px 8px;
     text-align: left;
+  }
+  .project-rail-select svg {
+    flex: 0 0 auto;
   }
   .project-rail-select span {
     min-width: 0;
