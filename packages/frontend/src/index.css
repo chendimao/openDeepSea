@@ -5463,7 +5463,11 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
   }
-  .task-record-list,
+  .task-record-list {
+    display: grid;
+    min-width: 0;
+    gap: 0;
+  }
   .task-resource-list {
     display: grid;
     min-width: 0;
@@ -5481,9 +5485,23 @@
     background: color-mix(in srgb, var(--room-card-muted-bg) 72%, transparent);
   }
   .task-record-item {
+    position: relative;
     min-width: 0;
-    overflow: hidden;
-    padding: 9px 10px;
+    overflow: visible;
+    border-width: 0 0 0 1px;
+    border-radius: 0;
+    background: transparent;
+    padding: 7px 0 9px 14px;
+  }
+  .task-record-item::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    left: -3px;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-primary) 62%, var(--room-text-muted));
   }
   .task-record-item .agent-run-console {
     width: 100%;
@@ -5507,27 +5525,25 @@
     max-width: 100%;
   }
   .task-record-message-body {
-    margin-top: 8px;
+    margin-top: 5px;
     min-width: 0;
-    border-radius: 9px;
-    background: color-mix(in srgb, var(--room-card-bg) 68%, transparent);
-    padding: 8px;
+    padding: 0;
   }
   .task-record-message-body .message-content {
     min-width: 0;
     color: var(--room-text);
-    font-size: 12px;
-    line-height: 1.55;
+    font-size: 11.5px;
+    line-height: 1.45;
   }
   .task-record-section {
-    margin-top: 9px;
+    margin-top: 7px;
     min-width: 0;
   }
   .task-record-section-title {
-    margin-bottom: 5px;
+    margin-bottom: 4px;
     color: var(--room-text-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 760;
     text-transform: uppercase;
   }
@@ -5540,7 +5556,7 @@
   }
   .task-record-item-header strong {
     color: var(--room-text-heading);
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 760;
   }
   .task-record-item-header time,
@@ -5548,6 +5564,50 @@
     color: var(--room-text-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 10px;
+  }
+  .task-record-run-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    color: var(--room-text);
+    font-size: 11px;
+  }
+  .task-record-run-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--room-text-muted);
+  }
+  .task-record-run-dot.is-completed {
+    background: var(--color-success);
+  }
+  .task-record-run-dot.is-failed,
+  .task-record-run-dot.is-cancelled,
+  .task-record-run-dot.is-interrupted {
+    background: var(--color-danger);
+  }
+  .task-record-run-dot.is-running,
+  .task-record-run-dot.is-queued,
+  .task-record-run-dot.is-retrying {
+    background: var(--color-primary);
+  }
+  .task-record-run-row strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--room-text-heading);
+    font-weight: 680;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-record-run-row small,
+  .task-record-run-row em {
+    color: var(--room-text-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9.5px;
+    font-style: normal;
+    white-space: nowrap;
   }
   .task-record-item p {
     margin: 6px 0 0;

@@ -36,8 +36,12 @@ test('TaskWorkspacePanel renders queue and active task surface together', () => 
         activeTaskId="task-active"
         statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
         activityEvents={[event('activity-1', 'message_routed', 'activity')]}
-        messages={[plannerMessage('message-planner', 'task-active'), traceMessage('message-trace', 'task-active')]}
-        agentRuns={[agentRun('run-1', 'task-active')]}
+        messages={[
+          plannerMessage('message-planner', 'task-active'),
+          traceMessage('message-trace', 'task-active'),
+          traceMessage('message-other', 'task-next', '其他任务记录'),
+        ]}
+        agentRuns={[agentRun('run-1', 'task-active'), agentRun('run-other', 'task-next')]}
         taskEvents={[
           event('diff-1', 'diff_detected', 'diff', { path: 'src/index.ts', additions: 2, deletions: 1 }),
           event('runtime-1', 'runtime_event', 'runtime', { command: 'npm run build', output: 'ok' }),
@@ -72,6 +76,8 @@ test('TaskWorkspacePanel renders queue and active task surface together', () => 
   assert.match(html, /Read · package\.json/);
   assert.match(html, /已完成文件读取/);
   assert.match(html, /Codex/);
+  assert.match(html, /completed/);
+  assert.doesNotMatch(html, /其他任务记录/);
   assert.doesNotMatch(html, /src\/index\.ts/);
   assert.doesNotMatch(html, /npm run build/);
 });
@@ -219,14 +225,14 @@ function plannerMessage(id: string, taskId: string): Message {
   };
 }
 
-function traceMessage(id: string, taskId: string): Message {
+function traceMessage(id: string, taskId: string, content = '已完成文件读取'): Message {
   return {
     id,
     room_id: 'room-1',
     sender_type: 'agent',
     sender_id: 'codex',
     sender_name: 'Codex',
-    content: '已完成文件读取',
+    content,
     message_type: 'text',
     layer: 'chat',
     metadata: JSON.stringify({

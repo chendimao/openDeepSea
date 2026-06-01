@@ -9,12 +9,12 @@ import type { AgentRun, Message, MessageTrace, PlannerDecision, RoomAgent, Task,
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { createPlannerDispatchInput } from '../../pages/roomPageLogic';
 import { AgentAvatar } from '../AgentAvatar';
-import { AgentRunStatusCard } from '../AgentRunPanel';
 import { AgentTimeline } from '../AgentTimeline';
 import { pairRunsWithAgentMessages } from '../chat/chatMessageModel';
 import { PlannerDecisionPanel } from '../chat/PlannerDecisionPanel';
 import { MessageContent } from '../MessageContent';
 import { selectTaskDetailEvents, type TaskLayerVisibility } from '../TaskDetailPanel';
+import { cn } from '../../lib/utils';
 import { TaskMetaCell, TaskResourceMetric, TaskWorkspacePanelTitle } from './TaskWorkspaceCards';
 import {
   buildFileChanges,
@@ -85,7 +85,7 @@ export function ActiveTaskSurface({
   const currentAgent = assignedAgent?.agent_name ?? t('common.unassigned');
   const currentStep = planSteps.find((step) => step.state === 'running') ?? planSteps[0];
   const taskMessages = useMemo(
-    () => messages.filter((message) => messageBelongsToTask(message, task)),
+    () => messages.filter((message) => messageBelongsToCurrentTask(message, task)),
     [messages, task],
   );
   const taskAgentRuns = useMemo(
@@ -99,11 +99,10 @@ export function ActiveTaskSurface({
       );
       return agentRuns.filter((run) =>
         run.task_id === task.id ||
-        Boolean(workflow?.id && run.workflow_run_id === workflow.id) ||
         pairedRunIds.has(run.id)
-      ).sort((a, b) => b.started_at - a.started_at);
+      ).sort((a, b) => a.started_at - b.started_at);
     },
-    [agentRuns, messages, task.id, taskMessages, workflow?.id],
+    [agentRuns, messages, task.id, taskMessages],
   );
   const agentByRoomId = useMemo(
     () => new Map(roomAgents.map((agent) => [agent.id, agent])),
@@ -399,14 +398,13 @@ function TaskRecordsTab({
         {records.map((record) => {
           if (record.type === 'run') {
             return (
-              <AgentRunStatusCard
-                key={`run:${record.run.id}`}
-                roomId={roomId}
-                run={record.run}
-                agent={agentByRoomId.get(record.run.room_agent_id)}
-                compact
-                defaultExpanded
-              />
+              <article key={`run:${record.run.id}`} className="task-record-item task-record-run-item">
+                <RunTimelineRow
+                  run={record.run}
+                  agent={agentByRoomId.get(record.run.room_agent_id)}
+                  formatRelativeTime={formatRelativeTime}
+                />
+              </article>
             );
           }
 
@@ -451,12 +449,10 @@ function TaskRecordsTab({
               )}
               {run && (
                 <div className="task-record-section">
-                  <AgentRunStatusCard
-                    roomId={roomId}
+                  <RunTimelineRow
                     run={run}
                     agent={agentByRoomId.get(run.room_agent_id)}
-                    compact
-                    defaultExpanded
+                    formatRelativeTime={formatRelativeTime}
                   />
                 </div>
               )}
@@ -466,6 +462,29 @@ function TaskRecordsTab({
         {!hasRecords && <div className="workspace-empty-row">{emptyLabel}</div>}
       </div>
     </section>
+  );
+}
+
+function RunTimelineRow({
+  run,
+  agent,
+  formatRelativeTime,
+}: {
+  run: AgentRun;
+  agent?: RoomAgent;
+  formatRelativeTime: (timestamp: number) => string;
+}): JSX.Element {
+  const label = agent?.agent_name ?? run.agent_id;
+  const finishedAt = run.completed_at ?? run.updated_at;
+  const meta = `${run.backend} · ${formatRelativeTime(finishedAt)}`;
+
+  return (
+    <div className="task-record-run-row">
+      <span className={cn('task-record-run-dot', `is-${run.status}`)} />
+      <strong>{label}</strong>
+      <small>{meta}</small>
+      <em>{run.status}</em>
+    </div>
   );
 }
 
@@ -480,11 +499,9 @@ function hasMessageTraceEvents(trace: MessageTrace | undefined): trace is Messag
   );
 }
 
-function messageBelongsToTask(message: Message, task: Task): boolean {
+function messageBelongsToCurrentTask(message: Message, task: Task): boolean {
   const metadata = parseMessageMetadata(message.metadata);
-  return metadata.task_id === task.id ||
-    metadata.source_message_id === task.source_message_id ||
-    message.id === task.source_message_id;
+  return metadata.task_id === task.id || message.id === task.source_message_id;
 }
 
 function formatClockTime(timestamp: number): string {
