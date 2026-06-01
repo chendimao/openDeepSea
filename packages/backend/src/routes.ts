@@ -2039,10 +2039,14 @@ function buildUserMessageMetadata(input: {
   roomId: string;
   attachments: MessageMetadata['attachments'];
   replyToMessageId?: string;
+  fileRefs?: string[];
 }): MessageMetadata | undefined {
   const metadata: MessageMetadata = {};
   if (input.attachments && input.attachments.length > 0) {
     metadata.attachments = input.attachments;
+  }
+  if (input.fileRefs && input.fileRefs.length > 0) {
+    metadata.file_refs = input.fileRefs;
   }
   const replyToMessageId = normalizeOptionalId(input.replyToMessageId);
   if (replyToMessageId) {

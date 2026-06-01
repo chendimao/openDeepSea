@@ -781,6 +781,7 @@ export interface MessageIntentResult {
 
 export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
+  file_refs?: string[];
   reply_to?: MessageReplyMetadata;
   source_message_id?: string;
   route_result?: RouteResult;
