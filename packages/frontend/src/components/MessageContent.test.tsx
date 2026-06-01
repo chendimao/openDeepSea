@@ -229,7 +229,7 @@ test('renders task references as compact chips with task title in message text',
   );
 
   assert.match(html, /message-task-ref-chip/);
-  assert.match(html, /修复聊天路由/);
+  assert.match(html, /任务:修复聊天路由/);
   assert.doesNotMatch(html, />#task:task-a</);
   assert.match(html, /title="#task:task-abcdef123456"/);
 });
@@ -239,7 +239,7 @@ test('renders task reference chips inside markdown preview text', () => {
 
   assert.match(html, /<strong>目标<\/strong>/);
   assert.match(html, /message-task-ref-chip/);
-  assert.match(html, /#task:task-x/);
+  assert.match(html, /任务:#task:task-x/);
 });
 
 test('recognizes application json fences with CRLF and metadata', () => {

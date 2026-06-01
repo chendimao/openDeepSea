@@ -792,10 +792,10 @@ function pushMaybeAgentNames(
 }
 
 function TaskReferenceChip({ taskId, title }: { taskId: string; title?: string }): JSX.Element {
-  const label = title?.trim() || `#task:${taskId.slice(0, 6)}`;
+  const taskLabel = title?.trim() || `#task:${taskId.slice(0, 6)}`;
   return (
     <span className="message-task-ref-chip" title={`#task:${taskId}`}>
-      {label}
+      {`任务:${taskLabel}`}
     </span>
   );
 }
