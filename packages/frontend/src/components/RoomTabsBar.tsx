@@ -1,8 +1,10 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { MoreHorizontal, Pencil, Pin, PinOff, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import type { DragEvent } from 'react';
 import { Link } from 'react-router-dom';
 import type { Room } from '../lib/types';
+import { isPinnedItem, layerIds, reorderWithinLayer, sortPinnedItems } from '../lib/sortableItems';
 import { cn, truncate } from '../lib/utils';
 import { Button } from './ui/Button';
 import { Dialog, DialogContent } from './ui/Dialog';
@@ -10,7 +12,6 @@ import { Input } from './ui/Input';
 
 type RoomTabMeta = {
   pinned_at?: number | null;
-  last_opened_at?: number | null;
 };
 
 type TabRoom = Room & RoomTabMeta;
@@ -25,27 +26,11 @@ type RoomTabsBarProps = {
   onRenameRoom: (room: Room, name: string) => Promise<void>;
   onTogglePin: (room: Room) => void;
   onDeleteRoom: (room: Room) => void;
+  onReorderRooms: (ids: string[], pinned: boolean) => void;
 };
 
 export function sortRoomsForTabs(rooms: Room[]): Room[] {
-  return [...rooms].sort((a, b) => {
-    const roomA = a as TabRoom;
-    const roomB = b as TabRoom;
-
-    const aPinned = roomA.pinned_at ?? null;
-    const bPinned = roomB.pinned_at ?? null;
-
-    if (aPinned && bPinned) {
-      return bPinned - aPinned;
-    }
-
-    if (aPinned) return -1;
-    if (bPinned) return 1;
-
-    const aSortTime = roomA.last_opened_at ?? roomA.created_at;
-    const bSortTime = roomB.last_opened_at ?? roomB.created_at;
-    return bSortTime - aSortTime;
-  });
+  return sortPinnedItems(rooms);
 }
 
 export function RoomTabsBar({
@@ -58,10 +43,13 @@ export function RoomTabsBar({
   onRenameRoom,
   onTogglePin,
   onDeleteRoom,
+  onReorderRooms,
 }: RoomTabsBarProps) {
   const sortedRooms = useMemo(() => sortRoomsForTabs(rooms), [rooms]);
   const [renamingRoom, setRenamingRoom] = useState<Room | null>(null);
   const [contextRoom, setContextRoom] = useState<{ room: Room; x: number; y: number } | null>(null);
+  const [draggingRoomId, setDraggingRoomId] = useState<string | null>(null);
+  const [dropRoomId, setDropRoomId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -111,6 +99,38 @@ export function RoomTabsBar({
     }
   };
 
+  const resetDragState = () => {
+    setDraggingRoomId(null);
+    setDropRoomId(null);
+  };
+
+  const canDropOnRoom = (target: Room) => {
+    if (!draggingRoomId || draggingRoomId === target.id) return false;
+    const draggingRoom = sortedRooms.find((room) => room.id === draggingRoomId);
+    return Boolean(draggingRoom && isPinnedItem(draggingRoom) === isPinnedItem(target));
+  };
+
+  const handleDrop = (target: Room) => {
+    if (!canDropOnRoom(target)) {
+      resetDragState();
+      return;
+    }
+
+    const activeId = draggingRoomId;
+    if (!activeId) {
+      resetDragState();
+      return;
+    }
+
+    const next = reorderWithinLayer(sortedRooms, activeId, target.id);
+    const moved = next.find((room) => room.id === activeId);
+    if (moved) {
+      const pinned = isPinnedItem(moved);
+      onReorderRooms(layerIds(next, pinned), pinned);
+    }
+    resetDragState();
+  };
+
   return (
     <div className="room-tabs-bar" aria-label="群聊切换">
       <div className="room-tabs-scroll">
@@ -120,7 +140,31 @@ export function RoomTabsBar({
           return (
             <div
               key={room.id}
-              className="room-tab-wrapper"
+              className={cn(
+                'room-tab-wrapper',
+                draggingRoomId === room.id && 'is-dragging',
+                dropRoomId === room.id && 'is-drop-target',
+              )}
+              draggable={!busy}
+              onDragStart={(event: DragEvent<HTMLDivElement>) => {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', room.id);
+                setDraggingRoomId(room.id);
+              }}
+              onDragOver={(event) => {
+                if (!canDropOnRoom(room)) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                setDropRoomId(room.id);
+              }}
+              onDragLeave={() => {
+                if (dropRoomId === room.id) setDropRoomId(null);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                handleDrop(room);
+              }}
+              onDragEnd={resetDragState}
               onContextMenu={(event) => {
                 event.preventDefault();
                 if (busy) return;
@@ -133,7 +177,7 @@ export function RoomTabsBar({
                 aria-current={room.id === roomId ? 'page' : undefined}
                 title={room.name}
               >
-                {roomMeta.pinned_at ? <Pin className="h-3.5 w-3.5" strokeWidth={1.8} /> : null}
+                {isPinnedItem(roomMeta) ? <Pin className="h-3.5 w-3.5" strokeWidth={1.8} /> : null}
                 <span>{truncate(room.name, 26)}</span>
               </Link>
               <RoomTabMenu
@@ -243,12 +287,12 @@ function RoomTabContextMenu({
         <span>重命名</span>
       </button>
       <button type="button" className="room-tab-menu-item" role="menuitem" onClick={() => run(onTogglePin)}>
-        {roomMeta.pinned_at ? (
+        {isPinnedItem(roomMeta) ? (
           <PinOff className="h-3.5 w-3.5" strokeWidth={1.8} />
         ) : (
           <Pin className="h-3.5 w-3.5" strokeWidth={1.8} />
         )}
-        <span>{roomMeta.pinned_at ? '取消置顶' : '置顶'}</span>
+        <span>{isPinnedItem(roomMeta) ? '取消置顶' : '置顶'}</span>
       </button>
       <button type="button" className="room-tab-menu-item is-danger" role="menuitem" onClick={() => run(onDelete)}>
         <Trash2 className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -296,12 +340,12 @@ function RoomTabMenu({
               onTogglePin();
             }}
           >
-            {roomMeta.pinned_at ? (
+            {isPinnedItem(roomMeta) ? (
               <PinOff className="h-3.5 w-3.5" strokeWidth={1.8} />
             ) : (
               <Pin className="h-3.5 w-3.5" strokeWidth={1.8} />
             )}
-            <span>{roomMeta.pinned_at ? '取消置顶' : '置顶'}</span>
+            <span>{isPinnedItem(roomMeta) ? '取消置顶' : '置顶'}</span>
           </DropdownMenu.Item>
           <DropdownMenu.Item
             className="room-tab-menu-item is-danger"

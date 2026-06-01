@@ -988,6 +988,17 @@
   .project-rail-item.is-busy {
     opacity: 0.62;
   }
+  .project-rail-item[draggable="true"] {
+    cursor: grab;
+  }
+  .project-rail-item.is-dragging {
+    cursor: grabbing;
+    opacity: 0.55;
+  }
+  .project-rail-item.is-drop-target {
+    outline: 1px solid var(--color-primary);
+    outline-offset: -1px;
+  }
   .project-rail-select,
   .project-rail-menu-button,
   .project-rail-icon-button {
@@ -1084,6 +1095,17 @@
   .room-tab-wrapper:has(.room-tab-link.is-active) {
     border-color: var(--color-border-strong);
     background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface-raised));
+  }
+  .room-tab-wrapper[draggable="true"] {
+    cursor: grab;
+  }
+  .room-tab-wrapper.is-dragging {
+    cursor: grabbing;
+    opacity: 0.55;
+  }
+  .room-tab-wrapper.is-drop-target {
+    outline: 1px solid var(--color-primary);
+    outline-offset: -1px;
   }
   .room-tab-link {
     display: inline-flex;

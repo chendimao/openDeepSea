@@ -5,7 +5,7 @@ import { MessageSquarePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import type { Project, Room } from '../lib/types';
-import { sortPinnedItems } from '../lib/sortableItems';
+import { isPinnedItem, sortPinnedItems } from '../lib/sortableItems';
 import { Button } from '../components/ui/Button';
 import { CreateProjectDialog } from '../components/CreateProjectDialog';
 import { CreateRoomDialog } from '../components/CreateRoomDialog';
@@ -71,6 +71,54 @@ export function DevelopmentWorkspacePage(): JSX.Element {
     },
     onError: (err) => toast.error((err as Error).message),
   });
+  const reorderProjects = useMutation({
+    mutationFn: (input: { ids: string[]; pinned: boolean }) => api.reorderProjects(input),
+    onMutate: async ({ ids, pinned }) => {
+      await queryClient.cancelQueries({ queryKey: ['projects'] });
+      const previousProjects = queryClient.getQueryData<Project[]>(['projects']);
+      const nextOrder = new Map(ids.map((id, index) => [id, index + 1]));
+      queryClient.setQueryData<Project[]>(['projects'], (current = []) =>
+        sortPinnedItems(current.map((project) =>
+          isPinnedItem(project) === pinned && nextOrder.has(project.id)
+            ? { ...project, sort_order: nextOrder.get(project.id) ?? null }
+            : project,
+        )),
+      );
+      return { previousProjects };
+    },
+    onSuccess: (nextProjects) => queryClient.setQueryData(['projects'], nextProjects),
+    onError: (err, _variables, context) => {
+      if (context?.previousProjects) queryClient.setQueryData(['projects'], context.previousProjects);
+      toast.error((err as Error).message);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['projects'] }),
+  });
+  const reorderRooms = useMutation({
+    mutationFn: (input: { projectId: string; ids: string[]; pinned: boolean }) =>
+      api.reorderRooms(input.projectId, { ids: input.ids, pinned: input.pinned }),
+    onMutate: async ({ projectId: reorderProjectId, ids, pinned }) => {
+      const queryKey = ['rooms', reorderProjectId];
+      await queryClient.cancelQueries({ queryKey });
+      const previousRooms = queryClient.getQueryData<Room[]>(queryKey);
+      const nextOrder = new Map(ids.map((id, index) => [id, index + 1]));
+      queryClient.setQueryData<Room[]>(queryKey, (current = []) =>
+        sortPinnedItems(current.map((room) =>
+          isPinnedItem(room) === pinned && nextOrder.has(room.id)
+            ? { ...room, sort_order: nextOrder.get(room.id) ?? null }
+            : room,
+        )),
+      );
+      return { queryKey, previousRooms };
+    },
+    onSuccess: (nextRooms, variables) => queryClient.setQueryData(['rooms', variables.projectId], nextRooms),
+    onError: (err, _variables, context) => {
+      if (context?.previousRooms) queryClient.setQueryData(context.queryKey, context.previousRooms);
+      toast.error((err as Error).message);
+    },
+    onSettled: (_data, _error, variables) => {
+      if (variables) queryClient.invalidateQueries({ queryKey: ['rooms', variables.projectId] });
+    },
+  });
 
   useEffect(() => {
     if (sortedProjects.length === 0) return;
@@ -120,6 +168,7 @@ export function DevelopmentWorkspacePage(): JSX.Element {
         onDeleteProject={(project) => {
           if (window.confirm(`删除项目「${project.name}」？此操作不可撤销。`)) deleteProject.mutate(project);
         }}
+        onReorderProjects={(ids, pinned) => reorderProjects.mutate({ ids, pinned })}
       />
       <section className="development-workspace-main">
         {activeProject && rooms.length === 0 ? (
@@ -158,6 +207,7 @@ export function DevelopmentWorkspacePage(): JSX.Element {
               onDeleteRoom={(room) => {
                 if (window.confirm(`删除群聊「${room.name}」？此操作不可撤销。`)) deleteRoom.mutate(room);
               }}
+              onReorderRooms={(ids, pinned) => reorderRooms.mutate({ projectId: activeProject.id, ids, pinned })}
             />
             <RoomWorkbench projectId={activeProject.id} roomId={activeRoom.id} />
           </>
