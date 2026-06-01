@@ -265,8 +265,8 @@ export const roomRepo = {
         WHERE project_id = ?
         ORDER BY
           pinned_at IS NULL ASC,
-          pinned_at DESC,
-          COALESCE(last_opened_at, created_at) DESC,
+          sort_order IS NULL ASC,
+          sort_order ASC,
           created_at DESC
       `)
       .all(projectId) as Room[];
@@ -283,8 +283,8 @@ export const roomRepo = {
     const id = nanoid(12);
     const createdAt = now();
     db.prepare(
-      `INSERT INTO rooms (id, project_id, name, description, created_at, last_opened_at, pinned_at)
-       VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+      `INSERT INTO rooms (id, project_id, name, description, created_at, last_opened_at, pinned_at, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
     ).run(id, input.project_id, name, input.description ?? null, createdAt, createdAt);
     if (input.ensureDefaultPlanner !== false) {
       roomAgentRepo.ensureDefaultPlanner(id);
@@ -298,6 +298,7 @@ export const roomRepo = {
       name?: string;
       last_opened_at?: number | null;
       pinned_at?: number | null;
+      sort_order?: number | null;
     },
   ): Room | undefined {
     const existing = this.get(id);
@@ -322,6 +323,10 @@ export const roomRepo = {
       setClauses.push('pinned_at = ?');
       values.push(patch.pinned_at);
     }
+    if (patch.sort_order !== undefined) {
+      setClauses.push('sort_order = ?');
+      values.push(patch.sort_order);
+    }
 
     if (setClauses.length === 0) return existing;
 
@@ -332,6 +337,32 @@ export const roomRepo = {
     ).run(...values, id);
 
     return this.get(id);
+  },
+
+  reorder(projectId: string, ids: string[], pinned: boolean): Room[] {
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length !== ids.length) throw new Error('duplicate room ids');
+    if (uniqueIds.length === 0) return this.listByProject(projectId);
+
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const rows = db.prepare(`SELECT id, project_id, pinned_at FROM rooms WHERE id IN (${placeholders})`).all(...uniqueIds) as Array<{
+      id: string;
+      project_id: string;
+      pinned_at: number | null;
+    }>;
+    if (rows.length !== uniqueIds.length) throw new Error('room not found');
+    for (const row of rows) {
+      if (row.project_id !== projectId) throw new Error('room project mismatch');
+      if ((row.pinned_at !== null) !== pinned) throw new Error('room layer mismatch');
+    }
+
+    const updateOrder = db.transaction((orderedIds: string[]) => {
+      orderedIds.forEach((id, index) => {
+        db.prepare('UPDATE rooms SET sort_order = ? WHERE id = ?').run(index + 1, id);
+      });
+    });
+    updateOrder(uniqueIds);
+    return this.listByProject(projectId);
   },
 
   delete(id: string): DeleteRoomResult {

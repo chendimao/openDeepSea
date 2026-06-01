@@ -3,6 +3,8 @@ export interface Project {
   name: string;
   path: string;
   description: string | null;
+  pinned_at: number | null;
+  sort_order: number | null;
   message_routing_mode: MessageRoutingMode;
   fallback_agent_id: string | null;
   created_at: number;
@@ -35,6 +37,7 @@ export interface Room {
   created_at: number;
   last_opened_at: number | null;
   pinned_at: number | null;
+  sort_order: number | null;
 }
 
 export type RoomSearchMode = 'semantic' | 'keyword';

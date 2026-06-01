@@ -18,7 +18,14 @@ const ACTIVE_WORKFLOW_STATUSES = ['draft', 'running', 'awaiting_decision', 'awai
 export const projectRepo = {
   list(): Project[] {
     return db
-      .prepare('SELECT * FROM projects ORDER BY updated_at DESC')
+      .prepare(`
+        SELECT * FROM projects
+        ORDER BY
+          pinned_at IS NULL ASC,
+          sort_order IS NULL ASC,
+          sort_order ASC,
+          created_at DESC
+      `)
       .all() as Project[];
   },
 
@@ -41,14 +48,63 @@ export const projectRepo = {
     return this.get(id)!;
   },
 
-  update(id: string, patch: Partial<Pick<Project, 'name' | 'description'>>): Project | undefined {
+  update(
+    id: string,
+    patch: Partial<Pick<Project, 'name' | 'description' | 'pinned_at' | 'sort_order'>>,
+  ): Project | undefined {
     const existing = this.get(id);
     if (!existing) return undefined;
-    const next = { ...existing, ...patch, updated_at: now() };
-    db.prepare(
-      `UPDATE projects SET name = ?, description = ?, updated_at = ? WHERE id = ?`,
-    ).run(next.name, next.description, next.updated_at, id);
+
+    const setClauses: string[] = [];
+    const values: Array<string | number | null> = [];
+    if (patch.name !== undefined) {
+      setClauses.push('name = ?');
+      values.push(patch.name);
+    }
+    if (patch.description !== undefined) {
+      setClauses.push('description = ?');
+      values.push(patch.description);
+    }
+    if (patch.pinned_at !== undefined) {
+      setClauses.push('pinned_at = ?');
+      values.push(patch.pinned_at);
+    }
+    if (patch.sort_order !== undefined) {
+      setClauses.push('sort_order = ?');
+      values.push(patch.sort_order);
+    }
+    if (setClauses.length === 0) return existing;
+
+    setClauses.push('updated_at = ?');
+    values.push(now());
+
+    db.prepare(`UPDATE projects SET ${setClauses.join(', ')} WHERE id = ?`).run(...values, id);
     return this.get(id);
+  },
+
+  reorder(ids: string[], pinned: boolean): Project[] {
+    const uniqueIds = [...new Set(ids)];
+    if (uniqueIds.length !== ids.length) throw new Error('duplicate project ids');
+    if (uniqueIds.length === 0) return this.list();
+
+    const placeholders = uniqueIds.map(() => '?').join(', ');
+    const rows = db.prepare(`SELECT id, pinned_at FROM projects WHERE id IN (${placeholders})`).all(...uniqueIds) as Array<{
+      id: string;
+      pinned_at: number | null;
+    }>;
+    if (rows.length !== uniqueIds.length) throw new Error('project not found');
+    for (const row of rows) {
+      if ((row.pinned_at !== null) !== pinned) throw new Error('project layer mismatch');
+    }
+
+    const updateOrder = db.transaction((orderedIds: string[]) => {
+      const updatedAt = now();
+      orderedIds.forEach((id, index) => {
+        db.prepare('UPDATE projects SET sort_order = ?, updated_at = ? WHERE id = ?').run(index + 1, updatedAt, id);
+      });
+    });
+    updateOrder(uniqueIds);
+    return this.list();
   },
 
   updateRouting(

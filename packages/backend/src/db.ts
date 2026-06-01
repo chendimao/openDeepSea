@@ -19,11 +19,14 @@ CREATE TABLE IF NOT EXISTS projects (
   name TEXT NOT NULL,
   path TEXT NOT NULL UNIQUE,
   description TEXT,
+  pinned_at INTEGER,
+  sort_order INTEGER,
   message_routing_mode TEXT NOT NULL DEFAULT 'fallback_reply',
   fallback_agent_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_projects_sort ON projects(pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS settings (
   scope TEXT NOT NULL,
@@ -129,9 +132,11 @@ CREATE TABLE IF NOT EXISTS rooms (
   created_at INTEGER NOT NULL,
   last_opened_at INTEGER,
   pinned_at INTEGER,
+  sort_order INTEGER,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_rooms_project ON rooms(project_id);
+CREATE INDEX IF NOT EXISTS idx_rooms_project_sort ON rooms(project_id, pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
@@ -717,6 +722,13 @@ if (!projectColumnNames.has('message_routing_mode')) {
 if (!projectColumnNames.has('fallback_agent_id')) {
   db.exec('ALTER TABLE projects ADD COLUMN fallback_agent_id TEXT');
 }
+if (!projectColumnNames.has('pinned_at')) {
+  db.exec('ALTER TABLE projects ADD COLUMN pinned_at INTEGER');
+}
+if (!projectColumnNames.has('sort_order')) {
+  db.exec('ALTER TABLE projects ADD COLUMN sort_order INTEGER');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_projects_sort ON projects(pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC)');
 
 const skillColumns = db.prepare('PRAGMA table_info(skills)').all() as { name: string }[];
 const skillColumnNames = new Set(skillColumns.map((column) => column.name));
@@ -765,7 +777,11 @@ if (!roomColumnNames.has('last_opened_at')) {
 if (!roomColumnNames.has('pinned_at')) {
   db.exec('ALTER TABLE rooms ADD COLUMN pinned_at INTEGER');
 }
-db.exec('CREATE INDEX IF NOT EXISTS idx_rooms_project_usage ON rooms(project_id, pinned_at DESC, last_opened_at DESC, created_at DESC)');
+if (!roomColumnNames.has('sort_order')) {
+  db.exec('ALTER TABLE rooms ADD COLUMN sort_order INTEGER');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_rooms_project_usage ON rooms(project_id, pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_rooms_project_sort ON rooms(project_id, pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC)');
 
 const roomAgentColumns = db.prepare('PRAGMA table_info(room_agents)').all() as { name: string }[];
 const roomAgentColumnNames = new Set(roomAgentColumns.map((column) => column.name));
