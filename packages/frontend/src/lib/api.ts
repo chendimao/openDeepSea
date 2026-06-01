@@ -612,6 +612,19 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(input),
     }),
+  updateProject: (
+    id: string,
+    input: { name?: string; description?: string | null; pinned_at?: number | null; sort_order?: number | null },
+  ) =>
+    request<Project>(`/projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  reorderProjects: (input: { ids: string[]; pinned: boolean }) =>
+    request<Project[]>(`/projects/reorder`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
   listRooms: (projectId: string) => request<Room[]>(`/projects/${projectId}/rooms`),
@@ -625,10 +638,15 @@ export const api = {
   getRoom: (id: string) => request<Room>(`/rooms/${id}`),
   updateRoom: (
     id: string,
-    input: { name?: string; last_opened_at?: number | null; pinned_at?: number | null },
+    input: { name?: string; last_opened_at?: number | null; pinned_at?: number | null; sort_order?: number | null },
   ) =>
     request<Room>(`/rooms/${id}`, {
       method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  reorderRooms: (projectId: string, input: { ids: string[]; pinned: boolean }) =>
+    request<Room[]>(`/projects/${projectId}/rooms/reorder`, {
+      method: 'PUT',
       body: JSON.stringify(input),
     }),
   deleteRoom: (id: string) => request<void>(`/rooms/${id}`, { method: 'DELETE' }),
