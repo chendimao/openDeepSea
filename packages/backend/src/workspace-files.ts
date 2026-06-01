@@ -200,18 +200,23 @@ export async function resolveWorkspacePath(projectPath: string, inputPath = ''):
   };
 }
 
-export function isIgnoredWorkspacePath(inputPath: string): boolean {
+export function isIgnoredWorkspacePath(inputPath: string, extraIgnoredDirs: string[] = []): boolean {
   const normalized = normalizeIgnoredPath(inputPath);
   if (!normalized) return false;
+  const extra = new Set(extraIgnoredDirs);
   const segments = normalized.split('/');
   for (const segment of segments) {
-    if (IGNORED_DIRECTORIES.has(segment)) return true;
+    if (IGNORED_DIRECTORIES.has(segment) || extra.has(segment)) return true;
   }
   const baseName = segments[segments.length - 1] ?? '';
   return isIgnoredFileName(baseName);
 }
 
-export async function listWorkspaceDirectory(projectPath: string, inputPath = ''): Promise<WorkspaceDirectoryEntry[]> {
+export async function listWorkspaceDirectory(
+  projectPath: string,
+  inputPath = '',
+  extraIgnoredDirs: string[] = [],
+): Promise<WorkspaceDirectoryEntry[]> {
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
   ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
 
@@ -232,7 +237,7 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
   const visibleEntries: WorkspaceDirectoryEntry[] = [];
   for (const name of names) {
     const relativeEntryPath = joinRelativePath(resolved.relativePath, name);
-    if (isIgnoredWorkspacePath(relativeEntryPath)) continue;
+    if (isIgnoredWorkspacePath(relativeEntryPath, extraIgnoredDirs)) continue;
 
     const absoluteEntryPath = join(resolved.absolutePath, name);
     let entryStats;
@@ -247,7 +252,7 @@ export async function listWorkspaceDirectory(projectPath: string, inputPath = ''
       const targetPath = await readSymlinkTargetPathOrNull(absoluteEntryPath, resolved.projectRealPath);
       if (!targetPath) continue;
       const targetRelativePath = toRelativeProjectPath(resolved.projectRealPath, targetPath);
-      if (targetRelativePath === null || isIgnoredWorkspacePath(targetRelativePath)) continue;
+      if (targetRelativePath === null || isIgnoredWorkspacePath(targetRelativePath, extraIgnoredDirs)) continue;
 
       let targetStats;
       try {
@@ -340,6 +345,7 @@ export async function searchWorkspaceFiles(
   projectPath: string,
   query: string,
   inputPath = '',
+  extraIgnoredDirs: string[] = [],
 ): Promise<WorkspaceSearchResponse> {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
@@ -406,7 +412,7 @@ export async function searchWorkspaceFiles(
         break;
       }
       const relativeEntryPath = joinRelativePath(current.relativePath, name);
-      if (isIgnoredWorkspacePath(relativeEntryPath)) continue;
+      if (isIgnoredWorkspacePath(relativeEntryPath, extraIgnoredDirs)) continue;
 
       const absoluteEntryPath = join(current.absolutePath, name);
       let entryStats;
@@ -421,7 +427,7 @@ export async function searchWorkspaceFiles(
         const targetPath = await readSymlinkTargetPathOrNull(absoluteEntryPath, resolved.projectRealPath);
         if (!targetPath) continue;
         const targetRelativePath = toRelativeProjectPath(resolved.projectRealPath, targetPath);
-        if (targetRelativePath === null || isIgnoredWorkspacePath(targetRelativePath)) continue;
+        if (targetRelativePath === null || isIgnoredWorkspacePath(targetRelativePath, extraIgnoredDirs)) continue;
 
         let targetStats;
         try {

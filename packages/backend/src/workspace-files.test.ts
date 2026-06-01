@@ -360,3 +360,16 @@ test('workspace search reports exact complete cap-sized result set as not trunca
     cleanupWorkspaceRoot(projectRoot);
   }
 });
+
+test('searchWorkspaceFiles excludes extra ignored dirs', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openclaw-room-ws-exclude-'));
+  mkdirSync(join(root, 'vendor'), { recursive: true });
+  writeFileSync(join(root, 'vendor', 'target.txt'), 'hit');
+  writeFileSync(join(root, 'target.txt'), 'hit');
+
+  const withExtra = await searchWorkspaceFiles(root, 'target', '', ['vendor']);
+  assert.ok(withExtra.entries.every((entry) => !entry.path.startsWith('vendor/')));
+
+  const withoutExtra = await searchWorkspaceFiles(root, 'target', '', []);
+  assert.ok(withoutExtra.entries.some((entry) => entry.path.startsWith('vendor/')));
+});
