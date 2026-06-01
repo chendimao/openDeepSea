@@ -13,7 +13,6 @@ import type {
   Room,
   RoomAgent,
   Task,
-  MessageLayer,
   WorkflowRun,
 } from '../../lib/types';
 import { useI18n } from '../../lib/i18n';
@@ -94,7 +93,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [autoActiveTaskDismissedRoomId, setAutoActiveTaskDismissedRoomId] = useState<string | null>(null);
-  const [layerVisibility, setLayerVisibility] = useState<TaskLayerVisibility>(DEFAULT_TASK_LAYER_VISIBILITY);
+  const [layerVisibility] = useState<TaskLayerVisibility>(DEFAULT_TASK_LAYER_VISIBILITY);
   const [taskStatusFilters, setTaskStatusFilters] = useState<TaskStatusFilter[]>(DEFAULT_TASK_STATUS_FILTERS);
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
   const [explicitReplyTarget, setExplicitReplyTarget] = useState<ReplyTarget | null>(null);
@@ -111,7 +110,6 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     interactionModeLabel,
     taskPriorityLabel,
     taskStatusLabel,
-    workflowStatusLabel,
   } = useI18n();
 
   const { data: project } = useQuery({
@@ -164,11 +162,6 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     queryFn: () => api.listRoomTaskEvents(activeTask!.room_id, { taskId: activeTask!.id, limit: 80 }),
     enabled: !!activeTask,
   });
-  const { data: taskExecutors = [], isLoading: taskExecutorsLoading } = useQuery({
-    queryKey: ['task-executors', activeTask?.id],
-    queryFn: () => api.listTaskExecutors(activeTask!.id),
-    enabled: !!activeTask,
-  });
   const roomActivityEvents = useMemo(() => {
     const byId = new Map((roomTaskEventResponse?.events ?? []).map((event) => [event.id, event]));
     for (const event of projectRoomActivityMessages(messages)) {
@@ -177,29 +170,6 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     return [...byId.values()];
   }, [messages, roomTaskEventResponse?.events]);
   const routableActiveTaskId = getRoutableActiveTaskId(activeTask);
-  const updateTaskStatus = useMutation({
-    mutationFn: ({ task, status }: { task: Task; status: Task['status'] }) =>
-      api.updateTask(task.id, { status }),
-    onSuccess: (task) => {
-      queryClient.setQueryData<Task[] | undefined>(['room-tasks', roomId], (prev) =>
-        upsertTask(prev, task),
-      );
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const startTaskLoop = useMutation({
-    mutationFn: (task: Task) => api.sendMessage(roomId, {
-      content: t('taskWorkspace.startLoopPrompt', { id: task.id, title: task.title }),
-      activeTaskId: task.id,
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
-      toast.success(t('taskWorkspace.loopStarted'));
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
   const activateTask = useMutation({
     mutationFn: (task: Task) => api.activateTask(roomId, task.id),
     onMutate: (task) => {
@@ -290,10 +260,6 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     setActiveTaskId(null);
     setAutoActiveTaskDismissedRoomId(roomId);
   }, [roomId]);
-  const updateLayerVisibility = useCallback((layer: MessageLayer, visible: boolean) => {
-    setLayerVisibility((current) => ({ ...current, [layer]: visible }));
-  }, []);
-
   const flushPendingStreamUpdates = useCallback(() => {
     streamFlushFrame.current = null;
     const updates = pendingStreamUpdates.current.filter((update) => {
@@ -504,9 +470,9 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
           onStatusFiltersChange={setTaskStatusFilters}
           activityEvents={roomActivityEvents}
           taskEvents={activeTaskEventResponse?.events ?? []}
+          messages={messages}
+          agentRuns={agentRuns}
           taskEventsLoading={activeTaskEventsLoading}
-          executors={taskExecutors}
-          executorsLoading={taskExecutorsLoading}
           agents={agents}
           workflows={workflows}
           layerVisibility={layerVisibility}
@@ -514,20 +480,13 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
             setAutoActiveTaskDismissedRoomId(null);
             activateTask.mutate(task);
           }}
-          onChangeStatus={(task, status) => {
-            updateTaskStatus.mutate({ task, status });
-          }}
-          onStartWorkflow={(task) => startTaskLoop.mutate(task)}
-          startingTaskId={startTaskLoop.variables?.id ?? null}
           onLocateSourceMessage={focusMessage}
-          onLayerVisibilityChange={updateLayerVisibility}
           onClearActiveTask={clearActiveTask}
           t={t}
           formatRelativeTime={formatRelativeTime}
           taskStatusLabel={taskStatusLabel}
           taskPriorityLabel={taskPriorityLabel}
           interactionModeLabel={interactionModeLabel}
-          workflowStatusLabel={workflowStatusLabel}
         />
         <section className="workbench-panel room-main-panel" aria-label={t('room.viewLabel')}>
           <ChatPanelHeader
@@ -842,10 +801,6 @@ function ChatColumn({
     () => new Map(agents.map((a) => [a.agent_id, a])),
     [agents],
   );
-  const agentByRoomId = useMemo(
-    () => new Map(agents.map((a) => [a.id, a])),
-    [agents],
-  );
   const runByMessageId = useMemo(
     () => pairRunsWithAgentMessages(messages, agentRuns),
     [messages, agentRuns],
@@ -957,14 +912,14 @@ function ChatColumn({
               const isStreamingMessage = shouldUseStreamingDisplayForMessage(m, run, hasLocalStreamingState);
               const displayMode = messageDisplayModes[m.id] ?? 'preview';
               const metadata = parseMessageMetadata(m.metadata);
-              const task = metadata.task_id ? taskById.get(metadata.task_id) : undefined;
+              const messageTaskId = metadata.task_id ?? run?.task_id ?? undefined;
+              const task = messageTaskId ? taskById.get(messageTaskId) : undefined;
               return (
                 <ChatMessageBubble
                   key={m.id}
                   message={m}
                   agentMeta={agentMap.get(m.sender_id)}
                   run={run}
-                  runAgent={run ? agentByRoomId.get(run.room_agent_id) : undefined}
                   roomAgents={agents}
                   globalAgents={globalAgents}
                   roomId={roomId}

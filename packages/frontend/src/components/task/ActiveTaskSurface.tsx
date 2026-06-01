@@ -1,14 +1,18 @@
-import { ArrowRight, Bot, Clock3, FileDiff, FileText, Gauge, GitBranch, ListChecks, LocateFixed, MonitorPlay, Pencil, Play, Radio, Search, XCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Bot, Clock3, FileDiff, FileText, FolderOpen, Gauge, GitBranch, ListChecks, LocateFixed, MonitorPlay, Pencil, Radio, Search, ScrollText, XCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { toast } from 'sonner';
+import { api } from '../../lib/api';
 import type { MessageKey } from '../../lib/i18n';
-import type { MessageLayer, RoomAgent, Task, WorkflowRun } from '../../lib/types';
+import type { AgentRun, Message, PlannerDecision, RoomAgent, Task, WorkflowRun } from '../../lib/types';
+import { parseMessageMetadata } from '../../lib/messageMetadata';
+import { createPlannerDispatchInput } from '../../pages/roomPageLogic';
 import { AgentAvatar } from '../AgentAvatar';
-import {
-  selectTaskDetailEvents,
-  TaskLayerToggles,
-  type TaskLayerVisibility,
-} from '../TaskDetailPanel';
-import { Button } from '../ui/Button';
+import { AgentRunStatusCard } from '../AgentRunPanel';
+import { pairRunsWithAgentMessages } from '../chat/chatMessageModel';
+import { PlannerDecisionPanel } from '../chat/PlannerDecisionPanel';
+import { selectTaskDetailEvents, type TaskLayerVisibility } from '../TaskDetailPanel';
 import { TaskMetaCell, TaskResourceMetric, TaskWorkspacePanelTitle } from './TaskWorkspaceCards';
 import {
   buildFileChanges,
@@ -20,19 +24,14 @@ import {
   type TaskWorkspaceToolCall,
 } from './taskWorkspaceModel';
 
-const NEXT_STATUS: Partial<Record<Task['status'], Task['status']>> = {
-  todo: 'in_progress',
-  in_progress: 'review',
-  review: 'done',
-};
+type ActiveTaskTab = 'records' | 'plan' | 'runtime' | 'resources';
 
-const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>([
-  'draft',
-  'running',
-  'awaiting_decision',
-  'awaiting_approval',
-  'blocked',
-]);
+const TASK_WORKSPACE_TABS: Array<{ id: ActiveTaskTab; label: string }> = [
+  { id: 'records', label: '记录' },
+  { id: 'plan', label: '计划' },
+  { id: 'runtime', label: '运行' },
+  { id: 'resources', label: '资源' },
+];
 
 export interface ActiveTaskSurfaceProps {
   task: Task;
@@ -41,10 +40,11 @@ export interface ActiveTaskSurfaceProps {
   layerVisibility: TaskLayerVisibility;
   taskEventsLoading: boolean;
   eventGroups: ReturnType<typeof selectTaskDetailEvents>;
-  onChangeStatus: (status: Task['status']) => void;
-  onStartWorkflow?: () => void;
+  messages: Message[];
+  agentRuns: AgentRun[];
+  roomAgents: RoomAgent[];
+  roomId: string;
   onLocateSourceMessage?: () => void;
-  onLayerVisibilityChange: (layer: MessageLayer, visible: boolean) => void;
   onClearActiveTask: () => void;
   formatRelativeTime: (timestamp: number) => string;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
@@ -60,10 +60,11 @@ export function ActiveTaskSurface({
   layerVisibility,
   taskEventsLoading,
   eventGroups,
-  onChangeStatus,
-  onStartWorkflow,
+  messages,
+  agentRuns,
+  roomAgents,
+  roomId,
   onLocateSourceMessage,
-  onLayerVisibilityChange,
   onClearActiveTask,
   formatRelativeTime,
   t,
@@ -71,9 +72,8 @@ export function ActiveTaskSurface({
   taskPriorityLabel,
   interactionModeLabel,
 }: ActiveTaskSurfaceProps): JSX.Element {
-  const nextStatus = NEXT_STATUS[task.status];
-  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
-  const canStartWorkflow = !hasActiveWorkflow && task.status !== 'done';
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<ActiveTaskTab>('records');
   const progress = taskProgressPercent(task.status);
   const planSteps = buildPlanSteps(task, eventGroups.planEvents, t);
   const timelineEvents = eventGroups.timelineEvents.slice(0, 5);
@@ -82,6 +82,67 @@ export function ActiveTaskSurface({
   const displayToolCalls = completeToolCallPreview(toolCalls, task.created_at);
   const currentAgent = assignedAgent?.agent_name ?? t('common.unassigned');
   const currentStep = planSteps.find((step) => step.state === 'running') ?? planSteps[0];
+  const taskMessages = useMemo(
+    () => messages.filter((message) => messageBelongsToTask(message, task)),
+    [messages, task],
+  );
+  const plannerRecords = useMemo(
+    () => taskMessages
+      .map((message) => {
+        const metadata = parseMessageMetadata(message.metadata);
+        return metadata.planner_decision ? { message, decision: metadata.planner_decision } : null;
+      })
+      .filter((record): record is { message: Message; decision: PlannerDecision } => Boolean(record)),
+    [taskMessages],
+  );
+  const taskAgentRuns = useMemo(
+    () => {
+      const runByMessageId = pairRunsWithAgentMessages(messages, agentRuns);
+      const taskMessageIds = new Set(taskMessages.map((message) => message.id));
+      const pairedRunIds = new Set(
+        Array.from(taskMessageIds)
+          .map((messageId) => runByMessageId.get(messageId)?.id)
+          .filter((id): id is string => Boolean(id)),
+      );
+      return agentRuns.filter((run) =>
+        run.task_id === task.id ||
+        Boolean(workflow?.id && run.workflow_run_id === workflow.id) ||
+        pairedRunIds.has(run.id)
+      ).sort((a, b) => b.started_at - a.started_at);
+    },
+    [agentRuns, messages, task.id, taskMessages, workflow?.id],
+  );
+  const agentByRoomId = useMemo(
+    () => new Map(roomAgents.map((agent) => [agent.id, agent])),
+    [roomAgents],
+  );
+  const attachments = useMemo(
+    () => taskMessages.flatMap((message) => parseMessageMetadata(message.metadata).attachments),
+    [taskMessages],
+  );
+  const continuePlanner = useMutation({
+    mutationFn: (input: { source_message_id: string; planner_decision: PlannerDecision }) =>
+      api.dispatchPlannerDecision(roomId, input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
+      const addedCount = result.added_agents?.length ?? 0;
+      const deferredCount = result.deferred_steps?.length ?? 0;
+      toast.success(
+        result.dispatched > 0
+          ? addedCount > 0
+            ? deferredCount > 0
+              ? `已加入 ${addedCount} 个智能体，先派发 ${result.dispatched} 个，暂缓 ${deferredCount} 个后续步骤`
+              : `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
+            : deferredCount > 0
+              ? `已先派发 ${result.dispatched} 个智能体，暂缓 ${deferredCount} 个后续步骤`
+              : `已派发 ${result.dispatched} 个智能体`
+          : '没有可派发的下一步',
+      );
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
 
   return (
     <>
@@ -126,20 +187,19 @@ export function ActiveTaskSurface({
         </div>
       </header>
 
-      <div className="active-task-actions">
-        {onStartWorkflow && canStartWorkflow && (
-          <Button size="sm" variant="secondary" onClick={onStartWorkflow}>
-            <Play className="h-3.5 w-3.5" />
-            {t('taskBoard.startWorkflow')}
-          </Button>
-        )}
-        {nextStatus && (
-          <Button size="sm" variant="secondary" onClick={() => onChangeStatus(nextStatus)}>
-            <ArrowRight className="h-3.5 w-3.5" />
-            {taskStatusLabel(nextStatus)}
-          </Button>
-        )}
-        <TaskLayerToggles layerVisibility={layerVisibility} onChange={onLayerVisibilityChange} t={t} />
+      <div className="active-task-tabs" role="tablist" aria-label="任务工作栏">
+        {TASK_WORKSPACE_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            className={activeTab === tab.id ? 'is-active' : undefined}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       <div className="active-task-scroll task-workspace-canvas">
@@ -150,7 +210,27 @@ export function ActiveTaskSurface({
           </div>
         )}
 
-        <section className="task-detail-card execution-plan-card">
+        {activeTab === 'records' && (
+          <TaskRecordsTab
+            plannerRecords={plannerRecords}
+            agentRuns={taskAgentRuns}
+            agentByRoomId={agentByRoomId}
+            roomId={roomId}
+            roomAgents={roomAgents}
+            formatRelativeTime={formatRelativeTime}
+            continuing={continuePlanner.isPending}
+            onContinue={(message) => {
+              const metadata = parseMessageMetadata(message.metadata);
+              const input = createPlannerDispatchInput(message, metadata);
+              if (!input) return;
+              continuePlanner.mutate(input);
+            }}
+            emptyLabel={t('taskDetail.noEvents')}
+          />
+        )}
+
+        {activeTab === 'plan' && (
+        <section className="task-detail-card execution-plan-card task-tab-section">
           <TaskWorkspacePanelTitle icon={ListChecks} title="Execution Plan" subtitle={`${planSteps.length} steps`} />
           <div className="execution-step-list">
             {planSteps.map((step, index) => (
@@ -164,7 +244,10 @@ export function ActiveTaskSurface({
             ))}
           </div>
         </section>
+        )}
 
+        {activeTab === 'runtime' && (
+          <>
         <section className="task-detail-card realtime-status-card">
           <TaskWorkspacePanelTitle icon={Gauge} title="Realtime Status" subtitle={workflow?.status ?? taskStatusLabel(task.status)} />
           <div className="current-agent-row">
@@ -204,7 +287,11 @@ export function ActiveTaskSurface({
             )}
           </div>
         </section>
+          </>
+        )}
 
+        {activeTab === 'resources' && (
+          <>
         <section className="task-detail-card file-changes-card">
           <TaskWorkspacePanelTitle icon={FileDiff} title="File Changes" subtitle={`${fileChanges.length} files`} />
           <div className="file-change-list">
@@ -253,9 +340,88 @@ export function ActiveTaskSurface({
             })}
           </div>
         </section>
+        <section className="task-detail-card task-resources-card">
+          <TaskWorkspacePanelTitle icon={FolderOpen} title="Resources" subtitle={`${attachments.length} items`} />
+          <div className="task-resource-list">
+            {attachments.length > 0 ? attachments.map((attachment) => (
+              <div key={attachment.id} className="task-resource-row">
+                <FileText className="h-3.5 w-3.5" />
+                <span>{attachment.name}</span>
+                <small>{attachment.mimeType ?? 'file'}</small>
+              </div>
+            )) : (
+              <div className="workspace-empty-row">暂无任务资源。上传文件、生成文档或产生 diff 后会出现在这里。</div>
+            )}
+          </div>
+        </section>
+          </>
+        )}
       </div>
     </>
   );
+}
+
+function TaskRecordsTab({
+  plannerRecords,
+  agentRuns,
+  agentByRoomId,
+  roomId,
+  roomAgents,
+  formatRelativeTime,
+  continuing,
+  onContinue,
+  emptyLabel,
+}: {
+  plannerRecords: Array<{ message: Message; decision: PlannerDecision }>;
+  agentRuns: AgentRun[];
+  agentByRoomId: Map<string, RoomAgent>;
+  roomId: string;
+  roomAgents: RoomAgent[];
+  formatRelativeTime: (timestamp: number) => string;
+  continuing: boolean;
+  onContinue: (message: Message) => void;
+  emptyLabel: string;
+}): JSX.Element {
+  const hasRecords = plannerRecords.length > 0 || agentRuns.length > 0;
+
+  return (
+    <section className="task-detail-card task-records-card task-tab-section">
+      <TaskWorkspacePanelTitle icon={ScrollText} title="Records" subtitle={`${plannerRecords.length + agentRuns.length} items`} />
+      <div className="task-record-list">
+        {plannerRecords.map(({ message, decision }) => (
+          <article key={message.id} className="task-record-item">
+            <div className="task-record-item-header">
+              <strong>规划决策</strong>
+              <time>{formatRelativeTime(message.created_at)}</time>
+            </div>
+            <PlannerDecisionPanel
+              decision={decision}
+              roomAgents={roomAgents}
+              continuing={continuing}
+              onContinue={() => onContinue(message)}
+            />
+          </article>
+        ))}
+        {agentRuns.map((run) => (
+          <AgentRunStatusCard
+            key={run.id}
+            roomId={roomId}
+            run={run}
+            agent={agentByRoomId.get(run.room_agent_id)}
+            compact
+          />
+        ))}
+        {!hasRecords && <div className="workspace-empty-row">{emptyLabel}</div>}
+      </div>
+    </section>
+  );
+}
+
+function messageBelongsToTask(message: Message, task: Task): boolean {
+  const metadata = parseMessageMetadata(message.metadata);
+  return metadata.task_id === task.id ||
+    metadata.source_message_id === task.source_message_id ||
+    message.id === task.source_message_id;
 }
 
 function formatClockTime(timestamp: number): string {

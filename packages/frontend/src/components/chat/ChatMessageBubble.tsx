@@ -1,13 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, Eye, FileText, Reply, RotateCcw } from 'lucide-react';
+import { BookmarkPlus, ClipboardList, Eye, FileText, Reply, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
-import type { Agent, AgentRun, Message, MessageIntent, PlannerDecision, RoomAgent, Task, TaskEventType } from '../../lib/types';
+import type { Agent, AgentRun, Message, MessageIntent, RoomAgent, Task, TaskEventType } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
 import { AgentAvatar } from '../AgentAvatar';
-import { AgentRunStatusCard } from '../AgentRunPanel';
 import { MessageContent, isMarkdownMessageContent } from '../MessageContent';
 import { MessageIntentCard } from '../MessageIntentCard';
 import {
@@ -17,11 +16,8 @@ import {
   MessageHeader as AiMessageHeader,
   MessageMeta as AiMessageMeta,
   MessageRow as AiMessageRow,
-  MessageRunPanel as AiMessageRunPanel,
 } from '../ai-elements/Message';
-import { createPlannerDispatchInput, shouldShowPlannerDecisionPanel } from '../../pages/roomPageLogic';
 import { MessageAttachments } from './MessageAttachments';
-import { PlannerDecisionPanel } from './PlannerDecisionPanel';
 import { ChatActivityMessage } from './ChatActivityMessage';
 import { ChatTaskCard } from './ChatTaskCard';
 import { shouldUseStreamingDisplayForMessage } from './chatMessageModel';
@@ -30,7 +26,6 @@ export interface ChatMessageBubbleProps {
   message: Message;
   agentMeta?: RoomAgent;
   run?: AgentRun;
-  runAgent?: RoomAgent;
   roomAgents: RoomAgent[];
   globalAgents: Agent[];
   roomId: string;
@@ -53,7 +48,6 @@ export function ChatMessageBubble({
   message,
   agentMeta,
   run,
-  runAgent,
   roomAgents,
   globalAgents,
   roomId,
@@ -107,29 +101,6 @@ export function ChatMessageBubble({
     },
     onError: (err) => toast.error((err as Error).message),
   });
-  const continuePlanner = useMutation({
-    mutationFn: (input: { source_message_id: string; planner_decision: PlannerDecision }) =>
-      api.dispatchPlannerDecision(roomId, input),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
-      const addedCount = result.added_agents?.length ?? 0;
-      const deferredCount = result.deferred_steps?.length ?? 0;
-      toast.success(
-        result.dispatched > 0
-          ? addedCount > 0
-            ? deferredCount > 0
-              ? `已加入 ${addedCount} 个智能体，先派发 ${result.dispatched} 个，暂缓 ${deferredCount} 个后续步骤`
-              : `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
-            : deferredCount > 0
-              ? `已先派发 ${result.dispatched} 个智能体，暂缓 ${deferredCount} 个后续步骤`
-              : `已派发 ${result.dispatched} 个智能体`
-          : '没有可派发的下一步',
-      );
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
   const attachments = metadata.attachments;
@@ -139,10 +110,7 @@ export function ChatMessageBubble({
   const isStreaming = shouldUseStreamingDisplayForMessage(message, run, streaming);
   const canReply = !isSystem && hasContent && !isStreaming;
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
-  const showPlannerDecisionPanel = shouldShowPlannerDecisionPanel({
-    isUser,
-    decision: metadata.planner_decision,
-  });
+  const showPlannerDecisionPanel = !isUser && Boolean(metadata.planner_decision);
   const chooseIntent = (intent: MessageIntent) => {
     const prefixByIntent: Record<MessageIntent, string> = {
       chat: '/chat ',
@@ -324,29 +292,54 @@ export function ChatMessageBubble({
           )}
         </AiMessageBody>
         {showPlannerDecisionPanel && metadata.planner_decision && (
-          <PlannerDecisionPanel
-            decision={metadata.planner_decision}
-            roomAgents={roomAgents}
-            continuing={continuePlanner.isPending}
-            onContinue={() => {
-              const input = createPlannerDispatchInput(message, metadata);
-              if (!input) return;
-              continuePlanner.mutate(input);
-            }}
+          <TaskRecordSummaryEntry
+            label="规划决策"
+            detail={`${metadata.planner_decision.next_steps.length} 个后续步骤`}
+            task={task}
+            onSelectTask={onSelectTask}
           />
         )}
         {!isUser && run && (
-          <AiMessageRunPanel>
-            <AgentRunStatusCard
-              roomId={roomId}
-              run={run}
-              agent={runAgent}
-              compact
-            />
-          </AiMessageRunPanel>
+          <TaskRecordSummaryEntry
+            label="ACP 调用记录"
+            detail={`ACP:${run.backend} · ${run.status}`}
+            task={task}
+            onSelectTask={onSelectTask}
+          />
         )}
       </div>
     </AiMessageRow>
+  );
+}
+
+function TaskRecordSummaryEntry({
+  label,
+  detail,
+  task,
+  onSelectTask,
+}: {
+  label: string;
+  detail: string;
+  task?: Task;
+  onSelectTask?: (task: Task) => void;
+}): JSX.Element {
+  if (!task || !onSelectTask) {
+    return (
+      <div className="message-task-record-summary">
+        <ClipboardList className="h-3.5 w-3.5" />
+        <span>{label}</span>
+        <small>{detail}</small>
+      </div>
+    );
+  }
+
+  return (
+    <button type="button" className="message-task-record-summary" onClick={() => onSelectTask(task)}>
+      <ClipboardList className="h-3.5 w-3.5" />
+      <span>{label}</span>
+      <small>{detail}</small>
+      <strong>查看任务记录</strong>
+    </button>
   );
 }
 

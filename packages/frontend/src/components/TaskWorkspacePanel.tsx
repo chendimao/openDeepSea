@@ -1,6 +1,6 @@
 import { CheckCircle2 } from 'lucide-react';
 import type { MessageKey } from '../lib/i18n';
-import type { MessageLayer, RoomAgent, Task, TaskEvent, TaskExecutorListItem, WorkflowRun } from '../lib/types';
+import type { AgentRun, Message, RoomAgent, Task, TaskEvent, WorkflowRun } from '../lib/types';
 import { cn } from '../lib/utils';
 import {
   selectTaskDetailEvents,
@@ -21,26 +21,21 @@ export interface TaskWorkspacePanelProps {
   statusFilters: TaskStatusFilter[];
   activityEvents: TaskEvent[];
   taskEvents: TaskEvent[];
+  messages: Message[];
+  agentRuns: AgentRun[];
   taskEventsLoading: boolean;
-  executors: TaskExecutorListItem[];
-  executorsLoading: boolean;
   agents: RoomAgent[];
   workflows: WorkflowRun[];
   layerVisibility: TaskLayerVisibility;
-  startingTaskId?: string | null;
   onStatusFiltersChange: (filters: TaskStatusFilter[]) => void;
   onSelectTask: (task: Task) => void;
-  onChangeStatus: (task: Task, status: Task['status']) => void;
-  onStartWorkflow?: (task: Task) => void;
   onLocateSourceMessage: (messageId: string, task: Task) => void;
-  onLayerVisibilityChange: (layer: MessageLayer, visible: boolean) => void;
   onClearActiveTask: () => void;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
   formatRelativeTime: (timestamp: number) => string;
   taskStatusLabel: (status: Task['status']) => string;
   taskPriorityLabel: (priority: Task['priority']) => string;
   interactionModeLabel: (mode: Task['interaction_mode']) => string;
-  workflowStatusLabel: (status: WorkflowRun['status']) => string;
 }
 
 export function TaskWorkspacePanel({
@@ -50,24 +45,21 @@ export function TaskWorkspacePanel({
   statusFilters,
   activityEvents,
   taskEvents,
+  messages,
+  agentRuns,
   taskEventsLoading,
   agents,
   workflows,
   layerVisibility,
-  startingTaskId,
   onStatusFiltersChange,
   onSelectTask,
-  onChangeStatus,
-  onStartWorkflow,
   onLocateSourceMessage,
-  onLayerVisibilityChange,
   onClearActiveTask,
   t,
   formatRelativeTime,
   taskStatusLabel,
   taskPriorityLabel,
   interactionModeLabel,
-  workflowStatusLabel,
 }: TaskWorkspacePanelProps): JSX.Element {
   const rootTasks = filterRootTasks(tasks, statusFilters);
   const visibleActivity = selectActivityEvents(activityEvents, 4);
@@ -121,27 +113,10 @@ export function TaskWorkspacePanel({
                 <TaskQueueCard
                   key={task.id}
                   task={task}
-                  agent={task.assigned_agent_id ? agentMap.get(task.assigned_agent_id) : undefined}
-                  workflow={workflowByTaskId.get(task.id)}
                   selected={activeTaskId === task.id}
                   statusLabel={taskStatusLabel(task.status)}
-                  priorityLabel={taskPriorityLabel(task.priority)}
-                  workflowStatusLabel={workflowStatusLabel}
-                  nextStatusLabel={(status) => taskStatusLabel(status)}
                   updatedLabel={formatRelativeTime(task.updated_at)}
-                  unassignedLabel={t('common.unassigned')}
-                  markFailedLabel={t('taskBoard.markFailed')}
-                  startWorkflowLabel={t('taskBoard.startWorkflow')}
-                  locateSourceLabel={t('taskBoard.locateSourceMessage')}
                   onSelect={() => onSelectTask(task)}
-                  onChangeStatus={(next) => onChangeStatus(task, next)}
-                  onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(task) : undefined}
-                  onLocateSourceMessage={
-                    task.source_message_id
-                      ? () => onLocateSourceMessage(task.source_message_id!, task)
-                      : undefined
-                  }
-                  startingWorkflow={startingTaskId === task.id}
                 />
               ))
             )}
@@ -164,14 +139,15 @@ export function TaskWorkspacePanel({
               layerVisibility={layerVisibility}
               taskEventsLoading={taskEventsLoading}
               eventGroups={eventGroups}
-              onChangeStatus={(status) => onChangeStatus(activeTask, status)}
-              onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(activeTask) : undefined}
+              messages={messages}
+              agentRuns={agentRuns}
+              roomAgents={agents}
+              roomId={activeTask.room_id}
               onLocateSourceMessage={
                 activeTask.source_message_id
                   ? () => onLocateSourceMessage(activeTask.source_message_id!, activeTask)
                   : undefined
               }
-              onLayerVisibilityChange={onLayerVisibilityChange}
               onClearActiveTask={onClearActiveTask}
               formatRelativeTime={formatRelativeTime}
               t={t}

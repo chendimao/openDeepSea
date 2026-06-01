@@ -4648,7 +4648,7 @@
   }
   .task-list-scroll {
     overflow-x: hidden;
-    padding: 10px;
+    padding: 6px;
   }
   .task-list-empty {
     min-height: 68px;
@@ -4674,16 +4674,85 @@
   .task-card,
   .task-list-item {
     border: 1px solid var(--room-border);
-    border-radius: 16px;
+    border-radius: 10px;
     background: var(--room-card-bg);
     box-shadow: var(--room-card-shadow);
     transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), background 180ms ease;
   }
   .task-card:hover,
   .task-card.is-selected {
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     background: var(--room-card-hover-bg);
     box-shadow: var(--room-card-hover-shadow);
+  }
+  .task-queue-card {
+    position: relative;
+    margin-bottom: 5px;
+    padding: 0;
+    box-shadow: none;
+  }
+  .task-queue-card.is-selected::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 0;
+    width: 3px;
+    border-radius: 0 999px 999px 0;
+    background: var(--color-primary);
+  }
+  .task-queue-row {
+    display: grid;
+    width: 100%;
+    gap: 5px;
+    padding: 8px 10px 8px 12px;
+    text-align: left;
+  }
+  .task-queue-row-main,
+  .task-queue-row-meta {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .task-queue-row-main h4 {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--room-text-heading);
+    font-size: 12px;
+    font-weight: 720;
+    line-height: 1.18;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-queue-row-main time,
+  .task-queue-row-meta small {
+    flex: 0 0 auto;
+    color: var(--room-text-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9.5px;
+  }
+  .task-queue-row-meta span {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 92px;
+    align-items: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-primary) 8%, var(--room-card-muted-bg));
+    padding: 2px 7px;
+    color: var(--color-primary);
+    font-size: 10px;
+    font-weight: 720;
+    line-height: 1.1;
+  }
+  .task-queue-row-meta span[data-status="done"] {
+    background: color-mix(in srgb, var(--color-success) 10%, var(--room-card-muted-bg));
+    color: var(--color-success);
+  }
+  .task-queue-row-meta span[data-status="failed"] {
+    background: color-mix(in srgb, var(--color-danger) 10%, var(--room-card-muted-bg));
+    color: var(--color-danger);
   }
   .task-card-kicker {
     display: flex;
@@ -4964,15 +5033,29 @@
     background: var(--room-primary-progress);
     animation: progress-glow 1.8s ease-in-out infinite;
   }
-  .active-task-actions {
+  .active-task-tabs {
+    display: flex;
     align-items: center;
     gap: 6px;
     border-bottom: 1px solid var(--room-border-subtle);
     padding: 6px 14px;
+    background: color-mix(in srgb, var(--room-card-bg) 44%, transparent);
   }
-  .active-task-actions .task-layer-toggles {
-    margin-top: 0;
-    margin-left: auto;
+  .active-task-tabs button {
+    min-height: 28px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 0 12px;
+    color: var(--room-text-muted);
+    font-size: 11px;
+    font-weight: 720;
+    transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+  }
+  .active-task-tabs button:hover,
+  .active-task-tabs button.is-active {
+    border-color: color-mix(in srgb, var(--color-primary) 18%, var(--room-border));
+    background: color-mix(in srgb, var(--color-primary) 9%, var(--room-card-bg));
+    color: var(--color-primary);
   }
   .task-workspace-canvas {
     display: grid;
@@ -5057,6 +5140,11 @@
     box-shadow: 0 18px 42px rgba(15,23,42,0.075), inset 0 1px 0 rgba(255,255,255,0.88);
   }
   .tool-calls-card {
+    grid-column: 1 / -1;
+  }
+  .task-tab-section,
+  .task-resources-card,
+  .task-records-card {
     grid-column: 1 / -1;
   }
   .task-detail-card-title {
@@ -5374,6 +5462,105 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
+  }
+  .task-record-list,
+  .task-resource-list {
+    display: grid;
+    gap: 8px;
+  }
+  .task-record-item,
+  .task-resource-row,
+  .message-task-record-summary {
+    border: 1px solid var(--room-border-subtle);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--room-card-muted-bg) 72%, transparent);
+  }
+  .task-record-item {
+    padding: 9px 10px;
+  }
+  .task-record-item-header {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .task-record-item-header strong {
+    color: var(--room-text-heading);
+    font-size: 12px;
+    font-weight: 760;
+  }
+  .task-record-item-header time,
+  .task-resource-row small {
+    color: var(--room-text-muted);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+  }
+  .task-record-item p {
+    margin: 6px 0 0;
+    color: var(--room-text-muted);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+  .task-record-steps {
+    display: grid;
+    gap: 5px;
+    margin-top: 7px;
+  }
+  .task-record-steps span {
+    overflow: hidden;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--room-card-bg) 80%, transparent);
+    padding: 5px 7px;
+    color: var(--room-text-heading);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .task-resource-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    color: var(--room-text-muted);
+  }
+  .task-resource-row span {
+    overflow: hidden;
+    color: var(--room-text-heading);
+    font-size: 11.5px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .message-task-record-summary {
+    display: flex;
+    width: calc(100% - 20px);
+    align-items: center;
+    gap: 8px;
+    margin: 0 10px 10px;
+    padding: 7px 9px;
+    color: var(--room-text-muted);
+    text-align: left;
+  }
+  .message-task-record-summary span {
+    color: var(--room-text-heading);
+    font-size: 11.5px;
+    font-weight: 740;
+  }
+  .message-task-record-summary small {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .message-task-record-summary strong {
+    color: var(--color-primary);
+    font-size: 10.5px;
+    font-weight: 760;
   }
   .tool-call-card {
     display: grid;
