@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { ArrowRight, LocateFixed, Play } from 'lucide-react';
 import type { RoomAgent, Task, WorkflowRun } from '../../lib/types';
 import { cn } from '../../lib/utils';
@@ -73,11 +72,9 @@ export function TaskQueueCard({
   const progress = taskProgressPercent(task.status);
 
   return (
-    <motion.article
+    <article
       className={cn('task-card task-list-item task-queue-card', selected && 'is-selected')}
       data-active={selected ? 'true' : undefined}
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
     >
       <button type="button" onClick={onSelect} className="block w-full text-left">
         <div className="task-card-kicker">
@@ -140,7 +137,7 @@ export function TaskQueueCard({
           </Button>
         )}
       </div>
-    </motion.article>
+    </article>
   );
 }
 

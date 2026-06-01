@@ -1,4 +1,3 @@
-import { motion, useReducedMotion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Circle, ClipboardList, Loader2, MousePointer2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Message, MessageMetadata, RoomAgent, Task, TaskEventType } from '../../lib/types';
@@ -59,7 +58,6 @@ export function ChatTaskCard({
   onSelectTask,
 }: ChatTaskCardProps): JSX.Element {
   const { formatRelativeTime } = useI18n();
-  const prefersReducedMotion = useReducedMotion();
   const status = task ? statusMeta[task.status] : null;
   const StatusIcon = status?.icon ?? ClipboardList;
   const canOpen = Boolean(task && onSelectTask);
@@ -74,17 +72,12 @@ export function ChatTaskCard({
   const shortTaskId = taskId.length > 10 ? taskId.slice(0, 10) : taskId;
 
   return (
-    <motion.button
+    <button
       type="button"
       className={cn('chat-task-card', active && 'is-active')}
       data-status={status?.tone ?? metadata.event_type ?? 'event'}
       data-task-id={metadata.task_id}
       disabled={!canOpen}
-      initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={canOpen && !prefersReducedMotion ? { y: -2 } : undefined}
-      whileTap={canOpen && !prefersReducedMotion ? { scale: 0.992 } : undefined}
-      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
       onClick={() => {
         if (task && onSelectTask) onSelectTask(task);
       }}
@@ -120,7 +113,7 @@ export function ChatTaskCard({
       <span className="chat-task-card-progress-track" aria-hidden="true">
         <span className="chat-task-card-progress" style={{ width: `${progress}%` }} />
       </span>
-    </motion.button>
+    </button>
   );
 }
 

@@ -22,7 +22,7 @@ import { LobsterMark } from './LobsterMark';
 import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
 import { SystemSettingsDialog } from './SettingsDialogs';
-import { type ThemeMode } from '../lib/theme';
+import { getThemeStyle, type ThemeMode } from '../lib/theme';
 
 export function AppShell({
   children,
@@ -37,6 +37,7 @@ export function AppShell({
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const location = useLocation();
   const { t } = useI18n();
+  const themeStyle = getThemeStyle(theme);
   const projectId = getProjectId(location.pathname);
   const isRoomRoute = Boolean(getRoomId(location.pathname));
   const { data: projects = [] } = useQuery({
@@ -67,7 +68,7 @@ export function AppShell({
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]">
-      <div className="liquid-backdrop" aria-hidden="true" />
+      {themeStyle === 'apple' && <div className="liquid-backdrop" aria-hidden="true" />}
       <header className="shell-public-header" aria-label={t('shell.sidebar.aria')}>
         <NavLink to="/" className="shell-brand" aria-label={t('app.name')}>
           <span className="shell-brand-logo">

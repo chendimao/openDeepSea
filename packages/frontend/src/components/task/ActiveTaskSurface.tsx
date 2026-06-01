@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { ArrowRight, Bot, Clock3, FileDiff, FileText, Gauge, GitBranch, ListChecks, LocateFixed, MonitorPlay, Pencil, Play, Radio, Search, XCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { MessageKey } from '../../lib/i18n';
@@ -122,7 +121,7 @@ export function ActiveTaskSurface({
               <b>Progress</b>
               <strong>{progress}%</strong>
             </span>
-            <div className="liquid-progress"><i style={{ width: `${progress}%` }} /></div>
+            <div className="task-progress-track"><i style={{ width: `${progress}%` }} /></div>
           </div>
         </div>
       </header>
@@ -151,7 +150,7 @@ export function ActiveTaskSurface({
           </div>
         )}
 
-        <motion.section className="task-detail-card execution-plan-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}>
+        <section className="task-detail-card execution-plan-card">
           <TaskWorkspacePanelTitle icon={ListChecks} title="Execution Plan" subtitle={`${planSteps.length} steps`} />
           <div className="execution-step-list">
             {planSteps.map((step, index) => (
@@ -164,9 +163,9 @@ export function ActiveTaskSurface({
               </div>
             ))}
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section className="task-detail-card realtime-status-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.03, ease: [0.16, 1, 0.3, 1] }}>
+        <section className="task-detail-card realtime-status-card">
           <TaskWorkspacePanelTitle icon={Gauge} title="Realtime Status" subtitle={workflow?.status ?? taskStatusLabel(task.status)} />
           <div className="current-agent-row">
             {assignedAgent ? <AgentAvatar name={assignedAgent.agent_name} size={34} active={!!assignedAgent.acp_enabled} /> : <Bot className="h-7 w-7 text-[var(--color-muted)]" />}
@@ -188,9 +187,9 @@ export function ActiveTaskSurface({
             <TaskResourceMetric label="File Reads" value={String(eventGroups.timelineEvents.length)} />
             <TaskResourceMetric label="File Changes" value={String(fileChanges.length)} />
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section className="task-detail-card timeline-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.06, ease: [0.16, 1, 0.3, 1] }}>
+        <section className="task-detail-card timeline-card">
           <TaskWorkspacePanelTitle icon={Clock3} title="Timeline" subtitle="Activity stream" />
           <div className="workspace-timeline-list">
             {(timelineEvents.length > 0 ? timelineEvents : eventGroups.visibleEvents.slice(0, 4)).map((event) => (
@@ -204,9 +203,9 @@ export function ActiveTaskSurface({
               <div className="workspace-empty-row">{t('taskDetail.noEvents')}</div>
             )}
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section className="task-detail-card file-changes-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.09, ease: [0.16, 1, 0.3, 1] }}>
+        <section className="task-detail-card file-changes-card">
           <TaskWorkspacePanelTitle icon={FileDiff} title="File Changes" subtitle={`${fileChanges.length} files`} />
           <div className="file-change-list">
             <div className="file-change-header" aria-hidden="true">
@@ -231,9 +230,9 @@ export function ActiveTaskSurface({
               </div>
             )}
           </div>
-        </motion.section>
+        </section>
 
-        <motion.section className="task-detail-card tool-calls-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} whileHover={{ y: -2 }} transition={{ duration: 0.2, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}>
+        <section className="task-detail-card tool-calls-card">
           <TaskWorkspacePanelTitle
             icon={GitBranch}
             title="Tool Calls"
@@ -253,7 +252,7 @@ export function ActiveTaskSurface({
               );
             })}
           </div>
-        </motion.section>
+        </section>
       </div>
     </>
   );

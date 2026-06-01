@@ -4801,13 +4801,13 @@
     font-size: 11px;
     font-weight: 800;
   }
-  .liquid-progress {
+  .task-progress-track {
     height: 5px;
     overflow: hidden;
     border-radius: 999px;
     background: rgba(37,99,235,0.12);
   }
-  .liquid-progress i {
+  .task-progress-track i {
     display: block;
     height: 100%;
     border-radius: inherit;
@@ -5358,7 +5358,7 @@
     .task-card-progress i::after,
     .chat-task-card-progress,
     .chat-task-card-progress::after,
-    .liquid-progress i,
+    .task-progress-track i,
     .current-agent-row > i,
     .execution-step[data-state="running"] .execution-step-node,
     .tool-call-card span::before {
@@ -8204,6 +8204,7 @@
 
   [data-theme="minimal-light"] .liquid-backdrop,
   [data-theme="minimal-dark"] .liquid-backdrop {
+    display: none;
     background: var(--color-bg);
   }
 
@@ -8234,8 +8235,8 @@
   [data-theme="minimal-light"] .liquid-logo-small,
   [data-theme="minimal-dark"] .liquid-logo-small {
     border-radius: 6px;
-    background: var(--color-surface);
-    box-shadow: inset 0 0 0 1px var(--color-border);
+    background: var(--color-surface-raised);
+    box-shadow: none;
   }
 
   [data-theme="minimal-light"] .workspace-root,
@@ -9198,6 +9199,67 @@
   [data-theme="minimal-light"] .glow-accent,
   [data-theme="minimal-dark"] .glow-accent {
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary), transparent 76%);
+  }
+
+  [data-theme="minimal-light"] *,
+  [data-theme="minimal-light"] *::before,
+  [data-theme="minimal-light"] *::after,
+  [data-theme="minimal-dark"] *,
+  [data-theme="minimal-dark"] *::before,
+  [data-theme="minimal-dark"] *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  [data-theme="minimal-light"] .task-progress-track,
+  [data-theme="minimal-dark"] .task-progress-track {
+    border: 1px solid var(--room-border-subtle);
+    border-radius: 3px;
+    background: var(--color-surface-raised);
+  }
+
+  [data-theme="minimal-light"] .task-progress-track i,
+  [data-theme="minimal-dark"] .task-progress-track i,
+  [data-theme="minimal-light"] .task-card-progress i,
+  [data-theme="minimal-dark"] .task-card-progress i,
+  [data-theme="minimal-light"] .chat-task-card-progress,
+  [data-theme="minimal-dark"] .chat-task-card-progress {
+    background: var(--color-primary);
+    animation: none;
+  }
+
+  [data-theme="minimal-light"] .task-card-progress i::after,
+  [data-theme="minimal-dark"] .task-card-progress i::after,
+  [data-theme="minimal-light"] .chat-task-card-progress::after,
+  [data-theme="minimal-dark"] .chat-task-card-progress::after {
+    display: none;
+    animation: none;
+  }
+
+  [data-theme="minimal-light"] .heartbeat,
+  [data-theme="minimal-dark"] .heartbeat,
+  [data-theme="minimal-light"] .fade-up,
+  [data-theme="minimal-dark"] .fade-up,
+  [data-theme="minimal-light"] .modal-pop,
+  [data-theme="minimal-dark"] .modal-pop,
+  [data-theme="minimal-light"] .ai-message-row.is-highlighted,
+  [data-theme="minimal-dark"] .ai-message-row.is-highlighted,
+  [data-theme="minimal-light"] .agent-activity-dot,
+  [data-theme="minimal-dark"] .agent-activity-dot,
+  [data-theme="minimal-light"] .chat-activity-pulse,
+  [data-theme="minimal-dark"] .chat-activity-pulse,
+  [data-theme="minimal-light"] .chat-activity-icon svg,
+  [data-theme="minimal-dark"] .chat-activity-icon svg,
+  [data-theme="minimal-light"] .current-agent-row > i,
+  [data-theme="minimal-dark"] .current-agent-row > i,
+  [data-theme="minimal-light"] .execution-step[data-state="running"] .execution-step-node,
+  [data-theme="minimal-dark"] .execution-step[data-state="running"] .execution-step-node,
+  [data-theme="minimal-light"] .tool-call-card span::before,
+  [data-theme="minimal-dark"] .tool-call-card span::before,
+  [data-theme="minimal-light"] .animate-pulse,
+  [data-theme="minimal-dark"] .animate-pulse {
+    animation: none !important;
+    transform: none !important;
   }
 
   .workspace-drawer {

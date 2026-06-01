@@ -102,8 +102,7 @@ export function TriggerPopover({
       className={cn(
         'max-h-[240px] min-w-[200px] overflow-y-auto',
         'rounded-lg border border-white/60 bg-[var(--color-surface)] p-2 shadow-[var(--shadow-mention)]',
-        'text-[var(--color-fg)] backdrop-blur-2xl',
-        'animate-in fade-in-0 zoom-in-95',
+        'text-[var(--color-fg)]',
       )}
       style={style}
       role="listbox"
