@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS projects (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_projects_sort ON projects(pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS settings (
   scope TEXT NOT NULL,
@@ -136,7 +135,6 @@ CREATE TABLE IF NOT EXISTS rooms (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_rooms_project ON rooms(project_id);
-CREATE INDEX IF NOT EXISTS idx_rooms_project_sort ON rooms(project_id, pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
