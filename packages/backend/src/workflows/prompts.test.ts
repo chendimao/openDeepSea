@@ -52,6 +52,7 @@ test('buildStagePrompt uses analysis-document acceptance prompt for analysis-onl
       created_at: 1,
       last_opened_at: null,
       pinned_at: null,
+      sort_order: null,
     },
     task: {
       id: 'task',
@@ -113,6 +114,7 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
       created_at: 1,
       last_opened_at: null,
       pinned_at: null,
+      sort_order: null,
     },
     task: {
       id: 'task',

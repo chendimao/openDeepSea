@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSupervisorMessages, parseWorkflowSupervisorDecision, type WorkflowSupervisorInput } from './supervisor.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { WorkflowSupervisorInput } from './supervisor.js';
+
+process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-supervisor-')), 'test.db');
+
+const { buildSupervisorMessages, parseWorkflowSupervisorDecision } = await import('./supervisor.js');
 
 test('parseWorkflowSupervisorDecision parses fenced selection JSON', () => {
   const decision = parseWorkflowSupervisorDecision(`
@@ -62,6 +69,8 @@ test('buildSupervisorMessages includes task, workflows, and executable agents', 
       name: 'Project',
       path: '/tmp/project',
       description: null,
+      pinned_at: null,
+      sort_order: null,
       message_routing_mode: 'mentions_only',
       fallback_agent_id: null,
       created_at: 1,
@@ -75,6 +84,7 @@ test('buildSupervisorMessages includes task, workflows, and executable agents', 
       created_at: 1,
       last_opened_at: null,
       pinned_at: null,
+      sort_order: null,
     },
     task: {
       id: 'task',
@@ -204,6 +214,8 @@ function baseSupervisorInput(): WorkflowSupervisorInput {
       name: 'Project',
       path: '/tmp/project',
       description: null,
+      pinned_at: null,
+      sort_order: null,
       message_routing_mode: 'mentions_only' as const,
       fallback_agent_id: null,
       created_at: 1,
@@ -217,6 +229,7 @@ function baseSupervisorInput(): WorkflowSupervisorInput {
       created_at: 1,
       last_opened_at: null,
       pinned_at: null,
+      sort_order: null,
     },
     task: {
       id: 'task',

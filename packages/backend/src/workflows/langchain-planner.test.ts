@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Room, RoomAgent, Task } from '../types.js';
+
+process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-langchain-planner-')), 'test.db');
+
+const {
   LangChainPlannerError,
   buildChatOpenAIFields,
   extractPlannerText,
@@ -8,8 +15,7 @@ import {
   getLangChainPlannerConfig,
   buildPlannerMessages,
   normalizeOpenAIBaseURL,
-} from './langchain-planner.js';
-import type { Room, RoomAgent, Task } from '../types.js';
+} = await import('./langchain-planner.js');
 
 test('getLangChainPlannerConfig returns disabled config when no model is configured', () => {
   const config = getLangChainPlannerConfig({
@@ -365,6 +371,7 @@ function fakeRoom(overrides: Partial<Room> = {}): Room {
     created_at: 1,
     last_opened_at: null,
     pinned_at: null,
+    sort_order: null,
     ...overrides,
   };
 }

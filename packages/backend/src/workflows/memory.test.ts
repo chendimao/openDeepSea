@@ -255,6 +255,7 @@ function basePromptContext(): Parameters<typeof buildStagePrompt>[1] {
       created_at: 1,
       last_opened_at: null,
       pinned_at: null,
+      sort_order: null,
     },
     task: {
       id: 'task-1',
