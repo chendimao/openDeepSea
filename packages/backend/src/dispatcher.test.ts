@@ -254,6 +254,132 @@ test('explicit mentions are still routed through planner in fallback reply mode'
   }
 });
 
+test('planner prompt tells ACP to keep casual chat concise without workflow narration', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-casual-prompt-'));
+  const project = projectRepo.create({ name: `planner-casual-prompt-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'hi',
+    message_type: 'text',
+  });
+  const originalAdapter = adapters.codex;
+  let capturedPrompt = '';
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedPrompt = args.prompt;
+      args.onChunk?.({ stream: 'stdout', text: '我在' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    assert.match(capturedPrompt, /普通问候、闲聊或信息不足时，只输出简短自然回复/u);
+    assert.match(capturedPrompt, /不要解释内部流程、workflow 判断、技能使用或 using-superpowers/u);
+    assert.match(capturedPrompt, /不要追加 planner_decision 或 task_readiness JSON/u);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('planner casual chat reply strips workflow narration and decision json', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-casual-cleanup-'));
+  const project = projectRepo.create({ name: `planner-casual-cleanup-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'read-only',
+    acp_writable_dirs: [],
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'hi',
+    message_type: 'text',
+    metadata: {
+      intent_result: {
+        intent: 'chat',
+        confidence: 0.6,
+        source: 'rule',
+        suggestedAction: 'ask_user',
+        reason: '未命中明确任务类信号，按聊天意图处理',
+        signals: [],
+      },
+      route_result: {
+        taskId: null,
+        action: 'ask_user',
+        confidence: 0,
+        reason: '无法确定消息应归属哪个任务',
+      },
+    },
+  });
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({
+        stream: 'stdout',
+        text: [
+          '我先按房间规则做入口 workflow 判断；这条消息只是问候，所以不会进入实现或任务拆解。',
+          '',
+          '我在。已按 `using-superpowers` 做入口判断。',
+          '',
+          '当前请求只是 `hi`，没有具体规划目标；我不会进入实现 workflow。',
+          '',
+          '```json',
+          JSON.stringify({
+            planner_decision: {
+              mode: 'pause_after_suggestion',
+              status: 'suggested',
+              summary: '等待用户提供要规划或拆解的具体目标',
+              next_steps: [],
+              awaiting_user_confirmation: true,
+            },
+          }),
+          '```',
+        ].join('\n'),
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const plannerMessage = messageRepo.listByRoom(room.id, 20).find((message) => message.sender_id === 'planner');
+    assert.ok(plannerMessage);
+    assert.equal(plannerMessage.content, '我在。');
+    assert.doesNotMatch(plannerMessage.metadata ?? '', /planner_decision/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('runAgentOnce broadcasts retrying status for ACP retry chunks and resumes running on session update', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-retry-status-'));
   const project = projectRepo.create({ name: `retry-status-${Date.now()}`, path: projectPath });

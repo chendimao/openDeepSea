@@ -1143,7 +1143,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     if (heartbeat) clearInterval(heartbeat);
     runRegistry.remove(run.id);
     const finalRun = agentRunRepo.get(run.id);
-    const finalMessage = messageRepo.get(placeholder.id);
+    let finalMessage = messageRepo.get(placeholder.id);
     let finalSnapshotBroadcasted = false;
     const broadcastFinalSnapshot = (): void => {
       if (finalSnapshotBroadcasted) return;
@@ -1168,6 +1168,12 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     try {
       if (finalRun && finalMessage) {
         try {
+          finalMessage = sanitizePlannerCasualReply({
+            message: finalMessage,
+            run: finalRun,
+            sourceMessageId: args.sourceMessageId,
+            agent,
+          }) ?? finalMessage;
           annotatePlannerDecision({
             message: finalMessage,
             run: finalRun,
@@ -1246,6 +1252,10 @@ function annotatePlannerDecision(input: {
 }): void {
   if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return;
   if (input.agent.agent_id !== 'planner') return;
+  if (input.sourceMessageId) {
+    const sourceMessage = messageRepo.get(input.sourceMessageId);
+    if (sourceMessage && isCasualChatSourceMessage(sourceMessage)) return;
+  }
 
   const decision = input.run.status === 'completed'
     ? parsePlannerDecision(input.message.content)
@@ -1255,6 +1265,80 @@ function annotatePlannerDecision(input: {
     planner_decision: decision,
     source_message_id: input.sourceMessageId ?? undefined,
   });
+}
+
+function sanitizePlannerCasualReply(input: {
+  message: Message;
+  run: AgentRun;
+  sourceMessageId?: string | null;
+  agent: RoomAgent;
+}): Message | undefined {
+  if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return undefined;
+  if (input.run.status !== 'completed') return undefined;
+  if (input.agent.agent_id !== 'planner') return undefined;
+  if (!input.sourceMessageId) return undefined;
+  const sourceMessage = messageRepo.get(input.sourceMessageId);
+  if (!sourceMessage || !isCasualChatSourceMessage(sourceMessage)) return undefined;
+  if (!hasPlannerCasualReplyNoise(input.message.content)) return undefined;
+  const cleaned = extractConciseCasualReply(input.message.content);
+  return cleaned && cleaned !== input.message.content
+    ? messageRepo.updateContent(input.message.id, cleaned)
+    : undefined;
+}
+
+function isCasualChatSourceMessage(message: Message): boolean {
+  const metadata = parseMessageMetadata(message.metadata);
+  const intent = metadata.intent_result;
+  const route = metadata.route_result;
+  if (metadata.task_id || route?.taskId) return false;
+  if (!intent && !route) return isShortGreeting(message.content);
+  return (
+    intent?.intent === 'chat' &&
+    route?.action === 'ask_user' &&
+    (intent.confidence ?? 1) <= 0.7 &&
+    (route.confidence ?? 1) <= 0.2
+  ) || isShortGreeting(message.content);
+}
+
+function hasPlannerCasualReplyNoise(content: string): boolean {
+  return /using-superpowers|workflow 判断|入口 workflow|内部流程|技能使用|planner_decision|task_readiness/u.test(content);
+}
+
+function extractConciseCasualReply(content: string): string | null {
+  const withoutJson = content.replace(/```(?:json)?\s*[\s\S]*?```/gi, '').trim();
+  const sentences = withoutJson
+    .split(/(?<=[。！？!?])\s+|\n+/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const candidate = sentences.find((line) =>
+    /^我在[。.!！]?$/u.test(line) ||
+    /^我在[。.!！]?\s*/u.test(line) ||
+    /^在[。.!！]?$/u.test(line)
+  );
+  if (!candidate) return '我在。';
+  const concise = candidate
+    .replace(/已按.*$/u, '')
+    .replace(/当前.*$/u, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (/^我在/u.test(concise)) return concise.endsWith('。') ? concise : `${concise.replace(/[.!！]+$/u, '')}。`;
+  if (/^在/u.test(concise)) return '我在。';
+  return '我在。';
+}
+
+function isShortGreeting(content: string): boolean {
+  const normalized = content.trim().toLowerCase();
+  return /^(hi|hello|hey|你好|您好|嗨|在吗|在不在)[。.!！?？\s]*$/u.test(normalized);
+}
+
+function parseMessageMetadata(raw: string | null): MessageMetadata {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return isRecord(parsed) ? parsed as MessageMetadata : {};
+  } catch {
+    return {};
+  }
 }
 
 function annotateTaskReadiness(input: {
@@ -1564,6 +1648,12 @@ function isPlannerDecisionStatus(value: unknown): value is PlannerDecision['stat
 
 function buildPlannerDecisionPrompt(): string[] {
   return [
+    '',
+    'Planner 普通消息回复规则：',
+    '- 普通问候、闲聊或信息不足时，只输出简短自然回复，例如“我在”。',
+    '- 不要解释内部流程、workflow 判断、技能使用或 using-superpowers。',
+    '- 不要追加 planner_decision 或 task_readiness JSON。',
+    '- 只有用户提出明确规划、实现、修复、任务拆解或调度需求时，才进入下面的结构化输出规则。',
     '',
     'Planner 决策结构化输出规则：',
     '- 当你需要建议下一步或调度其他智能体时，请在自然语言回复后追加一个单独的 ```json 代码块。',

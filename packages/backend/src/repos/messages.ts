@@ -92,6 +92,11 @@ export const messageRepo = {
     db.prepare('UPDATE messages SET content = content || ? WHERE id = ?').run(chunk, id);
   },
 
+  updateContent(id: string, content: string): Message | undefined {
+    db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(content, id);
+    return this.get(id);
+  },
+
   mergeMetadata(id: string, patch: Record<string, unknown>): Message | undefined {
     const message = this.get(id);
     if (!message) return undefined;
