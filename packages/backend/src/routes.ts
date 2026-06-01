@@ -1892,17 +1892,16 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
   if (routeResult.taskId) {
     metadata.task_id = routeResult.taskId;
   }
-  const userMsg = createAndDispatchUserMessage({
+  const userMsg = createUserMessage({
     roomId,
     senderId: parsed.data.sender_id,
     senderName: parsed.data.sender_name,
     content,
-    mentions: parsed.data.mentions,
     metadata,
-    dispatch: shouldDispatchRoutedUserMessage(routeResult, parsed.data.mentions, intentResult),
   });
   finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
+  dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions: parsed.data.mentions });
   res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
 }
 
@@ -2000,17 +1999,16 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
     if (routeResult.taskId) {
       metadata.task_id = routeResult.taskId;
     }
-    const userMsg = createAndDispatchUserMessage({
+    const userMsg = createUserMessage({
       roomId,
       senderId: parsed.data.sender_id,
       senderName: parsed.data.sender_name,
       content,
-      mentions,
       metadata,
-      dispatch: shouldDispatchRoutedUserMessage(routeResult, mentions, intentResult),
     });
     finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
     recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
+    dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions });
     res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
   } catch (err) {
     await cleanupProjectUploadedFiles(files);
@@ -2074,14 +2072,12 @@ function summarizeReplyExcerpt(content: string): string {
   return normalized.length <= 180 ? normalized : `${normalized.slice(0, 177).trimEnd()}...`;
 }
 
-function createAndDispatchUserMessage(input: {
+function createUserMessage(input: {
   roomId: string;
   senderId: string;
   senderName?: string;
   content: string;
-  mentions?: string[];
   metadata?: MessageMetadata;
-  dispatch?: boolean;
 }): ReturnType<typeof messageRepo.create> {
   const userMsg = messageRepo.create({
     room_id: input.roomId,
@@ -2093,8 +2089,17 @@ function createAndDispatchUserMessage(input: {
     metadata: input.metadata as Record<string, unknown> | undefined,
   });
   wsHub.broadcast(input.roomId, { type: 'message:new', roomId: input.roomId, message: userMsg });
-  if (input.dispatch === false) return userMsg;
-  // 这里是用户消息落库后触发智能体继续回复的最小入口。
+  return userMsg;
+}
+
+function dispatchUserMessageFromRoute(input: {
+  roomId: string;
+  userMessageId: string;
+  content: string;
+  mentions?: string[];
+}): void {
+  const userMessage = messageRepo.get(input.userMessageId);
+  if (!userMessage) return;
   const agents = roomAgentRepo.listByRoom(input.roomId);
   const mentionedAgentRoomIds = resolveMentionedAgentRoomIds({
     content: input.content,
@@ -2104,21 +2109,9 @@ function createAndDispatchUserMessage(input: {
   // Fire-and-forget dispatch
   void (messageRouteDeps.dispatchUserMessage ?? dispatchUserMessage)({
     roomId: input.roomId,
-    userMessage: userMsg,
+    userMessage,
     mentionedAgentRoomIds,
   });
-  return userMsg;
-}
-
-function shouldDispatchRoutedUserMessage(
-  routeResult: import('./types.js').RouteResult,
-  mentions?: string[],
-  intentResult?: import('./types.js').MessageIntentResult,
-): boolean {
-  if (routeResult.action === 'create_task') return false;
-  if (routeResult.action !== 'ask_user') return true;
-  if (intentResult?.intent === 'chat' && !shouldAskUserForIntent(intentResult)) return true;
-  return Boolean(mentions?.length);
 }
 
 function recordTaskRoutingEvent(

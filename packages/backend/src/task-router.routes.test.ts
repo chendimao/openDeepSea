@@ -153,7 +153,7 @@ test('POST /rooms/:roomId/messages creates a task for clear create-task intent',
     });
 
     assert.equal(res.status, 201);
-    assert.equal(dispatchCalls.length, 0);
+    assert.equal(dispatchCalls.length, 1);
     const message = await res.json() as { id: string; metadata: string | null };
     const metadata = JSON.parse(message.metadata ?? '{}') as {
       task_id?: string;
@@ -208,7 +208,7 @@ test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', a
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     route_result?: { action: string; taskId: string | null; reason: string };
@@ -283,7 +283,7 @@ test('POST /rooms/:roomId/messages creates task for high-confidence light task i
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
@@ -325,7 +325,7 @@ test('POST /rooms/:roomId/messages creates new workflow task for high-confidence
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
@@ -384,7 +384,7 @@ for (const scenario of [
       });
 
       assert.equal(res.status, 201);
-      assert.equal(dispatchCalls.length, 0);
+      assert.equal(dispatchCalls.length, 1);
       const message = await res.json() as { id: string; metadata: string | null };
       const metadata = JSON.parse(message.metadata ?? '{}') as {
         task_id?: string;
@@ -541,7 +541,7 @@ test('POST /rooms/:roomId/messages ignores terminal active task when routing', a
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
@@ -571,7 +571,7 @@ test('POST /rooms/:roomId/messages rejects explicit terminal task routing', asyn
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
@@ -602,7 +602,7 @@ test('POST /rooms/:roomId/messages keeps explicit terminal task guardrail for hi
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;

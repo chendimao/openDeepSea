@@ -73,14 +73,28 @@ test('buildPromptWithMessageAttachments appends readable attachment context', ()
   assert.match(prompt, new RegExp(`localPath=${escapeRegExp(messageUploadDir)}/stored\\.png`));
 });
 
-test('dispatchUserMessage reports non-ACP agent as not executable', async () => {
+test('dispatchUserMessage routes non-ACP mentions through planner', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-no-gateway-test-'));
   const project = projectRepo.create({ name: `no-gateway-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((item) => item.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
   const agent = roomAgentRepo.add({
     room_id: room.id,
     agent_id: 'legacy',
     agent_name: 'LegacyAgent',
+  });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: planner.agent_id,
   });
   const userMessage = messageRepo.create({
     room_id: room.id,
@@ -91,6 +105,15 @@ test('dispatchUserMessage reports non-ACP agent as not executable', async () => 
     message_type: 'text',
   });
 
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({ stream: 'stdout', text: 'planner handled non-ACP mention' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
   try {
     await dispatchUserMessage({
       roomId: room.id,
@@ -99,11 +122,10 @@ test('dispatchUserMessage reports non-ACP agent as not executable', async () => 
     });
 
     const messages = messageRepo.listByRoom(room.id, 20);
-    assert.ok(
-      messages.some((message) => message.content.includes('no ACP backend configured')),
-      'expected readable system message for non-ACP agent',
-    );
+    assert.equal(messages.some((message) => message.sender_id === 'planner'), true);
+    assert.equal(messages.some((message) => message.content.includes('no ACP backend configured')), false);
   } finally {
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });
@@ -172,7 +194,7 @@ test('legacy fallback_route data is normalized to planner fallback reply during 
   }
 });
 
-test('explicit mentions still dispatch directly to mentioned agent in fallback reply mode', async () => {
+test('explicit mentions are still routed through planner in fallback reply mode', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-fallback-reply-explicit-mention-'));
   const project = projectRepo.create({ name: `fallback-reply-explicit-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
@@ -222,7 +244,7 @@ test('explicit mentions still dispatch directly to mentioned agent in fallback r
 
     const runs = agentRunRepo.listByRoom(room.id, 20);
     assert.equal(runs.length, 1);
-    assert.equal(runs[0]?.agent_id, reviewer.agent_id);
+    assert.equal(runs[0]?.agent_id, planner.agent_id);
     assert.equal(seenPrompts.length, 1);
     assert.doesNotMatch(seenPrompts[0] ?? '', /Return ONLY valid JSON/);
     assert.doesNotMatch(seenPrompts[0] ?? '', /UNTRUSTED_USER_MESSAGE_BEGIN/);
@@ -1033,7 +1055,7 @@ test('planner completed reply marks analysis-only readiness without formal workf
   }
 });
 
-test('message route creates task for /task intent without fallback ACP dispatch', async () => {
+test('message route creates task for /task intent and still dispatches to planner', async () => {
   const { projectPath, room } = await createRoutedRoom('task-command');
   const { restore, calls } = installCountingCodexAdapter();
 
@@ -1051,7 +1073,7 @@ test('message route creates task for /task intent without fallback ACP dispatch'
     const userMessage = await res.json() as Message;
     assert.equal(userMessage.content, '/task Fix command route');
     await delay(30);
-    assert.equal(calls.count, 0);
+    assert.equal(calls.count, 1);
     const tasks = taskRepo.listByRoom(room.id);
     assert.equal(tasks.length, 1);
     assert.equal(tasks[0]?.title, 'Fix command route');
@@ -1062,6 +1084,35 @@ test('message route creates task for /task intent without fallback ACP dispatch'
     assert.equal(metadata.task_id, tasks[0]?.id);
     assert.equal(metadata.route_result?.action, 'create_task');
     assert.equal(taskEventRepo.listByTask(tasks[0]!.id).some((event) => event.type === 'message_routed'), true);
+  } finally {
+    restore();
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('message route dispatches low-confidence chat to fallback planner', async () => {
+  const { projectPath, room } = await createRoutedRoom('fallback-low-confidence-chat');
+  const { restore, calls } = installCountingCodexAdapter();
+
+  try {
+    const res = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        content: 'hi',
+        sender_id: 'user',
+        sender_name: 'You',
+      }),
+    });
+
+    assert.equal(res.status, 201);
+    const userMessage = await res.json() as Message;
+    await delay(30);
+    assert.equal(calls.count, 1);
+    const messages = messageRepo.listByRoom(room.id, 20);
+    const metadata = JSON.parse(userMessage.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.intent_result?.intent, 'chat');
+    assert.equal(metadata.route_result?.action, 'ask_user');
+    assert.ok(messages.some((message) => message.sender_id === 'planner'));
   } finally {
     restore();
     await rm(projectPath, { recursive: true, force: true });
@@ -1160,7 +1211,7 @@ test('message route treats /start-task content as plain chat and does not start 
     assert.equal(res.status, 201);
     const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 0);
+    assert.equal(calls.count, 1);
     assert.equal(workflowRepo.listByTask('task-123').length, 0);
     const messages = messageRepo.listByRoom(room.id, 20);
     assert.equal(messages[0]?.id, userMessage.id);
@@ -1191,7 +1242,7 @@ test('message route treats Chinese start command as plain chat and does not star
     assert.equal(res.status, 201);
     const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 0);
+    assert.equal(calls.count, 1);
     assert.equal(workflowRepo.listByTask('task-123').length, 0);
     assert.equal(messageRepo.listByRoom(room.id, 20).some((message) => {
       const metadata = message.metadata ? JSON.parse(message.metadata) as Record<string, unknown> : {};
@@ -1221,7 +1272,7 @@ test('message route no longer errors on missing /start-task target and treats it
     assert.equal(res.status, 201);
     const userMessage = await res.json() as Message;
     await delay(30);
-    assert.equal(calls.count, 0);
+    assert.equal(calls.count, 1);
     assert.equal(userMessage.content, '/start-task missing-task');
     assert.equal(messageRepo.listByRoom(room.id, 20).filter((message) => message.sender_type === 'user').length, 1);
   } finally {
@@ -1385,10 +1436,11 @@ test('dispatchUserMessage marks empty successful ACP output as failed', async ()
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-empty-acp-test-'));
   const project = projectRepo.create({ name: `empty-acp-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
-  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'opencode-agent', agent_name: 'OpenCodeAgent' });
-  roomAgentRepo.setAcp(agent.id, {
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
     acp_enabled: true,
-    acp_backend: 'opencode',
+    acp_backend: 'codex',
     acp_session_id: null,
     acp_session_label: null,
     acp_permission_mode: 'bypass',
@@ -1396,11 +1448,11 @@ test('dispatchUserMessage marks empty successful ACP output as failed', async ()
   });
   settingsRepo.updateProject(project.id, {
     message_routing_mode: 'fallback_reply',
-    fallback_agent_id: 'opencode-agent',
+    fallback_agent_id: planner.agent_id,
   });
 
-  const originalAdapter = adapters.opencode;
-  adapters.opencode = {
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
     ...originalAdapter,
     async invoke() {
       return { exitCode: 0, sessionId: null, stderr: '' };
@@ -1426,9 +1478,9 @@ test('dispatchUserMessage marks empty successful ACP output as failed', async ()
     assert.equal(run.status, 'failed');
     assert.match(run.error ?? '', /completed without output/i);
     assert.match(run.stderr, /completed without output/i);
-    assert.match(agentMessages.at(-1)?.content ?? '', /opencode error.*completed without output/i);
+    assert.match(agentMessages.at(-1)?.content ?? '', /codex error.*completed without output/i);
   } finally {
-    adapters.opencode = originalAdapter;
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });
@@ -3757,8 +3809,9 @@ test('dispatchUserMessage triggers model distill after completed ACP reply when 
     scope_id: room.id,
     enabled: true,
   });
-  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'codex-distill', agent_name: 'CodexDistill' });
-  roomAgentRepo.setAcp(agent.id, {
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
     acp_enabled: true,
     acp_backend: 'codex',
     acp_session_id: null,
@@ -3768,7 +3821,7 @@ test('dispatchUserMessage triggers model distill after completed ACP reply when 
   });
   settingsRepo.updateProject(project.id, {
     message_routing_mode: 'fallback_reply',
-    fallback_agent_id: agent.agent_id,
+    fallback_agent_id: planner.agent_id,
     auto_distill_enabled: true,
   });
 
@@ -3806,7 +3859,7 @@ test('dispatchUserMessage triggers model distill after completed ACP reply when 
     await waitFor(() => memoryRepo.list({ projectId: project.id, roomId: room.id }).length > 0);
 
     const memories = memoryRepo.list({ projectId: project.id, roomId: room.id });
-    const agentReply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === agent.agent_id);
+    const agentReply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === planner.agent_id);
     assert.ok(agentReply);
     assert.ok(
       memories.some((item) => item.source_id?.startsWith(`${agentReply.id}#distill-`)),
@@ -3824,18 +3877,16 @@ test('dispatchUserMessage does not let disabled or missing model distill block A
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-acp-no-distill-test-'));
   const project = projectRepo.create({ name: `acp-no-distill-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
-  const disabledAgent = roomAgentRepo.add({ room_id: room.id, agent_id: 'disabled-distill', agent_name: 'DisabledDistill' });
-  const missingModelAgent = roomAgentRepo.add({ room_id: room.id, agent_id: 'missing-model-distill', agent_name: 'MissingModelDistill' });
-  for (const agent of [disabledAgent, missingModelAgent]) {
-    roomAgentRepo.setAcp(agent.id, {
-      acp_enabled: true,
-      acp_backend: 'codex',
-      acp_session_id: null,
-      acp_session_label: null,
-      acp_permission_mode: 'bypass',
-      acp_writable_dirs: [],
-    });
-  }
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
   const originalAdapter = adapters.codex;
   adapters.codex = {
     ...originalAdapter,
@@ -3848,7 +3899,7 @@ test('dispatchUserMessage does not let disabled or missing model distill block A
   try {
     settingsRepo.updateProject(project.id, {
       message_routing_mode: 'fallback_reply',
-      fallback_agent_id: disabledAgent.agent_id,
+      fallback_agent_id: planner.agent_id,
       auto_distill_enabled: false,
     });
     const disabledMessage = messageRepo.create({
@@ -3862,13 +3913,13 @@ test('dispatchUserMessage does not let disabled or missing model distill block A
 
     await dispatchUserMessage({ roomId: room.id, userMessage: disabledMessage });
 
-    const repliesAfterDisabled = messageRepo.listByRoom(room.id).filter((item) => item.sender_id === disabledAgent.agent_id);
+    const repliesAfterDisabled = messageRepo.listByRoom(room.id).filter((item) => item.sender_id === planner.agent_id);
     assert.equal(repliesAfterDisabled.at(-1)?.content, 'ACP reply completed.');
     assert.equal(memoryRepo.list({ projectId: project.id, roomId: room.id }).length, 0);
 
     settingsRepo.updateProject(project.id, {
       message_routing_mode: 'fallback_reply',
-      fallback_agent_id: missingModelAgent.agent_id,
+      fallback_agent_id: planner.agent_id,
       auto_distill_enabled: true,
     });
     settingsRepo.updateSystem({
@@ -3888,7 +3939,7 @@ test('dispatchUserMessage does not let disabled or missing model distill block A
     await dispatchUserMessage({ roomId: room.id, userMessage: missingModelMessage });
 
     const repliesAfterMissingModel = messageRepo.listByRoom(room.id)
-      .filter((item) => item.sender_id === missingModelAgent.agent_id);
+      .filter((item) => item.sender_id === planner.agent_id);
     assert.equal(repliesAfterMissingModel.at(-1)?.content, 'ACP reply completed.');
     assert.equal(memoryRepo.list({ projectId: project.id, roomId: room.id }).length, 0);
   } finally {
@@ -4102,11 +4153,21 @@ test('respondAsAgent registers structured markdown documents into resource asset
   }
 });
 
-test('dispatchUserMessage replies with configured model when fallback reply has no agent target', async () => {
+test('dispatchUserMessage routes configured model fallback rooms through planner first', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-test-'));
   const project = projectRepo.create({ name: `model-chat-${Date.now()}`, path: projectPath });
   projectRepo.updateRouting(project.id, { message_routing_mode: 'fallback_reply', fallback_agent_id: 'missing-planner' });
-  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
   settingsRepo.updateRoom(room.id, {
     message_routing_mode: 'fallback_reply',
     fallback_agent_id: 'missing-planner',
@@ -4119,35 +4180,57 @@ test('dispatchUserMessage replies with configured model when fallback reply has 
     content: '你好，给我一句回复',
     message_type: 'text',
   });
+  const originalAdapter = adapters.codex;
+  let modelInvoked = false;
+  let plannerInvoked = 0;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      plannerInvoked += 1;
+      args.onChunk?.({ stream: 'stdout', text: 'planner reply' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
 
   try {
     await dispatchUserMessage({
       roomId: room.id,
       userMessage: message,
       modelChatInvoker: {
-        async invoke(messages) {
-          assert.equal(messages.length, 2);
-          return '模型回复成功';
+        async invoke() {
+          modelInvoked = true;
+          return '模型回复不应被使用';
         },
       },
     });
 
     const messages = messageRepo.listByRoom(room.id);
-    const modelReply = messages.find((item) => item.sender_id === 'model-chat');
-    assert.ok(modelReply);
-    assert.equal(modelReply.sender_type, 'agent');
-    assert.equal(modelReply.sender_name, 'Model Chat');
-    assert.equal(modelReply.content, '模型回复成功');
+    const plannerReply = messages.find((item) => item.sender_id === 'planner');
+    assert.equal(plannerInvoked, 1);
+    assert.equal(modelInvoked, false);
+    assert.ok(plannerReply);
+    assert.equal(plannerReply.content, 'planner reply');
   } finally {
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });
 
-test('dispatchUserMessage stays silent in mentions-only mode without mentions', async () => {
-  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-mentions-only-silent-'));
-  const project = projectRepo.create({ name: `mentions-only-silent-${Date.now()}`, path: projectPath });
+test('dispatchUserMessage routes mentions-only messages through planner', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-mentions-only-planner-'));
+  const project = projectRepo.create({ name: `mentions-only-planner-${Date.now()}`, path: projectPath });
   projectRepo.updateRouting(project.id, { message_routing_mode: 'mentions_only', fallback_agent_id: null });
-  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
   settingsRepo.updateRoom(room.id, {
     message_routing_mode: 'mentions_only',
     fallback_agent_id: null,
@@ -4160,24 +4243,28 @@ test('dispatchUserMessage stays silent in mentions-only mode without mentions', 
     content: '无 @ 时不要回复',
     message_type: 'text',
   });
-  let invoked = false;
+  const originalAdapter = adapters.codex;
+  let invoked = 0;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      invoked += 1;
+      args.onChunk?.({ stream: 'stdout', text: 'planner reply' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
 
   try {
     await dispatchUserMessage({
       roomId: room.id,
       userMessage: message,
-      modelChatInvoker: {
-        async invoke() {
-          invoked = true;
-          return '不应该出现';
-        },
-      },
     });
 
-    assert.equal(invoked, false);
+    assert.equal(invoked, 1);
     const messages = messageRepo.listByRoom(room.id);
-    assert.equal(messages.some((item) => item.sender_id === 'model-chat'), false);
+    assert.equal(messages.some((item) => item.sender_id === 'planner'), true);
   } finally {
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
 });
@@ -4185,10 +4272,9 @@ test('dispatchUserMessage stays silent in mentions-only mode without mentions', 
 test('dispatchUserMessage binds routed task context to agent run and task event projections', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-trace-projection-'));
   const project = projectRepo.create({ name: `task-trace-projection-${Date.now()}`, path: projectPath });
-  const room = roomRepo.create({ project_id: project.id, name: 'Room', ensureDefaultPlanner: false });
-  const global = agentRepo.getByAgentId('backend-executor');
-  assert.ok(global);
-  const agent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: global.id });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.listByRoom(room.id).find((item) => item.agent_id === 'planner');
+  assert.ok(agent);
   roomAgentRepo.setAcp(agent.id, {
     acp_enabled: true,
     acp_backend: 'codex',
@@ -4285,7 +4371,7 @@ test('dispatchUserMessage binds routed task context to agent run and task event 
   }
 });
 
-test('dispatchUserMessage passes model_chat skill context to configured model fallback', async () => {
+test('dispatchUserMessage keeps model_chat fallback behind planner routing', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-skill-runtime-'));
   const skillPath = await mkdtemp(join(tmpdir(), 'openclaw-room-model-chat-skill-dir-'));
   await mkdir(skillPath, { recursive: true });
@@ -4298,6 +4384,16 @@ test('dispatchUserMessage passes model_chat skill context to configured model fa
   ].join('\n'));
   const project = projectRepo.create({ name: `model-chat-runtime-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
   settingsRepo.updateRoom(room.id, {
     message_routing_mode: 'fallback_reply',
     fallback_agent_id: 'missing-planner',
@@ -4328,23 +4424,34 @@ test('dispatchUserMessage passes model_chat skill context to configured model fa
     content: '请调用模型聊天技能',
     message_type: 'text',
   });
-  let capturedSystem = '';
+  const originalAdapter = adapters.codex;
+  let modelInvoked = false;
+  let plannerInvoked = 0;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      plannerInvoked += 1;
+      args.onChunk?.({ stream: 'stdout', text: 'planner skill route reply' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
 
   try {
     await dispatchUserMessage({
       roomId: room.id,
       userMessage: message,
       modelChatInvoker: {
-        async invoke(messages) {
-          capturedSystem = String(messages[0]?.content);
-          return '模型技能回复成功';
+        async invoke() {
+          modelInvoked = true;
+          return '模型技能回复不应被使用';
         },
       },
     });
 
-    assert.match(capturedSystem, /OpenDeepSea active skills for this runtime/);
-    assert.match(capturedSystem, /Skill: model-chat-runtime-skill/);
+    assert.equal(plannerInvoked, 1);
+    assert.equal(modelInvoked, false);
   } finally {
+    adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
     await rm(skillPath, { recursive: true, force: true });
   }

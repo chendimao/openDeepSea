@@ -627,12 +627,9 @@ function resolveInitialTargets(args: {
   prompt: string;
   imagePaths?: string[];
 }): { targets: { agent: RoomAgent; prompt: string; internalMessage?: boolean }[] } {
-  if (args.explicitlyMentionedAgents.length > 0) {
-    return {
-      targets: args.explicitlyMentionedAgents.map((agent) => ({ agent, prompt: args.prompt })),
-    };
-  }
-  if (args.mode === 'mentions_only' || !args.fallbackAgentId) return { targets: [] };
+  const planner = args.allAgents.find((agent) => agent.agent_id === 'planner');
+  if (planner) return { targets: [{ agent: planner, prompt: args.prompt }] };
+  if (!args.fallbackAgentId) return { targets: [] };
   const fallbackAgent = args.allAgents.find((agent) => agent.agent_id === args.fallbackAgentId);
   if (!fallbackAgent) return { targets: [] };
   return {
