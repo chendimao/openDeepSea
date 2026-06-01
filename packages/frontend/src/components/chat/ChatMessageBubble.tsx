@@ -276,6 +276,7 @@ export function ChatMessageBubble({
                 roomAgents={roomAgents}
                 globalAgents={globalAgents}
                 suppressPlannerDecisionSummary={showPlannerDecisionPanel}
+                suppressTraceEvents={!isUser}
                 roomId={roomId}
               />
             ) : message.message_type === 'agent_stream' ? (
@@ -285,6 +286,7 @@ export function ChatMessageBubble({
                 trace={metadata.trace}
                 roomAgents={roomAgents}
                 globalAgents={globalAgents}
+                suppressTraceEvents={!isUser}
                 roomId={roomId}
               />
             ) : null}

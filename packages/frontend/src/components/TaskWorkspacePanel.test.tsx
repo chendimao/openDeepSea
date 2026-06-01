@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TaskWorkspacePanel } from './TaskWorkspacePanel';
 import type { TaskLayerVisibility } from './TaskDetailPanel';
+import { I18nProvider } from '../lib/i18n';
 import type {
   AgentRun,
   Message,
@@ -15,6 +17,8 @@ import type {
   WorkflowRun,
 } from '../lib/types';
 
+setupBrowserStubs();
+
 const layers: TaskLayerVisibility = {
   chat: true,
   activity: true,
@@ -25,32 +29,34 @@ const layers: TaskLayerVisibility = {
 
 test('TaskWorkspacePanel renders queue and active task surface together', () => {
   const html = renderToStaticMarkup(
-    <TaskWorkspacePanel
-      tasks={[task('task-active', '实现任务工作区'), task('task-next', '浏览器闭环验证')]}
-      activeTask={task('task-active', '实现任务工作区')}
-      activeTaskId="task-active"
-      statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
-      activityEvents={[event('activity-1', 'message_routed', 'activity')]}
-      messages={[plannerMessage('message-planner', 'task-active')]}
-      agentRuns={[agentRun('run-1', 'task-active')]}
-      taskEvents={[
-        event('diff-1', 'diff_detected', 'diff', { path: 'src/index.ts', additions: 2, deletions: 1 }),
-        event('runtime-1', 'runtime_event', 'runtime', { command: 'npm run build', output: 'ok' }),
-      ]}
-      taskEventsLoading={false}
-      agents={[agent('agent-row-1', 'Codex')]}
-      workflows={[] as WorkflowRun[]}
-      layerVisibility={layers}
-      onStatusFiltersChange={() => undefined}
-      onSelectTask={() => undefined}
-      onLocateSourceMessage={() => undefined}
-      onClearActiveTask={() => undefined}
-      t={(key) => key}
-      formatRelativeTime={(value) => `${value}`}
-      taskStatusLabel={(value) => value}
-      taskPriorityLabel={(value) => value}
-      interactionModeLabel={(value) => value}
-    />,
+    <TaskWorkspaceTestProvider>
+      <TaskWorkspacePanel
+        tasks={[task('task-active', '实现任务工作区'), task('task-next', '浏览器闭环验证')]}
+        activeTask={task('task-active', '实现任务工作区')}
+        activeTaskId="task-active"
+        statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
+        activityEvents={[event('activity-1', 'message_routed', 'activity')]}
+        messages={[plannerMessage('message-planner', 'task-active'), traceMessage('message-trace', 'task-active')]}
+        agentRuns={[agentRun('run-1', 'task-active')]}
+        taskEvents={[
+          event('diff-1', 'diff_detected', 'diff', { path: 'src/index.ts', additions: 2, deletions: 1 }),
+          event('runtime-1', 'runtime_event', 'runtime', { command: 'npm run build', output: 'ok' }),
+        ]}
+        taskEventsLoading={false}
+        agents={[agent('agent-row-1', 'Codex')]}
+        workflows={[] as WorkflowRun[]}
+        layerVisibility={layers}
+        onStatusFiltersChange={() => undefined}
+        onSelectTask={() => undefined}
+        onLocateSourceMessage={() => undefined}
+        onClearActiveTask={() => undefined}
+        t={(key) => key}
+        formatRelativeTime={(value) => `${value}`}
+        taskStatusLabel={(value) => value}
+        taskPriorityLabel={(value) => value}
+        interactionModeLabel={(value) => value}
+      />
+    </TaskWorkspaceTestProvider>,
   );
 
   assert.match(html, /task-workspace-panel/);
@@ -60,6 +66,9 @@ test('TaskWorkspacePanel renders queue and active task surface together', () => 
   assert.match(html, /taskWorkspace.activeTask/);
   assert.match(html, /Records/);
   assert.match(html, /规划决策/);
+  assert.match(html, /ACP 流转记录/);
+  assert.match(html, /ACP 执行过程/);
+  assert.match(html, /Read · package\.json/);
   assert.match(html, /Codex/);
   assert.doesNotMatch(html, /src\/index\.ts/);
   assert.doesNotMatch(html, /npm run build/);
@@ -67,34 +76,51 @@ test('TaskWorkspacePanel renders queue and active task surface together', () => 
 
 test('TaskWorkspacePanel keeps task selection explicit when no task is active', () => {
   const html = renderToStaticMarkup(
-    <TaskWorkspacePanel
-      tasks={[task('task-next', '选择后才激活')]}
-      activeTask={null}
-      activeTaskId={null}
-      statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
-      activityEvents={[]}
-      taskEvents={[]}
-      messages={[]}
-      agentRuns={[]}
-      taskEventsLoading={false}
-      agents={[]}
-      workflows={[]}
-      layerVisibility={layers}
-      onStatusFiltersChange={() => undefined}
-      onSelectTask={() => undefined}
-      onLocateSourceMessage={() => undefined}
-      onClearActiveTask={() => undefined}
-      t={(key) => key}
-      formatRelativeTime={(value) => `${value}`}
-      taskStatusLabel={(value) => value}
-      taskPriorityLabel={(value) => value}
-      interactionModeLabel={(value) => value}
-    />,
+    <TaskWorkspaceTestProvider>
+      <TaskWorkspacePanel
+        tasks={[task('task-next', '选择后才激活')]}
+        activeTask={null}
+        activeTaskId={null}
+        statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
+        activityEvents={[]}
+        taskEvents={[]}
+        messages={[]}
+        agentRuns={[]}
+        taskEventsLoading={false}
+        agents={[]}
+        workflows={[]}
+        layerVisibility={layers}
+        onStatusFiltersChange={() => undefined}
+        onSelectTask={() => undefined}
+        onLocateSourceMessage={() => undefined}
+        onClearActiveTask={() => undefined}
+        t={(key) => key}
+        formatRelativeTime={(value) => `${value}`}
+        taskStatusLabel={(value) => value}
+        taskPriorityLabel={(value) => value}
+        interactionModeLabel={(value) => value}
+      />
+    </TaskWorkspaceTestProvider>,
   );
 
   assert.match(html, /taskWorkspace.selectTaskTitle/);
   assert.doesNotMatch(html, /data-active="true"/);
 });
+
+function TaskWorkspaceTestProvider({ children }: { children: React.ReactNode }): JSX.Element {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  return (
+    <I18nProvider>
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    </I18nProvider>
+  );
+}
 
 function task(id: string, title: string): Task {
   return {
@@ -191,6 +217,40 @@ function plannerMessage(id: string, taskId: string): Message {
   };
 }
 
+function traceMessage(id: string, taskId: string): Message {
+  return {
+    id,
+    room_id: 'room-1',
+    sender_type: 'agent',
+    sender_id: 'codex',
+    sender_name: 'Codex',
+    content: '已完成文件读取',
+    message_type: 'text',
+    layer: 'chat',
+    metadata: JSON.stringify({
+      attachments: [],
+      task_id: taskId,
+      trace: {
+        events: [
+          {
+            id: 'trace-tool-1',
+            message_id: id,
+            run_id: 'run-1',
+            agent_id: 'codex',
+            seq: 1,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果 Read',
+            payload: { id: 'read-1', name: 'Read', input: '{"path":"package.json"}' },
+            created_at: 4,
+          },
+        ],
+      },
+    }),
+    created_at: 4,
+  };
+}
+
 function agentRun(id: string, taskId: string): AgentRun {
   return {
     id,
@@ -214,4 +274,25 @@ function agentRun(id: string, taskId: string): AgentRun {
     updated_at: 3,
     completed_at: 3,
   };
+}
+
+function setupBrowserStubs(): void {
+  Object.assign(globalThis, { React });
+
+  if (!('localStorage' in globalThis)) {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: () => null,
+        setItem: () => undefined,
+      },
+      configurable: true,
+    });
+  }
+
+  if (!('document' in globalThis)) {
+    Object.defineProperty(globalThis, 'document', {
+      value: { documentElement: { lang: 'zh' } },
+      configurable: true,
+    });
+  }
 }

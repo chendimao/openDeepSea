@@ -364,6 +364,50 @@ test('renders ACP transcript by interleaving assistant text and tool events', ()
   assert.doesNotMatch(html, /最终正文不应在 transcript 模式重复展示/);
 });
 
+test('can suppress trace events while keeping assistant transcript text', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content="最终正文不应重复展示"
+        suppressTraceEvents
+        trace={{
+          events: [
+            {
+              id: 'text-1',
+              message_id: 'message-1',
+              run_id: 'run-1',
+              agent_id: 'planner',
+              seq: 1,
+              type: 'assistant_message',
+              status: 'delta',
+              title: '助手回复',
+              payload: { text: '这是聊天中保留的回复文字。' },
+              created_at: 1000,
+            },
+            {
+              id: 'read-1',
+              message_id: 'message-1',
+              run_id: 'run-1',
+              agent_id: 'planner',
+              seq: 2,
+              type: 'tool_result',
+              status: 'completed',
+              title: '工具结果 Read',
+              payload: { id: 'read-1', name: 'Read', input: '{"path":"package.json"}' },
+              created_at: 1001,
+            },
+          ],
+        }}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /agent-transcript/);
+  assert.match(html, /这是聊天中保留的回复文字/);
+  assert.doesNotMatch(html, /Read · package\.json/);
+  assert.doesNotMatch(html, /ACP 执行过程/);
+});
+
 test('renders final content as transcript text when assistant_message events are absent', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

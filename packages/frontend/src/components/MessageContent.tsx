@@ -99,6 +99,7 @@ export function MessageContent({
   roomAgents = [],
   globalAgents = [],
   suppressPlannerDecisionSummary = false,
+  suppressTraceEvents = false,
   roomId,
 }: {
   content: string;
@@ -108,6 +109,7 @@ export function MessageContent({
   roomAgents?: RoomAgent[];
   globalAgents?: Agent[];
   suppressPlannerDecisionSummary?: boolean;
+  suppressTraceEvents?: boolean;
   roomId?: string;
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -137,6 +139,7 @@ export function MessageContent({
           streaming={streaming}
           agentNameById={agentNameById}
           suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+          suppressTraceEvents={suppressTraceEvents}
           roomId={roomId}
         />
       ) : (
@@ -179,7 +182,7 @@ export function MessageContent({
               </>
             )}
           </div>
-          <AgentTimeline trace={trace} roomId={roomId} />
+          {!suppressTraceEvents && <AgentTimeline trace={trace} roomId={roomId} />}
         </>
       )}
     </div>
@@ -191,18 +194,22 @@ function AgentTranscriptView({
   streaming,
   agentNameById,
   suppressPlannerDecisionSummary = false,
+  suppressTraceEvents = false,
   roomId,
 }: {
   transcript: AgentTranscriptModel;
   streaming: boolean;
   agentNameById?: Map<string, string>;
   suppressPlannerDecisionSummary?: boolean;
+  suppressTraceEvents?: boolean;
   roomId?: string;
 }): JSX.Element {
   return (
     <div className="agent-transcript">
-      {transcript.items.map((item, index) => (
-        item.type === 'text' ? (
+      {transcript.items.map((item, index) => {
+        if (item.type === 'event' && suppressTraceEvents) return null;
+
+        return item.type === 'text' ? (
           <div key={item.id} className="agent-transcript-text">
             <MarkdownPreview
               content={item.text}
@@ -215,8 +222,8 @@ function AgentTranscriptView({
           <div key={item.id} className="agent-transcript-event">
             <AgentTimelineItem event={item.event} roomId={roomId} presentation="activity" />
           </div>
-        )
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -5496,6 +5496,16 @@
   .task-record-item .agent-run-console pre {
     max-width: 100%;
   }
+  .task-record-trace-item .agent-timeline {
+    margin-top: 7px;
+    max-width: 100%;
+  }
+  .task-record-trace-item .agent-timeline-card,
+  .task-record-trace-item .agent-timeline-body,
+  .task-record-trace-item .agent-timeline-detail-field {
+    min-width: 0;
+    max-width: 100%;
+  }
   .task-record-item-header {
     display: flex;
     min-width: 0;

@@ -5,11 +5,12 @@ import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import type { MessageKey } from '../../lib/i18n';
-import type { AgentRun, Message, PlannerDecision, RoomAgent, Task, WorkflowRun } from '../../lib/types';
+import type { AgentRun, Message, MessageTrace, PlannerDecision, RoomAgent, Task, WorkflowRun } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { createPlannerDispatchInput } from '../../pages/roomPageLogic';
 import { AgentAvatar } from '../AgentAvatar';
 import { AgentRunStatusCard } from '../AgentRunPanel';
+import { AgentTimeline } from '../AgentTimeline';
 import { pairRunsWithAgentMessages } from '../chat/chatMessageModel';
 import { PlannerDecisionPanel } from '../chat/PlannerDecisionPanel';
 import { selectTaskDetailEvents, type TaskLayerVisibility } from '../TaskDetailPanel';
@@ -93,6 +94,15 @@ export function ActiveTaskSurface({
         return metadata.planner_decision ? { message, decision: metadata.planner_decision } : null;
       })
       .filter((record): record is { message: Message; decision: PlannerDecision } => Boolean(record)),
+    [taskMessages],
+  );
+  const traceRecords = useMemo(
+    () => taskMessages
+      .map((message) => {
+        const metadata = parseMessageMetadata(message.metadata);
+        return hasMessageTraceEvents(metadata.trace) ? { message, trace: metadata.trace } : null;
+      })
+      .filter((record): record is { message: Message; trace: MessageTrace } => Boolean(record)),
     [taskMessages],
   );
   const taskAgentRuns = useMemo(
@@ -213,6 +223,7 @@ export function ActiveTaskSurface({
         {activeTab === 'records' && (
           <TaskRecordsTab
             plannerRecords={plannerRecords}
+            traceRecords={traceRecords}
             agentRuns={taskAgentRuns}
             agentByRoomId={agentByRoomId}
             roomId={roomId}
@@ -363,6 +374,7 @@ export function ActiveTaskSurface({
 
 function TaskRecordsTab({
   plannerRecords,
+  traceRecords,
   agentRuns,
   agentByRoomId,
   roomId,
@@ -373,6 +385,7 @@ function TaskRecordsTab({
   emptyLabel,
 }: {
   plannerRecords: Array<{ message: Message; decision: PlannerDecision }>;
+  traceRecords: Array<{ message: Message; trace: MessageTrace }>;
   agentRuns: AgentRun[];
   agentByRoomId: Map<string, RoomAgent>;
   roomId: string;
@@ -382,11 +395,12 @@ function TaskRecordsTab({
   onContinue: (message: Message) => void;
   emptyLabel: string;
 }): JSX.Element {
-  const hasRecords = plannerRecords.length > 0 || agentRuns.length > 0;
+  const hasRecords = plannerRecords.length > 0 || traceRecords.length > 0 || agentRuns.length > 0;
+  const recordCount = plannerRecords.length + traceRecords.length + agentRuns.length;
 
   return (
     <section className="task-detail-card task-records-card task-tab-section">
-      <TaskWorkspacePanelTitle icon={ScrollText} title="Records" subtitle={`${plannerRecords.length + agentRuns.length} items`} />
+      <TaskWorkspacePanelTitle icon={ScrollText} title="Records" subtitle={`${recordCount} items`} />
       <div className="task-record-list">
         {plannerRecords.map(({ message, decision }) => (
           <article key={message.id} className="task-record-item">
@@ -402,6 +416,15 @@ function TaskRecordsTab({
             />
           </article>
         ))}
+        {traceRecords.map(({ message, trace }) => (
+          <article key={`trace:${message.id}`} className="task-record-item task-record-trace-item">
+            <div className="task-record-item-header">
+              <strong>ACP 流转记录</strong>
+              <time>{formatRelativeTime(message.created_at)}</time>
+            </div>
+            <AgentTimeline trace={trace} roomId={roomId} />
+          </article>
+        ))}
         {agentRuns.map((run) => (
           <AgentRunStatusCard
             key={run.id}
@@ -415,6 +438,17 @@ function TaskRecordsTab({
         {!hasRecords && <div className="workspace-empty-row">{emptyLabel}</div>}
       </div>
     </section>
+  );
+}
+
+function hasMessageTraceEvents(trace: MessageTrace | undefined): trace is MessageTrace {
+  return Boolean(
+    trace && (
+      (trace.events?.length ?? 0) > 0 ||
+      (trace.tool_calls?.length ?? 0) > 0 ||
+      (trace.commands?.length ?? 0) > 0 ||
+      (trace.thinking?.length ?? 0) > 0
+    ),
   );
 }
 
