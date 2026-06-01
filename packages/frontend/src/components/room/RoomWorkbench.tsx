@@ -913,6 +913,7 @@ function ChatColumn({
                   roomId={roomId}
                   projectId={projectId}
                   task={task}
+                  tasks={tasks}
                   activeTaskId={activeTaskId}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}

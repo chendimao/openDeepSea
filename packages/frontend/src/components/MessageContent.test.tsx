@@ -3,7 +3,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
-import type { Agent, RoomAgent } from '../lib/types';
+import type { Agent, RoomAgent, Task } from '../lib/types';
 import { MessageContent } from './MessageContent';
 
 setupBrowserStubs();
@@ -218,11 +218,19 @@ test('renders known agent ids in plain text as Chinese agent names', () => {
   assert.doesNotMatch(html, /frontend-reviewer ·/);
 });
 
-test('renders task references as compact chips in message text', () => {
-  const html = renderMessage('继续处理 #task:task-abcdef123456 并通知 planner');
+test('renders task references as compact chips with task title in message text', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content="继续处理 #task:task-abcdef123456 并通知 planner"
+        tasks={[task({ id: 'task-abcdef123456', title: '修复聊天路由' })]}
+      />
+    </I18nProvider>,
+  );
 
   assert.match(html, /message-task-ref-chip/);
-  assert.match(html, /#task:task-a/);
+  assert.match(html, /修复聊天路由/);
+  assert.doesNotMatch(html, />#task:task-a</);
   assert.match(html, /title="#task:task-abcdef123456"/);
 });
 
@@ -566,6 +574,27 @@ function globalAgent(input: Pick<Agent, 'agent_id' | 'name'>): Agent {
     created_at: 1000,
     updated_at: 1000,
     reference_count: 0,
+  };
+}
+
+function task(input: Pick<Task, 'id' | 'title'>): Task {
+  return {
+    id: input.id,
+    room_id: 'room-1',
+    project_id: 'project-1',
+    parent_task_id: null,
+    title: input.title,
+    description: null,
+    status: 'in_progress',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: null,
+    source_message_id: null,
+    created_from: 'manual',
+    created_at: 1000,
+    updated_at: 1000,
+    completed_at: null,
+    deleted_at: null,
   };
 }
 

@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { AgentTimeline, AgentTimelineItem } from './AgentTimeline';
 import { useI18n } from '../lib/i18n';
-import type { Agent, MessageTrace, RoomAgent } from '../lib/types';
+import type { Agent, MessageTrace, RoomAgent, Task } from '../lib/types';
 import { buildAgentTranscript, type AgentTranscriptModel } from './agent-timeline/transcript';
 
 type MessagePart =
@@ -98,6 +98,7 @@ export function MessageContent({
   trace,
   roomAgents = [],
   globalAgents = [],
+  tasks = [],
   suppressPlannerDecisionSummary = false,
   suppressTraceEvents = false,
   roomId,
@@ -108,6 +109,7 @@ export function MessageContent({
   trace?: MessageTrace;
   roomAgents?: RoomAgent[];
   globalAgents?: Agent[];
+  tasks?: Task[];
   suppressPlannerDecisionSummary?: boolean;
   suppressTraceEvents?: boolean;
   roomId?: string;
@@ -115,6 +117,7 @@ export function MessageContent({
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { t } = useI18n();
   const agentNameById = useMemo(() => buildAgentNameMap(roomAgents, globalAgents), [globalAgents, roomAgents]);
+  const taskTitleById = useMemo(() => buildTaskTitleMap(tasks), [tasks]);
   const parts = parseMessage(content);
   const markdown = streaming ? isStableStreamingMarkdownContent(content) : isMarkdownContent(content);
   const activeMode = mode ?? 'preview';
@@ -138,6 +141,7 @@ export function MessageContent({
           transcript={transcript}
           streaming={streaming}
           agentNameById={agentNameById}
+          taskTitleById={taskTitleById}
           suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
           suppressTraceEvents={suppressTraceEvents}
           roomId={roomId}
@@ -150,6 +154,7 @@ export function MessageContent({
                 content={content}
                 streaming={streaming}
                 agentNameById={agentNameById}
+                taskTitleById={taskTitleById}
                 suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
               />
             ) : (
@@ -159,7 +164,7 @@ export function MessageContent({
                     if (!part.value) return null;
                     return (
                       <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
-                        {renderInlineTextReferences(part.value, agentNameById)}
+                        {renderInlineTextReferences(part.value, agentNameById, taskTitleById)}
                         {streaming && index === lastTextPartIndex && <StreamingCursor />}
                       </span>
                     );
@@ -193,6 +198,7 @@ function AgentTranscriptView({
   transcript,
   streaming,
   agentNameById,
+  taskTitleById,
   suppressPlannerDecisionSummary = false,
   suppressTraceEvents = false,
   roomId,
@@ -200,6 +206,7 @@ function AgentTranscriptView({
   transcript: AgentTranscriptModel;
   streaming: boolean;
   agentNameById?: Map<string, string>;
+  taskTitleById?: Map<string, string>;
   suppressPlannerDecisionSummary?: boolean;
   suppressTraceEvents?: boolean;
   roomId?: string;
@@ -215,6 +222,7 @@ function AgentTranscriptView({
               content={item.text}
               streaming={streaming && index === transcript.items.length - 1}
               agentNameById={agentNameById}
+              taskTitleById={taskTitleById}
               suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
             />
           </div>
@@ -277,11 +285,13 @@ export function MarkdownPreview({
   content,
   streaming = false,
   agentNameById,
+  taskTitleById,
   suppressPlannerDecisionSummary = false,
 }: {
   content: string;
   streaming?: boolean;
   agentNameById?: Map<string, string>;
+  taskTitleById?: Map<string, string>;
   suppressPlannerDecisionSummary?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -337,6 +347,7 @@ export function MarkdownPreview({
             text={part.value}
             streaming={streaming && index === lastTextPartIndex}
             agentNameById={agentNameById}
+            taskTitleById={taskTitleById}
           />
         );
       })}
@@ -568,10 +579,12 @@ function MarkdownText({
   text,
   streaming = false,
   agentNameById,
+  taskTitleById,
 }: {
   text: string;
   streaming?: boolean;
   agentNameById?: Map<string, string>;
+  taskTitleById?: Map<string, string>;
 }): JSX.Element {
   const blocks = text.split(/\n{2,}/).filter((block) => block.trim().length > 0);
   return (
@@ -581,6 +594,7 @@ function MarkdownText({
         index,
         streaming && index === blocks.length - 1,
         agentNameById,
+        taskTitleById,
       ))}
     </>
   );
@@ -591,19 +605,20 @@ function renderMarkdownBlock(
   index: number,
   streaming = false,
   agentNameById?: Map<string, string>,
+  taskTitleById?: Map<string, string>,
 ): JSX.Element {
   const trimmed = block.trim();
   const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
   if (heading) {
     const level = Math.min(heading[1].length, 3);
     const Tag = (`h${level}` as keyof JSX.IntrinsicElements);
-    return <Tag key={index}>{renderInlineMarkdown(heading[2], agentNameById)}{streaming && <StreamingCursor />}</Tag>;
+    return <Tag key={index}>{renderInlineMarkdown(heading[2], agentNameById, taskTitleById)}{streaming && <StreamingCursor />}</Tag>;
   }
 
   if (/^>\s+/m.test(trimmed)) {
     return (
       <blockquote key={index}>
-        {renderInlineTextReferences(trimmed.replace(/^>\s?/gm, ''), agentNameById)}
+        {renderInlineTextReferences(trimmed.replace(/^>\s?/gm, ''), agentNameById, taskTitleById)}
         {streaming && <StreamingCursor />}
       </blockquote>
     );
@@ -615,7 +630,7 @@ function renderMarkdownBlock(
       <ul key={index}>
         {lines.map((line, i) => (
           <li key={i}>
-            {renderInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ''), agentNameById)}
+            {renderInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ''), agentNameById, taskTitleById)}
             {streaming && i === lines.length - 1 && <StreamingCursor />}
           </li>
         ))}
@@ -628,7 +643,7 @@ function renderMarkdownBlock(
       <ol key={index}>
         {lines.map((line, i) => (
           <li key={i}>
-            {renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''), agentNameById)}
+            {renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''), agentNameById, taskTitleById)}
             {streaming && i === lines.length - 1 && <StreamingCursor />}
           </li>
         ))}
@@ -650,7 +665,7 @@ function renderMarkdownBlock(
       {lines.map((line, i) => (
         <span key={i}>
           {i > 0 && <br />}
-          {renderInlineMarkdown(line, agentNameById)}
+          {renderInlineMarkdown(line, agentNameById, taskTitleById)}
           {streaming && i === lines.length - 1 && <StreamingCursor />}
         </span>
       ))}
@@ -658,15 +673,25 @@ function renderMarkdownBlock(
   );
 }
 
-function renderInlineMarkdown(text: string, agentNameById?: Map<string, string>): Array<string | JSX.Element> {
+function renderInlineMarkdown(
+  text: string,
+  agentNameById?: Map<string, string>,
+  taskTitleById?: Map<string, string>,
+): Array<string | JSX.Element> {
   const tokens: Array<string | JSX.Element> = [];
   const pattern = /(\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) pushTextWithAgentNames(tokens, text.slice(lastIndex, match.index), match.index, agentNameById);
+    if (match.index > lastIndex) {
+      pushTextWithAgentNames(tokens, text.slice(lastIndex, match.index), match.index, agentNameById, taskTitleById);
+    }
     if (match[2]) {
-      tokens.push(<strong key={match.index}>{renderInlineTextReferences(match[2], agentNameById, `strong-${match.index}`)}</strong>);
+      tokens.push(
+        <strong key={match.index}>
+          {renderInlineTextReferences(match[2], agentNameById, taskTitleById, `strong-${match.index}`)}
+        </strong>,
+      );
     } else if (match[3]) {
       tokens.push(<code key={match.index}>{match[3]}</code>);
     } else if (match[4] && match[5]) {
@@ -679,7 +704,9 @@ function renderInlineMarkdown(text: string, agentNameById?: Map<string, string>)
     }
     lastIndex = match.index + match[0].length;
   }
-  if (lastIndex < text.length) pushTextWithAgentNames(tokens, text.slice(lastIndex), lastIndex, agentNameById);
+  if (lastIndex < text.length) {
+    pushTextWithAgentNames(tokens, text.slice(lastIndex), lastIndex, agentNameById, taskTitleById);
+  }
   return tokens;
 }
 
@@ -694,13 +721,18 @@ function buildAgentNameMap(roomAgents: RoomAgent[], globalAgents: Agent[]): Map<
   return map;
 }
 
+function buildTaskTitleMap(tasks: Task[]): Map<string, string> {
+  return new Map(tasks.map((task) => [task.id, task.title]));
+}
+
 function pushTextWithAgentNames(
   tokens: Array<string | JSX.Element>,
   text: string,
   offset: number,
   agentNameById?: Map<string, string>,
+  taskTitleById?: Map<string, string>,
 ): void {
-  const rendered = renderInlineTextReferences(text, agentNameById, `inline-${offset}`);
+  const rendered = renderInlineTextReferences(text, agentNameById, taskTitleById, `inline-${offset}`);
   if (Array.isArray(rendered)) {
     tokens.push(...rendered);
   } else {
@@ -711,6 +743,7 @@ function pushTextWithAgentNames(
 function renderInlineTextReferences(
   text: string,
   agentNameById?: Map<string, string>,
+  taskTitleById?: Map<string, string>,
   keyPrefix = 'inline',
 ): string | Array<string | JSX.Element> {
   if (!text) return text;
@@ -727,7 +760,13 @@ function renderInlineTextReferences(
       pushMaybeAgentNames(parts, text.slice(lastIndex, match.index), `${keyPrefix}-agent-${lastIndex}`, agentNameById);
     }
     if (prefix) parts.push(prefix);
-    parts.push(<TaskReferenceChip key={`${keyPrefix}-task-${refStart}`} taskId={taskId} />);
+    parts.push(
+      <TaskReferenceChip
+        key={`${keyPrefix}-task-${refStart}`}
+        taskId={taskId}
+        title={taskTitleById?.get(taskId)}
+      />,
+    );
     lastIndex = refStart + `#task:${taskId}`.length;
   }
 
@@ -752,10 +791,11 @@ function pushMaybeAgentNames(
   }
 }
 
-function TaskReferenceChip({ taskId }: { taskId: string }): JSX.Element {
+function TaskReferenceChip({ taskId, title }: { taskId: string; title?: string }): JSX.Element {
+  const label = title?.trim() || `#task:${taskId.slice(0, 6)}`;
   return (
     <span className="message-task-ref-chip" title={`#task:${taskId}`}>
-      {`#task:${taskId.slice(0, 6)}`}
+      {label}
     </span>
   );
 }

@@ -142,6 +142,7 @@ export function TaskWorkspacePanel({
               messages={messages}
               agentRuns={agentRuns}
               roomAgents={agents}
+              tasks={tasks}
               roomId={activeTask.room_id}
               onLocateSourceMessage={
                 activeTask.source_message_id

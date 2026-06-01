@@ -45,6 +45,7 @@ export interface ActiveTaskSurfaceProps {
   messages: Message[];
   agentRuns: AgentRun[];
   roomAgents: RoomAgent[];
+  tasks?: Task[];
   roomId: string;
   onLocateSourceMessage?: () => void;
   onClearActiveTask: () => void;
@@ -65,6 +66,7 @@ export function ActiveTaskSurface({
   messages,
   agentRuns,
   roomAgents,
+  tasks = [],
   roomId,
   onLocateSourceMessage,
   onClearActiveTask,
@@ -209,6 +211,7 @@ export function ActiveTaskSurface({
             agentByRoomId={agentByRoomId}
             roomId={roomId}
             roomAgents={roomAgents}
+            tasks={tasks}
             formatRelativeTime={formatRelativeTime}
             continuing={continuePlanner.isPending}
             onContinue={(message) => {
@@ -359,6 +362,7 @@ function TaskRecordsTab({
   agentByRoomId,
   roomId,
   roomAgents,
+  tasks,
   formatRelativeTime,
   continuing,
   onContinue,
@@ -369,6 +373,7 @@ function TaskRecordsTab({
   agentByRoomId: Map<string, RoomAgent>;
   roomId: string;
   roomAgents: RoomAgent[];
+  tasks: Task[];
   formatRelativeTime: (timestamp: number) => string;
   continuing: boolean;
   onContinue: (message: Message) => void;
@@ -425,6 +430,7 @@ function TaskRecordsTab({
                     content={message.content}
                     trace={metadata.trace}
                     roomAgents={roomAgents}
+                    tasks={tasks}
                     suppressTraceEvents
                     roomId={roomId}
                   />

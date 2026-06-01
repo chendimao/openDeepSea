@@ -31,6 +31,7 @@ export interface ChatMessageBubbleProps {
   roomId: string;
   projectId: string;
   task?: Task;
+  tasks?: Task[];
   activeTaskId?: string | null;
   streaming: boolean;
   displayContent: string;
@@ -53,6 +54,7 @@ export function ChatMessageBubble({
   roomId,
   projectId,
   task,
+  tasks = [],
   activeTaskId,
   streaming,
   displayContent,
@@ -275,6 +277,7 @@ export function ChatMessageBubble({
                 trace={metadata.trace}
                 roomAgents={roomAgents}
                 globalAgents={globalAgents}
+                tasks={tasks}
                 suppressPlannerDecisionSummary={showPlannerDecisionPanel}
                 suppressTraceEvents={!isUser}
                 roomId={roomId}
@@ -286,6 +289,7 @@ export function ChatMessageBubble({
                 trace={metadata.trace}
                 roomAgents={roomAgents}
                 globalAgents={globalAgents}
+                tasks={tasks}
                 suppressTraceEvents={!isUser}
                 roomId={roomId}
               />
