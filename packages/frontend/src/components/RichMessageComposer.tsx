@@ -13,7 +13,7 @@ import { FilePickerDialog } from './FilePickerDialog';
 import { PromptArea } from './prompt-area/prompt-area';
 import { getChipsByTrigger, isSegmentsEmpty, segmentsToPlainText } from './prompt-area/segment-helpers';
 import type { PromptAreaHandle, Segment } from './prompt-area/types';
-import { AGENT_TRIGGER, buildComposerTriggers } from './RichMessageComposer.triggers';
+import { FILE_TRIGGER, buildComposerTriggers, parseFileChipValue } from './RichMessageComposer.triggers';
 import {
   PromptInputActions,
   PromptInputAttachmentShelf,
@@ -44,6 +44,7 @@ interface RichMessageComposerProps {
     mentions?: string[];
     files?: File[];
     fileIds?: string[];
+    fileRefs?: string[];
     replyToMessageId?: string;
   }) => void;
 }
@@ -76,12 +77,12 @@ export function RichMessageComposer({
   const hasContent = !isSegmentsEmpty(segments);
 
   const triggers = useMemo(() => buildComposerTriggers({
-    agents,
+    projectId,
     labels: {
-      mentionMenuAria: t('mention.menuAria'),
-      mentionEmpty: t('mention.empty'),
+      fileMenuAria: t('composer.fileMenuAria'),
+      fileEmpty: t('composer.fileEmpty'),
     },
-  }), [agents, t]);
+  }), [projectId, t]);
 
   const revokeAttachment = (attachment: ComposerAttachment) => {
     if (attachment.kind === 'local' && attachment.previewUrl) {
@@ -193,11 +194,11 @@ export function RichMessageComposer({
 
     if (!content && attachmentsRef.current.length === 0) return;
 
-    const mentionedRoomAgentIds = [
-      ...getChipsByTrigger(segments, AGENT_TRIGGER).map((chip) => chip.value),
-      ...findTypedMentionRoomAgentIds(content, agents),
-    ]
+    const mentionedRoomAgentIds = findTypedMentionRoomAgentIds(content, agents)
       .filter((value, index, values) => values.indexOf(value) === index);
+    const selectedFileRefs = getChipsByTrigger(segments, FILE_TRIGGER)
+      .map((chip) => parseFileChipValue(chip.value))
+      .filter((chip): chip is NonNullable<ReturnType<typeof parseFileChipValue>> => Boolean(chip));
 
     const localFiles = attachmentsRef.current
       .filter((attachment): attachment is Extract<ComposerAttachment, { kind: 'local' }> => attachment.kind === 'local')
@@ -205,12 +206,20 @@ export function RichMessageComposer({
     const fileIds = attachmentsRef.current
       .filter((attachment): attachment is Extract<ComposerAttachment, { kind: 'project' }> => attachment.kind === 'project')
       .map((attachment) => attachment.file.id);
+    const chipProjectFileIds = selectedFileRefs
+      .filter((chip) => chip.kind === 'project')
+      .map((chip) => chip.ref);
+    const fileRefs = selectedFileRefs
+      .filter((chip) => chip.kind === 'workspace')
+      .map((chip) => chip.ref);
+    const mergedFileIds = [...new Set([...fileIds, ...chipProjectFileIds])];
 
     onSend({
       content,
       mentions: mentionedRoomAgentIds.length > 0 ? mentionedRoomAgentIds : undefined,
       files: localFiles.length > 0 ? localFiles : undefined,
-      fileIds: fileIds.length > 0 ? fileIds : undefined,
+      fileIds: mergedFileIds.length > 0 ? mergedFileIds : undefined,
+      fileRefs: fileRefs.length > 0 ? fileRefs : undefined,
       replyToMessageId: getExplicitReplyToMessageId(replyTarget),
     });
   };

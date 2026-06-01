@@ -831,7 +831,7 @@ export interface TaskEvent {
 
 export interface RouteResult {
   taskId: string | null;
-  action: 'append_to_task' | 'switch_task' | 'create_task' | 'ask_user';
+  action: 'append_to_task' | 'switch_task' | 'create_task' | 'ask_user' | 'reply_in_chat';
   confidence: number;
   reason: string;
   reason_code?: RouteReasonCode;
@@ -841,10 +841,8 @@ export type RouteReasonCode =
   | 'explicit_task'
   | 'explicit_task_terminal'
   | 'explicit_task_not_found'
-  | 'active_task'
-  | 'title_match'
   | 'create_task_intent'
-  | 'ambiguous';
+  | 'reply_in_chat';
 
 export interface TaskExecutor {
   id: string;

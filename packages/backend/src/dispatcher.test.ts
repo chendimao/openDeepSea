@@ -1095,6 +1095,14 @@ test('message route dispatches low-confidence chat to fallback planner', async (
   const { restore, calls } = installCountingCodexAdapter();
 
   try {
+    messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: '前面先讨论一下默认回复策略',
+      message_type: 'text',
+    });
     const res = await request(`/api/rooms/${room.id}/messages`, {
       method: 'POST',
       body: JSON.stringify({
@@ -1111,7 +1119,9 @@ test('message route dispatches low-confidence chat to fallback planner', async (
     const messages = messageRepo.listByRoom(room.id, 20);
     const metadata = JSON.parse(userMessage.metadata ?? '{}') as MessageMetadata;
     assert.equal(metadata.intent_result?.intent, 'chat');
-    assert.equal(metadata.route_result?.action, 'ask_user');
+    assert.equal(metadata.route_result?.action, 'reply_in_chat');
+    assert.match(calls.prompts[0] ?? '', /群聊摘要：/);
+    assert.match(calls.prompts[0] ?? '', /前面先讨论一下默认回复策略/);
     assert.ok(messages.some((message) => message.sender_id === 'planner'));
   } finally {
     restore();
@@ -4595,13 +4605,14 @@ async function createRoutedRoom(name: string) {
   return { project, projectPath, room, agent };
 }
 
-function installCountingCodexAdapter(): { calls: { count: number }; restore: () => void } {
-  const calls = { count: 0 };
+function installCountingCodexAdapter(): { calls: { count: number; prompts: string[] }; restore: () => void } {
+  const calls = { count: 0, prompts: [] as string[] };
   const originalAdapter = adapters.codex;
   adapters.codex = {
     ...originalAdapter,
-    async invoke() {
+    async invoke(args) {
       calls.count += 1;
+      calls.prompts.push(args.prompt);
       return { exitCode: 0, sessionId: null, stdout: 'unexpected ACP dispatch', stderr: '' };
     },
   } satisfies SessionAdapter;

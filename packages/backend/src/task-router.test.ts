@@ -32,29 +32,27 @@ test('routeMessage prefers explicit task id references over active task', () => 
   });
 
   assert.equal(result.taskId, explicit.id);
-  assert.equal(result.action, 'switch_task');
+  assert.equal(result.action, 'append_to_task');
   assert.equal(result.confidence, 1);
   assert.match(result.reason, /显式/);
 });
 
-test('routeMessage switches active task for explicit references to another routable task', () => {
+test('routeMessage supports explicit hash task prefixes', () => {
   const { project, room } = createRoomFixture();
   const explicit = taskRepo.create({ project_id: project.id, room_id: room.id, title: '显式任务' });
-  const active = taskRepo.create({ project_id: project.id, room_id: room.id, title: '激活任务' });
 
   const result = routeMessage({
     roomId: room.id,
-    message: `切到 #task:${explicit.id} 继续`,
-    activeTaskId: active.id,
+    message: `#${explicit.id.slice(0, 8)} 继续`,
   });
 
   assert.equal(result.taskId, explicit.id);
-  assert.equal(result.action, 'switch_task');
+  assert.equal(result.action, 'append_to_task');
   assert.equal(result.confidence, 1);
-  assert.match(result.reason, /切换/);
+  assert.match(result.reason, /显式/);
 });
 
-test('routeMessage uses active task when there is no explicit task reference', () => {
+test('routeMessage ignores active task when there is no explicit task reference', () => {
   const { project, room } = createRoomFixture();
   const active = taskRepo.create({ project_id: project.id, room_id: room.id, title: '激活任务' });
 
@@ -64,13 +62,13 @@ test('routeMessage uses active task when there is no explicit task reference', (
     activeTaskId: active.id,
   });
 
-  assert.equal(result.taskId, active.id);
-  assert.equal(result.action, 'append_to_task');
-  assert.equal(result.confidence, 0.9);
-  assert.match(result.reason, /激活任务/);
+  assert.equal(result.taskId, null);
+  assert.equal(result.action, 'reply_in_chat');
+  assert.equal(result.confidence, 0);
+  assert.match(result.reason, /全局聊天/);
 });
 
-test('routeMessage does not append to terminal active tasks', () => {
+test('routeMessage ignores terminal active tasks', () => {
   const { project, room } = createRoomFixture();
   const failed = taskRepo.create({ project_id: project.id, room_id: room.id, title: '失败任务' });
   taskRepo.updateStatus(failed.id, 'failed');
@@ -82,8 +80,8 @@ test('routeMessage does not append to terminal active tasks', () => {
   });
 
   assert.equal(result.taskId, null);
-  assert.equal(result.action, 'ask_user');
-  assert.match(result.reason, /无法确定/);
+  assert.equal(result.action, 'reply_in_chat');
+  assert.match(result.reason, /全局聊天/);
 });
 
 test('routeMessage does not append to explicit terminal task references', () => {
@@ -102,9 +100,9 @@ test('routeMessage does not append to explicit terminal task references', () => 
   assert.match(result.reason, /不可接收新消息/);
 });
 
-test('routeMessage matches an open task by title tokens when no task is active', () => {
+test('routeMessage does not infer task routing from title tokens', () => {
   const { project, room } = createRoomFixture();
-  const matched = taskRepo.create({ project_id: project.id, room_id: room.id, title: '修复登录错误' });
+  taskRepo.create({ project_id: project.id, room_id: room.id, title: '修复登录错误' });
   taskRepo.create({ project_id: project.id, room_id: room.id, title: '优化构建速度' });
 
   const result = routeMessage({
@@ -112,13 +110,13 @@ test('routeMessage matches an open task by title tokens when no task is active',
     message: '登录错误还有一个边界情况要补',
   });
 
-  assert.equal(result.taskId, matched.id);
-  assert.equal(result.action, 'append_to_task');
-  assert.ok(result.confidence >= 0.65);
-  assert.match(result.reason, /标题匹配/);
+  assert.equal(result.taskId, null);
+  assert.equal(result.action, 'reply_in_chat');
+  assert.equal(result.confidence, 0);
+  assert.match(result.reason, /全局聊天/);
 });
 
-test('routeMessage asks user instead of guessing when confidence is low', () => {
+test('routeMessage keeps ordinary chat global instead of asking user', () => {
   const { project, room } = createRoomFixture();
   taskRepo.create({ project_id: project.id, room_id: room.id, title: '修复登录错误' });
 
@@ -128,9 +126,9 @@ test('routeMessage asks user instead of guessing when confidence is low', () => 
   });
 
   assert.equal(result.taskId, null);
-  assert.equal(result.action, 'ask_user');
+  assert.equal(result.action, 'reply_in_chat');
   assert.equal(result.confidence, 0);
-  assert.match(result.reason, /无法确定/);
+  assert.match(result.reason, /全局聊天/);
 });
 
 test('routeMessage creates a task for clear standalone work when no task matches', () => {

@@ -1,55 +1,51 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { RoomAgent } from '../lib/types';
 import { getExplicitReplyToMessageId } from './RichMessageComposer.model';
-import { buildComposerTriggers } from './RichMessageComposer.triggers';
-import type { TriggerConfig, TriggerSuggestion } from './prompt-area/types';
+import { FILE_TRIGGER, buildFileSuggestions, encodeFileChipValue, parseFileChipValue } from './RichMessageComposer.triggers';
 
-test('buildComposerTriggers only registers agent mention trigger in pure ACP chat mode', () => {
-  const agent: RoomAgent = {
-    id: 'room-agent-1',
-    room_id: 'room-1',
-    global_agent_id: null,
-    agent_id: 'planner',
-    agent_name: 'Planner',
-    agent_role: null,
-    preferred_user_name: null,
-    personality: null,
-    rules: null,
-    responsibilities: null,
-    workflow_role: null,
-    capabilities: [],
-    default_runtime: 'acp',
-    runtime_backend: null,
-    tool_policy: null,
-    workspace_policy: null,
-    memory_scope: null,
-    joined_at: 1,
-    left_at: null,
-    acp_enabled: 1,
-    acp_backend: 'codex',
-    acp_session_id: null,
-    acp_session_label: null,
-    acp_permission_mode: 'workspace-write',
-    acp_writable_dirs: [],
-  };
-
-  const triggers = buildComposerTriggers({
-    agents: [agent],
-    labels: {
-      mentionMenuAria: 'mention menu',
-      mentionEmpty: 'No agents',
-    },
+test('file trigger helpers encode project and workspace references', () => {
+  assert.equal(FILE_TRIGGER, '@');
+  assert.equal(encodeFileChipValue('project', 'file-1'), 'project:file-1');
+  assert.deepEqual(parseFileChipValue('workspace:src/App.tsx'), {
+    kind: 'workspace',
+    ref: 'src/App.tsx',
   });
+  assert.equal(parseFileChipValue('agent:planner'), null);
+});
 
-  const mentionTrigger = triggers.find((trigger) => trigger.char === '@');
-  assert.equal(mentionTrigger?.position, 'any');
-  assert.equal(mentionTrigger?.mode, 'dropdown');
-  const mentionResults = asSuggestions(mentionTrigger?.onSearch?.('', { signal: new AbortController().signal }));
-  assert.equal(mentionResults?.[0]?.value, 'room-agent-1');
-  assert.equal(mentionResults?.[0]?.label, 'Planner');
-  assert.equal(mentionResults?.[0]?.data, agent);
-  assert.equal(triggers.some((trigger) => trigger.char === '/'), false);
+test('buildFileSuggestions merges project and workspace references', () => {
+  const suggestions = buildFileSuggestions(
+    [{
+      id: 'file-1',
+      project_id: 'project-1',
+      source_type: 'uploaded_file',
+      original_name: 'report.md',
+      stored_name: 'report.md',
+      mime_type: 'text/markdown',
+      size: 100,
+      url: '/uploads/report.md',
+      storage_path: 'report.md',
+      uploaded_by_id: 'user',
+      uploaded_by_name: 'You',
+      source_message_id: null,
+      source_room_id: null,
+      source_agent_id: null,
+      source_task_id: null,
+      content: null,
+      created_at: 1,
+      deleted_at: null,
+      reference_count: 0,
+      last_referenced_at: null,
+      last_referenced_message_id: null,
+      last_referenced_room_id: null,
+      last_referenced_room_name: null,
+    }],
+    [{ path: 'src/report.md', name: 'report.md', type: 'file' }],
+    'report',
+  );
+
+  assert.equal(suggestions[0]?.value, 'project:file-1');
+  assert.equal(suggestions.some((suggestion) => suggestion.value === 'workspace:src/report.md'), true);
 });
 
 test('getExplicitReplyToMessageId only returns explicit reply targets', () => {
@@ -73,14 +69,3 @@ test('getExplicitReplyToMessageId only returns explicit reply targets', () => {
   );
   assert.equal(getExplicitReplyToMessageId(null), undefined);
 });
-
-function asSuggestions(
-  value: ReturnType<NonNullable<TriggerConfig['onSearch']>> | undefined,
-): TriggerSuggestion[] | undefined {
-  assert.ok(!isPromise(value));
-  return value;
-}
-
-function isPromise(value: unknown): value is Promise<unknown> {
-  return typeof value === 'object' && value !== null && 'then' in value;
-}

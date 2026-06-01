@@ -59,13 +59,13 @@ test('shouldAskUserForIntent returns true for low-confidence intent results', ()
   assert.equal(shouldAskUserForIntent(lowConfidence), true);
 });
 
-test('applyIntentToRouteResult upgrades ask_user to create_task for high-confidence task-like intent', () => {
+test('applyIntentToRouteResult upgrades global chat route to create_task for high-confidence task-like intent', () => {
   const askUserRouteResult: RouteResult = {
     taskId: null,
-    action: 'ask_user',
+    action: 'reply_in_chat',
     confidence: 0,
-    reason: '无法确定消息应归属哪个任务',
-    reason_code: 'ambiguous',
+    reason: '未显式引用任务，按全局聊天回复',
+    reason_code: 'reply_in_chat',
   };
   const intentResult: MessageIntentResult = {
     intent: 'light_task',
@@ -80,13 +80,13 @@ test('applyIntentToRouteResult upgrades ask_user to create_task for high-confide
   assert.equal(next.reason_code, 'create_task_intent');
 });
 
-test('applyIntentToRouteResult upgrades active task routing for high-confidence task-like intent', () => {
+test('applyIntentToRouteResult upgrades non-explicit task routing for high-confidence task-like intent', () => {
   const activeTaskRouteResult: RouteResult = {
     taskId: 'task-1',
     action: 'append_to_task',
     confidence: 0.9,
-    reason: '使用当前激活任务：旧任务',
-    reason_code: 'active_task',
+    reason: '旧的非显式任务路由',
+    reason_code: 'reply_in_chat',
   };
   const intentResult: MessageIntentResult = {
     intent: 'workflow',
@@ -130,13 +130,13 @@ test('applyIntentToRouteResult preserves explicit task routing and explicit term
   assert.equal(applyIntentToRouteResult(terminalAsk, intentResult).action, 'ask_user');
 });
 
-test('applyIntentToRouteResult preserves strong title match routing', () => {
-  const titleMatch: RouteResult = {
+test('applyIntentToRouteResult preserves explicit task routing for high-confidence intent', () => {
+  const explicitMatch: RouteResult = {
     taskId: 'task-1',
     action: 'append_to_task',
-    confidence: 0.9,
-    reason: '标题匹配任务：登录错误',
-    reason_code: 'title_match',
+    confidence: 1,
+    reason: '显式任务引用：task-1',
+    reason_code: 'explicit_task',
   };
   const intentResult: MessageIntentResult = {
     intent: 'debugger',
@@ -146,7 +146,7 @@ test('applyIntentToRouteResult preserves strong title match routing', () => {
     reason: '匹配到 debugger 关键词',
   };
 
-  const next = applyIntentToRouteResult(titleMatch, intentResult);
+  const next = applyIntentToRouteResult(explicitMatch, intentResult);
 
   assert.equal(next.action, 'append_to_task');
   assert.equal(next.taskId, 'task-1');
@@ -158,7 +158,7 @@ test('applyIntentToRouteResult keeps ask_user when intent confidence is low', ()
     action: 'ask_user',
     confidence: 0,
     reason: '无法确定消息应归属哪个任务',
-    reason_code: 'ambiguous',
+    reason_code: 'reply_in_chat',
   };
   const intentResult: MessageIntentResult = {
     intent: 'debugger',

@@ -598,12 +598,12 @@ test('multipart message creates a task for clear create-task intent', async () =
   assert.equal(taskEventRepo.listByTask(tasks[0]!.id).some((event) => event.type === 'message_routed'), true);
 });
 
-test('multipart message routes to the active task', async () => {
+test('multipart message routes to explicit hash task references', async () => {
   const project = createProject('multipart-active-task');
   const room = roomRepo.create({ project_id: project.id, name: 'File Room' });
   const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: '附件审查' });
   const form = new FormData();
-  form.append('content', '补充一份附件说明');
+  form.append('content', `#task:${task.id} 补充一份附件说明`);
   form.append('active_task_id', task.id);
   form.append('files', new Blob(['details'], { type: 'text/plain' }), 'details.txt');
 

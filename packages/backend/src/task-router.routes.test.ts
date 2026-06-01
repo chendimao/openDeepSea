@@ -63,17 +63,17 @@ function resetDispatchCalls(): void {
   dispatchCalls.length = 0;
 }
 
-test('POST /rooms/:roomId/messages records task routing metadata and activity event', async () => {
+test('POST /rooms/:roomId/messages keeps title-like messages in global chat', async () => {
   const project = projectRepo.create({
     name: 'Task Router Route',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-route-project-')),
   });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
-  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: '修复登录错误' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: '同步侧栏文案' });
 
   const res = await request(`/api/rooms/${room.id}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ content: '登录错误还有一个边界要补' }),
+    body: JSON.stringify({ content: '同步侧栏文案这里还有一个想法' }),
   });
 
   assert.equal(res.status, 201);
@@ -82,18 +82,16 @@ test('POST /rooms/:roomId/messages records task routing metadata and activity ev
     task_id?: string;
     route_result?: { action: string; taskId: string | null; reason: string };
   };
-  assert.equal(metadata.task_id, task.id);
-  assert.equal(metadata.route_result?.taskId, task.id);
-  assert.equal(metadata.route_result?.action, 'append_to_task');
+  assert.equal(metadata.task_id, undefined);
+  assert.equal(metadata.route_result?.taskId, null);
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
 
   const events = taskEventRepo.listByTask(task.id, { layer: 'activity' });
   const routeEvent = events.find((event) => event.type === 'message_routed');
-  assert.ok(routeEvent);
-  assert.equal(routeEvent.payload.message_id, message.id);
-  assert.equal(routeEvent.payload.route_action, 'append_to_task');
+  assert.equal(routeEvent, undefined);
 });
 
-test('POST /rooms/:roomId/messages broadcasts activation when explicit routing switches task', async () => {
+test('POST /rooms/:roomId/messages records explicit task routing without switching selection', async () => {
   const project = projectRepo.create({
     name: 'Task Router Switch Route',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-switch-route-project-')),
@@ -119,19 +117,19 @@ test('POST /rooms/:roomId/messages broadcasts activation when explicit routing s
       route_result?: { action: string; taskId: string | null; reason: string };
     };
     assert.equal(metadata.task_id, explicit.id);
-    assert.equal(metadata.route_result?.action, 'switch_task');
+    assert.equal(metadata.route_result?.action, 'append_to_task');
     assert.equal(
       events.some((event) =>
         event.type === 'task:activated' &&
         event.roomId === room.id &&
         event.taskId === explicit.id
       ),
-      true,
+      false,
     );
 
     const routeEvent = taskEventRepo.listByTask(explicit.id, { layer: 'activity' })
       .find((event) => event.type === 'message_routed');
-    assert.equal(routeEvent?.payload.route_action, 'switch_task');
+    assert.equal(routeEvent?.payload.route_action, 'append_to_task');
   } finally {
     events.restore();
   }
@@ -193,7 +191,7 @@ test('POST /rooms/:roomId/messages creates a task for clear create-task intent',
   }
 });
 
-test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', async () => {
+test('POST /rooms/:roomId/messages keeps ordinary low-confidence chat global', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Task Router Ask User Route',
@@ -213,7 +211,7 @@ test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', a
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     route_result?: { action: string; taskId: string | null; reason: string };
   };
-  assert.equal(metadata.route_result?.action, 'ask_user');
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
   assert.equal(metadata.route_result?.taskId, null);
 
   const systemMessages = await (await request(`/api/rooms/${room.id}/messages`)).json() as Array<{
@@ -228,7 +226,7 @@ test('POST /rooms/:roomId/messages surfaces low-confidence routing decisions', a
       itemMetadata.event_type === 'message_route_uncertain' &&
       itemMetadata.route_action === 'ask_user';
   });
-  assert.ok(routePrompt);
+  assert.equal(routePrompt, undefined);
 });
 
 test('POST /rooms/:roomId/messages records chat intent without creating task', async () => {
@@ -500,7 +498,7 @@ test('POST /rooms/:roomId/messages can use injected classifier for ambiguous int
   assert.equal(metadata.route_result?.action, 'create_task');
 });
 
-test('POST /rooms/:roomId/messages still dispatches ask_user messages with explicit mentions', async () => {
+test('POST /rooms/:roomId/messages still dispatches global chat messages with explicit mentions', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Task Router Ask User Mention Route',
@@ -522,7 +520,7 @@ test('POST /rooms/:roomId/messages still dispatches ask_user messages with expli
   assert.deepEqual(dispatchCalls[0]?.mentionedAgentRoomIds, ['room-agent-1']);
 });
 
-test('POST /rooms/:roomId/messages ignores terminal active task when routing', async () => {
+test('POST /rooms/:roomId/messages ignores active task when routing', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Task Router Terminal Active Route',
@@ -548,7 +546,7 @@ test('POST /rooms/:roomId/messages ignores terminal active task when routing', a
     route_result?: { action: string; taskId: string | null; reason: string };
   };
   assert.equal(metadata.task_id, undefined);
-  assert.equal(metadata.route_result?.action, 'ask_user');
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
   assert.equal(metadata.route_result?.taskId, null);
   assert.equal(taskEventRepo.listByTask(failed.id).some((event) => event.type === 'message_routed'), false);
 });

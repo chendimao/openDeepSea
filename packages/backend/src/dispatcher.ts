@@ -257,11 +257,15 @@ export async function dispatchUserMessage(args: {
   };
   const messageAttachments = getResolvedMessageAttachments(userMessage);
   const fileRefContext = await buildWorkspaceFileRefContext(project.path, getMessageFileRefs(userMessage.metadata));
+  const roomChatSummary = getMessageTaskId(userMessage.metadata)
+    ? null
+    : buildRoomChatSummary(roomId, userMessage.id);
   const promptWithAttachments = buildPromptWithResolvedMessageContext(
     userMessage.content,
     messageAttachments,
     getResolvedMessageReply(userMessage),
     fileRefContext,
+    roomChatSummary,
   );
   const imagePaths = [
     ...messageAttachments
@@ -414,9 +418,19 @@ function buildPromptWithResolvedMessageContext(
   attachments: ResolvedMessageAttachment[],
   replyTo: ResolvedMessageReply | null,
   fileRefContext?: WorkspaceFileRefContext,
+  roomChatSummary?: string | null,
 ): string {
   const content = userPrompt.trim() || '用户发送了一条仅包含附件的消息。';
   const sections = [content];
+
+  if (roomChatSummary) {
+    sections.push(
+      '',
+      '---',
+      '群聊摘要：',
+      roomChatSummary,
+    );
+  }
 
   if (replyTo) {
     const senderName = replyTo.metadata.sender_name ?? replyTo.metadata.sender_id;
@@ -468,6 +482,31 @@ function buildPromptWithResolvedMessageContext(
     ...attachmentLines,
   );
   return sections.join('\n');
+}
+
+function buildRoomChatSummary(roomId: string, currentMessageId: string): string | null {
+  const lines = messageRepo
+    .listByRoom(roomId, 20)
+    .filter((message) =>
+      message.id !== currentMessageId &&
+      message.layer === 'chat' &&
+      !getMessageTaskId(message.metadata) &&
+      (message.sender_type === 'user' || message.sender_type === 'agent')
+    )
+    .slice(-8)
+    .map((message) => `${formatSummarySender(message)}：${summarizeRoomChatContent(message.content)}`)
+    .filter((line) => line.trim().length > 0);
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+function formatSummarySender(message: Message): string {
+  return message.sender_name || message.sender_id || message.sender_type;
+}
+
+function summarizeRoomChatContent(content: string): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '空消息';
+  return normalized.length <= 220 ? normalized : `${normalized.slice(0, 217).trimEnd()}...`;
 }
 
 function getResolvedMessageReply(userMessage: Message): ResolvedMessageReply | null {

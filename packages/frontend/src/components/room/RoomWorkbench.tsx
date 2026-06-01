@@ -55,7 +55,6 @@ import {
   applyMessageStreamBatch,
   createDefaultReplyTarget,
   createReplyTarget,
-  getRoutableActiveTaskId,
   projectRoomActivityMessages,
   selectConversationMessages,
   type MessageStreamUpdate,
@@ -81,6 +80,7 @@ type SendInput = {
   mentions?: string[];
   files?: File[];
   fileIds?: string[];
+  fileRefs?: string[];
   replyToMessageId?: string;
   activeTaskId?: string | null;
 };
@@ -169,7 +169,6 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     }
     return [...byId.values()];
   }, [messages, roomTaskEventResponse?.events]);
-  const routableActiveTaskId = getRoutableActiveTaskId(activeTask);
   const activateTask = useMutation({
     mutationFn: (task: Task) => api.activateTask(roomId, task.id),
     onMutate: (task) => {
@@ -518,11 +517,9 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
                 registerMessageRef={registerMessageRef}
                 highlightMessageId={highlightMessageId}
                 explicitReplyTarget={explicitReplyTarget}
-                activeTask={activeTask}
-                activeTaskId={routableActiveTaskId}
+                activeTaskId={activeTaskId}
                 onReplyToMessage={replyToMessage}
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
-                onClearActiveTask={clearActiveTask}
                 onLocateReplyTarget={focusMessage}
                 onSelectTask={(task) => {
                   setAutoActiveTaskDismissedRoomId(null);
@@ -761,11 +758,9 @@ function ChatColumn({
   registerMessageRef,
   highlightMessageId,
   explicitReplyTarget,
-  activeTask,
   activeTaskId,
   onReplyToMessage,
   onClearReplyTarget,
-  onClearActiveTask,
   onLocateReplyTarget,
   onSelectTask,
 }: {
@@ -784,11 +779,9 @@ function ChatColumn({
   registerMessageRef: (messageId: string, node: HTMLElement | null) => void;
   highlightMessageId: string | null;
   explicitReplyTarget: ReplyTarget | null;
-  activeTask: Task | null;
   activeTaskId: string | null;
   onReplyToMessage: (message: Message) => void;
   onClearReplyTarget: () => void;
-  onClearActiveTask: () => void;
   onLocateReplyTarget: (messageId: string) => void;
   onSelectTask: (task: Task) => void;
 }) {
@@ -825,16 +818,10 @@ function ChatColumn({
     [defaultReplySuppressedForMessageId, explicitReplyTarget, streamingReplyMessageIds, visibleMessages],
   );
   const canSendChat = agents.length > 0 || modelChatReady;
-  const taskRouteTarget = activeTaskId && activeTask
-    ? {
-      kind: 'task' as const,
-      label: t('composer.targetTask', { id: activeTask.id.slice(0, 6), title: activeTask.title }),
-      onClear: onClearActiveTask,
-    }
-    : {
-      kind: 'global' as const,
-      label: t('composer.targetGlobal'),
-    };
+  const taskRouteTarget = {
+    kind: 'global' as const,
+    label: t('composer.targetGlobal'),
+  };
 
   const send = useMutation({
     mutationFn: (input: SendInput) => api.sendMessage(roomId, input),
@@ -856,16 +843,17 @@ function ChatColumn({
     const content = input.content.trim();
     const files = input.files;
     const fileIds = input.fileIds;
-    if (!content && (!files || files.length === 0) && (!fileIds || fileIds.length === 0)) return;
+    const fileRefs = input.fileRefs;
+    if (!content && (!files || files.length === 0) && (!fileIds || fileIds.length === 0) && (!fileRefs || fileRefs.length === 0)) return;
     send.mutate({
       content,
       mentions: input.mentions,
       files,
       fileIds,
+      fileRefs,
       replyToMessageId: input.replyToMessageId,
-      activeTaskId,
     });
-  }, [activeTaskId, send]);
+  }, [send]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
