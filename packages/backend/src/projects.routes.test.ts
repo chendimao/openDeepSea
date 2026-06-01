@@ -40,6 +40,50 @@ test('delete project returns 404 for missing project', async () => {
   assert.equal(res.status, 404);
 });
 
+test('patch project supports pinned_at and rejects unknown fields', async () => {
+  const { project } = createProjectFixture('patch-pinned');
+  const pinnedAt = Date.now();
+  const patchedRes = await request(`/api/projects/${project.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ pinned_at: pinnedAt }),
+  });
+  assert.equal(patchedRes.status, 200);
+  const patched = await patchedRes.json() as { id: string; pinned_at: number | null };
+  assert.equal(patched.id, project.id);
+  assert.equal(patched.pinned_at, pinnedAt);
+
+  const invalidRes = await request(`/api/projects/${project.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ unknown_field: true }),
+  });
+  assert.equal(invalidRes.status, 400);
+});
+
+test('reorder projects updates order and returns stats', async () => {
+  const a = createProjectFixture('reorder-a').project;
+  const b = createProjectFixture('reorder-b').project;
+  const c = createProjectFixture('reorder-c').project;
+  projectRepo.update(a.id, { pinned_at: 1 });
+  projectRepo.update(b.id, { pinned_at: 2 });
+  projectRepo.update(c.id, { pinned_at: null });
+
+  const res = await request('/api/projects/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({ ids: [b.id, a.id], pinned: true }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json() as Array<{ id: string; sort_order: number | null; stats: { rooms: number } }>;
+  const bIndex = body.findIndex((item) => item.id === b.id);
+  const aIndex = body.findIndex((item) => item.id === a.id);
+  assert.ok(bIndex >= 0 && aIndex >= 0);
+  assert.ok(bIndex < aIndex);
+  const bRow = body.find((item) => item.id === b.id);
+  const aRow = body.find((item) => item.id === a.id);
+  assert.equal(bRow?.sort_order, 1);
+  assert.equal(aRow?.sort_order, 2);
+  assert.equal(typeof bRow?.stats.rooms, 'number');
+});
+
 test('delete project rejects active agent runs', async () => {
   const { project, room } = createProjectFixture('active-agent-run');
   const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner-delete-test', agent_name: 'Planner Delete Test' });

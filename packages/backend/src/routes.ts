@@ -1238,12 +1238,34 @@ router.patch('/projects/:id', (req, res) => {
   const schema = z.object({
     name: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
-  });
+    pinned_at: z.number().int().nullable().optional(),
+    sort_order: z.number().int().nullable().optional(),
+  }).strict();
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const updated = projectRepo.update(req.params.id, parsed.data);
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(updated);
+});
+
+router.put('/projects/reorder', (req, res) => {
+  const schema = z.object({
+    ids: z.array(z.string().min(1)),
+    pinned: z.boolean(),
+  }).strict();
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const projects = projectRepo.reorder(parsed.data.ids, parsed.data.pinned);
+    res.json(projects.map((project) => ({ ...project, stats: projectRepo.stats(project.id) })));
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message === 'project not found') return res.status(404).json({ error: 'project not found' });
+    if (message === 'project layer mismatch' || message === 'duplicate project ids') {
+      return res.status(400).json({ error: message });
+    }
+    throw err;
+  }
 });
 
 router.put('/projects/:id/routing', (req, res) => {
@@ -1345,6 +1367,7 @@ router.patch('/rooms/:id', (req, res) => {
       name: z.string().optional(),
       last_opened_at: z.number().int().nullable().optional(),
       pinned_at: z.number().int().nullable().optional(),
+      sort_order: z.number().int().nullable().optional(),
     })
     .strict();
   const parsed = schema.safeParse(req.body);
@@ -1356,6 +1379,30 @@ router.patch('/rooms/:id', (req, res) => {
   } catch (err) {
     if ((err as Error).message === 'room name is required') {
       return res.status(400).json({ error: 'room name is required' });
+    }
+    throw err;
+  }
+});
+
+router.put('/projects/:projectId/rooms/reorder', (req, res) => {
+  const schema = z.object({
+    ids: z.array(z.string().min(1)),
+    pinned: z.boolean(),
+  }).strict();
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
+  try {
+    res.json(roomRepo.reorder(req.params.projectId, parsed.data.ids, parsed.data.pinned));
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message === 'room not found') return res.status(404).json({ error: 'room not found' });
+    if (
+      message === 'room project mismatch' ||
+      message === 'room layer mismatch' ||
+      message === 'duplicate room ids'
+    ) {
+      return res.status(400).json({ error: message });
     }
     throw err;
   }
