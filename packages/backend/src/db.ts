@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS settings (
   auto_distill_enabled INTEGER CHECK (auto_distill_enabled IN (0, 1)),
   default_workflow_definition_id TEXT,
   superpowers_bootstrap_owner TEXT CHECK (superpowers_bootstrap_owner IN ('project', 'provider', 'disabled')),
+  workspace_excluded_dirs TEXT,
   langchain_planner_model TEXT,
   openai_api_key TEXT,
   openai_base_url TEXT,
@@ -1189,6 +1190,9 @@ if (!settingsColumnNames.has('superpowers_bootstrap_owner')) {
     ALTER TABLE settings ADD COLUMN superpowers_bootstrap_owner TEXT
       CHECK (superpowers_bootstrap_owner IN ('project', 'provider', 'disabled'))
   `);
+}
+if (!settingsColumnNames.has('workspace_excluded_dirs')) {
+  db.exec('ALTER TABLE settings ADD COLUMN workspace_excluded_dirs TEXT');
 }
 
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {
