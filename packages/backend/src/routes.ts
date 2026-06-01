@@ -21,7 +21,6 @@ import {
   type SafeGlobalChatSettingsSummary,
 } from './global-chat.js';
 import { validateLocalAccess } from './local-access.js';
-import { resolveMentionedAgentRoomIds } from './mentions.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { agentRepo } from './repos/agents.js';
 import { fileRepo } from './repos/files.js';
@@ -2121,12 +2120,8 @@ function dispatchUserMessageFromRoute(input: {
 }): void {
   const userMessage = messageRepo.get(input.userMessageId);
   if (!userMessage) return;
-  const agents = roomAgentRepo.listByRoom(input.roomId);
-  const mentionedAgentRoomIds = resolveMentionedAgentRoomIds({
-    content: input.content,
-    agents,
-    explicitRoomAgentIds: input.mentions,
-  });
+  // 群聊不再按正文 @ 文本解析智能体（避免 @文件名 误命中同名 agent），仅用显式 mentions
+  const mentionedAgentRoomIds = dedupeIds(input.mentions ?? []);
   // Fire-and-forget dispatch
   void (messageRouteDeps.dispatchUserMessage ?? dispatchUserMessage)({
     roomId: input.roomId,
