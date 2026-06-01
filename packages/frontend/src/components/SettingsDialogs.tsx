@@ -94,6 +94,7 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   auto_distill_enabled: true,
   default_workflow_definition_id: null,
   superpowers_bootstrap_owner: 'provider',
+  workspace_excluded_dirs: [],
   active_ai_config_id: null,
   ai_configs: [],
   langchain_planner_model: null,
@@ -1521,6 +1522,7 @@ function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
       settings.project?.default_workflow_definition_id ?? settings.system.default_workflow_definition_id,
     superpowers_bootstrap_owner:
       settings.project?.superpowers_bootstrap_owner ?? settings.system.superpowers_bootstrap_owner,
+    workspace_excluded_dirs: settings.system.workspace_excluded_dirs,
   };
 }
 

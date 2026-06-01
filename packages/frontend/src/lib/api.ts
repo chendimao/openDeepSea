@@ -62,6 +62,7 @@ import type {
   WorkflowDefinitionStatus,
   WorkflowRole,
   WorkflowRun,
+  WorkspaceSearchResponse,
 } from './types';
 
 const BASE = '/api';
@@ -253,6 +254,7 @@ export const api = {
     langchain_planner_model?: string | null;
     openai_base_url?: string | null;
     openai_api_key?: string | null;
+    workspace_excluded_dirs?: string[];
   }) =>
     request<SettingsResolution['system']>('/settings/system', {
       method: 'PATCH',
@@ -300,6 +302,7 @@ export const api = {
       auto_distill_enabled?: boolean | null;
       default_workflow_definition_id?: string | null;
       superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
+      workspace_excluded_dirs?: string[] | null;
     },
   ) =>
     request<SettingsResolution>(`/projects/${projectId}/settings`, {
@@ -532,13 +535,18 @@ export const api = {
   },
   listProjectFiles: (
     projectId: string,
-    filters: { sourceType?: ProjectFile['source_type'] } = {},
+    filters: { sourceType?: ProjectFile['source_type']; q?: string } = {},
   ) => {
     const params = new URLSearchParams();
     if (filters.sourceType) params.set('sourceType', filters.sourceType);
+    if (filters.q) params.set('q', filters.q);
     const query = params.toString();
     return request<ProjectFile[]>(`/projects/${projectId}/files${query ? `?${query}` : ''}`);
   },
+  searchWorkspaceFiles: (projectId: string, query: string) =>
+    workspaceRequest<WorkspaceSearchResponse>(
+      `/projects/${projectId}/workspace/search?q=${encodeURIComponent(query)}`,
+    ),
   getResourceDetail: (assetId: string, filters: { projectId?: string } = {}) => {
     const params = new URLSearchParams();
     if (filters.projectId) params.set('projectId', filters.projectId);
@@ -733,6 +741,7 @@ export const api = {
       mentions?: string[];
       files?: File[];
       fileIds?: string[];
+      fileRefs?: string[];
       replyToMessageId?: string;
       activeTaskId?: string | null;
     },
@@ -749,6 +758,9 @@ export const api = {
       if (input.fileIds && input.fileIds.length > 0) {
         form.append('fileIds', JSON.stringify(input.fileIds));
       }
+      if (input.fileRefs && input.fileRefs.length > 0) {
+        form.append('fileRefs', JSON.stringify(input.fileRefs));
+      }
       if (input.activeTaskId) {
         form.append('active_task_id', input.activeTaskId);
       }
@@ -764,6 +776,7 @@ export const api = {
         content: input.content,
         mentions: input.mentions,
         fileIds: input.fileIds,
+        fileRefs: input.fileRefs,
         reply_to_message_id: input.replyToMessageId,
         active_task_id: input.activeTaskId,
       }),
