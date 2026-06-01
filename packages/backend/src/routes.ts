@@ -992,9 +992,10 @@ router.get('/projects/:projectId/workspace/tree', async (req, res, next) => {
   const parsed = z.object({ path: z.string().optional() }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const workspacePath = parsed.data.path ?? '';
+  const extraIgnoredDirs = settingsRepo.resolveWorkspaceExcludedDirs(project.id);
 
   try {
-    const entries = await listWorkspaceDirectory(project.path, workspacePath);
+    const entries = await listWorkspaceDirectory(project.path, workspacePath, extraIgnoredDirs);
     res.json({ path: workspacePath, entries });
   } catch (error) {
     if (error instanceof WorkspaceFileError) {
@@ -1031,9 +1032,10 @@ router.get('/projects/:projectId/workspace/search', async (req, res, next) => {
     path: z.string().optional(),
   }).safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const extraIgnoredDirs = settingsRepo.resolveWorkspaceExcludedDirs(project.id);
 
   try {
-    const result = await searchWorkspaceFiles(project.path, parsed.data.q, parsed.data.path ?? '');
+    const result = await searchWorkspaceFiles(project.path, parsed.data.q, parsed.data.path ?? '', extraIgnoredDirs);
     res.json(result);
   } catch (error) {
     if (error instanceof WorkspaceFileError) {
