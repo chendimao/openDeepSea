@@ -4,6 +4,7 @@ import { isAbsolute, resolve, sep, win32 } from 'node:path';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
+import { createAcpMessageIntentClassifier } from './acp-message-intent-classifier.js';
 import { listBuiltInAgentTemplates } from './agent-templates.js';
 import { testConfiguredModel, type ConfiguredModelTester } from './chat-model.js';
 import type { CollaborationDecision } from './collaboration-decision.js';
@@ -102,6 +103,7 @@ import {
   type ProjectFile,
   type ResourceAssetGroupKey,
   type ResourceAssetType,
+  type Room,
   type Task,
   type TaskExecutionIntent,
   type TaskInteractionMode,
@@ -1892,7 +1894,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
   }
   const intentResult = await classifyMessageIntentWithClassifier({
     message: content,
-    classifier: messageRouteDeps.intentClassifier,
+    classifier: getMessageIntentClassifierForRoom(room),
   });
   const initialRouteResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
   const routeResult = applyIntentToRouteResult(initialRouteResult, intentResult);
@@ -2009,7 +2011,7 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
     }
     const intentResult = await classifyMessageIntentWithClassifier({
       message: content,
-      classifier: messageRouteDeps.intentClassifier,
+      classifier: getMessageIntentClassifierForRoom(room),
     });
     const initialRouteResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
     const routeResult = applyIntentToRouteResult(initialRouteResult, intentResult);
@@ -2049,6 +2051,22 @@ function recordMessageFileRefs(projectId: string, roomId: string, messageId: str
     room_id: roomId,
     message_id: messageId,
     file_ids: files.map((file) => file.id),
+  });
+}
+
+function getMessageIntentClassifierForRoom(room: Room): MessageIntentClassifierInvoker | undefined {
+  if (messageRouteDeps.intentClassifier) return messageRouteDeps.intentClassifier;
+  if (process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER === '0') return undefined;
+  const project = projectRepo.get(room.project_id);
+  if (!project) return undefined;
+  const agent = roomAgentRepo
+    .listByRoom(room.id)
+    .find((item) => item.left_at === null && item.acp_enabled === 1 && item.acp_backend);
+  if (!agent?.acp_backend) return undefined;
+  return createAcpMessageIntentClassifier({
+    projectPath: project.path,
+    agent,
+    adapter: getAdapter(agent.acp_backend),
   });
 }
 

@@ -6,6 +6,7 @@ import test from 'node:test';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-routes-')), 'test.db');
 process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER = '0';
 
 const express = (await import('express')).default;
 const { projectRepo } = await import('./repos/projects.js');
