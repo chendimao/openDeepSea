@@ -338,6 +338,21 @@ test('planner casual chat reply strips workflow narration and decision json', as
     },
   });
   const originalAdapter = adapters.codex;
+  const sentEvents: Array<{ type: string; done?: boolean; channel?: string; chunk?: string; message?: Message }> = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send(payload: string) {
+      sentEvents.push(JSON.parse(payload) as {
+        type: string;
+        done?: boolean;
+        channel?: string;
+        chunk?: string;
+        message?: Message;
+      });
+    },
+  };
+  wsHub.subscribe(room.id, socket as never);
   adapters.codex = {
     ...originalAdapter,
     async invoke(args) {
@@ -346,7 +361,7 @@ test('planner casual chat reply strips workflow narration and decision json', as
         text: [
           '我先按房间规则做入口 workflow 判断；这条消息只是问候，所以不会进入实现或任务拆解。',
           '',
-          '我在。已按 `using-superpowers` 做入口判断。',
+          '我在。你这条消息只有问候，还没有具体任务。',
           '',
           '当前请求只是 `hi`，没有具体规划目标；我不会进入实现 workflow。',
           '',
@@ -374,7 +389,17 @@ test('planner casual chat reply strips workflow narration and decision json', as
     assert.ok(plannerMessage);
     assert.equal(plannerMessage.content, '我在。');
     assert.doesNotMatch(plannerMessage.metadata ?? '', /planner_decision/);
+    const plannerRun = agentRunRepo.listByRoom(room.id, 20).find((run) => run.agent_id === 'planner');
+    assert.ok(plannerRun);
+    assert.equal(plannerRun.stdout, '我在。');
+    assert.equal(
+      sentEvents.some((event) => event.type === 'message:stream' && !event.done && event.channel === 'answer'),
+      false,
+    );
+    const finalStream = sentEvents.find((event) => event.type === 'message:stream' && event.done);
+    assert.equal(finalStream?.message?.content, '我在。');
   } finally {
+    wsHub.unsubscribe(room.id, socket as never);
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }

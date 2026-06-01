@@ -829,6 +829,11 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       console.warn(`[agent-runs] onRunCreated callback failed for ${run.id}: ${(err as Error).message}`);
     }
   }
+  const suppressLiveAnswerStream = isPlannerCasualRun({
+    agent,
+    run,
+    sourceMessageId: args.sourceMessageId,
+  });
 
   // Create a placeholder agent message that will be filled by streaming chunks.
   const placeholder = messageRepo.create({
@@ -858,6 +863,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     restoreRunStatusAfterRetry();
     messageRepo.appendChunk(placeholder.id, chunk);
     agentRunRepo.appendStdout(run.id, chunk);
+    if (suppressLiveAnswerStream) return;
     if (!args.internalMessage) {
       wsHub.broadcast(roomId, {
         type: 'message:stream',
@@ -1273,17 +1279,29 @@ function sanitizePlannerCasualReply(input: {
   sourceMessageId?: string | null;
   agent: RoomAgent;
 }): Message | undefined {
-  if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return undefined;
+  if (!isPlannerCasualRun({
+    agent: input.agent,
+    run: input.run,
+    sourceMessageId: input.sourceMessageId,
+  })) return undefined;
   if (input.run.status !== 'completed') return undefined;
-  if (input.agent.agent_id !== 'planner') return undefined;
-  if (!input.sourceMessageId) return undefined;
-  const sourceMessage = messageRepo.get(input.sourceMessageId);
-  if (!sourceMessage || !isCasualChatSourceMessage(sourceMessage)) return undefined;
   if (!hasPlannerCasualReplyNoise(input.message.content)) return undefined;
   const cleaned = extractConciseCasualReply(input.message.content);
-  return cleaned && cleaned !== input.message.content
-    ? messageRepo.updateContent(input.message.id, cleaned)
-    : undefined;
+  if (!cleaned || cleaned === input.message.content) return undefined;
+  agentRunRepo.updateStdout(input.run.id, cleaned);
+  return messageRepo.updateContent(input.message.id, cleaned);
+}
+
+function isPlannerCasualRun(input: {
+  agent: RoomAgent;
+  run: AgentRun;
+  sourceMessageId?: string | null;
+}): boolean {
+  if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return false;
+  if (input.agent.agent_id !== 'planner') return false;
+  if (!input.sourceMessageId) return false;
+  const sourceMessage = messageRepo.get(input.sourceMessageId);
+  return Boolean(sourceMessage && isCasualChatSourceMessage(sourceMessage));
 }
 
 function isCasualChatSourceMessage(message: Message): boolean {
@@ -1316,12 +1334,10 @@ function extractConciseCasualReply(content: string): string | null {
     /^在[。.!！]?$/u.test(line)
   );
   if (!candidate) return '我在。';
-  const concise = candidate
-    .replace(/已按.*$/u, '')
-    .replace(/当前.*$/u, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (/^我在/u.test(concise)) return concise.endsWith('。') ? concise : `${concise.replace(/[.!！]+$/u, '')}。`;
+  const concise = candidate.match(/^我在[。.!！]?/u)?.[0]
+    ?? candidate.match(/^在[。.!！]?/u)?.[0]
+    ?? '';
+  if (/^我在/u.test(concise)) return '我在。';
   if (/^在/u.test(concise)) return '我在。';
   return '我在。';
 }

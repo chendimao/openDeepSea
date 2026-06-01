@@ -128,6 +128,15 @@ export const agentRunRepo = {
     return this.get(id);
   },
 
+  updateStdout(id: string, stdout: string): AgentRun | undefined {
+    db.prepare('UPDATE agent_runs SET stdout = ?, updated_at = ? WHERE id = ?').run(
+      stdout,
+      now(),
+      id,
+    );
+    return this.get(id);
+  },
+
   appendStderr(id: string, chunk: string): AgentRun | undefined {
     db.prepare('UPDATE agent_runs SET stderr = stderr || ?, updated_at = ? WHERE id = ?').run(
       chunk,
