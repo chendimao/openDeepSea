@@ -25,7 +25,24 @@ const DEFAULT_SETTINGS: EffectiveSettings = {
   auto_distill_enabled: true,
   default_workflow_definition_id: null,
   superpowers_bootstrap_owner: 'provider',
+  workspace_excluded_dirs: [],
 };
+
+function normalizeExcludedDirs(dirs: string[]): string[] {
+  const cleaned = dirs.map((dir) => dir.trim()).filter((dir) => dir.length > 0);
+  return Array.from(new Set(cleaned));
+}
+
+function parseExcludedDirs(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return normalizeExcludedDirs(parsed.filter((item): item is string => typeof item === 'string'));
+  } catch {
+    return [];
+  }
+}
 
 interface SystemSettingsRow extends ScopedSettings {
   langchain_planner_model: string | null;
@@ -54,6 +71,7 @@ function emptyScoped(scope: SettingsScope, scopeId: string): ScopedSettings {
     auto_distill_enabled: null,
     default_workflow_definition_id: null,
     superpowers_bootstrap_owner: null,
+    workspace_excluded_dirs: null,
     updated_at: 0,
   };
 }
@@ -70,6 +88,7 @@ function getScoped(scope: SettingsScope, scopeId: string): ScopedSettings | null
         auto_distill_enabled,
         default_workflow_definition_id,
         superpowers_bootstrap_owner,
+        workspace_excluded_dirs,
         updated_at
       FROM settings
       WHERE scope = ? AND scope_id = ?`,
@@ -89,6 +108,7 @@ function getSystemRow(): SystemSettingsRow | null {
         auto_distill_enabled,
         default_workflow_definition_id,
         superpowers_bootstrap_owner,
+        workspace_excluded_dirs,
         langchain_planner_model,
         openai_api_key,
         openai_base_url,
@@ -110,6 +130,7 @@ function upsertScoped(
     auto_distill_enabled?: boolean | null;
     default_workflow_definition_id?: string | null;
     superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
+    workspace_excluded_dirs?: string[] | null;
   },
 ): ScopedSettings {
   const existing = getScoped(scope, scopeId) ?? emptyScoped(scope, scopeId);
@@ -137,14 +158,20 @@ function upsertScoped(
     ? existing.fallback_agent_id
     : patch.fallback_agent_id;
   const fallbackAgentId = normalizeFallbackAgentId(routingMode, rawFallbackAgentId);
+  const workspaceExcludedDirs =
+    patch.workspace_excluded_dirs === undefined
+      ? existing.workspace_excluded_dirs
+      : patch.workspace_excluded_dirs === null
+        ? null
+        : JSON.stringify(normalizeExcludedDirs(patch.workspace_excluded_dirs));
   const updatedAt = now();
 
   db.prepare(
     `INSERT INTO settings (
       scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, auto_distill_enabled,
-      default_workflow_definition_id, superpowers_bootstrap_owner, updated_at
+      default_workflow_definition_id, superpowers_bootstrap_owner, workspace_excluded_dirs, updated_at
     )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(scope, scope_id) DO UPDATE SET
        message_routing_mode = excluded.message_routing_mode,
        fallback_agent_id = excluded.fallback_agent_id,
@@ -152,6 +179,7 @@ function upsertScoped(
        auto_distill_enabled = excluded.auto_distill_enabled,
        default_workflow_definition_id = excluded.default_workflow_definition_id,
        superpowers_bootstrap_owner = excluded.superpowers_bootstrap_owner,
+       workspace_excluded_dirs = excluded.workspace_excluded_dirs,
        updated_at = excluded.updated_at`,
   ).run(
     scope,
@@ -162,6 +190,7 @@ function upsertScoped(
     autoDistillEnabled,
     defaultWorkflowDefinitionId,
     superpowersBootstrapOwner,
+    workspaceExcludedDirs,
     updatedAt,
   );
   return getScoped(scope, scopeId)!;
@@ -343,6 +372,7 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
       : Boolean(settings.auto_distill_enabled),
     default_workflow_definition_id: defaultWorkflowDefinitionId,
     superpowers_bootstrap_owner: superpowersBootstrapOwner,
+    workspace_excluded_dirs: parseExcludedDirs(settings?.workspace_excluded_dirs ?? null),
     active_ai_config_id: activeAiConfig?.id ?? null,
     ai_configs: aiConfigRows.map(toSafeAiConfig),
     langchain_planner_model: normalizedOptionalString(activeAiConfig?.langchain_planner_model ?? settings?.langchain_planner_model),
@@ -400,6 +430,7 @@ export const settingsRepo = {
     openai_api_key?: string | null;
     openai_base_url?: string | null;
     superpowers_bootstrap_owner?: SuperpowersBootstrapOwner;
+    workspace_excluded_dirs?: string[] | null;
   }): SystemSettings {
     normalizeLegacyRouting();
     const existing = getSystemRow();
@@ -440,6 +471,12 @@ export const settingsRepo = {
       patch.langchain_planner_model !== undefined ||
       patch.openai_api_key !== undefined ||
       patch.openai_base_url !== undefined;
+    const workspaceExcludedDirs =
+      patch.workspace_excluded_dirs === undefined
+        ? existing?.workspace_excluded_dirs ?? null
+        : patch.workspace_excluded_dirs === null
+          ? null
+          : JSON.stringify(normalizeExcludedDirs(patch.workspace_excluded_dirs));
     const updatedAt = now();
 
     db.prepare(
@@ -456,9 +493,10 @@ export const settingsRepo = {
         openai_base_url,
         active_ai_config_id,
         superpowers_bootstrap_owner,
+        workspace_excluded_dirs,
         updated_at
       )
-       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(scope, scope_id) DO UPDATE SET
          message_routing_mode = excluded.message_routing_mode,
          fallback_agent_id = excluded.fallback_agent_id,
@@ -470,6 +508,7 @@ export const settingsRepo = {
          openai_base_url = excluded.openai_base_url,
          active_ai_config_id = excluded.active_ai_config_id,
          superpowers_bootstrap_owner = excluded.superpowers_bootstrap_owner,
+         workspace_excluded_dirs = excluded.workspace_excluded_dirs,
          updated_at = excluded.updated_at`,
     ).run(
       SYSTEM_SCOPE_ID,
@@ -483,6 +522,7 @@ export const settingsRepo = {
       openaiBaseUrl,
       shouldClearActiveAiConfig ? null : existing?.active_ai_config_id ?? null,
       superpowersBootstrapOwner ?? DEFAULT_SETTINGS.superpowers_bootstrap_owner,
+      workspaceExcludedDirs,
       updatedAt,
     );
 
@@ -640,6 +680,7 @@ export const settingsRepo = {
       auto_distill_enabled?: boolean | null;
       default_workflow_definition_id?: string | null;
       superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
+      workspace_excluded_dirs?: string[] | null;
     },
   ): ScopedSettings | null {
     normalizeLegacyRouting();
@@ -661,6 +702,7 @@ export const settingsRepo = {
       auto_distill_enabled?: boolean | null;
       default_workflow_definition_id?: string | null;
       superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
+      workspace_excluded_dirs?: string[] | null;
     },
   ): ScopedSettings | null {
     normalizeLegacyRouting();
@@ -698,6 +740,10 @@ export const settingsRepo = {
           : Boolean(project.auto_distill_enabled),
         default_workflow_definition_id: defaultWorkflowDefinitionId,
         superpowers_bootstrap_owner: superpowersBootstrapOwner,
+        workspace_excluded_dirs: Array.from(new Set([
+          ...system.workspace_excluded_dirs,
+          ...parseExcludedDirs(project?.workspace_excluded_dirs ?? null),
+        ])),
       },
       sources: {
         message_routing: messageRoutingSource,
@@ -750,6 +796,7 @@ export const settingsRepo = {
             : Boolean(roomSettings.auto_distill_enabled),
         default_workflow_definition_id: defaultWorkflowDefinitionId,
         superpowers_bootstrap_owner: superpowersBootstrapOwner,
+        workspace_excluded_dirs: projectResolution.effective.workspace_excluded_dirs,
       },
       sources: {
         message_routing: messageRoutingSource,
@@ -759,5 +806,9 @@ export const settingsRepo = {
         superpowers_bootstrap_owner: superpowersBootstrapOwnerSource,
       },
     };
+  },
+
+  resolveWorkspaceExcludedDirs(projectId: string): string[] {
+    return this.resolveForProject(projectId)?.effective.workspace_excluded_dirs ?? [];
   },
 };

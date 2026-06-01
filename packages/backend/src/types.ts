@@ -909,6 +909,7 @@ export interface ScopedSettings {
   auto_distill_enabled: 0 | 1 | null;
   default_workflow_definition_id: string | null;
   superpowers_bootstrap_owner: SuperpowersBootstrapOwner | null;
+  workspace_excluded_dirs: string | null;
   updated_at: number;
 }
 
@@ -919,6 +920,7 @@ export interface EffectiveSettings {
   auto_distill_enabled: boolean;
   default_workflow_definition_id: string | null;
   superpowers_bootstrap_owner: SuperpowersBootstrapOwner;
+  workspace_excluded_dirs: string[];
 }
 
 export interface SystemSettings extends EffectiveSettings {

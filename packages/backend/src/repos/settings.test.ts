@@ -440,3 +440,18 @@ test('settingsRepo deleting the last active AI config clears runtime planner set
     openai_base_url: null,
   });
 });
+
+test('settingsRepo unions workspace_excluded_dirs across system and project', () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-settings-excluded-'));
+  const project = projectRepo.create({ name: 'Excluded Dirs', path: projectPath });
+
+  assert.deepEqual(settingsRepo.resolveWorkspaceExcludedDirs(project.id), []);
+
+  settingsRepo.updateSystem({ workspace_excluded_dirs: ['vendor'] });
+  settingsRepo.updateProject(project.id, { workspace_excluded_dirs: ['tmp', 'vendor'] });
+
+  assert.deepEqual(
+    settingsRepo.resolveWorkspaceExcludedDirs(project.id).sort(),
+    ['tmp', 'vendor'],
+  );
+});
