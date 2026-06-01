@@ -7,11 +7,9 @@ import { AppShell } from './components/AppShell';
 import { api } from './lib/api';
 import { I18nProvider } from './lib/i18n';
 import { AgentsPage } from './pages/AgentsPage';
-import { DashboardPage } from './pages/DashboardPage';
+import { DevelopmentWorkspacePage } from './pages/DevelopmentWorkspacePage';
 import { FilesPage } from './pages/FilesPage';
 import { GlobalChatPage } from './pages/GlobalChatPage';
-import { ProjectPage } from './pages/ProjectPage';
-import { RoomPage } from './pages/RoomPage';
 import { SkillsPage } from './pages/SkillsPage';
 import { TestPage } from './pages/TestPage';
 import { getThemeTone, parseThemeMode, type ThemeMode } from './lib/theme';
@@ -47,15 +45,15 @@ function RootApp(): JSX.Element {
           <AppShell theme={theme} onThemeChange={setTheme}>
             <ProviderSuperpowersStartupNotice />
             <Routes>
-              <Route path="/" element={<DashboardPage />} />
+              <Route path="/" element={<DevelopmentWorkspacePage />} />
               <Route path="/chat" element={<GlobalChatPage />} />
               <Route path="/agents" element={<AgentsPage />} />
               <Route path="/files" element={<FilesPage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/test" element={<TestPage />} />
-              <Route path="/projects/:projectId" element={<ProjectPage />} />
+              <Route path="/projects/:projectId" element={<DevelopmentWorkspacePage />} />
               <Route path="/projects/:projectId/files" element={<FilesPage />} />
-              <Route path="/projects/:projectId/rooms/:roomId" element={<RoomPage />} />
+              <Route path="/projects/:projectId/rooms/:roomId" element={<DevelopmentWorkspacePage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AppShell>

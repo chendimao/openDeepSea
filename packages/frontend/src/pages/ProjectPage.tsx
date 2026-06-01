@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, Hash, MessageSquarePlus, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
+import { ChevronLeft, Hash, MessageSquarePlus, Search, Settings2, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/Button';
-import { Dialog, DialogContent, DialogTrigger } from '../components/ui/Dialog';
-import { Input, Label, Textarea } from '../components/ui/Input';
+import { Dialog, DialogContent } from '../components/ui/Dialog';
+import { Input } from '../components/ui/Input';
 import { useI18n } from '../lib/i18n';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { ProjectSettingsDialog } from '../components/SettingsDialogs';
+import { CreateRoomDialog } from '../components/CreateRoomDialog';
 import type { Room } from '../lib/types';
 
 export function ProjectPage() {
@@ -205,84 +206,5 @@ function RoomItem({ projectId, room }: { projectId: string; room: Room }) {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function CreateRoomDialog({
-  projectId,
-  buttonText,
-  buttonIcon = 'plus',
-}: {
-  projectId: string;
-  buttonText?: string;
-  buttonIcon?: 'plus' | 'message';
-}) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const queryClient = useQueryClient();
-  const { t } = useI18n();
-  const resolvedButtonText = buttonText ?? t('project.newRoom');
-
-  const create = useMutation({
-    mutationFn: () => api.createRoom(projectId, {
-      name,
-      description: description || undefined,
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rooms', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['rooms', 'search', projectId] });
-      queryClient.invalidateQueries({ queryKey: ['project', projectId] });
-      toast.success(t('project.roomCreated'));
-      setOpen(false);
-      setName('');
-      setDescription('');
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="primary" size="sm">
-          {buttonIcon === 'plus' ? <Plus className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
-          {resolvedButtonText}
-        </Button>
-      </DialogTrigger>
-      <DialogContent title={t('project.newRoom')} description={t('project.newRoomDescription')}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!name.trim()) return;
-            create.mutate();
-          }}
-          className="space-y-4"
-        >
-          <div>
-            <Label>{t('project.roomName')}</Label>
-            <Input
-              autoFocus
-              placeholder={t('project.roomNamePlaceholder')}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="font-mono"
-            />
-          </div>
-          <div>
-            <Label>{t('project.roomDescription')}</Label>
-            <Textarea
-              placeholder={t('project.roomDescriptionPlaceholder')}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
-            <Button type="submit" disabled={create.isPending || !name.trim()}>
-              {create.isPending ? t('project.creating') : t('common.create')}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

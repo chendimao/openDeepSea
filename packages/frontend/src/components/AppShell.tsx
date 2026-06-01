@@ -40,6 +40,7 @@ export function AppShell({
   const themeStyle = getThemeStyle(theme);
   const projectId = getProjectId(location.pathname);
   const isRoomRoute = Boolean(getRoomId(location.pathname));
+  const isDevelopmentRoute = location.pathname === '/' || location.pathname.startsWith('/projects/');
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -80,7 +81,7 @@ export function AppShell({
           </span>
         </NavLink>
         <nav className="shell-public-nav" aria-label={t('shell.sidebar.aria')}>
-          <SidebarLink to="/" active={location.pathname === '/'} icon={Home} label={t('shell.nav.development')} exact className="shell-public-link" />
+          <SidebarLink to="/" active={isDevelopmentRoute} icon={Home} label={t('shell.nav.development')} exact className="shell-public-link" />
           <SidebarLink to="/chat" icon={MessageCircle} label={t('shell.nav.chat')} className="shell-public-link" />
           <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} className="shell-public-link" />
           <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} className="shell-public-link" />
