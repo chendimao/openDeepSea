@@ -279,6 +279,7 @@ export function ChatMessageBubble({
                 globalAgents={globalAgents}
                 tasks={tasks}
                 suppressPlannerDecisionSummary={showPlannerDecisionPanel}
+                suppressWorkflowJsonBlocks={!isUser}
                 suppressTraceEvents={!isUser}
                 roomId={roomId}
               />
@@ -290,6 +291,7 @@ export function ChatMessageBubble({
                 roomAgents={roomAgents}
                 globalAgents={globalAgents}
                 tasks={tasks}
+                suppressWorkflowJsonBlocks={!isUser}
                 suppressTraceEvents={!isUser}
                 roomId={roomId}
               />

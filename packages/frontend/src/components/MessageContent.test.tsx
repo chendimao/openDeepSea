@@ -152,6 +152,51 @@ test('can suppress planner decision json when an outer action panel renders it',
   assert.doesNotMatch(html, /pause_after_suggestion/);
 });
 
+test('can suppress workflow structured json blocks in chat bubbles', () => {
+  const content = [
+    '正文保留。',
+    '',
+    '```json',
+    JSON.stringify({
+      task_readiness: {
+        ready: true,
+        confidence: 0.9,
+        title: '生成执行计划',
+        description: '进入 workflow 前的结构化判断',
+        missing_questions: [],
+        recommended_mode: 'formal_workflow',
+        execution_intent: 'implementation',
+      },
+    }, null, 2),
+    '```',
+    '',
+    '```json',
+    JSON.stringify({
+      planner_decision: {
+        mode: 'pause_after_suggestion',
+        status: 'suggested',
+        summary: '建议派发执行者',
+        next_steps: [{ agent_id: 'frontend-executor', goal: '实现页面调整' }],
+        awaiting_user_confirmation: true,
+      },
+    }, null, 2),
+    '```',
+  ].join('\n');
+
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent content={content} suppressWorkflowJsonBlocks />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /正文保留/);
+  assert.doesNotMatch(html, /任务准备状态/);
+  assert.doesNotMatch(html, /生成执行计划/);
+  assert.doesNotMatch(html, /planner_decision/);
+  assert.doesNotMatch(html, /pause_after_suggestion/);
+  assert.doesNotMatch(html, /json-tree/);
+});
+
 test('recognizes json fences whose opening brace is glued to the language tag', () => {
   // 复现 codex 原始流式输出：```json{ 把左花括号粘在语言行（无换行）
   const json = JSON.stringify({
