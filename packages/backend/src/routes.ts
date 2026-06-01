@@ -219,6 +219,7 @@ const settingsPatchShape = {
   auto_distill_enabled: z.boolean().nullable().optional(),
   default_workflow_definition_id: z.string().min(1).nullable().optional(),
   superpowers_bootstrap_owner: z.enum(['project', 'provider', 'disabled']).nullable().optional(),
+  workspace_excluded_dirs: z.array(z.string()).nullable().optional(),
 };
 
 const nullableTrimmedStringSchema = z.union([z.string(), z.null()]).optional().transform((value) => {
@@ -583,6 +584,7 @@ router.patch('/settings/system', (req, res) => {
     openai_api_key: parsed.data.openai_api_key,
     openai_base_url: parsed.data.openai_base_url,
     superpowers_bootstrap_owner: parsed.data.superpowers_bootstrap_owner ?? undefined,
+    workspace_excluded_dirs: parsed.data.workspace_excluded_dirs ?? undefined,
   }));
 });
 
@@ -664,6 +666,7 @@ router.patch('/projects/:projectId/settings', (req, res) => {
     auto_distill_enabled: parsed.data.auto_distill_enabled,
     default_workflow_definition_id: parsed.data.default_workflow_definition_id,
     superpowers_bootstrap_owner: parsed.data.superpowers_bootstrap_owner,
+    workspace_excluded_dirs: parsed.data.workspace_excluded_dirs,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForProject(req.params.projectId));
