@@ -231,7 +231,7 @@ test('POST /rooms/:roomId/messages keeps ordinary low-confidence chat global', a
   assert.equal(routePrompt, undefined);
 });
 
-test('POST /rooms/:roomId/messages records chat intent without creating task', async () => {
+test('POST /rooms/:roomId/messages saves chat message without synchronous intent metadata', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Message Intent Chat Route',
@@ -248,10 +248,12 @@ test('POST /rooms/:roomId/messages records chat intent without creating task', a
   assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
-    intent_result?: { intent: string; suggestedAction: string };
+    intent_result?: unknown;
+    route_result?: { action: string; taskId: string | null };
   };
-  assert.equal(metadata.intent_result?.intent, 'chat');
-  assert.equal(metadata.intent_result?.suggestedAction, 'reply_in_chat');
+  assert.equal(metadata.intent_result, undefined);
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
+  assert.equal(metadata.route_result?.taskId, null);
   assert.equal(taskRepo.listByRoom(room.id).length, 0);
 
   const systemMessages = await (await request(`/api/rooms/${room.id}/messages`)).json() as Array<{
@@ -269,7 +271,7 @@ test('POST /rooms/:roomId/messages records chat intent without creating task', a
   assert.equal(routePrompt, undefined);
 });
 
-test('POST /rooms/:roomId/messages creates task for high-confidence light task intent', async () => {
+test('POST /rooms/:roomId/messages leaves task-like text in chat until ACP stream returns intent', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Message Intent Light Task Route',
@@ -283,39 +285,26 @@ test('POST /rooms/:roomId/messages creates task for high-confidence light task i
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
-    intent_result?: { intent: string; suggestedAction: string };
+    intent_result?: unknown;
     route_result?: { action: string; taskId: string | null };
   };
-  assert.equal(metadata.intent_result?.intent, 'light_task');
-  assert.equal(metadata.intent_result?.suggestedAction, 'create_light_task');
-  assert.equal(metadata.route_result?.action, 'create_task');
-  assert.ok(metadata.task_id);
-
-  const tasks = taskRepo.listByRoom(room.id);
-  assert.equal(tasks.length, 1);
-  assert.equal(tasks[0]?.source_message_id, message.id);
-  assert.equal(tasks[0]?.interaction_mode, 'ask_user');
-  assert.equal(workflowRepo.listByTask(tasks[0]!.id).length, 0);
+  assert.equal(metadata.intent_result, undefined);
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
+  assert.equal(metadata.route_result?.taskId, null);
+  assert.equal(metadata.task_id, undefined);
+  assert.equal(taskRepo.listByRoom(room.id).length, 0);
 });
 
-test('POST /rooms/:roomId/messages creates waiting task from ACP structured analysis without auto execution', async () => {
+test('POST /rooms/:roomId/messages does not run task analysis before ACP stream returns intent', async () => {
   let analysisCalls = 0;
   setMessageRouteDeps({
     dispatchUserMessage: async (input) => {
       dispatchCalls.push(input);
     },
-    intentClassifier: async () => JSON.stringify({
-      intent: 'light_task',
-      confidence: 0.92,
-      source: 'classifier',
-      suggestedAction: 'create_light_task',
-      reason: 'ACP 判断用户要求移除 header 测试菜单，属于明确轻量任务',
-      signals: ['去掉', 'header 菜单', '测试菜单'],
-    }),
     taskAnalyzer: async ({ message, intentResult, routeResult }) => {
       analysisCalls += 1;
       assert.equal(message, '去掉 header 菜单中的测试菜单');
@@ -351,33 +340,26 @@ test('POST /rooms/:roomId/messages creates waiting task from ACP structured anal
   });
 
   assert.equal(res.status, 201);
-  assert.equal(analysisCalls, 1);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(analysisCalls, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
+    intent_result?: unknown;
     task_analysis?: {
       title: string;
       recommended_next_action: string;
     };
     route_result?: { action: string; taskId: string | null };
   };
-  assert.equal(metadata.route_result?.action, 'create_task');
-  assert.equal(metadata.task_analysis?.title, '移除 header 测试菜单');
-  assert.equal(metadata.task_analysis?.recommended_next_action, 'create_task');
-  assert.ok(metadata.task_id);
-
-  const tasks = taskRepo.listByRoom(room.id);
-  assert.equal(tasks.length, 1);
-  assert.equal(tasks[0]?.title, '移除 header 测试菜单');
-  assert.match(tasks[0]?.description ?? '', /删除 header 菜单里的“测试”入口/);
-  assert.match(tasks[0]?.description ?? '', /验收标准：/);
-  assert.match(tasks[0]?.description ?? '', /header 菜单不再显示“测试”入口/);
-  assert.equal(tasks[0]?.interaction_mode, 'ask_user');
-  assert.equal(workflowRepo.listByTask(tasks[0]!.id).length, 0);
+  assert.equal(metadata.intent_result, undefined);
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
+  assert.equal(metadata.task_analysis, undefined);
+  assert.equal(metadata.task_id, undefined);
+  assert.equal(taskRepo.listByRoom(room.id).length, 0);
 });
 
-test('POST /rooms/:roomId/messages creates new workflow task for high-confidence intent even with active task', async () => {
+test('POST /rooms/:roomId/messages ignores active task unless explicitly referenced', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Message Intent Active Task Override Route',
@@ -400,26 +382,18 @@ test('POST /rooms/:roomId/messages creates new workflow task for high-confidence
   });
 
   assert.equal(res.status, 201);
-  assert.equal(dispatchCalls.length, 0);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
-    intent_result?: { intent: string; suggestedAction: string };
+    intent_result?: unknown;
     route_result?: { action: string; taskId: string | null; reason_code?: string };
   };
-  assert.equal(metadata.intent_result?.intent, 'debugger');
-  assert.equal(metadata.intent_result?.suggestedAction, 'start_debugger');
-  assert.equal(metadata.route_result?.action, 'create_task');
-  assert.equal(metadata.route_result?.reason_code, 'create_task_intent');
-  assert.notEqual(metadata.task_id, active.id);
-
-  const tasks = taskRepo.listByRoom(room.id);
-  assert.equal(tasks.length, 2);
-  const created = tasks.find((task) => task.id === metadata.task_id);
-  assert.ok(created);
-  assert.equal(created.interaction_mode, 'ask_user');
-  assert.equal(created.source_message_id, message.id);
-  assert.equal(workflowRepo.listByTask(created.id).length, 0);
+  assert.equal(metadata.intent_result, undefined);
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
+  assert.equal(metadata.route_result?.reason_code, 'reply_in_chat');
+  assert.equal(metadata.task_id, undefined);
+  assert.equal(taskRepo.listByRoom(room.id).length, 1);
   assert.equal(taskEventRepo.listByTask(active.id).some((event) => event.type === 'message_routed'), false);
 });
 
@@ -443,7 +417,7 @@ for (const scenario of [
     executionIntent: 'implementation',
   },
 ] as const) {
-  test(`POST /rooms/:roomId/messages creates waiting workflow task for ${scenario.name} intent`, async () => {
+  test(`POST /rooms/:roomId/messages defers ${scenario.name} intent to ACP stream`, async () => {
     resetDispatchCalls();
     const project = projectRepo.create({
       name: `Message Intent ${scenario.name} Route`,
@@ -459,27 +433,20 @@ for (const scenario of [
       });
 
       assert.equal(res.status, 201);
-      assert.equal(dispatchCalls.length, 0);
+      assert.equal(dispatchCalls.length, 1);
       const message = await res.json() as { id: string; metadata: string | null };
       const metadata = JSON.parse(message.metadata ?? '{}') as {
         task_id?: string;
-        intent_result?: { intent: string; suggestedAction: string };
+        intent_result?: unknown;
         route_result?: { action: string; taskId: string | null };
       };
-      assert.equal(metadata.intent_result?.intent, scenario.name);
-      assert.equal(metadata.intent_result?.suggestedAction, scenario.suggestedAction);
-      assert.equal(metadata.route_result?.action, 'create_task');
-      assert.ok(metadata.task_id);
+      assert.equal(metadata.intent_result, undefined);
+      assert.equal(metadata.route_result?.action, 'reply_in_chat');
+      assert.equal(metadata.route_result?.taskId, null);
+      assert.equal(metadata.task_id, undefined);
 
       const tasks = taskRepo.listByRoom(room.id);
-      assert.equal(tasks.length, 1);
-      assert.equal(tasks[0]?.id, metadata.task_id);
-      assert.equal(tasks[0]?.source_message_id, message.id);
-      assert.equal(tasks[0]?.interaction_mode, 'ask_user');
-      assert.match(tasks[0]?.description ?? '', new RegExp(`消息模式：${scenario.name}`, 'u'));
-      assert.match(tasks[0]?.description ?? '', new RegExp(`任务意图：${scenario.executionIntent}`, 'u'));
-
-      assert.equal(workflowRepo.listByTask(tasks[0]!.id).length, 0);
+      assert.equal(tasks.length, 0);
       assert.equal(events.some((event) => event.type === 'workflow:created'), false);
     } finally {
       events.restore();
@@ -487,7 +454,7 @@ for (const scenario of [
   });
 }
 
-test('POST /rooms/:roomId/messages records low-confidence intent activity', async () => {
+test('POST /rooms/:roomId/messages does not create low-confidence intent activity during POST', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Message Intent Low Confidence Route',
@@ -503,9 +470,9 @@ test('POST /rooms/:roomId/messages records low-confidence intent activity', asyn
   assert.equal(res.status, 201);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
-    intent_result?: { intent: string; suggestedAction: string };
+    intent_result?: unknown;
   };
-  assert.equal(metadata.intent_result?.suggestedAction, 'ask_user');
+  assert.equal(metadata.intent_result, undefined);
 
   const systemMessages = await (await request(`/api/rooms/${room.id}/messages`)).json() as Array<{
     sender_type: string;
@@ -520,23 +487,14 @@ test('POST /rooms/:roomId/messages records low-confidence intent activity', asyn
       itemMetadata.event_type === 'message_intent_uncertain' &&
       itemMetadata.message_id === message.id;
   });
-  assert.ok(intentPrompt);
-  assert.match(intentPrompt.content, /无法确定消息类型/);
+  assert.equal(intentPrompt, undefined);
 });
 
-test('POST /rooms/:roomId/messages can use injected classifier for ambiguous intent', async () => {
+test('POST /rooms/:roomId/messages saves ambiguous messages without synchronous intent metadata', async () => {
   setMessageRouteDeps({
     dispatchUserMessage: async (input) => {
       dispatchCalls.push(input);
     },
-    intentClassifier: async () => JSON.stringify({
-      intent: 'workflow',
-      confidence: 0.9,
-      reason: '只读 classifier 根据上下文判断为正式 workflow',
-      source: 'classifier',
-      suggestedAction: 'start_workflow',
-      signals: ['上下文', '正式 workflow'],
-    }),
   });
   resetDispatchCalls();
   const project = projectRepo.create({
@@ -551,14 +509,14 @@ test('POST /rooms/:roomId/messages can use injected classifier for ambiguous int
   });
 
   assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 1);
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
-    intent_result?: { intent: string; source: string };
+    intent_result?: unknown;
     route_result?: { action: string };
   };
-  assert.equal(metadata.intent_result?.intent, 'workflow');
-  assert.equal(metadata.intent_result?.source, 'classifier');
-  assert.equal(metadata.route_result?.action, 'create_task');
+  assert.equal(metadata.intent_result, undefined);
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
 });
 
 test('POST /rooms/:roomId/messages still dispatches global chat messages with explicit mentions', async () => {
@@ -645,7 +603,7 @@ test('POST /rooms/:roomId/messages rejects explicit terminal task routing', asyn
   assert.equal(taskEventRepo.listByTask(done.id).some((event) => event.type === 'message_routed'), false);
 });
 
-test('POST /rooms/:roomId/messages keeps explicit terminal task guardrail for high-confidence intent', async () => {
+test('POST /rooms/:roomId/messages keeps explicit terminal task guardrail without local intent classification', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
     name: 'Task Router Explicit Terminal Intent Route',
@@ -667,11 +625,10 @@ test('POST /rooms/:roomId/messages keeps explicit terminal task guardrail for hi
   const message = await res.json() as { metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
     task_id?: string;
-    intent_result?: { intent: string; suggestedAction: string };
+    intent_result?: unknown;
     route_result?: { action: string; taskId: string | null; reason: string; reason_code?: string };
   };
-  assert.equal(metadata.intent_result?.intent, 'debugger');
-  assert.equal(metadata.intent_result?.suggestedAction, 'start_debugger');
+  assert.equal(metadata.intent_result, undefined);
   assert.equal(metadata.task_id, undefined);
   assert.equal(metadata.route_result?.action, 'ask_user');
   assert.equal(metadata.route_result?.taskId, null);

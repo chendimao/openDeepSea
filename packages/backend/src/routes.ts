@@ -4,7 +4,6 @@ import { isAbsolute, resolve, sep, win32 } from 'node:path';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { getAdapter } from './acp/index.js';
-import { createAcpMessageIntentClassifier } from './acp-message-intent-classifier.js';
 import {
   createAcpTaskAnalyzer,
   type TaskAnalysisResult,
@@ -55,11 +54,8 @@ import {
   recordTaskUpdated,
 } from './task-conversation.js';
 import {
-  applyIntentToRouteResult,
   buildIntentActivityContent,
-  classifyMessageIntentWithClassifier,
   shouldAskUserForIntent,
-  type MessageIntentClassifierInvoker,
 } from './message-intent-router.js';
 import { extractCreateTaskTitle, routeMessage } from './task-router.js';
 import { workflowRepo } from './repos/workflows.js';
@@ -136,7 +132,6 @@ interface AiConfigTestRouteDeps {
 
 interface MessageRouteDeps {
   dispatchUserMessage?: typeof dispatchUserMessage;
-  intentClassifier?: MessageIntentClassifierInvoker;
   taskAnalyzer?: TaskAnalyzerInvoker;
 }
 
@@ -1898,13 +1893,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     res.status(error.status ?? 400).json({ error: error.message });
     return;
   }
-  const intentResult = await classifyMessageIntentWithClassifier({
-    message: content,
-    classifier: getMessageIntentClassifierForRoom(room),
-  });
-  const initialRouteResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
-  const routeResult = applyIntentToRouteResult(initialRouteResult, intentResult);
-  metadata.intent_result = intentResult;
+  const routeResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
   metadata.route_result = routeResult;
   if (routeResult.taskId) {
     metadata.task_id = routeResult.taskId;
@@ -1916,7 +1905,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     content,
     metadata,
   });
-  const finalRouteResult = await finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
+  const finalRouteResult = await finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
   recordMessageFileRefs(room.project_id, roomId, userMsg.id, referencedFiles);
   dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions: parsed.data.mentions, routeResult: finalRouteResult });
   res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
@@ -2015,13 +2004,7 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       res.status(error.status ?? 400).json({ error: error.message });
       return;
     }
-    const intentResult = await classifyMessageIntentWithClassifier({
-      message: content,
-      classifier: getMessageIntentClassifierForRoom(room),
-    });
-    const initialRouteResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
-    const routeResult = applyIntentToRouteResult(initialRouteResult, intentResult);
-    metadata.intent_result = intentResult;
+    const routeResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
     metadata.route_result = routeResult;
     if (routeResult.taskId) {
       metadata.task_id = routeResult.taskId;
@@ -2033,7 +2016,7 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       content,
       metadata,
     });
-    const finalRouteResult = await finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult, intentResult });
+    const finalRouteResult = await finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
     recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
     dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions, routeResult: finalRouteResult });
     res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
@@ -2057,22 +2040,6 @@ function recordMessageFileRefs(projectId: string, roomId: string, messageId: str
     room_id: roomId,
     message_id: messageId,
     file_ids: files.map((file) => file.id),
-  });
-}
-
-function getMessageIntentClassifierForRoom(room: Room): MessageIntentClassifierInvoker | undefined {
-  if (messageRouteDeps.intentClassifier) return messageRouteDeps.intentClassifier;
-  if (process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER === '0') return undefined;
-  const project = projectRepo.get(room.project_id);
-  if (!project) return undefined;
-  const agent = roomAgentRepo
-    .listByRoom(room.id)
-    .find((item) => item.left_at === null && item.acp_enabled === 1 && item.acp_backend);
-  if (!agent?.acp_backend) return undefined;
-  return createAcpMessageIntentClassifier({
-    projectPath: project.path,
-    agent,
-    adapter: getAdapter(agent.acp_backend),
   });
 }
 

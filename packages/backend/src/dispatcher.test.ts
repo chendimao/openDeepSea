@@ -409,6 +409,144 @@ test('planner casual chat reply strips workflow narration and decision json', as
   }
 });
 
+test('dispatchUserMessage hides ACP intent control block and writes intent metadata to source user message', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-stream-intent-'));
+  const project = projectRepo.create({ name: `stream-intent-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: ['.'],
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'hi',
+    message_type: 'text',
+    metadata: {
+      route_result: {
+        action: 'reply_in_chat',
+        confidence: 0,
+        reason: '未显式引用任务，按全局聊天回复',
+        reason_code: 'reply_in_chat',
+        taskId: null,
+      },
+    },
+  });
+
+  const originalAdapter = adapters.codex;
+  let capturedPermissionMode: string | null | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedPermissionMode = args.acpPermissionMode;
+      args.onChunk?.({ stream: 'stdout', channel: 'answer', text: '我在。<openclaw_intent_json>' });
+      args.onChunk?.({
+        stream: 'stdout',
+        channel: 'answer',
+        text: '{"intent":"chat","suggestedAction":"reply_in_chat","reason":"普通问候","signals":["hi"]}',
+      });
+      args.onChunk?.({ stream: 'stdout', channel: 'answer', text: '</openclaw_intent_json>' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    assert.equal(capturedPermissionMode, 'read-only');
+    const messages = messageRepo.listByRoom(room.id, 20);
+    const agentMessage = messages.find((item) => item.sender_type === 'agent' && item.message_type === 'agent_stream');
+    assert.equal(agentMessage?.content, '我在。');
+    assert.doesNotMatch(agentMessage?.content ?? '', /openclaw_intent_json/);
+
+    const updatedUserMessage = messageRepo.get(userMessage.id);
+    const metadata = JSON.parse(updatedUserMessage?.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.intent_result?.intent, 'chat');
+    assert.equal(metadata.intent_result?.source, 'classifier');
+    assert.equal(metadata.intent_result?.suggestedAction, 'reply_in_chat');
+    assert.equal(metadata.route_result?.action, 'reply_in_chat');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('dispatchUserMessage creates waiting task when ACP intent control block is task-like', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-stream-task-intent-'));
+  const project = projectRepo.create({ name: `stream-task-intent-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: ['.'],
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '去掉 header 菜单中的测试菜单',
+    message_type: 'text',
+    metadata: {
+      route_result: {
+        action: 'reply_in_chat',
+        confidence: 0,
+        reason: '未显式引用任务，按全局聊天回复',
+        reason_code: 'reply_in_chat',
+        taskId: null,
+      },
+    },
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({ stream: 'stdout', channel: 'answer', text: '可以，这属于小范围界面调整。' });
+      args.onChunk?.({ stream: 'stdout', channel: 'answer', text: '<openclaw_intent_json>' });
+      args.onChunk?.({
+        stream: 'stdout',
+        channel: 'answer',
+        text: '{"intent":"light_task","suggestedAction":"create_light_task","reason":"用户要求移除测试菜单","signals":["去掉","测试菜单"]}',
+      });
+      args.onChunk?.({ stream: 'stdout', channel: 'answer', text: '</openclaw_intent_json>' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const updatedUserMessage = messageRepo.get(userMessage.id);
+    const metadata = JSON.parse(updatedUserMessage?.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.intent_result?.intent, 'light_task');
+    assert.equal(metadata.route_result?.action, 'create_task');
+    assert.ok(metadata.task_id);
+    const tasks = taskRepo.listByRoom(room.id);
+    assert.equal(tasks.length, 1);
+    assert.equal(tasks[0]?.id, metadata.task_id);
+    assert.equal(tasks[0]?.source_message_id, userMessage.id);
+    assert.equal(tasks[0]?.interaction_mode, 'ask_user');
+    assert.match(tasks[0]?.description ?? '', /消息模式：light_task/);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('runAgentOnce broadcasts retrying status for ACP retry chunks and resumes running on session update', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-retry-status-'));
   const project = projectRepo.create({ name: `retry-status-${Date.now()}`, path: projectPath });
@@ -1273,10 +1411,11 @@ test('message route dispatches low-confidence chat to fallback planner', async (
     assert.equal(calls.count, 1);
     const messages = messageRepo.listByRoom(room.id, 20);
     const metadata = JSON.parse(userMessage.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.intent_result?.intent, 'chat');
+    assert.equal(metadata.intent_result, undefined);
     assert.equal(metadata.route_result?.action, 'reply_in_chat');
     assert.match(calls.prompts[0] ?? '', /群聊摘要：/);
     assert.match(calls.prompts[0] ?? '', /前面先讨论一下默认回复策略/);
+    assert.match(calls.prompts[0] ?? '', /<openclaw_intent_json>/);
     assert.ok(messages.some((message) => message.sender_id === 'planner'));
   } finally {
     restore();

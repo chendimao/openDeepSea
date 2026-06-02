@@ -5,9 +5,11 @@ import { getAdapter } from './acp/index.js';
 import { isProtocolEvent, normalizeProtocolEvent } from './acp/protocol-events.js';
 import { normalizeKnownProviderEvent, normalizeTimelineEventFromTrace } from './acp/timeline.js';
 import type { AcpSessionHandoffMode, AcpStreamChunk, AcpStreamTrace } from './acp/types.js';
+import { createAcpIntentStreamFilter, type AcpIntentStreamFilter } from './acp-intent-stream.js';
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, invokeConfiguredModelText, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { classifyAgentDocument } from './agent-document-classifier.js';
+import { applyIntentToRouteResult } from './message-intent-router.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
 import { agentRunRepo } from './repos/agent-runs.js';
@@ -24,6 +26,7 @@ import { formatSkillPrompt } from './skills/prompt.js';
 import { selectSkills } from './skills/selector.js';
 import { buildSessionHandoffContext } from './session-handoff.js';
 import { applySuperpowersBootstrap } from './superpowers-bootstrap.js';
+import { createTaskWithConversation } from './task-conversation.js';
 import { runRegistry } from './run-registry.js';
 import { messageUploadDir, messageUploadRoute, projectFileUploadRoot, projectFileUploadRoute } from './uploads.js';
 import { buildWorkspaceFileRefContext, type WorkspaceFileRefContext } from './workspace-file-refs.js';
@@ -41,6 +44,7 @@ import type {
   MessageLayer,
   MessageMetadata,
   PlannerDecision,
+  RouteResult,
   Room,
   RoomAgent,
   TaskExecutionIntent,
@@ -769,7 +773,17 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     owner: effectiveSettings?.superpowers_bootstrap_owner ?? 'provider',
     workflowRunId: args.workflowRunId,
   });
-  const prompt = superpowersBootstrap.prompt;
+  const intentAnalysisSource = isAcpIntentAnalysisRun({
+    sourceMessage,
+    taskId: args.taskId,
+    workflowRunId: args.workflowRunId,
+    collaborationRunId: args.collaborationRunId,
+    internalMessage: args.internalMessage,
+  });
+  const intentStreamFilter = intentAnalysisSource ? createAcpIntentStreamFilter() : null;
+  const prompt = intentAnalysisSource
+    ? [superpowersBootstrap.prompt, buildAcpIntentControlBlockPrompt()].join('\n')
+    : superpowersBootstrap.prompt;
   const superpowersBootstrapEnvOverrides: Record<string, string> = {
     OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER: superpowersBootstrap.source,
     OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER: superpowersBootstrap.source,
@@ -861,7 +875,9 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   let answerBuffer = '';
   let answerFlushTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const broadcastAnswerChunk = (chunk: string): void => {
+  const broadcastAnswerChunk = (rawChunk: string): void => {
+    const chunk = intentStreamFilter ? intentStreamFilter.push(rawChunk) : rawChunk;
+    if (!chunk) return;
     restoreRunStatusAfterRetry();
     messageRepo.appendChunk(placeholder.id, chunk);
     agentRunRepo.appendStdout(run.id, chunk);
@@ -1059,8 +1075,8 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       sessionHandoff: sessionHandoff?.text ?? null,
       sessionHandoffMode: sessionHandoff?.mode,
       imagePaths: args.imagePaths,
-      acpPermissionMode: runtimeProfile.acpPermissionMode,
-      acpWritableDirs: runtimeProfile.writableDirs,
+      acpPermissionMode: intentAnalysisSource ? 'read-only' : runtimeProfile.acpPermissionMode,
+      acpWritableDirs: intentAnalysisSource ? [] : runtimeProfile.writableDirs,
       envOverrides: superpowersBootstrapEnvOverrides,
       onChunk: (chunk) => {
         if (chunk.rawType === 'protocol.retry') onRetry(chunk.text);
@@ -1175,6 +1191,18 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     };
     try {
       if (finalRun && finalMessage) {
+        const trailingVisibleAnswer = intentStreamFilter?.finish() ?? '';
+        if (trailingVisibleAnswer) {
+          broadcastAnswerChunk(trailingVisibleAnswer);
+          finalMessage = messageRepo.get(placeholder.id) ?? finalMessage;
+        }
+        if (intentStreamFilter && args.sourceMessageId && finalRun.status === 'completed') {
+          applyAcpIntentResultToSourceMessage({
+            roomId,
+            sourceMessageId: args.sourceMessageId,
+            filter: intentStreamFilter,
+          });
+        }
         try {
           finalMessage = sanitizePlannerCasualReply({
             message: finalMessage,
@@ -1347,6 +1375,120 @@ function extractConciseCasualReply(content: string): string | null {
 function isShortGreeting(content: string): boolean {
   const normalized = content.trim().toLowerCase();
   return /^(hi|hello|hey|你好|您好|嗨|在吗|在不在)[。.!！?？\s]*$/u.test(normalized);
+}
+
+function isAcpIntentAnalysisRun(input: {
+  sourceMessage?: Message;
+  taskId?: string | null;
+  workflowRunId?: string | null;
+  collaborationRunId?: string | null;
+  internalMessage?: boolean;
+}): boolean {
+  if (!input.sourceMessage || input.internalMessage) return false;
+  if (input.taskId || input.workflowRunId || input.collaborationRunId) return false;
+  const metadata = parseMessageMetadata(input.sourceMessage.metadata);
+  return metadata.route_result?.action === 'reply_in_chat';
+}
+
+function buildAcpIntentControlBlockPrompt(): string {
+  return [
+    '',
+    '本轮为群聊单次 ACP 分析回复。',
+    '你只能分析和回复，不能修改文件、不能执行实现、不能运行会改变工作区的操作。',
+    '正文按自然语言正常回复，并保持适合群聊直接阅读。',
+    '在回复末尾追加隐藏控制块，格式必须完全如下，且不要用 Markdown 代码块包裹：',
+    '<openclaw_intent_json>',
+    '{"intent":"chat","suggestedAction":"reply_in_chat","reason":"简短中文原因","signals":["关键信号"]}',
+    '</openclaw_intent_json>',
+    'intent 只能是 chat、light_task、debugger、brainstorming、workflow。',
+    'suggestedAction 只能是 reply_in_chat、create_light_task、start_debugger、start_brainstorming、start_workflow、ask_user。',
+  ].join('\n');
+}
+
+function applyAcpIntentResultToSourceMessage(input: {
+  roomId: string;
+  sourceMessageId: string;
+  filter: AcpIntentStreamFilter;
+}): void {
+  const intentResult = input.filter.intentResult();
+  if (!intentResult) return;
+  const sourceMessage = messageRepo.get(input.sourceMessageId);
+  if (!sourceMessage || sourceMessage.room_id !== input.roomId) return;
+  const metadata = parseMessageMetadata(sourceMessage.metadata);
+  const currentRouteResult = metadata.route_result ?? buildDefaultChatRouteResult();
+  let nextRouteResult = applyIntentToRouteResult(currentRouteResult, intentResult);
+  let taskId: string | undefined;
+  if (nextRouteResult.action === 'create_task') {
+    const taskResult = createTaskWithConversation({
+      roomId: input.roomId,
+      taskInput: {
+        title: inferAcpIntentTaskTitle(sourceMessage.content),
+        description: buildAcpIntentTaskDescription(sourceMessage.content, intentResult),
+        interaction_mode: 'ask_user',
+      },
+      origin: 'chat_plan',
+      sourceMessageId: sourceMessage.id,
+      createUserMessage: false,
+    });
+    taskId = taskResult.task.id;
+    nextRouteResult = {
+      ...nextRouteResult,
+      taskId,
+      reason: `${nextRouteResult.reason}，已根据 ACP 意图创建任务：${taskResult.task.title}`,
+    };
+  }
+  const updatedMessage = messageRepo.mergeMetadata(sourceMessage.id, {
+    intent_result: intentResult,
+    route_result: nextRouteResult,
+    task_id: taskId,
+  });
+  if (!updatedMessage) return;
+  wsHub.broadcast(input.roomId, {
+    type: 'message:stream',
+    roomId: input.roomId,
+    messageId: updatedMessage.id,
+    channel: 'event',
+    chunk: '',
+    done: true,
+    status: 'completed',
+    message: updatedMessage,
+  });
+  if (taskId) {
+    wsHub.broadcast(input.roomId, {
+      type: 'task:activated',
+      roomId: input.roomId,
+      taskId,
+    });
+  }
+}
+
+function buildDefaultChatRouteResult(): RouteResult {
+  return {
+    taskId: null,
+    action: 'reply_in_chat',
+    confidence: 0,
+    reason: '未显式引用任务，按全局聊天回复',
+    reason_code: 'reply_in_chat',
+  };
+}
+
+function inferAcpIntentTaskTitle(content: string): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '待处理任务';
+  return normalized.length <= 80 ? normalized : `${normalized.slice(0, 77).trimEnd()}...`;
+}
+
+function buildAcpIntentTaskDescription(
+  content: string,
+  intentResult: MessageMetadata['intent_result'],
+): string {
+  return [
+    `消息模式：${intentResult?.intent ?? 'light_task'}`,
+    `建议动作：${intentResult?.suggestedAction ?? 'create_light_task'}`,
+    intentResult?.reason ? `判断原因：${intentResult.reason}` : null,
+    '',
+    content,
+  ].filter((line): line is string => line !== null).join('\n');
 }
 
 function buildPlannerCasualChatPrompt(prompt: string, agent: RoomAgent, sourceMessage?: Message): string {
