@@ -799,6 +799,8 @@ export interface MessageMetadata {
   collaboration_decision?: CollaborationDecision;
   route_result?: RouteResult;
   task_readiness?: TaskReadinessMetadata;
+  brainstorming_options?: BrainstormingOption[];
+  brainstorming_option_selection?: BrainstormingOptionSelection;
 }
 
 export interface RouteResult {
@@ -950,6 +952,26 @@ export interface TaskReadinessMetadata {
   recommended_mode: CollaborationMode;
   execution_intent?: TaskExecutionIntent;
   source_message_id?: string;
+}
+
+export type BrainstormingOptionMaturity = 'exploratory' | 'boundary_needed' | 'actionable';
+
+export interface BrainstormingOption {
+  id: string;
+  title: string;
+  summary: string;
+  benefits: string[];
+  risks: string[];
+  maturity: BrainstormingOptionMaturity;
+  recommended?: boolean;
+}
+
+export interface BrainstormingOptionSelection {
+  selected_option_id: string;
+  selected_option_title: string;
+  selected_option_maturity: BrainstormingOptionMaturity;
+  source_message_id: string;
+  source_type: 'brainstorming_option';
 }
 
 export interface CollaborationRunSummary {

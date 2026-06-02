@@ -6,6 +6,7 @@ import { parseMessageMetadata } from '../lib/messageMetadata';
 import { upsertAgentRun } from './RoomPage';
 import {
   findPreviousUserMessage,
+  getAgentMessageRunState,
   shouldUseStreamingDisplayForMessage,
 } from '../components/chat/chatMessageModel';
 import {
@@ -387,6 +388,21 @@ test('shouldUseStreamingDisplayForMessage ignores local streaming state after te
     shouldUseStreamingDisplayForMessage(message, undefined, true),
     true,
   );
+});
+
+test('getAgentMessageRunState maps agent runs to visible message status', () => {
+  const message = createMessage({
+    id: 'agent-message',
+    sender_type: 'agent',
+    content: '',
+  });
+
+  assert.equal(getAgentMessageRunState(message, createAgentRun({ status: 'queued' }), false), 'queued');
+  assert.equal(getAgentMessageRunState(message, createAgentRun({ status: 'running' }), false), 'running');
+  assert.equal(getAgentMessageRunState(message, createAgentRun({ status: 'failed' }), false), 'failed');
+  assert.equal(getAgentMessageRunState(message, createAgentRun({ status: 'completed' }), true), 'completed');
+  assert.equal(getAgentMessageRunState(message, undefined, true), 'streaming');
+  assert.equal(getAgentMessageRunState(createMessage({ id: 'user-message', sender_type: 'user', content: '用户' }), undefined, true), null);
 });
 
 test('mergeTraceEvents merges duplicate event ids and appends streaming text fields', () => {

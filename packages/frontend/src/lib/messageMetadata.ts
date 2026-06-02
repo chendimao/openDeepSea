@@ -1,5 +1,8 @@
 import type {
   AcpBackend,
+  BrainstormingOption,
+  BrainstormingOptionMaturity,
+  BrainstormingOptionSelection,
   CollaborationDecision,
   CollaborationIntent,
   CollaborationMode,
@@ -77,6 +80,11 @@ const messageIntentSuggestedActions = new Set<MessageIntentSuggestedAction>([
   'start_workflow',
   'ask_user',
 ]);
+const brainstormingOptionMaturities = new Set<BrainstormingOptionMaturity>([
+  'exploratory',
+  'boundary_needed',
+  'actionable',
+]);
 
 function createEmptyMessageMetadata(): MessageMetadata {
   return { attachments: [] };
@@ -103,6 +111,7 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
     const trace = sanitizeTraceMetadata(parsed);
     const acp = sanitizeAcpMetadata(parsed);
     const reply = sanitizeReplyMetadata(parsed);
+    const brainstorming = sanitizeBrainstormingMetadata(parsed);
     return {
       attachments,
       ...reply,
@@ -113,10 +122,91 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
       ...plannerDecision,
       ...trace,
       ...acp,
+      ...brainstorming,
     };
   } catch {
     return createEmptyMessageMetadata();
   }
+}
+
+function sanitizeBrainstormingMetadata(value: Record<string, unknown>) {
+  const options = sanitizeBrainstormingOptions(value.brainstorming_options);
+  const selection = sanitizeBrainstormingOptionSelection(value.brainstorming_option_selection);
+  return {
+    ...(options.length > 0 ? { brainstorming_options: options } : {}),
+    ...(selection ? { brainstorming_option_selection: selection } : {}),
+  };
+}
+
+function sanitizeBrainstormingOptions(value: unknown): BrainstormingOption[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(sanitizeBrainstormingOption)
+    .filter((option): option is BrainstormingOption => option !== null)
+    .slice(0, 6);
+}
+
+function sanitizeBrainstormingOption(value: unknown): BrainstormingOption | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.id !== 'string' ||
+    !value.id.trim() ||
+    typeof value.title !== 'string' ||
+    !value.title.trim() ||
+    typeof value.summary !== 'string' ||
+    !value.summary.trim() ||
+    !isBrainstormingOptionMaturity(value.maturity)
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id.trim().slice(0, 120),
+    title: value.title.trim().slice(0, 120),
+    summary: value.summary.trim().slice(0, 360),
+    benefits: sanitizeBoundedStringList(value.benefits, 3, 180),
+    risks: sanitizeBoundedStringList(value.risks, 3, 180),
+    maturity: value.maturity,
+    ...(typeof value.recommended === 'boolean' ? { recommended: value.recommended } : {}),
+  };
+}
+
+function sanitizeBrainstormingOptionSelection(value: unknown): BrainstormingOptionSelection | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.selected_option_id !== 'string' ||
+    !value.selected_option_id.trim() ||
+    typeof value.selected_option_title !== 'string' ||
+    !value.selected_option_title.trim() ||
+    !isBrainstormingOptionMaturity(value.selected_option_maturity) ||
+    typeof value.source_message_id !== 'string' ||
+    !value.source_message_id.trim() ||
+    value.source_type !== 'brainstorming_option'
+  ) {
+    return null;
+  }
+
+  return {
+    selected_option_id: value.selected_option_id.trim().slice(0, 120),
+    selected_option_title: value.selected_option_title.trim().slice(0, 160),
+    selected_option_maturity: value.selected_option_maturity,
+    source_message_id: value.source_message_id.trim().slice(0, 120),
+    source_type: 'brainstorming_option',
+  };
+}
+
+function sanitizeBoundedStringList(value: unknown, limit: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .map((item) => item.slice(0, maxLength))
+    .slice(0, limit);
+}
+
+function isBrainstormingOptionMaturity(value: unknown): value is BrainstormingOptionMaturity {
+  return typeof value === 'string' && brainstormingOptionMaturities.has(value as BrainstormingOptionMaturity);
 }
 
 function sanitizeReplyMetadata(value: Record<string, unknown>) {

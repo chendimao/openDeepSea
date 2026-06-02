@@ -5,6 +5,7 @@ import type {
   AgentTimelineEvent,
   AgentInput,
   AgentRun,
+  BrainstormingOptionSelection,
   AgentMemoryScope,
   AgentRuntimeBackend,
   AgentToolCapability,
@@ -744,6 +745,7 @@ export const api = {
       fileRefs?: string[];
       replyToMessageId?: string;
       activeTaskId?: string | null;
+      brainstormingOptionSelection?: BrainstormingOptionSelection;
     },
   ) => {
     if (input.files && input.files.length > 0) {
@@ -779,6 +781,7 @@ export const api = {
         fileRefs: input.fileRefs,
         reply_to_message_id: input.replyToMessageId,
         active_task_id: input.activeTaskId,
+        brainstorming_option_selection: input.brainstormingOptionSelection,
       }),
     });
   },

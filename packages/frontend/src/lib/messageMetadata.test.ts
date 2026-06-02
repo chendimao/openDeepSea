@@ -569,3 +569,69 @@ test('parseMessageMetadata rejects invalid intent_result metadata', () => {
     assert.equal(parsed.intent_result, undefined, item.name);
   }
 });
+
+test('parseMessageMetadata accepts brainstorming options and selection metadata', () => {
+  const metadata = JSON.stringify({
+    brainstorming_options: [
+      {
+        id: 'unified-workspace-reference',
+        title: '推荐方案',
+        summary: '统一资源和工作区入口',
+        benefits: ['空查询展示根目录', '错误提示更明确'],
+        risks: ['需要确认目录注入深度'],
+        maturity: 'boundary_needed',
+        recommended: true,
+      },
+      {
+        id: 'hide-directories',
+        title: '不推荐方案',
+        summary: '禁止目录出现在搜索结果',
+        benefits: ['避免目录下游不可用'],
+        risks: ['违背用户搜索文件夹的目标'],
+        maturity: 'exploratory',
+      },
+    ],
+    brainstorming_option_selection: {
+      selected_option_id: 'unified-workspace-reference',
+      selected_option_title: '统一资源和工作区入口',
+      selected_option_maturity: 'boundary_needed',
+      source_message_id: 'message-1',
+      source_type: 'brainstorming_option',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.brainstorming_options?.length, 2);
+  assert.equal(parsed.brainstorming_options?.[0]?.recommended, true);
+  assert.equal(parsed.brainstorming_options?.[0]?.maturity, 'boundary_needed');
+  assert.equal(parsed.brainstorming_option_selection?.selected_option_id, 'unified-workspace-reference');
+  assert.equal(parsed.brainstorming_option_selection?.source_message_id, 'message-1');
+});
+
+test('parseMessageMetadata ignores invalid brainstorming options', () => {
+  const metadata = JSON.stringify({
+    brainstorming_options: [
+      {
+        id: '',
+        title: '坏方案',
+        summary: '',
+        benefits: ['x'],
+        risks: ['y'],
+        maturity: 'unknown',
+      },
+    ],
+    brainstorming_option_selection: {
+      selected_option_id: '',
+      selected_option_title: '无效',
+      selected_option_maturity: 'actionable',
+      source_message_id: 'message-1',
+      source_type: 'brainstorming_option',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.brainstorming_options, undefined);
+  assert.equal(parsed.brainstorming_option_selection, undefined);
+});

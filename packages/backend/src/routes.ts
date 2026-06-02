@@ -1763,6 +1763,13 @@ const jsonMessageSchema = z.object({
   fileRefs: z.array(z.string()).optional(),
   reply_to_message_id: z.string().trim().min(1).optional(),
   active_task_id: z.string().trim().min(1).nullable().optional(),
+  brainstorming_option_selection: z.object({
+    selected_option_id: z.string().trim().min(1).max(120),
+    selected_option_title: z.string().trim().min(1).max(160),
+    selected_option_maturity: z.enum(['exploratory', 'boundary_needed', 'actionable']),
+    source_message_id: z.string().trim().min(1).max(120),
+    source_type: z.literal('brainstorming_option'),
+  }).optional(),
 });
 
 const multipartMessageSchema = z.object({
@@ -1887,6 +1894,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
       attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile),
       replyToMessageId: parsed.data.reply_to_message_id,
       fileRefs,
+      brainstormingOptionSelection: parsed.data.brainstorming_option_selection,
     }) ?? {};
   } catch (err) {
     const error = err as Error & { status?: number };
@@ -2048,6 +2056,7 @@ function buildUserMessageMetadata(input: {
   attachments: MessageMetadata['attachments'];
   replyToMessageId?: string;
   fileRefs?: string[];
+  brainstormingOptionSelection?: MessageMetadata['brainstorming_option_selection'];
 }): MessageMetadata | undefined {
   const metadata: MessageMetadata = {};
   if (input.attachments && input.attachments.length > 0) {
@@ -2055,6 +2064,15 @@ function buildUserMessageMetadata(input: {
   }
   if (input.fileRefs && input.fileRefs.length > 0) {
     metadata.file_refs = input.fileRefs;
+  }
+  if (input.brainstormingOptionSelection) {
+    const sourceMessage = messageRepo.get(input.brainstormingOptionSelection.source_message_id);
+    if (!sourceMessage || sourceMessage.room_id !== input.roomId) {
+      const error = new Error('brainstorming option source message not found in room') as Error & { status?: number };
+      error.status = 400;
+      throw error;
+    }
+    metadata.brainstorming_option_selection = input.brainstormingOptionSelection;
   }
   const replyToMessageId = normalizeOptionalId(input.replyToMessageId);
   if (replyToMessageId) {

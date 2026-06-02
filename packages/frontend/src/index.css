@@ -1787,6 +1787,46 @@
     font-size: 10px;
     line-height: 1.2;
   }
+  .ai-message-status-badge {
+    display: inline-flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid var(--room-border-subtle);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--room-card-bg) 72%, transparent);
+    color: var(--room-text-muted);
+    padding: 2px 7px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 10px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .ai-message-status-badge.is-running,
+  .ai-message-status-badge.is-pending {
+    border-color: color-mix(in srgb, var(--color-primary) 26%, var(--room-border-subtle));
+    color: var(--color-primary);
+  }
+  .ai-message-status-badge.is-success {
+    border-color: color-mix(in srgb, var(--color-success) 28%, var(--room-border-subtle));
+    color: var(--color-success);
+  }
+  .ai-message-status-badge.is-danger {
+    border-color: color-mix(in srgb, var(--color-danger) 28%, var(--room-border-subtle));
+    color: var(--color-danger);
+  }
+  .ai-message-status-dot {
+    width: 5px;
+    height: 5px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: currentColor;
+    opacity: 0.78;
+  }
+  .ai-message-status-badge.is-active .ai-message-status-dot {
+    animation: chat-activity-pulse 1.35s ease-in-out infinite;
+  }
   .ai-message-actions {
     display: flex;
     flex: 0 0 auto;
@@ -1855,6 +1895,65 @@
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     font-size: 12.5px;
     line-height: 1.62;
+  }
+  .agent-run-status-notice {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    border: 1px solid var(--room-border-subtle);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--room-card-muted-bg) 68%, transparent);
+    padding: 9px 10px;
+    color: var(--room-text-muted);
+  }
+  .agent-run-status-notice.is-running,
+  .agent-run-status-notice.is-pending {
+    border-color: color-mix(in srgb, var(--color-primary) 20%, var(--room-border-subtle));
+    background: color-mix(in srgb, var(--color-primary) 6%, var(--room-card-muted-bg));
+  }
+  .agent-run-status-notice.is-danger {
+    border-color: color-mix(in srgb, var(--color-danger) 24%, var(--room-border-subtle));
+    background: color-mix(in srgb, var(--color-danger) 6%, var(--room-card-muted-bg));
+  }
+  .agent-run-status-notice.is-success {
+    border-color: color-mix(in srgb, var(--color-success) 20%, var(--room-border-subtle));
+    background: color-mix(in srgb, var(--color-success) 6%, var(--room-card-muted-bg));
+  }
+  .agent-run-status-notice-dot {
+    width: 7px;
+    height: 7px;
+    margin-top: 6px;
+    border-radius: 999px;
+    background: currentColor;
+    opacity: 0.7;
+  }
+  .agent-run-status-notice.is-running .agent-run-status-notice-dot,
+  .agent-run-status-notice.is-pending .agent-run-status-notice-dot {
+    color: var(--color-primary);
+  }
+  .agent-run-status-notice.is-success .agent-run-status-notice-dot {
+    color: var(--color-success);
+  }
+  .agent-run-status-notice.is-danger .agent-run-status-notice-dot {
+    color: var(--color-danger);
+  }
+  .agent-run-status-notice.is-active .agent-run-status-notice-dot {
+    animation: chat-activity-pulse 1.35s ease-in-out infinite;
+  }
+  .agent-run-status-notice strong {
+    display: block;
+    color: var(--room-text-heading);
+    font-size: 12px;
+    font-weight: 760;
+    line-height: 1.35;
+  }
+  .agent-run-status-notice span {
+    display: block;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 1.45;
   }
   .ai-message-run-panel {
     border-top: 1px solid rgba(255,255,255,0.52);

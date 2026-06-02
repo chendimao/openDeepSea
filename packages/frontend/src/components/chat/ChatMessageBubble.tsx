@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, ClipboardList, Eye, FileText, Reply, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
-import type { Agent, AgentRun, Message, RoomAgent, Task, TaskEventType, WorkflowRun } from '../../lib/types';
+import type { Agent, AgentRun, BrainstormingOption, Message, RoomAgent, Task, TaskEventType, WorkflowRun } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
@@ -19,7 +19,13 @@ import {
 import { MessageAttachments } from './MessageAttachments';
 import { ChatActivityMessage } from './ChatActivityMessage';
 import { ChatTaskCard } from './ChatTaskCard';
-import { shouldUseStreamingDisplayForMessage } from './chatMessageModel';
+import { BrainstormingOptionsPanel } from './BrainstormingOptionsPanel';
+import { getBrainstormingOptionsForMessage } from './brainstormingOptions';
+import {
+  getAgentMessageRunState,
+  shouldUseStreamingDisplayForMessage,
+  type AgentMessageRunState,
+} from './chatMessageModel';
 
 export interface ChatMessageBubbleProps {
   message: Message;
@@ -46,6 +52,8 @@ export interface ChatMessageBubbleProps {
   onLocateReplyTarget: (messageId: string) => void;
   onSelectTask?: (task: Task) => void;
   onStartWorkflow?: (task: Task) => void;
+  selectedBrainstormingOptionIds?: Set<string>;
+  onSelectBrainstormingOption?: (message: Message, option: BrainstormingOption) => void;
 }
 
 export function ChatMessageBubble({
@@ -73,6 +81,8 @@ export function ChatMessageBubble({
   onLocateReplyTarget,
   onSelectTask,
   onStartWorkflow,
+  selectedBrainstormingOptionIds,
+  onSelectBrainstormingOption,
 }: ChatMessageBubbleProps): JSX.Element {
   const { t, formatRelativeTime } = useI18n();
   const queryClient = useQueryClient();
@@ -113,14 +123,24 @@ export function ChatMessageBubble({
   const isUser = message.sender_type === 'user';
   const isSystem = message.sender_type === 'system';
   const attachments = metadata.attachments;
-  const renderedContent = displayContent || (message.message_type === 'agent_stream' ? '…' : '');
+  const agentRunState = getAgentMessageRunState(message, run, streaming);
+  const agentRunStatus = agentRunState ? getAgentRunStatusPresentation(agentRunState) : null;
+  const renderedContent = displayContent.trim() ? displayContent : '';
   const hasContent = Boolean(renderedContent.trim());
   const hasMarkdownDisplayMode = hasContent && isMarkdownMessageContent(renderedContent);
   const isStreaming = shouldUseStreamingDisplayForMessage(message, run, streaming);
+  const showRunStatusNotice = !hasContent && Boolean(agentRunStatus) && message.message_type === 'agent_stream';
   const canReply = !isSystem && hasContent && !isStreaming;
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
   const showPlannerDecisionPanel = !isUser && Boolean(metadata.planner_decision);
-  const showRecordOnlyBody = !isUser && Boolean(run) && !hasContent;
+  const showRecordOnlyBody = showPlannerDecisionPanel && !hasContent;
+  const brainstormingOptions = !isUser && !isStreaming
+    ? getBrainstormingOptionsForMessage(message, metadata)
+    : [];
+
+  if (!isUser && run && !hasContent && !showPlannerDecisionPanel && !agentRunStatus) {
+    return <></>;
+  }
 
   if (isSystem && shouldRenderInlineTaskCard(metadata.event_type, metadata.task_id)) {
     return (
@@ -187,6 +207,12 @@ export function ChatMessageBubble({
           </AiMessageMeta>
           {agentMeta?.acp_enabled && agentMeta.acp_backend && (
             <AiMessageBadge>ACP:{agentMeta.acp_backend}</AiMessageBadge>
+          )}
+          {agentRunStatus && (
+            <span className={cn('ai-message-status-badge', `is-${agentRunStatus.tone}`, agentRunStatus.active && 'is-active')}>
+              <span className="ai-message-status-dot" aria-hidden="true" />
+              {agentRunStatus.label}
+            </span>
           )}
           {(hasContent || canRetryAgentRun) && (
             <AiMessageActions>
@@ -276,20 +302,18 @@ export function ChatMessageBubble({
                 suppressTraceEvents={!isUser}
                 roomId={roomId}
               />
-            ) : message.message_type === 'agent_stream' ? (
-              <MessageContent
-                content="…"
-                streaming={isStreaming}
-                trace={metadata.trace}
-                roomAgents={roomAgents}
-                globalAgents={globalAgents}
-                tasks={tasks}
-                suppressWorkflowJsonBlocks={!isUser}
-                suppressTraceEvents={!isUser}
-                roomId={roomId}
-              />
+            ) : showRunStatusNotice && agentRunStatus ? (
+              <AgentRunStatusNotice status={agentRunStatus} error={run?.error ?? run?.stderr ?? null} />
             ) : null}
             <MessageAttachments attachments={attachments} />
+            {brainstormingOptions.length > 0 && (
+              <BrainstormingOptionsPanel
+                options={brainstormingOptions}
+                selectedOptionIds={selectedBrainstormingOptionIds}
+                disabled={!onSelectBrainstormingOption}
+                onSelect={(option) => onSelectBrainstormingOption?.(message, option)}
+              />
+            )}
           </AiMessageBody>
         )}
         {showPlannerDecisionPanel && metadata.planner_decision && (
@@ -300,16 +324,56 @@ export function ChatMessageBubble({
             onSelectTask={onSelectTask}
           />
         )}
-        {!isUser && run && (
-          <TaskRecordSummaryEntry
-            label="ACP 调用记录"
-            detail={`ACP:${run.backend} · ${run.status}`}
-            task={task}
-            onSelectTask={onSelectTask}
-          />
-        )}
       </div>
     </AiMessageRow>
+  );
+}
+
+type AgentRunStatusTone = 'pending' | 'running' | 'success' | 'danger' | 'muted';
+
+interface AgentRunStatusPresentation {
+  label: string;
+  detail: string;
+  tone: AgentRunStatusTone;
+  active: boolean;
+}
+
+function getAgentRunStatusPresentation(state: AgentMessageRunState): AgentRunStatusPresentation {
+  switch (state) {
+    case 'queued':
+      return { label: '等待运行', detail: '智能体已进入队列，等待开始回复。', tone: 'pending', active: true };
+    case 'running':
+    case 'streaming':
+      return { label: '运行中', detail: '智能体正在生成回复。', tone: 'running', active: true };
+    case 'retrying':
+      return { label: '重试中', detail: '上次运行未完成，正在重新尝试。', tone: 'running', active: true };
+    case 'completed':
+      return { label: '已完成', detail: '智能体回复已完成。', tone: 'success', active: false };
+    case 'failed':
+      return { label: '运行失败', detail: '智能体运行失败，可重试上一条用户消息。', tone: 'danger', active: false };
+    case 'cancelled':
+      return { label: '已取消', detail: '本次智能体回复已取消。', tone: 'muted', active: false };
+    case 'interrupted':
+      return { label: '已中断', detail: '本次智能体回复被中断，可能需要重新发送。', tone: 'danger', active: false };
+  }
+}
+
+function AgentRunStatusNotice({
+  status,
+  error,
+}: {
+  status: AgentRunStatusPresentation;
+  error: string | null;
+}): JSX.Element {
+  const errorText = status.tone === 'danger' ? error?.trim() : '';
+  return (
+    <div className={cn('agent-run-status-notice', `is-${status.tone}`, status.active && 'is-active')}>
+      <span className="agent-run-status-notice-dot" aria-hidden="true" />
+      <div>
+        <strong>{status.label}</strong>
+        <span>{errorText ? errorText.slice(0, 180) : status.detail}</span>
+      </div>
+    </div>
   );
 }
 

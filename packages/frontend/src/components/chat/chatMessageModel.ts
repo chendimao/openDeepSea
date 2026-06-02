@@ -1,5 +1,7 @@
 import type { AgentRun, Message } from '../../lib/types';
 
+export type AgentMessageRunState = AgentRun['status'] | 'streaming';
+
 export function pairRunsWithAgentMessages(messages: Message[], runs: AgentRun[]): Map<string, AgentRun> {
   const result = new Map<string, AgentRun>();
   const usedRunIds = new Set<string>();
@@ -38,6 +40,16 @@ export function shouldUseStreamingDisplayForMessage(
   if (run && isTerminalAgentRunStatus(run.status)) return false;
   if (run && (run.status === 'running' || run.status === 'queued' || run.status === 'retrying')) return true;
   return hasLocalStreamingState;
+}
+
+export function getAgentMessageRunState(
+  message: Message,
+  run: AgentRun | undefined,
+  hasLocalStreamingState: boolean,
+): AgentMessageRunState | null {
+  if (message.sender_type === 'user' || message.message_type !== 'agent_stream') return null;
+  if (run) return run.status;
+  return hasLocalStreamingState ? 'streaming' : null;
 }
 
 function isTerminalAgentRunStatus(status: AgentRun['status']): boolean {

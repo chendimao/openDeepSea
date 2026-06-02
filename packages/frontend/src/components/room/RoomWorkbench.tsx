@@ -9,6 +9,8 @@ import { parseMessageMetadata } from '../../lib/messageMetadata';
 import type {
   Agent,
   AgentRun,
+  BrainstormingOption,
+  BrainstormingOptionSelection,
   Message,
   Room,
   RoomAgent,
@@ -84,6 +86,7 @@ type SendInput = {
   fileRefs?: string[];
   replyToMessageId?: string;
   activeTaskId?: string | null;
+  brainstormingOptionSelection?: BrainstormingOptionSelection;
 };
 
 export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId: string }): JSX.Element {
@@ -854,6 +857,17 @@ function ChatColumn({
   );
   const workflowByTaskId = useMemo(() => createWorkflowByTaskId(workflows), [workflows]);
   const visibleMessages = useMemo(() => selectConversationMessages(dedupeMessages(messages)), [messages]);
+  const selectedBrainstormingOptionIdsByMessageId = useMemo(() => {
+    const selections = new Map<string, Set<string>>();
+    for (const message of visibleMessages) {
+      const selection = parseMessageMetadata(message.metadata).brainstorming_option_selection;
+      if (!selection) continue;
+      const selected = selections.get(selection.source_message_id) ?? new Set<string>();
+      selected.add(selection.selected_option_id);
+      selections.set(selection.source_message_id, selected);
+    }
+    return selections;
+  }, [visibleMessages]);
   const streamingReplyMessageIds = useMemo(
     () => new Set(Array.from(streamingMessageIds)),
     [streamingMessageIds],
@@ -902,8 +916,22 @@ function ChatColumn({
       fileIds,
       fileRefs,
       replyToMessageId: input.replyToMessageId,
+      brainstormingOptionSelection: input.brainstormingOptionSelection,
     });
   }, [send]);
+
+  const selectBrainstormingOption = useCallback((sourceMessage: Message, option: BrainstormingOption) => {
+    submitUserMessage({
+      content: `我选择：${option.title}「${option.summary}」`,
+      brainstormingOptionSelection: {
+        selected_option_id: option.id,
+        selected_option_title: option.title,
+        selected_option_maturity: option.maturity,
+        source_message_id: sourceMessage.id,
+        source_type: 'brainstorming_option',
+      },
+    });
+  }, [submitUserMessage]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -981,6 +1009,8 @@ function ChatColumn({
                   onLocateReplyTarget={onLocateReplyTarget}
                   onSelectTask={onSelectTask}
                   onStartWorkflow={onStartWorkflow}
+                  selectedBrainstormingOptionIds={selectedBrainstormingOptionIdsByMessageId.get(m.id)}
+                  onSelectBrainstormingOption={selectBrainstormingOption}
                 />
               );
             })

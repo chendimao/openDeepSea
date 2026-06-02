@@ -696,6 +696,16 @@ export interface PlannerDecision {
   awaiting_user_confirmation: boolean;
 }
 
+export type BrainstormingOptionMaturity = 'exploratory' | 'boundary_needed' | 'actionable';
+
+export interface BrainstormingOptionSelection {
+  selected_option_id: string;
+  selected_option_title: string;
+  selected_option_maturity: BrainstormingOptionMaturity;
+  source_message_id: string;
+  source_type: 'brainstorming_option';
+}
+
 export interface MessageTraceThinking {
   text: string;
 }
@@ -802,6 +812,7 @@ export interface MessageMetadata extends MessageTaskEventMetadata {
     execution_intent?: TaskExecutionIntent;
     source_message_id?: string;
   };
+  brainstorming_option_selection?: BrainstormingOptionSelection;
   task_analysis?: {
     task_type: MessageIntent;
     execution_intent: TaskExecutionIntent;
