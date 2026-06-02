@@ -29,8 +29,10 @@ export interface TaskWorkspacePanelProps {
   layerVisibility: TaskLayerVisibility;
   onStatusFiltersChange: (filters: TaskStatusFilter[]) => void;
   onSelectTask: (task: Task) => void;
+  onStartWorkflow?: (task: Task) => void;
   onLocateSourceMessage: (messageId: string, task: Task) => void;
   onClearActiveTask: () => void;
+  startingWorkflowTaskId?: string | null;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
   formatRelativeTime: (timestamp: number) => string;
   taskStatusLabel: (status: Task['status']) => string;
@@ -53,8 +55,10 @@ export function TaskWorkspacePanel({
   layerVisibility,
   onStatusFiltersChange,
   onSelectTask,
+  onStartWorkflow,
   onLocateSourceMessage,
   onClearActiveTask,
+  startingWorkflowTaskId,
   t,
   formatRelativeTime,
   taskStatusLabel,
@@ -144,12 +148,14 @@ export function TaskWorkspacePanel({
               roomAgents={agents}
               tasks={tasks}
               roomId={activeTask.room_id}
+              onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(activeTask) : undefined}
               onLocateSourceMessage={
                 activeTask.source_message_id
                   ? () => onLocateSourceMessage(activeTask.source_message_id!, activeTask)
                   : undefined
               }
               onClearActiveTask={onClearActiveTask}
+              startingWorkflow={startingWorkflowTaskId === activeTask.id}
               formatRelativeTime={formatRelativeTime}
               t={t}
               taskStatusLabel={taskStatusLabel}

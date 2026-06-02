@@ -121,6 +121,141 @@ test('TaskWorkspacePanel keeps task selection explicit when no task is active', 
   assert.doesNotMatch(html, /data-active="true"/);
 });
 
+test('TaskWorkspacePanel exposes workflow start action for active open task', () => {
+  const activeTask = task('task-open', '等待启动闭环');
+  const html = renderToStaticMarkup(
+    <TaskWorkspaceTestProvider>
+      <TaskWorkspacePanel
+        tasks={[activeTask]}
+        activeTask={activeTask}
+        activeTaskId={activeTask.id}
+        statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
+        activityEvents={[]}
+        taskEvents={[]}
+        messages={[]}
+        agentRuns={[]}
+        taskEventsLoading={false}
+        agents={[]}
+        workflows={[]}
+        layerVisibility={layers}
+        onStatusFiltersChange={() => undefined}
+        onSelectTask={() => undefined}
+        onStartWorkflow={() => undefined}
+        onLocateSourceMessage={() => undefined}
+        onClearActiveTask={() => undefined}
+        t={(key) => key}
+        formatRelativeTime={(value) => `${value}`}
+        taskStatusLabel={(value) => value}
+        taskPriorityLabel={(value) => value}
+        interactionModeLabel={(value) => value}
+      />
+    </TaskWorkspaceTestProvider>,
+  );
+
+  assert.match(html, /aria-label="taskDetail.startWorkflow"/);
+  assert.match(html, /title="taskDetail.startWorkflow"/);
+});
+
+test('TaskWorkspacePanel hides workflow start action for done task or active workflow', () => {
+  const doneTask = { ...task('task-done', '已完成任务'), status: 'done' as const };
+  const runningTask = task('task-running-workflow', '已有闭环任务');
+
+  const doneHtml = renderToStaticMarkup(
+    <TaskWorkspaceTestProvider>
+      <TaskWorkspacePanel
+        tasks={[doneTask]}
+        activeTask={doneTask}
+        activeTaskId={doneTask.id}
+        statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
+        activityEvents={[]}
+        taskEvents={[]}
+        messages={[]}
+        agentRuns={[]}
+        taskEventsLoading={false}
+        agents={[]}
+        workflows={[]}
+        layerVisibility={layers}
+        onStatusFiltersChange={() => undefined}
+        onSelectTask={() => undefined}
+        onStartWorkflow={() => undefined}
+        onLocateSourceMessage={() => undefined}
+        onClearActiveTask={() => undefined}
+        t={(key) => key}
+        formatRelativeTime={(value) => `${value}`}
+        taskStatusLabel={(value) => value}
+        taskPriorityLabel={(value) => value}
+        interactionModeLabel={(value) => value}
+      />
+    </TaskWorkspaceTestProvider>,
+  );
+
+  const workflowHtml = renderToStaticMarkup(
+    <TaskWorkspaceTestProvider>
+      <TaskWorkspacePanel
+        tasks={[runningTask]}
+        activeTask={runningTask}
+        activeTaskId={runningTask.id}
+        statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
+        activityEvents={[]}
+        taskEvents={[]}
+        messages={[]}
+        agentRuns={[]}
+        taskEventsLoading={false}
+        agents={[]}
+        workflows={[workflowRun(runningTask.id)]}
+        layerVisibility={layers}
+        onStatusFiltersChange={() => undefined}
+        onSelectTask={() => undefined}
+        onStartWorkflow={() => undefined}
+        onLocateSourceMessage={() => undefined}
+        onClearActiveTask={() => undefined}
+        t={(key) => key}
+        formatRelativeTime={(value) => `${value}`}
+        taskStatusLabel={(value) => value}
+        taskPriorityLabel={(value) => value}
+        interactionModeLabel={(value) => value}
+      />
+    </TaskWorkspaceTestProvider>,
+  );
+
+  assert.doesNotMatch(doneHtml, /aria-label="taskDetail.startWorkflow"/);
+  assert.doesNotMatch(workflowHtml, /aria-label="taskDetail.startWorkflow"/);
+});
+
+test('TaskWorkspacePanel keeps workflow start action after terminal workflow', () => {
+  const activeTask = task('task-terminal-workflow', '可重启闭环任务');
+  const html = renderToStaticMarkup(
+    <TaskWorkspaceTestProvider>
+      <TaskWorkspacePanel
+        tasks={[activeTask]}
+        activeTask={activeTask}
+        activeTaskId={activeTask.id}
+        statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
+        activityEvents={[]}
+        taskEvents={[]}
+        messages={[]}
+        agentRuns={[]}
+        taskEventsLoading={false}
+        agents={[]}
+        workflows={[workflowRun(activeTask.id, 'failed')]}
+        layerVisibility={layers}
+        onStatusFiltersChange={() => undefined}
+        onSelectTask={() => undefined}
+        onStartWorkflow={() => undefined}
+        onLocateSourceMessage={() => undefined}
+        onClearActiveTask={() => undefined}
+        t={(key) => key}
+        formatRelativeTime={(value) => `${value}`}
+        taskStatusLabel={(value) => value}
+        taskPriorityLabel={(value) => value}
+        interactionModeLabel={(value) => value}
+      />
+    </TaskWorkspaceTestProvider>,
+  );
+
+  assert.match(html, /aria-label="taskDetail.startWorkflow"/);
+});
+
 function TaskWorkspaceTestProvider({ children }: { children: React.ReactNode }): JSX.Element {
   const client = new QueryClient({
     defaultOptions: {
@@ -291,6 +426,30 @@ function agentRun(id: string, taskId: string): AgentRun {
     started_at: 2,
     updated_at: 3,
     completed_at: 3,
+  };
+}
+
+function workflowRun(taskId: string, status: WorkflowRun['status'] = 'running'): WorkflowRun {
+  return {
+    id: `workflow-${taskId}`,
+    room_id: 'room-1',
+    project_id: 'project-1',
+    task_id: taskId,
+    status,
+    current_stage: 'planning',
+    graph_version: null,
+    graph_state: null,
+    approval_required: 1,
+    approved_at: null,
+    approved_by: null,
+    openclaw_flow_id: null,
+    workflow_definition_id: null,
+    workflow_definition_version: null,
+    workflow_definition_snapshot: null,
+    created_at: 5,
+    updated_at: 5,
+    completed_at: null,
+    error: null,
   };
 }
 

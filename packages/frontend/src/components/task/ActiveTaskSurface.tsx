@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bot, Clock3, FileDiff, FileText, FolderOpen, Gauge, GitBranch, ListChecks, LocateFixed, MonitorPlay, Pencil, Radio, Search, ScrollText, XCircle } from 'lucide-react';
+import { Bot, Clock3, FileDiff, FileText, FolderOpen, Gauge, GitBranch, ListChecks, Loader2, LocateFixed, MonitorPlay, Pencil, Play, Radio, Search, ScrollText, XCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
@@ -34,6 +34,14 @@ const TASK_WORKSPACE_TABS: Array<{ id: ActiveTaskTab; label: string }> = [
   { id: 'resources', label: '资源' },
 ];
 
+const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>([
+  'draft',
+  'running',
+  'awaiting_decision',
+  'awaiting_approval',
+  'blocked',
+]);
+
 export interface ActiveTaskSurfaceProps {
   task: Task;
   assignedAgent?: RoomAgent;
@@ -46,8 +54,10 @@ export interface ActiveTaskSurfaceProps {
   roomAgents: RoomAgent[];
   tasks?: Task[];
   roomId: string;
+  onStartWorkflow?: () => void;
   onLocateSourceMessage?: () => void;
   onClearActiveTask: () => void;
+  startingWorkflow?: boolean;
   formatRelativeTime: (timestamp: number) => string;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
   taskStatusLabel: (status: Task['status']) => string;
@@ -67,8 +77,10 @@ export function ActiveTaskSurface({
   roomAgents,
   tasks = [],
   roomId,
+  onStartWorkflow,
   onLocateSourceMessage,
   onClearActiveTask,
+  startingWorkflow,
   formatRelativeTime,
   t,
   taskStatusLabel,
@@ -85,6 +97,8 @@ export function ActiveTaskSurface({
   const displayToolCalls = completeToolCallPreview(toolCalls, task.created_at);
   const currentAgent = assignedAgent?.agent_name ?? t('common.unassigned');
   const currentStep = planSteps.find((step) => step.state === 'running') ?? planSteps[0];
+  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
+  const canStartWorkflow = !hasActiveWorkflow && task.status !== 'done';
   const taskMessages = useMemo(
     () => messages.filter((message) => messageBelongsToCurrentTask(message, task)),
     [messages, task],
@@ -151,6 +165,21 @@ export function ActiveTaskSurface({
             <p>{task.description || t('taskDetail.noDescription')}</p>
           </div>
           <div className="active-task-header-actions">
+            {onStartWorkflow && canStartWorkflow && (
+              <button
+                type="button"
+                onClick={onStartWorkflow}
+                disabled={startingWorkflow}
+                aria-label={t('taskDetail.startWorkflow')}
+                title={t('taskDetail.startWorkflow')}
+              >
+                {startingWorkflow ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Play className="h-4 w-4" />
+                )}
+              </button>
+            )}
             {onLocateSourceMessage && (
               <button type="button" onClick={onLocateSourceMessage} aria-label={t('taskBoard.locateSourceMessage')} title={t('taskBoard.locateSourceMessage')}>
                 <LocateFixed className="h-4 w-4" />

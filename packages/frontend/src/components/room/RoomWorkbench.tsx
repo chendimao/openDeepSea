@@ -92,6 +92,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [startingWorkflowTaskId, setStartingWorkflowTaskId] = useState<string | null>(null);
   const [autoActiveTaskDismissedRoomId, setAutoActiveTaskDismissedRoomId] = useState<string | null>(null);
   const [layerVisibility] = useState<TaskLayerVisibility>(DEFAULT_TASK_LAYER_VISIBILITY);
   const [taskStatusFilters, setTaskStatusFilters] = useState<TaskStatusFilter[]>(DEFAULT_TASK_STATUS_FILTERS);
@@ -177,6 +178,30 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     },
     onError: (err) => toast.error((err as Error).message),
   });
+  const startWorkflow = useMutation({
+    mutationFn: (task: Task) =>
+      api.startWorkflowWithConversation(roomId, task.id, {
+        source: 'task_button',
+        source_message_id: task.source_message_id ?? undefined,
+      }),
+    onMutate: (task) => {
+      setStartingWorkflowTaskId(task.id);
+      setActiveTaskId(task.id);
+      setAutoActiveTaskDismissedRoomId(null);
+      setShowMemoryPanel(false);
+    },
+    onSuccess: (workflow) => {
+      toast.success(t('taskDetail.startWorkflow'));
+      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
+      queryClient.setQueryData<WorkflowRun[] | undefined>(['room-workflows', roomId], (prev) =>
+        [workflow, ...(prev ?? []).filter((item) => item.id !== workflow.id)],
+      );
+    },
+    onError: (err) => toast.error((err as Error).message),
+    onSettled: () => setStartingWorkflowTaskId(null),
+  });
   const { data: agentRuns = [] } = useQuery({
     queryKey: ['agent-runs', roomId],
     queryFn: () => api.listAgentRuns(roomId),
@@ -208,6 +233,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     setHighlightMessageId(null);
     setExplicitReplyTarget(null);
     setActiveTaskId(null);
+    setStartingWorkflowTaskId(null);
     setAutoActiveTaskDismissedRoomId(null);
     messageRefs.current.clear();
     streamingRunMessageIds.current.clear();
@@ -479,8 +505,10 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
             setAutoActiveTaskDismissedRoomId(null);
             activateTask.mutate(task);
           }}
+          onStartWorkflow={(task) => startWorkflow.mutate(task)}
           onLocateSourceMessage={focusMessage}
           onClearActiveTask={clearActiveTask}
+          startingWorkflowTaskId={startingWorkflowTaskId}
           t={t}
           formatRelativeTime={formatRelativeTime}
           taskStatusLabel={taskStatusLabel}
