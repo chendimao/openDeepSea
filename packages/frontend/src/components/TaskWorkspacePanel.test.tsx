@@ -72,6 +72,10 @@ test('TaskWorkspacePanel renders queue and active task surface together', () => 
   assert.match(html, /用于验证任务工作区合并布局/);
   assert.match(html, /规划决策/);
   assert.match(html, /规划完成/);
+  assert.match(html, /建议先执行前端重构/);
+  assert.doesNotMatch(html, /planner_decision/);
+  assert.doesNotMatch(html, /pause_after_suggestion/);
+  assert.doesNotMatch(html, /next_steps/);
   assert.match(html, /AI 已读取上下文/);
   assert.match(html, /Read · package\.json/);
   assert.match(html, /已完成文件读取/);
@@ -203,25 +207,29 @@ function agent(id: string, name: string): RoomAgent {
 }
 
 function plannerMessage(id: string, taskId: string): Message {
+  const plannerDecision = {
+    planner_decision: {
+      mode: 'pause_after_suggestion',
+      status: 'suggested',
+      summary: '建议先执行前端重构',
+      next_steps: [{ agent_id: 'codex', goal: '实现任务工作区重构' }],
+      awaiting_user_confirmation: false,
+    },
+  };
+
   return {
     id,
     room_id: 'room-1',
     sender_type: 'agent',
     sender_id: 'planner',
     sender_name: '规划师',
-    content: '规划完成',
+    content: `规划完成\n\n\`\`\`json\n${JSON.stringify(plannerDecision, null, 2)}\n\`\`\``,
     message_type: 'text',
     layer: 'activity',
     metadata: JSON.stringify({
       attachments: [],
       task_id: taskId,
-      planner_decision: {
-        mode: 'pause_after_suggestion',
-        status: 'suggested',
-        summary: '建议先执行前端重构',
-        next_steps: [{ agent_id: 'codex', goal: '实现任务工作区重构' }],
-        awaiting_user_confirmation: false,
-      },
+      planner_decision: plannerDecision.planner_decision,
     }),
     created_at: 2,
   };

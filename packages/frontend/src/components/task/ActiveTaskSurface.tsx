@@ -430,6 +430,7 @@ function TaskRecordsTab({
                     trace={metadata.trace}
                     roomAgents={roomAgents}
                     tasks={tasks}
+                    suppressWorkflowJsonBlocks
                     roomId={roomId}
                   />
                 </div>
