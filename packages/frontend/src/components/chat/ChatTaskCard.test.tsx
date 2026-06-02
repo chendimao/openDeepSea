@@ -8,7 +8,7 @@ import { ChatTaskCard } from './ChatTaskCard';
 
 setupBrowserStubs();
 
-test('ChatTaskCard renders start workflow entrance for open task card', () => {
+test('ChatTaskCard renders four task action entries for open task card', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <ChatTaskCard
@@ -18,21 +18,24 @@ test('ChatTaskCard renders start workflow entrance for open task card', () => {
         roomAgents={[]}
         active={false}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
       />
     </I18nProvider>,
   );
 
   assert.match(html, /TASK-task-open-/);
   assert.match(html, /去掉header菜单中的测试菜单/);
-  assert.match(html, /aria-label="启动闭环"/);
+  assert.match(html, /开始执行/u);
+  assert.match(html, /头脑风暴/u);
+  assert.match(html, /编写计划/u);
+  assert.match(html, /子代理执行/u);
   assert.match(html, /Owner/);
   assert.match(html, /Priority/);
   assert.match(html, /Status/);
   assert.match(html, /Time/);
 });
 
-test('ChatTaskCard hides start workflow entrance for done task and active workflow', () => {
+test('ChatTaskCard disables task actions for done task and keeps them visible for active workflow', () => {
   const doneHtml = renderToStaticMarkup(
     <I18nProvider>
       <ChatTaskCard
@@ -42,7 +45,7 @@ test('ChatTaskCard hides start workflow entrance for done task and active workfl
         roomAgents={[]}
         active={false}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
       />
     </I18nProvider>,
   );
@@ -57,16 +60,18 @@ test('ChatTaskCard hides start workflow entrance for done task and active workfl
         roomAgents={[]}
         active={false}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
       />
     </I18nProvider>,
   );
 
-  assert.doesNotMatch(doneHtml, /aria-label="启动闭环"/);
-  assert.doesNotMatch(activeWorkflowHtml, /aria-label="启动闭环"/);
+  assert.match(doneHtml, /开始执行/u);
+  assert.match(doneHtml, /disabled/u);
+  assert.match(activeWorkflowHtml, /开始执行/u);
+  assert.match(activeWorkflowHtml, /头脑风暴/u);
 });
 
-test('ChatTaskCard hides start workflow entrance for active ACP execution', () => {
+test('ChatTaskCard disables task actions for active ACP execution', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <ChatTaskCard
@@ -77,15 +82,16 @@ test('ChatTaskCard hides start workflow entrance for active ACP execution', () =
         roomAgents={[]}
         active={false}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
       />
     </I18nProvider>,
   );
 
-  assert.doesNotMatch(html, /aria-label="启动闭环"/);
+  assert.match(html, /开始执行/u);
+  assert.match(html, /disabled/u);
 });
 
-test('ChatTaskCard keeps start workflow entrance after terminal workflow', () => {
+test('ChatTaskCard keeps task actions after terminal workflow', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <ChatTaskCard
@@ -96,12 +102,13 @@ test('ChatTaskCard keeps start workflow entrance after terminal workflow', () =>
         roomAgents={[]}
         active={false}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
       />
     </I18nProvider>,
   );
 
-  assert.match(html, /aria-label="启动闭环"/);
+  assert.match(html, /开始执行/u);
+  assert.match(html, /头脑风暴/u);
 });
 
 function task(id: string, status: Task['status']): Task {

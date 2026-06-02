@@ -1,8 +1,9 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, Circle, ClipboardList, Loader2, MousePointer2, Play } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Circle, ClipboardList, Loader2, MousePointer2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { Message, MessageMetadata, RoomAgent, Task, TaskEventType, WorkflowRun } from '../../lib/types';
+import type { Message, MessageMetadata, RoomAgent, Task, TaskActionKind, TaskActionState, TaskEventType, WorkflowRun } from '../../lib/types';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
+import { TaskActionStrip } from '../task/TaskActionStrip';
 
 interface ChatTaskCardProps {
   message: Message;
@@ -12,9 +13,9 @@ interface ChatTaskCardProps {
   active: boolean;
   workflow?: WorkflowRun;
   hasActiveExecution?: boolean;
-  startingWorkflow?: boolean;
+  taskActionStates?: Partial<Record<TaskActionKind, TaskActionState>>;
   onSelectTask?: (task: Task) => void;
-  onStartWorkflow?: (task: Task) => void;
+  onStartTaskAction?: (task: Task, action: TaskActionKind) => void;
 }
 
 const eventLabels: Partial<Record<TaskEventType, string>> = {
@@ -53,32 +54,23 @@ const priorityLabels: Record<Task['priority'], string> = {
   urgent: '紧急',
 };
 
-const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>([
-  'draft',
-  'running',
-  'awaiting_decision',
-  'awaiting_approval',
-  'blocked',
-]);
-
 export function ChatTaskCard({
   message,
   metadata,
   task,
   roomAgents,
   active,
-  workflow,
+  workflow: _workflow,
   hasActiveExecution,
-  startingWorkflow,
+  taskActionStates = {},
   onSelectTask,
-  onStartWorkflow,
+  onStartTaskAction,
 }: ChatTaskCardProps): JSX.Element {
   const { formatRelativeTime, t } = useI18n();
   const status = task ? statusMeta[task.status] : null;
   const StatusIcon = status?.icon ?? ClipboardList;
   const canOpen = Boolean(task && onSelectTask);
-  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
-  const canStartWorkflow = Boolean(task && onStartWorkflow && !hasActiveWorkflow && !hasActiveExecution && task?.status !== 'done');
+  const canStartAction = Boolean(task && onStartTaskAction && !hasActiveExecution && task?.status !== 'done');
   const title = task?.title ?? metadata.task_title ?? summarizeTaskTitle(message.content, metadata.task_id);
   const description = summarizeTaskDescription(task?.description, message.content, title);
   const assignee = task?.assigned_agent_id
@@ -110,7 +102,7 @@ export function ChatTaskCard({
             </span>
             <span className="chat-task-card-kicker">TASK-{shortTaskId}</span>
           </span>
-          {!canStartWorkflow && (
+          {!canStartAction && (
             <span className="chat-task-card-chevron" aria-hidden="true">
               <ChevronRight className="h-4 w-4" />
             </span>
@@ -137,23 +129,15 @@ export function ChatTaskCard({
           <span><b>Time</b>{formatRelativeTime(message.created_at)}</span>
         </span>
       </button>
-      {canStartWorkflow && task && (
-        <button
-          type="button"
-          className="chat-task-card-start"
-          aria-label={t('taskDetail.startWorkflow')}
-          title={t('taskDetail.startWorkflow')}
-          disabled={startingWorkflow}
-          onClick={() => {
-            onStartWorkflow?.(task);
+      {task && onStartTaskAction && (
+        <TaskActionStrip
+          compact
+          states={taskActionStates}
+          disabled={!canStartAction}
+          onStartAction={(action) => {
+            if (canStartAction) onStartTaskAction(task, action);
           }}
-        >
-          {startingWorkflow ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Play className="h-3.5 w-3.5" />
-          )}
-        </button>
+        />
       )}
     </article>
   );

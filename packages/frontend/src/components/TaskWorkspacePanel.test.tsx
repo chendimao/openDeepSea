@@ -121,7 +121,7 @@ test('TaskWorkspacePanel keeps task selection explicit when no task is active', 
   assert.doesNotMatch(html, /data-active="true"/);
 });
 
-test('TaskWorkspacePanel exposes workflow start action for active open task', () => {
+test('TaskWorkspacePanel exposes four task actions for active open task', () => {
   const activeTask = task('task-open', '等待启动闭环');
   const html = renderToStaticMarkup(
     <TaskWorkspaceTestProvider>
@@ -140,7 +140,7 @@ test('TaskWorkspacePanel exposes workflow start action for active open task', ()
         layerVisibility={layers}
         onStatusFiltersChange={() => undefined}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
         onLocateSourceMessage={() => undefined}
         onClearActiveTask={() => undefined}
         t={(key) => key}
@@ -152,11 +152,13 @@ test('TaskWorkspacePanel exposes workflow start action for active open task', ()
     </TaskWorkspaceTestProvider>,
   );
 
-  assert.match(html, /aria-label="taskDetail.startWorkflow"/);
-  assert.match(html, /title="taskDetail.startWorkflow"/);
+  assert.match(html, /开始执行/u);
+  assert.match(html, /头脑风暴/u);
+  assert.match(html, /编写计划/u);
+  assert.match(html, /子代理执行/u);
 });
 
-test('TaskWorkspacePanel hides workflow start action for done task or active workflow', () => {
+test('TaskWorkspacePanel disables task actions for done task but keeps active workflow actions visible', () => {
   const doneTask = { ...task('task-done', '已完成任务'), status: 'done' as const };
   const runningTask = task('task-running-workflow', '已有闭环任务');
 
@@ -177,7 +179,7 @@ test('TaskWorkspacePanel hides workflow start action for done task or active wor
         layerVisibility={layers}
         onStatusFiltersChange={() => undefined}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
         onLocateSourceMessage={() => undefined}
         onClearActiveTask={() => undefined}
         t={(key) => key}
@@ -206,7 +208,7 @@ test('TaskWorkspacePanel hides workflow start action for done task or active wor
         layerVisibility={layers}
         onStatusFiltersChange={() => undefined}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
         onLocateSourceMessage={() => undefined}
         onClearActiveTask={() => undefined}
         t={(key) => key}
@@ -218,11 +220,13 @@ test('TaskWorkspacePanel hides workflow start action for done task or active wor
     </TaskWorkspaceTestProvider>,
   );
 
-  assert.doesNotMatch(doneHtml, /aria-label="taskDetail.startWorkflow"/);
-  assert.doesNotMatch(workflowHtml, /aria-label="taskDetail.startWorkflow"/);
+  assert.match(doneHtml, /开始执行/u);
+  assert.match(doneHtml, /disabled/u);
+  assert.match(workflowHtml, /开始执行/u);
+  assert.match(workflowHtml, /头脑风暴/u);
 });
 
-test('TaskWorkspacePanel keeps workflow start action after terminal workflow', () => {
+test('TaskWorkspacePanel shows task action running state after terminal workflow', () => {
   const activeTask = task('task-terminal-workflow', '可重启闭环任务');
   const html = renderToStaticMarkup(
     <TaskWorkspaceTestProvider>
@@ -241,7 +245,8 @@ test('TaskWorkspacePanel keeps workflow start action after terminal workflow', (
         layerVisibility={layers}
         onStatusFiltersChange={() => undefined}
         onSelectTask={() => undefined}
-        onStartWorkflow={() => undefined}
+        onStartTaskAction={() => undefined}
+        startingTaskActionKey={`${activeTask.id}:start_execution`}
         onLocateSourceMessage={() => undefined}
         onClearActiveTask={() => undefined}
         t={(key) => key}
@@ -253,7 +258,9 @@ test('TaskWorkspacePanel keeps workflow start action after terminal workflow', (
     </TaskWorkspaceTestProvider>,
   );
 
-  assert.match(html, /aria-label="taskDetail.startWorkflow"/);
+  assert.match(html, /开始执行/u);
+  assert.match(html, /运行中/u);
+  assert.match(html, /disabled/u);
 });
 
 function TaskWorkspaceTestProvider({ children }: { children: React.ReactNode }): JSX.Element {

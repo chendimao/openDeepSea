@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { AgentRun, Message, RoomAgent, Task } from '../lib/types';
+import type { AgentRun, Message, Task } from '../lib/types';
 import type { AgentTimelineEvent } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { upsertAgentRun } from './RoomPage';
@@ -14,7 +14,6 @@ import {
   applyMessageStreamUpdate,
   createDefaultReplyTarget,
   createTaskExecutionDispatchInputFromMessage,
-  createTaskExecutionDispatchInputForTask,
   hasExecutableTaskSteps,
   shouldShowTaskExecutionPanel,
   createReplyTarget,
@@ -122,40 +121,6 @@ test('createTaskExecutionDispatchInputFromMessage targets the task execution att
   assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'runtime-inspector');
 });
 
-test('createTaskExecutionDispatchInputForTask starts ready task execution directly', () => {
-  const task = createTask({
-    id: 'task-1',
-    source_message_id: 'user-request',
-    title: '需要支持子目录搜索',
-  });
-  const messages = [
-    createMessage({ id: 'user-request', sender_type: 'user', content: '需要支持子目录搜索' }),
-    createMessage({
-      id: 'planner-message',
-      sender_type: 'agent',
-      content: '可以直接执行。',
-      metadata: JSON.stringify({
-        source_message_id: 'user-request',
-        task_execution: {
-          state: 'ready_to_execute',
-          status: 'suggested',
-          summary: '派发前端实现',
-          reason: '单一完整实现方案，边界清晰',
-          next_steps: [{ agent_id: 'frontend-executor', goal: '实现 @docs/super 子目录搜索' }],
-        },
-      }),
-    }),
-  ];
-
-  const input = createTaskExecutionDispatchInputForTask(task, messages, [
-    createRoomAgent({ id: 'room-agent-frontend', agent_id: 'frontend-executor' }),
-  ]);
-
-  assert.equal(input?.source_message_id, 'user-request');
-  assert.equal(input?.task_execution.state, 'ready_to_execute');
-  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'frontend-executor');
-});
-
 test('hasExecutableTaskSteps only allows ready task execution', () => {
   assert.equal(hasExecutableTaskSteps({
     state: 'ready_to_execute',
@@ -190,152 +155,6 @@ test('createTaskExecutionDispatchInputFromMessage falls back to the clicked mess
   const input = createTaskExecutionDispatchInputFromMessage(message);
 
   assert.equal(input?.source_message_id, 'planner-message');
-});
-
-test('createTaskExecutionDispatchInputForTask reuses dispatchable task execution for the task source', () => {
-  const task = createTask({
-    source_message_id: 'user-request',
-    title: '实现设置页保存按钮',
-  });
-  const input = createTaskExecutionDispatchInputForTask(task, [
-    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
-    createMessage({
-      id: 'planner-message',
-      sender_type: 'agent',
-      content: '建议交给前端执行。',
-      metadata: JSON.stringify({
-        source_message_id: 'user-request',
-        task_execution: {
-          state: 'ready_to_execute',
-          status: 'suggested',
-          summary: '交给前端执行',
-          next_steps: [{ agent_id: 'frontend-executor', goal: '实现设置页保存按钮' }],
-        },
-      }),
-    }),
-  ]);
-
-  assert.equal(input?.source_message_id, 'user-request');
-  assert.equal(input?.task_execution.summary, '交给前端执行');
-  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'frontend-executor');
-});
-
-test('createTaskExecutionDispatchInputForTask creates pure ACP dispatch step when task execution has no next steps', () => {
-  const task = createTask({
-    source_message_id: 'user-request',
-    title: '去掉header菜单中的测试菜单',
-    description: '从前端 header 菜单中移除测试菜单入口。',
-  });
-  const input = createTaskExecutionDispatchInputForTask(task, [
-    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
-    createMessage({
-      id: 'planner-message',
-      sender_type: 'agent',
-      content: '可以进入正式实现任务。',
-      metadata: JSON.stringify({
-        source_message_id: 'user-request',
-        task_execution: {
-          state: 'ready_to_execute',
-          status: 'suggested',
-          summary: '可以进入正式实现任务。',
-          next_steps: [],
-        },
-      }),
-    }),
-  ]);
-
-  assert.equal(input?.source_message_id, 'user-request');
-  assert.equal(input?.task_execution.next_steps.length, 1);
-  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'frontend-executor');
-  assert.match(input?.task_execution.next_steps[0]?.goal ?? '', /去掉header菜单中的测试菜单/);
-});
-
-test('createTaskExecutionDispatchInputForTask prefers task-scoped message for pure ACP dispatch source', () => {
-  const task = createTask({
-    id: 'task-created-from-chat',
-    source_message_id: 'user-request',
-    title: '修复 header 菜单',
-  });
-  const input = createTaskExecutionDispatchInputForTask(task, [
-    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
-    createMessage({
-      id: 'task-created-event',
-      sender_type: 'system',
-      content: '已创建任务',
-      metadata: JSON.stringify({
-        event_type: 'task_created',
-        task_id: task.id,
-        source_message_id: 'user-request',
-      }),
-    }),
-    createMessage({
-      id: 'status-changed-event',
-      sender_type: 'system',
-      content: '任务状态变更',
-      metadata: JSON.stringify({
-        event_type: 'task_status_changed',
-        task_id: task.id,
-      }),
-    }),
-  ]);
-
-  assert.equal(input?.source_message_id, 'task-created-event');
-  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'frontend-executor');
-});
-
-test('createTaskExecutionDispatchInputForTask prefers original source message when it is task-scoped', () => {
-  const task = createTask({
-    id: 'task-source-scoped',
-    source_message_id: 'user-request',
-    title: '修复接口报错',
-  });
-  const input = createTaskExecutionDispatchInputForTask(task, [
-    createMessage({
-      id: 'user-request',
-      sender_type: 'user',
-      content: task.title,
-      metadata: JSON.stringify({ task_id: task.id }),
-    }),
-    createMessage({
-      id: 'task-created-event',
-      sender_type: 'system',
-      content: '已创建任务',
-      metadata: JSON.stringify({
-        event_type: 'task_created',
-        task_id: task.id,
-      }),
-    }),
-  ]);
-
-  assert.equal(input?.source_message_id, 'user-request');
-  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'backend-executor');
-});
-
-test('createTaskExecutionDispatchInputForTask routes explicit verification tasks to qa tester', () => {
-  const task = createTask({
-    source_message_id: 'user-request',
-    title: '测试设置页面跳转',
-  });
-  const input = createTaskExecutionDispatchInputForTask(task, [
-    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
-  ]);
-
-  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'qa-tester');
-});
-
-test('createTaskExecutionDispatchInputForTask prefers assigned non-planner room agent', () => {
-  const task = createTask({
-    source_message_id: 'user-request',
-    assigned_agent_id: 'room-agent-frontend',
-    title: '调整导航入口',
-  });
-  const input = createTaskExecutionDispatchInputForTask(task, [
-    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
-  ], [
-    createRoomAgent({ id: 'room-agent-frontend', agent_id: 'custom-frontend' }),
-  ]);
-
-  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'custom-frontend');
 });
 
 test('hasExecutableTaskSteps only enables ready task execution with concrete next steps', () => {
@@ -695,6 +514,35 @@ test('upsertAgentRun keeps terminal status even if a later non-terminal snapshot
   assert.equal(result[0]?.updated_at, 2000);
 });
 
+test('upsertAgentRun preserves older active runs when trimming recent cache', () => {
+  const active = createAgentRun({
+    id: 'active-old',
+    task_id: 'task-active',
+    status: 'running',
+    started_at: 1000,
+    updated_at: 1000,
+  });
+  const recent = Array.from({ length: 50 }, (_, index) => createAgentRun({
+    id: `recent-${index}`,
+    status: 'completed',
+    started_at: 2000 + index,
+    updated_at: 2000 + index,
+    completed_at: 2000 + index,
+  }));
+  const incoming = createAgentRun({
+    id: 'incoming',
+    status: 'completed',
+    started_at: 9999,
+    updated_at: 9999,
+    completed_at: 9999,
+  });
+
+  const result = upsertAgentRun([active, ...recent], incoming);
+
+  assert.equal(result.some((run) => run.id === 'active-old'), true);
+  assert.ok(result.length > 50);
+});
+
 function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & {
   created_at?: number;
   metadata?: string | null;
@@ -755,35 +603,5 @@ function createTask(input: Partial<Task> = {}): Task {
     updated_at: input.updated_at ?? 1000,
     completed_at: input.completed_at ?? null,
     deleted_at: input.deleted_at ?? null,
-  };
-}
-
-function createRoomAgent(input: Partial<RoomAgent> = {}): RoomAgent {
-  return {
-    id: input.id ?? 'room-agent-1',
-    room_id: input.room_id ?? 'room-1',
-    global_agent_id: input.global_agent_id ?? null,
-    agent_id: input.agent_id ?? 'frontend-executor',
-    agent_name: input.agent_name ?? '前端执行器',
-    agent_role: input.agent_role ?? null,
-    preferred_user_name: input.preferred_user_name ?? null,
-    personality: input.personality ?? null,
-    rules: input.rules ?? null,
-    responsibilities: input.responsibilities ?? null,
-    workflow_role: input.workflow_role ?? null,
-    capabilities: input.capabilities ?? [],
-    default_runtime: input.default_runtime ?? 'acp',
-    runtime_backend: input.runtime_backend ?? 'acp',
-    tool_policy: input.tool_policy ?? null,
-    workspace_policy: input.workspace_policy ?? null,
-    memory_scope: input.memory_scope ?? null,
-    joined_at: input.joined_at ?? 1000,
-    left_at: input.left_at ?? null,
-    acp_enabled: input.acp_enabled ?? 1,
-    acp_backend: input.acp_backend ?? 'codex',
-    acp_session_id: input.acp_session_id ?? null,
-    acp_session_label: input.acp_session_label ?? null,
-    acp_permission_mode: input.acp_permission_mode ?? 'read-only',
-    acp_writable_dirs: input.acp_writable_dirs ?? [],
   };
 }

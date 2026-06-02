@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, LocateFixed, Loader2, Play } from 'lucide-react';
+import { ArrowRight, CheckCircle2, LocateFixed } from 'lucide-react';
 import type { RoomAgent, Task, TaskEvent, WorkflowRun } from '../lib/types';
 import { useI18n, type MessageKey } from '../lib/i18n';
 import { cn } from '../lib/utils';
@@ -19,14 +19,6 @@ const PRIORITY_TONE: Record<Task['priority'], string> = {
   urgent: 'text-[var(--color-danger)]',
 };
 
-const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>([
-  'draft',
-  'running',
-  'awaiting_decision',
-  'awaiting_approval',
-  'blocked',
-]);
-
 export function TaskBoard({
   tasks,
   statusFilters,
@@ -37,9 +29,7 @@ export function TaskBoard({
   selectedTaskId,
   onSelectTask,
   onChangeStatus,
-  onStartWorkflow,
   onLocateSourceMessage,
-  startingTaskId,
 }: {
   tasks: Task[];
   statusFilters?: TaskStatusFilter[];
@@ -50,9 +40,7 @@ export function TaskBoard({
   selectedTaskId?: string | null;
   onSelectTask: (task: Task) => void;
   onChangeStatus: (task: Task, status: Task['status']) => void;
-  onStartWorkflow?: (task: Task) => void;
   onLocateSourceMessage?: (messageId: string, task: Task) => void;
-  startingTaskId?: string | null;
 }) {
   const { formatRelativeTime, t, taskStatusLabel } = useI18n();
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
@@ -110,13 +98,11 @@ export function TaskBoard({
               statusLabel={taskStatusLabel(task.status)}
               onSelect={() => onSelectTask(task)}
               onChangeStatus={(next) => onChangeStatus(task, next)}
-              onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(task) : undefined}
               onLocateSourceMessage={
                 onLocateSourceMessage && task.source_message_id
                   ? () => onLocateSourceMessage(task.source_message_id!, task)
                   : undefined
               }
-              startingWorkflow={startingTaskId === task.id}
             />
           ))
         )}
@@ -151,9 +137,7 @@ function TaskCard({
   statusLabel,
   onSelect,
   onChangeStatus,
-  onStartWorkflow,
   onLocateSourceMessage,
-  startingWorkflow,
 }: {
   task: Task;
   agent?: RoomAgent;
@@ -162,14 +146,10 @@ function TaskCard({
   statusLabel: string;
   onSelect: () => void;
   onChangeStatus: (status: Task['status']) => void;
-  onStartWorkflow?: () => void;
   onLocateSourceMessage?: () => void;
-  startingWorkflow?: boolean;
 }) {
   const { formatRelativeTime, t, taskPriorityLabel, taskStatusLabel, workflowStatusLabel } = useI18n();
   const nextStatus = NEXT_STATUS[task.status];
-  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
-  const canStartWorkflow = !hasActiveWorkflow && task.status !== 'done';
 
   return (
     <article className={cn('task-card task-list-item', selected && 'is-selected')}>
@@ -214,23 +194,6 @@ function TaskCard({
         </div>
       </button>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {canStartWorkflow && onStartWorkflow && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={onStartWorkflow}
-            disabled={startingWorkflow}
-            title={t('taskBoard.startWorkflow')}
-            aria-label={t('taskBoard.startWorkflow')}
-            className="w-7 px-0"
-          >
-            {startingWorkflow ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Play className="h-3.5 w-3.5" />
-            )}
-          </Button>
-        )}
         {onLocateSourceMessage && (
           <Button
             size="sm"
@@ -268,9 +231,13 @@ function createWorkflowByTaskId(workflows: WorkflowRun[]): Map<string, WorkflowR
   const byTaskId = new Map<string, WorkflowRun>();
   for (const [taskId, taskWorkflows] of grouped) {
     const sorted = [...taskWorkflows].sort((a, b) => b.created_at - a.created_at);
-    byTaskId.set(taskId, sorted.find((workflow) => ACTIVE_WORKFLOW_STATUSES.has(workflow.status)) ?? sorted[0]);
+    byTaskId.set(taskId, sorted.find((workflow) => isNonTerminalWorkflowStatus(workflow.status)) ?? sorted[0]);
   }
   return byTaskId;
+}
+
+function isNonTerminalWorkflowStatus(status: WorkflowRun['status']): boolean {
+  return status !== 'completed' && status !== 'cancelled' && status !== 'failed';
 }
 
 function taskEventLabel(type: TaskEvent['type'], t: (key: MessageKey) => string): string {

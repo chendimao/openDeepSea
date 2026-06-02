@@ -74,8 +74,21 @@ export const agentRunRepo = {
 
   listByRoom(roomId: string, limit = 50): AgentRun[] {
     return db
-      .prepare('SELECT * FROM agent_runs WHERE room_id = ? ORDER BY started_at DESC LIMIT ?')
-      .all(roomId, limit) as AgentRun[];
+      .prepare(
+        `SELECT * FROM (
+           SELECT * FROM agent_runs
+           WHERE room_id = ?
+             AND status IN (${ACTIVE_AGENT_RUN_STATUSES.map(() => '?').join(', ')})
+           UNION
+           SELECT * FROM (
+             SELECT * FROM agent_runs
+             WHERE room_id = ?
+             ORDER BY started_at DESC
+             LIMIT ?
+           )
+         ) ORDER BY started_at DESC`,
+      )
+      .all(roomId, ...ACTIVE_AGENT_RUN_STATUSES, roomId, limit) as AgentRun[];
   },
 
   listForClientByRoom(roomId: string, limit = 50): AgentRun[] {

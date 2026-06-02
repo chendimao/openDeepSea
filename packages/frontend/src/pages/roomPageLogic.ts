@@ -4,7 +4,6 @@ import type {
   Message,
   MessageMetadata,
   MessageTrace,
-  RoomAgent,
   Task,
   TaskEvent,
   TaskExecutionDecision,
@@ -202,118 +201,11 @@ export function createTaskExecutionDispatchInputFromMessage(
   };
 }
 
-export function createTaskExecutionDispatchInputForTask(
-  task: Task,
-  messages: Message[],
-  roomAgents: RoomAgent[] = [],
-): TaskExecutionDispatchInput | null {
-  if (!task.source_message_id) return null;
-  const plannerSourceMessageId = task.source_message_id;
-  const dispatchSourceMessageId = findTaskScopedDispatchSourceMessageId(task, messages) ?? plannerSourceMessageId;
-  const plannerMessage = [...messages]
-    .reverse()
-    .find((message) => {
-      const metadata = parseMessageMetadata(message.metadata);
-      return metadata.source_message_id === plannerSourceMessageId &&
-        Boolean(metadata.task_execution && hasExecutableTaskSteps(metadata.task_execution));
-    });
-
-  if (plannerMessage) {
-    const input = createTaskExecutionDispatchInputFromMessage(plannerMessage);
-    if (input) {
-      return {
-        source_message_id: dispatchSourceMessageId,
-        task_execution: input.task_execution,
-      };
-    }
-  }
-
-  return {
-    source_message_id: dispatchSourceMessageId,
-    task_execution: createFallbackTaskExecution(task, roomAgents),
-  };
-}
-
 export function hasExecutableTaskSteps(decision: TaskExecutionDecision): boolean {
   const isExecutableStatus = decision.status === 'suggested' || decision.status === 'needs_fix';
   return decision.state === 'ready_to_execute' &&
     isExecutableStatus &&
     decision.next_steps.length > 0;
-}
-
-function createFallbackTaskExecution(task: Task, roomAgents: RoomAgent[]): TaskExecutionDecision {
-  const agentId = resolveTaskExecutorAgentId(task, roomAgents);
-  return {
-    state: 'ready_to_execute',
-    status: 'suggested',
-    summary: `启动任务：${task.title}`,
-    next_steps: [{
-      agent_id: agentId,
-      goal: createTaskDispatchGoal(task),
-    }],
-  };
-}
-
-function findTaskScopedDispatchSourceMessageId(task: Task, messages: Message[]): string | null {
-  const originalSource = task.source_message_id
-    ? messages.find((message) => {
-      if (message.id !== task.source_message_id) return false;
-      return parseMessageMetadata(message.metadata).task_id === task.id;
-    })
-    : undefined;
-  if (originalSource) return originalSource.id;
-
-  const taskCreatedMessage = findLastTaskScopedMessage(task, messages, (metadata) =>
-    metadata.event_type === 'task_created'
-  );
-  if (taskCreatedMessage) return taskCreatedMessage.id;
-
-  const taskScopedMessage = findLastTaskScopedMessage(task, messages);
-  return taskScopedMessage?.id ?? null;
-}
-
-function findLastTaskScopedMessage(
-  task: Task,
-  messages: Message[],
-  predicate: (metadata: MessageMetadata) => boolean = () => true,
-): Message | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!message) continue;
-    const metadata = parseMessageMetadata(message.metadata);
-    if (metadata.task_id === task.id && predicate(metadata)) return message;
-  }
-  return null;
-}
-
-function resolveTaskExecutorAgentId(task: Task, roomAgents: RoomAgent[]): string {
-  if (task.assigned_agent_id) {
-    const assigned = roomAgents.find((agent) =>
-      agent.id === task.assigned_agent_id ||
-      agent.agent_id === task.assigned_agent_id
-    );
-    if (assigned && assigned.agent_id !== 'planner') return assigned.agent_id;
-  }
-
-  const text = `${task.title}\n${task.description ?? ''}`.toLowerCase();
-  if (/(^|\s)(test|qa)\b|验证|回归|e2e|playwright|测试.+(流程|用例|覆盖|回归|结果|交互|跳转|页面|功能)/u.test(text)) {
-    return 'qa-tester';
-  }
-  if (/前端|frontend|front-end|react|vite|css|ui|页面|组件|header|menu|菜单|导航/u.test(text)) {
-    return 'frontend-executor';
-  }
-  if (/后端|backend|server|api|接口|route|路由|database|sqlite|数据库/u.test(text)) {
-    return 'backend-executor';
-  }
-  return 'computer-assistant';
-}
-
-function createTaskDispatchGoal(task: Task): string {
-  const description = task.description?.trim();
-  const content = description
-    ? `执行任务「${task.title}」。任务描述：${description}`
-    : `执行任务「${task.title}」。`;
-  return content.length <= 600 ? content : `${content.slice(0, 597).trimEnd()}...`;
 }
 
 export type StreamTraceChannel = 'thinking' | 'tool' | 'command' | 'event';

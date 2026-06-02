@@ -110,10 +110,24 @@ export const taskEventRepo = {
     const limit = input?.limit ?? 500;
     const rows = input?.layer
       ? db
-          .prepare('SELECT * FROM task_events WHERE task_id = ? AND layer = ? ORDER BY seq ASC LIMIT ?')
+          .prepare(
+            `SELECT * FROM (
+               SELECT * FROM task_events
+               WHERE task_id = ? AND layer = ?
+               ORDER BY seq DESC
+               LIMIT ?
+             ) ORDER BY seq ASC`,
+          )
           .all(taskId, input.layer, limit) as TaskEventRow[]
       : db
-          .prepare('SELECT * FROM task_events WHERE task_id = ? ORDER BY seq ASC LIMIT ?')
+          .prepare(
+            `SELECT * FROM (
+               SELECT * FROM task_events
+               WHERE task_id = ?
+               ORDER BY seq DESC
+               LIMIT ?
+             ) ORDER BY seq ASC`,
+          )
           .all(taskId, limit) as TaskEventRow[];
     return rows.map(parseTaskEventRow);
   },
@@ -122,10 +136,24 @@ export const taskEventRepo = {
     const limit = input?.limit ?? 500;
     const rows = input?.layer
       ? db
-          .prepare('SELECT * FROM task_events WHERE room_id = ? AND layer = ? ORDER BY created_at ASC, id ASC LIMIT ?')
+          .prepare(
+            `SELECT * FROM (
+               SELECT task_events.*, rowid AS row_order FROM task_events
+               WHERE room_id = ? AND layer = ?
+               ORDER BY created_at DESC, rowid DESC
+               LIMIT ?
+             ) ORDER BY created_at ASC, row_order ASC`,
+          )
           .all(roomId, input.layer, limit) as TaskEventRow[]
       : db
-          .prepare('SELECT * FROM task_events WHERE room_id = ? ORDER BY created_at ASC, id ASC LIMIT ?')
+          .prepare(
+            `SELECT * FROM (
+               SELECT task_events.*, rowid AS row_order FROM task_events
+               WHERE room_id = ?
+               ORDER BY created_at DESC, rowid DESC
+               LIMIT ?
+             ) ORDER BY created_at ASC, row_order ASC`,
+          )
           .all(roomId, limit) as TaskEventRow[];
     return rows.map(parseTaskEventRow);
   },

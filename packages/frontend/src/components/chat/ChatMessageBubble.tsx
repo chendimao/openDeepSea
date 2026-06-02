@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, ClipboardList, Eye, FileText, Reply, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
-import type { Agent, AgentRun, BrainstormingOption, Message, RoomAgent, Task, TaskEventType, WorkflowRun } from '../../lib/types';
+import type { Agent, AgentRun, BrainstormingOption, Message, RoomAgent, Task, TaskActionKind, TaskActionState, TaskEventType, WorkflowRun } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
@@ -39,7 +39,7 @@ export interface ChatMessageBubbleProps {
   tasks?: Task[];
   workflow?: WorkflowRun;
   hasActiveExecution?: boolean;
-  startingWorkflowTaskId?: string | null;
+  taskActionStates?: Partial<Record<TaskActionKind, TaskActionState>>;
   activeTaskId?: string | null;
   streaming: boolean;
   displayContent: string;
@@ -51,7 +51,7 @@ export interface ChatMessageBubbleProps {
   retrySourceMessage?: Message | null;
   onLocateReplyTarget: (messageId: string) => void;
   onSelectTask?: (task: Task) => void;
-  onStartWorkflow?: (task: Task) => void;
+  onStartTaskAction?: (task: Task, action: TaskActionKind) => void;
   selectedBrainstormingOptionIds?: Set<string>;
   onSelectBrainstormingOption?: (message: Message, option: BrainstormingOption) => void;
 }
@@ -68,7 +68,7 @@ export function ChatMessageBubble({
   tasks = [],
   workflow,
   hasActiveExecution,
-  startingWorkflowTaskId,
+  taskActionStates,
   activeTaskId,
   streaming,
   displayContent,
@@ -80,7 +80,7 @@ export function ChatMessageBubble({
   retrySourceMessage,
   onLocateReplyTarget,
   onSelectTask,
-  onStartWorkflow,
+  onStartTaskAction,
   selectedBrainstormingOptionIds,
   onSelectBrainstormingOption,
 }: ChatMessageBubbleProps): JSX.Element {
@@ -158,9 +158,9 @@ export function ChatMessageBubble({
           active={Boolean(task && activeTaskId === task.id)}
           workflow={workflow}
           hasActiveExecution={hasActiveExecution}
-          startingWorkflow={Boolean(task && startingWorkflowTaskId === task.id)}
+          taskActionStates={taskActionStates}
           onSelectTask={onSelectTask}
-          onStartWorkflow={onStartWorkflow}
+          onStartTaskAction={onStartTaskAction}
         />
       </AiMessageRow>
     );

@@ -8,6 +8,7 @@ import type {
 import { agentRepo } from './repos/agents.js';
 import { respondAsAgent } from './dispatcher.js';
 import { projectRepo } from './repos/projects.js';
+import { agentRunRepo } from './repos/agent-runs.js';
 import { messageRepo } from './repos/messages.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { taskEventRepo } from './repos/task-events.js';
@@ -47,6 +48,26 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
   if (!room) throw new Error('room not found');
   const project = projectRepo.get(room.project_id);
   if (!project) throw new Error('project not found');
+
+  const runningActionBlock = findRunningTaskActionBlock(input.taskId, input.action);
+  if (runningActionBlock) {
+    return {
+      action: input.action,
+      status: 'blocked',
+      run_ids: [],
+      blocked_reason: '任务动作正在运行，请等待当前动作完成',
+    };
+  }
+
+  const activeRunBlock = findActiveTaskRunBlock(input.taskId);
+  if (activeRunBlock) {
+    return {
+      action: input.action,
+      status: 'blocked',
+      run_ids: [activeRunBlock.id],
+      blocked_reason: '任务已有运行中的智能体执行，请等待当前执行完成',
+    };
+  }
 
   if (input.action === 'start_execution') {
     recordTaskActionEvent(input.roomId, input.taskId, input.action, 'running', {});
@@ -227,6 +248,19 @@ function hasCompletedSuperpowersEvidence(
     action,
     evidenceKey,
   });
+}
+
+function findActiveTaskRunBlock(taskId: string): { id: string } | null {
+  const activeRun = agentRunRepo.listActive().find((run) => run.task_id === taskId);
+  return activeRun ? { id: activeRun.id } : null;
+}
+
+function findRunningTaskActionBlock(taskId: string, action: TaskActionKind): boolean {
+  const latest = [...taskEventRepo.listByTask(taskId, { layer: 'timeline', limit: 50 })]
+    .reverse()
+    .find((event) => event.payload.task_action === action || event.payload.action === action);
+  const status = latest?.payload.task_action_status ?? latest?.payload.status;
+  return status === 'queued' || status === 'running';
 }
 
 function selectOrAddPlanner(roomId: string): RoomAgent {

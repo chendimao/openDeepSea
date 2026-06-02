@@ -7,6 +7,7 @@ import test from 'node:test';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-task-actions-')), 'test.db');
 
 const { agentRepo } = await import('./repos/agents.js');
+const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { messageRepo } = await import('./repos/messages.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
@@ -262,6 +263,87 @@ test('start_execution blocks when a locked room agent is removed during executio
     event.payload.status === 'blocked'
   );
   assert.match(String(blockedEvent?.payload.blocked_reason ?? ''), /locked roster agent unavailable: reviewer/u);
+});
+
+test('startTaskAction blocks when task already has an active agent run', async () => {
+  const project = projectRepo.create({
+    name: '已有运行任务',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-active-task-run-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const backend = agentRepo.getByAgentId('backend-executor');
+  assert.ok(backend);
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: backend.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '已有运行中的任务',
+  });
+  const activeRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: roomAgent.agent_id,
+    backend: 'codex',
+    task_id: task.id,
+    status: 'running',
+    prompt: 'running',
+  });
+
+  let called = false;
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'start_execution',
+    runAgent: async () => {
+      called = true;
+      return { status: 'completed', content: '完成', error: null };
+    },
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(result.run_ids, [activeRun.id]);
+  assert.match(result.blocked_reason ?? '', /运行中/u);
+  assert.equal(called, false);
+});
+
+test('startTaskAction blocks duplicate action when latest action event is still running', async () => {
+  const project = projectRepo.create({
+    name: '重复动作保护',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-running-action-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '重复启动动作',
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'start_execution',
+      status: 'running',
+      task_action: 'start_execution',
+      task_action_status: 'running',
+    },
+  });
+
+  let called = false;
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'start_execution',
+    runAgent: async () => {
+      called = true;
+      return { status: 'completed', content: '完成', error: null };
+    },
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.match(result.blocked_reason ?? '', /正在运行/u);
+  assert.equal(called, false);
 });
 
 test('writing_plans action blocks when task has no design spec', async () => {

@@ -52,6 +52,8 @@ import type {
   SkillTriggerMode,
   SuperpowersBootstrapOwner,
   Task,
+  TaskActionKind,
+  TaskActionStartResult,
   TaskEvent,
   TaskExecutionDecision,
   TaskEventListResponse,
@@ -824,6 +826,15 @@ export const api = {
         body: JSON.stringify(input),
       },
     ),
+  startTaskAction: (
+    roomId: string,
+    taskId: string,
+    input: { action: TaskActionKind; sender_id?: string; sender_name?: string },
+  ) =>
+    request<TaskActionStartResult>(`/rooms/${roomId}/tasks/${taskId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
 
   listProjectTasks: (projectId: string) => request<Task[]>(`/projects/${projectId}/tasks`),
   listRoomTasks: (roomId: string) => request<Task[]>(`/rooms/${roomId}/tasks`),

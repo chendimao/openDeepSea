@@ -57,6 +57,39 @@ test('taskEventRepo appends task events with monotonically increasing task-local
   assert.deepEqual(events.map((event) => event.id), [first.id, second.id]);
 });
 
+test('taskEventRepo listByTask returns the latest limited events in seq order', () => {
+  const { room, task } = createTaskFixture();
+  const events = Array.from({ length: 5 }, (_, index) => taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: { index },
+    source_run_id: null,
+  }));
+
+  const listed = taskEventRepo.listByTask(task.id, { layer: 'timeline', limit: 2 });
+
+  assert.deepEqual(listed.map((event) => event.id), events.slice(3).map((event) => event.id));
+  assert.deepEqual(listed.map((event) => event.seq), [4, 5]);
+});
+
+test('taskEventRepo listByRoom returns the latest limited events in insertion order', () => {
+  const { room, task } = createTaskFixture();
+  const events = Array.from({ length: 5 }, (_, index) => taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: { index },
+    source_run_id: null,
+  }));
+
+  const listed = taskEventRepo.listByRoom(room.id, { layer: 'timeline', limit: 2 });
+
+  assert.deepEqual(listed.map((event) => event.id), events.slice(3).map((event) => event.id));
+});
+
 test('task_events table is append-only for repo callers', () => {
   const { room, task } = createTaskFixture();
   const event = taskEventRepo.create({

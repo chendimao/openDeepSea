@@ -1,6 +1,6 @@
 import { CheckCircle2 } from 'lucide-react';
 import type { MessageKey } from '../lib/i18n';
-import type { AgentRun, Message, RoomAgent, Task, TaskEvent, WorkflowRun } from '../lib/types';
+import type { AgentRun, Message, RoomAgent, Task, TaskActionKind, TaskEvent, WorkflowRun } from '../lib/types';
 import { cn } from '../lib/utils';
 import {
   selectTaskDetailEvents,
@@ -11,6 +11,7 @@ import { ActiveTaskSurface } from './task/ActiveTaskSurface';
 import { TaskActivityFeed } from './task/TaskActivityFeed';
 import { TaskQueueCard } from './task/TaskQueueCard';
 import { TaskWorkspaceEmptyState } from './task/TaskWorkspaceEmptyState';
+import { createTaskActionStates } from './task/taskActionState';
 
 const TASK_STATUS_FILTERS: TaskStatusFilter[] = ['todo', 'in_progress', 'review', 'done', 'failed'];
 
@@ -29,10 +30,10 @@ export interface TaskWorkspacePanelProps {
   layerVisibility: TaskLayerVisibility;
   onStatusFiltersChange: (filters: TaskStatusFilter[]) => void;
   onSelectTask: (task: Task) => void;
-  onStartWorkflow?: (task: Task) => void;
+  onStartTaskAction?: (task: Task, action: TaskActionKind) => void;
   onLocateSourceMessage: (messageId: string, task: Task) => void;
   onClearActiveTask: () => void;
-  startingWorkflowTaskId?: string | null;
+  startingTaskActionKey?: string | null;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
   formatRelativeTime: (timestamp: number) => string;
   taskStatusLabel: (status: Task['status']) => string;
@@ -55,10 +56,10 @@ export function TaskWorkspacePanel({
   layerVisibility,
   onStatusFiltersChange,
   onSelectTask,
-  onStartWorkflow,
+  onStartTaskAction,
   onLocateSourceMessage,
   onClearActiveTask,
-  startingWorkflowTaskId,
+  startingTaskActionKey,
   t,
   formatRelativeTime,
   taskStatusLabel,
@@ -70,6 +71,12 @@ export function TaskWorkspacePanel({
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const workflowByTaskId = createWorkflowByTaskId(workflows);
   const eventGroups = selectTaskDetailEvents(taskEvents, layerVisibility);
+  const activeTaskActionStates = activeTask
+    ? createTaskActionStates(
+      taskEvents.filter((event) => event.task_id === activeTask.id),
+      startingTaskActionKey?.startsWith(`${activeTask.id}:`) ? startingTaskActionKey : null,
+    )
+    : {};
 
   const toggleFilter = (status: TaskStatusFilter): void => {
     const next = statusFilters.includes(status)
@@ -148,14 +155,14 @@ export function TaskWorkspacePanel({
               roomAgents={agents}
               tasks={tasks}
               roomId={activeTask.room_id}
-              onStartWorkflow={onStartWorkflow ? () => onStartWorkflow(activeTask) : undefined}
+              taskActionStates={activeTaskActionStates}
+              onStartTaskAction={onStartTaskAction ? (action) => onStartTaskAction(activeTask, action) : undefined}
               onLocateSourceMessage={
                 activeTask.source_message_id
                   ? () => onLocateSourceMessage(activeTask.source_message_id!, activeTask)
                   : undefined
               }
               onClearActiveTask={onClearActiveTask}
-              startingWorkflow={startingWorkflowTaskId === activeTask.id}
               formatRelativeTime={formatRelativeTime}
               t={t}
               taskStatusLabel={taskStatusLabel}
@@ -177,13 +184,20 @@ export function TaskWorkspacePanel({
 }
 
 function createWorkflowByTaskId(workflows: WorkflowRun[]): Map<string, WorkflowRun> {
-  const byTaskId = new Map<string, WorkflowRun>();
+  const grouped = new Map<string, WorkflowRun[]>();
   for (const workflow of workflows) {
     if (!workflow.task_id) continue;
-    const existing = byTaskId.get(workflow.task_id);
-    if (!existing || workflow.updated_at > existing.updated_at) {
-      byTaskId.set(workflow.task_id, workflow);
-    }
+    grouped.set(workflow.task_id, [...(grouped.get(workflow.task_id) ?? []), workflow]);
+  }
+
+  const byTaskId = new Map<string, WorkflowRun>();
+  for (const [taskId, taskWorkflows] of grouped) {
+    const sorted = [...taskWorkflows].sort((a, b) => b.updated_at - a.updated_at);
+    byTaskId.set(taskId, sorted.find((workflow) => isNonTerminalWorkflowStatus(workflow.status)) ?? sorted[0]);
   }
   return byTaskId;
+}
+
+function isNonTerminalWorkflowStatus(status: WorkflowRun['status']): boolean {
+  return status !== 'completed' && status !== 'cancelled' && status !== 'failed';
 }

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Bot, Clock3, FileDiff, FileText, FolderOpen, Gauge, GitBranch, ListChecks, Loader2, LocateFixed, MonitorPlay, Pencil, Play, Radio, Search, ScrollText, XCircle } from 'lucide-react';
+import { Bot, Clock3, FileDiff, FileText, FolderOpen, Gauge, GitBranch, ListChecks, LocateFixed, MonitorPlay, Pencil, Radio, Search, ScrollText, XCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { MessageKey } from '../../lib/i18n';
-import type { AgentRun, Message, MessageTrace, RoomAgent, Task, WorkflowRun } from '../../lib/types';
+import type { AgentRun, Message, MessageTrace, RoomAgent, Task, TaskActionKind, TaskActionState, WorkflowRun } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { AgentAvatar } from '../AgentAvatar';
 import { pairRunsWithAgentMessages } from '../chat/chatMessageModel';
@@ -10,6 +10,7 @@ import { TaskExecutionPanel } from '../chat/TaskExecutionPanel';
 import { MessageContent } from '../MessageContent';
 import { selectTaskDetailEvents, type TaskLayerVisibility } from '../TaskDetailPanel';
 import { cn } from '../../lib/utils';
+import { TaskActionStrip } from './TaskActionStrip';
 import { TaskMetaCell, TaskResourceMetric, TaskWorkspacePanelTitle } from './TaskWorkspaceCards';
 import {
   buildFileChanges,
@@ -30,14 +31,6 @@ const TASK_WORKSPACE_TABS: Array<{ id: ActiveTaskTab; label: string }> = [
   { id: 'resources', label: '资源' },
 ];
 
-const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>([
-  'draft',
-  'running',
-  'awaiting_decision',
-  'awaiting_approval',
-  'blocked',
-]);
-
 export interface ActiveTaskSurfaceProps {
   task: Task;
   assignedAgent?: RoomAgent;
@@ -50,10 +43,10 @@ export interface ActiveTaskSurfaceProps {
   roomAgents: RoomAgent[];
   tasks?: Task[];
   roomId: string;
-  onStartWorkflow?: () => void;
+  taskActionStates: Partial<Record<TaskActionKind, TaskActionState>>;
+  onStartTaskAction?: (action: TaskActionKind) => void;
   onLocateSourceMessage?: () => void;
   onClearActiveTask: () => void;
-  startingWorkflow?: boolean;
   formatRelativeTime: (timestamp: number) => string;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
   taskStatusLabel: (status: Task['status']) => string;
@@ -73,15 +66,13 @@ export function ActiveTaskSurface({
   roomAgents,
   tasks = [],
   roomId,
-  onStartWorkflow,
+  taskActionStates,
+  onStartTaskAction,
   onLocateSourceMessage,
   onClearActiveTask,
-  startingWorkflow,
   formatRelativeTime,
   t,
   taskStatusLabel,
-  taskPriorityLabel,
-  interactionModeLabel,
 }: ActiveTaskSurfaceProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<ActiveTaskTab>('records');
   const progress = taskProgressPercent(task.status);
@@ -112,11 +103,10 @@ export function ActiveTaskSurface({
     },
     [agentRuns, messages, task.id, taskMessages],
   );
-  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
   const hasActiveAgentRun = taskAgentRuns.some((run) =>
     run.status === 'queued' || run.status === 'running' || run.status === 'retrying'
   );
-  const canStartWorkflow = !hasActiveWorkflow && !hasActiveAgentRun && task.status !== 'done';
+  const canStartTaskAction = Boolean(onStartTaskAction) && !hasActiveAgentRun && task.status !== 'done';
   const agentByRoomId = useMemo(
     () => new Map(roomAgents.map((agent) => [agent.id, agent])),
     [roomAgents],
@@ -139,21 +129,6 @@ export function ActiveTaskSurface({
             <p>{task.description || t('taskDetail.noDescription')}</p>
           </div>
           <div className="active-task-header-actions">
-            {onStartWorkflow && canStartWorkflow && (
-              <button
-                type="button"
-                onClick={onStartWorkflow}
-                disabled={startingWorkflow}
-                aria-label={t('taskDetail.startWorkflow')}
-                title={t('taskDetail.startWorkflow')}
-              >
-                {startingWorkflow ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-              </button>
-            )}
             {onLocateSourceMessage && (
               <button type="button" onClick={onLocateSourceMessage} aria-label={t('taskBoard.locateSourceMessage')} title={t('taskBoard.locateSourceMessage')}>
                 <LocateFixed className="h-4 w-4" />
@@ -168,10 +143,15 @@ export function ActiveTaskSurface({
           </div>
         </div>
         <div className="active-task-meta-grid">
-          <TaskMetaCell label="Status" value={taskStatusLabel(task.status)} />
-          <TaskMetaCell label="Owner" value={currentAgent} />
-          <TaskMetaCell label="Priority" value={taskPriorityLabel(task.priority)} />
-          <TaskMetaCell label="ETA" value={workflow?.current_stage ?? interactionModeLabel(task.interaction_mode)} />
+          <div className="active-task-action-cell">
+            <TaskActionStrip
+              states={taskActionStates}
+              disabled={!canStartTaskAction}
+              onStartAction={(action) => {
+                if (canStartTaskAction) onStartTaskAction?.(action);
+              }}
+            />
+          </div>
           <TaskMetaCell label="Create Time" value={formatRelativeTime(task.created_at)} />
           <div className="active-task-progress">
             <span>

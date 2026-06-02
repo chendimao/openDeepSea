@@ -16,6 +16,8 @@ import type {
   Room,
   RoomAgent,
   Task,
+  TaskActionKind,
+  TaskEvent,
   WorkflowRun,
 } from '../../lib/types';
 import { useI18n } from '../../lib/i18n';
@@ -43,6 +45,7 @@ import type { TaskStatusFilter } from '../taskBoardLogic';
 import { WorkspaceEmptyState } from '../WorkspaceEmptyState';
 import { ChatMessageBubble } from '../chat/ChatMessageBubble';
 import { ChatPanelHeader, type RoomFeatureTab } from '../chat/ChatPanelHeader';
+import { createTaskActionPendingKey, createTaskActionStates } from '../task/taskActionState';
 import {
   findPreviousUserMessage,
   pairRunsWithAgentMessages,
@@ -58,7 +61,6 @@ import {
   applyMessageStreamBatch,
   createDefaultReplyTarget,
   createReplyTarget,
-  createTaskExecutionDispatchInputForTask,
   projectRoomActivityMessages,
   selectConversationMessages,
   type MessageStreamUpdate,
@@ -98,7 +100,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
   const [streamingMessageIds, setStreamingMessageIds] = useState<Set<string>>(() => new Set());
   const [activeTab, setActiveTab] = useState<RoomFeatureTab>('chat');
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [startingWorkflowTaskId, setStartingWorkflowTaskId] = useState<string | null>(null);
+  const [startingTaskActionKey, setStartingTaskActionKey] = useState<string | null>(null);
   const [autoActiveTaskDismissedRoomId, setAutoActiveTaskDismissedRoomId] = useState<string | null>(null);
   const [layerVisibility] = useState<TaskLayerVisibility>(DEFAULT_TASK_LAYER_VISIBILITY);
   const [taskStatusFilters, setTaskStatusFilters] = useState<TaskStatusFilter[]>(DEFAULT_TASK_STATUS_FILTERS);
@@ -163,10 +165,15 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     queryFn: () => api.listRoomTaskEvents(roomId, { layer: 'activity', limit: 80 }),
     enabled: !!roomId,
   });
+  const { data: roomTimelineTaskEventResponse } = useQuery({
+    queryKey: ['room-task-events', roomId, 'timeline', 'task-actions'],
+    queryFn: () => api.listRoomTaskEvents(roomId, { layer: 'timeline', limit: 500 }),
+    enabled: !!roomId,
+  });
   const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
   const { data: activeTaskEventResponse, isLoading: activeTaskEventsLoading } = useQuery({
     queryKey: ['room-task-events', activeTask?.room_id, activeTask?.id],
-    queryFn: () => api.listRoomTaskEvents(activeTask!.room_id, { taskId: activeTask!.id, limit: 80 }),
+    queryFn: () => api.listRoomTaskEvents(activeTask!.room_id, { taskId: activeTask!.id, layer: 'timeline', limit: 80 }),
     enabled: !!activeTask,
   });
   const roomActivityEvents = useMemo(() => {
@@ -184,32 +191,25 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     },
     onError: (err) => toast.error((err as Error).message),
   });
-  const startWorkflow = useMutation({
-    mutationFn: (task: Task) => {
-      const input = createTaskExecutionDispatchInputForTask(task, messages, agents);
-      if (!input) throw new Error('任务缺少来源消息，无法派发');
-      return api.dispatchTaskExecution(roomId, input);
-    },
-    onMutate: (task) => {
-      setStartingWorkflowTaskId(task.id);
+  const startTaskAction = useMutation({
+    mutationFn: ({ task, action }: { task: Task; action: TaskActionKind }) =>
+      api.startTaskAction(roomId, task.id, { action, sender_id: 'user', sender_name: 'You' }),
+    onMutate: ({ task, action }) => {
+      setStartingTaskActionKey(createTaskActionPendingKey(task.id, action));
       setActiveTaskId(task.id);
       setAutoActiveTaskDismissedRoomId(null);
       setShowMemoryPanel(false);
     },
     onSuccess: (result) => {
-      const addedCount = result.added_agents?.length ?? 0;
-      const deferredCount = result.deferred_steps?.length ?? 0;
-      toast.success(
-        result.dispatched > 0
-          ? addedCount > 0
-            ? deferredCount > 0
-              ? `已加入 ${addedCount} 个智能体，先派发 ${result.dispatched} 个，暂缓 ${deferredCount} 个后续步骤`
-              : `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
-            : deferredCount > 0
-              ? `已先派发 ${result.dispatched} 个智能体，暂缓 ${deferredCount} 个后续步骤`
-              : `已派发 ${result.dispatched} 个智能体`
-          : '没有可派发的下一步',
-      );
+      if (result.status === 'blocked') {
+        toast.warning(result.blocked_reason ?? `任务动作已阻塞：${result.action}`);
+      } else if (result.status === 'failed') {
+        toast.error(`任务动作失败：${result.action}`);
+      } else if (result.status === 'completed') {
+        toast.success(`任务动作已完成：${result.action}`);
+      } else {
+        toast.success(`任务动作已启动：${result.action}`);
+      }
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
       queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
@@ -217,7 +217,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
       queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
     },
     onError: (err) => toast.error((err as Error).message),
-    onSettled: () => setStartingWorkflowTaskId(null),
+    onSettled: () => setStartingTaskActionKey(null),
   });
   const { data: agentRuns = [] } = useQuery({
     queryKey: ['agent-runs', roomId],
@@ -250,7 +250,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     setHighlightMessageId(null);
     setExplicitReplyTarget(null);
     setActiveTaskId(null);
-    setStartingWorkflowTaskId(null);
+    setStartingTaskActionKey(null);
     setAutoActiveTaskDismissedRoomId(null);
     messageRefs.current.clear();
     streamingRunMessageIds.current.clear();
@@ -522,10 +522,10 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
             setAutoActiveTaskDismissedRoomId(null);
             activateTask.mutate(task);
           }}
-          onStartWorkflow={(task) => startWorkflow.mutate(task)}
+          onStartTaskAction={(task, action) => startTaskAction.mutate({ task, action })}
           onLocateSourceMessage={focusMessage}
           onClearActiveTask={clearActiveTask}
-          startingWorkflowTaskId={startingWorkflowTaskId}
+          startingTaskActionKey={startingTaskActionKey}
           t={t}
           formatRelativeTime={formatRelativeTime}
           taskStatusLabel={taskStatusLabel}
@@ -564,7 +564,8 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
                 highlightMessageId={highlightMessageId}
                 explicitReplyTarget={explicitReplyTarget}
                 activeTaskId={activeTaskId}
-                startingWorkflowTaskId={startingWorkflowTaskId}
+                startingTaskActionKey={startingTaskActionKey}
+                taskActionEvents={roomTimelineTaskEventResponse?.events ?? []}
                 onReplyToMessage={replyToMessage}
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
                 onLocateReplyTarget={focusMessage}
@@ -572,7 +573,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
                   setAutoActiveTaskDismissedRoomId(null);
                   activateTask.mutate(task);
                 }}
-                onStartWorkflow={startWorkflow.mutate}
+                onStartTaskAction={(task, action) => startTaskAction.mutate({ task, action })}
               />
             )}
             {activeTab === 'files' && (
@@ -780,14 +781,25 @@ export function upsertAgentRun(prev: AgentRun[] | undefined, run: AgentRun): Age
   const list = prev ?? [];
   const existing = list.find((item) => item.id === run.id);
   const nextRun = existing && shouldKeepExistingAgentRun(existing, run) ? existing : run;
-  return [nextRun, ...list.filter((item) => item.id !== run.id)]
-    .sort((a, b) => b.started_at - a.started_at)
-    .slice(0, 50);
+  return selectVisibleAgentRuns([nextRun, ...list.filter((item) => item.id !== run.id)]);
 }
 
 function shouldKeepExistingAgentRun(existing: AgentRun, incoming: AgentRun): boolean {
   if (incoming.updated_at < existing.updated_at) return true;
   return isTerminalAgentRunStatus(existing.status) && !isTerminalAgentRunStatus(incoming.status);
+}
+
+function selectVisibleAgentRuns(agentRuns: AgentRun[], limit = 50): AgentRun[] {
+  const byId = new Map<string, AgentRun>();
+  for (const run of agentRuns) {
+    if (run.status === 'queued' || run.status === 'running' || run.status === 'retrying') {
+      byId.set(run.id, run);
+    }
+  }
+  for (const run of [...agentRuns].sort((a, b) => b.started_at - a.started_at).slice(0, limit)) {
+    byId.set(run.id, run);
+  }
+  return [...byId.values()].sort((a, b) => b.started_at - a.started_at);
 }
 
 function ChatColumn({
@@ -809,12 +821,13 @@ function ChatColumn({
   highlightMessageId,
   explicitReplyTarget,
   activeTaskId,
-  startingWorkflowTaskId,
+  startingTaskActionKey,
+  taskActionEvents,
   onReplyToMessage,
   onClearReplyTarget,
   onLocateReplyTarget,
   onSelectTask,
-  onStartWorkflow,
+  onStartTaskAction,
 }: {
   messages: Message[];
   tasks: Task[];
@@ -834,12 +847,13 @@ function ChatColumn({
   highlightMessageId: string | null;
   explicitReplyTarget: ReplyTarget | null;
   activeTaskId: string | null;
-  startingWorkflowTaskId: string | null;
+  startingTaskActionKey: string | null;
+  taskActionEvents: TaskEvent[];
   onReplyToMessage: (message: Message) => void;
   onClearReplyTarget: () => void;
   onLocateReplyTarget: (messageId: string) => void;
   onSelectTask: (task: Task) => void;
-  onStartWorkflow: (task: Task) => void;
+  onStartTaskAction: (task: Task, action: TaskActionKind) => void;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
   const [defaultReplySuppressedForMessageId, setDefaultReplySuppressedForMessageId] = useState<string | null>(null);
@@ -864,6 +878,15 @@ function ChatColumn({
     [tasks],
   );
   const workflowByTaskId = useMemo(() => createWorkflowByTaskId(workflows), [workflows]);
+  const actionEventsByTaskId = useMemo(() => {
+    const byTaskId = new Map<string, TaskEvent[]>();
+    for (const event of taskActionEvents) {
+      const list = byTaskId.get(event.task_id) ?? [];
+      list.push(event);
+      byTaskId.set(event.task_id, list);
+    }
+    return byTaskId;
+  }, [taskActionEvents]);
   const visibleMessages = useMemo(() => selectConversationMessages(dedupeMessages(messages)), [messages]);
   const selectedBrainstormingOptionIdsByMessageId = useMemo(() => {
     const selections = new Map<string, Set<string>>();
@@ -992,6 +1015,12 @@ function ChatColumn({
               const task = (messageTaskId ? taskById.get(messageTaskId) : undefined) ?? taskBySourceMessageId.get(m.id);
               const workflow = task ? workflowByTaskId.get(task.id) : undefined;
               const hasActiveExecution = task ? activeRunTaskIds.has(task.id) : false;
+              const taskActionStates = task
+                ? createTaskActionStates(
+                  actionEventsByTaskId.get(task.id) ?? [],
+                  startingTaskActionKey?.startsWith(`${task.id}:`) ? startingTaskActionKey : null,
+                )
+                : {};
               return (
                 <ChatMessageBubble
                   key={m.id}
@@ -1006,7 +1035,7 @@ function ChatColumn({
                   tasks={tasks}
                   workflow={workflow}
                   hasActiveExecution={hasActiveExecution}
-                  startingWorkflowTaskId={startingWorkflowTaskId}
+                  taskActionStates={taskActionStates}
                   activeTaskId={activeTaskId}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
@@ -1018,7 +1047,7 @@ function ChatColumn({
                   retrySourceMessage={findPreviousUserMessage(visibleMessages, index)}
                   onLocateReplyTarget={onLocateReplyTarget}
                   onSelectTask={onSelectTask}
-                  onStartWorkflow={onStartWorkflow}
+                  onStartTaskAction={onStartTaskAction}
                   selectedBrainstormingOptionIds={selectedBrainstormingOptionIdsByMessageId.get(m.id)}
                   onSelectBrainstormingOption={selectBrainstormingOption}
                 />

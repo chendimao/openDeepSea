@@ -61,3 +61,36 @@ test('agentRunRepo listForClientByRoom truncates prompts for room run lists', ()
   assert.match(listed.prompt, /^请分析：/);
   assert.match(listed.prompt, /truncated/);
 });
+
+test('agentRunRepo listForClientByRoom includes active runs outside the recent limit', () => {
+  const project = projectRepo.create({
+    name: `agent-runs-active-${Date.now()}`,
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-agent-runs-active-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner-active', agent_name: 'Planner' });
+  const activeRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: agent.id,
+    agent_id: 'planner-active',
+    backend: 'codex',
+    prompt: 'active prompt',
+    status: 'running',
+  });
+  for (let index = 0; index < 3; index += 1) {
+    const run = agentRunRepo.create({
+      room_id: room.id,
+      room_agent_id: agent.id,
+      agent_id: `recent-${index}`,
+      backend: 'codex',
+      prompt: `recent ${index}`,
+      status: 'running',
+    });
+    agentRunRepo.updateStatus(run.id, 'completed');
+  }
+
+  const listed = agentRunRepo.listForClientByRoom(room.id, 1);
+
+  assert.equal(listed.some((run) => run.id === activeRun.id), true);
+  assert.ok(listed.length > 1);
+});

@@ -859,6 +859,27 @@ export interface TaskExecutionDecision {
   next_steps: TaskExecutionStep[];
 }
 
+export type TaskActionKind =
+  | 'start_execution'
+  | 'brainstorming'
+  | 'writing_plans'
+  | 'subagent_execution';
+
+export type TaskActionStatus = 'idle' | 'queued' | 'running' | 'failed' | 'completed' | 'blocked';
+
+export interface TaskActionState {
+  status: TaskActionStatus;
+  detail?: string;
+}
+
+export interface TaskActionStartResult {
+  action: TaskActionKind;
+  status: Exclude<TaskActionStatus, 'idle'>;
+  run_ids: string[];
+  message_id?: string;
+  blocked_reason?: string;
+}
+
 export interface MessageTraceThinking {
   text: string;
 }
