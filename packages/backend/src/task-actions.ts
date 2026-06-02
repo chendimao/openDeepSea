@@ -6,6 +6,7 @@ import type {
   TaskWorkflowPlan,
 } from './types.js';
 import { agentRepo } from './repos/agents.js';
+import { respondAsAgent } from './dispatcher.js';
 import { projectRepo } from './repos/projects.js';
 import { messageRepo } from './repos/messages.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
@@ -46,14 +47,44 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
   if (!project) throw new Error('project not found');
 
   if (input.action === 'start_execution') {
-    const workflow = ensureFixedRosterWorkflow(input.roomId, task.title);
-    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'running', { workflow });
+    recordTaskActionEvent(input.roomId, input.taskId, input.action, 'running', {});
+    let workflow: TaskWorkflowPlan;
+    try {
+      workflow = ensureFixedRosterWorkflow(input.roomId, task.title);
+    } catch (error) {
+      const blockedReason = toErrorMessage(error, 'locked roster could not be created');
+      const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
+        blocked_reason: blockedReason,
+        error: blockedReason,
+      });
+      return {
+        action: input.action,
+        status: 'blocked',
+        message_id: messageId,
+        run_ids: [],
+        blocked_reason: blockedReason,
+      };
+    }
+    const stageResult = await runLockedRosterStagesSafely({
+      roomId: input.roomId,
+      taskId: input.taskId,
+      workflow,
+      sourceMessageId: task.source_message_id,
+      runAgent: input.runAgent ?? defaultRunAgent,
+    });
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, stageResult.status, {
+      workflow,
+      run_ids: stageResult.runIds,
+      error: stageResult.error,
+      blocked_reason: stageResult.status === 'blocked' ? stageResult.error : undefined,
+    });
     return {
       action: input.action,
-      status: 'running',
+      status: stageResult.status,
       workflow,
       message_id: messageId,
-      run_ids: [],
+      run_ids: stageResult.runIds,
+      blocked_reason: stageResult.status === 'blocked' ? stageResult.error ?? undefined : undefined,
     };
   }
 
@@ -91,10 +122,105 @@ function ensureFixedRosterWorkflow(roomId: string, taskTitle: string): TaskWorkf
   };
 }
 
+async function defaultRunAgent(input: TaskActionRunAgentInput): Promise<TaskActionAgentResult> {
+  const room = roomRepo.get(input.agent.room_id);
+  if (!room) throw new Error('room not found');
+  const project = projectRepo.get(room.project_id);
+  if (!project) throw new Error('project not found');
+
+  let finalRunId: string | undefined;
+  let finalMessageId: string | undefined;
+  let finalStatus: AgentRunStatus | 'failed' = 'failed';
+  let finalContent = '';
+  let finalError: string | null = null;
+
+  await respondAsAgent({
+    agent: input.agent,
+    projectPath: project.path,
+    roomId: room.id,
+    prompt: input.prompt,
+    taskId: input.taskId,
+    sourceMessageId: input.sourceMessageId,
+    onFinished: ({ run, message, status }) => {
+      finalRunId = run.id;
+      finalMessageId = message.id;
+      finalStatus = status;
+      finalContent = message.content;
+      finalError = run.error;
+    },
+  });
+
+  return {
+    status: finalStatus,
+    content: finalContent,
+    error: finalError,
+    runId: finalRunId,
+    messageId: finalMessageId,
+  };
+}
+
+async function runLockedRosterStages(input: {
+  roomId: string;
+  taskId: string;
+  workflow: TaskWorkflowPlan;
+  sourceMessageId?: string | null;
+  runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+}): Promise<{ status: 'completed' | 'failed' | 'blocked'; runIds: string[]; error: string | null }> {
+  const runIds: string[] = [];
+  const outputs: string[] = [];
+
+  for (const stage of input.workflow.stages) {
+    for (const agentId of stage.agent_ids) {
+      const lockedAgent = input.workflow.agents.find((candidate) => candidate.agent_id === agentId);
+      if (!lockedAgent) return { status: 'blocked', runIds, error: `locked roster agent missing: ${agentId}` };
+      const agent = roomAgentRepo.get(lockedAgent.room_agent_id);
+      if (!agent || agent.room_id !== input.roomId || agent.left_at !== null) {
+        return { status: 'blocked', runIds, error: `locked roster agent unavailable: ${agentId}` };
+      }
+      if (agent.agent_id !== lockedAgent.agent_id || !agent.acp_enabled || !agent.acp_backend) {
+        return { status: 'blocked', runIds, error: `locked roster agent not executable: ${agentId}` };
+      }
+      let result: TaskActionAgentResult;
+      try {
+        result = await input.runAgent({
+          agent,
+          taskId: input.taskId,
+          sourceMessageId: input.sourceMessageId,
+          prompt: buildLockedStagePrompt(stage.id, stage.goal, outputs),
+        });
+      } catch (error) {
+        return {
+          status: 'failed',
+          runIds,
+          error: error instanceof Error ? error.message : `${agent.agent_id} failed`,
+        };
+      }
+      if (result.runId) runIds.push(result.runId);
+      outputs.push(`${agent.agent_id}: ${result.content}`);
+      if (result.status !== 'completed') {
+        return { status: 'failed', runIds, error: result.error ?? `${agent.agent_id} failed` };
+      }
+    }
+  }
+
+  return { status: 'completed', runIds, error: null };
+}
+
+function buildLockedStagePrompt(stageId: string, goal: string, previousOutputs: string[]): string {
+  return [
+    `固定编队阶段：${stageId}`,
+    `阶段目标：${goal}`,
+    '本任务已锁定完整 roster。你不能要求新增智能体；如果发现缺人，说明阻塞原因，不要输出新增 agent 的 task_execution。',
+    '',
+    previousOutputs.length > 0 ? `前序阶段输出：\n${previousOutputs.join('\n\n')}` : '前序阶段输出：无',
+  ].join('\n');
+}
+
 function selectOrAddAgentByRole(roomId: string, role: 'executor' | 'reviewer' | 'acceptor'): RoomAgent {
   const existing = roomAgentRepo.listByRoom(roomId).find((agent) =>
     agent.workflow_role === role &&
-    Boolean(agent.acp_enabled)
+    Boolean(agent.acp_enabled) &&
+    Boolean(agent.acp_backend)
   );
   if (existing) return existing;
   const fallbackId = role === 'executor' ? 'backend-executor' : role;
@@ -105,6 +231,28 @@ function selectOrAddAgentByRole(roomId: string, role: 'executor' | 'reviewer' | 
     : roomAgentRepo.addFromGlobalAgent({ room_id: roomId, global_agent_id: globalAgent.id });
   if (!added.acp_enabled || !added.acp_backend) throw new Error(`no executable ${role} agent available`);
   return added;
+}
+
+async function runLockedRosterStagesSafely(input: {
+  roomId: string;
+  taskId: string;
+  workflow: TaskWorkflowPlan;
+  sourceMessageId?: string | null;
+  runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+}): Promise<{ status: 'completed' | 'failed' | 'blocked'; runIds: string[]; error: string | null }> {
+  try {
+    return await runLockedRosterStages(input);
+  } catch (error) {
+    return {
+      status: 'failed',
+      runIds: [],
+      error: toErrorMessage(error, 'locked roster stage failed'),
+    };
+  }
+}
+
+function toErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }
 
 function recordTaskActionEvent(
