@@ -18,6 +18,7 @@ import {
   Sun,
   SwatchBook,
   Trash2,
+  FolderX,
   type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -58,6 +59,7 @@ type SettingsPatch = {
   interaction_mode?: TaskInteractionMode | null;
   auto_distill_enabled?: boolean | null;
   superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
+  workspace_excluded_dirs?: string[] | null;
 };
 
 type SystemSettingsSavePatch = {
@@ -66,6 +68,7 @@ type SystemSettingsSavePatch = {
   interaction_mode: TaskInteractionMode;
   auto_distill_enabled: boolean;
   superpowers_bootstrap_owner: SuperpowersBootstrapOwner;
+  workspace_excluded_dirs?: string[];
   langchain_planner_model?: string | null;
   openai_base_url?: string | null;
   openai_api_key?: string | null;
@@ -303,6 +306,7 @@ function SystemSettingsForm({
   const [superpowersBootstrapOwner, setSuperpowersBootstrapOwner] = useState<SuperpowersBootstrapOwner>(
     value.superpowers_bootstrap_owner,
   );
+  const [workspaceExcludedDirs, setWorkspaceExcludedDirs] = useState<string[]>(value.workspace_excluded_dirs ?? []);
   const [selectedAiConfigId, setSelectedAiConfigId] = useState<string | null>(
     aiConfigs.active_ai_config_id ?? aiConfigs.items[0]?.id ?? null,
   );
@@ -461,6 +465,7 @@ function SystemSettingsForm({
               interaction_mode: interactionMode,
               auto_distill_enabled: autoDistillEnabled,
               superpowers_bootstrap_owner: superpowersBootstrapOwner,
+              workspace_excluded_dirs: workspaceExcludedDirs,
             };
             onSave(patch);
           }}
@@ -571,6 +576,13 @@ function SystemSettingsForm({
                   }}
                 />
               </SubSettingSection>
+              <SubSettingSection
+                title={t('settings.workspaceExcludedDirs')}
+                description={t('settings.workspaceExcludedDirsDescription')}
+                icon={<FolderX className="h-4 w-4" strokeWidth={1.75} />}
+              >
+                <ExcludedDirsEditor value={workspaceExcludedDirs} onChange={setWorkspaceExcludedDirs} />
+              </SubSettingSection>
             </div>
           )}
           {activeCategory === 'model' && (
@@ -642,6 +654,66 @@ function SubSettingSection({
       </div>
       {children}
     </section>
+  );
+}
+
+function ExcludedDirsEditor({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}): JSX.Element {
+  const [draft, setDraft] = useState('');
+  const add = () => {
+    const trimmed = draft.trim();
+    if (!trimmed || value.includes(trimmed)) {
+      setDraft('');
+      return;
+    }
+    onChange([...value, trimmed]);
+    setDraft('');
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {value.map((dir) => (
+          <span
+            key={dir}
+            className="inline-flex items-center gap-1 rounded-md bg-[var(--color-surface-1)] px-2 py-0.5 text-[12px] font-medium text-[var(--color-fg)]"
+          >
+            {dir}
+            <button
+              type="button"
+              className="text-[var(--color-fg-muted)] hover:text-[var(--color-fg)]"
+              onClick={() => onChange(value.filter((item) => item !== dir))}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {value.length === 0 && (
+          <span className="text-[12px] text-[var(--color-fg-muted)]">—</span>
+        )}
+      </div>
+      <div className="flex gap-1.5">
+        <input
+          className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-[12px] text-[var(--color-fg)] placeholder:text-[var(--color-fg-muted)] focus:border-[var(--color-accent)] focus:outline-none"
+          value={draft}
+          onChange={(event) => setDraft(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              add();
+            }
+          }}
+          placeholder="vendor"
+        />
+        <Button type="button" variant="ghost" onClick={add}>
+          <Plus className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -1014,6 +1086,14 @@ function ProjectSettingsForm({
   const [superpowersBootstrapOwner, setSuperpowersBootstrapOwner] = useState<SuperpowersBootstrapOwner | 'inherit'>(
     own?.superpowers_bootstrap_owner ?? 'inherit',
   );
+  const [workspaceExcludedDirs, setWorkspaceExcludedDirs] = useState<string[]>(() => {
+    const raw = own?.workspace_excluded_dirs;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string' && raw) {
+      try { return JSON.parse(raw) as string[]; } catch { /* ignore */ }
+    }
+    return system.workspace_excluded_dirs;
+  });
   const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
     own?.message_routing_mode ?? 'inherit',
   );
@@ -1042,6 +1122,7 @@ function ProjectSettingsForm({
               interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
               auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
               superpowers_bootstrap_owner: superpowersBootstrapOwner === 'inherit' ? null : superpowersBootstrapOwner,
+              workspace_excluded_dirs: workspaceExcludedDirs,
             })
           }
         >
@@ -1081,6 +1162,9 @@ function ProjectSettingsForm({
           inheritedLabel={t('settings.inheritedSystem', { value: superpowersBootstrapOwnerLabel(system.superpowers_bootstrap_owner, t) })}
           onModeChange={setSuperpowersBootstrapOwner}
         />
+      </SettingGroup>
+      <SettingGroup title={t('settings.workspaceExcludedDirs')} icon={<FolderX className="h-4 w-4" strokeWidth={1.75} />}>
+        <ExcludedDirsEditor value={workspaceExcludedDirs} onChange={setWorkspaceExcludedDirs} />
       </SettingGroup>
       {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit' || superpowersBootstrapOwner !== 'inherit') && (
         <ResetInheritanceButton
