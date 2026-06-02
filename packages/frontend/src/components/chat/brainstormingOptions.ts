@@ -18,6 +18,9 @@ export function getBrainstormingOptionsForMessage(
   metadata: MessageMetadata,
 ): BrainstormingOption[] {
   if (message.sender_type !== 'agent') return [];
+  if (metadata.choice_options && metadata.choice_options.length > 0) {
+    return metadata.choice_options;
+  }
   if (metadata.brainstorming_options && metadata.brainstorming_options.length > 0) {
     return metadata.brainstorming_options;
   }

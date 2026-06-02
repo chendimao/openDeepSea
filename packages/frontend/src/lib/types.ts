@@ -799,6 +799,8 @@ export interface MessageMetadata {
   collaboration_decision?: CollaborationDecision;
   route_result?: RouteResult;
   task_readiness?: TaskReadinessMetadata;
+  choice_options?: MessageChoiceOption[];
+  choice_option_selection?: MessageChoiceOptionSelection;
   brainstorming_options?: BrainstormingOption[];
   brainstorming_option_selection?: BrainstormingOptionSelection;
 }
@@ -955,6 +957,7 @@ export interface TaskReadinessMetadata {
 }
 
 export type BrainstormingOptionMaturity = 'exploratory' | 'boundary_needed' | 'actionable';
+export type MessageChoiceOptionMaturity = BrainstormingOptionMaturity;
 
 export interface BrainstormingOption {
   id: string;
@@ -964,6 +967,16 @@ export interface BrainstormingOption {
   risks: string[];
   maturity: BrainstormingOptionMaturity;
   recommended?: boolean;
+}
+
+export type MessageChoiceOption = BrainstormingOption;
+
+export interface MessageChoiceOptionSelection {
+  selected_option_id: string;
+  selected_option_title: string;
+  selected_option_maturity: MessageChoiceOptionMaturity;
+  source_message_id: string;
+  source_type: 'message_option' | 'brainstorming_option';
 }
 
 export interface BrainstormingOptionSelection {

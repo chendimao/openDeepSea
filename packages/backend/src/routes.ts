@@ -1763,6 +1763,13 @@ const jsonMessageSchema = z.object({
   fileRefs: z.array(z.string()).optional(),
   reply_to_message_id: z.string().trim().min(1).optional(),
   active_task_id: z.string().trim().min(1).nullable().optional(),
+  choice_option_selection: z.object({
+    selected_option_id: z.string().trim().min(1).max(120),
+    selected_option_title: z.string().trim().min(1).max(160),
+    selected_option_maturity: z.enum(['exploratory', 'boundary_needed', 'actionable']),
+    source_message_id: z.string().trim().min(1).max(120),
+    source_type: z.enum(['message_option', 'brainstorming_option']),
+  }).optional(),
   brainstorming_option_selection: z.object({
     selected_option_id: z.string().trim().min(1).max(120),
     selected_option_title: z.string().trim().min(1).max(160),
@@ -1894,6 +1901,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
       attachments: referencedFiles.map(buildAttachmentMetadataFromProjectFile),
       replyToMessageId: parsed.data.reply_to_message_id,
       fileRefs,
+      choiceOptionSelection: parsed.data.choice_option_selection,
       brainstormingOptionSelection: parsed.data.brainstorming_option_selection,
     }) ?? {};
   } catch (err) {
@@ -2056,6 +2064,7 @@ function buildUserMessageMetadata(input: {
   attachments: MessageMetadata['attachments'];
   replyToMessageId?: string;
   fileRefs?: string[];
+  choiceOptionSelection?: MessageMetadata['choice_option_selection'];
   brainstormingOptionSelection?: MessageMetadata['brainstorming_option_selection'];
 }): MessageMetadata | undefined {
   const metadata: MessageMetadata = {};
@@ -2065,13 +2074,12 @@ function buildUserMessageMetadata(input: {
   if (input.fileRefs && input.fileRefs.length > 0) {
     metadata.file_refs = input.fileRefs;
   }
+  if (input.choiceOptionSelection) {
+    assertMessageOptionSourceInRoom(input.roomId, input.choiceOptionSelection.source_message_id);
+    metadata.choice_option_selection = input.choiceOptionSelection;
+  }
   if (input.brainstormingOptionSelection) {
-    const sourceMessage = messageRepo.get(input.brainstormingOptionSelection.source_message_id);
-    if (!sourceMessage || sourceMessage.room_id !== input.roomId) {
-      const error = new Error('brainstorming option source message not found in room') as Error & { status?: number };
-      error.status = 400;
-      throw error;
-    }
+    assertMessageOptionSourceInRoom(input.roomId, input.brainstormingOptionSelection.source_message_id);
     metadata.brainstorming_option_selection = input.brainstormingOptionSelection;
   }
   const replyToMessageId = normalizeOptionalId(input.replyToMessageId);
@@ -2091,6 +2099,15 @@ function buildUserMessageMetadata(input: {
     };
   }
   return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+function assertMessageOptionSourceInRoom(roomId: string, sourceMessageId: string): void {
+  const sourceMessage = messageRepo.get(sourceMessageId);
+  if (!sourceMessage || sourceMessage.room_id !== roomId) {
+    const error = new Error('message option source message not found in room') as Error & { status?: number };
+    error.status = 400;
+    throw error;
+  }
 }
 
 function normalizeOptionalId(value?: string | null): string | undefined {

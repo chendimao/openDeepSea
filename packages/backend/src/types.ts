@@ -697,6 +697,15 @@ export interface PlannerDecision {
 }
 
 export type BrainstormingOptionMaturity = 'exploratory' | 'boundary_needed' | 'actionable';
+export type MessageChoiceOptionMaturity = BrainstormingOptionMaturity;
+
+export interface MessageChoiceOptionSelection {
+  selected_option_id: string;
+  selected_option_title: string;
+  selected_option_maturity: MessageChoiceOptionMaturity;
+  source_message_id: string;
+  source_type: 'message_option' | 'brainstorming_option';
+}
 
 export interface BrainstormingOptionSelection {
   selected_option_id: string;
@@ -812,6 +821,7 @@ export interface MessageMetadata extends MessageTaskEventMetadata {
     execution_intent?: TaskExecutionIntent;
     source_message_id?: string;
   };
+  choice_option_selection?: MessageChoiceOptionSelection;
   brainstorming_option_selection?: BrainstormingOptionSelection;
   task_analysis?: {
     task_type: MessageIntent;

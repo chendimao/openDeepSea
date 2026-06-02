@@ -17,6 +17,9 @@ import type {
   MessageTraceThinking,
   MessageTraceToolCall,
   MessageAttachmentMetadata,
+  MessageChoiceOption,
+  MessageChoiceOptionMaturity,
+  MessageChoiceOptionSelection,
   MessageIntent,
   MessageIntentResult,
   MessageIntentSource,
@@ -85,6 +88,11 @@ const brainstormingOptionMaturities = new Set<BrainstormingOptionMaturity>([
   'boundary_needed',
   'actionable',
 ]);
+const messageChoiceOptionMaturities = new Set<MessageChoiceOptionMaturity>([
+  'exploratory',
+  'boundary_needed',
+  'actionable',
+]);
 
 function createEmptyMessageMetadata(): MessageMetadata {
   return { attachments: [] };
@@ -111,6 +119,7 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
     const trace = sanitizeTraceMetadata(parsed);
     const acp = sanitizeAcpMetadata(parsed);
     const reply = sanitizeReplyMetadata(parsed);
+    const choices = sanitizeChoiceMetadata(parsed);
     const brainstorming = sanitizeBrainstormingMetadata(parsed);
     return {
       attachments,
@@ -123,10 +132,48 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
       ...trace,
       ...acp,
       ...brainstorming,
+      ...choices,
     };
   } catch {
     return createEmptyMessageMetadata();
   }
+}
+
+function sanitizeChoiceMetadata(value: Record<string, unknown>) {
+  const options = sanitizeChoiceOptions(value.choice_options);
+  const selection = sanitizeChoiceOptionSelection(value.choice_option_selection);
+  return {
+    ...(options.length > 0 ? { choice_options: options } : {}),
+    ...(selection ? { choice_option_selection: selection } : {}),
+  };
+}
+
+function sanitizeChoiceOptions(value: unknown): MessageChoiceOption[] {
+  return sanitizeBrainstormingOptions(value);
+}
+
+function sanitizeChoiceOptionSelection(value: unknown): MessageChoiceOptionSelection | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.selected_option_id !== 'string' ||
+    !value.selected_option_id.trim() ||
+    typeof value.selected_option_title !== 'string' ||
+    !value.selected_option_title.trim() ||
+    !isMessageChoiceOptionMaturity(value.selected_option_maturity) ||
+    typeof value.source_message_id !== 'string' ||
+    !value.source_message_id.trim() ||
+    (value.source_type !== 'message_option' && value.source_type !== 'brainstorming_option')
+  ) {
+    return null;
+  }
+
+  return {
+    selected_option_id: value.selected_option_id.trim().slice(0, 120),
+    selected_option_title: value.selected_option_title.trim().slice(0, 160),
+    selected_option_maturity: value.selected_option_maturity,
+    source_message_id: value.source_message_id.trim().slice(0, 120),
+    source_type: value.source_type,
+  };
 }
 
 function sanitizeBrainstormingMetadata(value: Record<string, unknown>) {
@@ -207,6 +254,10 @@ function sanitizeBoundedStringList(value: unknown, limit: number, maxLength: num
 
 function isBrainstormingOptionMaturity(value: unknown): value is BrainstormingOptionMaturity {
   return typeof value === 'string' && brainstormingOptionMaturities.has(value as BrainstormingOptionMaturity);
+}
+
+function isMessageChoiceOptionMaturity(value: unknown): value is MessageChoiceOptionMaturity {
+  return typeof value === 'string' && messageChoiceOptionMaturities.has(value as MessageChoiceOptionMaturity);
 }
 
 function sanitizeReplyMetadata(value: Record<string, unknown>) {

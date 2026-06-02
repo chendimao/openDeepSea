@@ -39,7 +39,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   }
 }
 
-test('POST /rooms/:roomId/messages stores brainstorming option selection as normal chat metadata', async () => {
+test('POST /rooms/:roomId/messages stores generic option selection as normal chat metadata', async () => {
   const project = projectRepo.create({
     name: 'Brainstorming Selection Route',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorming-route-project-')),
@@ -72,12 +72,12 @@ test('POST /rooms/:roomId/messages stores brainstorming option selection as norm
     method: 'POST',
     body: JSON.stringify({
       content: '我选择：推荐方案「统一资源和工作区入口」',
-      brainstorming_option_selection: {
+      choice_option_selection: {
         selected_option_id: 'unified-workspace-reference',
         selected_option_title: '推荐方案',
         selected_option_maturity: 'boundary_needed',
         source_message_id: sourceMessage.id,
-        source_type: 'brainstorming_option',
+        source_type: 'message_option',
       },
     }),
   });
@@ -85,21 +85,23 @@ test('POST /rooms/:roomId/messages stores brainstorming option selection as norm
   assert.equal(res.status, 201);
   const message = await res.json() as { metadata: string | null; message_type: string; sender_type: string };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
-    brainstorming_option_selection?: {
+    choice_option_selection?: {
       selected_option_id: string;
       source_message_id: string;
+      source_type: string;
     };
   };
   assert.equal(message.sender_type, 'user');
   assert.equal(message.message_type, 'text');
-  assert.equal(metadata.brainstorming_option_selection?.selected_option_id, 'unified-workspace-reference');
-  assert.equal(metadata.brainstorming_option_selection?.source_message_id, sourceMessage.id);
+  assert.equal(metadata.choice_option_selection?.selected_option_id, 'unified-workspace-reference');
+  assert.equal(metadata.choice_option_selection?.source_message_id, sourceMessage.id);
+  assert.equal(metadata.choice_option_selection?.source_type, 'message_option');
   assert.equal(taskRepo.listByRoom(room.id).length, 0);
   assert.equal(workflowRepo.listByRoom(room.id).length, 0);
   assert.equal(dispatchCount, 1);
 });
 
-test('POST /rooms/:roomId/messages rejects selection source from another room', async () => {
+test('POST /rooms/:roomId/messages rejects generic selection source from another room', async () => {
   const project = projectRepo.create({
     name: 'Brainstorming Selection Cross Room',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorming-cross-project-')),
@@ -119,12 +121,12 @@ test('POST /rooms/:roomId/messages rejects selection source from another room', 
     method: 'POST',
     body: JSON.stringify({
       content: '我选择：推荐方案「跨房间」',
-      brainstorming_option_selection: {
+      choice_option_selection: {
         selected_option_id: 'cross-room',
         selected_option_title: '推荐方案',
         selected_option_maturity: 'boundary_needed',
         source_message_id: sourceMessage.id,
-        source_type: 'brainstorming_option',
+        source_type: 'message_option',
       },
     }),
   });

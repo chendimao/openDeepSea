@@ -6,6 +6,7 @@ import type {
   AgentInput,
   AgentRun,
   BrainstormingOptionSelection,
+  MessageChoiceOptionSelection,
   AgentMemoryScope,
   AgentRuntimeBackend,
   AgentToolCapability,
@@ -745,6 +746,7 @@ export const api = {
       fileRefs?: string[];
       replyToMessageId?: string;
       activeTaskId?: string | null;
+      choiceOptionSelection?: MessageChoiceOptionSelection;
       brainstormingOptionSelection?: BrainstormingOptionSelection;
     },
   ) => {
@@ -781,6 +783,7 @@ export const api = {
         fileRefs: input.fileRefs,
         reply_to_message_id: input.replyToMessageId,
         active_task_id: input.activeTaskId,
+        choice_option_selection: input.choiceOptionSelection,
         brainstorming_option_selection: input.brainstormingOptionSelection,
       }),
     });

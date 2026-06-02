@@ -11,6 +11,7 @@ import type {
   AgentRun,
   BrainstormingOption,
   BrainstormingOptionSelection,
+  MessageChoiceOptionSelection,
   Message,
   Room,
   RoomAgent,
@@ -86,6 +87,7 @@ type SendInput = {
   fileRefs?: string[];
   replyToMessageId?: string;
   activeTaskId?: string | null;
+  choiceOptionSelection?: MessageChoiceOptionSelection;
   brainstormingOptionSelection?: BrainstormingOptionSelection;
 };
 
@@ -860,7 +862,8 @@ function ChatColumn({
   const selectedBrainstormingOptionIdsByMessageId = useMemo(() => {
     const selections = new Map<string, Set<string>>();
     for (const message of visibleMessages) {
-      const selection = parseMessageMetadata(message.metadata).brainstorming_option_selection;
+      const metadata = parseMessageMetadata(message.metadata);
+      const selection = metadata.choice_option_selection ?? metadata.brainstorming_option_selection;
       if (!selection) continue;
       const selected = selections.get(selection.source_message_id) ?? new Set<string>();
       selected.add(selection.selected_option_id);
@@ -916,6 +919,7 @@ function ChatColumn({
       fileIds,
       fileRefs,
       replyToMessageId: input.replyToMessageId,
+      choiceOptionSelection: input.choiceOptionSelection,
       brainstormingOptionSelection: input.brainstormingOptionSelection,
     });
   }, [send]);
@@ -923,12 +927,12 @@ function ChatColumn({
   const selectBrainstormingOption = useCallback((sourceMessage: Message, option: BrainstormingOption) => {
     submitUserMessage({
       content: `我选择：${option.title}「${option.summary}」`,
-      brainstormingOptionSelection: {
+      choiceOptionSelection: {
         selected_option_id: option.id,
         selected_option_title: option.title,
         selected_option_maturity: option.maturity,
         source_message_id: sourceMessage.id,
-        source_type: 'brainstorming_option',
+        source_type: 'message_option',
       },
     });
   }, [submitUserMessage]);

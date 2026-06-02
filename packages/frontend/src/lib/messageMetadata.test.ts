@@ -609,6 +609,36 @@ test('parseMessageMetadata accepts brainstorming options and selection metadata'
   assert.equal(parsed.brainstorming_option_selection?.source_message_id, 'message-1');
 });
 
+test('parseMessageMetadata accepts generic choice options and selection metadata', () => {
+  const metadata = JSON.stringify({
+    choice_options: [
+      {
+        id: 'parallel',
+        title: '并行执行',
+        summary: '拆成多个互不冲突的子任务。',
+        benefits: ['速度更快'],
+        risks: ['需要统一收尾'],
+        maturity: 'actionable',
+        recommended: true,
+      },
+    ],
+    choice_option_selection: {
+      selected_option_id: 'parallel',
+      selected_option_title: '并行执行',
+      selected_option_maturity: 'actionable',
+      source_message_id: 'message-1',
+      source_type: 'message_option',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.equal(parsed.choice_options?.length, 1);
+  assert.equal(parsed.choice_options?.[0]?.id, 'parallel');
+  assert.equal(parsed.choice_option_selection?.selected_option_id, 'parallel');
+  assert.equal(parsed.choice_option_selection?.source_type, 'message_option');
+});
+
 test('parseMessageMetadata ignores invalid brainstorming options', () => {
   const metadata = JSON.stringify({
     brainstorming_options: [

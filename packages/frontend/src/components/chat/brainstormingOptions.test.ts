@@ -25,6 +25,37 @@ test('uses structured brainstorming options when metadata is present', () => {
   assert.equal(options[0]?.id, 'structured');
 });
 
+test('uses generic choice options before legacy brainstorming options', () => {
+  const metadata: MessageMetadata = {
+    attachments: [],
+    choice_options: [
+      {
+        id: 'generic',
+        title: '方案 A',
+        summary: '通用选择方案',
+        benefits: [],
+        risks: [],
+        maturity: 'boundary_needed',
+      },
+    ],
+    brainstorming_options: [
+      {
+        id: 'legacy',
+        title: '推荐方案',
+        summary: '旧字段方案',
+        benefits: [],
+        risks: [],
+        maturity: 'actionable',
+      },
+    ],
+  };
+
+  const options = getBrainstormingOptionsForMessage(createAgentMessage('普通正文'), metadata);
+
+  assert.equal(options.length, 1);
+  assert.equal(options[0]?.id, 'generic');
+});
+
 test('parses recommendation, lightweight alternative, and non-recommended option from markdown', () => {
   const content = [
     '**头脑风暴方案**',
