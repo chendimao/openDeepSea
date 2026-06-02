@@ -2,13 +2,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, ClipboardList, Eye, FileText, Reply, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
-import type { Agent, AgentRun, Message, MessageIntent, RoomAgent, Task, TaskEventType } from '../../lib/types';
+import type { Agent, AgentRun, Message, RoomAgent, Task, TaskEventType } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
 import { AgentAvatar } from '../AgentAvatar';
 import { MessageContent, isMarkdownMessageContent } from '../MessageContent';
-import { MessageIntentCard } from '../MessageIntentCard';
 import {
   MessageActions as AiMessageActions,
   MessageBadge as AiMessageBadge,
@@ -114,24 +113,6 @@ export function ChatMessageBubble({
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
   const showPlannerDecisionPanel = !isUser && Boolean(metadata.planner_decision);
   const showRecordOnlyBody = !isUser && Boolean(run) && !hasContent;
-  const chooseIntent = (intent: MessageIntent) => {
-    const prefixByIntent: Record<MessageIntent, string> = {
-      chat: '/chat ',
-      light_task: '新建任务：',
-      debugger: 'debugger：',
-      brainstorming: '头脑风暴：',
-      workflow: 'workflow：',
-    };
-    const content = `${prefixByIntent[intent]}${message.content}`.trim();
-    void api.sendMessage(roomId, {
-      content,
-      activeTaskId: metadata.task_id,
-    }).then(() => {
-      toast.success('已按选择的消息类型重新发送');
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['tasks', roomId] });
-    }).catch((err) => toast.error((err as Error).message));
-  };
 
   if (isSystem && shouldRenderInlineTaskCard(metadata.event_type, metadata.task_id)) {
     return (
@@ -297,9 +278,6 @@ export function ChatMessageBubble({
               />
             ) : null}
             <MessageAttachments attachments={attachments} />
-            {isUser && metadata.intent_result && (
-              <MessageIntentCard intentResult={metadata.intent_result} onChooseIntent={chooseIntent} />
-            )}
           </AiMessageBody>
         )}
         {showPlannerDecisionPanel && metadata.planner_decision && (
