@@ -222,10 +222,59 @@ test('createTaskPlannerDispatchInput prefers task-scoped message for pure ACP di
         source_message_id: 'user-request',
       }),
     }),
+    createMessage({
+      id: 'status-changed-event',
+      sender_type: 'system',
+      content: '任务状态变更',
+      metadata: JSON.stringify({
+        event_type: 'task_status_changed',
+        task_id: task.id,
+      }),
+    }),
   ]);
 
   assert.equal(input?.source_message_id, 'task-created-event');
   assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'frontend-executor');
+});
+
+test('createTaskPlannerDispatchInput prefers original source message when it is task-scoped', () => {
+  const task = createTask({
+    id: 'task-source-scoped',
+    source_message_id: 'user-request',
+    title: '修复接口报错',
+  });
+  const input = createTaskPlannerDispatchInput(task, [
+    createMessage({
+      id: 'user-request',
+      sender_type: 'user',
+      content: task.title,
+      metadata: JSON.stringify({ task_id: task.id }),
+    }),
+    createMessage({
+      id: 'task-created-event',
+      sender_type: 'system',
+      content: '已创建任务',
+      metadata: JSON.stringify({
+        event_type: 'task_created',
+        task_id: task.id,
+      }),
+    }),
+  ]);
+
+  assert.equal(input?.source_message_id, 'user-request');
+  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'backend-executor');
+});
+
+test('createTaskPlannerDispatchInput routes explicit verification tasks to qa tester', () => {
+  const task = createTask({
+    source_message_id: 'user-request',
+    title: '测试设置页面跳转',
+  });
+  const input = createTaskPlannerDispatchInput(task, [
+    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
+  ]);
+
+  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'qa-tester');
 });
 
 test('createTaskPlannerDispatchInput prefers assigned non-planner room agent', () => {

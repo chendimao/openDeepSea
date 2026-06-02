@@ -256,11 +256,33 @@ function createFallbackTaskPlannerDecision(task: Task, roomAgents: RoomAgent[]):
 }
 
 function findTaskScopedDispatchSourceMessageId(task: Task, messages: Message[]): string | null {
+  const originalSource = task.source_message_id
+    ? messages.find((message) => {
+      if (message.id !== task.source_message_id) return false;
+      return parseMessageMetadata(message.metadata).task_id === task.id;
+    })
+    : undefined;
+  if (originalSource) return originalSource.id;
+
+  const taskCreatedMessage = findLastTaskScopedMessage(task, messages, (metadata) =>
+    metadata.event_type === 'task_created'
+  );
+  if (taskCreatedMessage) return taskCreatedMessage.id;
+
+  const taskScopedMessage = findLastTaskScopedMessage(task, messages);
+  return taskScopedMessage?.id ?? null;
+}
+
+function findLastTaskScopedMessage(
+  task: Task,
+  messages: Message[],
+  predicate: (metadata: MessageMetadata) => boolean = () => true,
+): Message | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (!message) continue;
     const metadata = parseMessageMetadata(message.metadata);
-    if (metadata.task_id === task.id) return message.id;
+    if (metadata.task_id === task.id && predicate(metadata)) return message;
   }
   return null;
 }
@@ -275,14 +297,14 @@ function resolveTaskExecutorAgentId(task: Task, roomAgents: RoomAgent[]): string
   }
 
   const text = `${task.title}\n${task.description ?? ''}`.toLowerCase();
+  if (/(^|\s)(test|qa)\b|验证|回归|e2e|playwright|测试.+(流程|用例|覆盖|回归|结果|交互|跳转|页面|功能)/u.test(text)) {
+    return 'qa-tester';
+  }
   if (/前端|frontend|front-end|react|vite|css|ui|页面|组件|header|menu|菜单|导航/u.test(text)) {
     return 'frontend-executor';
   }
   if (/后端|backend|server|api|接口|route|路由|database|sqlite|数据库/u.test(text)) {
     return 'backend-executor';
-  }
-  if (/测试|验证|test|qa|e2e|playwright/u.test(text)) {
-    return 'qa-tester';
   }
   return 'computer-assistant';
 }
