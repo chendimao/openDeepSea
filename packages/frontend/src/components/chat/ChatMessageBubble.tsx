@@ -32,6 +32,7 @@ export interface ChatMessageBubbleProps {
   task?: Task;
   tasks?: Task[];
   workflow?: WorkflowRun;
+  hasActiveExecution?: boolean;
   startingWorkflowTaskId?: string | null;
   activeTaskId?: string | null;
   streaming: boolean;
@@ -58,6 +59,7 @@ export function ChatMessageBubble({
   task,
   tasks = [],
   workflow,
+  hasActiveExecution,
   startingWorkflowTaskId,
   activeTaskId,
   streaming,
@@ -135,6 +137,7 @@ export function ChatMessageBubble({
           roomAgents={roomAgents}
           active={Boolean(task && activeTaskId === task.id)}
           workflow={workflow}
+          hasActiveExecution={hasActiveExecution}
           startingWorkflow={Boolean(task && startingWorkflowTaskId === task.id)}
           onSelectTask={onSelectTask}
           onStartWorkflow={onStartWorkflow}

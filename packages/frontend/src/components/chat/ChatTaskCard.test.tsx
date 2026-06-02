@@ -66,6 +66,25 @@ test('ChatTaskCard hides start workflow entrance for done task and active workfl
   assert.doesNotMatch(activeWorkflowHtml, /aria-label="启动闭环"/);
 });
 
+test('ChatTaskCard hides start workflow entrance for active ACP execution', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <ChatTaskCard
+        message={message('msg-active-execution')}
+        metadata={{ attachments: [], event_type: 'task_created', task_id: 'task-active-execution-123456' }}
+        task={task('task-active-execution-123456', 'todo')}
+        hasActiveExecution
+        roomAgents={[]}
+        active={false}
+        onSelectTask={() => undefined}
+        onStartWorkflow={() => undefined}
+      />
+    </I18nProvider>,
+  );
+
+  assert.doesNotMatch(html, /aria-label="启动闭环"/);
+});
+
 test('ChatTaskCard keeps start workflow entrance after terminal workflow', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

@@ -5,6 +5,7 @@ import type {
   MessageMetadata,
   MessageTrace,
   PlannerDecision,
+  RoomAgent,
   Task,
   TaskEvent,
   TaskExecutionIntent,
@@ -199,6 +200,38 @@ export function createPlannerDispatchInput(
   };
 }
 
+export function createTaskPlannerDispatchInput(
+  task: Task,
+  messages: Message[],
+  roomAgents: RoomAgent[] = [],
+): PlannerDispatchInput | null {
+  if (!task.source_message_id) return null;
+  const plannerSourceMessageId = task.source_message_id;
+  const dispatchSourceMessageId = findTaskScopedDispatchSourceMessageId(task, messages) ?? plannerSourceMessageId;
+  const plannerMessage = [...messages]
+    .reverse()
+    .find((message) => {
+      const metadata = parseMessageMetadata(message.metadata);
+      return metadata.source_message_id === plannerSourceMessageId &&
+        Boolean(metadata.planner_decision && hasDispatchablePlannerSteps(metadata.planner_decision));
+    });
+
+  if (plannerMessage) {
+    const input = createPlannerDispatchInput(plannerMessage);
+    if (input) {
+      return {
+        source_message_id: dispatchSourceMessageId,
+        planner_decision: input.planner_decision,
+      };
+    }
+  }
+
+  return {
+    source_message_id: dispatchSourceMessageId,
+    planner_decision: createFallbackTaskPlannerDecision(task, roomAgents),
+  };
+}
+
 export function hasDispatchablePlannerSteps(decision: PlannerDecision): boolean {
   const isDispatchableMode = decision.mode === 'pause_after_suggestion' || decision.mode === 'dispatch_next';
   const isDispatchableStatus = decision.status === 'suggested' || decision.status === 'needs_fix';
@@ -206,6 +239,60 @@ export function hasDispatchablePlannerSteps(decision: PlannerDecision): boolean 
     isDispatchableStatus &&
     decision.awaiting_user_confirmation &&
     decision.next_steps.length > 0;
+}
+
+function createFallbackTaskPlannerDecision(task: Task, roomAgents: RoomAgent[]): PlannerDecision {
+  const agentId = resolveTaskExecutorAgentId(task, roomAgents);
+  return {
+    mode: 'pause_after_suggestion',
+    status: 'suggested',
+    summary: `启动任务：${task.title}`,
+    next_steps: [{
+      agent_id: agentId,
+      goal: createTaskDispatchGoal(task),
+    }],
+    awaiting_user_confirmation: true,
+  };
+}
+
+function findTaskScopedDispatchSourceMessageId(task: Task, messages: Message[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message) continue;
+    const metadata = parseMessageMetadata(message.metadata);
+    if (metadata.task_id === task.id) return message.id;
+  }
+  return null;
+}
+
+function resolveTaskExecutorAgentId(task: Task, roomAgents: RoomAgent[]): string {
+  if (task.assigned_agent_id) {
+    const assigned = roomAgents.find((agent) =>
+      agent.id === task.assigned_agent_id ||
+      agent.agent_id === task.assigned_agent_id
+    );
+    if (assigned && assigned.agent_id !== 'planner') return assigned.agent_id;
+  }
+
+  const text = `${task.title}\n${task.description ?? ''}`.toLowerCase();
+  if (/前端|frontend|front-end|react|vite|css|ui|页面|组件|header|menu|菜单|导航/u.test(text)) {
+    return 'frontend-executor';
+  }
+  if (/后端|backend|server|api|接口|route|路由|database|sqlite|数据库/u.test(text)) {
+    return 'backend-executor';
+  }
+  if (/测试|验证|test|qa|e2e|playwright/u.test(text)) {
+    return 'qa-tester';
+  }
+  return 'computer-assistant';
+}
+
+function createTaskDispatchGoal(task: Task): string {
+  const description = task.description?.trim();
+  const content = description
+    ? `执行任务「${task.title}」。任务描述：${description}`
+    : `执行任务「${task.title}」。`;
+  return content.length <= 600 ? content : `${content.slice(0, 597).trimEnd()}...`;
 }
 
 export type StreamTraceChannel = 'thinking' | 'tool' | 'command' | 'event';

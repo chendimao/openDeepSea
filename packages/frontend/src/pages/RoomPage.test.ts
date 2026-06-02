@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { AgentRun, Message } from '../lib/types';
+import type { AgentRun, Message, RoomAgent, Task } from '../lib/types';
 import type { AgentTimelineEvent } from '../lib/types';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { upsertAgentRun } from './RoomPage';
@@ -13,6 +13,7 @@ import {
   applyMessageStreamUpdate,
   createDefaultReplyTarget,
   createPlannerDispatchInput,
+  createTaskPlannerDispatchInput,
   hasDispatchablePlannerSteps,
   shouldShowPlannerDecisionPanel,
   createReplyTarget,
@@ -141,6 +142,105 @@ test('createPlannerDispatchInput falls back to the clicked message id for legacy
   const input = createPlannerDispatchInput(message);
 
   assert.equal(input?.source_message_id, 'planner-message');
+});
+
+test('createTaskPlannerDispatchInput reuses dispatchable planner decision for the task source', () => {
+  const task = createTask({
+    source_message_id: 'user-request',
+    title: '实现设置页保存按钮',
+  });
+  const input = createTaskPlannerDispatchInput(task, [
+    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
+    createMessage({
+      id: 'planner-message',
+      sender_type: 'agent',
+      content: '建议交给前端执行。',
+      metadata: JSON.stringify({
+        source_message_id: 'user-request',
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '交给前端执行',
+          next_steps: [{ agent_id: 'frontend-executor', goal: '实现设置页保存按钮' }],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    }),
+  ]);
+
+  assert.equal(input?.source_message_id, 'user-request');
+  assert.equal(input?.planner_decision.summary, '交给前端执行');
+  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'frontend-executor');
+});
+
+test('createTaskPlannerDispatchInput creates pure ACP dispatch step when planner decision has no next steps', () => {
+  const task = createTask({
+    source_message_id: 'user-request',
+    title: '去掉header菜单中的测试菜单',
+    description: '从前端 header 菜单中移除测试菜单入口。',
+  });
+  const input = createTaskPlannerDispatchInput(task, [
+    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
+    createMessage({
+      id: 'planner-message',
+      sender_type: 'agent',
+      content: '可以进入正式实现任务。',
+      metadata: JSON.stringify({
+        source_message_id: 'user-request',
+        planner_decision: {
+          mode: 'pause_after_suggestion',
+          status: 'suggested',
+          summary: '可以进入正式实现任务。',
+          next_steps: [],
+          awaiting_user_confirmation: true,
+        },
+      }),
+    }),
+  ]);
+
+  assert.equal(input?.source_message_id, 'user-request');
+  assert.equal(input?.planner_decision.next_steps.length, 1);
+  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'frontend-executor');
+  assert.match(input?.planner_decision.next_steps[0]?.goal ?? '', /去掉header菜单中的测试菜单/);
+});
+
+test('createTaskPlannerDispatchInput prefers task-scoped message for pure ACP dispatch source', () => {
+  const task = createTask({
+    id: 'task-created-from-chat',
+    source_message_id: 'user-request',
+    title: '修复 header 菜单',
+  });
+  const input = createTaskPlannerDispatchInput(task, [
+    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
+    createMessage({
+      id: 'task-created-event',
+      sender_type: 'system',
+      content: '已创建任务',
+      metadata: JSON.stringify({
+        event_type: 'task_created',
+        task_id: task.id,
+        source_message_id: 'user-request',
+      }),
+    }),
+  ]);
+
+  assert.equal(input?.source_message_id, 'task-created-event');
+  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'frontend-executor');
+});
+
+test('createTaskPlannerDispatchInput prefers assigned non-planner room agent', () => {
+  const task = createTask({
+    source_message_id: 'user-request',
+    assigned_agent_id: 'room-agent-frontend',
+    title: '调整导航入口',
+  });
+  const input = createTaskPlannerDispatchInput(task, [
+    createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
+  ], [
+    createRoomAgent({ id: 'room-agent-frontend', agent_id: 'custom-frontend' }),
+  ]);
+
+  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'custom-frontend');
 });
 
 test('hasDispatchablePlannerSteps only enables continue when planner has concrete next steps', () => {
@@ -494,10 +594,10 @@ function createMessage(input: Pick<Message, 'id' | 'sender_type' | 'content'> & 
     id: input.id,
     room_id: 'room-1',
     sender_type: input.sender_type,
-    sender_id: input.sender_type === 'agent' ? 'planner' : 'user',
-    sender_name: input.sender_type === 'agent' ? '产品经理' : 'You',
+    sender_id: input.sender_type === 'agent' ? 'planner' : input.sender_type,
+    sender_name: input.sender_type === 'agent' ? '产品经理' : input.sender_type === 'system' ? 'System' : 'You',
     content: input.content,
-    message_type: input.sender_type === 'agent' ? 'agent_stream' : 'text',
+    message_type: input.sender_type === 'agent' ? 'agent_stream' : input.sender_type === 'system' ? 'system' : 'text',
     metadata: input.metadata ?? null,
     created_at: input.created_at ?? Date.now(),
   };
@@ -525,5 +625,56 @@ function createAgentRun(input: Partial<AgentRun> = {}): AgentRun {
     started_at: input.started_at ?? 1000,
     updated_at: input.updated_at ?? 1000,
     completed_at: input.completed_at ?? null,
+  };
+}
+
+function createTask(input: Partial<Task> = {}): Task {
+  return {
+    id: input.id ?? 'task-1',
+    room_id: input.room_id ?? 'room-1',
+    project_id: input.project_id ?? 'project-1',
+    parent_task_id: input.parent_task_id ?? null,
+    title: input.title ?? '任务标题',
+    description: input.description ?? null,
+    status: input.status ?? 'todo',
+    priority: input.priority ?? 'normal',
+    interaction_mode: input.interaction_mode ?? 'ask_user',
+    assigned_agent_id: input.assigned_agent_id ?? null,
+    source_message_id: input.source_message_id ?? 'user-request',
+    created_from: input.created_from ?? 'chat_plan',
+    created_at: input.created_at ?? 1000,
+    updated_at: input.updated_at ?? 1000,
+    completed_at: input.completed_at ?? null,
+    deleted_at: input.deleted_at ?? null,
+  };
+}
+
+function createRoomAgent(input: Partial<RoomAgent> = {}): RoomAgent {
+  return {
+    id: input.id ?? 'room-agent-1',
+    room_id: input.room_id ?? 'room-1',
+    global_agent_id: input.global_agent_id ?? null,
+    agent_id: input.agent_id ?? 'frontend-executor',
+    agent_name: input.agent_name ?? '前端执行器',
+    agent_role: input.agent_role ?? null,
+    preferred_user_name: input.preferred_user_name ?? null,
+    personality: input.personality ?? null,
+    rules: input.rules ?? null,
+    responsibilities: input.responsibilities ?? null,
+    workflow_role: input.workflow_role ?? null,
+    capabilities: input.capabilities ?? [],
+    default_runtime: input.default_runtime ?? 'acp',
+    runtime_backend: input.runtime_backend ?? 'acp',
+    tool_policy: input.tool_policy ?? null,
+    workspace_policy: input.workspace_policy ?? null,
+    memory_scope: input.memory_scope ?? null,
+    joined_at: input.joined_at ?? 1000,
+    left_at: input.left_at ?? null,
+    acp_enabled: input.acp_enabled ?? 1,
+    acp_backend: input.acp_backend ?? 'codex',
+    acp_session_id: input.acp_session_id ?? null,
+    acp_session_label: input.acp_session_label ?? null,
+    acp_permission_mode: input.acp_permission_mode ?? 'read-only',
+    acp_writable_dirs: input.acp_writable_dirs ?? [],
   };
 }

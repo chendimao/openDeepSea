@@ -97,8 +97,6 @@ export function ActiveTaskSurface({
   const displayToolCalls = completeToolCallPreview(toolCalls, task.created_at);
   const currentAgent = assignedAgent?.agent_name ?? t('common.unassigned');
   const currentStep = planSteps.find((step) => step.state === 'running') ?? planSteps[0];
-  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
-  const canStartWorkflow = !hasActiveWorkflow && task.status !== 'done';
   const taskMessages = useMemo(
     () => messages.filter((message) => messageBelongsToCurrentTask(message, task)),
     [messages, task],
@@ -119,6 +117,11 @@ export function ActiveTaskSurface({
     },
     [agentRuns, messages, task.id, taskMessages],
   );
+  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
+  const hasActiveAgentRun = taskAgentRuns.some((run) =>
+    run.status === 'queued' || run.status === 'running' || run.status === 'retrying'
+  );
+  const canStartWorkflow = !hasActiveWorkflow && !hasActiveAgentRun && task.status !== 'done';
   const agentByRoomId = useMemo(
     () => new Map(roomAgents.map((agent) => [agent.id, agent])),
     [roomAgents],

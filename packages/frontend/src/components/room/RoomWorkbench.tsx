@@ -55,6 +55,7 @@ import {
   applyMessageStreamBatch,
   createDefaultReplyTarget,
   createReplyTarget,
+  createTaskPlannerDispatchInput,
   projectRoomActivityMessages,
   selectConversationMessages,
   type MessageStreamUpdate,
@@ -179,25 +180,36 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
     onError: (err) => toast.error((err as Error).message),
   });
   const startWorkflow = useMutation({
-    mutationFn: (task: Task) =>
-      api.startWorkflowWithConversation(roomId, task.id, {
-        source: 'task_button',
-        source_message_id: task.source_message_id ?? undefined,
-      }),
+    mutationFn: (task: Task) => {
+      const input = createTaskPlannerDispatchInput(task, messages, agents);
+      if (!input) throw new Error('任务缺少来源消息，无法派发');
+      return api.dispatchPlannerDecision(roomId, input);
+    },
     onMutate: (task) => {
       setStartingWorkflowTaskId(task.id);
       setActiveTaskId(task.id);
       setAutoActiveTaskDismissedRoomId(null);
       setShowMemoryPanel(false);
     },
-    onSuccess: (workflow) => {
-      toast.success(t('taskDetail.startWorkflow'));
+    onSuccess: (result) => {
+      const addedCount = result.added_agents?.length ?? 0;
+      const deferredCount = result.deferred_steps?.length ?? 0;
+      toast.success(
+        result.dispatched > 0
+          ? addedCount > 0
+            ? deferredCount > 0
+              ? `已加入 ${addedCount} 个智能体，先派发 ${result.dispatched} 个，暂缓 ${deferredCount} 个后续步骤`
+              : `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
+            : deferredCount > 0
+              ? `已先派发 ${result.dispatched} 个智能体，暂缓 ${deferredCount} 个后续步骤`
+              : `已派发 ${result.dispatched} 个智能体`
+          : '没有可派发的下一步',
+      );
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
+      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-workflows', roomId] });
       queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
-      queryClient.setQueryData<WorkflowRun[] | undefined>(['room-workflows', roomId], (prev) =>
-        [workflow, ...(prev ?? []).filter((item) => item.id !== workflow.id)],
-      );
     },
     onError: (err) => toast.error((err as Error).message),
     onSettled: () => setStartingWorkflowTaskId(null),
@@ -835,6 +847,7 @@ function ChatColumn({
     () => pairRunsWithAgentMessages(messages, agentRuns),
     [messages, agentRuns],
   );
+  const activeRunTaskIds = useMemo(() => createActiveAgentRunTaskIds(agentRuns), [agentRuns]);
   const taskById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
     [tasks],
@@ -940,6 +953,7 @@ function ChatColumn({
               const messageTaskId = metadata.task_id ?? run?.task_id ?? undefined;
               const task = messageTaskId ? taskById.get(messageTaskId) : undefined;
               const workflow = task ? workflowByTaskId.get(task.id) : undefined;
+              const hasActiveExecution = task ? activeRunTaskIds.has(task.id) : false;
               return (
                 <ChatMessageBubble
                   key={m.id}
@@ -953,6 +967,7 @@ function ChatColumn({
                   task={task}
                   tasks={tasks}
                   workflow={workflow}
+                  hasActiveExecution={hasActiveExecution}
                   startingWorkflowTaskId={startingWorkflowTaskId}
                   activeTaskId={activeTaskId}
                   streaming={isStreamingMessage}
@@ -1036,4 +1051,15 @@ function createWorkflowByTaskId(workflows: WorkflowRun[]): Map<string, WorkflowR
     }
   }
   return byTaskId;
+}
+
+function createActiveAgentRunTaskIds(agentRuns: AgentRun[]): Set<string> {
+  const taskIds = new Set<string>();
+  for (const run of agentRuns) {
+    if (!run.task_id) continue;
+    if (run.status === 'queued' || run.status === 'running' || run.status === 'retrying') {
+      taskIds.add(run.task_id);
+    }
+  }
+  return taskIds;
 }

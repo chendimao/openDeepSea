@@ -11,6 +11,7 @@ interface ChatTaskCardProps {
   roomAgents: RoomAgent[];
   active: boolean;
   workflow?: WorkflowRun;
+  hasActiveExecution?: boolean;
   startingWorkflow?: boolean;
   onSelectTask?: (task: Task) => void;
   onStartWorkflow?: (task: Task) => void;
@@ -67,6 +68,7 @@ export function ChatTaskCard({
   roomAgents,
   active,
   workflow,
+  hasActiveExecution,
   startingWorkflow,
   onSelectTask,
   onStartWorkflow,
@@ -76,7 +78,7 @@ export function ChatTaskCard({
   const StatusIcon = status?.icon ?? ClipboardList;
   const canOpen = Boolean(task && onSelectTask);
   const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
-  const canStartWorkflow = Boolean(task && onStartWorkflow && !hasActiveWorkflow && task?.status !== 'done');
+  const canStartWorkflow = Boolean(task && onStartWorkflow && !hasActiveWorkflow && !hasActiveExecution && task?.status !== 'done');
   const title = task?.title ?? metadata.task_title ?? summarizeTaskTitle(message.content, metadata.task_id);
   const description = summarizeTaskDescription(task?.description, message.content, title);
   const assignee = task?.assigned_agent_id
