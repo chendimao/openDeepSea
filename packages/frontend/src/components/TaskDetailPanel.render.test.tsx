@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { TaskEventTimeline, TaskExecutorSessions, TaskLayerToggles, type TaskLayerVisibility } from './TaskDetailPanel';
+import { TaskEventTimeline, TaskExecutorSessions, TaskLayerToggles, TaskTimeline, type TaskLayerVisibility } from './TaskDetailPanel';
 
 const visible: TaskLayerVisibility = {
   chat: true,
@@ -106,4 +106,46 @@ test('TaskEventTimeline renders runtime and diff payload details', () => {
   assert.match(html, /task-event-diff-line is-added/);
   assert.match(html, /npm test/);
   assert.match(html, /all tests passed/);
+});
+
+test('TaskTimeline renders task body and task events in one timeline container', () => {
+  const html = renderToStaticMarkup(
+    <TaskTimeline
+      items={[
+        {
+          kind: 'body',
+          id: 'task-body-task-1',
+          layer: 'chat',
+          created_at: 10,
+          content: '用户回复正文应该进入时间线',
+        },
+        {
+          kind: 'event',
+          id: 'runtime-event',
+          layer: 'runtime',
+          created_at: 20,
+          event: {
+            id: 'runtime-event',
+            task_id: 'task-1',
+            room_id: 'room-1',
+            seq: 2,
+            type: 'runtime_event',
+            layer: 'runtime',
+            payload: {
+              command: 'npm test',
+            },
+            source_run_id: null,
+            created_at: 20,
+          },
+        },
+      ]}
+      formatRelativeTime={(timestamp) => `${timestamp}`}
+      t={(key) => key}
+    />,
+  );
+
+  assert.match(html, /用户回复正文应该进入时间线/);
+  assert.match(html, /npm test/);
+  assert.match(html, /task-event-timeline/);
+  assert.doesNotMatch(html, /taskDetail.description/);
 });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { describeTaskEvent, selectTaskDetailEvents, type TaskLayerVisibility } from './TaskDetailPanel';
-import type { MessageLayer, TaskEvent, TaskEventType } from '../lib/types';
+import { buildTaskTimelineItems, describeTaskEvent, selectTaskDetailEvents, type TaskLayerVisibility } from './TaskDetailPanel';
+import type { MessageLayer, Task, TaskEvent, TaskEventType } from '../lib/types';
 
 const visible: TaskLayerVisibility = {
   chat: true,
@@ -68,6 +68,38 @@ test('describeTaskEvent explains message routing decisions from route payload', 
   assert.equal(describeTaskEvent(event, t), '使用当前激活任务：浏览器闭环测试 · 90%');
 });
 
+test('buildTaskTimelineItems merges task body with events by created_at ascending', () => {
+  const task = createTask({
+    description: '用户回复正文',
+    created_at: 10,
+  });
+  const laterEvent = createEvent('runtime_event', 'runtime', { command: 'npm test' });
+  laterEvent.id = 'event-later';
+  laterEvent.created_at = 20;
+  const earlierEvent = createEvent('task_created', 'activity');
+  earlierEvent.id = 'event-earlier';
+  earlierEvent.created_at = 5;
+
+  const items = buildTaskTimelineItems(task, [laterEvent, earlierEvent], visible);
+
+  assert.deepEqual(items.map((item) => item.id), ['event-earlier', 'task-body-task-1', 'event-later']);
+  assert.equal(items[1]?.kind, 'body');
+});
+
+test('buildTaskTimelineItems hides task body when chat layer is disabled', () => {
+  const task = createTask({
+    description: '这段正文不应展示',
+    created_at: 10,
+  });
+
+  const items = buildTaskTimelineItems(task, [], {
+    ...visible,
+    chat: false,
+  });
+
+  assert.deepEqual(items, []);
+});
+
 function createEvent(type: TaskEventType, layer: MessageLayer, payload: Record<string, unknown> = {}): TaskEvent {
   return {
     id: `${type}-${layer}`,
@@ -79,6 +111,28 @@ function createEvent(type: TaskEventType, layer: MessageLayer, payload: Record<s
     payload,
     source_run_id: null,
     created_at: 1,
+  };
+}
+
+function createTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'task-1',
+    room_id: 'room-1',
+    project_id: 'project-1',
+    parent_task_id: null,
+    title: '测试任务',
+    description: null,
+    status: 'todo',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: null,
+    source_message_id: null,
+    created_from: 'manual',
+    created_at: 1,
+    updated_at: 1,
+    completed_at: null,
+    deleted_at: null,
+    ...overrides,
   };
 }
 

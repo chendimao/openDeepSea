@@ -26,6 +26,53 @@ const PLAN_EVENT_TYPES = new Set<TaskEvent['type']>([
   'workflow_assignment_created',
 ]);
 
+export type TaskTimelineItem =
+  | {
+      kind: 'body';
+      id: string;
+      layer: Extract<MessageLayer, 'chat'>;
+      created_at: number;
+      content: string;
+    }
+  | {
+      kind: 'event';
+      id: string;
+      layer: MessageLayer;
+      created_at: number;
+      event: TaskEvent;
+    };
+
+export function buildTaskTimelineItems(
+  task: Task,
+  events: TaskEvent[],
+  layerVisibility: TaskLayerVisibility,
+): TaskTimelineItem[] {
+  const body = task.description?.trim();
+  const items: TaskTimelineItem[] = events.map((event) => ({
+    kind: 'event',
+    id: event.id,
+    layer: event.layer,
+    created_at: event.created_at,
+    event,
+  }));
+
+  if (body && layerVisibility.chat) {
+    items.push({
+      kind: 'body',
+      id: `task-body-${task.id}`,
+      layer: 'chat',
+      created_at: task.created_at,
+      content: body,
+    });
+  }
+
+  return items.sort((left, right) => {
+    if (left.created_at !== right.created_at) return left.created_at - right.created_at;
+    if (left.kind === right.kind) return left.id.localeCompare(right.id);
+    return left.kind === 'body' ? -1 : 1;
+  });
+}
+
 export function selectTaskDetailEvents(
   events: TaskEvent[],
   layerVisibility: TaskLayerVisibility,
@@ -80,6 +127,7 @@ export function TaskDetailPanel({
   const events = eventResponse?.events ?? [];
   const { visibleEvents, planEvents, timelineEvents, diffEvents, logEvents } =
     selectTaskDetailEvents(events, layerVisibility);
+  const timelineItems = task ? buildTaskTimelineItems(task, timelineEvents, layerVisibility) : [];
 
   const update = useMutation({
     mutationFn: (patch: Partial<Pick<Task, 'status' | 'priority' | 'interaction_mode' | 'assigned_agent_id'>>) =>
@@ -167,13 +215,6 @@ export function TaskDetailPanel({
           </div>
         </section>
 
-        <section className="inspector-section">
-          <Label>{t('taskDetail.description')}</Label>
-          <div className="glass-info-card min-h-[76px] whitespace-pre-wrap px-3 py-2.5 text-[13px] leading-relaxed">
-            {task.description || t('taskDetail.noDescription')}
-          </div>
-        </section>
-
         <TaskExecutorSessions executors={executors} isLoading={executorsLoading} t={t} />
 
         {activeView === 'plan' && (
@@ -183,8 +224,8 @@ export function TaskDetailPanel({
         {activeView === 'timeline' && (
           <section className="inspector-section">
             <Label>{t('taskDetail.timeline')}</Label>
-            <TaskEventTimeline
-              events={timelineEvents}
+            <TaskTimeline
+              items={timelineItems}
               emptyKey={visibleEvents.length === 0 ? 'taskDetail.noVisibleEvents' : 'taskDetail.noTimelineEvents'}
               formatRelativeTime={formatRelativeTime}
               t={t}
@@ -339,24 +380,115 @@ export function TaskEventTimeline({
   return (
     <div className="task-event-timeline glass-info-card">
       {events.map((event) => (
-        <div key={event.id} className="task-event-row">
-          <span className="task-event-dot" data-layer={event.layer} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-[12.5px] font-semibold text-[var(--color-fg)]">
-                {eventTitle(event, t)}
-              </span>
-              <span className="shrink-0 font-mono text-[10.5px] text-[var(--color-muted)]">
-                {formatRelativeTime(event.created_at)}
-              </span>
-            </div>
-            <div className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
-              {describeTaskEvent(event, t)}
-            </div>
-            <TaskEventPayloadDetails event={event} />
-          </div>
-        </div>
+        <TaskEventTimelineRow
+          key={event.id}
+          event={event}
+          formatRelativeTime={formatRelativeTime}
+          t={t}
+        />
       ))}
+    </div>
+  );
+}
+
+export function TaskTimeline({
+  items,
+  emptyKey = 'taskDetail.noEvents',
+  formatRelativeTime,
+  t,
+}: {
+  items: TaskTimelineItem[];
+  emptyKey?: MessageKey;
+  formatRelativeTime: (timestamp: number) => string;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}): JSX.Element {
+  if (items.length === 0) {
+    return (
+      <div className="glass-info-card flex min-h-[96px] items-center gap-3 text-[12px] text-[var(--color-fg-muted)]">
+        <Radio className="h-4 w-4 shrink-0 text-[var(--color-muted)]" strokeWidth={1.8} />
+        <span>{t(emptyKey)}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="task-event-timeline glass-info-card">
+      {items.map((item) => (
+        item.kind === 'body' ? (
+          <TaskBodyTimelineRow
+            key={item.id}
+            item={item}
+            formatRelativeTime={formatRelativeTime}
+            t={t}
+          />
+        ) : (
+          <TaskEventTimelineRow
+            key={item.id}
+            event={item.event}
+            formatRelativeTime={formatRelativeTime}
+            t={t}
+          />
+        )
+      ))}
+    </div>
+  );
+}
+
+function TaskEventTimelineRow({
+  event,
+  formatRelativeTime,
+  t,
+}: {
+  event: TaskEvent;
+  formatRelativeTime: (timestamp: number) => string;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}): JSX.Element {
+  return (
+    <div className="task-event-row">
+      <span className="task-event-dot" data-layer={event.layer} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-[12.5px] font-semibold text-[var(--color-fg)]">
+            {eventTitle(event, t)}
+          </span>
+          <span className="shrink-0 font-mono text-[10.5px] text-[var(--color-muted)]">
+            {formatRelativeTime(event.created_at)}
+          </span>
+        </div>
+        <div className="mt-1 text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
+          {describeTaskEvent(event, t)}
+        </div>
+        <TaskEventPayloadDetails event={event} />
+      </div>
+    </div>
+  );
+}
+
+function TaskBodyTimelineRow({
+  item,
+  formatRelativeTime,
+  t,
+}: {
+  item: Extract<TaskTimelineItem, { kind: 'body' }>;
+  formatRelativeTime: (timestamp: number) => string;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}): JSX.Element {
+  return (
+    <div className="task-event-row">
+      <span className="task-event-dot" data-layer="chat" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate text-[12.5px] font-semibold text-[var(--color-fg)]">
+            {eventLayerLabel('chat', t)}
+          </span>
+          <span className="shrink-0 font-mono text-[10.5px] text-[var(--color-muted)]">
+            {formatRelativeTime(item.created_at)}
+          </span>
+        </div>
+        <div className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+          {item.content}
+        </div>
+      </div>
     </div>
   );
 }
