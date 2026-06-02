@@ -26,9 +26,9 @@ import type {
   MessageIntentSuggestedAction,
   MessageMetadata,
   MessageReplyMetadata,
-  PlannerDecision,
-  PlannerDecisionStep,
-  PlannerExecutionMode,
+  TaskExecutionDecision,
+  TaskExecutionState,
+  TaskExecutionStep,
   TaskExecutionIntent,
   TaskReadinessMetadata,
   TaskCreatedFrom,
@@ -62,8 +62,20 @@ const collaborationIntents = new Set<CollaborationIntent>(['question', 'analysis
 const collaborationModes = new Set<CollaborationMode>(['chat_collaboration', 'formal_workflow']);
 const collaborationProblemAreas = new Set<CollaborationProblemArea>(['frontend', 'backend', 'fullstack', 'unknown']);
 const collaborationStages = new Set<CollaborationStage>(['execute', 'review', 'acceptance', 'summary']);
-const plannerExecutionModes = new Set<PlannerExecutionMode>(['pause_after_suggestion', 'auto_continue', 'dispatch_next']);
-const plannerDecisionStatuses = new Set<PlannerDecision['status']>(['suggested', 'dispatching', 'completed', 'blocked', 'needs_fix']);
+const taskExecutionStates = new Set<TaskExecutionState>([
+  'ready_to_execute',
+  'needs_choice',
+  'needs_boundary_confirmation',
+  'analysis_only',
+  'blocked',
+]);
+const taskExecutionStatuses = new Set<TaskExecutionDecision['status']>([
+  'suggested',
+  'dispatching',
+  'completed',
+  'blocked',
+  'needs_fix',
+]);
 const acpBackends = new Set<AcpBackend>(['claudecode', 'opencode', 'codex']);
 const taskExecutionIntents = new Set<TaskExecutionIntent>([
   'analysis_only',
@@ -114,7 +126,7 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
     const taskEvent = sanitizeTaskEventMetadata(parsed);
     const collaboration = sanitizeCollaborationDecisionMetadata(parsed);
     const taskReadiness = sanitizeTaskReadinessMetadata(parsed);
-    const plannerDecision = sanitizePlannerDecisionMetadata(parsed);
+    const taskExecution = sanitizeTaskExecutionMetadata(parsed);
     const intentResult = sanitizeIntentResultMetadata(parsed);
     const trace = sanitizeTraceMetadata(parsed);
     const acp = sanitizeAcpMetadata(parsed);
@@ -128,7 +140,7 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
       ...taskEvent,
       ...collaboration,
       ...taskReadiness,
-      ...plannerDecision,
+      ...taskExecution,
       ...trace,
       ...acp,
       ...brainstorming,
@@ -331,12 +343,12 @@ function sanitizeIntentResultMetadata(value: Record<string, unknown>) {
   return intentResult ? { intent_result: intentResult } : {};
 }
 
-function sanitizePlannerDecisionMetadata(value: Record<string, unknown>) {
-  const decision = sanitizePlannerDecision(value.planner_decision);
-  if (!decision) return {};
+function sanitizeTaskExecutionMetadata(value: Record<string, unknown>) {
+  const execution = sanitizeTaskExecution(value.task_execution);
+  if (!execution) return {};
   return {
     ...(typeof value.source_message_id === 'string' ? { source_message_id: value.source_message_id } : {}),
-    planner_decision: decision,
+    task_execution: execution,
   };
 }
 
@@ -402,38 +414,35 @@ function sanitizeIntentSignals(value: unknown): string[] {
     .slice(0, 8);
 }
 
-function sanitizePlannerDecision(value: unknown): PlannerDecision | null {
+function sanitizeTaskExecution(value: unknown): TaskExecutionDecision | null {
   if (!isRecord(value)) return null;
   if (
     typeof value.summary !== 'string' ||
-    !value.summary.trim() ||
-    typeof value.awaiting_user_confirmation !== 'boolean'
+    !value.summary.trim()
   ) {
     return null;
   }
 
-  const nextSteps = sanitizePlannerDecisionSteps(value.next_steps);
+  const nextSteps = sanitizeTaskExecutionSteps(value.next_steps);
   if (!nextSteps) return null;
 
-  const mode: PlannerExecutionMode = isPlannerExecutionMode(value.mode)
-    ? value.mode
-    : 'pause_after_suggestion';
-  const status: PlannerDecision['status'] = isPlannerDecisionStatus(value.status)
+  if (!isTaskExecutionState(value.state)) return null;
+  const state: TaskExecutionState = value.state;
+  const status: TaskExecutionDecision['status'] = isTaskExecutionStatus(value.status)
     ? value.status
     : 'suggested';
 
   return {
-    mode,
+    state,
     status,
-    summary: value.summary,
+    summary: value.summary.trim(),
+    ...(typeof value.reason === 'string' && value.reason.trim() ? { reason: value.reason.trim() } : {}),
     next_steps: nextSteps,
-    awaiting_user_confirmation: value.awaiting_user_confirmation,
   };
 }
 
-function sanitizePlannerDecisionSteps(value: unknown): PlannerDecisionStep[] | null {
+function sanitizeTaskExecutionSteps(value: unknown): TaskExecutionStep[] | null {
   if (!Array.isArray(value)) return null;
-  if (value.length === 0) return null;
   const steps = value.map((step) => {
     if (!isRecord(step)) return null;
     if (
@@ -450,7 +459,7 @@ function sanitizePlannerDecisionSteps(value: unknown): PlannerDecisionStep[] | n
     };
   });
   if (steps.some((step) => step === null)) return null;
-  return steps as PlannerDecisionStep[];
+  return steps as TaskExecutionStep[];
 }
 
 function sanitizeTrace(value: unknown): MessageTrace | null {
@@ -670,12 +679,12 @@ function isCollaborationStage(value: unknown): value is CollaborationStage {
   return typeof value === 'string' && collaborationStages.has(value as CollaborationStage);
 }
 
-function isPlannerExecutionMode(value: unknown): value is PlannerExecutionMode {
-  return typeof value === 'string' && plannerExecutionModes.has(value as PlannerExecutionMode);
+function isTaskExecutionState(value: unknown): value is TaskExecutionState {
+  return typeof value === 'string' && taskExecutionStates.has(value as TaskExecutionState);
 }
 
-function isPlannerDecisionStatus(value: unknown): value is PlannerDecision['status'] {
-  return typeof value === 'string' && plannerDecisionStatuses.has(value as PlannerDecision['status']);
+function isTaskExecutionStatus(value: unknown): value is TaskExecutionDecision['status'] {
+  return typeof value === 'string' && taskExecutionStatuses.has(value as TaskExecutionDecision['status']);
 }
 
 function isAcpBackend(value: unknown): value is AcpBackend {

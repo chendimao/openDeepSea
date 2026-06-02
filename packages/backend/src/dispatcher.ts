@@ -43,7 +43,7 @@ import type {
   MessageReplyMetadata,
   MessageLayer,
   MessageMetadata,
-  PlannerDecision,
+  TaskExecutionDecision,
   RouteResult,
   Room,
   RoomAgent,
@@ -56,23 +56,23 @@ const AGENT_RUN_HEARTBEAT_MS = 30_000;
 const ANSWER_STREAM_FLUSH_MS = 420;
 const ANSWER_STREAM_FLUSH_CHARS = 120;
 const ANSWER_STREAM_SENTENCE_END_PATTERN = /[。！？!?…]\s*$|\n$/;
-const MAX_PLANNER_AUTO_CONTINUE_DEPTH = 5;
+const MAX_TASK_EXECUTION_AUTO_CONTINUE_DEPTH = 5;
 
-interface PlannerDispatchAddedAgent {
+interface TaskExecutionDispatchAddedAgent {
   agent_id: string;
   agent_name: string;
 }
 
-interface PlannerDispatchResult {
+interface TaskExecutionDispatchResult {
   dispatched: number;
-  added_agents: PlannerDispatchAddedAgent[];
-  deferred_steps: PlannerDecision['next_steps'];
+  added_agents: TaskExecutionDispatchAddedAgent[];
+  deferred_steps: TaskExecutionDecision['next_steps'];
 }
 
-interface PlannerDispatchedTarget {
+interface TaskExecutionDispatchedTarget {
   agent: RoomAgent;
   prompt: string;
-  step: PlannerDecision['next_steps'][number];
+  step: TaskExecutionDecision['next_steps'][number];
 }
 
 interface TargetRunResult {
@@ -82,30 +82,42 @@ interface TargetRunResult {
   error: string | null;
 }
 
-interface PlannerExecutionPlanDecision {
+interface InitialRunTarget {
+  agent: RoomAgent;
+  prompt: string;
+  internalMessage?: boolean;
+  acpSessionIdOverride?: string | null;
+}
+
+interface ReplyDispatchTarget {
+  agent: RoomAgent;
+  acpSessionId: string | null;
+}
+
+interface TaskExecutionPlanDecision {
   mode: 'parallel' | 'serial';
   dispatch_step_indexes: number[];
   deferred_step_indexes: number[];
   rationale: string;
 }
 
-export interface PlannerExecutionPlanInvoker {
+export interface TaskExecutionPlanInvoker {
   invoke(input: {
     room: Room;
-    targets: PlannerDispatchTarget[];
+    targets: TaskExecutionDispatchTarget[];
     sourceMessage: Message | undefined;
-  }): Promise<PlannerExecutionPlanDecision | null>;
+  }): Promise<TaskExecutionPlanDecision | null>;
 }
 
-interface PlannerDispatchTarget {
+interface TaskExecutionDispatchTarget {
   agent: RoomAgent;
   prompt: string;
-  step: PlannerDecision['next_steps'][number];
+  step: TaskExecutionDecision['next_steps'][number];
 }
 
-let plannerExecutionPlanInvoker: PlannerExecutionPlanInvoker | undefined;
+let plannerExecutionPlanInvoker: TaskExecutionPlanInvoker | undefined;
 
-export function setPlannerExecutionPlanInvokerForTest(invoker?: PlannerExecutionPlanInvoker): void {
+export function setTaskExecutionPlanInvokerForTest(invoker?: TaskExecutionPlanInvoker): void {
   plannerExecutionPlanInvoker = invoker;
 }
 
@@ -271,6 +283,11 @@ export async function dispatchUserMessage(args: {
     fileRefContext,
     roomChatSummary,
   );
+  const replyDispatchTarget = resolveReplyDispatchTarget({
+    roomId,
+    userMessage,
+    allAgents,
+  });
   const imagePaths = [
     ...messageAttachments
       .filter((attachment) => attachment.metadata.isImage && attachment.localPath)
@@ -284,6 +301,7 @@ export async function dispatchUserMessage(args: {
     mode: settings.message_routing_mode,
     prompt: promptWithAttachments,
     imagePaths,
+    replyDispatchTarget,
   });
   if (routing.targets.length === 0 && settings.message_routing_mode === 'fallback_reply') {
     await respondWithConfiguredModel({
@@ -390,6 +408,7 @@ export interface RespondAsAgentInput {
   workflowStepId?: string | null;
   workflowStage?: WorkflowStage | null;
   sourceMessageId?: string | null;
+  acpSessionIdOverride?: string | null;
   collaborationRunId?: string | null;
   collaborationStage?: AgentRun['collaboration_stage'];
   distillModelInvoker?: MemoryDistillModelInvoker;
@@ -530,6 +549,23 @@ function getResolvedMessageReply(userMessage: Message): ResolvedMessageReply | n
   };
 }
 
+function resolveReplyDispatchTarget(input: {
+  roomId: string;
+  userMessage: Message;
+  allAgents: RoomAgent[];
+}): ReplyDispatchTarget | null {
+  const metadata = getMessageReplyMetadata(input.userMessage.metadata);
+  if (!metadata || metadata.sender_type !== 'agent') return null;
+  const replyTarget = messageRepo.get(metadata.message_id);
+  if (!replyTarget || replyTarget.room_id !== input.roomId || replyTarget.sender_type !== 'agent') return null;
+  const agent = input.allAgents.find((candidate) => candidate.agent_id === replyTarget.sender_id);
+  if (!agent) return null;
+  return {
+    agent,
+    acpSessionId: getMessageAcpSessionId(replyTarget.metadata),
+  };
+}
+
 function getMessageFileRefs(rawMetadata: string | null): string[] {
   if (!rawMetadata) return [];
   try {
@@ -638,7 +674,7 @@ function resolveUploadLocalPath(rootDir: string, relativePath: string): string |
 }
 
 async function runTargets(args: {
-  targets: { agent: RoomAgent; prompt: string; internalMessage?: boolean }[];
+  targets: InitialRunTarget[];
   projectPath: string;
   roomId: string;
   sourceMessageId?: string | null;
@@ -660,6 +696,7 @@ async function runTargets(args: {
         imagePaths: args.imagePaths,
         taskId: args.taskId,
         sourceMessageId: args.sourceMessageId,
+        acpSessionIdOverride: target.acpSessionIdOverride,
         distillModelInvoker: args.distillModelInvoker,
         onFinished: ({ run, message, status }) => {
           finalRun = run;
@@ -697,7 +734,17 @@ function resolveInitialTargets(args: {
   mode: 'mentions_only' | 'fallback_reply';
   prompt: string;
   imagePaths?: string[];
-}): { targets: { agent: RoomAgent; prompt: string; internalMessage?: boolean }[] } {
+  replyDispatchTarget?: ReplyDispatchTarget | null;
+}): { targets: InitialRunTarget[] } {
+  if (args.replyDispatchTarget) {
+    return {
+      targets: [{
+        agent: args.replyDispatchTarget.agent,
+        prompt: args.prompt,
+        acpSessionIdOverride: args.replyDispatchTarget.acpSessionId,
+      }],
+    };
+  }
   const planner = args.allAgents.find((agent) => agent.agent_id === 'planner');
   if (planner) return { targets: [{ agent: planner, prompt: args.prompt }] };
   if (!args.fallbackAgentId) return { targets: [] };
@@ -721,7 +768,7 @@ export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): stri
     '你的智能体身份：',
     ...identityLines,
     ...buildMessageChoiceOptionsPrompt(),
-    ...(agent.agent_id === 'planner' ? buildPlannerDecisionPrompt() : []),
+    ...(agent.agent_id === 'planner' ? buildTaskExecutionDecisionPrompt() : []),
     '',
     '当前用户请求：',
     prompt,
@@ -806,13 +853,15 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         agent_id: agent.agent_id,
       })
     : null;
-  const acpSessionId = taskExecutor?.acp_session_id ?? agent.acp_session_id;
-  const sessionHandoff = buildSessionHandoffForAgent({
-    roomId,
-    agent,
-    taskExecutor,
-    currentPrompt: args.prompt,
-  });
+  const acpSessionId = taskExecutor?.acp_session_id ?? args.acpSessionIdOverride ?? agent.acp_session_id;
+  const sessionHandoff = args.acpSessionIdOverride
+    ? null
+    : buildSessionHandoffForAgent({
+        roomId,
+        agent,
+        taskExecutor,
+        currentPrompt: args.prompt,
+      });
   const run = agentRunRepo.create({
     room_id: roomId,
     room_agent_id: agent.id,
@@ -1209,7 +1258,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
             sourceMessageId: args.sourceMessageId,
             agent,
           }) ?? finalMessage;
-          annotatePlannerDecision({
+          annotateTaskExecutionDecision({
             message: finalMessage,
             run: finalRun,
             sourceMessageId: args.sourceMessageId,
@@ -1284,7 +1333,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   }
 }
 
-function annotatePlannerDecision(input: {
+function annotateTaskExecutionDecision(input: {
   message: Message;
   run: AgentRun;
   sourceMessageId?: string | null;
@@ -1298,11 +1347,11 @@ function annotatePlannerDecision(input: {
   }
 
   const decision = input.run.status === 'completed'
-    ? parsePlannerDecision(input.message.content)
-    : parseExplicitPlannerDecision(input.message.content);
+    ? parseTaskExecutionDecision(input.message.content)
+    : parseExplicitTaskExecutionDecision(input.message.content);
   if (!decision) return;
   messageRepo.mergeMetadata(input.message.id, {
-    planner_decision: decision,
+    task_execution: decision,
     source_message_id: input.sourceMessageId ?? undefined,
   });
 }
@@ -1353,7 +1402,7 @@ function isCasualChatSourceMessage(message: Message): boolean {
 }
 
 function hasPlannerCasualReplyNoise(content: string): boolean {
-  return /using-superpowers|workflow 判断|入口 workflow|内部流程|技能使用|planner_decision|task_readiness/u.test(content);
+  return /using-superpowers|workflow 判断|入口 workflow|内部流程|技能使用|task_execution|task_readiness/u.test(content);
 }
 
 function extractConciseCasualReply(content: string): string | null {
@@ -1391,7 +1440,7 @@ function isAcpIntentAnalysisRun(input: {
   if (!input.sourceMessage || input.internalMessage) return false;
   if (input.taskId || input.workflowRunId || input.collaborationRunId) return false;
   const metadata = parseMessageMetadata(input.sourceMessage.metadata);
-  return metadata.route_result?.action === 'reply_in_chat';
+  return !metadata.route_result || metadata.route_result.action === 'reply_in_chat';
 }
 
 function buildAcpIntentControlBlockPrompt(): string {
@@ -1500,7 +1549,7 @@ function buildPlannerCasualChatPrompt(prompt: string, agent: RoomAgent, sourceMe
   if (!sourceMessage || !isCasualChatSourceMessage(sourceMessage)) return prompt;
   return [
     '本轮消息类型：普通闲聊/问候。',
-    '回复契约：只输出一句简短自然回复，例如“我在。”；不要解释 workflow、任务规划、内部流程或技能加载；不要输出 planner_decision、task_readiness 或任何 JSON。',
+    '回复契约：只输出一句简短自然回复，例如“我在。”；不要解释 workflow、任务规划、内部流程或技能加载；不要输出 task_execution、task_readiness 或任何 JSON。',
     '',
     prompt,
   ].join('\n');
@@ -1784,29 +1833,15 @@ function maybeRegisterAgentDocument(input: {
   }
 }
 
-function parsePlannerDecision(content: string): PlannerDecision | null {
-  const explicitDecision = parseExplicitPlannerDecision(content);
-  if (explicitDecision) return explicitDecision;
-
-  const summary = content
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .find(Boolean);
-  if (!summary) return null;
-  return {
-    mode: 'pause_after_suggestion',
-    status: 'suggested',
-    summary,
-    next_steps: [],
-    awaiting_user_confirmation: true,
-  };
+function parseTaskExecutionDecision(content: string): TaskExecutionDecision | null {
+  return parseExplicitTaskExecutionDecision(content);
 }
 
-function parseExplicitPlannerDecision(content: string): PlannerDecision | null {
+function parseExplicitTaskExecutionDecision(content: string): TaskExecutionDecision | null {
   for (const candidate of extractJsonObjectCandidates(content)) {
     try {
       const parsed = JSON.parse(candidate) as unknown;
-      const decision = readPlannerDecisionObject(parsed);
+      const decision = readTaskExecutionDecisionObject(parsed);
       if (decision) return decision;
     } catch {
       // Ignore malformed JSON blocks.
@@ -1815,31 +1850,24 @@ function parseExplicitPlannerDecision(content: string): PlannerDecision | null {
   return null;
 }
 
-function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
+function readTaskExecutionDecisionObject(value: unknown): TaskExecutionDecision | null {
   if (!isRecord(value)) return null;
-  const candidate = isRecord(value.planner_decision) ? value.planner_decision : value;
+  const candidate = isRecord(value.task_execution) ? value.task_execution : value;
   if (
     typeof candidate.summary !== 'string' ||
     !candidate.summary.trim() ||
-    typeof candidate.awaiting_user_confirmation !== 'boolean' ||
+    !isTaskExecutionState(candidate.state) ||
     !Array.isArray(candidate.next_steps)
   ) {
     return null;
   }
 
-  const hasValidNextSteps = Array.isArray(candidate.next_steps) && candidate.next_steps.length > 0;
-  const mode: PlannerDecision['mode'] = isPlannerExecutionMode(candidate.mode)
-    ? candidate.mode
-    : hasValidNextSteps ? 'pause_after_suggestion' : 'pause_after_suggestion';
-  const status: PlannerDecision['status'] = isPlannerDecisionStatus(candidate.status)
+  const status: TaskExecutionDecision['status'] = isTaskExecutionDecisionStatus(candidate.status)
     ? candidate.status
-    : hasValidNextSteps ? 'suggested' : 'suggested';
+    : 'suggested';
 
-  if (!isPlannerExecutionMode(candidate.mode) && candidate.mode !== undefined) {
-    console.warn(`[planner_decision] unknown mode "${candidate.mode}", falling back to "${mode}"`);
-  }
-  if (!isPlannerDecisionStatus(candidate.status) && candidate.status !== undefined) {
-    console.warn(`[planner_decision] unknown status "${candidate.status}", falling back to "${status}"`);
+  if (!isTaskExecutionDecisionStatus(candidate.status) && candidate.status !== undefined) {
+    console.warn(`[task_execution] unknown status "${candidate.status}", falling back to "${status}"`);
   }
 
   const next_steps = candidate.next_steps
@@ -1858,14 +1886,14 @@ function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
         goal: step.goal.trim(),
       };
     })
-    .filter((step): step is PlannerDecision['next_steps'][number] => Boolean(step));
+    .filter((step): step is TaskExecutionDecision['next_steps'][number] => Boolean(step));
 
   return {
-    mode,
+    state: candidate.state,
     status,
     summary: candidate.summary.trim(),
+    ...(typeof candidate.reason === 'string' && candidate.reason.trim() ? { reason: candidate.reason.trim() } : {}),
     next_steps,
-    awaiting_user_confirmation: candidate.awaiting_user_confirmation,
   };
 }
 
@@ -1884,38 +1912,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function isPlannerExecutionMode(value: unknown): value is PlannerDecision['mode'] {
-  return value === 'pause_after_suggestion' || value === 'auto_continue' || value === 'dispatch_next';
+function isTaskExecutionState(value: unknown): value is TaskExecutionDecision['state'] {
+  return value === 'ready_to_execute' ||
+    value === 'needs_choice' ||
+    value === 'needs_boundary_confirmation' ||
+    value === 'analysis_only' ||
+    value === 'blocked';
 }
 
-function isPlannerDecisionStatus(value: unknown): value is PlannerDecision['status'] {
+function isTaskExecutionDecisionStatus(value: unknown): value is TaskExecutionDecision['status'] {
   return value === 'suggested' || value === 'dispatching' || value === 'completed' || value === 'blocked' || value === 'needs_fix';
 }
 
-function buildPlannerDecisionPrompt(): string[] {
+function buildTaskExecutionDecisionPrompt(): string[] {
   return [
     '',
     'Planner 普通消息回复规则：',
     '- 普通问候、闲聊或信息不足时，只输出简短自然回复，例如“我在”。',
     '- 不要解释内部流程、workflow 判断、技能使用或 using-superpowers。',
-    '- 不要追加 planner_decision 或 task_readiness JSON。',
+    '- 不要追加 task_execution 或 task_readiness JSON。',
     '- 只有用户提出明确规划、实现、修复、任务拆解或调度需求时，才进入下面的结构化输出规则。',
     '',
-    'Planner 决策结构化输出规则：',
-    '- 当你需要建议下一步或调度其他智能体时，请在自然语言回复后追加一个单独的 ```json 代码块。',
-    '- 字段名必须固定为 planner_decision。',
-    '- 若需要等待用户确认，mode 使用 "pause_after_suggestion"，awaiting_user_confirmation 为 true。',
+    '任务执行结构化输出规则：',
+    '- 当用户请求是单一完整可执行任务时，必须返回 state 为 "ready_to_execute"，系统会在用户点击开始任务后直接派发执行智能体。',
+    '- 只有存在多个方案、重大分析结论需要用户决策、或执行边界不清时，才返回 "needs_choice" 或 "needs_boundary_confirmation"。',
+    '- 只读分析不执行时返回 "analysis_only"；无法继续时返回 "blocked"。',
+    '- 字段名必须固定为 task_execution。',
     '- 固定 JSON 结构如下：',
     '```json',
     '{',
-    '  "planner_decision": {',
-    '    "mode": "pause_after_suggestion",',
+    '  "task_execution": {',
+    '    "state": "ready_to_execute",',
     '    "status": "suggested",',
     '    "summary": "一句话总结下一步",',
+    '    "reason": "为什么可以直接执行，或为什么需要选择/确认",',
     '    "next_steps": [',
     '      { "agent_id": "frontend-executor", "goal": "检查设置页测试入口" }',
-    '    ],',
-    '    "awaiting_user_confirmation": true',
+    '    ]',
     '  }',
     '}',
     '```',
@@ -1995,6 +2028,19 @@ function getMessageTaskId(rawMetadata: string | null): string | null {
   }
 }
 
+function getMessageAcpSessionId(rawMetadata: string | null): string | null {
+  if (!rawMetadata) return null;
+  try {
+    const parsed = JSON.parse(rawMetadata) as unknown;
+    if (!isRecord(parsed)) return null;
+    return typeof parsed.acp_session_id === 'string' && parsed.acp_session_id.trim()
+      ? parsed.acp_session_id.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function projectTimelineEventToTaskEvent(input: {
   roomId: string;
   taskId?: string | null;
@@ -2047,20 +2093,20 @@ function mapTimelineEventToTaskEvent(event: AgentTimelineEvent): { type: TaskEve
   return null;
 }
 
-async function dispatchPlannerDecision(args: {
+async function dispatchTaskExecutionDecision(args: {
   roomId: string;
   sourceMessageId: string;
-  decision: PlannerDecision;
+  decision: TaskExecutionDecision;
   autoContinueDepth?: number;
-}): Promise<PlannerDispatchResult> {
+}): Promise<TaskExecutionDispatchResult> {
   const room = roomRepo.get(args.roomId);
   if (!room) throw new Error('room not found');
   const project = projectRepo.get(room.project_id);
   if (!project) throw new Error('project not found');
-  const { targets, addedAgents, missingAgentIds } = resolvePlannerDispatchTargets(args.roomId, args.decision);
+  const { targets, addedAgents, missingAgentIds } = resolveTaskExecutionDispatchTargets(args.roomId, args.decision);
   const sourceMessage = messageRepo.get(args.sourceMessageId);
   const taskId = getMessageTaskId(sourceMessage?.metadata ?? null);
-  const executionPlan = await resolvePlannerStepExecutionPlan({
+  const executionPlan = await resolveTaskExecutionStepExecutionPlan({
     room,
     sourceMessage,
     targets,
@@ -2069,10 +2115,10 @@ async function dispatchPlannerDecision(args: {
     const requestedAgentIds = args.decision.next_steps.map((step) => step.agent_id).filter(Boolean);
     throw new Error(
       missingAgentIds.length > 0
-        ? `planner decision has no matching room or global agents: ${missingAgentIds.join(', ')}`
+        ? `task execution has no matching room or global agents: ${missingAgentIds.join(', ')}`
         : requestedAgentIds.length > 0
-          ? `planner decision has no matching room or global agents: ${requestedAgentIds.join(', ')}`
-        : 'planner decision has no next steps to dispatch',
+          ? `task execution has no matching room or global agents: ${requestedAgentIds.join(', ')}`
+        : 'task execution has no next steps to dispatch',
     );
   }
   const results = await runTargets({
@@ -2082,7 +2128,7 @@ async function dispatchPlannerDecision(args: {
     sourceMessageId: args.sourceMessageId,
     taskId,
   });
-  await reportPlannerDispatchResults({
+  await reportTaskExecutionDispatchResults({
     roomId: args.roomId,
     projectPath: project.path,
     sourceMessageId: args.sourceMessageId,
@@ -2100,23 +2146,23 @@ async function dispatchPlannerDecision(args: {
   };
 }
 
-async function resolvePlannerStepExecutionPlan(input: {
+async function resolveTaskExecutionStepExecutionPlan(input: {
   room: Room;
   sourceMessage: Message | undefined;
-  targets: PlannerDispatchTarget[];
+  targets: TaskExecutionDispatchTarget[];
 }): Promise<{
-  dispatchTargets: PlannerDispatchedTarget[];
-  deferredSteps: PlannerDecision['next_steps'];
+  dispatchTargets: TaskExecutionDispatchedTarget[];
+  deferredSteps: TaskExecutionDecision['next_steps'];
 }> {
-  const llmDecision = await resolvePlannerExecutionPlanWithModel(input);
-  const selectedIndexes = sanitizePlannerExecutionIndexes(
+  const llmDecision = await resolveTaskExecutionPlanWithModel(input);
+  const selectedIndexes = sanitizeTaskExecutionPlanIndexes(
     llmDecision?.dispatch_step_indexes,
     input.targets.length,
   );
   const fallbackIndexes = input.targets.length > 0 ? [0] : [];
   const dispatchIndexes = selectedIndexes.length > 0 ? selectedIndexes : fallbackIndexes;
   const dispatchIndexSet = new Set(dispatchIndexes);
-  const deferredIndexes = sanitizePlannerExecutionIndexes(
+  const deferredIndexes = sanitizeTaskExecutionPlanIndexes(
     llmDecision?.deferred_step_indexes,
     input.targets.length,
   ).filter((index) => !dispatchIndexSet.has(index));
@@ -2126,48 +2172,48 @@ async function resolvePlannerStepExecutionPlan(input: {
   }
 
   return {
-    dispatchTargets: dispatchIndexes.map((index) => input.targets[index]).filter(isPlannerDispatchTarget)
+    dispatchTargets: dispatchIndexes.map((index) => input.targets[index]).filter(isTaskExecutionDispatchTarget)
       .map((target) => ({ agent: target.agent, prompt: target.prompt, step: target.step })),
-    deferredSteps: deferredIndexes.map((index) => input.targets[index]).filter(isPlannerDispatchTarget)
+    deferredSteps: deferredIndexes.map((index) => input.targets[index]).filter(isTaskExecutionDispatchTarget)
       .map((target) => target.step),
   };
 }
 
-function isPlannerDispatchTarget(value: PlannerDispatchTarget | undefined): value is PlannerDispatchTarget {
+function isTaskExecutionDispatchTarget(value: TaskExecutionDispatchTarget | undefined): value is TaskExecutionDispatchTarget {
   return Boolean(value);
 }
 
-async function resolvePlannerExecutionPlanWithModel(input: {
+async function resolveTaskExecutionPlanWithModel(input: {
   room: Room;
   sourceMessage: Message | undefined;
-  targets: PlannerDispatchTarget[];
-}): Promise<PlannerExecutionPlanDecision | null> {
-  const invoker = plannerExecutionPlanInvoker ?? defaultPlannerExecutionPlanInvoker;
+  targets: TaskExecutionDispatchTarget[];
+}): Promise<TaskExecutionPlanDecision | null> {
+  const invoker = plannerExecutionPlanInvoker ?? defaultTaskExecutionPlanInvoker;
   try {
     return await invoker.invoke(input);
   } catch (err) {
-    console.warn(`[planner-dispatch] LLM execution plan failed, falling back to serial: ${(err as Error).message}`);
+    console.warn(`[task-execution-dispatch] LLM execution plan failed, falling back to serial: ${(err as Error).message}`);
     return null;
   }
 }
 
-const defaultPlannerExecutionPlanInvoker: PlannerExecutionPlanInvoker = {
+const defaultTaskExecutionPlanInvoker: TaskExecutionPlanInvoker = {
   async invoke(input) {
     if (!isModelChatConfigured()) return null;
-    const text = await invokeConfiguredModelText(buildPlannerExecutionPlanMessages(input));
-    return parsePlannerExecutionPlanDecision(text);
+    const text = await invokeConfiguredModelText(buildTaskExecutionPlanMessages(input));
+    return parseTaskExecutionPlanDecision(text);
   },
 };
 
-function buildPlannerExecutionPlanMessages(input: {
+function buildTaskExecutionPlanMessages(input: {
   room: Room;
   sourceMessage: Message | undefined;
-  targets: PlannerDispatchTarget[];
+  targets: TaskExecutionDispatchTarget[];
 }): Array<SystemMessage | HumanMessage> {
   return [
     new SystemMessage([
       '你是 OpenDeepSea 的调度策略模型。',
-      '任务：判断 planner_decision.next_steps 应该第一批并行执行哪些步骤，哪些步骤必须等第一批结果返回 planner 后再执行。',
+      '任务：判断 task_execution.next_steps 应该第一批并行执行哪些步骤，哪些步骤必须等第一批结果返回 planner 后再执行。',
       '必须基于任务语义、智能体角色、目标依赖来判断串行或并行，不要用固定关键词规则。',
       '如果某个步骤是在验证、测试、审查、验收另一个步骤的产物，必须暂缓到后续阶段。',
       '如果多个步骤互不依赖、可以同时产生独立结果，可以并行执行。',
@@ -2204,7 +2250,7 @@ function buildPlannerExecutionPlanMessages(input: {
   ];
 }
 
-function parsePlannerExecutionPlanDecision(text: string): PlannerExecutionPlanDecision | null {
+function parseTaskExecutionPlanDecision(text: string): TaskExecutionPlanDecision | null {
   const json = extractJsonObjectCandidates(text)[0];
   if (!json) return null;
   try {
@@ -2224,7 +2270,7 @@ function parsePlannerExecutionPlanDecision(text: string): PlannerExecutionPlanDe
   }
 }
 
-function sanitizePlannerExecutionIndexes(value: unknown, length: number): number[] {
+function sanitizeTaskExecutionPlanIndexes(value: unknown, length: number): number[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<number>();
   for (const item of value) {
@@ -2234,24 +2280,24 @@ function sanitizePlannerExecutionIndexes(value: unknown, length: number): number
   return Array.from(seen);
 }
 
-function resolvePlannerDispatchTargets(
+function resolveTaskExecutionDispatchTargets(
   roomId: string,
-  decision: PlannerDecision,
+  decision: TaskExecutionDecision,
 ): {
-  targets: PlannerDispatchTarget[];
-  addedAgents: PlannerDispatchAddedAgent[];
+  targets: TaskExecutionDispatchTarget[];
+  addedAgents: TaskExecutionDispatchAddedAgent[];
   missingAgentIds: string[];
 } {
   const agentsById = new Map(roomAgentRepo.listByRoom(roomId).map((agent) => [agent.agent_id, agent]));
   const globalAgentsByRequestedId = new Map<string, Agent>();
-  const addedAgentsById = new Map<string, PlannerDispatchAddedAgent>();
+  const addedAgentsById = new Map<string, TaskExecutionDispatchAddedAgent>();
   const missingAgentIds: string[] = [];
 
   for (const step of decision.next_steps) {
     if (agentsById.has(step.agent_id)) {
       continue;
     }
-    const globalAgent = resolveGlobalAgentForPlannerStep(step);
+    const globalAgent = resolveGlobalAgentForTaskExecutionStep(step);
     if (globalAgent) {
       globalAgentsByRequestedId.set(step.agent_id, globalAgent);
       continue;
@@ -2281,7 +2327,7 @@ function resolvePlannerDispatchTargets(
       const agent = agentsById.get(step.agent_id);
       return agent ? { agent, prompt: step.goal, step } : null;
     })
-    .filter((target): target is PlannerDispatchTarget =>
+    .filter((target): target is TaskExecutionDispatchTarget =>
       Boolean(target),
     );
 
@@ -2292,15 +2338,15 @@ function resolvePlannerDispatchTargets(
   };
 }
 
-async function reportPlannerDispatchResults(args: {
+async function reportTaskExecutionDispatchResults(args: {
   roomId: string;
   projectPath: string;
   sourceMessageId: string;
   taskId?: string | null;
-  decision: PlannerDecision;
-  dispatchedTargets: PlannerDispatchedTarget[];
+  decision: TaskExecutionDecision;
+  dispatchedTargets: TaskExecutionDispatchedTarget[];
   dispatchedResults: TargetRunResult[];
-  deferredSteps: PlannerDecision['next_steps'];
+  deferredSteps: TaskExecutionDecision['next_steps'];
   autoContinueDepth: number;
 }): Promise<void> {
   if (args.dispatchedTargets.length === 0) return;
@@ -2314,7 +2360,7 @@ async function reportPlannerDispatchResults(args: {
       `  原目标：${target.prompt}`,
       `  状态：${result?.status ?? 'unknown'}`,
       result?.error ? `  错误：${result.error}` : null,
-      `  返回摘要：${summarizePlannerDispatchResult(content)}`,
+      `  返回摘要：${summarizeTaskExecutionDispatchResult(content)}`,
     ].filter((line): line is string => Boolean(line)).join('\n');
   });
   const deferredLines = args.deferredSteps.map((step, index) =>
@@ -2337,9 +2383,10 @@ async function reportPlannerDispatchResults(args: {
     ...(deferredLines.length > 0 ? deferredLines : ['- 无']),
     '',
     '请判断：',
-    '- 如果任务已完成，输出 status 为 "completed" 且 next_steps 为空的 planner_decision。',
-    '- 如果还需要修复、审查、测试或验收，输出新的 planner_decision，只包含下一轮要派发的智能体。',
-    '- 如果无法继续，输出 status 为 "blocked" 并说明原因。',
+    '- 如果任务已完成，输出 state 为 "analysis_only"、status 为 "completed" 且 next_steps 为空的 task_execution。',
+    '- 如果还需要修复、审查、测试或验收，输出 state 为 "ready_to_execute" 的 task_execution，只包含下一轮要派发的智能体。',
+    '- 如果存在多个方案或边界不清，输出 state 为 "needs_choice" 或 "needs_boundary_confirmation"，不要派发。',
+    '- 如果无法继续，输出 state 为 "blocked"、status 为 "blocked" 并说明原因。',
     '- 不要重复派发已经完成且不需要返工的同一目标。',
   ].join('\n');
   await respondAsAgent({
@@ -2353,15 +2400,15 @@ async function reportPlannerDispatchResults(args: {
       if (run.status !== 'completed') return;
       const latestMessage = messageRepo.get(message.id) ?? message;
       const metadata = parsePlannerMessageMetadata(latestMessage.metadata);
-      const decision = metadata.planner_decision;
-      if (!shouldAutoContinuePlannerDecision(decision)) return;
-      if (args.autoContinueDepth >= MAX_PLANNER_AUTO_CONTINUE_DEPTH) {
-        const blockedDecision = normalizeBlockedAutoContinuePlannerDecision(
+      const decision = metadata.task_execution;
+      if (!shouldAutoContinueTaskExecutionDecision(decision)) return;
+      if (args.autoContinueDepth >= MAX_TASK_EXECUTION_AUTO_CONTINUE_DEPTH) {
+        const blockedDecision = normalizeBlockedAutoContinueTaskExecutionDecision(
           decision,
-          `自动续派发已达到上限 ${MAX_PLANNER_AUTO_CONTINUE_DEPTH}，已暂停后续派发。`,
+          `自动续派发已达到上限 ${MAX_TASK_EXECUTION_AUTO_CONTINUE_DEPTH}，已暂停后续派发。`,
         );
         const updatedMessage = messageRepo.mergeMetadata(latestMessage.id, {
-          planner_decision: blockedDecision,
+          task_execution: blockedDecision,
           source_message_id: args.sourceMessageId,
         });
         if (updatedMessage) broadcastAgentMessageSnapshot({
@@ -2369,12 +2416,12 @@ async function reportPlannerDispatchResults(args: {
           message: updatedMessage,
           run,
         });
-        console.warn(`[planner-dispatch] auto-continue depth limit reached for source message ${args.sourceMessageId}`);
+        console.warn(`[task-execution-dispatch] auto-continue depth limit reached for source message ${args.sourceMessageId}`);
         return;
       }
-      const autoDecision = normalizeAutoContinuePlannerDecision(decision);
+      const autoDecision = normalizeAutoContinueTaskExecutionDecision(decision);
       const updatedMessage = messageRepo.mergeMetadata(latestMessage.id, {
-        planner_decision: autoDecision,
+        task_execution: autoDecision,
         source_message_id: args.sourceMessageId,
       });
       if (updatedMessage) broadcastAgentMessageSnapshot({
@@ -2383,7 +2430,7 @@ async function reportPlannerDispatchResults(args: {
         run,
       });
       try {
-        await dispatchPlannerDecision({
+        await dispatchTaskExecutionDecision({
           roomId: args.roomId,
           sourceMessageId: args.sourceMessageId,
           decision: autoDecision,
@@ -2391,9 +2438,9 @@ async function reportPlannerDispatchResults(args: {
         });
       } catch (err) {
         const error = (err as Error).message;
-        const blockedDecision = normalizeBlockedAutoContinuePlannerDecision(autoDecision, `自动续派发失败：${error}`);
+        const blockedDecision = normalizeBlockedAutoContinueTaskExecutionDecision(autoDecision, `自动续派发失败：${error}`);
         const blockedMessage = messageRepo.mergeMetadata(latestMessage.id, {
-          planner_decision: blockedDecision,
+          task_execution: blockedDecision,
           source_message_id: args.sourceMessageId,
         });
         if (blockedMessage) broadcastAgentMessageSnapshot({
@@ -2434,36 +2481,40 @@ function broadcastAgentMessageSnapshot(input: {
   });
 }
 
-function summarizePlannerDispatchResult(content: string): string {
+function summarizeTaskExecutionDispatchResult(content: string): string {
   const normalized = content.replace(/\s+/g, ' ').trim();
   if (normalized.length <= 800) return normalized;
   return `${normalized.slice(0, 520)} ... ${normalized.slice(-220)}`;
 }
 
-function shouldAutoContinuePlannerDecision(decision: PlannerDecision | undefined): decision is PlannerDecision {
-  return Boolean(decision && decision.status === 'suggested' && decision.next_steps.length > 0);
+function shouldAutoContinueTaskExecutionDecision(decision: TaskExecutionDecision | undefined): decision is TaskExecutionDecision {
+  return Boolean(
+    decision &&
+    decision.state === 'ready_to_execute' &&
+    (decision.status === 'suggested' || decision.status === 'needs_fix') &&
+    decision.next_steps.length > 0,
+  );
 }
 
-function normalizeAutoContinuePlannerDecision(decision: PlannerDecision): PlannerDecision {
+function normalizeAutoContinueTaskExecutionDecision(decision: TaskExecutionDecision): TaskExecutionDecision {
   return {
     ...decision,
-    mode: 'auto_continue',
-    awaiting_user_confirmation: false,
+    state: 'ready_to_execute',
+    status: 'dispatching',
   };
 }
 
-function normalizeBlockedAutoContinuePlannerDecision(decision: PlannerDecision, summary: string): PlannerDecision {
+function normalizeBlockedAutoContinueTaskExecutionDecision(decision: TaskExecutionDecision, summary: string): TaskExecutionDecision {
   return {
     ...decision,
-    mode: 'auto_continue',
+    state: 'blocked',
     status: 'blocked',
     summary,
     next_steps: [],
-    awaiting_user_confirmation: false,
   };
 }
 
-function resolveGlobalAgentForPlannerStep(step: PlannerDecision['next_steps'][number]): Agent | undefined {
+function resolveGlobalAgentForTaskExecutionStep(step: TaskExecutionDecision['next_steps'][number]): Agent | undefined {
   return agentRepo.getByAgentId(step.agent_id)
     ?? agentRepo.getByBuiltinKey(step.agent_id)
     ?? resolveGlobalAgentAlias(step.agent_id)
@@ -2496,7 +2547,7 @@ function matchesAgentRoleAlias(value: string, aliases: string[]): boolean {
   return aliases.some((alias) => value.includes(alias));
 }
 
-function findBestGlobalAgentMatch(step: PlannerDecision['next_steps'][number]): Agent | undefined {
+function findBestGlobalAgentMatch(step: TaskExecutionDecision['next_steps'][number]): Agent | undefined {
   const queryTokens = tokenizeAgentMatchText(`${step.agent_id} ${step.goal}`);
   if (queryTokens.length === 0) return undefined;
 
@@ -2544,51 +2595,23 @@ function tokenizeAgentMatchText(text: string): string[] {
   ));
 }
 
-export async function continueLatestPlannerDecision(args: { roomId: string }): Promise<{ accepted: boolean } & PlannerDispatchResult> {
-  const plannerMessage = messageRepo
-    .listByRoom(args.roomId, 200)
-    .slice()
-    .reverse()
-    .find((message) => {
-      if (message.sender_type !== 'agent' || message.sender_id !== 'planner') return false;
-      const metadata = parsePlannerMessageMetadata(message.metadata);
-      return Boolean(metadata.planner_decision);
-    });
-  if (!plannerMessage) return { accepted: false, dispatched: 0, added_agents: [], deferred_steps: [] };
-  const metadata = parsePlannerMessageMetadata(plannerMessage.metadata);
-  if (!metadata.planner_decision || !metadata.planner_decision.awaiting_user_confirmation) {
-    return { accepted: false, dispatched: 0, added_agents: [], deferred_steps: [] };
-  }
-  const result = await dispatchPlannerDecision({
-    roomId: args.roomId,
-    sourceMessageId: metadata.source_message_id ?? plannerMessage.id,
-    decision: metadata.planner_decision,
-  });
-  return {
-    accepted: true,
-    dispatched: result.dispatched,
-    added_agents: result.added_agents,
-    deferred_steps: result.deferred_steps,
-  };
-}
-
-export async function dispatchPlannerDecisionForRoom(args: {
+export async function dispatchTaskExecutionDecisionForRoom(args: {
   roomId: string;
   sourceMessageId: string;
-  decision: PlannerDecision;
-}): Promise<PlannerDispatchResult> {
-  return dispatchPlannerDecision(args);
+  decision: TaskExecutionDecision;
+}): Promise<TaskExecutionDispatchResult> {
+  return dispatchTaskExecutionDecision(args);
 }
 
 function parsePlannerMessageMetadata(raw: string | null): {
-  planner_decision?: PlannerDecision;
+  task_execution?: TaskExecutionDecision;
   source_message_id?: string;
 } {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
-      planner_decision: readPlannerDecisionObject(parsed) ?? undefined,
+      task_execution: readTaskExecutionDecisionObject(parsed) ?? undefined,
       source_message_id: typeof parsed.source_message_id === 'string' ? parsed.source_message_id : undefined,
     };
   } catch {

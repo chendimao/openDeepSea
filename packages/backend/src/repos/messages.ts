@@ -6,7 +6,7 @@ import type {
   Message,
   MessageLayer,
   MessageMetadata,
-  PlannerDecision,
+  TaskExecutionDecision,
   MessageTrace,
   MessageType,
   SenderType,
@@ -328,23 +328,24 @@ function readNonEmptyString(value: unknown): string | null {
 
 function refreshPlannerMessageMetadata(message: Message): Message {
   if (message.sender_type !== 'agent' || message.sender_id !== 'planner') return message;
-  const explicitDecision = parseExplicitPlannerDecision(message.content);
-  if (!explicitDecision) return message;
+  const explicitExecution = parseExplicitTaskExecution(message.content);
+  if (!explicitExecution) return message;
 
   const metadata = parseMetadataObject(message.metadata);
-  const currentDecision = readPlannerDecisionObject(metadata.planner_decision);
-  if (plannerDecisionMatches(currentDecision, explicitDecision)) return message;
+  const currentExecution = readTaskExecutionObject(metadata.task_execution);
+  if (currentExecution && currentExecution.status !== 'suggested') return message;
+  if (taskExecutionMatches(currentExecution, explicitExecution)) return message;
 
-  const nextMetadata = { ...metadata, planner_decision: explicitDecision };
+  const nextMetadata = { ...metadata, task_execution: explicitExecution };
   db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify(nextMetadata), message.id);
   return { ...message, metadata: JSON.stringify(nextMetadata) };
 }
 
-function parseExplicitPlannerDecision(content: string): PlannerDecision | null {
+function parseExplicitTaskExecution(content: string): TaskExecutionDecision | null {
   for (const candidate of extractJsonObjectCandidates(content)) {
     try {
       const parsed = JSON.parse(candidate) as unknown;
-      const decision = readPlannerDecisionObject(parsed);
+      const decision = readTaskExecutionObject(parsed);
       if (decision) return decision;
     } catch {
       // Ignore malformed JSON blocks.
@@ -364,25 +365,21 @@ function extractJsonObjectCandidates(content: string): string[] {
   return fencedBlocks;
 }
 
-function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
+function readTaskExecutionObject(value: unknown): TaskExecutionDecision | null {
   if (!isRecord(value)) return null;
-  const candidate = isRecord(value.planner_decision) ? value.planner_decision : value;
+  const candidate = isRecord(value.task_execution) ? value.task_execution : value;
   if (
     typeof candidate.summary !== 'string' ||
     !candidate.summary.trim() ||
-    typeof candidate.awaiting_user_confirmation !== 'boolean' ||
+    !isTaskExecutionState(candidate.state) ||
     !Array.isArray(candidate.next_steps)
   ) {
     return null;
   }
 
-  const hasValidNextSteps = Array.isArray(candidate.next_steps) && candidate.next_steps.length > 0;
-  const mode: PlannerDecision['mode'] = isPlannerExecutionMode(candidate.mode)
-    ? candidate.mode
-    : 'pause_after_suggestion';
-  const status: PlannerDecision['status'] = isPlannerDecisionStatus(candidate.status)
+  const status: TaskExecutionDecision['status'] = isTaskExecutionStatus(candidate.status)
     ? candidate.status
-    : hasValidNextSteps ? 'suggested' : 'suggested';
+    : 'suggested';
 
   const next_steps = candidate.next_steps
     .map((step) => {
@@ -400,22 +397,26 @@ function readPlannerDecisionObject(value: unknown): PlannerDecision | null {
         goal: step.goal.trim(),
       };
     })
-    .filter((step): step is PlannerDecision['next_steps'][number] => Boolean(step));
+    .filter((step): step is TaskExecutionDecision['next_steps'][number] => Boolean(step));
 
   return {
-    mode,
+    state: candidate.state,
     status,
     summary: candidate.summary.trim(),
+    ...(typeof candidate.reason === 'string' && candidate.reason.trim() ? { reason: candidate.reason.trim() } : {}),
     next_steps,
-    awaiting_user_confirmation: candidate.awaiting_user_confirmation,
   };
 }
 
-function isPlannerExecutionMode(value: unknown): value is PlannerDecision['mode'] {
-  return value === 'pause_after_suggestion' || value === 'auto_continue' || value === 'dispatch_next';
+function isTaskExecutionState(value: unknown): value is TaskExecutionDecision['state'] {
+  return value === 'ready_to_execute' ||
+    value === 'needs_choice' ||
+    value === 'needs_boundary_confirmation' ||
+    value === 'analysis_only' ||
+    value === 'blocked';
 }
 
-function isPlannerDecisionStatus(value: unknown): value is PlannerDecision['status'] {
+function isTaskExecutionStatus(value: unknown): value is TaskExecutionDecision['status'] {
   return value === 'suggested' || value === 'dispatching' || value === 'completed' || value === 'blocked' || value === 'needs_fix';
 }
 
@@ -423,27 +424,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function plannerDecisionMatches(a: PlannerDecision | null, b: PlannerDecision): boolean {
+function taskExecutionMatches(a: TaskExecutionDecision | null, b: TaskExecutionDecision): boolean {
   if (!a) return false;
-  if (plannerDecisionFieldsEqual(a, b)) return true;
-  if (a.mode !== 'auto_continue' || b.status !== 'suggested') return false;
-  if (a.status === 'blocked') return true;
-  return plannerDecisionFieldsEqual(a, {
-    ...b,
-    mode: 'auto_continue',
-    awaiting_user_confirmation: false,
-  });
+  return taskExecutionFieldsEqual(a, b);
 }
 
-function plannerDecisionFieldsEqual(a: PlannerDecision, b: PlannerDecision): boolean {
-  return a.mode === b.mode &&
+function taskExecutionFieldsEqual(a: TaskExecutionDecision, b: TaskExecutionDecision): boolean {
+  return a.state === b.state &&
     a.status === b.status &&
     a.summary === b.summary &&
-    a.awaiting_user_confirmation === b.awaiting_user_confirmation &&
-    plannerNextStepsEqual(a.next_steps, b.next_steps);
+    (a.reason ?? '') === (b.reason ?? '') &&
+    taskExecutionNextStepsEqual(a.next_steps, b.next_steps);
 }
 
-function plannerNextStepsEqual(a: PlannerDecision['next_steps'], b: PlannerDecision['next_steps']): boolean {
+function taskExecutionNextStepsEqual(a: TaskExecutionDecision['next_steps'], b: TaskExecutionDecision['next_steps']): boolean {
   if (a.length !== b.length) return false;
   return a.every((step, index) =>
     step.agent_id === b[index]?.agent_id &&

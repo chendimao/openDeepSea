@@ -24,7 +24,6 @@ import type {
   MemorySearchResult,
   Message,
   MessageRoutingMode,
-  PlannerDecision,
   PlatformSkill,
   PlatformSkillAggregate,
   PlatformSkillInstallMode,
@@ -54,6 +53,7 @@ import type {
   SuperpowersBootstrapOwner,
   Task,
   TaskEvent,
+  TaskExecutionDecision,
   TaskEventListResponse,
   TaskExecutorListItem,
   TaskInteractionMode,
@@ -545,10 +545,13 @@ export const api = {
     const query = params.toString();
     return request<ProjectFile[]>(`/projects/${projectId}/files${query ? `?${query}` : ''}`);
   },
-  searchWorkspaceFiles: (projectId: string, query: string) =>
-    workspaceRequest<WorkspaceSearchResponse>(
-      `/projects/${projectId}/workspace/search?q=${encodeURIComponent(query)}`,
-    ),
+  searchWorkspaceFiles: (projectId: string, query: string, filters: { path?: string } = {}) => {
+    const params = new URLSearchParams({ q: query });
+    if (filters.path) params.set('path', filters.path);
+    return workspaceRequest<WorkspaceSearchResponse>(
+      `/projects/${projectId}/workspace/search?${params.toString()}`,
+    );
+  },
   getResourceDetail: (assetId: string, filters: { projectId?: string } = {}) => {
     const params = new URLSearchParams();
     if (filters.projectId) params.set('projectId', filters.projectId);
@@ -805,27 +808,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
-  continuePlannerDecision: (roomId: string) =>
-    request<{
-      accepted: true;
-      dispatched: number;
-      added_agents: Array<{ agent_id: string; agent_name: string }>;
-      deferred_steps: PlannerDecision['next_steps'];
-    }>(
-      `/rooms/${roomId}/planner/continue`,
-      { method: 'POST' },
-    ),
-  dispatchPlannerDecision: (
+  dispatchTaskExecution: (
     roomId: string,
-    input: { source_message_id: string; planner_decision: PlannerDecision },
+    input: { source_message_id: string; task_execution: TaskExecutionDecision },
   ) =>
     request<{
       accepted: true;
       dispatched: number;
       added_agents: Array<{ agent_id: string; agent_name: string }>;
-      deferred_steps: PlannerDecision['next_steps'];
+      deferred_steps: TaskExecutionDecision['next_steps'];
     }>(
-      `/rooms/${roomId}/planner/dispatch`,
+      `/rooms/${roomId}/task-execution/dispatch`,
       {
         method: 'POST',
         body: JSON.stringify(input),

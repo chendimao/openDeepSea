@@ -383,11 +383,11 @@ test('parseMessageMetadata accepts workflow recovery decision task event', () =>
   assert.equal(parsed.event_type, 'workflow_recovery_decided');
 });
 
-test('parseMessageMetadata accepts planner decision and structured trace metadata', () => {
+test('parseMessageMetadata accepts task execution and structured trace metadata', () => {
   const metadata = JSON.stringify({
     source_message_id: 'user-message-1',
-    planner_decision: {
-      mode: 'pause_after_suggestion',
+    task_execution: {
+      state: 'ready_to_execute',
       status: 'suggested',
       summary: '建议先验证模型配置与连接测试链路',
       next_steps: [
@@ -396,7 +396,6 @@ test('parseMessageMetadata accepts planner decision and structured trace metadat
           goal: '检查设置页是否已有测试模型入口',
         },
       ],
-      awaiting_user_confirmation: true,
     },
     trace: {
       thinking: [{ text: '完整 thinking 原文' }],
@@ -418,8 +417,8 @@ test('parseMessageMetadata accepts planner decision and structured trace metadat
 
   const parsed = parseMessageMetadata(metadata);
 
-  assert.deepEqual(parsed.planner_decision, {
-    mode: 'pause_after_suggestion',
+  assert.deepEqual(parsed.task_execution, {
+    state: 'ready_to_execute',
     status: 'suggested',
     summary: '建议先验证模型配置与连接测试链路',
     next_steps: [
@@ -428,12 +427,45 @@ test('parseMessageMetadata accepts planner decision and structured trace metadat
         goal: '检查设置页是否已有测试模型入口',
       },
     ],
-    awaiting_user_confirmation: true,
   });
   assert.equal(parsed.source_message_id, 'user-message-1');
   assert.equal(parsed.trace?.thinking?.[0]?.text, '完整 thinking 原文');
   assert.equal(parsed.trace?.tool_calls?.[0]?.name, 'search_files');
   assert.equal(parsed.trace?.commands?.[0]?.command, 'rg -n "model" packages/frontend/src');
+});
+
+test('parseMessageMetadata accepts task execution metadata', () => {
+  const metadata = JSON.stringify({
+    source_message_id: 'user-message-1',
+    task_execution: {
+      state: 'ready_to_execute',
+      status: 'suggested',
+      summary: '直接派发前端执行',
+      reason: '单一完整实现方案，边界清晰',
+      next_steps: [
+        {
+          agent_id: 'frontend-executor',
+          goal: '实现 @docs/super 子目录搜索',
+        },
+      ],
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.deepEqual(parsed.task_execution, {
+    state: 'ready_to_execute',
+    status: 'suggested',
+    summary: '直接派发前端执行',
+    reason: '单一完整实现方案，边界清晰',
+    next_steps: [
+      {
+        agent_id: 'frontend-executor',
+        goal: '实现 @docs/super 子目录搜索',
+      },
+    ],
+  });
+  assert.equal(parsed.source_message_id, 'user-message-1');
 });
 
 test('parseMessageMetadata keeps trace events alongside legacy trace fields', () => {
@@ -463,14 +495,13 @@ test('parseMessageMetadata keeps trace events alongside legacy trace fields', ()
   assert.equal(parsed.trace?.events?.[0]?.type, 'raw');
 });
 
-test('parseMessageMetadata ignores invalid planner decisions and invalid trace rows', () => {
+test('parseMessageMetadata ignores invalid task execution and invalid trace rows', () => {
   const metadata = JSON.stringify({
-    planner_decision: {
-      mode: 'legacy_mode',
+    task_execution: {
+      state: 'legacy_state',
       status: 'suggested',
       summary: 'bad',
       next_steps: [],
-      awaiting_user_confirmation: true,
     },
     trace: {
       thinking: [{ text: '' }],
@@ -481,7 +512,7 @@ test('parseMessageMetadata ignores invalid planner decisions and invalid trace r
 
   const parsed = parseMessageMetadata(metadata);
 
-  assert.equal(parsed.planner_decision, undefined);
+  assert.equal(parsed.task_execution, undefined);
   assert.equal(parsed.trace, undefined);
 });
 

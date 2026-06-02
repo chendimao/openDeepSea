@@ -35,7 +35,7 @@ const {
   dispatchUserMessage,
   runAgentOnce,
   respondAsAgent,
-  setPlannerExecutionPlanInvokerForTest,
+  setTaskExecutionPlanInvokerForTest,
 } = await import('./dispatcher.js');
 const { router } = await import('./routes.js');
 const { setWorkflowConversationDeps } = await import('./workflows/conversation.js');
@@ -48,7 +48,7 @@ app.use('/api', router);
 test.afterEach(() => {
   process.env.LANGGRAPH_WORKFLOW_ENABLED = '0';
   setWorkflowConversationDeps({});
-  setPlannerExecutionPlanInvokerForTest(undefined);
+  setTaskExecutionPlanInvokerForTest(undefined);
 });
 
 test('buildPromptWithMessageAttachments appends readable attachment context', () => {
@@ -296,7 +296,7 @@ test('planner prompt tells ACP to keep casual chat concise without workflow narr
     assert.match(capturedPrompt, /回复契约：只输出一句简短自然回复/u);
     assert.match(capturedPrompt, /普通问候、闲聊或信息不足时，只输出简短自然回复/u);
     assert.match(capturedPrompt, /不要解释内部流程、workflow 判断、技能使用或 using-superpowers/u);
-    assert.match(capturedPrompt, /不要追加 planner_decision 或 task_readiness JSON/u);
+    assert.match(capturedPrompt, /不要追加 task_execution 或 task_readiness JSON/u);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -371,12 +371,12 @@ test('planner casual chat reply strips workflow narration and decision json', as
           '',
           '```json',
           JSON.stringify({
-            planner_decision: {
-              mode: 'pause_after_suggestion',
+            task_execution: {
+              state: 'ready_to_execute',
               status: 'suggested',
               summary: '等待用户提供要规划或拆解的具体目标',
               next_steps: [],
-              awaiting_user_confirmation: true,
+
             },
           }),
           '```',
@@ -392,7 +392,7 @@ test('planner casual chat reply strips workflow narration and decision json', as
     const plannerMessage = messageRepo.listByRoom(room.id, 20).find((message) => message.sender_id === 'planner');
     assert.ok(plannerMessage);
     assert.equal(plannerMessage.content, '我在。');
-    assert.doesNotMatch(plannerMessage.metadata ?? '', /planner_decision/);
+    assert.doesNotMatch(plannerMessage.metadata ?? '', /task_execution/);
     const plannerRun = agentRunRepo.listByRoom(room.id, 20).find((run) => run.agent_id === 'planner');
     assert.ok(plannerRun);
     assert.equal(plannerRun.stdout, '我在。');
@@ -472,6 +472,63 @@ test('dispatchUserMessage hides ACP intent control block and writes intent metad
     assert.equal(metadata.intent_result?.intent, 'chat');
     assert.equal(metadata.intent_result?.source, 'classifier');
     assert.equal(metadata.intent_result?.suggestedAction, 'reply_in_chat');
+    assert.equal(metadata.route_result?.action, 'reply_in_chat');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('dispatchUserMessage hides ACP intent control block without route metadata', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-stream-intent-without-route-'));
+  const project = projectRepo.create({ name: `stream-intent-without-route-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: ['.'],
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: 'hi',
+    message_type: 'text',
+    metadata: {},
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({ stream: 'stdout', channel: 'answer', text: '我在。<openclaw_intent_json>' });
+      args.onChunk?.({
+        stream: 'stdout',
+        channel: 'answer',
+        text: '{"intent":"chat","suggestedAction":"reply_in_chat","reason":"普通问候","signals":["hi"]}',
+      });
+      args.onChunk?.({ stream: 'stdout', channel: 'answer', text: '</openclaw_intent_json>' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const messages = messageRepo.listByRoom(room.id, 20);
+    const agentMessage = messages.find((item) => item.sender_type === 'agent' && item.message_type === 'agent_stream');
+    assert.equal(agentMessage?.content, '我在。');
+    assert.doesNotMatch(agentMessage?.content ?? '', /openclaw_intent_json/);
+
+    const updatedUserMessage = messageRepo.get(userMessage.id);
+    const metadata = JSON.parse(updatedUserMessage?.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.intent_result?.intent, 'chat');
     assert.equal(metadata.route_result?.action, 'reply_in_chat');
   } finally {
     adapters.codex = originalAdapter;
@@ -675,6 +732,94 @@ test('runAgentOnce does not broadcast agent run updates for answer stdout chunks
     assert.match(agentRunRepo.get(result.run.id)?.stdout ?? '', /第一段。第二段。/);
   } finally {
     wsHub.unsubscribe(room.id, socket as never);
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('reply target routes follow-up to the replied agent session', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-reply-session-route-'));
+  const project = projectRepo.create({ name: `reply-session-route-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  const reviewer = roomAgentRepo.add({ room_id: room.id, agent_id: 'reviewer-reply', agent_name: 'ReviewerReply' });
+  const plannerAcp = roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'planner-session',
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  const reviewerAcp = roomAgentRepo.setAcp(reviewer.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: 'current-reviewer-session',
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  assert.ok(plannerAcp);
+  assert.ok(reviewerAcp);
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: planner.agent_id,
+  });
+  const agentMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: reviewer.agent_id,
+    sender_name: reviewer.agent_name,
+    content: '头脑风暴第一轮：可以继续展开方案。',
+    message_type: 'agent_stream',
+    metadata: {
+      acp_session_id: 'replied-reviewer-session',
+    },
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '继续',
+    message_type: 'text',
+    metadata: {
+      reply_to: {
+        message_id: agentMessage.id,
+        sender_type: 'agent',
+        sender_id: reviewer.agent_id,
+        sender_name: reviewer.agent_name,
+        excerpt: '头脑风暴第一轮',
+      },
+    },
+  });
+
+  const originalAdapter = adapters.codex;
+  let capturedAgentId: string | undefined;
+  let capturedSessionId: string | null | undefined;
+  let capturedPrompt = '';
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedSessionId = args.sessionId;
+      capturedPrompt = args.prompt;
+      args.onChunk?.({ stream: 'stdout', text: '继续展开方案。' });
+      return { exitCode: 0, sessionId: args.sessionId, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage });
+
+    const runs = agentRunRepo.listByRoom(room.id, 20);
+    capturedAgentId = runs[0]?.agent_id;
+    assert.equal(runs.length, 1);
+    assert.equal(capturedAgentId, reviewer.agent_id);
+    assert.equal(capturedSessionId, 'replied-reviewer-session');
+    assert.match(capturedPrompt, /正在回复的消息：/);
+    assert.match(capturedPrompt, /头脑风暴第一轮/);
+  } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
   }
@@ -2279,21 +2424,21 @@ test('planner dispatch runs source task steps through task executor sessions', a
   } satisfies SessionAdapter;
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '派发执行者处理任务',
           next_steps: [{ agent_id: acpAgent.agent_id, goal: '处理 task 范围内的工作' }],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(capturedSessionId, null);
     const runs = agentRunRepo.listByRoom(room.id, 20);
     assert.equal(runs.some((run) => run.agent_id === acpAgent.agent_id && run.task_id === task.id), true);
@@ -3106,16 +3251,16 @@ test('planner dispatch auto-adds matching global agent before dispatching', asyn
 
   try {
     const beforeAgents = new Set(roomAgentRepo.listByRoom(room.id).map((agent) => agent.agent_id));
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '建议检查运行上下文',
           next_steps: [{ agent_id: globalAgent.agent_id, goal: '检查 Codex CLI 启动规则' }],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3124,7 +3269,7 @@ test('planner dispatch auto-adds matching global agent before dispatching', asyn
       added_agents?: Array<{ agent_id: string; agent_name: string }>;
     };
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(body.dispatched, 1);
     assert.deepEqual(body.added_agents, [{ agent_id: globalAgent.agent_id, agent_name: 'Runtime Inspector' }]);
     assert.ok(roomAgentRepo.listByRoom(room.id).some((agent) => agent.agent_id === globalAgent.agent_id));
@@ -3160,16 +3305,16 @@ test('planner dispatch falls back to best global agent search for unknown sugges
 
   try {
     const beforeAgents = new Set(roomAgentRepo.listByRoom(room.id).map((agent) => agent.agent_id));
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '建议检查运行上下文',
           next_steps: [{ agent_id: 'runtime-inspector', goal: '检查 Codex CLI 启动规则' }],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3178,7 +3323,7 @@ test('planner dispatch falls back to best global agent search for unknown sugges
       added_agents?: Array<{ agent_id: string; agent_name: string }>;
     };
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(body.dispatched, 1);
     assert.equal(body.added_agents?.length, 1);
     assert.deepEqual(body.added_agents, [{ agent_id: 'computer-assistant', agent_name: '电脑助手' }]);
@@ -3214,18 +3359,18 @@ test('planner dispatch maps unknown frontend reviewer request to reviewer agent'
   } satisfies SessionAdapter;
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '审查前端改动',
           next_steps: [
             { agent_id: 'frontend-reviewer', goal: '审查前端计数器页面、侧边栏入口、i18n 和可访问性' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3235,7 +3380,7 @@ test('planner dispatch maps unknown frontend reviewer request to reviewer agent'
     };
     const runs = agentRunRepo.listByRoom(room.id, 20);
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(body.dispatched, 1);
     assert.deepEqual(body.added_agents, [{ agent_id: 'reviewer', agent_name: '审查员' }]);
     assert.equal(runs.some((run) => run.agent_id === 'reviewer'), true);
@@ -3269,18 +3414,18 @@ test('planner dispatch maps unknown frontend tester request to qa tester agent',
   } satisfies SessionAdapter;
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '验证前端改动',
           next_steps: [
             { agent_id: 'frontend-tester', goal: '验证前端计数器页面、侧边栏入口和交互路径' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3290,7 +3435,7 @@ test('planner dispatch maps unknown frontend tester request to qa tester agent',
     };
     const runs = agentRunRepo.listByRoom(room.id, 20);
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(body.dispatched, 1);
     assert.deepEqual(body.added_agents, [{ agent_id: 'qa-tester', agent_name: '测试工程师' }]);
     assert.equal(runs.some((run) => run.agent_id === 'qa-tester'), true);
@@ -3337,7 +3482,7 @@ test('planner dispatch defers review steps until execution result returns to pla
 
   try {
     let plannerInputSeen = false;
-    setPlannerExecutionPlanInvokerForTest({
+    setTaskExecutionPlanInvokerForTest({
       async invoke(input) {
         plannerInputSeen = input.targets.length === 2 &&
           input.targets[0]?.step.agent_id === 'frontend-executor' &&
@@ -3351,26 +3496,26 @@ test('planner dispatch defers review steps until execution result returns to pla
         };
       },
     });
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '先开发再测试',
           next_steps: [
             { agent_id: 'frontend-executor', goal: '在真实仓库中定位侧边栏配置，新增“测试”菜单及计数器页面' },
             { agent_id: 'qa-tester', goal: '验证侧边栏入口展示、页面跳转和计数器交互是否正常' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
     const body = await response.json() as { dispatched?: number; deferred_steps?: Array<{ agent_id: string; goal: string }> };
     const runs = agentRunRepo.listByRoom(room.id, 20);
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(plannerInputSeen, true);
     assert.equal(body.dispatched, 1);
     assert.deepEqual(body.deferred_steps?.map((step) => step.agent_id), ['qa-tester']);
@@ -3427,12 +3572,12 @@ test('planner follow-up auto continues suggested next steps after dispatched age
                 '',
                 '```json',
                 JSON.stringify({
-                  planner_decision: {
-                    mode: 'pause_after_suggestion',
+                  task_execution: {
+                    state: 'ready_to_execute',
                     status: 'completed',
                     summary: '测试工程师已验证计数器菜单，暂无后续派发',
                     next_steps: [],
-                    awaiting_user_confirmation: false,
+
                   },
                 }),
                 '```',
@@ -3442,14 +3587,14 @@ test('planner follow-up auto continues suggested next steps after dispatched age
                 '',
                 '```json',
                 JSON.stringify({
-                  planner_decision: {
-                    mode: 'pause_after_suggestion',
+                  task_execution: {
+                    state: 'ready_to_execute',
                     status: 'suggested',
                     summary: '派发测试工程师验证计数器菜单',
                     next_steps: [
                       { agent_id: 'qa-tester', goal: '验证侧边栏测试菜单、/test 路由和计数器交互' },
                     ],
-                    awaiting_user_confirmation: true,
+
                   },
                 }),
                 '```',
@@ -3465,18 +3610,18 @@ test('planner follow-up auto continues suggested next steps after dispatched age
   } satisfies SessionAdapter;
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '派发前端执行者实现测试菜单',
           next_steps: [
             { agent_id: 'frontend-executor', goal: '新增侧边栏测试菜单、/test 路由和计数器页面' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3485,7 +3630,7 @@ test('planner follow-up auto continues suggested next steps after dispatched age
     const plannerReply = messageRepo.listByRoom(room.id, 20)
       .find((message) => message.sender_id === 'planner' && message.content.includes('派发测试工程师验证计数器菜单'));
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(body.dispatched, 1);
     assert.deepEqual(body.deferred_steps, []);
     assert.equal(plannerFollowupPrompts.length, 2);
@@ -3493,21 +3638,20 @@ test('planner follow-up auto continues suggested next steps after dispatched age
     assert.equal(runs.some((run) => run.agent_id === 'qa-tester'), true);
     assert.ok(plannerReply);
     const metadata = JSON.parse(plannerReply.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.planner_decision?.mode, 'auto_continue');
-    assert.equal(metadata.planner_decision?.awaiting_user_confirmation, false);
-    assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'qa-tester');
+    assert.equal(metadata.task_execution?.state, 'ready_to_execute');
+    assert.equal(metadata.task_execution?.next_steps[0]?.agent_id, 'qa-tester');
 
     const plannerDoneIndex = events.findIndex((event) =>
       event.type === 'message:stream' &&
       event.done === true &&
       event.messageId === plannerReply.id &&
-      event.message?.metadata?.includes('"auto_continue"') === true
+      event.message?.metadata?.includes('"ready_to_execute"') === true
     );
     const qaRunCreatedIndex = events.findIndex((event) =>
       event.type === 'agent_run:created' &&
       event.run.agent_id === 'qa-tester'
     );
-    assert.ok(plannerDoneIndex >= 0, 'expected planner final message snapshot with auto_continue metadata');
+    assert.ok(plannerDoneIndex >= 0, 'expected planner final message snapshot with ready_to_execute metadata');
     assert.ok(qaRunCreatedIndex >= 0, 'expected auto-continued qa-tester run to be created');
     assert.ok(
       plannerDoneIndex < qaRunCreatedIndex,
@@ -3548,14 +3692,14 @@ test('planner follow-up blocks auto continue when suggested agent cannot be disp
             '',
             '```json',
             JSON.stringify({
-              planner_decision: {
-                mode: 'pause_after_suggestion',
+              task_execution: {
+                state: 'ready_to_execute',
                 status: 'suggested',
                 summary: '继续派发不存在的智能体',
                 next_steps: [
                   { agent_id: 'ghost-worker-z', goal: '处理未定义步骤' },
                 ],
-                awaiting_user_confirmation: true,
+
               },
             }),
             '```',
@@ -3569,18 +3713,18 @@ test('planner follow-up blocks auto continue when suggested agent cannot be disp
   } satisfies SessionAdapter;
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '派发前端执行者',
           next_steps: [
             { agent_id: 'frontend-executor', goal: '实现页面' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3590,14 +3734,13 @@ test('planner follow-up blocks auto continue when suggested agent cannot be disp
     const systemMessage = messages
       .find((message) => message.sender_type === 'system' && message.content.includes('Planner auto-continue failed'));
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.ok(plannerReply);
     const metadata = JSON.parse(plannerReply.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.planner_decision?.mode, 'auto_continue');
-    assert.equal(metadata.planner_decision?.status, 'blocked');
-    assert.equal(metadata.planner_decision?.awaiting_user_confirmation, false);
-    assert.equal(metadata.planner_decision?.next_steps.length, 0);
-    assert.match(metadata.planner_decision?.summary ?? '', /ghost-worker-z/);
+    assert.equal(metadata.task_execution?.state, 'blocked');
+    assert.equal(metadata.task_execution?.status, 'blocked');
+    assert.equal(metadata.task_execution?.next_steps.length, 0);
+    assert.match(metadata.task_execution?.summary ?? '', /ghost-worker-z/);
     assert.ok(systemMessage);
   } finally {
     adapters.codex = originalAdapter;
@@ -3638,14 +3781,14 @@ test('planner follow-up blocks instead of showing continue button when auto cont
             '',
             '```json',
             JSON.stringify({
-              planner_decision: {
-                mode: 'pause_after_suggestion',
+              task_execution: {
+                state: 'ready_to_execute',
                 status: 'suggested',
                 summary: `第 ${plannerFollowupPrompts.length} 轮继续测试`,
                 next_steps: [
                   { agent_id: 'qa-tester', goal: `继续验证第 ${plannerFollowupPrompts.length} 轮` },
                 ],
-                awaiting_user_confirmation: true,
+
               },
             }),
             '```',
@@ -3661,18 +3804,18 @@ test('planner follow-up blocks instead of showing continue button when auto cont
   } satisfies SessionAdapter;
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '派发前端执行者',
           next_steps: [
             { agent_id: 'frontend-executor', goal: '实现初始页面' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3681,16 +3824,15 @@ test('planner follow-up blocks instead of showing continue button when auto cont
       .filter((message) => message.sender_id === 'planner');
     const latestPlannerReply = plannerReplies[plannerReplies.length - 1];
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(plannerFollowupPrompts.length, 6);
     assert.equal(runs.filter((run) => run.agent_id === 'qa-tester').length, 5);
     assert.ok(latestPlannerReply);
     const metadata = JSON.parse(latestPlannerReply.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.planner_decision?.mode, 'auto_continue');
-    assert.equal(metadata.planner_decision?.status, 'blocked');
-    assert.equal(metadata.planner_decision?.awaiting_user_confirmation, false);
-    assert.equal(metadata.planner_decision?.next_steps.length, 0);
-    assert.match(metadata.planner_decision?.summary ?? '', /自动续派发已达到上限/);
+    assert.equal(metadata.task_execution?.state, 'blocked');
+    assert.equal(metadata.task_execution?.status, 'blocked');
+    assert.equal(metadata.task_execution?.next_steps.length, 0);
+    assert.match(metadata.task_execution?.summary ?? '', /自动续派发已达到上限/);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -3727,12 +3869,12 @@ test('planner dispatch reports completed agent results back to planner even with
             '',
             '```json',
             JSON.stringify({
-              planner_decision: {
-                mode: 'pause_after_suggestion',
+              task_execution: {
+                state: 'ready_to_execute',
                 status: 'completed',
                 summary: '后端执行者已完成修复，暂无后续派发',
                 next_steps: [],
-                awaiting_user_confirmation: false,
+
               },
             }),
             '```',
@@ -3746,18 +3888,18 @@ test('planner dispatch reports completed agent results back to planner even with
   } satisfies SessionAdapter;
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '派发后端执行者修复 ACP 保存回退',
           next_steps: [
             { agent_id: 'backend-executor', goal: '修复规划师 ACP 保存后刷新回退的问题，并补充回归测试' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3766,7 +3908,7 @@ test('planner dispatch reports completed agent results back to planner even with
     const plannerReply = messageRepo.listByRoom(room.id, 20)
       .find((message) => message.sender_id === 'planner' && message.content.includes('后端执行者已完成修复'));
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(body.dispatched, 1);
     assert.deepEqual(body.deferred_steps, []);
     assert.equal(runs.some((run) => run.agent_id === 'backend-executor'), true);
@@ -3776,7 +3918,7 @@ test('planner dispatch reports completed agent results back to planner even with
     assert.match(plannerFollowupPrompts[0] ?? '', /后端执行者完成：已修复保存后刷新回退问题/);
     assert.ok(plannerReply);
     const metadata = JSON.parse(plannerReply.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.planner_decision?.status, 'completed');
+    assert.equal(metadata.task_execution?.status, 'completed');
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -3813,12 +3955,12 @@ test('planner dispatch reports failed agent status and error back to planner', a
             '',
             '```json',
             JSON.stringify({
-              planner_decision: {
-                mode: 'pause_after_suggestion',
+              task_execution: {
+                state: 'ready_to_execute',
                 status: 'blocked',
                 summary: '后端执行失败，需要重新处理',
                 next_steps: [],
-                awaiting_user_confirmation: true,
+
               },
             }),
             '```',
@@ -3833,23 +3975,23 @@ test('planner dispatch reports failed agent status and error back to planner', a
   } satisfies SessionAdapter;
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '派发后端执行者修复接口',
           next_steps: [
             { agent_id: 'backend-executor', goal: '修复后端接口并运行 TypeScript 编译' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 202);
     assert.equal(plannerFollowupPrompts.length, 1);
     assert.match(plannerFollowupPrompts[0] ?? '', /状态：failed/);
     assert.match(plannerFollowupPrompts[0] ?? '', /错误：TypeScript compilation failed/);
@@ -3875,16 +4017,16 @@ test('planner dispatch reports missing room and global agents instead of accepti
   });
 
   try {
-    const response = await request(`/api/rooms/${room.id}/planner/dispatch`, {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
       method: 'POST',
       body: JSON.stringify({
         source_message_id: sourceMessage.id,
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '建议执行无法匹配的专业任务',
           next_steps: [{ agent_id: missingAgentId, goal: '分析深海声呐样本的鲸类迁徙模式' }],
-          awaiting_user_confirmation: true,
+
         },
       }),
     });
@@ -3988,7 +4130,7 @@ test('respondAsAgent marks final stream event failed without mixing stderr into 
   }
 });
 
-test('respondAsAgent annotates explicit planner decision even when ACP prompt times out after output', async () => {
+test('respondAsAgent annotates explicit task execution even when ACP prompt times out after output', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-timeout-decision-'));
   const project = projectRepo.create({ name: `planner-timeout-decision-${Date.now()}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
@@ -4014,14 +4156,14 @@ test('respondAsAgent annotates explicit planner decision even when ACP prompt ti
           '',
           '```json',
           JSON.stringify({
-            planner_decision: {
-              mode: 'pause_after_suggestion',
+            task_execution: {
+              state: 'ready_to_execute',
               status: 'suggested',
               summary: '修复协议调试重叠',
               next_steps: [
                 { agent_id: 'frontend-executor', goal: '修复 AgentTimeline 协议调试计数布局' },
               ],
-              awaiting_user_confirmation: true,
+
             },
           }),
           '```',
@@ -4042,8 +4184,8 @@ test('respondAsAgent annotates explicit planner decision even when ACP prompt ti
     const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === 'planner');
     assert.ok(reply);
     const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.planner_decision?.summary, '修复协议调试重叠');
-    assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
+    assert.equal(metadata.task_execution?.summary, '修复协议调试重叠');
+    assert.equal(metadata.task_execution?.next_steps[0]?.agent_id, 'frontend-executor');
     assert.equal(agentRunRepo.listByRoom(room.id, 1)[0]?.status, 'failed');
   } finally {
     adapters.codex = originalAdapter;
@@ -4073,26 +4215,26 @@ test('message list refreshes stale planner metadata from explicit decision conte
       '',
       '```json',
       JSON.stringify({
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '实现测试计数器菜单',
           next_steps: [
             { agent_id: 'frontend-executor', goal: '新增测试菜单和计数器页面' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
       '```',
     ].join('\n'),
     message_type: 'agent_stream',
     metadata: {
-      planner_decision: {
-        mode: 'pause_after_suggestion',
+      task_execution: {
+        state: 'ready_to_execute',
         status: 'suggested',
         summary: '建议交给前端执行。',
         next_steps: [],
-        awaiting_user_confirmation: true,
+
       },
       source_message_id: userMessage.id,
     },
@@ -4106,14 +4248,14 @@ test('message list refreshes stale planner metadata from explicit decision conte
     assert.ok(reply);
 
     const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.planner_decision?.summary, '实现测试计数器菜单');
-    assert.equal(metadata.planner_decision?.next_steps.length, 1);
-    assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
+    assert.equal(metadata.task_execution?.summary, '实现测试计数器菜单');
+    assert.equal(metadata.task_execution?.next_steps.length, 1);
+    assert.equal(metadata.task_execution?.next_steps[0]?.agent_id, 'frontend-executor');
 
     const persisted = messageRepo.get(plannerReply.id);
     assert.ok(persisted);
     const persistedMetadata = JSON.parse(persisted.metadata ?? '{}') as MessageMetadata;
-    assert.equal(persistedMetadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
+    assert.equal(persistedMetadata.task_execution?.next_steps[0]?.agent_id, 'frontend-executor');
   } finally {
     await rm(projectPath, { recursive: true, force: true });
   }
@@ -4141,28 +4283,28 @@ test('message list preserves auto-continue planner metadata normalized after fol
       '',
       '```json',
       JSON.stringify({
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '派发测试工程师验证计数器菜单',
           next_steps: [
             { agent_id: 'qa-tester', goal: '验证侧边栏测试菜单、/test 路由和计数器交互' },
           ],
-          awaiting_user_confirmation: true,
+
         },
       }),
       '```',
     ].join('\n'),
     message_type: 'agent_stream',
     metadata: {
-      planner_decision: {
-        mode: 'auto_continue',
+      task_execution: {
+        state: 'ready_to_execute',
         status: 'suggested',
         summary: '派发测试工程师验证计数器菜单',
         next_steps: [
           { agent_id: 'qa-tester', goal: '验证侧边栏测试菜单、/test 路由和计数器交互' },
         ],
-        awaiting_user_confirmation: false,
+
       },
       source_message_id: userMessage.id,
     },
@@ -4173,8 +4315,7 @@ test('message list preserves auto-continue planner metadata normalized after fol
     const reply = messages.find((item) => item.id === plannerReply.id);
     assert.ok(reply);
     const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.planner_decision?.mode, 'auto_continue');
-    assert.equal(metadata.planner_decision?.awaiting_user_confirmation, false);
+    assert.equal(metadata.task_execution?.state, 'ready_to_execute');
   } finally {
     await rm(projectPath, { recursive: true, force: true });
   }
@@ -4216,7 +4357,7 @@ test('respondAsAgent does not annotate failed planner plain text as dispatchable
     const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === 'planner');
     assert.ok(reply);
     const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
-    assert.equal(metadata.planner_decision, undefined);
+    assert.equal(metadata.task_execution, undefined);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

@@ -58,7 +58,7 @@ import {
   applyMessageStreamBatch,
   createDefaultReplyTarget,
   createReplyTarget,
-  createTaskPlannerDispatchInput,
+  createTaskExecutionDispatchInputForTask,
   projectRoomActivityMessages,
   selectConversationMessages,
   type MessageStreamUpdate,
@@ -186,9 +186,9 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
   });
   const startWorkflow = useMutation({
     mutationFn: (task: Task) => {
-      const input = createTaskPlannerDispatchInput(task, messages, agents);
+      const input = createTaskExecutionDispatchInputForTask(task, messages, agents);
       if (!input) throw new Error('任务缺少来源消息，无法派发');
-      return api.dispatchPlannerDecision(roomId, input);
+      return api.dispatchTaskExecution(roomId, input);
     },
     onMutate: (task) => {
       setStartingWorkflowTaskId(task.id);
@@ -799,6 +799,7 @@ function ChatColumn({
   workflows,
   roomId,
   projectId,
+  workspacePath,
   modelChatReady,
   routingMode,
   fallbackAgentId,
@@ -823,6 +824,7 @@ function ChatColumn({
   workflows: WorkflowRun[];
   roomId: string;
   projectId: string;
+  workspacePath?: string;
   modelChatReady: boolean;
   routingMode: 'mentions_only' | 'fallback_reply';
   fallbackAgentId: string | null;
@@ -855,6 +857,10 @@ function ChatColumn({
   const activeRunTaskIds = useMemo(() => createActiveAgentRunTaskIds(agentRuns), [agentRuns]);
   const taskById = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
+    [tasks],
+  );
+  const taskBySourceMessageId = useMemo(
+    () => new Map(tasks.flatMap((task) => (task.source_message_id ? [[task.source_message_id, task] as const] : []))),
     [tasks],
   );
   const workflowByTaskId = useMemo(() => createWorkflowByTaskId(workflows), [workflows]);
@@ -983,7 +989,7 @@ function ChatColumn({
               const displayMode = messageDisplayModes[m.id] ?? 'preview';
               const metadata = parseMessageMetadata(m.metadata);
               const messageTaskId = metadata.task_id ?? run?.task_id ?? undefined;
-              const task = messageTaskId ? taskById.get(messageTaskId) : undefined;
+              const task = (messageTaskId ? taskById.get(messageTaskId) : undefined) ?? taskBySourceMessageId.get(m.id);
               const workflow = task ? workflowByTaskId.get(task.id) : undefined;
               const hasActiveExecution = task ? activeRunTaskIds.has(task.id) : false;
               return (
@@ -1025,6 +1031,7 @@ function ChatColumn({
 
       <RichMessageComposer
         projectId={projectId}
+        workspacePath={workspacePath}
         resetKey={composerResetKey}
         onSend={submitUserMessage}
         sending={send.isPending}

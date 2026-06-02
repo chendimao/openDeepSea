@@ -446,7 +446,7 @@ test('messageRepo listForClient coalesces assistant deltas for the client transc
       '完整规划正文。',
       '',
       '```json',
-      '{"planner_decision":{"awaiting_user_confirmation":true}}',
+      '{"task_execution":{"state":"ready_to_execute"}}',
       '```',
     ].join('\n'),
     message_type: 'agent_stream',
@@ -487,7 +487,7 @@ test('messageRepo listForClient coalesces assistant deltas for the client transc
       title: '助手回复',
       payload: index === 50
         ? { text: '', content: { type: 'text', text: ' ' } }
-        : { text: index === 99 ? 'awaiting_user_confirmation": true\n}\n```' : `token-${index}` },
+        : { text: index === 99 ? 'state": "ready_to_execute"\n}\n```' : `token-${index}` },
       created_at: 1002 + index,
     })),
     {
@@ -529,7 +529,7 @@ test('messageRepo listForClient coalesces assistant deltas for the client transc
   assert.equal(metadata.trace?.events?.[1]?.payload.detail_omitted, true);
   assert.equal(metadata.trace?.events?.[2]?.seq, 3);
   assert.match(String(metadata.trace?.events?.[2]?.payload.text), /^token-0token-1/);
-  assert.match(String(metadata.trace?.events?.[2]?.payload.text), /awaiting_user_confirmation": true\n}\n```$/);
+  assert.match(String(metadata.trace?.events?.[2]?.payload.text), /state": "ready_to_execute"\n}\n```$/);
   assert.equal(metadata.trace?.events?.[2]?.payload.content, undefined);
   assert.equal(metadata.trace?.events?.[3]?.payload.text, undefined);
   assert.equal(metadata.trace?.events?.[3]?.payload.detail_omitted, true);

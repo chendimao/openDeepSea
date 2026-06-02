@@ -85,18 +85,18 @@ test('only compact-renders short scalar json rows', () => {
   assert.match(html, /json-tree-row is-nested[\s\S]*nested/);
 });
 
-test('renders planner decision json as generic structured json without a duplicate planner summary card', () => {
+test('renders task execution json as generic structured json without a duplicate task execution summary card', () => {
   const content = [
     '```json',
     JSON.stringify({
-      planner_decision: {
-        mode: 'pause_after_suggestion',
+      task_execution: {
+        state: 'ready_to_execute',
         status: 'suggested',
         summary: '建议下一步对比 ACP 与 Codex CLI 的启动上下文和 skill 加载配置',
         next_steps: [
           { agent_id: 'runtime-inspector', goal: '检查 Codex CLI 是否加载 AGENTS.md、Superpowers skill 路径和 using-superpowers 启动规则' },
         ],
-        awaiting_user_confirmation: true,
+
       },
     }, null, 2),
     '```',
@@ -113,28 +113,27 @@ test('renders planner decision json as generic structured json without a duplica
   );
 
   assert.match(html, /json-tree/);
-  assert.match(html, /planner_decision/);
-  assert.match(html, /pause_after_suggestion/);
+  assert.match(html, /task_execution/);
+  assert.match(html, /ready_to_execute/);
   assert.match(html, /suggested/);
-  assert.match(html, /awaiting_user_confirmation/);
   assert.doesNotMatch(html, /下一步数量/);
   assert.match(html, /runtime-inspector/);
   assert.match(html, /检查 Codex CLI 是否加载/);
   assert.doesNotMatch(html, /json-planner-summary/);
 });
 
-test('can suppress planner decision json when an outer action panel renders it', () => {
+test('can suppress task execution json when an outer action panel renders it', () => {
   const content = [
     '```json',
     JSON.stringify({
-      planner_decision: {
-        mode: 'pause_after_suggestion',
+      task_execution: {
+        state: 'ready_to_execute',
         status: 'suggested',
         summary: '交给前端执行智能体优化侧边栏导航',
         next_steps: [
           { agent_id: 'frontend-executor', goal: '调整侧边栏入口、路由和 i18n 文案' },
         ],
-        awaiting_user_confirmation: true,
+
       },
     }, null, 2),
     '```',
@@ -142,14 +141,14 @@ test('can suppress planner decision json when an outer action panel renders it',
 
   const html = renderToStaticMarkup(
     <I18nProvider>
-      <MessageContent content={content} suppressPlannerDecisionSummary />
+      <MessageContent content={content} suppressTaskExecutionSummary />
     </I18nProvider>,
   );
 
   assert.doesNotMatch(html, /json-planner-summary/);
   assert.doesNotMatch(html, /json-tree/);
-  assert.doesNotMatch(html, /planner_decision/);
-  assert.doesNotMatch(html, /pause_after_suggestion/);
+  assert.doesNotMatch(html, /task_execution/);
+  assert.doesNotMatch(html, /ready_to_execute/);
 });
 
 test('can suppress workflow structured json blocks in chat bubbles', () => {
@@ -172,12 +171,12 @@ test('can suppress workflow structured json blocks in chat bubbles', () => {
     '',
     '```json',
     JSON.stringify({
-      planner_decision: {
-        mode: 'pause_after_suggestion',
+      task_execution: {
+        state: 'ready_to_execute',
         status: 'suggested',
         summary: '建议派发执行者',
         next_steps: [{ agent_id: 'frontend-executor', goal: '实现页面调整' }],
-        awaiting_user_confirmation: true,
+
       },
     }, null, 2),
     '```',
@@ -192,37 +191,36 @@ test('can suppress workflow structured json blocks in chat bubbles', () => {
   assert.match(html, /正文保留/);
   assert.doesNotMatch(html, /任务准备状态/);
   assert.doesNotMatch(html, /生成执行计划/);
-  assert.doesNotMatch(html, /planner_decision/);
-  assert.doesNotMatch(html, /pause_after_suggestion/);
+  assert.doesNotMatch(html, /task_execution/);
+  assert.doesNotMatch(html, /ready_to_execute/);
   assert.doesNotMatch(html, /json-tree/);
 });
 
 test('recognizes json fences whose opening brace is glued to the language tag', () => {
   // 复现 codex 原始流式输出：```json{ 把左花括号粘在语言行（无换行）
   const json = JSON.stringify({
-    planner_decision: {
-      mode: 'pause_after_suggestion',
+    task_execution: {
+      state: 'ready_to_execute',
       status: 'suggested',
       summary: '派发前端执行者局部调小群聊消息预览模式字号和间距',
       next_steps: [
         { agent_id: 'frontend-executor', goal: '局部降低 Markdown/ACP transcript 正文字号、标题层级和间距' },
       ],
-      awaiting_user_confirmation: true,
+
     },
   }, null, 2);
-  // json === '{\n  "planner_decision"...\n}'，把开头的 { 挪到围栏行
+  // json === '{\n  "task_execution"...\n}'，把开头的 { 挪到围栏行
   const content = `\`\`\`json${json.slice(0, 1)}\n${json.slice(2)}\n\`\`\``;
 
   const html = renderToStaticMarkup(
     <I18nProvider>
-      <MessageContent content={content} suppressPlannerDecisionSummary />
+      <MessageContent content={content} suppressTaskExecutionSummary />
     </I18nProvider>,
   );
 
   // 应被识别为 planner 决策 JSON 并隐藏，而非当作裸代码/文本吐出乱码
-  assert.doesNotMatch(html, /awaiting_user_confirmation/);
-  assert.doesNotMatch(html, /planner_decision/);
-  assert.doesNotMatch(html, /pause_after_suggestion/);
+  assert.doesNotMatch(html, /task_execution/);
+  assert.doesNotMatch(html, /ready_to_execute/);
 });
 
 test('renders known agent ids in markdown text as Chinese agent names', () => {

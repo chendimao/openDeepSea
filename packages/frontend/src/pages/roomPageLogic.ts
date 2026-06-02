@@ -4,10 +4,10 @@ import type {
   Message,
   MessageMetadata,
   MessageTrace,
-  PlannerDecision,
   RoomAgent,
   Task,
   TaskEvent,
+  TaskExecutionDecision,
   TaskExecutionIntent,
 } from '../lib/types';
 
@@ -45,16 +45,18 @@ export interface TaskEventVisibilityState {
   hideMessage: boolean;
 }
 
-export interface PlannerDispatchInput {
+export interface TaskExecutionDispatchInput {
   source_message_id: string;
-  planner_decision: PlannerDecision;
+  task_execution: TaskExecutionDecision;
 }
 
-export function shouldShowPlannerDecisionPanel(input: {
+export function shouldShowTaskExecutionPanel(input: {
   isUser: boolean;
-  decision?: PlannerDecision;
+  decision?: TaskExecutionDecision;
 }): boolean {
-  return !input.isUser && Boolean(input.decision?.awaiting_user_confirmation);
+  if (input.isUser || !input.decision) return false;
+  if (input.decision.status === 'completed' || input.decision.status === 'blocked') return false;
+  return !hasExecutableTaskSteps(input.decision);
 }
 
 export function createDefaultReplyTarget(
@@ -189,22 +191,22 @@ export function getTaskEventVisibilityState(input: {
   };
 }
 
-export function createPlannerDispatchInput(
+export function createTaskExecutionDispatchInputFromMessage(
   message: Message,
   metadata: MessageMetadata = parseMessageMetadata(message.metadata),
-): PlannerDispatchInput | null {
-  if (!metadata.planner_decision) return null;
+): TaskExecutionDispatchInput | null {
+  if (!metadata.task_execution) return null;
   return {
     source_message_id: metadata.source_message_id ?? message.id,
-    planner_decision: metadata.planner_decision,
+    task_execution: metadata.task_execution,
   };
 }
 
-export function createTaskPlannerDispatchInput(
+export function createTaskExecutionDispatchInputForTask(
   task: Task,
   messages: Message[],
   roomAgents: RoomAgent[] = [],
-): PlannerDispatchInput | null {
+): TaskExecutionDispatchInput | null {
   if (!task.source_message_id) return null;
   const plannerSourceMessageId = task.source_message_id;
   const dispatchSourceMessageId = findTaskScopedDispatchSourceMessageId(task, messages) ?? plannerSourceMessageId;
@@ -213,45 +215,42 @@ export function createTaskPlannerDispatchInput(
     .find((message) => {
       const metadata = parseMessageMetadata(message.metadata);
       return metadata.source_message_id === plannerSourceMessageId &&
-        Boolean(metadata.planner_decision && hasDispatchablePlannerSteps(metadata.planner_decision));
+        Boolean(metadata.task_execution && hasExecutableTaskSteps(metadata.task_execution));
     });
 
   if (plannerMessage) {
-    const input = createPlannerDispatchInput(plannerMessage);
+    const input = createTaskExecutionDispatchInputFromMessage(plannerMessage);
     if (input) {
       return {
         source_message_id: dispatchSourceMessageId,
-        planner_decision: input.planner_decision,
+        task_execution: input.task_execution,
       };
     }
   }
 
   return {
     source_message_id: dispatchSourceMessageId,
-    planner_decision: createFallbackTaskPlannerDecision(task, roomAgents),
+    task_execution: createFallbackTaskExecution(task, roomAgents),
   };
 }
 
-export function hasDispatchablePlannerSteps(decision: PlannerDecision): boolean {
-  const isDispatchableMode = decision.mode === 'pause_after_suggestion' || decision.mode === 'dispatch_next';
-  const isDispatchableStatus = decision.status === 'suggested' || decision.status === 'needs_fix';
-  return isDispatchableMode &&
-    isDispatchableStatus &&
-    decision.awaiting_user_confirmation &&
+export function hasExecutableTaskSteps(decision: TaskExecutionDecision): boolean {
+  const isExecutableStatus = decision.status === 'suggested' || decision.status === 'needs_fix';
+  return decision.state === 'ready_to_execute' &&
+    isExecutableStatus &&
     decision.next_steps.length > 0;
 }
 
-function createFallbackTaskPlannerDecision(task: Task, roomAgents: RoomAgent[]): PlannerDecision {
+function createFallbackTaskExecution(task: Task, roomAgents: RoomAgent[]): TaskExecutionDecision {
   const agentId = resolveTaskExecutorAgentId(task, roomAgents);
   return {
-    mode: 'pause_after_suggestion',
+    state: 'ready_to_execute',
     status: 'suggested',
     summary: `启动任务：${task.title}`,
     next_steps: [{
       agent_id: agentId,
       goal: createTaskDispatchGoal(task),
     }],
-    awaiting_user_confirmation: true,
   };
 }
 

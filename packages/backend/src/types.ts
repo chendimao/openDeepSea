@@ -524,7 +524,7 @@ export interface WorkspaceFileReference {
 export interface WorkspaceSearchResult {
   path: string;
   name: string;
-  type: Extract<WorkspaceEntryType, 'file'>;
+  type: WorkspaceEntryType;
 }
 
 export interface WorkspaceSearchResponse {
@@ -681,19 +681,24 @@ export interface MessageReplyMetadata {
   excerpt: string;
 }
 
-export type PlannerExecutionMode = 'pause_after_suggestion' | 'auto_continue' | 'dispatch_next';
+export type TaskExecutionState =
+  | 'ready_to_execute'
+  | 'needs_choice'
+  | 'needs_boundary_confirmation'
+  | 'analysis_only'
+  | 'blocked';
 
-export interface PlannerDecisionStep {
+export interface TaskExecutionStep {
   agent_id: string;
   goal: string;
 }
 
-export interface PlannerDecision {
-  mode: PlannerExecutionMode;
+export interface TaskExecutionDecision {
+  state: TaskExecutionState;
   status: 'suggested' | 'dispatching' | 'completed' | 'blocked' | 'needs_fix';
   summary: string;
-  next_steps: PlannerDecisionStep[];
-  awaiting_user_confirmation: boolean;
+  reason?: string;
+  next_steps: TaskExecutionStep[];
 }
 
 export type BrainstormingOptionMaturity = 'exploratory' | 'boundary_needed' | 'actionable';
@@ -815,7 +820,7 @@ export interface MessageMetadata extends MessageTaskEventMetadata {
   source_message_id?: string;
   route_result?: RouteResult;
   intent_result?: MessageIntentResult;
-  planner_decision?: PlannerDecision;
+  task_execution?: TaskExecutionDecision;
   trace?: MessageTrace;
   acp_enabled?: boolean;
   acp_backend?: AcpBackend | null;

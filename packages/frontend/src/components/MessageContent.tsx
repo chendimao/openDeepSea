@@ -16,14 +16,14 @@ const fencePattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
 
 const jsonFieldLabels: Record<string, string> = {
   task_readiness: '任务准备状态',
-  planner_decision: '规划决策',
-  mode: '模式',
+  task_execution: '任务执行',
+  state: '状态',
   status: '状态',
   summary: '摘要',
+  reason: '原因',
   next_steps: '下一步',
   agent_id: '智能体',
   goal: '目标',
-  awaiting_user_confirmation: '等待确认',
   ready: '是否就绪',
   confidence: '置信度',
   title: '标题',
@@ -35,8 +35,9 @@ const jsonFieldLabels: Record<string, string> = {
 
 const jsonValueLabels: Record<string, string> = {
   formal_workflow: '正式工作流',
-  pause_after_suggestion: '建议后暂停',
-  auto_continue: '自动继续',
+  ready_to_execute: '准备执行',
+  needs_choice: '等待选择方案',
+  needs_boundary_confirmation: '等待边界确认',
   suggested: '已建议',
   dispatching: '派发中',
   completed: '已完成',
@@ -99,7 +100,7 @@ export function MessageContent({
   roomAgents = [],
   globalAgents = [],
   tasks = [],
-  suppressPlannerDecisionSummary = false,
+  suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
   suppressTraceEvents = false,
   roomId,
@@ -111,7 +112,7 @@ export function MessageContent({
   roomAgents?: RoomAgent[];
   globalAgents?: Agent[];
   tasks?: Task[];
-  suppressPlannerDecisionSummary?: boolean;
+  suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
   suppressTraceEvents?: boolean;
   roomId?: string;
@@ -144,7 +145,7 @@ export function MessageContent({
           streaming={streaming}
           agentNameById={agentNameById}
           taskTitleById={taskTitleById}
-          suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+          suppressTaskExecutionSummary={suppressTaskExecutionSummary}
           suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
           suppressTraceEvents={suppressTraceEvents}
           roomId={roomId}
@@ -158,7 +159,7 @@ export function MessageContent({
                 streaming={streaming}
                 agentNameById={agentNameById}
                 taskTitleById={taskTitleById}
-                suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+                suppressTaskExecutionSummary={suppressTaskExecutionSummary}
                 suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
               />
             ) : (
@@ -203,7 +204,7 @@ function AgentTranscriptView({
   streaming,
   agentNameById,
   taskTitleById,
-  suppressPlannerDecisionSummary = false,
+  suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
   suppressTraceEvents = false,
   roomId,
@@ -212,7 +213,7 @@ function AgentTranscriptView({
   streaming: boolean;
   agentNameById?: Map<string, string>;
   taskTitleById?: Map<string, string>;
-  suppressPlannerDecisionSummary?: boolean;
+  suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
   suppressTraceEvents?: boolean;
   roomId?: string;
@@ -229,7 +230,7 @@ function AgentTranscriptView({
               streaming={streaming && index === transcript.items.length - 1}
               agentNameById={agentNameById}
               taskTitleById={taskTitleById}
-              suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+              suppressTaskExecutionSummary={suppressTaskExecutionSummary}
               suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
             />
           </div>
@@ -293,14 +294,14 @@ export function MarkdownPreview({
   streaming = false,
   agentNameById,
   taskTitleById,
-  suppressPlannerDecisionSummary = false,
+  suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
 }: {
   content: string;
   streaming?: boolean;
   agentNameById?: Map<string, string>;
   taskTitleById?: Map<string, string>;
-  suppressPlannerDecisionSummary?: boolean;
+  suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
 }): JSX.Element {
   const { t } = useI18n();
@@ -325,7 +326,7 @@ export function MarkdownPreview({
           const parsedJson = parseJsonCodeBlock(part.language, part.value);
           if (parsedJson.ok) {
             if (shouldHideWorkflowJsonBlock(parsedJson.value, {
-              suppressPlannerDecisionSummary,
+              suppressTaskExecutionSummary,
               suppressWorkflowJsonBlocks,
             })) {
               return null;
@@ -337,7 +338,7 @@ export function MarkdownPreview({
                 value={part.value}
                 data={parsedJson.value}
                 agentNameById={agentNameById}
-                suppressPlannerDecisionSummary={suppressPlannerDecisionSummary}
+                suppressTaskExecutionSummary={suppressTaskExecutionSummary}
               />
             );
           }
@@ -386,13 +387,13 @@ function JsonBlock({
   value,
   data,
   agentNameById,
-  suppressPlannerDecisionSummary = false,
+  suppressTaskExecutionSummary = false,
 }: {
   language: string;
   value: string;
   data: JsonValue;
   agentNameById?: Map<string, string>;
-  suppressPlannerDecisionSummary?: boolean;
+  suppressTaskExecutionSummary?: boolean;
 }): JSX.Element {
   const [mode, setMode] = useState<'structured' | 'source'>('structured');
   const [copied, setCopied] = useState(false);
@@ -502,20 +503,20 @@ function getTaskReadiness(data: JsonValue): JsonObject | null {
   return isJsonObject(value) ? value : null;
 }
 
-function getPlannerDecision(data: JsonValue): JsonObject | null {
+function getTaskExecution(data: JsonValue): JsonObject | null {
   if (!isJsonObject(data)) return null;
-  const value = data.planner_decision;
+  const value = data.task_execution;
   return isJsonObject(value) ? value : null;
 }
 
 function shouldHideWorkflowJsonBlock(
   data: JsonValue,
-  options: { suppressPlannerDecisionSummary: boolean; suppressWorkflowJsonBlocks: boolean },
+  options: { suppressTaskExecutionSummary: boolean; suppressWorkflowJsonBlocks: boolean },
 ): boolean {
-  if (options.suppressWorkflowJsonBlocks && (getPlannerDecision(data) || getTaskReadiness(data))) {
+  if (options.suppressWorkflowJsonBlocks && (getTaskExecution(data) || getTaskReadiness(data))) {
     return true;
   }
-  return options.suppressPlannerDecisionSummary && Boolean(getPlannerDecision(data));
+  return options.suppressTaskExecutionSummary && Boolean(getTaskExecution(data));
 }
 
 function JsonTree({ value }: { value: JsonValue }): JSX.Element {

@@ -13,10 +13,10 @@ import {
   applyMessageStreamBatch,
   applyMessageStreamUpdate,
   createDefaultReplyTarget,
-  createPlannerDispatchInput,
-  createTaskPlannerDispatchInput,
-  hasDispatchablePlannerSteps,
-  shouldShowPlannerDecisionPanel,
+  createTaskExecutionDispatchInputFromMessage,
+  createTaskExecutionDispatchInputForTask,
+  hasExecutableTaskSteps,
+  shouldShowTaskExecutionPanel,
   createReplyTarget,
   mergeMessageStreamEvent,
   mergeMessageStreamTrace,
@@ -64,18 +64,17 @@ test('createReplyTarget keeps explicit reply metadata compact', () => {
   assert.ok(target.excerpt.length <= 96);
 });
 
-test('room main path treats planner decision and trace as normal agent message metadata', () => {
+test('room main path treats task execution and trace as normal agent message metadata', () => {
   const message = createMessage({
     id: 'planner-message',
     sender_type: 'agent',
     content: '建议先让前端执行器检查设置页。',
     metadata: JSON.stringify({
-      planner_decision: {
-        mode: 'pause_after_suggestion',
+      task_execution: {
+        state: 'ready_to_execute',
         status: 'suggested',
         summary: '建议先验证模型配置与连接测试链路',
         next_steps: [{ agent_id: 'frontend-executor', goal: '检查设置页测试模型入口' }],
-        awaiting_user_confirmation: true,
       },
       trace: {
         thinking: [{ text: '完整 thinking 原文' }],
@@ -95,62 +94,110 @@ test('room main path treats planner decision and trace as normal agent message m
   const metadata = parseMessageMetadata(message.metadata);
 
   assert.equal(message.sender_type, 'agent');
-  assert.equal(metadata.planner_decision?.awaiting_user_confirmation, true);
-  assert.equal(metadata.planner_decision?.next_steps[0]?.agent_id, 'frontend-executor');
+  assert.equal(metadata.task_execution?.state, 'ready_to_execute');
+  assert.equal(metadata.task_execution?.next_steps[0]?.agent_id, 'frontend-executor');
   assert.equal(metadata.trace?.thinking?.[0]?.text, '完整 thinking 原文');
   assert.equal(metadata.trace?.tool_calls?.[0]?.name, 'search_files');
 });
 
-test('createPlannerDispatchInput targets the planner decision attached to the clicked message', () => {
+test('createTaskExecutionDispatchInputFromMessage targets the task execution attached to the clicked message', () => {
   const message = createMessage({
     id: 'planner-message',
     sender_type: 'agent',
     content: '建议先检查运行上下文。',
     metadata: JSON.stringify({
       source_message_id: 'user-request',
-      planner_decision: {
-        mode: 'pause_after_suggestion',
+      task_execution: {
+        state: 'ready_to_execute',
         status: 'suggested',
         summary: '建议先检查运行上下文',
         next_steps: [{ agent_id: 'runtime-inspector', goal: '检查 Codex CLI 启动规则' }],
-        awaiting_user_confirmation: true,
       },
     }),
   });
 
-  const input = createPlannerDispatchInput(message);
+  const input = createTaskExecutionDispatchInputFromMessage(message);
 
   assert.equal(input?.source_message_id, 'user-request');
-  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'runtime-inspector');
+  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'runtime-inspector');
 });
 
-test('createPlannerDispatchInput falls back to the clicked message id for legacy planner metadata', () => {
+test('createTaskExecutionDispatchInputForTask starts ready task execution directly', () => {
+  const task = createTask({
+    id: 'task-1',
+    source_message_id: 'user-request',
+    title: '需要支持子目录搜索',
+  });
+  const messages = [
+    createMessage({ id: 'user-request', sender_type: 'user', content: '需要支持子目录搜索' }),
+    createMessage({
+      id: 'planner-message',
+      sender_type: 'agent',
+      content: '可以直接执行。',
+      metadata: JSON.stringify({
+        source_message_id: 'user-request',
+        task_execution: {
+          state: 'ready_to_execute',
+          status: 'suggested',
+          summary: '派发前端实现',
+          reason: '单一完整实现方案，边界清晰',
+          next_steps: [{ agent_id: 'frontend-executor', goal: '实现 @docs/super 子目录搜索' }],
+        },
+      }),
+    }),
+  ];
+
+  const input = createTaskExecutionDispatchInputForTask(task, messages, [
+    createRoomAgent({ id: 'room-agent-frontend', agent_id: 'frontend-executor' }),
+  ]);
+
+  assert.equal(input?.source_message_id, 'user-request');
+  assert.equal(input?.task_execution.state, 'ready_to_execute');
+  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'frontend-executor');
+});
+
+test('hasExecutableTaskSteps only allows ready task execution', () => {
+  assert.equal(hasExecutableTaskSteps({
+    state: 'ready_to_execute',
+    status: 'suggested',
+    summary: '派发前端实现',
+    next_steps: [{ agent_id: 'frontend-executor', goal: '实现 @docs/super 子目录搜索' }],
+  }), true);
+  assert.equal(hasExecutableTaskSteps({
+    state: 'needs_boundary_confirmation',
+    status: 'suggested',
+    summary: '边界不清',
+    reason: '需要用户确认写入范围',
+    next_steps: [{ agent_id: 'frontend-executor', goal: '等待确认后执行' }],
+  }), false);
+});
+
+test('createTaskExecutionDispatchInputFromMessage falls back to the clicked message id', () => {
   const message = createMessage({
     id: 'planner-message',
     sender_type: 'agent',
     content: '建议继续。',
     metadata: JSON.stringify({
-      planner_decision: {
-        mode: 'pause_after_suggestion',
+      task_execution: {
+        state: 'ready_to_execute',
         status: 'suggested',
         summary: '建议继续',
         next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
-        awaiting_user_confirmation: true,
       },
     }),
   });
 
-  const input = createPlannerDispatchInput(message);
+  const input = createTaskExecutionDispatchInputFromMessage(message);
 
   assert.equal(input?.source_message_id, 'planner-message');
 });
 
-test('createTaskPlannerDispatchInput reuses dispatchable planner decision for the task source', () => {
+test('createTaskExecutionDispatchInputForTask reuses dispatchable task execution for the task source', () => {
   const task = createTask({
     source_message_id: 'user-request',
     title: '实现设置页保存按钮',
   });
-  const input = createTaskPlannerDispatchInput(task, [
+  const input = createTaskExecutionDispatchInputForTask(task, [
     createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
     createMessage({
       id: 'planner-message',
@@ -158,29 +205,28 @@ test('createTaskPlannerDispatchInput reuses dispatchable planner decision for th
       content: '建议交给前端执行。',
       metadata: JSON.stringify({
         source_message_id: 'user-request',
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '交给前端执行',
           next_steps: [{ agent_id: 'frontend-executor', goal: '实现设置页保存按钮' }],
-          awaiting_user_confirmation: true,
         },
       }),
     }),
   ]);
 
   assert.equal(input?.source_message_id, 'user-request');
-  assert.equal(input?.planner_decision.summary, '交给前端执行');
-  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'frontend-executor');
+  assert.equal(input?.task_execution.summary, '交给前端执行');
+  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'frontend-executor');
 });
 
-test('createTaskPlannerDispatchInput creates pure ACP dispatch step when planner decision has no next steps', () => {
+test('createTaskExecutionDispatchInputForTask creates pure ACP dispatch step when task execution has no next steps', () => {
   const task = createTask({
     source_message_id: 'user-request',
     title: '去掉header菜单中的测试菜单',
     description: '从前端 header 菜单中移除测试菜单入口。',
   });
-  const input = createTaskPlannerDispatchInput(task, [
+  const input = createTaskExecutionDispatchInputForTask(task, [
     createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
     createMessage({
       id: 'planner-message',
@@ -188,30 +234,29 @@ test('createTaskPlannerDispatchInput creates pure ACP dispatch step when planner
       content: '可以进入正式实现任务。',
       metadata: JSON.stringify({
         source_message_id: 'user-request',
-        planner_decision: {
-          mode: 'pause_after_suggestion',
+        task_execution: {
+          state: 'ready_to_execute',
           status: 'suggested',
           summary: '可以进入正式实现任务。',
           next_steps: [],
-          awaiting_user_confirmation: true,
         },
       }),
     }),
   ]);
 
   assert.equal(input?.source_message_id, 'user-request');
-  assert.equal(input?.planner_decision.next_steps.length, 1);
-  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'frontend-executor');
-  assert.match(input?.planner_decision.next_steps[0]?.goal ?? '', /去掉header菜单中的测试菜单/);
+  assert.equal(input?.task_execution.next_steps.length, 1);
+  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'frontend-executor');
+  assert.match(input?.task_execution.next_steps[0]?.goal ?? '', /去掉header菜单中的测试菜单/);
 });
 
-test('createTaskPlannerDispatchInput prefers task-scoped message for pure ACP dispatch source', () => {
+test('createTaskExecutionDispatchInputForTask prefers task-scoped message for pure ACP dispatch source', () => {
   const task = createTask({
     id: 'task-created-from-chat',
     source_message_id: 'user-request',
     title: '修复 header 菜单',
   });
-  const input = createTaskPlannerDispatchInput(task, [
+  const input = createTaskExecutionDispatchInputForTask(task, [
     createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
     createMessage({
       id: 'task-created-event',
@@ -235,16 +280,16 @@ test('createTaskPlannerDispatchInput prefers task-scoped message for pure ACP di
   ]);
 
   assert.equal(input?.source_message_id, 'task-created-event');
-  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'frontend-executor');
+  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'frontend-executor');
 });
 
-test('createTaskPlannerDispatchInput prefers original source message when it is task-scoped', () => {
+test('createTaskExecutionDispatchInputForTask prefers original source message when it is task-scoped', () => {
   const task = createTask({
     id: 'task-source-scoped',
     source_message_id: 'user-request',
     title: '修复接口报错',
   });
-  const input = createTaskPlannerDispatchInput(task, [
+  const input = createTaskExecutionDispatchInputForTask(task, [
     createMessage({
       id: 'user-request',
       sender_type: 'user',
@@ -263,85 +308,84 @@ test('createTaskPlannerDispatchInput prefers original source message when it is 
   ]);
 
   assert.equal(input?.source_message_id, 'user-request');
-  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'backend-executor');
+  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'backend-executor');
 });
 
-test('createTaskPlannerDispatchInput routes explicit verification tasks to qa tester', () => {
+test('createTaskExecutionDispatchInputForTask routes explicit verification tasks to qa tester', () => {
   const task = createTask({
     source_message_id: 'user-request',
     title: '测试设置页面跳转',
   });
-  const input = createTaskPlannerDispatchInput(task, [
+  const input = createTaskExecutionDispatchInputForTask(task, [
     createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
   ]);
 
-  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'qa-tester');
+  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'qa-tester');
 });
 
-test('createTaskPlannerDispatchInput prefers assigned non-planner room agent', () => {
+test('createTaskExecutionDispatchInputForTask prefers assigned non-planner room agent', () => {
   const task = createTask({
     source_message_id: 'user-request',
     assigned_agent_id: 'room-agent-frontend',
     title: '调整导航入口',
   });
-  const input = createTaskPlannerDispatchInput(task, [
+  const input = createTaskExecutionDispatchInputForTask(task, [
     createMessage({ id: 'user-request', sender_type: 'user', content: task.title }),
   ], [
     createRoomAgent({ id: 'room-agent-frontend', agent_id: 'custom-frontend' }),
   ]);
 
-  assert.equal(input?.planner_decision.next_steps[0]?.agent_id, 'custom-frontend');
+  assert.equal(input?.task_execution.next_steps[0]?.agent_id, 'custom-frontend');
 });
 
-test('hasDispatchablePlannerSteps only enables continue when planner has concrete next steps', () => {
-  assert.equal(hasDispatchablePlannerSteps({
-    mode: 'pause_after_suggestion',
+test('hasExecutableTaskSteps only enables ready task execution with concrete next steps', () => {
+  assert.equal(hasExecutableTaskSteps({
+    state: 'ready_to_execute',
     status: 'suggested',
     summary: '只是说明',
     next_steps: [],
-    awaiting_user_confirmation: true,
   }), false);
-  assert.equal(hasDispatchablePlannerSteps({
-    mode: 'pause_after_suggestion',
+  assert.equal(hasExecutableTaskSteps({
+    state: 'ready_to_execute',
     status: 'suggested',
     summary: '建议派发',
     next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
-    awaiting_user_confirmation: true,
   }), true);
-  assert.equal(hasDispatchablePlannerSteps({
-    mode: 'auto_continue',
+  assert.equal(hasExecutableTaskSteps({
+    state: 'ready_to_execute',
     status: 'suggested',
     summary: '自动派发',
     next_steps: [{ agent_id: 'qa-tester', goal: '验证导航页面' }],
-    awaiting_user_confirmation: false,
-  }), false);
-  assert.equal(hasDispatchablePlannerSteps({
-    mode: 'auto_continue',
+  }), true);
+  assert.equal(hasExecutableTaskSteps({
+    state: 'needs_choice',
     status: 'suggested',
-    summary: '自动派发不应显示按钮',
+    summary: '需要选方案',
     next_steps: [{ agent_id: 'qa-tester', goal: '验证导航页面' }],
-    awaiting_user_confirmation: true,
   }), false);
 });
 
-test('shouldShowPlannerDecisionPanel only shows pending non-user decisions', () => {
+test('shouldShowTaskExecutionPanel only shows non-executable non-user decisions', () => {
   const pendingDecision = {
-    mode: 'pause_after_suggestion' as const,
+    state: 'needs_boundary_confirmation' as const,
     status: 'suggested' as const,
     summary: '建议派发',
     next_steps: [{ agent_id: 'planner', goal: '继续分析' }],
-    awaiting_user_confirmation: true,
+  };
+  const readyDecision = {
+    ...pendingDecision,
+    state: 'ready_to_execute' as const,
   };
   const completedDecision = {
     ...pendingDecision,
     status: 'completed' as const,
-    awaiting_user_confirmation: false,
   };
 
-  assert.equal(shouldShowPlannerDecisionPanel({ isUser: false, decision: pendingDecision }), true);
-  assert.equal(shouldShowPlannerDecisionPanel({ isUser: false, decision: completedDecision }), false);
-  assert.equal(shouldShowPlannerDecisionPanel({ isUser: true, decision: pendingDecision }), false);
-  assert.equal(shouldShowPlannerDecisionPanel({ isUser: false }), false);
+  assert.equal(shouldShowTaskExecutionPanel({ isUser: false, decision: pendingDecision }), true);
+  assert.equal(shouldShowTaskExecutionPanel({ isUser: false, decision: readyDecision }), false);
+  assert.equal(shouldShowTaskExecutionPanel({ isUser: false, decision: completedDecision }), false);
+  assert.equal(shouldShowTaskExecutionPanel({ isUser: true, decision: pendingDecision }), false);
+  assert.equal(shouldShowTaskExecutionPanel({ isUser: false }), false);
 });
 
 test('findPreviousUserMessage selects the user prompt before a failed agent response', () => {

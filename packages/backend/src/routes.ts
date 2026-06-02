@@ -16,8 +16,7 @@ import { runCollaborationStages as defaultRunCollaborationStages } from './colla
 import { getDefaultRoomCrewTemplate, getRoomCrewTemplate, listRoomCrewTemplates } from './crew-templates.js';
 import { db } from './db.js';
 import {
-  continueLatestPlannerDecision,
-  dispatchPlannerDecisionForRoom,
+  dispatchTaskExecutionDecisionForRoom,
   dispatchUserMessage,
 } from './dispatcher.js';
 import {
@@ -99,7 +98,7 @@ import {
   type Message,
   type MessageLayer,
   type MessageMetadata,
-  type PlannerDecision,
+  type TaskExecutionDecision,
   type MessageRoutingMode,
   type ProjectFile,
   type ResourceAssetGroupKey,
@@ -1807,62 +1806,6 @@ router.post('/rooms/:roomId/messages', (req, res, next) => {
   void handleJsonMessage(req, res).catch(next);
 });
 
-router.post('/rooms/:roomId/planner/continue', async (req, res) => {
-  const room = roomRepo.get(req.params.roomId);
-  if (!room) return res.status(404).json({ error: 'room not found' });
-  try {
-    const result = await continueLatestPlannerDecision({ roomId: room.id });
-    if (!result.accepted) return res.status(409).json({ error: 'no planner decision ready to continue' });
-    res.status(200).json({
-      accepted: true,
-      dispatched: result.dispatched,
-      added_agents: result.added_agents,
-      deferred_steps: result.deferred_steps,
-    });
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
-});
-
-router.post('/rooms/:roomId/planner/dispatch', async (req, res) => {
-  const schema = z.object({
-    source_message_id: z.string().trim().min(1),
-    planner_decision: z.object({
-      mode: z.enum(['pause_after_suggestion', 'auto_continue']),
-      status: z.enum(['suggested', 'dispatching', 'completed', 'blocked']),
-      summary: z.string().trim().min(1),
-      next_steps: z.array(z.object({
-        agent_id: z.string().trim().min(1),
-        goal: z.string().trim().min(1),
-      })),
-      awaiting_user_confirmation: z.boolean(),
-    }),
-  });
-  const parsed = schema.safeParse(req.body ?? {});
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const room = roomRepo.get(req.params.roomId);
-  if (!room) return res.status(404).json({ error: 'room not found' });
-  const sourceMessage = messageRepo.get(parsed.data.source_message_id);
-  if (!sourceMessage || sourceMessage.room_id !== room.id) {
-    return res.status(404).json({ error: 'source message not found' });
-  }
-  try {
-    const result = await dispatchPlannerDecisionForRoom({
-      roomId: room.id,
-      sourceMessageId: parsed.data.source_message_id,
-      decision: parsed.data.planner_decision,
-    });
-    res.status(200).json({
-      accepted: true,
-      dispatched: result.dispatched,
-      added_agents: result.added_agents,
-      deferred_steps: result.deferred_steps,
-    });
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message });
-  }
-});
-
 async function handleJsonMessage(req: Request, res: Response): Promise<void> {
   const roomId = Array.isArray(req.params.roomId) ? req.params.roomId[0] : req.params.roomId;
   if (!roomId) {
@@ -2546,51 +2489,30 @@ const collaborationStartSchema = z.object({
   decision: collaborationDecisionSchema,
 });
 
-const plannerDecisionSchema: z.ZodType<PlannerDecision> = z.object({
-  mode: z.enum(['pause_after_suggestion', 'auto_continue', 'dispatch_next']),
+const taskExecutionDecisionSchema: z.ZodType<TaskExecutionDecision> = z.object({
+  state: z.enum(['ready_to_execute', 'needs_choice', 'needs_boundary_confirmation', 'analysis_only', 'blocked']),
   status: z.enum(['suggested', 'dispatching', 'completed', 'blocked', 'needs_fix']),
   summary: z.string().trim().min(1),
+  reason: z.string().trim().min(1).optional(),
   next_steps: z.array(z.object({
     agent_id: z.string().trim().min(1),
     goal: z.string().trim().min(1),
   })),
-  awaiting_user_confirmation: z.boolean(),
 });
 
-const plannerDispatchSchema = z.object({
+const taskExecutionDispatchSchema = z.object({
   source_message_id: z.string().trim().min(1),
-  planner_decision: plannerDecisionSchema,
+  task_execution: taskExecutionDecisionSchema,
 });
 
-router.post('/rooms/:roomId/planner/continue', (req, res, next) => {
+router.post('/rooms/:roomId/task-execution/dispatch', (req, res, next) => {
   void (async () => {
     const room = roomRepo.get(req.params.roomId);
     if (!room) {
       res.status(404).json({ error: 'room not found' });
       return;
     }
-    const result = await continueLatestPlannerDecision({ roomId: room.id });
-    if (!result.accepted) {
-      res.status(404).json({ error: 'planner decision not found' });
-      return;
-    }
-    res.status(202).json({
-      accepted: true,
-      dispatched: result.dispatched,
-      added_agents: result.added_agents,
-      deferred_steps: result.deferred_steps,
-    });
-  })().catch(next);
-});
-
-router.post('/rooms/:roomId/planner/dispatch', (req, res, next) => {
-  void (async () => {
-    const room = roomRepo.get(req.params.roomId);
-    if (!room) {
-      res.status(404).json({ error: 'room not found' });
-      return;
-    }
-    const parsed = plannerDispatchSchema.safeParse(req.body ?? {});
+    const parsed = taskExecutionDispatchSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.flatten() });
       return;
@@ -2600,11 +2522,17 @@ router.post('/rooms/:roomId/planner/dispatch', (req, res, next) => {
       res.status(404).json({ error: 'source message not found' });
       return;
     }
-    const result = await dispatchPlannerDecisionForRoom({
-      roomId: room.id,
-      sourceMessageId: sourceMessage.id,
-      decision: parsed.data.planner_decision,
-    });
+    let result;
+    try {
+      result = await dispatchTaskExecutionDecisionForRoom({
+        roomId: room.id,
+        sourceMessageId: sourceMessage.id,
+        decision: parsed.data.task_execution,
+      });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : 'task execution dispatch failed' });
+      return;
+    }
     res.status(202).json({
       accepted: true,
       dispatched: result.dispatched,

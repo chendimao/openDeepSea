@@ -132,13 +132,13 @@ export function ChatMessageBubble({
   const showRunStatusNotice = !hasContent && Boolean(agentRunStatus) && message.message_type === 'agent_stream';
   const canReply = !isSystem && hasContent && !isStreaming;
   const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
-  const showPlannerDecisionPanel = !isUser && Boolean(metadata.planner_decision);
-  const showRecordOnlyBody = showPlannerDecisionPanel && !hasContent;
+  const showTaskExecutionSummary = !isUser && Boolean(metadata.task_execution);
+  const showRecordOnlyBody = showTaskExecutionSummary && !hasContent;
   const brainstormingOptions = !isUser && !isStreaming
     ? getBrainstormingOptionsForMessage(message, metadata)
     : [];
 
-  if (!isUser && run && !hasContent && !showPlannerDecisionPanel && !agentRunStatus) {
+  if (!isUser && run && !hasContent && !showTaskExecutionSummary && !agentRunStatus) {
     return <></>;
   }
 
@@ -297,7 +297,7 @@ export function ChatMessageBubble({
                 roomAgents={roomAgents}
                 globalAgents={globalAgents}
                 tasks={tasks}
-                suppressPlannerDecisionSummary={showPlannerDecisionPanel}
+                suppressTaskExecutionSummary={showTaskExecutionSummary}
                 suppressWorkflowJsonBlocks={!isUser}
                 suppressTraceEvents={!isUser}
                 roomId={roomId}
@@ -316,10 +316,10 @@ export function ChatMessageBubble({
             )}
           </AiMessageBody>
         )}
-        {showPlannerDecisionPanel && metadata.planner_decision && (
+        {showTaskExecutionSummary && metadata.task_execution && (
           <TaskRecordSummaryEntry
-            label="规划决策"
-            detail={`${metadata.planner_decision.next_steps.length} 个后续步骤`}
+            label="任务执行"
+            detail={`${metadata.task_execution.next_steps.length} 个后续步骤`}
             task={task}
             onSelectTask={onSelectTask}
           />

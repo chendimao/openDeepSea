@@ -1,16 +1,12 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bot, Clock3, FileDiff, FileText, FolderOpen, Gauge, GitBranch, ListChecks, Loader2, LocateFixed, MonitorPlay, Pencil, Play, Radio, Search, ScrollText, XCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { toast } from 'sonner';
-import { api } from '../../lib/api';
 import type { MessageKey } from '../../lib/i18n';
-import type { AgentRun, Message, MessageTrace, PlannerDecision, RoomAgent, Task, WorkflowRun } from '../../lib/types';
+import type { AgentRun, Message, MessageTrace, RoomAgent, Task, WorkflowRun } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
-import { createPlannerDispatchInput } from '../../pages/roomPageLogic';
 import { AgentAvatar } from '../AgentAvatar';
 import { pairRunsWithAgentMessages } from '../chat/chatMessageModel';
-import { PlannerDecisionPanel } from '../chat/PlannerDecisionPanel';
+import { TaskExecutionPanel } from '../chat/TaskExecutionPanel';
 import { MessageContent } from '../MessageContent';
 import { selectTaskDetailEvents, type TaskLayerVisibility } from '../TaskDetailPanel';
 import { cn } from '../../lib/utils';
@@ -87,7 +83,6 @@ export function ActiveTaskSurface({
   taskPriorityLabel,
   interactionModeLabel,
 }: ActiveTaskSurfaceProps): JSX.Element {
-  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<ActiveTaskTab>('records');
   const progress = taskProgressPercent(task.status);
   const planSteps = buildPlanSteps(task, eventGroups.planEvents, t);
@@ -130,30 +125,6 @@ export function ActiveTaskSurface({
     () => taskMessages.flatMap((message) => parseMessageMetadata(message.metadata).attachments),
     [taskMessages],
   );
-  const continuePlanner = useMutation({
-    mutationFn: (input: { source_message_id: string; planner_decision: PlannerDecision }) =>
-      api.dispatchPlannerDecision(roomId, input),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['room-agents', roomId] });
-      queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
-      const addedCount = result.added_agents?.length ?? 0;
-      const deferredCount = result.deferred_steps?.length ?? 0;
-      toast.success(
-        result.dispatched > 0
-          ? addedCount > 0
-            ? deferredCount > 0
-              ? `已加入 ${addedCount} 个智能体，先派发 ${result.dispatched} 个，暂缓 ${deferredCount} 个后续步骤`
-              : `已加入 ${addedCount} 个智能体并派发 ${result.dispatched} 个智能体`
-            : deferredCount > 0
-              ? `已先派发 ${result.dispatched} 个智能体，暂缓 ${deferredCount} 个后续步骤`
-              : `已派发 ${result.dispatched} 个智能体`
-          : '没有可派发的下一步',
-      );
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-
   return (
     <>
       <header className="active-task-header">
@@ -244,13 +215,6 @@ export function ActiveTaskSurface({
             roomAgents={roomAgents}
             tasks={tasks}
             formatRelativeTime={formatRelativeTime}
-            continuing={continuePlanner.isPending}
-            onContinue={(message) => {
-              const metadata = parseMessageMetadata(message.metadata);
-              const input = createPlannerDispatchInput(message, metadata);
-              if (!input) return;
-              continuePlanner.mutate(input);
-            }}
             emptyLabel={t('taskDetail.noEvents')}
           />
         )}
@@ -395,8 +359,6 @@ function TaskRecordsTab({
   roomAgents,
   tasks,
   formatRelativeTime,
-  continuing,
-  onContinue,
   emptyLabel,
 }: {
   messages: Message[];
@@ -406,8 +368,6 @@ function TaskRecordsTab({
   roomAgents: RoomAgent[];
   tasks: Task[];
   formatRelativeTime: (timestamp: number) => string;
-  continuing: boolean;
-  onContinue: (message: Message) => void;
   emptyLabel: string;
 }): JSX.Element {
   const runByMessageId = useMemo(() => pairRunsWithAgentMessages(messages, agentRuns), [agentRuns, messages]);
@@ -467,14 +427,12 @@ function TaskRecordsTab({
                   />
                 </div>
               )}
-              {metadata.planner_decision && (
+              {metadata.task_execution && (
                 <div className="task-record-section">
-                  <div className="task-record-section-title">规划决策</div>
-                  <PlannerDecisionPanel
-                    decision={metadata.planner_decision}
+                  <div className="task-record-section-title">任务执行</div>
+                  <TaskExecutionPanel
+                    decision={metadata.task_execution}
                     roomAgents={roomAgents}
-                    continuing={continuing}
-                    onContinue={() => onContinue(message)}
                   />
                 </div>
               )}
