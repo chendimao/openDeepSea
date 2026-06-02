@@ -4039,6 +4039,64 @@ test('planner dispatch reports missing room and global agents instead of accepti
   }
 });
 
+test('task execution dispatch rejects non-ready decisions even when next steps are present', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-execution-non-ready-'));
+  const project = projectRepo.create({ name: `task-execution-non-ready-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const executor = roomAgentRepo.add({ room_id: room.id, agent_id: 'frontend-executor', agent_name: 'Frontend Executor' });
+  roomAgentRepo.setAcp(executor.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '这里有多个方案，先让我选择',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  let invoked = false;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      invoked = true;
+      args.onChunk({ stream: 'stdout', text: '不应该执行' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        task_execution: {
+          state: 'needs_choice',
+          status: 'suggested',
+          summary: '需要用户选择方案',
+          next_steps: [{ agent_id: executor.agent_id, goal: '实现其中一个方案' }],
+        },
+      }),
+    });
+    const body = await response.json() as { error?: unknown };
+
+    assert.equal(response.status, 400);
+    assert.match(String(body.error), /ready_to_execute/);
+    assert.equal(invoked, false);
+    assert.equal(agentRunRepo.listByRoom(room.id, 20).some((run) => run.agent_id === executor.agent_id), false);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('respondAsAgent forces read-only and empty writable dirs for reviewer runtime profile', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-runtime-readonly-test-'));
   const project = projectRepo.create({ name: `runtime-readonly-${Date.now()}`, path: projectPath });

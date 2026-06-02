@@ -2103,6 +2103,9 @@ async function dispatchTaskExecutionDecision(args: {
   if (!room) throw new Error('room not found');
   const project = projectRepo.get(room.project_id);
   if (!project) throw new Error('project not found');
+  if (!isDispatchableTaskExecutionDecision(args.decision)) {
+    throw new Error('task execution dispatch requires state "ready_to_execute", status "suggested" or "needs_fix", and at least one next step');
+  }
   const { targets, addedAgents, missingAgentIds } = resolveTaskExecutionDispatchTargets(args.roomId, args.decision);
   const sourceMessage = messageRepo.get(args.sourceMessageId);
   const taskId = getMessageTaskId(sourceMessage?.metadata ?? null);
@@ -2433,7 +2436,7 @@ async function reportTaskExecutionDispatchResults(args: {
         await dispatchTaskExecutionDecision({
           roomId: args.roomId,
           sourceMessageId: args.sourceMessageId,
-          decision: autoDecision,
+          decision,
           autoContinueDepth: args.autoContinueDepth + 1,
         });
       } catch (err) {
@@ -2488,6 +2491,10 @@ function summarizeTaskExecutionDispatchResult(content: string): string {
 }
 
 function shouldAutoContinueTaskExecutionDecision(decision: TaskExecutionDecision | undefined): decision is TaskExecutionDecision {
+  return Boolean(decision && isDispatchableTaskExecutionDecision(decision));
+}
+
+function isDispatchableTaskExecutionDecision(decision: TaskExecutionDecision): boolean {
   return Boolean(
     decision &&
     decision.state === 'ready_to_execute' &&
