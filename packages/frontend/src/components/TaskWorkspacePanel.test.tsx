@@ -69,14 +69,16 @@ test('TaskWorkspacePanel renders queue and active task surface together', () => 
   assert.match(html, /data-active="true"/);
   assert.match(html, /taskWorkspace.activeTask/);
   assert.match(html, /Records/);
+  assert.match(html, /用于验证任务工作区合并布局/);
   assert.match(html, /规划决策/);
   assert.match(html, /规划完成/);
-  assert.match(html, /ACP 流转记录/);
-  assert.match(html, /ACP 执行过程/);
+  assert.match(html, /AI 已读取上下文/);
   assert.match(html, /Read · package\.json/);
   assert.match(html, /已完成文件读取/);
   assert.match(html, /Codex/);
   assert.match(html, /completed/);
+  assert.doesNotMatch(html, /ACP 流转记录/);
+  assert.ok(html.indexOf('已完成文件读取') < html.indexOf('Read · package.json'));
   assert.doesNotMatch(html, /其他任务记录/);
   assert.doesNotMatch(html, /src\/index\.ts/);
   assert.doesNotMatch(html, /npm run build/);

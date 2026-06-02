@@ -9,7 +9,6 @@ import type { AgentRun, Message, MessageTrace, PlannerDecision, RoomAgent, Task,
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { createPlannerDispatchInput } from '../../pages/roomPageLogic';
 import { AgentAvatar } from '../AgentAvatar';
-import { AgentTimeline } from '../AgentTimeline';
 import { pairRunsWithAgentMessages } from '../chat/chatMessageModel';
 import { PlannerDecisionPanel } from '../chat/PlannerDecisionPanel';
 import { MessageContent } from '../MessageContent';
@@ -431,7 +430,6 @@ function TaskRecordsTab({
                     trace={metadata.trace}
                     roomAgents={roomAgents}
                     tasks={tasks}
-                    suppressTraceEvents
                     roomId={roomId}
                   />
                 </div>
@@ -445,12 +443,6 @@ function TaskRecordsTab({
                     continuing={continuing}
                     onContinue={() => onContinue(message)}
                   />
-                </div>
-              )}
-              {hasMessageTraceEvents(metadata.trace) && (
-                <div className="task-record-section task-record-trace-item">
-                  <div className="task-record-section-title">ACP 流转记录</div>
-                  <AgentTimeline trace={metadata.trace} roomId={roomId} />
                 </div>
               )}
               {run && (
