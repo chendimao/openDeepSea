@@ -10,7 +10,7 @@ process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER = '0';
 process.env.OPENCLAW_ACP_TASK_ANALYZER = '0';
 
 import type { SessionAdapter } from './acp/types.js';
-import type { Message, MessageMetadata } from './types.js';
+import type { AcpBackend, Message, MessageMetadata } from './types.js';
 
 const { adapters } = await import('./acp/index.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
@@ -1653,6 +1653,8 @@ test('buildAgentIdentityPrompt renders global personality and rules before the u
   assert.match(prompt, /性格：严谨、直接。/);
   assert.match(prompt, /主要工作：前端实现和 UI 验收。/);
   assert.match(prompt, /必须遵守的规则：\n完成前必须验证。/);
+  assert.match(prompt, /群聊可选方案结构化输出规则/);
+  assert.match(prompt, /"choice_options"/);
   assert.match(prompt, /当前用户请求：\n请实现页面/);
 });
 
@@ -1672,9 +1674,91 @@ test('built-in planner identity does not convert executable feature requests int
   assert.match(prompt, /不得把任务改写成“只做分析\/不进入实现”/);
   assert.match(prompt, /可进入 workflow 的执行计划/);
   assert.match(prompt, /任务生成结构化输出规则/);
+  assert.match(prompt, /群聊可选方案结构化输出规则/);
   assert.match(prompt, /"task_readiness"/);
   assert.match(prompt, /"recommended_mode": "formal_workflow"/);
   assert.match(prompt, /当前用户请求：\n细化文件管理功能/);
+});
+
+test('respondAsAgent annotates generic choice options from ACP JSON across providers', async () => {
+  const providers: AcpBackend[] = ['codex', 'claudecode', 'opencode'];
+
+  for (const provider of providers) {
+    const projectPath = await mkdtemp(join(tmpdir(), `openclaw-room-choice-options-${provider}-`));
+    const project = projectRepo.create({ name: `choice-options-${provider}-${Date.now()}`, path: projectPath });
+    const room = roomRepo.create({ project_id: project.id, name: `Choice ${provider}` });
+    const agent = roomAgentRepo.add({ room_id: room.id, agent_id: `${provider}-agent`, agent_name: `${provider} Agent` });
+    const acpAgent = roomAgentRepo.setAcp(agent.id, {
+      acp_enabled: true,
+      acp_backend: provider,
+      acp_session_id: null,
+      acp_session_label: null,
+      acp_permission_mode: 'read-only',
+      acp_writable_dirs: [],
+    });
+    assert.ok(acpAgent);
+
+    const originalAdapter = adapters[provider];
+    let capturedPrompt = '';
+    adapters[provider] = {
+      ...originalAdapter,
+      async invoke(args) {
+        capturedPrompt = args.prompt;
+        args.onChunk({
+          stream: 'stdout',
+          text: [
+            '可以选一种处理方式。',
+            '',
+            '```json',
+            JSON.stringify({
+              choice_options: [
+                {
+                  id: 'parallel_execution',
+                  title: '并行执行',
+                  summary: '拆成互不冲突的子任务并行处理。',
+                  benefits: ['更快拿到结果'],
+                  risks: ['需要统一收尾'],
+                  maturity: 'actionable',
+                  recommended: true,
+                },
+                {
+                  id: 'single_thread',
+                  title: '串行执行',
+                  summary: '由当前智能体逐步完成。',
+                  benefits: ['边界更简单'],
+                  risks: [],
+                  maturity: 'boundary_needed',
+                },
+              ],
+            }),
+            '```',
+          ].join('\n'),
+        });
+        return { exitCode: 0, sessionId: null, stderr: '' };
+      },
+    } satisfies SessionAdapter;
+
+    try {
+      await respondAsAgent({
+        agent: acpAgent,
+        projectPath,
+        roomId: room.id,
+        prompt: '给我两个方案选择',
+      });
+
+      assert.match(capturedPrompt, /群聊可选方案结构化输出规则/);
+      assert.match(capturedPrompt, /"choice_options"/);
+      const reply = messageRepo.listByRoom(room.id).find((item) => item.sender_id === acpAgent.agent_id);
+      assert.ok(reply);
+      const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
+      assert.equal(metadata.choice_options?.length, 2);
+      assert.equal(metadata.choice_options?.[0]?.id, 'parallel_execution');
+      assert.equal(metadata.choice_options?.[0]?.maturity, 'actionable');
+    } finally {
+      adapters[provider] = originalAdapter;
+      await rm(projectPath, { recursive: true, force: true });
+    }
+  }
 });
 
 test('dispatchUserMessage passes uploaded image paths to ACP adapters', async () => {

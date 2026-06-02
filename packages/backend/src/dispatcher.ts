@@ -717,11 +717,10 @@ export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): stri
     agent.rules ? `- 必须遵守的规则：\n${agent.rules}` : null,
   ].filter((line): line is string => Boolean(line));
 
-  if (identityLines.length <= 1) return prompt;
-
   const promptParts = [
     '你的智能体身份：',
     ...identityLines,
+    ...buildMessageChoiceOptionsPrompt(),
     ...(agent.agent_id === 'planner' ? buildPlannerDecisionPrompt() : []),
     '',
     '当前用户请求：',
@@ -1216,6 +1215,11 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
             sourceMessageId: args.sourceMessageId,
             agent,
           });
+          annotateMessageChoiceOptions({
+            message: finalMessage,
+            run: finalRun,
+            sourceMessageId: args.sourceMessageId,
+          });
           annotateTaskReadiness({
             message: finalMessage,
             run: finalRun,
@@ -1531,6 +1535,77 @@ function annotateTaskReadiness(input: {
       source_message_id: input.sourceMessageId ?? readiness.source_message_id,
     },
   });
+}
+
+function annotateMessageChoiceOptions(input: {
+  message: Message;
+  run: AgentRun;
+  sourceMessageId?: string | null;
+}): void {
+  if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return;
+  if (input.message.sender_type !== 'agent') return;
+  const options = parseExplicitMessageChoiceOptions(input.message.content);
+  if (options.length === 0) return;
+  messageRepo.mergeMetadata(input.message.id, {
+    choice_options: options,
+    source_message_id: input.sourceMessageId ?? undefined,
+  });
+}
+
+function parseExplicitMessageChoiceOptions(content: string): NonNullable<MessageMetadata['choice_options']> {
+  for (const candidate of extractJsonObjectCandidates(content)) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      const options = readMessageChoiceOptionsObject(parsed);
+      if (options.length > 0) return options;
+    } catch {
+      // Ignore malformed JSON blocks.
+    }
+  }
+  return [];
+}
+
+function readMessageChoiceOptionsObject(value: unknown): NonNullable<MessageMetadata['choice_options']> {
+  if (!isRecord(value)) return [];
+  const rawOptions = Array.isArray(value.choice_options)
+    ? value.choice_options
+    : Array.isArray(value.message_options)
+      ? value.message_options
+      : [];
+  return rawOptions
+    .map(readMessageChoiceOption)
+    .filter((option): option is NonNullable<MessageMetadata['choice_options']>[number] => option !== null)
+    .slice(0, 6);
+}
+
+function readMessageChoiceOption(value: unknown): NonNullable<MessageMetadata['choice_options']>[number] | null {
+  if (!isRecord(value)) return null;
+  const id = readNonEmptyString(value.id);
+  const title = readNonEmptyString(value.title);
+  const summary = readNonEmptyString(value.summary);
+  const maturity = readMessageChoiceOptionMaturity(value.maturity);
+  if (!id || !title || !summary || !maturity) return null;
+  return {
+    id: id.slice(0, 120),
+    title: title.slice(0, 120),
+    summary: summary.slice(0, 360),
+    benefits: readStringList(value.benefits, 3, 180),
+    risks: readStringList(value.risks, 3, 180),
+    maturity,
+    ...(typeof value.recommended === 'boolean' ? { recommended: value.recommended } : {}),
+  };
+}
+
+function readMessageChoiceOptionMaturity(value: unknown): NonNullable<MessageMetadata['choice_options']>[number]['maturity'] | null {
+  return value === 'exploratory' || value === 'boundary_needed' || value === 'actionable' ? value : null;
+}
+
+function readStringList(value: unknown, limit: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim().slice(0, maxLength))
+    .slice(0, limit);
 }
 
 function parseTaskReadiness(content: string): MessageMetadata['task_readiness'] | null {
@@ -1863,6 +1938,34 @@ function buildPlannerDecisionPrompt(): string[] {
     '  }',
     '}',
     '```',
+  ];
+}
+
+function buildMessageChoiceOptionsPrompt(): string[] {
+  return [
+    '',
+    '群聊可选方案结构化输出规则：',
+    '- 当回复中给出多个可供用户选择的方案、路径、处理方式或执行策略时，必须在自然语言回复后追加一个单独的 ```json 代码块。',
+    '- 字段名固定为 choice_options；不要依赖标题文案让前端猜测方案。',
+    '- 不提供多个可选方案时，不要输出 choice_options。',
+    '- 固定 JSON 结构如下：',
+    '```json',
+    '{',
+    '  "choice_options": [',
+    '    {',
+    '      "id": "parallel_execution",',
+    '      "title": "并行执行",',
+    '      "summary": "拆成互不冲突的子任务并行处理。",',
+    '      "benefits": ["更快拿到结果"],',
+    '      "risks": ["需要统一收尾"],',
+    '      "maturity": "actionable",',
+    '      "recommended": true',
+    '    }',
+    '  ]',
+    '}',
+    '```',
+    '- maturity 只能是 exploratory、boundary_needed、actionable。',
+    '- id 使用稳定英文 snake_case，同一条消息内唯一。',
   ];
 }
 

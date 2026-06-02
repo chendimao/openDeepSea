@@ -56,32 +56,15 @@ test('uses generic choice options before legacy brainstorming options', () => {
   assert.equal(options[0]?.id, 'generic');
 });
 
-test('parses recommendation, lightweight alternative, and non-recommended option from markdown', () => {
+test('does not infer options from markdown headings without structured metadata', () => {
   const content = [
-    '**头脑风暴方案**',
-    '',
-    '推荐方案：把 `@` 文件引用升级成“资源 + 工作区入口”的统一引用器。',
-    '',
-    '- 空查询时展示 workspace 根目录，比如 `docs/`、`packages/`、`README.md`',
-    '- 搜索失败不要静默，至少显示“无法访问本地工作区”',
-    '',
-    '备选轻量方案：只修复 `@` 空查询不显示目录的问题。',
-    '这能解决用户第一感知，但目录发送后仍不可用，容易产生第二个问题。',
-    '',
-    '不推荐方案：禁止目录出现在 `@` 搜索结果。',
-    '这能避免下游不可用，但和用户“搜索文件夹”的目标相反。',
+    '推荐方案：把 `@` 文件引用升级成统一引用器。',
+    '备选方案：只修复空查询。',
   ].join('\n');
 
   const options = getBrainstormingOptionsForMessage(createAgentMessage(content), { attachments: [] });
 
-  assert.equal(options.length, 3);
-  assert.equal(options[0]?.title, '推荐方案');
-  assert.equal(options[0]?.maturity, 'boundary_needed');
-  assert.equal(options[0]?.recommended, true);
-  assert.equal(options[1]?.title, '备选轻量方案');
-  assert.equal(options[1]?.maturity, 'actionable');
-  assert.equal(options[2]?.title, '不推荐方案');
-  assert.equal(options[2]?.maturity, 'exploratory');
+  assert.equal(options.length, 0);
 });
 
 test('does not parse ordinary markdown lists as brainstorming options', () => {
@@ -95,27 +78,6 @@ test('does not parse ordinary markdown lists as brainstorming options', () => {
   const options = getBrainstormingOptionsForMessage(createAgentMessage(content), { attachments: [] });
 
   assert.equal(options.length, 0);
-});
-
-test('stops parsing options at the next markdown section heading', () => {
-  const content = [
-    '**头脑风暴方案**',
-    '',
-    '推荐方案：统一资源入口。',
-    '',
-    '不推荐方案：禁止目录出现在搜索结果。',
-    '',
-    '**建议下一步**',
-    '',
-    '- 创建正式任务',
-    '- 运行构建',
-  ].join('\n');
-
-  const options = getBrainstormingOptionsForMessage(createAgentMessage(content), { attachments: [] });
-
-  assert.equal(options.length, 2);
-  assert.equal(options[1]?.summary, '禁止目录出现在搜索结果。');
-  assert.deepEqual(options[1]?.benefits, []);
 });
 
 test('does not parse user messages as brainstorming options', () => {
