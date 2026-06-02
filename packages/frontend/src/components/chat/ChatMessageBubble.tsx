@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BookmarkPlus, ClipboardList, Eye, FileText, Reply, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
-import type { Agent, AgentRun, Message, RoomAgent, Task, TaskEventType } from '../../lib/types';
+import type { Agent, AgentRun, Message, RoomAgent, Task, TaskEventType, WorkflowRun } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
@@ -31,6 +31,8 @@ export interface ChatMessageBubbleProps {
   projectId: string;
   task?: Task;
   tasks?: Task[];
+  workflow?: WorkflowRun;
+  startingWorkflowTaskId?: string | null;
   activeTaskId?: string | null;
   streaming: boolean;
   displayContent: string;
@@ -42,6 +44,7 @@ export interface ChatMessageBubbleProps {
   retrySourceMessage?: Message | null;
   onLocateReplyTarget: (messageId: string) => void;
   onSelectTask?: (task: Task) => void;
+  onStartWorkflow?: (task: Task) => void;
 }
 
 export function ChatMessageBubble({
@@ -54,6 +57,8 @@ export function ChatMessageBubble({
   projectId,
   task,
   tasks = [],
+  workflow,
+  startingWorkflowTaskId,
   activeTaskId,
   streaming,
   displayContent,
@@ -65,6 +70,7 @@ export function ChatMessageBubble({
   retrySourceMessage,
   onLocateReplyTarget,
   onSelectTask,
+  onStartWorkflow,
 }: ChatMessageBubbleProps): JSX.Element {
   const { t, formatRelativeTime } = useI18n();
   const queryClient = useQueryClient();
@@ -128,7 +134,10 @@ export function ChatMessageBubble({
           task={task}
           roomAgents={roomAgents}
           active={Boolean(task && activeTaskId === task.id)}
+          workflow={workflow}
+          startingWorkflow={Boolean(task && startingWorkflowTaskId === task.id)}
           onSelectTask={onSelectTask}
+          onStartWorkflow={onStartWorkflow}
         />
       </AiMessageRow>
     );

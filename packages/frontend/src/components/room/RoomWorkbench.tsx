@@ -535,6 +535,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
                 agents={agents}
                 globalAgents={globalAgents}
                 agentRuns={agentRuns}
+                workflows={workflows}
                 roomId={roomId}
                 projectId={projectId}
                 modelChatReady={Boolean(settings?.system.langchain_planner_model && settings.system.openai_api_key_set)}
@@ -546,6 +547,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
                 highlightMessageId={highlightMessageId}
                 explicitReplyTarget={explicitReplyTarget}
                 activeTaskId={activeTaskId}
+                startingWorkflowTaskId={startingWorkflowTaskId}
                 onReplyToMessage={replyToMessage}
                 onClearReplyTarget={() => setExplicitReplyTarget(null)}
                 onLocateReplyTarget={focusMessage}
@@ -553,6 +555,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
                   setAutoActiveTaskDismissedRoomId(null);
                   activateTask.mutate(task);
                 }}
+                onStartWorkflow={startWorkflow.mutate}
               />
             )}
             {activeTab === 'files' && (
@@ -776,6 +779,7 @@ function ChatColumn({
   agents,
   globalAgents,
   agentRuns,
+  workflows,
   roomId,
   projectId,
   modelChatReady,
@@ -787,16 +791,19 @@ function ChatColumn({
   highlightMessageId,
   explicitReplyTarget,
   activeTaskId,
+  startingWorkflowTaskId,
   onReplyToMessage,
   onClearReplyTarget,
   onLocateReplyTarget,
   onSelectTask,
+  onStartWorkflow,
 }: {
   messages: Message[];
   tasks: Task[];
   agents: RoomAgent[];
   globalAgents: Agent[];
   agentRuns: AgentRun[];
+  workflows: WorkflowRun[];
   roomId: string;
   projectId: string;
   modelChatReady: boolean;
@@ -808,10 +815,12 @@ function ChatColumn({
   highlightMessageId: string | null;
   explicitReplyTarget: ReplyTarget | null;
   activeTaskId: string | null;
+  startingWorkflowTaskId: string | null;
   onReplyToMessage: (message: Message) => void;
   onClearReplyTarget: () => void;
   onLocateReplyTarget: (messageId: string) => void;
   onSelectTask: (task: Task) => void;
+  onStartWorkflow: (task: Task) => void;
 }) {
   const [composerResetKey, setComposerResetKey] = useState(0);
   const [defaultReplySuppressedForMessageId, setDefaultReplySuppressedForMessageId] = useState<string | null>(null);
@@ -830,6 +839,7 @@ function ChatColumn({
     () => new Map(tasks.map((task) => [task.id, task])),
     [tasks],
   );
+  const workflowByTaskId = useMemo(() => createWorkflowByTaskId(workflows), [workflows]);
   const visibleMessages = useMemo(() => selectConversationMessages(dedupeMessages(messages)), [messages]);
   const streamingReplyMessageIds = useMemo(
     () => new Set(Array.from(streamingMessageIds)),
@@ -929,6 +939,7 @@ function ChatColumn({
               const metadata = parseMessageMetadata(m.metadata);
               const messageTaskId = metadata.task_id ?? run?.task_id ?? undefined;
               const task = messageTaskId ? taskById.get(messageTaskId) : undefined;
+              const workflow = task ? workflowByTaskId.get(task.id) : undefined;
               return (
                 <ChatMessageBubble
                   key={m.id}
@@ -941,6 +952,8 @@ function ChatColumn({
                   projectId={projectId}
                   task={task}
                   tasks={tasks}
+                  workflow={workflow}
+                  startingWorkflowTaskId={startingWorkflowTaskId}
                   activeTaskId={activeTaskId}
                   streaming={isStreamingMessage}
                   displayContent={isStreamingMessage ? streamingDisplay.getDisplayedContent(m) : m.content}
@@ -952,6 +965,7 @@ function ChatColumn({
                   retrySourceMessage={findPreviousUserMessage(visibleMessages, index)}
                   onLocateReplyTarget={onLocateReplyTarget}
                   onSelectTask={onSelectTask}
+                  onStartWorkflow={onStartWorkflow}
                 />
               );
             })
@@ -1011,4 +1025,15 @@ function routingHint(
   }
   const agentName = fallbackAgent?.agent_name ?? t('room.routing.fallbackAgent');
   return t('room.routing.fallbackReply', { agentName });
+}
+
+function createWorkflowByTaskId(workflows: WorkflowRun[]): Map<string, WorkflowRun> {
+  const byTaskId = new Map<string, WorkflowRun>();
+  for (const workflow of workflows) {
+    const existing = byTaskId.get(workflow.task_id);
+    if (!existing || workflow.updated_at > existing.updated_at) {
+      byTaskId.set(workflow.task_id, workflow);
+    }
+  }
+  return byTaskId;
 }

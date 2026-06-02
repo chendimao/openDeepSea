@@ -1,6 +1,6 @@
-import { AlertTriangle, CheckCircle2, Circle, ClipboardList, Loader2, MousePointer2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Circle, ClipboardList, Loader2, MousePointer2, Play } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { Message, MessageMetadata, RoomAgent, Task, TaskEventType } from '../../lib/types';
+import type { Message, MessageMetadata, RoomAgent, Task, TaskEventType, WorkflowRun } from '../../lib/types';
 import { useI18n } from '../../lib/i18n';
 import { cn } from '../../lib/utils';
 
@@ -10,7 +10,10 @@ interface ChatTaskCardProps {
   task?: Task;
   roomAgents: RoomAgent[];
   active: boolean;
+  workflow?: WorkflowRun;
+  startingWorkflow?: boolean;
   onSelectTask?: (task: Task) => void;
+  onStartWorkflow?: (task: Task) => void;
 }
 
 const eventLabels: Partial<Record<TaskEventType, string>> = {
@@ -49,18 +52,31 @@ const priorityLabels: Record<Task['priority'], string> = {
   urgent: '紧急',
 };
 
+const ACTIVE_WORKFLOW_STATUSES = new Set<WorkflowRun['status']>([
+  'draft',
+  'running',
+  'awaiting_decision',
+  'awaiting_approval',
+  'blocked',
+]);
+
 export function ChatTaskCard({
   message,
   metadata,
   task,
   roomAgents,
   active,
+  workflow,
+  startingWorkflow,
   onSelectTask,
+  onStartWorkflow,
 }: ChatTaskCardProps): JSX.Element {
-  const { formatRelativeTime } = useI18n();
+  const { formatRelativeTime, t } = useI18n();
   const status = task ? statusMeta[task.status] : null;
   const StatusIcon = status?.icon ?? ClipboardList;
   const canOpen = Boolean(task && onSelectTask);
+  const hasActiveWorkflow = workflow ? ACTIVE_WORKFLOW_STATUSES.has(workflow.status) : false;
+  const canStartWorkflow = Boolean(task && onStartWorkflow && !hasActiveWorkflow && task?.status !== 'done');
   const title = task?.title ?? metadata.task_title ?? summarizeTaskTitle(message.content, metadata.task_id);
   const description = summarizeTaskDescription(task?.description, message.content, title);
   const assignee = task?.assigned_agent_id
@@ -72,48 +88,72 @@ export function ChatTaskCard({
   const shortTaskId = taskId.length > 10 ? taskId.slice(0, 10) : taskId;
 
   return (
-    <button
-      type="button"
-      className={cn('chat-task-card', active && 'is-active')}
+    <article
+      className={cn('chat-task-card', active && 'is-active', canOpen ? 'is-openable' : 'is-disabled')}
       data-status={status?.tone ?? metadata.event_type ?? 'event'}
       data-task-id={metadata.task_id}
-      disabled={!canOpen}
-      onClick={() => {
-        if (task && onSelectTask) onSelectTask(task);
-      }}
     >
-      <span className="chat-task-card-top">
-        <span className="chat-task-card-identity">
-          <span className="chat-task-card-icon" aria-hidden="true">
-            <StatusIcon className="h-4 w-4" strokeWidth={1.9} />
+      <button
+        type="button"
+        className="chat-task-card-open"
+        disabled={!canOpen}
+        onClick={() => {
+          if (task && onSelectTask) onSelectTask(task);
+        }}
+      >
+        <span className="chat-task-card-top">
+          <span className="chat-task-card-identity">
+            <span className="chat-task-card-icon" aria-hidden="true">
+              <StatusIcon className="h-3.5 w-3.5" strokeWidth={1.9} />
+            </span>
+            <span className="chat-task-card-kicker">TASK-{shortTaskId}</span>
           </span>
-          <span className="chat-task-card-copy">
-            <span className="chat-task-card-kicker">{eventLabel}</span>
-            <span className="chat-task-card-title" title={title}>{title}</span>
-          </span>
+          {!canStartWorkflow && (
+            <span className="chat-task-card-chevron" aria-hidden="true">
+              <ChevronRight className="h-4 w-4" />
+            </span>
+          )}
         </span>
-        <span className="chat-task-card-status">
-          {status?.label ?? '已记录'}
+
+        <span className="chat-task-card-title" title={title}>{title}</span>
+        <span className="chat-task-card-description" title={description}>
+          {description}
         </span>
-      </span>
-      <span className="chat-task-card-description" title={description}>
-        {description}
-      </span>
-      <span className="chat-task-card-meta">
-        <span><b>Task ID</b>#{shortTaskId}</span>
-        <span><b>Owner</b>{assignee ?? '未分配'}</span>
-        <span><b>Priority</b>{task ? priorityLabels[task.priority] : '普通'}</span>
-        <span><b>Status</b>{status?.label ?? eventLabel}</span>
-        <span><b>Time</b>{formatRelativeTime(message.created_at)}</span>
-      </span>
-      <span className="chat-task-card-progress-label">
-        <b>Progress</b>
-        <strong>{progress}%</strong>
-      </span>
-      <span className="chat-task-card-progress-track" aria-hidden="true">
-        <span className="chat-task-card-progress" style={{ width: `${progress}%` }} />
-      </span>
-    </button>
+
+        <span className="chat-task-card-progress-label">
+          <b>{status?.label ?? eventLabel}</b>
+          <strong>{progress}%</strong>
+        </span>
+        <span className="chat-task-card-progress-track" aria-hidden="true">
+          <span className="chat-task-card-progress" style={{ width: `${progress}%` }} />
+        </span>
+
+        <span className="chat-task-card-meta">
+          <span><b>Owner</b>{assignee ?? '未分配'}</span>
+          <span><b>Priority</b>{task ? priorityLabels[task.priority] : '普通'}</span>
+          <span><b>Status</b>{status?.label ?? eventLabel}</span>
+          <span><b>Time</b>{formatRelativeTime(message.created_at)}</span>
+        </span>
+      </button>
+      {canStartWorkflow && task && (
+        <button
+          type="button"
+          className="chat-task-card-start"
+          aria-label={t('taskDetail.startWorkflow')}
+          title={t('taskDetail.startWorkflow')}
+          disabled={startingWorkflow}
+          onClick={() => {
+            onStartWorkflow?.(task);
+          }}
+        >
+          {startingWorkflow ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Play className="h-3.5 w-3.5" />
+          )}
+        </button>
+      )}
+    </article>
   );
 }
 
