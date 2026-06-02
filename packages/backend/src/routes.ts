@@ -52,6 +52,7 @@ import {
   recordTaskStatusChanged,
   recordTaskUpdated,
 } from './task-conversation.js';
+import { startTaskAction } from './task-actions.js';
 import {
   buildIntentActivityContent,
   shouldAskUserForIntent,
@@ -2503,6 +2504,45 @@ const taskExecutionDecisionSchema: z.ZodType<TaskExecutionDecision> = z.object({
 const taskExecutionDispatchSchema = z.object({
   source_message_id: z.string().trim().min(1),
   task_execution: taskExecutionDecisionSchema,
+});
+
+const taskActionStartSchema = z.object({
+  action: z.enum(['start_execution', 'brainstorming', 'writing_plans', 'subagent_execution']),
+  sender_id: z.string().trim().optional(),
+  sender_name: z.string().trim().optional(),
+});
+
+router.post('/rooms/:roomId/tasks/:taskId/actions', (req, res, next) => {
+  void (async () => {
+    const room = roomRepo.get(req.params.roomId);
+    if (!room) {
+      res.status(404).json({ error: 'room not found' });
+      return;
+    }
+    const task = taskRepo.get(req.params.taskId);
+    if (!task || task.room_id !== room.id) {
+      res.status(404).json({ error: 'task not found' });
+      return;
+    }
+    const parsed = taskActionStartSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.flatten() });
+      return;
+    }
+    try {
+      const result = await startTaskAction({
+        roomId: req.params.roomId,
+        taskId: req.params.taskId,
+        action: parsed.data.action,
+        senderId: parsed.data.sender_id,
+        senderName: parsed.data.sender_name,
+      });
+      res.status(202).json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'task action failed';
+      res.status(/no executable .* agent available|no .* agent available/u.test(message) ? 409 : 400).json({ error: message });
+    }
+  })().catch(next);
 });
 
 router.post('/rooms/:roomId/task-execution/dispatch', (req, res, next) => {

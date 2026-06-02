@@ -230,6 +230,43 @@ export interface WorkflowDefinition {
   created_at: number;
   updated_at: number;
 }
+export type TaskActionKind =
+  | 'start_execution'
+  | 'brainstorming'
+  | 'writing_plans'
+  | 'subagent_execution';
+
+export type TaskActionStatus = 'idle' | 'queued' | 'running' | 'failed' | 'completed' | 'blocked';
+
+export interface FixedRosterAgent {
+  agent_id: string;
+  room_agent_id: string;
+  role: Extract<WorkflowRole, 'executor' | 'reviewer' | 'acceptor'>;
+}
+
+export interface FixedRosterStage {
+  id: 'execute' | 'review' | 'acceptance';
+  agent_ids: string[];
+  parallel: boolean;
+  goal: string;
+}
+
+export interface TaskWorkflowPlan {
+  mode: 'fixed_roster';
+  entry_action: 'start_execution';
+  locked: true;
+  agents: FixedRosterAgent[];
+  stages: FixedRosterStage[];
+}
+
+export interface TaskActionStartResult {
+  action: TaskActionKind;
+  status: Exclude<TaskActionStatus, 'idle'>;
+  workflow?: TaskWorkflowPlan;
+  message_id?: string;
+  run_ids: string[];
+  blocked_reason?: string;
+}
 export type WorkflowStepStatus =
   | 'pending'
   | 'running'
