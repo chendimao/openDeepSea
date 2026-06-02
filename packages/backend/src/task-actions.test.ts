@@ -263,3 +263,590 @@ test('start_execution blocks when a locked room agent is removed during executio
   );
   assert.match(String(blockedEvent?.payload.blocked_reason ?? ''), /locked roster agent unavailable: reviewer/u);
 });
+
+test('writing_plans action blocks when task has no design spec', async () => {
+  const project = projectRepo.create({
+    name: '计划缺少 spec',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-plan-no-spec-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '写计划',
+    description: '没有 spec 时应阻塞',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+
+  const result = await startTaskAction({ roomId: room.id, taskId: task.id, action: 'writing_plans' });
+
+  assert.equal(result.status, 'blocked');
+  assert.match(result.blocked_reason ?? '', /头脑风暴|spec/u);
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  assert.ok(events.some((event) =>
+    event.payload.action === 'writing_plans' &&
+    event.payload.status === 'running'
+  ));
+  const blockedEvent = events.find((event) =>
+    event.payload.action === 'writing_plans' &&
+    event.payload.status === 'blocked'
+  );
+  assert.equal(blockedEvent?.payload.event_message_id, result.message_id);
+  assert.equal(blockedEvent?.payload.superpowers_phase, 'writing_plans');
+});
+
+test('brainstorming action dispatches planner with superpowers brainstorming prompt', async () => {
+  const project = projectRepo.create({
+    name: '头脑风暴动作',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorm-action-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '澄清四入口',
+    description: '需要 brainstorming spec',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+  let prompt = '';
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'brainstorming',
+    runAgent: async (input) => {
+      prompt = input.prompt;
+      return {
+        status: 'completed',
+        content: '```json\n{"example":true}\n```\n```json\n{"superpowers":{"designDocPath":"docs/superpowers/specs/test-design.md","designReviewVerdict":"approved"}}\n```',
+        error: null,
+        runId: 'run-brainstorming',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.match(prompt, /brainstorming/u);
+  assert.match(prompt, /Skill: superpowers:brainstorming/u);
+  assert.deepEqual(result.run_ids, ['run-brainstorming']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const completedEvent = events.find((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'completed'
+  );
+  assert.equal(completedEvent?.payload.event_message_id, result.message_id);
+  assert.equal((completedEvent?.payload.evidence as { designDocPath?: string } | undefined)?.designDocPath, 'docs/superpowers/specs/test-design.md');
+});
+
+test('brainstorming action fails when completed output has no design doc evidence', async () => {
+  const project = projectRepo.create({
+    name: '头脑风暴缺 evidence',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorm-no-evidence-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '缺少设计文档',
+    description: 'completed 输出没有 designDocPath 时不能算完成',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'brainstorming',
+    runAgent: async () => ({
+      status: 'completed',
+      content: '```json\n{"superpowers":{"designReviewVerdict":"approved"}}\n```',
+      error: null,
+      runId: 'run-brainstorming-no-evidence',
+    }),
+  });
+
+  assert.equal(result.status, 'failed');
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const failedEvent = events.find((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /designDocPath/u);
+});
+
+test('writing_plans ignores unmarked design spec evidence', async () => {
+  const project = projectRepo.create({
+    name: '忽略未标记 spec',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-plan-unmarked-spec-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '未标记 spec',
+    description: '非 task action evidence 不能放行',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'brainstorming',
+      status: 'completed',
+      evidence: { designDocPath: 'docs/superpowers/specs/unmarked-design.md' },
+    },
+  });
+
+  const result = await startTaskAction({ roomId: room.id, taskId: task.id, action: 'writing_plans' });
+
+  assert.equal(result.status, 'blocked');
+  assert.match(result.blocked_reason ?? '', /头脑风暴|spec/u);
+});
+
+test('writing_plans action dispatches planner after brainstorming spec evidence', async () => {
+  const project = projectRepo.create({
+    name: '已有 spec 写计划',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-plan-with-spec-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '写实施计划',
+    description: '已有 brainstorming spec 时应运行 writing-plans',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+  for (let index = 0; index < 501; index += 1) {
+    taskEventRepo.create({
+      room_id: room.id,
+      task_id: task.id,
+      type: 'task_updated',
+      layer: 'timeline',
+      payload: {
+        action: 'brainstorming',
+        status: 'completed',
+        evidence: { designDocPath: `docs/superpowers/specs/unmarked-${index}.md` },
+      },
+    });
+  }
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'brainstorming',
+      status: 'completed',
+      task_action: 'brainstorming',
+      task_action_status: 'completed',
+      evidence: { designDocPath: 'docs/superpowers/specs/test-design.md' },
+    },
+  });
+  let prompt = '';
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'writing_plans',
+    runAgent: async (input) => {
+      prompt = input.prompt;
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers":{"implementationPlanPath":"docs/superpowers/plans/test-plan.md","planReviewVerdict":"approved"}}\n```',
+        error: null,
+        runId: 'run-writing-plans',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.match(prompt, /writing_plans/u);
+  assert.match(prompt, /Skill: superpowers:writing-plans/u);
+  assert.deepEqual(result.run_ids, ['run-writing-plans']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 1000 });
+  const completedEvent = events.find((event) =>
+    event.payload.action === 'writing_plans' &&
+    event.payload.status === 'completed'
+  );
+  assert.equal((completedEvent?.payload.evidence as { implementationPlanPath?: string } | undefined)?.implementationPlanPath, 'docs/superpowers/plans/test-plan.md');
+});
+
+test('writing_plans action fails when completed output has no implementation plan evidence', async () => {
+  const project = projectRepo.create({
+    name: '写计划缺 evidence',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-plan-no-evidence-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '缺少实施计划',
+    description: 'completed 输出没有 implementationPlanPath 时不能算完成',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'brainstorming',
+      status: 'completed',
+      task_action: 'brainstorming',
+      task_action_status: 'completed',
+      evidence: { designDocPath: 'docs/superpowers/specs/test-design.md' },
+    },
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'writing_plans',
+    runAgent: async () => ({
+      status: 'completed',
+      content: '```json\n{"superpowers":{"planReviewVerdict":"approved"}}\n```',
+      error: null,
+      runId: 'run-writing-no-evidence',
+    }),
+  });
+
+  assert.equal(result.status, 'failed');
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const failedEvent = events.find((event) =>
+    event.payload.action === 'writing_plans' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /implementationPlanPath/u);
+});
+
+test('subagent_execution action blocks when task has no implementation plan', async () => {
+  const project = projectRepo.create({
+    name: '执行缺少计划',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-subagent-no-plan-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '子代理执行',
+    description: '没有 implementation plan 时应阻塞',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+
+  const result = await startTaskAction({ roomId: room.id, taskId: task.id, action: 'subagent_execution' });
+
+  assert.equal(result.status, 'blocked');
+  assert.match(result.blocked_reason ?? '', /编写计划|implementation plan/u);
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  assert.ok(events.some((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'running'
+  ));
+  const blockedEvent = events.find((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'blocked'
+  );
+  assert.equal(blockedEvent?.payload.event_message_id, result.message_id);
+  assert.equal(blockedEvent?.payload.superpowers_phase, 'tdd_execute');
+});
+
+test('subagent_execution ignores failed writing plan evidence', async () => {
+  const project = projectRepo.create({
+    name: '失败计划不能执行',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-subagent-failed-plan-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '失败计划',
+    description: 'failed writing_plans evidence 不能放行',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'writing_plans',
+      status: 'failed',
+      task_action: 'writing_plans',
+      task_action_status: 'failed',
+      evidence: { implementationPlanPath: 'docs/superpowers/plans/failed-plan.md' },
+    },
+  });
+
+  const result = await startTaskAction({ roomId: room.id, taskId: task.id, action: 'subagent_execution' });
+
+  assert.equal(result.status, 'blocked');
+  assert.match(result.blocked_reason ?? '', /编写计划|implementation plan/u);
+});
+
+test('subagent_execution action dispatches tdd_execute after completed implementation plan evidence', async () => {
+  const project = projectRepo.create({
+    name: '已有计划执行',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-subagent-with-plan-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '子代理执行实施计划',
+    description: '已有 implementation plan 时应进入 tdd_execute',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'writing_plans',
+      status: 'completed',
+      task_action: 'writing_plans',
+      task_action_status: 'completed',
+      evidence: { implementationPlanPath: 'docs/superpowers/plans/test-plan.md' },
+    },
+  });
+  let prompt = '';
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async (input) => {
+      prompt = input.prompt;
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"通过"}]}}\n```',
+        error: null,
+        runId: 'run-subagent-execution',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.match(prompt, /tdd_execute/u);
+  assert.match(prompt, /Skill: superpowers:subagent-driven-development/u);
+  assert.deepEqual(result.run_ids, ['run-subagent-execution']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const completedEvent = events.find((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'completed'
+  );
+  assert.equal(completedEvent?.payload.superpowers_phase, 'tdd_execute');
+});
+
+test('subagent_execution action fails when tdd evidence has no red stage', async () => {
+  const project = projectRepo.create({
+    name: '缺少 RED evidence',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-subagent-no-red-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '缺少 RED 阶段',
+    description: '只有 GREEN 不能算完成',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'writing_plans',
+      status: 'completed',
+      task_action: 'writing_plans',
+      task_action_status: 'completed',
+      evidence: { implementationPlanPath: 'docs/superpowers/plans/test-plan.md' },
+    },
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async () => ({
+      status: 'completed',
+      content: '```json\n{"superpowers":{"tddEvidence":[{"stage":"GREEN","command":"node --test","passed":true,"summary":"通过"}]}}\n```',
+      error: null,
+      runId: 'run-subagent-no-red',
+    }),
+  });
+
+  assert.equal(result.status, 'failed');
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const failedEvent = events.find((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /RED\/GREEN/u);
+});
+
+test('subagent_execution action completes with numeric tdd exemption evidence', async () => {
+  const project = projectRepo.create({
+    name: 'TDD 豁免执行',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-subagent-tdd-exemption-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'TDD 豁免',
+    description: '合法 tddExemption 使用数字 createdAt',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'writing_plans',
+      status: 'completed',
+      task_action: 'writing_plans',
+      task_action_status: 'completed',
+      evidence: { implementationPlanPath: 'docs/superpowers/plans/test-plan.md' },
+    },
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async () => ({
+      status: 'completed',
+      content: '```json\n{"superpowers":{"tddExemption":{"reason":"只读分析任务","approvedBy":"user","createdAt":1770076800000}}}\n```',
+      error: null,
+      runId: 'run-subagent-tdd-exemption',
+    }),
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(result.run_ids, ['run-subagent-tdd-exemption']);
+});
+
+test('brainstorming action records failed event when planner runner throws', async () => {
+  const project = projectRepo.create({
+    name: '头脑风暴失败',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorm-throw-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'runner 抛错',
+    description: 'phase runner 抛错必须写 failed',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'brainstorming',
+    runAgent: async () => {
+      throw new Error('planner exploded');
+    },
+  });
+
+  assert.equal(result.status, 'failed');
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  assert.ok(events.some((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'running'
+  ));
+  const failedEvent = events.find((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /planner exploded/u);
+  assert.equal(failedEvent?.payload.event_message_id, result.message_id);
+});

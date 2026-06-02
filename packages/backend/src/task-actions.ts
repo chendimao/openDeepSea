@@ -12,6 +12,8 @@ import { messageRepo } from './repos/messages.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { taskEventRepo } from './repos/task-events.js';
 import { taskRepo } from './repos/tasks.js';
+import { buildSuperpowersPhasePrompt } from './workflows/prompts.js';
+import type { SuperpowersPhase } from './workflows/superpowers-skills.js';
 import { wsHub } from './ws-hub.js';
 
 export interface TaskActionAgentResult {
@@ -88,17 +90,229 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
     };
   }
 
-  const blockedReason = 'task action phase is not implemented yet';
-  const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
-    blocked_reason: blockedReason,
+  return runSuperpowersPhaseAction({
+    roomId: input.roomId,
+    taskId: input.taskId,
+    action: input.action,
+    runAgent: input.runAgent ?? defaultRunAgent,
+  });
+}
+
+async function runSuperpowersPhaseAction(input: {
+  roomId: string;
+  taskId: string;
+  action: TaskActionKind;
+  runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+}): Promise<TaskActionStartResult> {
+  const phase = actionToPhase(input.action);
+  if (!phase) throw new Error(`unsupported action: ${input.action}`);
+
+  recordTaskActionEvent(input.roomId, input.taskId, input.action, 'running', { superpowers_phase: phase });
+  const prerequisiteError = validatePhasePrerequisite(input.action, input.taskId);
+  if (prerequisiteError) {
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
+      superpowers_phase: phase,
+      blocked_reason: prerequisiteError,
+      error: prerequisiteError,
+    });
+    return {
+      action: input.action,
+      status: 'blocked',
+      message_id: messageId,
+      run_ids: [],
+      blocked_reason: prerequisiteError,
+    };
+  }
+
+  const task = taskRepo.get(input.taskId);
+  if (!task || task.room_id !== input.roomId) throw new Error('task not found');
+  const room = roomRepo.get(input.roomId);
+  if (!room) throw new Error('room not found');
+  const project = projectRepo.get(room.project_id);
+  if (!project) throw new Error('project not found');
+
+  let planner: RoomAgent;
+  try {
+    planner = selectOrAddPlanner(input.roomId);
+  } catch (error) {
+    const blockedReason = toErrorMessage(error, 'planner agent is not executable');
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
+      superpowers_phase: phase,
+      blocked_reason: blockedReason,
+      error: blockedReason,
+    });
+    return {
+      action: input.action,
+      status: 'blocked',
+      message_id: messageId,
+      run_ids: [],
+      blocked_reason: blockedReason,
+    };
+  }
+  const agents = roomAgentRepo.listByRoom(input.roomId);
+  const prompt = buildSuperpowersPhasePrompt(phase, {
+    projectName: project.name,
+    projectPath: project.path,
+    room,
+    task,
+    agents,
+    workflowContext: `任务动作入口：${input.action}`,
+  });
+
+  let result: TaskActionAgentResult;
+  try {
+    result = await input.runAgent({
+      agent: planner,
+      taskId: input.taskId,
+      sourceMessageId: task.source_message_id,
+      prompt,
+    });
+  } catch (error) {
+    const errorMessage = toErrorMessage(error, 'superpowers phase failed');
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'failed', {
+      superpowers_phase: phase,
+      error: errorMessage,
+    });
+    return {
+      action: input.action,
+      status: 'failed',
+      message_id: messageId,
+      run_ids: [],
+    };
+  }
+
+  const evidence = extractSuperpowersEvidence(result.content);
+  const evidenceError = result.status === 'completed' ? validateCompletedPhaseEvidence(phase, evidence) : null;
+  const status = result.status === 'completed' && !evidenceError ? 'completed' : 'failed';
+  const error = evidenceError ?? result.error;
+  const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, status, {
+    superpowers_phase: phase,
+    run_id: result.runId,
+    run_ids: result.runId ? [result.runId] : [],
+    error,
+    evidence,
   });
   return {
     action: input.action,
-    status: 'blocked',
+    status,
     message_id: messageId,
-    run_ids: [],
-    blocked_reason: blockedReason,
+    run_ids: result.runId ? [result.runId] : [],
   };
+}
+
+function actionToPhase(action: TaskActionKind): SuperpowersPhase | null {
+  if (action === 'brainstorming') return 'brainstorming';
+  if (action === 'writing_plans') return 'writing_plans';
+  if (action === 'subagent_execution') return 'tdd_execute';
+  return null;
+}
+
+function validatePhasePrerequisite(action: TaskActionKind, taskId: string): string | null {
+  if (action === 'writing_plans' && !hasCompletedSuperpowersEvidence(taskId, 'brainstorming', 'designDocPath')) {
+    return '缺少头脑风暴产出的 spec，请先运行头脑风暴';
+  }
+  if (action === 'subagent_execution' && !hasCompletedSuperpowersEvidence(taskId, 'writing_plans', 'implementationPlanPath')) {
+    return '缺少编写计划产出的 implementation plan，请先运行编写计划';
+  }
+  return null;
+}
+
+function hasCompletedSuperpowersEvidence(
+  taskId: string,
+  action: TaskActionKind,
+  evidenceKey: 'designDocPath' | 'implementationPlanPath',
+): boolean {
+  return taskEventRepo.hasCompletedTaskActionEvidence({
+    taskId,
+    action,
+    evidenceKey,
+  });
+}
+
+function selectOrAddPlanner(roomId: string): RoomAgent {
+  const existing = roomAgentRepo.listByRoom(roomId).find((agent) =>
+    agent.agent_id === 'planner' &&
+    Boolean(agent.acp_enabled) &&
+    Boolean(agent.acp_backend)
+  );
+  if (existing) return existing;
+  const globalAgent = agentRepo.getByAgentId('planner') ?? agentRepo.getByBuiltinKey('planner');
+  if (!globalAgent) throw new Error('no planner agent available');
+  const added = globalAgent.builtin_key
+    ? roomAgentRepo.ensureBuiltInAgent(roomId, globalAgent.builtin_key)
+    : roomAgentRepo.addFromGlobalAgent({ room_id: roomId, global_agent_id: globalAgent.id });
+  if (!added.acp_enabled || !added.acp_backend) throw new Error('no executable planner agent available');
+  return added;
+}
+
+function extractSuperpowersEvidence(content: string): Record<string, unknown> | null {
+  const jsonBlocks = content.matchAll(/```json\s*([\s\S]*?)```/gu);
+  for (const match of jsonBlocks) {
+    try {
+      const parsed = JSON.parse(match[1] ?? '{}') as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+      const superpowers = (parsed as { superpowers?: unknown }).superpowers;
+      if (superpowers && typeof superpowers === 'object' && !Array.isArray(superpowers)) {
+        return superpowers as Record<string, unknown>;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function validateCompletedPhaseEvidence(phase: SuperpowersPhase, evidence: Record<string, unknown> | null): string | null {
+  if (!evidence) return `缺少 ${phase} 阶段的 superpowers evidence`;
+  if (phase === 'brainstorming') {
+    return typeof evidence.designDocPath === 'string' && evidence.designDocPath.trim().length > 0
+      ? null
+      : '缺少 brainstorming 阶段产出的 designDocPath';
+  }
+  if (phase === 'writing_plans') {
+    return typeof evidence.implementationPlanPath === 'string' && evidence.implementationPlanPath.trim().length > 0
+      ? null
+      : '缺少 writing_plans 阶段产出的 implementationPlanPath';
+  }
+  if (phase === 'tdd_execute') {
+    return hasValidTddEvidence(evidence.tddEvidence) || hasValidTddExemption(evidence.tddExemption)
+      ? null
+      : '缺少 tdd_execute 阶段产出的 RED/GREEN tddEvidence 或有效 tddExemption';
+  }
+  return null;
+}
+
+function hasValidTddEvidence(value: unknown): boolean {
+  if (!Array.isArray(value)) return false;
+  const hasRed = value.some((item) =>
+    isRecord(item) &&
+    item.stage === 'RED' &&
+    item.passed === false
+  );
+  const hasGreen = value.some((item) =>
+    isRecord(item) &&
+    item.stage === 'GREEN' &&
+    item.passed === true
+  );
+  return hasRed && hasGreen;
+}
+
+function hasValidTddExemption(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const createdAt = value.createdAt;
+  return isNonEmptyString(value.reason) &&
+    isNonEmptyString(value.approvedBy) &&
+    typeof createdAt === 'number' &&
+    Number.isFinite(createdAt) &&
+    createdAt > 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function ensureFixedRosterWorkflow(roomId: string, taskTitle: string): TaskWorkflowPlan {
@@ -290,6 +504,8 @@ function recordTaskActionEvent(
     payload: {
       action,
       status,
+      task_action: action,
+      task_action_status: status,
       message_id: message.id,
       event_message_id: message.id,
       content,

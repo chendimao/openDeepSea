@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { MessageLayer, TaskEvent, TaskEventType } from '../types.js';
+import type { MessageLayer, TaskActionKind, TaskEvent, TaskEventType } from '../types.js';
 
 interface TaskEventRow {
   id: string;
@@ -128,6 +128,33 @@ export const taskEventRepo = {
           .prepare('SELECT * FROM task_events WHERE room_id = ? ORDER BY created_at ASC, id ASC LIMIT ?')
           .all(roomId, limit) as TaskEventRow[];
     return rows.map(parseTaskEventRow);
+  },
+
+  hasCompletedTaskActionEvidence(input: {
+    taskId: string;
+    action: TaskActionKind;
+    evidenceKey: string;
+  }): boolean {
+    if (!isSimpleJsonObjectKey(input.evidenceKey)) return false;
+    const evidencePath = `$.evidence.${input.evidenceKey}`;
+    const row = db
+      .prepare(
+        `SELECT 1 AS found
+         FROM task_events
+         WHERE task_id = ?
+           AND type = 'task_updated'
+           AND layer = 'timeline'
+           AND json_valid(payload)
+           AND json_extract(payload, '$.task_action') = ?
+           AND json_extract(payload, '$.task_action_status') = 'completed'
+           AND json_extract(payload, '$.action') = ?
+           AND json_extract(payload, '$.status') = 'completed'
+           AND json_type(payload, ?) = 'text'
+           AND length(trim(json_extract(payload, ?))) > 0
+         LIMIT 1`,
+      )
+      .get(input.taskId, input.action, input.action, evidencePath, evidencePath) as { found: 1 } | undefined;
+    return Boolean(row);
   },
 };
 
