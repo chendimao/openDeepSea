@@ -847,7 +847,6 @@ function ChatColumn({
     if (!content && (!files || files.length === 0) && (!fileIds || fileIds.length === 0) && (!fileRefs || fileRefs.length === 0)) return;
     send.mutate({
       content,
-      mentions: input.mentions,
       files,
       fileIds,
       fileRefs,

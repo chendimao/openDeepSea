@@ -3,7 +3,6 @@ import { Files, Image, Paperclip, Send, Wrench, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   MAX_MESSAGE_FILES,
-  findUniqueAgentMention,
   formatFileSize,
   validatePendingFiles,
 } from '../lib/composerModel';
@@ -199,8 +198,6 @@ export function RichMessageComposer({
 
     if (!content && attachmentsRef.current.length === 0) return;
 
-    const mentionedRoomAgentIds = findTypedMentionRoomAgentIds(content, agents)
-      .filter((value, index, values) => values.indexOf(value) === index);
     const selectedFileRefs = getChipsByTrigger(segments, FILE_TRIGGER)
       .map((chip) => parseFileChipValue(chip.value))
       .filter((chip): chip is NonNullable<ReturnType<typeof parseFileChipValue>> => Boolean(chip));
@@ -221,7 +218,6 @@ export function RichMessageComposer({
 
     onSend({
       content,
-      mentions: mentionedRoomAgentIds.length > 0 ? mentionedRoomAgentIds : undefined,
       files: localFiles.length > 0 ? localFiles : undefined,
       fileIds: mergedFileIds.length > 0 ? mergedFileIds : undefined,
       fileRefs: fileRefs.length > 0 ? fileRefs : undefined,
@@ -449,14 +445,3 @@ function isAttachmentImage(attachment: ComposerAttachment): boolean {
     : attachment.file.mime_type.startsWith('image/');
 }
 
-function findTypedMentionRoomAgentIds(content: string, agents: RoomAgent[]): string[] {
-  const ids: string[] = [];
-  const mentionPattern = /@([\p{L}\p{N}_.-]+)/gu;
-
-  for (const match of content.matchAll(mentionPattern)) {
-    const agent = findUniqueAgentMention(match[1], agents);
-    if (agent) ids.push(agent.id);
-  }
-
-  return ids;
-}
