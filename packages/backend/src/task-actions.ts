@@ -6,6 +6,8 @@ import type {
   TaskActionStartResult,
   TaskWorkflowPlan,
 } from './types.js';
+import { existsSync, statSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
 import { agentRepo } from './repos/agents.js';
 import { respondAsAgent } from './dispatcher.js';
 import { projectRepo } from './repos/projects.js';
@@ -499,7 +501,9 @@ async function runSuperpowersPhaseAction(input: {
   }
 
   const evidence = extractSuperpowersEvidence(result.content);
-  const evidenceError = result.status === 'completed' ? validateCompletedPhaseEvidence(phase, evidence) : null;
+  const evidenceError = result.status === 'completed'
+    ? validateCompletedPhaseEvidence(phase, evidence, project.path)
+    : null;
   const nonCompletedError = result.status === 'completed'
     ? null
     : result.error ?? `${phase} 阶段未完成：${result.status}`;
@@ -531,24 +535,25 @@ function actionToPhase(action: TaskActionKind): SuperpowersRuntimePhase | null {
 }
 
 function validatePhasePrerequisite(action: TaskActionKind, taskId: string): string | null {
-  if (action === 'writing_plans' && !hasCompletedSuperpowersEvidence(taskId, 'brainstorming', 'designDocPath')) {
-    return '缺少头脑风暴产出的 spec，请先运行头脑风暴';
+  if (action === 'writing_plans') {
+    const error = validateCompletedArtifactEvidence(taskId, 'brainstorming', 'designDocPath', 'spec');
+    if (error) return error;
   }
   if (
     (action === 'subagent_execution' ||
       action === 'systematic_debugging' ||
       action === 'verification' ||
-      action === 'finish_branch') &&
-    !hasCompletedSuperpowersEvidence(taskId, 'writing_plans', 'implementationPlanPath')
+      action === 'finish_branch')
   ) {
-    return '缺少编写计划产出的 implementation plan，请先运行编写计划';
+    const error = validateCompletedArtifactEvidence(taskId, 'writing_plans', 'implementationPlanPath', 'implementation plan');
+    if (error) return error;
   }
   return null;
 }
 
 function chooseAutoAdvanceTarget(taskId: string, routing: SuperpowersRouting): TaskActionKind | null {
-  if (!hasCompletedSuperpowersEvidence(taskId, 'brainstorming', 'designDocPath')) return 'brainstorming';
-  if (!hasCompletedSuperpowersEvidence(taskId, 'writing_plans', 'implementationPlanPath')) return 'writing_plans';
+  if (validateCompletedArtifactEvidence(taskId, 'brainstorming', 'designDocPath', 'spec')) return 'brainstorming';
+  if (validateCompletedArtifactEvidence(taskId, 'writing_plans', 'implementationPlanPath', 'implementation plan')) return 'writing_plans';
   return routingActionToTaskAction(routing.next_action);
 }
 
@@ -628,16 +633,27 @@ function buildTaskPromptContext(roomId: string, taskId: string, workflowContextV
   };
 }
 
-function hasCompletedSuperpowersEvidence(
+function validateCompletedArtifactEvidence(
   taskId: string,
   action: TaskActionKind,
   evidenceKey: 'designDocPath' | 'implementationPlanPath',
-): boolean {
-  return taskEventRepo.hasCompletedTaskActionEvidence({
+  label: 'spec' | 'implementation plan',
+): string | null {
+  const artifactPath = taskEventRepo.findCompletedTaskActionEvidence({
     taskId,
     action,
     evidenceKey,
   });
+  if (!artifactPath) {
+    return label === 'spec'
+      ? '缺少头脑风暴产出的 spec，请先运行头脑风暴'
+      : '缺少编写计划产出的 implementation plan，请先运行编写计划';
+  }
+  const task = taskRepo.get(taskId);
+  if (!task) return 'task not found';
+  const project = projectRepo.get(task.project_id);
+  if (!project) return 'project not found';
+  return validateArtifactPath(project.path, artifactPath, label);
 }
 
 function findActiveTaskRunBlock(taskId: string): { id: string } | null {
@@ -686,17 +702,23 @@ function extractSuperpowersEvidence(content: string): Record<string, unknown> | 
   return null;
 }
 
-function validateCompletedPhaseEvidence(phase: SuperpowersRuntimePhase, evidence: Record<string, unknown> | null): string | null {
+function validateCompletedPhaseEvidence(
+  phase: SuperpowersRuntimePhase,
+  evidence: Record<string, unknown> | null,
+  projectPath: string,
+): string | null {
   if (!evidence) return `缺少 ${phase} 阶段的 superpowers evidence`;
   if (phase === 'brainstorming') {
-    return typeof evidence.designDocPath === 'string' && evidence.designDocPath.trim().length > 0
-      ? null
-      : '缺少 brainstorming 阶段产出的 designDocPath';
+    if (typeof evidence.designDocPath !== 'string' || evidence.designDocPath.trim().length === 0) {
+      return '缺少 brainstorming 阶段产出的 designDocPath';
+    }
+    return validateArtifactPath(projectPath, evidence.designDocPath, 'spec');
   }
   if (phase === 'writing_plans') {
-    return typeof evidence.implementationPlanPath === 'string' && evidence.implementationPlanPath.trim().length > 0
-      ? null
-      : '缺少 writing_plans 阶段产出的 implementationPlanPath';
+    if (typeof evidence.implementationPlanPath !== 'string' || evidence.implementationPlanPath.trim().length === 0) {
+      return '缺少 writing_plans 阶段产出的 implementationPlanPath';
+    }
+    return validateArtifactPath(projectPath, evidence.implementationPlanPath, 'implementation plan');
   }
   if (phase === 'tdd_execute') {
     return hasValidTddEvidence(evidence.tddEvidence) || hasValidTddExemption(evidence.tddExemption)
@@ -704,6 +726,35 @@ function validateCompletedPhaseEvidence(phase: SuperpowersRuntimePhase, evidence
       : '缺少 tdd_execute 阶段产出的 RED/GREEN tddEvidence 或有效 tddExemption';
   }
   return null;
+}
+
+function validateArtifactPath(
+  projectPath: string,
+  artifactPath: string,
+  label: 'spec' | 'implementation plan',
+): string | null {
+  const resolvedProjectPath = resolve(projectPath);
+  const resolvedArtifactPath = resolveArtifactPath(resolvedProjectPath, artifactPath);
+  if (!resolvedArtifactPath || !isPathInside(resolvedArtifactPath, resolvedProjectPath)) {
+    return `${label} 路径不在项目目录内：${artifactPath}`;
+  }
+  if (!existsSync(resolvedArtifactPath)) return `${label} 文件不存在：${artifactPath}`;
+  try {
+    if (!statSync(resolvedArtifactPath).isFile()) return `${label} 路径不是文件：${artifactPath}`;
+  } catch {
+    return `${label} 文件不可访问：${artifactPath}`;
+  }
+  return null;
+}
+
+function resolveArtifactPath(projectPath: string, artifactPath: string): string | null {
+  const trimmed = artifactPath.trim();
+  if (!trimmed) return null;
+  return isAbsolute(trimmed) ? resolve(trimmed) : resolve(projectPath, trimmed);
+}
+
+function isPathInside(targetPath: string, rootPath: string): boolean {
+  return targetPath === rootPath || targetPath.startsWith(`${rootPath}/`);
 }
 
 function hasValidTddEvidence(value: unknown): boolean {

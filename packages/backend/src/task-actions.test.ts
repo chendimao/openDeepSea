@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -484,6 +484,7 @@ test('brainstorming action dispatches planner with superpowers brainstorming pro
     action: 'brainstorming',
     runAgent: async (input) => {
       prompt = input.prompt;
+      writeProjectFile(project.path, 'docs/superpowers/specs/test-design.md');
       return {
         status: 'completed',
         content: '```json\n{"example":true}\n```\n```json\n{"superpowers":{"designDocPath":"docs/superpowers/specs/test-design.md","designReviewVerdict":"approved"}}\n```',
@@ -619,6 +620,7 @@ test('auto_advance routes missing spec task to planner brainstorming', async () 
         };
       }
       assert.match(prompt, /brainstorming/u);
+      writeProjectFile(project.path, 'docs/superpowers/specs/auto-design.md');
       return {
         status: 'completed',
         content: '```json\n{"superpowers":{"designDocPath":"docs/superpowers/specs/auto-design.md","designReviewVerdict":"approved"}}\n```',
@@ -682,6 +684,7 @@ test('auto_advance routes existing spec task to planner writing_plans before exe
         };
       }
       assert.match(prompt, /writing_plans/u);
+      writeProjectFile(project.path, 'docs/superpowers/plans/auto-plan.md');
       return {
         status: 'completed',
         content: '```json\n{"superpowers":{"implementationPlanPath":"docs/superpowers/plans/auto-plan.md","planReviewVerdict":"approved"}}\n```',
@@ -771,6 +774,7 @@ test('auto_advance retry resumes from failed routing output when it is parseable
       prompts.push(prompt);
       assert.doesNotMatch(prompt, /superpowers_routing/u);
       assert.match(prompt, /writing_plans/u);
+      writeProjectFile(project.path, 'docs/superpowers/plans/retry-plan.md');
       return {
         status: 'completed',
         content: '```json\n{"superpowers":{"implementationPlanPath":"docs/superpowers/plans/retry-plan.md","planReviewVerdict":"approved"}}\n```',
@@ -1097,10 +1101,10 @@ test('brainstorming action fails when completed output has no design doc evidenc
   assert.match(String(failedEvent?.payload.error ?? ''), /designDocPath/u);
 });
 
-test('writing_plans ignores unmarked design spec evidence', async () => {
+test('writing_plans blocks when design spec evidence file is missing', async () => {
   const project = projectRepo.create({
-    name: '忽略未标记 spec',
-    path: mkdtempSync(join(tmpdir(), 'openclaw-room-plan-unmarked-spec-')),
+    name: '缺失 spec 文件',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-plan-missing-spec-file-')),
   });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
   const planner = agentRepo.getByAgentId('planner');
@@ -1109,8 +1113,8 @@ test('writing_plans ignores unmarked design spec evidence', async () => {
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
-    title: '未标记 spec',
-    description: '非 task action evidence 不能放行',
+    title: '缺失 spec 文件',
+    description: '只有 designDocPath 但文件不存在时不能放行',
     priority: 'normal',
     interaction_mode: 'ask_user',
     assigned_agent_id: undefined,
@@ -1125,14 +1129,21 @@ test('writing_plans ignores unmarked design spec evidence', async () => {
     payload: {
       action: 'brainstorming',
       status: 'completed',
-      evidence: { designDocPath: 'docs/superpowers/specs/unmarked-design.md' },
+      evidence: { designDocPath: 'docs/superpowers/specs/missing-design.md' },
     },
   });
 
-  const result = await startTaskAction({ roomId: room.id, taskId: task.id, action: 'writing_plans' });
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'writing_plans',
+    runAgent: async () => {
+      throw new Error('writing_plans should not run without a real spec file');
+    },
+  });
 
   assert.equal(result.status, 'blocked');
-  assert.match(result.blocked_reason ?? '', /头脑风暴|spec/u);
+  assert.match(result.blocked_reason ?? '', /spec 文件不存在|missing-design/u);
 });
 
 test('writing_plans action dispatches planner after brainstorming spec evidence', async () => {
@@ -1155,19 +1166,32 @@ test('writing_plans action dispatches planner after brainstorming spec evidence'
     source_message_id: null,
     parent_task_id: undefined,
   });
-  for (let index = 0; index < 501; index += 1) {
-    taskEventRepo.create({
-      room_id: room.id,
-      task_id: task.id,
-      type: 'task_updated',
-      layer: 'timeline',
-      payload: {
-        action: 'brainstorming',
-        status: 'completed',
-        evidence: { designDocPath: `docs/superpowers/specs/unmarked-${index}.md` },
-      },
-    });
-  }
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'brainstorming',
+      status: 'completed',
+      task_action: 'brainstorming',
+      task_action_status: 'failed',
+      evidence: { designDocPath: 'docs/superpowers/specs/failed-design.md' },
+    },
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'brainstorming',
+      status: 'completed',
+      task_action: 'researching',
+      task_action_status: 'completed',
+      evidence: { designDocPath: 'docs/superpowers/specs/wrong-action-design.md' },
+    },
+  });
   taskEventRepo.create({
     room_id: room.id,
     task_id: task.id,
@@ -1181,6 +1205,7 @@ test('writing_plans action dispatches planner after brainstorming spec evidence'
       evidence: { designDocPath: 'docs/superpowers/specs/test-design.md' },
     },
   });
+  writeProjectFile(project.path, 'docs/superpowers/specs/test-design.md');
   let prompt = '';
 
   const result = await startTaskAction({
@@ -1189,6 +1214,7 @@ test('writing_plans action dispatches planner after brainstorming spec evidence'
     action: 'writing_plans',
     runAgent: async (input) => {
       prompt = input.prompt;
+      writeProjectFile(project.path, 'docs/superpowers/plans/test-plan.md');
       return {
         status: 'completed',
         content: '```json\n{"superpowers":{"implementationPlanPath":"docs/superpowers/plans/test-plan.md","planReviewVerdict":"approved"}}\n```',
@@ -1243,6 +1269,7 @@ test('writing_plans action fails when completed output has no implementation pla
       evidence: { designDocPath: 'docs/superpowers/specs/test-design.md' },
     },
   });
+  writeProjectFile(project.path, 'docs/superpowers/specs/test-design.md');
 
   const result = await startTaskAction({
     roomId: room.id,
@@ -1376,6 +1403,7 @@ test('subagent_execution action dispatches tdd_execute after completed implement
       evidence: { implementationPlanPath: 'docs/superpowers/plans/test-plan.md' },
     },
   });
+  writeProjectFile(project.path, 'docs/superpowers/plans/test-plan.md');
   let prompt = '';
 
   const result = await startTaskAction({
@@ -1438,6 +1466,7 @@ test('subagent_execution action fails when tdd evidence has no red stage', async
       evidence: { implementationPlanPath: 'docs/superpowers/plans/test-plan.md' },
     },
   });
+  writeProjectFile(project.path, 'docs/superpowers/plans/test-plan.md');
 
   const result = await startTaskAction({
     roomId: room.id,
@@ -1493,6 +1522,7 @@ test('subagent_execution action completes with numeric tdd exemption evidence', 
       evidence: { implementationPlanPath: 'docs/superpowers/plans/test-plan.md' },
     },
   });
+  writeProjectFile(project.path, 'docs/superpowers/plans/test-plan.md');
 
   const result = await startTaskAction({
     roomId: room.id,
@@ -1560,6 +1590,18 @@ function recordCompletedEvidence(
   action: 'brainstorming' | 'writing_plans',
   evidence: Record<string, unknown>,
 ): void {
+  const task = taskRepo.get(taskId);
+  if (task) {
+    const project = projectRepo.get(task.project_id);
+    if (project) {
+      const artifactPath = typeof evidence.designDocPath === 'string'
+        ? evidence.designDocPath
+        : typeof evidence.implementationPlanPath === 'string'
+          ? evidence.implementationPlanPath
+          : null;
+      if (artifactPath) writeProjectFile(project.path, artifactPath);
+    }
+  }
   taskEventRepo.create({
     room_id: roomId,
     task_id: taskId,
@@ -1573,4 +1615,10 @@ function recordCompletedEvidence(
       evidence,
     },
   });
+}
+
+function writeProjectFile(projectPath: string, relativePath: string): void {
+  const fullPath = join(projectPath, relativePath);
+  mkdirSync(join(fullPath, '..'), { recursive: true });
+  writeFileSync(fullPath, '# test artifact\n', 'utf8');
 }

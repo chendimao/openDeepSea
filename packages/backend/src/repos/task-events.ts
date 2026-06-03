@@ -106,6 +106,42 @@ export const taskEventRepo = {
     return row ? parseTaskEventRow(row) : undefined;
   },
 
+  findCompletedTaskActionEvidence(input: {
+    taskId: string;
+    action: TaskActionKind;
+    evidenceKey: string;
+  }): string | null {
+    if (!isSimpleJsonObjectKey(input.evidenceKey)) return null;
+    const evidencePath = `$.evidence.${input.evidenceKey}`;
+    const row = db
+      .prepare(
+        `SELECT json_extract(payload, ?) AS evidence_value
+         FROM task_events
+         WHERE task_id = ?
+           AND type = 'task_updated'
+           AND layer = 'timeline'
+           AND json_valid(payload)
+           AND json_extract(payload, '$.action') = ?
+           AND json_extract(payload, '$.status') = 'completed'
+           AND (
+             json_type(payload, '$.task_action') IS NULL
+             OR json_extract(payload, '$.task_action') = ?
+           )
+           AND (
+             json_type(payload, '$.task_action_status') IS NULL
+             OR json_extract(payload, '$.task_action_status') = 'completed'
+           )
+           AND json_type(payload, ?) = 'text'
+           AND length(trim(json_extract(payload, ?))) > 0
+         ORDER BY seq DESC
+         LIMIT 1`,
+      )
+      .get(evidencePath, input.taskId, input.action, input.action, evidencePath, evidencePath) as
+        | { evidence_value: string }
+        | undefined;
+    return typeof row?.evidence_value === 'string' ? row.evidence_value : null;
+  },
+
   listByTask(taskId: string, input?: { layer?: MessageLayer; limit?: number }): TaskEvent[] {
     const limit = input?.limit ?? 500;
     const rows = input?.layer
@@ -163,26 +199,7 @@ export const taskEventRepo = {
     action: TaskActionKind;
     evidenceKey: string;
   }): boolean {
-    if (!isSimpleJsonObjectKey(input.evidenceKey)) return false;
-    const evidencePath = `$.evidence.${input.evidenceKey}`;
-    const row = db
-      .prepare(
-        `SELECT 1 AS found
-         FROM task_events
-         WHERE task_id = ?
-           AND type = 'task_updated'
-           AND layer = 'timeline'
-           AND json_valid(payload)
-           AND json_extract(payload, '$.task_action') = ?
-           AND json_extract(payload, '$.task_action_status') = 'completed'
-           AND json_extract(payload, '$.action') = ?
-           AND json_extract(payload, '$.status') = 'completed'
-           AND json_type(payload, ?) = 'text'
-           AND length(trim(json_extract(payload, ?))) > 0
-         LIMIT 1`,
-      )
-      .get(input.taskId, input.action, input.action, evidencePath, evidencePath) as { found: 1 } | undefined;
-    return Boolean(row);
+    return this.findCompletedTaskActionEvidence(input) !== null;
   },
 };
 
