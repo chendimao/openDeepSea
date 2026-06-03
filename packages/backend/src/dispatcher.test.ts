@@ -3733,6 +3733,69 @@ test('planner dispatch still runs available targets when later steps reference a
   }
 });
 
+test('planner dispatch blocks available targets when an earlier step references an unknown agent', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-earlier-missing-agent-'));
+  const project = projectRepo.create({ name: `planner-earlier-missing-agent-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  assert.ok(frontend);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '先实现 API，再接入页面',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk({ stream: 'stdout', text: '不应该派发后置前端步骤。' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    setTaskExecutionPlanInvokerForTest({
+      async invoke() {
+        return {
+          mode: 'serial',
+          dispatch_step_indexes: [0],
+          deferred_step_indexes: [],
+          rationale: '模型只能看到可用前端目标，但前置步骤缺失时不应派发。',
+        };
+      },
+    });
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        task_execution: {
+          state: 'ready_to_execute',
+          status: 'suggested',
+          summary: '先实现 API 再接入页面',
+          next_steps: [
+            { agent_id: 'zzzxq-api-worker', goal: '先实现 API' },
+            { agent_id: 'frontend-executor', goal: '接入 API 并验证页面' },
+          ],
+        },
+      }),
+    });
+    const body = await response.json() as { error?: unknown };
+    const runs = agentRunRepo.listByRoom(room.id, 50);
+
+    assert.equal(response.status, 400);
+    assert.match(String(body.error), /zzzxq-api-worker/);
+    assert.equal(runs.some((run) => run.agent_id === 'frontend-executor'), false);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner follow-up auto continues suggested next steps after dispatched agent completes', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-followup-auto-'));
   const project = projectRepo.create({ name: `planner-followup-auto-${Date.now()}`, path: projectPath });

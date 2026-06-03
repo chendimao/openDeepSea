@@ -73,6 +73,7 @@ interface TaskExecutionDispatchedTarget {
   agent: RoomAgent;
   prompt: string;
   step: TaskExecutionDecision['next_steps'][number];
+  originalIndex: number;
 }
 
 interface TargetRunResult {
@@ -113,6 +114,12 @@ interface TaskExecutionDispatchTarget {
   agent: RoomAgent;
   prompt: string;
   step: TaskExecutionDecision['next_steps'][number];
+  originalIndex: number;
+}
+
+interface TaskExecutionMissingStep {
+  step: TaskExecutionDecision['next_steps'][number];
+  originalIndex: number;
 }
 
 let plannerExecutionPlanInvoker: TaskExecutionPlanInvoker | undefined;
@@ -2208,7 +2215,18 @@ async function dispatchTaskExecutionDecision(args: {
         : 'task execution has no next steps to dispatch',
     );
   }
-  const deferredSteps = [...executionPlan.deferredSteps, ...missingSteps];
+  const blockingMissingSteps = getBlockingMissingStepsBeforeDispatch({
+    missingSteps,
+    dispatchTargets: executionPlan.dispatchTargets,
+  });
+  if (blockingMissingSteps.length > 0) {
+    throw new Error(
+      `task execution has unresolved earlier steps before selected dispatch targets: ${
+        blockingMissingSteps.map((item) => item.step.agent_id).join(', ')
+      }`,
+    );
+  }
+  const deferredSteps = [...executionPlan.deferredSteps, ...missingSteps.map((item) => item.step)];
   const results = await runTargets({
     targets: executionPlan.dispatchTargets,
     projectPath: project.path,
@@ -2261,7 +2279,12 @@ async function resolveTaskExecutionStepExecutionPlan(input: {
 
   return {
     dispatchTargets: dispatchIndexes.map((index) => input.targets[index]).filter(isTaskExecutionDispatchTarget)
-      .map((target) => ({ agent: target.agent, prompt: target.prompt, step: target.step })),
+      .map((target) => ({
+        agent: target.agent,
+        prompt: target.prompt,
+        step: target.step,
+        originalIndex: target.originalIndex,
+      })),
     deferredSteps: deferredIndexes.map((index) => input.targets[index]).filter(isTaskExecutionDispatchTarget)
       .map((target) => target.step),
   };
@@ -2375,15 +2398,15 @@ function resolveTaskExecutionDispatchTargets(
   targets: TaskExecutionDispatchTarget[];
   addedAgents: TaskExecutionDispatchAddedAgent[];
   missingAgentIds: string[];
-  missingSteps: TaskExecutionDecision['next_steps'];
+  missingSteps: TaskExecutionMissingStep[];
 } {
   const agentsById = new Map(roomAgentRepo.listByRoom(roomId).map((agent) => [agent.agent_id, agent]));
   const globalAgentsByRequestedId = new Map<string, Agent>();
   const addedAgentsById = new Map<string, TaskExecutionDispatchAddedAgent>();
   const missingAgentIds: string[] = [];
-  const missingSteps: TaskExecutionDecision['next_steps'] = [];
+  const missingSteps: TaskExecutionMissingStep[] = [];
 
-  for (const step of decision.next_steps) {
+  for (const [originalIndex, step] of decision.next_steps.entries()) {
     if (agentsById.has(step.agent_id)) {
       continue;
     }
@@ -2395,7 +2418,7 @@ function resolveTaskExecutionDispatchTargets(
     if (!missingAgentIds.includes(step.agent_id)) {
       missingAgentIds.push(step.agent_id);
     }
-    missingSteps.push(step);
+    missingSteps.push({ step, originalIndex });
   }
 
   for (const [requestedAgentId, globalAgent] of globalAgentsByRequestedId.entries()) {
@@ -2410,9 +2433,9 @@ function resolveTaskExecutionDispatchTargets(
   }
 
   const targets = decision.next_steps
-    .map((step) => {
+    .map((step, originalIndex) => {
       const agent = agentsById.get(step.agent_id);
-      return agent ? { agent, prompt: step.goal, step } : null;
+      return agent ? { agent, prompt: step.goal, step, originalIndex } : null;
     })
     .filter((target): target is TaskExecutionDispatchTarget =>
       Boolean(target),
@@ -2424,6 +2447,15 @@ function resolveTaskExecutionDispatchTargets(
     missingAgentIds,
     missingSteps,
   };
+}
+
+function getBlockingMissingStepsBeforeDispatch(input: {
+  missingSteps: TaskExecutionMissingStep[];
+  dispatchTargets: TaskExecutionDispatchedTarget[];
+}): TaskExecutionMissingStep[] {
+  if (input.missingSteps.length === 0 || input.dispatchTargets.length === 0) return [];
+  const latestDispatchedStepIndex = Math.max(...input.dispatchTargets.map((target) => target.originalIndex));
+  return input.missingSteps.filter((item) => item.originalIndex < latestDispatchedStepIndex);
 }
 
 async function reportTaskExecutionDispatchResults(args: {
