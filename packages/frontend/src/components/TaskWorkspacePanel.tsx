@@ -22,6 +22,7 @@ export interface TaskWorkspacePanelProps {
   statusFilters: TaskStatusFilter[];
   activityEvents: TaskEvent[];
   taskEvents: TaskEvent[];
+  taskActionEvents: TaskEvent[];
   messages: Message[];
   agentRuns: AgentRun[];
   taskEventsLoading: boolean;
@@ -48,6 +49,7 @@ export function TaskWorkspacePanel({
   statusFilters,
   activityEvents,
   taskEvents,
+  taskActionEvents,
   messages,
   agentRuns,
   taskEventsLoading,
@@ -73,7 +75,7 @@ export function TaskWorkspacePanel({
   const eventGroups = selectTaskDetailEvents(taskEvents, layerVisibility);
   const activeTaskActionStates = activeTask
     ? createTaskActionStates(
-      taskEvents.filter((event) => event.task_id === activeTask.id),
+      taskActionEvents.filter((event) => event.task_id === activeTask.id),
       startingTaskActionKey?.startsWith(`${activeTask.id}:`) ? startingTaskActionKey : null,
     )
     : {};

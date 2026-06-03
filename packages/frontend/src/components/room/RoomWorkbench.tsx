@@ -173,6 +173,11 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
   const activeTask = tasks.find((task) => task.id === activeTaskId) ?? null;
   const { data: activeTaskEventResponse, isLoading: activeTaskEventsLoading } = useQuery({
     queryKey: ['room-task-events', activeTask?.room_id, activeTask?.id],
+    queryFn: () => api.listRoomTaskEvents(activeTask!.room_id, { taskId: activeTask!.id, limit: 80 }),
+    enabled: !!activeTask,
+  });
+  const { data: activeTaskTimelineEventResponse } = useQuery({
+    queryKey: ['room-task-events', activeTask?.room_id, activeTask?.id, 'timeline', 'task-actions'],
     queryFn: () => api.listRoomTaskEvents(activeTask!.room_id, { taskId: activeTask!.id, layer: 'timeline', limit: 80 }),
     enabled: !!activeTask,
   });
@@ -512,6 +517,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
           onStatusFiltersChange={setTaskStatusFilters}
           activityEvents={roomActivityEvents}
           taskEvents={activeTaskEventResponse?.events ?? []}
+          taskActionEvents={activeTaskTimelineEventResponse?.events ?? []}
           messages={messages}
           agentRuns={agentRuns}
           taskEventsLoading={activeTaskEventsLoading}

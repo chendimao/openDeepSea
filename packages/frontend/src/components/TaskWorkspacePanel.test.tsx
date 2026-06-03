@@ -46,6 +46,7 @@ test('TaskWorkspacePanel renders queue and active task surface together', () => 
           event('diff-1', 'diff_detected', 'diff', { path: 'src/index.ts', additions: 2, deletions: 1 }),
           event('runtime-1', 'runtime_event', 'runtime', { command: 'npm run build', output: 'ok' }),
         ]}
+        taskActionEvents={[]}
         taskEventsLoading={false}
         agents={[agent('agent-row-1', 'Codex')]}
         workflows={[] as WorkflowRun[]}
@@ -98,6 +99,7 @@ test('TaskWorkspacePanel keeps task selection explicit when no task is active', 
         statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
         activityEvents={[]}
         taskEvents={[]}
+        taskActionEvents={[]}
         messages={[]}
         agentRuns={[]}
         taskEventsLoading={false}
@@ -132,6 +134,7 @@ test('TaskWorkspacePanel exposes four task actions for active open task', () => 
         statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
         activityEvents={[]}
         taskEvents={[]}
+        taskActionEvents={[]}
         messages={[]}
         agentRuns={[]}
         taskEventsLoading={false}
@@ -171,6 +174,7 @@ test('TaskWorkspacePanel disables task actions for done task but keeps active wo
         statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
         activityEvents={[]}
         taskEvents={[]}
+        taskActionEvents={[]}
         messages={[]}
         agentRuns={[]}
         taskEventsLoading={false}
@@ -200,6 +204,7 @@ test('TaskWorkspacePanel disables task actions for done task but keeps active wo
         statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
         activityEvents={[]}
         taskEvents={[]}
+        taskActionEvents={[]}
         messages={[]}
         agentRuns={[]}
         taskEventsLoading={false}
@@ -236,7 +241,20 @@ test('TaskWorkspacePanel shows task action running state after terminal workflow
         activeTaskId={activeTask.id}
         statusFilters={['todo', 'in_progress', 'review', 'done', 'failed']}
         activityEvents={[]}
-        taskEvents={[]}
+        taskEvents={[
+          event('diff-for-detail', 'diff_detected', 'diff', { path: 'src/keep-detail.ts', additions: 1, deletions: 0 }),
+          event('runtime-for-detail', 'runtime_event', 'runtime', { command: 'npm run build', output: 'ok' }),
+        ]}
+        taskActionEvents={[
+          {
+            ...event('action-running', 'task_updated', 'timeline', {
+              task_action: 'start_execution',
+              task_action_status: 'running',
+              content: '运行中',
+            }),
+            task_id: activeTask.id,
+          },
+        ]}
         messages={[]}
         agentRuns={[]}
         taskEventsLoading={false}
@@ -246,7 +264,6 @@ test('TaskWorkspacePanel shows task action running state after terminal workflow
         onStatusFiltersChange={() => undefined}
         onSelectTask={() => undefined}
         onStartTaskAction={() => undefined}
-        startingTaskActionKey={`${activeTask.id}:start_execution`}
         onLocateSourceMessage={() => undefined}
         onClearActiveTask={() => undefined}
         t={(key) => key}
@@ -261,6 +278,8 @@ test('TaskWorkspacePanel shows task action running state after terminal workflow
   assert.match(html, /开始执行/u);
   assert.match(html, /运行中/u);
   assert.match(html, /disabled/u);
+  assert.doesNotMatch(html, /src\/keep-detail\.ts/);
+  assert.doesNotMatch(html, /npm run build/);
 });
 
 function TaskWorkspaceTestProvider({ children }: { children: React.ReactNode }): JSX.Element {
