@@ -4,7 +4,7 @@ import {
   loadProjectSuperpowersSkills,
   PROJECT_SUPERPOWERS_SKILL_SOURCE_WARNING,
 } from '../project-superpowers.js';
-import { getSuperpowersPhaseSkills, type SuperpowersPhase } from './superpowers-skills.js';
+import { getSuperpowersPhaseSkills, type SuperpowersRuntimePhase } from './superpowers-skills.js';
 
 export type WorkflowPromptKind = 'development' | 'analysis_document';
 
@@ -29,7 +29,7 @@ export function buildStagePrompt(stage: WorkflowStage, context: PromptContext): 
   return buildAssignmentPrompt(context);
 }
 
-export function buildSuperpowersPhasePrompt(phase: SuperpowersPhase, context: PromptContext): string {
+export function buildSuperpowersPhasePrompt(phase: SuperpowersRuntimePhase, context: PromptContext): string {
   return [
     buildSuperpowersPhaseHeader(phase),
     '',
@@ -42,6 +42,36 @@ export function buildSuperpowersPhasePrompt(phase: SuperpowersPhase, context: Pr
     baseContext(context),
     '',
     workflowContext(context),
+  ].join('\n');
+}
+
+export function buildSuperpowersRoutingPrompt(context: PromptContext): string {
+  return [
+    '你是 Superpowers 开发闭环的 planner 路由智能体。',
+    '必须先遵循 using-superpowers，判断当前任务下一步应调用哪个 Superpowers skill 或进入哪个执行阶段。',
+    'using-superpowers 在这里 routing 只做判断，不替代 brainstorming、writing-plans、systematic-debugging 或执行阶段。',
+    '如果输出不是合法 JSON，runtime 会把任务动作标记为 blocked。',
+    '',
+    '允许的 next_action：brainstorming、writing_plans、subagent_execution、systematic_debugging、verification、finish_branch、blocked。',
+    'brainstorming 与 writing_plans 必须推荐 recommended_agent_id=planner。',
+    '已有 implementationPlanPath 后，前端、后端、测试、审查或验收智能体才可进入执行、调试、验证阶段。',
+    '',
+    baseContext(context),
+    '',
+    workflowContext(context),
+    '',
+    '最后必须输出一个 fenced JSON 代码块，格式如下：',
+    '```json',
+    '{',
+    '  "superpowers_routing": {',
+    '    "next_action": "brainstorming",',
+    '    "required_skill": "brainstorming",',
+    '    "reason": "任务是功能或行为变更，需要先澄清需求并产出 spec。",',
+    '    "recommended_agent_id": "planner",',
+    '    "expected_evidence": ["designDocPath"]',
+    '  }',
+    '}',
+    '```',
   ].join('\n');
 }
 
@@ -106,7 +136,7 @@ function buildAnalysisPrompt(context: PromptContext): string {
   ].join('\n');
 }
 
-function buildSuperpowersPhaseHeader(phase: SuperpowersPhase): string {
+function buildSuperpowersPhaseHeader(phase: SuperpowersRuntimePhase): string {
   if (phase === 'brainstorming') {
     return [
       '你是 Superpowers 开发闭环的 brainstorming 阶段智能体。',
@@ -118,7 +148,7 @@ function buildSuperpowersPhaseHeader(phase: SuperpowersPhase): string {
   return `你是 Superpowers 开发闭环的 ${phase} 阶段智能体。请按该阶段门禁产出可追踪结果。`;
 }
 
-function formatSuperpowersSkillInstruction(phase: SuperpowersPhase): string {
+function formatSuperpowersSkillInstruction(phase: SuperpowersRuntimePhase): string {
   const skillNames = getSuperpowersPhaseSkills(phase);
   const skills = loadProjectSuperpowersSkills(skillNames);
   return [
@@ -135,7 +165,7 @@ function formatSuperpowersSkillInstruction(phase: SuperpowersPhase): string {
   ].join('\n');
 }
 
-function formatSuperpowersEvidenceInstruction(phase: SuperpowersPhase): string {
+function formatSuperpowersEvidenceInstruction(phase: SuperpowersRuntimePhase): string {
   const lines = [
     '阶段完成时必须输出一个 fenced JSON 代码块，根字段为 superpowers，用于 workflow runtime 记录门禁证据。',
     '不要把证据只写在自然语言里。',

@@ -1,6 +1,7 @@
 import type {
   AgentRunStatus,
   RoomAgent,
+  Task,
   TaskActionKind,
   TaskActionStartResult,
   TaskWorkflowPlan,
@@ -13,8 +14,14 @@ import { messageRepo } from './repos/messages.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { taskEventRepo } from './repos/task-events.js';
 import { taskRepo } from './repos/tasks.js';
-import { buildSuperpowersPhasePrompt } from './workflows/prompts.js';
-import type { SuperpowersPhase } from './workflows/superpowers-skills.js';
+import { isExecutableAgent, resolveWorkflowExecutor, selectWorkflowAgentForRole } from './workflows/role-resolver.js';
+import { buildSuperpowersPhasePrompt, buildSuperpowersRoutingPrompt } from './workflows/prompts.js';
+import type { SuperpowersRuntimePhase } from './workflows/superpowers-skills.js';
+import {
+  parseSuperpowersRouting,
+  routingActionToTaskAction,
+  type SuperpowersRouting,
+} from './workflows/superpowers-routing.js';
 import { wsHub } from './ws-hub.js';
 
 export interface TaskActionAgentResult {
@@ -111,6 +118,23 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
     };
   }
 
+  if (input.action === 'route_skills') {
+    return runSuperpowersRoutingAction({
+      roomId: input.roomId,
+      taskId: input.taskId,
+      action: input.action,
+      runAgent: input.runAgent ?? defaultRunAgent,
+    });
+  }
+
+  if (input.action === 'auto_advance') {
+    return runAutoAdvanceAction({
+      roomId: input.roomId,
+      taskId: input.taskId,
+      runAgent: input.runAgent ?? defaultRunAgent,
+    });
+  }
+
   return runSuperpowersPhaseAction({
     roomId: input.roomId,
     taskId: input.taskId,
@@ -119,10 +143,203 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
   });
 }
 
+async function runSuperpowersRoutingAction(input: {
+  roomId: string;
+  taskId: string;
+  action: TaskActionKind;
+  runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+}): Promise<TaskActionStartResult & { routing?: SuperpowersRouting }> {
+  recordTaskActionEvent(input.roomId, input.taskId, input.action, 'running', {
+    superpowers_phase: 'using_superpowers',
+  });
+
+  const context = buildTaskPromptContext(input.roomId, input.taskId, `任务动作入口：${input.action}`);
+  let planner: RoomAgent;
+  try {
+    planner = selectOrAddPlanner(input.roomId);
+  } catch (error) {
+    const blockedReason = toErrorMessage(error, 'planner agent is not executable');
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
+      superpowers_phase: 'using_superpowers',
+      blocked_reason: blockedReason,
+      error: blockedReason,
+    });
+    return {
+      action: input.action,
+      status: 'blocked',
+      message_id: messageId,
+      run_ids: [],
+      blocked_reason: blockedReason,
+    };
+  }
+
+  let result: TaskActionAgentResult;
+  try {
+    result = await input.runAgent({
+      agent: planner,
+      taskId: input.taskId,
+      sourceMessageId: context.task.source_message_id,
+      prompt: buildSuperpowersRoutingPrompt(context),
+    });
+  } catch (error) {
+    const errorMessage = toErrorMessage(error, 'superpowers routing failed');
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'failed', {
+      superpowers_phase: 'using_superpowers',
+      error: errorMessage,
+    });
+    return {
+      action: input.action,
+      status: 'failed',
+      message_id: messageId,
+      run_ids: [],
+    };
+  }
+
+  const runIds = result.runId ? [result.runId] : [];
+  if (result.status !== 'completed') {
+    const error = result.error ?? `${input.action} 未完成：${result.status}`;
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'failed', {
+      superpowers_phase: 'using_superpowers',
+      run_id: result.runId,
+      run_ids: runIds,
+      error,
+    });
+    return {
+      action: input.action,
+      status: 'failed',
+      message_id: messageId,
+      run_ids: runIds,
+    };
+  }
+
+  const parsed = parseSuperpowersRouting(result.content);
+  if (!parsed.ok) {
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
+      superpowers_phase: 'using_superpowers',
+      run_id: result.runId,
+      run_ids: runIds,
+      blocked_reason: parsed.error,
+      error: parsed.error,
+    });
+    return {
+      action: input.action,
+      status: 'blocked',
+      message_id: messageId,
+      run_ids: runIds,
+      blocked_reason: parsed.error,
+    };
+  }
+
+  const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'completed', {
+    superpowers_phase: 'using_superpowers',
+    run_id: result.runId,
+    run_ids: runIds,
+    superpowers_routing: parsed.routing,
+  });
+  return {
+    action: input.action,
+    status: 'completed',
+    message_id: messageId,
+    run_ids: runIds,
+    routing: parsed.routing,
+  };
+}
+
+async function runAutoAdvanceAction(input: {
+  roomId: string;
+  taskId: string;
+  runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+}): Promise<TaskActionStartResult> {
+  recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', 'running', {});
+
+  const routingResult = await runSuperpowersRoutingAction({
+    roomId: input.roomId,
+    taskId: input.taskId,
+    action: 'route_skills',
+    runAgent: input.runAgent,
+  });
+  if (routingResult.status !== 'completed' || !routingResult.routing) {
+    const status = toTerminalTaskActionStatus(routingResult.status);
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', status, {
+      run_ids: routingResult.run_ids,
+      blocked_reason: status === 'blocked' ? routingResult.blocked_reason : undefined,
+      error: status === 'failed' ? routingResult.blocked_reason ?? 'Superpowers 路由未完成' : undefined,
+    });
+    return {
+      action: 'auto_advance',
+      status,
+      message_id: messageId,
+      run_ids: routingResult.run_ids,
+      blocked_reason: routingResult.blocked_reason,
+    };
+  }
+
+  const targetAction = chooseAutoAdvanceTarget(input.taskId, routingResult.routing);
+  if (!targetAction) {
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', 'blocked', {
+      run_ids: routingResult.run_ids,
+      superpowers_routing: routingResult.routing,
+      blocked_reason: routingResult.routing.reason,
+    });
+    return {
+      action: 'auto_advance',
+      status: 'blocked',
+      message_id: messageId,
+      run_ids: routingResult.run_ids,
+      blocked_reason: routingResult.routing.reason,
+    };
+  }
+
+  let phaseAgent: RoomAgent;
+  try {
+    phaseAgent = selectPhaseAgentForRouting(input.roomId, targetAction, routingResult.routing);
+  } catch (error) {
+    const blockedReason = toErrorMessage(error, 'recommended phase agent is not executable');
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', 'blocked', {
+      run_ids: routingResult.run_ids,
+      delegated_action: targetAction,
+      superpowers_routing: routingResult.routing,
+      blocked_reason: blockedReason,
+      error: blockedReason,
+    });
+    return {
+      action: 'auto_advance',
+      status: 'blocked',
+      message_id: messageId,
+      run_ids: routingResult.run_ids,
+      blocked_reason: blockedReason,
+    };
+  }
+
+  const phaseResult = await runSuperpowersPhaseAction({
+    roomId: input.roomId,
+    taskId: input.taskId,
+    action: targetAction,
+    agent: phaseAgent,
+    runAgent: input.runAgent,
+  });
+  const runIds = [...routingResult.run_ids, ...phaseResult.run_ids];
+  const status = toTerminalTaskActionStatus(phaseResult.status);
+  const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', status, {
+    run_ids: runIds,
+    delegated_action: targetAction,
+    superpowers_routing: routingResult.routing,
+    blocked_reason: phaseResult.blocked_reason,
+  });
+  return {
+    action: 'auto_advance',
+    status,
+    message_id: messageId,
+    run_ids: runIds,
+    blocked_reason: phaseResult.blocked_reason,
+  };
+}
+
 async function runSuperpowersPhaseAction(input: {
   roomId: string;
   taskId: string;
   action: TaskActionKind;
+  agent?: RoomAgent;
   runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
 }): Promise<TaskActionStartResult> {
   const phase = actionToPhase(input.action);
@@ -152,11 +369,11 @@ async function runSuperpowersPhaseAction(input: {
   const project = projectRepo.get(room.project_id);
   if (!project) throw new Error('project not found');
 
-  let planner: RoomAgent;
+  let phaseAgent: RoomAgent;
   try {
-    planner = selectOrAddPlanner(input.roomId);
+    phaseAgent = input.agent ?? selectDefaultPhaseAgent(input.roomId, task, input.action);
   } catch (error) {
-    const blockedReason = toErrorMessage(error, 'planner agent is not executable');
+    const blockedReason = toErrorMessage(error, 'phase agent is not executable');
     const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
       superpowers_phase: phase,
       blocked_reason: blockedReason,
@@ -183,7 +400,7 @@ async function runSuperpowersPhaseAction(input: {
   let result: TaskActionAgentResult;
   try {
     result = await input.runAgent({
-      agent: planner,
+      agent: phaseAgent,
       taskId: input.taskId,
       sourceMessageId: task.source_message_id,
       prompt,
@@ -204,8 +421,11 @@ async function runSuperpowersPhaseAction(input: {
 
   const evidence = extractSuperpowersEvidence(result.content);
   const evidenceError = result.status === 'completed' ? validateCompletedPhaseEvidence(phase, evidence) : null;
+  const nonCompletedError = result.status === 'completed'
+    ? null
+    : result.error ?? `${phase} 阶段未完成：${result.status}`;
   const status = result.status === 'completed' && !evidenceError ? 'completed' : 'failed';
-  const error = evidenceError ?? result.error;
+  const error = evidenceError ?? nonCompletedError;
   const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, status, {
     superpowers_phase: phase,
     run_id: result.runId,
@@ -221,10 +441,13 @@ async function runSuperpowersPhaseAction(input: {
   };
 }
 
-function actionToPhase(action: TaskActionKind): SuperpowersPhase | null {
+function actionToPhase(action: TaskActionKind): SuperpowersRuntimePhase | null {
   if (action === 'brainstorming') return 'brainstorming';
   if (action === 'writing_plans') return 'writing_plans';
   if (action === 'subagent_execution') return 'tdd_execute';
+  if (action === 'systematic_debugging') return 'systematic_debugging';
+  if (action === 'verification') return 'verify';
+  if (action === 'finish_branch') return 'finish_branch';
   return null;
 }
 
@@ -232,10 +455,98 @@ function validatePhasePrerequisite(action: TaskActionKind, taskId: string): stri
   if (action === 'writing_plans' && !hasCompletedSuperpowersEvidence(taskId, 'brainstorming', 'designDocPath')) {
     return '缺少头脑风暴产出的 spec，请先运行头脑风暴';
   }
-  if (action === 'subagent_execution' && !hasCompletedSuperpowersEvidence(taskId, 'writing_plans', 'implementationPlanPath')) {
+  if (
+    (action === 'subagent_execution' ||
+      action === 'systematic_debugging' ||
+      action === 'verification' ||
+      action === 'finish_branch') &&
+    !hasCompletedSuperpowersEvidence(taskId, 'writing_plans', 'implementationPlanPath')
+  ) {
     return '缺少编写计划产出的 implementation plan，请先运行编写计划';
   }
   return null;
+}
+
+function chooseAutoAdvanceTarget(taskId: string, routing: SuperpowersRouting): TaskActionKind | null {
+  if (!hasCompletedSuperpowersEvidence(taskId, 'brainstorming', 'designDocPath')) return 'brainstorming';
+  if (!hasCompletedSuperpowersEvidence(taskId, 'writing_plans', 'implementationPlanPath')) return 'writing_plans';
+  return routingActionToTaskAction(routing.next_action);
+}
+
+function selectPhaseAgentForRouting(
+  roomId: string,
+  action: TaskActionKind,
+  routing: SuperpowersRouting,
+): RoomAgent {
+  if (action === 'brainstorming' || action === 'writing_plans') return selectOrAddPlanner(roomId);
+  return selectOrAddExecutableAgentByAgentId(roomId, routing.recommended_agent_id);
+}
+
+function selectDefaultPhaseAgent(roomId: string, task: Task, action: TaskActionKind): RoomAgent {
+  if (action === 'brainstorming' || action === 'writing_plans') return selectOrAddPlanner(roomId);
+
+  if (action === 'subagent_execution' || action === 'systematic_debugging') {
+    ensureBuiltInPhaseAgent(roomId, 'backend-executor');
+    ensureBuiltInPhaseAgent(roomId, 'frontend-executor');
+    const executor = resolveWorkflowExecutor(roomAgentRepo.listByRoom(roomId), task);
+    if (executor) return executor;
+    throw new Error('no executable executor agent available');
+  }
+
+  if (action === 'verification' || action === 'finish_branch') {
+    ensureBuiltInPhaseAgent(roomId, 'reviewer');
+    ensureBuiltInPhaseAgent(roomId, 'acceptor');
+    const agents = roomAgentRepo.listByRoom(roomId);
+    const reviewer = selectWorkflowAgentForRole('reviewer', agents, { task }) ??
+      selectWorkflowAgentForRole('acceptor', agents, { task });
+    if (reviewer) return reviewer;
+    throw new Error('no executable review agent available');
+  }
+
+  return selectOrAddPlanner(roomId);
+}
+
+function selectOrAddExecutableAgentByAgentId(roomId: string, agentId: string): RoomAgent {
+  const normalizedAgentId = agentId.trim();
+  const existing = roomAgentRepo.listByRoom(roomId).find((agent) =>
+    (agent.id === normalizedAgentId || agent.agent_id === normalizedAgentId) &&
+    isExecutableAgent(agent)
+  );
+  if (existing) return existing;
+
+  const globalAgent = agentRepo.getByAgentId(normalizedAgentId);
+  if (!globalAgent) throw new Error(`recommended agent not found: ${normalizedAgentId}`);
+  const added = globalAgent.builtin_key
+    ? roomAgentRepo.ensureBuiltInAgent(roomId, globalAgent.builtin_key)
+    : roomAgentRepo.addFromGlobalAgent({ room_id: roomId, global_agent_id: globalAgent.id });
+  if (!isExecutableAgent(added)) throw new Error(`recommended agent is not executable: ${normalizedAgentId}`);
+  return added;
+}
+
+function ensureBuiltInPhaseAgent(roomId: string, agentId: string): void {
+  try {
+    roomAgentRepo.ensureBuiltInAgent(roomId, agentId);
+  } catch {
+    // Optional built-ins are best-effort; caller still validates executable candidates.
+  }
+}
+
+function buildTaskPromptContext(roomId: string, taskId: string, workflowContextValue: string) {
+  const task = taskRepo.get(taskId);
+  if (!task || task.room_id !== roomId) throw new Error('task not found');
+  const room = roomRepo.get(roomId);
+  if (!room) throw new Error('room not found');
+  const project = projectRepo.get(room.project_id);
+  if (!project) throw new Error('project not found');
+  const agents = roomAgentRepo.listByRoom(roomId);
+  return {
+    projectName: project.name,
+    projectPath: project.path,
+    room,
+    task,
+    agents,
+    workflowContext: workflowContextValue,
+  };
 }
 
 function hasCompletedSuperpowersEvidence(
@@ -296,7 +607,7 @@ function extractSuperpowersEvidence(content: string): Record<string, unknown> | 
   return null;
 }
 
-function validateCompletedPhaseEvidence(phase: SuperpowersPhase, evidence: Record<string, unknown> | null): string | null {
+function validateCompletedPhaseEvidence(phase: SuperpowersRuntimePhase, evidence: Record<string, unknown> | null): string | null {
   if (!evidence) return `缺少 ${phase} 阶段的 superpowers evidence`;
   if (phase === 'brainstorming') {
     return typeof evidence.designDocPath === 'string' && evidence.designDocPath.trim().length > 0
@@ -347,6 +658,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function toTerminalTaskActionStatus(
+  status: Exclude<TaskActionStartResult['status'], 'idle'>,
+): Exclude<TaskActionStartResult['status'], 'idle' | 'queued'> {
+  return status === 'queued' ? 'running' : status;
 }
 
 function ensureFixedRosterWorkflow(roomId: string, taskTitle: string): TaskWorkflowPlan {

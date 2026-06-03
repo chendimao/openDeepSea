@@ -232,9 +232,14 @@ export interface WorkflowDefinition {
 }
 export type TaskActionKind =
   | 'start_execution'
+  | 'auto_advance'
+  | 'route_skills'
   | 'brainstorming'
   | 'writing_plans'
-  | 'subagent_execution';
+  | 'subagent_execution'
+  | 'systematic_debugging'
+  | 'verification'
+  | 'finish_branch';
 
 export type TaskActionStatus = 'idle' | 'queued' | 'running' | 'failed' | 'completed' | 'blocked';
 

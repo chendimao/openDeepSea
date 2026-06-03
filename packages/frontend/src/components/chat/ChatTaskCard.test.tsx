@@ -8,7 +8,7 @@ import { ChatTaskCard } from './ChatTaskCard';
 
 setupBrowserStubs();
 
-test('ChatTaskCard renders four task action entries for open task card', () => {
+test('ChatTaskCard renders auto advance entry and override menu for open task card', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <ChatTaskCard
@@ -25,10 +25,15 @@ test('ChatTaskCard renders four task action entries for open task card', () => {
 
   assert.match(html, /TASK-task-open-/);
   assert.match(html, /去掉header菜单中的测试菜单/);
-  assert.match(html, /开始执行/u);
-  assert.match(html, /头脑风暴/u);
-  assert.match(html, /编写计划/u);
-  assert.match(html, /子代理执行/u);
+  assert.match(html, /自动推进/u);
+  assert.match(html, /更多/u);
+  assert.match(html, /重新运行路由判断/u);
+  assert.match(html, /强制头脑风暴/u);
+  assert.match(html, /强制编写计划/u);
+  assert.match(html, /强制执行计划/u);
+  assert.match(html, /强制诊断\/调试/u);
+  assert.doesNotMatch(html, /开始执行/u);
+  assert.doesNotMatch(html, /子代理执行/u);
   assert.match(html, /Owner/);
   assert.match(html, /Priority/);
   assert.match(html, /Status/);
@@ -65,10 +70,10 @@ test('ChatTaskCard disables task actions for done task and keeps them visible fo
     </I18nProvider>,
   );
 
-  assert.match(doneHtml, /开始执行/u);
+  assert.match(doneHtml, /自动推进/u);
   assert.match(doneHtml, /disabled/u);
-  assert.match(activeWorkflowHtml, /开始执行/u);
-  assert.match(activeWorkflowHtml, /头脑风暴/u);
+  assert.match(activeWorkflowHtml, /自动推进/u);
+  assert.match(activeWorkflowHtml, /更多/u);
 });
 
 test('ChatTaskCard disables task actions for active ACP execution', () => {
@@ -87,7 +92,7 @@ test('ChatTaskCard disables task actions for active ACP execution', () => {
     </I18nProvider>,
   );
 
-  assert.match(html, /开始执行/u);
+  assert.match(html, /自动推进/u);
   assert.match(html, /disabled/u);
 });
 
@@ -107,8 +112,8 @@ test('ChatTaskCard keeps task actions after terminal workflow', () => {
     </I18nProvider>,
   );
 
-  assert.match(html, /开始执行/u);
-  assert.match(html, /头脑风暴/u);
+  assert.match(html, /自动推进/u);
+  assert.match(html, /更多/u);
 });
 
 function task(id: string, status: Task['status']): Task {

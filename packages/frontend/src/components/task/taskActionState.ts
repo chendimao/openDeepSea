@@ -1,6 +1,31 @@
-import type { TaskActionKind, TaskActionState, TaskEvent } from '../../lib/types';
+import type { Task, TaskActionKind, TaskActionState, TaskEvent } from '../../lib/types';
 
-const ACTIONS: TaskActionKind[] = ['start_execution', 'brainstorming', 'writing_plans', 'subagent_execution'];
+const ACTIONS: TaskActionKind[] = [
+  'start_execution',
+  'auto_advance',
+  'route_skills',
+  'brainstorming',
+  'writing_plans',
+  'subagent_execution',
+  'systematic_debugging',
+  'verification',
+  'finish_branch',
+];
+
+export type SuperpowersTaskStage =
+  | 'unrouted'
+  | 'routing'
+  | 'routed'
+  | 'brainstorming'
+  | 'spec_ready'
+  | 'planning'
+  | 'plan_ready'
+  | 'executing'
+  | 'debugging'
+  | 'verifying'
+  | 'done'
+  | 'failed'
+  | 'blocked';
 
 export function createTaskActionStates(
   events: TaskEvent[],
@@ -15,6 +40,7 @@ export function createTaskActionStates(
     states[action] = {
       status,
       detail: getTaskActionDetail(event.payload),
+      evidence: getTaskActionEvidence(event.payload),
     };
   }
 
@@ -29,6 +55,25 @@ export function createTaskActionStates(
   }
 
   return states;
+}
+
+export function deriveSuperpowersTaskStage(
+  states: Partial<Record<TaskActionKind, TaskActionState>>,
+  taskStatus?: Task['status'],
+): SuperpowersTaskStage {
+  if (taskStatus === 'failed') return 'failed';
+  if (hasStatus(states, 'failed')) return 'failed';
+  if (hasStatus(states, 'blocked')) return 'blocked';
+
+  const runningAction = findActionByStatus(states, ['queued', 'running']);
+  if (runningAction) return stageForRunningAction(runningAction);
+
+  if (taskStatus === 'done') return 'done';
+  if (isCompleted(states.finish_branch) || isCompleted(states.verification)) return 'done';
+  if (hasEvidence(states.writing_plans, 'implementationPlanPath')) return 'plan_ready';
+  if (hasEvidence(states.brainstorming, 'designDocPath')) return 'spec_ready';
+  if (hasRoutingEvidence(states)) return 'routed';
+  return 'unrouted';
 }
 
 function compareTaskActionEvents(a: TaskEvent, b: TaskEvent): number {
@@ -71,4 +116,62 @@ function getTaskActionDetail(payload: Record<string, unknown>): string | undefin
   const content = payload.content;
   if (typeof content === 'string' && content.trim()) return content.trim();
   return undefined;
+}
+
+function getTaskActionEvidence(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  const evidence = payload.evidence;
+  const result: Record<string, unknown> = isRecord(evidence) ? { ...evidence } : {};
+  if (isRecord(payload.superpowers_routing)) {
+    result.superpowers_routing = payload.superpowers_routing;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function hasStatus(
+  states: Partial<Record<TaskActionKind, TaskActionState>>,
+  status: TaskActionState['status'],
+): boolean {
+  return Object.values(states).some((state) => state?.status === status);
+}
+
+function findActionByStatus(
+  states: Partial<Record<TaskActionKind, TaskActionState>>,
+  statuses: TaskActionState['status'][],
+): TaskActionKind | null {
+  for (const action of ACTIONS) {
+    const status = states[action]?.status;
+    if (status && statuses.includes(status)) return action;
+  }
+  return null;
+}
+
+function stageForRunningAction(action: TaskActionKind): SuperpowersTaskStage {
+  if (action === 'auto_advance' || action === 'route_skills') return 'routing';
+  if (action === 'brainstorming') return 'brainstorming';
+  if (action === 'writing_plans') return 'planning';
+  if (action === 'subagent_execution' || action === 'start_execution') return 'executing';
+  if (action === 'systematic_debugging') return 'debugging';
+  return 'verifying';
+}
+
+function isCompleted(state: TaskActionState | undefined): boolean {
+  return state?.status === 'completed';
+}
+
+function hasRoutingEvidence(states: Partial<Record<TaskActionKind, TaskActionState>>): boolean {
+  return hasEvidence(states.auto_advance, 'superpowers_routing') ||
+    hasEvidence(states.route_skills, 'superpowers_routing') ||
+    hasEvidence(states.auto_advance, 'next_action') ||
+    hasEvidence(states.route_skills, 'next_action');
+}
+
+function hasEvidence(state: TaskActionState | undefined, key: string): boolean {
+  if (!state || state.status !== 'completed' || !state.evidence) return false;
+  const value = state.evidence[key];
+  if (typeof value === 'string') return value.trim().length > 0;
+  return Boolean(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }

@@ -27,17 +27,20 @@ export type SuperpowersPhase =
   | 'verify'
   | 'finish_branch';
 
-export const SUPERPOWERS_PHASE_SKILLS: Record<SuperpowersPhase, readonly SuperpowersCoreSkillName[]> = {
+export type SuperpowersRuntimePhase = SuperpowersPhase | 'systematic_debugging';
+
+export const SUPERPOWERS_PHASE_SKILLS: Record<SuperpowersRuntimePhase, readonly SuperpowersCoreSkillName[]> = {
   brainstorming: ['using-superpowers', 'brainstorming'],
   worktree: ['using-git-worktrees'],
   writing_plans: ['writing-plans'],
   tdd_execute: ['test-driven-development', 'subagent-driven-development'],
+  systematic_debugging: ['systematic-debugging'],
   spec_compliance_review: ['requesting-code-review'],
   code_quality_review: ['requesting-code-review'],
   verify: ['verification-before-completion'],
   finish_branch: ['finishing-a-development-branch'],
 };
 
-export function getSuperpowersPhaseSkills(phase: SuperpowersPhase): readonly SuperpowersCoreSkillName[] {
+export function getSuperpowersPhaseSkills(phase: SuperpowersRuntimePhase): readonly SuperpowersCoreSkillName[] {
   return SUPERPOWERS_PHASE_SKILLS[phase];
 }

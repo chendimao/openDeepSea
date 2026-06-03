@@ -123,7 +123,7 @@ test('TaskWorkspacePanel keeps task selection explicit when no task is active', 
   assert.doesNotMatch(html, /data-active="true"/);
 });
 
-test('TaskWorkspacePanel exposes four task actions for active open task', () => {
+test('TaskWorkspacePanel exposes auto advance action and override menu for active open task', () => {
   const activeTask = task('task-open', '等待启动闭环');
   const html = renderToStaticMarkup(
     <TaskWorkspaceTestProvider>
@@ -155,10 +155,15 @@ test('TaskWorkspacePanel exposes four task actions for active open task', () => 
     </TaskWorkspaceTestProvider>,
   );
 
-  assert.match(html, /开始执行/u);
-  assert.match(html, /头脑风暴/u);
-  assert.match(html, /编写计划/u);
-  assert.match(html, /子代理执行/u);
+  assert.match(html, /自动推进/u);
+  assert.match(html, /更多/u);
+  assert.match(html, /重新运行路由判断/u);
+  assert.match(html, /强制头脑风暴/u);
+  assert.match(html, /强制编写计划/u);
+  assert.match(html, /强制执行计划/u);
+  assert.match(html, /强制诊断\/调试/u);
+  assert.doesNotMatch(html, /开始执行/u);
+  assert.doesNotMatch(html, /子代理执行/u);
 });
 
 test('TaskWorkspacePanel disables task actions for done task but keeps active workflow actions visible', () => {
@@ -225,10 +230,10 @@ test('TaskWorkspacePanel disables task actions for done task but keeps active wo
     </TaskWorkspaceTestProvider>,
   );
 
-  assert.match(doneHtml, /开始执行/u);
+  assert.match(doneHtml, /自动推进/u);
   assert.match(doneHtml, /disabled/u);
-  assert.match(workflowHtml, /开始执行/u);
-  assert.match(workflowHtml, /头脑风暴/u);
+  assert.match(workflowHtml, /自动推进/u);
+  assert.match(workflowHtml, /更多/u);
 });
 
 test('TaskWorkspacePanel shows task action running state after terminal workflow', () => {
@@ -248,9 +253,9 @@ test('TaskWorkspacePanel shows task action running state after terminal workflow
         taskActionEvents={[
           {
             ...event('action-running', 'task_updated', 'timeline', {
-              task_action: 'start_execution',
+              task_action: 'writing_plans',
               task_action_status: 'running',
-              content: '运行中',
+              content: '正在编写 implementation plan',
             }),
             task_id: activeTask.id,
           },
@@ -275,8 +280,8 @@ test('TaskWorkspacePanel shows task action running state after terminal workflow
     </TaskWorkspaceTestProvider>,
   );
 
-  assert.match(html, /开始执行/u);
-  assert.match(html, /运行中/u);
+  assert.match(html, /编写计划中/u);
+  assert.match(html, /正在编写 implementation plan/u);
   assert.match(html, /disabled/u);
   assert.doesNotMatch(html, /src\/keep-detail\.ts/);
   assert.doesNotMatch(html, /npm run build/);

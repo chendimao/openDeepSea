@@ -5154,14 +5154,17 @@
   }
   .task-action-strip {
     display: grid;
+    position: relative;
     min-width: 0;
     height: 100%;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 5px;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    gap: 6px;
+    align-items: stretch;
   }
   .task-action-button {
     display: grid;
     min-width: 0;
+    min-height: 38px;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     gap: 6px;
@@ -5209,6 +5212,21 @@
   .task-action-button:focus-visible svg {
     color: var(--color-primary);
   }
+  .task-action-button-primary {
+    padding-inline: 9px;
+  }
+  .task-action-more-button {
+    width: 82px;
+    grid-template-columns: auto auto auto;
+    justify-content: center;
+    text-align: center;
+  }
+  .task-action-more-button span {
+    width: auto;
+  }
+  .task-action-more-chevron {
+    opacity: 0.62;
+  }
   .task-action-button:disabled {
     cursor: default;
     opacity: 0.66;
@@ -5235,6 +5253,48 @@
   .task-action-button.is-failed svg,
   .task-action-button.is-blocked svg {
     color: #DC2626;
+  }
+  .task-action-menu-content {
+    z-index: 1200;
+    min-width: 224px;
+    border: 1px solid var(--room-border-subtle);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--room-card-bg) 98%, transparent);
+    box-shadow: 0 18px 42px rgba(15,23,42,0.16), inset 0 1px 0 rgba(255,255,255,0.52);
+    padding: 5px;
+  }
+  .task-action-menu-content[data-state="closed"] {
+    display: none;
+  }
+  .task-action-menu-item {
+    display: flex;
+    min-height: 34px;
+    align-items: center;
+    gap: 8px;
+    border-radius: 7px;
+    color: var(--room-text-heading);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 720;
+    line-height: 1.2;
+    padding: 7px 8px;
+    outline: none;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .task-action-menu-item svg {
+    flex: 0 0 auto;
+    color: var(--room-text-muted);
+  }
+  .task-action-menu-item[data-highlighted] {
+    background: color-mix(in srgb, var(--color-primary) 9%, var(--room-card-bg));
+    color: var(--color-primary);
+  }
+  .task-action-menu-item[data-highlighted] svg {
+    color: var(--color-primary);
+  }
+  .task-action-menu-item[data-disabled] {
+    cursor: default;
+    opacity: 0.48;
   }
   .active-task-tabs {
     display: flex;
@@ -6736,11 +6796,22 @@
     padding: 10px 14px 14px;
   }
   .task-action-strip.is-compact .task-action-button {
+    min-height: 40px;
+    gap: 6px;
+    padding: 7px 8px;
+  }
+  .task-action-strip.is-compact .task-action-button-primary {
+    grid-template-columns: auto minmax(0, 1fr);
+    text-align: left;
+  }
+  .task-action-strip.is-compact .task-action-more-button {
+    width: 76px;
+    grid-template-columns: auto auto;
     justify-content: center;
-    grid-template-columns: auto minmax(0, auto);
-    gap: 5px;
-    padding: 7px 6px;
     text-align: center;
+  }
+  .task-action-strip.is-compact .task-action-more-chevron {
+    display: none;
   }
   .task-action-strip.is-compact .task-action-button strong {
     font-size: 10.5px;

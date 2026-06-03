@@ -2594,7 +2594,17 @@ const taskExecutionDispatchSchema = z.object({
 });
 
 const taskActionStartSchema = z.object({
-  action: z.enum(['start_execution', 'brainstorming', 'writing_plans', 'subagent_execution']),
+  action: z.enum([
+    'start_execution',
+    'auto_advance',
+    'route_skills',
+    'brainstorming',
+    'writing_plans',
+    'subagent_execution',
+    'systematic_debugging',
+    'verification',
+    'finish_branch',
+  ]),
   sender_id: z.string().trim().optional(),
   sender_name: z.string().trim().optional(),
 });

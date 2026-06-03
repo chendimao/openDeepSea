@@ -13,7 +13,79 @@ const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
 const { taskRepo } = await import('./repos/tasks.js');
+const { buildSuperpowersRoutingPrompt } = await import('./workflows/prompts.js');
+const { parseSuperpowersRouting } = await import('./workflows/superpowers-routing.js');
 const { startTaskAction } = await import('./task-actions.js');
+
+test('parseSuperpowersRouting extracts valid fenced routing json', () => {
+  const result = parseSuperpowersRouting([
+    '路由完成',
+    '```json',
+    '{',
+    '  "superpowers_routing": {',
+    '    "next_action": "brainstorming",',
+    '    "required_skill": "brainstorming",',
+    '    "reason": "功能变更需要先澄清需求并产出 spec。",',
+    '    "recommended_agent_id": "planner",',
+    '    "expected_evidence": ["designDocPath"]',
+    '  }',
+    '}',
+    '```',
+  ].join('\n'));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.ok ? result.routing.next_action : '', 'brainstorming');
+  assert.deepEqual(result.ok ? result.routing.expected_evidence : [], ['designDocPath']);
+});
+
+test('parseSuperpowersRouting rejects incomplete routing json', () => {
+  const result = parseSuperpowersRouting('```json\n{"superpowers_routing":{"next_action":"brainstorming"}}\n```');
+
+  assert.equal(result.ok, false);
+  assert.match(result.ok ? '' : result.error, /required_skill|reason|recommended_agent_id|expected_evidence/u);
+});
+
+test('buildSuperpowersRoutingPrompt describes routing-only using-superpowers output', () => {
+  const prompt = buildSuperpowersRoutingPrompt({
+    projectName: 'Project',
+    projectPath: '/tmp/project',
+    room: {
+      id: 'room',
+      project_id: 'project',
+      name: 'Room',
+      description: null,
+      created_at: 1,
+      last_opened_at: null,
+      pinned_at: null,
+      sort_order: null,
+    },
+    task: {
+      id: 'task',
+      room_id: 'room',
+      project_id: 'project',
+      parent_task_id: null,
+      title: '自动推进任务卡片',
+      description: '需要先判断 Superpowers 下一步',
+      status: 'todo',
+      priority: 'normal',
+      interaction_mode: 'auto_recommended',
+      assigned_agent_id: null,
+      source_message_id: null,
+      created_from: 'manual',
+      created_at: 1,
+      updated_at: 1,
+      completed_at: null,
+      deleted_at: null,
+    },
+    agents: [],
+  });
+
+  assert.match(prompt, /using-superpowers/u);
+  assert.match(prompt, /routing 只做判断/u);
+  assert.match(prompt, /不替代 brainstorming、writing-plans、systematic-debugging/u);
+  assert.match(prompt, /superpowers_routing/u);
+  assert.match(prompt, /```json/u);
+});
 
 test('start_execution action creates a locked roster with executor reviewer and acceptor', async () => {
   const project = projectRepo.create({
@@ -432,6 +504,329 @@ test('brainstorming action dispatches planner with superpowers brainstorming pro
   );
   assert.equal(completedEvent?.payload.event_message_id, result.message_id);
   assert.equal((completedEvent?.payload.evidence as { designDocPath?: string } | undefined)?.designDocPath, 'docs/superpowers/specs/test-design.md');
+});
+
+test('route_skills action dispatches planner with using-superpowers routing prompt', async () => {
+  const project = projectRepo.create({
+    name: '路由判断动作',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-route-skills-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '自动判断下一步',
+  });
+  let prompt = '';
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'route_skills',
+    runAgent: async (input) => {
+      prompt = input.prompt;
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers_routing":{"next_action":"brainstorming","required_skill":"brainstorming","reason":"需要 spec","recommended_agent_id":"planner","expected_evidence":["designDocPath"]}}\n```',
+        error: null,
+        runId: 'run-route',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.match(prompt, /using-superpowers/u);
+  assert.match(prompt, /superpowers_routing/u);
+  assert.deepEqual(result.run_ids, ['run-route']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const completedEvent = events.find((event) =>
+    event.payload.action === 'route_skills' &&
+    event.payload.status === 'completed'
+  );
+  assert.equal(completedEvent?.payload.event_message_id, result.message_id);
+  assert.equal((completedEvent?.payload.superpowers_routing as { next_action?: string } | undefined)?.next_action, 'brainstorming');
+});
+
+test('auto_advance routes missing spec task to planner brainstorming', async () => {
+  const project = projectRepo.create({
+    name: '自动推进缺 spec',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-no-spec-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '新增任务卡片入口',
+  });
+  const actions: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'auto_advance',
+    runAgent: async ({ prompt }) => {
+      actions.push(prompt.includes('superpowers_routing') ? 'route' : 'phase');
+      if (prompt.includes('superpowers_routing')) {
+        return {
+          status: 'completed',
+          content: '```json\n{"superpowers_routing":{"next_action":"verification","required_skill":"verification-before-completion","reason":"planner 误判为验收","recommended_agent_id":"reviewer","expected_evidence":["verificationEvidence"]}}\n```',
+          error: null,
+          runId: 'run-route',
+        };
+      }
+      assert.match(prompt, /brainstorming/u);
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers":{"designDocPath":"docs/superpowers/specs/auto-design.md","designReviewVerdict":"approved"}}\n```',
+        error: null,
+        runId: 'run-brainstorming',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(actions, ['route', 'phase']);
+  assert.deepEqual(result.run_ids, ['run-route', 'run-brainstorming']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 20 });
+  assert.ok(events.some((event) =>
+    event.payload.action === 'route_skills' &&
+    event.payload.status === 'completed'
+  ));
+  assert.ok(events.some((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'completed'
+  ));
+  assert.ok(events.some((event) =>
+    event.payload.action === 'auto_advance' &&
+    event.payload.status === 'completed'
+  ));
+});
+
+test('auto_advance routes existing spec task to planner writing_plans before execution', async () => {
+  const project = projectRepo.create({
+    name: '自动推进已有 spec',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-with-spec-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '已有 spec 缺 plan',
+  });
+  recordCompletedEvidence(room.id, task.id, 'brainstorming', {
+    designDocPath: 'docs/superpowers/specs/auto-design.md',
+  });
+  const prompts: string[] = [];
+  const agentIds: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'auto_advance',
+    runAgent: async ({ agent, prompt }) => {
+      agentIds.push(agent.agent_id);
+      prompts.push(prompt);
+      if (prompt.includes('superpowers_routing')) {
+        return {
+          status: 'completed',
+          content: '```json\n{"superpowers_routing":{"next_action":"subagent_execution","required_skill":"subagent-driven-development","reason":"planner 误判为执行","recommended_agent_id":"backend-executor","expected_evidence":["tddEvidence"]}}\n```',
+          error: null,
+          runId: 'run-route',
+        };
+      }
+      assert.match(prompt, /writing_plans/u);
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers":{"implementationPlanPath":"docs/superpowers/plans/auto-plan.md","planReviewVerdict":"approved"}}\n```',
+        error: null,
+        runId: 'run-writing-plans',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(prompts.length, 2);
+  assert.deepEqual(agentIds, ['planner', 'planner']);
+  assert.deepEqual(result.run_ids, ['run-route', 'run-writing-plans']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 20 });
+  assert.ok(events.some((event) =>
+    event.payload.action === 'writing_plans' &&
+    event.payload.status === 'completed'
+  ));
+});
+
+test('auto_advance follows routing action after implementation plan evidence exists', async () => {
+  const project = projectRepo.create({
+    name: '自动推进已有 plan',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-with-plan-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '已有 plan 进入调试',
+  });
+  recordCompletedEvidence(room.id, task.id, 'brainstorming', {
+    designDocPath: 'docs/superpowers/specs/auto-design.md',
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/auto-plan.md',
+  });
+  const prompts: string[] = [];
+  const agentIds: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'auto_advance',
+    runAgent: async ({ agent, prompt }) => {
+      agentIds.push(agent.agent_id);
+      prompts.push(prompt);
+      if (prompt.includes('superpowers_routing')) {
+        return {
+          status: 'completed',
+          content: '```json\n{"superpowers_routing":{"next_action":"systematic_debugging","required_skill":"systematic-debugging","reason":"测试失败，需要系统化调试","recommended_agent_id":"backend-executor","expected_evidence":["debuggingEvidence"]}}\n```',
+          error: null,
+          runId: 'run-route',
+        };
+      }
+      assert.match(prompt, /systematic_debugging/u);
+      assert.match(prompt, /Skill: superpowers:systematic-debugging/u);
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers":{"debuggingEvidence":{"rootCause":"测试失败","fixed":true}}}\n```',
+        error: null,
+        runId: 'run-debugging',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(prompts.length, 2);
+  assert.deepEqual(agentIds, ['planner', 'backend-executor']);
+  assert.deepEqual(result.run_ids, ['run-route', 'run-debugging']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 20 });
+  const completedEvent = events.find((event) =>
+    event.payload.action === 'systematic_debugging' &&
+    event.payload.status === 'completed'
+  );
+  assert.equal(completedEvent?.payload.superpowers_phase, 'systematic_debugging');
+});
+
+test('auto_advance blocks execution routing when recommended agent is unavailable', async () => {
+  const project = projectRepo.create({
+    name: '自动推进推荐执行者不可用',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-missing-agent-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '已有 plan 但推荐执行者不存在',
+  });
+  recordCompletedEvidence(room.id, task.id, 'brainstorming', {
+    designDocPath: 'docs/superpowers/specs/auto-design.md',
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/auto-plan.md',
+  });
+  let calls = 0;
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'auto_advance',
+    runAgent: async () => {
+      calls += 1;
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers_routing":{"next_action":"subagent_execution","required_skill":"subagent-driven-development","reason":"进入执行阶段","recommended_agent_id":"missing-executor","expected_evidence":["tddEvidence"]}}\n```',
+        error: null,
+        runId: 'run-route-missing-agent',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(calls, 1);
+  assert.match(result.blocked_reason ?? '', /missing-executor|recommended agent/u);
+  const events = taskEventRepo.listByTask(task.id, { limit: 20 });
+  assert.ok(events.some((event) =>
+    event.payload.action === 'route_skills' &&
+    event.payload.status === 'completed'
+  ));
+  assert.ok(events.some((event) =>
+    event.payload.action === 'auto_advance' &&
+    event.payload.status === 'blocked'
+  ));
+  assert.equal(events.some((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'running'
+  ), false);
+});
+
+test('auto_advance blocks invalid routing output before dispatching a phase', async () => {
+  const project = projectRepo.create({
+    name: '自动推进非法 routing',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-invalid-route-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '非法 routing 输出',
+  });
+  let calls = 0;
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'auto_advance',
+    runAgent: async () => {
+      calls += 1;
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers_routing":{"next_action":"brainstorming"}}\n```',
+        error: null,
+        runId: 'run-route-invalid',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'blocked');
+  assert.equal(calls, 1);
+  assert.match(result.blocked_reason ?? '', /required_skill|reason|recommended_agent_id|expected_evidence/u);
+  const events = taskEventRepo.listByTask(task.id, { limit: 20 });
+  assert.ok(events.some((event) =>
+    event.payload.action === 'route_skills' &&
+    event.payload.status === 'blocked'
+  ));
+  assert.ok(events.some((event) =>
+    event.payload.action === 'auto_advance' &&
+    event.payload.status === 'blocked'
+  ));
+  assert.equal(events.some((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'running'
+  ), false);
 });
 
 test('brainstorming action fails when completed output has no design doc evidence', async () => {
@@ -932,3 +1327,24 @@ test('brainstorming action records failed event when planner runner throws', asy
   assert.match(String(failedEvent?.payload.error ?? ''), /planner exploded/u);
   assert.equal(failedEvent?.payload.event_message_id, result.message_id);
 });
+
+function recordCompletedEvidence(
+  roomId: string,
+  taskId: string,
+  action: 'brainstorming' | 'writing_plans',
+  evidence: Record<string, unknown>,
+): void {
+  taskEventRepo.create({
+    room_id: roomId,
+    task_id: taskId,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action,
+      status: 'completed',
+      task_action: action,
+      task_action_status: 'completed',
+      evidence,
+    },
+  });
+}
