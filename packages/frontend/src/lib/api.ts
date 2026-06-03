@@ -741,6 +741,8 @@ export const api = {
   listAgentRuns: (roomId: string) => request<AgentRun[]>(`/rooms/${roomId}/agent-runs`),
   cancelAgentRun: (id: string) =>
     request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),
+  retryAgentRun: (id: string) =>
+    request<AgentRun>(`/agent-runs/${id}/retry`, { method: 'POST' }),
   sendMessage: (
     roomId: string,
     input: {

@@ -31,6 +31,16 @@ export function findPreviousUserMessage(messages: Message[], beforeIndex: number
   return null;
 }
 
+export async function retryFailedAgentRun(input: {
+  run: AgentRun | undefined;
+  retrySourceMessage?: Message | null;
+  retryAgentRun: (id: string) => Promise<unknown>;
+  sendMessage?: (content: string, mentions: string[]) => Promise<unknown>;
+}): Promise<void> {
+  if (!input.run || input.run.status !== 'failed') throw new Error('没有可重试的失败运行');
+  await input.retryAgentRun(input.run.id);
+}
+
 export function shouldUseStreamingDisplayForMessage(
   message: Message,
   run: AgentRun | undefined,

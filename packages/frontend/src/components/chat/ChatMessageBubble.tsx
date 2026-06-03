@@ -23,6 +23,7 @@ import { BrainstormingOptionsPanel } from './BrainstormingOptionsPanel';
 import { getBrainstormingOptionsForMessage } from './brainstormingOptions';
 import {
   getAgentMessageRunState,
+  retryFailedAgentRun,
   shouldUseStreamingDisplayForMessage,
   type AgentMessageRunState,
 } from './chatMessageModel';
@@ -105,16 +106,13 @@ export function ChatMessageBubble({
     onError: (err) => toast.error((err as Error).message),
   });
   const retryAgentRun = useMutation({
-    mutationFn: () => {
-      const retryContent = retrySourceMessage?.content?.trim();
-      if (!run || !retryContent) throw new Error('没有可重试的用户消息');
-      return api.sendMessage(roomId, {
-        content: retryContent,
-        mentions: [run.agent_id],
-      });
-    },
+    mutationFn: () => retryFailedAgentRun({
+      run,
+      retrySourceMessage,
+      retryAgentRun: (id) => api.retryAgentRun(id),
+    }),
     onSuccess: () => {
-      toast.success('已重新发送给智能体');
+      toast.success('已在原会话中重试');
       queryClient.invalidateQueries({ queryKey: ['messages', roomId] });
       queryClient.invalidateQueries({ queryKey: ['agent-runs', roomId] });
     },
@@ -131,7 +129,7 @@ export function ChatMessageBubble({
   const isStreaming = shouldUseStreamingDisplayForMessage(message, run, streaming);
   const showRunStatusNotice = !hasContent && Boolean(agentRunStatus) && message.message_type === 'agent_stream';
   const canReply = !isSystem && hasContent && !isStreaming;
-  const canRetryAgentRun = !isUser && run?.status === 'failed' && Boolean(retrySourceMessage?.content?.trim());
+  const canRetryAgentRun = !isUser && run?.status === 'failed';
   const showTaskExecutionSummary = !isUser && Boolean(metadata.task_execution);
   const showRecordOnlyBody = showTaskExecutionSummary && !hasContent;
   const brainstormingOptions = !isUser && !isStreaming

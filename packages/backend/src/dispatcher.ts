@@ -890,6 +890,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         room_id: roomId,
         room_agent_id: agent.id,
         agent_id: agent.agent_id,
+        acp_session_id: args.acpSessionIdOverride === undefined ? undefined : args.acpSessionIdOverride,
       })
     : null;
   const acpSessionId = taskExecutor?.acp_session_id ?? args.acpSessionIdOverride ?? agent.acp_session_id;

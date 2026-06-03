@@ -18,6 +18,8 @@ import { db } from './db.js';
 import {
   dispatchTaskExecutionDecisionForRoom,
   dispatchUserMessage,
+  respondAsAgent,
+  type RespondAsAgentInput,
 } from './dispatcher.js';
 import {
   sendGlobalChatMessage,
@@ -120,6 +122,7 @@ import {
   type MessageIntent,
   type MessageIntentResult,
   type RouteResult,
+  type AgentRun,
   type WorkflowRole,
 } from './types.js';
 
@@ -221,6 +224,7 @@ interface AiConfigTestRouteDeps {
 interface MessageRouteDeps {
   dispatchUserMessage?: typeof dispatchUserMessage;
   taskAnalyzer?: TaskAnalyzerInvoker;
+  retryAgentRunOnce?: (input: RespondAsAgentInput) => Promise<{ run: AgentRun }>;
 }
 
 let collaborationRouteDeps: CollaborationRouteDeps = {};
@@ -1841,6 +1845,82 @@ router.post('/agent-runs/:id/cancel', (req, res) => {
   }
   res.json(updated);
 });
+
+router.post('/agent-runs/:id/retry', (req, res) => {
+  void (async () => {
+    const run = agentRunRepo.get(req.params.id);
+    if (!run) {
+      res.status(404).json({ error: 'not found' });
+      return;
+    }
+    if (run.status !== 'failed' && run.status !== 'interrupted') {
+      res.status(409).json({ error: 'only failed or interrupted runs can be retried' });
+      return;
+    }
+    const room = roomRepo.get(run.room_id);
+    if (!room) {
+      res.status(404).json({ error: 'room not found' });
+      return;
+    }
+    const project = projectRepo.get(room.project_id);
+    if (!project) {
+      res.status(404).json({ error: 'project not found' });
+      return;
+    }
+    const agent = roomAgentRepo.get(run.room_agent_id);
+    if (!agent || agent.room_id !== room.id || agent.agent_id !== run.agent_id) {
+      res.status(404).json({ error: 'agent not found' });
+      return;
+    }
+    const task = run.task_id ? taskRepo.get(run.task_id) : undefined;
+    if (run.task_id && (!task || task.room_id !== room.id)) {
+      res.status(409).json({ error: 'run task is no longer available' });
+      return;
+    }
+
+    try {
+      const retry = await (messageRouteDeps.retryAgentRunOnce ?? startRetriedAgentRun)({
+        agent,
+        projectPath: project.path,
+        roomId: room.id,
+        prompt: run.prompt,
+        internalMessage: false,
+        taskId: run.task_id,
+        workflowRunId: run.workflow_run_id,
+        workflowStepId: run.workflow_step_id,
+        workflowStage: run.workflow_stage,
+        collaborationRunId: run.collaboration_run_id,
+        collaborationStage: run.collaboration_stage,
+        sourceMessageId: task?.source_message_id ?? null,
+        acpSessionIdOverride: run.acp_session_id,
+      });
+      res.status(202).json(retry.run);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'agent run retry failed';
+      res.status(/no ACP backend|has no ACP backend|no executable/u.test(message) ? 409 : 400).json({ error: message });
+    }
+  })();
+});
+
+function startRetriedAgentRun(input: RespondAsAgentInput): Promise<{ run: AgentRun }> {
+  let created = false;
+  return new Promise((resolve, reject) => {
+    void respondAsAgent({
+      ...input,
+      onRunCreated: async (run) => {
+        created = true;
+        resolve({ run });
+        if (input.onRunCreated) await input.onRunCreated(run);
+      },
+    }).catch((error) => {
+      if (created) {
+        console.warn(`[agent-runs] retried run failed after start: ${(error as Error).message}`);
+        return;
+      }
+      reject(error);
+    });
+  });
+}
 
 const jsonMessageSchema = z.object({
   content: z.string().default(''),
