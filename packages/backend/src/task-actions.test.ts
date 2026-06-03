@@ -792,6 +792,104 @@ test('auto_advance retry resumes from failed routing output when it is parseable
   assert.equal((recoveredRoute?.payload.superpowers_routing as { next_action?: string } | undefined)?.next_action, 'writing_plans');
 });
 
+test('auto_advance does not recover stale failed routing after a later task action', async () => {
+  const project = projectRepo.create({
+    name: '自动推进不复用过期路由',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-no-stale-route-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  const backend = agentRepo.getByAgentId('backend-executor');
+  assert.ok(planner);
+  assert.ok(backend);
+  const plannerRoomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: backend.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '失败路由后已有手动计划',
+  });
+  recordCompletedEvidence(room.id, task.id, 'brainstorming', {
+    designDocPath: 'docs/superpowers/specs/stale-design.md',
+  });
+  const failedRouteRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: plannerRoomAgent.id,
+    agent_id: plannerRoomAgent.agent_id,
+    backend: 'codex',
+    task_id: task.id,
+    status: 'failed',
+    prompt: 'old route prompt',
+  });
+  agentRunRepo.updateStatus(failedRouteRun.id, 'failed', {
+    stdout: '```json\n{"superpowers_routing":{"next_action":"writing_plans","required_skill":"writing-plans","reason":"旧路由：继续写计划","recommended_agent_id":"planner","expected_evidence":["implementationPlanPath"]}}\n```',
+    error: 'ACP prompt timed out',
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'route_skills',
+      status: 'failed',
+      task_action: 'route_skills',
+      task_action_status: 'failed',
+      run_id: failedRouteRun.id,
+      run_ids: [failedRouteRun.id],
+      error: 'ACP prompt timed out',
+    },
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'auto_advance',
+      status: 'failed',
+      task_action: 'auto_advance',
+      task_action_status: 'failed',
+      run_ids: [failedRouteRun.id],
+      error: 'Superpowers 路由未完成',
+    },
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/manual-plan.md',
+  });
+  const prompts: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'auto_advance',
+    runAgent: async ({ prompt }) => {
+      prompts.push(prompt);
+      if (prompt.includes('superpowers_routing')) {
+        return {
+          status: 'completed',
+          content: '```json\n{"superpowers_routing":{"next_action":"systematic_debugging","required_skill":"systematic-debugging","reason":"已有 plan 后应重新判断执行阶段","recommended_agent_id":"backend-executor","expected_evidence":["debuggingEvidence"]}}\n```',
+          error: null,
+          runId: 'run-route-fresh',
+        };
+      }
+      assert.match(prompt, /systematic_debugging/u);
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers":{"debuggingEvidence":{"rootCause":"fresh route used","fixed":true}}}\n```',
+        error: null,
+        runId: 'run-debugging-fresh',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(prompts.length, 2);
+  assert.deepEqual(result.run_ids, ['run-route-fresh', 'run-debugging-fresh']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 30 });
+  assert.equal(events.some((event) => event.payload.recovered_from_run_id === failedRouteRun.id), false);
+});
+
 test('auto_advance follows routing action after implementation plan evidence exists', async () => {
   const project = projectRepo.create({
     name: '自动推进已有 plan',

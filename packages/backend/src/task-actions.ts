@@ -24,6 +24,18 @@ import {
 } from './workflows/superpowers-routing.js';
 import { wsHub } from './ws-hub.js';
 
+const TASK_ACTION_KINDS: readonly TaskActionKind[] = [
+  'start_execution',
+  'auto_advance',
+  'route_skills',
+  'brainstorming',
+  'writing_plans',
+  'subagent_execution',
+  'systematic_debugging',
+  'verification',
+  'finish_branch',
+];
+
 export interface TaskActionAgentResult {
   status: AgentRunStatus | 'failed';
   content: string;
@@ -351,12 +363,14 @@ function recoverLatestFailedRoutingResult(
   const latestTerminalEvent = [...taskEventRepo.listByTask(taskId, { layer: 'timeline', limit: 50 })]
     .reverse()
     .find((event) => {
-      const action = event.payload.task_action ?? event.payload.action;
-      if (action !== 'auto_advance' && action !== 'route_skills') return false;
+      const action = getTaskActionKind(event.payload.task_action ?? event.payload.action);
+      if (!action) return false;
       const status = event.payload.task_action_status ?? event.payload.status;
       return status !== 'queued' && status !== 'running';
     });
   if (!latestTerminalEvent) return null;
+  const action = getTaskActionKind(latestTerminalEvent.payload.task_action ?? latestTerminalEvent.payload.action);
+  if (action !== 'auto_advance' && action !== 'route_skills') return null;
   const status = latestTerminalEvent.payload.task_action_status ?? latestTerminalEvent.payload.status;
   if (status !== 'failed') return null;
 
@@ -383,6 +397,12 @@ function recoverLatestFailedRoutingResult(
     run_ids: runIds,
     routing: parsed.routing,
   };
+}
+
+function getTaskActionKind(value: unknown): TaskActionKind | null {
+  return typeof value === 'string' && TASK_ACTION_KINDS.includes(value as TaskActionKind)
+    ? value as TaskActionKind
+    : null;
 }
 
 function extractRunId(payload: Record<string, unknown>): string | null {
