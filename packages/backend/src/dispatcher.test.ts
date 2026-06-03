@@ -3539,6 +3539,200 @@ test('planner dispatch defers review steps until execution result returns to pla
   }
 });
 
+test('task-bound planner ready decision auto dispatches on the original task', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-planner-auto-dispatch-'));
+  const project = projectRepo.create({ name: `task-planner-auto-dispatch-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: '修复群聊任务自动执行' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  assert.ok(planner);
+  assert.ok(frontend);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  settingsRepo.updateProject(project.id, {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: planner.agent_id,
+  });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '确认边界：按原任务继续执行，不要新建任务',
+    message_type: 'text',
+    metadata: { task_id: task.id },
+  });
+
+  const originalAdapter = adapters.codex;
+  const events = captureRoomEvents(room.id);
+  const calls: string[] = [];
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      if (args.prompt.includes('本轮派发的智能体已经完成')) {
+        calls.push('planner-followup');
+        args.onChunk({
+          stream: 'stdout',
+          text: [
+            '执行结果已收到，任务完成。',
+            '',
+            '```json',
+            JSON.stringify({
+              task_execution: {
+                state: 'analysis_only',
+                status: 'completed',
+                summary: '前端执行者已完成原任务，暂无后续派发',
+                next_steps: [],
+              },
+            }),
+            '```',
+          ].join('\n'),
+        });
+      } else if (args.prompt.includes('名称：前端执行者')) {
+        calls.push('frontend-executor');
+        args.onChunk({ stream: 'stdout', text: '前端执行者完成：已在原任务上继续执行。' });
+      } else {
+        calls.push('planner-initial');
+        args.onChunk({
+          stream: 'stdout',
+          text: [
+            '边界已确认，直接在原任务上继续执行。',
+            '',
+            '```json',
+            JSON.stringify({
+              task_execution: {
+                state: 'ready_to_execute',
+                status: 'suggested',
+                summary: '确认边界后继续执行原任务',
+                next_steps: [
+                  { agent_id: 'frontend-executor', goal: '在原任务上继续修复群聊任务自动执行链路' },
+                ],
+              },
+            }),
+            '```',
+          ].join('\n'),
+        });
+      }
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await dispatchUserMessage({ roomId: room.id, userMessage: sourceMessage });
+
+    const runs = agentRunRepo.listByRoom(room.id, 50);
+    const plannerReply = messageRepo.listByRoom(room.id, 50)
+      .find((message) => message.sender_id === 'planner' && message.content.includes('确认边界后继续执行原任务'));
+    const plannerRun = runs.find((run) => run.agent_id === 'planner' && run.prompt.includes('确认边界：按原任务继续执行'));
+    const executorRun = runs.find((run) => run.agent_id === 'frontend-executor');
+
+    assert.deepEqual(calls, ['planner-initial', 'frontend-executor', 'planner-followup']);
+    assert.ok(plannerRun);
+    assert.ok(executorRun);
+    assert.equal(plannerRun.task_id, task.id);
+    assert.equal(executorRun.task_id, task.id);
+    assert.ok(plannerReply);
+    const plannerMetadata = JSON.parse(plannerReply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(plannerMetadata.task_execution?.status, 'dispatching');
+
+    const plannerDoneIndex = events.findIndex((event) =>
+      event.type === 'message:stream' &&
+      event.done === true &&
+      event.messageId === plannerReply.id &&
+      event.message?.metadata?.includes('"dispatching"') === true
+    );
+    const executorRunCreatedIndex = events.findIndex((event) =>
+      event.type === 'agent_run:created' &&
+      event.run.agent_id === 'frontend-executor'
+    );
+    assert.ok(plannerDoneIndex >= 0, 'expected planner final dispatching snapshot before executor starts');
+    assert.ok(executorRunCreatedIndex >= 0, 'expected frontend executor run to be auto-created');
+    assert.ok(plannerDoneIndex < executorRunCreatedIndex);
+  } finally {
+    events.restore();
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('planner dispatch still runs available targets when later steps reference an unknown agent', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-partial-missing-agent-'));
+  const project = projectRepo.create({ name: `planner-partial-missing-agent-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  assert.ok(frontend);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '先实现页面，再交给一个不存在的专业审查智能体',
+    message_type: 'text',
+  });
+
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      if (args.prompt.includes('本轮派发的智能体已经完成')) {
+        args.onChunk({ stream: 'stdout', text: '规划师收到前端结果，并看到了暂缓的缺失智能体步骤。' });
+      } else {
+        args.onChunk({ stream: 'stdout', text: '前端执行者完成：页面已实现。' });
+      }
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    setTaskExecutionPlanInvokerForTest({
+      async invoke() {
+        return {
+          mode: 'parallel',
+          dispatch_step_indexes: [0],
+          deferred_step_indexes: [],
+          rationale: '先执行可用前端步骤，缺失智能体暂缓给规划师处理。',
+        };
+      },
+    });
+    const response = await request(`/api/rooms/${room.id}/task-execution/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source_message_id: sourceMessage.id,
+        task_execution: {
+          state: 'ready_to_execute',
+          status: 'suggested',
+          summary: '先执行可用前端步骤',
+          next_steps: [
+            { agent_id: 'frontend-executor', goal: '实现页面' },
+            { agent_id: 'zzzxq-void-worker', goal: '处理第二阶段不可用步骤' },
+          ],
+        },
+      }),
+    });
+    const body = await response.json() as { dispatched?: number; deferred_steps?: Array<{ agent_id: string }> };
+    const runs = agentRunRepo.listByRoom(room.id, 50);
+    const plannerRun = runs.find((run) => run.agent_id === 'planner' && run.prompt.includes('zzzxq-void-worker'));
+
+    assert.equal(response.status, 202);
+    assert.equal(body.dispatched, 1);
+    assert.deepEqual(body.deferred_steps?.map((step) => step.agent_id), ['zzzxq-void-worker']);
+    assert.equal(runs.some((run) => run.agent_id === 'frontend-executor'), true);
+    assert.ok(plannerRun);
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner follow-up auto continues suggested next steps after dispatched agent completes', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-followup-auto-'));
   const project = projectRepo.create({ name: `planner-followup-auto-${Date.now()}`, path: projectPath });

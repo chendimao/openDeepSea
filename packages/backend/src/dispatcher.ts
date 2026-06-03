@@ -412,6 +412,7 @@ export interface RespondAsAgentInput {
   collaborationRunId?: string | null;
   collaborationStage?: AgentRun['collaboration_stage'];
   distillModelInvoker?: MemoryDistillModelInvoker;
+  suppressInitialTaskExecutionAutoDispatch?: boolean;
   onRunCreated?: (run: AgentRun) => Promise<void> | void;
   onFinished?: (result: { run: AgentRun; message: Message; status: AgentRunStatus }) => Promise<void> | void;
 }
@@ -1282,6 +1283,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
             filter: intentStreamFilter,
           });
         }
+        let initialTaskExecutionDecision: TaskExecutionDecision | undefined;
         try {
           finalMessage = sanitizePlannerCasualReply({
             message: finalMessage,
@@ -1289,12 +1291,29 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
             sourceMessageId: args.sourceMessageId,
             agent,
           }) ?? finalMessage;
-          annotateTaskExecutionDecision({
+          const taskExecutionAnnotation = annotateTaskExecutionDecision({
             message: finalMessage,
             run: finalRun,
             sourceMessageId: args.sourceMessageId,
             agent,
           });
+          if (taskExecutionAnnotation) {
+            finalMessage = taskExecutionAnnotation.message;
+            if (shouldAutoDispatchInitialTaskExecutionDecision({
+              run: finalRun,
+              agent,
+              sourceMessageId: args.sourceMessageId,
+              taskExecutionDecision: taskExecutionAnnotation.decision,
+              suppress: args.suppressInitialTaskExecutionAutoDispatch,
+            })) {
+              initialTaskExecutionDecision = taskExecutionAnnotation.decision;
+              const dispatchingDecision = normalizeAutoContinueTaskExecutionDecision(taskExecutionAnnotation.decision);
+              finalMessage = messageRepo.mergeMetadata(finalMessage.id, {
+                task_execution: dispatchingDecision,
+                source_message_id: args.sourceMessageId ?? undefined,
+              }) ?? finalMessage;
+            }
+          }
           annotateMessageChoiceOptions({
             message: finalMessage,
             run: finalRun,
@@ -1318,6 +1337,39 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
           console.warn(`[agent-runs] onFinished callback failed for ${finalRun.id}: ${(err as Error).message}`);
         }
         broadcastFinalSnapshot();
+        if (initialTaskExecutionDecision && args.sourceMessageId) {
+          try {
+            await dispatchTaskExecutionDecision({
+              roomId,
+              sourceMessageId: args.sourceMessageId,
+              decision: initialTaskExecutionDecision,
+              autoContinueDepth: 0,
+            });
+          } catch (err) {
+            const error = (err as Error).message;
+            const blockedDecision = normalizeBlockedAutoContinueTaskExecutionDecision(
+              normalizeAutoContinueTaskExecutionDecision(initialTaskExecutionDecision),
+              `自动派发失败：${error}`,
+            );
+            const blockedMessage = messageRepo.mergeMetadata(finalMessage.id, {
+              task_execution: blockedDecision,
+              source_message_id: args.sourceMessageId,
+            });
+            if (blockedMessage) {
+              finalMessage = blockedMessage;
+              broadcastAgentMessageSnapshot({ roomId, message: blockedMessage, run: finalRun });
+            }
+            const systemMessage = messageRepo.create({
+              room_id: roomId,
+              sender_type: 'system',
+              sender_id: 'system',
+              sender_name: 'System',
+              content: `Planner initial auto-dispatch failed: ${error}`,
+              message_type: 'system',
+            });
+            wsHub.broadcast(roomId, { type: 'message:new', roomId, message: systemMessage });
+          }
+        }
       }
       if (finalRun && finalMessage && args.onFinished) {
         await args.onFinished({ run: finalRun, message: finalMessage, status: finalRun.status });
@@ -1369,22 +1421,23 @@ function annotateTaskExecutionDecision(input: {
   run: AgentRun;
   sourceMessageId?: string | null;
   agent: RoomAgent;
-}): void {
-  if (input.run.workflow_run_id || input.run.task_id || input.run.collaboration_run_id) return;
-  if (input.agent.agent_id !== 'planner') return;
+}): { message: Message; decision: TaskExecutionDecision } | undefined {
+  if (input.run.workflow_run_id || input.run.collaboration_run_id) return undefined;
+  if (input.agent.agent_id !== 'planner') return undefined;
   if (input.sourceMessageId) {
     const sourceMessage = messageRepo.get(input.sourceMessageId);
-    if (sourceMessage && isCasualChatSourceMessage(sourceMessage)) return;
+    if (sourceMessage && isCasualChatSourceMessage(sourceMessage)) return undefined;
   }
 
   const decision = input.run.status === 'completed'
     ? parseTaskExecutionDecision(input.message.content)
     : parseExplicitTaskExecutionDecision(input.message.content);
-  if (!decision) return;
-  messageRepo.mergeMetadata(input.message.id, {
+  if (!decision) return undefined;
+  const message = messageRepo.mergeMetadata(input.message.id, {
     task_execution: decision,
     source_message_id: input.sourceMessageId ?? undefined,
-  });
+  }) ?? input.message;
+  return { message, decision };
 }
 
 function sanitizePlannerCasualReply(input: {
@@ -2137,7 +2190,7 @@ async function dispatchTaskExecutionDecision(args: {
   if (!isDispatchableTaskExecutionDecision(args.decision)) {
     throw new Error('task execution dispatch requires state "ready_to_execute", status "suggested" or "needs_fix", and at least one next step');
   }
-  const { targets, addedAgents, missingAgentIds } = resolveTaskExecutionDispatchTargets(args.roomId, args.decision);
+  const { targets, addedAgents, missingAgentIds, missingSteps } = resolveTaskExecutionDispatchTargets(args.roomId, args.decision);
   const sourceMessage = messageRepo.get(args.sourceMessageId);
   const taskId = getMessageTaskId(sourceMessage?.metadata ?? null);
   const executionPlan = await resolveTaskExecutionStepExecutionPlan({
@@ -2145,7 +2198,7 @@ async function dispatchTaskExecutionDecision(args: {
     sourceMessage,
     targets,
   });
-  if (executionPlan.dispatchTargets.length === 0 || missingAgentIds.length > 0) {
+  if (executionPlan.dispatchTargets.length === 0) {
     const requestedAgentIds = args.decision.next_steps.map((step) => step.agent_id).filter(Boolean);
     throw new Error(
       missingAgentIds.length > 0
@@ -2155,6 +2208,7 @@ async function dispatchTaskExecutionDecision(args: {
         : 'task execution has no next steps to dispatch',
     );
   }
+  const deferredSteps = [...executionPlan.deferredSteps, ...missingSteps];
   const results = await runTargets({
     targets: executionPlan.dispatchTargets,
     projectPath: project.path,
@@ -2170,13 +2224,13 @@ async function dispatchTaskExecutionDecision(args: {
     decision: args.decision,
     dispatchedTargets: executionPlan.dispatchTargets,
     dispatchedResults: results,
-    deferredSteps: executionPlan.deferredSteps,
+    deferredSteps,
     autoContinueDepth: args.autoContinueDepth ?? 0,
   });
   return {
     dispatched: executionPlan.dispatchTargets.length,
     added_agents: addedAgents,
-    deferred_steps: executionPlan.deferredSteps,
+    deferred_steps: deferredSteps,
   };
 }
 
@@ -2321,11 +2375,13 @@ function resolveTaskExecutionDispatchTargets(
   targets: TaskExecutionDispatchTarget[];
   addedAgents: TaskExecutionDispatchAddedAgent[];
   missingAgentIds: string[];
+  missingSteps: TaskExecutionDecision['next_steps'];
 } {
   const agentsById = new Map(roomAgentRepo.listByRoom(roomId).map((agent) => [agent.agent_id, agent]));
   const globalAgentsByRequestedId = new Map<string, Agent>();
   const addedAgentsById = new Map<string, TaskExecutionDispatchAddedAgent>();
   const missingAgentIds: string[] = [];
+  const missingSteps: TaskExecutionDecision['next_steps'] = [];
 
   for (const step of decision.next_steps) {
     if (agentsById.has(step.agent_id)) {
@@ -2339,10 +2395,7 @@ function resolveTaskExecutionDispatchTargets(
     if (!missingAgentIds.includes(step.agent_id)) {
       missingAgentIds.push(step.agent_id);
     }
-  }
-
-  if (missingAgentIds.length > 0) {
-    return { targets: [], addedAgents: [], missingAgentIds };
+    missingSteps.push(step);
   }
 
   for (const [requestedAgentId, globalAgent] of globalAgentsByRequestedId.entries()) {
@@ -2369,6 +2422,7 @@ function resolveTaskExecutionDispatchTargets(
     targets,
     addedAgents: Array.from(addedAgentsById.values()),
     missingAgentIds,
+    missingSteps,
   };
 }
 
@@ -2430,6 +2484,7 @@ async function reportTaskExecutionDispatchResults(args: {
     prompt,
     taskId: args.taskId,
     sourceMessageId: args.sourceMessageId,
+    suppressInitialTaskExecutionAutoDispatch: true,
     onFinished: async ({ run, message }) => {
       if (run.status !== 'completed') return;
       const latestMessage = messageRepo.get(message.id) ?? message;
@@ -2523,6 +2578,30 @@ function summarizeTaskExecutionDispatchResult(content: string): string {
 
 function shouldAutoContinueTaskExecutionDecision(decision: TaskExecutionDecision | undefined): decision is TaskExecutionDecision {
   return Boolean(decision && isDispatchableTaskExecutionDecision(decision));
+}
+
+function shouldAutoDispatchInitialTaskExecutionDecision(input: {
+  run: AgentRun;
+  agent: RoomAgent;
+  sourceMessageId?: string | null;
+  taskExecutionDecision: TaskExecutionDecision | undefined;
+  suppress?: boolean;
+}): input is {
+  run: AgentRun & { task_id: string };
+  agent: RoomAgent;
+  sourceMessageId: string;
+  taskExecutionDecision: TaskExecutionDecision;
+  suppress?: boolean;
+} {
+  if (input.suppress) return false;
+  if (input.run.status !== 'completed') return false;
+  if (!input.run.task_id) return false;
+  if (input.run.workflow_run_id || input.run.collaboration_run_id) return false;
+  if (input.agent.agent_id !== 'planner') return false;
+  if (!input.sourceMessageId) return false;
+  const sourceMessage = messageRepo.get(input.sourceMessageId);
+  if (!sourceMessage || getMessageTaskId(sourceMessage.metadata) !== input.run.task_id) return false;
+  return shouldAutoContinueTaskExecutionDecision(input.taskExecutionDecision);
 }
 
 function isDispatchableTaskExecutionDecision(decision: TaskExecutionDecision): boolean {
