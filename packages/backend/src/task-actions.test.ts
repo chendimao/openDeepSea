@@ -550,6 +550,44 @@ test('route_skills action dispatches planner with using-superpowers routing prom
   assert.equal((completedEvent?.payload.superpowers_routing as { next_action?: string } | undefined)?.next_action, 'brainstorming');
 });
 
+test('route_skills accepts valid routing output even when runner exits failed', async () => {
+  const project = projectRepo.create({
+    name: '路由输出后超时',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-route-timeout-after-output-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '路由已输出但进程超时',
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'route_skills',
+    runAgent: async () => ({
+      status: 'failed',
+      content: '```json\n{"superpowers_routing":{"next_action":"writing_plans","required_skill":"writing-plans","reason":"已有 spec，继续写计划","recommended_agent_id":"planner","expected_evidence":["implementationPlanPath"]}}\n```',
+      error: 'ACP prompt timed out',
+      runId: 'run-route-timeout',
+    }),
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(result.run_ids, ['run-route-timeout']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const completedEvent = events.find((event) =>
+    event.payload.action === 'route_skills' &&
+    event.payload.status === 'completed'
+  );
+  assert.equal((completedEvent?.payload.superpowers_routing as { next_action?: string } | undefined)?.next_action, 'writing_plans');
+  assert.equal(completedEvent?.payload.error, 'ACP prompt timed out');
+});
+
 test('auto_advance routes missing spec task to planner brainstorming', async () => {
   const project = projectRepo.create({
     name: '自动推进缺 spec',
@@ -662,6 +700,96 @@ test('auto_advance routes existing spec task to planner writing_plans before exe
     event.payload.action === 'writing_plans' &&
     event.payload.status === 'completed'
   ));
+});
+
+test('auto_advance retry resumes from failed routing output when it is parseable', async () => {
+  const project = projectRepo.create({
+    name: '自动推进复用失败路由输出',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-recover-route-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '已有失败路由输出',
+  });
+  recordCompletedEvidence(room.id, task.id, 'brainstorming', {
+    designDocPath: 'docs/superpowers/specs/retry-design.md',
+  });
+  const failedRouteRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: roomAgent.agent_id,
+    backend: 'codex',
+    task_id: task.id,
+    status: 'failed',
+    prompt: 'route prompt',
+  });
+  agentRunRepo.updateStatus(failedRouteRun.id, 'failed', {
+    stdout: '```json\n{"superpowers_routing":{"next_action":"writing_plans","required_skill":"writing-plans","reason":"已有 spec，继续写计划","recommended_agent_id":"planner","expected_evidence":["implementationPlanPath"]}}\n```',
+    error: 'ACP prompt timed out',
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'route_skills',
+      status: 'failed',
+      task_action: 'route_skills',
+      task_action_status: 'failed',
+      run_id: failedRouteRun.id,
+      run_ids: [failedRouteRun.id],
+      error: 'ACP prompt timed out',
+    },
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'auto_advance',
+      status: 'failed',
+      task_action: 'auto_advance',
+      task_action_status: 'failed',
+      run_ids: [failedRouteRun.id],
+      error: 'Superpowers 路由未完成',
+    },
+  });
+  const prompts: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'auto_advance',
+    runAgent: async ({ prompt }) => {
+      prompts.push(prompt);
+      assert.doesNotMatch(prompt, /superpowers_routing/u);
+      assert.match(prompt, /writing_plans/u);
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers":{"implementationPlanPath":"docs/superpowers/plans/retry-plan.md","planReviewVerdict":"approved"}}\n```',
+        error: null,
+        runId: 'run-writing-plans-retry',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(prompts.length, 1);
+  assert.deepEqual(result.run_ids, [failedRouteRun.id, 'run-writing-plans-retry']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 20 });
+  const recoveredRoute = events.find((event) =>
+    event.payload.action === 'route_skills' &&
+    event.payload.status === 'completed' &&
+    event.payload.recovered_from_run_id === failedRouteRun.id
+  );
+  assert.equal((recoveredRoute?.payload.superpowers_routing as { next_action?: string } | undefined)?.next_action, 'writing_plans');
 });
 
 test('auto_advance follows routing action after implementation plan evidence exists', async () => {

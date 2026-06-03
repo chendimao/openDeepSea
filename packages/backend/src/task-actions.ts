@@ -196,6 +196,27 @@ async function runSuperpowersRoutingAction(input: {
   }
 
   const runIds = result.runId ? [result.runId] : [];
+  const parsed = parseSuperpowersRouting(result.content);
+  if (parsed.ok) {
+    const error = result.status === 'completed'
+      ? undefined
+      : result.error ?? `${input.action} 未完成：${result.status}`;
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'completed', {
+      superpowers_phase: 'using_superpowers',
+      run_id: result.runId,
+      run_ids: runIds,
+      error,
+      superpowers_routing: parsed.routing,
+    });
+    return {
+      action: input.action,
+      status: 'completed',
+      message_id: messageId,
+      run_ids: runIds,
+      routing: parsed.routing,
+    };
+  }
+
   if (result.status !== 'completed') {
     const error = result.error ?? `${input.action} 未完成：${result.status}`;
     const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'failed', {
@@ -212,7 +233,6 @@ async function runSuperpowersRoutingAction(input: {
     };
   }
 
-  const parsed = parseSuperpowersRouting(result.content);
   if (!parsed.ok) {
     const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
       superpowers_phase: 'using_superpowers',
@@ -230,19 +250,7 @@ async function runSuperpowersRoutingAction(input: {
     };
   }
 
-  const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'completed', {
-    superpowers_phase: 'using_superpowers',
-    run_id: result.runId,
-    run_ids: runIds,
-    superpowers_routing: parsed.routing,
-  });
-  return {
-    action: input.action,
-    status: 'completed',
-    message_id: messageId,
-    run_ids: runIds,
-    routing: parsed.routing,
-  };
+  throw new Error('unreachable routing parse state');
 }
 
 async function runAutoAdvanceAction(input: {
@@ -252,12 +260,13 @@ async function runAutoAdvanceAction(input: {
 }): Promise<TaskActionStartResult> {
   recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', 'running', {});
 
-  const routingResult = await runSuperpowersRoutingAction({
-    roomId: input.roomId,
-    taskId: input.taskId,
-    action: 'route_skills',
-    runAgent: input.runAgent,
-  });
+  const routingResult = recoverLatestFailedRoutingResult(input.roomId, input.taskId) ??
+    await runSuperpowersRoutingAction({
+      roomId: input.roomId,
+      taskId: input.taskId,
+      action: 'route_skills',
+      runAgent: input.runAgent,
+    });
   if (routingResult.status !== 'completed' || !routingResult.routing) {
     const status = toTerminalTaskActionStatus(routingResult.status);
     const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', status, {
@@ -333,6 +342,56 @@ async function runAutoAdvanceAction(input: {
     run_ids: runIds,
     blocked_reason: phaseResult.blocked_reason,
   };
+}
+
+function recoverLatestFailedRoutingResult(
+  roomId: string,
+  taskId: string,
+): (TaskActionStartResult & { routing: SuperpowersRouting }) | null {
+  const latestTerminalEvent = [...taskEventRepo.listByTask(taskId, { layer: 'timeline', limit: 50 })]
+    .reverse()
+    .find((event) => {
+      const action = event.payload.task_action ?? event.payload.action;
+      if (action !== 'auto_advance' && action !== 'route_skills') return false;
+      const status = event.payload.task_action_status ?? event.payload.status;
+      return status !== 'queued' && status !== 'running';
+    });
+  if (!latestTerminalEvent) return null;
+  const status = latestTerminalEvent.payload.task_action_status ?? latestTerminalEvent.payload.status;
+  if (status !== 'failed') return null;
+
+  const runId = extractRunId(latestTerminalEvent.payload);
+  if (!runId) return null;
+  const run = agentRunRepo.get(runId);
+  if (!run || run.task_id !== taskId) return null;
+  const parsed = parseSuperpowersRouting(run.stdout);
+  if (!parsed.ok) return null;
+
+  const runIds = [run.id];
+  const messageId = recordTaskActionEvent(roomId, taskId, 'route_skills', 'completed', {
+    superpowers_phase: 'using_superpowers',
+    run_id: run.id,
+    run_ids: runIds,
+    recovered_from_run_id: run.id,
+    error: run.error ?? undefined,
+    superpowers_routing: parsed.routing,
+  });
+  return {
+    action: 'route_skills',
+    status: 'completed',
+    message_id: messageId,
+    run_ids: runIds,
+    routing: parsed.routing,
+  };
+}
+
+function extractRunId(payload: Record<string, unknown>): string | null {
+  if (typeof payload.run_id === 'string' && payload.run_id.trim()) return payload.run_id;
+  if (Array.isArray(payload.run_ids)) {
+    const runId = payload.run_ids.find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    return runId ?? null;
+  }
+  return null;
 }
 
 async function runSuperpowersPhaseAction(input: {
