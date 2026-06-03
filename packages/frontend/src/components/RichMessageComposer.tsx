@@ -25,6 +25,7 @@ import { getExplicitReplyToMessageId, type ComposerReplyTarget } from './RichMes
 
 interface RichMessageComposerProps {
   projectId: string;
+  workspacePath?: string;
   agents: RoomAgent[];
   tasks: Task[];
   sending: boolean;
@@ -55,6 +56,7 @@ type ComposerAttachment =
 
 export function RichMessageComposer({
   projectId,
+  workspacePath,
   agents,
   tasks,
   sending,
@@ -79,6 +81,7 @@ export function RichMessageComposer({
 
   const triggers = useMemo(() => buildComposerTriggers({
     projectId,
+    workspacePath,
     tasks,
     labels: {
       fileMenuAria: t('composer.fileMenuAria'),
@@ -86,7 +89,7 @@ export function RichMessageComposer({
       taskMenuAria: t('composer.taskMenuAria'),
       taskEmpty: t('composer.taskEmpty'),
     },
-  }), [projectId, tasks, t]);
+  }), [projectId, workspacePath, tasks, t]);
 
   const revokeAttachment = (attachment: ComposerAttachment) => {
     if (attachment.kind === 'local' && attachment.previewUrl) {
@@ -444,4 +447,3 @@ function isAttachmentImage(attachment: ComposerAttachment): boolean {
     ? Boolean(attachment.previewUrl)
     : attachment.file.mime_type.startsWith('image/');
 }
-

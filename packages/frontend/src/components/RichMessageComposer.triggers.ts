@@ -1,3 +1,5 @@
+import { createElement } from 'react';
+import { File, FileText, Folder } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ProjectFile, Task, WorkspaceSearchResult } from '../lib/types';
 import type { TriggerConfig, TriggerSuggestion } from './prompt-area/types';
@@ -46,6 +48,7 @@ export function buildFileSuggestions(
       value,
       label: file.original_name,
       description: '项目文件',
+      icon: createElement(FileText, { className: 'h-3.5 w-3.5 text-blue-500', strokeWidth: 1.75 }),
       data: { kind: 'project', file },
     });
   }
@@ -54,11 +57,15 @@ export function buildFileSuggestions(
     const value = encodeFileChipValue('workspace', entry.path);
     if (seen.has(value)) continue;
     seen.add(value);
+    const isDir = entry.type === 'directory';
     suggestions.push({
       value,
-      label: entry.name,
+      label: entry.path,
       description: entry.path,
-      data: { kind: 'workspace', path: entry.path, name: entry.name },
+      icon: isDir
+        ? createElement(Folder, { className: 'h-3.5 w-3.5 text-amber-500', strokeWidth: 1.75 })
+        : createElement(File, { className: 'h-3.5 w-3.5 text-emerald-500', strokeWidth: 1.75 }),
+      data: { kind: 'workspace', path: entry.path, name: entry.name, entryType: entry.type },
     });
   }
 
@@ -97,17 +104,26 @@ function isRoutableTask(task: Task): boolean {
 
 interface BuildComposerTriggersInput {
   projectId: string;
+  workspacePath?: string;
   tasks: Task[];
   labels: ComposerTriggerLabels;
 }
 
 const EMPTY_WORKSPACE_RESULT = { entries: [] as WorkspaceSearchResult[], truncated: false };
 
+function normalizeWorkspaceSearchPath(path?: string): string | undefined {
+  const trimmed = path?.trim();
+  if (!trimmed || trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) return undefined;
+  return trimmed;
+}
+
 export function buildComposerTriggers({
   projectId,
+  workspacePath,
   tasks,
   labels,
 }: BuildComposerTriggersInput): TriggerConfig[] {
+  const searchPath = normalizeWorkspaceSearchPath(workspacePath);
   return [
     {
       char: TASK_TRIGGER,
@@ -128,7 +144,9 @@ export function buildComposerTriggers({
         const [projectFiles, workspace] = await Promise.all([
           api.listProjectFiles(projectId, query ? { q: query } : {}).catch(() => [] as ProjectFile[]),
           query
-            ? api.searchWorkspaceFiles(projectId, query).catch(() => EMPTY_WORKSPACE_RESULT)
+            ? api.searchWorkspaceFiles(projectId, query, { path: searchPath }).catch(
+                () => EMPTY_WORKSPACE_RESULT,
+              )
             : Promise.resolve(EMPTY_WORKSPACE_RESULT),
         ]);
         return buildFileSuggestions(projectFiles, workspace.entries, query);
