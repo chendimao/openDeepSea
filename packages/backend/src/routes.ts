@@ -1883,7 +1883,7 @@ router.post('/agent-runs/:id/retry', (req, res) => {
         agent,
         projectPath: project.path,
         roomId: room.id,
-        prompt: run.prompt,
+        prompt: buildAgentRunRetryPrompt(run),
         internalMessage: false,
         taskId: run.task_id,
         workflowRunId: run.workflow_run_id,
@@ -1920,6 +1920,19 @@ function startRetriedAgentRun(input: RespondAsAgentInput): Promise<{ run: AgentR
       reject(error);
     });
   });
+}
+
+function buildAgentRunRetryPrompt(run: AgentRun): string {
+  if (!run.acp_session_id) return run.prompt;
+  return [
+    '上一次运行已经失败或中断，但当前 ACP 会话仍可用于继续。',
+    '请在当前 ACP 会话中继续原任务，优先从已有上下文、已完成步骤和当前工作区状态之后继续推进。',
+    '不要重新创建任务，不要重新发送用户请求，也不要无必要地重新进入头脑风暴或 writing-plans 流程。',
+    '如果发现原任务确实缺少必要前置产物，请只补齐缺失部分并说明原因。',
+    '',
+    '原始任务提示：',
+    run.prompt,
+  ].join('\n');
 }
 
 const jsonMessageSchema = z.object({

@@ -84,20 +84,20 @@ test('POST /agent-runs/:id/retry reruns the failed run without creating a new us
   const userMessagesBefore = messageRepo.listByRoom(room.id).filter((message) => message.sender_type === 'user').length;
   const taskCountBefore = taskRepo.listByRoom(room.id).length;
 
-  let retryInput: {
+  const retryInputs: Array<{
     prompt: string;
     taskId?: string | null;
     acpSessionIdOverride?: string | null;
     sourceMessageId?: string | null;
-  } | null = null;
+  }> = [];
   setMessageRouteDeps({
     retryAgentRunOnce: async (input) => {
-      retryInput = {
+      retryInputs.push({
         prompt: input.prompt,
         taskId: input.taskId,
         acpSessionIdOverride: input.acpSessionIdOverride,
         sourceMessageId: input.sourceMessageId,
-      };
+      });
       const run = agentRunRepo.updateStatus(
         agentRunRepo.create({
           room_id: input.roomId,
@@ -132,8 +132,16 @@ test('POST /agent-runs/:id/retry reruns the failed run without creating a new us
   assert.notEqual(body.id, failed.id);
   assert.equal(body.task_id, task.id);
   assert.equal(body.acp_session_id, 'session-original');
-  assert.deepEqual(retryInput, {
-    prompt: '继续原任务',
+  const capturedRetryInput = retryInputs[0];
+  assert.ok(capturedRetryInput);
+  assert.ok(capturedRetryInput.prompt.includes('请在当前 ACP 会话中继续原任务'));
+  assert.ok(capturedRetryInput.prompt.includes('原始任务提示：'));
+  assert.ok(capturedRetryInput.prompt.includes('继续原任务'));
+  assert.deepEqual({
+    taskId: capturedRetryInput.taskId,
+    acpSessionIdOverride: capturedRetryInput.acpSessionIdOverride,
+    sourceMessageId: capturedRetryInput.sourceMessageId,
+  }, {
     taskId: task.id,
     acpSessionIdOverride: 'session-original',
     sourceMessageId: userMessage.id,
