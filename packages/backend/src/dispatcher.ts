@@ -777,6 +777,32 @@ export function buildAgentIdentityPrompt(agent: RoomAgent, prompt: string): stri
   return promptParts.join('\n');
 }
 
+function shouldInjectOpenClawSystemContextToolPrompt(args: RespondAsAgentInput, room: Room | undefined): room is Room {
+  if (!room) return false;
+  if (args.internalMessage) return false;
+  if (args.taskId || args.workflowRunId || args.collaborationRunId) return false;
+  return true;
+}
+
+function buildOpenClawSystemContextToolPrompt(input: { projectId: string; roomId: string }): string {
+  return [
+    'OpenClaw 系统上下文工具：',
+    '- 你可以通过只读命令查询 OpenClaw 数据库中的系统、项目、群聊、任务、文件和智能体事实。',
+    '- 系统状态、项目、群聊、任务、文件、智能体数量或列表类问题，必须先调用对应命令，再基于返回 JSON 回答。',
+    '- 当前 projectId: ' + input.projectId,
+    '- 当前 roomId: ' + input.roomId,
+    '- 常用命令：',
+    '  - npm run openclaw:context -- system-overview',
+    '  - npm run openclaw:context -- project-overview ' + input.projectId,
+    '  - npm run openclaw:context -- room-overview ' + input.roomId,
+    '  - npm run openclaw:context -- list-room-tasks ' + input.roomId,
+    '  - npm run openclaw:context -- list-room-agents ' + input.roomId,
+    '  - npm run openclaw:context -- list-files --project ' + input.projectId,
+    '  - npm run openclaw:context -- list-files --room ' + input.roomId,
+    '- 安全要求：不要执行原始 SQL，不要读取数据库文件，不要返回 API key、session id、raw trace、stderr 或本机绝对路径。',
+  ].join('\n');
+}
+
 export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const { agent, projectPath, roomId } = args;
   const room = roomRepo.get(roomId);
@@ -788,11 +814,16 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     projectPath,
     imagePaths: args.imagePaths ?? [],
   });
+  const contextToolPrompt = shouldInjectOpenClawSystemContextToolPrompt(args, room)
+    ? buildOpenClawSystemContextToolPrompt({ projectId: room.project_id, roomId })
+    : null;
   const promptWithRuntime = [
     promptWithIdentity,
     '',
+    contextToolPrompt,
+    contextToolPrompt ? '' : null,
     buildAgentRuntimeContextPrompt(runtimeProfile),
-  ].join('\n');
+  ].filter((part): part is string => part !== null).join('\n');
   const promptWithMemory =
     room && !args.workflowRunId
       ? appendMemoryContextForPromptSafely({

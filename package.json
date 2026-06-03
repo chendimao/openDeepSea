@@ -12,6 +12,7 @@
     "dev:backend:watch": "npm run dev:watch -w @openclaw-room/backend",
     "dev:frontend": "npm run dev -w @openclaw-room/frontend",
     "build": "npm run build -w @openclaw-room/backend && npm run build -w @openclaw-room/frontend",
+    "openclaw:context": "npm run openclaw:context -w @openclaw-room/backend --",
     "start": "npm run start -w @openclaw-room/backend"
   },
   "devDependencies": {

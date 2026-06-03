@@ -47,6 +47,15 @@ import { skillsRouter } from './skills/routes.js';
 import { platformSkillsRouter } from './platform-skills/routes.js';
 import { pickDirectory } from './system-dialogs.js';
 import {
+  getProjectOverview,
+  getRoomOverview,
+  getSystemOverview,
+  listProjectFiles,
+  listRoomAgents,
+  listRoomFiles,
+  listRoomTasks,
+} from './system-context.js';
+import {
   createTaskWithConversation,
   recordTaskEvent,
   recordTaskStatusChanged,
@@ -116,6 +125,84 @@ import {
 export const router = Router();
 router.use('/skills', skillsRouter);
 router.use('/platform-skills', platformSkillsRouter);
+
+// ---------- System context ----------
+router.get('/context/system', (_req, res) => {
+  res.json(getSystemOverview());
+});
+
+router.get('/context/projects/:projectId', (req, res) => {
+  try {
+    res.json(getProjectOverview(req.params.projectId));
+  } catch (err) {
+    respondSystemContextError(res, err);
+  }
+});
+
+router.get('/context/projects/:projectId/files', (req, res) => {
+  const parsed = z.object({
+    sourceType: z.enum(['uploaded_file', 'agent_document']).optional(),
+    q: z.string().trim().min(1).optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    res.json(listProjectFiles(req.params.projectId, {
+      sourceType: parsed.data.sourceType,
+      query: parsed.data.q,
+    }));
+  } catch (err) {
+    respondSystemContextError(res, err);
+  }
+});
+
+router.get('/context/rooms/:roomId', (req, res) => {
+  try {
+    res.json(getRoomOverview(req.params.roomId));
+  } catch (err) {
+    respondSystemContextError(res, err);
+  }
+});
+
+router.get('/context/rooms/:roomId/tasks', (req, res) => {
+  try {
+    res.json(listRoomTasks(req.params.roomId));
+  } catch (err) {
+    respondSystemContextError(res, err);
+  }
+});
+
+router.get('/context/rooms/:roomId/agents', (req, res) => {
+  try {
+    res.json(listRoomAgents(req.params.roomId));
+  } catch (err) {
+    respondSystemContextError(res, err);
+  }
+});
+
+router.get('/context/rooms/:roomId/files', (req, res) => {
+  const parsed = z.object({
+    sourceType: z.enum(['uploaded_file', 'agent_document']).optional(),
+    q: z.string().trim().min(1).optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    res.json(listRoomFiles(req.params.roomId, {
+      sourceType: parsed.data.sourceType,
+      query: parsed.data.q,
+    }));
+  } catch (err) {
+    respondSystemContextError(res, err);
+  }
+});
+
+function respondSystemContextError(res: Response, err: unknown): void {
+  const message = (err as Error).message;
+  if (message === 'project not found' || message === 'room not found') {
+    res.status(404).json({ error: message });
+    return;
+  }
+  res.status(400).json({ error: message || 'system context query failed' });
+}
 
 interface CollaborationRouteDeps {
   runCollaborationStages?: typeof defaultRunCollaborationStages;

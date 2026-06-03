@@ -3033,6 +3033,9 @@ test('respondAsAgent passes resolved workspace writable dirs and runtime prompt 
     assert.equal(capturedPermissionMode, 'workspace-write');
     assert.match(capturedPrompt, /智能体运行边界：/);
     assert.match(capturedPrompt, new RegExp(`可写目录：.*${escapeRegExp(projectPath)}`));
+    assert.match(capturedPrompt, /OpenClaw 系统上下文工具/);
+    assert.match(capturedPrompt, new RegExp(`npm run openclaw:context -- room-overview ${escapeRegExp(room.id)}`));
+    assert.match(capturedPrompt, /系统状态、项目、群聊、任务、文件、智能体数量或列表类问题，必须先调用/);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
