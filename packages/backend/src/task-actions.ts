@@ -339,6 +339,7 @@ async function runAutoAdvanceAction(input: {
     taskId: input.taskId,
     action: targetAction,
     agent: phaseAgent,
+    skipPlanningPrerequisite: isPlanningSkipExecutionRouting(routingResult.routing),
     runAgent: input.runAgent,
   });
   const runIds = [...routingResult.run_ids, ...phaseResult.run_ids];
@@ -421,13 +422,16 @@ async function runSuperpowersPhaseAction(input: {
   taskId: string;
   action: TaskActionKind;
   agent?: RoomAgent;
+  skipPlanningPrerequisite?: boolean;
   runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
 }): Promise<TaskActionStartResult> {
   const phase = actionToPhase(input.action);
   if (!phase) throw new Error(`unsupported action: ${input.action}`);
 
   recordTaskActionEvent(input.roomId, input.taskId, input.action, 'running', { superpowers_phase: phase });
-  const prerequisiteError = validatePhasePrerequisite(input.action, input.taskId);
+  const prerequisiteError = validatePhasePrerequisite(input.action, input.taskId, {
+    skipPlanningPrerequisite: input.skipPlanningPrerequisite === true,
+  });
   if (prerequisiteError) {
     const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
       superpowers_phase: phase,
@@ -534,7 +538,12 @@ function actionToPhase(action: TaskActionKind): SuperpowersRuntimePhase | null {
   return null;
 }
 
-function validatePhasePrerequisite(action: TaskActionKind, taskId: string): string | null {
+function validatePhasePrerequisite(
+  action: TaskActionKind,
+  taskId: string,
+  options?: { skipPlanningPrerequisite?: boolean },
+): string | null {
+  if (options?.skipPlanningPrerequisite) return null;
   if (action === 'writing_plans') {
     const error = validateCompletedArtifactEvidence(taskId, 'brainstorming', 'designDocPath', 'spec');
     if (error) return error;
@@ -552,9 +561,14 @@ function validatePhasePrerequisite(action: TaskActionKind, taskId: string): stri
 }
 
 function chooseAutoAdvanceTarget(taskId: string, routing: SuperpowersRouting): TaskActionKind | null {
+  if (isPlanningSkipExecutionRouting(routing)) return routingActionToTaskAction(routing.next_action);
   if (validateCompletedArtifactEvidence(taskId, 'brainstorming', 'designDocPath', 'spec')) return 'brainstorming';
   if (validateCompletedArtifactEvidence(taskId, 'writing_plans', 'implementationPlanPath', 'implementation plan')) return 'writing_plans';
   return routingActionToTaskAction(routing.next_action);
+}
+
+function isPlanningSkipExecutionRouting(routing: SuperpowersRouting): boolean {
+  return routing.planning_required === false && routing.next_action === 'subagent_execution';
 }
 
 function selectPhaseAgentForRouting(

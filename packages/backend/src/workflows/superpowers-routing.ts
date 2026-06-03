@@ -15,6 +15,8 @@ export interface SuperpowersRouting {
   reason: string;
   recommended_agent_id: string;
   expected_evidence: string[];
+  planning_required?: boolean;
+  skip_planning_reason?: string;
 }
 
 export type SuperpowersRoutingParseResult =
@@ -88,6 +90,8 @@ function validateSuperpowersRouting(value: unknown): SuperpowersRoutingParseResu
       reason: value.reason,
       recommended_agent_id: value.recommended_agent_id,
       expected_evidence: value.expected_evidence,
+      planning_required: typeof value.planning_required === 'boolean' ? value.planning_required : undefined,
+      skip_planning_reason: isNonEmptyString(value.skip_planning_reason) ? value.skip_planning_reason : undefined,
     },
   };
 }
