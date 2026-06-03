@@ -14,6 +14,7 @@ const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
+const { messageRepo } = await import('./repos/messages.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { wsHub } = await import('./ws-hub.js');
 const { router, setMessageRouteDeps } = await import('./routes.js');
@@ -191,6 +192,63 @@ test('POST /rooms/:roomId/messages creates a task for clear create-task intent',
   } finally {
     events.restore();
   }
+});
+
+test('POST /rooms/:roomId/messages routes boundary confirmation reply back to source task', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Boundary Reply Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-router-boundary-reply-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    title: '群聊 @ 文件 chip 显示完整路径',
+  });
+  const plannerMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '我需要确认一个边界问题：是否只针对工作区文件/文件夹？',
+    metadata: {
+      task_id: task.id,
+      task_execution: {
+        state: 'needs_boundary_confirmation',
+        status: 'suggested',
+        summary: '确认 @文件 chip 完整路径的适用范围后进入设计定稿',
+        reason: '需要确认 workspace files 和 project uploaded files 的边界。',
+        next_steps: [{ agent_id: 'planner', goal: '确认适用范围后提出方案' }],
+      },
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      content: '确定',
+      reply_to_message_id: plannerMessage.id,
+    }),
+  });
+
+  assert.equal(res.status, 201);
+  const message = await res.json() as { id: string; metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: { action: string; taskId: string | null; reason_code?: string };
+  };
+  assert.equal(metadata.task_id, task.id);
+  assert.equal(metadata.route_result?.action, 'append_to_task');
+  assert.equal(metadata.route_result?.taskId, task.id);
+  assert.equal(metadata.route_result?.reason_code, 'reply_to_task');
+  assert.equal(taskRepo.listByRoom(room.id).length, 1);
+
+  const routeEvent = taskEventRepo.listByTask(task.id, { layer: 'activity' })
+    .find((event) => event.type === 'message_routed');
+  assert.equal(routeEvent?.payload.route_action, 'append_to_task');
+  assert.equal(dispatchCalls.length, 1);
+  assert.equal(dispatchCalls[0]?.userMessage.id, message.id);
 });
 
 test('POST /rooms/:roomId/messages keeps ordinary low-confidence chat global', async () => {

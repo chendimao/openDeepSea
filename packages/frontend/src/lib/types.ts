@@ -817,6 +817,7 @@ export type RouteReasonCode =
   | 'explicit_task'
   | 'explicit_task_terminal'
   | 'explicit_task_not_found'
+  | 'reply_to_task'
   | 'create_task_intent'
   | 'reply_in_chat';
 

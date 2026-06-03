@@ -152,6 +152,29 @@ test('applyIntentToRouteResult preserves explicit task routing for high-confiden
   assert.equal(next.taskId, 'task-1');
 });
 
+test('applyIntentToRouteResult preserves reply-to task routing for high-confidence intent', () => {
+  const replyToTaskRoute: RouteResult = {
+    taskId: 'task-1',
+    action: 'append_to_task',
+    confidence: 0.95,
+    reason: '回复等待确认的任务消息：task-1',
+    reason_code: 'reply_to_task',
+  };
+  const intentResult: MessageIntentResult = {
+    intent: 'workflow',
+    confidence: 0.97,
+    source: 'classifier',
+    suggestedAction: 'start_workflow',
+    reason: '用户已确认边界，可进入正式实现流程',
+  };
+
+  const next = applyIntentToRouteResult(replyToTaskRoute, intentResult);
+
+  assert.equal(next.action, 'append_to_task');
+  assert.equal(next.taskId, 'task-1');
+  assert.equal(next.reason_code, 'reply_to_task');
+});
+
 test('applyIntentToRouteResult keeps ask_user when intent confidence is low', () => {
   const askUserRouteResult: RouteResult = {
     taskId: null,

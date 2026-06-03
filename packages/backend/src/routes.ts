@@ -119,6 +119,7 @@ import {
   type TaskInteractionMode,
   type MessageIntent,
   type MessageIntentResult,
+  type RouteResult,
   type WorkflowRole,
 } from './types.js';
 
@@ -1940,7 +1941,12 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     res.status(error.status ?? 400).json({ error: error.message });
     return;
   }
-  const routeResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
+  const routeResult = resolveUserMessageRoute({
+    roomId,
+    message: content,
+    activeTaskId: parsed.data.active_task_id ?? null,
+    replyToMessageId: parsed.data.reply_to_message_id,
+  });
   metadata.route_result = routeResult;
   if (routeResult.taskId) {
     metadata.task_id = routeResult.taskId;
@@ -2051,7 +2057,12 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       res.status(error.status ?? 400).json({ error: error.message });
       return;
     }
-    const routeResult = routeMessage({ roomId, message: content, activeTaskId: parsed.data.active_task_id ?? null });
+    const routeResult = resolveUserMessageRoute({
+      roomId,
+      message: content,
+      activeTaskId: parsed.data.active_task_id ?? null,
+      replyToMessageId,
+    });
     metadata.route_result = routeResult;
     if (routeResult.taskId) {
       metadata.task_id = routeResult.taskId;
@@ -2130,6 +2141,79 @@ function buildUserMessageMetadata(input: {
     };
   }
   return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+function resolveUserMessageRoute(input: {
+  roomId: string;
+  message: string;
+  activeTaskId?: string | null;
+  replyToMessageId?: string | null;
+}): RouteResult {
+  const routeResult = routeMessage({
+    roomId: input.roomId,
+    message: input.message,
+    activeTaskId: input.activeTaskId ?? null,
+  });
+  if (routeResult.action !== 'reply_in_chat') return routeResult;
+  return resolveReplyToTaskRoute(input.roomId, input.replyToMessageId) ?? routeResult;
+}
+
+function resolveReplyToTaskRoute(roomId: string, replyToMessageId?: string | null): RouteResult | null {
+  const replyToId = normalizeOptionalId(replyToMessageId);
+  if (!replyToId) return null;
+  const replyTarget = messageRepo.get(replyToId);
+  if (!replyTarget || replyTarget.room_id !== roomId) return null;
+  const metadata = parseMetadataRecord(replyTarget.metadata);
+  if (!isAwaitingUserTaskExecution(metadata.task_execution)) return null;
+
+  const task = resolveTaskFromMessageMetadata(roomId, metadata);
+  if (!task || !isRoutableTaskForReply(task)) return null;
+  return {
+    taskId: task.id,
+    action: 'append_to_task',
+    confidence: 0.95,
+    reason: `回复等待确认的任务消息：${task.id}`,
+    reason_code: 'reply_to_task',
+  };
+}
+
+function resolveTaskFromMessageMetadata(roomId: string, metadata: Record<string, unknown>): Task | null {
+  const directTaskId = firstNonEmptyString([
+    metadata.task_id,
+    isRecord(metadata.route_result) ? metadata.route_result.taskId : undefined,
+  ]);
+  const directTask = directTaskId ? taskRepo.get(directTaskId) : undefined;
+  if (directTask?.room_id === roomId) return directTask;
+
+  const sourceMessageId = firstNonEmptyString([
+    metadata.source_message_id,
+    isRecord(metadata.task_readiness) ? metadata.task_readiness.source_message_id : undefined,
+  ]);
+  if (!sourceMessageId) return null;
+  return taskRepo.listByRoom(roomId).find((task) => task.source_message_id === sourceMessageId) ?? null;
+}
+
+function isAwaitingUserTaskExecution(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return value.state === 'needs_boundary_confirmation' || value.state === 'needs_choice';
+}
+
+function isRoutableTaskForReply(task: Task): boolean {
+  return task.status === 'todo' || task.status === 'in_progress' || task.status === 'review';
+}
+
+function parseMetadataRecord(metadata: string | null): Record<string, unknown> {
+  if (!metadata) return {};
+  try {
+    const parsed = JSON.parse(metadata) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function assertMessageOptionSourceInRoom(roomId: string, sourceMessageId: string): void {

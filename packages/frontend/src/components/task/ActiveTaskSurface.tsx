@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Bot, Clock3, FileDiff, FileText, FolderOpen, Gauge, GitBranch, ListChecks, LocateFixed, MonitorPlay, Pencil, Radio, Search, ScrollText, XCircle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { MessageKey } from '../../lib/i18n';
-import type { AgentRun, Message, MessageTrace, RoomAgent, Task, TaskActionKind, TaskActionState, WorkflowRun } from '../../lib/types';
+import type { AgentRun, Message, MessageTrace, RoomAgent, Task, TaskActionKind, TaskActionState, TaskExecutionDecision, WorkflowRun } from '../../lib/types';
 import { parseMessageMetadata } from '../../lib/messageMetadata';
 import { AgentAvatar } from '../AgentAvatar';
 import { pairRunsWithAgentMessages } from '../chat/chatMessageModel';
@@ -87,6 +87,10 @@ export function ActiveTaskSurface({
     () => messages.filter((message) => messageBelongsToCurrentTask(message, task)),
     [messages, task],
   );
+  const pendingTaskExecution = useMemo(
+    () => selectPendingTaskExecution(taskMessages),
+    [taskMessages],
+  );
   const taskAgentRuns = useMemo(
     () => {
       const runByMessageId = pairRunsWithAgentMessages(messages, agentRuns);
@@ -146,6 +150,7 @@ export function ActiveTaskSurface({
           <div className="active-task-action-cell">
             <TaskActionStrip
               states={taskActionStates}
+              pendingTaskExecution={pendingTaskExecution}
               disabled={!canStartTaskAction}
               onStartAction={(action) => {
                 if (canStartTaskAction) onStartTaskAction?.(action);
@@ -471,6 +476,22 @@ function hasMessageTraceEvents(trace: MessageTrace | undefined): trace is Messag
 function messageBelongsToCurrentTask(message: Message, task: Task): boolean {
   const metadata = parseMessageMetadata(message.metadata);
   return metadata.task_id === task.id || message.id === task.source_message_id;
+}
+
+export function selectPendingTaskExecution(messages: Message[]): TaskExecutionDecision | null {
+  const latestUserReply = messages
+    .filter((message) => message.sender_type === 'user')
+    .sort((a, b) => b.created_at - a.created_at)[0];
+  const latestDecisionMessage = messages
+    .map((message) => ({ message, decision: parseMessageMetadata(message.metadata).task_execution }))
+    .filter((item): item is { message: Message; decision: TaskExecutionDecision } => Boolean(item.decision))
+    .sort((a, b) => b.message.created_at - a.message.created_at)[0];
+  if (!latestDecisionMessage) return null;
+  if (latestUserReply && latestUserReply.created_at > latestDecisionMessage.message.created_at) return null;
+  const decision = latestDecisionMessage.decision;
+  return decision.state === 'needs_boundary_confirmation' || decision.state === 'needs_choice'
+    ? decision
+    : null;
 }
 
 function formatClockTime(timestamp: number): string {

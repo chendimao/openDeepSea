@@ -1,7 +1,7 @@
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Bug, ChevronDown, ClipboardList, Loader2, MoreHorizontal, PenLine, Rocket, Route, Workflow } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { TaskActionKind, TaskActionState } from '../../lib/types';
+import type { TaskActionKind, TaskActionState, TaskExecutionDecision } from '../../lib/types';
 import { cn } from '../../lib/utils';
 import { deriveSuperpowersTaskStage, type SuperpowersTaskStage } from './taskActionState';
 
@@ -34,11 +34,13 @@ const BUSY_ACTIONS: TaskActionKind[] = [
 
 export function TaskActionStrip({
   states,
+  pendingTaskExecution,
   onStartAction,
   compact = false,
   disabled = false,
 }: {
   states: Partial<Record<TaskActionKind, TaskActionState>>;
+  pendingTaskExecution?: TaskExecutionDecision | null;
   onStartAction: (action: TaskActionKind) => void;
   compact?: boolean;
   disabled?: boolean;
@@ -46,12 +48,19 @@ export function TaskActionStrip({
   const stage = deriveSuperpowersTaskStage(states);
   const busyAction = findBusyAction(states);
   const busy = Boolean(busyAction);
+  const awaitingUser = isAwaitingUserTaskExecution(pendingTaskExecution);
   const blocked = stage === 'blocked';
   const failed = stage === 'failed';
-  const controlsDisabled = disabled || busy;
-  const mainLabel = createPrimaryActionLabel(stage, busy);
-  const detail = findStageDetail(states, stage, busyAction);
-  const visualStatus = createPrimaryVisualStatus(stage, busyAction ? states[busyAction]?.status : undefined);
+  const controlsDisabled = disabled || busy || awaitingUser;
+  const mainLabel = awaitingUser
+    ? createAwaitingUserLabel(pendingTaskExecution)
+    : createPrimaryActionLabel(stage, busy);
+  const detail = awaitingUser && pendingTaskExecution
+    ? createAwaitingUserDetail(pendingTaskExecution)
+    : findStageDetail(states, stage, busyAction);
+  const visualStatus = awaitingUser
+    ? 'blocked'
+    : createPrimaryVisualStatus(stage, busyAction ? states[busyAction]?.status : undefined);
   const menuContent = (
     <DropdownMenu.Content
       forceMount
@@ -80,7 +89,7 @@ export function TaskActionStrip({
     <div className={cn('task-action-strip', compact && 'is-compact')} data-stage={stage}>
       <button
         type="button"
-        className={cn('task-action-button task-action-button-primary', `is-${visualStatus}`, (failed || blocked) && 'is-retry')}
+        className={cn('task-action-button task-action-button-primary', `is-${visualStatus}`, (failed || blocked) && !awaitingUser && 'is-retry')}
         disabled={controlsDisabled}
         onClick={() => onStartAction('auto_advance')}
         title={detail}
@@ -118,6 +127,19 @@ export function TaskActionStrip({
       </DropdownMenu.Root>
     </div>
   );
+}
+
+function isAwaitingUserTaskExecution(decision: TaskExecutionDecision | null | undefined): decision is TaskExecutionDecision {
+  return decision?.state === 'needs_boundary_confirmation' || decision?.state === 'needs_choice';
+}
+
+function createAwaitingUserLabel(decision: TaskExecutionDecision | null | undefined): string {
+  if (decision?.state === 'needs_choice') return '等待用户选择方案';
+  return '等待用户确认边界';
+}
+
+function createAwaitingUserDetail(decision: TaskExecutionDecision): string {
+  return decision.summary || decision.reason || '等待用户回复后继续原任务';
 }
 
 function createPrimaryActionLabel(stage: SuperpowersTaskStage, busy: boolean): string {

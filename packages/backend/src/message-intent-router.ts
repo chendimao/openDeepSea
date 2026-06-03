@@ -207,7 +207,8 @@ export function applyIntentToRouteResult(routeResult: RouteResult, intentResult:
   if (!isTaskLikeIntent(intentResult.intent)) return routeResult;
   if (routeResult.reason_code === 'explicit_task' ||
     routeResult.reason_code === 'explicit_task_terminal' ||
-    routeResult.reason_code === 'explicit_task_not_found') {
+    routeResult.reason_code === 'explicit_task_not_found' ||
+    routeResult.reason_code === 'reply_to_task') {
     return routeResult;
   }
   if (routeResult.action === 'create_task') return routeResult;

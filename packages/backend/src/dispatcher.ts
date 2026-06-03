@@ -1501,7 +1501,7 @@ function applyAcpIntentResultToSourceMessage(input: {
   const metadata = parseMessageMetadata(sourceMessage.metadata);
   const currentRouteResult = metadata.route_result ?? buildDefaultChatRouteResult();
   let nextRouteResult = applyIntentToRouteResult(currentRouteResult, intentResult);
-  let taskId: string | undefined;
+  let taskId = nextRouteResult.taskId ?? undefined;
   if (nextRouteResult.action === 'create_task') {
     const taskResult = createTaskWithConversation({
       roomId: input.roomId,
