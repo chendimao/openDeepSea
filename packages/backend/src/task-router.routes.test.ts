@@ -251,6 +251,119 @@ test('POST /rooms/:roomId/messages routes boundary confirmation reply back to so
   assert.equal(dispatchCalls[0]?.userMessage.id, message.id);
 });
 
+test('POST /rooms/:roomId/messages creates task from previous actionable planner analysis on short fix confirmation', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Confirm Previous Analysis Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-confirm-previous-analysis-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const sourceUserMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '分析一下群聊 tabs 拖动不生效的原因',
+    message_type: 'text',
+  });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '根因是 layerIds 对拖拽后的结果重新按旧 sort_order 排序。建议修复排序辅助函数并补充回归测试。',
+    message_type: 'text',
+    metadata: {
+      source_message_id: sourceUserMessage.id,
+      task_execution: {
+        state: 'analysis_only',
+        status: 'suggested',
+        summary: '已定位群聊 tabs 拖动不生效的前端排序根因',
+        reason: '当前请求是只读分析；根因已收敛到 layerIds 对拖拽结果重新排序。',
+        next_steps: [
+          { agent_id: 'frontend-executor', goal: '修复 sortableItems 的 layer ids 提取逻辑并补充回归测试' },
+        ],
+      },
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '修复' }),
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 0);
+  const message = await res.json() as { id: string; metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: { action: string; taskId: string | null; reason_code?: string };
+  };
+  assert.equal(metadata.route_result?.action, 'create_task');
+  assert.equal(metadata.route_result?.reason_code, 'confirm_previous_action');
+  assert.ok(metadata.task_id);
+
+  const tasks = taskRepo.listByRoom(room.id);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0]?.id, metadata.task_id);
+  assert.equal(tasks[0]?.title, '已定位群聊 tabs 拖动不生效的前端排序根因');
+  assert.match(tasks[0]?.description ?? '', /修复 sortableItems 的 layer ids 提取逻辑/u);
+  assert.match(tasks[0]?.description ?? '', /来源分析消息/u);
+  assert.equal(tasks[0]?.source_message_id, message.id);
+});
+
+test('POST /rooms/:roomId/messages asks for clarification when short fix follows non-actionable planner analysis', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Non Actionable Confirmation Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-non-actionable-confirmation-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '这个项目主要由 backend、frontend 两个 workspace 组成，当前只是结构说明，没有定位到具体问题。',
+    message_type: 'text',
+    metadata: {
+      task_execution: {
+        state: 'analysis_only',
+        status: 'completed',
+        summary: '已说明项目结构',
+        reason: '这是普通说明，不包含待执行修复。',
+        next_steps: [],
+      },
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '修复' }),
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 0);
+  const message = await res.json() as { metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    route_result?: { action: string; taskId: string | null; reason_code?: string };
+  };
+  assert.equal(metadata.route_result?.action, 'ask_user');
+  assert.equal(metadata.route_result?.taskId, null);
+  assert.equal(metadata.route_result?.reason_code, 'confirm_previous_not_actionable');
+  assert.equal(taskRepo.listByRoom(room.id).length, 0);
+
+  const messages = messageRepo.listByRoom(room.id, 20);
+  const clarification = messages.find((item) => {
+    const itemMetadata = JSON.parse(item.metadata ?? '{}') as { event_type?: string; route_reason_code?: string };
+    return item.sender_type === 'system' &&
+      itemMetadata.event_type === 'message_route_uncertain' &&
+      itemMetadata.route_reason_code === 'confirm_previous_not_actionable';
+  });
+  assert.ok(clarification);
+  assert.match(clarification.content, /想修复哪一部分/u);
+});
+
 test('POST /rooms/:roomId/messages keeps ordinary low-confidence chat global', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({

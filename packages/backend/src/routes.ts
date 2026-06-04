@@ -2330,7 +2330,9 @@ function resolveUserMessageRoute(input: {
     activeTaskId: input.activeTaskId ?? null,
   });
   if (routeResult.action !== 'reply_in_chat') return routeResult;
-  return resolveReplyToTaskRoute(input.roomId, input.replyToMessageId) ?? routeResult;
+  return resolveReplyToTaskRoute(input.roomId, input.replyToMessageId)
+    ?? resolvePreviousPlannerConfirmationRoute(input.roomId, input.message)
+    ?? routeResult;
 }
 
 function resolveReplyToTaskRoute(roomId: string, replyToMessageId?: string | null): RouteResult | null {
@@ -2375,6 +2377,57 @@ function isAwaitingUserTaskExecution(value: unknown): boolean {
 
 function isRoutableTaskForReply(task: Task): boolean {
   return task.status === 'todo' || task.status === 'in_progress' || task.status === 'review';
+}
+
+function resolvePreviousPlannerConfirmationRoute(roomId: string, message: string): RouteResult | null {
+  if (!isShortActionConfirmation(message)) return null;
+  const previous = findLatestPlannerContextMessage(roomId);
+  if (!previous) return null;
+  const metadata = parseMetadataRecord(previous.metadata);
+  if (isPreviousPlannerMessageActionable(metadata)) {
+    return {
+      taskId: null,
+      action: 'create_task',
+      confidence: 0.96,
+      reason: `用户确认执行上一条规划建议：${previous.id}`,
+      reason_code: 'confirm_previous_action',
+    };
+  }
+  return {
+    taskId: null,
+    action: 'ask_user',
+    confidence: 0.9,
+    reason: '上一条智能体回复没有可执行修复项，请确认想修复哪一部分',
+    reason_code: 'confirm_previous_not_actionable',
+  };
+}
+
+function isShortActionConfirmation(message: string): boolean {
+  const normalized = message.trim().replace(/\s+/gu, '');
+  if (!normalized || normalized.length > 12) return false;
+  if (/^(不要|先别|别|不用|无需|不需要|不是|为什么)/u.test(normalized)) return false;
+  return /^(修复|确定修复|确认修复|开始修复|执行修复|改|修改|开始|执行|确定|确认|可以|好的|好)$/u.test(normalized);
+}
+
+function findLatestPlannerContextMessage(roomId: string): Message | null {
+  const messages = messageRepo.listByRoom(roomId, 30);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || message.sender_type !== 'agent' || message.sender_id !== 'planner') continue;
+    return message;
+  }
+  return null;
+}
+
+function isPreviousPlannerMessageActionable(metadata: Record<string, unknown>): boolean {
+  const execution = parseMessageMetadataObject(metadata.task_execution);
+  const readiness = parseMessageMetadataObject(metadata.task_readiness);
+  if (readiness?.ready === true && firstNonEmptyString([readiness.title, readiness.description])) return true;
+  const state = firstNonEmptyString([execution?.state]);
+  const nextSteps = Array.isArray(execution?.next_steps) ? execution.next_steps : [];
+  if (state === 'ready_to_execute' && nextSteps.length > 0) return true;
+  if (state === 'analysis_only' && nextSteps.length === 1) return true;
+  return false;
 }
 
 function parseMetadataRecord(metadata: string | null): Record<string, unknown> {
@@ -2441,6 +2494,7 @@ function dispatchUserMessageFromRoute(input: {
   const userMessage = messageRepo.get(input.userMessageId);
   if (!userMessage) return;
   if (input.routeResult?.action === 'create_task') return;
+  if (input.routeResult?.reason_code === 'confirm_previous_not_actionable') return;
   // 群聊不再按正文 @ 文本解析智能体（避免 @文件名 误命中同名 agent），仅用显式 mentions
   const mentionedAgentRoomIds = dedupeIds(input.mentions ?? []);
   // Fire-and-forget dispatch
@@ -2513,7 +2567,7 @@ function recordUncertainMessageRoute(
     sender_type: 'system',
     sender_id: 'system',
     sender_name: 'System',
-    content: `无法确定消息应归属哪个任务：${routeResult.reason}`,
+    content: buildUncertainRouteMessageContent(routeResult),
     message_type: 'system',
     layer: 'activity',
     metadata: {
@@ -2522,9 +2576,17 @@ function recordUncertainMessageRoute(
       route_action: routeResult.action,
       route_confidence: routeResult.confidence,
       route_reason: routeResult.reason,
+      route_reason_code: routeResult.reason_code,
     },
   });
   wsHub.broadcast(roomId, { type: 'message:new', roomId, message });
+}
+
+function buildUncertainRouteMessageContent(routeResult: import('./types.js').RouteResult): string {
+  if (routeResult.reason_code === 'confirm_previous_not_actionable') {
+    return '上一条回复没有明确可执行的修复项。你想修复哪一部分？';
+  }
+  return `无法确定消息应归属哪个任务：${routeResult.reason}`;
 }
 
 function recordUncertainMessageIntent(
@@ -2557,6 +2619,9 @@ async function createTaskFromRoutedMessage(input: {
   intentResult?: MessageIntentResult;
 }): Promise<import('./types.js').RouteResult> {
   const intent = input.intentResult?.intent ?? 'light_task';
+  const previousPlannerTaskInput = input.routeResult.reason_code === 'confirm_previous_action'
+    ? resolvePreviousPlannerTaskInput(input.roomId)
+    : null;
   const analysis = await analyzeRoutedTaskMessage(input);
   if (analysis && analysis.recommended_next_action !== 'create_task') {
     const nextRouteResult: import('./types.js').RouteResult = {
@@ -2574,12 +2639,16 @@ async function createTaskFromRoutedMessage(input: {
     if (updatedMessage) broadcastUserMessageSnapshot(input.roomId, updatedMessage);
     return nextRouteResult;
   }
-  const title = analysis?.title ?? extractCreateTaskTitle(input.content) ?? inferTaskTitleFromIntentMessage(input.content);
+  const title = previousPlannerTaskInput?.title
+    ?? analysis?.title
+    ?? extractCreateTaskTitle(input.content)
+    ?? inferTaskTitleFromIntentMessage(input.content);
   const result = createTaskWithConversation({
     roomId: input.roomId,
     taskInput: {
       title,
-      description: analysis ? buildAnalyzedTaskDescription(analysis) : buildIntentTaskDescription(input.content, intent),
+      description: previousPlannerTaskInput?.description
+        ?? (analysis ? buildAnalyzedTaskDescription(analysis) : buildIntentTaskDescription(input.content, intent)),
       interaction_mode: 'ask_user',
     },
     origin: 'chat_plan',
@@ -2605,6 +2674,61 @@ async function createTaskFromRoutedMessage(input: {
     taskId: result.task.id,
   });
   return nextRouteResult;
+}
+
+function resolvePreviousPlannerTaskInput(roomId: string): { title: string; description: string } | null {
+  const previous = findLatestPlannerContextMessage(roomId);
+  if (!previous) return null;
+  const metadata = parseMetadataRecord(previous.metadata);
+  const readiness = parseMessageMetadataObject(metadata.task_readiness);
+  const execution = parseMessageMetadataObject(metadata.task_execution);
+  const readinessTitle = firstNonEmptyString([readiness?.title]);
+  const readinessDescription = firstNonEmptyString([readiness?.description]);
+  if (readiness?.ready === true && (readinessTitle || readinessDescription)) {
+    const summary = readinessTitle ?? readinessDescription!;
+    return {
+      title: truncateTitle(summary),
+      description: buildPreviousPlannerTaskDescription({
+        plannerMessage: previous,
+        summary,
+        reason: readinessDescription && readinessDescription !== summary ? readinessDescription : null,
+        nextSteps: [],
+      }),
+    };
+  }
+
+  const summary = firstNonEmptyString([execution?.summary]);
+  if (!summary) return null;
+  const reason = firstNonEmptyString([execution?.reason]);
+  const rawNextSteps = Array.isArray(execution?.next_steps) ? execution.next_steps : [];
+  const nextSteps = rawNextSteps
+    .map((step) => parseMessageMetadataObject(step))
+    .map((step) => firstNonEmptyString([step?.goal]))
+    .filter((goal): goal is string => Boolean(goal));
+  return {
+    title: truncateTitle(summary),
+    description: buildPreviousPlannerTaskDescription({
+      plannerMessage: previous,
+      summary,
+      reason,
+      nextSteps,
+    }),
+  };
+}
+
+function buildPreviousPlannerTaskDescription(input: {
+  plannerMessage: Message;
+  summary: string;
+  reason: string | null;
+  nextSteps: string[];
+}): string {
+  return [
+    `来源分析消息：${input.plannerMessage.id}`,
+    '',
+    `分析摘要：${input.summary}`,
+    input.reason ? `判断依据：${input.reason}` : null,
+    input.nextSteps.length > 0 ? ['建议执行：', ...input.nextSteps.map((step) => `- ${step}`)].join('\n') : null,
+  ].filter((line): line is string => Boolean(line)).join('\n');
 }
 
 async function analyzeRoutedTaskMessage(input: {

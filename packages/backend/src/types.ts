@@ -933,6 +933,8 @@ export type RouteReasonCode =
   | 'explicit_task_not_found'
   | 'reply_to_task'
   | 'create_task_intent'
+  | 'confirm_previous_action'
+  | 'confirm_previous_not_actionable'
   | 'reply_in_chat';
 
 export interface TaskExecutor {
