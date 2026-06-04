@@ -571,7 +571,11 @@ function chooseAutoAdvanceTarget(taskId: string, routing: SuperpowersRouting): T
 
 function isPlanningSkipExecutionRouting(routing: SuperpowersRouting): boolean {
   return routing.planning_required === false &&
-    (routing.next_action === 'subagent_execution' || routing.next_action === 'systematic_debugging');
+    (
+      routing.next_action === 'subagent_execution' ||
+      routing.next_action === 'systematic_debugging' ||
+      routing.next_action === 'verification'
+    );
 }
 
 function selectPhaseAgentForRouting(
@@ -726,6 +730,7 @@ function validateCompletedPhaseEvidence(
   options?: { skipPlanningPrerequisite?: boolean },
 ): string | null {
   if (phase === 'systematic_debugging') return null;
+  if (phase === 'verify') return null;
   if (phase === 'tdd_execute' && !evidence && options?.skipPlanningPrerequisite) return null;
   if (!evidence) return `缺少 ${phase} 阶段的 superpowers evidence`;
   if (phase === 'brainstorming') {

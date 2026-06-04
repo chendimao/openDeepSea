@@ -770,56 +770,65 @@ test('auto_advance can directly debug lightweight tasks when routing skips plann
   ));
 });
 
-test('auto_advance does not skip planning for non-execution routing', async () => {
+test('auto_advance can directly verify when routing skips planning', async () => {
   const project = projectRepo.create({
-    name: '非执行阶段不能跳规划',
-    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-no-direct-verify-')),
+    name: '轻量任务直达验证',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-direct-verify-')),
   });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
   const planner = agentRepo.getByAgentId('planner');
+  const reviewer = agentRepo.getByAgentId('reviewer');
   assert.ok(planner);
+  assert.ok(reviewer);
   roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: reviewer.id });
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
-    title: '误判直接验收',
+    title: '验证已完成的轻量修复',
+    description: '执行者已完成修复与验证，下一步只需确认完成证据',
   });
   const actions: string[] = [];
+  const agentIds: string[] = [];
 
   const result = await startTaskAction({
     roomId: room.id,
     taskId: task.id,
     action: 'auto_advance',
-    runAgent: async ({ prompt }) => {
+    runAgent: async ({ agent, prompt }) => {
+      agentIds.push(agent.agent_id);
       actions.push(prompt.includes('superpowers_routing') ? 'route' : 'phase');
       if (prompt.includes('superpowers_routing')) {
         return {
           status: 'completed',
-          content: '```json\n{"superpowers_routing":{"next_action":"verification","required_skill":"verification-before-completion","reason":"误判直接验收","recommended_agent_id":"reviewer","expected_evidence":["verificationEvidence"],"planning_required":false,"skip_planning_reason":"不应生效"}}\n```',
+          content: '```json\n{"superpowers_routing":{"next_action":"verification","required_skill":"verification-before-completion","reason":"执行者已完成代码修复、回归测试和构建，只需完成前验证。","recommended_agent_id":"reviewer","expected_evidence":["verificationEvidence"],"planning_required":false,"skip_planning_reason":"修复已完成且有执行证据，无需补跑 brainstorming 或 writing-plans"}}\n```',
           error: null,
-          runId: 'run-route-verify-skip',
+          runId: 'run-route-direct-verify',
         };
       }
-      assert.match(prompt, /brainstorming/u);
-      writeProjectFile(project.path, 'docs/superpowers/specs/no-direct-verify-design.md');
+      assert.match(prompt, /verify/u);
       return {
         status: 'completed',
-        content: '```json\n{"superpowers":{"designDocPath":"docs/superpowers/specs/no-direct-verify-design.md","designReviewVerdict":"approved"}}\n```',
+        content: '验证通过：定向测试、构建和改动范围均已核对。',
         error: null,
-        runId: 'run-brainstorming-no-direct-verify',
+        runId: 'run-direct-verify',
       };
     },
   });
 
   assert.equal(result.status, 'completed');
   assert.deepEqual(actions, ['route', 'phase']);
-  assert.deepEqual(result.run_ids, ['run-route-verify-skip', 'run-brainstorming-no-direct-verify']);
+  assert.deepEqual(agentIds, ['planner', 'reviewer']);
+  assert.deepEqual(result.run_ids, ['run-route-direct-verify', 'run-direct-verify']);
   const events = taskEventRepo.listByTask(task.id, { limit: 20 });
-  assert.ok(events.some((event) =>
+  assert.equal(events.some((event) =>
     event.payload.action === 'brainstorming' &&
     event.payload.status === 'completed'
+  ), false);
+  assert.ok(events.some((event) =>
+    event.payload.action === 'verification' &&
+    event.payload.status === 'completed'
   ));
-  assert.equal(events.some((event) => event.payload.action === 'verification'), false);
 });
 
 test('auto_advance routes existing spec task to planner writing_plans before execution', async () => {
