@@ -707,6 +707,12 @@ test('auto_advance can directly execute lightweight tasks when routing skips pla
     event.payload.action === 'subagent_execution' &&
     event.payload.status === 'completed'
   ));
+  assert.equal(taskRepo.get(task.id)?.status, 'done');
+  assert.ok(events.some((event) =>
+    event.type === 'task_status_changed' &&
+    event.payload.previous_status === 'todo' &&
+    event.payload.next_status === 'done'
+  ));
 });
 
 test('auto_advance can directly debug lightweight tasks when routing skips planning', async () => {
@@ -768,6 +774,12 @@ test('auto_advance can directly debug lightweight tasks when routing skips plann
     event.payload.action === 'systematic_debugging' &&
     event.payload.status === 'completed'
   ));
+  assert.equal(taskRepo.get(task.id)?.status, 'done');
+  assert.ok(events.some((event) =>
+    event.type === 'task_status_changed' &&
+    event.payload.previous_status === 'todo' &&
+    event.payload.next_status === 'done'
+  ));
 });
 
 test('auto_advance can directly verify when routing skips planning', async () => {
@@ -828,6 +840,12 @@ test('auto_advance can directly verify when routing skips planning', async () =>
   assert.ok(events.some((event) =>
     event.payload.action === 'verification' &&
     event.payload.status === 'completed'
+  ));
+  assert.equal(taskRepo.get(task.id)?.status, 'done');
+  assert.ok(events.some((event) =>
+    event.type === 'task_status_changed' &&
+    event.payload.previous_status === 'todo' &&
+    event.payload.next_status === 'done'
   ));
 });
 

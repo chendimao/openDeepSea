@@ -16,6 +16,7 @@ import { messageRepo } from './repos/messages.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { taskEventRepo } from './repos/task-events.js';
 import { taskRepo } from './repos/tasks.js';
+import { recordTaskStatusChanged } from './task-conversation.js';
 import { isExecutableAgent, resolveWorkflowExecutor, selectWorkflowAgentForRole } from './workflows/role-resolver.js';
 import { buildSuperpowersPhasePrompt, buildSuperpowersRoutingPrompt } from './workflows/prompts.js';
 import type { SuperpowersRuntimePhase } from './workflows/superpowers-skills.js';
@@ -344,6 +345,7 @@ async function runAutoAdvanceAction(input: {
   });
   const runIds = [...routingResult.run_ids, ...phaseResult.run_ids];
   const status = toTerminalTaskActionStatus(phaseResult.status);
+  completeTaskAfterAutoAdvancePhase(input.taskId, status, targetAction);
   const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', status, {
     run_ids: runIds,
     delegated_action: targetAction,
@@ -357,6 +359,35 @@ async function runAutoAdvanceAction(input: {
     run_ids: runIds,
     blocked_reason: phaseResult.blocked_reason,
   };
+}
+
+function completeTaskAfterAutoAdvancePhase(
+  taskId: string,
+  status: Exclude<TaskActionStartResult['status'], 'idle' | 'queued'>,
+  targetAction: TaskActionKind,
+): void {
+  if (status !== 'completed') return;
+  if (!isTaskCompletingAutoAdvanceAction(targetAction)) return;
+  const before = taskRepo.get(taskId);
+  if (!before || before.status === 'done') return;
+  const after = taskRepo.updateStatus(taskId, 'done');
+  if (!after) return;
+  recordTaskStatusChanged({
+    before,
+    after,
+    metadata: {
+      completed_by_task_action: 'auto_advance',
+      delegated_action: targetAction,
+    },
+  });
+  wsHub.broadcast(after.room_id, { type: 'task:updated', task: after });
+}
+
+function isTaskCompletingAutoAdvanceAction(action: TaskActionKind): boolean {
+  return action === 'subagent_execution' ||
+    action === 'systematic_debugging' ||
+    action === 'verification' ||
+    action === 'finish_branch';
 }
 
 function recoverLatestFailedRoutingResult(
