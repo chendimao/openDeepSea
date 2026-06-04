@@ -45,7 +45,10 @@ const fieldLabels: Record<string, string> = {
   reason: '原因',
   status: '状态',
   child_agent_id: '子代理',
+  child_run_id: '子运行',
   parent_run_id: '父运行',
+  role: '角色',
+  relationship: '关系',
   tool_call_id: '工具调用',
   model: '模型',
   reasoning_effort: '推理等级',
@@ -57,6 +60,17 @@ const fieldLabels: Record<string, string> = {
 
 const diffLinePattern = /^([+-])(?![+-])/;
 const detailFieldKeys = new Set(['input', 'output', 'stdout', 'stderr', 'patch', 'diff']);
+const knownValueLabels: Record<string, string> = {
+  implementer: '实现者',
+  spec_reviewer: '规格审查者',
+  code_quality_reviewer: '代码质量审查者',
+  final_reviewer: '最终审查者',
+  subagent: '子代理',
+  subagent_started: '子代理启动',
+  subagent_progress: '子代理进度',
+  subagent_completed: '子代理完成',
+  subagent_failed: '子代理失败',
+};
 
 export function AgentTimeline({
   events,
@@ -725,7 +739,7 @@ function formatFieldLabel(key: string): string {
 }
 
 function formatKnownValue(value: string): string {
-  return planStatusLabels[value] ?? value;
+  return planStatusLabels[value] ?? knownValueLabels[value] ?? value;
 }
 
 function readString(value: unknown): string | null {

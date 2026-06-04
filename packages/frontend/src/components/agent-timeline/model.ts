@@ -71,7 +71,7 @@ function buildDiagnostics(events: AgentTimelineEvent[]): AgentTimelineDiagnostic
 
   for (const event of events) {
     if (event.type === 'thinking') hasThinking = true;
-    if (event.type.startsWith('subagent_')) hasStructuredSubagent = true;
+    if (isStructuredSubagentEvent(event)) hasStructuredSubagent = true;
     if (
       event.type === 'assistant_message' &&
       /子代理已派发|等待子代理|子代理已返回|subagent/i.test(String(event.payload.text ?? ''))
@@ -118,6 +118,11 @@ function buildDiagnostics(events: AgentTimelineEvent[]): AgentTimelineDiagnostic
     subagentStructureStatus,
     subagentStructureMessage: formatSubagentStructureMessage(subagentStructureStatus),
   };
+}
+
+function isStructuredSubagentEvent(event: AgentTimelineEvent): boolean {
+  if (event.type.startsWith('subagent_')) return true;
+  return event.type === 'runtime_event' && readString(event.payload.timeline_type)?.startsWith('subagent_') === true;
 }
 
 function formatThoughtStreamMessage(status: AgentTimelineDiagnostics['thoughtStreamStatus']): string {

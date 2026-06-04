@@ -358,6 +358,88 @@ test('AgentTimeline renders subagent lifecycle events', () => {
   assert.match(html, /实现结构化 JSON 展示/);
 });
 
+test('AgentTimeline renders native subagent run event cards', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'subagent-link-1',
+            message_id: 'message-1',
+            run_id: 'parent-run',
+            agent_id: 'frontend-executor',
+            seq: 1,
+            type: 'subagent_completed',
+            status: 'completed',
+            title: '子代理完成',
+            payload: {
+              timeline_type: 'subagent_completed',
+              timeline_status: 'completed',
+              parent_run_id: 'parent-run',
+              child_run_id: 'child-run',
+              child_agent_id: 'reviewer',
+              role: 'spec_reviewer',
+              relationship: 'subagent',
+              summary: '规格审查通过',
+            },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /子代理完成/);
+  assert.match(html, /child-run/);
+  assert.match(html, /reviewer/);
+  assert.match(html, /规格审查者/);
+  assert.match(html, /子代理/);
+  assert.match(html, /规格审查通过/);
+});
+
+test('AgentTimeline treats native subagent run events as structured subagent evidence', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'message-1',
+            message_id: 'message-1',
+            run_id: 'parent-run',
+            agent_id: 'frontend-executor',
+            seq: 1,
+            type: 'assistant_message',
+            status: 'completed',
+            title: '助手回复',
+            payload: { text: '审查子代理已启动，等待子代理返回结果。' },
+            created_at: 1000,
+          },
+          {
+            id: 'subagent-link-1',
+            message_id: 'message-1',
+            run_id: 'parent-run',
+            agent_id: 'frontend-executor',
+            seq: 2,
+            type: 'runtime_event',
+            status: 'completed',
+            title: '子代理完成',
+            payload: {
+              timeline_type: 'subagent_completed',
+              parent_run_id: 'parent-run',
+              child_run_id: 'child-run',
+              child_agent_id: 'reviewer',
+              role: 'spec_reviewer',
+            },
+            created_at: 1001,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /已收到结构化子代理 ACP 事件或子代理 run/);
+});
+
 test('AgentTimeline diagnoses text-only subagent claims without subagent run events', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
