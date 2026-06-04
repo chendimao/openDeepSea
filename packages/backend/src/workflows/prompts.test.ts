@@ -40,6 +40,15 @@ test('implementation prompt embeds Superpowers TDD evidence protocol', () => {
   assert.match(prompt, /"GREEN"/);
 });
 
+test('systematic debugging prompt asks for debugging evidence instead of finish branch evidence', () => {
+  const prompt = buildSuperpowersPhasePrompt('systematic_debugging', basePromptContext());
+
+  assert.match(prompt, /systematic-debugging/);
+  assert.match(prompt, /"systematicDebuggingEvidence"/);
+  assert.match(prompt, /"rootCause"/);
+  assert.doesNotMatch(prompt, /"finishBranchDecision"/);
+});
+
 test('buildStagePrompt uses analysis-document acceptance prompt for analysis-only intent', () => {
   const prompt = buildStagePrompt('acceptance', {
     projectName: 'Project',

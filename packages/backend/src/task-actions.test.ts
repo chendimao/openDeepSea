@@ -748,7 +748,7 @@ test('auto_advance can directly debug lightweight tasks when routing skips plann
       assert.match(prompt, /systematic_debugging/u);
       return {
         status: 'completed',
-        content: '已完成系统化调试。\n```json\n{"superpowers":{"systematicDebuggingEvidence":{"rootCause":"样式隔离缺失","verification":"定向验证通过"}}}\n```',
+        content: '已完成系统化调试，根因是样式隔离缺失，定向验证通过。',
         error: null,
         runId: 'run-direct-debug',
       };

@@ -247,6 +247,25 @@ function formatSuperpowersEvidenceInstruction(phase: SuperpowersRuntimePhase): s
     ].join('\n');
   }
 
+  if (phase === 'systematic_debugging') {
+    return [
+      ...lines,
+      '记录 rootCause、reproductionSteps、targetedFix、verificationResult；如果验证因环境限制无法完成，写清 limitation。',
+      '```json',
+      '{',
+      '  "superpowers": {',
+      '    "systematicDebuggingEvidence": {',
+      '      "rootCause": "具体根因",',
+      '      "reproductionSteps": ["复现步骤或证据"],',
+      '      "targetedFix": "最小修复说明",',
+      '      "verificationResult": "已运行的验证或无法验证原因"',
+      '    }',
+      '  }',
+      '}',
+      '```',
+    ].join('\n');
+  }
+
   if (phase === 'spec_compliance_review' || phase === 'code_quality_review') {
     const field = phase === 'spec_compliance_review' ? 'specComplianceReview' : 'codeQualityReview';
     return [

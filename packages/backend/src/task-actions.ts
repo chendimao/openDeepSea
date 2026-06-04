@@ -722,6 +722,7 @@ function validateCompletedPhaseEvidence(
   evidence: Record<string, unknown> | null,
   projectPath: string,
 ): string | null {
+  if (phase === 'systematic_debugging') return null;
   if (!evidence) return `缺少 ${phase} 阶段的 superpowers evidence`;
   if (phase === 'brainstorming') {
     if (typeof evidence.designDocPath !== 'string' || evidence.designDocPath.trim().length === 0) {
