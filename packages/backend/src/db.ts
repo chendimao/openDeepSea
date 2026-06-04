@@ -314,6 +314,20 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 CREATE INDEX IF NOT EXISTS idx_agent_runs_room ON agent_runs(room_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
 
+CREATE TABLE IF NOT EXISTS agent_run_links (
+  id TEXT PRIMARY KEY,
+  room_id TEXT NOT NULL,
+  task_id TEXT,
+  parent_run_id TEXT NOT NULL,
+  child_run_id TEXT NOT NULL,
+  relationship TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_run_links_parent ON agent_run_links(parent_run_id);
+CREATE INDEX IF NOT EXISTS idx_agent_run_links_task ON agent_run_links(task_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_run_links_unique_child ON agent_run_links(parent_run_id, child_run_id, relationship);
+
 CREATE TABLE IF NOT EXISTS workflow_definitions (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

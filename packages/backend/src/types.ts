@@ -610,6 +610,8 @@ export const COLLABORATION_STAGES = ['execute', 'review', 'acceptance', 'summary
 export type CollaborationStage = typeof COLLABORATION_STAGES[number];
 export type CollaborationRunStatus = 'running' | 'completed' | 'blocked';
 export type CollaborationStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+export type AgentRunRelationship = 'subagent';
+export type AgentRunLinkRole = 'implementer' | 'spec_reviewer' | 'code_quality_reviewer' | 'final_reviewer';
 
 export interface AgentRun {
   id: string;
@@ -638,6 +640,17 @@ export interface AgentRun {
   started_at: number;
   updated_at: number;
   completed_at: number | null;
+}
+
+export interface AgentRunLink {
+  id: string;
+  room_id: string;
+  task_id: string | null;
+  parent_run_id: string;
+  child_run_id: string;
+  relationship: AgentRunRelationship;
+  role: AgentRunLinkRole;
+  created_at: number;
 }
 
 export interface CollaborationStepResult {
