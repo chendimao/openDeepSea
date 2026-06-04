@@ -809,6 +809,7 @@ export type AgentTimelineEventType =
   | 'command_output'
   | 'file_diff'
   | 'plan_update'
+  | 'runtime_event'
   | 'subagent_started'
   | 'subagent_progress'
   | 'subagent_completed'
