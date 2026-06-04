@@ -364,6 +364,161 @@ test('POST /rooms/:roomId/messages asks for clarification when short fix follows
   assert.match(clarification.content, /想修复哪一部分/u);
 });
 
+test('POST /rooms/:roomId/messages uses latest planner analysis after long room history', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Long History Confirmation Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-long-history-confirmation-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '旧问题：不要再使用这条旧分析。',
+    message_type: 'text',
+    metadata: {
+      task_execution: {
+        state: 'analysis_only',
+        status: 'suggested',
+        summary: '旧的修复建议',
+        next_steps: [{ agent_id: 'frontend-executor', goal: '修复旧问题' }],
+      },
+    },
+  });
+  for (let index = 0; index < 35; index += 1) {
+    messageRepo.create({
+      room_id: room.id,
+      sender_type: 'user',
+      sender_id: 'user',
+      sender_name: 'You',
+      content: `填充消息 ${index}`,
+      message_type: 'text',
+    });
+  }
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '最新问题：修复 tabs 排序。',
+    message_type: 'text',
+    metadata: {
+      task_execution: {
+        state: 'analysis_only',
+        status: 'suggested',
+        summary: '最新 tabs 排序修复建议',
+        next_steps: [{ agent_id: 'frontend-executor', goal: '修复最新 tabs 排序问题' }],
+      },
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '修复' }),
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 0);
+  const tasks = taskRepo.listByRoom(room.id);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0]?.title, '最新 tabs 排序修复建议');
+  assert.match(tasks[0]?.description ?? '', /修复最新 tabs 排序问题/u);
+});
+
+test('POST /rooms/:roomId/messages leaves ordinary acknowledgement after non-actionable planner reply in chat', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Ordinary Acknowledgement Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-ordinary-acknowledgement-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '这个项目由前后端 workspace 组成，没有定位到待修复问题。',
+    message_type: 'text',
+    metadata: {
+      task_execution: {
+        state: 'analysis_only',
+        status: 'completed',
+        summary: '已说明项目结构',
+        next_steps: [],
+      },
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '好的' }),
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 1);
+  const message = await res.json() as { metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    route_result?: { action: string; taskId: string | null; reason_code?: string };
+  };
+  assert.equal(metadata.route_result?.action, 'reply_in_chat');
+  assert.equal(metadata.route_result?.taskId, null);
+  assert.equal(metadata.route_result?.reason_code, 'reply_in_chat');
+  assert.equal(taskRepo.listByRoom(room.id).length, 0);
+});
+
+test('POST /rooms/:roomId/messages reuses existing task for repeated short confirmation of same planner analysis', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Repeated Confirmation Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-repeated-confirmation-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '建议修复 tabs 排序。',
+    message_type: 'text',
+    metadata: {
+      task_execution: {
+        state: 'analysis_only',
+        status: 'suggested',
+        summary: '修复 tabs 排序',
+        next_steps: [{ agent_id: 'frontend-executor', goal: '修复 tabs 排序' }],
+      },
+    },
+  });
+
+  const first = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '修复' }),
+  });
+  assert.equal(first.status, 201);
+  const firstMessage = await first.json() as { metadata: string | null };
+  const firstMetadata = JSON.parse(firstMessage.metadata ?? '{}') as { task_id?: string };
+  assert.ok(firstMetadata.task_id);
+
+  const second = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '修复' }),
+  });
+
+  assert.equal(second.status, 201);
+  assert.equal(dispatchCalls.length, 0);
+  const secondMessage = await second.json() as { metadata: string | null };
+  const secondMetadata = JSON.parse(secondMessage.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: { action: string; taskId: string | null; reason_code?: string };
+  };
+  assert.equal(secondMetadata.route_result?.action, 'create_task');
+  assert.equal(secondMetadata.route_result?.taskId, firstMetadata.task_id);
+  assert.equal(secondMetadata.task_id, firstMetadata.task_id);
+  assert.equal(taskRepo.listByRoom(room.id).length, 1);
+});
+
 test('POST /rooms/:roomId/messages keeps ordinary low-confidence chat global', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({

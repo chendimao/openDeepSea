@@ -2380,19 +2380,24 @@ function isRoutableTaskForReply(task: Task): boolean {
 }
 
 function resolvePreviousPlannerConfirmationRoute(roomId: string, message: string): RouteResult | null {
-  if (!isShortActionConfirmation(message)) return null;
+  const confirmationKind = readShortActionConfirmationKind(message);
+  if (!confirmationKind) return null;
   const previous = findLatestPlannerContextMessage(roomId);
   if (!previous) return null;
   const metadata = parseMetadataRecord(previous.metadata);
   if (isPreviousPlannerMessageActionable(metadata)) {
+    const existingTask = findTaskCreatedFromPlannerConfirmation(roomId, previous.id);
     return {
-      taskId: null,
+      taskId: existingTask?.id ?? null,
       action: 'create_task',
       confidence: 0.96,
-      reason: `用户确认执行上一条规划建议：${previous.id}`,
+      reason: existingTask
+        ? `用户重复确认上一条规划建议，复用已创建任务：${existingTask.id}`
+        : `用户确认执行上一条规划建议：${previous.id}`,
       reason_code: 'confirm_previous_action',
     };
   }
+  if (confirmationKind !== 'fix') return null;
   return {
     taskId: null,
     action: 'ask_user',
@@ -2402,21 +2407,25 @@ function resolvePreviousPlannerConfirmationRoute(roomId: string, message: string
   };
 }
 
-function isShortActionConfirmation(message: string): boolean {
+function readShortActionConfirmationKind(message: string): 'fix' | 'ack' | null {
   const normalized = message.trim().replace(/\s+/gu, '');
-  if (!normalized || normalized.length > 12) return false;
-  if (/^(不要|先别|别|不用|无需|不需要|不是|为什么)/u.test(normalized)) return false;
-  return /^(修复|确定修复|确认修复|开始修复|执行修复|改|修改|开始|执行|确定|确认|可以|好的|好)$/u.test(normalized);
+  if (!normalized || normalized.length > 12) return null;
+  if (/^(不要|先别|别|不用|无需|不需要|不是|为什么)/u.test(normalized)) return null;
+  if (/^(修复|确定修复|确认修复|开始修复|执行修复|改|修改)$/u.test(normalized)) return 'fix';
+  if (/^(开始|执行|确定|确认|可以|好的|好)$/u.test(normalized)) return 'ack';
+  return null;
 }
 
 function findLatestPlannerContextMessage(roomId: string): Message | null {
-  const messages = messageRepo.listByRoom(roomId, 30);
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!message || message.sender_type !== 'agent' || message.sender_id !== 'planner') continue;
-    return message;
-  }
-  return null;
+  return db.prepare(
+    `SELECT * FROM messages
+     WHERE room_id = ?
+       AND sender_type = 'agent'
+       AND sender_id = 'planner'
+       AND COALESCE(json_extract(metadata, '$.internal'), 0) <> 1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+  ).get(roomId) as Message | undefined ?? null;
 }
 
 function isPreviousPlannerMessageActionable(metadata: Record<string, unknown>): boolean {
@@ -2618,6 +2627,24 @@ async function createTaskFromRoutedMessage(input: {
   routeResult: import('./types.js').RouteResult;
   intentResult?: MessageIntentResult;
 }): Promise<import('./types.js').RouteResult> {
+  if (input.routeResult.reason_code === 'confirm_previous_action' && input.routeResult.taskId) {
+    const existingTask = taskRepo.get(input.routeResult.taskId);
+    if (existingTask?.room_id === input.roomId) {
+      const updatedMessage = messageRepo.mergeMetadata(input.userMessageId, {
+        task_id: existingTask.id,
+        route_result: input.routeResult,
+      });
+      if (updatedMessage) {
+        broadcastUserMessageSnapshot(input.roomId, updatedMessage);
+      }
+      wsHub.broadcast(input.roomId, {
+        type: 'task:activated',
+        roomId: input.roomId,
+        taskId: existingTask.id,
+      });
+      return input.routeResult;
+    }
+  }
   const intent = input.intentResult?.intent ?? 'light_task';
   const previousPlannerTaskInput = input.routeResult.reason_code === 'confirm_previous_action'
     ? resolvePreviousPlannerTaskInput(input.roomId)
@@ -2729,6 +2756,23 @@ function buildPreviousPlannerTaskDescription(input: {
     input.reason ? `判断依据：${input.reason}` : null,
     input.nextSteps.length > 0 ? ['建议执行：', ...input.nextSteps.map((step) => `- ${step}`)].join('\n') : null,
   ].filter((line): line is string => Boolean(line)).join('\n');
+}
+
+function findTaskCreatedFromPlannerConfirmation(roomId: string, plannerMessageId: string): Task | null {
+  const row = db.prepare(
+    `SELECT json_extract(metadata, '$.task_id') AS task_id
+     FROM messages
+     WHERE room_id = ?
+       AND metadata IS NOT NULL
+       AND json_valid(metadata)
+       AND json_extract(metadata, '$.event_type') = 'task_created'
+       AND json_extract(metadata, '$.description') LIKE ?
+     ORDER BY created_at DESC
+     LIMIT 1`,
+  ).get(roomId, `%来源分析消息：${plannerMessageId}%`) as { task_id: string } | undefined;
+  if (!row?.task_id) return null;
+  const task = taskRepo.get(row.task_id);
+  return task?.room_id === roomId ? task : null;
 }
 
 async function analyzeRoutedTaskMessage(input: {
