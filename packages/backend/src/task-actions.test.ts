@@ -687,7 +687,7 @@ test('auto_advance can directly execute lightweight tasks when routing skips pla
       assert.match(prompt, /tdd_execute/u);
       return {
         status: 'completed',
-        content: '```json\n{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"回归测试失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"实现后通过"}]}}\n```',
+        content: '已完成实现并运行定向验证，构建通过；缺失的浏览器验证受本地端口权限限制。',
         error: null,
         runId: 'run-direct-execution',
       };

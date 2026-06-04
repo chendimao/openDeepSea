@@ -506,7 +506,9 @@ async function runSuperpowersPhaseAction(input: {
 
   const evidence = extractSuperpowersEvidence(result.content);
   const evidenceError = result.status === 'completed'
-    ? validateCompletedPhaseEvidence(phase, evidence, project.path)
+    ? validateCompletedPhaseEvidence(phase, evidence, project.path, {
+        skipPlanningPrerequisite: input.skipPlanningPrerequisite === true,
+      })
     : null;
   const nonCompletedError = result.status === 'completed'
     ? null
@@ -721,8 +723,10 @@ function validateCompletedPhaseEvidence(
   phase: SuperpowersRuntimePhase,
   evidence: Record<string, unknown> | null,
   projectPath: string,
+  options?: { skipPlanningPrerequisite?: boolean },
 ): string | null {
   if (phase === 'systematic_debugging') return null;
+  if (phase === 'tdd_execute' && !evidence && options?.skipPlanningPrerequisite) return null;
   if (!evidence) return `缺少 ${phase} 阶段的 superpowers evidence`;
   if (phase === 'brainstorming') {
     if (typeof evidence.designDocPath !== 'string' || evidence.designDocPath.trim().length === 0) {
