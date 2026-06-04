@@ -94,3 +94,29 @@ test('agentRunRepo listForClientByRoom includes active runs outside the recent l
   assert.equal(listed.some((run) => run.id === activeRun.id), true);
   assert.ok(listed.length > 1);
 });
+
+test('agentRunRepo does not let late active updates overwrite terminal status', () => {
+  const project = projectRepo.create({
+    name: `agent-runs-terminal-${Date.now()}`,
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-agent-runs-terminal-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner-terminal', agent_name: 'Planner' });
+  const run = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: agent.id,
+    agent_id: 'planner-terminal',
+    backend: 'codex',
+    prompt: 'prompt',
+  });
+
+  const failed = agentRunRepo.updateStatus(run.id, 'failed', { error: 'ACP prompt timed out' });
+  assert.equal(failed?.status, 'failed');
+  assert.equal(typeof failed?.completed_at, 'number');
+
+  const retrying = agentRunRepo.updateStatus(run.id, 'retrying');
+
+  assert.equal(retrying?.status, 'failed');
+  assert.equal(retrying?.error, 'ACP prompt timed out');
+  assert.equal(retrying?.completed_at, failed?.completed_at);
+});

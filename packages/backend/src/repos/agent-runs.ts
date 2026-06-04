@@ -182,6 +182,10 @@ export const agentRunRepo = {
     status: AgentRunStatus,
     patch: Partial<Pick<AgentRun, 'session_key' | 'acp_session_id' | 'error' | 'stdout' | 'stderr' | 'activity_log'>> = {},
   ): AgentRun | undefined {
+    const existing = this.get(id);
+    if (existing && isTerminalAgentRunStatus(existing.status) && isActiveAgentRunStatus(status)) {
+      return existing;
+    }
     const completedAt = ACTIVE_AGENT_RUN_STATUSES.includes(status as typeof ACTIVE_AGENT_RUN_STATUSES[number]) ? null : now();
     db.prepare(
       `UPDATE agent_runs
@@ -210,6 +214,14 @@ export const agentRunRepo = {
     return this.get(id);
   },
 };
+
+function isActiveAgentRunStatus(status: AgentRunStatus): boolean {
+  return ACTIVE_AGENT_RUN_STATUSES.includes(status as typeof ACTIVE_AGENT_RUN_STATUSES[number]);
+}
+
+function isTerminalAgentRunStatus(status: AgentRunStatus): boolean {
+  return !isActiveAgentRunStatus(status);
+}
 
 function compactAgentRunForClient(run: AgentRun): AgentRun {
   return {

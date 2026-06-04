@@ -951,6 +951,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       acp_enabled: !!agent.acp_enabled,
       acp_backend: agent.acp_backend,
       acp_session_id: acpSessionId,
+      run_id: run.id,
       task_id: args.taskId ?? undefined,
       internal: args.internalMessage ? true : undefined,
     },
@@ -1186,6 +1187,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         const updated = agentRunRepo.updateStatus(run.id, 'running', {
           acp_session_id: sessionId,
         });
+        messageRepo.mergeMetadata(placeholder.id, { acp_session_id: sessionId, run_id: run.id });
         if (updated) broadcastRun('agent_run:updated', updated);
       },
       signal: controller.signal,
@@ -1198,6 +1200,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       const updated = agentRunRepo.updateStatus(run.id, 'running', {
         acp_session_id: result.sessionId,
       });
+      messageRepo.mergeMetadata(placeholder.id, { acp_session_id: result.sessionId, run_id: run.id });
       if (updated) broadcastRun('agent_run:updated', updated);
     }
     if (!taskExecutor && result.sessionId && result.sessionId !== agent.acp_session_id) {

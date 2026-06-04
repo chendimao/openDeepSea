@@ -666,6 +666,9 @@ test('runAgentOnce broadcasts retrying status for ACP retry chunks and resumes r
     assert.equal(relevantStatuses.at(-1), 'completed');
     assert.match(updatedRun?.activity_log ?? '', /retrying 1\/2/);
     assert.equal(updatedRun?.stderr, '');
+    const metadata = JSON.parse(result.message.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.run_id, result.run.id);
+    assert.equal(metadata.acp_session_id, 'retry-session-1');
   } finally {
     wsHub.unsubscribe(room.id, socket as never);
     adapters.codex = originalAdapter;
