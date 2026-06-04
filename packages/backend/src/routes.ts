@@ -3479,13 +3479,24 @@ function reconcileCompletedAutoAdvanceTasks(roomId: string): void {
         event.payload.status === 'completed'
       );
     if (!latestAutoAdvance || !isTaskCompletingDelegatedAction(latestAutoAdvance.payload.delegated_action)) continue;
-    taskRepo.updateStatus(task.id, 'done');
+    const after = taskRepo.updateStatus(task.id, 'done');
+    if (!after) continue;
+    recordTaskStatusChanged({
+      before: task,
+      after,
+      metadata: {
+        completed_by_task_action: 'auto_advance',
+        delegated_action: latestAutoAdvance.payload.delegated_action,
+        reconciled_from_task_event_id: latestAutoAdvance.id,
+      },
+    });
+    wsHub.broadcast(after.room_id, { type: 'task:updated', task: after });
   }
 }
 
 function isTaskCompletingDelegatedAction(value: unknown): boolean {
-  return value === 'start_execution' ||
-    value === 'subagent_execution' ||
+  return value === 'subagent_execution' ||
+    value === 'systematic_debugging' ||
     value === 'verification' ||
     value === 'finish_branch';
 }

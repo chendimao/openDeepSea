@@ -494,3 +494,28 @@ test('normalizeProtocolEvent maps wait_agent result to subagent_completed', () =
   assert.equal(event.payload.child_agent_id, 'frontend-implementer');
   assert.equal(event.payload.result, 'RED/GREEN/build evidence collected');
 });
+
+test('normalizeProtocolEvent maps function_call_output subagent result to subagent_completed', () => {
+  const raw = {
+    type: 'function_call_output',
+    name: 'wait_agent',
+    id: 'tool-subagent-2',
+    output: {
+      status: 'DONE',
+      agent_id: 'backend-implementer',
+      result: '子代理实现已完成',
+    },
+  };
+
+  const event = normalizeProtocolEvent({
+    ...baseArgs,
+    seq: 10,
+    raw,
+  });
+
+  assert.equal(event.type, 'subagent_completed');
+  assert.equal(event.status, 'completed');
+  assert.equal(event.payload.tool_call_id, 'tool-subagent-2');
+  assert.equal(event.payload.child_agent_id, 'backend-implementer');
+  assert.equal(event.payload.result, '子代理实现已完成');
+});

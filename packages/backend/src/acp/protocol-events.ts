@@ -91,7 +91,7 @@ export function normalizeProtocolEvent(args: {
   if (sessionUpdate === 'tool_call' || /tool_call_started|tool.*started|tool_use|^tool_call$/i.test(type)) {
     const name = getToolName(payload, args.raw, 'tool');
     if (isSubagentToolName(name)) {
-      return compactTimelineEvent(createTimelineEvent({
+      return buildSubagentTimelineEvent({
         messageId: args.messageId,
         runId: args.runId,
         agentId: args.agentId,
@@ -99,15 +99,11 @@ export function normalizeProtocolEvent(args: {
         type: 'subagent_started',
         status: 'started',
         title: '子代理启动',
-        payload: buildSubagentPayload({
-          payload,
-          raw: args.raw,
-          name,
-          parentRunId: args.runId,
-          source: payload['input'] ?? payload['arguments'] ?? payload['rawInput'] ?? args.raw['input'],
-        }),
+        payload,
         raw: args.raw,
-      }));
+        name,
+        source: payload['input'] ?? payload['arguments'] ?? payload['rawInput'] ?? args.raw['input'],
+      });
     }
     return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
@@ -136,7 +132,7 @@ export function normalizeProtocolEvent(args: {
     const hasResult = status === 'completed' || status === 'failed' || payload['rawOutput'] !== undefined;
     if (isSubagentToolName(name)) {
       const output = payload['output'] ?? payload['rawOutput'] ?? payload['content'] ?? args.raw['output'];
-      return compactTimelineEvent(createTimelineEvent({
+      return buildSubagentTimelineEvent({
         messageId: args.messageId,
         runId: args.runId,
         agentId: args.agentId,
@@ -144,15 +140,11 @@ export function normalizeProtocolEvent(args: {
         type: status === 'failed' ? 'subagent_failed' : hasResult ? 'subagent_completed' : 'subagent_progress',
         status: hasResult ? status : 'started',
         title: status === 'failed' ? '子代理失败' : hasResult ? '子代理完成' : '子代理进度',
-        payload: buildSubagentPayload({
-          payload,
-          raw: args.raw,
-          name,
-          parentRunId: args.runId,
-          source: output,
-        }),
+        payload,
         raw: args.raw,
-      }));
+        name,
+        source: output,
+      });
     }
     return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
@@ -178,6 +170,23 @@ export function normalizeProtocolEvent(args: {
 
   if (/tool_result|tool_call_completed|tool.*completed|function_call_output/i.test(type)) {
     const name = getToolName(payload, args.raw, 'tool_result');
+    if (isSubagentToolName(name)) {
+      const output = payload['output'] ?? payload['rawOutput'] ?? payload['content'] ?? args.raw['output'];
+      const status = resolveStatus(payload, 'completed');
+      return buildSubagentTimelineEvent({
+        messageId: args.messageId,
+        runId: args.runId,
+        agentId: args.agentId,
+        seq: args.seq,
+        type: status === 'failed' ? 'subagent_failed' : 'subagent_completed',
+        status,
+        title: status === 'failed' ? '子代理失败' : '子代理完成',
+        payload,
+        raw: args.raw,
+        name,
+        source: output,
+      });
+    }
     return compactTimelineEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
@@ -306,6 +315,38 @@ function getToolName(
 function isSubagentToolName(name: string): boolean {
   return /^(spawn_agent|dispatch_agent|wait_agent|subagent_result|agent_result|Task)$/i.test(name)
     || /subagent/i.test(name);
+}
+
+function buildSubagentTimelineEvent(input: {
+  messageId: string;
+  runId: string;
+  agentId: string;
+  seq: number;
+  type: Extract<AgentTimelineEvent['type'], 'subagent_started' | 'subagent_progress' | 'subagent_completed' | 'subagent_failed'>;
+  status: AgentTimelineEventStatus;
+  title: string;
+  payload: Record<string, unknown>;
+  raw: Record<string, unknown>;
+  name: string;
+  source: unknown;
+}): AgentTimelineEvent {
+  return compactTimelineEvent(createTimelineEvent({
+    messageId: input.messageId,
+    runId: input.runId,
+    agentId: input.agentId,
+    seq: input.seq,
+    type: input.type,
+    status: input.status,
+    title: input.title,
+    payload: buildSubagentPayload({
+      payload: input.payload,
+      raw: input.raw,
+      name: input.name,
+      parentRunId: input.runId,
+      source: input.source,
+    }),
+    raw: input.raw,
+  }));
 }
 
 function buildSubagentPayload(input: {

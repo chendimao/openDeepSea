@@ -132,6 +132,11 @@ test('room task list marks task done when auto advance completed terminal action
     room_id: room.id,
     title: '历史自动推进完成任务',
   });
+  const debuggingTask = taskRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    title: '历史调试自动推进完成任务',
+  });
   taskEventRepo.create({
     room_id: room.id,
     task_id: task.id,
@@ -145,8 +150,27 @@ test('room task list marks task done when auto advance completed terminal action
       delegated_action: 'subagent_execution',
     },
   });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: debuggingTask.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'auto_advance',
+      status: 'completed',
+      task_action: 'auto_advance',
+      task_action_status: 'completed',
+      delegated_action: 'systematic_debugging',
+    },
+  });
+  const events = captureRoomEvents(room.id);
 
-  const listRes = await request(`/api/rooms/${room.id}/tasks`);
+  let listRes: Response;
+  try {
+    listRes = await request(`/api/rooms/${room.id}/tasks`);
+  } finally {
+    events.restore();
+  }
 
   assert.equal(listRes.status, 200);
   const body = await listRes.json() as Array<{ id: string; status: string; completed_at: number | null }>;
@@ -155,6 +179,29 @@ test('room task list marks task done when auto advance completed terminal action
   assert.equal(reconciled.status, 'done');
   assert.equal(typeof reconciled.completed_at, 'number');
   assert.equal(taskRepo.get(task.id)?.status, 'done');
+  const reconciledDebugging = body.find((item) => item.id === debuggingTask.id);
+  assert.ok(reconciledDebugging);
+  assert.equal(reconciledDebugging.status, 'done');
+  assert.equal(taskRepo.get(debuggingTask.id)?.status, 'done');
+  assert.equal(
+    taskEventRepo.listByTask(task.id).some((event) =>
+      event.type === 'task_status_changed' &&
+      event.payload.completed_by_task_action === 'auto_advance' &&
+      event.payload.delegated_action === 'subagent_execution'
+    ),
+    true,
+  );
+  assert.equal(
+    taskEventRepo.listByTask(debuggingTask.id).some((event) =>
+      event.type === 'task_status_changed' &&
+      event.payload.delegated_action === 'systematic_debugging'
+    ),
+    true,
+  );
+  assert.equal(
+    events.filter((event) => event.type === 'task:updated').length,
+    2,
+  );
 });
 
 test('task patch route rejects unsupported fields instead of ignoring them', async () => {
