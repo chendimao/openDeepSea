@@ -335,11 +335,14 @@ function refreshPlannerMessageMetadata(message: Message): Message {
   const metadata = parseMetadataObject(message.metadata);
   const currentExecution = readTaskExecutionObject(metadata.task_execution);
   if (currentExecution && currentExecution.status !== 'suggested') return message;
-  if (taskExecutionMatches(currentExecution, explicitExecution)) return message;
-
   const pendingAction = buildPendingActionFromTaskExecution(message, explicitExecution, metadata);
+  const currentPendingAction = readPendingActionObject(metadata.pending_action);
+  const executionMatches = taskExecutionMatches(currentExecution, explicitExecution);
+  if (executionMatches && pendingActionMatches(currentPendingAction, pendingAction)) return message;
+
+  const { pending_action: _pendingAction, ...metadataWithoutPendingAction } = metadata;
   const nextMetadata = {
-    ...metadata,
+    ...metadataWithoutPendingAction,
     task_execution: explicitExecution,
     ...(pendingAction ? { pending_action: pendingAction } : {}),
   };
@@ -362,6 +365,38 @@ function buildPendingActionFromTaskExecution(
     description: buildPendingActionDescriptionFromTaskExecution(message, decision),
     risk_level: 'normal',
   };
+}
+
+function readPendingActionObject(value: unknown): PendingActionMetadata | null {
+  if (!isRecord(value)) return null;
+  if (value.kind !== 'create_task_from_analysis') return null;
+  if (value.status !== 'awaiting_confirmation') return null;
+  const id = readNonEmptyString(value.id);
+  const sourceMessageId = readNonEmptyString(value.source_message_id);
+  const title = readNonEmptyString(value.title);
+  const description = readNonEmptyString(value.description);
+  if (!id || !sourceMessageId || !title || !description) return null;
+  return {
+    id,
+    kind: 'create_task_from_analysis',
+    status: 'awaiting_confirmation',
+    source_message_id: sourceMessageId,
+    title,
+    description,
+    risk_level: value.risk_level === 'low' || value.risk_level === 'high' ? value.risk_level : 'normal',
+  };
+}
+
+function pendingActionMatches(a: PendingActionMetadata | null, b: PendingActionMetadata | null): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.id === b.id &&
+    a.kind === b.kind &&
+    a.status === b.status &&
+    a.source_message_id === b.source_message_id &&
+    a.title === b.title &&
+    a.description === b.description &&
+    a.risk_level === b.risk_level;
 }
 
 function isTaskExecutionActionable(decision: TaskExecutionDecision): boolean {

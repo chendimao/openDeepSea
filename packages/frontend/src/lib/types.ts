@@ -813,6 +813,7 @@ export interface RouteResult {
   confidence: number;
   reason: string;
   reason_code?: RouteReasonCode;
+  pending_action_context?: PendingActionRouteContext;
 }
 
 export type RouteReasonCode =
@@ -1011,6 +1012,11 @@ export interface PendingActionDecisionMetadata {
   action_id: string;
   source_message_id: string;
   decision: 'approve' | 'reject' | 'clarify';
+}
+
+export interface PendingActionRouteContext {
+  action_id: string;
+  planner_message_id: string;
 }
 
 export type BrainstormingOptionMaturity = 'exploratory' | 'boundary_needed' | 'actionable';

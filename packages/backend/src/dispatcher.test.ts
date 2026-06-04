@@ -4657,6 +4657,129 @@ test('message list refreshes stale planner metadata from explicit decision conte
   }
 });
 
+test('message list adds pending action when stale planner execution already matches explicit content', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-matched-decision-'));
+  const project = projectRepo.create({ name: `planner-matched-decision-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '修复设置页保存按钮',
+    message_type: 'text',
+  });
+  const decision = {
+    state: 'ready_to_execute',
+    status: 'suggested',
+    summary: '修复设置页保存按钮',
+    next_steps: [
+      { agent_id: 'frontend-executor', goal: '修复保存按钮点击无响应' },
+    ],
+  };
+  const plannerReply = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: [
+      '建议直接修复。',
+      '',
+      '```json',
+      JSON.stringify({ task_execution: decision }),
+      '```',
+    ].join('\n'),
+    message_type: 'agent_stream',
+    metadata: {
+      task_execution: decision,
+      source_message_id: userMessage.id,
+    },
+  });
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/messages`);
+    assert.equal(response.status, 200);
+    const body = await response.json() as Message[];
+    const reply = body.find((item) => item.id === plannerReply.id);
+    assert.ok(reply);
+    const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.pending_action?.kind, 'create_task_from_analysis');
+    assert.equal(metadata.pending_action?.source_message_id, userMessage.id);
+    assert.equal(metadata.pending_action?.title, '修复设置页保存按钮');
+
+    const persisted = messageRepo.get(plannerReply.id);
+    assert.ok(persisted);
+    const persistedMetadata = JSON.parse(persisted.metadata ?? '{}') as MessageMetadata;
+    assert.equal(persistedMetadata.pending_action?.id, `pa_${plannerReply.id}`);
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('message list removes stale pending action when explicit planner execution is no longer actionable', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-stale-pending-action-'));
+  const project = projectRepo.create({ name: `planner-stale-pending-action-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const plannerReply = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: [
+      '已经完成，不需要继续执行。',
+      '',
+      '```json',
+      JSON.stringify({
+        task_execution: {
+          state: 'analysis_only',
+          status: 'completed',
+          summary: '已完成',
+          next_steps: [],
+        },
+      }),
+      '```',
+    ].join('\n'),
+    message_type: 'agent_stream',
+    metadata: {
+      task_execution: {
+        state: 'ready_to_execute',
+        status: 'suggested',
+        summary: '旧的执行建议',
+        next_steps: [
+          { agent_id: 'frontend-executor', goal: '旧的执行步骤' },
+        ],
+      },
+      pending_action: {
+        id: 'pa-stale',
+        kind: 'create_task_from_analysis',
+        status: 'awaiting_confirmation',
+        source_message_id: 'old-source',
+        title: '旧的执行建议',
+        description: '不应继续保留。',
+        risk_level: 'normal',
+      },
+    },
+  });
+
+  try {
+    const response = await request(`/api/rooms/${room.id}/messages`);
+    assert.equal(response.status, 200);
+    const body = await response.json() as Message[];
+    const reply = body.find((item) => item.id === plannerReply.id);
+    assert.ok(reply);
+    const metadata = JSON.parse(reply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.task_execution?.status, 'completed');
+    assert.equal(metadata.pending_action, undefined);
+
+    const persisted = messageRepo.get(plannerReply.id);
+    assert.ok(persisted);
+    const persistedMetadata = JSON.parse(persisted.metadata ?? '{}') as MessageMetadata;
+    assert.equal(persistedMetadata.pending_action, undefined);
+  } finally {
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('message list preserves auto-continue planner metadata normalized after follow-up dispatch', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-auto-decision-'));
   const project = projectRepo.create({ name: `planner-auto-decision-${Date.now()}`, path: projectPath });

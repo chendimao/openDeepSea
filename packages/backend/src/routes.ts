@@ -2397,6 +2397,12 @@ function resolvePreviousPlannerConfirmationRoute(roomId: string, message: string
         ? `用户重复确认上一条规划建议，复用已创建任务：${existingTask.id}`
         : `用户确认执行上一条规划建议：${previous.id}`,
       reason_code: 'confirm_previous_action',
+      ...(pendingAction ? {
+        pending_action_context: {
+          action_id: pendingAction.id,
+          planner_message_id: previous.id,
+        },
+      } : {}),
     };
   }
   if (confirmationKind !== 'fix') return null;
@@ -2656,7 +2662,7 @@ async function createTaskFromRoutedMessage(input: {
       const updatedMessage = messageRepo.mergeMetadata(input.userMessageId, {
         task_id: existingTask.id,
         route_result: input.routeResult,
-        pending_action_decision: buildPendingActionApprovalDecision(input.roomId),
+        pending_action_decision: buildPendingActionApprovalDecision(input.roomId, input.routeResult),
       });
       if (updatedMessage) {
         broadcastUserMessageSnapshot(input.roomId, updatedMessage);
@@ -2671,7 +2677,7 @@ async function createTaskFromRoutedMessage(input: {
   }
   const intent = input.intentResult?.intent ?? 'light_task';
   const previousPlannerTaskInput = input.routeResult.reason_code === 'confirm_previous_action'
-    ? resolvePreviousPlannerTaskInput(input.roomId)
+    ? resolvePreviousPlannerTaskInput(input.roomId, input.routeResult)
     : null;
   const analysis = await analyzeRoutedTaskMessage(input);
   if (analysis && analysis.recommended_next_action !== 'create_task') {
@@ -2715,7 +2721,7 @@ async function createTaskFromRoutedMessage(input: {
     task_id: result.task.id,
     task_analysis: analysis ?? undefined,
     route_result: nextRouteResult,
-    pending_action_decision: buildPendingActionApprovalDecision(input.roomId),
+    pending_action_decision: buildPendingActionApprovalDecision(input.roomId, nextRouteResult),
   });
   if (updatedMessage) {
     broadcastUserMessageSnapshot(input.roomId, updatedMessage);
@@ -2728,8 +2734,11 @@ async function createTaskFromRoutedMessage(input: {
   return nextRouteResult;
 }
 
-function resolvePreviousPlannerTaskInput(roomId: string): { title: string; description: string } | null {
-  const previous = findLatestPlannerContextMessage(roomId);
+function resolvePreviousPlannerTaskInput(
+  roomId: string,
+  routeResult: import('./types.js').RouteResult,
+): { title: string; description: string } | null {
+  const previous = findPlannerContextMessageForRoute(roomId, routeResult);
   if (!previous) return null;
   const metadata = parseMetadataRecord(previous.metadata);
   const pendingAction = readPendingActionObject(metadata.pending_action);
@@ -2785,8 +2794,11 @@ function buildPendingActionTaskDescription(action: PendingActionMetadata, planne
   ].join('\n');
 }
 
-function buildPendingActionApprovalDecision(roomId: string): Record<string, unknown> | undefined {
-  const previous = findLatestPlannerContextMessage(roomId);
+function buildPendingActionApprovalDecision(
+  roomId: string,
+  routeResult: import('./types.js').RouteResult,
+): Record<string, unknown> | undefined {
+  const previous = findPlannerContextMessageForRoute(roomId, routeResult);
   if (!previous) return undefined;
   const metadata = parseMetadataRecord(previous.metadata);
   const pendingAction = readPendingActionObject(metadata.pending_action);
@@ -2796,6 +2808,16 @@ function buildPendingActionApprovalDecision(roomId: string): Record<string, unkn
     source_message_id: previous.id,
     decision: 'approve',
   };
+}
+
+function findPlannerContextMessageForRoute(roomId: string, routeResult: import('./types.js').RouteResult): Message | null {
+  const plannerMessageId = routeResult.pending_action_context?.planner_message_id;
+  if (plannerMessageId) {
+    const message = messageRepo.get(plannerMessageId);
+    if (message?.room_id === roomId && message.sender_type === 'agent' && message.sender_id === 'planner') return message;
+    return null;
+  }
+  return findLatestPlannerContextMessage(roomId);
 }
 
 function buildPreviousPlannerTaskDescription(input: {

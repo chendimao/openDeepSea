@@ -871,6 +871,11 @@ export interface PendingActionDecisionMetadata {
   decision: 'approve' | 'reject' | 'clarify';
 }
 
+export interface PendingActionRouteContext {
+  action_id: string;
+  planner_message_id: string;
+}
+
 export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
   file_refs?: string[];
@@ -943,6 +948,7 @@ export interface RouteResult {
   confidence: number;
   reason: string;
   reason_code?: RouteReasonCode;
+  pending_action_context?: PendingActionRouteContext;
 }
 
 export type RouteReasonCode =

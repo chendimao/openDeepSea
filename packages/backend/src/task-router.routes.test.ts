@@ -593,6 +593,86 @@ test('POST /rooms/:roomId/messages reuses existing task for repeated short confi
   assert.equal(taskRepo.listByRoom(room.id).length, 1);
 });
 
+test('POST /rooms/:roomId/messages records approval for routed pending action when newer planner message appears', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Pending Action Frozen Context',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-pending-action-frozen-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const plannerMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '建议修复原始问题。',
+    message_type: 'text',
+    metadata: {
+      pending_action: {
+        id: 'pa-original-action',
+        kind: 'create_task_from_analysis',
+        status: 'awaiting_confirmation',
+        source_message_id: 'origin-user-message',
+        title: '修复原始问题',
+        description: '原始待确认动作。',
+        risk_level: 'normal',
+      },
+    },
+  });
+  const task = taskRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    title: '修复原始问题',
+    description: `pending_action: pa-original-action\n来源分析消息：${plannerMessage.id}`,
+  });
+  messageRepo.create({
+    room_id: room.id,
+    sender_type: 'system',
+    sender_id: 'system',
+    sender_name: 'System',
+    content: '任务已创建：修复原始问题',
+    message_type: 'system',
+    layer: 'activity',
+    metadata: {
+      event_type: 'task_created',
+      task_id: task.id,
+      description: task.description,
+    },
+  });
+
+  setMessageRouteDeps({
+    dispatchUserMessage: async (input) => {
+      dispatchCalls.push(input);
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '确定' }),
+  });
+
+  assert.equal(res.status, 201);
+  const message = await res.json() as { metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: {
+      action: string;
+      taskId: string | null;
+      reason_code?: string;
+      pending_action_context?: { action_id: string; planner_message_id: string };
+    };
+    pending_action_decision?: { action_id: string; source_message_id: string; decision: string };
+  };
+  assert.equal(metadata.task_id, task.id);
+  assert.equal(metadata.route_result?.taskId, task.id);
+  assert.equal(metadata.route_result?.pending_action_context?.action_id, 'pa-original-action');
+  assert.equal(metadata.route_result?.pending_action_context?.planner_message_id, plannerMessage.id);
+  assert.equal(metadata.pending_action_decision?.action_id, 'pa-original-action');
+  assert.equal(metadata.pending_action_decision?.source_message_id, plannerMessage.id);
+  assert.equal(metadata.pending_action_decision?.decision, 'approve');
+  assert.equal(taskRepo.listByRoom(room.id).length, 1);
+});
+
 test('POST /rooms/:roomId/messages keeps ordinary low-confidence chat global', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({
