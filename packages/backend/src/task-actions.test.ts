@@ -7,6 +7,7 @@ import test from 'node:test';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-task-actions-')), 'test.db');
 
 const { agentRepo } = await import('./repos/agents.js');
+const { agentRunLinkRepo } = await import('./repos/agent-run-links.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { messageRepo } = await import('./repos/messages.js');
 const { projectRepo } = await import('./repos/projects.js');
@@ -669,7 +670,7 @@ test('auto_advance can directly execute lightweight tasks when routing skips pla
   const actions: string[] = [];
   const agentIds: string[] = [];
 
-  const result = await startTaskAction({
+  const result = await withLegacySubagentExecution(() => startTaskAction({
     roomId: room.id,
     taskId: task.id,
     action: 'auto_advance',
@@ -692,7 +693,7 @@ test('auto_advance can directly execute lightweight tasks when routing skips pla
         runId: 'run-direct-execution',
       };
     },
-  });
+  }));
 
   assert.equal(result.status, 'completed');
   assert.deepEqual(actions, ['route', 'phase']);
@@ -1571,6 +1572,68 @@ test('subagent_execution ignores failed writing plan evidence', async () => {
   assert.match(result.blocked_reason ?? '', /编写计划|implementation plan/u);
 });
 
+test('subagent_execution creates native subagent run links for implementation and reviews', async () => {
+  const project = projectRepo.create({
+    name: '原生子代理执行',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-native-subagent-execution-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(frontend);
+  assert.ok(reviewer);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: reviewer.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '原生子代理编排',
+    description: '需要实现者和审查者子 run',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    source_message_id: null,
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/native-subagent-plan.md',
+  });
+  const runIds: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async ({ agent, prompt }) => {
+      const run = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: agent.id,
+        agent_id: agent.agent_id,
+        backend: agent.acp_backend ?? 'codex',
+        prompt,
+        task_id: task.id,
+      });
+      agentRunRepo.updateStatus(run.id, 'completed');
+      runIds.push(run.id);
+      return {
+        status: 'completed',
+        runId: run.id,
+        content: '```json\n{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"ok"}]}}\n```',
+        error: null,
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(result.run_ids, runIds);
+  assert.equal(runIds.length, 4);
+  const links = agentRunLinkRepo.listByTask(task.id);
+  assert.deepEqual(
+    links.map((link) => link.role),
+    ['implementer', 'spec_reviewer', 'code_quality_reviewer'],
+  );
+  assert.deepEqual(links.map((link) => link.parent_run_id), [runIds[0], runIds[0], runIds[0]]);
+  assert.deepEqual(links.map((link) => link.child_run_id), runIds.slice(1));
+});
+
 test('subagent_execution action dispatches tdd_execute after completed implementation plan evidence', async () => {
   const project = projectRepo.create({
     name: '已有计划执行',
@@ -1607,7 +1670,7 @@ test('subagent_execution action dispatches tdd_execute after completed implement
   writeProjectFile(project.path, 'docs/superpowers/plans/test-plan.md');
   let prompt = '';
 
-  const result = await startTaskAction({
+  const result = await withLegacySubagentExecution(() => startTaskAction({
     roomId: room.id,
     taskId: task.id,
     action: 'subagent_execution',
@@ -1620,7 +1683,7 @@ test('subagent_execution action dispatches tdd_execute after completed implement
         runId: 'run-subagent-execution',
       };
     },
-  });
+  }));
 
   assert.equal(result.status, 'completed');
   assert.match(prompt, /tdd_execute/u);
@@ -1669,7 +1732,7 @@ test('subagent_execution action fails when tdd evidence has no red stage', async
   });
   writeProjectFile(project.path, 'docs/superpowers/plans/test-plan.md');
 
-  const result = await startTaskAction({
+  const result = await withLegacySubagentExecution(() => startTaskAction({
     roomId: room.id,
     taskId: task.id,
     action: 'subagent_execution',
@@ -1679,7 +1742,7 @@ test('subagent_execution action fails when tdd evidence has no red stage', async
       error: null,
       runId: 'run-subagent-no-red',
     }),
-  });
+  }));
 
   assert.equal(result.status, 'failed');
   const events = taskEventRepo.listByTask(task.id, { limit: 10 });
@@ -1725,7 +1788,7 @@ test('subagent_execution action completes with numeric tdd exemption evidence', 
   });
   writeProjectFile(project.path, 'docs/superpowers/plans/test-plan.md');
 
-  const result = await startTaskAction({
+  const result = await withLegacySubagentExecution(() => startTaskAction({
     roomId: room.id,
     taskId: task.id,
     action: 'subagent_execution',
@@ -1735,7 +1798,7 @@ test('subagent_execution action completes with numeric tdd exemption evidence', 
       error: null,
       runId: 'run-subagent-tdd-exemption',
     }),
-  });
+  }));
 
   assert.equal(result.status, 'completed');
   assert.deepEqual(result.run_ids, ['run-subagent-tdd-exemption']);
@@ -1816,6 +1879,20 @@ function recordCompletedEvidence(
       evidence,
     },
   });
+}
+
+async function withLegacySubagentExecution<T>(fn: () => Promise<T>): Promise<T> {
+  const previousNativeSubagentExecution = process.env.OPENCLAW_NATIVE_SUBAGENT_EXECUTION;
+  process.env.OPENCLAW_NATIVE_SUBAGENT_EXECUTION = '0';
+  try {
+    return await fn();
+  } finally {
+    if (previousNativeSubagentExecution === undefined) {
+      delete process.env.OPENCLAW_NATIVE_SUBAGENT_EXECUTION;
+    } else {
+      process.env.OPENCLAW_NATIVE_SUBAGENT_EXECUTION = previousNativeSubagentExecution;
+    }
+  }
 }
 
 function writeProjectFile(projectPath: string, relativePath: string): void {

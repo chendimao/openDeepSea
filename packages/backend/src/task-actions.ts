@@ -1,4 +1,5 @@
 import type {
+  AgentRunLinkRole,
   AgentRunStatus,
   RoomAgent,
   Task,
@@ -11,6 +12,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { agentRepo } from './repos/agents.js';
 import { respondAsAgent } from './dispatcher.js';
 import { projectRepo } from './repos/projects.js';
+import { agentRunLinkRepo } from './repos/agent-run-links.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { messageRepo } from './repos/messages.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
@@ -37,6 +39,12 @@ const TASK_ACTION_KINDS: readonly TaskActionKind[] = [
   'systematic_debugging',
   'verification',
   'finish_branch',
+];
+
+const SUBAGENT_EXECUTION_ROLES: Array<{ role: AgentRunLinkRole; agentId: 'executor' | 'reviewer'; phaseLabel: string }> = [
+  { role: 'implementer', agentId: 'executor', phaseLabel: '实现者' },
+  { role: 'spec_reviewer', agentId: 'reviewer', phaseLabel: '规格审查者' },
+  { role: 'code_quality_reviewer', agentId: 'reviewer', phaseLabel: '代码质量审查者' },
 ];
 
 export interface TaskActionAgentResult {
@@ -513,6 +521,18 @@ async function runSuperpowersPhaseAction(input: {
     workflowContext: `任务动作入口：${input.action}`,
   });
 
+  if (input.action === 'subagent_execution' && isNativeSubagentExecutionEnabled()) {
+    return runNativeSubagentExecution({
+      roomId: input.roomId,
+      taskId: input.taskId,
+      task,
+      projectPath: project.path,
+      parentAgent: phaseAgent,
+      parentPrompt: prompt,
+      runAgent: input.runAgent,
+    });
+  }
+
   let result: TaskActionAgentResult;
   try {
     result = await input.runAgent({
@@ -559,6 +579,184 @@ async function runSuperpowersPhaseAction(input: {
     message_id: messageId,
     run_ids: result.runId ? [result.runId] : [],
   };
+}
+
+async function runNativeSubagentExecution(input: {
+  roomId: string;
+  taskId: string;
+  task: Task;
+  projectPath: string;
+  parentAgent: RoomAgent;
+  parentPrompt: string;
+  runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+}): Promise<TaskActionStartResult> {
+  const runIds: string[] = [];
+  let parentResult: TaskActionAgentResult;
+  try {
+    parentResult = await input.runAgent({
+      agent: input.parentAgent,
+      taskId: input.taskId,
+      sourceMessageId: input.task.source_message_id,
+      prompt: input.parentPrompt,
+    });
+  } catch (error) {
+    const errorMessage = toErrorMessage(error, 'native subagent parent run failed');
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
+      superpowers_phase: 'tdd_execute',
+      error: errorMessage,
+      native_subagent_execution: true,
+    });
+    return {
+      action: 'subagent_execution',
+      status: 'failed',
+      message_id: messageId,
+      run_ids: [],
+    };
+  }
+
+  if (parentResult.runId) runIds.push(parentResult.runId);
+  if (parentResult.status !== 'completed') {
+    const error = parentResult.error ?? `tdd_execute 父级编排未完成：${parentResult.status}`;
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
+      superpowers_phase: 'tdd_execute',
+      run_id: parentResult.runId,
+      run_ids: runIds,
+      error,
+      native_subagent_execution: true,
+    });
+    return {
+      action: 'subagent_execution',
+      status: 'failed',
+      message_id: messageId,
+      run_ids: runIds,
+    };
+  }
+
+  if (!parentResult.runId) {
+    const error = 'native subagent execution requires parent run id';
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
+      superpowers_phase: 'tdd_execute',
+      run_ids: runIds,
+      error,
+      native_subagent_execution: true,
+    });
+    return {
+      action: 'subagent_execution',
+      status: 'failed',
+      message_id: messageId,
+      run_ids: runIds,
+    };
+  }
+
+  const childContents: string[] = [];
+  for (const role of SUBAGENT_EXECUTION_ROLES) {
+    const agent = selectNativeSubagentRoleAgent(input.roomId, input.task, role.agentId);
+    let result: TaskActionAgentResult;
+    try {
+      result = await input.runAgent({
+        agent,
+        taskId: input.taskId,
+        sourceMessageId: input.task.source_message_id,
+        prompt: buildNativeSubagentPrompt(role.role, role.phaseLabel, input.task, childContents),
+      });
+    } catch (error) {
+      const errorMessage = toErrorMessage(error, `${role.role} subagent failed`);
+      const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
+        superpowers_phase: 'tdd_execute',
+        run_id: parentResult.runId,
+        run_ids: runIds,
+        failed_role: role.role,
+        error: errorMessage,
+        native_subagent_execution: true,
+      });
+      return {
+        action: 'subagent_execution',
+        status: 'failed',
+        message_id: messageId,
+        run_ids: runIds,
+      };
+    }
+
+    if (result.runId) {
+      runIds.push(result.runId);
+      agentRunLinkRepo.create({
+        room_id: input.roomId,
+        task_id: input.taskId,
+        parent_run_id: parentResult.runId,
+        child_run_id: result.runId,
+        relationship: 'subagent',
+        role: role.role,
+      });
+    }
+    childContents.push(`${role.role}: ${result.content}`);
+    if (result.status !== 'completed') {
+      const error = result.error ?? `${role.role} 子代理未完成：${result.status}`;
+      const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
+        superpowers_phase: 'tdd_execute',
+        run_id: parentResult.runId,
+        run_ids: runIds,
+        failed_role: role.role,
+        error,
+        native_subagent_execution: true,
+      });
+      return {
+        action: 'subagent_execution',
+        status: 'failed',
+        message_id: messageId,
+        run_ids: runIds,
+      };
+    }
+  }
+
+  const evidence = extractSuperpowersEvidence(childContents.join('\n\n')) ?? extractSuperpowersEvidence(parentResult.content);
+  const error = validateCompletedPhaseEvidence('tdd_execute', evidence, input.projectPath);
+  const status = error ? 'failed' : 'completed';
+  const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', status, {
+    superpowers_phase: 'tdd_execute',
+    run_id: parentResult.runId,
+    run_ids: runIds,
+    error,
+    evidence,
+    native_subagent_execution: true,
+  });
+  return {
+    action: 'subagent_execution',
+    status,
+    message_id: messageId,
+    run_ids: runIds,
+  };
+}
+
+function isNativeSubagentExecutionEnabled(): boolean {
+  return process.env.OPENCLAW_NATIVE_SUBAGENT_EXECUTION !== '0';
+}
+
+function selectNativeSubagentRoleAgent(
+  roomId: string,
+  task: Task,
+  roleAgentId: 'executor' | 'reviewer',
+): RoomAgent {
+  if (roleAgentId === 'reviewer') return selectDefaultPhaseAgent(roomId, task, 'verification');
+  return selectDefaultPhaseAgent(roomId, task, 'subagent_execution');
+}
+
+function buildNativeSubagentPrompt(
+  role: AgentRunLinkRole,
+  phaseLabel: string,
+  task: Task,
+  previousOutputs: string[],
+): string {
+  return [
+    `原生子代理阶段：${phaseLabel}`,
+    `子代理角色：${role}`,
+    `任务：${task.title}`,
+    task.description ? `任务说明：${task.description}` : null,
+    '',
+    previousOutputs.length > 0 ? `前序子代理输出：\n${previousOutputs.join('\n\n')}` : '前序子代理输出：无',
+    '',
+    '请只处理当前子代理角色负责的工作，并输出必要的 Superpowers evidence。',
+    '实现者需要提供 RED/GREEN tddEvidence 或有效 tddExemption；审查者需要明确审查结论。',
+  ].filter((line): line is string => line !== null).join('\n');
 }
 
 function actionToPhase(action: TaskActionKind): SuperpowersRuntimePhase | null {
