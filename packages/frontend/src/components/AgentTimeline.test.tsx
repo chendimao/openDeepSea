@@ -324,6 +324,67 @@ test('AgentTimeline renders lossless execution details as dedicated detail field
   assert.match(html, /diff-line is-added/);
 });
 
+
+test('AgentTimeline renders subagent lifecycle events', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'run-1:1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'frontend-executor',
+            seq: 1,
+            type: 'subagent_started',
+            status: 'started',
+            title: '子代理启动',
+            payload: {
+              child_agent_id: 'frontend-implementer',
+              model: 'gpt-5.4',
+              reasoning_effort: 'high',
+              summary: '实现结构化 JSON 展示',
+            },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /子代理启动/);
+  assert.match(html, /frontend-implementer/);
+  assert.match(html, /gpt-5\.4/);
+  assert.match(html, /实现结构化 JSON 展示/);
+});
+
+test('AgentTimeline diagnoses text-only subagent claims without structured subagent events', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        trace={{
+          events: [
+            {
+              id: 'run-1:1',
+              message_id: 'message-1',
+              run_id: 'run-1',
+              agent_id: 'frontend-executor',
+              seq: 1,
+              type: 'assistant_message',
+              status: 'delta',
+              title: '助手回复',
+              payload: { text: '子代理已派发，正在等待子代理返回结果。' },
+              created_at: 1000,
+            },
+          ],
+        }}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /ACP 未返回结构化子代理事件/);
+});
+
 test('AgentTimeline renders concrete event time in timeline summaries', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

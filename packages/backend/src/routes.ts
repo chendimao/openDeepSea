@@ -3464,8 +3464,31 @@ router.get('/projects/:projectId/tasks', (req, res) => {
 router.get('/rooms/:roomId/tasks', (req, res) => {
   const room = roomRepo.get(req.params.roomId);
   if (!room) return res.status(404).json({ error: 'room not found' });
+  reconcileCompletedAutoAdvanceTasks(room.id);
   res.json(taskRepo.listByRoom(room.id));
 });
+
+function reconcileCompletedAutoAdvanceTasks(roomId: string): void {
+  for (const task of taskRepo.listByRoom(roomId)) {
+    if (task.status === 'done') continue;
+    const latestAutoAdvance = [...taskEventRepo.listByTask(task.id, { layer: 'timeline', limit: 50 })]
+      .reverse()
+      .find((event) =>
+        event.type === 'task_updated' &&
+        event.payload.action === 'auto_advance' &&
+        event.payload.status === 'completed'
+      );
+    if (!latestAutoAdvance || !isTaskCompletingDelegatedAction(latestAutoAdvance.payload.delegated_action)) continue;
+    taskRepo.updateStatus(task.id, 'done');
+  }
+}
+
+function isTaskCompletingDelegatedAction(value: unknown): boolean {
+  return value === 'start_execution' ||
+    value === 'subagent_execution' ||
+    value === 'verification' ||
+    value === 'finish_branch';
+}
 
 router.post('/rooms/:roomId/tasks/conversation', (req, res) => {
   const room = roomRepo.get(req.params.roomId);

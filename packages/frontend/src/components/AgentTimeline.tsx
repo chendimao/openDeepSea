@@ -44,6 +44,14 @@ const fieldLabels: Record<string, string> = {
   raw_type: '原始类型',
   reason: '原因',
   status: '状态',
+  child_agent_id: '子代理',
+  parent_run_id: '父运行',
+  tool_call_id: '工具调用',
+  model: '模型',
+  reasoning_effort: '推理等级',
+  summary: '摘要',
+  result: '结果',
+  raw_input: '原始输入',
   encrypted: '加密',
 };
 
@@ -245,6 +253,14 @@ function ProtocolDiagnosticsView({ diagnostics }: { diagnostics: AgentTimelineDi
         {diagnostics.thoughtStreamStatus === 'received' ? 'thinking 已收到' : diagnostics.thoughtStreamStatus === 'missing' ? 'thinking 未返回' : 'thinking 未判断'}
       </div>
       <p>{diagnostics.thoughtStreamMessage}</p>
+      {diagnostics.subagentStructureStatus !== 'not_applicable' ? (
+        <>
+          <div className={`agent-timeline-diagnostic-badge is-${diagnostics.subagentStructureStatus}`}>
+            {diagnostics.subagentStructureStatus === 'received' ? '子代理事件已收到' : '子代理事件缺失'}
+          </div>
+          <p>{diagnostics.subagentStructureMessage}</p>
+        </>
+      ) : null}
       <dl className="agent-timeline-kv agent-timeline-protocol-counts">
         {diagnostics.protocolEventCounts.map((entry) => (
           <div key={entry.type}>
@@ -280,6 +296,10 @@ function renderEventBody(event: AgentTimelineEvent): ReactNode {
 
   if (event.type === 'plan_update') {
     return <PlanUpdateView payload={event.payload} />;
+  }
+
+  if (event.type.startsWith('subagent_')) {
+    return <EventKeyValue payload={event.payload} />;
   }
 
   if (event.type === 'raw') {
@@ -505,6 +525,10 @@ function getActivityVerb(event: AgentTimelineEvent, summary: string): string {
   if (event.type === 'command' || event.type === 'command_output') return '运行命令';
   if (event.type === 'file_diff') return '更新文件';
   if (event.type === 'plan_update') return '更新计划';
+  if (event.type === 'subagent_started') return '启动子代理';
+  if (event.type === 'subagent_progress') return '等待子代理';
+  if (event.type === 'subagent_completed') return '收集子代理结果';
+  if (event.type === 'subagent_failed') return '处理子代理失败';
   if (event.type === 'permission_request') return '请求权限';
   if (event.type === 'web_search') return '检索资料';
   if (event.type === 'error') return '处理异常';
@@ -550,6 +574,11 @@ function getTranscriptAction(event: AgentTimelineEvent): string {
       return 'Edited';
     case 'plan_update':
       return 'Plan';
+    case 'subagent_started':
+    case 'subagent_progress':
+    case 'subagent_completed':
+    case 'subagent_failed':
+      return 'Subagent';
     case 'permission_request':
       return 'Permission';
     case 'web_search':
@@ -589,6 +618,12 @@ function getEventSummary(event: AgentTimelineEvent): string {
   if (event.type === 'plan_update') {
     const entries = Array.isArray(event.payload.entries) ? event.payload.entries : [];
     return entries.length > 0 ? `计划更新 · ${entries.length} 项` : event.title;
+  }
+
+  if (event.type.startsWith('subagent_')) {
+    const childAgent = readString(event.payload.child_agent_id);
+    const summary = readString(event.payload.summary) ?? readString(event.payload.result);
+    return compactJoin([getEventLabel(event.type), childAgent, summary], ' · ') || event.title;
   }
 
   return event.title;
@@ -662,6 +697,14 @@ function getEventLabel(type: AgentTimelineEvent['type']): string {
       return '文件差异';
     case 'plan_update':
       return '计划';
+    case 'subagent_started':
+      return '子代理启动';
+    case 'subagent_progress':
+      return '子代理进度';
+    case 'subagent_completed':
+      return '子代理完成';
+    case 'subagent_failed':
+      return '子代理失败';
     case 'raw':
       return '原始事件';
     default:

@@ -2221,6 +2221,10 @@ function mapTimelineEventToTaskEvent(event: AgentTimelineEvent): { type: TaskEve
     event.type === 'tool_result' ||
     event.type === 'command' ||
     event.type === 'command_output' ||
+    event.type === 'subagent_started' ||
+    event.type === 'subagent_progress' ||
+    event.type === 'subagent_completed' ||
+    event.type === 'subagent_failed' ||
     event.type === 'web_search' ||
     event.type === 'permission_request' ||
     event.type === 'error'

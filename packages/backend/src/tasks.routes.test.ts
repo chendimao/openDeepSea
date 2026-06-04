@@ -121,6 +121,42 @@ test('task delete route hides task while preserving append-only task event histo
   );
 });
 
+test('room task list marks task done when auto advance completed terminal action historically', async () => {
+  const project = projectRepo.create({
+    name: 'Tasks Auto Advance Reconcile Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-tasks-auto-advance-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    title: '历史自动推进完成任务',
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    payload: {
+      action: 'auto_advance',
+      status: 'completed',
+      task_action: 'auto_advance',
+      task_action_status: 'completed',
+      delegated_action: 'subagent_execution',
+    },
+  });
+
+  const listRes = await request(`/api/rooms/${room.id}/tasks`);
+
+  assert.equal(listRes.status, 200);
+  const body = await listRes.json() as Array<{ id: string; status: string; completed_at: number | null }>;
+  const reconciled = body.find((item) => item.id === task.id);
+  assert.ok(reconciled);
+  assert.equal(reconciled.status, 'done');
+  assert.equal(typeof reconciled.completed_at, 'number');
+  assert.equal(taskRepo.get(task.id)?.status, 'done');
+});
+
 test('task patch route rejects unsupported fields instead of ignoring them', async () => {
   const project = projectRepo.create({
     name: 'Tasks Patch Validation Route',

@@ -11,6 +11,8 @@ export interface AgentTimelineDiagnostics {
   protocolEventCounts: Array<{ type: string; count: number }>;
   thoughtStreamStatus: 'received' | 'missing' | 'not_applicable';
   thoughtStreamMessage: string;
+  subagentStructureStatus: 'received' | 'missing' | 'not_applicable';
+  subagentStructureMessage: string;
 }
 
 const DEBUG_RAW_TYPES = new Set(['available_commands_update', 'protocol.stderr', 'usage_update']);
@@ -64,9 +66,18 @@ function buildDiagnostics(events: AgentTimelineEvent[]): AgentTimelineDiagnostic
   let hasProtocolEvent = false;
   let hasAssistantOrToolStream = false;
   let hasThinking = false;
+  let hasStructuredSubagent = false;
+  let hasTextOnlySubagentClaim = false;
 
   for (const event of events) {
     if (event.type === 'thinking') hasThinking = true;
+    if (event.type.startsWith('subagent_')) hasStructuredSubagent = true;
+    if (
+      event.type === 'assistant_message' &&
+      /子代理已派发|等待子代理|子代理已返回|subagent/i.test(String(event.payload.text ?? ''))
+    ) {
+      hasTextOnlySubagentClaim = true;
+    }
     if (event.type === 'assistant_message' || event.type === 'tool_call' || event.type === 'tool_result') {
       hasAssistantOrToolStream = true;
     }
@@ -85,11 +96,16 @@ function buildDiagnostics(events: AgentTimelineEvent[]): AgentTimelineDiagnostic
     }
   }
 
-  if (!hasProtocolEvent) return null;
+  if (!hasProtocolEvent && !hasTextOnlySubagentClaim) return null;
 
   const thoughtStreamStatus = hasThinking
     ? 'received'
     : hasAssistantOrToolStream
+      ? 'missing'
+      : 'not_applicable';
+  const subagentStructureStatus = hasStructuredSubagent
+    ? 'received'
+    : hasTextOnlySubagentClaim
       ? 'missing'
       : 'not_applicable';
 
@@ -99,6 +115,8 @@ function buildDiagnostics(events: AgentTimelineEvent[]): AgentTimelineDiagnostic
       .sort((left, right) => right.count - left.count || left.type.localeCompare(right.type)),
     thoughtStreamStatus,
     thoughtStreamMessage: formatThoughtStreamMessage(thoughtStreamStatus),
+    subagentStructureStatus,
+    subagentStructureMessage: formatSubagentStructureMessage(subagentStructureStatus),
   };
 }
 
@@ -106,6 +124,12 @@ function formatThoughtStreamMessage(status: AgentTimelineDiagnostics['thoughtStr
   if (status === 'received') return '已收到 thinking/reasoning 流。';
   if (status === 'missing') return '本轮 ACP 返回了正文或工具事件，但 provider 没有返回 thinking/reasoning 流。';
   return '本轮未观察到可判断 thinking 流的 ACP 消息事件。';
+}
+
+function formatSubagentStructureMessage(status: AgentTimelineDiagnostics['subagentStructureStatus']): string {
+  if (status === 'received') return '已收到结构化子代理 ACP 事件。';
+  if (status === 'missing') return '检测到文本中的子代理声明，但 ACP 未返回结构化子代理事件。';
+  return '本轮未观察到子代理声明。';
 }
 
 function readSessionUpdate(raw: Record<string, unknown> | undefined): string | null {

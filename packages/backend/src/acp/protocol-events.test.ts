@@ -428,3 +428,69 @@ test('normalizeProtocolEvent maps next_steps events to plan_update entries', () 
   assert.deepEqual(event.payload.entries, ['补充验证', '整理结果']);
   assert.deepEqual(event.raw, raw);
 });
+
+test('normalizeProtocolEvent maps spawn_agent tool call to subagent_started', () => {
+  const raw = {
+    method: 'session/update',
+    params: {
+      sessionId: 'acp-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tool-subagent-1',
+        name: 'spawn_agent',
+        title: 'Spawn frontend implementer',
+        rawInput: {
+          model: 'gpt-5.4',
+          reasoning_effort: 'high',
+          target: '实现结构化 JSON 展示',
+        },
+      },
+    },
+  };
+
+  const event = normalizeProtocolEvent({
+    ...baseArgs,
+    seq: 8,
+    raw,
+  });
+
+  assert.equal(event.type, 'subagent_started');
+  assert.equal(event.status, 'started');
+  assert.equal(event.payload.tool_call_id, 'tool-subagent-1');
+  assert.equal(event.payload.child_agent_id, 'spawn_agent');
+  assert.equal(event.payload.model, 'gpt-5.4');
+  assert.equal(event.payload.reasoning_effort, 'high');
+  assert.equal(event.payload.summary, '实现结构化 JSON 展示');
+});
+
+test('normalizeProtocolEvent maps wait_agent result to subagent_completed', () => {
+  const raw = {
+    method: 'session/update',
+    params: {
+      sessionId: 'acp-session-1',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'tool-subagent-1',
+        name: 'wait_agent',
+        status: 'completed',
+        rawOutput: {
+          status: 'DONE',
+          agent_id: 'frontend-implementer',
+          result: 'RED/GREEN/build evidence collected',
+        },
+      },
+    },
+  };
+
+  const event = normalizeProtocolEvent({
+    ...baseArgs,
+    seq: 9,
+    raw,
+  });
+
+  assert.equal(event.type, 'subagent_completed');
+  assert.equal(event.status, 'completed');
+  assert.equal(event.payload.tool_call_id, 'tool-subagent-1');
+  assert.equal(event.payload.child_agent_id, 'frontend-implementer');
+  assert.equal(event.payload.result, 'RED/GREEN/build evidence collected');
+});

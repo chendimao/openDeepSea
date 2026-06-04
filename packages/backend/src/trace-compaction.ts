@@ -118,6 +118,24 @@ function compactPayloadForStorage(event: AgentTimelineEvent): Record<string, unk
   if (event.type === 'plan_update') {
     return pickPayload(event.payload, ['entries', 'status']);
   }
+  if (
+    event.type === 'subagent_started' ||
+    event.type === 'subagent_progress' ||
+    event.type === 'subagent_completed' ||
+    event.type === 'subagent_failed'
+  ) {
+    return pickPayload(event.payload, [
+      'tool_call_id',
+      'parent_run_id',
+      'child_agent_id',
+      'model',
+      'reasoning_effort',
+      'summary',
+      'result',
+      'status',
+      'raw_input',
+    ]);
+  }
   if (event.type === 'web_search') {
     return pickPayload(event.payload, ['query', 'title', 'url', 'status']);
   }

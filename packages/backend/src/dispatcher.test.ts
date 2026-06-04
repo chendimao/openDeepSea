@@ -5435,6 +5435,27 @@ test('dispatchUserMessage binds routed task context to agent run and task event 
         channel: 'event',
         event: diffEvent,
       });
+      onChunk({
+        stream: 'stdout',
+        text: '子代理启动',
+        channel: 'event',
+        rawEvent: {
+          method: 'session/update',
+          params: {
+            sessionId: 'acp-session-1',
+            update: {
+              sessionUpdate: 'tool_call',
+              toolCallId: 'tool-subagent-1',
+              name: 'spawn_agent',
+              rawInput: {
+                model: 'gpt-5.4',
+                reasoning_effort: 'high',
+                target: '实现结构化 JSON 展示',
+              },
+            },
+          },
+        },
+      });
       onChunk({ stream: 'stdout', text: '完成。' });
       return { exitCode: 0, sessionId: null, stderr: '' };
     },
@@ -5456,6 +5477,13 @@ test('dispatchUserMessage binds routed task context to agent run and task event 
 
     const events = taskEventRepo.listByTask(task.id);
     assert.equal(events.some((event) => event.type === 'runtime_event' && event.layer === 'runtime'), true);
+    assert.equal(events.some((event) =>
+      event.type === 'runtime_event' &&
+      event.layer === 'runtime' &&
+      event.payload.timeline_type === 'subagent_started' &&
+      event.payload.child_agent_id === 'spawn_agent' &&
+      event.payload.model === 'gpt-5.4'
+    ), true);
     const diffEvent = events.find((event) => event.type === 'diff_detected' && event.layer === 'diff');
     assert.ok(diffEvent);
     assert.equal(diffEvent.payload.path, 'src/index.ts');
