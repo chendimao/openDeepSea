@@ -79,7 +79,7 @@ test('POST /agent-runs/:id/retry reruns the failed run without creating a new us
     status: 'failed',
     acp_session_id: 'session-original',
     task_id: task.id,
-    prompt: '继续原任务',
+    prompt: '原始用户需求ABC',
   });
   const userMessagesBefore = messageRepo.listByRoom(room.id).filter((message) => message.sender_type === 'user').length;
   const taskCountBefore = taskRepo.listByRoom(room.id).length;
@@ -135,8 +135,8 @@ test('POST /agent-runs/:id/retry reruns the failed run without creating a new us
   const capturedRetryInput = retryInputs[0];
   assert.ok(capturedRetryInput);
   assert.ok(capturedRetryInput.prompt.includes('请在当前 ACP 会话中继续原任务'));
-  assert.ok(capturedRetryInput.prompt.includes('原始任务提示：'));
-  assert.ok(capturedRetryInput.prompt.includes('继续原任务'));
+  assert.equal(capturedRetryInput.prompt.includes('原始任务提示：'), false);
+  assert.equal(capturedRetryInput.prompt.includes('原始用户需求ABC'), false);
   assert.deepEqual({
     taskId: capturedRetryInput.taskId,
     acpSessionIdOverride: capturedRetryInput.acpSessionIdOverride,
@@ -149,4 +149,75 @@ test('POST /agent-runs/:id/retry reruns the failed run without creating a new us
   const userMessagesAfter = messageRepo.listByRoom(room.id).filter((message) => message.sender_type === 'user').length;
   assert.equal(userMessagesAfter, userMessagesBefore);
   assert.equal(taskRepo.listByRoom(room.id).length, taskCountBefore);
+});
+
+test('POST /agent-runs/:id/retry rejects duplicate retry while the same task already has an active run', async () => {
+  const project = projectRepo.create({
+    name: 'Agent run duplicate retry',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-agent-run-duplicate-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '阻止重复重试',
+  });
+  const failed = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: 'planner',
+    backend: 'codex',
+    status: 'failed',
+    acp_session_id: 'session-duplicate',
+    task_id: task.id,
+    prompt: '原始 prompt',
+  });
+  const active = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: 'planner',
+    backend: 'codex',
+    status: 'running',
+    acp_session_id: 'session-duplicate',
+    task_id: task.id,
+    prompt: '正在重试',
+  });
+
+  const res = await request(`/api/agent-runs/${failed.id}/retry`, { method: 'POST' });
+
+  assert.equal(res.status, 409);
+  const body = await res.json() as { error: string; active_run_id?: string };
+  assert.match(body.error, /already has an active retry/u);
+  assert.equal(body.active_run_id, active.id);
+});
+
+test('POST /agent-runs/:id/retry rejects workflow-scoped runs instead of bypassing workflow state', async () => {
+  const project = projectRepo.create({
+    name: 'Agent run workflow retry',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-agent-run-workflow-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const failed = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: 'planner',
+    backend: 'codex',
+    status: 'failed',
+    acp_session_id: 'session-workflow',
+    workflow_run_id: 'workflow-1',
+    workflow_step_id: 'step-1',
+    prompt: 'workflow prompt',
+  });
+
+  const res = await request(`/api/agent-runs/${failed.id}/retry`, { method: 'POST' });
+
+  assert.equal(res.status, 409);
+  const body = await res.json() as { error: string };
+  assert.match(body.error, /workflow run retry/u);
 });

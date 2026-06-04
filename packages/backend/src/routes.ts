@@ -1857,6 +1857,22 @@ router.post('/agent-runs/:id/retry', (req, res) => {
       res.status(409).json({ error: 'only failed or interrupted runs can be retried' });
       return;
     }
+    if (run.workflow_run_id || run.workflow_step_id) {
+      res.status(409).json({ error: 'workflow run retry must use workflow retry instead of agent message retry' });
+      return;
+    }
+    if (run.collaboration_run_id) {
+      res.status(409).json({ error: 'collaboration run retry is not supported from agent message retry' });
+      return;
+    }
+    const activeConflict = findActiveAgentRunRetryConflict(run);
+    if (activeConflict) {
+      res.status(409).json({
+        error: 'agent run already has an active retry',
+        active_run_id: activeConflict.id,
+      });
+      return;
+    }
     const room = roomRepo.get(run.room_id);
     if (!room) {
       res.status(404).json({ error: 'room not found' });
@@ -1883,7 +1899,10 @@ router.post('/agent-runs/:id/retry', (req, res) => {
         agent,
         projectPath: project.path,
         roomId: room.id,
-        prompt: buildAgentRunRetryPrompt(run),
+        prompt: buildAgentRunRetryPrompt({
+          run,
+          sourceMessage: task?.source_message_id ? messageRepo.get(task.source_message_id) : undefined,
+        }),
         internalMessage: false,
         taskId: run.task_id,
         workflowRunId: run.workflow_run_id,
@@ -1922,16 +1941,23 @@ function startRetriedAgentRun(input: RespondAsAgentInput): Promise<{ run: AgentR
   });
 }
 
-function buildAgentRunRetryPrompt(run: AgentRun): string {
-  if (!run.acp_session_id) return run.prompt;
+function findActiveAgentRunRetryConflict(run: AgentRun): AgentRun | null {
+  return agentRunRepo.listActive().find((active) => {
+    if (active.id === run.id) return false;
+    if (active.room_id !== run.room_id || active.room_agent_id !== run.room_agent_id) return false;
+    if (run.task_id) return active.task_id === run.task_id;
+    if (run.acp_session_id) return active.acp_session_id === run.acp_session_id;
+    return !active.task_id && !active.workflow_run_id && !active.collaboration_run_id;
+  }) ?? null;
+}
+
+function buildAgentRunRetryPrompt(input: { run: AgentRun; sourceMessage?: Message }): string {
+  if (!input.run.acp_session_id) return input.sourceMessage?.content.trim() || input.run.prompt;
   return [
     '上一次运行已经失败或中断，但当前 ACP 会话仍可用于继续。',
     '请在当前 ACP 会话中继续原任务，优先从已有上下文、已完成步骤和当前工作区状态之后继续推进。',
     '不要重新创建任务，不要重新发送用户请求，也不要无必要地重新进入头脑风暴或 writing-plans 流程。',
     '如果发现原任务确实缺少必要前置产物，请只补齐缺失部分并说明原因。',
-    '',
-    '原始任务提示：',
-    run.prompt,
   ].join('\n');
 }
 
