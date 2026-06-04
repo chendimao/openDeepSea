@@ -34,12 +34,21 @@ test('isPinnedItem treats zero pinned_at as pinned to match backend null semanti
 test('reorderWithinLayer reorders only matching pinned layer', () => {
   const items: Item[] = [
     { id: 'pinned', created_at: 1, pinned_at: 1 },
-    { id: 'a', created_at: 2 },
-    { id: 'b', created_at: 3 },
+    { id: 'a', created_at: 2, sort_order: 1 },
+    { id: 'b', created_at: 3, sort_order: 2 },
   ];
 
   assert.deepEqual(reorderWithinLayer(items, 'a', 'b').map((item) => item.id), ['pinned', 'b', 'a']);
-  assert.deepEqual(reorderWithinLayer(items, 'pinned', 'a').map((item) => item.id), ['pinned', 'b', 'a']);
+  assert.deepEqual(reorderWithinLayer(items, 'pinned', 'a').map((item) => item.id), ['pinned', 'a', 'b']);
+});
+
+test('reorderWithinLayer moves a lower item before a higher drop target', () => {
+  const items: Item[] = [
+    { id: 'first', created_at: 1, sort_order: 1 },
+    { id: 'second', created_at: 2, sort_order: 2 },
+  ];
+
+  assert.deepEqual(reorderWithinLayer(items, 'second', 'first').map((item) => item.id), ['second', 'first']);
 });
 
 test('layerIds returns ids for a single pinned layer in current order', () => {
@@ -56,11 +65,11 @@ test('layerIds returns ids for a single pinned layer in current order', () => {
 test('layerIds preserves current layer order after a drag reorder', () => {
   const items: Item[] = [
     { id: 'pinned', created_at: 1, pinned_at: 1 },
-    { id: 'a', created_at: 2 },
-    { id: 'b', created_at: 3 },
+    { id: 'a', created_at: 2, sort_order: 1 },
+    { id: 'b', created_at: 3, sort_order: 2 },
   ];
 
   const next = reorderWithinLayer(items, 'b', 'a');
 
-  assert.deepEqual(layerIds(next, false), ['a', 'b']);
+  assert.deepEqual(layerIds(next, false), ['b', 'a']);
 });

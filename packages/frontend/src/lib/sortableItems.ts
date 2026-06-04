@@ -44,8 +44,7 @@ export function reorderWithinLayer<T extends SortablePinnedItem>(
 
   const nextLayer = [...layer];
   const [moved] = nextLayer.splice(from, 1);
-  const insertAt = from > to ? to + 1 : to;
-  nextLayer.splice(insertAt, 0, moved);
+  nextLayer.splice(to, 0, moved);
   return pinned ? [...nextLayer, ...otherLayer] : [...otherLayer, ...nextLayer];
 }
 
