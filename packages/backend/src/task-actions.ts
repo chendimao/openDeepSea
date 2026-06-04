@@ -568,7 +568,8 @@ function chooseAutoAdvanceTarget(taskId: string, routing: SuperpowersRouting): T
 }
 
 function isPlanningSkipExecutionRouting(routing: SuperpowersRouting): boolean {
-  return routing.planning_required === false && routing.next_action === 'subagent_execution';
+  return routing.planning_required === false &&
+    (routing.next_action === 'subagent_execution' || routing.next_action === 'systematic_debugging');
 }
 
 function selectPhaseAgentForRouting(

@@ -709,6 +709,67 @@ test('auto_advance can directly execute lightweight tasks when routing skips pla
   ));
 });
 
+test('auto_advance can directly debug lightweight tasks when routing skips planning', async () => {
+  const project = projectRepo.create({
+    name: '轻量任务直达调试',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-auto-direct-debug-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  assert.ok(planner);
+  assert.ok(frontend);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '修复 chip 点击变大',
+    description: '明确可复现的前端交互 bug',
+  });
+  const actions: string[] = [];
+  const agentIds: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'auto_advance',
+    runAgent: async ({ agent, prompt }) => {
+      agentIds.push(agent.agent_id);
+      actions.push(prompt.includes('superpowers_routing') ? 'route' : 'phase');
+      if (prompt.includes('superpowers_routing')) {
+        return {
+          status: 'completed',
+          content: '```json\n{"superpowers_routing":{"next_action":"systematic_debugging","required_skill":"systematic-debugging","reason":"问题明确且可复现，可直接进入系统化调试。","recommended_agent_id":"frontend-executor","expected_evidence":["reproductionEvidence","rootCause","verificationEvidence"],"planning_required":false,"skip_planning_reason":"轻量明确前端 bug，无需单独 spec/plan"}}\n```',
+          error: null,
+          runId: 'run-route-direct-debug',
+        };
+      }
+      assert.match(prompt, /systematic_debugging/u);
+      return {
+        status: 'completed',
+        content: '已完成系统化调试。\n```json\n{"superpowers":{"systematicDebuggingEvidence":{"rootCause":"样式隔离缺失","verification":"定向验证通过"}}}\n```',
+        error: null,
+        runId: 'run-direct-debug',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(actions, ['route', 'phase']);
+  assert.deepEqual(agentIds, ['planner', 'frontend-executor']);
+  assert.deepEqual(result.run_ids, ['run-route-direct-debug', 'run-direct-debug']);
+  const events = taskEventRepo.listByTask(task.id, { limit: 20 });
+  assert.equal(events.some((event) =>
+    event.payload.action === 'brainstorming' ||
+    event.payload.action === 'writing_plans'
+  ), false);
+  assert.ok(events.some((event) =>
+    event.payload.action === 'systematic_debugging' &&
+    event.payload.status === 'completed'
+  ));
+});
+
 test('auto_advance does not skip planning for non-execution routing', async () => {
   const project = projectRepo.create({
     name: '非执行阶段不能跳规划',
