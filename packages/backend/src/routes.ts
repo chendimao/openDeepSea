@@ -123,6 +123,7 @@ import {
   type MessageIntentResult,
   type RouteResult,
   type AgentRun,
+  type TaskActionKind,
   type WorkflowRole,
 } from './types.js';
 
@@ -1895,6 +1896,18 @@ router.post('/agent-runs/:id/retry', (req, res) => {
     }
 
     try {
+      const taskActionRetry = run.task_id
+        ? await maybeRetryFailedTaskActionRun({
+            roomId: room.id,
+            taskId: run.task_id,
+            runId: run.id,
+          })
+        : null;
+      if (taskActionRetry) {
+        res.status(202).json(taskActionRetry);
+        return;
+      }
+
       const retry = await (messageRouteDeps.retryAgentRunOnce ?? startRetriedAgentRun)({
         agent,
         projectPath: project.path,
@@ -1920,6 +1933,48 @@ router.post('/agent-runs/:id/retry', (req, res) => {
     }
   })();
 });
+
+async function maybeRetryFailedTaskActionRun(input: {
+  roomId: string;
+  taskId: string;
+  runId: string;
+}) {
+  const failedAction = findLatestFailedTaskActionForRun(input.taskId, input.runId);
+  if (!failedAction) return null;
+  return startTaskAction({
+    roomId: input.roomId,
+    taskId: input.taskId,
+    action: failedAction === 'route_skills' ? 'auto_advance' : failedAction,
+  });
+}
+
+function findLatestFailedTaskActionForRun(taskId: string, runId: string): TaskActionKind | null {
+  const latestTerminalEvent = [...taskEventRepo.listByTask(taskId, { layer: 'timeline', limit: 50 })]
+    .reverse()
+    .find((event) => {
+      const action = getTaskActionKind(event.payload.task_action ?? event.payload.action);
+      if (!action) return false;
+      const status = event.payload.task_action_status ?? event.payload.status;
+      return status !== 'queued' && status !== 'running';
+    });
+  if (!latestTerminalEvent) return null;
+  const status = latestTerminalEvent.payload.task_action_status ?? latestTerminalEvent.payload.status;
+  if (status !== 'failed') return null;
+  if (!taskActionEventReferencesRun(latestTerminalEvent.payload, runId)) return null;
+  return getTaskActionKind(latestTerminalEvent.payload.task_action ?? latestTerminalEvent.payload.action);
+}
+
+function getTaskActionKind(value: unknown): TaskActionKind | null {
+  return typeof value === 'string' && TASK_ACTION_KINDS.includes(value as TaskActionKind)
+    ? value as TaskActionKind
+    : null;
+}
+
+function taskActionEventReferencesRun(payload: Record<string, unknown>, runId: string): boolean {
+  if (payload.run_id === runId) return true;
+  if (Array.isArray(payload.run_ids)) return payload.run_ids.includes(runId);
+  return false;
+}
 
 function startRetriedAgentRun(input: RespondAsAgentInput): Promise<{ run: AgentRun }> {
   let created = false;
@@ -2796,18 +2851,20 @@ const taskExecutionDispatchSchema = z.object({
   task_execution: taskExecutionDecisionSchema,
 });
 
+const TASK_ACTION_KINDS = [
+  'start_execution',
+  'auto_advance',
+  'route_skills',
+  'brainstorming',
+  'writing_plans',
+  'subagent_execution',
+  'systematic_debugging',
+  'verification',
+  'finish_branch',
+] as const satisfies readonly TaskActionKind[];
+
 const taskActionStartSchema = z.object({
-  action: z.enum([
-    'start_execution',
-    'auto_advance',
-    'route_skills',
-    'brainstorming',
-    'writing_plans',
-    'subagent_execution',
-    'systematic_debugging',
-    'verification',
-    'finish_branch',
-  ]),
+  action: z.enum(TASK_ACTION_KINDS),
   sender_id: z.string().trim().optional(),
   sender_name: z.string().trim().optional(),
 });

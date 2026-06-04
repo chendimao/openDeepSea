@@ -348,11 +348,11 @@ function getAgentRunStatusPresentation(state: AgentMessageRunState): AgentRunSta
     case 'completed':
       return { label: '已完成', detail: '智能体回复已完成。', tone: 'success', active: false };
     case 'failed':
-      return { label: '运行失败', detail: '智能体运行失败，可重试上一条用户消息。', tone: 'danger', active: false };
+      return { label: '运行失败', detail: '智能体运行失败，可从原任务或原回复继续重试。', tone: 'danger', active: false };
     case 'cancelled':
       return { label: '已取消', detail: '本次智能体回复已取消。', tone: 'muted', active: false };
     case 'interrupted':
-      return { label: '已中断', detail: '本次智能体回复被中断，可能需要重新发送。', tone: 'danger', active: false };
+      return { label: '已中断', detail: '本次智能体回复被中断，可从原任务或原回复继续重试。', tone: 'danger', active: false };
   }
 }
 

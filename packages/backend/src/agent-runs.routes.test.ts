@@ -3,17 +3,20 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import type { SessionAdapter } from './acp/types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-agent-runs-routes-')), 'test.db');
 process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER = '0';
 process.env.OPENCLAW_ACP_TASK_ANALYZER = '0';
 
+const { adapters } = await import('./acp/index.js');
 const express = (await import('express')).default;
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { agentRepo } = await import('./repos/agents.js');
 const { messageRepo } = await import('./repos/messages.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
+const { taskEventRepo } = await import('./repos/task-events.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { router, setMessageRouteDeps } = await import('./routes.js');
 
@@ -220,4 +223,135 @@ test('POST /agent-runs/:id/retry rejects workflow-scoped runs instead of bypassi
   assert.equal(res.status, 409);
   const body = await res.json() as { error: string };
   assert.match(body.error, /workflow run retry/u);
+});
+
+test('POST /agent-runs/:id/retry resumes failed task action instead of re-prompting planner', async () => {
+  const project = projectRepo.create({
+    name: 'Agent run task action retry',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-agent-run-task-action-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  const executor = agentRepo.getByAgentId('frontend-executor');
+  assert.ok(planner);
+  assert.ok(executor);
+  const plannerRoomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const executorRoomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: executor.id });
+  roomAgentRepo.setAcp(plannerRoomAgent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  roomAgentRepo.setAcp(executorRoomAgent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  const userMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '修复 chip 点击变大',
+    message_type: 'text',
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '修复 chip 点击变大',
+    source_message_id: userMessage.id,
+    created_from: 'chat_plan',
+  });
+  messageRepo.mergeMetadata(userMessage.id, { task_id: task.id });
+  const failed = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: plannerRoomAgent.id,
+    agent_id: 'planner',
+    backend: 'codex',
+    status: 'failed',
+    acp_session_id: 'session-task-action',
+    task_id: task.id,
+    prompt: 'route skills',
+  });
+  agentRunRepo.updateStatus(failed.id, 'failed', {
+    stdout: [
+      '```json',
+      JSON.stringify({
+        superpowers_routing: {
+          next_action: 'systematic_debugging',
+          required_skill: 'systematic-debugging',
+          reason: '明确 bug，应直接调试',
+          recommended_agent_id: 'frontend-executor',
+          expected_evidence: ['定位根因并修复'],
+          planning_required: false,
+        },
+      }),
+      '```',
+    ].join('\n'),
+    error: 'ACP prompt timed out',
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    source_run_id: failed.id,
+    payload: {
+      task_action: 'route_skills',
+      action: 'route_skills',
+      task_action_status: 'failed',
+      status: 'failed',
+      run_id: failed.id,
+      run_ids: [failed.id],
+      error: 'ACP prompt timed out',
+    },
+  });
+  let retryAgentRunCalled = false;
+  setMessageRouteDeps({
+    retryAgentRunOnce: async () => {
+      retryAgentRunCalled = true;
+      throw new Error('agent-message retry should not run for failed task actions');
+    },
+  });
+  const originalAdapter = adapters.codex;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      args.onChunk?.({
+        stream: 'stdout',
+        text: '执行者已从失败 task action 断点继续。\n```json\n{"superpowers":{"debuggingEvidence":"continued from recovered route"}}\n```',
+      });
+      return { exitCode: 0, sessionId: 'executor-session', stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    const res = await request(`/api/agent-runs/${failed.id}/retry`, { method: 'POST' });
+
+    assert.equal(res.status, 202);
+    const body = await res.json() as { action: string; status: string; run_ids: string[] };
+    assert.equal(retryAgentRunCalled, false);
+    assert.equal(body.action, 'auto_advance');
+    assert.equal(body.status, 'completed');
+    assert.equal(body.run_ids[0], failed.id);
+    const events = taskEventRepo.listByTask(task.id, { layer: 'timeline', limit: 20 });
+    assert.ok(events.some((event) =>
+      event.payload.task_action === 'route_skills' &&
+      event.payload.task_action_status === 'completed' &&
+      event.payload.recovered_from_run_id === failed.id
+    ));
+    assert.ok(events.some((event) =>
+      event.payload.task_action === 'auto_advance' &&
+      event.payload.task_action_status === 'completed' &&
+      event.payload.delegated_action === 'systematic_debugging'
+    ));
+  } finally {
+    adapters.codex = originalAdapter;
+  }
 });

@@ -3666,6 +3666,77 @@ test('task-bound planner ready decision auto dispatches on the original task', a
   }
 });
 
+test('task-bound planner annotates buffered final task execution before final snapshot', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-task-planner-buffered-dispatch-'));
+  const project = projectRepo.create({ name: `task-planner-buffered-dispatch-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: '继续失败重试后的任务' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  const sourceMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    sender_name: 'You',
+    content: '失败重试后继续执行',
+    message_type: 'text',
+    metadata: { task_id: task.id },
+  });
+
+  const originalAdapter = adapters.codex;
+  const events = captureRoomEvents(room.id);
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      assert.doesNotMatch(args.prompt, /名称：前端执行者/u);
+      args.onChunk({
+        stream: 'stdout',
+        text: '{"task_execution":{"state":"analysis_only","status":"completed","summary":"已完成","next_steps":[]}}',
+      });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: roomAgentRepo.get(planner.id)!,
+      projectPath,
+      roomId: room.id,
+      prompt: '继续失败重试后的任务',
+      taskId: task.id,
+      sourceMessageId: sourceMessage.id,
+    });
+
+    const plannerReply = messageRepo.listByRoom(room.id, 20)
+      .find((message) => message.sender_id === 'planner');
+    assert.ok(plannerReply);
+    const metadata = JSON.parse(plannerReply.metadata ?? '{}') as MessageMetadata;
+    assert.equal(metadata.task_execution?.state, 'analysis_only');
+    assert.equal(metadata.task_execution?.status, 'completed');
+    const finalEvent = events.find((event) =>
+      event.type === 'message:stream' &&
+      event.done === true &&
+      event.messageId === plannerReply.id
+    );
+    assert.ok(finalEvent);
+    assert.equal('message' in finalEvent, true);
+    const finalMetadata = JSON.parse(('message' in finalEvent ? finalEvent.message?.metadata : null) ?? '{}') as MessageMetadata;
+    assert.equal(finalMetadata.task_execution?.state, 'analysis_only');
+  } finally {
+    events.restore();
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
 test('planner dispatch still runs available targets when later steps reference an unknown agent', async () => {
   const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-planner-partial-missing-agent-'));
   const project = projectRepo.create({ name: `planner-partial-missing-agent-${Date.now()}`, path: projectPath });
@@ -5487,7 +5558,7 @@ function captureRoomEvents(roomId: string): CapturedRoomEvent[] & { restore: () 
   const original = wsHub.broadcast.bind(wsHub);
   const events: CapturedRoomEvent[] = [];
   wsHub.broadcast = ((targetRoomId: string, event: CapturedRoomEvent) => {
-    if (targetRoomId === roomId) events.push(event);
+    if (targetRoomId === roomId) events.push(structuredClone(event));
     original(targetRoomId, event);
   }) as typeof wsHub.broadcast;
   return Object.assign(events, {
