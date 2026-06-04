@@ -358,7 +358,7 @@ test('AgentTimeline renders subagent lifecycle events', () => {
   assert.match(html, /实现结构化 JSON 展示/);
 });
 
-test('AgentTimeline diagnoses text-only subagent claims without structured subagent events', () => {
+test('AgentTimeline diagnoses text-only subagent claims without subagent run events', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
       <AgentTimeline
@@ -373,7 +373,7 @@ test('AgentTimeline diagnoses text-only subagent claims without structured subag
               type: 'assistant_message',
               status: 'delta',
               title: '助手回复',
-              payload: { text: '子代理已派发，正在等待子代理返回结果。' },
+              payload: { text: '审查子代理已启动，等待子代理返回结果。' },
               created_at: 1000,
             },
           ],
@@ -382,7 +382,7 @@ test('AgentTimeline diagnoses text-only subagent claims without structured subag
     </I18nProvider>,
   );
 
-  assert.match(html, /ACP 未返回结构化子代理事件/);
+  assert.match(html, /没有收到结构化子代理事件或子代理 run/);
 });
 
 test('AgentTimeline renders concrete event time in timeline summaries', () => {

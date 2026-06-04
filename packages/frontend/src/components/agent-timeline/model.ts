@@ -127,8 +127,8 @@ function formatThoughtStreamMessage(status: AgentTimelineDiagnostics['thoughtStr
 }
 
 function formatSubagentStructureMessage(status: AgentTimelineDiagnostics['subagentStructureStatus']): string {
-  if (status === 'received') return '已收到结构化子代理 ACP 事件。';
-  if (status === 'missing') return '检测到文本中的子代理声明，但 ACP 未返回结构化子代理事件。';
+  if (status === 'received') return '已收到结构化子代理 ACP 事件或子代理 run。';
+  if (status === 'missing') return '检测到文本中的子代理声明，但没有收到结构化子代理事件或子代理 run。';
   return '本轮未观察到子代理声明。';
 }
 
