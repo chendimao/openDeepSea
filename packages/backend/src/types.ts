@@ -855,6 +855,22 @@ export interface MessageIntentResult {
   signals?: string[];
 }
 
+export interface PendingActionMetadata {
+  id: string;
+  kind: 'create_task_from_analysis';
+  status: 'awaiting_confirmation';
+  source_message_id: string;
+  title: string;
+  description: string;
+  risk_level: 'low' | 'normal' | 'high';
+}
+
+export interface PendingActionDecisionMetadata {
+  action_id: string;
+  source_message_id: string;
+  decision: 'approve' | 'reject' | 'clarify';
+}
+
 export interface MessageMetadata extends MessageTaskEventMetadata {
   attachments?: MessageAttachmentMetadata[];
   file_refs?: string[];
@@ -878,6 +894,8 @@ export interface MessageMetadata extends MessageTaskEventMetadata {
     execution_intent?: TaskExecutionIntent;
     source_message_id?: string;
   };
+  pending_action?: PendingActionMetadata;
+  pending_action_decision?: PendingActionDecisionMetadata;
   choice_options?: MessageChoiceOption[];
   choice_option_selection?: MessageChoiceOptionSelection;
   brainstorming_option_selection?: BrainstormingOptionSelection;

@@ -6,6 +6,7 @@ import type {
   Message,
   MessageLayer,
   MessageMetadata,
+  PendingActionMetadata,
   TaskExecutionDecision,
   MessageTrace,
   MessageType,
@@ -336,9 +337,49 @@ function refreshPlannerMessageMetadata(message: Message): Message {
   if (currentExecution && currentExecution.status !== 'suggested') return message;
   if (taskExecutionMatches(currentExecution, explicitExecution)) return message;
 
-  const nextMetadata = { ...metadata, task_execution: explicitExecution };
+  const pendingAction = buildPendingActionFromTaskExecution(message, explicitExecution, metadata);
+  const nextMetadata = {
+    ...metadata,
+    task_execution: explicitExecution,
+    ...(pendingAction ? { pending_action: pendingAction } : {}),
+  };
   db.prepare('UPDATE messages SET metadata = ? WHERE id = ?').run(JSON.stringify(nextMetadata), message.id);
   return { ...message, metadata: JSON.stringify(nextMetadata) };
+}
+
+function buildPendingActionFromTaskExecution(
+  message: Message,
+  decision: TaskExecutionDecision,
+  metadata: Record<string, unknown>,
+): PendingActionMetadata | null {
+  if (!isTaskExecutionActionable(decision)) return null;
+  return {
+    id: `pa_${message.id}`,
+    kind: 'create_task_from_analysis',
+    status: 'awaiting_confirmation',
+    source_message_id: readNonEmptyString(metadata.source_message_id) ?? message.id,
+    title: decision.summary,
+    description: buildPendingActionDescriptionFromTaskExecution(message, decision),
+    risk_level: 'normal',
+  };
+}
+
+function isTaskExecutionActionable(decision: TaskExecutionDecision): boolean {
+  if (decision.state === 'ready_to_execute' && decision.next_steps.length > 0) return true;
+  if (decision.state === 'analysis_only' && decision.next_steps.length === 1) return true;
+  return false;
+}
+
+function buildPendingActionDescriptionFromTaskExecution(message: Message, decision: TaskExecutionDecision): string {
+  return [
+    `来源分析消息：${message.id}`,
+    '',
+    `分析摘要：${decision.summary}`,
+    decision.reason ? `判断依据：${decision.reason}` : null,
+    decision.next_steps.length > 0
+      ? ['建议执行：', ...decision.next_steps.map((step) => `- ${step.goal}`)].join('\n')
+      : null,
+  ].filter((line): line is string => Boolean(line)).join('\n');
 }
 
 function parseExplicitTaskExecution(content: string): TaskExecutionDecision | null {

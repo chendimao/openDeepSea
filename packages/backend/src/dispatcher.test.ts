@@ -4643,11 +4643,15 @@ test('message list refreshes stale planner metadata from explicit decision conte
     assert.equal(metadata.task_execution?.summary, '实现测试计数器菜单');
     assert.equal(metadata.task_execution?.next_steps.length, 1);
     assert.equal(metadata.task_execution?.next_steps[0]?.agent_id, 'frontend-executor');
+    assert.equal(metadata.pending_action?.kind, 'create_task_from_analysis');
+    assert.equal(metadata.pending_action?.title, '实现测试计数器菜单');
+    assert.match(metadata.pending_action?.description ?? '', /新增测试菜单和计数器页面/u);
 
     const persisted = messageRepo.get(plannerReply.id);
     assert.ok(persisted);
     const persistedMetadata = JSON.parse(persisted.metadata ?? '{}') as MessageMetadata;
     assert.equal(persistedMetadata.task_execution?.next_steps[0]?.agent_id, 'frontend-executor');
+    assert.equal(persistedMetadata.pending_action?.source_message_id, userMessage.id);
   } finally {
     await rm(projectPath, { recursive: true, force: true });
   }

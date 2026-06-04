@@ -43,6 +43,7 @@ import type {
   MessageReplyMetadata,
   MessageLayer,
   MessageMetadata,
+  PendingActionMetadata,
   TaskExecutionDecision,
   RouteResult,
   Room,
@@ -1444,11 +1445,52 @@ function annotateTaskExecutionDecision(input: {
     ? parseTaskExecutionDecision(input.message.content)
     : parseExplicitTaskExecutionDecision(input.message.content);
   if (!decision) return undefined;
+  const pendingAction = buildPendingActionFromTaskExecution({
+    message: input.message,
+    decision,
+    sourceMessageId: input.sourceMessageId,
+  });
   const message = messageRepo.mergeMetadata(input.message.id, {
     task_execution: decision,
     source_message_id: input.sourceMessageId ?? undefined,
+    pending_action: pendingAction ?? undefined,
   }) ?? input.message;
   return { message, decision };
+}
+
+function buildPendingActionFromTaskExecution(input: {
+  message: Message;
+  decision: TaskExecutionDecision;
+  sourceMessageId?: string | null;
+}): PendingActionMetadata | undefined {
+  if (!isTaskExecutionActionable(input.decision)) return undefined;
+  return {
+    id: `pa_${input.message.id}`,
+    kind: 'create_task_from_analysis',
+    status: 'awaiting_confirmation',
+    source_message_id: input.sourceMessageId ?? input.message.id,
+    title: input.decision.summary,
+    description: buildPendingActionDescriptionFromTaskExecution(input.message, input.decision),
+    risk_level: 'normal',
+  };
+}
+
+function isTaskExecutionActionable(decision: TaskExecutionDecision): boolean {
+  if (decision.state === 'ready_to_execute' && decision.next_steps.length > 0) return true;
+  if (decision.state === 'analysis_only' && decision.next_steps.length === 1) return true;
+  return false;
+}
+
+function buildPendingActionDescriptionFromTaskExecution(message: Message, decision: TaskExecutionDecision): string {
+  return [
+    `来源分析消息：${message.id}`,
+    '',
+    `分析摘要：${decision.summary}`,
+    decision.reason ? `判断依据：${decision.reason}` : null,
+    decision.next_steps.length > 0
+      ? ['建议执行：', ...decision.next_steps.map((step) => `- ${step.goal}`)].join('\n')
+      : null,
+  ].filter((line): line is string => Boolean(line)).join('\n');
 }
 
 function sanitizePlannerCasualReply(input: {

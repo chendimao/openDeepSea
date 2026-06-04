@@ -274,6 +274,15 @@ test('POST /rooms/:roomId/messages creates task from previous actionable planner
     content: '根因是 layerIds 对拖拽后的结果重新按旧 sort_order 排序。建议修复排序辅助函数并补充回归测试。',
     message_type: 'text',
     metadata: {
+      pending_action: {
+        id: 'pa-tabs-drag-fix',
+        kind: 'create_task_from_analysis',
+        status: 'awaiting_confirmation',
+        source_message_id: sourceUserMessage.id,
+        title: '修复群聊 tabs 拖动排序不生效',
+        description: '修复 sortableItems 的 layer ids 提取逻辑并补充回归测试。',
+        risk_level: 'normal',
+      },
       source_message_id: sourceUserMessage.id,
       task_execution: {
         state: 'analysis_only',
@@ -302,14 +311,67 @@ test('POST /rooms/:roomId/messages creates task from previous actionable planner
   assert.equal(metadata.route_result?.action, 'create_task');
   assert.equal(metadata.route_result?.reason_code, 'confirm_previous_action');
   assert.ok(metadata.task_id);
+  assert.equal(metadata.route_result?.taskId, metadata.task_id);
 
   const tasks = taskRepo.listByRoom(room.id);
   assert.equal(tasks.length, 1);
   assert.equal(tasks[0]?.id, metadata.task_id);
-  assert.equal(tasks[0]?.title, '已定位群聊 tabs 拖动不生效的前端排序根因');
+  assert.equal(tasks[0]?.title, '修复群聊 tabs 拖动排序不生效');
   assert.match(tasks[0]?.description ?? '', /修复 sortableItems 的 layer ids 提取逻辑/u);
-  assert.match(tasks[0]?.description ?? '', /来源分析消息/u);
+  assert.match(tasks[0]?.description ?? '', /pending_action: pa-tabs-drag-fix/u);
   assert.equal(tasks[0]?.source_message_id, message.id);
+});
+
+test('POST /rooms/:roomId/messages creates task from pending_action without task_execution fallback', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Pending Action Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-pending-action-route-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const plannerMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '我已经准备好一个待确认动作。',
+    message_type: 'text',
+    metadata: {
+      pending_action: {
+        id: 'pa-direct-create-task',
+        kind: 'create_task_from_analysis',
+        status: 'awaiting_confirmation',
+        source_message_id: 'planner-source',
+        title: '从 pending action 创建任务',
+        description: '这段描述来自 pending_action，而不是 task_execution。',
+        risk_level: 'normal',
+      },
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '确定' }),
+  });
+
+  assert.equal(res.status, 201);
+  assert.equal(dispatchCalls.length, 0);
+  const message = await res.json() as { metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    route_result?: { action: string; taskId: string | null; reason_code?: string };
+    pending_action_decision?: { action_id: string; decision: string };
+  };
+  assert.equal(metadata.route_result?.action, 'create_task');
+  assert.equal(metadata.route_result?.reason_code, 'confirm_previous_action');
+  assert.equal(metadata.pending_action_decision?.action_id, 'pa-direct-create-task');
+  assert.equal(metadata.pending_action_decision?.decision, 'approve');
+
+  const tasks = taskRepo.listByRoom(room.id);
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0]?.title, '从 pending action 创建任务');
+  assert.match(tasks[0]?.description ?? '', /这段描述来自 pending_action/u);
+  assert.match(tasks[0]?.description ?? '', /pending_action: pa-direct-create-task/u);
 });
 
 test('POST /rooms/:roomId/messages asks for clarification when short fix follows non-actionable planner analysis', async () => {
@@ -475,7 +537,7 @@ test('POST /rooms/:roomId/messages reuses existing task for repeated short confi
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-repeated-confirmation-')),
   });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
-  messageRepo.create({
+  const plannerMessage = messageRepo.create({
     room_id: room.id,
     sender_type: 'agent',
     sender_id: 'planner',
@@ -500,6 +562,18 @@ test('POST /rooms/:roomId/messages reuses existing task for repeated short confi
   const firstMessage = await first.json() as { metadata: string | null };
   const firstMetadata = JSON.parse(firstMessage.metadata ?? '{}') as { task_id?: string };
   assert.ok(firstMetadata.task_id);
+
+  messageRepo.mergeMetadata(plannerMessage.id, {
+    pending_action: {
+      id: 'pa-tabs-sort-migrated',
+      kind: 'create_task_from_analysis',
+      status: 'awaiting_confirmation',
+      source_message_id: plannerMessage.id,
+      title: '修复 tabs 排序',
+      description: '迁移后由 pending_action 表示同一条待执行动作。',
+      risk_level: 'normal',
+    },
+  });
 
   const second = await request(`/api/rooms/${room.id}/messages`, {
     method: 'POST',

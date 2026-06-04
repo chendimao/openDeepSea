@@ -110,6 +110,7 @@ import {
   type Message,
   type MessageLayer,
   type MessageMetadata,
+  type PendingActionMetadata,
   type TaskExecutionDecision,
   type MessageRoutingMode,
   type ProjectFile,
@@ -2385,8 +2386,9 @@ function resolvePreviousPlannerConfirmationRoute(roomId: string, message: string
   const previous = findLatestPlannerContextMessage(roomId);
   if (!previous) return null;
   const metadata = parseMetadataRecord(previous.metadata);
-  if (isPreviousPlannerMessageActionable(metadata)) {
-    const existingTask = findTaskCreatedFromPlannerConfirmation(roomId, previous.id);
+  const pendingAction = readPendingActionObject(metadata.pending_action);
+  if (pendingAction || isPreviousPlannerMessageActionable(metadata)) {
+    const existingTask = findTaskCreatedFromPlannerConfirmation(roomId, previous.id, pendingAction?.id);
     return {
       taskId: existingTask?.id ?? null,
       action: 'create_task',
@@ -2404,6 +2406,27 @@ function resolvePreviousPlannerConfirmationRoute(roomId: string, message: string
     confidence: 0.9,
     reason: '上一条智能体回复没有可执行修复项，请确认想修复哪一部分',
     reason_code: 'confirm_previous_not_actionable',
+  };
+}
+
+function readPendingActionObject(value: unknown): PendingActionMetadata | null {
+  if (!isRecord(value)) return null;
+  if (value.kind !== 'create_task_from_analysis') return null;
+  if (value.status !== 'awaiting_confirmation') return null;
+  const id = firstNonEmptyString([value.id]);
+  const sourceMessageId = firstNonEmptyString([value.source_message_id]);
+  const title = firstNonEmptyString([value.title]);
+  const description = firstNonEmptyString([value.description]);
+  if (!id || !sourceMessageId || !title || !description) return null;
+  const riskLevel = value.risk_level === 'low' || value.risk_level === 'high' ? value.risk_level : 'normal';
+  return {
+    id,
+    kind: 'create_task_from_analysis',
+    status: 'awaiting_confirmation',
+    source_message_id: sourceMessageId,
+    title,
+    description,
+    risk_level: riskLevel,
   };
 }
 
@@ -2633,6 +2656,7 @@ async function createTaskFromRoutedMessage(input: {
       const updatedMessage = messageRepo.mergeMetadata(input.userMessageId, {
         task_id: existingTask.id,
         route_result: input.routeResult,
+        pending_action_decision: buildPendingActionApprovalDecision(input.roomId),
       });
       if (updatedMessage) {
         broadcastUserMessageSnapshot(input.roomId, updatedMessage);
@@ -2691,6 +2715,7 @@ async function createTaskFromRoutedMessage(input: {
     task_id: result.task.id,
     task_analysis: analysis ?? undefined,
     route_result: nextRouteResult,
+    pending_action_decision: buildPendingActionApprovalDecision(input.roomId),
   });
   if (updatedMessage) {
     broadcastUserMessageSnapshot(input.roomId, updatedMessage);
@@ -2707,6 +2732,13 @@ function resolvePreviousPlannerTaskInput(roomId: string): { title: string; descr
   const previous = findLatestPlannerContextMessage(roomId);
   if (!previous) return null;
   const metadata = parseMetadataRecord(previous.metadata);
+  const pendingAction = readPendingActionObject(metadata.pending_action);
+  if (pendingAction) {
+    return {
+      title: truncateTitle(pendingAction.title),
+      description: buildPendingActionTaskDescription(pendingAction, previous),
+    };
+  }
   const readiness = parseMessageMetadataObject(metadata.task_readiness);
   const execution = parseMessageMetadataObject(metadata.task_execution);
   const readinessTitle = firstNonEmptyString([readiness?.title]);
@@ -2743,6 +2775,29 @@ function resolvePreviousPlannerTaskInput(roomId: string): { title: string; descr
   };
 }
 
+function buildPendingActionTaskDescription(action: PendingActionMetadata, plannerMessage: Message): string {
+  return [
+    `pending_action: ${action.id}`,
+    `来源分析消息：${plannerMessage.id}`,
+    `风险等级：${action.risk_level}`,
+    '',
+    action.description,
+  ].join('\n');
+}
+
+function buildPendingActionApprovalDecision(roomId: string): Record<string, unknown> | undefined {
+  const previous = findLatestPlannerContextMessage(roomId);
+  if (!previous) return undefined;
+  const metadata = parseMetadataRecord(previous.metadata);
+  const pendingAction = readPendingActionObject(metadata.pending_action);
+  if (!pendingAction) return undefined;
+  return {
+    action_id: pendingAction.id,
+    source_message_id: previous.id,
+    decision: 'approve',
+  };
+}
+
 function buildPreviousPlannerTaskDescription(input: {
   plannerMessage: Message;
   summary: string;
@@ -2758,7 +2813,14 @@ function buildPreviousPlannerTaskDescription(input: {
   ].filter((line): line is string => Boolean(line)).join('\n');
 }
 
-function findTaskCreatedFromPlannerConfirmation(roomId: string, plannerMessageId: string): Task | null {
+function findTaskCreatedFromPlannerConfirmation(
+  roomId: string,
+  plannerMessageId: string,
+  pendingActionId?: string,
+): Task | null {
+  const markers = pendingActionId
+    ? [`pending_action: ${pendingActionId}`, `来源分析消息：${plannerMessageId}`]
+    : [`来源分析消息：${plannerMessageId}`];
   const row = db.prepare(
     `SELECT json_extract(metadata, '$.task_id') AS task_id
      FROM messages
@@ -2766,10 +2828,10 @@ function findTaskCreatedFromPlannerConfirmation(roomId: string, plannerMessageId
        AND metadata IS NOT NULL
        AND json_valid(metadata)
        AND json_extract(metadata, '$.event_type') = 'task_created'
-       AND json_extract(metadata, '$.description') LIKE ?
+       AND (${markers.map(() => "json_extract(metadata, '$.description') LIKE ?").join(' OR ')})
      ORDER BY created_at DESC
      LIMIT 1`,
-  ).get(roomId, `%来源分析消息：${plannerMessageId}%`) as { task_id: string } | undefined;
+  ).get(roomId, ...markers.map((marker) => `%${marker}%`)) as { task_id: string } | undefined;
   if (!row?.task_id) return null;
   const task = taskRepo.get(row.task_id);
   return task?.room_id === roomId ? task : null;

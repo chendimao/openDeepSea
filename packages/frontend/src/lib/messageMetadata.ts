@@ -128,6 +128,8 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
     const taskReadiness = sanitizeTaskReadinessMetadata(parsed);
     const taskExecution = sanitizeTaskExecutionMetadata(parsed);
     const intentResult = sanitizeIntentResultMetadata(parsed);
+    const pendingAction = sanitizePendingActionMetadata(parsed);
+    const pendingActionDecision = sanitizePendingActionDecisionMetadata(parsed);
     const trace = sanitizeTraceMetadata(parsed);
     const acp = sanitizeAcpMetadata(parsed);
     const reply = sanitizeReplyMetadata(parsed);
@@ -141,6 +143,8 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
       ...collaboration,
       ...taskReadiness,
       ...taskExecution,
+      ...pendingAction,
+      ...pendingActionDecision,
       ...trace,
       ...acp,
       ...brainstorming,
@@ -338,6 +342,16 @@ function sanitizeTaskReadinessMetadata(value: Record<string, unknown>) {
   return readiness ? { task_readiness: readiness } : {};
 }
 
+function sanitizePendingActionMetadata(value: Record<string, unknown>) {
+  const action = sanitizePendingAction(value.pending_action);
+  return action ? { pending_action: action } : {};
+}
+
+function sanitizePendingActionDecisionMetadata(value: Record<string, unknown>) {
+  const decision = sanitizePendingActionDecision(value.pending_action_decision);
+  return decision ? { pending_action_decision: decision } : {};
+}
+
 function sanitizeIntentResultMetadata(value: Record<string, unknown>) {
   const intentResult = sanitizeIntentResult(value.intent_result);
   return intentResult ? { intent_result: intentResult } : {};
@@ -349,6 +363,52 @@ function sanitizeTaskExecutionMetadata(value: Record<string, unknown>) {
   return {
     ...(typeof value.source_message_id === 'string' ? { source_message_id: value.source_message_id } : {}),
     task_execution: execution,
+  };
+}
+
+function sanitizePendingAction(value: unknown): MessageMetadata['pending_action'] | null {
+  if (!isRecord(value)) return null;
+  if (value.kind !== 'create_task_from_analysis') return null;
+  if (value.status !== 'awaiting_confirmation') return null;
+  if (
+    typeof value.id !== 'string' ||
+    !value.id.trim() ||
+    typeof value.source_message_id !== 'string' ||
+    !value.source_message_id.trim() ||
+    typeof value.title !== 'string' ||
+    !value.title.trim() ||
+    typeof value.description !== 'string' ||
+    !value.description.trim()
+  ) {
+    return null;
+  }
+  const riskLevel = value.risk_level === 'low' || value.risk_level === 'high' ? value.risk_level : 'normal';
+  return {
+    id: value.id.trim(),
+    kind: 'create_task_from_analysis',
+    status: 'awaiting_confirmation',
+    source_message_id: value.source_message_id.trim(),
+    title: value.title.trim(),
+    description: value.description.trim(),
+    risk_level: riskLevel,
+  };
+}
+
+function sanitizePendingActionDecision(value: unknown): MessageMetadata['pending_action_decision'] | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.action_id !== 'string' ||
+    !value.action_id.trim() ||
+    typeof value.source_message_id !== 'string' ||
+    !value.source_message_id.trim() ||
+    (value.decision !== 'approve' && value.decision !== 'reject' && value.decision !== 'clarify')
+  ) {
+    return null;
+  }
+  return {
+    action_id: value.action_id.trim(),
+    source_message_id: value.source_message_id.trim(),
+    decision: value.decision,
   };
 }
 

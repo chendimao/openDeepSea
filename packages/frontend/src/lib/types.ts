@@ -799,6 +799,8 @@ export interface MessageMetadata {
   collaboration_decision?: CollaborationDecision;
   route_result?: RouteResult;
   task_readiness?: TaskReadinessMetadata;
+  pending_action?: PendingActionMetadata;
+  pending_action_decision?: PendingActionDecisionMetadata;
   choice_options?: MessageChoiceOption[];
   choice_option_selection?: MessageChoiceOptionSelection;
   brainstorming_options?: BrainstormingOption[];
@@ -993,6 +995,22 @@ export interface TaskReadinessMetadata {
   recommended_mode: CollaborationMode;
   execution_intent?: TaskExecutionIntent;
   source_message_id?: string;
+}
+
+export interface PendingActionMetadata {
+  id: string;
+  kind: 'create_task_from_analysis';
+  status: 'awaiting_confirmation';
+  source_message_id: string;
+  title: string;
+  description: string;
+  risk_level: 'low' | 'normal' | 'high';
+}
+
+export interface PendingActionDecisionMetadata {
+  action_id: string;
+  source_message_id: string;
+  decision: 'approve' | 'reject' | 'clarify';
 }
 
 export type BrainstormingOptionMaturity = 'exploratory' | 'boundary_needed' | 'actionable';

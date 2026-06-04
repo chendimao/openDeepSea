@@ -468,6 +468,50 @@ test('parseMessageMetadata accepts task execution metadata', () => {
   assert.equal(parsed.source_message_id, 'user-message-1');
 });
 
+test('parseMessageMetadata accepts pending action metadata', () => {
+  const metadata = JSON.stringify({
+    pending_action: {
+      id: 'pa-1',
+      kind: 'create_task_from_analysis',
+      status: 'awaiting_confirmation',
+      source_message_id: 'msg-1',
+      title: '修复 tabs 排序',
+      description: '修复排序并补测试',
+      risk_level: 'normal',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.deepEqual(parsed.pending_action, {
+    id: 'pa-1',
+    kind: 'create_task_from_analysis',
+    status: 'awaiting_confirmation',
+    source_message_id: 'msg-1',
+    title: '修复 tabs 排序',
+    description: '修复排序并补测试',
+    risk_level: 'normal',
+  });
+});
+
+test('parseMessageMetadata accepts pending action approval decision metadata', () => {
+  const metadata = JSON.stringify({
+    pending_action_decision: {
+      action_id: 'pa-1',
+      source_message_id: 'msg-1',
+      decision: 'approve',
+    },
+  });
+
+  const parsed = parseMessageMetadata(metadata);
+
+  assert.deepEqual(parsed.pending_action_decision, {
+    action_id: 'pa-1',
+    source_message_id: 'msg-1',
+    decision: 'approve',
+  });
+});
+
 test('parseMessageMetadata keeps trace events alongside legacy trace fields', () => {
   const metadata = JSON.stringify({
     trace: {
