@@ -887,6 +887,10 @@ export interface TaskActionStartResult {
   blocked_reason?: string;
 }
 
+export type AgentRunRetryResult =
+  | { retry_type: 'agent_run'; run: AgentRun }
+  | { retry_type: 'task_action'; result: TaskActionStartResult };
+
 export interface MessageTraceThinking {
   text: string;
 }

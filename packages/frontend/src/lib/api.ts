@@ -5,6 +5,7 @@ import type {
   AgentTimelineEvent,
   AgentInput,
   AgentRun,
+  AgentRunRetryResult,
   BrainstormingOptionSelection,
   MessageChoiceOptionSelection,
   AgentMemoryScope,
@@ -742,7 +743,7 @@ export const api = {
   cancelAgentRun: (id: string) =>
     request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),
   retryAgentRun: (id: string) =>
-    request<AgentRun>(`/agent-runs/${id}/retry`, { method: 'POST' }),
+    request<AgentRunRetryResult>(`/agent-runs/${id}/retry`, { method: 'POST' }),
   sendMessage: (
     roomId: string,
     input: {

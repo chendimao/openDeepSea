@@ -1904,7 +1904,7 @@ router.post('/agent-runs/:id/retry', (req, res) => {
           })
         : null;
       if (taskActionRetry) {
-        res.status(202).json(taskActionRetry);
+        res.status(202).json({ retry_type: 'task_action', result: taskActionRetry });
         return;
       }
 
@@ -1926,7 +1926,7 @@ router.post('/agent-runs/:id/retry', (req, res) => {
         sourceMessageId: task?.source_message_id ?? null,
         acpSessionIdOverride: run.acp_session_id,
       });
-      res.status(202).json(retry.run);
+      res.status(202).json({ retry_type: 'agent_run', run: retry.run });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'agent run retry failed';
       res.status(/no ACP backend|has no ACP backend|no executable/u.test(message) ? 409 : 400).json({ error: message });
@@ -1941,6 +1941,7 @@ async function maybeRetryFailedTaskActionRun(input: {
 }) {
   const failedAction = findLatestFailedTaskActionForRun(input.taskId, input.runId);
   if (!failedAction) return null;
+  if (failedAction !== 'route_skills' && failedAction !== 'auto_advance') return null;
   return startTaskAction({
     roomId: input.roomId,
     taskId: input.taskId,

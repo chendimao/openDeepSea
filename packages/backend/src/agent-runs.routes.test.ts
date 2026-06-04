@@ -131,10 +131,14 @@ test('POST /agent-runs/:id/retry reruns the failed run without creating a new us
   const res = await request(`/api/agent-runs/${failed.id}/retry`, { method: 'POST' });
 
   assert.equal(res.status, 202);
-  const body = await res.json() as { id: string; task_id: string | null; acp_session_id: string | null };
-  assert.notEqual(body.id, failed.id);
-  assert.equal(body.task_id, task.id);
-  assert.equal(body.acp_session_id, 'session-original');
+  const body = await res.json() as {
+    retry_type: 'agent_run';
+    run: { id: string; task_id: string | null; acp_session_id: string | null };
+  };
+  assert.equal(body.retry_type, 'agent_run');
+  assert.notEqual(body.run.id, failed.id);
+  assert.equal(body.run.task_id, task.id);
+  assert.equal(body.run.acp_session_id, 'session-original');
   const capturedRetryInput = retryInputs[0];
   assert.ok(capturedRetryInput);
   assert.ok(capturedRetryInput.prompt.includes('请在当前 ACP 会话中继续原任务'));
@@ -335,11 +339,15 @@ test('POST /agent-runs/:id/retry resumes failed task action instead of re-prompt
     const res = await request(`/api/agent-runs/${failed.id}/retry`, { method: 'POST' });
 
     assert.equal(res.status, 202);
-    const body = await res.json() as { action: string; status: string; run_ids: string[] };
+    const body = await res.json() as {
+      retry_type: 'task_action';
+      result: { action: string; status: string; run_ids: string[] };
+    };
     assert.equal(retryAgentRunCalled, false);
-    assert.equal(body.action, 'auto_advance');
-    assert.equal(body.status, 'completed');
-    assert.equal(body.run_ids[0], failed.id);
+    assert.equal(body.retry_type, 'task_action');
+    assert.equal(body.result.action, 'auto_advance');
+    assert.equal(body.result.status, 'completed');
+    assert.equal(body.result.run_ids[0], failed.id);
     const events = taskEventRepo.listByTask(task.id, { layer: 'timeline', limit: 20 });
     assert.ok(events.some((event) =>
       event.payload.task_action === 'route_skills' &&
@@ -354,4 +362,84 @@ test('POST /agent-runs/:id/retry resumes failed task action instead of re-prompt
   } finally {
     adapters.codex = originalAdapter;
   }
+});
+
+test('POST /agent-runs/:id/retry keeps non-routing task action failures on agent retry path', async () => {
+  const project = projectRepo.create({
+    name: 'Agent run phase retry',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-agent-run-phase-retry-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  roomAgentRepo.setAcp(roomAgent.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'bypass',
+    acp_writable_dirs: [],
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '写计划失败重试',
+  });
+  const failed = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: 'planner',
+    backend: 'codex',
+    status: 'failed',
+    acp_session_id: 'session-writing-plans',
+    task_id: task.id,
+    prompt: 'writing plans',
+  });
+  taskEventRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    type: 'task_updated',
+    layer: 'timeline',
+    source_run_id: failed.id,
+    payload: {
+      task_action: 'writing_plans',
+      action: 'writing_plans',
+      task_action_status: 'failed',
+      status: 'failed',
+      run_id: failed.id,
+      run_ids: [failed.id],
+      error: 'plan failed',
+    },
+  });
+  let retryAgentRunCalled = false;
+  setMessageRouteDeps({
+    retryAgentRunOnce: async (input) => {
+      retryAgentRunCalled = true;
+      const retry = agentRunRepo.updateStatus(
+        agentRunRepo.create({
+          room_id: input.roomId,
+          room_agent_id: input.agent.id,
+          agent_id: input.agent.agent_id,
+          backend: 'codex',
+          status: 'running',
+          acp_session_id: input.acpSessionIdOverride,
+          task_id: input.taskId,
+          prompt: input.prompt,
+        }).id,
+        'completed',
+        { stdout: 'retry writing plan done' },
+      );
+      assert.ok(retry);
+      return { run: retry };
+    },
+  });
+
+  const res = await request(`/api/agent-runs/${failed.id}/retry`, { method: 'POST' });
+
+  assert.equal(res.status, 202);
+  const body = await res.json() as { retry_type: string; run?: { task_id: string | null } };
+  assert.equal(retryAgentRunCalled, true);
+  assert.equal(body.retry_type, 'agent_run');
+  assert.equal(body.run?.task_id, task.id);
 });
