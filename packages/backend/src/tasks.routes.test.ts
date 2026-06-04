@@ -13,6 +13,8 @@ const { roomAgentRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
 const { taskExecutorRepo } = await import('./repos/task-executors.js');
+const { agentRunRepo } = await import('./repos/agent-runs.js');
+const { agentRunLinkRepo } = await import('./repos/agent-run-links.js');
 const { wsHub } = await import('./ws-hub.js');
 const { router } = await import('./routes.js');
 
@@ -220,6 +222,66 @@ test('task patch route rejects unsupported fields instead of ignoring them', asy
   assert.equal(res.status, 400);
   const unchanged = taskRepo.get(task.id);
   assert.equal(unchanged?.parent_task_id, null);
+});
+
+test('task events include subagent run links as runtime events', async () => {
+  const project = projectRepo.create({
+    name: 'Task Subagent Link Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-task-subagent-link-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Subagent visible task' });
+  const parentRoomAgent = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'frontend-executor',
+    agent_name: 'Frontend Executor',
+  });
+  const childRoomAgent = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'reviewer',
+    agent_name: 'Reviewer',
+  });
+  const parent = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: parentRoomAgent.id,
+    agent_id: 'frontend-executor',
+    backend: 'codex',
+    prompt: 'parent',
+    task_id: task.id,
+  });
+  const child = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: childRoomAgent.id,
+    agent_id: 'reviewer',
+    backend: 'codex',
+    prompt: 'review',
+    task_id: task.id,
+  });
+  agentRunLinkRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    parent_run_id: parent.id,
+    child_run_id: child.id,
+    relationship: 'subagent',
+    role: 'spec_reviewer',
+  });
+
+  const res = await request(`/api/rooms/${room.id}/task-events?taskId=${task.id}&layer=runtime`);
+
+  assert.equal(res.status, 200);
+  const body = await res.json() as {
+    events: Array<{ type: string; layer: string; payload: Record<string, unknown> }>;
+  };
+  assert.equal(
+    body.events.some((event) =>
+      event.type === 'runtime_event' &&
+      event.layer === 'runtime' &&
+      event.payload.timeline_type === 'subagent_started' &&
+      event.payload.child_run_id === child.id &&
+      event.payload.role === 'spec_reviewer'
+    ),
+    true,
+  );
 });
 
 test('task executors route lists task-scoped executor sessions', async () => {

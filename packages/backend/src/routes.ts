@@ -27,6 +27,7 @@ import {
   type SafeGlobalChatSettingsSummary,
 } from './global-chat.js';
 import { validateLocalAccess } from './local-access.js';
+import { agentRunLinkRepo } from './repos/agent-run-links.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { agentRepo } from './repos/agents.js';
 import { fileRepo } from './repos/files.js';
@@ -124,6 +125,7 @@ import {
   type MessageIntentResult,
   type RouteResult,
   type AgentRun,
+  type TaskEvent,
   type TaskActionKind,
   type WorkflowRole,
 } from './types.js';
@@ -1813,9 +1815,14 @@ router.get('/rooms/:roomId/task-events', (req, res) => {
     : null;
   const limit = parseTaskEventsLimit(req.query.limit);
   const layer = layerResult.data as MessageLayer | undefined;
-  const events = taskId
+  const repoEvents = taskId
     ? taskEventRepo.listByTask(taskId, { layer, limit })
     : taskEventRepo.listByRoom(room.id, { layer, limit });
+  const projectedEvents = taskId && (!layer || layer === 'runtime')
+    ? createSubagentRunTaskEvents(taskId)
+    : [];
+  const events = [...repoEvents, ...projectedEvents]
+    .sort((left, right) => left.created_at - right.created_at || left.id.localeCompare(right.id));
 
   const roomEvents = events.filter((event) => event.room_id === room.id);
   res.json({
@@ -1829,6 +1836,42 @@ function parseTaskEventsLimit(value: unknown): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 1) return 500;
   return Math.min(parsed, 1000);
+}
+
+function createSubagentRunTaskEvents(taskId: string): TaskEvent[] {
+  return agentRunLinkRepo.listByTask(taskId).map((link) => {
+    const childRun = agentRunRepo.get(link.child_run_id);
+    const timelineType = childRun?.status === 'failed'
+      ? 'subagent_failed'
+      : childRun?.status === 'completed'
+        ? 'subagent_completed'
+        : 'subagent_started';
+    const timelineStatus = childRun?.status === 'failed'
+      ? 'failed'
+      : childRun?.status === 'completed'
+        ? 'completed'
+        : 'started';
+
+    return {
+      id: `subagent-link:${link.id}:${timelineType}`,
+      task_id: link.task_id ?? taskId,
+      room_id: link.room_id,
+      seq: 0,
+      type: 'runtime_event',
+      layer: 'runtime',
+      payload: {
+        timeline_type: timelineType,
+        timeline_status: timelineStatus,
+        parent_run_id: link.parent_run_id,
+        child_run_id: link.child_run_id,
+        child_agent_id: childRun?.agent_id,
+        role: link.role,
+        relationship: link.relationship,
+      },
+      source_run_id: link.parent_run_id,
+      created_at: link.created_at,
+    } satisfies TaskEvent;
+  });
 }
 
 router.post('/agent-runs/:id/cancel', (req, res) => {
