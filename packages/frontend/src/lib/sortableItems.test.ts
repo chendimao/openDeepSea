@@ -42,13 +42,25 @@ test('reorderWithinLayer reorders only matching pinned layer', () => {
   assert.deepEqual(reorderWithinLayer(items, 'pinned', 'a').map((item) => item.id), ['pinned', 'b', 'a']);
 });
 
-test('layerIds returns sorted ids for a single pinned layer', () => {
+test('layerIds returns ids for a single pinned layer in current order', () => {
   const items: Item[] = [
     { id: 'normal-b', created_at: 2, sort_order: 2 },
     { id: 'pinned-a', created_at: 1, pinned_at: 1 },
     { id: 'normal-a', created_at: 3, sort_order: 1 },
   ];
 
-  assert.deepEqual(layerIds(items, false), ['normal-a', 'normal-b']);
+  assert.deepEqual(layerIds(items, false), ['normal-b', 'normal-a']);
   assert.deepEqual(layerIds(items, true), ['pinned-a']);
+});
+
+test('layerIds preserves current layer order after a drag reorder', () => {
+  const items: Item[] = [
+    { id: 'pinned', created_at: 1, pinned_at: 1 },
+    { id: 'a', created_at: 2 },
+    { id: 'b', created_at: 3 },
+  ];
+
+  const next = reorderWithinLayer(items, 'b', 'a');
+
+  assert.deepEqual(layerIds(next, false), ['a', 'b']);
 });

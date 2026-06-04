@@ -50,7 +50,5 @@ export function reorderWithinLayer<T extends SortablePinnedItem>(
 }
 
 export function layerIds<T extends SortablePinnedItem>(items: T[], pinned: boolean): string[] {
-  return sortPinnedItems(items)
-    .filter((item) => isPinnedItem(item) === pinned)
-    .map((item) => item.id);
+  return items.filter((item) => isPinnedItem(item) === pinned).map((item) => item.id);
 }
