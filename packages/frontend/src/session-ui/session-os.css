@@ -493,6 +493,23 @@
   flex-wrap: wrap;
 }
 
+.session-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(16 20 21 / 42%);
+}
+
+.session-overlay .session-workflow-surface {
+  width: min(760px, 100%);
+  max-height: min(720px, 90dvh);
+  overflow: auto;
+  box-shadow: var(--session-shadow);
+}
+
 .session-command-button,
 .session-icon-button,
 .session-tab,
