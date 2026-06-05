@@ -44,4 +44,9 @@ export const sessionCheckpointRepo = {
       ORDER BY created_at ASC
     `).all(sessionId) as SessionCheckpoint[];
   },
+
+  updateEvidenceEvent(id: string, evidenceEventId: string): SessionCheckpoint | undefined {
+    db.prepare('UPDATE session_checkpoints SET evidence_event_id = ? WHERE id = ?').run(evidenceEventId, id);
+    return this.get(id);
+  },
 };

@@ -1,4 +1,6 @@
 import { Router, type Response } from 'express';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { z } from 'zod';
 import { now } from './db.js';
 import { projectRepo } from './repos/projects.js';
@@ -33,6 +35,7 @@ import type {
 export const sessionRouter = Router();
 
 const sessionModeSchema = z.enum(['ask', 'plan', 'code', 'debug', 'review']);
+const execFileAsync = promisify(execFile);
 
 sessionRouter.get('/projects/:projectId/session-workspace', (req, res) => {
   const project = projectRepo.get(req.params.projectId);
@@ -316,26 +319,32 @@ function listSessionEvidence(req: { params: { sessionId: string } }, res: Respon
   res.json(sessionEvidenceRepo.listBySession(session.id));
 }
 
-function createSessionCheckpoint(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
+async function createSessionCheckpoint(req: { params: { sessionId: string }; body?: unknown }, res: Response): Promise<void> {
   const session = sessionRepo.get(req.params.sessionId);
   if (!session) {
     res.status(404).json({ error: 'session not found' });
     return;
   }
+  const project = projectRepo.get(session.project_id);
+  if (!project) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
   const parsed = z.object({
     title: z.string().trim().min(1),
     description: z.string().nullable().optional(),
-    git_head: z.string().nullable().optional(),
-    branch_name: z.string().nullable().optional(),
-    diff_summary: z.string().nullable().optional(),
   }).safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
+  const git = await readGitSnapshot(project.path);
   const checkpoint = sessionCheckpointRepo.create({
     session_id: session.id,
     ...parsed.data,
+    git_head: git.git_head,
+    branch_name: git.branch_name,
+    diff_summary: git.diff_summary,
   });
   const evidence = sessionEvidenceRepo.create({
     session_id: session.id,
@@ -344,7 +353,7 @@ function createSessionCheckpoint(req: { params: { sessionId: string }; body?: un
     summary: checkpoint.diff_summary,
     payload: { checkpoint_id: checkpoint.id },
   });
-  res.status(201).json({ ...checkpoint, evidence_event_id: evidence.id });
+  res.status(201).json(sessionCheckpointRepo.updateEvidenceEvent(checkpoint.id, evidence.id));
 }
 
 function forkSession(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
@@ -370,6 +379,7 @@ function forkSession(req: { params: { sessionId: string }; body?: unknown }, res
     branch_name: parsed.data.branch_name ?? session.branch_name,
     forked_from_session_id: session.id,
   });
+  inheritLatestAppliedCompact(session, fork);
   sessionEvidenceRepo.create({
     session_id: session.id,
     event_type: 'fork',
@@ -472,6 +482,18 @@ function forkHistoryRecord(req: { params: { historyRecordId: string }; body?: un
     worktree_path: parsed.data.worktree_path ?? null,
     branch_name: parsed.data.branch_name ?? null,
     forked_from_history_record_id: record.id,
+  });
+  sessionContextRepo.createManifest({
+    session_id: fork.id,
+    total_token_estimate: Math.ceil(record.resume_brief.length / 4),
+    sources: [{
+      source_type: 'history',
+      source_ref: record.id,
+      title: `History: ${record.title}`,
+      reason: '从历史记录分叉时继承 resume brief',
+      excerpt: record.resume_brief,
+      metadata: { inherited: true },
+    }],
   });
   historyRecordRepo.incrementForkCount(record.id);
   sessionEvidenceRepo.create({
@@ -718,6 +740,56 @@ function buildPromptFromMessage(session: Session, content: string): string {
   const goal = session.current_goal?.trim();
   if (!goal) return content;
   return [`当前目标：${goal}`, '', content].join('\n');
+}
+
+function inheritLatestAppliedCompact(source: Session, target: Session): void {
+  const compact = sessionCompactionRepo
+    .listBySession(source.id)
+    .filter((item) => item.status === 'applied' && item.applied_summary?.trim())
+    .at(-1);
+  if (!compact?.applied_summary) return;
+  sessionContextRepo.createManifest({
+    session_id: target.id,
+    total_token_estimate: Math.ceil(compact.applied_summary.length / 4),
+    sources: [{
+      source_type: 'compact',
+      source_ref: compact.id,
+      title: `Inherited compact: ${source.title}`,
+      reason: '从源 session 分叉时继承最新已应用 compact',
+      excerpt: compact.applied_summary,
+      metadata: {
+        inherited: true,
+        source_session_id: source.id,
+      },
+    }],
+  });
+}
+
+async function readGitSnapshot(projectPath: string): Promise<{
+  git_head: string | null;
+  branch_name: string | null;
+  diff_summary: string | null;
+}> {
+  const [gitHead, branchName, diffSummary] = await Promise.all([
+    readGitValue(projectPath, ['rev-parse', 'HEAD']),
+    readGitValue(projectPath, ['branch', '--show-current']),
+    readGitValue(projectPath, ['diff', '--stat']),
+  ]);
+  return {
+    git_head: gitHead,
+    branch_name: branchName,
+    diff_summary: diffSummary,
+  };
+}
+
+async function readGitValue(projectPath: string, args: string[]): Promise<string | null> {
+  try {
+    const result = await execFileAsync('git', args, { cwd: projectPath, timeout: 5000 });
+    const value = result.stdout.trim();
+    return value || null;
+  } catch {
+    return null;
+  }
 }
 
 function forkInputSchema() {

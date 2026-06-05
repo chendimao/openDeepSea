@@ -1349,7 +1349,7 @@ rtk git commit -m "feat(backend): 接入会话运行时与流式事件"
 - Modify: `packages/backend/src/repos/history-records.ts`
 - Test: `packages/backend/src/session.commands.integration.test.ts`
 
-- [ ] **Step 1: Implement `/new` hard boundary**
+- [x] **Step 1: Implement `/new` hard boundary**
 
 `handleNewCommand` must:
 
@@ -1389,7 +1389,7 @@ const next = sessionRepo.create({
 });
 ```
 
-- [ ] **Step 2: Implement compact preview/apply**
+- [x] **Step 2: Implement compact preview/apply**
 
 Preview endpoint creates:
 
@@ -1407,7 +1407,7 @@ sessionCompactionRepo.createPreview({
 
 Apply endpoint updates `applied_summary`, `user_edited`, `sessions.latest_compaction_id`, and writes evidence `compact`.
 
-- [ ] **Step 3: Implement resume brief and resume**
+- [x] **Step 3: Implement resume brief and resume**
 
 `POST /history-records/:historyRecordId/resume` must:
 
@@ -1425,7 +1425,7 @@ System message content:
 {resume_brief}
 ```
 
-- [ ] **Step 4: Implement fork**
+- [x] **Step 4: Implement fork**
 
 `POST /sessions/:sessionId/fork` and `POST /history-records/:historyRecordId/fork` must:
 
@@ -1434,7 +1434,7 @@ System message content:
 - copy provider/model unless request overrides them;
 - write evidence `fork` in source and fork session.
 
-- [ ] **Step 5: Implement checkpoint**
+- [x] **Step 5: Implement checkpoint**
 
 `POST /sessions/:sessionId/checkpoints` must record:
 
@@ -1450,7 +1450,7 @@ System message content:
 
 Use `node:child_process` `execFile` with `git` and fixed args only.
 
-- [ ] **Step 6: Run command integration tests**
+- [x] **Step 6: Run command integration tests**
 
 Run:
 
@@ -1466,7 +1466,7 @@ Expected:
 - resume creates a new session and system resume message.
 - fork records source relation.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 rtk git add packages/backend/src/session.routes.ts packages/backend/src/session-summary.ts packages/backend/src/session-context.ts packages/backend/src/repos/session-compactions.ts packages/backend/src/repos/session-checkpoints.ts packages/backend/src/repos/history-records.ts packages/backend/src/session.commands.integration.test.ts
