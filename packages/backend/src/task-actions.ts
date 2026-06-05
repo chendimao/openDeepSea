@@ -52,6 +52,7 @@ const SUBAGENT_EXECUTION_ROLES: Array<{ role: AgentRunLinkRole; agentId: 'execut
   { role: 'code_quality_reviewer', agentId: 'reviewer', phaseLabel: '代码质量审查者' },
 ];
 const MAX_NATIVE_SUBAGENT_REVIEW_FIX_ROUNDS = 2;
+const DEFAULT_PHASE_OUTPUT_CLASSIFICATION_TIMEOUT_MS = 5000;
 
 interface ReviewFinding {
   severity: 'critical' | 'important' | 'minor';
@@ -108,6 +109,7 @@ export interface StartTaskActionInput {
   senderName?: string;
   runAgent?: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
   classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>;
+  classifyPhaseOutputTimeoutMs?: number;
 }
 
 export async function startTaskAction(input: StartTaskActionInput): Promise<TaskActionStartResult> {
@@ -195,6 +197,7 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
       taskId: input.taskId,
       runAgent: input.runAgent ?? defaultRunAgent,
       classifyPhaseOutput: input.classifyPhaseOutput,
+      classifyPhaseOutputTimeoutMs: input.classifyPhaseOutputTimeoutMs,
     });
   }
 
@@ -204,6 +207,7 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
     action: input.action,
     runAgent: input.runAgent ?? defaultRunAgent,
     classifyPhaseOutput: input.classifyPhaseOutput,
+    classifyPhaseOutputTimeoutMs: input.classifyPhaseOutputTimeoutMs,
   });
 }
 
@@ -322,6 +326,7 @@ async function runAutoAdvanceAction(input: {
   taskId: string;
   runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
   classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>;
+  classifyPhaseOutputTimeoutMs?: number;
 }): Promise<TaskActionStartResult> {
   recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', 'running', {});
 
@@ -393,6 +398,7 @@ async function runAutoAdvanceAction(input: {
     skipPlanningPrerequisite: isPlanningSkipExecutionRouting(routingResult.routing),
     runAgent: input.runAgent,
     classifyPhaseOutput: input.classifyPhaseOutput,
+    classifyPhaseOutputTimeoutMs: input.classifyPhaseOutputTimeoutMs,
   });
   const runIds = [...routingResult.run_ids, ...phaseResult.run_ids];
   const status = toTerminalTaskActionStatus(phaseResult.status);
@@ -507,6 +513,7 @@ async function runSuperpowersPhaseAction(input: {
   skipPlanningPrerequisite?: boolean;
   runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
   classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>;
+  classifyPhaseOutputTimeoutMs?: number;
 }): Promise<TaskActionStartResult> {
   const phase = actionToPhase(input.action);
   if (!phase) throw new Error(`unsupported action: ${input.action}`);
@@ -612,7 +619,10 @@ async function runSuperpowersPhaseAction(input: {
         task,
         content: result.content,
         missingEvidenceError: evidenceError,
-      }, input.classifyPhaseOutput)
+      }, {
+        classifyPhaseOutput: input.classifyPhaseOutput,
+        timeoutMs: input.classifyPhaseOutputTimeoutMs,
+      })
     : null;
   if (
     outputClassification?.status === 'awaiting_user_input' ||
@@ -1320,18 +1330,42 @@ function extractSuperpowersEvidence(content: string): Record<string, unknown> | 
 
 async function classifyCompletedPhaseOutput(
   input: PhaseOutputClassifierInput,
-  classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>,
+  options: {
+    classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>;
+    timeoutMs?: number;
+  } = {},
 ): Promise<PhaseOutputClassification | null> {
-  const classifier: PhaseOutputClassifier = classifyPhaseOutput
-    ? { classify: classifyPhaseOutput }
+  const classifier: PhaseOutputClassifier = options.classifyPhaseOutput
+    ? { classify: options.classifyPhaseOutput }
     : defaultPhaseOutputClassifier;
+  const timeoutMs = normalizePhaseOutputClassificationTimeoutMs(options.timeoutMs);
   try {
-    const classification = await classifier.classify(input);
+    const classification = await withPhaseOutputClassificationTimeout(
+      classifier.classify(input),
+      timeoutMs,
+    );
     return normalizePhaseOutputClassification(classification);
   } catch (error) {
     console.warn(`[task-actions] phase output classification failed: ${toErrorMessage(error, 'classification failed')}`);
     return null;
   }
+}
+
+function normalizePhaseOutputClassificationTimeoutMs(value: number | undefined): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.max(1, Math.floor(value));
+  }
+  return DEFAULT_PHASE_OUTPUT_CLASSIFICATION_TIMEOUT_MS;
+}
+
+function withPhaseOutputClassificationTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`phase output classification timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
 }
 
 const defaultPhaseOutputClassifier: PhaseOutputClassifier = {

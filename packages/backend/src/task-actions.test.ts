@@ -1362,6 +1362,150 @@ test('brainstorming action blocks when phase status classifier returns awaiting_
   assert.equal(blockedEvent?.payload.awaiting_user_input, true);
 });
 
+test('brainstorming action fails when phase status classifier returns failed', async () => {
+  const project = projectRepo.create({
+    name: '头脑风暴判定失败',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorm-classified-failed-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '判定失败',
+    description: 'classifier failed status should preserve evidence failure',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'brainstorming',
+    runAgent: async () => ({
+      status: 'completed',
+      content: '阶段结束。',
+      error: null,
+      runId: 'run-brainstorming-classified-failed',
+    }),
+    classifyPhaseOutput: async () => ({
+      status: 'failed',
+      reason: '没有等待用户输入，只是缺少证据',
+    }),
+  });
+
+  assert.equal(result.status, 'failed');
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  assert.equal(events.some((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'blocked'
+  ), false);
+  const failedEvent = events.find((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /superpowers evidence/u);
+});
+
+test('brainstorming action falls back to evidence failure when phase status classifier throws', async () => {
+  const project = projectRepo.create({
+    name: '头脑风暴判定异常',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorm-classifier-throws-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '判定异常',
+    description: 'classifier errors should preserve evidence failure',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'brainstorming',
+    runAgent: async () => ({
+      status: 'completed',
+      content: '阶段结束。',
+      error: null,
+      runId: 'run-brainstorming-classifier-throws',
+    }),
+    classifyPhaseOutput: async () => {
+      throw new Error('classifier timeout');
+    },
+  });
+
+  assert.equal(result.status, 'failed');
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const failedEvent = events.find((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /superpowers evidence/u);
+});
+
+test('brainstorming action falls back to evidence failure when phase status classifier times out', async () => {
+  const project = projectRepo.create({
+    name: '头脑风暴判定超时',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorm-classifier-timeout-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: planner.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '判定超时',
+    description: 'classifier timeout should preserve evidence failure',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    assigned_agent_id: undefined,
+    source_message_id: null,
+    parent_task_id: undefined,
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'brainstorming',
+    runAgent: async () => ({
+      status: 'completed',
+      content: '阶段结束。',
+      error: null,
+      runId: 'run-brainstorming-classifier-timeout',
+    }),
+    classifyPhaseOutput: () => new Promise((resolve) => {
+      setTimeout(() => resolve({
+        status: 'awaiting_user_input',
+        reason: '迟到的等待用户输入判定',
+      }), 50);
+    }),
+    classifyPhaseOutputTimeoutMs: 1,
+  });
+
+  assert.equal(result.status, 'failed');
+  const events = taskEventRepo.listByTask(task.id, { limit: 10 });
+  const failedEvent = events.find((event) =>
+    event.payload.action === 'brainstorming' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /superpowers evidence/u);
+});
+
 test('writing_plans blocks when design spec evidence file is missing', async () => {
   const project = projectRepo.create({
     name: '缺失 spec 文件',
