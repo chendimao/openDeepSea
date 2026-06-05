@@ -275,35 +275,36 @@ test('POST /rooms/:roomId/messages routes short confirmation to latest task agen
     },
   });
 
-  const res = await request(`/api/rooms/${room.id}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content: '确定' }),
-  });
+  for (const content of ['确定', '修复']) {
+    const res = await request(`/api/rooms/${room.id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
 
-  assert.equal(res.status, 201);
-  const message = await res.json() as { id: string; metadata: string | null };
-  const metadata = JSON.parse(message.metadata ?? '{}') as {
-    task_id?: string;
-    reply_to?: { message_id: string; sender_type: string; sender_id: string };
-    route_result?: {
-      action: string;
-      taskId: string | null;
-      reason_code?: string;
-      reply_context?: { message_id: string; reason: string };
+    assert.equal(res.status, 201);
+    const message = await res.json() as { id: string; metadata: string | null };
+    const metadata = JSON.parse(message.metadata ?? '{}') as {
+      task_id?: string;
+      reply_to?: { message_id: string; sender_type: string; sender_id: string };
+      route_result?: {
+        action: string;
+        taskId: string | null;
+        reason_code?: string;
+        reply_context?: { message_id: string; reason: string };
+      };
     };
-  };
-  assert.equal(metadata.task_id, task.id);
-  assert.equal(metadata.reply_to?.message_id, plannerMessage.id);
-  assert.equal(metadata.reply_to?.sender_type, 'agent');
-  assert.equal(metadata.reply_to?.sender_id, 'planner');
-  assert.equal(metadata.route_result?.action, 'append_to_task');
-  assert.equal(metadata.route_result?.taskId, task.id);
-  assert.equal(metadata.route_result?.reason_code, 'reply_to_task');
-  assert.equal(metadata.route_result?.reply_context?.message_id, plannerMessage.id);
-  assert.equal(metadata.route_result?.reply_context?.reason, 'short_confirmation_to_recent_agent');
-  assert.equal(taskRepo.listByRoom(room.id).length, 1);
-  assert.equal(dispatchCalls.length, 1);
-  assert.equal(dispatchCalls[0]?.userMessage.id, message.id);
+    assert.equal(metadata.task_id, task.id);
+    assert.equal(metadata.reply_to?.message_id, plannerMessage.id);
+    assert.equal(metadata.reply_to?.sender_type, 'agent');
+    assert.equal(metadata.reply_to?.sender_id, 'planner');
+    assert.equal(metadata.route_result?.action, 'append_to_task');
+    assert.equal(metadata.route_result?.taskId, task.id);
+    assert.equal(metadata.route_result?.reason_code, 'reply_to_task');
+    assert.equal(metadata.route_result?.reply_context?.message_id, plannerMessage.id);
+    assert.equal(metadata.route_result?.reply_context?.reason, 'short_confirmation_to_recent_agent');
+    assert.equal(taskRepo.listByRoom(room.id).length, 1);
+  }
+  assert.equal(dispatchCalls.length, 2);
 });
 
 test('POST /rooms/:roomId/messages creates task from previous actionable planner analysis on short fix confirmation', async () => {

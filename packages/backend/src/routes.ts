@@ -2380,6 +2380,7 @@ function resolveUserMessageRoute(input: {
   return resolveReplyToTaskRoute(input.roomId, input.replyToMessageId)
     ?? resolvePreviousPlannerConfirmationRoute(input.roomId, input.message)
     ?? resolveRecentTaskAgentContextRoute(input.roomId, input.message)
+    ?? resolvePreviousPlannerNonActionableConfirmationRoute(input.roomId, input.message)
     ?? routeResult;
 }
 
@@ -2452,7 +2453,16 @@ function resolvePreviousPlannerConfirmationRoute(roomId: string, message: string
       } : {}),
     };
   }
+  return null;
+}
+
+function resolvePreviousPlannerNonActionableConfirmationRoute(roomId: string, message: string): RouteResult | null {
+  const confirmationKind = readShortActionConfirmationKind(message);
   if (confirmationKind !== 'fix') return null;
+  const previous = findLatestPlannerContextMessage(roomId);
+  if (!previous) return null;
+  const metadata = parseMetadataRecord(previous.metadata);
+  if (readPendingActionObject(metadata.pending_action) || isPreviousPlannerMessageActionable(metadata)) return null;
   return {
     taskId: null,
     action: 'ask_user',
