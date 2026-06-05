@@ -12,6 +12,8 @@ import type {
 } from './types.js';
 import { existsSync, statSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { invokeConfiguredModelText, isModelChatConfigured } from './chat-model.js';
 import { agentRepo } from './repos/agents.js';
 import { respondAsAgent } from './dispatcher.js';
 import { projectRepo } from './repos/projects.js';
@@ -63,6 +65,25 @@ interface ReviewVerdict {
   issues: ReviewFinding[];
 }
 
+type PhaseOutputStatus = 'awaiting_user_input' | 'blocked' | 'failed';
+
+interface PhaseOutputClassification {
+  status: PhaseOutputStatus;
+  reason: string;
+}
+
+interface PhaseOutputClassifierInput {
+  phase: SuperpowersRuntimePhase;
+  action: TaskActionKind;
+  task: Task;
+  content: string;
+  missingEvidenceError: string | null;
+}
+
+interface PhaseOutputClassifier {
+  classify(input: PhaseOutputClassifierInput): Promise<PhaseOutputClassification | null>;
+}
+
 export interface TaskActionAgentResult {
   status: AgentRunStatus | 'failed';
   content: string;
@@ -86,6 +107,7 @@ export interface StartTaskActionInput {
   senderId?: string;
   senderName?: string;
   runAgent?: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+  classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>;
 }
 
 export async function startTaskAction(input: StartTaskActionInput): Promise<TaskActionStartResult> {
@@ -172,6 +194,7 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
       roomId: input.roomId,
       taskId: input.taskId,
       runAgent: input.runAgent ?? defaultRunAgent,
+      classifyPhaseOutput: input.classifyPhaseOutput,
     });
   }
 
@@ -180,6 +203,7 @@ export async function startTaskAction(input: StartTaskActionInput): Promise<Task
     taskId: input.taskId,
     action: input.action,
     runAgent: input.runAgent ?? defaultRunAgent,
+    classifyPhaseOutput: input.classifyPhaseOutput,
   });
 }
 
@@ -297,6 +321,7 @@ async function runAutoAdvanceAction(input: {
   roomId: string;
   taskId: string;
   runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+  classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>;
 }): Promise<TaskActionStartResult> {
   recordTaskActionEvent(input.roomId, input.taskId, 'auto_advance', 'running', {});
 
@@ -367,6 +392,7 @@ async function runAutoAdvanceAction(input: {
     agent: phaseAgent,
     skipPlanningPrerequisite: isPlanningSkipExecutionRouting(routingResult.routing),
     runAgent: input.runAgent,
+    classifyPhaseOutput: input.classifyPhaseOutput,
   });
   const runIds = [...routingResult.run_ids, ...phaseResult.run_ids];
   const status = toTerminalTaskActionStatus(phaseResult.status);
@@ -480,6 +506,7 @@ async function runSuperpowersPhaseAction(input: {
   agent?: RoomAgent;
   skipPlanningPrerequisite?: boolean;
   runAgent: (input: TaskActionRunAgentInput) => Promise<TaskActionAgentResult>;
+  classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>;
 }): Promise<TaskActionStartResult> {
   const phase = actionToPhase(input.action);
   if (!phase) throw new Error(`unsupported action: ${input.action}`);
@@ -573,32 +600,43 @@ async function runSuperpowersPhaseAction(input: {
   }
 
   const evidence = extractSuperpowersEvidence(result.content);
-  const waitingForUserInputReason = result.status === 'completed' && !evidence
-    ? detectSuperpowersPhaseWaitingForUserInput(phase, result.content)
+  const evidenceError = result.status === 'completed'
+    ? validateCompletedPhaseEvidence(phase, evidence, project.path, {
+        skipPlanningPrerequisite: input.skipPlanningPrerequisite === true,
+      })
     : null;
-  if (waitingForUserInputReason) {
+  const outputClassification = result.status === 'completed' && evidenceError
+    ? await classifyCompletedPhaseOutput({
+        phase,
+        action: input.action,
+        task,
+        content: result.content,
+        missingEvidenceError: evidenceError,
+      }, input.classifyPhaseOutput)
+    : null;
+  if (
+    outputClassification?.status === 'awaiting_user_input' ||
+    outputClassification?.status === 'blocked'
+  ) {
+    const awaitingUserInput = outputClassification.status === 'awaiting_user_input';
     const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
       superpowers_phase: phase,
       run_id: result.runId,
       run_ids: result.runId ? [result.runId] : [],
-      blocked_reason: waitingForUserInputReason,
-      error: waitingForUserInputReason,
+      blocked_reason: outputClassification.reason,
+      error: outputClassification.reason,
       evidence,
-      awaiting_user_input: true,
+      awaiting_user_input: awaitingUserInput,
+      phase_output_status: outputClassification.status,
     });
     return {
       action: input.action,
       status: 'blocked',
       message_id: messageId,
       run_ids: result.runId ? [result.runId] : [],
-      blocked_reason: waitingForUserInputReason,
+      blocked_reason: outputClassification.reason,
     };
   }
-  const evidenceError = result.status === 'completed'
-    ? validateCompletedPhaseEvidence(phase, evidence, project.path, {
-        skipPlanningPrerequisite: input.skipPlanningPrerequisite === true,
-      })
-    : null;
   const nonCompletedError = result.status === 'completed'
     ? null
     : result.error ?? `${phase} 阶段未完成：${result.status}`;
@@ -1280,19 +1318,108 @@ function extractSuperpowersEvidence(content: string): Record<string, unknown> | 
   return null;
 }
 
-function detectSuperpowersPhaseWaitingForUserInput(
-  phase: SuperpowersRuntimePhase,
-  content: string,
-): string | null {
-  if (phase === 'brainstorming' && isVisualCompanionConsentPrompt(content)) {
-    return 'brainstorming 阶段正在等待用户确认是否启用 Visual Companion';
+async function classifyCompletedPhaseOutput(
+  input: PhaseOutputClassifierInput,
+  classifyPhaseOutput?: (input: PhaseOutputClassifierInput) => Promise<PhaseOutputClassification | null>,
+): Promise<PhaseOutputClassification | null> {
+  const classifier: PhaseOutputClassifier = classifyPhaseOutput
+    ? { classify: classifyPhaseOutput }
+    : defaultPhaseOutputClassifier;
+  try {
+    const classification = await classifier.classify(input);
+    return normalizePhaseOutputClassification(classification);
+  } catch (error) {
+    console.warn(`[task-actions] phase output classification failed: ${toErrorMessage(error, 'classification failed')}`);
+    return null;
   }
-  return null;
 }
 
-function isVisualCompanionConsentPrompt(content: string): boolean {
-  return /Some of what we're working on might be easier to explain if I can show it to you in a web browser/u.test(content) &&
-    /Want to try it\?\s*\(Requires opening a local URL\)/u.test(content);
+const defaultPhaseOutputClassifier: PhaseOutputClassifier = {
+  async classify(input) {
+    if (input.phase !== 'brainstorming') return null;
+    if (!isModelChatConfigured()) return null;
+    const text = await invokeConfiguredModelText(buildPhaseOutputClassificationMessages(input));
+    return parsePhaseOutputClassification(text);
+  },
+};
+
+function buildPhaseOutputClassificationMessages(input: PhaseOutputClassifierInput): Array<SystemMessage | HumanMessage> {
+  return [
+    new SystemMessage([
+      '你是 OpenDeepSea 的 Superpowers 阶段状态判定器。',
+      '任务：根据智能体阶段回复判断它是在等待用户输入、遇到阻塞，还是实际失败。',
+      '不要按固定关键词判断；必须基于回复语义和阶段门禁缺失原因判断。',
+      '状态定义：',
+      '- awaiting_user_input：回复向用户提出问题、请求确认、等待选择、等待审批，阶段应暂停等待用户。',
+      '- blocked：回复说明缺少权限、缺少上下文、缺少可执行 agent、环境不可用，且不能自行继续。',
+      '- failed：回复没有在等待用户，也没有明确阻塞，只是没有满足阶段门禁或输出无效。',
+      '只输出 JSON，不要输出 Markdown。',
+      'JSON 结构：{"status":"awaiting_user_input|blocked|failed","reason":"一句中文原因"}',
+    ].join('\n')),
+    new HumanMessage(JSON.stringify({
+      phase: input.phase,
+      action: input.action,
+      task: {
+        id: input.task.id,
+        title: input.task.title,
+        description: input.task.description,
+      },
+      missing_evidence_error: input.missingEvidenceError,
+      agent_output: input.content.slice(-6000),
+    }, null, 2)),
+  ];
+}
+
+function parsePhaseOutputClassification(text: string): PhaseOutputClassification | null {
+  const json = extractFirstJsonObject(text);
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (!isRecord(parsed)) return null;
+    const status = parsed.status === 'awaiting_user_input' ||
+      parsed.status === 'blocked' ||
+      parsed.status === 'failed'
+      ? parsed.status
+      : null;
+    if (!status) return null;
+    return {
+      status,
+      reason: isNonEmptyString(parsed.reason) ? parsed.reason.trim() : defaultPhaseOutputClassificationReason(status),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function normalizePhaseOutputClassification(
+  value: PhaseOutputClassification | null | undefined,
+): PhaseOutputClassification | null {
+  if (!value) return null;
+  if (
+    value.status !== 'awaiting_user_input' &&
+    value.status !== 'blocked' &&
+    value.status !== 'failed'
+  ) {
+    return null;
+  }
+  return {
+    status: value.status,
+    reason: value.reason.trim() || defaultPhaseOutputClassificationReason(value.status),
+  };
+}
+
+function defaultPhaseOutputClassificationReason(status: PhaseOutputStatus): string {
+  if (status === 'awaiting_user_input') return '阶段正在等待用户输入';
+  if (status === 'blocked') return '阶段已阻塞，无法继续';
+  return '阶段输出未满足门禁要求';
+}
+
+function extractFirstJsonObject(text: string): string | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/iu);
+  if (fenced?.[1]) return fenced[1].trim();
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  return start >= 0 && end > start ? text.slice(start, end + 1) : null;
 }
 
 function validateCompletedPhaseEvidence(

@@ -1304,10 +1304,10 @@ test('brainstorming action fails when completed output has no design doc evidenc
   assert.match(String(failedEvent?.payload.error ?? ''), /designDocPath/u);
 });
 
-test('brainstorming action blocks when visual companion consent is waiting for user input', async () => {
+test('brainstorming action blocks when phase status classifier returns awaiting_user_input', async () => {
   const project = projectRepo.create({
-    name: '头脑风暴等待视觉伴随确认',
-    path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorm-visual-consent-')),
+    name: '头脑风暴等待用户输入',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-brainstorm-awaiting-user-')),
   });
   const room = roomRepo.create({ project_id: project.id, name: 'Room' });
   const planner = agentRepo.getByAgentId('planner');
@@ -1316,8 +1316,8 @@ test('brainstorming action blocks when visual companion consent is waiting for u
   const task = taskRepo.create({
     room_id: room.id,
     project_id: project.id,
-    title: '等待视觉伴随确认',
-    description: 'visual companion consent prompt should pause instead of failing evidence gate',
+    title: '等待用户输入',
+    description: 'phase status classifier should pause instead of failing evidence gate',
     priority: 'normal',
     interaction_mode: 'ask_user',
     assigned_agent_id: undefined,
@@ -1331,17 +1331,23 @@ test('brainstorming action blocks when visual companion consent is waiting for u
     action: 'brainstorming',
     runAgent: async () => ({
       status: 'completed',
-      content: [
-        '项目上下文探索完成，下一步按照 brainstorming 要求，因为这是明显的 UI 布局问题，我需要先单独询问是否使用可视化伴随。',
-        'Some of what we\'re working on might be easier to explain if I can show it to you in a web browser. I can put together mockups, diagrams, comparisons, and other visuals as we go. This feature is still new and can be token-intensive. Want to try it? (Requires opening a local URL)',
-      ].join('\n\n'),
+      content: '我需要先确认一个边界：你希望这个面板默认展开，还是点击后展开？',
       error: null,
-      runId: 'run-brainstorming-visual-consent',
+      runId: 'run-brainstorming-awaiting-user',
     }),
+    classifyPhaseOutput: async ({ phase, content, missingEvidenceError }) => {
+      assert.equal(phase, 'brainstorming');
+      assert.match(content, /先确认一个边界/u);
+      assert.match(missingEvidenceError ?? '', /superpowers evidence/u);
+      return {
+        status: 'awaiting_user_input',
+        reason: 'brainstorming 正在等待用户确认交互边界',
+      };
+    },
   });
 
   assert.equal(result.status, 'blocked');
-  assert.match(result.blocked_reason ?? '', /Visual Companion|用户输入|确认/u);
+  assert.match(result.blocked_reason ?? '', /用户确认|交互边界/u);
   const events = taskEventRepo.listByTask(task.id, { limit: 10 });
   assert.equal(events.some((event) =>
     event.payload.action === 'brainstorming' &&
@@ -1352,7 +1358,8 @@ test('brainstorming action blocks when visual companion consent is waiting for u
     event.payload.status === 'blocked'
   );
   assert.equal(blockedEvent?.payload.event_message_id, result.message_id);
-  assert.equal(blockedEvent?.payload.run_id, 'run-brainstorming-visual-consent');
+  assert.equal(blockedEvent?.payload.run_id, 'run-brainstorming-awaiting-user');
+  assert.equal(blockedEvent?.payload.awaiting_user_input, true);
 });
 
 test('writing_plans blocks when design spec evidence file is missing', async () => {
