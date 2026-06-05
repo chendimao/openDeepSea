@@ -14,6 +14,25 @@ export interface Project {
 export type MessageRoutingMode = 'mentions_only' | 'fallback_reply';
 export type SettingsScope = 'system' | 'project' | 'room';
 export type {
+  HistoryRecord,
+  Session,
+  SessionCheckpoint,
+  SessionCompaction,
+  SessionContextManifest,
+  SessionContextSource,
+  SessionDetail,
+  SessionEvidenceEvent,
+  SessionMessage,
+  SessionMode,
+  SessionPhase,
+  SessionPlanItem,
+  SessionRun,
+  SessionRunStatus,
+  SessionStatus,
+  SessionWorkspacePayload,
+  StatusSnapshot,
+} from './session-types.js';
+export type {
   Skill,
   SkillBinding,
   SkillBindingScope,
@@ -1251,6 +1270,20 @@ export type WsServerEvent =
   | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
+  | { type: 'session:updated'; sessionId: string; session: import('./session-types.js').Session }
+  | { type: 'session_message:new'; sessionId: string; message: import('./session-types.js').SessionMessage }
+  | { type: 'session_run:created'; sessionId: string; run: import('./session-types.js').SessionRun }
+  | { type: 'session_run:updated'; sessionId: string; run: import('./session-types.js').SessionRun }
+  | {
+      type: 'session_run:stream';
+      sessionId: string;
+      runId: string;
+      chunk: string;
+      channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      done: boolean;
+    }
+  | { type: 'session_evidence:new'; sessionId: string; event: import('./session-types.js').SessionEvidenceEvent }
+  | { type: 'history_record:new'; projectId: string; record: import('./session-types.js').HistoryRecord }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:created'; task: Task }
   | { type: 'task:deleted'; taskId: string };
@@ -1258,4 +1291,6 @@ export type WsServerEvent =
 export type WsClientEvent =
   | { type: 'subscribe'; roomId: string }
   | { type: 'unsubscribe'; roomId: string }
+  | { type: 'session:subscribe'; sessionId: string }
+  | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'message:send'; roomId: string; content: string; mentions?: string[] };

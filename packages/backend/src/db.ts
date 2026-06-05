@@ -314,6 +314,219 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 CREATE INDEX IF NOT EXISTS idx_agent_runs_room ON agent_runs(room_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON agent_runs(status);
 
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  current_goal TEXT,
+  mode TEXT NOT NULL CHECK (mode IN ('ask', 'plan', 'code', 'debug', 'review')),
+  phase TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('active', 'blocked', 'completed', 'archived', 'failed')),
+  provider TEXT,
+  model TEXT,
+  workspace_path TEXT,
+  worktree_path TEXT,
+  branch_name TEXT,
+  forked_from_session_id TEXT,
+  forked_from_history_record_id TEXT,
+  latest_compaction_id TEXT,
+  latest_context_manifest_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  archived_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (forked_from_session_id) REFERENCES sessions(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_project_status_updated ON sessions(project_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_project_archived ON sessions(project_id, archived_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_forked_from_session ON sessions(forked_from_session_id);
+
+CREATE TABLE IF NOT EXISTS session_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  sender_id TEXT NOT NULL,
+  sender_name TEXT,
+  content TEXT NOT NULL,
+  message_type TEXT NOT NULL DEFAULT 'text',
+  status TEXT NOT NULL DEFAULT 'completed',
+  metadata TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS session_runs (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT,
+  status TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  phase TEXT,
+  prompt TEXT NOT NULL,
+  stdout TEXT NOT NULL DEFAULT '',
+  stderr TEXT NOT NULL DEFAULT '',
+  activity_log TEXT NOT NULL DEFAULT '',
+  error TEXT,
+  acp_session_id TEXT,
+  started_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_runs_session ON session_runs(session_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_session_runs_status ON session_runs(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS session_plan_items (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  parent_id TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'in_progress', 'completed', 'blocked', 'failed', 'skipped')),
+  priority INTEGER NOT NULL DEFAULT 0,
+  source TEXT,
+  evidence_event_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_id) REFERENCES session_plan_items(id) ON DELETE CASCADE,
+  FOREIGN KEY (evidence_event_id) REFERENCES session_evidence_events(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_plan_items_session ON session_plan_items(session_id, priority, created_at);
+
+CREATE TABLE IF NOT EXISTS session_context_manifests (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  run_id TEXT,
+  total_token_estimate INTEGER NOT NULL DEFAULT 0,
+  prompt_hash TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (run_id) REFERENCES session_runs(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS session_context_sources (
+  id TEXT PRIMARY KEY,
+  manifest_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  source_type TEXT NOT NULL CHECK (
+    source_type IN ('agents', 'rtk', 'compact', 'history', 'memory', 'file', 'diff', 'user_message', 'system', 'tool_result')
+  ),
+  source_ref TEXT,
+  title TEXT NOT NULL,
+  included INTEGER NOT NULL CHECK (included IN (0, 1)),
+  priority INTEGER NOT NULL DEFAULT 0,
+  token_estimate INTEGER NOT NULL DEFAULT 0,
+  reason TEXT,
+  content_hash TEXT,
+  excerpt TEXT,
+  metadata TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (manifest_id) REFERENCES session_context_manifests(id) ON DELETE CASCADE,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_context_sources_manifest ON session_context_sources(manifest_id, priority);
+
+CREATE TABLE IF NOT EXISTS session_compactions (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  strategy TEXT NOT NULL CHECK (strategy IN ('manual', 'focus', 'aggressive', 'conservative', 'auto_suggested')),
+  focus_prompt TEXT,
+  preview_summary TEXT NOT NULL,
+  applied_summary TEXT,
+  retained_refs TEXT NOT NULL DEFAULT '[]',
+  dropped_refs TEXT NOT NULL DEFAULT '[]',
+  risk_notes TEXT,
+  user_edited INTEGER NOT NULL DEFAULT 0 CHECK (user_edited IN (0, 1)),
+  status TEXT NOT NULL CHECK (status IN ('previewed', 'applied', 'superseded', 'discarded', 'failed')),
+  created_at INTEGER NOT NULL,
+  applied_at INTEGER,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_compactions_session ON session_compactions(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS session_evidence_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  event_type TEXT NOT NULL CHECK (
+    event_type IN (
+      'message',
+      'tool_call',
+      'tool_result',
+      'file_read',
+      'file_diff',
+      'test',
+      'build',
+      'browser_check',
+      'review',
+      'commit',
+      'compact',
+      'checkpoint',
+      'blocker',
+      'new',
+      'resume',
+      'fork',
+      'status'
+    )
+  ),
+  severity TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'error', 'critical')),
+  source_run_id TEXT,
+  source_message_id TEXT,
+  title TEXT NOT NULL,
+  summary TEXT,
+  payload TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_run_id) REFERENCES session_runs(id) ON DELETE SET NULL,
+  UNIQUE(session_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_session_evidence_session ON session_evidence_events(session_id, seq);
+
+CREATE TABLE IF NOT EXISTS session_checkpoints (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  git_head TEXT,
+  branch_name TEXT,
+  diff_summary TEXT,
+  evidence_event_id TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (evidence_event_id) REFERENCES session_evidence_events(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_checkpoints_session ON session_checkpoints(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS history_records (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('completed', 'blocked', 'failed', 'archived')),
+  mode TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER NOT NULL,
+  key_decisions TEXT NOT NULL DEFAULT '[]',
+  changed_files TEXT NOT NULL DEFAULT '[]',
+  verification_summary TEXT,
+  commit_refs TEXT NOT NULL DEFAULT '[]',
+  resume_brief TEXT NOT NULL,
+  compact_count INTEGER NOT NULL DEFAULT 0,
+  fork_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  UNIQUE(session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_history_project ON history_records(project_id, ended_at DESC);
+CREATE INDEX IF NOT EXISTS idx_history_session ON history_records(session_id);
+
 CREATE TABLE IF NOT EXISTS agent_run_links (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,

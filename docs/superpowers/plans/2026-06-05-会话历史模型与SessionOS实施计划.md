@@ -132,7 +132,7 @@ export type SessionWsServerEvent =
 - Test: `packages/backend/src/session-types.test.ts`
 - Test: `packages/backend/src/repos/sessions.test.ts`
 
-- [ ] **Step 1: 新增后端 session 类型**
+- [x] **Step 1: 新增后端 session 类型**
 
 Create `packages/backend/src/session-types.ts` with:
 
@@ -403,7 +403,7 @@ export interface SessionWorkspacePayload {
 }
 ```
 
-- [ ] **Step 2: 在 `packages/backend/src/types.ts` 导出 session 类型和 WS event**
+- [x] **Step 2: 在 `packages/backend/src/types.ts` 导出 session 类型和 WS event**
 
 Append near existing type exports:
 
@@ -446,7 +446,7 @@ Extend `WsServerEvent` and `WsClientEvent`:
   | { type: 'session:unsubscribe'; sessionId: string };
 ```
 
-- [ ] **Step 3: 新增 SQLite tables**
+- [x] **Step 3: 新增 SQLite tables**
 
 Modify `packages/backend/src/db.ts` after `agent_runs` indexes and before workflow tables. Use the schema from the spec, with these additional indexes:
 
@@ -463,7 +463,7 @@ CREATE INDEX IF NOT EXISTS idx_history_project ON history_records(project_id, en
 CREATE INDEX IF NOT EXISTS idx_history_session ON history_records(session_id);
 ```
 
-- [ ] **Step 4: 写 schema smoke test**
+- [x] **Step 4: 写 schema smoke test**
 
 Create `packages/backend/src/repos/sessions.test.ts` with an initial schema test:
 
@@ -512,7 +512,7 @@ test('session schema creates all new tables', () => {
 });
 ```
 
-- [ ] **Step 5: 运行后端 schema test**
+- [x] **Step 5: 运行后端 schema test**
 
 Run:
 
@@ -522,7 +522,7 @@ rtk node --import tsx --test packages/backend/src/repos/sessions.test.ts
 
 Expected: PASS。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 rtk git add packages/backend/src/session-types.ts packages/backend/src/types.ts packages/backend/src/db.ts packages/backend/src/repos/sessions.test.ts
