@@ -1839,8 +1839,9 @@ function parseTaskEventsLimit(value: unknown): number {
 }
 
 function createSubagentRunTaskEvents(taskId: string): TaskEvent[] {
-  return agentRunLinkRepo.listByTask(taskId).map((link) => {
+  return agentRunLinkRepo.listByTask(taskId).flatMap((link) => {
     const childRun = agentRunRepo.get(link.child_run_id);
+    if (!childRun) return [];
     const timelineType = childRun?.status === 'failed'
       ? 'subagent_failed'
       : childRun?.status === 'completed'

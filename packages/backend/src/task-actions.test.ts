@@ -17,6 +17,7 @@ const { taskRepo } = await import('./repos/tasks.js');
 const { buildSuperpowersRoutingPrompt } = await import('./workflows/prompts.js');
 const { parseSuperpowersRouting } = await import('./workflows/superpowers-routing.js');
 const { startTaskAction } = await import('./task-actions.js');
+const { wsHub } = await import('./ws-hub.js');
 
 test('parseSuperpowersRouting extracts valid fenced routing json', () => {
   const result = parseSuperpowersRouting([
@@ -1597,34 +1598,44 @@ test('subagent_execution creates native subagent run links for implementation an
     implementationPlanPath: 'docs/superpowers/plans/native-subagent-plan.md',
   });
   const runIds: string[] = [];
+  const linkCountsAfterRunCreated: number[] = [];
+  const events = captureRoomEvents(room.id);
 
-  const result = await startTaskAction({
-    roomId: room.id,
-    taskId: task.id,
-    action: 'subagent_execution',
-    runAgent: async ({ agent, prompt }) => {
-      const run = agentRunRepo.create({
-        room_id: room.id,
-        room_agent_id: agent.id,
-        agent_id: agent.agent_id,
-        backend: agent.acp_backend ?? 'codex',
-        prompt,
-        task_id: task.id,
-      });
-      agentRunRepo.updateStatus(run.id, 'completed');
-      runIds.push(run.id);
-      return {
-        status: 'completed',
-        runId: run.id,
-        content: '```json\n{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"ok"}]}}\n```',
-        error: null,
-      };
-    },
-  });
+  let result: Awaited<ReturnType<typeof startTaskAction>>;
+  try {
+    result = await startTaskAction({
+      roomId: room.id,
+      taskId: task.id,
+      action: 'subagent_execution',
+      runAgent: async ({ agent, prompt, onRunCreated }) => {
+        const run = agentRunRepo.create({
+          room_id: room.id,
+          room_agent_id: agent.id,
+          agent_id: agent.agent_id,
+          backend: agent.acp_backend ?? 'codex',
+          prompt,
+          task_id: task.id,
+        });
+        runIds.push(run.id);
+        await onRunCreated?.(run);
+        linkCountsAfterRunCreated.push(agentRunLinkRepo.listByTask(task.id).length);
+        agentRunRepo.updateStatus(run.id, 'completed');
+        return {
+          status: 'completed',
+          runId: run.id,
+          content: '```json\n{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"ok"}]}}\n```',
+          error: null,
+        };
+      },
+    });
+  } finally {
+    events.restore();
+  }
 
   assert.equal(result.status, 'completed');
   assert.deepEqual(result.run_ids, runIds);
   assert.equal(runIds.length, 4);
+  assert.deepEqual(linkCountsAfterRunCreated, [0, 1, 2, 3]);
   const links = agentRunLinkRepo.listByTask(task.id);
   assert.deepEqual(
     links.map((link) => link.role),
@@ -1632,6 +1643,86 @@ test('subagent_execution creates native subagent run links for implementation an
   );
   assert.deepEqual(links.map((link) => link.parent_run_id), [runIds[0], runIds[0], runIds[0]]);
   assert.deepEqual(links.map((link) => link.child_run_id), runIds.slice(1));
+  assert.equal(
+    events.some((event) =>
+      event.type === 'task_event:new' &&
+      event.event.payload.timeline_type === 'subagent_started'
+    ),
+    true,
+  );
+  assert.equal(
+    events.some((event) =>
+      event.type === 'task_event:new' &&
+      event.event.payload.timeline_type === 'subagent_completed'
+    ),
+    true,
+  );
+});
+
+test('subagent_execution fails when a native child run has no run id', async () => {
+  const project = projectRepo.create({
+    name: '原生子代理缺少 run id',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-native-subagent-missing-run-id-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(frontend);
+  assert.ok(reviewer);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: reviewer.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '原生子代理缺 run id',
+    description: '子 run 没有 id 时必须失败',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    source_message_id: null,
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/native-subagent-missing-run-id-plan.md',
+  });
+  let callCount = 0;
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async ({ agent, prompt, onRunCreated }) => {
+      callCount += 1;
+      if (callCount === 1) {
+        const run = agentRunRepo.create({
+          room_id: room.id,
+          room_agent_id: agent.id,
+          agent_id: agent.agent_id,
+          backend: agent.acp_backend ?? 'codex',
+          prompt,
+          task_id: task.id,
+        });
+        await onRunCreated?.(run);
+        agentRunRepo.updateStatus(run.id, 'completed');
+        return {
+          status: 'completed',
+          runId: run.id,
+          content: '```json\n{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"ok"}]}}\n```',
+          error: null,
+        };
+      }
+      return {
+        status: 'completed',
+        content: '```json\n{"superpowers":{"tddEvidence":[{"stage":"GREEN","command":"node --test","passed":true,"summary":"ok"}]}}\n```',
+        error: null,
+      };
+    },
+  });
+
+  assert.equal(result.status, 'failed');
+  const failedEvent = taskEventRepo.listByTask(task.id).find((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /requires child run id/u);
 });
 
 test('subagent_execution action dispatches tdd_execute after completed implementation plan evidence', async () => {
@@ -1893,6 +1984,19 @@ async function withLegacySubagentExecution<T>(fn: () => Promise<T>): Promise<T> 
       process.env.OPENCLAW_NATIVE_SUBAGENT_EXECUTION = previousNativeSubagentExecution;
     }
   }
+}
+
+function captureRoomEvents(roomId: string): import('./types.js').WsServerEvent[] & { restore: () => void } {
+  const original = wsHub.broadcast.bind(wsHub);
+  const events: import('./types.js').WsServerEvent[] & { restore: () => void } = [] as never;
+  wsHub.broadcast = ((targetRoomId, event) => {
+    if (targetRoomId === roomId) events.push(event);
+    return original(targetRoomId, event);
+  }) as typeof wsHub.broadcast;
+  events.restore = () => {
+    wsHub.broadcast = original as typeof wsHub.broadcast;
+  };
+  return events;
 }
 
 function writeProjectFile(projectPath: string, relativePath: string): void {

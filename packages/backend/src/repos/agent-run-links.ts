@@ -13,6 +13,7 @@ export interface AgentRunLinkCreateInput {
 
 export const agentRunLinkRepo = {
   create(input: AgentRunLinkCreateInput): AgentRunLink {
+    validateAgentRunLinkInput(input);
     const id = nanoid();
     const createdAt = now();
     db.prepare(
@@ -48,3 +49,24 @@ export const agentRunLinkRepo = {
       .all(taskId) as AgentRunLink[];
   },
 };
+
+function validateAgentRunLinkInput(input: AgentRunLinkCreateInput): void {
+  const parentRun = getRunReference(input.parent_run_id);
+  if (!parentRun) throw new Error(`parent run not found: ${input.parent_run_id}`);
+  const childRun = getRunReference(input.child_run_id);
+  if (!childRun) throw new Error(`child run not found: ${input.child_run_id}`);
+  if (parentRun.room_id !== input.room_id || childRun.room_id !== input.room_id) {
+    throw new Error('agent run link room mismatch');
+  }
+  if (input.task_id) {
+    if (parentRun.task_id !== input.task_id || childRun.task_id !== input.task_id) {
+      throw new Error('agent run link task mismatch');
+    }
+  }
+}
+
+function getRunReference(runId: string): { id: string; room_id: string; task_id: string | null } | undefined {
+  return db
+    .prepare('SELECT id, room_id, task_id FROM agent_runs WHERE id = ?')
+    .get(runId) as { id: string; room_id: string; task_id: string | null } | undefined;
+}

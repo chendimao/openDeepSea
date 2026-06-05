@@ -433,6 +433,7 @@ export function RoomWorkbench({ projectId, roomId }: { projectId: string; roomId
         );
         if (event.run.task_id) {
           queryClient.invalidateQueries({ queryKey: ['task-executors', event.run.task_id] });
+          queryClient.invalidateQueries({ queryKey: ['room-task-events', roomId] });
         }
         if (event.type === 'agent_run:updated' && isTerminalAgentRunStatus(event.run.status)) {
           finalizedStreamRunIds.current.add(event.run.id);
