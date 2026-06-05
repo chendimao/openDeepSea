@@ -6,7 +6,8 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { api } from '../lib/api';
 import type { SessionWorkspacePayload } from '../lib/types';
-import { runSessionCommand, SessionWorkspacePage } from './SessionWorkspacePage';
+import type { WsServerEvent } from '../lib/ws';
+import { runSessionCommand, SessionWorkspacePage, shouldRefreshSessionWorkspace } from './SessionWorkspacePage';
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
@@ -75,6 +76,42 @@ test('runSessionCommand treats empty history command as local no-op', async () =
   } finally {
     api.sendSessionMessage = originalSendSessionMessage;
   }
+});
+
+test('shouldRefreshSessionWorkspace skips unfinished stream events', () => {
+  const event = {
+    type: 'session_run:stream',
+    sessionId: 'session-1',
+    runId: 'run-1',
+    chunk: 'partial',
+    channel: 'answer',
+    done: false,
+  } as WsServerEvent;
+
+  assert.equal(shouldRefreshSessionWorkspace(event), false);
+});
+
+test('shouldRefreshSessionWorkspace refreshes completed stream events', () => {
+  const event = {
+    type: 'session_run:stream',
+    sessionId: 'session-1',
+    runId: 'run-1',
+    chunk: '',
+    channel: 'answer',
+    done: true,
+  } as WsServerEvent;
+
+  assert.equal(shouldRefreshSessionWorkspace(event), true);
+});
+
+test('shouldRefreshSessionWorkspace refreshes session run updates', () => {
+  const event = {
+    type: 'session_run:updated',
+    sessionId: 'session-1',
+    run: { id: 'run-1' },
+  } as WsServerEvent;
+
+  assert.equal(shouldRefreshSessionWorkspace(event), true);
 });
 
 function createCommandPayload(): SessionWorkspacePayload {

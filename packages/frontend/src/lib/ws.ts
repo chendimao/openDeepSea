@@ -91,7 +91,8 @@ class RoomSocket {
       }
     });
     ws.addEventListener('close', () => {
-      this.ws = null;
+      if (this.ws === ws) this.ws = null;
+      if (this.subscribed.size === 0 && this.subscribedSessions.size === 0) return;
       this.retry++;
       const delay = Math.min(1000 * 2 ** this.retry, 10000);
       this.retryTimer = setTimeout(() => this.connect(), delay);
@@ -118,6 +119,7 @@ class RoomSocket {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'unsubscribe', roomId }));
     }
+    this.closeIfIdle();
   }
 
   subscribeSession(sessionId: string): void {
@@ -134,12 +136,26 @@ class RoomSocket {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'session:unsubscribe', sessionId }));
     }
+    this.closeIfIdle();
   }
 
   destroy(): void {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.ws?.close();
     this.ws = null;
+  }
+
+  private closeIfIdle(): void {
+    if (this.subscribed.size > 0 || this.subscribedSessions.size > 0) return;
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    if (this.ws?.readyState === WebSocket.CONNECTING || this.ws?.readyState === WebSocket.OPEN) {
+      const socket = this.ws;
+      this.ws = null;
+      socket.close();
+    }
   }
 }
 

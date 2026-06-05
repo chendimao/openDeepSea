@@ -42,7 +42,7 @@ export function SessionWorkspacePage(): JSX.Element {
 
   useEffect(() => {
     return sessionSocket.on((event: WsServerEvent) => {
-      if (!isSessionWorkspaceEvent(event)) return;
+      if (!shouldRefreshSessionWorkspace(event)) return;
       void queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] });
     });
   }, [activeProjectId, queryClient]);
@@ -180,6 +180,12 @@ export function SessionWorkspacePage(): JSX.Element {
     )}
     </>
   );
+}
+
+export function shouldRefreshSessionWorkspace(event: WsServerEvent): boolean {
+  if (!isSessionWorkspaceEvent(event)) return false;
+  if (event.type === 'session_run:stream' && !event.done) return false;
+  return true;
 }
 
 function isSessionWorkspaceEvent(event: WsServerEvent): boolean {
