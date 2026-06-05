@@ -25,6 +25,7 @@ import { buildContextManifestDraft } from './session-context.js';
 import { runSessionAgent } from './session-runtime.js';
 import { buildHistorySummary } from './session-summary.js';
 import { buildStatusSnapshot } from './session-status.js';
+import { runRegistry } from './run-registry.js';
 import {
   buildSessionBottomStatus,
   buildSessionDiffRows,
@@ -32,6 +33,7 @@ import {
   buildSessionToolRows,
   resolveSessionWorkspacePath,
 } from './session-workspace-view-model.js';
+import { wsHub } from './ws-hub.js';
 import type {
   HistoryRecord,
   Project,
@@ -71,6 +73,10 @@ sessionRouter.post('/sessions/:sessionId/messages', createSessionMessage);
 sessionRouter.post('/sessions/:sessionId/new', runNewCommand);
 sessionRouter.post('/sessions/:sessionId/compact/preview', previewSessionCompact);
 sessionRouter.post('/sessions/:sessionId/compact/apply', applySessionCompact);
+sessionRouter.post('/sessions/:sessionId/compact/discard', discardSessionCompact);
+sessionRouter.patch('/sessions/:sessionId/contract', updateSessionContract);
+sessionRouter.post('/session-runs/:runId/cancel', cancelSessionRun);
+sessionRouter.post('/session-runs/:runId/retry', retrySessionRun);
 sessionRouter.get('/sessions/:sessionId/status', getSessionStatus);
 sessionRouter.get('/sessions/:sessionId/context', getSessionContext);
 sessionRouter.get('/sessions/:sessionId/evidence', listSessionEvidence);
@@ -161,6 +167,32 @@ function updateSession(req: { params: { sessionId: string }; body: unknown }, re
     return;
   }
   res.json(sessionRepo.update(session.id, parsed.data));
+}
+
+function updateSessionContract(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = z.object({
+    scope: z.string().nullable().optional(),
+    risks: z.array(z.string().trim().min(1)).optional(),
+    acceptanceCriteria: z.array(z.string().trim().min(1)).optional(),
+  }).strict().safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const contract = sessionContractRepo.upsert(session, parsed.data);
+  const event = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: 'Contract updated',
+    payload: { contract_updated: true },
+  });
+  wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  res.json(contract);
 }
 
 function createSessionMessage(req: { params: { sessionId: string }; body: unknown }, res: Response): void {
@@ -312,6 +344,37 @@ function applySessionCompact(req: { params: { sessionId: string }; body?: unknow
   res.json(applied);
 }
 
+function discardSessionCompact(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = z.object({ compaction_id: z.string().min(1) }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const compaction = sessionCompactionRepo.get(parsed.data.compaction_id);
+  if (!compaction || compaction.session_id !== session.id) {
+    res.status(404).json({ error: 'compaction not found' });
+    return;
+  }
+  const discarded = sessionCompactionRepo.discard(compaction.id);
+  if (!discarded || discarded.status !== 'discarded') {
+    res.status(409).json({ error: 'compaction is not previewed' });
+    return;
+  }
+  const event = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'compact',
+    title: 'Compact discarded',
+    payload: { compaction_id: compaction.id },
+  });
+  wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  res.json(discarded);
+}
+
 function getSessionStatus(req: { params: { sessionId: string } }, res: Response): void {
   const session = sessionRepo.get(req.params.sessionId);
   if (!session) {
@@ -374,6 +437,77 @@ async function createSessionCheckpoint(req: { params: { sessionId: string }; bod
     payload: { checkpoint_id: checkpoint.id },
   });
   res.status(201).json(sessionCheckpointRepo.updateEvidenceEvent(checkpoint.id, evidence.id));
+}
+
+function cancelSessionRun(req: { params: { runId: string } }, res: Response): void {
+  const run = sessionRunRepo.get(req.params.runId);
+  if (!run) {
+    res.status(404).json({ error: 'run not found' });
+    return;
+  }
+  if (!['queued', 'running', 'retrying'].includes(run.status)) {
+    res.status(409).json({ error: 'run is not active' });
+    return;
+  }
+  runRegistry.cancel(run.id);
+  const updated = sessionRunRepo.updateStatus(run.id, 'cancelled', { error: 'Session run cancelled' });
+  if (!updated) {
+    res.status(404).json({ error: 'run not found' });
+    return;
+  }
+  wsHub.broadcastSession(updated.session_id, {
+    type: 'session_run:updated',
+    sessionId: updated.session_id,
+    run: updated,
+  });
+  wsHub.broadcastSession(updated.session_id, {
+    type: 'session_run:stream',
+    sessionId: updated.session_id,
+    runId: updated.id,
+    chunk: '',
+    channel: 'answer',
+    done: true,
+  });
+  const event = sessionEvidenceRepo.create({
+    session_id: updated.session_id,
+    event_type: 'status',
+    title: 'Run cancelled',
+    payload: { run_id: updated.id },
+  });
+  wsHub.broadcastSession(updated.session_id, { type: 'session_evidence:new', sessionId: updated.session_id, event });
+  res.json(updated);
+}
+
+function retrySessionRun(req: { params: { runId: string } }, res: Response): void {
+  const run = sessionRunRepo.get(req.params.runId);
+  if (!run) {
+    res.status(404).json({ error: 'run not found' });
+    return;
+  }
+  void runSessionAgent({
+    sessionId: run.session_id,
+    prompt: run.prompt,
+    provider: run.provider,
+    model: run.model,
+  }).catch((error) => {
+    const event = sessionEvidenceRepo.create({
+      session_id: run.session_id,
+      event_type: 'blocker',
+      severity: 'error',
+      title: 'Session retry failed',
+      summary: (error as Error).message,
+      payload: { source_run_id: run.id },
+    });
+    wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
+  });
+  const event = sessionEvidenceRepo.create({
+    session_id: run.session_id,
+    event_type: 'status',
+    title: 'Run retry requested',
+    payload: { source_run_id: run.id },
+  });
+  wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
+  res.status(202).json({ retried: true, source_run_id: run.id });
 }
 
 function forkSession(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {

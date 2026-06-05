@@ -9,7 +9,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-se
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
-const { sessionRepo, sessionMessageRepo } = await import('./repos/sessions.js');
+const { sessionRepo, sessionMessageRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { historyRecordRepo } = await import('./repos/history-records.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 const { router } = await import('./routes.js');
@@ -314,4 +314,88 @@ test('GET project history records filters by query status and mode', async () =>
   assert.equal(res.status, 200);
   const records = await res.json() as Array<{ title: string }>;
   assert.deepEqual(records.map((record) => record.title), ['补齐后端接入']);
+});
+
+test('PATCH session contract persists scope risks and acceptance criteria', async () => {
+  const project = projectRepo.create({
+    name: 'contract route',
+    path: mkdtempSync(join(tmpdir(), 'session-contract-route-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Contract Route' });
+
+  const res = await request(`/api/sessions/${session.id}/contract`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      scope: '只改后端接入',
+      risks: ['重试可能重复执行'],
+      acceptanceCriteria: ['页面不再显示 mock 数据'],
+    }),
+  });
+
+  assert.equal(res.status, 200);
+  const contract = await res.json() as { scope: string; risks: string[]; acceptanceCriteria: string[] };
+  assert.equal(contract.scope, '只改后端接入');
+  assert.deepEqual(contract.risks, ['重试可能重复执行']);
+  assert.deepEqual(contract.acceptanceCriteria, ['页面不再显示 mock 数据']);
+});
+
+test('POST compact discard marks previewed compaction as discarded', async () => {
+  const project = projectRepo.create({
+    name: 'discard route',
+    path: mkdtempSync(join(tmpdir(), 'session-discard-route-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Discard Route' });
+  const previewRes = await request(`/api/sessions/${session.id}/compact/preview`, { method: 'POST' });
+  const preview = await previewRes.json() as { id: string };
+
+  const discardRes = await request(`/api/sessions/${session.id}/compact/discard`, {
+    method: 'POST',
+    body: JSON.stringify({ compaction_id: preview.id }),
+  });
+
+  assert.equal(discardRes.status, 200);
+  const discarded = await discardRes.json() as { status: string };
+  assert.equal(discarded.status, 'discarded');
+});
+
+test('POST session run cancel cancels an active run', async () => {
+  const project = projectRepo.create({
+    name: 'cancel route',
+    path: mkdtempSync(join(tmpdir(), 'session-cancel-route-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Cancel Route' });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    provider: 'codex',
+    mode: 'code',
+    prompt: 'long run',
+  });
+
+  const res = await request(`/api/session-runs/${run.id}/cancel`, { method: 'POST' });
+
+  assert.equal(res.status, 200);
+  const body = await res.json() as { status: string };
+  assert.equal(body.status, 'cancelled');
+  assert.equal(sessionRunRepo.get(run.id)?.status, 'cancelled');
+});
+
+test('POST session run retry starts runtime with original prompt', async () => {
+  capturedPrompts.length = 0;
+  const project = projectRepo.create({
+    name: 'retry route',
+    path: mkdtempSync(join(tmpdir(), 'session-retry-route-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Retry Route', provider: 'codex' });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    provider: 'codex',
+    mode: 'code',
+    prompt: 'retry this prompt',
+  });
+
+  const res = await request(`/api/session-runs/${run.id}/retry`, { method: 'POST' });
+
+  assert.equal(res.status, 202);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(capturedPrompts.at(-1) ?? '', /retry this prompt/);
 });
