@@ -1711,7 +1711,7 @@ rtk git commit -m "feat(frontend): 新增SessionOS视觉基础"
 - Test: `packages/frontend/src/session-ui/SessionShell.test.tsx`
 - Test: `packages/frontend/src/session-ui/InspectorPanel.test.tsx`
 
-- [ ] **Step 1: Build `SessionShell`**
+- [x] **Step 1: Build `SessionShell`**
 
 Create `SessionShell.tsx`:
 
@@ -1745,7 +1745,7 @@ export function SessionShell({
 }
 ```
 
-- [ ] **Step 2: Build Command Bar and History Rail**
+- [x] **Step 2: Build Command Bar and History Rail**
 
 `SessionCommandBar.tsx` must render:
 
@@ -1765,7 +1765,7 @@ export function SessionShell({
 - changed files count;
 - Resume / Fork / Copy Brief actions.
 
-- [ ] **Step 3: Build Active Session surface**
+- [x] **Step 3: Build Active Session surface**
 
 `ActiveSessionSurface.tsx` must render:
 
@@ -1777,7 +1777,7 @@ export function SessionShell({
 
 `SessionTranscript.tsx` must group tool/run/evidence rows and collapse raw output by default.
 
-- [ ] **Step 4: Build Inspector tabs**
+- [x] **Step 4: Build Inspector tabs**
 
 `InspectorPanel.tsx` uses Radix Tabs or local buttons and renders:
 
@@ -1789,7 +1789,7 @@ export function SessionShell({
 
 Default tab is Status.
 
-- [ ] **Step 5: Build workflow surfaces**
+- [x] **Step 5: Build workflow surfaces**
 
 Create:
 
@@ -1797,7 +1797,7 @@ Create:
 - `ResumeBriefPanel.tsx` with resume brief sections and Copy / Resume / Fork.
 - `ForkSessionDialog.tsx` with source relation and provider/model selectors.
 
-- [ ] **Step 6: Render tests**
+- [x] **Step 6: Render tests**
 
 `SessionShell.test.tsx` must assert:
 
@@ -1812,7 +1812,7 @@ assert.doesNotMatch(html, /task-workspace/);
 assert.doesNotMatch(html, /chat-panel/);
 ```
 
-- [ ] **Step 7: Run component tests**
+- [x] **Step 7: Run component tests**
 
 Run:
 
@@ -1822,7 +1822,7 @@ rtk node --import tsx --test packages/frontend/src/session-ui/SessionShell.test.
 
 Expected: PASS。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 rtk git add packages/frontend/src/session-ui
