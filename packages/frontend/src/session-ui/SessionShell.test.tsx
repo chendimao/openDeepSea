@@ -5,17 +5,25 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView } from './SessionShellView';
 
-test('SessionShell renders operations console without old workflow class names', () => {
+test('SessionShell renders Deepsea command center modules', () => {
   const html = renderToStaticMarkup(
     <SessionShellView payload={createPayload()} onSendMessage={() => undefined} onCommand={() => undefined} />,
   );
 
   assert.match(html, /Session Operations Console/);
+  assert.match(html, /Deepsea Command/);
+  assert.match(html, /会话历史/);
+  assert.match(html, /3. 对话记录/);
+  assert.match(html, /当前状态/);
+  assert.match(html, /目标契约/);
+  assert.match(html, /代理运行/);
+  assert.match(html, /工具调用/);
+  assert.match(html, /会话计划/);
+  assert.match(html, /待提交变更/);
+  assert.match(html, /data-command="\/new"/);
+  assert.match(html, /data-command="\/compact"/);
+  assert.match(html, /data-command="\/status"/);
   assert.match(html, /History Records/);
-  assert.match(html, /Active Session/);
-  assert.match(html, /Status/);
-  assert.match(html, /Context/);
-  assert.match(html, /Evidence/);
   assert.doesNotMatch(html, /task-workspace/);
   assert.doesNotMatch(html, /chat-panel/);
 });

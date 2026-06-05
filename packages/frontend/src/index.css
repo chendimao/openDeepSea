@@ -679,6 +679,15 @@
     padding: 8px 0 0;
   }
 
+  .app-shell--session .shell-public-header {
+    display: none;
+  }
+
+  .app-shell--session .app-grid,
+  .app-shell--session .app-main {
+    padding: 0;
+  }
+
   .app-grid--room {
     grid-template-columns: minmax(0, 1fr);
     padding: 0;

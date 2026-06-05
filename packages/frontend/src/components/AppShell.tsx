@@ -40,6 +40,9 @@ export function AppShell({
   const projectId = getProjectId(location.pathname);
   const isRoomRoute = Boolean(getRoomId(location.pathname));
   const isDevelopmentRoute = location.pathname === '/' || location.pathname.startsWith('/projects/');
+  const isSessionWorkspaceRoute = location.pathname === '/' ||
+    /^\/projects\/[^/]+\/?$/.test(location.pathname) ||
+    /^\/projects\/[^/]+\/sessions\/[^/]+\/?$/.test(location.pathname);
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -67,7 +70,7 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]">
+    <div className={cn('flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]', isSessionWorkspaceRoute && 'app-shell--session')}>
       {themeStyle === 'apple' && <div className="liquid-backdrop" aria-hidden="true" />}
       <header className="shell-public-header" aria-label={t('shell.sidebar.aria')}>
         <NavLink to="/" className="shell-brand" aria-label={t('app.name')}>
