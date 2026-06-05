@@ -3,6 +3,7 @@ import {
   AtSign,
   Bell,
   Brain,
+  Bot,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -12,8 +13,10 @@ import {
   GitFork,
   Hash,
   History,
+  Home,
   Info,
   MessageSquare,
+  MessageCircle,
   Minimize2,
   MoreVertical,
   Plus,
@@ -73,7 +76,6 @@ export function SessionShellView({
     <section className="session-shell deepsea-shell" aria-label="Session Operations Console">
       <TopCommandBar
         payload={payload}
-        activeRun={activeRun}
         onCommand={onCommand}
         forkTarget={forkTarget}
       />
@@ -91,24 +93,21 @@ export function SessionShellView({
         />
         <IntegratedInspector payload={payload} activeRun={activeRun} onCommand={onCommand} />
       </main>
+      <BottomStatusBar payload={payload} activeRun={activeRun} />
     </section>
   );
 }
 
 function TopCommandBar({
   payload,
-  activeRun,
   onCommand,
   forkTarget,
 }: {
   payload: SessionWorkspacePayload;
-  activeRun: SessionRun | null;
   onCommand: (command: string) => void;
   forkTarget?: string;
 }): JSX.Element {
   const session = payload.activeSession.session;
-  const provider = payload.status.provider.backend ?? session.provider ?? activeRun?.provider ?? 'codex';
-  const model = payload.status.provider.model ?? session.model ?? activeRun?.model ?? 'gpt-test';
   const pressure = contextPressurePercent(payload.status.context.pressure);
 
   return (
@@ -125,6 +124,29 @@ function TopCommandBar({
         </div>
       </div>
 
+      <nav className="deepsea-shell-nav" aria-label="项目首页菜单">
+        <a href="/">
+          <Home aria-hidden="true" />
+          <span>Sessions</span>
+        </a>
+        <a href="/chat">
+          <MessageCircle aria-hidden="true" />
+          <span>聊天</span>
+        </a>
+        <a href="/agents">
+          <Bot aria-hidden="true" />
+          <span>智能体</span>
+        </a>
+        <a href="/skills">
+          <ShieldCheck aria-hidden="true" />
+          <span>技能</span>
+        </a>
+        <a href="/files">
+          <FileText aria-hidden="true" />
+          <span>资源库</span>
+        </a>
+      </nav>
+
       <div className="deepsea-topbar__center">
         <div className="deepsea-command-group" aria-label="Session command actions">
           <CommandPill label="新建" kbd="⌘N" icon={Plus} command="/new" onCommand={onCommand} />
@@ -137,14 +159,6 @@ function TopCommandBar({
             onCommand={onCommand}
           />
           <CommandPill label="继续执行" kbd="⌘R" icon={RefreshCcw} command="/status" onCommand={onCommand} primary />
-        </div>
-        <div className="deepsea-model-pill">
-          <span className="deepsea-model-pill__model">
-            <Brain aria-hidden="true" />
-            <span className="deepsea-mono">{formatProviderModel(provider, model)}</span>
-          </span>
-          <span className="deepsea-online-dot" />
-          <strong>在线</strong>
         </div>
       </div>
 
@@ -162,6 +176,56 @@ function TopCommandBar({
         </div>
       </div>
     </header>
+  );
+}
+
+function BottomStatusBar({
+  payload,
+  activeRun,
+}: {
+  payload: SessionWorkspacePayload;
+  activeRun: SessionRun | null;
+}): JSX.Element {
+  const session = payload.activeSession.session;
+  const pressure = contextPressurePercent(payload.status.context.pressure);
+  const verification = payload.status.verification;
+  const changedFiles = payload.status.git.changedFileCount;
+  const runStatus = activeRun?.status ?? payload.status.status;
+  const branch = payload.status.git.branchName ?? session.branch_name ?? 'no-branch';
+
+  return (
+    <footer className="deepsea-bottom-status" aria-label="Session status bar">
+      <div className="deepsea-bottom-status__group">
+        <span className="deepsea-bottom-status__brand">{payload.project.name}</span>
+        <span className="deepsea-bottom-status__path deepsea-mono">{session.workspace_path ?? payload.project.path}</span>
+      </div>
+      <div className="deepsea-bottom-status__group">
+        <span className="deepsea-status-dot" data-tone={runStatus === 'failed' ? 'danger' : 'ok'} />
+        <span>run</span>
+        <strong>{runStatus}</strong>
+      </div>
+      <div className="deepsea-bottom-status__group">
+        <GitFork aria-hidden="true" />
+        <span className="deepsea-mono">{branch}</span>
+      </div>
+      <div className="deepsea-bottom-status__group">
+        <FileText aria-hidden="true" />
+        <span>{changedFiles} diff</span>
+      </div>
+      <div className="deepsea-bottom-status__group">
+        <CheckCircle2 aria-hidden="true" />
+        <span>verify</span>
+        <strong>{verification.status}</strong>
+      </div>
+      <div className="deepsea-bottom-status__group">
+        <span>ctx</span>
+        <strong>{pressure}%</strong>
+      </div>
+      <div className="deepsea-bottom-status__group deepsea-bottom-status__next">
+        <TrendingUp aria-hidden="true" />
+        <span>{payload.status.nextAction.label}</span>
+      </div>
+    </footer>
   );
 }
 
