@@ -81,8 +81,47 @@ test('session workspace payload keeps active session, history and inspector data
     status,
     context: null,
     evidence: [],
+    projectSwitcher: {
+      activeProjectId: 'project-1',
+      projects: [{
+        id: 'project-1',
+        name: 'OpenClaw',
+        path: '/workspace',
+        active: true,
+        recentSessions: [],
+      }],
+    },
+    bottomStatus: {
+      health: 'ok',
+      healthLabel: '良好',
+      indexStatus: 'unknown',
+      indexLabel: '未接入索引',
+      lastResponseMs: null,
+      errorRate: 0,
+      networkLatencyMs: null,
+      tokenUsage: null,
+    },
+    contract: {
+      sessionId: 'session-1',
+      objective: '实现 SessionOS',
+      scope: null,
+      risks: [],
+      acceptanceCriteria: [],
+      updated_at: 1,
+    },
+    toolRows: [],
+    diffRows: [],
+    historyFilters: {
+      q: '',
+      status: 'all',
+      mode: 'all',
+    },
   } satisfies SessionWorkspacePayload;
 
   assert.equal(payload.activeSession.session.mode, 'code');
   assert.equal(payload.status.git.changedFileCount, 2);
+  assert.equal(payload.projectSwitcher.projects[0]?.active, true);
+  assert.equal(payload.contract.objective, '实现 SessionOS');
+  assert.deepEqual(payload.toolRows, []);
+  assert.deepEqual(payload.diffRows, []);
 });

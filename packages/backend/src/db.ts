@@ -397,6 +397,17 @@ CREATE TABLE IF NOT EXISTS session_plan_items (
 );
 CREATE INDEX IF NOT EXISTS idx_session_plan_items_session ON session_plan_items(session_id, priority, created_at);
 
+CREATE TABLE IF NOT EXISTS session_contracts (
+  session_id TEXT PRIMARY KEY,
+  scope TEXT,
+  risks TEXT NOT NULL DEFAULT '[]',
+  acceptance_criteria TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_session_contracts_updated ON session_contracts(updated_at);
+
 CREATE TABLE IF NOT EXISTS session_context_manifests (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,

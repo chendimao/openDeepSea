@@ -260,6 +260,74 @@ export interface StatusSnapshot {
   };
 }
 
+export interface SessionProjectSwitcher {
+  activeProjectId: string;
+  projects: Array<{
+    id: string;
+    name: string;
+    path: string;
+    active: boolean;
+    recentSessions: Array<{
+      id: string;
+      title: string;
+      status: SessionStatus | HistoryRecordStatus;
+      updated_at: number;
+      href: string;
+      source: 'session' | 'history';
+    }>;
+  }>;
+}
+
+export interface SessionBottomStatus {
+  health: 'ok' | 'warning' | 'error';
+  healthLabel: string;
+  indexStatus: 'ready' | 'building' | 'missing' | 'unknown';
+  indexLabel: string;
+  lastResponseMs: number | null;
+  errorRate: number | null;
+  networkLatencyMs: number | null;
+  tokenUsage: {
+    input: number;
+    output: number;
+    total: number;
+  } | null;
+}
+
+export interface SessionContract {
+  sessionId: string;
+  objective: string;
+  scope: string | null;
+  risks: string[];
+  acceptanceCriteria: string[];
+  updated_at: number;
+}
+
+export interface SessionToolRow {
+  id: string;
+  action: 'read' | 'write' | 'edit' | 'exec' | 'browser' | 'tool';
+  label: string;
+  target: string;
+  status: 'completed' | 'running' | 'failed' | 'unknown';
+  durationMs: number | null;
+  severity: SessionEvidenceSeverity;
+  eventId: string;
+  created_at: number;
+}
+
+export interface SessionDiffRow {
+  path: string;
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'untracked' | 'conflicted';
+  additions: number | null;
+  deletions: number | null;
+  summary: string | null;
+}
+
+export interface SessionHistoryFilters {
+  q: string;
+  status: HistoryRecordStatus | 'all';
+  mode: SessionMode | 'all';
+}
+
 export interface SessionWorkspacePayload {
   project: Project;
   activeSession: SessionDetail;
@@ -267,4 +335,10 @@ export interface SessionWorkspacePayload {
   status: StatusSnapshot;
   context: SessionContextManifest | null;
   evidence: SessionEvidenceEvent[];
+  projectSwitcher: SessionProjectSwitcher;
+  bottomStatus: SessionBottomStatus;
+  contract: SessionContract;
+  toolRows: SessionToolRow[];
+  diffRows: SessionDiffRow[];
+  historyFilters: SessionHistoryFilters;
 }
