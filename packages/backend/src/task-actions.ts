@@ -677,6 +677,7 @@ async function runNativeSubagentExecution(input: {
   const childContents: string[] = [];
   let reviewFixRounds = 0;
   let reviewFindings: ReviewFinding[] = [];
+  let hasBlockingReview = false;
 
   const runLinkedSubagent = async (role: {
     role: AgentRunLinkRole;
@@ -807,13 +808,14 @@ async function runNativeSubagentExecution(input: {
     if (role.role === 'spec_reviewer' || role.role === 'code_quality_reviewer') {
       const review = extractReviewVerdict(roleResult.content);
       reviewFindings = review.issues;
-      if (hasBlockingReviewFindings(review)) {
+      hasBlockingReview = hasBlockingReviewFindings(review);
+      if (hasBlockingReview) {
         break;
       }
     }
   }
 
-  while (reviewFindings.length > 0 && reviewFixRounds < MAX_NATIVE_SUBAGENT_REVIEW_FIX_ROUNDS) {
+  while (hasBlockingReview && reviewFixRounds < MAX_NATIVE_SUBAGENT_REVIEW_FIX_ROUNDS) {
     reviewFixRounds += 1;
     const fixResult = await runLinkedSubagent({
       role: 'implementer',
@@ -833,13 +835,13 @@ async function runNativeSubagentExecution(input: {
     childContents.push(`review_fix_review_${reviewFixRounds}: ${reviewResult.content}`);
     const review = extractReviewVerdict(reviewResult.content);
     reviewFindings = review.issues;
-    if (!hasBlockingReviewFindings(review)) {
-      reviewFindings = [];
+    hasBlockingReview = hasBlockingReviewFindings(review);
+    if (!hasBlockingReview) {
       break;
     }
   }
 
-  if (reviewFindings.length > 0) {
+  if (hasBlockingReview) {
     const error = '审查仍有阻断问题，已达到自动修复轮次上限';
     const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
       superpowers_phase: 'tdd_execute',
@@ -955,7 +957,9 @@ function buildNativeSubagentPrompt(
     previousOutputs.length > 0 ? `前序子代理输出：\n${previousOutputs.join('\n\n')}` : '前序子代理输出：无',
     '',
     '请只处理当前子代理角色负责的工作，并输出必要的 Superpowers evidence。',
-    '实现者需要提供 RED/GREEN tddEvidence 或有效 tddExemption；审查者需要明确审查结论。',
+    role === 'implementer'
+      ? '实现者需要提供 RED/GREEN tddEvidence 或有效 tddExemption。'
+      : buildNativeReviewOutputContract(),
   ].filter((line): line is string => line !== null).join('\n');
 }
 
@@ -980,6 +984,29 @@ function buildNativeReviewFixPrompt(
     '',
     '修复后必须输出必要的 Superpowers evidence，包含 RED/GREEN tddEvidence 或有效 tddExemption。',
   ].filter((line): line is string => line !== null).join('\n');
+}
+
+function buildNativeReviewOutputContract(): string {
+  return [
+    '审查者必须在输出末尾提供结构化审查结论，使用 fenced JSON，格式如下：',
+    '```json',
+    '{',
+    '  "review": {',
+    '    "verdict": "approved | changes_requested | blocked",',
+    '    "issues": [',
+    '      {',
+    '        "severity": "critical | important | minor",',
+    '        "summary": "一句话说明问题",',
+    '        "file": "可选文件路径",',
+    '        "line": 1',
+    '      }',
+    '    ]',
+    '  }',
+    '}',
+    '```',
+    '只有 critical 或 important 的 changes_requested/blocked issue 会触发自动回派修复；minor 只作为非阻断建议记录。',
+    '如果没有问题，verdict 必须为 approved，issues 必须为空数组。',
+  ].join('\n');
 }
 
 function extractReviewVerdict(content: string): ReviewVerdict {

@@ -1755,6 +1755,158 @@ test('subagent_execution sends blocking review findings back to executor and re-
   assert.deepEqual(completedEvent?.payload.review_findings, []);
 });
 
+test('subagent_execution does not auto-fix non-blocking minor review findings', async () => {
+  const project = projectRepo.create({
+    name: '原生子代理 minor 审查不回派',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-native-subagent-review-minor-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(frontend);
+  assert.ok(reviewer);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: reviewer.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'minor 审查意见不阻断',
+    description: 'reviewer 只提出 minor 问题时不应回派 executor',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    source_message_id: null,
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/native-subagent-review-minor-plan.md',
+  });
+  const calls: Array<{ agentId: string; prompt: string }> = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async ({ agent, prompt, onRunCreated }) => {
+      calls.push({ agentId: agent.agent_id, prompt });
+      const run = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: agent.id,
+        agent_id: agent.agent_id,
+        backend: agent.acp_backend ?? 'codex',
+        prompt,
+        task_id: task.id,
+      });
+      await onRunCreated?.(run);
+      agentRunRepo.updateStatus(run.id, 'completed');
+      const isReviewer = agent.agent_id === 'reviewer';
+      return {
+        status: 'completed',
+        runId: run.id,
+        content: isReviewer
+          ? [
+              '审查通过，但有非阻断建议',
+              '```json',
+              '{"review":{"verdict":"changes_requested","issues":[{"severity":"minor","summary":"按钮文案可以更短","file":"index.vue","line":12}]}}',
+              '```',
+            ].join('\n')
+          : [
+              '实现完成',
+              '```json',
+              '{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"通过"}]}}',
+              '```',
+            ].join('\n'),
+        error: null,
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(calls.map((call) => call.agentId), [
+    'frontend-executor',
+    'frontend-executor',
+    'reviewer',
+    'reviewer',
+  ]);
+  const completedEvent = taskEventRepo.listByTask(task.id).find((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'completed'
+  );
+  assert.equal(completedEvent?.payload.review_fix_rounds, 0);
+  assert.deepEqual(completedEvent?.payload.review_findings, [
+    {
+      severity: 'minor',
+      summary: '按钮文案可以更短',
+      file: 'index.vue',
+      line: 12,
+    },
+  ]);
+});
+
+test('subagent_execution reviewer prompt requires structured review json', async () => {
+  const project = projectRepo.create({
+    name: '原生子代理结构化审查契约',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-native-subagent-review-schema-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(frontend);
+  assert.ok(reviewer);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: reviewer.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '审查输出结构化契约',
+    description: 'reviewer prompt 必须要求输出 review JSON',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    source_message_id: null,
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/native-subagent-review-schema-plan.md',
+  });
+  const reviewerPrompts: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async ({ agent, prompt, onRunCreated }) => {
+      if (agent.agent_id === 'reviewer') reviewerPrompts.push(prompt);
+      const run = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: agent.id,
+        agent_id: agent.agent_id,
+        backend: agent.acp_backend ?? 'codex',
+        prompt,
+        task_id: task.id,
+      });
+      await onRunCreated?.(run);
+      agentRunRepo.updateStatus(run.id, 'completed');
+      return {
+        status: 'completed',
+        runId: run.id,
+        content: [
+          '完成',
+          '```json',
+          '{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"通过"}]},"review":{"verdict":"approved","issues":[]}}',
+          '```',
+        ].join('\n'),
+        error: null,
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(reviewerPrompts.length, 2);
+  for (const prompt of reviewerPrompts) {
+    assert.match(prompt, /```json/u);
+    assert.match(prompt, /"review"/u);
+    assert.match(prompt, /"verdict": "approved \| changes_requested \| blocked"/u);
+    assert.match(prompt, /"severity": "critical \| important \| minor"/u);
+  }
+});
+
 test('subagent_execution fails with review findings after fix retry limit is exhausted', async () => {
   const project = projectRepo.create({
     name: '原生子代理审查回派失败',
