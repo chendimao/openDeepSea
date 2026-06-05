@@ -573,6 +573,27 @@ async function runSuperpowersPhaseAction(input: {
   }
 
   const evidence = extractSuperpowersEvidence(result.content);
+  const waitingForUserInputReason = result.status === 'completed' && !evidence
+    ? detectSuperpowersPhaseWaitingForUserInput(phase, result.content)
+    : null;
+  if (waitingForUserInputReason) {
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, input.action, 'blocked', {
+      superpowers_phase: phase,
+      run_id: result.runId,
+      run_ids: result.runId ? [result.runId] : [],
+      blocked_reason: waitingForUserInputReason,
+      error: waitingForUserInputReason,
+      evidence,
+      awaiting_user_input: true,
+    });
+    return {
+      action: input.action,
+      status: 'blocked',
+      message_id: messageId,
+      run_ids: result.runId ? [result.runId] : [],
+      blocked_reason: waitingForUserInputReason,
+    };
+  }
   const evidenceError = result.status === 'completed'
     ? validateCompletedPhaseEvidence(phase, evidence, project.path, {
         skipPlanningPrerequisite: input.skipPlanningPrerequisite === true,
@@ -1257,6 +1278,21 @@ function extractSuperpowersEvidence(content: string): Record<string, unknown> | 
     }
   }
   return null;
+}
+
+function detectSuperpowersPhaseWaitingForUserInput(
+  phase: SuperpowersRuntimePhase,
+  content: string,
+): string | null {
+  if (phase === 'brainstorming' && isVisualCompanionConsentPrompt(content)) {
+    return 'brainstorming 阶段正在等待用户确认是否启用 Visual Companion';
+  }
+  return null;
+}
+
+function isVisualCompanionConsentPrompt(content: string): boolean {
+  return /Some of what we're working on might be easier to explain if I can show it to you in a web browser/u.test(content) &&
+    /Want to try it\?\s*\(Requires opening a local URL\)/u.test(content);
 }
 
 function validateCompletedPhaseEvidence(
