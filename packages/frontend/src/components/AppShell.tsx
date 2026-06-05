@@ -12,7 +12,6 @@ import {
   Search,
   Settings,
   ShieldCheck,
-  TestTube2,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -81,12 +80,11 @@ export function AppShell({
           </span>
         </NavLink>
         <nav className="shell-public-nav" aria-label={t('shell.sidebar.aria')}>
-          <SidebarLink to="/" active={isDevelopmentRoute} icon={Home} label={t('shell.nav.development')} exact className="shell-public-link" />
+          <SidebarLink to="/" active={isDevelopmentRoute} icon={Home} label="Sessions" exact className="shell-public-link" />
           <SidebarLink to="/chat" icon={MessageCircle} label={t('shell.nav.chat')} className="shell-public-link" />
           <SidebarLink to="/agents" icon={Bot} label={t('shell.nav.agents')} className="shell-public-link" />
           <SidebarLink to="/skills" icon={ShieldCheck} label={t('shell.nav.skills')} className="shell-public-link" />
           <SidebarLink to="/files" icon={FolderKanban} label={t('shell.nav.files')} className="shell-public-link" />
-          <SidebarLink to="/test" icon={TestTube2} label={t('shell.nav.test')} className="shell-public-link" />
         </nav>
         <div className="shell-header-actions">
           <button

@@ -1839,7 +1839,7 @@ rtk git commit -m "feat(frontend): 实现SessionOS组件骨架"
 - Test: `packages/frontend/src/pages/SessionWorkspacePage.test.tsx`
 - Test: `packages/frontend/src/components/AppShell.test.tsx`
 
-- [ ] **Step 1: Create SessionWorkspacePage**
+- [x] **Step 1: Create SessionWorkspacePage**
 
 Create `packages/frontend/src/pages/SessionWorkspacePage.tsx`:
 
@@ -1895,7 +1895,7 @@ export function SessionWorkspacePage(): JSX.Element {
 }
 ```
 
-- [ ] **Step 2: Replace main routes**
+- [x] **Step 2: Replace main routes**
 
 Modify `packages/frontend/src/main.tsx`:
 
@@ -1909,7 +1909,7 @@ import { SessionWorkspacePage } from './pages/SessionWorkspacePage';
 
 Remove `/projects/:projectId/rooms/:roomId` from primary navigation. If kept temporarily for manual old-data inspection, it must not be linked by AppShell or project workspace.
 
-- [ ] **Step 3: AppShell nav language**
+- [x] **Step 3: AppShell nav language**
 
 Modify `AppShell.tsx` visible nav copy:
 
@@ -1918,7 +1918,7 @@ Modify `AppShell.tsx` visible nav copy:
 - avoid new UI using `shell-*` visual classes inside Session OS;
 - keep AppShell outer shell stable until full app shell redesign.
 
-- [ ] **Step 4: `index.css` cleanup guard**
+- [x] **Step 4: `index.css` cleanup guard**
 
 Do not move Session OS styles into `index.css`. Add only one import path through component import. Run grep:
 
@@ -1928,11 +1928,11 @@ rtk rg -n "session-shell|session-workspace-grid|session-history|session-inspecto
 
 Expected: no output.
 
-- [ ] **Step 5: Route render tests**
+- [x] **Step 5: Route render tests**
 
 `SessionWorkspacePage.test.tsx` must assert project route renders Session shell and does not render old room UI strings.
 
-- [ ] **Step 6: Run frontend page tests**
+- [x] **Step 6: Run frontend page tests**
 
 Run:
 
@@ -1942,7 +1942,7 @@ rtk node --import tsx --test packages/frontend/src/pages/SessionWorkspacePage.te
 
 Expected: PASS。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 rtk git add packages/frontend/src/pages/SessionWorkspacePage.tsx packages/frontend/src/main.tsx packages/frontend/src/components/AppShell.tsx packages/frontend/src/index.css packages/frontend/src/pages/SessionWorkspacePage.test.tsx packages/frontend/src/components/AppShell.test.tsx

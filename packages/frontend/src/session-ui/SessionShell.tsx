@@ -1,7 +1,10 @@
-import './session-os.css';
 import React from 'react';
 import type { SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView } from './SessionShellView';
+
+if (typeof document !== 'undefined') {
+  void import('./session-os.css');
+}
 
 export function SessionShell({
   payload,
