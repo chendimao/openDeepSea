@@ -1583,7 +1583,7 @@ rtk git commit -m "feat(frontend): 新增会话API客户端"
 - Create: `packages/frontend/src/session-ui/session-ui-model.ts`
 - Test: `packages/frontend/src/session-ui/session-ui-model.test.ts`
 
-- [ ] **Step 1: Create isolated CSS tokens**
+- [x] **Step 1: Create isolated CSS tokens**
 
 Create `packages/frontend/src/session-ui/session-os.css`:
 
@@ -1644,7 +1644,7 @@ Create `packages/frontend/src/session-ui/session-os.css`:
 }
 ```
 
-- [ ] **Step 2: Add UI model helpers**
+- [x] **Step 2: Add UI model helpers**
 
 Create `packages/frontend/src/session-ui/session-ui-model.ts`:
 
@@ -1687,7 +1687,7 @@ export function evidenceTypeLabel(type: string): string {
 }
 ```
 
-- [ ] **Step 3: Run UI model tests**
+- [x] **Step 3: Run UI model tests**
 
 Run:
 
@@ -1697,7 +1697,7 @@ rtk node --import tsx --test packages/frontend/src/session-ui/session-ui-model.t
 
 Expected: PASS。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 rtk git add packages/frontend/src/session-ui/session-os.css packages/frontend/src/session-ui/session-ui-model.ts packages/frontend/src/session-ui/session-ui-model.test.ts

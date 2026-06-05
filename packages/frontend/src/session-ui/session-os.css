@@ -1,0 +1,265 @@
+:root {
+  --session-bg: #f4f5f2;
+  --session-bg-strong: #e7eceb;
+  --session-panel: #fbfbf8;
+  --session-panel-muted: #eef1ee;
+  --session-panel-strong: #171b1d;
+  --session-ink: #161819;
+  --session-ink-inverse: #f7faf7;
+  --session-muted: #626b6c;
+  --session-faint: #8a9290;
+  --session-rule: #d4dbd8;
+  --session-rule-strong: #aab7b4;
+  --session-accent: #008fb3;
+  --session-accent-strong: #00687f;
+  --session-accent-soft: #d7eef3;
+  --session-ok: #18764f;
+  --session-ok-soft: #dcefe6;
+  --session-warn: #a26000;
+  --session-warn-soft: #f4e4c8;
+  --session-danger: #b42318;
+  --session-danger-soft: #f5dad7;
+  --session-shadow: 0 18px 44px rgb(20 28 28 / 12%);
+  --session-radius: 8px;
+  --session-radius-tight: 4px;
+  --session-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --session-sans: "IBM Plex Sans", "Aptos", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --session-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.session-shell {
+  min-height: 100dvh;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 72%), transparent 260px),
+    repeating-linear-gradient(90deg, rgb(22 24 25 / 3%) 0 1px, transparent 1px 80px),
+    var(--session-bg);
+  color: var(--session-ink);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  font-family: var(--session-sans);
+  letter-spacing: 0;
+}
+
+.session-shell *,
+.session-shell *::before,
+.session-shell *::after {
+  box-sizing: border-box;
+}
+
+.session-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(520px, 1fr) minmax(360px, 440px);
+  min-height: 0;
+  border-top: 1px solid var(--session-rule);
+}
+
+.session-panel {
+  min-width: 0;
+  min-height: 0;
+  background: color-mix(in srgb, var(--session-panel) 94%, transparent);
+  border-right: 1px solid var(--session-rule);
+}
+
+.session-panel:last-child {
+  border-right: 0;
+}
+
+.session-panel-header {
+  min-height: 64px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--session-rule);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.session-kicker,
+.session-label {
+  color: var(--session-muted);
+  font-family: var(--session-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.session-title {
+  margin: 0;
+  color: var(--session-ink);
+  font-size: 18px;
+  font-weight: 760;
+  line-height: 1.18;
+}
+
+.session-subtitle {
+  margin: 4px 0 0;
+  color: var(--session-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.session-scroll {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.session-command-button,
+.session-icon-button,
+.session-tab,
+.session-row-button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--session-rule);
+  border-radius: var(--session-radius-tight);
+  background: var(--session-panel);
+  color: var(--session-ink);
+  cursor: pointer;
+  font: inherit;
+  transition:
+    background 180ms var(--session-ease),
+    border-color 180ms var(--session-ease),
+    color 180ms var(--session-ease),
+    transform 180ms var(--session-ease);
+}
+
+.session-command-button:hover,
+.session-icon-button:hover,
+.session-tab:hover,
+.session-row-button:hover {
+  border-color: var(--session-rule-strong);
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.session-command-button:focus-visible,
+.session-icon-button:focus-visible,
+.session-tab:focus-visible,
+.session-row-button:focus-visible,
+.session-input:focus-visible,
+.session-textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--session-accent) 34%, transparent);
+  outline-offset: 2px;
+}
+
+.session-command-button[data-variant="primary"] {
+  border-color: var(--session-accent);
+  background: var(--session-panel-strong);
+  color: var(--session-ink-inverse);
+}
+
+.session-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--session-rule);
+  border-radius: 999px;
+  background: var(--session-panel-muted);
+  color: var(--session-muted);
+  font-family: var(--session-mono);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.session-chip[data-tone="ok"] {
+  border-color: color-mix(in srgb, var(--session-ok) 28%, var(--session-rule));
+  background: var(--session-ok-soft);
+  color: var(--session-ok);
+}
+
+.session-chip[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--session-warn) 32%, var(--session-rule));
+  background: var(--session-warn-soft);
+  color: var(--session-warn);
+}
+
+.session-chip[data-tone="danger"] {
+  border-color: color-mix(in srgb, var(--session-danger) 32%, var(--session-rule));
+  background: var(--session-danger-soft);
+  color: var(--session-danger);
+}
+
+.session-input,
+.session-textarea {
+  width: 100%;
+  border: 1px solid var(--session-rule);
+  border-radius: var(--session-radius-tight);
+  background: #fff;
+  color: var(--session-ink);
+  font: inherit;
+}
+
+.session-input {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.session-textarea {
+  min-height: 104px;
+  padding: 12px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.session-empty,
+.session-loading {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  color: var(--session-muted);
+  text-align: center;
+}
+
+@media (max-width: 1180px) {
+  .session-workspace-grid {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+
+  .session-inspector {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 40;
+    max-height: 72dvh;
+    border-top: 1px solid var(--session-rule-strong);
+    box-shadow: var(--session-shadow);
+  }
+}
+
+@media (max-width: 720px) {
+  .session-shell {
+    min-width: 0;
+  }
+
+  .session-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .session-panel-header {
+    min-height: 56px;
+    padding: 12px 14px;
+  }
+
+  .session-title {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-command-button,
+  .session-icon-button,
+  .session-tab,
+  .session-row-button {
+    transition: none;
+  }
+
+  .session-command-button:hover,
+  .session-icon-button:hover,
+  .session-tab:hover,
+  .session-row-button:hover {
+    transform: none;
+  }
+}
