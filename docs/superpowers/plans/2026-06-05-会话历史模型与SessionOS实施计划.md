@@ -541,7 +541,7 @@ rtk git commit -m "feat(backend): 新增会话历史数据模型"
 - Test: `packages/backend/src/repos/sessions.test.ts`
 - Test: `packages/backend/src/repos/history-records.test.ts`
 
-- [ ] **Step 1: 实现 JSON parse helpers**
+- [x] **Step 1: 实现 JSON parse helpers**
 
 In `packages/backend/src/repos/sessions.ts`:
 
@@ -569,7 +569,7 @@ function parseJsonObject(value: string | null | undefined): Record<string, unkno
 }
 ```
 
-- [ ] **Step 2: 实现 `sessionRepo`**
+- [x] **Step 2: 实现 `sessionRepo`**
 
 In `packages/backend/src/repos/sessions.ts`, export:
 
@@ -630,7 +630,7 @@ export const sessionRepo = {
 };
 ```
 
-- [ ] **Step 3: 实现 message/run/plan repo 方法**
+- [x] **Step 3: 实现 message/run/plan repo 方法**
 
 Add `sessionMessageRepo`, `sessionRunRepo`, `sessionPlanItemRepo` in the same file. Required methods:
 
@@ -653,7 +653,7 @@ Implementation rules:
 - `updateStatus` must set `completed_at` for terminal statuses.
 - `listBySession` returns ascending chronological order.
 
-- [ ] **Step 4: 实现 evidence repo with append-only seq**
+- [x] **Step 4: 实现 evidence repo with append-only seq**
 
 Create `packages/backend/src/repos/session-evidence.ts`:
 
@@ -700,7 +700,7 @@ export const sessionEvidenceRepo = {
 };
 ```
 
-- [ ] **Step 5: 实现 history repo**
+- [x] **Step 5: 实现 history repo**
 
 Create `packages/backend/src/repos/history-records.ts` with:
 
@@ -758,7 +758,7 @@ export const historyRecordRepo = {
 };
 ```
 
-- [ ] **Step 6: 写 repo round-trip tests**
+- [x] **Step 6: 写 repo round-trip tests**
 
 Extend `packages/backend/src/repos/sessions.test.ts`:
 
@@ -787,7 +787,7 @@ test('session repos create active session, message, run and evidence in order', 
 });
 ```
 
-- [ ] **Step 7: 运行 repo tests**
+- [x] **Step 7: 运行 repo tests**
 
 Run:
 
@@ -797,7 +797,7 @@ rtk node --import tsx --test packages/backend/src/repos/sessions.test.ts package
 
 Expected: PASS。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 rtk git add packages/backend/src/repos/sessions.ts packages/backend/src/repos/session-context.ts packages/backend/src/repos/session-compactions.ts packages/backend/src/repos/session-evidence.ts packages/backend/src/repos/session-checkpoints.ts packages/backend/src/repos/history-records.ts packages/backend/src/repos/sessions.test.ts packages/backend/src/repos/history-records.test.ts
