@@ -2024,7 +2024,7 @@ rtk git commit -m "refactor: 移除旧群聊任务主入口"
 - Modify: `docs/superpowers/specs/2026-06-05-会话与历史记录新模型设计.md`
 - Modify: `docs/superpowers/plans/2026-06-05-会话历史模型与SessionOS实施计划.md`
 
-- [ ] **Step 1: Run targeted backend tests**
+- [x] **Step 1: Run targeted backend tests**
 
 Run:
 
@@ -2034,7 +2034,7 @@ rtk npm run test -w @openclaw-room/backend -- --test-reporter=spec
 
 Expected: all backend tests PASS.
 
-- [ ] **Step 2: Run frontend targeted tests**
+- [x] **Step 2: Run frontend targeted tests**
 
 Run:
 
@@ -2044,7 +2044,7 @@ rtk node --import tsx --test packages/frontend/src/session-ui/session-ui-model.t
 
 Expected: all targeted frontend tests PASS.
 
-- [ ] **Step 3: Run full build**
+- [x] **Step 3: Run full build**
 
 Run:
 
@@ -2054,7 +2054,7 @@ rtk npm run build
 
 Expected: backend TypeScript build and frontend Vite build complete with exit code 0. Existing Vite chunk-size warnings are acceptable only if the command exits 0.
 
-- [ ] **Step 4: Browser smoke check**
+- [x] **Step 4: Browser smoke check**
 
 Start dev server:
 
@@ -2078,20 +2078,18 @@ Manual smoke assertions:
 - Fork displays source relation in History rail;
 - mobile viewport has no horizontal scroll and command buttons remain at least 44px high.
 
-- [ ] **Step 5: Update plan checkboxes**
+- [x] **Step 5: Update plan checkboxes**
 
 Mark completed steps in this plan file and add verification evidence under this section:
 
-```markdown
 ## Final Verification Evidence
 
-- Backend tests: command + result.
-- Frontend targeted tests: command + result.
-- Build: command + result.
-- Browser smoke: URL + checked states.
-```
+- Backend tests: `rtk node --import tsx --test packages/backend/src/session.routes.test.ts packages/backend/src/session-runtime.test.ts packages/backend/src/session.commands.integration.test.ts packages/backend/src/repos/sessions.test.ts packages/backend/src/repos/history-records.test.ts packages/backend/src/session-command.test.ts packages/backend/src/session-summary.test.ts packages/backend/src/session-status.test.ts packages/backend/src/session-context.test.ts`，27/27 PASS。
+- Frontend targeted tests: `rtk node --import tsx --test packages/frontend/src/session-ui/session-ui-model.test.ts packages/frontend/src/session-ui/SessionShell.test.tsx packages/frontend/src/pages/SessionWorkspacePage.test.tsx packages/frontend/src/components/AppShell.test.tsx packages/frontend/src/lib/sessionApi.test.ts packages/frontend/src/lib/sessionTypes.test.ts`，12/12 PASS。SSR 测试存在 React Router `useLayoutEffect` warning，不影响断言。
+- Build: `rtk npm run build`，backend `tsc` 与 frontend `vite build` 均 exit 0；Vite chunk-size warning 保留。
+- Browser smoke: 使用当前代码临时启动 `PORT=7430 npm run dev -w @openclaw-room/backend` 与 `VITE_BACKEND_URL=http://localhost:7430 npm run dev -w @openclaw-room/frontend -- --port 5273`，打开 `http://localhost:5273/projects/b6p57AAqxbcl`。Playwright 检查结果：History Records 可见、Active Session 可见、Session Inspector/Status 可见、`/status` 按钮可点击、`/compact` 打开 Compact Preview 且 Discard 后不应用；移动端 390px viewport `scrollWidth === clientWidth`，Compact 按钮高度 44px。为避免污染真实项目历史，未在浏览器 smoke 中执行 `/new`、resume、fork；这些状态变更由后端集成测试覆盖。
 
-- [ ] **Step 6: Commit final docs**
+- [x] **Step 6: Commit final docs**
 
 ```bash
 rtk git add docs/superpowers/specs/2026-06-05-会话与历史记录新模型设计.md docs/superpowers/plans/2026-06-05-会话历史模型与SessionOS实施计划.md
