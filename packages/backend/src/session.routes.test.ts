@@ -11,12 +11,23 @@ const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { sessionRepo, sessionMessageRepo } = await import('./repos/sessions.js');
 const { historyRecordRepo } = await import('./repos/history-records.js');
+const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
 
 const app = express();
 app.use(express.json());
 app.use('/api', router);
+
+setSessionRuntimeAdapterForTest({
+  backend: 'codex',
+  listSessions: async () => [],
+  invoke: async ({ onChunk, onSession }) => {
+    onSession?.('route-test-acp-session');
+    onChunk({ stream: 'stdout', channel: 'answer', text: 'ok' });
+    return { exitCode: 0, sessionId: 'route-test-acp-session', stderr: '' };
+  },
+});
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);

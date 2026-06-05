@@ -15,6 +15,7 @@ import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
 import { parseSessionCommand, type ParsedSessionCommand } from './session-command.js';
 import { buildContextManifestDraft } from './session-context.js';
+import { runSessionAgent } from './session-runtime.js';
 import { buildHistorySummary } from './session-summary.js';
 import { buildStatusSnapshot } from './session-status.js';
 import type {
@@ -185,6 +186,20 @@ function createSessionMessage(req: { params: { sessionId: string }; body: unknow
     source_message_id: message.id,
     title: 'User message',
     payload: { message_id: message.id },
+  });
+  void runSessionAgent({
+    sessionId: updatedSession.id,
+    prompt: buildPromptFromMessage(updatedSession, message.content),
+    provider: updatedSession.provider ?? 'codex',
+    model: updatedSession.model,
+  }).catch((error) => {
+    sessionEvidenceRepo.create({
+      session_id: updatedSession.id,
+      event_type: 'blocker',
+      severity: 'error',
+      title: 'Session runtime failed',
+      summary: (error as Error).message,
+    });
   });
   res.status(202).json({ message });
 }
@@ -697,6 +712,12 @@ function collectLatestVerification(evidence: SessionEvidenceEvent[]): string | n
 function readGoalFromResumeBrief(record: HistoryRecord): string | null {
   const firstLine = record.resume_brief.split('\n').find((line) => line.trim().startsWith('目标：'));
   return firstLine ? firstLine.replace(/^目标：/, '').trim() || null : record.title;
+}
+
+function buildPromptFromMessage(session: Session, content: string): string {
+  const goal = session.current_goal?.trim();
+  if (!goal) return content;
+  return [`当前目标：${goal}`, '', content].join('\n');
 }
 
 function forkInputSchema() {

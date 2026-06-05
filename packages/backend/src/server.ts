@@ -71,6 +71,8 @@ wss.on('connection', (socket) => {
     }
     if (event.type === 'subscribe') wsHub.subscribe(event.roomId, socket);
     else if (event.type === 'unsubscribe') wsHub.unsubscribe(event.roomId, socket);
+    else if (event.type === 'session:subscribe') wsHub.subscribeSession(event.sessionId, socket);
+    else if (event.type === 'session:unsubscribe') wsHub.unsubscribeSession(event.sessionId, socket);
   });
   socket.on('close', () => wsHub.removeSocket(socket));
 });

@@ -1167,7 +1167,7 @@ rtk git commit -m "feat(backend): 新增会话工作台API"
 - Test: `packages/backend/src/session-runtime.test.ts`
 - Test: `packages/backend/src/ws-hub.test.ts`
 
-- [ ] **Step 1: 扩展 WebSocket hub**
+- [x] **Step 1: 扩展 WebSocket hub**
 
 Modify `packages/backend/src/ws-hub.ts`:
 
@@ -1194,7 +1194,7 @@ class WsHub {
 }
 ```
 
-- [ ] **Step 2: 扩展 server subscribe handling**
+- [x] **Step 2: 扩展 server subscribe handling**
 
 Modify `packages/backend/src/server.ts`:
 
@@ -1205,7 +1205,7 @@ else if (event.type === 'session:unsubscribe') wsHub.unsubscribeSession(event.se
 
 Keep existing room subscribe handling for old pages that still exist outside the main workspace.
 
-- [ ] **Step 3: 实现 runtime**
+- [x] **Step 3: 实现 runtime**
 
 Create `packages/backend/src/session-runtime.ts`:
 
@@ -1254,7 +1254,7 @@ export async function runSessionAgent(input: {
 }
 ```
 
-- [ ] **Step 4: Map stream chunks to evidence**
+- [x] **Step 4: Map stream chunks to evidence**
 
 `recordSessionChunk` must:
 
@@ -1274,7 +1274,7 @@ Use this payload shape:
 }
 ```
 
-- [ ] **Step 5: Hook runtime to message endpoint**
+- [x] **Step 5: Hook runtime to message endpoint**
 
 In `session.routes.ts`, after normal user message create:
 
@@ -1297,7 +1297,7 @@ void runSessionAgent({
 res.status(202).json({ message: userMessage });
 ```
 
-- [ ] **Step 6: Write runtime test with fake adapter**
+- [x] **Step 6: Write runtime test with fake adapter**
 
 Create `packages/backend/src/session-runtime.test.ts`:
 
@@ -1321,7 +1321,7 @@ test('runSessionAgent writes run, stream output and evidence', async () => {
 });
 ```
 
-- [ ] **Step 7: Run runtime tests**
+- [x] **Step 7: Run runtime tests**
 
 Run:
 
@@ -1331,7 +1331,7 @@ rtk node --import tsx --test packages/backend/src/session-runtime.test.ts packag
 
 Expected: PASS。
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 rtk git add packages/backend/src/session-runtime.ts packages/backend/src/ws-hub.ts packages/backend/src/server.ts packages/backend/src/session.routes.ts packages/backend/src/session-runtime.test.ts packages/backend/src/ws-hub.test.ts
