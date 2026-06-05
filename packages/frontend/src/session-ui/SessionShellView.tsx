@@ -4,7 +4,6 @@ import {
   Bell,
   Brain,
   Bot,
-  Check,
   CheckCircle2,
   ChevronDown,
   FileText,
@@ -25,9 +24,6 @@ import {
   ShieldCheck,
   Square,
   StopCircle,
-  Terminal,
-  UserCircle,
-  Waves,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
@@ -53,6 +49,36 @@ const fallbackTools = [
 const fallbackDiffs = [
   { path: 'retry_handler.py', delta: '+34', tone: 'ok' },
   { path: 'sync_service.py', delta: '+8', tone: 'ok' },
+];
+
+const projectSwitcherCards = [
+  {
+    name: 'deepsea-command-center',
+    path: '~/workspaces/deepsea-command-center',
+    active: true,
+    sessions: [
+      ['优化数据同步模块...', '10:22'],
+      ['修复用户权限校验...', '昨天'],
+      ['重构 UI 组件库...', '2天前'],
+    ],
+  },
+  {
+    name: 'quantum-core-engine',
+    path: '~/workspaces/quantum-core',
+    active: false,
+    sessions: [
+      ['核心引擎性能调优', '3天前'],
+      ['更新依赖版本', '上周'],
+    ],
+  },
+  {
+    name: 'nebula-ui-kit',
+    path: '~/design/nebula-ui',
+    active: false,
+    sessions: [
+      ['添加深色模式支持', '1个月前'],
+    ],
+  },
 ];
 
 export function SessionShellView({
@@ -103,17 +129,19 @@ function TopCommandBar({
   onCommand: (command: string) => void;
   forkTarget?: string;
 }): JSX.Element {
-  const session = payload.activeSession.session;
   const pressure = contextPressurePercent(payload.status.context.pressure);
-  const provider = formatProviderModel(session.provider ?? payload.status.provider.backend ?? 'codex', session.model ?? payload.status.provider.model ?? 'gpt-test');
+  const activeProjectName = 'deepsea-command-center';
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
 
   return (
     <>
       <header className="deepsea-topbar">
         <div className="deepsea-topbar__identity">
           <div className="deepsea-brand">
-            <Waves aria-hidden="true" />
-            <span>Deepsea Command</span>
+            <span className="deepsea-brand__mark">
+              <img alt="蟹老板 AI 指挥官 Logo" src="/deepsea-krabs-logo.jpg" />
+            </span>
+            <span>深海指挥中心</span>
           </div>
           <nav className="deepsea-shell-nav" aria-label="项目首页菜单">
             <a href="/">
@@ -140,26 +168,16 @@ function TopCommandBar({
         </div>
 
         <div className="deepsea-topbar__actions">
-          <div className="deepsea-model-status">
-            <div>
-              <Brain aria-hidden="true" />
-              <span className="deepsea-mono">{provider}</span>
-            </div>
-            <span>
-              <i />
-              在线
-            </span>
+          <div className="deepsea-action-icons">
+            <button type="button" className="deepsea-icon-button" aria-label="设置">
+              <Settings aria-hidden="true" />
+            </button>
+            <button type="button" className="deepsea-icon-button deepsea-icon-button--alert" aria-label="通知">
+              <Bell aria-hidden="true" />
+              <span />
+            </button>
           </div>
-          <button type="button" className="deepsea-icon-button" aria-label="设置">
-            <Settings aria-hidden="true" />
-          </button>
-          <button type="button" className="deepsea-icon-button deepsea-icon-button--alert" aria-label="通知">
-            <Bell aria-hidden="true" />
-            <span />
-          </button>
-          <div className="deepsea-avatar" aria-label="Profile">
-            <UserCircle aria-hidden="true" />
-          </div>
+          <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
         </div>
       </header>
 
@@ -170,25 +188,77 @@ function TopCommandBar({
           <ChevronDown aria-hidden="true" />
         </div>
         <div className="deepsea-project-switcher">
-          <button type="button" aria-label="切换项目">
-            <strong>{payload.project.name}</strong>
+          <button
+            type="button"
+            aria-expanded={projectMenuOpen}
+            aria-label="切换项目"
+            onClick={() => setProjectMenuOpen((open) => !open)}
+          >
+            <strong>{activeProjectName}</strong>
             <ChevronDown aria-hidden="true" />
           </button>
-          <div className="deepsea-project-menu" role="menu">
-            <label>
-              <Search aria-hidden="true" />
-              <input type="search" placeholder="搜索项目..." />
-            </label>
-            <div>
-              <span>{payload.project.name}</span>
-              <Check aria-hidden="true" />
+        </div>
+        <div
+          className="deepsea-project-menu"
+          data-open={projectMenuOpen ? 'true' : undefined}
+          role="dialog"
+          aria-label="项目切换器"
+          aria-hidden={projectMenuOpen ? undefined : true}
+          onClick={() => setProjectMenuOpen(false)}
+        >
+          <div className="deepsea-project-menu__panel" onClick={(event) => event.stopPropagation()}>
+            <div className="deepsea-project-menu__header">
+              <div>
+                <h2>项目切换器</h2>
+                <p>选择一个工作区以继续您的任务</p>
+              </div>
+              <div>
+                <label className="deepsea-project-menu__search">
+                  <Search aria-hidden="true" />
+                  <input type="search" placeholder="搜索项目..." />
+                </label>
+                <button type="button" aria-label="关闭项目切换器" onClick={() => setProjectMenuOpen(false)}>
+                  <span aria-hidden="true">×</span>
+                </button>
+              </div>
             </div>
-            <div><span>quantum-core-engine</span></div>
-            <div><span>nebula-ui-kit</span></div>
-            <button type="button">
-              <Settings aria-hidden="true" />
-              管理项目
-            </button>
+            <div className="deepsea-project-menu__body">
+              <div className="deepsea-project-grid">
+                {projectSwitcherCards.map((project) => (
+                  <article className="deepsea-project-card" data-active={project.active ? 'true' : undefined} key={project.name}>
+                    {project.active && (
+                      <div className="deepsea-project-card__active">
+                        <i />
+                        <span>当前激活</span>
+                      </div>
+                    )}
+                    <div className="deepsea-project-card__head">
+                      <h3>{project.name}</h3>
+                      <p className="deepsea-mono">{project.path}</p>
+                    </div>
+                    <div className="deepsea-project-card__sessions">
+                      <span>最近会话</span>
+                      {project.sessions.map(([title, time]) => (
+                        <button type="button" key={`${project.name}-${title}`}>
+                          <strong>{title}</strong>
+                          <em>{time}</em>
+                        </button>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+                <article className="deepsea-project-card deepsea-project-card--add">
+                  <Plus aria-hidden="true" />
+                  <span>新建项目</span>
+                </article>
+              </div>
+            </div>
+            <div className="deepsea-project-menu__footer">
+              <button type="button">
+                <Settings aria-hidden="true" />
+                管理所有工作区
+              </button>
+            </div>
           </div>
         </div>
         <div className="deepsea-strip-actions">
@@ -424,11 +494,11 @@ function TranscriptCanvas({
           />
         ))}
 
-        {detail.runs.slice(-3).map((run) => (
+        {detail.runs.slice(-1).map((run) => (
           <article className="deepsea-run-log" key={run.id}>
             <div>
-              <span className="deepsea-status-chip" data-tone={run.status === 'failed' ? 'danger' : 'ok'}>{run.provider}</span>
-              <span className="deepsea-mono">{run.status}</span>
+              <span className="deepsea-status-chip" data-tone={run.status === 'failed' ? 'danger' : 'ok'}>ASSISTANT</span>
+              <time className="deepsea-mono">{formatClock(run.started_at)}</time>
             </div>
             <p>{run.stdout || run.stderr || run.activity_log || run.prompt || 'No output yet'}</p>
           </article>
@@ -459,7 +529,10 @@ function TranscriptMessage({
         <div className="deepsea-evidence-tray">
           <div>
             <FileText aria-hidden="true" />
-            <span>证据摘要：{evidence.length} 条记录，最近为 {evidenceTypeLabel(evidence[evidence.length - 1].event_type)}</span>
+            <span>
+              <strong>证据摘要</strong>
+              <em>{evidence.length} 条记录，最近为 {evidenceTypeLabel(evidence[evidence.length - 1].event_type)}</em>
+            </span>
           </div>
           <ChevronDown aria-hidden="true" />
         </div>
@@ -470,7 +543,6 @@ function TranscriptMessage({
 
 function DeepseaComposer({
   onSendMessage,
-  onCommand,
 }: {
   onSendMessage: (content: string) => void;
   onCommand: (command: string) => void;
@@ -487,13 +559,6 @@ function DeepseaComposer({
 
   return (
     <form className="deepsea-composer" onSubmit={submit}>
-      <div className="deepsea-composer__header">
-        <h3>
-          <Terminal aria-hidden="true" />
-          命令输入 <span>(Composer)</span>
-        </h3>
-        <span className="deepsea-mode-pill">mode: code</span>
-      </div>
       <div className="deepsea-composer__field">
         <input
           aria-label="命令输入"
@@ -501,30 +566,14 @@ function DeepseaComposer({
           onChange={(event) => setContent(event.currentTarget.value)}
           placeholder="输入命令或 / 选择命令，支持 @ 文件、# 历史、! 上下文"
         />
-        <div className="deepsea-composer__footer">
-          <div className="deepsea-command-shortcuts">
-            {['/new', '/compact', '/status', '/context'].map((command) => (
-              <button type="button" key={command} onClick={() => onCommand(command)}>
-                {command}
-              </button>
-            ))}
-          </div>
-          <div className="deepsea-composer__tools">
-            <AtSign aria-hidden="true" />
-            <Hash aria-hidden="true" />
-            <AlertTriangle aria-hidden="true" />
-            <button type="submit" className="deepsea-send-button" aria-label="发送">
-              <SendHorizontal aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-      </div>
-      <div className="deepsea-compact-alert">
-        <span>
+        <div className="deepsea-composer__tools">
+          <AtSign aria-hidden="true" />
+          <Hash aria-hidden="true" />
           <AlertTriangle aria-hidden="true" />
-          检测到未应用的 Compact 预览
-        </span>
-        <button type="button" onClick={() => onCommand('/compact')}>查看预览</button>
+          <button type="submit" className="deepsea-send-button" aria-label="发送">
+            <SendHorizontal aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </form>
   );

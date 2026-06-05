@@ -11,7 +11,9 @@ test('SessionShell renders Deepsea command center modules', () => {
   );
 
   assert.match(html, /Session Operations Console/);
-  assert.match(html, /Deepsea Command/);
+  assert.match(html, /深海指挥中心/);
+  assert.match(html, /蟹老板 AI 指挥官 Logo/);
+  assert.match(html, /deepsea-profile-avatar\.png/);
   assert.match(html, /项目首页菜单/);
   assert.match(html, /会话/);
   assert.match(html, /聊天/);
@@ -19,6 +21,12 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /Project command bar/);
   assert.match(html, /workspace/);
   assert.match(html, /切换项目/);
+  assert.match(html, /项目切换器/);
+  assert.match(html, /选择一个工作区以继续您的任务/);
+  assert.match(html, /deepsea-command-center/);
+  assert.match(html, /当前激活/);
+  assert.match(html, /新建项目/);
+  assert.match(html, /管理所有工作区/);
   assert.match(html, /上下文压力/);
   assert.match(html, /Session status bar/);
   assert.match(html, /会话历史/);
@@ -37,6 +45,8 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /History Records/);
   assert.doesNotMatch(html, /task-workspace/);
   assert.doesNotMatch(html, /chat-panel/);
+  assert.doesNotMatch(html, /Deepsea Command/);
+  assert.doesNotMatch(html, /deepsea-model-status/);
   assert.doesNotMatch(html, /当前状态/);
 });
 
