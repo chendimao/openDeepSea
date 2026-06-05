@@ -76,14 +76,40 @@ export const historyRecordRepo = {
     return row ? parseHistoryRecordRow(row) : undefined;
   },
 
-  listByProject(projectId: string, input: { limit?: number } = {}): HistoryRecord[] {
+  listByProject(
+    projectId: string,
+    input: {
+      limit?: number;
+      q?: string;
+      status?: HistoryRecordStatus | HistoryRecordStatus[];
+      mode?: SessionMode | SessionMode[];
+    } = {},
+  ): HistoryRecord[] {
     const limit = input.limit ?? 100;
+    const where = ['project_id = ?'];
+    const values: Array<string | number> = [projectId];
+    const q = input.q?.trim();
+    if (q) {
+      where.push('(title LIKE ? OR summary LIKE ? OR resume_brief LIKE ?)');
+      values.push(`%${q}%`, `%${q}%`, `%${q}%`);
+    }
+    const statuses = normalizeArray(input.status);
+    if (statuses.length > 0) {
+      where.push(`status IN (${statuses.map(() => '?').join(', ')})`);
+      values.push(...statuses);
+    }
+    const modes = normalizeArray(input.mode);
+    if (modes.length > 0) {
+      where.push(`mode IN (${modes.map(() => '?').join(', ')})`);
+      values.push(...modes);
+    }
+    values.push(limit);
     const rows = db.prepare(`
       SELECT * FROM history_records
-      WHERE project_id = ?
+      WHERE ${where.join(' AND ')}
       ORDER BY ended_at DESC
       LIMIT ?
-    `).all(projectId, limit) as HistoryRecordRow[];
+    `).all(...values) as HistoryRecordRow[];
     return rows.map(parseHistoryRecordRow);
   },
 
@@ -101,6 +127,11 @@ export const historyRecordRepo = {
     return this.get(id);
   },
 };
+
+function normalizeArray<T>(value: T | T[] | undefined): T[] {
+  if (Array.isArray(value)) return value;
+  return value === undefined ? [] : [value];
+}
 
 function parseHistoryRecordRow(row: HistoryRecordRow): HistoryRecord {
   return {

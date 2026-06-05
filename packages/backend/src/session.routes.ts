@@ -16,6 +16,7 @@ import {
 } from './repos/sessions.js';
 import { historyRecordRepo } from './repos/history-records.js';
 import { sessionCompactionRepo } from './repos/session-compactions.js';
+import { sessionContractRepo } from './repos/session-contracts.js';
 import { sessionContextRepo } from './repos/session-context.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
@@ -24,6 +25,13 @@ import { buildContextManifestDraft } from './session-context.js';
 import { runSessionAgent } from './session-runtime.js';
 import { buildHistorySummary } from './session-summary.js';
 import { buildStatusSnapshot } from './session-status.js';
+import {
+  buildSessionBottomStatus,
+  buildSessionDiffRows,
+  buildSessionProjectSwitcher,
+  buildSessionToolRows,
+  resolveSessionWorkspacePath,
+} from './session-workspace-view-model.js';
 import type {
   HistoryRecord,
   Project,
@@ -40,6 +48,7 @@ import type {
 export const sessionRouter = Router();
 
 const sessionModeSchema = z.enum(['ask', 'plan', 'code', 'debug', 'review']);
+const historyRecordStatusSchema = z.enum(['completed', 'blocked', 'failed', 'archived']);
 const execFileAsync = promisify(execFile);
 
 sessionRouter.get('/projects/:projectId/session-workspace', (req, res) => {
@@ -407,13 +416,23 @@ function forkSession(req: { params: { sessionId: string }; body?: unknown }, res
   res.status(201).json(buildWorkspacePayload(project, fork));
 }
 
-function listProjectHistoryRecords(req: { params: { projectId: string } }, res: Response): void {
+function listProjectHistoryRecords(req: { params: { projectId: string }; query: Record<string, unknown> }, res: Response): void {
   const project = projectRepo.get(req.params.projectId);
   if (!project) {
     res.status(404).json({ error: 'project not found' });
     return;
   }
-  res.json(historyRecordRepo.listByProject(project.id));
+  const parsed = z.object({
+    q: z.string().trim().optional(),
+    status: historyRecordStatusSchema.optional(),
+    mode: sessionModeSchema.optional(),
+    limit: z.coerce.number().int().positive().max(500).optional(),
+  }).safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  res.json(historyRecordRepo.listByProject(project.id, parsed.data));
 }
 
 function getHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
@@ -624,13 +643,20 @@ function createCompactPreview(
 
 function buildWorkspacePayload(project: Project, activeSession: Session): SessionWorkspacePayload {
   const detail = buildSessionDetail(activeSession);
+  const evidence = detail.evidence.slice(-100);
   return {
     project,
     activeSession: detail,
     historyRecords: historyRecordRepo.listByProject(project.id),
     status: buildSessionStatus(activeSession),
     context: sessionContextRepo.getLatestBySession(activeSession.id) ?? null,
-    evidence: detail.evidence.slice(-100),
+    evidence,
+    projectSwitcher: buildSessionProjectSwitcher(project.id),
+    bottomStatus: buildSessionBottomStatus(detail.runs, detail.evidence),
+    contract: sessionContractRepo.getOrCreate(activeSession),
+    toolRows: buildSessionToolRows(evidence),
+    diffRows: buildSessionDiffRows(resolveSessionWorkspacePath(activeSession, project)),
+    historyFilters: { q: '', status: 'all', mode: 'all' },
   };
 }
 

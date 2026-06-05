@@ -46,3 +46,52 @@ test('historyRecordRepo creates records and normalizes JSON array fields', () =>
   const updated = historyRecordRepo.incrementForkCount(record.id);
   assert.equal(updated?.fork_count, 1);
 });
+
+test('historyRecordRepo filters records by query status and mode', () => {
+  const project = projectRepo.create({
+    name: 'history filters',
+    path: mkdtempSync(join(tmpdir(), 'history-filter-project-')),
+  });
+  const codeSession = sessionRepo.create({ project_id: project.id, title: 'code source' });
+  const askSession = sessionRepo.create({ project_id: project.id, title: 'ask source' });
+  historyRecordRepo.create({
+    project_id: project.id,
+    session_id: codeSession.id,
+    title: '补齐后端接入',
+    summary: '包含工具调用',
+    status: 'archived',
+    mode: 'code',
+    started_at: 1,
+    ended_at: 2,
+    key_decisions: [],
+    changed_files: [],
+    verification_summary: null,
+    commit_refs: [],
+    resume_brief: '目标：补齐后端接入',
+    compact_count: 0,
+  });
+  historyRecordRepo.create({
+    project_id: project.id,
+    session_id: askSession.id,
+    title: '普通问答',
+    summary: '无关内容',
+    status: 'completed',
+    mode: 'ask',
+    started_at: 1,
+    ended_at: 3,
+    key_decisions: [],
+    changed_files: [],
+    verification_summary: null,
+    commit_refs: [],
+    resume_brief: '目标：普通问答',
+    compact_count: 0,
+  });
+
+  const records = historyRecordRepo.listByProject(project.id, {
+    q: '工具',
+    status: 'archived',
+    mode: 'code',
+  });
+
+  assert.deepEqual(records.map((record) => record.title), ['补齐后端接入']);
+});

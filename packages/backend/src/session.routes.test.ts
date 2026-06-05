@@ -57,11 +57,24 @@ test('GET project session workspace creates an active session without creating a
     project: { id: string };
     activeSession: { session: { id: string; status: string } };
     historyRecords: unknown[];
+    projectSwitcher: { activeProjectId: string; projects: Array<{ id: string }> };
+    bottomStatus: { indexStatus: string };
+    contract: { sessionId: string };
+    toolRows: unknown[];
+    diffRows: unknown[];
+    historyFilters: { q: string; status: string; mode: string };
   };
 
   assert.equal(response.project.id, project.id);
   assert.equal(response.activeSession.session.status, 'active');
   assert.deepEqual(response.historyRecords, []);
+  assert.equal(response.projectSwitcher.activeProjectId, project.id);
+  assert.equal(response.projectSwitcher.projects.some((item) => item.id === project.id), true);
+  assert.equal(response.bottomStatus.indexStatus, 'unknown');
+  assert.equal(response.contract.sessionId, response.activeSession.session.id);
+  assert.deepEqual(response.toolRows, []);
+  assert.deepEqual(response.diffRows, []);
+  assert.deepEqual(response.historyFilters, { q: '', status: 'all', mode: 'all' });
   assert.deepEqual(roomRepo.listByProject(project.id), []);
   assert.deepEqual(taskRepo.listByProject(project.id), []);
 });
@@ -254,4 +267,51 @@ test('/new archives the source session into history and opens a new active sessi
   assert.equal(sessionRepo.get(session.id)?.status, 'archived');
   assert.equal(historyRecordRepo.getBySession(session.id)?.title, '完成第一段');
   assert.equal(payload.historyRecords[0]?.session_id, session.id);
+});
+
+test('GET project history records filters by query status and mode', async () => {
+  const project = projectRepo.create({
+    name: 'history route filters',
+    path: mkdtempSync(join(tmpdir(), 'session-history-route-filters-')),
+  });
+  const codeSession = sessionRepo.create({ project_id: project.id, title: 'Code Session' });
+  const askSession = sessionRepo.create({ project_id: project.id, title: 'Ask Session' });
+  historyRecordRepo.create({
+    project_id: project.id,
+    session_id: codeSession.id,
+    title: '补齐后端接入',
+    summary: '包含工具调用',
+    status: 'archived',
+    mode: 'code',
+    started_at: 1,
+    ended_at: 2,
+    key_decisions: [],
+    changed_files: [],
+    verification_summary: null,
+    commit_refs: [],
+    resume_brief: '目标：补齐后端接入',
+    compact_count: 0,
+  });
+  historyRecordRepo.create({
+    project_id: project.id,
+    session_id: askSession.id,
+    title: '普通问答',
+    summary: '无关内容',
+    status: 'completed',
+    mode: 'ask',
+    started_at: 1,
+    ended_at: 3,
+    key_decisions: [],
+    changed_files: [],
+    verification_summary: null,
+    commit_refs: [],
+    resume_brief: '目标：普通问答',
+    compact_count: 0,
+  });
+
+  const res = await request(`/api/projects/${project.id}/history-records?q=${encodeURIComponent('工具')}&status=archived&mode=code`);
+
+  assert.equal(res.status, 200);
+  const records = await res.json() as Array<{ title: string }>;
+  assert.deepEqual(records.map((record) => record.title), ['补齐后端接入']);
 });
