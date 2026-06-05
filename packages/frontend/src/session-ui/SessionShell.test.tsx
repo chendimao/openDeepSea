@@ -38,7 +38,7 @@ export function createPayload(): SessionWorkspacePayload {
         id: 'session-1',
         project_id: 'project-1',
         title: 'SessionOS 迁移',
-        current_goal: '把群聊任务工作流切换为会话历史模型',
+        current_goal: '把旧协作工作流切换为会话历史模型',
         mode: 'code',
         phase: 'implementing',
         status: 'active',
@@ -136,7 +136,7 @@ export function createPayload(): SessionWorkspacePayload {
       updated_at: now - 3_600_000,
     }],
     status: {
-      goal: '把群聊任务工作流切换为会话历史模型',
+      goal: '把旧协作工作流切换为会话历史模型',
       mode: 'code',
       phase: 'implementing',
       status: 'active',

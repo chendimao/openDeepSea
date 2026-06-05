@@ -1960,7 +1960,7 @@ rtk git commit -m "feat(frontend): 切换项目入口到SessionOS"
 - Test: `packages/frontend/src/pages/SessionWorkspacePage.test.tsx`
 - Test: `packages/backend/src/session.routes.test.ts`
 
-- [ ] **Step 1: Remove old workspace from active imports**
+- [x] **Step 1: Remove old workspace from active imports**
 
 `SessionWorkspacePage` must not import:
 
@@ -1978,11 +1978,11 @@ rtk rg -n "RoomWorkbench|TaskWorkspacePanel|RoomTabsBar" packages/frontend/src/p
 
 Expected: no output.
 
-- [ ] **Step 2: Hide create room path from UI**
+- [x] **Step 2: Hide create room path from UI**
 
 Remove visible create-room controls from main workspace. Old `/projects/:projectId/rooms` API can remain until data cleanup task, but no current route or primary button should create a room from Session OS.
 
-- [ ] **Step 3: Replace user-facing group-chat copy**
+- [x] **Step 3: Replace user-facing group-chat copy**
 
 Search:
 
@@ -1992,7 +1992,7 @@ rtk rg -n "群聊|任务列表|任务工作区|新增群聊|项目群聊" packag
 
 Expected: matches only in old components not reachable from Session OS, or no matches in new Session UI.
 
-- [ ] **Step 4: Backend guard against automatic old task creation in session path**
+- [x] **Step 4: Backend guard against automatic old task creation in session path**
 
 Assert session message endpoint never imports or calls:
 
@@ -2011,7 +2011,7 @@ rtk rg -n "createTaskWithConversation|dispatchUserMessage|routeMessage|taskRepo\
 
 Expected: no output.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add packages/frontend/src/pages/DevelopmentWorkspacePage.tsx packages/frontend/src/components/room/RoomWorkbench.tsx packages/frontend/src/components/TaskWorkspacePanel.tsx packages/frontend/src/lib/i18n.tsx packages/backend/src/routes.ts packages/frontend/src/pages/SessionWorkspacePage.test.tsx packages/backend/src/session.routes.test.ts
