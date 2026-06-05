@@ -91,6 +91,15 @@ export const historyRecordRepo = {
     db.prepare('UPDATE history_records SET fork_count = fork_count + 1, updated_at = ? WHERE id = ?').run(now(), id);
     return this.get(id);
   },
+
+  updateResumeBrief(id: string, resumeBrief: string): HistoryRecord | undefined {
+    db.prepare('UPDATE history_records SET resume_brief = ?, updated_at = ? WHERE id = ?').run(
+      resumeBrief,
+      now(),
+      id,
+    );
+    return this.get(id);
+  },
 };
 
 function parseHistoryRecordRow(row: HistoryRecordRow): HistoryRecord {

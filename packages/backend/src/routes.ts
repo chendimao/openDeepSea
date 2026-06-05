@@ -72,6 +72,7 @@ import {
 import { extractCreateTaskTitle, routeMessage } from './task-router.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
+import { sessionRouter } from './session.routes.js';
 import {
   MAX_MESSAGE_FILES,
   buildAttachmentMetadata,
@@ -133,6 +134,7 @@ import {
 export const router = Router();
 router.use('/skills', skillsRouter);
 router.use('/platform-skills', platformSkillsRouter);
+router.use(sessionRouter);
 
 // ---------- System context ----------
 router.get('/context/system', (_req, res) => {

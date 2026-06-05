@@ -1,0 +1,711 @@
+import { Router, type Response } from 'express';
+import { z } from 'zod';
+import { now } from './db.js';
+import { projectRepo } from './repos/projects.js';
+import {
+  sessionMessageRepo,
+  sessionPlanItemRepo,
+  sessionRepo,
+  sessionRunRepo,
+} from './repos/sessions.js';
+import { historyRecordRepo } from './repos/history-records.js';
+import { sessionCompactionRepo } from './repos/session-compactions.js';
+import { sessionContextRepo } from './repos/session-context.js';
+import { sessionEvidenceRepo } from './repos/session-evidence.js';
+import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
+import { parseSessionCommand, type ParsedSessionCommand } from './session-command.js';
+import { buildContextManifestDraft } from './session-context.js';
+import { buildHistorySummary } from './session-summary.js';
+import { buildStatusSnapshot } from './session-status.js';
+import type {
+  HistoryRecord,
+  Project,
+  Session,
+  SessionContextManifest,
+  SessionDetail,
+  SessionEvidenceEvent,
+  SessionMode,
+  SessionWorkspacePayload,
+  StatusSnapshot,
+} from './types.js';
+
+export const sessionRouter = Router();
+
+const sessionModeSchema = z.enum(['ask', 'plan', 'code', 'debug', 'review']);
+
+sessionRouter.get('/projects/:projectId/session-workspace', (req, res) => {
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const activeSession = getOrCreateActiveSession(project);
+  res.json(buildWorkspacePayload(project, activeSession));
+});
+
+sessionRouter.get('/projects/:projectId/sessions', listProjectSessions);
+sessionRouter.post('/projects/:projectId/sessions', createProjectSession);
+sessionRouter.get('/sessions/:sessionId', getSessionDetail);
+sessionRouter.patch('/sessions/:sessionId', updateSession);
+sessionRouter.post('/sessions/:sessionId/messages', createSessionMessage);
+sessionRouter.post('/sessions/:sessionId/new', runNewCommand);
+sessionRouter.post('/sessions/:sessionId/compact/preview', previewSessionCompact);
+sessionRouter.post('/sessions/:sessionId/compact/apply', applySessionCompact);
+sessionRouter.get('/sessions/:sessionId/status', getSessionStatus);
+sessionRouter.get('/sessions/:sessionId/context', getSessionContext);
+sessionRouter.get('/sessions/:sessionId/evidence', listSessionEvidence);
+sessionRouter.post('/sessions/:sessionId/checkpoints', createSessionCheckpoint);
+sessionRouter.post('/sessions/:sessionId/fork', forkSession);
+sessionRouter.get('/projects/:projectId/history-records', listProjectHistoryRecords);
+sessionRouter.get('/history-records/:historyRecordId', getHistoryRecord);
+sessionRouter.post('/history-records/:historyRecordId/resume', resumeHistoryRecord);
+sessionRouter.post('/history-records/:historyRecordId/fork', forkHistoryRecord);
+sessionRouter.post('/history-records/:historyRecordId/resume-brief/regenerate', regenerateResumeBrief);
+sessionRouter.get('/history-records/:historyRecordId/export', exportHistoryRecord);
+
+function listProjectSessions(req: { params: { projectId: string }; query: Record<string, unknown> }, res: Response): void {
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
+  res.json(sessionRepo.listByProject(project.id, { includeArchived: req.query.includeArchived === '1' }));
+}
+
+function createProjectSession(req: { params: { projectId: string }; body: unknown }, res: Response): void {
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
+  const parsed = z.object({
+    title: z.string().trim().min(1).optional(),
+    current_goal: z.string().trim().min(1).nullable().optional(),
+    mode: sessionModeSchema.optional(),
+    provider: z.enum(['claudecode', 'opencode', 'codex']).nullable().optional(),
+    model: z.string().trim().min(1).nullable().optional(),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: parsed.data.title,
+    current_goal: parsed.data.current_goal,
+    mode: parsed.data.mode,
+    provider: parsed.data.provider ?? 'codex',
+    model: parsed.data.model,
+    workspace_path: project.path,
+  });
+  res.status(201).json(session);
+}
+
+function getSessionDetail(req: { params: { sessionId: string } }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  res.json(buildSessionDetail(session));
+}
+
+function updateSession(req: { params: { sessionId: string }; body: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = z.object({
+    title: z.string().trim().min(1).optional(),
+    current_goal: z.string().trim().min(1).nullable().optional(),
+    mode: sessionModeSchema.optional(),
+    phase: z.enum([
+      'idle',
+      'brainstorming',
+      'planning',
+      'implementing',
+      'debugging',
+      'reviewing',
+      'verifying',
+      'blocked',
+      'completed',
+      'archived',
+    ]).optional(),
+    status: z.enum(['active', 'blocked', 'completed', 'archived', 'failed']).optional(),
+    provider: z.enum(['claudecode', 'opencode', 'codex']).nullable().optional(),
+    model: z.string().trim().min(1).nullable().optional(),
+  }).strict().safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  res.json(sessionRepo.update(session.id, parsed.data));
+}
+
+function createSessionMessage(req: { params: { sessionId: string }; body: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = z.object({
+    content: z.string().trim().min(1),
+    sender_id: z.string().default('user'),
+    sender_name: z.string().nullable().optional(),
+    mode: sessionModeSchema.optional(),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+
+  const command = parseSessionCommand(parsed.data.content);
+  if (command.kind === 'new') return handleNewCommand(res, session, command);
+  if (command.kind === 'compact') return handleCompactPreviewCommand(res, session, command);
+  if (command.kind === 'status') {
+    res.json(buildSessionStatus(session));
+    return;
+  }
+  if (command.kind === 'context') {
+    res.json(ensureContextManifest(session));
+    return;
+  }
+
+  const updatedSession = parsed.data.mode && parsed.data.mode !== session.mode
+    ? sessionRepo.update(session.id, { mode: parsed.data.mode }) ?? session
+    : session;
+  const message = sessionMessageRepo.create({
+    session_id: updatedSession.id,
+    role: 'user',
+    sender_id: parsed.data.sender_id,
+    sender_name: parsed.data.sender_name,
+    content: parsed.data.content,
+  });
+  sessionEvidenceRepo.create({
+    session_id: updatedSession.id,
+    event_type: 'message',
+    source_message_id: message.id,
+    title: 'User message',
+    payload: { message_id: message.id },
+  });
+  res.status(202).json({ message });
+}
+
+function runNewCommand(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = z.object({
+    title: z.string().trim().min(1).optional(),
+    blank: z.boolean().optional(),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const command: ParsedSessionCommand = {
+    kind: 'new',
+    raw: '/new',
+    body: '',
+    args: {
+      ...(parsed.data.title ? { title: parsed.data.title } : {}),
+      ...(parsed.data.blank ? { blank: true } : {}),
+    },
+  };
+  handleNewCommand(res, session, command);
+}
+
+function previewSessionCompact(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = z.object({
+    focus: z.string().trim().min(1).optional(),
+    strategy: z.enum(['manual', 'focus', 'aggressive', 'conservative', 'auto_suggested']).optional(),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const command: ParsedSessionCommand = {
+    kind: 'compact',
+    raw: '/compact',
+    body: '',
+    args: parsed.data.focus ? { focus: parsed.data.focus } : {},
+  };
+  const compaction = createCompactPreview(session, command, parsed.data.strategy);
+  res.status(201).json(compaction);
+}
+
+function applySessionCompact(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = z.object({
+    compaction_id: z.string().min(1),
+    applied_summary: z.string().trim().min(1),
+    user_edited: z.boolean().optional(),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const compaction = sessionCompactionRepo.get(parsed.data.compaction_id);
+  if (!compaction || compaction.session_id !== session.id) {
+    res.status(404).json({ error: 'compaction not found' });
+    return;
+  }
+  const applied = sessionCompactionRepo.apply(compaction.id, {
+    applied_summary: parsed.data.applied_summary,
+    user_edited: parsed.data.user_edited,
+  });
+  sessionRepo.update(session.id, { latest_compaction_id: compaction.id });
+  sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'compact',
+    title: 'Compact applied',
+    summary: parsed.data.applied_summary,
+    payload: { compaction_id: compaction.id },
+  });
+  res.json(applied);
+}
+
+function getSessionStatus(req: { params: { sessionId: string } }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  res.json(buildSessionStatus(session));
+}
+
+function getSessionContext(req: { params: { sessionId: string } }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  res.json(ensureContextManifest(session));
+}
+
+function listSessionEvidence(req: { params: { sessionId: string } }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  res.json(sessionEvidenceRepo.listBySession(session.id));
+}
+
+function createSessionCheckpoint(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = z.object({
+    title: z.string().trim().min(1),
+    description: z.string().nullable().optional(),
+    git_head: z.string().nullable().optional(),
+    branch_name: z.string().nullable().optional(),
+    diff_summary: z.string().nullable().optional(),
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const checkpoint = sessionCheckpointRepo.create({
+    session_id: session.id,
+    ...parsed.data,
+  });
+  const evidence = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'checkpoint',
+    title: checkpoint.title,
+    summary: checkpoint.diff_summary,
+    payload: { checkpoint_id: checkpoint.id },
+  });
+  res.status(201).json({ ...checkpoint, evidence_event_id: evidence.id });
+}
+
+function forkSession(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const parsed = forkInputSchema().safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const fork = sessionRepo.create({
+    project_id: session.project_id,
+    title: parsed.data.title ?? `Fork: ${session.title}`,
+    current_goal: session.current_goal,
+    mode: parsed.data.mode ?? session.mode,
+    provider: parsed.data.provider ?? session.provider,
+    model: parsed.data.model ?? session.model,
+    workspace_path: session.workspace_path,
+    worktree_path: parsed.data.worktree_path ?? null,
+    branch_name: parsed.data.branch_name ?? session.branch_name,
+    forked_from_session_id: session.id,
+  });
+  sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'fork',
+    title: 'Session forked',
+    payload: { fork_session_id: fork.id },
+  });
+  sessionEvidenceRepo.create({
+    session_id: fork.id,
+    event_type: 'fork',
+    title: 'Fork created',
+    payload: { source_session_id: session.id },
+  });
+  const project = projectRepo.get(session.project_id)!;
+  res.status(201).json(buildWorkspacePayload(project, fork));
+}
+
+function listProjectHistoryRecords(req: { params: { projectId: string } }, res: Response): void {
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
+  res.json(historyRecordRepo.listByProject(project.id));
+}
+
+function getHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
+  const record = historyRecordRepo.get(req.params.historyRecordId);
+  if (!record) {
+    res.status(404).json({ error: 'history record not found' });
+    return;
+  }
+  res.json(record);
+}
+
+function resumeHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
+  const record = historyRecordRepo.get(req.params.historyRecordId);
+  if (!record) {
+    res.status(404).json({ error: 'history record not found' });
+    return;
+  }
+  const project = projectRepo.get(record.project_id);
+  if (!project) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
+  const session = sessionRepo.create({
+    project_id: record.project_id,
+    title: `Resume: ${record.title}`,
+    current_goal: readGoalFromResumeBrief(record),
+    mode: record.mode,
+    provider: 'codex',
+    workspace_path: project.path,
+    forked_from_history_record_id: record.id,
+  });
+  sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'system',
+    sender_id: 'system',
+    sender_name: 'OpenClaw',
+    message_type: 'system',
+    content: [
+      '这是从历史记录恢复的新会话。请先对齐目标、未完成项、关键文件和最近验证，再继续执行。',
+      '',
+      record.resume_brief,
+    ].join('\n'),
+  });
+  sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'resume',
+    title: 'History resumed',
+    payload: { history_record_id: record.id },
+  });
+  res.status(201).json(buildWorkspacePayload(project, session));
+}
+
+function forkHistoryRecord(req: { params: { historyRecordId: string }; body?: unknown }, res: Response): void {
+  const record = historyRecordRepo.get(req.params.historyRecordId);
+  if (!record) {
+    res.status(404).json({ error: 'history record not found' });
+    return;
+  }
+  const project = projectRepo.get(record.project_id);
+  if (!project) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
+  const parsed = forkInputSchema().safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const fork = sessionRepo.create({
+    project_id: record.project_id,
+    title: parsed.data.title ?? `Fork: ${record.title}`,
+    current_goal: readGoalFromResumeBrief(record),
+    mode: parsed.data.mode ?? record.mode,
+    provider: parsed.data.provider ?? 'codex',
+    model: parsed.data.model,
+    workspace_path: project.path,
+    worktree_path: parsed.data.worktree_path ?? null,
+    branch_name: parsed.data.branch_name ?? null,
+    forked_from_history_record_id: record.id,
+  });
+  historyRecordRepo.incrementForkCount(record.id);
+  sessionEvidenceRepo.create({
+    session_id: fork.id,
+    event_type: 'fork',
+    title: 'History fork created',
+    payload: { history_record_id: record.id },
+  });
+  res.status(201).json(buildWorkspacePayload(project, fork));
+}
+
+function regenerateResumeBrief(req: { params: { historyRecordId: string } }, res: Response): void {
+  const record = historyRecordRepo.get(req.params.historyRecordId);
+  if (!record) {
+    res.status(404).json({ error: 'history record not found' });
+    return;
+  }
+  const resumeBrief = [
+    `目标：${record.title}`,
+    `已完成：${record.summary}`,
+    `最近验证：${record.verification_summary ?? '未知'}`,
+    `优先读取文件：${record.changed_files.slice(0, 8).join(', ') || '无'}`,
+  ].join('\n');
+  res.json(historyRecordRepo.updateResumeBrief(record.id, resumeBrief));
+}
+
+function exportHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
+  const record = historyRecordRepo.get(req.params.historyRecordId);
+  if (!record) {
+    res.status(404).json({ error: 'history record not found' });
+    return;
+  }
+  const sourceSession = sessionRepo.get(record.session_id);
+  res.json({
+    record,
+    sourceSession: sourceSession ? buildSessionDetail(sourceSession) : null,
+  });
+}
+
+function handleNewCommand(res: Response, session: Session, command: ParsedSessionCommand): void {
+  const project = projectRepo.get(session.project_id);
+  if (!project) {
+    res.status(404).json({ error: 'project not found' });
+    return;
+  }
+  const detail = buildSessionDetail(session);
+  const changedFiles = collectChangedFiles(detail.evidence);
+  const verificationSummary = collectLatestVerification(detail.evidence);
+  const summary = buildHistorySummary({
+    goal: session.current_goal,
+    messages: detail.messages,
+    changedFiles,
+    verificationSummary,
+  });
+  const record = historyRecordRepo.create({
+    project_id: session.project_id,
+    session_id: session.id,
+    title: typeof command.args.title === 'string' ? command.args.title : summary.title,
+    summary: summary.summary,
+    status: session.status === 'failed' ? 'failed' : session.status === 'blocked' ? 'blocked' : 'archived',
+    mode: session.mode,
+    started_at: session.created_at,
+    ended_at: now(),
+    key_decisions: summary.keyDecisions,
+    changed_files: changedFiles,
+    verification_summary: verificationSummary,
+    commit_refs: collectCommitRefs(detail.evidence),
+    resume_brief: summary.resumeBrief,
+    compact_count: detail.compactions.length,
+  });
+  sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'new',
+    title: 'Session archived',
+    payload: { history_record_id: record.id },
+  });
+  sessionRepo.archive(session.id);
+  const next = sessionRepo.create({
+    project_id: session.project_id,
+    title: command.args.blank ? 'New Session' : `继续：${record.title}`,
+    current_goal: command.args.blank ? null : session.current_goal,
+    mode: session.mode,
+    provider: session.provider ?? 'codex',
+    model: session.model,
+    workspace_path: session.workspace_path ?? project.path,
+  });
+  res.status(201).json(buildWorkspacePayload(project, next));
+}
+
+function handleCompactPreviewCommand(res: Response, session: Session, command: ParsedSessionCommand): void {
+  res.status(201).json(createCompactPreview(session, command));
+}
+
+function createCompactPreview(
+  session: Session,
+  command: ParsedSessionCommand,
+  strategy?: 'manual' | 'focus' | 'aggressive' | 'conservative' | 'auto_suggested',
+) {
+  const messages = sessionMessageRepo.listBySession(session.id, { limit: 20 });
+  const focus = typeof command.args.focus === 'string' ? command.args.focus : null;
+  const previewSummary = [
+    focus ? `Focus：${focus}` : null,
+    `目标：${session.current_goal ?? session.title}`,
+    `最近消息数：${messages.length}`,
+    messages.slice(-5).map((message) => `${message.role}: ${message.content}`).join('\n'),
+  ].filter(Boolean).join('\n');
+  return sessionCompactionRepo.createPreview({
+    session_id: session.id,
+    strategy: strategy ?? (focus ? 'focus' : 'manual'),
+    focus_prompt: focus,
+    preview_summary: previewSummary,
+    retained_refs: messages.slice(-10).map((message) => `message:${message.id}`),
+    dropped_refs: messages.slice(0, -10).map((message) => `message:${message.id}`),
+    risk_notes: messages.length > 10 ? '较早消息将只通过摘要保留。' : null,
+  });
+}
+
+function buildWorkspacePayload(project: Project, activeSession: Session): SessionWorkspacePayload {
+  const detail = buildSessionDetail(activeSession);
+  return {
+    project,
+    activeSession: detail,
+    historyRecords: historyRecordRepo.listByProject(project.id),
+    status: buildSessionStatus(activeSession),
+    context: sessionContextRepo.getLatestBySession(activeSession.id) ?? null,
+    evidence: detail.evidence.slice(-100),
+  };
+}
+
+function buildSessionDetail(session: Session): SessionDetail {
+  return {
+    session,
+    messages: sessionMessageRepo.listBySession(session.id),
+    runs: sessionRunRepo.listBySession(session.id),
+    planItems: sessionPlanItemRepo.listBySession(session.id),
+    compactions: sessionCompactionRepo.listBySession(session.id),
+    checkpoints: sessionCheckpointRepo.listBySession(session.id),
+    evidence: sessionEvidenceRepo.listBySession(session.id),
+  };
+}
+
+function getOrCreateActiveSession(project: Project): Session {
+  const existing = sessionRepo.listByProject(project.id).find((session) => session.status === 'active');
+  if (existing) return existing;
+  return sessionRepo.create({
+    project_id: project.id,
+    title: 'New Session',
+    mode: 'ask',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+}
+
+function buildSessionStatus(session: Session): StatusSnapshot {
+  const evidence = sessionEvidenceRepo.listBySession(session.id);
+  const latestVerification = [...evidence].reverse().find((event) =>
+    event.event_type === 'test' ||
+    event.event_type === 'build' ||
+    event.event_type === 'browser_check' ||
+    event.event_type === 'review'
+  ) ?? null;
+  const latestBlocker = [...evidence].reverse().find((event) => event.event_type === 'blocker') ?? null;
+  return buildStatusSnapshot({
+    session,
+    context: sessionContextRepo.getLatestBySession(session.id) ?? null,
+    latestVerification,
+    latestBlocker,
+    changedFileCount: collectChangedFiles(evidence).length,
+    permissionMode: null,
+  });
+}
+
+function ensureContextManifest(session: Session): SessionContextManifest {
+  const existing = sessionContextRepo.getLatestBySession(session.id);
+  if (existing) return existing;
+  const draft = buildContextManifestDraft({
+    session,
+    agentsText: null,
+    rtkText: null,
+    compactSummary: null,
+    historyBriefs: [],
+    recentMessages: sessionMessageRepo.listBySession(session.id, { limit: 20 }),
+    explicitFiles: [],
+    gitDiff: null,
+  });
+  return sessionContextRepo.createManifest({
+    session_id: session.id,
+    total_token_estimate: draft.totalTokenEstimate,
+    sources: draft.sources.map((source) => ({
+      source_type: source.source_type,
+      source_ref: source.source_ref,
+      title: source.title,
+      included: source.included,
+      priority: source.priority,
+      token_estimate: source.token_estimate,
+      reason: source.reason,
+      content_hash: source.content_hash,
+      excerpt: source.excerpt,
+      metadata: source.metadata,
+    })),
+  });
+}
+
+function collectChangedFiles(evidence: SessionEvidenceEvent[]): string[] {
+  const files = new Set<string>();
+  for (const event of evidence) {
+    const path = event.payload.path ?? event.payload.file ?? event.payload.file_path;
+    if (event.event_type === 'file_diff' && typeof path === 'string' && path.trim()) {
+      files.add(path.trim());
+    }
+    if (Array.isArray(event.payload.files)) {
+      for (const file of event.payload.files) {
+        if (typeof file === 'string' && file.trim()) files.add(file.trim());
+      }
+    }
+  }
+  return [...files];
+}
+
+function collectCommitRefs(evidence: SessionEvidenceEvent[]): string[] {
+  return evidence.flatMap((event) => {
+    if (event.event_type !== 'commit') return [];
+    const ref = event.payload.commit ?? event.payload.hash ?? event.payload.ref;
+    return typeof ref === 'string' && ref.trim() ? [ref.trim()] : [];
+  });
+}
+
+function collectLatestVerification(evidence: SessionEvidenceEvent[]): string | null {
+  const event = [...evidence].reverse().find((item) =>
+    item.event_type === 'test' ||
+    item.event_type === 'build' ||
+    item.event_type === 'browser_check' ||
+    item.event_type === 'review'
+  );
+  return event ? event.summary ?? event.title : null;
+}
+
+function readGoalFromResumeBrief(record: HistoryRecord): string | null {
+  const firstLine = record.resume_brief.split('\n').find((line) => line.trim().startsWith('目标：'));
+  return firstLine ? firstLine.replace(/^目标：/, '').trim() || null : record.title;
+}
+
+function forkInputSchema() {
+  return z.object({
+    title: z.string().trim().min(1).optional(),
+    mode: sessionModeSchema.optional(),
+    provider: z.enum(['claudecode', 'opencode', 'codex']).nullable().optional(),
+    model: z.string().trim().min(1).nullable().optional(),
+    worktree_path: z.string().trim().min(1).nullable().optional(),
+    branch_name: z.string().trim().min(1).nullable().optional(),
+  });
+}

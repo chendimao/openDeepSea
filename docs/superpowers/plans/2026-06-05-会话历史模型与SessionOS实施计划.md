@@ -1034,7 +1034,7 @@ rtk git commit -m "feat(backend): 实现会话控制服务"
 - Modify: `packages/backend/src/routes.ts`
 - Test: `packages/backend/src/session.routes.test.ts`
 
-- [ ] **Step 1: 创建 session router**
+- [x] **Step 1: 创建 session router**
 
 Create `packages/backend/src/session.routes.ts`:
 
@@ -1064,7 +1064,7 @@ sessionRouter.get('/projects/:projectId/session-workspace', (req, res) => {
 });
 ```
 
-- [ ] **Step 2: 实现 session CRUD endpoints**
+- [x] **Step 2: 实现 session CRUD endpoints**
 
 Add:
 
@@ -1092,7 +1092,7 @@ sessionRouter.get('/history-records/:historyRecordId/export', exportHistoryRecor
 
 Each handler must validate project/session ownership before writing.
 
-- [ ] **Step 3: Message endpoint handles slash commands**
+- [x] **Step 3: Message endpoint handles slash commands**
 
 In `POST /sessions/:sessionId/messages`:
 
@@ -1113,7 +1113,7 @@ if (command.kind === 'context') return res.json(sessionContextService.latestOrBu
 
 Normal message path writes `session_messages`, evidence `message`, and starts runtime in Task 5.
 
-- [ ] **Step 4: 挂载 route**
+- [x] **Step 4: 挂载 route**
 
 Modify `packages/backend/src/routes.ts`:
 
@@ -1125,7 +1125,7 @@ router.use(sessionRouter);
 
 Place this near `router.use('/skills', skillsRouter)` so session routes are not nested under old room routes.
 
-- [ ] **Step 5: 写 API tests**
+- [x] **Step 5: 写 API tests**
 
 Create `packages/backend/src/session.routes.test.ts` covering:
 
@@ -1140,7 +1140,7 @@ test('GET project session workspace creates an active session without creating a
 });
 ```
 
-- [ ] **Step 6: 运行 API tests**
+- [x] **Step 6: 运行 API tests**
 
 Run:
 
@@ -1150,7 +1150,7 @@ rtk node --import tsx --test packages/backend/src/session.routes.test.ts
 
 Expected: PASS。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 rtk git add packages/backend/src/session.routes.ts packages/backend/src/routes.ts packages/backend/src/session.routes.test.ts
