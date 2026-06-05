@@ -3508,42 +3508,8 @@ router.get('/projects/:projectId/tasks', (req, res) => {
 router.get('/rooms/:roomId/tasks', (req, res) => {
   const room = roomRepo.get(req.params.roomId);
   if (!room) return res.status(404).json({ error: 'room not found' });
-  reconcileCompletedAutoAdvanceTasks(room.id);
   res.json(taskRepo.listByRoom(room.id));
 });
-
-function reconcileCompletedAutoAdvanceTasks(roomId: string): void {
-  for (const task of taskRepo.listByRoom(roomId)) {
-    if (task.status === 'done') continue;
-    const latestAutoAdvance = [...taskEventRepo.listByTask(task.id, { layer: 'timeline', limit: 50 })]
-      .reverse()
-      .find((event) =>
-        event.type === 'task_updated' &&
-        event.payload.action === 'auto_advance' &&
-        event.payload.status === 'completed'
-      );
-    if (!latestAutoAdvance || !isTaskCompletingDelegatedAction(latestAutoAdvance.payload.delegated_action)) continue;
-    const after = taskRepo.updateStatus(task.id, 'done');
-    if (!after) continue;
-    recordTaskStatusChanged({
-      before: task,
-      after,
-      metadata: {
-        completed_by_task_action: 'auto_advance',
-        delegated_action: latestAutoAdvance.payload.delegated_action,
-        reconciled_from_task_event_id: latestAutoAdvance.id,
-      },
-    });
-    wsHub.broadcast(after.room_id, { type: 'task:updated', task: after });
-  }
-}
-
-function isTaskCompletingDelegatedAction(value: unknown): boolean {
-  return value === 'subagent_execution' ||
-    value === 'systematic_debugging' ||
-    value === 'verification' ||
-    value === 'finish_branch';
-}
 
 router.post('/rooms/:roomId/tasks/conversation', (req, res) => {
   const room = roomRepo.get(req.params.roomId);

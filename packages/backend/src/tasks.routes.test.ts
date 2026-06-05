@@ -123,7 +123,7 @@ test('task delete route hides task while preserving append-only task event histo
   );
 });
 
-test('room task list marks task done when auto advance completed terminal action historically', async () => {
+test('room task list does not reconcile historical auto advance completions as a read side effect', async () => {
   const project = projectRepo.create({
     name: 'Tasks Auto Advance Reconcile Route',
     path: mkdtempSync(join(tmpdir(), 'openclaw-room-tasks-auto-advance-project-')),
@@ -176,33 +176,34 @@ test('room task list marks task done when auto advance completed terminal action
 
   assert.equal(listRes.status, 200);
   const body = await listRes.json() as Array<{ id: string; status: string; completed_at: number | null }>;
-  const reconciled = body.find((item) => item.id === task.id);
-  assert.ok(reconciled);
-  assert.equal(reconciled.status, 'done');
-  assert.equal(typeof reconciled.completed_at, 'number');
-  assert.equal(taskRepo.get(task.id)?.status, 'done');
-  const reconciledDebugging = body.find((item) => item.id === debuggingTask.id);
-  assert.ok(reconciledDebugging);
-  assert.equal(reconciledDebugging.status, 'done');
-  assert.equal(taskRepo.get(debuggingTask.id)?.status, 'done');
+  const listed = body.find((item) => item.id === task.id);
+  assert.ok(listed);
+  assert.equal(listed.status, 'todo');
+  assert.equal(listed.completed_at, null);
+  assert.equal(taskRepo.get(task.id)?.status, 'todo');
+  const listedDebugging = body.find((item) => item.id === debuggingTask.id);
+  assert.ok(listedDebugging);
+  assert.equal(listedDebugging.status, 'todo');
+  assert.equal(listedDebugging.completed_at, null);
+  assert.equal(taskRepo.get(debuggingTask.id)?.status, 'todo');
   assert.equal(
     taskEventRepo.listByTask(task.id).some((event) =>
       event.type === 'task_status_changed' &&
       event.payload.completed_by_task_action === 'auto_advance' &&
       event.payload.delegated_action === 'subagent_execution'
     ),
-    true,
+    false,
   );
   assert.equal(
     taskEventRepo.listByTask(debuggingTask.id).some((event) =>
       event.type === 'task_status_changed' &&
       event.payload.delegated_action === 'systematic_debugging'
     ),
-    true,
+    false,
   );
   assert.equal(
     events.filter((event) => event.type === 'task:updated').length,
-    2,
+    0,
   );
 });
 
