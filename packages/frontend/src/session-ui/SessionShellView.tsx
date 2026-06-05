@@ -29,10 +29,12 @@ import type { LucideIcon } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import type {
   HistoryRecord,
+  HistoryRecordStatus,
   Session,
   SessionDetail,
   SessionEvidenceEvent,
   SessionMessage,
+  SessionMode,
   SessionPlanItem,
   SessionRun,
   SessionWorkspacePayload,
@@ -85,10 +87,18 @@ export function SessionShellView({
   payload,
   onSendMessage,
   onCommand,
+  onCancelRun,
+  onRetryRun,
+  onSaveContract,
+  onFilterHistory,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (content: string) => void;
   onCommand: (command: string) => void;
+  onCancelRun?: (runId: string) => void;
+  onRetryRun?: (runId: string) => void;
+  onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
+  onFilterHistory?: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) => void;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
   const recentHistory = payload.historyRecords.slice(0, 12);

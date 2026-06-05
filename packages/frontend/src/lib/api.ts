@@ -41,14 +41,17 @@ import type {
   RoomSearchResponse,
   SettingsResolution,
   HistoryRecord,
+  HistoryRecordStatus,
   Session,
   SessionCheckpoint,
   SessionCompaction,
+  SessionContract,
   SessionContextManifest,
   SessionDetail,
   SessionEvidenceEvent,
   SessionMessage,
   SessionMode,
+  SessionRun,
   SessionWorkspacePayload,
   StatusSnapshot,
   Skill,
@@ -583,6 +586,23 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ compaction_id: compactionId, ...input }),
     }),
+  discardCompact: (sessionId: string, compactionId: string) =>
+    request<SessionCompaction>(`/sessions/${sessionId}/compact/discard`, {
+      method: 'POST',
+      body: JSON.stringify({ compaction_id: compactionId }),
+    }),
+  updateSessionContract: (
+    sessionId: string,
+    input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] },
+  ) =>
+    request<SessionContract>(`/sessions/${sessionId}/contract`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  cancelSessionRun: (runId: string) =>
+    request<SessionRun>(`/session-runs/${runId}/cancel`, { method: 'POST' }),
+  retrySessionRun: (runId: string) =>
+    request<{ retried: true; source_run_id: string }>(`/session-runs/${runId}/retry`, { method: 'POST' }),
   getSessionStatus: (sessionId: string) =>
     request<StatusSnapshot>(`/sessions/${sessionId}/status`),
   getSessionContext: (sessionId: string) =>
@@ -602,8 +622,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
-  listHistoryRecords: (projectId: string) =>
-    request<HistoryRecord[]>(`/projects/${projectId}/history-records`),
+  listHistoryRecords: (
+    projectId: string,
+    input: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (input.q?.trim()) params.set('q', input.q.trim());
+    if (input.status && input.status !== 'all') params.set('status', input.status);
+    if (input.mode && input.mode !== 'all') params.set('mode', input.mode);
+    const query = params.toString();
+    return request<HistoryRecord[]>(`/projects/${projectId}/history-records${query ? `?${query}` : ''}`);
+  },
   getHistoryRecord: (historyRecordId: string) =>
     request<HistoryRecord>(`/history-records/${historyRecordId}`),
   resumeHistoryRecord: (historyRecordId: string) =>

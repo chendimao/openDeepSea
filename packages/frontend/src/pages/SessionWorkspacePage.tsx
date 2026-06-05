@@ -3,7 +3,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import type { SessionCompaction, SessionContextManifest, SessionWorkspacePayload, StatusSnapshot } from '../lib/types';
+import type {
+  HistoryRecordStatus,
+  SessionCompaction,
+  SessionContextManifest,
+  SessionMode,
+  SessionWorkspacePayload,
+  StatusSnapshot,
+} from '../lib/types';
 import { sessionSocket, type WsServerEvent } from '../lib/ws';
 import { CompactPreviewSurface } from '../session-ui/CompactPreviewSurface';
 import { SessionShell } from '../session-ui/SessionShell';
@@ -88,6 +95,46 @@ export function SessionWorkspacePage(): JSX.Element {
     onError: (error) => toast.error((error as Error).message),
   });
 
+  const discardCompact = useMutation({
+    mutationFn: (compactionId: string) => api.discardCompact(workspace.data!.activeSession.session.id, compactionId),
+    onSuccess: () => {
+      setCompactPreview(null);
+      return queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] });
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+
+  const cancelRun = useMutation({
+    mutationFn: api.cancelSessionRun,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] }),
+    onError: (error) => toast.error((error as Error).message),
+  });
+
+  const retryRun = useMutation({
+    mutationFn: api.retrySessionRun,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] }),
+    onError: (error) => toast.error((error as Error).message),
+  });
+
+  const saveContract = useMutation({
+    mutationFn: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) =>
+      api.updateSessionContract(workspace.data!.activeSession.session.id, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] }),
+    onError: (error) => toast.error((error as Error).message),
+  });
+
+  const filterHistory = useMutation({
+    mutationFn: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) =>
+      api.listHistoryRecords(activeProjectId, filters),
+    onSuccess: (records) => {
+      queryClient.setQueryData<SessionWorkspacePayload>(
+        ['session-workspace', activeProjectId, sessionId ?? 'active'],
+        (current) => current ? { ...current, historyRecords: records } : current,
+      );
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+
   if (!activeProjectId) {
     return (
       <div className="session-shell">
@@ -117,13 +164,17 @@ export function SessionWorkspacePage(): JSX.Element {
         }
         runCommand.mutate(command);
       }}
+      onCancelRun={(runId) => cancelRun.mutate(runId)}
+      onRetryRun={(runId) => retryRun.mutate(runId)}
+      onSaveContract={(input) => saveContract.mutate(input)}
+      onFilterHistory={(filters) => filterHistory.mutate(filters)}
     />
     {compactPreview && (
       <div className="session-overlay" role="dialog" aria-label="Compact Preview">
         <CompactPreviewSurface
           compaction={compactPreview}
           onApply={(summary) => applyCompact.mutate(summary)}
-          onDiscard={() => setCompactPreview(null)}
+          onDiscard={() => discardCompact.mutate(compactPreview.id)}
         />
       </div>
     )}

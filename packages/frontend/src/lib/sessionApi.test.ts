@@ -73,6 +73,58 @@ test('forkHistoryRecord posts provider overrides to history fork endpoint', asyn
   });
 });
 
+test('updateSessionContract patches session contract endpoint', async () => {
+  const fetchLog = installFetchStub({ sessionId: 'session-1' });
+  try {
+    await api.updateSessionContract('session-1', {
+      scope: '只改接入',
+      risks: ['风险'],
+      acceptanceCriteria: ['验收'],
+    });
+  } finally {
+    fetchLog.restore();
+  }
+
+  assert.equal(fetchLog.calls[0]?.url, '/api/sessions/session-1/contract');
+  assert.equal(fetchLog.calls[0]?.method, 'PATCH');
+});
+
+test('cancel and retry session run call run endpoints', async () => {
+  const fetchLog = installFetchStub({ ok: true });
+  try {
+    await api.cancelSessionRun('run-1');
+    await api.retrySessionRun('run-1');
+  } finally {
+    fetchLog.restore();
+  }
+
+  assert.equal(fetchLog.calls[0]?.url, '/api/session-runs/run-1/cancel');
+  assert.equal(fetchLog.calls[1]?.url, '/api/session-runs/run-1/retry');
+});
+
+test('discardCompact posts compaction id to discard endpoint', async () => {
+  const fetchLog = installFetchStub({ id: 'compact-1', status: 'discarded' });
+  try {
+    await api.discardCompact('session-1', 'compact-1');
+  } finally {
+    fetchLog.restore();
+  }
+
+  assert.equal(fetchLog.calls[0]?.url, '/api/sessions/session-1/compact/discard');
+  assert.deepEqual(JSON.parse(fetchLog.calls[0]?.body ?? '{}'), { compaction_id: 'compact-1' });
+});
+
+test('listHistoryRecords sends q status and mode query params', async () => {
+  const fetchLog = installFetchStub([]);
+  try {
+    await api.listHistoryRecords('project-1', { q: '工具', status: 'archived', mode: 'code' });
+  } finally {
+    fetchLog.restore();
+  }
+
+  assert.equal(fetchLog.calls[0]?.url, '/api/projects/project-1/history-records?q=%E5%B7%A5%E5%85%B7&status=archived&mode=code');
+});
+
 function installFetchStub(responseBody: unknown) {
   const originalFetch = globalThis.fetch;
   const calls: Array<{ url: string; method: string; body: string | null }> = [];
