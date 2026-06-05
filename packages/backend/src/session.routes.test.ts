@@ -178,6 +178,48 @@ test('applied compact is included in the next session runtime prompt', async () 
   assert.match(capturedPrompts.at(-1) ?? '', /## Context Sources/);
 });
 
+test('/context refreshes stale manifest after compact apply', async () => {
+  const project = projectRepo.create({
+    name: 'compact context refresh workspace',
+    path: mkdtempSync(join(tmpdir(), 'session-compact-context-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Compact Context Session',
+    workspace_path: project.path,
+  });
+
+  const firstContextRes = await request(`/api/sessions/${session.id}/context`);
+  assert.equal(firstContextRes.status, 200);
+
+  const previewRes = await request(`/api/sessions/${session.id}/compact/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ focus: '保留 context 刷新证据' }),
+  });
+  assert.equal(previewRes.status, 201);
+  const preview = await previewRes.json() as { id: string };
+
+  const applyRes = await request(`/api/sessions/${session.id}/compact/apply`, {
+    method: 'POST',
+    body: JSON.stringify({
+      compaction_id: preview.id,
+      applied_summary: '已保留 context 刷新证据',
+    }),
+  });
+  assert.equal(applyRes.status, 200);
+
+  const refreshedContextRes = await request(`/api/sessions/${session.id}/context`);
+  assert.equal(refreshedContextRes.status, 200);
+  const context = await refreshedContextRes.json() as {
+    sources: Array<{ source_type: string; source_ref: string | null; excerpt: string | null }>;
+  };
+  assert.ok(context.sources.some((source) =>
+    source.source_type === 'compact' &&
+    source.source_ref === preview.id &&
+    source.excerpt?.includes('已保留 context 刷新证据')
+  ));
+});
+
 test('/new archives the source session into history and opens a new active session', async () => {
   const project = projectRepo.create({
     name: 'new workspace',

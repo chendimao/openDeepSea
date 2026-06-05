@@ -28,6 +28,7 @@ import type {
   HistoryRecord,
   Project,
   Session,
+  SessionCompaction,
   SessionContextManifest,
   SessionDetail,
   SessionEvidenceEvent,
@@ -682,14 +683,14 @@ function buildSessionStatus(session: Session): StatusSnapshot {
 
 function ensureContextManifest(session: Session): SessionContextManifest {
   const existing = sessionContextRepo.getLatestBySession(session.id);
-  if (existing) return existing;
+  if (existing && isContextManifestFreshForSession(session, existing)) return existing;
   return createContextManifest(session);
 }
 
 function createContextManifest(session: Session): SessionContextManifest {
   const project = projectRepo.get(session.project_id);
   const workspacePath = session.worktree_path ?? session.workspace_path ?? project?.path ?? process.cwd();
-  const compactSummary = getLatestAppliedCompactSummary(session);
+  const compact = getLatestAppliedCompact(session);
   const historyBriefs = session.forked_from_history_record_id
     ? [historyRecordRepo.get(session.forked_from_history_record_id)].filter((record): record is HistoryRecord => Boolean(record))
     : [];
@@ -705,7 +706,7 @@ function createContextManifest(session: Session): SessionContextManifest {
       join(process.cwd(), 'RTK.md'),
       join(homedir(), '.codex', 'RTK.md'),
     ]),
-    compactSummary,
+    compactSummary: compact?.applied_summary?.trim() || null,
     historyBriefs,
     recentMessages: sessionMessageRepo.listBySession(session.id, { limit: 20 }),
     explicitFiles: [],
@@ -717,7 +718,7 @@ function createContextManifest(session: Session): SessionContextManifest {
     prompt_hash: hashPromptSources(draft.sources.map((source) => source.excerpt).join('\n')),
     sources: draft.sources.map((source) => ({
       source_type: source.source_type,
-      source_ref: source.source_ref,
+      source_ref: source.source_type === 'compact' ? compact?.id ?? source.source_ref : source.source_ref,
       title: source.title,
       included: source.included,
       priority: source.priority,
@@ -730,6 +731,15 @@ function createContextManifest(session: Session): SessionContextManifest {
   });
   sessionRepo.update(session.id, { latest_context_manifest_id: manifest.id });
   return manifest;
+}
+
+function isContextManifestFreshForSession(session: Session, manifest: SessionContextManifest): boolean {
+  if (!session.latest_compaction_id) return true;
+  return manifest.sources.some((source) =>
+    source.source_type === 'compact' &&
+    source.source_ref === session.latest_compaction_id &&
+    source.excerpt?.trim()
+  );
 }
 
 function collectChangedFiles(evidence: SessionEvidenceEvent[]): string[] {
@@ -887,14 +897,14 @@ function readFirstExistingFile(paths: string[]): string | null {
   return null;
 }
 
-function getLatestAppliedCompactSummary(session: Session): string | null {
+function getLatestAppliedCompact(session: Session): SessionCompaction | null {
   const compactions = sessionCompactionRepo
     .listBySession(session.id)
     .filter((item) => item.status === 'applied' && item.applied_summary?.trim());
   const latest = session.latest_compaction_id
     ? compactions.find((item) => item.id === session.latest_compaction_id) ?? compactions.at(-1)
     : compactions.at(-1);
-  return latest?.applied_summary?.trim() || null;
+  return latest ?? null;
 }
 
 function hashPromptSources(value: string): string {
