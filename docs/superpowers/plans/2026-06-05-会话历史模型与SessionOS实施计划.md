@@ -816,7 +816,7 @@ rtk git commit -m "feat(backend): 实现会话仓储层"
 - Test: `packages/backend/src/session-status.test.ts`
 - Test: `packages/backend/src/session-context.test.ts`
 
-- [ ] **Step 1: 实现 slash command parser**
+- [x] **Step 1: 实现 slash command parser**
 
 Create `packages/backend/src/session-command.ts`:
 
@@ -850,7 +850,7 @@ export function parseSessionCommand(input: string): ParsedSessionCommand {
 /fork checkpoint:abc123
 ```
 
-- [ ] **Step 2: 写 command parser tests**
+- [x] **Step 2: 写 command parser tests**
 
 Create `packages/backend/src/session-command.test.ts`:
 
@@ -875,7 +875,7 @@ test('parseSessionCommand parses compact focus argument', () => {
 });
 ```
 
-- [ ] **Step 3: 实现 deterministic summary helpers**
+- [x] **Step 3: 实现 deterministic summary helpers**
 
 Create `packages/backend/src/session-summary.ts`:
 
@@ -901,7 +901,7 @@ export function buildHistorySummary(input: {
 }
 ```
 
-- [ ] **Step 4: 实现 `/status` snapshot builder**
+- [x] **Step 4: 实现 `/status` snapshot builder**
 
 Create `packages/backend/src/session-status.ts`:
 
@@ -956,7 +956,7 @@ export function buildStatusSnapshot(input: {
 }
 ```
 
-- [ ] **Step 5: 实现 context manifest builder**
+- [x] **Step 5: 实现 context manifest builder**
 
 Create `packages/backend/src/session-context.ts`:
 
@@ -1010,7 +1010,7 @@ export function buildContextManifestDraft(input: {
 }
 ```
 
-- [ ] **Step 6: 运行 service tests**
+- [x] **Step 6: 运行 service tests**
 
 Run:
 
@@ -1020,7 +1020,7 @@ rtk node --import tsx --test packages/backend/src/session-command.test.ts packag
 
 Expected: PASS。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 rtk git add packages/backend/src/session-command.ts packages/backend/src/session-command.test.ts packages/backend/src/session-summary.ts packages/backend/src/session-summary.test.ts packages/backend/src/session-status.ts packages/backend/src/session-status.test.ts packages/backend/src/session-context.ts packages/backend/src/session-context.test.ts
