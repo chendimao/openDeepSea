@@ -23,7 +23,16 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /切换项目/);
   assert.match(html, /项目切换器/);
   assert.match(html, /选择一个工作区以继续您的任务/);
-  assert.match(html, /deepsea-command-center/);
+  assert.match(html, /OpenClaw/);
+  assert.doesNotMatch(html, /deepsea-command-center/);
+  assert.doesNotMatch(html, /quantum-core-engine/);
+  assert.doesNotMatch(html, /nebula-ui-kit/);
+  assert.doesNotMatch(html, /retry_handler\.py/);
+  assert.doesNotMatch(html, /sync_service\.py/);
+  assert.doesNotMatch(html, /1,242 tokens/);
+  assert.doesNotMatch(html, /分析当前会话页面结构/);
+  assert.doesNotMatch(html, /还原 Deepsea 三栏布局/);
+  assert.doesNotMatch(html, /运行浏览器 smoke test/);
   assert.match(html, /当前激活/);
   assert.match(html, /新建项目/);
   assert.match(html, /管理所有工作区/);
@@ -236,5 +245,59 @@ export function createPayload(): SessionWorkspacePayload {
       payload: { path: 'packages/frontend/src/session-ui/SessionShell.tsx' },
       created_at: now - 30_000,
     }],
+    projectSwitcher: {
+      activeProjectId: 'project-1',
+      projects: [{
+        id: 'project-1',
+        name: 'OpenClaw',
+        path: '/workspace/openclaw',
+        active: true,
+        recentSessions: [{
+          id: 'session-1',
+          title: 'SessionOS 迁移',
+          status: 'active',
+          updated_at: now,
+          href: '/projects/project-1/sessions/session-1',
+          source: 'session',
+        }],
+      }],
+    },
+    bottomStatus: {
+      health: 'ok',
+      healthLabel: '良好',
+      indexStatus: 'unknown',
+      indexLabel: '未接入索引',
+      lastResponseMs: 1000,
+      errorRate: 0,
+      networkLatencyMs: null,
+      tokenUsage: null,
+    },
+    contract: {
+      sessionId: 'session-1',
+      objective: '把旧协作工作流切换为会话历史模型',
+      scope: '仅补齐 Session OS 后端接入',
+      risks: ['retry 可能重复执行 prompt'],
+      acceptanceCriteria: ['页面不显示静态 mock 数据'],
+      updated_at: now,
+    },
+    toolRows: [{
+      id: 'tool-1',
+      action: 'edit',
+      label: '文件变更',
+      target: 'packages/frontend/src/session-ui/SessionShell.tsx',
+      status: 'completed',
+      durationMs: null,
+      severity: 'info',
+      eventId: 'evidence-1',
+      created_at: now,
+    }],
+    diffRows: [{
+      path: 'packages/frontend/src/session-ui/SessionShell.tsx',
+      status: 'modified',
+      additions: 12,
+      deletions: 3,
+      summary: 'M',
+    }],
+    historyFilters: { q: '', status: 'all', mode: 'all' },
   };
 }

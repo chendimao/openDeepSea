@@ -26,62 +26,25 @@ import {
   StopCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import type {
   HistoryRecord,
   HistoryRecordStatus,
   Session,
+  SessionBottomStatus,
+  SessionContract,
   SessionDetail,
+  SessionDiffRow,
   SessionEvidenceEvent,
   SessionMessage,
   SessionMode,
   SessionPlanItem,
   SessionRun,
+  SessionToolRow,
   SessionWorkspacePayload,
   StatusSnapshot,
 } from '../lib/types';
 import { evidenceTypeLabel, sessionStatusTone } from './session-ui-model';
-
-const fallbackTools = [
-  { action: 'READ', path: 'packages/frontend/src/session-ui/SessionShellView.tsx', tone: 'primary' },
-  { action: 'READ', path: 'packages/frontend/src/session-ui/session-os.css', tone: 'primary' },
-  { action: 'EXEC', path: 'npm run build', tone: 'warn' },
-];
-
-const fallbackDiffs = [
-  { path: 'retry_handler.py', delta: '+34', tone: 'ok' },
-  { path: 'sync_service.py', delta: '+8', tone: 'ok' },
-];
-
-const projectSwitcherCards = [
-  {
-    name: 'deepsea-command-center',
-    path: '~/workspaces/deepsea-command-center',
-    active: true,
-    sessions: [
-      ['优化数据同步模块...', '10:22'],
-      ['修复用户权限校验...', '昨天'],
-      ['重构 UI 组件库...', '2天前'],
-    ],
-  },
-  {
-    name: 'quantum-core-engine',
-    path: '~/workspaces/quantum-core',
-    active: false,
-    sessions: [
-      ['核心引擎性能调优', '3天前'],
-      ['更新依赖版本', '上周'],
-    ],
-  },
-  {
-    name: 'nebula-ui-kit',
-    path: '~/design/nebula-ui',
-    active: false,
-    sessions: [
-      ['添加深色模式支持', '1个月前'],
-    ],
-  },
-];
 
 export function SessionShellView({
   payload,
@@ -116,6 +79,7 @@ export function SessionShellView({
           records={recentHistory}
           activeSession={payload.activeSession.session}
           onCommand={onCommand}
+          onFilterHistory={onFilterHistory}
         />
         <TranscriptCanvas
           detail={payload.activeSession}
@@ -123,9 +87,16 @@ export function SessionShellView({
           onSendMessage={onSendMessage}
           onCommand={onCommand}
         />
-        <IntegratedInspector payload={payload} activeRun={activeRun} onCommand={onCommand} />
+        <IntegratedInspector
+          payload={payload}
+          activeRun={activeRun}
+          onCommand={onCommand}
+          onCancelRun={onCancelRun}
+          onRetryRun={onRetryRun}
+          onSaveContract={onSaveContract}
+        />
       </main>
-      <BottomStatusBar />
+      <BottomStatusBar status={payload.bottomStatus} />
     </section>
   );
 }
@@ -140,7 +111,8 @@ function TopCommandBar({
   forkTarget?: string;
 }): JSX.Element {
   const pressure = contextPressurePercent(payload.status.context.pressure);
-  const activeProjectName = 'deepsea-command-center';
+  const activeProjectName = payload.project.name;
+  const projects = payload.projectSwitcher.projects;
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
 
   return (
@@ -234,8 +206,8 @@ function TopCommandBar({
             </div>
             <div className="deepsea-project-menu__body">
               <div className="deepsea-project-grid">
-                {projectSwitcherCards.map((project) => (
-                  <article className="deepsea-project-card" data-active={project.active ? 'true' : undefined} key={project.name}>
+                {projects.map((project) => (
+                  <article className="deepsea-project-card" data-active={project.active ? 'true' : undefined} key={project.id}>
                     {project.active && (
                       <div className="deepsea-project-card__active">
                         <i />
@@ -248,10 +220,18 @@ function TopCommandBar({
                     </div>
                     <div className="deepsea-project-card__sessions">
                       <span>最近会话</span>
-                      {project.sessions.map(([title, time]) => (
-                        <button type="button" key={`${project.name}-${title}`}>
-                          <strong>{title}</strong>
-                          <em>{time}</em>
+                      {project.recentSessions.length === 0 ? (
+                        <em>暂无会话</em>
+                      ) : project.recentSessions.map((session) => (
+                        <button
+                          type="button"
+                          key={`${project.id}-${session.source}-${session.id}`}
+                          onClick={() => {
+                            if (typeof window !== 'undefined') window.location.assign(session.href);
+                          }}
+                        >
+                          <strong>{session.title}</strong>
+                          <em>{formatRelativeTime(Date.now(), session.updated_at)}</em>
                         </button>
                       ))}
                     </div>
@@ -293,43 +273,43 @@ function TopCommandBar({
   );
 }
 
-function BottomStatusBar(): JSX.Element {
+function BottomStatusBar({ status }: { status: SessionBottomStatus }): JSX.Element {
   return (
     <footer className="deepsea-bottom-status" aria-label="Session status bar">
       <div className="deepsea-bottom-status__group">
         <span className="deepsea-bottom-status__label">系统健康状态</span>
-        <span className="deepsea-status-dot" data-tone="ok" />
-        <strong>良好</strong>
+        <span className="deepsea-status-dot" data-tone={healthTone(status.health)} />
+        <strong>{status.healthLabel}</strong>
       </div>
       <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
         <span className="deepsea-bottom-status__label">索引状态</span>
-        <span className="deepsea-status-dot" data-tone="primary" />
-        <strong>已建立</strong>
+        <span className="deepsea-status-dot" data-tone={status.indexStatus === 'ready' ? 'primary' : 'warn'} />
+        <strong>{status.indexLabel}</strong>
       </div>
       <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
         <StopCircle aria-hidden="true" />
         <span className="deepsea-bottom-status__label">响应耗时</span>
-        <strong>1.2s</strong>
+        <strong>{formatResponseTime(status.lastResponseMs)}</strong>
       </div>
       <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
         <ShieldCheck aria-hidden="true" />
         <span className="deepsea-bottom-status__label">错误率</span>
-        <strong>0.0%</strong>
+        <strong>{formatErrorRate(status.errorRate)}</strong>
       </div>
       <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
         <RefreshCcw aria-hidden="true" />
         <span className="deepsea-bottom-status__label">网络延迟</span>
-        <strong>45ms</strong>
+        <strong>{status.networkLatencyMs === null ? '--' : `${status.networkLatencyMs}ms`}</strong>
       </div>
       <div className="deepsea-bottom-status__spacer" />
       <div className="deepsea-bottom-status__group">
         <FileText aria-hidden="true" />
         <span className="deepsea-bottom-status__label">API 消耗</span>
-        <strong>1,242 tokens</strong>
+        <strong>{status.tokenUsage ? `${status.tokenUsage.total.toLocaleString()} tokens` : '--'}</strong>
       </div>
       <span className="deepsea-bottom-status__divider" />
       <button type="button" className="deepsea-bottom-status__export">
@@ -391,11 +371,14 @@ function HistoryRail({
   records,
   activeSession,
   onCommand,
+  onFilterHistory,
 }: {
   records: HistoryRecord[];
   activeSession: Session;
   onCommand: (command: string) => void;
+  onFilterHistory?: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) => void;
 }): JSX.Element {
+  const [q, setQ] = useState('');
   return (
     <aside className="deepsea-history" aria-label="History Records">
       <div className="deepsea-history__header">
@@ -409,10 +392,21 @@ function HistoryRail({
             <MoreVertical aria-hidden="true" />
           </div>
         </div>
-        <label className="deepsea-search">
+        <form
+          className="deepsea-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onFilterHistory?.({ q, status: 'all', mode: 'all' });
+          }}
+        >
           <Search aria-hidden="true" />
-          <input type="search" placeholder="搜索历史..." />
-        </label>
+          <input
+            type="search"
+            value={q}
+            onChange={(event) => setQ(event.currentTarget.value)}
+            placeholder="搜索历史..."
+          />
+        </form>
       </div>
 
       <div className="deepsea-history__list">
@@ -593,15 +587,17 @@ function IntegratedInspector({
   payload,
   activeRun,
   onCommand,
+  onCancelRun,
+  onRetryRun,
+  onSaveContract,
 }: {
   payload: SessionWorkspacePayload;
   activeRun: SessionRun | null;
   onCommand: (command: string) => void;
+  onCancelRun?: (runId: string) => void;
+  onRetryRun?: (runId: string) => void;
+  onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
 }): JSX.Element {
-  const session = payload.activeSession.session;
-  const tools = useMemo(() => collectToolRows(payload.evidence), [payload.evidence]);
-  const diffs = useMemo(() => collectDiffRows(payload.evidence, payload.status), [payload.evidence, payload.status]);
-
   return (
     <aside className="deepsea-inspector" aria-label="Session Inspector">
       <div className="deepsea-tabs" role="tablist" aria-label="Inspector tabs">
@@ -612,17 +608,41 @@ function IntegratedInspector({
         ))}
       </div>
       <div className="deepsea-inspector__scroll">
-        <ContractModule session={session} />
+        <ContractModule contract={payload.contract} onSaveContract={onSaveContract} />
         <PlanModule items={payload.activeSession.planItems} />
-        <RunModule run={activeRun} status={payload.status} onCommand={onCommand} />
-        <ToolsModule rows={tools} />
-        <DiffModule rows={diffs} onCommand={onCommand} />
+        <RunModule
+          run={activeRun}
+          status={payload.status}
+          onCancelRun={onCancelRun}
+          onRetryRun={onRetryRun}
+        />
+        <ToolsModule rows={payload.toolRows} />
+        <DiffModule rows={payload.diffRows} onCommand={onCommand} />
       </div>
     </aside>
   );
 }
 
-function ContractModule({ session }: { session: Session }): JSX.Element {
+function ContractModule({
+  contract,
+  onSaveContract,
+}: {
+  contract: SessionContract;
+  onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [scope, setScope] = useState(contract.scope ?? '');
+  const [risks, setRisks] = useState(contract.risks.join('\n'));
+  const [criteria, setCriteria] = useState(contract.acceptanceCriteria.join('\n'));
+  const save = () => {
+    onSaveContract?.({
+      scope: scope.trim() || null,
+      risks: splitLines(risks),
+      acceptanceCriteria: splitLines(criteria),
+    });
+    setEditing(false);
+  };
+
   return (
     <section className="deepsea-glass-card">
       <div className="deepsea-module-title">
@@ -630,20 +650,44 @@ function ContractModule({ session }: { session: Session }): JSX.Element {
           <FileText aria-hidden="true" />
           目标契约 (Contract)
         </h3>
-        <button type="button">编辑</button>
+        {editing ? (
+          <button type="button" onClick={save}>保存</button>
+        ) : (
+          <button type="button" onClick={() => setEditing(true)}>编辑</button>
+        )}
       </div>
       <div className="deepsea-contract-list">
         <div>
           <span>目标 (Objective)</span>
-          <p>{session.current_goal ?? session.title}</p>
+          <p>{contract.objective}</p>
         </div>
         <div>
           <span>边界 (Scope)</span>
-          <p>仅修改 <code className="deepsea-inline-code">sync/</code> 目录，保持现有接口协议不变</p>
+          {editing ? (
+            <textarea value={scope} onChange={(event) => setScope(event.currentTarget.value)} />
+          ) : (
+            <p>{contract.scope ?? '未设置范围'}</p>
+          )}
         </div>
         <div>
           <span>风险 (Risks)</span>
-          <p><i /> 重试逻辑可能导致重复写入，需要幂等性保证</p>
+          {editing ? (
+            <textarea value={risks} onChange={(event) => setRisks(event.currentTarget.value)} />
+          ) : contract.risks.length === 0 ? (
+            <p><i /> 暂无风险记录</p>
+          ) : (
+            contract.risks.map((risk) => <p key={risk}><i /> {risk}</p>)
+          )}
+        </div>
+        <div>
+          <span>验收 (Acceptance)</span>
+          {editing ? (
+            <textarea value={criteria} onChange={(event) => setCriteria(event.currentTarget.value)} />
+          ) : contract.acceptanceCriteria.length === 0 ? (
+            <p>暂无验收标准</p>
+          ) : (
+            contract.acceptanceCriteria.map((item) => <p key={item}>{item}</p>)
+          )}
         </div>
       </div>
     </section>
@@ -653,15 +697,18 @@ function ContractModule({ session }: { session: Session }): JSX.Element {
 function RunModule({
   run,
   status,
-  onCommand,
+  onCancelRun,
+  onRetryRun,
 }: {
   run: SessionRun | null;
   status: StatusSnapshot;
-  onCommand: (command: string) => void;
+  onCancelRun?: (runId: string) => void;
+  onRetryRun?: (runId: string) => void;
 }): JSX.Element {
   const provider = run?.provider ?? status.provider.backend ?? 'codex';
   const model = run?.model ?? status.provider.model ?? 'gpt-test';
   const runLabel = run?.status ?? status.status;
+  const cancellable = Boolean(run && (run.status === 'queued' || run.status === 'running' || run.status === 'retrying'));
   return (
     <section className="deepsea-inspector-section deepsea-run-section">
       <h3>代理运行 (Active Run)</h3>
@@ -685,11 +732,16 @@ function RunModule({
           </div>
         </div>
         <div className="deepsea-run-card__actions">
-          <button type="button" aria-label="停止运行">
+          <button
+            type="button"
+            aria-label="停止运行"
+            disabled={!cancellable}
+            onClick={() => run && onCancelRun?.(run.id)}
+          >
             <StopCircle aria-hidden="true" />
             停止
           </button>
-          <button type="button" aria-label="重新执行" onClick={() => onCommand('/status')}>
+          <button type="button" aria-label="重新执行" disabled={!run} onClick={() => run && onRetryRun?.(run.id)}>
             <Repeat2 aria-hidden="true" />
             重试
           </button>
@@ -699,45 +751,48 @@ function RunModule({
   );
 }
 
-function ToolsModule({ rows }: { rows: Array<{ action: string; path: string; tone: string }> }): JSX.Element {
+function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
   return (
     <section className="deepsea-inspector-section">
       <div className="deepsea-module-title">
         <h3>工具调用 (TOOLS)</h3>
-        <span>耗时 24.3s | {rows.length} 文件</span>
+        <span>{rows.length} 条记录</span>
       </div>
+      {rows.length === 0 ? (
+        <div className="deepsea-empty">暂无工具调用</div>
+      ) : (
       <div className="deepsea-tool-table">
         {rows.map((row, index) => (
-          <div key={`${row.action}-${row.path}-${index}`} data-tone={row.tone}>
+          <div key={row.id} data-tone={toolRowTone(row)}>
             <span>{index + 1}</span>
             <strong>{toolActionLabel(row.action)}</strong>
-            <p>{row.path}</p>
-            <span>{index === 0 ? '2.1s' : index === 1 ? '3.4s' : '18.8s'}</span>
-            {row.tone === 'warn' ? <span>...</span> : <CheckCircle2 aria-hidden="true" />}
+            <p>{row.target}</p>
+            <span>{row.durationMs === null ? '--' : `${(row.durationMs / 1000).toFixed(1)}s`}</span>
+            {row.status === 'running' ? <span>...</span> : <CheckCircle2 aria-hidden="true" />}
           </div>
         ))}
       </div>
+      )}
     </section>
   );
 }
 
 function PlanModule({ items }: { items: SessionPlanItem[] }): JSX.Element {
-  const planItems = items.length > 0 ? items : [
-    { id: 'mock-1', title: '分析当前会话页面结构', status: 'completed' },
-    { id: 'mock-2', title: '还原 Deepsea 三栏布局', status: 'in_progress' },
-    { id: 'mock-3', title: '运行浏览器 smoke test', status: 'pending' },
-  ];
   return (
     <section className="deepsea-inspector-section">
       <h3>会话计划 (Session Plan)</h3>
+      {items.length === 0 ? (
+        <div className="deepsea-empty">暂无会话计划</div>
+      ) : (
       <div className="deepsea-plan-list">
-        {planItems.map((item) => (
+        {items.map((item) => (
           <div data-status={item.status} key={item.id}>
             {item.status === 'completed' ? <CheckCircle2 aria-hidden="true" /> : <Square aria-hidden="true" />}
             <span>{item.title}</span>
           </div>
         ))}
       </div>
+      )}
     </section>
   );
 }
@@ -746,7 +801,7 @@ function DiffModule({
   rows,
   onCommand,
 }: {
-  rows: Array<{ path: string; delta: string; tone: string }>;
+  rows: SessionDiffRow[];
   onCommand: (command: string) => void;
 }): JSX.Element {
   return (
@@ -759,13 +814,21 @@ function DiffModule({
         <span>UNCOMMITTED</span>
       </div>
       <div className="deepsea-diff-card">
-        {rows.map((row) => (
+        {rows.length === 0 ? (
+          <div>
+            <span>
+              <FileText aria-hidden="true" />
+              <em>working tree clean</em>
+            </span>
+            <strong data-tone="muted">0</strong>
+          </div>
+        ) : rows.map((row) => (
           <div key={row.path}>
             <span>
               <FileText aria-hidden="true" />
               <em>{row.path}</em>
             </span>
-            <strong data-tone={row.tone}>{row.delta}</strong>
+            <strong data-tone={diffRowTone(row)}>{formatDiffDelta(row)}</strong>
           </div>
         ))}
       </div>
@@ -837,38 +900,58 @@ function formatDuration(start: number, end: number): string {
   return [hours, minutes, rest].map((part) => String(part).padStart(2, '0')).join(':');
 }
 
-function collectToolRows(evidence: SessionEvidenceEvent[]): Array<{ action: string; path: string; tone: string }> {
-  const rows = evidence
-    .filter((event) => event.event_type === 'tool_call' || event.event_type === 'file_read' || event.event_type === 'test' || event.event_type === 'build')
-    .slice(-6)
-    .map((event) => ({
-      action: event.event_type === 'test' || event.event_type === 'build' ? 'EXEC' : event.event_type === 'file_read' ? 'READ' : 'TOOL',
-      path: String(event.payload.path ?? event.payload.command ?? event.summary ?? event.title),
-      tone: event.severity === 'warning' ? 'warn' : event.severity === 'error' || event.severity === 'critical' ? 'danger' : 'primary',
-    }));
-  return rows.length > 0 ? rows : fallbackTools;
-}
-
 function toolActionLabel(action: string): string {
   const normalized = action.toUpperCase();
   if (normalized === 'READ') return '读取文件';
+  if (normalized === 'EDIT') return '文件变更';
+  if (normalized === 'WRITE') return '写入文件';
+  if (normalized === 'BROWSER') return '浏览器验证';
   if (normalized === 'EXEC') return '执行命令';
   return '工具调用';
 }
 
-function collectDiffRows(
-  evidence: SessionEvidenceEvent[],
-  status: StatusSnapshot,
-): Array<{ path: string; delta: string; tone: string }> {
-  const rows = evidence
-    .filter((event) => event.event_type === 'file_diff')
-    .slice(-5)
-    .map((event) => ({
-      path: String(event.payload.path ?? event.title),
-      delta: String(event.payload.delta ?? '+1'),
-      tone: String(event.payload.delta ?? '+').startsWith('-') ? 'danger' : 'ok',
-    }));
-  if (rows.length > 0) return rows;
-  if (status.git.changedFileCount > 0) return fallbackDiffs.slice(0, Math.min(status.git.changedFileCount, fallbackDiffs.length));
-  return [{ path: 'working tree clean', delta: '0', tone: 'muted' }];
+function formatRelativeTime(now: number, timestamp: number): string {
+  const diff = Math.max(0, now - timestamp);
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  return `${Math.floor(diff / 86_400_000)} 天前`;
+}
+
+function healthTone(health: SessionBottomStatus['health']): 'ok' | 'warn' | 'danger' {
+  if (health === 'error') return 'danger';
+  if (health === 'warning') return 'warn';
+  return 'ok';
+}
+
+function formatResponseTime(value: number | null): string {
+  return value === null ? '--' : `${(value / 1000).toFixed(1)}s`;
+}
+
+function formatErrorRate(value: number | null): string {
+  return value === null ? '--' : `${(value * 100).toFixed(1)}%`;
+}
+
+function splitLines(value: string): string[] {
+  return value.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+function toolRowTone(row: SessionToolRow): 'primary' | 'warn' | 'danger' | 'ok' {
+  if (row.status === 'failed' || row.severity === 'error' || row.severity === 'critical') return 'danger';
+  if (row.status === 'running' || row.severity === 'warning') return 'warn';
+  return row.action === 'edit' || row.action === 'write' ? 'ok' : 'primary';
+}
+
+function diffRowTone(row: SessionDiffRow): 'ok' | 'danger' | 'warn' | 'muted' {
+  if (row.status === 'deleted' || row.status === 'conflicted') return 'danger';
+  if (row.status === 'renamed') return 'warn';
+  if (row.status === 'modified' || row.status === 'added' || row.status === 'untracked') return 'ok';
+  return 'muted';
+}
+
+function formatDiffDelta(row: SessionDiffRow): string {
+  const additions = row.additions ?? 0;
+  const deletions = row.deletions ?? 0;
+  if (additions === 0 && deletions === 0) return row.summary ?? row.status;
+  return `+${additions} / -${deletions}`;
 }
