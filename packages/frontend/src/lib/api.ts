@@ -40,6 +40,17 @@ import type {
   RoomCrewTemplate,
   RoomSearchResponse,
   SettingsResolution,
+  HistoryRecord,
+  Session,
+  SessionCheckpoint,
+  SessionCompaction,
+  SessionContextManifest,
+  SessionDetail,
+  SessionEvidenceEvent,
+  SessionMessage,
+  SessionMode,
+  SessionWorkspacePayload,
+  StatusSnapshot,
   Skill,
   SkillBinding,
   SkillBindingScope,
@@ -516,6 +527,95 @@ export const api = {
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
+  getSessionWorkspace: (projectId: string) =>
+    request<SessionWorkspacePayload>(`/projects/${projectId}/session-workspace`),
+  listSessions: (projectId: string, input: { includeArchived?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (input.includeArchived) params.set('includeArchived', '1');
+    const query = params.toString();
+    return request<Session[]>(`/projects/${projectId}/sessions${query ? `?${query}` : ''}`);
+  },
+  createSession: (
+    projectId: string,
+    input: { title?: string; current_goal?: string | null; mode?: SessionMode; provider?: AcpBackend | null; model?: string | null } = {},
+  ) =>
+    request<Session>(`/projects/${projectId}/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  getSession: (sessionId: string) => request<SessionDetail>(`/sessions/${sessionId}`),
+  updateSession: (
+    sessionId: string,
+    input: Partial<Pick<Session, 'title' | 'current_goal' | 'mode' | 'phase' | 'status' | 'provider' | 'model'>>,
+  ) =>
+    request<Session>(`/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  sendSessionMessage: (sessionId: string, input: { content: string; mode?: SessionMode }) =>
+    request<{ message: SessionMessage } | SessionWorkspacePayload>(`/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  newSessionFromCurrent: (sessionId: string, input: { title?: string; blank?: boolean } = {}) =>
+    request<SessionWorkspacePayload>(`/sessions/${sessionId}/new`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  previewCompact: (
+    sessionId: string,
+    input: { focus?: string; strategy?: 'manual' | 'focus' | 'aggressive' | 'conservative' | 'auto_suggested' } = {},
+  ) =>
+    request<SessionCompaction>(`/sessions/${sessionId}/compact/preview`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  applyCompact: (
+    sessionId: string,
+    compactionId: string,
+    input: { applied_summary: string; user_edited?: boolean },
+  ) =>
+    request<SessionCompaction>(`/sessions/${sessionId}/compact/apply`, {
+      method: 'POST',
+      body: JSON.stringify({ compaction_id: compactionId, ...input }),
+    }),
+  getSessionStatus: (sessionId: string) =>
+    request<StatusSnapshot>(`/sessions/${sessionId}/status`),
+  getSessionContext: (sessionId: string) =>
+    request<SessionContextManifest>(`/sessions/${sessionId}/context`),
+  listSessionEvidence: (sessionId: string) =>
+    request<SessionEvidenceEvent[]>(`/sessions/${sessionId}/evidence`),
+  createSessionCheckpoint: (sessionId: string, input: { title: string; description?: string | null }) =>
+    request<SessionCheckpoint>(`/sessions/${sessionId}/checkpoints`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  forkSession: (
+    sessionId: string,
+    input: { title?: string; mode?: SessionMode; provider?: AcpBackend | null; model?: string | null; worktree_path?: string | null; branch_name?: string | null } = {},
+  ) =>
+    request<SessionWorkspacePayload>(`/sessions/${sessionId}/fork`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  listHistoryRecords: (projectId: string) =>
+    request<HistoryRecord[]>(`/projects/${projectId}/history-records`),
+  getHistoryRecord: (historyRecordId: string) =>
+    request<HistoryRecord>(`/history-records/${historyRecordId}`),
+  resumeHistoryRecord: (historyRecordId: string) =>
+    request<SessionWorkspacePayload>(`/history-records/${historyRecordId}/resume`, { method: 'POST' }),
+  forkHistoryRecord: (
+    historyRecordId: string,
+    input: { title?: string; mode?: SessionMode; provider?: AcpBackend | null; model?: string | null; worktree_path?: string | null; branch_name?: string | null } = {},
+  ) =>
+    request<SessionWorkspacePayload>(`/history-records/${historyRecordId}/fork`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  regenerateResumeBrief: (historyRecordId: string) =>
+    request<HistoryRecord>(`/history-records/${historyRecordId}/resume-brief/regenerate`, { method: 'POST' }),
+  exportHistoryRecord: (historyRecordId: string) =>
+    request<{ record: HistoryRecord; sourceSession: SessionDetail | null }>(`/history-records/${historyRecordId}/export`),
   listFiles: (filters: { projectId?: string; roomId?: string; sourceType?: ProjectFile['source_type'] } = {}) => {
     if (filters.projectId && !filters.roomId) {
       return api.listResourceFiles(filters.projectId, { sourceType: filters.sourceType });

@@ -2,8 +2,13 @@ import type {
   AgentRun,
   AgentRunStatus,
   AgentTimelineEvent,
+  HistoryRecord,
   Message,
   RoomAgent,
+  Session,
+  SessionEvidenceEvent,
+  SessionMessage,
+  SessionRun,
   Task,
   TaskArtifact,
   TaskEvent,
@@ -38,6 +43,20 @@ export type WsServerEvent =
   | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
+  | { type: 'session:updated'; sessionId: string; session: Session }
+  | { type: 'session_message:new'; sessionId: string; message: SessionMessage }
+  | { type: 'session_run:created'; sessionId: string; run: SessionRun }
+  | { type: 'session_run:updated'; sessionId: string; run: SessionRun }
+  | {
+      type: 'session_run:stream';
+      sessionId: string;
+      runId: string;
+      chunk: string;
+      channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      done: boolean;
+    }
+  | { type: 'session_evidence:new'; sessionId: string; event: SessionEvidenceEvent }
+  | { type: 'history_record:new'; projectId: string; record: HistoryRecord }
   | { type: 'task:created'; task: Task }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:deleted'; taskId: string };
@@ -48,6 +67,7 @@ class RoomSocket {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
   private subscribed = new Set<string>();
+  private subscribedSessions = new Set<string>();
   private retry = 0;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -60,6 +80,7 @@ class RoomSocket {
     ws.addEventListener('open', () => {
       this.retry = 0;
       for (const id of this.subscribed) ws.send(JSON.stringify({ type: 'subscribe', roomId: id }));
+      for (const id of this.subscribedSessions) ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: id }));
     });
     ws.addEventListener('message', (e) => {
       try {
@@ -99,6 +120,22 @@ class RoomSocket {
     }
   }
 
+  subscribeSession(sessionId: string): void {
+    this.subscribedSessions.add(sessionId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'session:subscribe', sessionId }));
+    } else {
+      this.connect();
+    }
+  }
+
+  unsubscribeSession(sessionId: string): void {
+    this.subscribedSessions.delete(sessionId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'session:unsubscribe', sessionId }));
+    }
+  }
+
   destroy(): void {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.ws?.close();
@@ -107,3 +144,4 @@ class RoomSocket {
 }
 
 export const roomSocket = new RoomSocket();
+export const sessionSocket = roomSocket;

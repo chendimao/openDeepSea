@@ -1482,7 +1482,7 @@ rtk git commit -m "feat(backend): 完成会话控制命令"
 - Test: `packages/frontend/src/lib/sessionTypes.test.ts`
 - Test: `packages/frontend/src/lib/sessionApi.test.ts`
 
-- [ ] **Step 1: Add frontend session DTOs**
+- [x] **Step 1: Add frontend session DTOs**
 
 Append to `packages/frontend/src/lib/types.ts`:
 
@@ -1514,7 +1514,7 @@ export interface Session {
 }
 ```
 
-- [ ] **Step 2: Add API client methods**
+- [x] **Step 2: Add API client methods**
 
 Append to `api` in `packages/frontend/src/lib/api.ts`:
 
@@ -1543,7 +1543,7 @@ forkHistoryRecord: (historyRecordId: string, input: { provider?: AcpBackend | nu
   request<SessionWorkspacePayload>(`/history-records/${historyRecordId}/fork`, { method: 'POST', body: JSON.stringify(input) }),
 ```
 
-- [ ] **Step 3: Add session WS subscribe**
+- [x] **Step 3: Add session WS subscribe**
 
 Modify `packages/frontend/src/lib/ws.ts`:
 
@@ -1559,7 +1559,7 @@ unsubscribeSession(sessionId: string): void {
 
 Expose a `sessionSocket` or extend existing `roomSocket` with neutral names. The UI must call `subscribeSession`, not `subscribe(roomId)`.
 
-- [ ] **Step 4: Run frontend lib checks**
+- [x] **Step 4: Run frontend lib checks**
 
 Run:
 
@@ -1569,7 +1569,7 @@ rtk node --import tsx --test packages/frontend/src/lib/sessionTypes.test.ts pack
 
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 rtk git add packages/frontend/src/lib/types.ts packages/frontend/src/lib/api.ts packages/frontend/src/lib/ws.ts packages/frontend/src/lib/sessionTypes.test.ts packages/frontend/src/lib/sessionApi.test.ts
