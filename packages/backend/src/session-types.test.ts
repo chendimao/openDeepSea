@@ -82,6 +82,52 @@ test('SessionWorkspacePayload supports the initial workspace contract', () => {
     },
     context: null,
     evidence: [],
+    projectSwitcher: {
+      activeProjectId: 'project-1',
+      projects: [
+        {
+          id: 'project-1',
+          name: 'OpenClaw',
+          path: '/tmp/openclaw',
+          active: true,
+          recentSessions: [
+            {
+              id: 'session-1',
+              title: 'Session OS',
+              status: 'active',
+              updated_at: 2,
+              href: '/projects/project-1/sessions/session-1',
+              source: 'session',
+            },
+          ],
+        },
+      ],
+    },
+    bottomStatus: {
+      health: 'ok',
+      healthLabel: 'Ready',
+      indexStatus: 'unknown',
+      indexLabel: 'Index unknown',
+      lastResponseMs: null,
+      errorRate: null,
+      networkLatencyMs: null,
+      tokenUsage: null,
+    },
+    contract: {
+      sessionId: 'session-1',
+      objective: '实现会话系统',
+      scope: null,
+      risks: [],
+      acceptanceCriteria: [],
+      updated_at: 2,
+    },
+    toolRows: [],
+    diffRows: [],
+    historyFilters: {
+      q: '',
+      status: 'all',
+      mode: 'all',
+    },
   } satisfies SessionWorkspacePayload;
 
   assert.equal(payload.activeSession.session.mode, 'code');

@@ -69,9 +69,15 @@ class RoomSocket {
   private subscribed = new Set<string>();
   private subscribedSessions = new Set<string>();
   private retry = 0;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private closeWhenOpen = false;
 
   connect(): void {
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const url = `${proto}://${window.location.host}/ws`;
@@ -79,6 +85,16 @@ class RoomSocket {
     this.ws = ws;
     ws.addEventListener('open', () => {
       this.retry = 0;
+      if (this.closeWhenOpen && this.subscribed.size === 0 && this.subscribedSessions.size === 0) {
+        this.closeWhenOpen = false;
+        setTimeout(() => {
+          if (this.ws !== ws || this.subscribed.size > 0 || this.subscribedSessions.size > 0) return;
+          this.ws = null;
+          ws.close();
+        }, 0);
+        return;
+      }
+      this.closeWhenOpen = false;
       for (const id of this.subscribed) ws.send(JSON.stringify({ type: 'subscribe', roomId: id }));
       for (const id of this.subscribedSessions) ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: id }));
     });
@@ -92,6 +108,7 @@ class RoomSocket {
     });
     ws.addEventListener('close', () => {
       if (this.ws === ws) this.ws = null;
+      this.closeWhenOpen = false;
       if (this.subscribed.size === 0 && this.subscribedSessions.size === 0) return;
       this.retry++;
       const delay = Math.min(1000 * 2 ** this.retry, 10000);
@@ -105,12 +122,23 @@ class RoomSocket {
     return () => this.listeners.delete(listener);
   }
 
+  private connectSoon(): void {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    if (this.connectTimer) return;
+    this.connectTimer = setTimeout(() => {
+      this.connectTimer = null;
+      if (this.subscribed.size === 0 && this.subscribedSessions.size === 0) return;
+      this.connect();
+    }, 0);
+  }
+
   subscribe(roomId: string): void {
+    this.closeWhenOpen = false;
     this.subscribed.add(roomId);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'subscribe', roomId }));
     } else {
-      this.connect();
+      this.connectSoon();
     }
   }
 
@@ -123,11 +151,12 @@ class RoomSocket {
   }
 
   subscribeSession(sessionId: string): void {
+    this.closeWhenOpen = false;
     this.subscribedSessions.add(sessionId);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'session:subscribe', sessionId }));
     } else {
-      this.connect();
+      this.connectSoon();
     }
   }
 
@@ -140,18 +169,28 @@ class RoomSocket {
   }
 
   destroy(): void {
+    if (this.connectTimer) clearTimeout(this.connectTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.connectTimer = null;
     this.ws?.close();
     this.ws = null;
   }
 
   private closeIfIdle(): void {
     if (this.subscribed.size > 0 || this.subscribedSessions.size > 0) return;
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+    }
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
-    if (this.ws?.readyState === WebSocket.CONNECTING || this.ws?.readyState === WebSocket.OPEN) {
+    if (this.ws?.readyState === WebSocket.CONNECTING) {
+      this.closeWhenOpen = true;
+      return;
+    }
+    if (this.ws?.readyState === WebSocket.OPEN) {
       const socket = this.ws;
       this.ws = null;
       socket.close();

@@ -16,7 +16,6 @@ import {
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { cn, truncate } from '../lib/utils';
-import { roomSocket } from '../lib/ws';
 import { LobsterMark } from './LobsterMark';
 import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
@@ -52,11 +51,6 @@ export function AppShell({
     () => projects.find((project) => project.id === projectId),
     [projectId, projects],
   );
-
-  useEffect(() => {
-    roomSocket.connect();
-    return () => roomSocket.destroy();
-  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

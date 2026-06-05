@@ -37,7 +37,36 @@ class FakeWebSocket {
   }
 }
 
-test('sessionSocket closes idle connecting sockets without reconnecting', async () => {
+test('sessionSocket cancels pending connects when unsubscribed before socket creation', async () => {
+  FakeWebSocket.instances = [];
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { location: { protocol: 'http:', host: 'localhost:5173' } },
+  });
+  globalThis.WebSocket = FakeWebSocket as never;
+
+  try {
+    const { sessionSocket } = await import(`./ws.ts?ws-test-${Date.now()}`);
+
+    sessionSocket.subscribeSession('session-1');
+    sessionSocket.unsubscribeSession('session-1');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    assert.equal(FakeWebSocket.instances.length, 0);
+    sessionSocket.destroy();
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    });
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
+test('sessionSocket closes idle connecting sockets after open without reconnecting', async () => {
   FakeWebSocket.instances = [];
   const originalWindow = globalThis.window;
   const originalWebSocket = globalThis.WebSocket;
@@ -50,7 +79,7 @@ test('sessionSocket closes idle connecting sockets without reconnecting', async 
   });
   globalThis.WebSocket = FakeWebSocket as never;
   globalThis.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-    scheduledReconnects += 1;
+    if ((timeout ?? 0) >= 1000) scheduledReconnects += 1;
     return originalSetTimeout(handler, timeout, ...args);
   }) as typeof setTimeout;
 
@@ -58,13 +87,19 @@ test('sessionSocket closes idle connecting sockets without reconnecting', async 
     const { sessionSocket } = await import(`./ws.ts?ws-test-${Date.now()}`);
 
     sessionSocket.subscribeSession('session-1');
+    await new Promise((resolve) => originalSetTimeout(resolve, 5));
     assert.equal(FakeWebSocket.instances.length, 1);
 
     const socket = FakeWebSocket.instances[0];
     sessionSocket.unsubscribeSession('session-1');
+
+    assert.equal(socket.closed, false);
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.emit('open');
+    await new Promise((resolve) => originalSetTimeout(resolve, 5));
+    assert.equal(socket.closed, true);
     socket.emit('close');
 
-    assert.equal(socket.closed, true);
     assert.equal(scheduledReconnects, 0);
     sessionSocket.destroy();
   } finally {

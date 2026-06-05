@@ -96,5 +96,51 @@ function createPayload(): SessionWorkspacePayload {
     },
     context: null,
     evidence: [],
+    projectSwitcher: {
+      activeProjectId: 'project-1',
+      projects: [
+        {
+          id: 'project-1',
+          name: 'OpenClaw',
+          path: '/workspace',
+          active: true,
+          recentSessions: [
+            {
+              id: 'session-1',
+              title: 'Inspector Session',
+              status: 'active',
+              updated_at: now,
+              href: '/projects/project-1/sessions/session-1',
+              source: 'session',
+            },
+          ],
+        },
+      ],
+    },
+    bottomStatus: {
+      health: 'ok',
+      healthLabel: 'Ready',
+      indexStatus: 'unknown',
+      indexLabel: 'Index unknown',
+      lastResponseMs: null,
+      errorRate: null,
+      networkLatencyMs: null,
+      tokenUsage: null,
+    },
+    contract: {
+      sessionId: 'session-1',
+      objective: '检查 Inspector',
+      scope: null,
+      risks: [],
+      acceptanceCriteria: [],
+      updated_at: now,
+    },
+    toolRows: [],
+    diffRows: [],
+    historyFilters: {
+      q: '',
+      status: 'all',
+      mode: 'all',
+    },
   };
 }

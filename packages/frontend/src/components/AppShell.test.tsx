@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -34,4 +35,11 @@ test('AppShell labels primary workspace as Sessions', () => {
 
   assert.match(html, /Sessions/);
   assert.doesNotMatch(html, /projects\/project-1\/rooms/);
+});
+
+test('AppShell does not open a global websocket without a concrete subscription', () => {
+  const source = readFileSync(new URL('./AppShell.tsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(source, /roomSocket\.connect\(/);
+  assert.doesNotMatch(source, /roomSocket\.destroy\(/);
 });
