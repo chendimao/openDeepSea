@@ -49,6 +49,19 @@ const SUBAGENT_EXECUTION_ROLES: Array<{ role: AgentRunLinkRole; agentId: 'execut
   { role: 'spec_reviewer', agentId: 'reviewer', phaseLabel: '规格审查者' },
   { role: 'code_quality_reviewer', agentId: 'reviewer', phaseLabel: '代码质量审查者' },
 ];
+const MAX_NATIVE_SUBAGENT_REVIEW_FIX_ROUNDS = 2;
+
+interface ReviewFinding {
+  severity: 'critical' | 'important' | 'minor';
+  summary: string;
+  file?: string;
+  line?: number;
+}
+
+interface ReviewVerdict {
+  verdict: 'approved' | 'changes_requested' | 'blocked' | 'unknown';
+  issues: ReviewFinding[];
+}
 
 export interface TaskActionAgentResult {
   status: AgentRunStatus | 'failed';
@@ -662,7 +675,18 @@ async function runNativeSubagentExecution(input: {
 
   const resolvedParentRunId = parentRunId;
   const childContents: string[] = [];
-  for (const role of SUBAGENT_EXECUTION_ROLES) {
+  let reviewFixRounds = 0;
+  let reviewFindings: ReviewFinding[] = [];
+
+  const runLinkedSubagent = async (role: {
+    role: AgentRunLinkRole;
+    agentId: 'executor' | 'reviewer';
+    phaseLabel: string;
+    prompt?: string;
+  }): Promise<
+    | { ok: true; content: string }
+    | { ok: false; result: TaskActionStartResult }
+  > => {
     const agent = selectNativeSubagentRoleAgent(input.roomId, input.task, role.agentId);
     let childRunId: string | null = null;
     let childLink: AgentRunLink | null = null;
@@ -672,7 +696,7 @@ async function runNativeSubagentExecution(input: {
         agent,
         taskId: input.taskId,
         sourceMessageId: input.task.source_message_id,
-        prompt: buildNativeSubagentPrompt(role.role, role.phaseLabel, input.task, childContents),
+        prompt: role.prompt ?? buildNativeSubagentPrompt(role.role, role.phaseLabel, input.task, childContents),
         onRunCreated: (run) => {
           childRunId = run.id;
           pushUniqueRunId(runIds, run.id);
@@ -697,12 +721,12 @@ async function runNativeSubagentExecution(input: {
         error: errorMessage,
         native_subagent_execution: true,
       });
-      return {
+      return { ok: false, result: {
         action: 'subagent_execution',
         status: 'failed',
         message_id: messageId,
         run_ids: runIds,
-      };
+      } };
     }
 
     if (result.runId) {
@@ -719,12 +743,12 @@ async function runNativeSubagentExecution(input: {
         error,
         native_subagent_execution: true,
       });
-      return {
+      return { ok: false, result: {
         action: 'subagent_execution',
         status: 'failed',
         message_id: messageId,
         run_ids: runIds,
-      };
+      } };
     }
     if (!childLink) {
       const childRun = agentRunRepo.get(childRunId);
@@ -738,12 +762,12 @@ async function runNativeSubagentExecution(input: {
           error,
           native_subagent_execution: true,
         });
-        return {
+        return { ok: false, result: {
           action: 'subagent_execution',
           status: 'failed',
           message_id: messageId,
           run_ids: runIds,
-        };
+        } };
       }
       childLink = agentRunLinkRepo.create({
         room_id: input.roomId,
@@ -756,7 +780,6 @@ async function runNativeSubagentExecution(input: {
       broadcastSubagentRunProjection(input.roomId, childLink, childRun);
     }
     broadcastSubagentRunProjection(input.roomId, childLink, agentRunRepo.get(childRunId));
-    childContents.push(`${role.role}: ${result.content}`);
     if (result.status !== 'completed') {
       const error = result.error ?? `${role.role} 子代理未完成：${result.status}`;
       const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
@@ -767,13 +790,72 @@ async function runNativeSubagentExecution(input: {
         error,
         native_subagent_execution: true,
       });
-      return {
+      return { ok: false, result: {
         action: 'subagent_execution',
         status: 'failed',
         message_id: messageId,
         run_ids: runIds,
-      };
+      } };
     }
+    return { ok: true, content: result.content };
+  };
+
+  for (const role of SUBAGENT_EXECUTION_ROLES) {
+    const roleResult = await runLinkedSubagent(role);
+    if (!roleResult.ok) return roleResult.result;
+    childContents.push(`${role.role}: ${roleResult.content}`);
+    if (role.role === 'spec_reviewer' || role.role === 'code_quality_reviewer') {
+      const review = extractReviewVerdict(roleResult.content);
+      reviewFindings = review.issues;
+      if (hasBlockingReviewFindings(review)) {
+        break;
+      }
+    }
+  }
+
+  while (reviewFindings.length > 0 && reviewFixRounds < MAX_NATIVE_SUBAGENT_REVIEW_FIX_ROUNDS) {
+    reviewFixRounds += 1;
+    const fixResult = await runLinkedSubagent({
+      role: 'implementer',
+      agentId: 'executor',
+      phaseLabel: `审查修复者 ${reviewFixRounds}`,
+      prompt: buildNativeReviewFixPrompt(input.task, reviewFindings, childContents, reviewFixRounds),
+    });
+    if (!fixResult.ok) return fixResult.result;
+    childContents.push(`review_fix_${reviewFixRounds}: ${fixResult.content}`);
+
+    const reviewResult = await runLinkedSubagent({
+      role: 'code_quality_reviewer',
+      agentId: 'reviewer',
+      phaseLabel: `修复复审者 ${reviewFixRounds}`,
+    });
+    if (!reviewResult.ok) return reviewResult.result;
+    childContents.push(`review_fix_review_${reviewFixRounds}: ${reviewResult.content}`);
+    const review = extractReviewVerdict(reviewResult.content);
+    reviewFindings = review.issues;
+    if (!hasBlockingReviewFindings(review)) {
+      reviewFindings = [];
+      break;
+    }
+  }
+
+  if (reviewFindings.length > 0) {
+    const error = '审查仍有阻断问题，已达到自动修复轮次上限';
+    const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
+      superpowers_phase: 'tdd_execute',
+      run_id: resolvedParentRunId,
+      run_ids: runIds,
+      error,
+      review_findings: reviewFindings,
+      review_fix_rounds: reviewFixRounds,
+      native_subagent_execution: true,
+    });
+    return {
+      action: 'subagent_execution',
+      status: 'failed',
+      message_id: messageId,
+      run_ids: runIds,
+    };
   }
 
   const evidence = extractSuperpowersEvidence(childContents.join('\n\n')) ?? extractSuperpowersEvidence(parentResult.content);
@@ -785,6 +867,8 @@ async function runNativeSubagentExecution(input: {
     run_ids: runIds,
     error,
     evidence,
+    review_findings: reviewFindings,
+    review_fix_rounds: reviewFixRounds,
     native_subagent_execution: true,
   });
   return {
@@ -873,6 +957,86 @@ function buildNativeSubagentPrompt(
     '请只处理当前子代理角色负责的工作，并输出必要的 Superpowers evidence。',
     '实现者需要提供 RED/GREEN tddEvidence 或有效 tddExemption；审查者需要明确审查结论。',
   ].filter((line): line is string => line !== null).join('\n');
+}
+
+function buildNativeReviewFixPrompt(
+  task: Task,
+  findings: ReviewFinding[],
+  previousOutputs: string[],
+  round: number,
+): string {
+  return [
+    `原生子代理阶段：审查修复者 ${round}`,
+    '子代理角色：implementer',
+    `任务：${task.title}`,
+    task.description ? `任务说明：${task.description}` : null,
+    '',
+    '请修复审查指出的问题。只处理下列 findings，不做无关重构。',
+    formatReviewFindings(findings),
+    '',
+    previousOutputs.length > 0
+      ? `前序子代理输出摘要：\n${previousOutputs.slice(-4).join('\n\n')}`
+      : '前序子代理输出摘要：无',
+    '',
+    '修复后必须输出必要的 Superpowers evidence，包含 RED/GREEN tddEvidence 或有效 tddExemption。',
+  ].filter((line): line is string => line !== null).join('\n');
+}
+
+function extractReviewVerdict(content: string): ReviewVerdict {
+  const jsonBlocks = content.matchAll(/```json\s*([\s\S]*?)```/gu);
+  for (const match of jsonBlocks) {
+    try {
+      const parsed = JSON.parse(match[1] ?? '{}') as unknown;
+      if (!isRecord(parsed)) continue;
+      const rawReview = isRecord(parsed.review) ? parsed.review : isRecord(parsed.superpowers)
+        ? (isRecord(parsed.superpowers.review) ? parsed.superpowers.review : null)
+        : null;
+      if (!rawReview) continue;
+      return normalizeReviewVerdict(rawReview);
+    } catch {
+      continue;
+    }
+  }
+  return { verdict: 'unknown', issues: [] };
+}
+
+function normalizeReviewVerdict(value: Record<string, unknown>): ReviewVerdict {
+  const verdict = value.verdict === 'approved' ||
+    value.verdict === 'changes_requested' ||
+    value.verdict === 'blocked'
+    ? value.verdict
+    : 'unknown';
+  const issues = Array.isArray(value.issues)
+    ? value.issues.map(normalizeReviewFinding).filter((finding): finding is ReviewFinding => finding !== null)
+    : [];
+  return { verdict, issues };
+}
+
+function normalizeReviewFinding(value: unknown): ReviewFinding | null {
+  if (!isRecord(value)) return null;
+  const summary = typeof value.summary === 'string' ? value.summary.trim() : '';
+  if (!summary) return null;
+  const severity = value.severity === 'critical' || value.severity === 'important' || value.severity === 'minor'
+    ? value.severity
+    : 'important';
+  const file = typeof value.file === 'string' && value.file.trim() ? value.file.trim() : undefined;
+  const line = typeof value.line === 'number' && Number.isFinite(value.line) && value.line > 0
+    ? Math.floor(value.line)
+    : undefined;
+  return { severity, summary, file, line };
+}
+
+function hasBlockingReviewFindings(review: ReviewVerdict): boolean {
+  if (review.verdict !== 'changes_requested' && review.verdict !== 'blocked') return false;
+  return review.issues.some((issue) => issue.severity === 'critical' || issue.severity === 'important');
+}
+
+function formatReviewFindings(findings: ReviewFinding[]): string {
+  if (findings.length === 0) return '- 无结构化 findings';
+  return findings.map((finding, index) => {
+    const location = [finding.file, finding.line ? `:${finding.line}` : null].filter(Boolean).join('');
+    return `${index + 1}. [${finding.severity}] ${finding.summary}${location ? ` (${location})` : ''}`;
+  }).join('\n');
 }
 
 function actionToPhase(action: TaskActionKind): SuperpowersRuntimePhase | null {

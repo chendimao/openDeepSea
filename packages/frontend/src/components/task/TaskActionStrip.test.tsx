@@ -77,3 +77,31 @@ test('TaskActionStrip renders boundary confirmation copy before failed retry cop
   assert.match(html, /确认 @文件 chip 完整路径的适用范围后进入设计定稿/u);
   assert.doesNotMatch(html, /重试自动推进/u);
 });
+
+test('TaskActionStrip renders review findings and automatic fix rounds', () => {
+  const html = renderToStaticMarkup(
+    <TaskActionStrip
+      states={{
+        subagent_execution: {
+          status: 'failed',
+          detail: '审查仍有阻断问题',
+          reviewFixRounds: 2,
+          reviewFindings: [
+            {
+              severity: 'critical',
+              summary: '仍会展示错误字典预览',
+              file: 'index.vue',
+              line: 1102,
+            },
+          ],
+        },
+      }}
+      onStartAction={() => undefined}
+    />,
+  );
+
+  assert.match(html, /审查问题/u);
+  assert.match(html, /已自动回派修复 2 轮/u);
+  assert.match(html, /仍会展示错误字典预览/u);
+  assert.match(html, /index.vue:1102/u);
+});

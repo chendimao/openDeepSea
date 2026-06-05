@@ -44,6 +44,36 @@ test('createTaskActionStates folds new task actions and extracts evidence', () =
   assert.equal(states.systematic_debugging?.status, 'running');
 });
 
+test('createTaskActionStates extracts review findings and fix rounds', () => {
+  const states = createTaskActionStates([
+    taskEvent({
+      payload: {
+        task_action: 'subagent_execution',
+        task_action_status: 'failed',
+        review_fix_rounds: 2,
+        review_findings: [
+          {
+            severity: 'critical',
+            summary: '仍会展示错误字典预览',
+            file: 'index.vue',
+            line: 1102,
+          },
+        ],
+      },
+    }),
+  ], null);
+
+  assert.equal(states.subagent_execution?.reviewFixRounds, 2);
+  assert.deepEqual(states.subagent_execution?.reviewFindings, [
+    {
+      severity: 'critical',
+      summary: '仍会展示错误字典预览',
+      file: 'index.vue',
+      line: 1102,
+    },
+  ]);
+});
+
 test('deriveSuperpowersTaskStage prioritizes failed and blocked before running', () => {
   assert.equal(deriveSuperpowersTaskStage({
     writing_plans: {

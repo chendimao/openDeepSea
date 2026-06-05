@@ -1,4 +1,4 @@
-import type { Task, TaskActionKind, TaskActionState, TaskEvent } from '../../lib/types';
+import type { Task, TaskActionKind, TaskActionState, TaskEvent, TaskReviewFinding } from '../../lib/types';
 
 const ACTIONS: TaskActionKind[] = [
   'start_execution',
@@ -41,6 +41,8 @@ export function createTaskActionStates(
       status,
       detail: getTaskActionDetail(event.payload),
       evidence: getTaskActionEvidence(event.payload),
+      reviewFindings: getReviewFindings(event.payload),
+      reviewFixRounds: getReviewFixRounds(event.payload),
     };
   }
 
@@ -125,6 +127,32 @@ function getTaskActionEvidence(payload: Record<string, unknown>): Record<string,
     result.superpowers_routing = payload.superpowers_routing;
   }
   return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function getReviewFindings(payload: Record<string, unknown>): TaskReviewFinding[] | undefined {
+  const value = payload.review_findings;
+  if (!Array.isArray(value)) return undefined;
+  const findings = value.map(normalizeReviewFinding).filter((finding): finding is TaskReviewFinding => finding !== null);
+  return findings.length > 0 ? findings : undefined;
+}
+
+function normalizeReviewFinding(value: unknown): TaskReviewFinding | null {
+  if (!isRecord(value)) return null;
+  const summary = typeof value.summary === 'string' ? value.summary.trim() : '';
+  if (!summary) return null;
+  const severity = value.severity === 'critical' || value.severity === 'important' || value.severity === 'minor'
+    ? value.severity
+    : 'important';
+  const file = typeof value.file === 'string' && value.file.trim() ? value.file.trim() : undefined;
+  const line = typeof value.line === 'number' && Number.isFinite(value.line) && value.line > 0
+    ? Math.floor(value.line)
+    : undefined;
+  return { severity, summary, file, line };
+}
+
+function getReviewFixRounds(payload: Record<string, unknown>): number | undefined {
+  const value = payload.review_fix_rounds;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
 }
 
 function hasStatus(

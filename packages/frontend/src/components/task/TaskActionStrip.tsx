@@ -58,6 +58,7 @@ export function TaskActionStrip({
   const detail = awaitingUser && pendingTaskExecution
     ? createAwaitingUserDetail(pendingTaskExecution)
     : findStageDetail(states, stage, busyAction);
+  const reviewState = findReviewState(states);
   const visualStatus = awaitingUser
     ? 'blocked'
     : createPrimaryVisualStatus(stage, busyAction ? states[busyAction]?.status : undefined);
@@ -125,6 +126,29 @@ export function TaskActionStrip({
           menuContent
         )}
       </DropdownMenu.Root>
+      {reviewState && (
+        <div className="task-action-review-panel">
+          <div className="task-action-review-header">
+            <strong>审查问题</strong>
+            {reviewState.reviewFixRounds ? (
+              <span>已自动回派修复 {reviewState.reviewFixRounds} 轮</span>
+            ) : null}
+          </div>
+          <ul>
+            {reviewState.reviewFindings.slice(0, 3).map((finding, index) => (
+              <li key={`${finding.severity}-${finding.summary}-${index}`}>
+                <span className={`task-action-review-severity is-${finding.severity}`}>
+                  {reviewSeverityLabel(finding.severity)}
+                </span>
+                <span className="task-action-review-summary">{finding.summary}</span>
+                {finding.file ? (
+                  <code>{finding.file}{finding.line ? `:${finding.line}` : ''}</code>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -191,6 +215,24 @@ function findDetailByStatus(
     if (state?.status === status && state.detail) return state.detail;
   }
   return undefined;
+}
+
+type TaskActionReviewState = TaskActionState & {
+  reviewFindings: NonNullable<TaskActionState['reviewFindings']>;
+};
+
+function findReviewState(states: Partial<Record<TaskActionKind, TaskActionState>>): TaskActionReviewState | null {
+  for (const action of BUSY_ACTIONS) {
+    const state = states[action];
+    if (state?.reviewFindings?.length) return state as TaskActionReviewState;
+  }
+  return null;
+}
+
+function reviewSeverityLabel(severity: NonNullable<TaskActionState['reviewFindings']>[number]['severity']): string {
+  if (severity === 'critical') return 'Critical';
+  if (severity === 'important') return 'Important';
+  return 'Minor';
 }
 
 function shouldUseDropdownPortal(): boolean {

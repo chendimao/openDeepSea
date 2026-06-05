@@ -882,6 +882,15 @@ export interface TaskActionState {
   status: TaskActionStatus;
   detail?: string;
   evidence?: Record<string, unknown>;
+  reviewFindings?: TaskReviewFinding[];
+  reviewFixRounds?: number;
+}
+
+export interface TaskReviewFinding {
+  severity: 'critical' | 'important' | 'minor';
+  summary: string;
+  file?: string;
+  line?: number;
 }
 
 export interface TaskActionStartResult {

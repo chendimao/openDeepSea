@@ -1659,6 +1659,181 @@ test('subagent_execution creates native subagent run links for implementation an
   );
 });
 
+test('subagent_execution sends blocking review findings back to executor and re-reviews fix', async () => {
+  const project = projectRepo.create({
+    name: '原生子代理审查回派',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-native-subagent-review-fix-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(frontend);
+  assert.ok(reviewer);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: reviewer.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '审查失败后自动修复',
+    description: 'reviewer 提出 important 问题后应回派 executor',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    source_message_id: null,
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/native-subagent-review-fix-plan.md',
+  });
+  const calls: Array<{ agentId: string; prompt: string }> = [];
+  const runIds: string[] = [];
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async ({ agent, prompt, onRunCreated }) => {
+      calls.push({ agentId: agent.agent_id, prompt });
+      const run = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: agent.id,
+        agent_id: agent.agent_id,
+        backend: agent.acp_backend ?? 'codex',
+        prompt,
+        task_id: task.id,
+      });
+      runIds.push(run.id);
+      await onRunCreated?.(run);
+      agentRunRepo.updateStatus(run.id, 'completed');
+      if (calls.length === 4) {
+        return {
+          status: 'completed',
+          runId: run.id,
+          content: [
+            '审查发现阻断问题',
+            '```json',
+            '{"review":{"verdict":"changes_requested","issues":[{"severity":"important","summary":"旧请求会覆盖新预览","file":"index.vue","line":1102}]}}',
+            '```',
+          ].join('\n'),
+          error: null,
+        };
+      }
+      return {
+        status: 'completed',
+        runId: run.id,
+        content: [
+          '完成',
+          '```json',
+          '{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"通过"}]},"review":{"verdict":"approved","issues":[]}}',
+          '```',
+        ].join('\n'),
+        error: null,
+      };
+    },
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(calls.map((call) => call.agentId), [
+    'frontend-executor',
+    'frontend-executor',
+    'reviewer',
+    'reviewer',
+    'frontend-executor',
+    'reviewer',
+  ]);
+  assert.match(calls[4]?.prompt ?? '', /旧请求会覆盖新预览/u);
+  assert.match(calls[4]?.prompt ?? '', /请修复审查指出的问题/u);
+  assert.deepEqual(result.run_ids, runIds);
+  const links = agentRunLinkRepo.listByTask(task.id);
+  assert.deepEqual(
+    links.map((link) => link.role),
+    ['implementer', 'spec_reviewer', 'code_quality_reviewer', 'implementer', 'code_quality_reviewer'],
+  );
+  const completedEvent = taskEventRepo.listByTask(task.id).find((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'completed'
+  );
+  assert.equal(completedEvent?.payload.review_fix_rounds, 1);
+  assert.deepEqual(completedEvent?.payload.review_findings, []);
+});
+
+test('subagent_execution fails with review findings after fix retry limit is exhausted', async () => {
+  const project = projectRepo.create({
+    name: '原生子代理审查回派失败',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-native-subagent-review-fix-limit-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(frontend);
+  assert.ok(reviewer);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: reviewer.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '审查失败超过修复上限',
+    description: 'reviewer 持续提出 important 问题后应失败并保留 findings',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    source_message_id: null,
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/native-subagent-review-fix-limit-plan.md',
+  });
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async ({ agent, prompt, onRunCreated }) => {
+      const run = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: agent.id,
+        agent_id: agent.agent_id,
+        backend: agent.acp_backend ?? 'codex',
+        prompt,
+        task_id: task.id,
+      });
+      await onRunCreated?.(run);
+      agentRunRepo.updateStatus(run.id, 'completed');
+      const isReviewer = agent.agent_id === 'reviewer';
+      return {
+        status: 'completed',
+        runId: run.id,
+        content: isReviewer
+          ? [
+              '审查仍不通过',
+              '```json',
+              '{"review":{"verdict":"changes_requested","issues":[{"severity":"critical","summary":"仍会展示错误字典预览","file":"index.vue","line":1102}]}}',
+              '```',
+            ].join('\n')
+          : [
+              '实现完成',
+              '```json',
+              '{"superpowers":{"tddEvidence":[{"stage":"RED","command":"node --test","passed":false,"summary":"按预期失败"},{"stage":"GREEN","command":"node --test","passed":true,"summary":"通过"}]}}',
+              '```',
+            ].join('\n'),
+        error: null,
+      };
+    },
+  });
+
+  assert.equal(result.status, 'failed');
+  const failedEvent = taskEventRepo.listByTask(task.id).find((event) =>
+    event.payload.action === 'subagent_execution' &&
+    event.payload.status === 'failed'
+  );
+  assert.match(String(failedEvent?.payload.error ?? ''), /审查仍有阻断问题/u);
+  assert.equal(failedEvent?.payload.review_fix_rounds, 2);
+  assert.deepEqual(failedEvent?.payload.review_findings, [
+    {
+      severity: 'critical',
+      summary: '仍会展示错误字典预览',
+      file: 'index.vue',
+      line: 1102,
+    },
+  ]);
+});
+
 test('subagent_execution fails when a native child run has no run id', async () => {
   const project = projectRepo.create({
     name: '原生子代理缺少 run id',
