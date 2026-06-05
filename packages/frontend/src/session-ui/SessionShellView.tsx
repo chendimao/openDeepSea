@@ -474,7 +474,7 @@ function StatusModule({ status }: { status: StatusSnapshot }): JSX.Element {
   return (
     <section className="deepsea-inspector-section">
       <h3>
-        当前状态 (Status)
+        当前状态 (STATUS)
         <Info aria-hidden="true" />
       </h3>
       <dl className="deepsea-status-grid">
@@ -506,7 +506,7 @@ function ContractModule({ session }: { session: Session }): JSX.Element {
   return (
     <section className="deepsea-glass-card">
       <div className="deepsea-module-title">
-        <h3>目标契约 (Contract)</h3>
+        <h3>目标契约 (CONTRACT)</h3>
         <button type="button">编辑</button>
       </div>
       <div className="deepsea-contract-list">
@@ -540,31 +540,27 @@ function RunModule({
   const model = run?.model ?? status.provider.model ?? 'gpt-test';
   return (
     <section className="deepsea-inspector-section">
-      <h3>代理运行 (Run)</h3>
-      <div className="deepsea-run-card">
-        <div className="deepsea-run-card__top">
-          <span>
-            <Brain aria-hidden="true" />
-            <strong className="deepsea-mono">{formatProviderModel(provider, model)}</strong>
-          </span>
+      <h3>代理运行 (RUN)</h3>
+      <div className="deepsea-run-strip">
+        <div className="deepsea-run-strip__agent">
+          <Brain aria-hidden="true" />
+          <strong className="deepsea-mono">{formatProviderModel(provider, model)}</strong>
           <span className="deepsea-run-state">
             <i />
             {run?.status ?? status.status}
           </span>
         </div>
-        <div className="deepsea-run-card__bottom">
+        <div className="deepsea-run-strip__actions">
           <span>
             <ShieldCheck aria-hidden="true" />
             <strong className="deepsea-mono">{run ? formatDuration(run.started_at, run.completed_at ?? Date.now()) : '02:14:05'}</strong>
           </span>
-          <div>
-            <button type="button" aria-label="停止运行">
-              <StopCircle aria-hidden="true" />
-            </button>
-            <button type="button" aria-label="重新执行" onClick={() => onCommand('/status')}>
-              <Repeat2 aria-hidden="true" />
-            </button>
-          </div>
+          <button type="button" aria-label="停止运行">
+            <StopCircle aria-hidden="true" />
+          </button>
+          <button type="button" aria-label="重新执行" onClick={() => onCommand('/status')}>
+            <Repeat2 aria-hidden="true" />
+          </button>
         </div>
       </div>
     </section>
@@ -575,7 +571,7 @@ function ToolsModule({ rows }: { rows: Array<{ action: string; path: string; ton
   return (
     <section className="deepsea-inspector-section">
       <div className="deepsea-module-title">
-        <h3>工具调用 (Tools)</h3>
+        <h3>工具调用 (TOOLS)</h3>
         <span>影响 {rows.length} 文件</span>
       </div>
       <div className="deepsea-tool-table">
@@ -600,7 +596,7 @@ function PlanModule({ items }: { items: SessionPlanItem[] }): JSX.Element {
   ];
   return (
     <section className="deepsea-inspector-section">
-      <h3>会话计划 (Plan)</h3>
+      <h3>会话计划 (PLAN)</h3>
       <div className="deepsea-plan-list">
         {planItems.map((item) => (
           <div data-status={item.status} key={item.id}>
@@ -616,7 +612,7 @@ function PlanModule({ items }: { items: SessionPlanItem[] }): JSX.Element {
 function DiffModule({ rows }: { rows: Array<{ path: string; delta: string; tone: string }> }): JSX.Element {
   return (
     <section className="deepsea-inspector-section">
-      <h3>待提交变更 (Diffs)</h3>
+      <h3>待提交变更 (DIFFS)</h3>
       <div className="deepsea-diff-card">
         {rows.map((row) => (
           <div key={row.path}>
