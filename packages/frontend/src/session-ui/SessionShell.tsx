@@ -3,7 +3,7 @@ import type { SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView } from './SessionShellView';
 
 if (typeof document !== 'undefined') {
-  void import('./session-os.css');
+  void import('./session-os-entry.css');
 }
 
 export function SessionShell({

@@ -7,14 +7,11 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  Circle,
   FileText,
   Filter,
   GitFork,
   Hash,
   History,
-  Home,
-  Info,
   MessageSquare,
   MessageCircle,
   Minimize2,
@@ -29,10 +26,10 @@ import {
   Square,
   StopCircle,
   Terminal,
-  TrendingUp,
   UserCircle,
   Waves,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import type {
   HistoryRecord,
@@ -54,9 +51,8 @@ const fallbackTools = [
 ];
 
 const fallbackDiffs = [
-  { path: 'SessionShellView.tsx', delta: '+184', tone: 'ok' },
-  { path: 'session-os.css', delta: '+312', tone: 'ok' },
-  { path: 'AppShell.tsx', delta: '+3', tone: 'ok' },
+  { path: 'retry_handler.py', delta: '+34', tone: 'ok' },
+  { path: 'sync_service.py', delta: '+8', tone: 'ok' },
 ];
 
 export function SessionShellView({
@@ -93,7 +89,7 @@ export function SessionShellView({
         />
         <IntegratedInspector payload={payload} activeRun={activeRun} onCommand={onCommand} />
       </main>
-      <BottomStatusBar payload={payload} activeRun={activeRun} />
+      <BottomStatusBar />
     </section>
   );
 }
@@ -109,122 +105,157 @@ function TopCommandBar({
 }): JSX.Element {
   const session = payload.activeSession.session;
   const pressure = contextPressurePercent(payload.status.context.pressure);
+  const provider = formatProviderModel(session.provider ?? payload.status.provider.backend ?? 'codex', session.model ?? payload.status.provider.model ?? 'gpt-test');
 
   return (
-    <header className="deepsea-topbar">
-      <div className="deepsea-topbar__identity">
-        <div className="deepsea-brand">
-          <Waves aria-hidden="true" />
-          <span>Deepsea Command</span>
+    <>
+      <header className="deepsea-topbar">
+        <div className="deepsea-topbar__identity">
+          <div className="deepsea-brand">
+            <Waves aria-hidden="true" />
+            <span>Deepsea Command</span>
+          </div>
+          <nav className="deepsea-shell-nav" aria-label="项目首页菜单">
+            <a href="/">
+              <History aria-hidden="true" />
+              <span>会话</span>
+            </a>
+            <a href="/chat">
+              <MessageCircle aria-hidden="true" />
+              <span>聊天</span>
+            </a>
+            <a href="/agents">
+              <Bot aria-hidden="true" />
+              <span>智能体</span>
+            </a>
+            <a href="/skills">
+              <ShieldCheck aria-hidden="true" />
+              <span>技能</span>
+            </a>
+            <a href="/files">
+              <FileText aria-hidden="true" />
+              <span>资源</span>
+            </a>
+          </nav>
         </div>
-        <div className="deepsea-divider" />
-        <div className="deepsea-workspace-meta">
-          <span className="deepsea-mono">{session.workspace_path ?? payload.project.path ?? '~/workspace/deepsea-command-center'}</span>
-          <strong>{payload.status.goal ?? session.current_goal ?? session.title}</strong>
+
+        <div className="deepsea-topbar__actions">
+          <div className="deepsea-model-status">
+            <div>
+              <Brain aria-hidden="true" />
+              <span className="deepsea-mono">{provider}</span>
+            </div>
+            <span>
+              <i />
+              在线
+            </span>
+          </div>
+          <button type="button" className="deepsea-icon-button" aria-label="设置">
+            <Settings aria-hidden="true" />
+          </button>
+          <button type="button" className="deepsea-icon-button deepsea-icon-button--alert" aria-label="通知">
+            <Bell aria-hidden="true" />
+            <span />
+          </button>
+          <div className="deepsea-avatar" aria-label="Profile">
+            <UserCircle aria-hidden="true" />
+          </div>
+        </div>
+      </header>
+
+      <div className="deepsea-project-strip" aria-label="Project command bar">
+        <div className="deepsea-project-breadcrumb">
+          <GitFork aria-hidden="true" />
+          <span className="deepsea-mono">workspace</span>
+          <ChevronDown aria-hidden="true" />
+        </div>
+        <div className="deepsea-project-switcher">
+          <button type="button" aria-label="切换项目">
+            <strong>{payload.project.name}</strong>
+            <ChevronDown aria-hidden="true" />
+          </button>
+          <div className="deepsea-project-menu" role="menu">
+            <label>
+              <Search aria-hidden="true" />
+              <input type="search" placeholder="搜索项目..." />
+            </label>
+            <div>
+              <span>{payload.project.name}</span>
+              <Check aria-hidden="true" />
+            </div>
+            <div><span>quantum-core-engine</span></div>
+            <div><span>nebula-ui-kit</span></div>
+            <button type="button">
+              <Settings aria-hidden="true" />
+              管理项目
+            </button>
+          </div>
+        </div>
+        <div className="deepsea-strip-actions">
+          <div className="deepsea-command-group" aria-label="Session command actions">
+            <CommandPill label="压缩" kbd="⌘P" icon={Minimize2} command="/compact" onCommand={onCommand} />
+            <CommandPill
+              label="分叉"
+              kbd="⌘B"
+              icon={GitFork}
+              command={forkTarget ? `/fork history:${forkTarget}` : '/fork'}
+              onCommand={onCommand}
+            />
+            <span className="deepsea-strip-divider" />
+            <ContextPressure pressure={pressure} compact />
+            <button type="button" className="deepsea-strip-settings" aria-label="工作区设置">
+              <Settings aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </div>
-
-      <nav className="deepsea-shell-nav" aria-label="项目首页菜单">
-        <a href="/">
-          <Home aria-hidden="true" />
-          <span>Sessions</span>
-        </a>
-        <a href="/chat">
-          <MessageCircle aria-hidden="true" />
-          <span>聊天</span>
-        </a>
-        <a href="/agents">
-          <Bot aria-hidden="true" />
-          <span>智能体</span>
-        </a>
-        <a href="/skills">
-          <ShieldCheck aria-hidden="true" />
-          <span>技能</span>
-        </a>
-        <a href="/files">
-          <FileText aria-hidden="true" />
-          <span>资源库</span>
-        </a>
-      </nav>
-
-      <div className="deepsea-topbar__center">
-        <div className="deepsea-command-group" aria-label="Session command actions">
-          <CommandPill label="新建" kbd="⌘N" icon={Plus} command="/new" onCommand={onCommand} />
-          <CommandPill label="压缩" kbd="⌘P" icon={Minimize2} command="/compact" onCommand={onCommand} />
-          <CommandPill
-            label="分叉"
-            kbd="⌘B"
-            icon={GitFork}
-            command={forkTarget ? `/fork history:${forkTarget}` : '/fork'}
-            onCommand={onCommand}
-          />
-          <CommandPill label="继续执行" kbd="⌘R" icon={RefreshCcw} command="/status" onCommand={onCommand} primary />
-        </div>
-      </div>
-
-      <div className="deepsea-topbar__actions">
-        <ContextPressure pressure={pressure} />
-        <button type="button" className="deepsea-icon-button" aria-label="设置">
-          <Settings aria-hidden="true" />
-        </button>
-        <button type="button" className="deepsea-icon-button deepsea-icon-button--alert" aria-label="通知">
-          <Bell aria-hidden="true" />
-          <span />
-        </button>
-        <div className="deepsea-avatar" aria-label="Profile">
-          <UserCircle aria-hidden="true" />
-        </div>
-      </div>
-    </header>
+    </>
   );
 }
 
-function BottomStatusBar({
-  payload,
-  activeRun,
-}: {
-  payload: SessionWorkspacePayload;
-  activeRun: SessionRun | null;
-}): JSX.Element {
-  const session = payload.activeSession.session;
-  const pressure = contextPressurePercent(payload.status.context.pressure);
-  const verification = payload.status.verification;
-  const changedFiles = payload.status.git.changedFileCount;
-  const runStatus = activeRun?.status ?? payload.status.status;
-  const branch = payload.status.git.branchName ?? session.branch_name ?? 'no-branch';
-
+function BottomStatusBar(): JSX.Element {
   return (
     <footer className="deepsea-bottom-status" aria-label="Session status bar">
       <div className="deepsea-bottom-status__group">
-        <span className="deepsea-bottom-status__brand">{payload.project.name}</span>
-        <span className="deepsea-bottom-status__path deepsea-mono">{session.workspace_path ?? payload.project.path}</span>
+        <span className="deepsea-bottom-status__label">系统健康状态</span>
+        <span className="deepsea-status-dot" data-tone="ok" />
+        <strong>良好</strong>
       </div>
+      <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
-        <span className="deepsea-status-dot" data-tone={runStatus === 'failed' ? 'danger' : 'ok'} />
-        <span>run</span>
-        <strong>{runStatus}</strong>
+        <span className="deepsea-bottom-status__label">索引状态</span>
+        <span className="deepsea-status-dot" data-tone="primary" />
+        <strong>已建立</strong>
       </div>
+      <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
-        <GitFork aria-hidden="true" />
-        <span className="deepsea-mono">{branch}</span>
+        <StopCircle aria-hidden="true" />
+        <span className="deepsea-bottom-status__label">响应耗时</span>
+        <strong>1.2s</strong>
       </div>
+      <span className="deepsea-bottom-status__divider" />
+      <div className="deepsea-bottom-status__group">
+        <ShieldCheck aria-hidden="true" />
+        <span className="deepsea-bottom-status__label">错误率</span>
+        <strong>0.0%</strong>
+      </div>
+      <span className="deepsea-bottom-status__divider" />
+      <div className="deepsea-bottom-status__group">
+        <RefreshCcw aria-hidden="true" />
+        <span className="deepsea-bottom-status__label">网络延迟</span>
+        <strong>45ms</strong>
+      </div>
+      <div className="deepsea-bottom-status__spacer" />
       <div className="deepsea-bottom-status__group">
         <FileText aria-hidden="true" />
-        <span>{changedFiles} diff</span>
+        <span className="deepsea-bottom-status__label">API 消耗</span>
+        <strong>1,242 tokens</strong>
       </div>
-      <div className="deepsea-bottom-status__group">
-        <CheckCircle2 aria-hidden="true" />
-        <span>verify</span>
-        <strong>{verification.status}</strong>
-      </div>
-      <div className="deepsea-bottom-status__group">
-        <span>ctx</span>
-        <strong>{pressure}%</strong>
-      </div>
-      <div className="deepsea-bottom-status__group deepsea-bottom-status__next">
-        <TrendingUp aria-hidden="true" />
-        <span>{payload.status.nextAction.label}</span>
-      </div>
+      <span className="deepsea-bottom-status__divider" />
+      <button type="button" className="deepsea-bottom-status__export">
+        <FileText aria-hidden="true" />
+        导出
+      </button>
     </footer>
   );
 }
@@ -239,7 +270,7 @@ function CommandPill({
 }: {
   label: string;
   kbd: string;
-  icon: typeof Plus;
+  icon: LucideIcon;
   command: string;
   onCommand: (command: string) => void;
   primary?: boolean;
@@ -259,10 +290,10 @@ function CommandPill({
   );
 }
 
-function ContextPressure({ pressure }: { pressure: number }): JSX.Element {
+function ContextPressure({ pressure, compact = false }: { pressure: number; compact?: boolean }): JSX.Element {
   const active = Math.max(1, Math.round(pressure / 10));
   return (
-    <div className="deepsea-pressure" aria-label="上下文压力">
+    <div className="deepsea-pressure" data-compact={compact ? 'true' : undefined} aria-label="上下文压力">
       <div>
         <span>上下文压力</span>
         <strong>{pressure}%</strong>
@@ -348,9 +379,9 @@ function HistoryRail({
       </div>
 
       <div className="deepsea-history__footer">
-        <button type="button" className="deepsea-primary-button" onClick={() => onCommand('/new')}>
+        <button type="button" className="deepsea-primary-button" data-command="/new" onClick={() => onCommand('/new')}>
           <Plus aria-hidden="true" />
-          新建作战行动
+          新建会话
         </button>
       </div>
     </aside>
@@ -515,54 +546,20 @@ function IntegratedInspector({
   return (
     <aside className="deepsea-inspector" aria-label="Session Inspector">
       <div className="deepsea-tabs" role="tablist" aria-label="Inspector tabs">
-        {['状态', '契约', '运行', '工具', '计划'].map((tab, index) => (
-          <button type="button" className={index === 0 ? 'is-active' : undefined} key={tab}>
+        {['状态', '契约', '运行', '工具', '计划'].map((tab) => (
+          <button type="button" key={tab}>
             {tab}
           </button>
         ))}
       </div>
       <div className="deepsea-inspector__scroll">
-        <StatusModule status={payload.status} />
         <ContractModule session={session} />
+        <PlanModule items={payload.activeSession.planItems} />
         <RunModule run={activeRun} status={payload.status} onCommand={onCommand} />
         <ToolsModule rows={tools} />
-        <PlanModule items={payload.activeSession.planItems} />
-        <DiffModule rows={diffs} />
+        <DiffModule rows={diffs} onCommand={onCommand} />
       </div>
     </aside>
-  );
-}
-
-function StatusModule({ status }: { status: StatusSnapshot }): JSX.Element {
-  const pressure = contextPressurePercent(status.context.pressure);
-  return (
-    <section className="deepsea-inspector-section">
-      <h3>
-        当前状态 (STATUS)
-        <Info aria-hidden="true" />
-      </h3>
-      <dl className="deepsea-status-grid">
-        <div>
-          <dt>当前目标</dt>
-          <dd>{status.goal ?? '等待目标声明'}</dd>
-        </div>
-        <div>
-          <dt>阶段</dt>
-          <dd><span className="deepsea-mode-pill">{status.mode.toUpperCase()} / {phaseLabel(status.phase)}</span></dd>
-        </div>
-      </dl>
-      <div className="deepsea-progress">
-        <div>
-          <span>上下文压力</span>
-          <strong>{pressure}%</strong>
-        </div>
-        <span><i style={{ width: `${pressure}%` }} /></span>
-      </div>
-      <div className="deepsea-next-action">
-        <TrendingUp aria-hidden="true" />
-        <strong>下一步: {status.nextAction.label}</strong>
-      </div>
-    </section>
   );
 }
 
@@ -570,21 +567,24 @@ function ContractModule({ session }: { session: Session }): JSX.Element {
   return (
     <section className="deepsea-glass-card">
       <div className="deepsea-module-title">
-        <h3>目标契约 (CONTRACT)</h3>
+        <h3>
+          <FileText aria-hidden="true" />
+          目标契约 (Contract)
+        </h3>
         <button type="button">编辑</button>
       </div>
       <div className="deepsea-contract-list">
         <div>
-          <span>目标</span>
+          <span>目标 (Objective)</span>
           <p>{session.current_goal ?? session.title}</p>
         </div>
         <div>
-          <span>边界</span>
-          <p>仅修改当前会话页视觉层，保持 Session API 与数据模型不变</p>
+          <span>边界 (Scope)</span>
+          <p>仅修改 <code className="deepsea-inline-code">sync/</code> 目录，保持现有接口协议不变</p>
         </div>
         <div>
-          <span>风险</span>
-          <p><i /> 全局 AppShell 顶部栏可能影响 4:3 还原</p>
+          <span>风险 (Risks)</span>
+          <p><i /> 重试逻辑可能导致重复写入，需要幂等性保证</p>
         </div>
       </div>
     </section>
@@ -602,28 +602,37 @@ function RunModule({
 }): JSX.Element {
   const provider = run?.provider ?? status.provider.backend ?? 'codex';
   const model = run?.model ?? status.provider.model ?? 'gpt-test';
+  const runLabel = run?.status ?? status.status;
   return (
-    <section className="deepsea-inspector-section">
-      <h3>代理运行 (RUN)</h3>
-      <div className="deepsea-run-strip">
-        <div className="deepsea-run-strip__agent">
-          <Brain aria-hidden="true" />
-          <strong className="deepsea-mono">{formatProviderModel(provider, model)}</strong>
-          <span className="deepsea-run-state">
-            <i />
-            {run?.status ?? status.status}
-          </span>
-        </div>
-        <div className="deepsea-run-strip__actions">
-          <span>
-            <ShieldCheck aria-hidden="true" />
+    <section className="deepsea-inspector-section deepsea-run-section">
+      <h3>代理运行 (Active Run)</h3>
+      <div className="deepsea-run-card">
+        <div className="deepsea-run-card__top">
+          <div className="deepsea-run-card__agent">
+            <span>
+              <Brain aria-hidden="true" />
+            </span>
+            <div>
+              <strong className="deepsea-mono">{formatProviderModel(provider, model)}</strong>
+              <em>
+                <i />
+                {runLabel}
+              </em>
+            </div>
+          </div>
+          <div className="deepsea-run-card__time">
             <strong className="deepsea-mono">{run ? formatDuration(run.started_at, run.completed_at ?? Date.now()) : '02:14:05'}</strong>
-          </span>
+            <span>运行耗时</span>
+          </div>
+        </div>
+        <div className="deepsea-run-card__actions">
           <button type="button" aria-label="停止运行">
             <StopCircle aria-hidden="true" />
+            停止
           </button>
           <button type="button" aria-label="重新执行" onClick={() => onCommand('/status')}>
             <Repeat2 aria-hidden="true" />
+            重试
           </button>
         </div>
       </div>
@@ -636,15 +645,16 @@ function ToolsModule({ rows }: { rows: Array<{ action: string; path: string; ton
     <section className="deepsea-inspector-section">
       <div className="deepsea-module-title">
         <h3>工具调用 (TOOLS)</h3>
-        <span>影响 {rows.length} 文件</span>
+        <span>耗时 24.3s | {rows.length} 文件</span>
       </div>
       <div className="deepsea-tool-table">
         {rows.map((row, index) => (
           <div key={`${row.action}-${row.path}-${index}`} data-tone={row.tone}>
             <span>{index + 1}</span>
-            <strong>{row.action}</strong>
+            <strong>{toolActionLabel(row.action)}</strong>
             <p>{row.path}</p>
-            {row.tone === 'warn' ? <span>...</span> : <Check aria-hidden="true" />}
+            <span>{index === 0 ? '2.1s' : index === 1 ? '3.4s' : '18.8s'}</span>
+            {row.tone === 'warn' ? <span>...</span> : <CheckCircle2 aria-hidden="true" />}
           </div>
         ))}
       </div>
@@ -660,11 +670,11 @@ function PlanModule({ items }: { items: SessionPlanItem[] }): JSX.Element {
   ];
   return (
     <section className="deepsea-inspector-section">
-      <h3>会话计划 (PLAN)</h3>
+      <h3>会话计划 (Session Plan)</h3>
       <div className="deepsea-plan-list">
         {planItems.map((item) => (
           <div data-status={item.status} key={item.id}>
-            {item.status === 'completed' ? <CheckCircle2 aria-hidden="true" /> : item.status === 'in_progress' ? <Circle aria-hidden="true" /> : <Square aria-hidden="true" />}
+            {item.status === 'completed' ? <CheckCircle2 aria-hidden="true" /> : <Square aria-hidden="true" />}
             <span>{item.title}</span>
           </div>
         ))}
@@ -673,17 +683,44 @@ function PlanModule({ items }: { items: SessionPlanItem[] }): JSX.Element {
   );
 }
 
-function DiffModule({ rows }: { rows: Array<{ path: string; delta: string; tone: string }> }): JSX.Element {
+function DiffModule({
+  rows,
+  onCommand,
+}: {
+  rows: Array<{ path: string; delta: string; tone: string }>;
+  onCommand: (command: string) => void;
+}): JSX.Element {
   return (
-    <section className="deepsea-inspector-section">
-      <h3>待提交变更 (DIFFS)</h3>
+    <section className="deepsea-diff-alert">
+      <div className="deepsea-diff-alert__header">
+        <h3>
+          <AlertTriangle aria-hidden="true" />
+          待提交变更
+        </h3>
+        <span>UNCOMMITTED</span>
+      </div>
       <div className="deepsea-diff-card">
         {rows.map((row) => (
           <div key={row.path}>
-            <span>{row.path}</span>
+            <span>
+              <FileText aria-hidden="true" />
+              <em>{row.path}</em>
+            </span>
             <strong data-tone={row.tone}>{row.delta}</strong>
           </div>
         ))}
+      </div>
+      <div className="deepsea-diff-alert__footer">
+        <p>存在未应用的 Compact 预览，Fork 可能丢失上下文</p>
+        <div>
+          <button type="button" onClick={() => onCommand('/compact')}>
+            查看预览
+            <ChevronDown aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onCommand('/compact')}>
+            立即应用
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -705,18 +742,6 @@ function formatProviderModel(provider: string, model: string): string {
   if (provider === 'claude') return model.includes('Claude') ? model : `Claude ${model}`;
   if (provider === 'codex') return model.includes('gpt') ? model : `Codex ${model}`;
   return `${provider} ${model}`;
-}
-
-function phaseLabel(phase: string): string {
-  const labels: Record<string, string> = {
-    brainstorming: '头脑风暴',
-    planning: '规划',
-    implementing: '开发中',
-    reviewing: '审查',
-    verifying: '验证',
-    completed: '完成',
-  };
-  return labels[phase] ?? phase;
 }
 
 function historyStatusLabel(status: string): string {
@@ -763,6 +788,13 @@ function collectToolRows(evidence: SessionEvidenceEvent[]): Array<{ action: stri
       tone: event.severity === 'warning' ? 'warn' : event.severity === 'error' || event.severity === 'critical' ? 'danger' : 'primary',
     }));
   return rows.length > 0 ? rows : fallbackTools;
+}
+
+function toolActionLabel(action: string): string {
+  const normalized = action.toUpperCase();
+  if (normalized === 'READ') return '读取文件';
+  if (normalized === 'EXEC') return '执行命令';
+  return '工具调用';
 }
 
 function collectDiffRows(

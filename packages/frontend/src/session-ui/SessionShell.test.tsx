@@ -13,23 +13,31 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /Session Operations Console/);
   assert.match(html, /Deepsea Command/);
   assert.match(html, /项目首页菜单/);
-  assert.match(html, /Sessions/);
+  assert.match(html, /会话/);
+  assert.match(html, /聊天/);
   assert.match(html, /智能体/);
+  assert.match(html, /Project command bar/);
+  assert.match(html, /workspace/);
+  assert.match(html, /切换项目/);
+  assert.match(html, /上下文压力/);
   assert.match(html, /Session status bar/);
   assert.match(html, /会话历史/);
   assert.match(html, /3. 对话记录/);
-  assert.match(html, /当前状态/);
   assert.match(html, /目标契约/);
+  assert.match(html, /会话计划/);
   assert.match(html, /代理运行/);
   assert.match(html, /工具调用/);
-  assert.match(html, /会话计划/);
   assert.match(html, /待提交变更/);
+  assert.match(html, /UNCOMMITTED/);
+  assert.match(html, /存在未应用的 Compact 预览/);
+  assert.match(html, /立即应用/);
   assert.match(html, /data-command="\/new"/);
   assert.match(html, /data-command="\/compact"/);
-  assert.match(html, /data-command="\/status"/);
+  assert.match(html, /\/fork history:history-1/);
   assert.match(html, /History Records/);
   assert.doesNotMatch(html, /task-workspace/);
   assert.doesNotMatch(html, /chat-panel/);
+  assert.doesNotMatch(html, /当前状态/);
 });
 
 export function createPayload(): SessionWorkspacePayload {
