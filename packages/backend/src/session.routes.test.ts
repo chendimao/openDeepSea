@@ -15,6 +15,7 @@ const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js')
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
 
+const capturedPrompts: string[] = [];
 const app = express();
 app.use(express.json());
 app.use('/api', router);
@@ -22,7 +23,8 @@ app.use('/api', router);
 setSessionRuntimeAdapterForTest({
   backend: 'codex',
   listSessions: async () => [],
-  invoke: async ({ onChunk, onSession }) => {
+  invoke: async ({ prompt, onChunk, onSession }) => {
+    capturedPrompts.push(prompt);
     onSession?.('route-test-acp-session');
     onChunk({ stream: 'stdout', channel: 'answer', text: 'ok' });
     return { exitCode: 0, sessionId: 'route-test-acp-session', stderr: '' };
@@ -62,6 +64,23 @@ test('GET project session workspace creates an active session without creating a
   assert.deepEqual(response.historyRecords, []);
   assert.deepEqual(roomRepo.listByProject(project.id), []);
   assert.deepEqual(taskRepo.listByProject(project.id), []);
+});
+
+test('GET project session workspace can select a concrete session', async () => {
+  const project = projectRepo.create({
+    name: 'workspace with selected session',
+    path: mkdtempSync(join(tmpdir(), 'session-workspace-selected-')),
+  });
+  const first = sessionRepo.create({ project_id: project.id, title: 'First Session', workspace_path: project.path });
+  const second = sessionRepo.create({ project_id: project.id, title: 'Selected Session', workspace_path: project.path });
+
+  const res = await request(`/api/projects/${project.id}/session-workspace?sessionId=${second.id}`);
+  assert.equal(res.status, 200);
+  const response = await res.json() as { activeSession: { session: { id: string; title: string } } };
+
+  assert.notEqual(response.activeSession.session.id, first.id);
+  assert.equal(response.activeSession.session.id, second.id);
+  assert.equal(response.activeSession.session.title, 'Selected Session');
 });
 
 test('POST session message records message and evidence without creating old task', async () => {
@@ -116,6 +135,47 @@ test('session message slash commands return status and compact preview', async (
   assert.equal(compact.status, 'previewed');
   assert.equal(compact.focus_prompt, '保留 API 决策');
   assert.match(compact.preview_summary, /Focus：保留 API 决策/);
+});
+
+test('applied compact is included in the next session runtime prompt', async () => {
+  capturedPrompts.length = 0;
+  const project = projectRepo.create({
+    name: 'compact prompt workspace',
+    path: mkdtempSync(join(tmpdir(), 'session-compact-prompt-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Compact Prompt Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  const previewRes = await request(`/api/sessions/${session.id}/compact/preview`, {
+    method: 'POST',
+    body: JSON.stringify({ focus: '保留架构决策' }),
+  });
+  assert.equal(previewRes.status, 201);
+  const preview = await previewRes.json() as { id: string };
+
+  const applyRes = await request(`/api/sessions/${session.id}/compact/apply`, {
+    method: 'POST',
+    body: JSON.stringify({
+      compaction_id: preview.id,
+      applied_summary: '已保留 SessionOS 架构决策',
+    }),
+  });
+  assert.equal(applyRes.status, 200);
+
+  const messageRes = await request(`/api/sessions/${session.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '继续实现' }),
+  });
+  assert.equal(messageRes.status, 202);
+
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(capturedPrompts.at(-1) ?? '', /已保留 SessionOS 架构决策/);
+  assert.match(capturedPrompts.at(-1) ?? '', /## Context Sources/);
 });
 
 test('/new archives the source session into history and opens a new active session', async () => {

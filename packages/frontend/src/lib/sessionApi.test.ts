@@ -14,6 +14,18 @@ test('getSessionWorkspace requests project session workspace endpoint', async ()
   assert.equal(fetchLog.calls[0]?.method, 'GET');
 });
 
+test('getSessionWorkspace can request a concrete session workspace endpoint', async () => {
+  const fetchLog = installFetchStub({ activeSession: { session: { id: 'session-2' } } });
+  try {
+    await api.getSessionWorkspace('project-1', { sessionId: 'session-2' });
+  } finally {
+    fetchLog.restore();
+  }
+
+  assert.equal(fetchLog.calls[0]?.url, '/api/projects/project-1/session-workspace?sessionId=session-2');
+  assert.equal(fetchLog.calls[0]?.method, 'GET');
+});
+
 test('sendSessionMessage posts content and mode to session message endpoint', async () => {
   const fetchLog = installFetchStub({ message: { id: 'message-1' } });
   try {

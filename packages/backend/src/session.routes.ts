@@ -1,5 +1,9 @@
 import { Router, type Response } from 'express';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { now } from './db.js';
@@ -40,7 +44,12 @@ const execFileAsync = promisify(execFile);
 sessionRouter.get('/projects/:projectId/session-workspace', (req, res) => {
   const project = projectRepo.get(req.params.projectId);
   if (!project) return res.status(404).json({ error: 'project not found' });
-  const activeSession = getOrCreateActiveSession(project);
+  const requestedSessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : '';
+  const requestedSession = requestedSessionId ? sessionRepo.get(requestedSessionId) : undefined;
+  if (requestedSessionId && (!requestedSession || requestedSession.project_id !== project.id)) {
+    return res.status(404).json({ error: 'session not found' });
+  }
+  const activeSession = requestedSession ?? getOrCreateActiveSession(project);
   res.json(buildWorkspacePayload(project, activeSession));
 });
 
@@ -190,9 +199,10 @@ function createSessionMessage(req: { params: { sessionId: string }; body: unknow
     title: 'User message',
     payload: { message_id: message.id },
   });
+  const runtimePrompt = buildRuntimePrompt(updatedSession, message.content);
   void runSessionAgent({
     sessionId: updatedSession.id,
-    prompt: buildPromptFromMessage(updatedSession, message.content),
+    prompt: runtimePrompt,
     provider: updatedSession.provider ?? 'codex',
     model: updatedSession.model,
   }).catch((error) => {
@@ -649,6 +659,7 @@ function getOrCreateActiveSession(project: Project): Session {
 
 function buildSessionStatus(session: Session): StatusSnapshot {
   const evidence = sessionEvidenceRepo.listBySession(session.id);
+  const git = readStatusGitSnapshot(session);
   const latestVerification = [...evidence].reverse().find((event) =>
     event.event_type === 'test' ||
     event.event_type === 'build' ||
@@ -661,7 +672,10 @@ function buildSessionStatus(session: Session): StatusSnapshot {
     context: sessionContextRepo.getLatestBySession(session.id) ?? null,
     latestVerification,
     latestBlocker,
-    changedFileCount: collectChangedFiles(evidence).length,
+    changedFileCount: git.changedFileCount,
+    branchName: git.branchName ?? session.branch_name,
+    hasUncommittedDiff: git.hasUncommittedDiff,
+    conflictRisk: git.conflictRisk,
     permissionMode: null,
   });
 }
@@ -669,19 +683,38 @@ function buildSessionStatus(session: Session): StatusSnapshot {
 function ensureContextManifest(session: Session): SessionContextManifest {
   const existing = sessionContextRepo.getLatestBySession(session.id);
   if (existing) return existing;
+  return createContextManifest(session);
+}
+
+function createContextManifest(session: Session): SessionContextManifest {
+  const project = projectRepo.get(session.project_id);
+  const workspacePath = session.worktree_path ?? session.workspace_path ?? project?.path ?? process.cwd();
+  const compactSummary = getLatestAppliedCompactSummary(session);
+  const historyBriefs = session.forked_from_history_record_id
+    ? [historyRecordRepo.get(session.forked_from_history_record_id)].filter((record): record is HistoryRecord => Boolean(record))
+    : [];
   const draft = buildContextManifestDraft({
     session,
-    agentsText: null,
-    rtkText: null,
-    compactSummary: null,
-    historyBriefs: [],
+    agentsText: readFirstExistingFile([
+      join(workspacePath, 'AGENTS.md'),
+      join(process.cwd(), 'AGENTS.md'),
+      join(homedir(), '.codex', 'AGENTS.md'),
+    ]),
+    rtkText: readFirstExistingFile([
+      join(workspacePath, 'RTK.md'),
+      join(process.cwd(), 'RTK.md'),
+      join(homedir(), '.codex', 'RTK.md'),
+    ]),
+    compactSummary,
+    historyBriefs,
     recentMessages: sessionMessageRepo.listBySession(session.id, { limit: 20 }),
     explicitFiles: [],
-    gitDiff: null,
+    gitDiff: readGitValueSync(workspacePath, ['diff', '--stat']),
   });
-  return sessionContextRepo.createManifest({
+  const manifest = sessionContextRepo.createManifest({
     session_id: session.id,
     total_token_estimate: draft.totalTokenEstimate,
+    prompt_hash: hashPromptSources(draft.sources.map((source) => source.excerpt).join('\n')),
     sources: draft.sources.map((source) => ({
       source_type: source.source_type,
       source_ref: source.source_ref,
@@ -695,6 +728,8 @@ function ensureContextManifest(session: Session): SessionContextManifest {
       metadata: source.metadata,
     })),
   });
+  sessionRepo.update(session.id, { latest_context_manifest_id: manifest.id });
+  return manifest;
 }
 
 function collectChangedFiles(evidence: SessionEvidenceEvent[]): string[] {
@@ -736,10 +771,23 @@ function readGoalFromResumeBrief(record: HistoryRecord): string | null {
   return firstLine ? firstLine.replace(/^目标：/, '').trim() || null : record.title;
 }
 
-function buildPromptFromMessage(session: Session, content: string): string {
+function buildRuntimePrompt(session: Session, content: string): string {
+  const manifest = createContextManifest(session);
+  const sourceBlocks = manifest.sources
+    .filter((source) => source.included === 1 && source.excerpt?.trim())
+    .map((source) => [
+      `### ${source.title} (${source.source_type})`,
+      `Reason: ${source.reason ?? 'session context'}`,
+      source.excerpt!.trim(),
+    ].join('\n'));
   const goal = session.current_goal?.trim();
-  if (!goal) return content;
-  return [`当前目标：${goal}`, '', content].join('\n');
+  return [
+    '本轮 prompt 来源由 SessionOS Context Inspector 记录。',
+    goal ? `当前目标：${goal}` : null,
+    sourceBlocks.length > 0 ? ['## Context Sources', ...sourceBlocks].join('\n\n') : null,
+    '## User Request',
+    content,
+  ].filter(Boolean).join('\n\n');
 }
 
 function inheritLatestAppliedCompact(source: Session, target: Session): void {
@@ -782,6 +830,28 @@ async function readGitSnapshot(projectPath: string): Promise<{
   };
 }
 
+function readStatusGitSnapshot(session: Session): {
+  branchName: string | null;
+  changedFileCount: number;
+  hasUncommittedDiff: boolean;
+  conflictRisk: 'none' | 'low' | 'high';
+} {
+  const project = projectRepo.get(session.project_id);
+  const projectPath = session.worktree_path ?? session.workspace_path ?? project?.path;
+  if (!projectPath) {
+    return { branchName: session.branch_name, changedFileCount: 0, hasUncommittedDiff: false, conflictRisk: 'none' };
+  }
+  const status = readGitValueSync(projectPath, ['status', '--short']) ?? '';
+  const changedLines = status.split('\n').map((line) => line.trim()).filter(Boolean);
+  const hasConflict = changedLines.some((line) => /^(UU|AA|DD|AU|UA|DU|UD)\b/.test(line));
+  return {
+    branchName: readGitValueSync(projectPath, ['branch', '--show-current']),
+    changedFileCount: changedLines.length,
+    hasUncommittedDiff: changedLines.length > 0,
+    conflictRisk: hasConflict ? 'high' : changedLines.length > 0 ? 'low' : 'none',
+  };
+}
+
 async function readGitValue(projectPath: string, args: string[]): Promise<string | null> {
   try {
     const result = await execFileAsync('git', args, { cwd: projectPath, timeout: 5000 });
@@ -790,6 +860,45 @@ async function readGitValue(projectPath: string, args: string[]): Promise<string
   } catch {
     return null;
   }
+}
+
+function readGitValueSync(projectPath: string, args: string[]): string | null {
+  try {
+    const value = execFileSync('git', args, {
+      cwd: projectPath,
+      timeout: 5000,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
+
+function readFirstExistingFile(paths: string[]): string | null {
+  for (const path of paths) {
+    try {
+      if (existsSync(path)) return readFileSync(path, 'utf-8');
+    } catch {
+      // Ignore unreadable context files; the manifest records only readable sources.
+    }
+  }
+  return null;
+}
+
+function getLatestAppliedCompactSummary(session: Session): string | null {
+  const compactions = sessionCompactionRepo
+    .listBySession(session.id)
+    .filter((item) => item.status === 'applied' && item.applied_summary?.trim());
+  const latest = session.latest_compaction_id
+    ? compactions.find((item) => item.id === session.latest_compaction_id) ?? compactions.at(-1)
+    : compactions.at(-1);
+  return latest?.applied_summary?.trim() || null;
+}
+
+function hashPromptSources(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 function forkInputSchema() {

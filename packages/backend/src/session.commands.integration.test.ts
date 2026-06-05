@@ -204,3 +204,26 @@ test('checkpoint records git head, branch and diff summary from project path', a
   assert.match(checkpoint.diff_summary ?? '', /README.md/);
   assert.ok(checkpoint.evidence_event_id);
 });
+
+test('/status reads current git diff even when there is no file_diff evidence', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'session-command-status-'));
+  execFileSync('git', ['init'], { cwd: projectPath });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: projectPath });
+  execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: projectPath });
+  writeFileSync(join(projectPath, 'README.md'), 'initial\n');
+  execFileSync('git', ['add', 'README.md'], { cwd: projectPath });
+  execFileSync('git', ['commit', '-m', 'initial'], { cwd: projectPath });
+  writeFileSync(join(projectPath, 'README.md'), 'initial\nchanged\n');
+
+  const project = projectRepo.create({ name: 'status project', path: projectPath });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Status Session', workspace_path: projectPath });
+
+  const res = await request(`/api/sessions/${session.id}/status`);
+  assert.equal(res.status, 200);
+  const status = await res.json() as {
+    git: { changedFileCount: number; hasUncommittedDiff: boolean; conflictRisk: string };
+  };
+  assert.equal(status.git.hasUncommittedDiff, true);
+  assert.equal(status.git.changedFileCount, 1);
+  assert.equal(status.git.conflictRisk, 'low');
+});

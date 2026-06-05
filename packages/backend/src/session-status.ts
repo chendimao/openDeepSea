@@ -12,6 +12,9 @@ export function buildStatusSnapshot(input: {
   latestVerification: SessionEvidenceEvent | null;
   latestBlocker: SessionEvidenceEvent | null;
   changedFileCount: number;
+  branchName?: string | null;
+  hasUncommittedDiff?: boolean;
+  conflictRisk?: 'none' | 'low' | 'high';
   permissionMode: AcpPermissionMode | null;
 }): StatusSnapshot {
   const totalTokenEstimate = input.context?.total_token_estimate ?? 0;
@@ -27,10 +30,10 @@ export function buildStatusSnapshot(input: {
       pressure: totalTokenEstimate > 90_000 ? 'high' : totalTokenEstimate > 45_000 ? 'medium' : 'low',
     },
     git: {
-      branchName: input.session.branch_name,
+      branchName: input.branchName ?? input.session.branch_name,
       changedFileCount: input.changedFileCount,
-      hasUncommittedDiff: input.changedFileCount > 0,
-      conflictRisk: input.session.worktree_path ? 'low' : 'none',
+      hasUncommittedDiff: input.hasUncommittedDiff ?? input.changedFileCount > 0,
+      conflictRisk: input.conflictRisk ?? (input.session.worktree_path ? 'low' : 'none'),
     },
     verification: {
       lastCommand: readPayloadString(input.latestVerification, 'command'),

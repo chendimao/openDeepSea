@@ -527,8 +527,12 @@ export const api = {
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
-  getSessionWorkspace: (projectId: string) =>
-    request<SessionWorkspacePayload>(`/projects/${projectId}/session-workspace`),
+  getSessionWorkspace: (projectId: string, input: { sessionId?: string | null } = {}) => {
+    const params = new URLSearchParams();
+    if (input.sessionId) params.set('sessionId', input.sessionId);
+    const query = params.toString();
+    return request<SessionWorkspacePayload>(`/projects/${projectId}/session-workspace${query ? `?${query}` : ''}`);
+  },
   listSessions: (projectId: string, input: { includeArchived?: boolean } = {}) => {
     const params = new URLSearchParams();
     if (input.includeArchived) params.set('includeArchived', '1');
@@ -553,7 +557,7 @@ export const api = {
       body: JSON.stringify(input),
     }),
   sendSessionMessage: (sessionId: string, input: { content: string; mode?: SessionMode }) =>
-    request<{ message: SessionMessage } | SessionWorkspacePayload>(`/sessions/${sessionId}/messages`, {
+    request<{ message: SessionMessage } | SessionWorkspacePayload | SessionCompaction>(`/sessions/${sessionId}/messages`, {
       method: 'POST',
       body: JSON.stringify(input),
     }),
