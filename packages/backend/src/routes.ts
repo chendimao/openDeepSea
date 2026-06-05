@@ -2167,6 +2167,7 @@ async function handleJsonMessage(req: Request, res: Response): Promise<void> {
     activeTaskId: parsed.data.active_task_id ?? null,
     replyToMessageId: parsed.data.reply_to_message_id,
   });
+  applyRouteReplyContextToMetadata(roomId, metadata, routeResult);
   metadata.route_result = routeResult;
   if (routeResult.taskId) {
     metadata.task_id = routeResult.taskId;
@@ -2283,6 +2284,7 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
       activeTaskId: parsed.data.active_task_id ?? null,
       replyToMessageId,
     });
+    applyRouteReplyContextToMetadata(roomId, metadata, routeResult);
     metadata.route_result = routeResult;
     if (routeResult.taskId) {
       metadata.task_id = routeResult.taskId;
@@ -2377,6 +2379,7 @@ function resolveUserMessageRoute(input: {
   if (routeResult.action !== 'reply_in_chat') return routeResult;
   return resolveReplyToTaskRoute(input.roomId, input.replyToMessageId)
     ?? resolvePreviousPlannerConfirmationRoute(input.roomId, input.message)
+    ?? resolveRecentTaskAgentContextRoute(input.roomId, input.message)
     ?? routeResult;
 }
 
@@ -2459,6 +2462,47 @@ function resolvePreviousPlannerConfirmationRoute(roomId: string, message: string
   };
 }
 
+function resolveRecentTaskAgentContextRoute(roomId: string, message: string): RouteResult | null {
+  const confirmationKind = readShortActionConfirmationKind(message);
+  if (!confirmationKind) return null;
+  const previous = findLatestTaskAgentContextMessage(roomId);
+  if (!previous) return null;
+  const metadata = parseMetadataRecord(previous.metadata);
+  if (readPendingActionObject(metadata.pending_action) || isPreviousPlannerMessageActionable(metadata)) {
+    return null;
+  }
+  const task = resolveTaskFromMessageMetadata(roomId, metadata);
+  if (!task || !isRoutableTaskForReply(task)) return null;
+  return {
+    taskId: task.id,
+    action: 'append_to_task',
+    confidence: 0.92,
+    reason: `短确认回复最近的任务内智能体消息：${previous.id}`,
+    reason_code: 'reply_to_task',
+    reply_context: {
+      message_id: previous.id,
+      reason: 'short_confirmation_to_recent_agent',
+    },
+  };
+}
+
+function applyRouteReplyContextToMetadata(
+  roomId: string,
+  metadata: MessageMetadata,
+  routeResult: RouteResult,
+): void {
+  if (metadata.reply_to || !routeResult.reply_context) return;
+  const replyTarget = messageRepo.get(routeResult.reply_context.message_id);
+  if (!replyTarget || replyTarget.room_id !== roomId) return;
+  metadata.reply_to = {
+    message_id: replyTarget.id,
+    sender_type: replyTarget.sender_type,
+    sender_id: replyTarget.sender_id,
+    sender_name: replyTarget.sender_name,
+    excerpt: summarizeReplyExcerpt(replyTarget.content),
+  };
+}
+
 function readPendingActionObject(value: unknown): PendingActionMetadata | null {
   if (!isRecord(value)) return null;
   if (value.kind !== 'create_task_from_analysis') return null;
@@ -2495,6 +2539,18 @@ function findLatestPlannerContextMessage(roomId: string): Message | null {
      WHERE room_id = ?
        AND sender_type = 'agent'
        AND sender_id = 'planner'
+       AND COALESCE(json_extract(metadata, '$.internal'), 0) <> 1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+  ).get(roomId) as Message | undefined ?? null;
+}
+
+function findLatestTaskAgentContextMessage(roomId: string): Message | null {
+  return db.prepare(
+    `SELECT * FROM messages
+     WHERE room_id = ?
+       AND sender_type = 'agent'
+       AND json_extract(metadata, '$.task_id') IS NOT NULL
        AND COALESCE(json_extract(metadata, '$.internal'), 0) <> 1
      ORDER BY created_at DESC
      LIMIT 1`,

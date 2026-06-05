@@ -251,6 +251,61 @@ test('POST /rooms/:roomId/messages routes boundary confirmation reply back to so
   assert.equal(dispatchCalls[0]?.userMessage.id, message.id);
 });
 
+test('POST /rooms/:roomId/messages routes short confirmation to latest task agent context without explicit reply', async () => {
+  resetDispatchCalls();
+  const project = projectRepo.create({
+    name: 'Task Router Recent Agent Context Reply Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-recent-agent-context-reply-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({
+    project_id: project.id,
+    room_id: room.id,
+    title: '重构右上角项目详情面板',
+  });
+  const plannerMessage = messageRepo.create({
+    room_id: room.id,
+    sender_type: 'agent',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: 'Some of what we are working on might be easier to explain in a browser. Want to try it?',
+    message_type: 'text',
+    metadata: {
+      task_id: task.id,
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '确定' }),
+  });
+
+  assert.equal(res.status, 201);
+  const message = await res.json() as { id: string; metadata: string | null };
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    task_id?: string;
+    reply_to?: { message_id: string; sender_type: string; sender_id: string };
+    route_result?: {
+      action: string;
+      taskId: string | null;
+      reason_code?: string;
+      reply_context?: { message_id: string; reason: string };
+    };
+  };
+  assert.equal(metadata.task_id, task.id);
+  assert.equal(metadata.reply_to?.message_id, plannerMessage.id);
+  assert.equal(metadata.reply_to?.sender_type, 'agent');
+  assert.equal(metadata.reply_to?.sender_id, 'planner');
+  assert.equal(metadata.route_result?.action, 'append_to_task');
+  assert.equal(metadata.route_result?.taskId, task.id);
+  assert.equal(metadata.route_result?.reason_code, 'reply_to_task');
+  assert.equal(metadata.route_result?.reply_context?.message_id, plannerMessage.id);
+  assert.equal(metadata.route_result?.reply_context?.reason, 'short_confirmation_to_recent_agent');
+  assert.equal(taskRepo.listByRoom(room.id).length, 1);
+  assert.equal(dispatchCalls.length, 1);
+  assert.equal(dispatchCalls[0]?.userMessage.id, message.id);
+});
+
 test('POST /rooms/:roomId/messages creates task from previous actionable planner analysis on short fix confirmation', async () => {
   resetDispatchCalls();
   const project = projectRepo.create({

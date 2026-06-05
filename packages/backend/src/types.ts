@@ -967,6 +967,10 @@ export interface RouteResult {
   reason: string;
   reason_code?: RouteReasonCode;
   pending_action_context?: PendingActionRouteContext;
+  reply_context?: {
+    message_id: string;
+    reason: 'short_confirmation_to_recent_agent';
+  };
 }
 
 export type RouteReasonCode =
