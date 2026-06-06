@@ -694,7 +694,6 @@
 }
 .deepsea-message,
 .deepsea-run-log {
-  margin-bottom: 12px;
   border-left: 2px solid var(--deepsea-primary-bright);
   border-radius: 0 var(--deepsea-radius) var(--deepsea-radius) 0;
   background: rgba(255, 255, 255, 0.05);
