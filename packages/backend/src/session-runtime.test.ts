@@ -274,3 +274,35 @@ test('runSessionAgent broadcasts inspector snapshot after ACP tool evidence', as
   assert.equal(inspector?.toolRows?.[0]?.target, 'packages/frontend/src/session-ui/SessionShellView.tsx');
   wsHub.removeSocket(socket);
 });
+
+test('runSessionAgent forwards imagePaths to session adapter', async () => {
+  const project = projectRepo.create({
+    name: 'runtime image project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-image-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Image',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const seen: string[][] = [];
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ imagePaths }) => {
+      seen.push(imagePaths ?? []);
+      return { exitCode: 0, sessionId: 'image-acp', stderr: '' };
+    },
+  });
+
+  await runSessionAgent({
+    sessionId: session.id,
+    prompt: '看图',
+    provider: 'codex',
+    imagePaths: ['/tmp/screen.png'],
+  });
+
+  assert.deepEqual(seen, [['/tmp/screen.png']]);
+});

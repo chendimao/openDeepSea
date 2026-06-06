@@ -116,3 +116,37 @@ test('dispatchSessionUserMessage rejects foreign library refs before creating a 
   assert.equal(sessionRepo.get(session.id)?.title, 'Dispatch Reject File Refs');
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
 });
+
+test('dispatchSessionUserMessage injects referenced file context into runtime prompt', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'session-dispatch-context-'));
+  mkdirSync(join(root, 'src'), { recursive: true });
+  writeFileSync(join(root, 'src', 'app.ts'), 'export const app = true;\n');
+  const project = projectRepo.create({ name: 'Dispatch Context', path: root });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Context Session',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-context', stderr: '' };
+    },
+  });
+
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '分析引用',
+    workspaceFileRefs: ['src/app.ts'],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.match(prompts[0] ?? '', /## Referenced Files/);
+  assert.match(prompts[0] ?? '', /Source: src\/app\.ts/);
+  assert.match(prompts[0] ?? '', /export const app = true/);
+});

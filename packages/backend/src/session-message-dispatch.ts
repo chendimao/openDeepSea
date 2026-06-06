@@ -8,6 +8,7 @@ import {
   sessionRepo,
 } from './repos/sessions.js';
 import { createContextManifest } from './session.routes.js';
+import { buildSessionFileReferenceContext } from './session-file-reference-context.js';
 import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import { runSessionAgent } from './session-runtime.js';
 import { wsHub } from './ws-hub.js';
@@ -70,15 +71,22 @@ export async function dispatchSessionUserMessage(input: {
     sessionId: runtimeSession.id,
     message,
   });
+  const fileReferenceContext = await buildSessionFileReferenceContext({
+    project,
+    workspacePath,
+    workspaceFileRefs,
+    libraryFileRefs,
+  });
   const plannerRuntime = resolveSessionPlannerRuntime(runtimeSession.project_id);
   void runSessionAgent({
     sessionId: runtimeSession.id,
     agentId: plannerRuntime.agentId,
-    prompt: buildRuntimePrompt(runtimeSession, message.content),
+    prompt: buildRuntimePrompt(runtimeSession, message.content, fileReferenceContext.promptAddition),
     provider: plannerRuntime.backend,
     model: runtimeSession.model,
     permissionMode: plannerRuntime.permissionMode,
     runtimeProfileSnapshot: buildSessionPlannerRuntimeSnapshot(plannerRuntime),
+    imagePaths: fileReferenceContext.imagePaths,
   }).catch((error) => {
     const event = sessionEvidenceRepo.create({
       session_id: runtimeSession.id,
@@ -186,7 +194,7 @@ function truncateTitle(title: string, limit: number): string {
   return `${chars.slice(0, limit).join('').trimEnd()}...`;
 }
 
-export function buildRuntimePrompt(session: Session, content: string): string {
+export function buildRuntimePrompt(session: Session, content: string, referencedFilesBlock = ''): string {
   const manifest = createContextManifest(session);
   const sourceBlocks = manifest.sources
     .filter((source) => source.included === 1 && source.excerpt?.trim())
@@ -200,6 +208,7 @@ export function buildRuntimePrompt(session: Session, content: string): string {
     '本轮 prompt 来源由 SessionOS Context Inspector 记录。',
     goal ? `当前目标：${goal}` : null,
     sourceBlocks.length > 0 ? ['## Context Sources', ...sourceBlocks].join('\n\n') : null,
+    referencedFilesBlock.trim() || null,
     '## User Request',
     content,
   ].filter(Boolean).join('\n\n');
