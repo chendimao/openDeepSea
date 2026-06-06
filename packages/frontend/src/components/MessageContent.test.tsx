@@ -285,6 +285,32 @@ test('renders task reference chips inside markdown preview text', () => {
   assert.match(html, /任务:#task:task-x/);
 });
 
+test('renders GFM tables while preserving inline reference chips', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content={[
+          '## 执行矩阵',
+          '',
+          '| 任务 | 负责人 |',
+          '| --- | --- |',
+          '| #task:task-gfm123456 | frontend-reviewer |',
+        ].join('\n')}
+        tasks={[task({ id: 'task-gfm123456', title: '修复 Markdown 预览' })]}
+        globalAgents={[globalAgent({ agent_id: 'frontend-reviewer', name: '前端审查员' })]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /<h2>执行矩阵<\/h2>/);
+  assert.match(html, /<table>/);
+  assert.match(html, /<th>任务<\/th>/);
+  assert.match(html, /<td><span class="message-task-ref-chip"/);
+  assert.match(html, /任务:修复 Markdown 预览/);
+  assert.match(html, /前端审查员/);
+  assert.doesNotMatch(html, /\| --- \| --- \|/);
+});
+
 test('recognizes application json fences with CRLF and metadata', () => {
   const content = '```application/json title="readiness"\r\n{"task_readiness":{"ready":true,"title":"CRLF JSON","confidence":1}}\r\n```';
 
@@ -422,7 +448,7 @@ test('places streaming cursor inside the final markdown text block', () => {
     </I18nProvider>,
   );
 
-  assert.match(html, /<p><span>优化 <a href="https:\/\/example\.com" target="_blank" rel="noreferrer noopener">ACP<\/a> 消息展示，并保持光标在流式文字后面<span class="streaming-cursor"/);
+  assert.match(html, /<p>优化 <a href="https:\/\/example\.com" target="_blank" rel="noreferrer noopener">ACP<\/a> 消息展示，并保持光标在流式文字后面<span class="streaming-cursor"/);
   assert.doesNotMatch(html, /<\/p><span class="streaming-cursor"/);
 });
 

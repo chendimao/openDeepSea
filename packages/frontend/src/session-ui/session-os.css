@@ -1053,6 +1053,7 @@
 .deepsea-message-body .markdown-preview,
 .deepsea-run-log-body .markdown-preview {
   gap: 8px;
+  white-space: normal;
 }
 .deepsea-message-body .markdown-preview > *,
 .deepsea-run-log-body .markdown-preview > *,
@@ -1070,6 +1071,112 @@
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+.deepsea-message-body .markdown-preview h1,
+.deepsea-message-body .markdown-preview h2,
+.deepsea-message-body .markdown-preview h3,
+.deepsea-message-body .markdown-preview h4,
+.deepsea-message-body .markdown-preview h5,
+.deepsea-message-body .markdown-preview h6,
+.deepsea-run-log-body .markdown-preview h1,
+.deepsea-run-log-body .markdown-preview h2,
+.deepsea-run-log-body .markdown-preview h3,
+.deepsea-run-log-body .markdown-preview h4,
+.deepsea-run-log-body .markdown-preview h5,
+.deepsea-run-log-body .markdown-preview h6 {
+  margin: 0;
+  color: var(--deepsea-text);
+  font-family: var(--deepsea-font, ui-sans-serif, system-ui, sans-serif);
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+.deepsea-message-body .markdown-preview h1,
+.deepsea-run-log-body .markdown-preview h1 {
+  font-size: 16px;
+}
+.deepsea-message-body .markdown-preview h2,
+.deepsea-run-log-body .markdown-preview h2 {
+  font-size: 15px;
+}
+.deepsea-message-body .markdown-preview h3,
+.deepsea-run-log-body .markdown-preview h3,
+.deepsea-message-body .markdown-preview h4,
+.deepsea-run-log-body .markdown-preview h4,
+.deepsea-message-body .markdown-preview h5,
+.deepsea-run-log-body .markdown-preview h5,
+.deepsea-message-body .markdown-preview h6,
+.deepsea-run-log-body .markdown-preview h6 {
+  font-size: 14px;
+}
+.deepsea-message-body .markdown-preview p,
+.deepsea-run-log-body .markdown-preview p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: normal;
+}
+.deepsea-message-body .markdown-preview ul,
+.deepsea-message-body .markdown-preview ol,
+.deepsea-run-log-body .markdown-preview ul,
+.deepsea-run-log-body .markdown-preview ol {
+  margin: 0;
+  padding-left: 18px;
+}
+.deepsea-message-body .markdown-preview li + li,
+.deepsea-run-log-body .markdown-preview li + li {
+  margin-top: 3px;
+}
+.deepsea-message-body .markdown-preview li,
+.deepsea-run-log-body .markdown-preview li {
+  font-size: 14px;
+  line-height: 20px;
+  white-space: normal;
+}
+.deepsea-message-body .markdown-preview blockquote,
+.deepsea-run-log-body .markdown-preview blockquote {
+  margin: 0;
+  border-left: 2px solid color-mix(in srgb, var(--deepsea-accent) 54%, var(--deepsea-border));
+  padding: 2px 0 2px 10px;
+  color: color-mix(in srgb, var(--deepsea-text) 76%, var(--deepsea-muted));
+}
+.deepsea-message-body .markdown-preview table,
+.deepsea-run-log-body .markdown-preview table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+.deepsea-message-body .markdown-preview th,
+.deepsea-message-body .markdown-preview td,
+.deepsea-run-log-body .markdown-preview th,
+.deepsea-run-log-body .markdown-preview td {
+  border: 1px solid var(--deepsea-border);
+  padding: 5px 7px;
+  text-align: left;
+  vertical-align: top;
+}
+.deepsea-message-body .markdown-preview th,
+.deepsea-run-log-body .markdown-preview th {
+  background: color-mix(in srgb, var(--deepsea-surface-2) 78%, transparent);
+  color: var(--deepsea-text);
+  font-weight: 760;
+}
+.deepsea-message-body .markdown-preview tr:nth-child(even) td,
+.deepsea-run-log-body .markdown-preview tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--deepsea-surface-2) 42%, transparent);
+}
+.deepsea-message-body .markdown-preview hr,
+.deepsea-run-log-body .markdown-preview hr {
+  width: 100%;
+  margin: 2px 0;
+  border: 0;
+  border-top: 1px solid var(--deepsea-border);
 }
 .deepsea-run-timeline {
   display: grid;

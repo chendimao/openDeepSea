@@ -1,5 +1,7 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { Children, isValidElement, cloneElement, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
+import ReactMarkdown, { type Components, type UrlTransform } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { AgentTimeline, AgentTimelineItem } from './AgentTimeline';
 import {
   isStructuredJsonObject,
@@ -19,6 +21,7 @@ type JsonValue = StructuredJsonValue;
 type JsonObject = StructuredJsonObject;
 
 const fencePattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
+const streamingCursorToken = '\uE000';
 
 const jsonValueLabels: Record<string, string> = {
   formal_workflow: '正式工作流',
@@ -529,6 +532,10 @@ function StreamingCursor(): JSX.Element {
   return <span className="streaming-cursor" aria-hidden="true" />;
 }
 
+function MarkdownInlineCode({ children }: { children?: ReactNode }): JSX.Element {
+  return <code>{children}</code>;
+}
+
 function MarkdownText({
   text,
   streaming = false,
@@ -540,128 +547,49 @@ function MarkdownText({
   agentNameById?: Map<string, string>;
   taskTitleById?: Map<string, string>;
 }): JSX.Element {
-  const blocks = text.split(/\n{2,}/).filter((block) => block.trim().length > 0);
+  const source = streaming ? `${text}${streamingCursorToken}` : text;
+  const components = createMarkdownComponents(agentNameById, taskTitleById);
+
   return (
-    <>
-      {blocks.map((block, index) => renderMarkdownBlock(
-        block,
-        index,
-        streaming && index === blocks.length - 1,
-        agentNameById,
-        taskTitleById,
-      ))}
-    </>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={components}
+      urlTransform={sanitizeMarkdownUrl}
+    >
+      {source}
+    </ReactMarkdown>
   );
 }
 
-function renderMarkdownBlock(
-  block: string,
-  index: number,
-  streaming = false,
+function createMarkdownComponents(
   agentNameById?: Map<string, string>,
   taskTitleById?: Map<string, string>,
-): JSX.Element {
-  const trimmed = block.trim();
-  const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
-  if (heading) {
-    const level = Math.min(heading[1].length, 3);
-    const Tag = (`h${level}` as keyof JSX.IntrinsicElements);
-    return <Tag key={index}>{renderInlineMarkdown(heading[2], agentNameById, taskTitleById)}{streaming && <StreamingCursor />}</Tag>;
-  }
+): Components {
+  const renderChildren = (children: ReactNode) => renderMarkdownReferenceChildren(children, agentNameById, taskTitleById);
 
-  if (/^>\s+/m.test(trimmed)) {
-    return (
-      <blockquote key={index}>
-        {renderInlineTextReferences(trimmed.replace(/^>\s?/gm, ''), agentNameById, taskTitleById)}
-        {streaming && <StreamingCursor />}
-      </blockquote>
-    );
-  }
-
-  const lines = trimmed.split('\n');
-  if (lines.every((line) => /^\s*[-*+]\s+/.test(line))) {
-    return (
-      <ul key={index}>
-        {lines.map((line, i) => (
-          <li key={i}>
-            {renderInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ''), agentNameById, taskTitleById)}
-            {streaming && i === lines.length - 1 && <StreamingCursor />}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-
-  if (lines.every((line) => /^\s*\d+\.\s+/.test(line))) {
-    return (
-      <ol key={index}>
-        {lines.map((line, i) => (
-          <li key={i}>
-            {renderInlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''), agentNameById, taskTitleById)}
-            {streaming && i === lines.length - 1 && <StreamingCursor />}
-          </li>
-        ))}
-      </ol>
-    );
-  }
-
-  if (/^-{3,}$/.test(trimmed)) {
-    return streaming ? (
-      <div key={index} className="markdown-rule-block">
-        <hr />
-        <StreamingCursor />
-      </div>
-    ) : <hr key={index} />;
-  }
-
-  return (
-    <p key={index}>
-      {lines.map((line, i) => (
-        <span key={i}>
-          {i > 0 && <br />}
-          {renderInlineMarkdown(line, agentNameById, taskTitleById)}
-          {streaming && i === lines.length - 1 && <StreamingCursor />}
-        </span>
-      ))}
-    </p>
-  );
-}
-
-function renderInlineMarkdown(
-  text: string,
-  agentNameById?: Map<string, string>,
-  taskTitleById?: Map<string, string>,
-): Array<string | JSX.Element> {
-  const tokens: Array<string | JSX.Element> = [];
-  const pattern = /(\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      pushTextWithAgentNames(tokens, text.slice(lastIndex, match.index), match.index, agentNameById, taskTitleById);
-    }
-    if (match[2]) {
-      tokens.push(
-        <strong key={match.index}>
-          {renderInlineTextReferences(match[2], agentNameById, taskTitleById, `strong-${match.index}`)}
-        </strong>,
-      );
-    } else if (match[3]) {
-      tokens.push(<code key={match.index}>{match[3]}</code>);
-    } else if (match[4] && match[5]) {
-      const href = sanitizeMarkdownHref(match[5]);
-      tokens.push(href ? (
-        <a key={match.index} href={href} target="_blank" rel="noreferrer noopener">
-          {match[4]}
+  return {
+    a: ({ href, children }) => {
+      const safeHref = href ? sanitizeMarkdownHref(href) : null;
+      if (!safeHref) return <>{renderChildren(children)}</>;
+      return (
+        <a href={safeHref} target="_blank" rel="noreferrer noopener">
+          {renderChildren(children)}
         </a>
-      ) : match[4]);
-    }
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    pushTextWithAgentNames(tokens, text.slice(lastIndex), lastIndex, agentNameById, taskTitleById);
-  }
-  return tokens;
+      );
+    },
+    h1: ({ children }) => <h1>{renderChildren(children)}</h1>,
+    h2: ({ children }) => <h2>{renderChildren(children)}</h2>,
+    h3: ({ children }) => <h3>{renderChildren(children)}</h3>,
+    h4: ({ children }) => <h4>{renderChildren(children)}</h4>,
+    h5: ({ children }) => <h5>{renderChildren(children)}</h5>,
+    h6: ({ children }) => <h6>{renderChildren(children)}</h6>,
+    p: ({ children }) => <p>{renderChildren(children)}</p>,
+    li: ({ children }) => <li>{renderChildren(children)}</li>,
+    blockquote: ({ children }) => <blockquote>{renderChildren(children)}</blockquote>,
+    td: ({ children }) => <td>{renderChildren(children)}</td>,
+    th: ({ children }) => <th>{renderChildren(children)}</th>,
+    code: MarkdownInlineCode,
+  };
 }
 
 function buildAgentNameMap(roomAgents: RoomAgent[], globalAgents: Agent[]): Map<string, string> {
@@ -677,21 +605,6 @@ function buildAgentNameMap(roomAgents: RoomAgent[], globalAgents: Agent[]): Map<
 
 function buildTaskTitleMap(tasks: Task[]): Map<string, string> {
   return new Map(tasks.map((task) => [task.id, task.title]));
-}
-
-function pushTextWithAgentNames(
-  tokens: Array<string | JSX.Element>,
-  text: string,
-  offset: number,
-  agentNameById?: Map<string, string>,
-  taskTitleById?: Map<string, string>,
-): void {
-  const rendered = renderInlineTextReferences(text, agentNameById, taskTitleById, `inline-${offset}`);
-  if (Array.isArray(rendered)) {
-    tokens.push(...rendered);
-  } else {
-    tokens.push(rendered);
-  }
 }
 
 function renderInlineTextReferences(
@@ -729,6 +642,67 @@ function renderInlineTextReferences(
     pushMaybeAgentNames(parts, text.slice(lastIndex), `${keyPrefix}-agent-${lastIndex}`, agentNameById);
   }
   return parts;
+}
+
+function renderMarkdownReferenceChildren(
+  children: ReactNode,
+  agentNameById?: Map<string, string>,
+  taskTitleById?: Map<string, string>,
+  keyPrefix = 'markdown',
+): ReactNode {
+  return Children.map(children, (child, index) => {
+    const childKey = `${keyPrefix}-${index}`;
+    if (typeof child === 'string') {
+      return renderMarkdownTextNode(child, agentNameById, taskTitleById, childKey);
+    }
+    if (!isValidElement(child)) return child;
+    if (child.type === 'code' || child.type === 'pre' || child.type === MarkdownInlineCode) return child;
+    const props = child.props as { children?: ReactNode };
+    if (!('children' in props)) return child;
+    return cloneElement(child as ReactElement<{ children?: ReactNode }>, {
+      children: renderMarkdownReferenceChildren(props.children, agentNameById, taskTitleById, childKey),
+    });
+  });
+}
+
+function renderMarkdownTextNode(
+  text: string,
+  agentNameById?: Map<string, string>,
+  taskTitleById?: Map<string, string>,
+  keyPrefix = 'markdown-text',
+): string | Array<string | JSX.Element> {
+  const tokens: Array<string | JSX.Element> = [];
+  let lastIndex = 0;
+  let tokenIndex = 0;
+
+  for (let index = text.indexOf(streamingCursorToken); index !== -1; index = text.indexOf(streamingCursorToken, lastIndex)) {
+    if (index > lastIndex) {
+      pushMarkdownReferenceText(tokens, text.slice(lastIndex, index), `${keyPrefix}-${tokenIndex++}`, agentNameById, taskTitleById);
+    }
+    tokens.push(<StreamingCursor key={`${keyPrefix}-cursor-${tokenIndex++}`} />);
+    lastIndex = index + streamingCursorToken.length;
+  }
+
+  if (lastIndex === 0) return renderInlineTextReferences(text, agentNameById, taskTitleById, keyPrefix);
+  if (lastIndex < text.length) {
+    pushMarkdownReferenceText(tokens, text.slice(lastIndex), `${keyPrefix}-${tokenIndex++}`, agentNameById, taskTitleById);
+  }
+  return tokens;
+}
+
+function pushMarkdownReferenceText(
+  tokens: Array<string | JSX.Element>,
+  text: string,
+  keyPrefix: string,
+  agentNameById?: Map<string, string>,
+  taskTitleById?: Map<string, string>,
+): void {
+  const rendered = renderInlineTextReferences(text, agentNameById, taskTitleById, keyPrefix);
+  if (Array.isArray(rendered)) {
+    tokens.push(...rendered);
+  } else if (rendered) {
+    tokens.push(rendered);
+  }
 }
 
 function pushMaybeAgentNames(
@@ -799,6 +773,8 @@ function sanitizeMarkdownHref(href: string): string | null {
     return null;
   }
 }
+
+const sanitizeMarkdownUrl: UrlTransform = (value) => sanitizeMarkdownHref(value) ?? '';
 
 function CodeBlock({
   language,
