@@ -100,7 +100,7 @@ test('shouldRefreshSessionWorkspace skips unfinished stream events', () => {
   assert.equal(shouldRefreshSessionWorkspace(event), false);
 });
 
-test('shouldRefreshSessionWorkspace refreshes completed stream events', () => {
+test('shouldRefreshSessionWorkspace does not refresh completed stream events', () => {
   const event = {
     type: 'session_run:stream',
     sessionId: 'session-1',
@@ -112,17 +112,17 @@ test('shouldRefreshSessionWorkspace refreshes completed stream events', () => {
     done: true,
   } as WsServerEvent;
 
-  assert.equal(shouldRefreshSessionWorkspace(event), true);
+  assert.equal(shouldRefreshSessionWorkspace(event), false);
 });
 
-test('shouldRefreshSessionWorkspace refreshes session run updates', () => {
+test('shouldRefreshSessionWorkspace does not refresh session run updates', () => {
   const event = {
     type: 'session_run:updated',
     sessionId: 'session-1',
     run: { id: 'run-1' },
   } as WsServerEvent;
 
-  assert.equal(shouldRefreshSessionWorkspace(event), true);
+  assert.equal(shouldRefreshSessionWorkspace(event), false);
 });
 
 function createCommandPayload(): SessionWorkspacePayload {

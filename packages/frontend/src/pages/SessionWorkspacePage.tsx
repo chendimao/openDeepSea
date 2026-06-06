@@ -14,6 +14,7 @@ import type {
 import { sessionSocket, type WsServerEvent } from '../lib/ws';
 import { CompactPreviewSurface } from '../session-ui/CompactPreviewSurface';
 import { SessionShell } from '../session-ui/SessionShell';
+import { applySessionWorkspaceEvent } from '../session-ui/session-workspace-events';
 
 export function SessionWorkspacePage(): JSX.Element {
   const { projectId = '', sessionId } = useParams();
@@ -50,15 +51,10 @@ export function SessionWorkspacePage(): JSX.Element {
         toast.error(event.error);
         return;
       }
-      if (!activeProjectId || !workspacePayload) return;
-      if (!shouldRefreshSessionWorkspace(event)) return;
-      if ('sessionId' in event && event.sessionId !== workspacePayload.activeSession.session.id) return;
-      sessionSocket.requestSessionWorkspace({
-        projectId: activeProjectId,
-        sessionId: workspacePayload.activeSession.session.id,
-      });
+      if (!isSessionWorkspaceEvent(event)) return;
+      setWorkspacePayload((current) => current ? applySessionWorkspaceEvent(current, event) : current);
     });
-  }, [activeProjectId, workspacePayload]);
+  }, [activeProjectId]);
 
   const runCommand = useMutation({
     mutationFn: (content: string) => runSessionCommand(content, workspacePayload!, {
@@ -183,9 +179,7 @@ export function SessionWorkspacePage(): JSX.Element {
 
 export function shouldRefreshSessionWorkspace(event: WsServerEvent): boolean {
   if (!isSessionWorkspaceEvent(event)) return false;
-  if (event.type === 'session_workspace:snapshot') return false;
-  if (event.type === 'session_run:stream' && !event.done) return false;
-  return true;
+  return false;
 }
 
 function isSessionWorkspaceEvent(event: WsServerEvent): boolean {
