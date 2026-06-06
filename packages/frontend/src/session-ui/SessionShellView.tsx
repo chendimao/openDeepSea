@@ -48,6 +48,7 @@ import {
   SessionMessageBubble,
   type SessionMessageDisplayMode,
 } from './SessionMessageBubble';
+import { ProjectAgentStrip } from './ProjectAgentStrip';
 import { sessionStatusTone } from './session-ui-model';
 
 export function SessionShellView({
@@ -226,6 +227,7 @@ function TopCommandBar({
               <Settings aria-hidden="true" />
             </button>
           </div>
+          <ProjectAgentStrip project={payload.project} />
         </div>
       </div>
     </>

@@ -95,7 +95,9 @@ export function AppShell({
               <span />
             </button>
           </div>
-          <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
+          {!isSessionWorkspaceRoute && (
+            <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
+          )}
         </div>
       </header>
       <div className="app-grid">
