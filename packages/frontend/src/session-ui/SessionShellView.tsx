@@ -44,6 +44,7 @@ import type {
   StatusSnapshot,
 } from '../lib/types';
 import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
+import { ProjectAgentStrip } from './ProjectAgentStrip';
 import { sessionStatusTone } from './session-ui-model';
 
 export function SessionShellView({
@@ -222,6 +223,7 @@ function TopCommandBar({
               <Settings aria-hidden="true" />
             </button>
           </div>
+          <ProjectAgentStrip project={payload.project} />
         </div>
       </div>
     </>

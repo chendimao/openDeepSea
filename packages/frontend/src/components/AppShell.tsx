@@ -37,6 +37,9 @@ export function AppShell({
   const isSessionWorkspaceRoute = location.pathname === '/' ||
     /^\/projects\/[^/]+\/?$/.test(location.pathname) ||
     /^\/projects\/[^/]+\/sessions\/[^/]+\/?$/.test(location.pathname);
+  const isSessionWorkspaceRoute = location.pathname === '/' ||
+    /^\/projects\/[^/]+\/?$/.test(location.pathname) ||
+    /^\/projects\/[^/]+\/sessions\/[^/]+\/?$/.test(location.pathname);
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -96,7 +99,9 @@ export function AppShell({
               <span />
             </button>
           </div>
-          <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
+          {!isSessionWorkspaceRoute && (
+            <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
+          )}
         </div>
       </header>
       <div className={cn('app-grid', isRoomRoute && 'app-grid--room')}>
