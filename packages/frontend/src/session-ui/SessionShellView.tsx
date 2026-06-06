@@ -846,31 +846,37 @@ function DiffModule({
   rows: SessionDiffRow[];
   onCommand: (command: string) => void;
 }): JSX.Element {
+  const changedLabel = rows.length === 0 ? '工作区干净' : `${rows.length} 文件已修改`;
   return (
     <section className="deepsea-diff-alert">
       <div className="deepsea-diff-alert__header">
-        <h3>
-          <AlertTriangle aria-hidden="true" />
-          待提交变更
-        </h3>
-        <span>UNCOMMITTED</span>
+        <h3>待提交变更 <span>(Uncommitted)</span></h3>
+        <span data-tone={rows.length === 0 ? 'muted' : 'danger'}>{changedLabel}</span>
       </div>
       <div className="deepsea-diff-card">
         {rows.length === 0 ? (
-          <div>
-            <span>
+          <div className="deepsea-diff-row">
+            <span className="deepsea-diff-row__index">0</span>
+            <span className="deepsea-diff-row__file">
               <FileText aria-hidden="true" />
               <em>working tree clean</em>
             </span>
-            <strong data-tone="muted">0</strong>
+            <span className="deepsea-diff-row__status" data-tone="muted">
+              <strong data-tone="muted">0</strong>
+              <CheckCircle2 aria-hidden="true" />
+            </span>
           </div>
-        ) : rows.map((row) => (
-          <div key={row.path}>
-            <span>
+        ) : rows.map((row, index) => (
+          <div className="deepsea-diff-row" key={row.path}>
+            <span className="deepsea-diff-row__index">{index + 1}</span>
+            <span className="deepsea-diff-row__file">
               <FileText aria-hidden="true" />
               <em>{row.path}</em>
             </span>
-            <strong data-tone={diffRowTone(row)}>{formatDiffDelta(row)}</strong>
+            <span className="deepsea-diff-row__status" data-tone={diffRowTone(row)}>
+              <strong data-tone={diffRowTone(row)}>{formatDiffDelta(row)}</strong>
+              <CheckCircle2 aria-hidden="true" />
+            </span>
           </div>
         ))}
       </div>
@@ -995,5 +1001,7 @@ function formatDiffDelta(row: SessionDiffRow): string {
   const additions = row.additions ?? 0;
   const deletions = row.deletions ?? 0;
   if (additions === 0 && deletions === 0) return row.summary ?? row.status;
+  if (additions > 0 && deletions === 0) return `+${additions}`;
+  if (additions === 0 && deletions > 0) return `-${deletions}`;
   return `+${additions} / -${deletions}`;
 }

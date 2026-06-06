@@ -45,7 +45,9 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /代理运行/);
   assert.match(html, /工具调用/);
   assert.match(html, /待提交变更/);
-  assert.match(html, /UNCOMMITTED/);
+  assert.match(html, /Uncommitted/);
+  assert.match(html, /1 文件已修改/);
+  assert.match(html, /\+12 \/ -3/);
   assert.match(html, /存在未应用的 Compact 预览/);
   assert.match(html, /立即应用/);
   assert.match(html, /data-command="\/new"/);
