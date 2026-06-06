@@ -4,6 +4,7 @@ import {
   Brain,
   CheckCircle2,
   ChevronDown,
+  Eye,
   FileText,
   Filter,
   GitFork,
@@ -21,6 +22,7 @@ import {
   ShieldCheck,
   Square,
   StopCircle,
+  Timer,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import React, { useState } from 'react';
@@ -41,6 +43,7 @@ import type {
   SessionWorkspacePayload,
   StatusSnapshot,
 } from '../lib/types';
+import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
 import { sessionStatusTone } from './session-ui-model';
 
 export function SessionShellView({
@@ -177,11 +180,12 @@ function TopCommandBar({
                         <button
                           type="button"
                           key={`${project.id}-${session.source}-${session.id}`}
+                          title={session.title}
                           onClick={() => {
                             if (typeof window !== 'undefined') window.location.assign(session.href);
                           }}
                         >
-                          <strong>{session.title}</strong>
+                          <strong>{formatCompactSessionTitle(session.title)}</strong>
                           <em>{formatRelativeTime(Date.now(), session.updated_at)}</em>
                         </button>
                       ))}
@@ -364,7 +368,7 @@ function HistoryRail({
         <article className="deepsea-history-card is-active">
           <span className="deepsea-history-card__rail" />
           <div>
-            <h3>{activeSession.title}</h3>
+            <h3 title={activeSession.title}>{formatCompactSessionTitle(activeSession.title)}</h3>
             <p className="deepsea-mono">{formatTimeRange(activeSession.created_at, activeSession.updated_at)}</p>
             <div className="deepsea-history-card__footer">
               <span className="deepsea-status-chip" data-tone="primary">运行中</span>
@@ -425,6 +429,12 @@ function TranscriptCanvas({
   onCommand: (command: string) => void;
 }): JSX.Element {
   const timeline = buildTranscriptTimeline(detail).slice(-36);
+  const [displayModes, setDisplayModes] = useState<Record<string, 'preview' | 'source'>>({});
+  const displayModeFor = (key: string): 'preview' | 'source' => displayModes[key] ?? 'preview';
+  const setDisplayModeFor = (key: string, mode: 'preview' | 'source') => {
+    setDisplayModes((current) => ({ ...current, [key]: mode }));
+  };
+
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
       <div className="deepsea-transcript__scroll">
@@ -443,9 +453,17 @@ function TranscriptCanvas({
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
         ) : timeline.map((item) => {
           if (item.kind === 'message') {
-            return <TranscriptMessage key={item.key} message={item.message} />;
+            return (
+              <TranscriptMessage
+                key={item.key}
+                message={item.message}
+                displayMode={displayModeFor(item.key)}
+                onDisplayModeChange={(mode) => setDisplayModeFor(item.key, mode)}
+              />
+            );
           }
           const runEvidence = evidence.filter((event) => event.source_run_id === item.run.id);
+          const output = runOutputText(item.run);
           return (
             <React.Fragment key={item.key}>
               <AgentThoughtPanel run={item.run} evidence={runEvidence} />
@@ -453,8 +471,16 @@ function TranscriptCanvas({
                 <div>
                   <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>ASSISTANT</span>
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
+                  <ThinkingDurationBadge run={item.run} />
+                  <MarkdownDisplaySwitch
+                    content={output}
+                    mode={displayModeFor(item.key)}
+                    onModeChange={(mode) => setDisplayModeFor(item.key, mode)}
+                  />
                 </div>
-                <p>{runOutputText(item.run)}</p>
+                <div className="deepsea-run-log-body">
+                  <MessageContent content={output} mode={displayModeFor(item.key)} suppressTraceEvents />
+                </div>
               </article>
             </React.Fragment>
           );
@@ -488,8 +514,12 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
 
 function TranscriptMessage({
   message,
+  displayMode,
+  onDisplayModeChange,
 }: {
   message: SessionMessage;
+  displayMode: 'preview' | 'source';
+  onDisplayModeChange: (mode: 'preview' | 'source') => void;
 }): JSX.Element {
   const role = message.role === 'assistant' ? 'ASSISTANT' : message.role.toUpperCase();
   return (
@@ -498,9 +528,59 @@ function TranscriptMessage({
         <span>{role}</span>
         <time className="deepsea-mono">{formatClock(message.created_at)}</time>
         {(message.status === 'queued' || message.status === 'streaming') && <strong>思考中</strong>}
+        <MarkdownDisplaySwitch content={message.content} mode={displayMode} onModeChange={onDisplayModeChange} />
       </header>
-      <p>{message.content}</p>
+      <div className="deepsea-message-body">
+        <MessageContent content={message.content} mode={displayMode} suppressTraceEvents />
+      </div>
     </article>
+  );
+}
+
+function MarkdownDisplaySwitch({
+  content,
+  mode,
+  onModeChange,
+}: {
+  content: string;
+  mode: 'preview' | 'source';
+  onModeChange: (mode: 'preview' | 'source') => void;
+}): JSX.Element | null {
+  if (!isMarkdownMessageContent(content)) return null;
+  return (
+    <div className="deepsea-markdown-switch" aria-label="Markdown 显示模式">
+      <button
+        type="button"
+        className={mode === 'preview' ? 'is-active' : undefined}
+        aria-label="预览"
+        aria-pressed={mode === 'preview'}
+        onClick={() => onModeChange('preview')}
+      >
+        <Eye aria-hidden="true" />
+        <span>预览</span>
+      </button>
+      <button
+        type="button"
+        className={mode === 'source' ? 'is-active' : undefined}
+        aria-label="源码"
+        aria-pressed={mode === 'source'}
+        onClick={() => onModeChange('source')}
+      >
+        <FileText aria-hidden="true" />
+        <span>源码</span>
+      </button>
+    </div>
+  );
+}
+
+function ThinkingDurationBadge({ run }: { run: SessionRun }): JSX.Element | null {
+  const duration = getSessionRunThinkingDuration(run);
+  if (!duration) return null;
+  return (
+    <span className="deepsea-thinking-duration" data-active={duration.active ? 'true' : 'false'}>
+      <Timer aria-hidden="true" />
+      {duration.label}
+    </span>
   );
 }
 
@@ -743,6 +823,31 @@ function runOutputText(run: SessionRun): string {
   return '等待智能体输出...';
 }
 
+export function getSessionRunThinkingDuration(
+  run: Pick<SessionRun, 'status' | 'started_at' | 'updated_at' | 'completed_at'>,
+  now = Date.now(),
+): { label: string; active: boolean } | null {
+  if (!Number.isFinite(run.started_at) || run.started_at <= 0) return null;
+  const active = run.status === 'queued' || run.status === 'running' || run.status === 'retrying' || run.status === 'paused';
+  const endAt = active ? now : run.completed_at ?? run.updated_at ?? now;
+  const durationMs = Math.max(0, endAt - run.started_at);
+  return {
+    label: `${active ? '思考中' : '思考'} ${formatSessionDuration(durationMs)}`,
+    active,
+  };
+}
+
+function formatSessionDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+}
+
 function agentThoughtText(run: SessionRun, evidence: SessionEvidenceEvent[]): string | null {
   const activity = trimDisplayText(run.activity_log);
   if (activity) return activity;
@@ -879,6 +984,11 @@ function formatProviderModel(provider: string, model: string): string {
   if (provider === 'claude') return model.includes('Claude') ? model : `Claude ${model}`;
   if (provider === 'codex') return model.includes('gpt') ? model : `Codex ${model}`;
   return `${provider} ${model}`;
+}
+
+function formatCompactSessionTitle(title: string, maxLength = 17): string {
+  if (title.length <= maxLength) return title;
+  return `${title.slice(0, maxLength)}...`;
 }
 
 function historyStatusLabel(status: string): string {

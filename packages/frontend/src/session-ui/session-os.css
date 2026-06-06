@@ -899,14 +899,99 @@
   padding: 1px 6px;
   font-size: 8px;
 }
+.deepsea-markdown-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  border: 1px solid rgba(226, 232, 240, 0.76);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  padding: 2px;
+}
+.deepsea-markdown-switch button {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(67, 70, 85, 0.72);
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.deepsea-markdown-switch button:hover {
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--deepsea-primary-bright);
+}
+.deepsea-markdown-switch button.is-active {
+  background: var(--deepsea-primary-bright);
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.18);
+}
+.deepsea-markdown-switch svg {
+  width: 13px;
+  height: 13px;
+}
+.deepsea-thinking-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 4px;
+  background: var(--deepsea-warn-soft);
+  color: var(--deepsea-warn);
+  padding: 1px 6px;
+  font-family: var(--deepsea-mono);
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.deepsea-thinking-duration svg {
+  width: 11px;
+  height: 11px;
+}
+.deepsea-thinking-duration[data-active="true"] svg {
+  animation: deepsea-spin 1.6s linear infinite;
+}
 .deepsea-message p,
+.deepsea-message-body,
+.deepsea-run-log-body,
 .deepsea-run-log p {
   margin: 0;
   color: var(--deepsea-text);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 20px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+.deepsea-message-body .message-content,
+.deepsea-run-log-body .message-content,
+.deepsea-message-body .markdown-preview,
+.deepsea-run-log-body .markdown-preview {
+  color: var(--deepsea-text);
+  font-size: 14px;
+  line-height: 20px;
+}
+.deepsea-message-body .markdown-preview,
+.deepsea-run-log-body .markdown-preview {
+  gap: 8px;
+}
+.deepsea-message-body .code-block,
+.deepsea-run-log-body .code-block {
+  border-color: var(--deepsea-border-subtle);
+  border-radius: 8px;
+  background: rgba(242, 244, 246, 0.58);
+}
+.deepsea-message-body .code-block-pre,
+.deepsea-run-log-body .code-block-pre {
+  font-size: 12px;
+  line-height: 1.65;
 }
 .deepsea-evidence-tray {
   justify-content: space-between;
@@ -1017,6 +1102,8 @@
   white-space: pre-wrap;
 }
 .deepsea-run-log > div {
+  display: flex;
+  align-items: center;
   gap: 8px;
   margin-bottom: 5px;
 }
@@ -1037,6 +1124,12 @@
 .deepsea-run-log p {
   font-size: 10px;
   line-height: 1.35;
+}
+
+@keyframes deepsea-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .deepsea-composer {
   position: absolute;

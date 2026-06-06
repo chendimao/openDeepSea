@@ -98,6 +98,7 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   default_workflow_definition_id: null,
   superpowers_bootstrap_owner: 'provider',
   workspace_excluded_dirs: [],
+  session_planner_acp_backend: null,
   active_ai_config_id: null,
   ai_configs: [],
   langchain_planner_model: null,
@@ -1607,6 +1608,8 @@ function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
     superpowers_bootstrap_owner:
       settings.project?.superpowers_bootstrap_owner ?? settings.system.superpowers_bootstrap_owner,
     workspace_excluded_dirs: settings.system.workspace_excluded_dirs,
+    session_planner_acp_backend:
+      settings.project?.session_planner_acp_backend ?? settings.system.session_planner_acp_backend,
   };
 }
 

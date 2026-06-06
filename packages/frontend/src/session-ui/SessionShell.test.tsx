@@ -3,12 +3,23 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SessionWorkspacePayload } from '../lib/types';
-import { SessionShellView } from './SessionShellView';
+import { I18nProvider } from '../lib/i18n';
+import { SessionShellView, getSessionRunThinkingDuration } from './SessionShellView';
+
+const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
+globalWithReact.React = React;
+
+Object.defineProperty(globalThis, 'localStorage', {
+  value: {
+    getItem: () => null,
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  },
+  configurable: true,
+});
 
 test('SessionShell renders Deepsea command center modules', () => {
-  const html = renderToStaticMarkup(
-    <SessionShellView payload={createPayload()} onSendMessage={() => undefined} onCommand={() => undefined} />,
-  );
+  const html = renderSessionShell(createPayload());
 
   assert.match(html, /Session Operations Console/);
   assert.match(html, /Project command bar/);
@@ -63,9 +74,7 @@ test('SessionShell renders agent thought above run output without leaking runtim
   run.stderr = '';
   run.activity_log = '分析用户问题，检查会话上下文，并准备简短回复。';
 
-  const html = renderToStaticMarkup(
-    <SessionShellView payload={payload} onSendMessage={() => undefined} onCommand={() => undefined} />,
-  );
+  const html = renderSessionShell(payload);
 
   assert.doesNotMatch(html, /本轮 prompt 来源由 SessionOS Context Inspector 记录/);
   assert.match(html, /智能体思考过程/);
@@ -112,15 +121,63 @@ test('SessionShell keeps previous assistant replies in transcript timeline', () 
     },
   ];
 
-  const html = renderToStaticMarkup(
-    <SessionShellView payload={payload} onSendMessage={() => undefined} onCommand={() => undefined} />,
-  );
+  const html = renderSessionShell(payload);
 
   assert.match(html, /第一轮回复仍然可见/);
   assert.match(html, /第二轮回复也可见/);
   assert.ok(html.indexOf('第一轮问题') < html.indexOf('第一轮回复仍然可见'));
   assert.ok(html.indexOf('第一轮回复仍然可见') < html.indexOf('第二轮问题'));
   assert.ok(html.indexOf('第二轮问题') < html.indexOf('第二轮回复也可见'));
+});
+
+test('SessionShell renders markdown controls and thinking duration in transcript', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  payload.activeSession.messages[0] = {
+    ...payload.activeSession.messages[0]!,
+    content: '请检查 `packages/frontend` 的 Markdown 展示',
+  };
+  run.stdout = ['## 分析结果', '', '- 已读取消息区', '- 需要补齐源码切换'].join('\n');
+  run.started_at = 1_000;
+  run.updated_at = 19_000;
+  run.completed_at = 19_000;
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /deepsea-markdown-switch/);
+  assert.match(html, /预览/);
+  assert.match(html, /源码/);
+  assert.match(html, /思考 18s/);
+  assert.match(html, /markdown-preview/);
+  assert.match(html, /分析结果/);
+});
+
+test('getSessionRunThinkingDuration formats active and completed durations', () => {
+  assert.deepEqual(getSessionRunThinkingDuration({
+    status: 'running',
+    started_at: 1_000,
+    updated_at: 1_000,
+    completed_at: null,
+  }, 19_400), { label: '思考中 18s', active: true });
+
+  assert.deepEqual(getSessionRunThinkingDuration({
+    status: 'completed',
+    started_at: 1_000,
+    updated_at: 126_000,
+    completed_at: 126_000,
+  }, 200_000), { label: '思考 2m 5s', active: false });
+});
+
+test('SessionShell renders a concise active session title with the full title available', () => {
+  const payload = createPayload();
+  payload.activeSession.session.title = '用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出';
+  payload.projectSwitcher.projects[0]!.recentSessions[0]!.title = payload.activeSession.session.title;
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /title="用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出"/);
+  assert.match(html, /用户在当前会话第一次发送消息的时候.../);
+  assert.doesNotMatch(html, />用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出</);
 });
 
 export function createPayload(): SessionWorkspacePayload {
@@ -185,6 +242,7 @@ export function createPayload(): SessionWorkspacePayload {
         activity_log: '',
         error: null,
         acp_session_id: 'acp-1',
+        runtime_profile_snapshot: null,
         started_at: now - 50_000,
         updated_at: now - 40_000,
         completed_at: now - 40_000,
@@ -365,4 +423,12 @@ export function createPayload(): SessionWorkspacePayload {
     }],
     historyFilters: { q: '', status: 'all', mode: 'all' },
   };
+}
+
+function renderSessionShell(payload: SessionWorkspacePayload): string {
+  return renderToStaticMarkup(
+    <I18nProvider>
+      <SessionShellView payload={payload} onSendMessage={() => undefined} onCommand={() => undefined} />
+    </I18nProvider>,
+  );
 }
