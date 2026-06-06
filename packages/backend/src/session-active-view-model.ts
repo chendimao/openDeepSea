@@ -13,7 +13,7 @@ export function buildActiveSessionSummaries(): ActiveSessionSummary[] {
 }
 
 export function buildActiveSessionSummary(session: Session): ActiveSessionSummary | null {
-  if (session.closed_at !== null) return null;
+  if (session.closed_at !== null || session.status === 'archived' || session.archived_at !== null) return null;
   const project = projectRepo.get(session.project_id);
   if (!project) return null;
   const latestEvent = readLatestEventSummary(session.id);

@@ -60,6 +60,31 @@ test('buildActiveSessionSummaries includes active sessions across projects with 
   assert.equal(summaries[0]?.latest_event_summary, '左侧面板已进入实现阶段');
 });
 
+test('buildActiveSessionSummaries excludes archived sessions even when they are not closed', () => {
+  const project = projectRepo.create({
+    name: 'Archived Project',
+    path: mkdtempSync(join(tmpdir(), 'active-summary-archived-')),
+  });
+  const archived = sessionRepo.create({
+    project_id: project.id,
+    title: '已归档但未关闭',
+    workspace_path: project.path,
+  });
+  const active = sessionRepo.create({
+    project_id: project.id,
+    title: '继续开发',
+    workspace_path: project.path,
+  });
+
+  sessionRepo.update(archived.id, { status: 'archived', phase: 'archived', archived_at: 1 });
+
+  const summaries = buildActiveSessionSummaries();
+
+  assert.equal(summaries.some((summary) => summary.id === active.id), true);
+  assert.equal(summaries.some((summary) => summary.id === archived.id), false);
+  assert.equal(sessionRepo.get(archived.id)?.closed_at, null);
+});
+
 test('buildActiveSessionSummaries orders pinned sessions before recent unpinned sessions', () => {
   const project = projectRepo.create({
     name: 'Pinned Project',

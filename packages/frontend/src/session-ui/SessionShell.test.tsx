@@ -85,6 +85,19 @@ test('SessionShell renders current session when active sessions are absent from 
   assert.match(html, /SessionOS 迁移/);
 });
 
+test('SessionShell does not add an archived current session to the active rail fallback', () => {
+  const payload = createPayload();
+  payload.activeSessions = [];
+  payload.activeSession.session.status = 'archived';
+  payload.activeSession.session.phase = 'archived';
+  payload.activeSession.session.archived_at = Date.now();
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /活跃会话/);
+  assert.match(html, /没有匹配的活跃会话/);
+});
+
 test('SessionShell renders empty run state without fake run values', () => {
   const payload = createPayload();
   payload.activeSession.runs = [];

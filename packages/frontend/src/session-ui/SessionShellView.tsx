@@ -344,15 +344,17 @@ function ActiveSessionsRail({
     currentSession,
     currentProjectId,
     currentProjectName,
-  ).filter((session) => {
-    if (!normalizedQuery) return true;
-    return [
-      session.title,
-      session.project_name,
-      session.project_path,
-      session.latest_event_summary ?? '',
-    ].some((value) => (value ?? '').toLowerCase().includes(normalizedQuery));
-  });
+  )
+    .filter((session) => session.status !== 'archived')
+    .filter((session) => {
+      if (!normalizedQuery) return true;
+      return [
+        session.title,
+        session.project_name,
+        session.project_path,
+        session.latest_event_summary ?? '',
+      ].some((value) => (value ?? '').toLowerCase().includes(normalizedQuery));
+    });
 
   return (
     <aside className="deepsea-history" aria-label="Active Sessions">
@@ -1146,6 +1148,7 @@ function ensureCurrentActiveSessionSummary(
   currentProjectName: string,
 ): ActiveSessionSummary[] {
   if (sessions.some((session) => session.id === currentSession.id)) return sessions;
+  if (!isSessionActiveForRail(currentSession)) return sessions;
   return [{
     id: currentSession.id,
     project_id: currentProjectId,
@@ -1162,6 +1165,10 @@ function ensureCurrentActiveSessionSummary(
     active_run_count: 0,
     latest_event_summary: currentSession.current_goal,
   }, ...sessions];
+}
+
+function isSessionActiveForRail(session: Pick<Session, 'closed_at' | 'status' | 'archived_at'>): boolean {
+  return session.closed_at === null && session.status !== 'archived' && session.archived_at === null;
 }
 
 function activeSessionStatusLabel(session: ActiveSessionSummary): string {

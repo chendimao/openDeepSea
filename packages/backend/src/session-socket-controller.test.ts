@@ -184,6 +184,47 @@ test('websocket workspace request returns a session workspace snapshot event', (
   assert.equal(event.payload.activeSession.session.project_id, project.id);
 });
 
+test('websocket workspace request marks the focused session as viewed before returning active summaries', () => {
+  const project = projectRepo.create({
+    name: 'socket viewed project',
+    path: mkdtempSync(join(tmpdir(), 'socket-viewed-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Viewed Snapshot',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  sessionRepo.update(session.id, { last_viewed_at: 1 });
+  sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'assistant',
+    sender_id: 'planner',
+    content: '已经有新的消息',
+  });
+  sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: '新证据',
+    summary: '有新的证据事件',
+  });
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'session.workspace.request',
+    projectId: project.id,
+    sessionId: session.id,
+  });
+
+  const event = JSON.parse(sent[0]!);
+  const viewed = sessionRepo.get(session.id);
+  const activeSummary = event.payload.activeSessions.find((item: { id: string }) => item.id === session.id);
+  assert.equal(event.type, 'session_workspace:snapshot');
+  assert.ok((viewed?.last_viewed_at ?? 0) > 1);
+  assert.equal(activeSummary?.unread_count, 0);
+});
+
 test('websocket pause marks the active run as paused instead of cancelled', () => {
   const project = projectRepo.create({
     name: 'socket pause project',

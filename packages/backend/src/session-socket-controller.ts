@@ -23,6 +23,7 @@ import { retrySessionAgentRun, runSessionAgent } from './session-runtime.js';
 import { parseSessionCommand } from './session-command.js';
 import { buildHistorySummary } from './session-summary.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
+import { buildActiveSessionSummary } from './session-active-view-model.js';
 import { buildSessionStatus, buildWorkspacePayload, createContextManifest } from './session.routes.js';
 import { wsHub } from './ws-hub.js';
 import type { HistoryRecord, Project, Session, SessionEvidenceEvent, SessionRun, WsClientEvent, WsServerEvent } from './types.js';
@@ -384,12 +385,21 @@ function requireProject(projectId: string): Project {
 }
 
 function sendWorkspaceSnapshot(socket: WebSocket, project: Project, session: Session): void {
+  const viewedSession = markSessionViewedForSnapshot(session);
   send(socket, {
     type: 'session_workspace:snapshot',
     projectId: project.id,
-    sessionId: session.id,
-    payload: buildWorkspacePayload(project, session),
+    sessionId: viewedSession.id,
+    payload: buildWorkspacePayload(project, viewedSession),
   });
+}
+
+function markSessionViewedForSnapshot(session: Session): Session {
+  const previousSummary = buildActiveSessionSummary(session);
+  if (!previousSummary) return session;
+  const viewedSession = sessionRepo.touchViewed(session.id) ?? session;
+  if (previousSummary.unread_count > 0) broadcastActiveSessionUpsert(viewedSession);
+  return viewedSession;
 }
 
 function createHistoryRecordForSession(session: Session, title?: string | true): HistoryRecord {
@@ -577,13 +587,7 @@ function sendSessionWorkspaceSnapshot(socket: WebSocket, projectId: string, sess
       provider: null,
       workspace_path: project.path,
     });
-  broadcastActiveSessionUpsert(activeSession);
-  send(socket, {
-    type: 'session_workspace:snapshot',
-    projectId: project.id,
-    sessionId: activeSession.id,
-    payload: buildWorkspacePayload(project, activeSession),
-  });
+  sendWorkspaceSnapshot(socket, project, activeSession);
 }
 
 type RunControlInput = {

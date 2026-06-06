@@ -80,6 +80,8 @@ export const sessionRepo = {
     return db.prepare(`
       SELECT * FROM sessions
       WHERE closed_at IS NULL
+        AND status != 'archived'
+        AND archived_at IS NULL
       ORDER BY pinned_at IS NULL ASC, pinned_at DESC, updated_at DESC
     `).all() as Session[];
   },
@@ -142,7 +144,7 @@ export const sessionRepo = {
 
   archive(id: string): Session | undefined {
     const timestamp = now();
-    return this.update(id, { status: 'archived', phase: 'archived', archived_at: timestamp });
+    return this.update(id, { status: 'archived', phase: 'archived', closed_at: timestamp, archived_at: timestamp });
   },
 
   close(id: string): Session | undefined {
@@ -158,7 +160,10 @@ export const sessionRepo = {
   },
 
   touchViewed(id: string): Session | undefined {
-    return this.update(id, { last_viewed_at: now() });
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    db.prepare('UPDATE sessions SET last_viewed_at = ? WHERE id = ?').run(now(), id);
+    return this.get(id);
   },
 };
 

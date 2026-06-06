@@ -127,6 +127,31 @@ test('sessionRepo active workspace list includes unclosed sessions across projec
   assert.equal(sessionRepo.get(first.id)?.closed_at !== null, true);
 });
 
+test('sessionRepo active workspace list excludes archived sessions', () => {
+  const project = projectRepo.create({
+    name: 'Archived Active',
+    path: mkdtempSync(join(tmpdir(), 'active-archived-')),
+  });
+  const archived = sessionRepo.create({
+    project_id: project.id,
+    title: 'Archived',
+  });
+  const active = sessionRepo.create({
+    project_id: project.id,
+    title: 'Still Active',
+  });
+
+  sessionRepo.update(archived.id, { status: 'archived', phase: 'archived', archived_at: 1 });
+
+  const sessions = sessionRepo.listActiveWorkspaceSessions();
+
+  assert.equal(sessions.some((session) => session.id === active.id), true);
+  assert.equal(sessions.some((session) => session.id === archived.id), false);
+  assert.equal(sessionRepo.get(archived.id)?.status, 'archived');
+  assert.equal(sessionRepo.get(archived.id)?.closed_at, null);
+  assert.equal(sessionRepo.get(archived.id)?.archived_at !== null, true);
+});
+
 test('sessionRepo pins active workspace sessions ahead of recent unpinned sessions', () => {
   const project = projectRepo.create({
     name: 'Pinned Active',
@@ -165,6 +190,26 @@ test('sessionRepo touchViewed updates last viewed without closing the session', 
   const viewed = sessionRepo.get(session.id);
   assert.equal(viewed?.closed_at, null);
   assert.equal(viewed?.last_viewed_at !== null, true);
+});
+
+test('sessionRepo touchViewed does not reorder the active workspace list', () => {
+  const project = projectRepo.create({
+    name: 'Viewed Stable Active',
+    path: mkdtempSync(join(tmpdir(), 'active-viewed-stable-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Viewed Stable',
+  });
+  db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(1, session.id);
+  const before = sessionRepo.get(session.id);
+
+  sessionRepo.touchViewed(session.id);
+
+  const viewed = sessionRepo.get(session.id);
+  assert.equal(viewed?.closed_at, null);
+  assert.equal(viewed?.last_viewed_at !== null, true);
+  assert.equal(viewed?.updated_at, before?.updated_at);
 });
 
 test('session agent runtime repo stores provider session per agent', () => {
