@@ -359,6 +359,7 @@ CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(sess
 CREATE TABLE IF NOT EXISTS session_runs (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL DEFAULT 'planner',
   provider TEXT NOT NULL,
   model TEXT,
   status TEXT NOT NULL,
@@ -377,6 +378,46 @@ CREATE TABLE IF NOT EXISTS session_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_session_runs_session ON session_runs(session_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_session_runs_status ON session_runs(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_session_runs_agent ON session_runs(session_id, agent_id, provider, started_at);
+
+CREATE TABLE IF NOT EXISTS session_agent_runtimes (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT,
+  provider_session_id TEXT,
+  status TEXT NOT NULL,
+  current_run_id TEXT,
+  latest_checkpoint_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (current_run_id) REFERENCES session_runs(id) ON DELETE SET NULL,
+  UNIQUE(session_id, agent_id, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_session_agent_runtimes_session
+  ON session_agent_runtimes(session_id, agent_id, provider);
+
+CREATE TABLE IF NOT EXISTS session_agent_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  seq INTEGER NOT NULL,
+  channel TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  payload_json TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (run_id) REFERENCES session_runs(id) ON DELETE CASCADE,
+  UNIQUE(run_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_session_agent_events_run
+  ON session_agent_events(run_id, seq);
+CREATE INDEX IF NOT EXISTS idx_session_agent_events_session
+  ON session_agent_events(session_id, agent_id, created_at);
 
 CREATE TABLE IF NOT EXISTS session_plan_items (
   id TEXT PRIMARY KEY,
@@ -966,6 +1007,13 @@ if (!projectColumnNames.has('sort_order')) {
   db.exec('ALTER TABLE projects ADD COLUMN sort_order INTEGER');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_projects_sort ON projects(pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC)');
+
+const sessionRunColumns = db.prepare('PRAGMA table_info(session_runs)').all() as { name: string }[];
+const sessionRunColumnNames = new Set(sessionRunColumns.map((column) => column.name));
+if (!sessionRunColumnNames.has('agent_id')) {
+  db.exec("ALTER TABLE session_runs ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'planner'");
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_session_runs_agent ON session_runs(session_id, agent_id, provider, started_at)');
 
 const skillColumns = db.prepare('PRAGMA table_info(skills)').all() as { name: string }[];
 const skillColumnNames = new Set(skillColumns.map((column) => column.name));

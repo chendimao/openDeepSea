@@ -8,7 +8,13 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-se
 
 const { db } = await import('../db.js');
 const { projectRepo } = await import('./projects.js');
-const { sessionRepo, sessionMessageRepo, sessionRunRepo, sessionPlanItemRepo } = await import('./sessions.js');
+const {
+  sessionRepo,
+  sessionMessageRepo,
+  sessionRunRepo,
+  sessionPlanItemRepo,
+  sessionAgentRuntimeRepo,
+} = await import('./sessions.js');
 const { sessionEvidenceRepo } = await import('./session-evidence.js');
 const { sessionContextRepo } = await import('./session-context.js');
 const { sessionCompactionRepo } = await import('./session-compactions.js');
@@ -68,6 +74,103 @@ test('session schema creates the primary lookup indexes', () => {
     'idx_session_runs_session',
     'idx_sessions_project_status_updated',
   ]);
+});
+
+test('session schema creates agent runtime and event tables', () => {
+  const tables = db.prepare(`
+    SELECT name FROM sqlite_master
+    WHERE type = 'table'
+      AND name IN ('session_agent_runtimes', 'session_agent_events')
+    ORDER BY name
+  `).all() as Array<{ name: string }>;
+
+  assert.deepEqual(tables.map((row) => row.name), [
+    'session_agent_events',
+    'session_agent_runtimes',
+  ]);
+
+  const runColumns = db.prepare('PRAGMA table_info(session_runs)').all() as Array<{ name: string }>;
+  assert.ok(runColumns.some((column) => column.name === 'agent_id'));
+});
+
+test('session agent runtime repo stores provider session per agent', () => {
+  const project = projectRepo.create({
+    name: 'agent runtime project',
+    path: mkdtempSync(join(tmpdir(), 'session-agent-runtime-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Agent Runtime',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  const runtime = sessionAgentRuntimeRepo.upsert({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    model: 'gpt-test',
+    provider_session_id: 'acp-session-1',
+    status: 'running',
+  });
+
+  assert.equal(runtime.agent_id, 'planner');
+  assert.equal(runtime.provider_session_id, 'acp-session-1');
+
+  const next = sessionAgentRuntimeRepo.upsert({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    model: 'gpt-test',
+    provider_session_id: 'acp-session-2',
+    status: 'idle',
+  });
+
+  assert.equal(next.id, runtime.id);
+  assert.equal(sessionAgentRuntimeRepo.getByAgent(session.id, 'planner', 'codex')?.provider_session_id, 'acp-session-2');
+});
+
+test('session run repo finds reusable acp session by session agent and provider', () => {
+  const project = projectRepo.create({
+    name: 'run reuse project',
+    path: mkdtempSync(join(tmpdir(), 'session-run-reuse-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Run Reuse',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    prompt: 'first',
+    acp_session_id: 'acp-first',
+  });
+  sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'reviewer',
+    provider: 'codex',
+    mode: 'code',
+    prompt: 'review',
+    acp_session_id: 'acp-reviewer',
+  });
+
+  assert.equal(sessionRunRepo.findReusableAcpSessionId({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+  }), 'acp-first');
+  assert.equal(sessionRunRepo.findReusableAcpSessionId({
+    session_id: session.id,
+    agent_id: 'reviewer',
+    provider: 'codex',
+  }), 'acp-reviewer');
 });
 
 test('session repos create active session, message, run and evidence in order', () => {

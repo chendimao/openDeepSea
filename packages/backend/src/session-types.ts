@@ -13,7 +13,16 @@ export type SessionPhase =
   | 'completed'
   | 'archived';
 export type SessionStatus = 'active' | 'blocked' | 'completed' | 'archived' | 'failed';
-export type SessionRunStatus = 'queued' | 'running' | 'retrying' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export type SessionRunStatus =
+  | 'queued'
+  | 'running'
+  | 'retrying'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
+export type SessionAgentRuntimeStatus = 'idle' | 'running' | 'paused' | 'failed' | 'completed';
 export type SessionMessageRole = 'user' | 'assistant' | 'system';
 export type SessionMessageType = 'text' | 'system' | 'agent_stream';
 export type SessionMessageStatus = 'queued' | 'streaming' | 'completed' | 'failed';
@@ -90,6 +99,7 @@ export interface SessionMessage {
 export interface SessionRun {
   id: string;
   session_id: string;
+  agent_id: string;
   provider: AcpBackend;
   model: string | null;
   status: SessionRunStatus;
@@ -104,6 +114,33 @@ export interface SessionRun {
   started_at: number;
   updated_at: number;
   completed_at: number | null;
+}
+
+export interface SessionAgentRuntime {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  provider: AcpBackend;
+  model: string | null;
+  provider_session_id: string | null;
+  status: SessionAgentRuntimeStatus;
+  current_run_id: string | null;
+  latest_checkpoint_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SessionAgentEvent {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  run_id: string;
+  seq: number;
+  channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+  event_type: string;
+  content: string;
+  payload_json: string | null;
+  created_at: number;
 }
 
 export interface SessionPlanItem {

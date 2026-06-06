@@ -3,6 +3,9 @@ import { db, now } from '../db.js';
 import type {
   AcpBackend,
   Session,
+  SessionAgentEvent,
+  SessionAgentRuntime,
+  SessionAgentRuntimeStatus,
   SessionMessage,
   SessionMessageRole,
   SessionMode,
@@ -13,7 +16,9 @@ import type {
   SessionRunStatus,
 } from '../types.js';
 
-const ACTIVE_SESSION_RUN_STATUSES = ['queued', 'running', 'retrying'] as const;
+export const DEFAULT_SESSION_AGENT_ID = 'planner';
+
+const ACTIVE_SESSION_RUN_STATUSES = ['queued', 'running', 'retrying', 'paused'] as const;
 
 export const sessionRepo = {
   create(input: {
@@ -180,6 +185,7 @@ export const sessionMessageRepo = {
 export const sessionRunRepo = {
   create(input: {
     session_id: string;
+    agent_id?: string;
     provider: AcpBackend;
     model?: string | null;
     status?: SessionRunStatus;
@@ -192,13 +198,14 @@ export const sessionRunRepo = {
     const timestamp = now();
     db.prepare(`
       INSERT INTO session_runs (
-        id, session_id, provider, model, status, mode, phase,
+        id, session_id, agent_id, provider, model, status, mode, phase,
         prompt, acp_session_id, started_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.session_id,
+      input.agent_id ?? DEFAULT_SESSION_AGENT_ID,
       input.provider,
       input.model ?? null,
       input.status ?? 'running',
@@ -214,6 +221,25 @@ export const sessionRunRepo = {
 
   get(id: string): SessionRun | undefined {
     return db.prepare('SELECT * FROM session_runs WHERE id = ?').get(id) as SessionRun | undefined;
+  },
+
+  findReusableAcpSessionId(input: {
+    session_id: string;
+    agent_id: string;
+    provider: AcpBackend;
+  }): string | null {
+    const row = db.prepare(`
+      SELECT acp_session_id
+      FROM session_runs
+      WHERE session_id = ?
+        AND agent_id = ?
+        AND provider = ?
+        AND acp_session_id IS NOT NULL
+        AND status IN ('running', 'completed', 'paused', 'cancelled', 'interrupted')
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `).get(input.session_id, input.agent_id, input.provider) as { acp_session_id: string } | undefined;
+    return row?.acp_session_id ?? null;
   },
 
   listBySession(sessionId: string, input: { limit?: number } = {}): SessionRun[] {
@@ -280,6 +306,103 @@ export const sessionRunRepo = {
       id,
     );
     return this.get(id);
+  },
+};
+
+export const sessionAgentRuntimeRepo = {
+  getByAgent(sessionId: string, agentId: string, provider: AcpBackend): SessionAgentRuntime | undefined {
+    return db.prepare(`
+      SELECT * FROM session_agent_runtimes
+      WHERE session_id = ? AND agent_id = ? AND provider = ?
+    `).get(sessionId, agentId, provider) as SessionAgentRuntime | undefined;
+  },
+
+  upsert(input: {
+    session_id: string;
+    agent_id: string;
+    provider: AcpBackend;
+    model?: string | null;
+    provider_session_id?: string | null;
+    status: SessionAgentRuntimeStatus;
+    current_run_id?: string | null;
+    latest_checkpoint_id?: string | null;
+  }): SessionAgentRuntime {
+    const id = this.getByAgent(input.session_id, input.agent_id, input.provider)?.id ?? nanoid(16);
+    const timestamp = now();
+    db.prepare(`
+      INSERT INTO session_agent_runtimes (
+        id, session_id, agent_id, provider, model, provider_session_id,
+        status, current_run_id, latest_checkpoint_id, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id, agent_id, provider) DO UPDATE SET
+        model = excluded.model,
+        provider_session_id = COALESCE(excluded.provider_session_id, session_agent_runtimes.provider_session_id),
+        status = excluded.status,
+        current_run_id = excluded.current_run_id,
+        latest_checkpoint_id = COALESCE(excluded.latest_checkpoint_id, session_agent_runtimes.latest_checkpoint_id),
+        updated_at = excluded.updated_at
+    `).run(
+      id,
+      input.session_id,
+      input.agent_id,
+      input.provider,
+      input.model ?? null,
+      input.provider_session_id ?? null,
+      input.status,
+      input.current_run_id ?? null,
+      input.latest_checkpoint_id ?? null,
+      timestamp,
+      timestamp,
+    );
+    return this.getByAgent(input.session_id, input.agent_id, input.provider)!;
+  },
+};
+
+export const sessionAgentEventRepo = {
+  create(input: {
+    session_id: string;
+    agent_id: string;
+    run_id: string;
+    channel: SessionAgentEvent['channel'];
+    event_type: string;
+    content: string;
+    payload?: Record<string, unknown> | null;
+  }): SessionAgentEvent {
+    const row = db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM session_agent_events WHERE run_id = ?')
+      .get(input.run_id) as { seq: number };
+    const id = nanoid(16);
+    db.prepare(`
+      INSERT INTO session_agent_events (
+        id, session_id, agent_id, run_id, seq, channel, event_type,
+        content, payload_json, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      input.session_id,
+      input.agent_id,
+      input.run_id,
+      row.seq,
+      input.channel,
+      input.event_type,
+      input.content,
+      input.payload ? JSON.stringify(input.payload) : null,
+      now(),
+    );
+    return this.get(id)!;
+  },
+
+  get(id: string): SessionAgentEvent | undefined {
+    return db.prepare('SELECT * FROM session_agent_events WHERE id = ?').get(id) as SessionAgentEvent | undefined;
+  },
+
+  listByRun(runId: string): SessionAgentEvent[] {
+    return db.prepare(`
+      SELECT * FROM session_agent_events
+      WHERE run_id = ?
+      ORDER BY seq ASC
+    `).all(runId) as SessionAgentEvent[];
   },
 };
 
