@@ -1033,16 +1033,38 @@
 .deepsea-run-log-body .message-content,
 .deepsea-message-body .markdown-preview,
 .deepsea-run-log-body .markdown-preview {
+  min-width: 0;
+  max-width: 100%;
   color: var(--deepsea-text);
   font-size: 14px;
   line-height: 20px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .deepsea-message-body .markdown-preview,
 .deepsea-run-log-body .markdown-preview {
   gap: 8px;
 }
+.deepsea-message-body .markdown-preview > *,
+.deepsea-run-log-body .markdown-preview > *,
+.deepsea-message-body .markdown-preview p,
+.deepsea-run-log-body .markdown-preview p,
+.deepsea-message-body .markdown-preview li,
+.deepsea-run-log-body .markdown-preview li,
+.deepsea-message-body .markdown-preview blockquote,
+.deepsea-run-log-body .markdown-preview blockquote,
+.deepsea-message-body .markdown-preview a,
+.deepsea-run-log-body .markdown-preview a,
+.deepsea-message-body .markdown-preview :not(pre) > code,
+.deepsea-run-log-body .markdown-preview :not(pre) > code {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .deepsea-run-timeline {
   display: grid;
+  min-width: 0;
   gap: 8px;
 }
 .deepsea-run-timeline__text {
