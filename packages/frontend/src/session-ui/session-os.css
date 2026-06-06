@@ -1034,12 +1034,21 @@
 .deepsea-message-body .markdown-preview,
 .deepsea-run-log-body .markdown-preview {
   min-width: 0;
+  width: 100%;
   max-width: 100%;
   color: var(--deepsea-text);
   font-size: 14px;
   line-height: 20px;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+.deepsea-run-log,
+.deepsea-run-log-body {
+  min-width: 0;
+  max-width: 100%;
+}
+.deepsea-run-log-body {
+  display: block;
 }
 .deepsea-message-body .markdown-preview,
 .deepsea-run-log-body .markdown-preview {
@@ -1065,10 +1074,16 @@
 .deepsea-run-timeline {
   display: grid;
   min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 .deepsea-run-timeline__text {
   min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .deepsea-run-timeline__event {
   display: inline-flex;
@@ -1221,6 +1236,9 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 5px;
+}
+.deepsea-run-log > .deepsea-run-log-body {
+  display: block;
 }
 .deepsea-run-log .deepsea-status-chip {
   min-height: 16px;
