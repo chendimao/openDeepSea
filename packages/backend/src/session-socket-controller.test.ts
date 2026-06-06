@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { afterEach } from 'node:test';
@@ -8,6 +8,7 @@ import type { WebSocket } from 'ws';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-session-socket-')), 'test.db');
 
 const { projectRepo } = await import('./repos/projects.js');
+const { fileRepo } = await import('./repos/files.js');
 const { historyRecordRepo } = await import('./repos/history-records.js');
 const { sessionCheckpointRepo } = await import('./repos/session-checkpoints.js');
 const { sessionCompactionRepo } = await import('./repos/session-compactions.js');
@@ -74,6 +75,95 @@ test('websocket message send starts planner run and sends no HTTP response objec
   assert.equal(run.agent_id, 'planner');
   assert.match(seenPrompts[0] ?? '', /继续实现/);
   assert.equal(sent.some((payload) => JSON.parse(payload).type === 'session_error'), false);
+});
+
+test('websocket message send stores normalized file refs in message metadata', async () => {
+  const project = projectRepo.create({
+    name: 'socket message file refs project',
+    path: mkdtempSync(join(tmpdir(), 'socket-message-file-refs-')),
+  });
+  mkdirSync(join(project.path, 'src'), { recursive: true });
+  writeFileSync(join(project.path, 'src', 'app.ts'), 'export const answer = 42;\n');
+  const libraryFile = fileRepo.createAgentDocument({
+    project_id: project.id,
+    title: 'handoff.md',
+    content: '历史交接记录',
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Socket Message File Refs',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'socket-acp', stderr: '' }),
+  });
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'session.message.send',
+    sessionId: session.id,
+    content: '结合这些文件分析',
+    workspaceFileRefs: [' ./src/../src/app.ts ', 'src/app.ts'],
+    libraryFileRefs: [libraryFile.id, libraryFile.id],
+  });
+
+  await waitFor(() => sessionMessageRepo.listBySession(session.id).length === 1);
+  const [message] = sessionMessageRepo.listBySession(session.id);
+  const metadata = JSON.parse(message?.metadata ?? '{}') as {
+    workspace_file_refs?: string[];
+    library_file_refs?: string[];
+  };
+  assert.deepEqual(metadata.workspace_file_refs, ['src/app.ts']);
+  assert.deepEqual(metadata.library_file_refs, [libraryFile.id]);
+  assert.equal(sent.some((payload) => JSON.parse(payload).type === 'session_error'), false);
+});
+
+test('websocket message send rejects foreign library refs without creating a message', async () => {
+  const project = projectRepo.create({
+    name: 'socket reject file refs project',
+    path: mkdtempSync(join(tmpdir(), 'socket-reject-file-refs-')),
+  });
+  const otherProject = projectRepo.create({
+    name: 'socket foreign library project',
+    path: mkdtempSync(join(tmpdir(), 'socket-foreign-library-')),
+  });
+  const foreignFile = fileRepo.createAgentDocument({
+    project_id: otherProject.id,
+    title: 'foreign.md',
+    content: '其它项目的资料',
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Socket Reject File Refs',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'socket-acp', stderr: '' }),
+  });
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'session.message.send',
+    sessionId: session.id,
+    content: '不要创建这条消息',
+    libraryFileRefs: [foreignFile.id],
+  });
+
+  await waitFor(() => (
+    sent.some((payload) => JSON.parse(payload).type === 'session_error') ||
+    sessionMessageRepo.listBySession(session.id).length > 0
+  ));
+  assert.equal(sessionMessageRepo.listBySession(session.id).length, 0);
+  const error = sent.map((payload) => JSON.parse(payload)).find((event) => event.type === 'session_error');
+  assert.match(error?.error ?? '', /library file reference is not available/);
 });
 
 test('websocket workspace request returns a session workspace snapshot event', () => {

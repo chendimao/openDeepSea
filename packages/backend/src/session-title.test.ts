@@ -27,7 +27,7 @@ test('dispatchSessionUserMessage renames a default empty session from the first 
   });
   setSessionRuntimeAdapterForTest(createNoopAdapter());
 
-  dispatchSessionUserMessage({
+  await dispatchSessionUserMessage({
     sessionId: session.id,
     content: '用户在当前会话第一次发送消息的时候，要同时修改当前会话名称，要显示简略的，避免超长溢出',
   });
@@ -63,8 +63,8 @@ test('dispatchSessionUserMessage keeps explicit and non-empty session titles', a
   });
   setSessionRuntimeAdapterForTest(createNoopAdapter());
 
-  dispatchSessionUserMessage({ sessionId: explicit.id, content: '这个内容不应该覆盖已有标题' });
-  dispatchSessionUserMessage({ sessionId: nonEmptyDefault.id, content: '第二条消息不应该重新命名' });
+  await dispatchSessionUserMessage({ sessionId: explicit.id, content: '这个内容不应该覆盖已有标题' });
+  await dispatchSessionUserMessage({ sessionId: nonEmptyDefault.id, content: '第二条消息不应该重新命名' });
   await new Promise((resolve) => setTimeout(resolve, 30));
 
   assert.equal(sessionRepo.get(explicit.id)?.title, '手动命名的会话');

@@ -1,4 +1,7 @@
+import { lstat } from 'node:fs/promises';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
+import { fileRepo } from './repos/files.js';
+import { projectRepo } from './repos/projects.js';
 import {
   DEFAULT_SESSION_AGENT_ID,
   sessionMessageRepo,
@@ -8,21 +11,30 @@ import { createContextManifest } from './session.routes.js';
 import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import { runSessionAgent } from './session-runtime.js';
 import { wsHub } from './ws-hub.js';
+import { isIgnoredWorkspacePath, normalizeWorkspacePath, resolveWorkspacePath } from './workspace-files.js';
 import type { Session, SessionMessage, SessionMode } from './types.js';
 
 const DEFAULT_SESSION_TITLE = 'New Session';
 const AUTO_SESSION_TITLE_LIMIT = 25;
+const MAX_SESSION_FILE_REFS = 12;
 
-export function dispatchSessionUserMessage(input: {
+export async function dispatchSessionUserMessage(input: {
   sessionId: string;
   content: string;
   senderId?: string;
   senderName?: string | null;
   mode?: SessionMode;
   agentId?: string | null;
-}): SessionMessage {
+  workspaceFileRefs?: string[];
+  libraryFileRefs?: string[];
+}): Promise<SessionMessage> {
   const session = sessionRepo.get(input.sessionId);
   if (!session) throw new Error('session not found');
+  const project = projectRepo.get(session.project_id);
+  if (!project) throw new Error('project not found');
+  const workspacePath = session.worktree_path ?? session.workspace_path ?? project.path;
+  const workspaceFileRefs = await normalizeWorkspaceFileRefs(workspacePath, input.workspaceFileRefs);
+  const libraryFileRefs = normalizeLibraryFileRefs(project.id, input.libraryFileRefs);
   const updatedSession = input.mode && input.mode !== session.mode
     ? sessionRepo.update(session.id, { mode: input.mode }) ?? session
     : session;
@@ -34,7 +46,7 @@ export function dispatchSessionUserMessage(input: {
     sender_id: input.senderId ?? 'user',
     sender_name: input.senderName ?? null,
     content: input.content,
-    metadata: { target_agent_id: agentId },
+    metadata: buildUserMessageMetadata({ agentId, workspaceFileRefs, libraryFileRefs }),
   });
   const runtimeSession = shouldRenameSession
     ? sessionRepo.update(updatedSession.id, { title: buildSessionTitleFromMessage(input.content) }) ?? updatedSession
@@ -78,6 +90,72 @@ export function dispatchSessionUserMessage(input: {
     wsHub.broadcastSession(runtimeSession.id, { type: 'session_evidence:new', sessionId: runtimeSession.id, event });
   });
   return message;
+}
+
+function buildUserMessageMetadata(input: {
+  agentId: string;
+  workspaceFileRefs: string[];
+  libraryFileRefs: string[];
+}): Record<string, unknown> {
+  return {
+    target_agent_id: input.agentId,
+    ...(input.workspaceFileRefs.length > 0 ? { workspace_file_refs: input.workspaceFileRefs } : {}),
+    ...(input.libraryFileRefs.length > 0 ? { library_file_refs: input.libraryFileRefs } : {}),
+  };
+}
+
+async function normalizeWorkspaceFileRefs(workspacePath: string, refs: string[] | undefined): Promise<string[]> {
+  const normalizedRefs = dedupeRefs(refs);
+  const validRefs: string[] = [];
+  const seenPaths = new Set<string>();
+  for (const ref of normalizedRefs) {
+    let safePath: string;
+    try {
+      safePath = normalizeWorkspacePath(ref);
+    } catch {
+      throw new Error('workspace file reference is not available');
+    }
+    if (!safePath || isIgnoredWorkspacePath(safePath)) {
+      throw new Error('workspace file reference is not available');
+    }
+    try {
+      const resolved = await resolveWorkspacePath(workspacePath, safePath);
+      const stats = await lstat(resolved.absolutePath);
+      if (!stats.isFile()) {
+        throw new Error('workspace file reference is not a file');
+      }
+      if (!seenPaths.has(resolved.relativePath)) {
+        seenPaths.add(resolved.relativePath);
+        validRefs.push(resolved.relativePath);
+      }
+    } catch {
+      throw new Error('workspace file reference is not available');
+    }
+  }
+  return validRefs;
+}
+
+function normalizeLibraryFileRefs(projectId: string, refs: string[] | undefined): string[] {
+  return dedupeRefs(refs).map((ref) => {
+    const file = fileRepo.get(ref);
+    if (!file || file.project_id !== projectId || file.deleted_at !== null) {
+      throw new Error('library file reference is not available');
+    }
+    return file.id;
+  });
+}
+
+function dedupeRefs(refs: string[] | undefined): string[] {
+  const uniqueRefs: string[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs ?? []) {
+    const trimmed = ref.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    uniqueRefs.push(trimmed);
+    if (uniqueRefs.length >= MAX_SESSION_FILE_REFS) break;
+  }
+  return uniqueRefs;
 }
 
 function shouldRenameFromFirstUserMessage(session: Session): boolean {

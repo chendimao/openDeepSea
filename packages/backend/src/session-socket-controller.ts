@@ -28,6 +28,8 @@ import type { HistoryRecord, Project, Session, SessionEvidenceEvent, SessionRun,
 
 const execFileAsync = promisify(execFile);
 
+const sessionFileRefListSchema = z.array(z.string().trim().min(1)).max(12).optional();
+
 const socketEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('session.workspace.request'),
@@ -40,6 +42,8 @@ const socketEventSchema = z.discriminatedUnion('type', [
     content: z.string().trim().min(1),
     agentId: z.string().trim().min(1).optional(),
     mode: z.enum(['ask', 'plan', 'code', 'debug', 'review']).optional(),
+    workspaceFileRefs: sessionFileRefListSchema,
+    libraryFileRefs: sessionFileRefListSchema,
   }),
   z.object({
     type: z.literal('agent.run.pause'),
@@ -108,11 +112,16 @@ export function handleSessionSocketEvent(socket: WebSocket, event: WsClientEvent
       return true;
     }
     if (parsed.data.type === 'session.message.send') {
-      dispatchSessionUserMessage({
-        sessionId: parsed.data.sessionId,
+      const { sessionId } = parsed.data;
+      void dispatchSessionUserMessage({
+        sessionId,
         content: parsed.data.content,
         agentId: parsed.data.agentId,
         mode: parsed.data.mode,
+        workspaceFileRefs: parsed.data.workspaceFileRefs,
+        libraryFileRefs: parsed.data.libraryFileRefs,
+      }).catch((error) => {
+        send(socket, { type: 'session_error', sessionId, error: (error as Error).message });
       });
       return true;
     }
@@ -267,7 +276,9 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
     });
     return true;
   }
-  dispatchSessionUserMessage({ sessionId: session.id, content: commandText, agentId: DEFAULT_SESSION_AGENT_ID });
+  void dispatchSessionUserMessage({ sessionId: session.id, content: commandText, agentId: DEFAULT_SESSION_AGENT_ID }).catch((error) => {
+    send(socket, { type: 'session_error', sessionId: session.id, error: (error as Error).message });
+  });
   return true;
 }
 

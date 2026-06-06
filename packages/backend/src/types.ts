@@ -1388,6 +1388,8 @@ export type WsClientEvent =
       content: string;
       agentId?: string;
       mode?: import('./session-types.js').SessionMode;
+      workspaceFileRefs?: string[];
+      libraryFileRefs?: string[];
     }
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
