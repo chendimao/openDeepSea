@@ -69,6 +69,8 @@ export type TriggerSuggestion = {
   description?: string
   /** Optional icon element rendered before the label */
   icon?: React.ReactNode
+  /** Optional visual group label rendered above this suggestion in dropdowns */
+  groupLabel?: string
   /** Optional arbitrary data passed through on selection */
   data?: unknown
 }

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { cn } from '../../lib/utils'
 import type { TriggerSuggestion } from './types'
 import { computeTriggerPopoverPosition } from './trigger-popover-position'
+import { buildTriggerPopoverRows } from './trigger-popover-groups'
 
 type TriggerPopoverProps = {
   suggestions: TriggerSuggestion[]
@@ -79,6 +80,7 @@ export function TriggerPopover({
 
   if (!triggerRect) return null
   if (suggestions.length === 0 && !loading && !error && !emptyMessage) return null
+  const rows = buildTriggerPopoverRows(suggestions)
 
   // Position the popover below the trigger character, clamped to viewport
   const position = computeTriggerPopoverPosition({
@@ -126,31 +128,43 @@ export function TriggerPopover({
           {emptyMessage}
         </div>
       ) : (
-        suggestions.map((suggestion, index) => (
-          <button
-            key={suggestion.value}
-            ref={index === selectedIndex ? selectedRef : undefined}
-            type="button"
-            role="option"
-            aria-selected={index === selectedIndex}
-            className={cn(
-              'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px]',
-              'text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-primary)]',
-              index === selectedIndex && 'bg-[var(--color-surface-raised)] text-[var(--color-primary)]',
-            )}
-            onMouseDown={(e) => {
-              e.preventDefault() // Prevent blur on the editor
-              onSelect(suggestion)
-            }}>
-            {suggestion.icon && <span className="shrink-0">{suggestion.icon}</span>}
-            <span className="min-w-0 flex-1 truncate font-medium">{suggestion.label}</span>
-            {suggestion.description && (
-              <span className="shrink-0 truncate text-[11px] text-[var(--color-fg-muted)] opacity-70 max-w-[45%] text-right">
-                {suggestion.description}
-              </span>
-            )}
-          </button>
-        ))
+        rows.map((row, rowIndex) => {
+          if (row.type === 'group') {
+            return (
+              <div
+                key={`group:${row.label}:${rowIndex}`}
+                className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-fg-muted)] opacity-70">
+                {row.label}
+              </div>
+            )
+          }
+          const { suggestion, suggestionIndex } = row
+          return (
+            <button
+              key={suggestion.value}
+              ref={suggestionIndex === selectedIndex ? selectedRef : undefined}
+              type="button"
+              role="option"
+              aria-selected={suggestionIndex === selectedIndex}
+              className={cn(
+                'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px]',
+                'text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-primary)]',
+                suggestionIndex === selectedIndex && 'bg-[var(--color-surface-raised)] text-[var(--color-primary)]',
+              )}
+              onMouseDown={(e) => {
+                e.preventDefault() // Prevent blur on the editor
+                onSelect(suggestion)
+              }}>
+              {suggestion.icon && <span className="shrink-0">{suggestion.icon}</span>}
+              <span className="min-w-0 flex-1 truncate font-medium">{suggestion.label}</span>
+              {suggestion.description && (
+                <span className="shrink-0 truncate text-[11px] text-[var(--color-fg-muted)] opacity-70 max-w-[45%] text-right">
+                  {suggestion.description}
+                </span>
+              )}
+            </button>
+          )
+        })
       )}
     </div>,
     document.body,
