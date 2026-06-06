@@ -73,7 +73,8 @@ export function SessionShellView({
         forkTarget={forkTarget}
       />
       <main className="deepsea-main">
-        <ActiveSessionsRail
+        <ProjectSessionTreeRail
+          projects={payload.projectSwitcher.projects}
           sessions={payload.activeSessions}
           currentSession={payload.activeSession.session}
           currentProjectId={payload.project.id}
@@ -322,7 +323,18 @@ function ContextPressure({ pressure, compact = false }: { pressure: number; comp
   );
 }
 
-function ActiveSessionsRail({
+type ProjectSessionTreeProject = {
+  id: string;
+  name: string;
+  path: string;
+  active: boolean;
+  sessions: ActiveSessionSummary[];
+};
+
+type ProjectSwitcherProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
+
+function ProjectSessionTreeRail({
+  projects = [],
   sessions = [],
   currentSession,
   currentProjectId,
@@ -330,6 +342,7 @@ function ActiveSessionsRail({
   onCommand,
   onOpenSession,
 }: {
+  projects?: ProjectSwitcherProject[];
   sessions?: ActiveSessionSummary[];
   currentSession: Session;
   currentProjectId: string;
@@ -339,33 +352,35 @@ function ActiveSessionsRail({
 }): JSX.Element {
   const [q, setQ] = useState('');
   const normalizedQuery = q.trim().toLowerCase();
-  const visibleSessions = ensureCurrentActiveSessionSummary(
+  const tree = buildProjectSessionTree({
+    projects,
     sessions,
     currentSession,
     currentProjectId,
     currentProjectName,
-  )
-    .filter((session) => session.status !== 'archived')
-    .filter((session) => {
-      if (!normalizedQuery) return true;
-      return [
-        session.title,
-        session.project_name,
-        session.project_path,
-        session.latest_event_summary ?? '',
-      ].some((value) => (value ?? '').toLowerCase().includes(normalizedQuery));
-    });
+  });
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(tree.map((project) => [project.id, true]))
+  );
+  const visibleProjects = filterProjectSessionTree(tree, normalizedQuery);
+  const visibleSessionCount = visibleProjects.reduce((total, project) => total + project.sessions.length, 0);
 
   return (
-    <aside className="deepsea-history" aria-label="Active Sessions">
+    <aside className="deepsea-history" aria-label="Project Sessions">
       <div className="deepsea-history__header">
+        <div className="deepsea-project-tree-actions">
+          <button type="button" className="deepsea-primary-button" data-command="/new" onClick={() => onCommand('/new')}>
+            <Plus aria-hidden="true" />
+            新建会话
+          </button>
+        </div>
         <div className="deepsea-history__title">
           <div>
-            <MessageSquare aria-hidden="true" />
-            <h2>活跃会话</h2>
+            <GitFork aria-hidden="true" />
+            <h2>项目会话</h2>
           </div>
           <div className="deepsea-history__tools">
-            <span className="deepsea-active-count">{visibleSessions.length}</span>
+            <span className="deepsea-active-count">{visibleSessionCount}</span>
           </div>
         </div>
         <form
@@ -379,65 +394,182 @@ function ActiveSessionsRail({
             type="search"
             value={q}
             onChange={(event) => setQ(event.currentTarget.value)}
-            placeholder="搜索活跃会话..."
+            placeholder="搜索项目或会话..."
           />
         </form>
       </div>
 
-      <div className="deepsea-history__list">
-        {visibleSessions.length === 0 ? (
-          <div className="deepsea-empty">没有匹配的活跃会话。</div>
-        ) : visibleSessions.map((session) => {
-          const isCurrent = session.id === currentSession.id;
+      <div className="deepsea-history__list deepsea-project-tree">
+        {visibleProjects.length === 0 ? (
+          <div className="deepsea-empty">没有匹配的项目或会话。</div>
+        ) : visibleProjects.map((project) => {
+          const expanded = normalizedQuery
+            ? true
+            : expandedProjectIds[project.id] ?? true;
           return (
-            <button
-              type="button"
-              aria-current={isCurrent ? 'true' : undefined}
-              className={`deepsea-history-card deepsea-active-session-card${isCurrent ? ' is-active' : ''}`}
-              data-status={session.status}
-              data-current={isCurrent ? 'true' : undefined}
-              data-running={session.active_run_count > 0 ? 'true' : undefined}
-              data-pinned={session.pinned_at !== null ? 'true' : undefined}
-              key={session.id}
-              onClick={() => onOpenSession?.(session.project_id, session.id)}
+            <section
+              className="deepsea-project-tree-section"
+              data-active={project.active ? 'true' : undefined}
+              data-empty={project.sessions.length === 0 ? 'true' : undefined}
+              key={project.id}
             >
-              <span className="deepsea-history-card__rail" />
-              <div>
-                <div className="deepsea-active-session-card__project">
-                  <span>{session.project_name}</span>
-                  <em>{formatRelativeTime(Date.now(), session.updated_at)}</em>
+              <button
+                type="button"
+                className="deepsea-project-node__button"
+                aria-expanded={expanded}
+                onClick={() =>
+                  setExpandedProjectIds((current) => ({
+                    ...current,
+                    [project.id]: !(current[project.id] ?? true),
+                  }))
+                }
+              >
+                <ChevronDown aria-hidden="true" className="deepsea-project-node__chevron" />
+                <GitFork aria-hidden="true" />
+                <span className="deepsea-project-node__label">
+                  <strong>{project.name}</strong>
+                  <em title={project.path}>{project.path || '未设置路径'}</em>
+                </span>
+                <span className="deepsea-project-node__count">{project.sessions.length}</span>
+              </button>
+              {expanded && (
+                <div className="deepsea-project-node__sessions">
+                  {project.sessions.length === 0 ? (
+                    <div className="deepsea-project-session-empty">暂无活跃会话</div>
+                  ) : project.sessions.map((session) => (
+                    <ProjectSessionRow
+                      currentSessionId={currentSession.id}
+                      key={session.id}
+                      onOpenSession={onOpenSession}
+                      session={session}
+                    />
+                  ))}
                 </div>
-                <h3 title={session.title}>{formatCompactSessionTitle(session.title)}</h3>
-                <p>{session.latest_event_summary ?? session.project_path}</p>
-                <div className="deepsea-history-card__footer">
-                  <span className="deepsea-status-chip" data-tone={session.active_run_count > 0 ? 'primary' : sessionStatusTone(session.status)}>
-                    {activeSessionStatusLabel(session)}
-                  </span>
-                  <span className="deepsea-agent-mini">
-                    <Brain aria-hidden="true" />
-                    {formatProviderModel(session.provider ?? 'codex', session.model)}
-                  </span>
-                </div>
-                {(session.unread_count > 0 || session.pinned_at !== null) && (
-                  <div className="deepsea-active-session-card__meta">
-                    {session.pinned_at !== null && <span>置顶</span>}
-                    {session.unread_count > 0 && <span>{session.unread_count} 未读</span>}
-                  </div>
-                )}
-              </div>
-            </button>
+              )}
+            </section>
           );
         })}
       </div>
 
-      <div className="deepsea-history__footer">
-        <button type="button" className="deepsea-primary-button" data-command="/new" onClick={() => onCommand('/new')}>
-          <Plus aria-hidden="true" />
-          新建会话
-        </button>
+      <div className="deepsea-history__footer deepsea-project-chat-section">
+        <div>
+          <MessageSquare aria-hidden="true" />
+          <span>聊天</span>
+        </div>
+        <em>暂无聊天</em>
       </div>
     </aside>
   );
+}
+
+function ProjectSessionRow({
+  session,
+  currentSessionId,
+  onOpenSession,
+}: {
+  session: ActiveSessionSummary;
+  currentSessionId: string;
+  onOpenSession?: (projectId: string, sessionId: string) => void;
+}): JSX.Element {
+  const isCurrent = session.id === currentSessionId;
+  return (
+    <button
+      type="button"
+      aria-current={isCurrent ? 'true' : undefined}
+      className="deepsea-project-session-row"
+      data-current={isCurrent ? 'true' : undefined}
+      data-project-session-row="true"
+      data-running={session.active_run_count > 0 ? 'true' : undefined}
+      data-status={session.status}
+      data-pinned={session.pinned_at !== null ? 'true' : undefined}
+      onClick={() => onOpenSession?.(session.project_id, session.id)}
+    >
+      <span className="deepsea-project-session-row__state" data-tone={session.active_run_count > 0 ? 'primary' : sessionStatusTone(session.status)} />
+      <span className="deepsea-project-session-row__main">
+        <span className="deepsea-project-session-row__title" title={session.title}>
+          {formatCompactSessionTitle(session.title)}
+        </span>
+        <span className="deepsea-project-session-row__meta">
+          <span>{activeSessionStatusLabel(session)}</span>
+          {session.unread_count > 0 && <span>{session.unread_count} 未读</span>}
+          {session.pinned_at !== null && <span>置顶</span>}
+        </span>
+      </span>
+      <time className="deepsea-project-session-row__time">{formatRelativeTime(Date.now(), session.updated_at)}</time>
+    </button>
+  );
+}
+
+function buildProjectSessionTree(input: {
+  projects: ProjectSwitcherProject[];
+  sessions: ActiveSessionSummary[];
+  currentSession: Session;
+  currentProjectId: string;
+  currentProjectName: string;
+}): ProjectSessionTreeProject[] {
+  const activeSessions = ensureCurrentActiveSessionSummary(
+    input.sessions,
+    input.currentSession,
+    input.currentProjectId,
+    input.currentProjectName,
+  ).filter((session) => session.status !== 'archived');
+  const sessionsByProjectId = new Map<string, ActiveSessionSummary[]>();
+  for (const session of activeSessions) {
+    const bucket = sessionsByProjectId.get(session.project_id) ?? [];
+    bucket.push(session);
+    sessionsByProjectId.set(session.project_id, bucket);
+  }
+
+  const knownProjectIds = new Set(input.projects.map((project) => project.id));
+  const projectNodes: ProjectSessionTreeProject[] = input.projects.map((project) => ({
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    active: project.active,
+    sessions: sessionsByProjectId.get(project.id) ?? [],
+  }));
+
+  const orphanProjects = new Map<string, ProjectSessionTreeProject>();
+  for (const session of activeSessions) {
+    if (knownProjectIds.has(session.project_id)) continue;
+    const orphanId = `orphan:${session.project_id || session.project_name || session.project_path}`;
+    const orphanProject = orphanProjects.get(orphanId) ?? {
+      id: orphanId,
+      name: session.project_name || '其他项目',
+      path: session.project_path,
+      active: false,
+      sessions: [],
+    };
+    orphanProject.sessions.push(session);
+    orphanProjects.set(orphanId, orphanProject);
+  }
+
+  return [...projectNodes, ...orphanProjects.values()];
+}
+
+function filterProjectSessionTree(
+  tree: ProjectSessionTreeProject[],
+  normalizedQuery: string,
+): ProjectSessionTreeProject[] {
+  if (!normalizedQuery) return tree;
+  return tree.flatMap((project) => {
+    const projectMatches = [project.name, project.path].some((value) =>
+      value.toLowerCase().includes(normalizedQuery)
+    );
+    const matchingSessions = project.sessions.filter((session) =>
+      [
+        session.title,
+        session.project_name,
+        session.project_path,
+        session.latest_event_summary ?? '',
+      ].some((value) => value.toLowerCase().includes(normalizedQuery))
+    );
+    if (!projectMatches && matchingSessions.length === 0) return [];
+    return [{
+      ...project,
+      sessions: projectMatches ? project.sessions : matchingSessions,
+    }];
+  });
 }
 
 function TranscriptCanvas({

@@ -49,8 +49,8 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /管理所有工作区/);
   assert.match(html, /上下文压力/);
   assert.match(html, /Session status bar/);
-  assert.match(html, /活跃会话/);
-  assert.match(html, /Active Sessions/);
+  assert.match(html, /项目会话/);
+  assert.match(html, /Project Sessions/);
   assert.match(html, /接口联调/);
   assert.match(html, /AnotherProject/);
   assert.doesNotMatch(html, /会话历史/);
@@ -69,7 +69,7 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /data-command="\/new"/);
   assert.match(html, /data-command="\/compact"/);
   assert.match(html, /\/fork history:history-1/);
-  assert.match(html, /Active Sessions/);
+  assert.match(html, /Project Sessions/);
   assert.doesNotMatch(html, /task-workspace/);
   assert.doesNotMatch(html, /Deepsea Command/);
   assert.doesNotMatch(html, /deepsea-model-status/);
@@ -81,11 +81,34 @@ test('SessionShell renders current session when active sessions are absent from 
 
   const html = renderSessionShell(legacyPayload as unknown as SessionWorkspacePayload);
 
-  assert.match(html, /活跃会话/);
+  assert.match(html, /项目会话/);
   assert.match(html, /SessionOS 迁移/);
 });
 
-test('SessionShell does not add an archived current session to the active rail fallback', () => {
+test('SessionShell renders active sessions grouped under every project in the left project tree', () => {
+  const payload = createPayload();
+  payload.projectSwitcher.projects.push({
+    id: 'project-empty',
+    name: 'EmptyProject',
+    path: '/workspace/empty',
+    active: false,
+    recentSessions: [],
+  });
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /项目会话/);
+  assert.match(html, /OpenClaw/);
+  assert.match(html, /AnotherProject/);
+  assert.match(html, /EmptyProject/);
+  assert.match(html, /SessionOS 迁移/);
+  assert.match(html, /接口联调/);
+  assert.match(html, /暂无活跃会话/);
+  assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /data-project-session-row="true"/);
+});
+
+test('SessionShell does not add an archived current session to the project tree fallback', () => {
   const payload = createPayload();
   payload.activeSessions = [];
   payload.activeSession.session.status = 'archived';
@@ -94,8 +117,9 @@ test('SessionShell does not add an archived current session to the active rail f
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /活跃会话/);
-  assert.match(html, /没有匹配的活跃会话/);
+  assert.match(html, /项目会话/);
+  assert.match(html, /暂无活跃会话/);
+  assert.doesNotMatch(html, /data-project-session-row="true"/);
 });
 
 test('SessionShell renders empty run state without fake run values', () => {
