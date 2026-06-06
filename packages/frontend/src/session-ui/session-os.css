@@ -1171,6 +1171,16 @@
 .deepsea-run-log-body .markdown-preview tr:nth-child(even) td {
   background: color-mix(in srgb, var(--deepsea-surface-2) 42%, transparent);
 }
+.deepsea-message-body .markdown-preview img,
+.deepsea-run-log-body .markdown-preview img {
+  display: block;
+  max-width: 100%;
+  max-height: min(360px, 56vh);
+  border: 1px solid var(--deepsea-border-subtle);
+  border-radius: 8px;
+  background: rgba(242, 244, 246, 0.58);
+  object-fit: contain;
+}
 .deepsea-message-body .markdown-preview hr,
 .deepsea-run-log-body .markdown-preview hr {
   width: 100%;

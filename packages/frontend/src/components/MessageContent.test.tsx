@@ -311,6 +311,20 @@ test('renders GFM tables while preserving inline reference chips', () => {
   assert.doesNotMatch(html, /\| --- \| --- \|/);
 });
 
+test('renders markdown images as lazy previews with a safe referrer policy', () => {
+  const html = renderMessage('![架构截图](/uploads/session-preview.png)');
+
+  assert.match(html, /<img src="\/uploads\/session-preview\.png" alt="架构截图" loading="lazy" decoding="async" referrerPolicy="no-referrer"\/>/);
+});
+
+test('keeps soft line breaks readable in markdown text previews', () => {
+  const html = renderMessage(['[日志](https://example.com/log)', '第一行', '第二行'].join('\n'));
+
+  assert.match(html, /<a href="https:\/\/example\.com\/log" target="_blank" rel="noreferrer noopener">日志<\/a><br\/>/);
+  assert.match(html, /第一行<br\/>/);
+  assert.match(html, /第二行/);
+});
+
 test('recognizes application json fences with CRLF and metadata', () => {
   const content = '```application/json title="readiness"\r\n{"task_readiness":{"ready":true,"title":"CRLF JSON","confidence":1}}\r\n```';
 

@@ -21,3 +21,9 @@ test('session markdown preview styles GFM tables within transcript width', () =>
   assert.match(css, /\.deepsea-message-body \.markdown-preview table[\s\S]*?overflow-x:\s*auto/s);
   assert.match(css, /\.deepsea-message-body \.markdown-preview th,[\s\S]*?\.deepsea-message-body \.markdown-preview td[\s\S]*?border:\s*1px solid var\(--deepsea-border\)/s);
 });
+
+test('session markdown preview constrains inline image previews', () => {
+  assert.match(css, /\.deepsea-message-body \.markdown-preview img[\s\S]*?max-width:\s*100%/s);
+  assert.match(css, /\.deepsea-message-body \.markdown-preview img[\s\S]*?max-height:\s*min\(360px, 56vh\)/s);
+  assert.match(css, /\.deepsea-run-log-body \.markdown-preview img[\s\S]*?object-fit:\s*contain/s);
+});

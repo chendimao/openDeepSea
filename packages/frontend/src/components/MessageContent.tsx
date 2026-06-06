@@ -1,6 +1,7 @@
 import { Children, isValidElement, cloneElement, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
 import ReactMarkdown, { type Components, type UrlTransform } from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { AgentTimeline, AgentTimelineItem } from './AgentTimeline';
 import {
@@ -552,7 +553,7 @@ function MarkdownText({
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkBreaks]}
       components={components}
       urlTransform={sanitizeMarkdownUrl}
     >
@@ -588,6 +589,11 @@ function createMarkdownComponents(
     blockquote: ({ children }) => <blockquote>{renderChildren(children)}</blockquote>,
     td: ({ children }) => <td>{renderChildren(children)}</td>,
     th: ({ children }) => <th>{renderChildren(children)}</th>,
+    img: ({ src, alt }) => {
+      const safeSrc = src ? sanitizeMarkdownHref(src) : null;
+      if (!safeSrc) return null;
+      return <img src={safeSrc} alt={alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" />;
+    },
     code: MarkdownInlineCode,
   };
 }
