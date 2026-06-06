@@ -37,6 +37,7 @@ import { messageRepo } from './repos/messages.js';
 import { replayTaskEvents } from './repos/task-event-replay.js';
 import { projectRepo } from './repos/projects.js';
 import { getProviderSuperpowersStatus } from './provider-superpowers.js';
+import { buildProjectUsedAgents } from './project-used-agents.js';
 import { resourceAssetRepo } from './repos/resource-assets.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
@@ -321,6 +322,7 @@ const settingsPatchShape = {
   default_workflow_definition_id: z.string().min(1).nullable().optional(),
   superpowers_bootstrap_owner: z.enum(['project', 'provider', 'disabled']).nullable().optional(),
   workspace_excluded_dirs: z.array(z.string()).nullable().optional(),
+  session_planner_acp_backend: z.enum(['claudecode', 'opencode', 'codex']).nullable().optional(),
 };
 
 const nullableTrimmedStringSchema = z.union([z.string(), z.null()]).optional().transform((value) => {
@@ -751,6 +753,17 @@ router.get('/projects/:projectId/settings', (req, res) => {
   res.json(resolution);
 });
 
+router.get('/projects/:projectId/agents/used', (req, res) => {
+  try {
+    res.json(buildProjectUsedAgents(req.params.projectId));
+  } catch (error) {
+    if (error instanceof Error && error.message === 'project not found') {
+      return res.status(404).json({ error: 'not found' });
+    }
+    res.status(500).json({ error: error instanceof Error ? error.message : 'failed to load project agents' });
+  }
+});
+
 router.patch('/projects/:projectId/settings', (req, res) => {
   const parsed = settingsPatchSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -768,6 +781,7 @@ router.patch('/projects/:projectId/settings', (req, res) => {
     default_workflow_definition_id: parsed.data.default_workflow_definition_id,
     superpowers_bootstrap_owner: parsed.data.superpowers_bootstrap_owner,
     workspace_excluded_dirs: parsed.data.workspace_excluded_dirs,
+    session_planner_acp_backend: parsed.data.session_planner_acp_backend,
   });
   if (!updated) return res.status(404).json({ error: 'not found' });
   res.json(settingsRepo.resolveForProject(req.params.projectId));

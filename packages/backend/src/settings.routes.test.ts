@@ -9,6 +9,8 @@ import test from 'node:test';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-settings-routes-')), 'test.db');
 
 const { settingsRepo } = await import('./repos/settings.js');
+const { projectRepo } = await import('./repos/projects.js');
+const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { router, setAiConfigTestRouteDeps } = await import('./routes.js');
 const express = (await import('express')).default;
 
@@ -196,6 +198,39 @@ test('settings routes reject removed fallback_route mode', async () => {
   });
 
   assert.equal(res.status, 400);
+});
+
+test('project settings route saves session planner backend and used agents route returns planner', async () => {
+  const project = projectRepo.create({
+    name: 'Settings Route Planner Backend',
+    path: mkdtempSync(join(tmpdir(), 'settings-route-planner-backend-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Planner Route Room', ensureDefaultPlanner: false });
+  roomAgentRepo.add({ room_id: room.id, agent_id: 'local-reviewer', agent_name: 'Local Reviewer' });
+
+  const patchRes = await request(`/api/projects/${project.id}/settings`, {
+    method: 'PATCH',
+    body: JSON.stringify({ session_planner_acp_backend: 'opencode' }),
+  });
+  assert.equal(patchRes.status, 200);
+  const patched = await patchRes.json() as {
+    effective: { session_planner_acp_backend: unknown };
+    sources: { session_planner_acp_backend: unknown };
+  };
+  assert.equal(patched.effective.session_planner_acp_backend, 'opencode');
+  assert.equal(patched.sources.session_planner_acp_backend, 'project');
+
+  const usedRes = await request(`/api/projects/${project.id}/agents/used`);
+  assert.equal(usedRes.status, 200);
+  const used = await usedRes.json() as {
+    planner: { agent_id: string; effective_acp_backend: string; backend_source: string };
+    agents: Array<{ agent_id: string; room_bindings: unknown[] }>;
+  };
+  assert.equal(used.planner.agent_id, 'planner');
+  assert.equal(used.planner.effective_acp_backend, 'opencode');
+  assert.equal(used.planner.backend_source, 'project');
+  assert.deepEqual(used.agents.map((agent) => agent.agent_id), ['local-reviewer']);
+  assert.equal(used.agents[0]?.room_bindings.length, 1);
 });
 
 test('settings routes persist AI configs and keep the selected config after refetch', async () => {
