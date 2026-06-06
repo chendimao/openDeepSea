@@ -1795,31 +1795,33 @@
     position: relative;
     display: flex;
     min-width: 0;
-    max-width: min(960px, 92%);
+    max-width: min(980px, 94%);
     flex-direction: column;
     overflow: hidden;
-    border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
-    border-radius: 9px;
-    background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
-    box-shadow: 0 10px 26px rgba(55, 76, 104, 0.08);
-    backdrop-filter: blur(20px) saturate(1.18);
+    border: 1px solid color-mix(in srgb, var(--room-border-subtle) 88%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--room-card-bg) 76%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 78%, transparent), 0 8px 20px rgba(55, 76, 104, 0.055);
+    backdrop-filter: blur(16px) saturate(1.12);
   }
   .ai-message-row--agent .ai-message-card {
-    width: min(960px, calc(100% - 42px));
+    width: min(980px, calc(100% - 42px));
+    border-left-color: color-mix(in srgb, var(--color-success) 34%, var(--room-border-subtle));
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-success) 72%, transparent), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 78%, transparent), 0 8px 20px rgba(55, 76, 104, 0.055);
   }
   .ai-message-row--user .ai-message-card {
     width: min(980px, 100%);
     max-width: min(980px, 100%);
-    border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+    border-color: color-mix(in srgb, var(--color-primary) 24%, var(--room-border-subtle));
     background:
-      linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 8%, transparent), transparent 34%),
-      color-mix(in srgb, var(--color-surface-raised) 94%, var(--color-primary) 6%);
+      linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 32%),
+      color-mix(in srgb, var(--room-card-bg) 88%, var(--color-primary) 5%);
     color: var(--color-fg);
-    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--color-primary) 68%, transparent), 0 10px 24px rgba(45, 78, 118, 0.08);
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-primary) 72%, transparent), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 82%, transparent), 0 8px 20px rgba(45, 78, 118, 0.055);
   }
   .ai-message-header {
     display: flex;
-    min-height: 30px;
+    min-height: 29px;
     align-items: center;
     gap: 7px;
     border-bottom: 1px solid rgba(255,255,255,0.42);
@@ -1840,14 +1842,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12.5px;
+    font-size: 11px;
     font-weight: 700;
+    text-transform: uppercase;
   }
   .ai-message-time {
     flex: 0 0 auto;
     color: var(--color-muted);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 10.5px;
+    font-size: 9.5px;
   }
   .ai-message-row--user .ai-message-time {
     color: var(--color-fg-muted);
@@ -1879,6 +1882,26 @@
     line-height: 1.2;
     white-space: nowrap;
   }
+  .ai-message-thinking-badge {
+    display: inline-flex;
+    min-width: 0;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid color-mix(in srgb, var(--color-warning) 24%, var(--room-border-subtle));
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+    color: var(--color-warning);
+    padding: 2px 6px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 9.5px;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .ai-message-thinking-badge.is-active svg {
+    animation: chat-icon-spin 1.6s linear infinite;
+  }
   .ai-message-status-badge.is-running,
   .ai-message-status-badge.is-pending {
     border-color: color-mix(in srgb, var(--color-primary) 26%, var(--room-border-subtle));
@@ -1907,13 +1930,44 @@
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 4px;
-    opacity: 0.46;
+    gap: 5px;
+    opacity: 0.62;
     transition: opacity 160ms ease;
   }
   .ai-message-card:hover .ai-message-actions,
   .ai-message-card:focus-within .ai-message-actions {
     opacity: 1;
+  }
+  .ai-message-display-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid color-mix(in srgb, var(--room-border-subtle) 88%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-fg) 5%, transparent);
+    padding: 2px;
+  }
+  .ai-message-display-switch button {
+    display: inline-flex;
+    min-height: 22px;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    padding: 2px 7px;
+    color: var(--color-fg-muted);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  }
+  .ai-message-display-switch button:hover {
+    background: color-mix(in srgb, var(--room-card-bg) 78%, transparent);
+    color: var(--color-primary);
+  }
+  .ai-message-display-switch button.is-active {
+    background: var(--color-primary);
+    color: var(--color-primary-fg);
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--color-primary) 18%, transparent);
   }
   .ai-message-action {
     display: grid;
@@ -1938,8 +1992,9 @@
   }
   .ai-message-body {
     padding: 9px 12px 10px;
-    font-size: 13px;
-    line-height: 1.58;
+    color: var(--color-fg);
+    font-size: 14px;
+    line-height: 20px;
   }
   .message-reply-reference {
     display: grid;
@@ -1969,8 +2024,8 @@
   }
   .ai-message-body--stream {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 12.5px;
-    line-height: 1.62;
+    font-size: 13px;
+    line-height: 20px;
   }
   .agent-run-status-notice {
     display: grid;
@@ -4638,20 +4693,20 @@
     padding-right: 10%;
   }
   .ai-message-card {
-    border-color: var(--room-border);
-    border-radius: 20px;
-    background: var(--room-agent-message-bg);
-    box-shadow: none;
+    border-color: color-mix(in srgb, var(--room-border-subtle) 88%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--room-card-bg) 76%, transparent);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 78%, transparent), 0 8px 20px rgba(55, 76, 104, 0.055);
   }
   .ai-message-row--agent .ai-message-card {
     width: auto;
-    max-width: min(76%, 720px);
+    max-width: min(86%, 820px);
     overflow: visible;
-    border-color: var(--room-border-subtle);
-    border-radius: 20px 20px 20px 8px;
+    border-color: color-mix(in srgb, var(--room-border-subtle) 90%, transparent);
+    border-radius: 8px;
     background:
-      linear-gradient(180deg, color-mix(in srgb, var(--room-agent-message-bg) 88%, transparent), color-mix(in srgb, var(--room-agent-message-bg) 62%, transparent));
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 58%, transparent);
+      linear-gradient(180deg, color-mix(in srgb, var(--room-agent-message-bg) 80%, transparent), color-mix(in srgb, var(--room-agent-message-bg) 56%, transparent));
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 58%, transparent), 0 8px 20px rgba(55, 76, 104, 0.055);
   }
   .ai-message-row--agent .ai-message-card::before {
     content: "";
@@ -4660,32 +4715,34 @@
     bottom: 12px;
     left: -1px;
     width: 2px;
-    border-radius: 999px;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 58%, transparent), color-mix(in srgb, #14b8a6 45%, transparent));
-    opacity: 0.58;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-success) 70%, var(--color-primary));
+    opacity: 0.7;
   }
   .ai-message-row--user .ai-message-card {
     width: auto;
-    max-width: min(75%, 680px);
-    border-color: var(--room-border-subtle);
-    border-radius: 20px 20px 8px 20px;
-    background: var(--room-user-message-bg);
-    box-shadow: 0 10px 24px rgba(15,23,42,0.038), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 66%, transparent);
+    max-width: min(86%, 820px);
+    border-color: color-mix(in srgb, var(--color-primary) 22%, var(--room-border-subtle));
+    border-radius: 8px;
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 32%),
+      var(--room-user-message-bg);
+    box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-primary) 72%, transparent), inset 0 1px 0 color-mix(in srgb, var(--room-card-bg) 66%, transparent), 0 8px 20px rgba(15,23,42,0.038);
   }
   .ai-message-header {
     min-height: 28px;
     border-bottom: 0;
-    padding: 8px 14px 0;
+    padding: 6px 12px 0;
   }
   .ai-message-body {
-    padding: 8px 14px 12px;
-    font-size: 13.5px;
-    line-height: 1.68;
+    padding: 8px 12px 12px;
+    font-size: 14px;
+    line-height: 20px;
   }
   .ai-message-row--agent .ai-message-header,
   .ai-message-row--agent .ai-message-body {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding-left: 13px;
+    padding-right: 12px;
   }
   .ai-message-row--agent .ai-message-header {
     min-height: 24px;
@@ -8093,6 +8150,9 @@
     min-width: 0;
     flex-direction: column;
     gap: 8px;
+    color: var(--color-fg);
+    font-size: 14px;
+    line-height: 20px;
     word-break: break-word;
   }
 
@@ -8117,7 +8177,7 @@
   .markdown-preview ul,
   .markdown-preview ol {
     margin: 0;
-    padding-left: 20px;
+    padding-left: 19px;
   }
 
   .markdown-preview li + li {
@@ -8126,7 +8186,7 @@
 
   .markdown-preview blockquote {
     margin: 0;
-    border-left: 3px solid var(--color-accent);
+    border-left: 2px solid var(--color-accent);
     padding: 2px 0 2px 10px;
     color: var(--color-fg-muted);
   }
@@ -8139,12 +8199,12 @@
 
   .markdown-preview :not(pre) > code {
     border: 1px solid var(--color-border);
-    border-radius: 5px;
-    background: var(--color-code-bg);
-    padding: 1px 5px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--color-fg) 5%, transparent);
+    padding: 1px 4px;
     color: var(--color-fg);
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.92em;
+    font-size: 0.82em;
   }
 
   .markdown-preview hr {

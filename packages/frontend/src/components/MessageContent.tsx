@@ -137,10 +137,19 @@ export function MessageContent({
           suppressTraceEvents={suppressTraceEvents}
           roomId={roomId}
         />
+      ) : activeMode === 'source' ? (
+        <CodeBlock
+          language="markdown"
+          value={content}
+          copied={copiedIndex === -1}
+          onCopy={() => void copyCode(content, -1)}
+          copyLabel={t('message.copy')}
+          copiedLabel={t('message.copied')}
+        />
       ) : (
         <>
           <div>
-            {markdown && activeMode === 'preview' ? (
+            {markdown ? (
               <MarkdownPreview
                 content={content}
                 streaming={streaming}

@@ -844,7 +844,7 @@ const zhMessages = {
   'composer.error.fileTooLarge': '{name} 超过 {size} 限制',
   'message.markdownModeAria': 'Markdown 显示模式',
   'message.preview': '预览',
-  'message.source': '原文',
+  'message.source': '源码',
   'message.copied': '已复制',
   'message.copy': '复制',
   'message.jsonModeAria': 'JSON 显示模式',

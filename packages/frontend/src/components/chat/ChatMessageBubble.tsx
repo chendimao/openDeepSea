@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { BookmarkPlus, ClipboardList, Eye, FileText, Reply, RotateCcw } from 'lucide-react';
+import { BookmarkPlus, ClipboardList, Eye, FileText, Reply, RotateCcw, Timer } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../../lib/api';
 import type { Agent, AgentRun, BrainstormingOption, Message, RoomAgent, Task, TaskActionKind, TaskActionState, TaskEventType, WorkflowRun } from '../../lib/types';
@@ -123,6 +123,7 @@ export function ChatMessageBubble({
   const attachments = metadata.attachments;
   const agentRunState = getAgentMessageRunState(message, run, streaming);
   const agentRunStatus = agentRunState ? getAgentRunStatusPresentation(agentRunState) : null;
+  const thinkingDuration = !isUser && run ? getThinkingDurationPresentation(run) : null;
   const renderedContent = displayContent.trim() ? displayContent : '';
   const hasContent = Boolean(renderedContent.trim());
   const hasMarkdownDisplayMode = hasContent && isMarkdownMessageContent(renderedContent);
@@ -206,6 +207,12 @@ export function ChatMessageBubble({
           {agentMeta?.acp_enabled && agentMeta.acp_backend && (
             <AiMessageBadge>ACP:{agentMeta.acp_backend}</AiMessageBadge>
           )}
+          {thinkingDuration && (
+            <span className={cn('ai-message-thinking-badge', thinkingDuration.active && 'is-active')}>
+              <Timer className="h-3 w-3" strokeWidth={1.8} aria-hidden="true" />
+              {thinkingDuration.label}
+            </span>
+          )}
           {agentRunStatus && (
             <span className={cn('ai-message-status-badge', `is-${agentRunStatus.tone}`, agentRunStatus.active && 'is-active')}>
               <span className="ai-message-status-dot" aria-hidden="true" />
@@ -215,28 +222,30 @@ export function ChatMessageBubble({
           {(hasContent || canRetryAgentRun) && (
             <AiMessageActions>
               {hasMarkdownDisplayMode && (
-                <>
+                <div className="ai-message-display-switch" aria-label="Markdown 显示模式">
                   <button
                     type="button"
-                    className={cn('ai-message-action', displayMode === 'preview' && 'is-active')}
+                    className={cn(displayMode === 'preview' && 'is-active')}
                     title={t('message.preview')}
                     aria-label={t('message.preview')}
                     aria-pressed={displayMode === 'preview'}
                     onClick={() => onDisplayModeChange('preview')}
                   >
                     <Eye className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+                    <span>{t('message.preview')}</span>
                   </button>
                   <button
                     type="button"
-                    className={cn('ai-message-action', displayMode === 'source' && 'is-active')}
+                    className={cn(displayMode === 'source' && 'is-active')}
                     title={t('message.source')}
                     aria-label={t('message.source')}
                     aria-pressed={displayMode === 'source'}
                     onClick={() => onDisplayModeChange('source')}
                   >
                     <FileText className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
+                    <span>{t('message.source')}</span>
                   </button>
-                </>
+                </div>
               )}
               {canReply && (
                 <button
@@ -325,6 +334,29 @@ export function ChatMessageBubble({
       </div>
     </AiMessageRow>
   );
+}
+
+export function getThinkingDurationPresentation(
+  run: Pick<AgentRun, 'status' | 'started_at' | 'completed_at' | 'updated_at'>,
+  now = Date.now(),
+): { label: string; active: boolean } | null {
+  if (!Number.isFinite(run.started_at) || run.started_at <= 0) return null;
+  const active = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
+  const endAt = active ? now : run.completed_at ?? run.updated_at ?? now;
+  const durationMs = Math.max(0, endAt - run.started_at);
+  const prefix = active ? '思考中' : '思考';
+  return { label: `${prefix} ${formatThinkingDuration(durationMs)}`, active };
+}
+
+function formatThinkingDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
 type AgentRunStatusTone = 'pending' | 'running' | 'success' | 'danger' | 'muted';
