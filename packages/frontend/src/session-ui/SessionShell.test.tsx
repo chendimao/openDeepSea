@@ -28,6 +28,8 @@ test('SessionShell renders Deepsea command center modules', () => {
 
   assert.match(html, /Session Operations Console/);
   assert.match(html, /Project command bar/);
+  assert.match(html, /项目智能体/);
+  assert.match(html, /设置会话规划智能体/);
   assert.match(html, /workspace/);
   assert.match(html, /切换项目/);
   assert.match(html, /项目切换器/);
@@ -64,7 +66,6 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /\/fork history:history-1/);
   assert.match(html, /History Records/);
   assert.doesNotMatch(html, /task-workspace/);
-  assert.doesNotMatch(html, /chat-panel/);
   assert.doesNotMatch(html, /Deepsea Command/);
   assert.doesNotMatch(html, /deepsea-model-status/);
   assert.doesNotMatch(html, /当前状态/);
