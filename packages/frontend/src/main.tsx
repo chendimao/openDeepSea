@@ -14,6 +14,7 @@ import { SkillsPage } from './pages/SkillsPage';
 import { TestPage } from './pages/TestPage';
 import { getThemeTone, parseThemeMode, type ThemeMode } from './lib/theme';
 import './index.css';
+import './session-ui/session-os-entry.css';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: 1 } },

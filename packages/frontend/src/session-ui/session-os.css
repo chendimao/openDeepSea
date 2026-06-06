@@ -154,7 +154,7 @@
   white-space: nowrap;
   transition: background 160ms, color 160ms, transform 160ms, box-shadow 160ms;
 }
-.deepsea-shell-nav a:first-child {
+.deepsea-shell-nav a.is-active {
   border-color: rgba(255, 255, 255, 0.22);
   background: rgba(255, 255, 255, 0.2);
   color: var(--deepsea-primary);

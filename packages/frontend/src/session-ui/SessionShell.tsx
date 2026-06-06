@@ -2,10 +2,6 @@ import React from 'react';
 import type { HistoryRecordStatus, SessionMode, SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView } from './SessionShellView';
 
-if (typeof document !== 'undefined') {
-  void import('./session-os-entry.css');
-}
-
 export function SessionShell({
   payload,
   onSendMessage,

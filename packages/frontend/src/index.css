@@ -471,7 +471,7 @@
     min-height: 0;
     position: relative;
     z-index: 1;
-    padding: 0 10px 8px;
+    padding: 48px 10px 8px;
   }
 
   .shell-public-header {

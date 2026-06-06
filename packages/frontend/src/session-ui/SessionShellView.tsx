@@ -1,9 +1,7 @@
 import {
   AlertTriangle,
   AtSign,
-  Bell,
   Brain,
-  Bot,
   CheckCircle2,
   ChevronDown,
   FileText,
@@ -12,7 +10,6 @@ import {
   Hash,
   History,
   MessageSquare,
-  MessageCircle,
   Minimize2,
   MoreVertical,
   Plus,
@@ -117,52 +114,6 @@ function TopCommandBar({
 
   return (
     <>
-      <header className="deepsea-topbar">
-        <div className="deepsea-topbar__identity">
-          <div className="deepsea-brand">
-            <span className="deepsea-brand__mark">
-              <img alt="蟹老板 AI 指挥官 Logo" src="/deepsea-krabs-logo.jpg" />
-            </span>
-            <span>深海指挥中心</span>
-          </div>
-          <nav className="deepsea-shell-nav" aria-label="项目首页菜单">
-            <a href="/">
-              <History aria-hidden="true" />
-              <span>会话</span>
-            </a>
-            <a href="/chat">
-              <MessageCircle aria-hidden="true" />
-              <span>聊天</span>
-            </a>
-            <a href="/agents">
-              <Bot aria-hidden="true" />
-              <span>智能体</span>
-            </a>
-            <a href="/skills">
-              <ShieldCheck aria-hidden="true" />
-              <span>技能</span>
-            </a>
-            <a href="/files">
-              <FileText aria-hidden="true" />
-              <span>资源</span>
-            </a>
-          </nav>
-        </div>
-
-        <div className="deepsea-topbar__actions">
-          <div className="deepsea-action-icons">
-            <button type="button" className="deepsea-icon-button" aria-label="设置">
-              <Settings aria-hidden="true" />
-            </button>
-            <button type="button" className="deepsea-icon-button deepsea-icon-button--alert" aria-label="通知">
-              <Bell aria-hidden="true" />
-              <span />
-            </button>
-          </div>
-          <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
-        </div>
-      </header>
-
       <div className="deepsea-project-strip" aria-label="Project command bar">
         <div className="deepsea-project-breadcrumb">
           <GitFork aria-hidden="true" />

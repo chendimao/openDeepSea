@@ -11,13 +11,6 @@ test('SessionShell renders Deepsea command center modules', () => {
   );
 
   assert.match(html, /Session Operations Console/);
-  assert.match(html, /深海指挥中心/);
-  assert.match(html, /蟹老板 AI 指挥官 Logo/);
-  assert.match(html, /deepsea-profile-avatar\.png/);
-  assert.match(html, /项目首页菜单/);
-  assert.match(html, /会话/);
-  assert.match(html, /聊天/);
-  assert.match(html, /智能体/);
   assert.match(html, /Project command bar/);
   assert.match(html, /workspace/);
   assert.match(html, /切换项目/);

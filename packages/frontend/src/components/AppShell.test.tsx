@@ -19,7 +19,7 @@ Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
 });
 
-test('AppShell labels primary workspace as Sessions', () => {
+test('AppShell renders the shared Deepsea header with system settings entry', () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const html = renderToStaticMarkup(
     <I18nProvider>
@@ -33,7 +33,14 @@ test('AppShell labels primary workspace as Sessions', () => {
     </I18nProvider>,
   );
 
-  assert.match(html, /Sessions/);
+  assert.match(html, /deepsea-topbar app-header/);
+  assert.match(html, /深海指挥中心/);
+  assert.match(html, /蟹老板 AI 指挥官 Logo/);
+  assert.match(html, /系统设置/);
+  assert.match(html, /会话/);
+  assert.match(html, /聊天/);
+  assert.match(html, /智能体/);
+  assert.match(html, /资源/);
   assert.doesNotMatch(html, /projects\/project-1\/rooms/);
 });
 
