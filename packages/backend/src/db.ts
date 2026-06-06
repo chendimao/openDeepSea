@@ -378,7 +378,6 @@ CREATE TABLE IF NOT EXISTS session_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_session_runs_session ON session_runs(session_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_session_runs_status ON session_runs(status, updated_at);
-CREATE INDEX IF NOT EXISTS idx_session_runs_agent ON session_runs(session_id, agent_id, provider, started_at);
 
 CREATE TABLE IF NOT EXISTS session_agent_runtimes (
   id TEXT PRIMARY KEY,
