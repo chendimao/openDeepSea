@@ -19,8 +19,20 @@ import { CompactPreviewSurface } from '../session-ui/CompactPreviewSurface';
 import { SessionShell } from '../session-ui/SessionShell';
 import { applySessionWorkspaceEvent } from '../session-ui/session-workspace-events';
 
-export function SessionWorkspacePage(): JSX.Element {
-  const { projectId = '', sessionId } = useParams();
+type SessionWorkspacePageProps = {
+  projectIdOverride?: string;
+  sessionIdOverride?: string;
+  navigationEnabled?: boolean;
+};
+
+export function SessionWorkspacePage({
+  projectIdOverride,
+  sessionIdOverride,
+  navigationEnabled = true,
+}: SessionWorkspacePageProps = {}): JSX.Element {
+  const { projectId: routeProjectId = '', sessionId: routeSessionId } = useParams();
+  const projectId = projectIdOverride ?? routeProjectId;
+  const sessionId = sessionIdOverride ?? routeSessionId;
   const navigate = useNavigate();
   const { t } = useI18n();
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
@@ -31,8 +43,9 @@ export function SessionWorkspacePage(): JSX.Element {
   const activeProjectId = projectId || projects[0]?.id || '';
 
   useEffect(() => {
+    if (!navigationEnabled) return;
     if (!projectId && activeProjectId) navigate(`/projects/${activeProjectId}`, { replace: true });
-  }, [activeProjectId, navigate, projectId]);
+  }, [activeProjectId, navigate, navigationEnabled, projectId]);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -60,7 +73,12 @@ export function SessionWorkspacePage(): JSX.Element {
       if (event.type === 'session_workspace:snapshot') {
         if (event.projectId !== activeProjectId) return;
         setWorkspacePayload(event.payload);
-        const nextNavigation = getSnapshotNavigation(event.projectId, event.payload.activeSession.session.id, sessionId);
+        const nextNavigation = getSnapshotNavigation(
+          event.projectId,
+          event.payload.activeSession.session.id,
+          sessionId,
+          navigationEnabled,
+        );
         if (nextNavigation) {
           navigate(nextNavigation.to, { replace: nextNavigation.replace });
         }
@@ -97,11 +115,11 @@ export function SessionWorkspacePage(): JSX.Element {
       if (!isSessionWorkspaceEvent(event)) return;
       setWorkspacePayload((current) => current ? applySessionWorkspaceEvent(current, event) : current);
     });
-  }, [activeProjectId, navigate, sessionId]);
+  }, [activeProjectId, navigate, navigationEnabled, sessionId]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (!navigationEnabled || event.key !== 'Escape') return;
       const activeRun = [...(workspacePayload?.activeSession.runs ?? [])].reverse().find((run) =>
         run.status === 'queued' || run.status === 'running' || run.status === 'retrying'
       );
@@ -116,7 +134,7 @@ export function SessionWorkspacePage(): JSX.Element {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [workspacePayload?.activeSession.runs]);
+  }, [navigationEnabled, workspacePayload?.activeSession.runs]);
 
   if (!activeProjectId) {
     return (
@@ -208,7 +226,9 @@ export function getSnapshotNavigation(
   projectId: string,
   nextSessionId: string,
   currentSessionId?: string,
+  navigationEnabled = true,
 ): { to: string; replace: boolean } | null {
+  if (!navigationEnabled) return null;
   if (!nextSessionId || nextSessionId === currentSessionId) return null;
   return {
     to: `/projects/${projectId}/sessions/${nextSessionId}`,

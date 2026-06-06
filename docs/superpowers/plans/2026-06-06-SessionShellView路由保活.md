@@ -1,6 +1,6 @@
 # SessionShellView 路由保活 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 让 `SessionShellView` 所在的新版 Session 工作台在当前浏览器 tab 内切换到其他页面再切回时保持原组件状态。
 
@@ -41,7 +41,7 @@
 - Create: `packages/frontend/src/pages/sessionWorkspaceRoute.ts`
 - Test: `packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 在 `packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx` 中先写 helper 测试：
 
@@ -92,7 +92,7 @@ test('getSessionWorkspaceRouteParams extracts project and session params', () =>
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -102,7 +102,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: FAIL，错误包含 `Cannot find module './sessionWorkspaceRoute'`。
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 创建 `packages/frontend/src/pages/sessionWorkspaceRoute.ts`：
 
@@ -150,7 +150,7 @@ function normalizePathname(pathname: string): string {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -160,7 +160,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: PASS，2 个 helper 测试通过。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/frontend/src/pages/sessionWorkspaceRoute.ts packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx
@@ -175,7 +175,7 @@ git commit -m "test(frontend): 增加Session路由识别测试"
 - Modify: `packages/frontend/src/pages/SessionWorkspacePage.tsx`
 - Test: `packages/frontend/src/pages/SessionWorkspacePage.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 在 `packages/frontend/src/pages/SessionWorkspacePage.test.tsx` 增加一个 props 渲染测试，确认该组件不再只能依赖 `useParams()`：
 
@@ -213,7 +213,7 @@ function renderSessionWorkspaceWithProps(input: { projectId: string; sessionId?:
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -223,7 +223,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: FAIL，TypeScript/tsx 报告 `projectIdOverride` 或 `sessionIdOverride` 不是 `SessionWorkspacePage` 的有效 props。
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 修改 `packages/frontend/src/pages/SessionWorkspacePage.tsx` 的组件签名和参数解析：
 
@@ -250,7 +250,7 @@ const { projectId = '', sessionId } = useParams();
 
 保留 `navigate`、`activeProjectId`、WebSocket 订阅和渲染逻辑不变。
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -260,7 +260,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: PASS，新增 props 测试和既有测试都通过。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/frontend/src/pages/SessionWorkspacePage.tsx packages/frontend/src/pages/SessionWorkspacePage.test.tsx
@@ -275,7 +275,7 @@ git commit -m "refactor(frontend): 支持Session页面外部路由参数"
 - Create: `packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.tsx`
 - Modify: `packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 在 `packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx` 追加 host SSR 测试：
 
@@ -319,7 +319,7 @@ function renderKeepAliveHost(initialEntry: string): string {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -329,7 +329,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: FAIL，错误包含 `Cannot find module './SessionWorkspaceKeepAliveHost'`。
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 创建 `packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.tsx`：
 
@@ -375,7 +375,7 @@ export function SessionWorkspaceKeepAliveHost(): JSX.Element {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -385,7 +385,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: PASS，helper 和 host SSR 测试都通过。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.tsx packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx
@@ -400,7 +400,7 @@ git commit -m "feat(frontend): 增加Session工作台保活宿主"
 - Modify: `packages/frontend/src/main.tsx`
 - Modify: `packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 在 `packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx` 增加一个静态源码测试，防止 Session route 被重新放回普通 route element：
 
@@ -417,7 +417,7 @@ test('main route tree mounts Session keep-alive host outside ordinary routes', (
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -427,7 +427,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: FAIL，因为 `main.tsx` 尚未引入和挂载 `SessionWorkspaceKeepAliveHost`。
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 修改 `packages/frontend/src/main.tsx` import：
 
@@ -460,7 +460,7 @@ import { SessionWorkspacePage } from './pages/SessionWorkspacePage';
 </Routes>
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run:
 
@@ -470,7 +470,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/frontend/src/main.tsx packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx
@@ -484,7 +484,7 @@ git commit -m "feat(frontend): 接入Session页面路由保活"
 **Files:**
 - Verify only.
 
-- [ ] **Step 1: Run focused tests**
+- [x] **Step 1: Run focused tests**
 
 Run:
 
@@ -494,7 +494,7 @@ npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspac
 
 Expected: PASS，所有 Session workspace 相关测试通过。
 
-- [ ] **Step 2: Run frontend build**
+- [x] **Step 2: Run frontend build**
 
 Run:
 
@@ -504,7 +504,7 @@ npm run build -w @openclaw-room/frontend
 
 Expected: PASS，TypeScript 编译和 Vite build 完成。
 
-- [ ] **Step 3: Run full build**
+- [x] **Step 3: Run full build**
 
 Run:
 
@@ -514,7 +514,7 @@ npm run build
 
 Expected: PASS，后端 TypeScript 编译和前端 build 完成。
 
-- [ ] **Step 4: Manual smoke test in browser**
+- [x] **Step 4: Manual smoke test in browser**
 
 Run:
 
@@ -532,7 +532,7 @@ Manual steps:
 
 Expected: Session 工作台切回后不是重新加载出来的空白状态，`SessionShellView` 的本地交互状态保留。
 
-- [ ] **Step 5: Commit verification notes if docs changed during execution**
+- [x] **Step 5: Commit verification notes if docs changed during execution**
 
 如果执行过程中更新了计划勾选状态或新增验收文档：
 
@@ -548,3 +548,14 @@ git commit -m "docs: 更新Session保活执行计划"
 - Spec coverage: 本计划覆盖当前 tab 内 `SessionShellView` 路由切换保活；不覆盖刷新浏览器后的持久恢复；不包含 `RoomWorkbench` 删除。
 - Placeholder scan: 未发现占位项、延后实现项或未定义函数名。每个代码改动步骤包含具体文件和代码片段。
 - Type consistency: `SessionWorkspaceRouteParams`、`projectIdOverride`、`sessionIdOverride`、`SessionWorkspaceKeepAliveHost` 在任务之间命名一致。
+
+## Execution Notes
+
+- 2026-06-06：按“Subagent-Driven / 并行执行”启动 Task 1 与 Task 2 worker；两个 worker 均因上游 502 返回，随后在当前会话按 TDD 继续完成。
+- 2026-06-06：完成 `SessionWorkspaceKeepAliveHost`、`sessionWorkspaceRoute`、`SessionWorkspacePage` route override，以及 `main.tsx` 常驻 host 接入。
+- 2026-06-06：最终 review 发现隐藏页面的 `session_workspace:snapshot` navigate 和全局 Escape handler 泄漏；已增加 `navigationEnabled` guard 并补充回归测试。
+- 2026-06-06：复查 agent 返回 `STATUS: APPROVED`。
+- 2026-06-06：验证通过：
+  - `npm exec -- node --import tsx --test packages/frontend/src/pages/SessionWorkspaceKeepAliveHost.test.tsx packages/frontend/src/pages/SessionWorkspacePage.test.tsx`
+  - `npm run build`
+  - Playwright smoke：在同一 SPA 进程中从 Session 路由点击进入 `/files` 后，`[data-testid="session-workspace-keep-alive"]` 仍存在、`data-active="false"` 且隐藏。

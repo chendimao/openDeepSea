@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -32,6 +33,27 @@ test('project route renders Session shell loading state', () => {
 
   assert.match(html, /session-shell/);
   assert.match(html, /加载 Session/);
+});
+
+test('SessionWorkspacePage can render from keep-alive host route params', () => {
+  const html = renderSessionWorkspaceWithProps({
+    projectId: 'project-1',
+    sessionId: 'session-1',
+  });
+
+  assert.match(html, /session-shell/);
+  assert.match(html, /加载 Session/);
+});
+
+test('SessionWorkspacePage exposes override props for keep-alive host params', () => {
+  const source = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /type SessionWorkspacePageProps =/);
+  assert.match(source, /projectIdOverride\?: string/);
+  assert.match(source, /sessionIdOverride\?: string/);
+  assert.match(source, /navigationEnabled\?: boolean/);
+  assert.match(source, /if \(!navigationEnabled\) return/);
+  assert.match(source, /if \(!navigationEnabled \|\| event\.key !== 'Escape'\) return/);
 });
 
 test('root session route shows project onboarding when no projects exist', () => {
@@ -126,6 +148,11 @@ test('getSnapshotNavigation replaces project route with active session route', (
   });
 });
 
+test('getSnapshotNavigation skips navigation when keep-alive page is hidden', () => {
+  assert.equal(getSnapshotNavigation('project-1', 'session-2', undefined, false), null);
+  assert.equal(getSnapshotNavigation('project-1', 'session-2', 'session-1', false), null);
+});
+
 test('getSnapshotNavigation pushes when websocket command switches sessions', () => {
   assert.deepEqual(getSnapshotNavigation('project-1', 'session-2', 'session-1'), {
     to: '/projects/project-1/sessions/session-2',
@@ -169,6 +196,24 @@ function renderSessionWorkspace(
           <Routes>
             <Route path={routePath} element={<SessionWorkspacePage />} />
           </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </I18nProvider>,
+  );
+}
+
+function renderSessionWorkspaceWithProps(input: { projectId: string; sessionId?: string }): string {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(['projects'], [{ id: input.projectId, name: 'Project 1' }]);
+
+  return renderToStaticMarkup(
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/files']}>
+          <SessionWorkspacePage
+            projectIdOverride={input.projectId}
+            sessionIdOverride={input.sessionId}
+          />
         </MemoryRouter>
       </QueryClientProvider>
     </I18nProvider>,

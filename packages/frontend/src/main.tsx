@@ -9,7 +9,7 @@ import { I18nProvider } from './lib/i18n';
 import { AgentsPage } from './pages/AgentsPage';
 import { FilesPage } from './pages/FilesPage';
 import { GlobalChatPage } from './pages/GlobalChatPage';
-import { SessionWorkspacePage } from './pages/SessionWorkspacePage';
+import { SessionWorkspaceKeepAliveHost } from './pages/SessionWorkspaceKeepAliveHost';
 import { SkillsPage } from './pages/SkillsPage';
 import { TestPage } from './pages/TestPage';
 import { getThemeTone, parseThemeMode, type ThemeMode } from './lib/theme';
@@ -45,15 +45,16 @@ function RootApp(): JSX.Element {
         <BrowserRouter>
           <AppShell theme={theme} onThemeChange={setTheme}>
             <ProviderSuperpowersStartupNotice />
+            <SessionWorkspaceKeepAliveHost />
             <Routes>
-              <Route path="/" element={<SessionWorkspacePage />} />
+              <Route path="/" element={null} />
               <Route path="/chat" element={<GlobalChatPage />} />
               <Route path="/agents" element={<AgentsPage />} />
               <Route path="/files" element={<FilesPage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/test" element={<TestPage />} />
-              <Route path="/projects/:projectId" element={<SessionWorkspacePage />} />
-              <Route path="/projects/:projectId/sessions/:sessionId" element={<SessionWorkspacePage />} />
+              <Route path="/projects/:projectId" element={null} />
+              <Route path="/projects/:projectId/sessions/:sessionId" element={null} />
               <Route path="/projects/:projectId/files" element={<FilesPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
