@@ -14,7 +14,6 @@ import {
   GitBranch,
   MessageSquare,
   Minimize2,
-  Plus,
   RefreshCcw,
   Repeat2,
   Search,
@@ -31,7 +30,6 @@ import React, { useState } from 'react';
 import type {
   ActiveSessionSummary,
   Session,
-  SessionBottomStatus,
   SessionContract,
   SessionDetail,
   SessionDiffRow,
@@ -78,11 +76,6 @@ export function SessionShellView({
 
   return (
     <section className="session-shell deepsea-shell" aria-label="Session Operations Console">
-      <TopCommandBar
-        payload={payload}
-        onCommand={onCommand}
-        forkTarget={forkTarget}
-      />
       <main className="deepsea-main">
         <ProjectSessionTreeRail
           projects={payload.projectSwitcher.projects}
@@ -108,12 +101,16 @@ export function SessionShellView({
           onSaveContract={onSaveContract}
         />
       </main>
-      <BottomStatusBar status={payload.bottomStatus} />
+      <BottomStatusBar
+        payload={payload}
+        forkTarget={forkTarget}
+        onCommand={onCommand}
+      />
     </section>
   );
 }
 
-function TopCommandBar({
+function BottomStatusBar({
   payload,
   onCommand,
   forkTarget,
@@ -122,138 +119,20 @@ function TopCommandBar({
   onCommand: (command: string) => void;
   forkTarget?: string;
 }): JSX.Element {
+  const status = payload.bottomStatus;
   const pressure = contextPressurePercent(payload.status.context.pressure);
-  const activeProjectName = payload.project.name;
-  const projects = payload.projectSwitcher.projects;
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
 
-  return (
-    <>
-      <div className="deepsea-project-strip" aria-label="Project command bar">
-        <div className="deepsea-project-breadcrumb">
-          <GitFork aria-hidden="true" />
-          <span className="deepsea-mono">workspace</span>
-          <ChevronDown aria-hidden="true" />
-        </div>
-        <div className="deepsea-project-switcher">
-          <button
-            type="button"
-            aria-expanded={projectMenuOpen}
-            aria-label="切换项目"
-            onClick={() => setProjectMenuOpen((open) => !open)}
-          >
-            <strong>{activeProjectName}</strong>
-            <ChevronDown aria-hidden="true" />
-          </button>
-        </div>
-        <div
-          className="deepsea-project-menu"
-          data-open={projectMenuOpen ? 'true' : undefined}
-          role="dialog"
-          aria-label="项目切换器"
-          aria-hidden={projectMenuOpen ? undefined : true}
-          onClick={() => setProjectMenuOpen(false)}
-        >
-          <div className="deepsea-project-menu__panel" onClick={(event) => event.stopPropagation()}>
-            <div className="deepsea-project-menu__header">
-              <div>
-                <h2>项目切换器</h2>
-                <p>选择一个工作区以继续您的任务</p>
-              </div>
-              <div>
-                <label className="deepsea-project-menu__search">
-                  <Search aria-hidden="true" />
-                  <input type="search" placeholder="搜索项目..." />
-                </label>
-                <button type="button" aria-label="关闭项目切换器" onClick={() => setProjectMenuOpen(false)}>
-                  <span aria-hidden="true">×</span>
-                </button>
-              </div>
-            </div>
-            <div className="deepsea-project-menu__body">
-              <div className="deepsea-project-grid">
-                {projects.map((project) => (
-                  <article className="deepsea-project-card" data-active={project.active ? 'true' : undefined} key={project.id}>
-                    {project.active && (
-                      <div className="deepsea-project-card__active">
-                        <i />
-                        <span>当前激活</span>
-                      </div>
-                    )}
-                    <div className="deepsea-project-card__head">
-                      <h3>{project.name}</h3>
-                      <p className="deepsea-mono">{project.path}</p>
-                    </div>
-                    <div className="deepsea-project-card__sessions">
-                      <span>最近会话</span>
-                      {project.recentSessions.length === 0 ? (
-                        <em>暂无会话</em>
-                      ) : project.recentSessions.map((session) => (
-                        <button
-                          type="button"
-                          key={`${project.id}-${session.source}-${session.id}`}
-                          title={session.title}
-                          onClick={() => {
-                            if (typeof window !== 'undefined') window.location.assign(session.href);
-                          }}
-                        >
-                          <strong>{formatCompactSessionTitle(session.title)}</strong>
-                          <em>{formatRelativeTime(Date.now(), session.updated_at)}</em>
-                        </button>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-                <article className="deepsea-project-card deepsea-project-card--add">
-                  <Plus aria-hidden="true" />
-                  <span>新建项目</span>
-                </article>
-              </div>
-            </div>
-            <div className="deepsea-project-menu__footer">
-              <button type="button">
-                <Settings aria-hidden="true" />
-                管理所有工作区
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="deepsea-strip-actions">
-          <div className="deepsea-command-group" aria-label="Session command actions">
-            <CommandPill label="压缩" kbd="⌘P" icon={Minimize2} command="/compact" onCommand={onCommand} />
-            <CommandPill
-              label="分叉"
-              kbd="⌘B"
-              icon={GitFork}
-              command={forkTarget ? `/fork history:${forkTarget}` : '/fork'}
-              onCommand={onCommand}
-            />
-            <span className="deepsea-strip-divider" />
-            <ContextPressure pressure={pressure} compact />
-            <button type="button" className="deepsea-strip-settings" aria-label="工作区设置">
-              <Settings aria-hidden="true" />
-            </button>
-          </div>
-          <ProjectAgentStrip project={payload.project} />
-        </div>
-      </div>
-    </>
-  );
-}
-
-function BottomStatusBar({ status }: { status: SessionBottomStatus }): JSX.Element {
   return (
     <footer className="deepsea-bottom-status" aria-label="Session status bar">
-      <div className="deepsea-bottom-status__group">
-        <span className="deepsea-bottom-status__label">系统健康状态</span>
-        <span className="deepsea-status-dot" data-tone={healthTone(status.health)} />
-        <strong>{status.healthLabel}</strong>
-      </div>
-      <span className="deepsea-bottom-status__divider" />
-      <div className="deepsea-bottom-status__group">
-        <span className="deepsea-bottom-status__label">索引状态</span>
-        <span className="deepsea-status-dot" data-tone={status.indexStatus === 'ready' ? 'primary' : 'warn'} />
-        <strong>{status.indexLabel}</strong>
+      <div className="deepsea-bottom-status__path" aria-label="当前会话路径">
+        <GitFork aria-hidden="true" />
+        <span className="deepsea-mono">workspace</span>
+        <span>/</span>
+        <strong>{payload.project.name}</strong>
+        <span>/</span>
+        <span title={payload.activeSession.session.title}>
+          {formatCompactSessionTitle(payload.activeSession.session.title, 28)}
+        </span>
       </div>
       <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
@@ -274,6 +153,25 @@ function BottomStatusBar({ status }: { status: SessionBottomStatus }): JSX.Eleme
         <strong>{status.networkLatencyMs === null ? '--' : `${status.networkLatencyMs}ms`}</strong>
       </div>
       <div className="deepsea-bottom-status__spacer" />
+      <div className="deepsea-bottom-status__commands">
+        <div className="deepsea-command-group" aria-label="Session command actions">
+          <CommandPill label="压缩" kbd="⌘P" icon={Minimize2} command="/compact" onCommand={onCommand} />
+          <CommandPill
+            label="分叉"
+            kbd="⌘B"
+            icon={GitFork}
+            command={forkTarget ? `/fork history:${forkTarget}` : '/fork'}
+            onCommand={onCommand}
+          />
+          <span className="deepsea-strip-divider" />
+          <ContextPressure pressure={pressure} compact />
+          <button type="button" className="deepsea-strip-settings" aria-label="工作区设置">
+            <Settings aria-hidden="true" />
+          </button>
+        </div>
+        <ProjectAgentStrip project={payload.project} />
+      </div>
+      <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
         <FileText aria-hidden="true" />
         <span className="deepsea-bottom-status__label">API 消耗</span>
@@ -391,10 +289,21 @@ function ProjectSessionTreeRail({
     <aside className="deepsea-history" aria-label="Project Sessions">
       <div className="deepsea-history__header">
         <div className="deepsea-project-tree-actions">
-          <button type="button" className="deepsea-project-tree-action-row" data-command="/new" onClick={() => onCommand('/new')}>
+          <button
+            type="button"
+            className="deepsea-project-tree-action-row"
+            data-project-create-session={currentProjectId}
+            onClick={() => {
+              if (onCreateSession) {
+                void onCreateSession(currentProjectId);
+                return;
+              }
+              onCommand('/new');
+            }}
+          >
             <span>
               <Edit3 aria-hidden="true" />
-              新建聊天
+              新建会话
             </span>
             <kbd>⌘N</kbd>
           </button>
@@ -530,21 +439,6 @@ function ProjectSessionTreeRail({
             </section>
           );
         })}
-      </div>
-
-      <div className="deepsea-history__footer deepsea-project-chat-section">
-        <div className="deepsea-project-chat-section__heading">
-          <span>聊天</span>
-          <div>
-            <button type="button" aria-label="筛选聊天">
-              <Filter aria-hidden="true" />
-            </button>
-            <button type="button" aria-label="新建聊天">
-              <Edit3 aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-        <em>暂无聊天</em>
       </div>
     </aside>
   );
@@ -1416,12 +1310,6 @@ function formatRelativeTime(now: number, timestamp: number): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
   return `${Math.floor(diff / 86_400_000)} 天前`;
-}
-
-function healthTone(health: SessionBottomStatus['health']): 'ok' | 'warn' | 'danger' {
-  if (health === 'error') return 'danger';
-  if (health === 'warning') return 'warn';
-  return 'ok';
 }
 
 function formatResponseTime(value: number | null): string {

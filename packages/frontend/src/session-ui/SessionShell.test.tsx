@@ -27,14 +27,14 @@ test('SessionShell renders Deepsea command center modules', () => {
   const html = renderSessionShell(createPayload());
 
   assert.match(html, /Session Operations Console/);
-  assert.match(html, /Project command bar/);
   assert.match(html, /项目智能体/);
   assert.match(html, /设置会话规划智能体/);
   assert.match(html, /workspace/);
-  assert.match(html, /切换项目/);
-  assert.match(html, /项目切换器/);
-  assert.match(html, /选择一个工作区以继续您的任务/);
   assert.match(html, /OpenClaw/);
+  assert.doesNotMatch(html, /Project command bar/);
+  assert.doesNotMatch(html, /切换项目/);
+  assert.doesNotMatch(html, /项目切换器/);
+  assert.doesNotMatch(html, /选择一个工作区以继续您的任务/);
   assert.doesNotMatch(html, /deepsea-command-center/);
   assert.doesNotMatch(html, /quantum-core-engine/);
   assert.doesNotMatch(html, /nebula-ui-kit/);
@@ -44,12 +44,17 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /分析当前会话页面结构/);
   assert.doesNotMatch(html, /还原 Deepsea 三栏布局/);
   assert.doesNotMatch(html, /运行浏览器 smoke test/);
-  assert.match(html, /当前激活/);
-  assert.match(html, /新建项目/);
-  assert.match(html, /管理所有工作区/);
+  assert.doesNotMatch(html, /当前激活/);
+  assert.doesNotMatch(html, /deepsea-project-card--add/);
+  assert.doesNotMatch(html, /管理所有工作区/);
   assert.match(html, /上下文压力/);
   assert.match(html, /Session status bar/);
-  assert.match(html, /新建聊天/);
+  assert.doesNotMatch(html, /系统健康状态/);
+  assert.doesNotMatch(html, /索引状态/);
+  assert.match(html, /新建会话/);
+  assert.doesNotMatch(html, /新建聊天/);
+  assert.doesNotMatch(html, /deepsea-project-chat-section/);
+  assert.doesNotMatch(html, /暂无聊天/);
   assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /Project Sessions/);
   assert.match(html, /接口联调/);
@@ -67,7 +72,6 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /本会话 1 个文件变更/);
   assert.match(html, /\+12 \/ -3/);
   assert.match(html, /立即应用/);
-  assert.match(html, /data-command="\/new"/);
   assert.match(html, /data-command="\/compact"/);
   assert.match(html, /\/fork history:history-1/);
   assert.match(html, /Project Sessions/);
@@ -82,7 +86,7 @@ test('SessionShell renders current session when active sessions are absent from 
 
   const html = renderSessionShell(legacyPayload as unknown as SessionWorkspacePayload);
 
-  assert.match(html, /新建聊天/);
+  assert.match(html, /新建会话/);
   assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /SessionOS 迁移/);
 });
@@ -99,7 +103,7 @@ test('SessionShell renders active sessions grouped under every project in the le
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /新建聊天/);
+  assert.match(html, /新建会话/);
   assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /OpenClaw/);
   assert.match(html, /AnotherProject/);
@@ -132,7 +136,7 @@ test('SessionShell does not add an archived current session to the project tree 
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /新建聊天/);
+  assert.match(html, /新建会话/);
   assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /暂无活跃会话/);
   assert.doesNotMatch(html, /data-project-session-row="true"/);

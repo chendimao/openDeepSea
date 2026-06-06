@@ -9,7 +9,9 @@ import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import type {
+  AcpBackend,
   ActiveSessionSummary,
+  Session,
   SessionCompaction,
   SessionMode,
   SessionWorkspacePayload,
@@ -25,6 +27,37 @@ type SessionWorkspacePageProps = {
   sessionIdOverride?: string;
   navigationEnabled?: boolean;
 };
+
+type CreateSessionInput = NonNullable<Parameters<typeof api.createSession>[1]>;
+type CreateSessionAndSelectInput = {
+  targetProjectId: string;
+  sourceSession: Pick<Session, 'id' | 'mode' | 'provider' | 'model'>;
+  navigationEnabled: boolean;
+  createSession: (projectId: string, input: CreateSessionInput) => Promise<{ id: string }>;
+  navigate: (to: string, options?: { replace?: boolean }) => void;
+  requestWorkspace: (input: { projectId: string; sessionId: string }) => void;
+};
+
+export async function createProjectSessionAndSelect({
+  targetProjectId,
+  sourceSession,
+  navigationEnabled,
+  createSession,
+  navigate,
+  requestWorkspace,
+}: CreateSessionAndSelectInput): Promise<void> {
+  const nextSession = await createSession(targetProjectId, {
+    title: 'New Session',
+    mode: sourceSession.mode,
+    provider: sourceSession.provider as AcpBackend | null,
+    model: sourceSession.model,
+  });
+  if (navigationEnabled) {
+    navigate(`/projects/${targetProjectId}/sessions/${nextSession.id}`);
+    return;
+  }
+  requestWorkspace({ projectId: targetProjectId, sessionId: nextSession.id });
+}
 
 export function SessionWorkspacePage({
   projectIdOverride,
@@ -206,18 +239,14 @@ export function SessionWorkspacePage({
 
   const createProjectSession = async (targetProjectId: string): Promise<void> => {
     try {
-      const sourceSession = workspacePayload.activeSession.session;
-      const nextSession = await api.createSession(targetProjectId, {
-        title: 'New Session',
-        mode: sourceSession.mode,
-        provider: sourceSession.provider,
-        model: sourceSession.model,
+      await createProjectSessionAndSelect({
+        targetProjectId,
+        sourceSession: workspacePayload.activeSession.session,
+        navigationEnabled,
+        createSession: api.createSession,
+        navigate: (to, options) => navigate(to, options),
+        requestWorkspace: (input) => sessionSocket.requestSessionWorkspace(input),
       });
-      if (navigationEnabled) {
-        navigate(`/projects/${targetProjectId}/sessions/${nextSession.id}`);
-        return;
-      }
-      sessionSocket.requestSessionWorkspace({ projectId: targetProjectId, sessionId: nextSession.id });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '新建会话失败');
     }

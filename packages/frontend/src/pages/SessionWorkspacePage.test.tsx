@@ -6,9 +6,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
-import type { SessionWorkspacePayload } from '../lib/types';
+import type { SessionMode, SessionWorkspacePayload } from '../lib/types';
 import type { WsServerEvent } from '../lib/ws';
 import {
+  createProjectSessionAndSelect,
   getSnapshotNavigation,
   isCompactPreviewForActiveSession,
   runSessionCommand,
@@ -143,6 +144,66 @@ test('runSessionCommand does not attach refs to slash commands', () => {
 
   assert.equal(result, null);
   assert.deepEqual(commands, [{ sessionId: 'session-1', command: '/compact' }]);
+});
+
+test('createProjectSessionAndSelect creates a project session and navigates to it', async () => {
+  const created: Array<{
+    projectId: string;
+    input: { title?: string; mode?: SessionMode; provider?: string | null; model?: string | null };
+  }> = [];
+  const navigations: Array<{ to: string; replace?: boolean }> = [];
+  const snapshots: Array<{ projectId: string; sessionId: string }> = [];
+
+  await createProjectSessionAndSelect({
+    targetProjectId: 'project-2',
+    sourceSession: {
+      id: 'session-1',
+      mode: 'code',
+      provider: 'codex',
+      model: 'gpt-5.5',
+    },
+    navigationEnabled: true,
+    createSession: async (projectId, input) => {
+      created.push({ projectId, input });
+      return { id: 'session-new' };
+    },
+    navigate: (to, options) => navigations.push({ to, replace: options?.replace }),
+    requestWorkspace: (input) => snapshots.push(input),
+  });
+
+  assert.deepEqual(created, [{
+    projectId: 'project-2',
+    input: {
+      title: 'New Session',
+      mode: 'code',
+      provider: 'codex',
+      model: 'gpt-5.5',
+    },
+  }]);
+  assert.deepEqual(navigations, [{ to: '/projects/project-2/sessions/session-new', replace: undefined }]);
+  assert.deepEqual(snapshots, []);
+});
+
+test('createProjectSessionAndSelect requests the new snapshot when navigation is disabled', async () => {
+  const navigations: Array<{ to: string; replace?: boolean }> = [];
+  const snapshots: Array<{ projectId: string; sessionId: string }> = [];
+
+  await createProjectSessionAndSelect({
+    targetProjectId: 'project-3',
+    sourceSession: {
+      id: 'session-1',
+      mode: 'review',
+      provider: null,
+      model: null,
+    },
+    navigationEnabled: false,
+    createSession: async () => ({ id: 'session-keep-alive' }),
+    navigate: (to, options) => navigations.push({ to, replace: options?.replace }),
+    requestWorkspace: (input) => snapshots.push(input),
+  });
+
+  assert.deepEqual(navigations, []);
+  assert.deepEqual(snapshots, [{ projectId: 'project-3', sessionId: 'session-keep-alive' }]);
 });
 
 test('shouldRefreshSessionWorkspace skips unfinished stream events', () => {
