@@ -600,16 +600,23 @@
   border-width: 0 1px 0 0;
 }
 .deepsea-history {
+  position: relative;
+  z-index: 45;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  height: calc(100% + 40px);
+  margin-top: -40px;
+  border-right: 1px solid rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
 }
 .deepsea-history__header {
   display: grid;
-  gap: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.46);
-  background: rgba(255, 255, 255, 0.22);
-  padding: 6px 8px;
+  gap: 2px;
+  border-bottom: 0;
+  background: transparent;
+  padding: 8px;
 }
 .deepsea-history__title,
 .deepsea-history__title > div,
@@ -707,47 +714,145 @@
   padding: 12px 12px;
 }
 .deepsea-project-tree-actions {
-  display: flex;
+  display: grid;
+  gap: 4px;
   min-width: 0;
 }
-.deepsea-project-tree-actions .deepsea-primary-button {
-  min-height: 32px;
+.deepsea-project-tree-action-row,
+.deepsea-project-tree-search-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
   border-radius: 8px;
-  font-size: 11px;
-  box-shadow: 0 6px 12px rgba(0, 74, 198, 0.14);
+  color: rgba(67, 70, 84, 0.88);
+  padding: 8px 12px;
+  transition: background 160ms, color 160ms;
 }
-.deepsea-project-tree-actions .deepsea-primary-button svg {
-  width: 14px;
-  height: 14px;
+.deepsea-project-tree-action-row {
+  justify-content: space-between;
+  border: 0;
+  background: rgba(0, 0, 0, 0.05);
+}
+.deepsea-project-tree-action-row:hover,
+.deepsea-project-tree-search-row:hover,
+.deepsea-project-tree-search-row:focus-within {
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--deepsea-text);
+}
+.deepsea-project-tree-action-row span,
+.deepsea-project-tree-search-row {
+  gap: 12px;
+}
+.deepsea-project-tree-action-row span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  color: var(--deepsea-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.deepsea-project-tree-action-row svg,
+.deepsea-project-tree-search-row svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+.deepsea-project-tree-action-row kbd {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(67, 70, 84, 0.44);
+  padding: 2px 6px;
+  font-family: var(--deepsea-mono);
+  font-size: 10px;
+  line-height: 1.1;
+}
+.deepsea-project-tree-search-row input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--deepsea-text);
+  padding: 0;
+  font-size: 13px;
+}
+.deepsea-project-tree-search-row input::placeholder {
+  color: rgba(67, 70, 84, 0.82);
 }
 .deepsea-history__list.deepsea-project-tree {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 8px;
+  gap: 4px;
+  padding: 16px 8px;
+}
+.deepsea-project-tree-heading,
+.deepsea-project-chat-section__heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.deepsea-project-tree-heading {
+  margin-bottom: 8px;
+  padding: 0 8px;
+}
+.deepsea-project-tree-heading > span,
+.deepsea-project-chat-section__heading > span {
+  color: rgba(67, 70, 84, 0.6);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 16px;
+}
+.deepsea-project-tree-heading > div,
+.deepsea-project-chat-section__heading > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.deepsea-project-tree-heading button,
+.deepsea-project-chat-section__heading button {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: rgba(67, 70, 84, 0.4);
+  padding: 0;
+}
+.deepsea-project-tree-heading button:hover,
+.deepsea-project-chat-section__heading button:hover {
+  color: var(--deepsea-text);
+}
+.deepsea-project-tree-heading svg,
+.deepsea-project-chat-section__heading svg {
+  width: 16px;
+  height: 16px;
 }
 .deepsea-project-tree-section {
   min-width: 0;
 }
 .deepsea-project-node__button {
-  display: grid;
-  grid-template-columns: 14px 14px minmax(0, 1fr) auto;
-  gap: 7px;
+  display: flex;
+  gap: 8px;
   width: 100%;
   min-height: 30px;
   align-items: center;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--deepsea-text);
-  padding: 0 7px;
+  color: rgba(67, 70, 84, 0.88);
+  padding: 6px 8px;
   text-align: left;
-  transition: background 160ms, border-color 160ms, color 160ms;
+  transition: background 160ms, color 160ms;
 }
 .deepsea-project-tree-section[data-active="true"] .deepsea-project-node__button,
 .deepsea-project-node__button:hover {
-  border-color: rgba(0, 74, 198, 0.12);
-  background: rgba(255, 255, 255, 0.34);
+  background: transparent;
+  color: rgba(67, 70, 84, 0.96);
 }
 .deepsea-project-node__button:focus-visible,
 .deepsea-project-session-row:focus-visible {
@@ -755,150 +860,82 @@
   outline-offset: 2px;
 }
 .deepsea-project-node__button svg {
-  width: 14px;
-  height: 14px;
-  color: rgba(71, 85, 105, 0.7);
-}
-.deepsea-project-node__chevron {
-  transition: transform 160ms;
-  transform: rotate(-90deg);
-}
-.deepsea-project-node__button[aria-expanded="true"] .deepsea-project-node__chevron {
-  transform: rotate(0deg);
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: currentColor;
 }
 .deepsea-project-node__label {
-  display: grid;
+  display: block;
   min-width: 0;
-  gap: 1px;
 }
-.deepsea-project-node__label strong,
-.deepsea-project-node__label em {
+.deepsea-project-node__label strong {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.deepsea-project-node__label strong {
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.15;
-}
-.deepsea-project-node__label em {
-  color: rgba(71, 85, 105, 0.62);
-  font-family: var(--deepsea-mono);
-  font-size: 8px;
-  font-style: normal;
-  line-height: 1.1;
-}
-.deepsea-project-node__count {
-  display: inline-grid;
-  min-width: 18px;
-  height: 18px;
-  place-items: center;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.04);
-  color: rgba(71, 85, 105, 0.76);
-  font-family: var(--deepsea-mono);
-  font-size: 8px;
-  font-weight: 900;
-  line-height: 1;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
 }
 .deepsea-project-node__sessions {
   display: grid;
   gap: 2px;
-  margin: 2px 0 5px 14px;
-  border-left: 1px solid rgba(71, 85, 105, 0.14);
-  padding-left: 8px;
+  margin: 0 0 4px 16px;
+  border-left: 0;
+  padding-left: 0;
 }
 .deepsea-project-session-empty {
   display: flex;
-  min-height: 28px;
+  min-height: 32px;
   align-items: center;
-  color: rgba(71, 85, 105, 0.62);
-  padding: 0 8px;
+  color: rgba(67, 70, 84, 0.42);
+  padding: 0 12px;
   font-size: 12px;
 }
 .deepsea-project-session-row {
-  display: grid;
-  grid-template-columns: 7px minmax(0, 1fr) auto;
-  gap: 7px;
+  display: flex;
+  gap: 8px;
   width: 100%;
-  min-height: 32px;
+  min-height: 33px;
   align-items: center;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: inherit;
-  padding: 3px 7px;
+  padding: 8px 12px;
   text-align: left;
   transition: background 160ms, border-color 160ms;
 }
-.deepsea-project-session-row:hover,
+.deepsea-project-session-row:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
 .deepsea-project-session-row[data-current="true"] {
-  border-color: rgba(0, 74, 198, 0.16);
+  border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.42);
-}
-.deepsea-project-session-row__state {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: rgba(71, 85, 105, 0.46);
-}
-.deepsea-project-session-row__state[data-tone="primary"] {
-  background: var(--deepsea-primary-bright);
-}
-.deepsea-project-session-row__state[data-tone="ok"] {
-  background: var(--deepsea-ok);
-}
-.deepsea-project-session-row__state[data-tone="warn"] {
-  background: var(--deepsea-warn);
-}
-.deepsea-project-session-row__state[data-tone="danger"] {
-  background: var(--deepsea-danger);
-}
-.deepsea-project-session-row__main,
-.deepsea-project-session-row__title,
-.deepsea-project-session-row__meta {
-  min-width: 0;
-}
-.deepsea-project-session-row__main {
-  display: grid;
-  gap: 2px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 .deepsea-project-session-row__title {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
-  color: var(--deepsea-text);
-  font-size: 11px;
-  font-weight: 760;
-  line-height: 1.15;
+  color: rgba(67, 70, 84, 0.82);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .deepsea-project-session-row[data-current="true"] .deepsea-project-session-row__title {
-  font-weight: 860;
-}
-.deepsea-project-session-row__meta {
-  display: flex;
-  gap: 5px;
-  overflow: hidden;
-  color: rgba(71, 85, 105, 0.64);
-  font-family: var(--deepsea-mono);
-  font-size: 8px;
-  font-weight: 800;
-  line-height: 1;
-  white-space: nowrap;
-}
-.deepsea-project-session-row__meta span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--deepsea-text);
 }
 .deepsea-project-session-row__time {
   flex: 0 0 auto;
-  color: rgba(71, 85, 105, 0.62);
-  font-family: var(--deepsea-mono);
-  font-size: 9px;
-  font-weight: 800;
+  color: rgba(67, 70, 84, 0.4);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 12px;
   white-space: nowrap;
 }
 .deepsea-history-card {
@@ -1103,32 +1140,19 @@
   padding: 12px 16px;
 }
 .deepsea-project-chat-section {
-  display: flex;
-  min-height: 42px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-}
-.deepsea-project-chat-section > div {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 7px;
-  color: var(--deepsea-text);
-  font-size: 11px;
-  font-weight: 800;
-}
-.deepsea-project-chat-section svg {
-  width: 14px;
-  height: 14px;
-  color: rgba(71, 85, 105, 0.72);
+  display: block;
+  min-height: 0;
+  border-top-color: rgba(255, 255, 255, 0.2);
+  padding: 8px;
 }
 .deepsea-project-chat-section em {
-  flex: 0 0 auto;
-  color: rgba(71, 85, 105, 0.62);
-  font-size: 10px;
+  display: block;
+  color: rgba(67, 70, 84, 0.4);
+  padding: 16px 8px;
+  text-align: center;
+  font-size: 12px;
   font-style: normal;
+  line-height: 16px;
 }
 .deepsea-primary-button {
   display: inline-flex;

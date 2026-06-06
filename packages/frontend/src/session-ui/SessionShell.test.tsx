@@ -49,7 +49,8 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /管理所有工作区/);
   assert.match(html, /上下文压力/);
   assert.match(html, /Session status bar/);
-  assert.match(html, /项目会话/);
+  assert.match(html, /新建聊天/);
+  assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /Project Sessions/);
   assert.match(html, /接口联调/);
   assert.match(html, /AnotherProject/);
@@ -81,7 +82,8 @@ test('SessionShell renders current session when active sessions are absent from 
 
   const html = renderSessionShell(legacyPayload as unknown as SessionWorkspacePayload);
 
-  assert.match(html, /项目会话/);
+  assert.match(html, /新建聊天/);
+  assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /SessionOS 迁移/);
 });
 
@@ -97,7 +99,8 @@ test('SessionShell renders active sessions grouped under every project in the le
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /项目会话/);
+  assert.match(html, /新建聊天/);
+  assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /OpenClaw/);
   assert.match(html, /AnotherProject/);
   assert.match(html, /EmptyProject/);
@@ -117,7 +120,8 @@ test('SessionShell does not add an archived current session to the project tree 
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /项目会话/);
+  assert.match(html, /新建聊天/);
+  assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /暂无活跃会话/);
   assert.doesNotMatch(html, /data-project-session-row="true"/);
 });

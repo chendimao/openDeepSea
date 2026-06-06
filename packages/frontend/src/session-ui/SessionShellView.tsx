@@ -2,7 +2,11 @@ import {
   Brain,
   CheckCircle2,
   ChevronDown,
+  Edit3,
   FileText,
+  Filter,
+  FolderOpen,
+  FolderPlus,
   GitFork,
   MessageSquare,
   Minimize2,
@@ -41,7 +45,6 @@ import {
   type SessionMessageDisplayMode,
 } from './SessionMessageBubble';
 import { ProjectAgentStrip } from './ProjectAgentStrip';
-import { sessionStatusTone } from './session-ui-model';
 import { SessionFileComposer } from './SessionFileComposer';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 
@@ -363,43 +366,47 @@ function ProjectSessionTreeRail({
     Object.fromEntries(tree.map((project) => [project.id, true]))
   );
   const visibleProjects = filterProjectSessionTree(tree, normalizedQuery);
-  const visibleSessionCount = visibleProjects.reduce((total, project) => total + project.sessions.length, 0);
 
   return (
     <aside className="deepsea-history" aria-label="Project Sessions">
       <div className="deepsea-history__header">
         <div className="deepsea-project-tree-actions">
-          <button type="button" className="deepsea-primary-button" data-command="/new" onClick={() => onCommand('/new')}>
-            <Plus aria-hidden="true" />
-            新建会话
+          <button type="button" className="deepsea-project-tree-action-row" data-command="/new" onClick={() => onCommand('/new')}>
+            <span>
+              <Edit3 aria-hidden="true" />
+              新建聊天
+            </span>
+            <kbd>⌘N</kbd>
           </button>
+          <form
+            className="deepsea-project-tree-search-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <Search aria-hidden="true" />
+            <input
+              type="search"
+              value={q}
+              onChange={(event) => setQ(event.currentTarget.value)}
+              placeholder="搜索"
+            />
+          </form>
         </div>
-        <div className="deepsea-history__title">
-          <div>
-            <GitFork aria-hidden="true" />
-            <h2>项目会话</h2>
-          </div>
-          <div className="deepsea-history__tools">
-            <span className="deepsea-active-count">{visibleSessionCount}</span>
-          </div>
-        </div>
-        <form
-          className="deepsea-search"
-          onSubmit={(event) => {
-            event.preventDefault();
-          }}
-        >
-          <Search aria-hidden="true" />
-          <input
-            type="search"
-            value={q}
-            onChange={(event) => setQ(event.currentTarget.value)}
-            placeholder="搜索项目或会话..."
-          />
-        </form>
       </div>
 
       <div className="deepsea-history__list deepsea-project-tree">
+        <div className="deepsea-project-tree-heading">
+          <span>项目</span>
+          <div>
+            <button type="button" aria-label="筛选项目">
+              <Filter aria-hidden="true" />
+            </button>
+            <button type="button" aria-label="新建项目文件夹">
+              <FolderPlus aria-hidden="true" />
+            </button>
+          </div>
+        </div>
         {visibleProjects.length === 0 ? (
           <div className="deepsea-empty">没有匹配的项目或会话。</div>
         ) : visibleProjects.map((project) => {
@@ -424,13 +431,10 @@ function ProjectSessionTreeRail({
                   }))
                 }
               >
-                <ChevronDown aria-hidden="true" className="deepsea-project-node__chevron" />
-                <GitFork aria-hidden="true" />
+                <FolderOpen aria-hidden="true" />
                 <span className="deepsea-project-node__label">
                   <strong>{project.name}</strong>
-                  <em title={project.path}>{project.path || '未设置路径'}</em>
                 </span>
-                <span className="deepsea-project-node__count">{project.sessions.length}</span>
               </button>
               {expanded && (
                 <div className="deepsea-project-node__sessions">
@@ -452,9 +456,16 @@ function ProjectSessionTreeRail({
       </div>
 
       <div className="deepsea-history__footer deepsea-project-chat-section">
-        <div>
-          <MessageSquare aria-hidden="true" />
+        <div className="deepsea-project-chat-section__heading">
           <span>聊天</span>
+          <div>
+            <button type="button" aria-label="筛选聊天">
+              <Filter aria-hidden="true" />
+            </button>
+            <button type="button" aria-label="新建聊天">
+              <Edit3 aria-hidden="true" />
+            </button>
+          </div>
         </div>
         <em>暂无聊天</em>
       </div>
@@ -484,16 +495,8 @@ function ProjectSessionRow({
       data-pinned={session.pinned_at !== null ? 'true' : undefined}
       onClick={() => onOpenSession?.(session.project_id, session.id)}
     >
-      <span className="deepsea-project-session-row__state" data-tone={session.active_run_count > 0 ? 'primary' : sessionStatusTone(session.status)} />
-      <span className="deepsea-project-session-row__main">
-        <span className="deepsea-project-session-row__title" title={session.title}>
-          {formatCompactSessionTitle(session.title)}
-        </span>
-        <span className="deepsea-project-session-row__meta">
-          <span>{activeSessionStatusLabel(session)}</span>
-          {session.unread_count > 0 && <span>{session.unread_count} 未读</span>}
-          {session.pinned_at !== null && <span>置顶</span>}
-        </span>
+      <span className="deepsea-project-session-row__title" title={session.title}>
+        {formatCompactSessionTitle(session.title, 31)}
       </span>
       <time className="deepsea-project-session-row__time">{formatRelativeTime(Date.now(), session.updated_at)}</time>
     </button>
@@ -1301,18 +1304,6 @@ function ensureCurrentActiveSessionSummary(
 
 function isSessionActiveForRail(session: Pick<Session, 'closed_at' | 'status' | 'archived_at'>): boolean {
   return session.closed_at === null && session.status !== 'archived' && session.archived_at === null;
-}
-
-function activeSessionStatusLabel(session: ActiveSessionSummary): string {
-  if (session.active_run_count > 0) return `运行中 ${session.active_run_count}`;
-  const labels: Record<string, string> = {
-    active: '空闲',
-    completed: '已完成',
-    blocked: '阻塞',
-    failed: '失败',
-    archived: '已归档',
-  };
-  return labels[session.status] ?? session.status;
 }
 
 function formatClock(timestamp: number): string {
