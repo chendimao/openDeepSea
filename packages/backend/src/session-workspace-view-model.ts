@@ -3,9 +3,12 @@ import type {
   HistoryRecord,
   Project,
   Session,
+  SessionAgentEvent,
   SessionBottomStatus,
   SessionDiffRow,
   SessionEvidenceEvent,
+  SessionPlanItem,
+  SessionPlanItemStatus,
   SessionProjectSwitcher,
   SessionRun,
   SessionToolRow,
@@ -107,7 +110,7 @@ export function buildSessionToolRows(evidence: SessionEvidenceEvent[]): SessionT
       label: evidenceLabel(event),
       target: evidenceTarget(event),
       status: evidenceStatus(event),
-      durationMs: typeof event.payload.durationMs === 'number' ? event.payload.durationMs : null,
+      durationMs: firstNumber(event.payload.durationMs, acpEventPayload(event)?.durationMs),
       severity: event.severity,
       eventId: event.id,
       created_at: event.created_at,
@@ -127,14 +130,24 @@ function isToolEvidence(event: SessionEvidenceEvent): boolean {
 }
 
 function evidenceAction(event: SessionEvidenceEvent): SessionToolRow['action'] {
+  const trace = record(event.payload.trace);
+  const toolName = evidenceToolName(event);
+  if (trace?.kind === 'command') return 'exec';
   if (event.event_type === 'file_read') return 'read';
   if (event.event_type === 'file_diff') return 'edit';
   if (event.event_type === 'test' || event.event_type === 'build') return 'exec';
   if (event.event_type === 'browser_check') return 'browser';
+  if (toolName && /^(read)$/i.test(toolName)) return 'read';
+  if (toolName && /^(write)$/i.test(toolName)) return 'write';
+  if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName)) return 'edit';
   return 'tool';
 }
 
 function evidenceLabel(event: SessionEvidenceEvent): string {
+  const trace = record(event.payload.trace);
+  const toolName = evidenceToolName(event);
+  if (toolName) return toolName;
+  if (trace?.kind === 'command') return 'exec_command';
   if (event.event_type === 'file_read') return '读取文件';
   if (event.event_type === 'file_diff') return '文件变更';
   if (event.event_type === 'test') return '测试';
@@ -144,15 +157,321 @@ function evidenceLabel(event: SessionEvidenceEvent): string {
 }
 
 function evidenceTarget(event: SessionEvidenceEvent): string {
-  const target = event.payload.path ?? event.payload.file ?? event.payload.command ?? event.summary ?? event.title;
+  const trace = record(event.payload.trace);
+  const eventPayload = acpEventPayload(event);
+  const input = firstString(eventPayload?.input, eventPayload?.arguments, eventPayload?.rawInput, event.payload.input);
+  const target = firstString(
+    eventPayload?.path,
+    eventPayload?.file,
+    eventPayload?.file_path,
+    eventPayload?.filePath,
+    event.payload.path,
+    event.payload.file,
+    event.payload.file_path,
+    event.payload.filePath,
+    trace?.command,
+    event.payload.command,
+    input ? extractPatchPath(input) : null,
+    event.summary,
+    event.title,
+  );
   return typeof target === 'string' && target.trim() ? target.trim() : event.title;
 }
 
 function evidenceStatus(event: SessionEvidenceEvent): SessionToolRow['status'] {
   if (event.severity === 'error' || event.severity === 'critical') return 'failed';
-  const status = event.payload.status;
-  if (status === 'running' || status === 'completed' || status === 'failed') return status;
+  const acpEvent = record(event.payload.event);
+  const status = firstString(acpEvent?.status, event.payload.status);
+  if (status === 'running' || status === 'delta' || status === 'started') return 'running';
+  if (status === 'completed' || status === 'succeeded' || status === 'success') return 'completed';
+  if (status === 'failed' || status === 'error') return 'failed';
   return 'completed';
+}
+
+export interface SessionInspectorSnapshot {
+  planItems: SessionPlanItem[];
+  toolRows: SessionToolRow[];
+  diffRows: SessionDiffRow[];
+}
+
+export function buildSessionInspectorSnapshot(
+  sessionId: string,
+  evidence: SessionEvidenceEvent[],
+  agentEvents: SessionAgentEvent[],
+): SessionInspectorSnapshot {
+  return {
+    planItems: buildSessionPlanItemsFromAcp(sessionId, evidence, agentEvents),
+    toolRows: buildSessionToolRows(evidence),
+    diffRows: buildSessionDiffRowsFromAcp(evidence, agentEvents),
+  };
+}
+
+export function buildSessionPlanItemsFromAcp(
+  sessionId: string,
+  evidence: SessionEvidenceEvent[],
+  agentEvents: SessionAgentEvent[],
+): SessionPlanItem[] {
+  const latest = [
+    ...evidence.flatMap((event) => extractPlanEntryBatchFromEvidence(event)),
+    ...agentEvents.flatMap((event) => extractPlanEntryBatchFromAgentEvent(event)),
+  ].at(-1);
+  if (!latest) return [];
+  return latest.entries.map((entry, index) => {
+    const title = firstString(entry.title, entry.content, entry.text, entry.description) ?? `计划项 ${index + 1}`;
+    const status = normalizePlanStatus(firstString(entry.status) ?? null);
+    return {
+      id: firstString(entry.id) ?? `${latest.sourceId}:${index}`,
+      session_id: sessionId,
+      parent_id: null,
+      title,
+      description: firstString(entry.description) ?? null,
+      status,
+      priority: index,
+      source: 'acp_plan_update',
+      evidence_event_id: latest.evidenceEventId,
+      created_at: latest.createdAt,
+      updated_at: latest.createdAt,
+      completed_at: status === 'completed' ? latest.createdAt : null,
+    };
+  });
+}
+
+export function buildSessionDiffRowsFromAcp(
+  evidence: SessionEvidenceEvent[],
+  agentEvents: SessionAgentEvent[],
+): SessionDiffRow[] {
+  const rows = new Map<string, SessionDiffRow>();
+  const changes = [
+    ...evidence.flatMap(extractFileChangesFromEvidence),
+    ...agentEvents.flatMap(extractFileChangesFromAgentEvent),
+  ];
+
+  for (const change of changes) {
+    const existing = rows.get(change.path);
+    rows.set(change.path, {
+      path: change.path,
+      status: change.status ?? existing?.status ?? 'modified',
+      additions: addNullable(existing?.additions ?? null, change.additions),
+      deletions: addNullable(existing?.deletions ?? null, change.deletions),
+      summary: change.summary ?? existing?.summary ?? null,
+    });
+  }
+
+  return [...rows.values()];
+}
+
+type PlanEntryBatch = {
+  entries: Record<string, unknown>[];
+  sourceId: string;
+  evidenceEventId: string | null;
+  createdAt: number;
+};
+
+type FileChange = {
+  path: string;
+  status: SessionDiffRow['status'] | null;
+  additions: number | null;
+  deletions: number | null;
+  summary: string | null;
+};
+
+function extractPlanEntryBatchFromEvidence(event: SessionEvidenceEvent): PlanEntryBatch[] {
+  const entries = extractPlanEntries(event.payload);
+  if (entries.length === 0) return [];
+  return [{
+    entries,
+    sourceId: event.id,
+    evidenceEventId: event.id,
+    createdAt: event.created_at,
+  }];
+}
+
+function extractPlanEntryBatchFromAgentEvent(event: SessionAgentEvent): PlanEntryBatch[] {
+  const payload = parsePayloadJson(event.payload_json);
+  const entries = extractPlanEntries(payload);
+  if (entries.length === 0) return [];
+  return [{
+    entries,
+    sourceId: event.id,
+    evidenceEventId: null,
+    createdAt: event.created_at,
+  }];
+}
+
+function extractPlanEntries(source: Record<string, unknown> | null): Record<string, unknown>[] {
+  const candidates = expandPayloadCandidates(source);
+  for (const candidate of candidates) {
+    const eventType = firstString(candidate.type, candidate.event_type, candidate.rawType);
+    const entries = firstArray(candidate.entries, candidate.plan, candidate.next_steps);
+    if (!entries || entries.length === 0) continue;
+    if (eventType && !/plan|next_steps/i.test(eventType)) continue;
+    return entries.filter(isRecord);
+  }
+  return [];
+}
+
+function extractFileChangesFromEvidence(event: SessionEvidenceEvent): FileChange[] {
+  const changes: FileChange[] = [];
+  const eventPayload = acpEventPayload(event);
+  const patchInput = firstString(eventPayload?.input, eventPayload?.arguments, eventPayload?.rawInput, event.payload.input);
+  const path = firstString(
+    eventPayload?.path,
+    eventPayload?.file,
+    eventPayload?.file_path,
+    eventPayload?.filePath,
+    event.payload.path,
+    event.payload.file,
+    event.payload.file_path,
+    event.payload.filePath,
+  );
+  if (event.event_type === 'file_diff' && path) {
+    changes.push({
+      path,
+      status: 'modified',
+      additions: firstNumber(eventPayload?.additions, event.payload.additions),
+      deletions: firstNumber(eventPayload?.deletions, event.payload.deletions),
+      summary: evidenceToolName(event) ?? firstString(event.summary, event.title),
+    });
+  }
+
+  const toolName = evidenceToolName(event);
+  const patchPath = patchInput ? extractPatchPath(patchInput) : null;
+  if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && patchPath) {
+    changes.push({
+      path: patchPath,
+      status: patchStatus(patchInput),
+      additions: null,
+      deletions: null,
+      summary: toolName,
+    });
+  }
+  return changes;
+}
+
+function extractFileChangesFromAgentEvent(event: SessionAgentEvent): FileChange[] {
+  const payload = parsePayloadJson(event.payload_json);
+  const changes: FileChange[] = [];
+  for (const candidate of expandPayloadCandidates(payload)) {
+    const eventType = firstString(candidate.type, candidate.event_type, candidate.rawType);
+    const path = firstString(candidate.path, candidate.file, candidate.file_path, candidate.filePath);
+    if (path && eventType && /file_diff|patch|diff/i.test(eventType)) {
+      changes.push({
+        path,
+        status: 'modified',
+        additions: firstNumber(candidate.additions),
+        deletions: firstNumber(candidate.deletions),
+        summary: firstString(candidate.name, candidate.title, event.event_type),
+      });
+    }
+    const toolName = firstString(candidate.name, candidate.toolName, candidate.tool_name);
+    const input = firstString(candidate.input, candidate.arguments, candidate.rawInput);
+    const patchPath = input ? extractPatchPath(input) : null;
+    if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && patchPath) {
+      changes.push({
+        path: patchPath,
+        status: patchStatus(input),
+        additions: null,
+        deletions: null,
+        summary: toolName,
+      });
+    }
+  }
+  return changes;
+}
+
+function evidenceToolName(event: SessionEvidenceEvent): string | null {
+  const trace = record(event.payload.trace);
+  const eventPayload = acpEventPayload(event);
+  return firstString(
+    eventPayload?.name,
+    eventPayload?.toolName,
+    eventPayload?.tool_name,
+    event.payload.name,
+    event.payload.toolName,
+    event.payload.tool_name,
+    trace?.name,
+  );
+}
+
+function acpEventPayload(event: SessionEvidenceEvent): Record<string, unknown> | null {
+  const acpEvent = record(event.payload.event);
+  return record(acpEvent?.payload) ?? record(event.payload.payload);
+}
+
+function expandPayloadCandidates(source: Record<string, unknown> | null): Record<string, unknown>[] {
+  if (!source) return [];
+  const event = record(source.event);
+  const eventPayload = record(event?.payload);
+  const payload = record(source.payload);
+  const rawEvent = record(source.rawEvent);
+  const rawEventPayload = record(rawEvent?.payload);
+  return [source, event, eventPayload, payload, rawEvent, rawEventPayload].filter(isRecord);
+}
+
+function normalizePlanStatus(value: string | null): SessionPlanItemStatus {
+  if (value === 'in_progress' || value === 'running' || value === 'started') return 'in_progress';
+  if (value === 'completed' || value === 'done' || value === 'success' || value === 'succeeded') return 'completed';
+  if (value === 'blocked') return 'blocked';
+  if (value === 'failed' || value === 'error') return 'failed';
+  if (value === 'skipped') return 'skipped';
+  return 'pending';
+}
+
+function extractPatchPath(input: string): string | null {
+  const match = /^\*\*\* (?:Update|Add|Delete) File: (.+)$/m.exec(input);
+  return match?.[1]?.trim() || null;
+}
+
+function patchStatus(input: string): SessionDiffRow['status'] {
+  if (/^\*\*\* Add File:/m.test(input)) return 'added';
+  if (/^\*\*\* Delete File:/m.test(input)) return 'deleted';
+  return 'modified';
+}
+
+function addNullable(left: number | null, right: number | null): number | null {
+  if (left === null && right === null) return null;
+  return (left ?? 0) + (right ?? 0);
+}
+
+function parsePayloadJson(value: string | null): Record<string, unknown> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return record(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(record(value));
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function firstArray(...values: unknown[]): unknown[] | null {
+  for (const value of values) {
+    if (Array.isArray(value)) return value;
+  }
+  return null;
 }
 
 export function buildSessionDiffRows(workspacePath: string | null | undefined): SessionDiffRow[] {

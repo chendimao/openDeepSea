@@ -23,10 +23,8 @@ import { buildContextManifestDraft } from './session-context.js';
 import { buildStatusSnapshot } from './session-status.js';
 import {
   buildSessionBottomStatus,
-  buildSessionDiffRows,
+  buildSessionInspectorSnapshot,
   buildSessionProjectSwitcher,
-  buildSessionToolRows,
-  resolveSessionWorkspacePath,
 } from './session-workspace-view-model.js';
 import type {
   HistoryRecord,
@@ -172,9 +170,13 @@ function exportHistoryRecord(req: { params: { historyRecordId: string } }, res: 
 export function buildWorkspacePayload(project: Project, activeSession: Session): SessionWorkspacePayload {
   const detail = buildSessionDetail(activeSession);
   const evidence = detail.evidence.slice(-100);
+  const inspector = buildSessionInspectorSnapshot(activeSession.id, detail.evidence, detail.agentEvents);
   return {
     project,
-    activeSession: detail,
+    activeSession: {
+      ...detail,
+      planItems: inspector.planItems,
+    },
     historyRecords: historyRecordRepo.listByProject(project.id),
     status: buildSessionStatus(activeSession),
     context: sessionContextRepo.getLatestBySession(activeSession.id) ?? null,
@@ -182,8 +184,8 @@ export function buildWorkspacePayload(project: Project, activeSession: Session):
     projectSwitcher: buildSessionProjectSwitcher(project.id),
     bottomStatus: buildSessionBottomStatus(detail.runs, detail.evidence),
     contract: sessionContractRepo.getOrCreate(activeSession),
-    toolRows: buildSessionToolRows(evidence),
-    diffRows: buildSessionDiffRows(resolveSessionWorkspacePath(activeSession, project)),
+    toolRows: inspector.toolRows,
+    diffRows: inspector.diffRows,
     historyFilters: { q: '', status: 'all', mode: 'all' },
   };
 }

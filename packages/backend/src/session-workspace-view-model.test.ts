@@ -14,6 +14,9 @@ const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const {
   buildSessionBottomStatus,
   buildSessionDiffRows,
+  buildSessionDiffRowsFromAcp,
+  buildSessionInspectorSnapshot,
+  buildSessionPlanItemsFromAcp,
   buildSessionProjectSwitcher,
   buildSessionToolRows,
 } = await import('./session-workspace-view-model.js');
@@ -75,6 +78,170 @@ test('buildSessionToolRows maps evidence to stable display rows without fallback
   assert.equal(rows[0]?.action, 'read');
   assert.equal(rows[0]?.target, 'packages/frontend/src/session-ui/SessionShellView.tsx');
   assert.equal(rows[0]?.eventId, event.id);
+});
+
+test('buildSessionPlanItemsFromAcp derives plan items from ACP plan_update evidence', () => {
+  const project = projectRepo.create({
+    name: 'plan project',
+    path: mkdtempSync(join(tmpdir(), 'session-plan-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Plan Session' });
+  const event = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: '计划更新',
+    payload: {
+      event: {
+        type: 'plan_update',
+        payload: {
+          entries: [
+            { id: 'read-context', title: '读取上下文', status: 'completed' },
+            { id: 'wire-data', title: '接入真实数据', status: 'in_progress' },
+          ],
+        },
+      },
+    },
+  });
+
+  const items = buildSessionPlanItemsFromAcp(session.id, [event], []);
+
+  assert.deepEqual(items.map((item) => ({
+    title: item.title,
+    status: item.status,
+    source: item.source,
+    evidence_event_id: item.evidence_event_id,
+    priority: item.priority,
+  })), [
+    {
+      title: '读取上下文',
+      status: 'completed',
+      source: 'acp_plan_update',
+      evidence_event_id: event.id,
+      priority: 0,
+    },
+    {
+      title: '接入真实数据',
+      status: 'in_progress',
+      source: 'acp_plan_update',
+      evidence_event_id: event.id,
+      priority: 1,
+    },
+  ]);
+});
+
+test('buildSessionToolRows prefers ACP tool names and targets', () => {
+  const project = projectRepo.create({
+    name: 'tool acp project',
+    path: mkdtempSync(join(tmpdir(), 'session-tool-acp-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Tool ACP Session' });
+  const patchEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'tool_call',
+    title: '调用工具 apply_patch',
+    payload: {
+      event: {
+        type: 'tool_call',
+        status: 'started',
+        payload: {
+          name: 'apply_patch',
+          input: '*** Update File: packages/frontend/src/session-ui/SessionShellView.tsx',
+        },
+      },
+    },
+  });
+  const commandEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'tool_call',
+    title: 'Command: npm run build',
+    payload: {
+      trace: {
+        kind: 'command',
+        command: 'npm run build',
+      },
+    },
+  });
+
+  const rows = buildSessionToolRows([patchEvent, commandEvent]);
+
+  assert.equal(rows[0]?.action, 'edit');
+  assert.equal(rows[0]?.label, 'apply_patch');
+  assert.equal(rows[0]?.target, 'packages/frontend/src/session-ui/SessionShellView.tsx');
+  assert.equal(rows[0]?.status, 'running');
+  assert.equal(rows[1]?.action, 'exec');
+  assert.equal(rows[1]?.target, 'npm run build');
+});
+
+test('buildSessionDiffRowsFromAcp includes only ACP file changes and aggregates duplicate files', () => {
+  const project = projectRepo.create({
+    name: 'diff acp project',
+    path: mkdtempSync(join(tmpdir(), 'session-diff-acp-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Diff ACP Session' });
+  const diffEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'file_diff',
+    title: '修改文件 packages/frontend/src/session-ui/SessionShellView.tsx',
+    payload: {
+      event: {
+        type: 'file_diff',
+        payload: {
+          path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+          additions: 12,
+          deletions: 3,
+        },
+      },
+    },
+  });
+  const patchEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'tool_call',
+    title: '调用工具 apply_patch',
+    payload: {
+      event: {
+        type: 'tool_call',
+        payload: {
+          name: 'apply_patch',
+          input: '*** Update File: packages/frontend/src/session-ui/SessionShellView.tsx',
+        },
+      },
+    },
+  });
+
+  const rows = buildSessionDiffRowsFromAcp([diffEvent, patchEvent], []);
+
+  assert.deepEqual(rows, [{
+    path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+    status: 'modified',
+    additions: 12,
+    deletions: 3,
+    summary: 'apply_patch',
+  }]);
+});
+
+test('buildSessionInspectorSnapshot combines plan, tool and session change rows', () => {
+  const project = projectRepo.create({
+    name: 'inspector project',
+    path: mkdtempSync(join(tmpdir(), 'session-inspector-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Inspector Session' });
+  const event = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: '计划更新',
+    payload: {
+      event: {
+        type: 'plan_update',
+        payload: { entries: [{ title: '实现派生层', status: 'pending' }] },
+      },
+    },
+  });
+
+  const snapshot = buildSessionInspectorSnapshot(session.id, [event], []);
+
+  assert.equal(snapshot.planItems[0]?.title, '实现派生层');
+  assert.deepEqual(snapshot.toolRows, []);
+  assert.deepEqual(snapshot.diffRows, []);
 });
 
 test('buildSessionDiffRows reads real git status and numstat', () => {
