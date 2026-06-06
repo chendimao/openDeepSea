@@ -4,6 +4,7 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { I18nProvider } from '../lib/i18n';
 import type { SessionWorkspacePayload } from '../lib/types';
 import type { WsServerEvent } from '../lib/ws';
 import {
@@ -17,23 +18,32 @@ import {
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
 
+Object.defineProperty(globalThis, 'localStorage', {
+  value: {
+    getItem: () => null,
+    setItem: () => undefined,
+    removeItem: () => undefined,
+  },
+  configurable: true,
+});
+
 test('project route renders Session shell loading state instead of old room UI', () => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const html = renderToStaticMarkup(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/projects/project-1']}>
-        <Routes>
-          <Route path="/projects/:projectId" element={<SessionWorkspacePage />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+  const html = renderSessionWorkspace('/projects/project-1', '/projects/:projectId');
 
   assert.match(html, /session-shell/);
   assert.match(html, /加载 Session/);
   assert.doesNotMatch(html, /RoomWorkbench/);
   assert.doesNotMatch(html, /TaskWorkspacePanel/);
   assert.doesNotMatch(html, /chat-panel/);
+});
+
+test('root session route shows project onboarding when no projects exist', () => {
+  const html = renderSessionWorkspace('/', '/', { projects: [] });
+
+  assert.match(html, /先添加一个项目/);
+  assert.match(html, /会话需要绑定到本地项目/);
+  assert.match(html, /新建项目/);
+  assert.doesNotMatch(html, /加载 Session/);
 });
 
 test('runSessionCommand sends slash commands through websocket callback', () => {
@@ -145,4 +155,25 @@ test('isCompactPreviewForActiveSession ignores previews from inactive sessions',
 
 function createCommandPayload(): SessionWorkspacePayload {
   return { activeSession: { session: { id: 'session-1', mode: 'code' } } } as SessionWorkspacePayload;
+}
+
+function renderSessionWorkspace(
+  initialEntry: string,
+  routePath: string,
+  input: { projects?: unknown[] } = {},
+): string {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (input.projects) queryClient.setQueryData(['projects'], input.projects);
+
+  return renderToStaticMarkup(
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <Routes>
+            <Route path={routePath} element={<SessionWorkspacePage />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </I18nProvider>,
+  );
 }

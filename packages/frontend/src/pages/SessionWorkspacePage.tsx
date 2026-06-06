@@ -1,8 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { FolderPlus, Plus } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { CreateProjectDialog } from '../components/CreateProjectDialog';
+import { Button } from '../components/ui/Button';
+import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 import type {
   HistoryRecordStatus,
   SessionCompaction,
@@ -17,11 +22,12 @@ import { applySessionWorkspaceEvent } from '../session-ui/session-workspace-even
 export function SessionWorkspacePage(): JSX.Element {
   const { projectId = '', sessionId } = useParams();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
   const previousSessionIdRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
-  const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
+  const { data: projects = [], isLoading: projectsLoading } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
   const activeProjectId = projectId || projects[0]?.id || '';
 
   useEffect(() => {
@@ -114,14 +120,32 @@ export function SessionWorkspacePage(): JSX.Element {
 
   if (!activeProjectId) {
     return (
-      <div className="session-shell">
-        <div className="session-empty">创建项目后开始 Session</div>
+      <div className="session-shell session-shell--empty">
+        {projectsLoading ? (
+          <div className="session-loading">{t('sessionWorkspace.loadingProjects')}</div>
+        ) : (
+          <div className="session-onboarding">
+            <WorkspaceEmptyState
+              icon={<FolderPlus className="session-onboarding-icon" strokeWidth={1.5} />}
+              title={t('sessionWorkspace.noProjectTitle')}
+              description={t('sessionWorkspace.noProjectDescription')}
+              action={
+                <CreateProjectDialog>
+                  <Button variant="primary">
+                    <Plus className="h-4 w-4" />
+                    {t('sessionWorkspace.createProject')}
+                  </Button>
+                </CreateProjectDialog>
+              }
+            />
+          </div>
+        )}
       </div>
     );
   }
   if (!workspacePayload) {
     return (
-      <div className="session-shell">
+      <div className="session-shell session-shell--empty">
         <div className="session-loading">加载 Session</div>
       </div>
     );

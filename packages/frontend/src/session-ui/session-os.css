@@ -26,7 +26,8 @@
   --deepsea-sans: Inter, "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
-[data-theme="minimal-light"] .deepsea-shell {
+[data-theme="minimal-light"] .deepsea-shell,
+[data-theme="minimal-light"] .session-shell--empty {
   background:
     radial-gradient(circle at 14% 10%, rgba(255, 252, 245, 0.92) 0 11%, rgba(255, 252, 245, 0) 30%),
     radial-gradient(circle at 84% 4%, rgba(226, 161, 91, 0.14) 0 13%, rgba(226, 161, 91, 0) 36%),
@@ -34,7 +35,8 @@
     linear-gradient(135deg, #fffaf0 0%, #f7f4ec 42%, var(--deepsea-background) 100%);
 }
 
-[data-theme="minimal-dark"] .deepsea-shell {
+[data-theme="minimal-dark"] .deepsea-shell,
+[data-theme="minimal-dark"] .session-shell--empty {
   background:
     radial-gradient(circle at 18% 8%, rgba(226, 161, 91, 0.13) 0 12%, rgba(226, 161, 91, 0) 34%),
     radial-gradient(circle at 86% 12%, rgba(240, 181, 111, 0.09) 0 12%, rgba(240, 181, 111, 0) 36%),
@@ -186,6 +188,32 @@
   height: 16px;
   flex: 0 0 auto;
   stroke-width: 1.8;
+}
+.session-shell--empty {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+  color: var(--deepsea-text);
+  font-family: var(--deepsea-sans);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.96) 0 9%, rgba(255, 255, 255, 0) 30%),
+    radial-gradient(circle at 82% 6%, rgba(214, 232, 250, 0.86) 0 12%, rgba(214, 232, 250, 0) 34%),
+    radial-gradient(circle at 54% 92%, rgba(198, 229, 242, 0.72) 0 15%, rgba(198, 229, 242, 0) 42%),
+    linear-gradient(135deg, #f8fbff 0%, #edf4fb 42%, var(--deepsea-background) 100%);
+}
+.session-onboarding {
+  width: min(100%, 520px);
+}
+.session-onboarding .workspace-empty {
+  min-height: 300px;
+  border-color: var(--deepsea-border);
+  background: var(--deepsea-surface-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 20px 60px rgba(35, 53, 76, 0.12);
+}
+.session-onboarding-icon {
+  width: 48px;
+  height: 48px;
 }
 .deepsea-mono {
   font-family: var(--deepsea-mono);
