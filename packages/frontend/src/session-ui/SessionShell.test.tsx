@@ -238,6 +238,18 @@ test('buildSessionRunTranscriptItems maps ACP tool names to timeline markers', (
   ]);
 });
 
+test('SessionShell renders a concise active session title with the full title available', () => {
+  const payload = createPayload();
+  payload.activeSession.session.title = '用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出';
+  payload.projectSwitcher.projects[0]!.recentSessions[0]!.title = payload.activeSession.session.title;
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /title="用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出"/);
+  assert.match(html, /用户在当前会话第一次发送消息的时候.../);
+  assert.doesNotMatch(html, />用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出</);
+});
+
 test('getSessionRunThinkingDuration formats active and completed durations', () => {
   assert.deepEqual(getSessionRunThinkingDuration({
     status: 'running',
