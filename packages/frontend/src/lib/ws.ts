@@ -3,6 +3,7 @@ import type {
   AgentRunStatus,
   AgentTimelineEvent,
   HistoryRecord,
+  HistoryRecordStatus,
   Message,
   RoomAgent,
   Session,
@@ -47,6 +48,10 @@ export type WsServerEvent =
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
   | { type: 'session_workspace:snapshot'; projectId: string; sessionId: string; payload: SessionWorkspacePayload }
   | { type: 'session_error'; sessionId: string; error: string }
+  | { type: 'session_status:snapshot'; sessionId: string; status: import('./types').StatusSnapshot }
+  | { type: 'session_context:snapshot'; sessionId: string; context: import('./types').SessionContextManifest | null }
+  | { type: 'session_compact:preview'; sessionId: string; compaction: import('./types').SessionCompaction }
+  | { type: 'history_records:snapshot'; projectId: string; records: HistoryRecord[] }
   | { type: 'session:updated'; sessionId: string; session: Session }
   | { type: 'session_message:new'; sessionId: string; message: SessionMessage }
   | { type: 'session_run:created'; sessionId: string; run: SessionRun }
@@ -77,7 +82,18 @@ export type WsClientEvent =
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
   | { type: 'agent.run.cancel'; sessionId: string; agentId: string; runId: string }
-  | { type: 'agent.run.retry'; sessionId: string; agentId: string; runId: string };
+  | { type: 'agent.run.retry'; sessionId: string; agentId: string; runId: string }
+  | { type: 'session.command.run'; sessionId: string; command: string }
+  | { type: 'session.compact.apply'; sessionId: string; compactionId: string; appliedSummary: string; userEdited?: boolean }
+  | { type: 'session.compact.discard'; sessionId: string; compactionId: string }
+  | {
+      type: 'session.contract.save';
+      sessionId: string;
+      scope?: string | null;
+      risks?: string[];
+      acceptanceCriteria?: string[];
+    }
+  | { type: 'history_records.filter'; projectId: string; q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' };
 
 type Listener = (event: WsServerEvent) => void;
 
@@ -248,6 +264,36 @@ class RoomSocket {
     | { type: 'agent.run.retry'; sessionId: string; agentId: string; runId: string }
   ): void {
     this.sendOrQueue(input);
+  }
+
+  runSessionCommand(input: { sessionId: string; command: string }): void {
+    this.sendOrQueue({ type: 'session.command.run', ...input });
+  }
+
+  applySessionCompact(input: { sessionId: string; compactionId: string; appliedSummary: string; userEdited?: boolean }): void {
+    this.sendOrQueue({ type: 'session.compact.apply', ...input });
+  }
+
+  discardSessionCompact(input: { sessionId: string; compactionId: string }): void {
+    this.sendOrQueue({ type: 'session.compact.discard', ...input });
+  }
+
+  saveSessionContract(input: {
+    sessionId: string;
+    scope?: string | null;
+    risks?: string[];
+    acceptanceCriteria?: string[];
+  }): void {
+    this.sendOrQueue({ type: 'session.contract.save', ...input });
+  }
+
+  filterHistoryRecords(input: {
+    projectId: string;
+    q?: string;
+    status?: HistoryRecordStatus | 'all';
+    mode?: SessionMode | 'all';
+  }): void {
+    this.sendOrQueue({ type: 'history_records.filter', ...input });
   }
 
   destroy(): void {

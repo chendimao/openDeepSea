@@ -1,15 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import type {
   HistoryRecordStatus,
   SessionCompaction,
-  SessionContextManifest,
   SessionMode,
   SessionWorkspacePayload,
-  StatusSnapshot,
 } from '../lib/types';
 import { sessionSocket, type WsServerEvent } from '../lib/ws';
 import { CompactPreviewSurface } from '../session-ui/CompactPreviewSurface';
@@ -54,90 +52,61 @@ export function SessionWorkspacePage(): JSX.Element {
       if (event.type === 'session_workspace:snapshot') {
         if (event.projectId !== activeProjectId) return;
         setWorkspacePayload(event.payload);
+        const nextNavigation = getSnapshotNavigation(event.projectId, event.payload.activeSession.session.id, sessionId);
+        if (nextNavigation) {
+          navigate(nextNavigation.to, { replace: nextNavigation.replace });
+        }
         return;
       }
       if (event.type === 'session_error') {
         toast.error(event.error);
         return;
       }
+      if (event.type === 'session_status:snapshot') {
+        setWorkspacePayload((current) => current && current.activeSession.session.id === event.sessionId
+          ? { ...current, status: event.status }
+          : current);
+        return;
+      }
+      if (event.type === 'session_context:snapshot') {
+        setWorkspacePayload((current) => current && current.activeSession.session.id === event.sessionId
+          ? { ...current, context: event.context }
+          : current);
+        return;
+      }
+      if (event.type === 'session_compact:preview') {
+        setCompactPreview(event.compaction);
+        return;
+      }
+      if (event.type === 'history_records:snapshot') {
+        setWorkspacePayload((current) => current && current.project.id === event.projectId
+          ? { ...current, historyRecords: event.records }
+          : current);
+        return;
+      }
       if (!isSessionWorkspaceEvent(event)) return;
       setWorkspacePayload((current) => current ? applySessionWorkspaceEvent(current, event) : current);
     });
-  }, [activeProjectId]);
+  }, [activeProjectId, navigate, sessionId]);
 
-  const runCommand = useMutation({
-    mutationFn: (content: string) => runSessionCommand(content, workspacePayload!, {
-      sendMessage: (message) => sessionSocket.sendSessionMessage(message),
-    }),
-    onSuccess: (result) => {
-      if (!result) return undefined;
-      if (result.kind === 'workspace') {
-        const nextSessionId = result.payload.activeSession.session.id;
-        setWorkspacePayload(result.payload);
-        if (nextSessionId !== sessionId || result.payload.project.id !== activeProjectId) {
-          navigate(`/projects/${result.payload.project.id}/sessions/${nextSessionId}`);
-        }
-        return undefined;
-      }
-      if (result.kind === 'compact') {
-        setCompactPreview(result.compaction);
-        return undefined;
-      }
-      if (result.kind === 'status') {
-        setWorkspacePayload((current) => current ? { ...current, status: result.status } : current);
-        return undefined;
-      }
-      if (result.kind === 'context') {
-        setWorkspacePayload((current) => current ? { ...current, context: result.context } : current);
-        return undefined;
-      }
-      return undefined;
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const applyCompact = useMutation({
-    mutationFn: (summary: string) =>
-      api.applyCompact(workspacePayload!.activeSession.session.id, compactPreview!.id, {
-        applied_summary: summary,
-        user_edited: summary !== compactPreview!.preview_summary,
-      }),
-    onSuccess: () => {
-      setCompactPreview(null);
-      requestActiveWorkspaceSnapshot(activeProjectId, workspacePayload);
-      return undefined;
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const discardCompact = useMutation({
-    mutationFn: (compactionId: string) => api.discardCompact(workspacePayload!.activeSession.session.id, compactionId),
-    onSuccess: () => {
-      setCompactPreview(null);
-      requestActiveWorkspaceSnapshot(activeProjectId, workspacePayload);
-      return undefined;
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const saveContract = useMutation({
-    mutationFn: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) =>
-      api.updateSessionContract(workspacePayload!.activeSession.session.id, input),
-    onSuccess: () => {
-      requestActiveWorkspaceSnapshot(activeProjectId, workspacePayload);
-      return undefined;
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const filterHistory = useMutation({
-    mutationFn: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) =>
-      api.listHistoryRecords(activeProjectId, filters),
-    onSuccess: (records) => {
-      setWorkspacePayload((current) => current ? { ...current, historyRecords: records } : current);
-    },
-    onError: (error) => toast.error((error as Error).message),
-  });
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const activeRun = [...(workspacePayload?.activeSession.runs ?? [])].reverse().find((run) =>
+        run.status === 'queued' || run.status === 'running' || run.status === 'retrying'
+      );
+      if (!activeRun) return;
+      event.preventDefault();
+      sessionSocket.runSessionControl({
+        type: 'agent.run.pause',
+        sessionId: activeRun.session_id,
+        agentId: activeRun.agent_id,
+        runId: activeRun.id,
+      });
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [workspacePayload?.activeSession.runs]);
 
   if (!activeProjectId) {
     return (
@@ -158,27 +127,43 @@ export function SessionWorkspacePage(): JSX.Element {
     <>
     <SessionShell
       payload={workspacePayload}
-      onSendMessage={(content) => runCommand.mutate(content)}
-      onCommand={(command) => {
-        if (command === '/compact') {
-          void api.previewCompact(workspacePayload.activeSession.session.id).then(setCompactPreview).catch((error) => {
-            toast.error((error as Error).message);
-          });
-          return;
-        }
-        runCommand.mutate(command);
-      }}
+      onSendMessage={(content) => runSessionCommand(content, workspacePayload, {
+        sendMessage: (message) => sessionSocket.sendSessionMessage(message),
+        runCommand: (message) => sessionSocket.runSessionCommand(message),
+      })}
+      onCommand={(command) => runSessionCommand(command, workspacePayload, {
+        sendMessage: (message) => sessionSocket.sendSessionMessage(message),
+        runCommand: (message) => sessionSocket.runSessionCommand(message),
+      })}
       onCancelRun={(runId) => runSessionControl(workspacePayload, runId, 'agent.run.cancel')}
       onRetryRun={(runId) => runSessionControl(workspacePayload, runId, 'agent.run.retry')}
-      onSaveContract={(input) => saveContract.mutate(input)}
-      onFilterHistory={(filters) => filterHistory.mutate(filters)}
+      onSaveContract={(input) => {
+        sessionSocket.saveSessionContract({ sessionId: workspacePayload.activeSession.session.id, ...input });
+      }}
+      onFilterHistory={(filters) => {
+        sessionSocket.filterHistoryRecords({ projectId: activeProjectId, ...filters });
+      }}
     />
     {compactPreview && (
       <div className="session-overlay" role="dialog" aria-label="Compact Preview">
         <CompactPreviewSurface
           compaction={compactPreview}
-          onApply={(summary) => applyCompact.mutate(summary)}
-          onDiscard={() => discardCompact.mutate(compactPreview.id)}
+          onApply={(summary) => {
+            sessionSocket.applySessionCompact({
+              sessionId: workspacePayload.activeSession.session.id,
+              compactionId: compactPreview.id,
+              appliedSummary: summary,
+              userEdited: summary !== compactPreview.preview_summary,
+            });
+            setCompactPreview(null);
+          }}
+          onDiscard={() => {
+            sessionSocket.discardSessionCompact({
+              sessionId: workspacePayload.activeSession.session.id,
+              compactionId: compactPreview.id,
+            });
+            setCompactPreview(null);
+          }}
         />
       </div>
     )}
@@ -191,63 +176,41 @@ export function shouldRefreshSessionWorkspace(event: WsServerEvent): boolean {
   return false;
 }
 
+export function getSnapshotNavigation(
+  projectId: string,
+  nextSessionId: string,
+  currentSessionId?: string,
+): { to: string; replace: boolean } | null {
+  if (!nextSessionId || nextSessionId === currentSessionId) return null;
+  return {
+    to: `/projects/${projectId}/sessions/${nextSessionId}`,
+    replace: !currentSessionId,
+  };
+}
+
 function isSessionWorkspaceEvent(event: WsServerEvent): boolean {
   return event.type.startsWith('session_') || event.type === 'session:updated' || event.type === 'history_record:new';
 }
 
-type SessionCommandResult =
-  | { kind: 'workspace'; payload: SessionWorkspacePayload }
-  | { kind: 'compact'; compaction: SessionCompaction }
-  | { kind: 'status'; status: StatusSnapshot }
-  | { kind: 'context'; context: SessionContextManifest }
-  | { kind: 'noop' };
+type SessionCommandResult = { kind: 'noop' } | null;
 
-export async function runSessionCommand(
+export function runSessionCommand(
   content: string,
   payload: SessionWorkspacePayload,
   input: {
     sendMessage: (message: { sessionId: string; content: string; agentId?: string; mode?: SessionMode }) => void;
+    runCommand: (message: { sessionId: string; command: string }) => void;
   },
-): Promise<SessionCommandResult | null> {
+): SessionCommandResult {
   const sessionId = payload.activeSession.session.id;
   const trimmed = content.trim();
-  if (trimmed === '/new') return { kind: 'workspace', payload: await api.newSessionFromCurrent(sessionId) };
-  if (trimmed.startsWith('/new ')) {
-    return { kind: 'workspace', payload: await api.newSessionFromCurrent(sessionId, parseNewCommand(trimmed)) };
-  }
-  if (trimmed === '/compact') return { kind: 'compact', compaction: await api.previewCompact(sessionId) };
-  if (trimmed.startsWith('/compact ')) {
-    return { kind: 'compact', compaction: await api.previewCompact(sessionId, parseCompactCommand(trimmed)) };
-  }
-  if (trimmed === '/status') {
-    return { kind: 'status', status: await api.getSessionStatus(sessionId) };
-  }
-  if (trimmed === '/context') {
-    return { kind: 'context', context: await api.getSessionContext(sessionId) };
-  }
-  if (trimmed === '/fork') return { kind: 'workspace', payload: await api.forkSession(sessionId) };
   if (trimmed === '/resume' || trimmed === '/history') return { kind: 'noop' };
-  if (trimmed.startsWith('/resume ')) {
-    const historyRecordId = trimmed.replace('/resume ', '').trim();
-    return historyRecordId ? { kind: 'workspace', payload: await api.resumeHistoryRecord(historyRecordId) } : { kind: 'noop' };
-  }
-  if (trimmed.startsWith('/fork history:')) {
-    const historyRecordId = trimmed.replace('/fork history:', '').trim();
-    return historyRecordId ? { kind: 'workspace', payload: await api.forkHistoryRecord(historyRecordId) } : { kind: 'noop' };
+  if (trimmed.startsWith('/')) {
+    input.runCommand({ sessionId, command: trimmed });
+    return null;
   }
   input.sendMessage({ sessionId, content, agentId: 'planner', mode: payload.activeSession.session.mode });
   return null;
-}
-
-function requestActiveWorkspaceSnapshot(
-  activeProjectId: string,
-  payload: SessionWorkspacePayload | null,
-): void {
-  if (!activeProjectId || !payload) return;
-  sessionSocket.requestSessionWorkspace({
-    projectId: activeProjectId,
-    sessionId: payload.activeSession.session.id,
-  });
 }
 
 function runSessionControl(
@@ -263,21 +226,4 @@ function runSessionControl(
     agentId,
     runId,
   });
-}
-
-function parseNewCommand(command: string): { title?: string; blank?: boolean } {
-  const body = command.replace(/^\/new\s*/, '').trim();
-  return {
-    ...(body.startsWith('title:') ? { title: body.replace(/^title:\s*/, '').trim() } : {}),
-    ...(body === 'blank' || body.includes('blank:true') ? { blank: true } : {}),
-  };
-}
-
-function parseCompactCommand(command: string): { focus?: string } {
-  const body = command.replace(/^\/compact\s*/, '').trim();
-  return body.startsWith('focus:')
-    ? { focus: body.replace(/^focus:\s*/, '').trim() }
-    : body
-      ? { focus: body }
-      : {};
 }

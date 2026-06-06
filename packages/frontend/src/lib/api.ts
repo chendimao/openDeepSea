@@ -41,17 +41,9 @@ import type {
   RoomSearchResponse,
   SettingsResolution,
   HistoryRecord,
-  HistoryRecordStatus,
   Session,
-  SessionCheckpoint,
-  SessionCompaction,
-  SessionContract,
-  SessionContextManifest,
   SessionDetail,
-  SessionEvidenceEvent,
   SessionMode,
-  SessionWorkspacePayload,
-  StatusSnapshot,
   Skill,
   SkillBinding,
   SkillBindingScope,
@@ -551,83 +543,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
-  newSessionFromCurrent: (sessionId: string, input: { title?: string; blank?: boolean } = {}) =>
-    request<SessionWorkspacePayload>(`/sessions/${sessionId}/new`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  previewCompact: (
-    sessionId: string,
-    input: { focus?: string; strategy?: 'manual' | 'focus' | 'aggressive' | 'conservative' | 'auto_suggested' } = {},
-  ) =>
-    request<SessionCompaction>(`/sessions/${sessionId}/compact/preview`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  applyCompact: (
-    sessionId: string,
-    compactionId: string,
-    input: { applied_summary: string; user_edited?: boolean },
-  ) =>
-    request<SessionCompaction>(`/sessions/${sessionId}/compact/apply`, {
-      method: 'POST',
-      body: JSON.stringify({ compaction_id: compactionId, ...input }),
-    }),
-  discardCompact: (sessionId: string, compactionId: string) =>
-    request<SessionCompaction>(`/sessions/${sessionId}/compact/discard`, {
-      method: 'POST',
-      body: JSON.stringify({ compaction_id: compactionId }),
-    }),
-  updateSessionContract: (
-    sessionId: string,
-    input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] },
-  ) =>
-    request<SessionContract>(`/sessions/${sessionId}/contract`, {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    }),
-  getSessionStatus: (sessionId: string) =>
-    request<StatusSnapshot>(`/sessions/${sessionId}/status`),
-  getSessionContext: (sessionId: string) =>
-    request<SessionContextManifest>(`/sessions/${sessionId}/context`),
-  listSessionEvidence: (sessionId: string) =>
-    request<SessionEvidenceEvent[]>(`/sessions/${sessionId}/evidence`),
-  createSessionCheckpoint: (sessionId: string, input: { title: string; description?: string | null }) =>
-    request<SessionCheckpoint>(`/sessions/${sessionId}/checkpoints`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  forkSession: (
-    sessionId: string,
-    input: { title?: string; mode?: SessionMode; provider?: AcpBackend | null; model?: string | null; worktree_path?: string | null; branch_name?: string | null } = {},
-  ) =>
-    request<SessionWorkspacePayload>(`/sessions/${sessionId}/fork`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  listHistoryRecords: (
-    projectId: string,
-    input: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' } = {},
-  ) => {
-    const params = new URLSearchParams();
-    if (input.q?.trim()) params.set('q', input.q.trim());
-    if (input.status && input.status !== 'all') params.set('status', input.status);
-    if (input.mode && input.mode !== 'all') params.set('mode', input.mode);
-    const query = params.toString();
-    return request<HistoryRecord[]>(`/projects/${projectId}/history-records${query ? `?${query}` : ''}`);
-  },
   getHistoryRecord: (historyRecordId: string) =>
     request<HistoryRecord>(`/history-records/${historyRecordId}`),
-  resumeHistoryRecord: (historyRecordId: string) =>
-    request<SessionWorkspacePayload>(`/history-records/${historyRecordId}/resume`, { method: 'POST' }),
-  forkHistoryRecord: (
-    historyRecordId: string,
-    input: { title?: string; mode?: SessionMode; provider?: AcpBackend | null; model?: string | null; worktree_path?: string | null; branch_name?: string | null } = {},
-  ) =>
-    request<SessionWorkspacePayload>(`/history-records/${historyRecordId}/fork`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
   regenerateResumeBrief: (historyRecordId: string) =>
     request<HistoryRecord>(`/history-records/${historyRecordId}/resume-brief/regenerate`, { method: 'POST' }),
   exportHistoryRecord: (historyRecordId: string) =>

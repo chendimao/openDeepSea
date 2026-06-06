@@ -1296,6 +1296,18 @@ export type WsServerEvent =
       payload: import('./session-types.js').SessionWorkspacePayload;
     }
   | { type: 'session_error'; sessionId: string; error: string }
+  | { type: 'session_status:snapshot'; sessionId: string; status: import('./session-types.js').StatusSnapshot }
+  | {
+      type: 'session_context:snapshot';
+      sessionId: string;
+      context: import('./session-types.js').SessionContextManifest | null;
+    }
+  | {
+      type: 'session_compact:preview';
+      sessionId: string;
+      compaction: import('./session-types.js').SessionCompaction;
+    }
+  | { type: 'history_records:snapshot'; projectId: string; records: import('./session-types.js').HistoryRecord[] }
   | { type: 'session:updated'; sessionId: string; session: import('./session-types.js').Session }
   | { type: 'session_message:new'; sessionId: string; message: import('./session-types.js').SessionMessage }
   | { type: 'session_run:created'; sessionId: string; run: import('./session-types.js').SessionRun }
@@ -1333,4 +1345,21 @@ export type WsClientEvent =
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
   | { type: 'agent.run.cancel'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.retry'; sessionId: string; agentId: string; runId: string }
+  | { type: 'session.command.run'; sessionId: string; command: string }
+  | { type: 'session.compact.apply'; sessionId: string; compactionId: string; appliedSummary: string; userEdited?: boolean }
+  | { type: 'session.compact.discard'; sessionId: string; compactionId: string }
+  | {
+      type: 'session.contract.save';
+      sessionId: string;
+      scope?: string | null;
+      risks?: string[];
+      acceptanceCriteria?: string[];
+    }
+  | {
+      type: 'history_records.filter';
+      projectId: string;
+      q?: string;
+      status?: import('./session-types.js').HistoryRecordStatus | 'all';
+      mode?: import('./session-types.js').SessionMode | 'all';
+    }
   | { type: 'message:send'; roomId: string; content: string; mentions?: string[] };

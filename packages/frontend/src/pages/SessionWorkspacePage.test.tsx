@@ -4,10 +4,14 @@ import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { api } from '../lib/api';
 import type { SessionWorkspacePayload } from '../lib/types';
 import type { WsServerEvent } from '../lib/ws';
-import { runSessionCommand, SessionWorkspacePage, shouldRefreshSessionWorkspace } from './SessionWorkspacePage';
+import {
+  getSnapshotNavigation,
+  runSessionCommand,
+  SessionWorkspacePage,
+  shouldRefreshSessionWorkspace,
+} from './SessionWorkspacePage';
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
@@ -31,43 +35,24 @@ test('project route renders Session shell loading state instead of old room UI',
   assert.doesNotMatch(html, /chat-panel/);
 });
 
-test('runSessionCommand returns compact preview from slash compact response', async () => {
-  const originalPreviewCompact = api.previewCompact;
-  let sentFocus = '';
-  api.previewCompact = async (_sessionId, input = {}) => {
-    sentFocus = input.focus ?? '';
-    return {
-      id: 'compact-1',
-      session_id: 'session-1',
-      strategy: 'focus',
-      focus_prompt: '保留 UI 决策',
-      preview_summary: 'Focus：保留 UI 决策',
-      applied_summary: null,
-      retained_refs: '[]',
-      dropped_refs: '[]',
-      risk_notes: null,
-      user_edited: 0,
-      status: 'previewed',
-      created_at: Date.now(),
-      applied_at: null,
-    };
-  };
-  try {
-    const result = await runSessionCommand('/compact focus: 保留 UI 决策', createCommandPayload(), {
-      sendMessage: () => undefined,
-    });
-    assert.equal(sentFocus, '保留 UI 决策');
-    assert.equal(result?.kind, 'compact');
-    if (result?.kind === 'compact') assert.equal(result.compaction.focus_prompt, '保留 UI 决策');
-  } finally {
-    api.previewCompact = originalPreviewCompact;
-  }
+test('runSessionCommand sends slash commands through websocket callback', () => {
+  const commands: Array<{ sessionId: string; command: string }> = [];
+  const result = runSessionCommand('/compact focus: 保留 UI 决策', createCommandPayload(), {
+    sendMessage: () => undefined,
+    runCommand: (message) => commands.push(message),
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(commands, [{ sessionId: 'session-1', command: '/compact focus: 保留 UI 决策' }]);
 });
 
-test('runSessionCommand treats empty history command as local no-op', async () => {
+test('runSessionCommand treats empty history command as local no-op', () => {
   let sent = false;
-  const result = await runSessionCommand('/history', createCommandPayload(), {
+  const result = runSessionCommand('/history', createCommandPayload(), {
     sendMessage: () => {
+      sent = true;
+    },
+    runCommand: () => {
       sent = true;
     },
   });
@@ -75,10 +60,11 @@ test('runSessionCommand treats empty history command as local no-op', async () =
   assert.equal(sent, false);
 });
 
-test('runSessionCommand sends normal messages through websocket callback', async () => {
+test('runSessionCommand sends normal messages through websocket callback', () => {
   const sent: Array<{ sessionId: string; content: string; agentId?: string }> = [];
-  const result = await runSessionCommand('继续实现', createCommandPayload(), {
+  const result = runSessionCommand('继续实现', createCommandPayload(), {
     sendMessage: (message) => sent.push(message),
+    runCommand: () => undefined,
   });
 
   assert.equal(result, null);
@@ -123,6 +109,21 @@ test('shouldRefreshSessionWorkspace does not refresh session run updates', () =>
   } as WsServerEvent;
 
   assert.equal(shouldRefreshSessionWorkspace(event), false);
+});
+
+test('getSnapshotNavigation replaces project route with active session route', () => {
+  assert.deepEqual(getSnapshotNavigation('project-1', 'session-2', undefined), {
+    to: '/projects/project-1/sessions/session-2',
+    replace: true,
+  });
+});
+
+test('getSnapshotNavigation pushes when websocket command switches sessions', () => {
+  assert.deepEqual(getSnapshotNavigation('project-1', 'session-2', 'session-1'), {
+    to: '/projects/project-1/sessions/session-2',
+    replace: false,
+  });
+  assert.equal(getSnapshotNavigation('project-1', 'session-1', 'session-1'), null);
 });
 
 function createCommandPayload(): SessionWorkspacePayload {
