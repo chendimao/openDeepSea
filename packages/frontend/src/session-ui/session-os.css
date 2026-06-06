@@ -457,10 +457,6 @@
   gap: 4px;
   min-width: 0;
 }
-.deepsea-agent-avatar-wrap {
-  position: relative;
-  display: inline-flex;
-}
 .deepsea-agent-avatar {
   position: relative;
   display: inline-grid;
@@ -510,52 +506,6 @@
 }
 .deepsea-agent-avatar--planner {
   color: var(--deepsea-primary);
-}
-.deepsea-agent-binding-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 80;
-  width: 220px;
-  border: 1px solid var(--deepsea-border);
-  border-radius: var(--deepsea-radius-lg);
-  background: color-mix(in srgb, var(--deepsea-surface) 96%, transparent);
-  box-shadow: var(--deepsea-shadow-soft);
-  padding: 4px;
-}
-.deepsea-agent-binding-popover button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  min-height: 42px;
-  border: 0;
-  border-radius: var(--deepsea-radius);
-  background: transparent;
-  color: var(--deepsea-text);
-  padding: 7px 8px;
-  text-align: left;
-}
-.deepsea-agent-binding-popover button:hover {
-  background: color-mix(in srgb, var(--deepsea-primary) 9%, transparent);
-  color: var(--deepsea-primary);
-}
-.deepsea-agent-binding-popover strong,
-.deepsea-agent-binding-popover em {
-  display: block;
-  overflow: hidden;
-  max-width: 160px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.deepsea-agent-binding-popover strong {
-  font-size: 12px;
-}
-.deepsea-agent-binding-popover em {
-  color: var(--deepsea-muted);
-  font-size: 10px;
-  font-style: normal;
 }
 .deepsea-pressure {
   width: 116px;

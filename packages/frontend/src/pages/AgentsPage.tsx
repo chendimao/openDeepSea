@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Bot, MessageCircleQuestion, Plus, RotateCcw, Save, Search, Trash2, Users } from 'lucide-react';
@@ -30,6 +30,7 @@ export function AgentsPage() {
   const [form, setForm] = useState<AgentInput>(EMPTY_FORM);
   const [mode, setMode] = useState<'edit' | 'conversation'>('edit');
   const [deleteReferences, setDeleteReferences] = useState<AgentReference[] | null>(null);
+  const consumedRequestedAgentRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
   const { data: agents = [], isLoading } = useQuery({
     queryKey: ['agents'],
@@ -48,17 +49,23 @@ export function AgentsPage() {
   }, [agents, query]);
   const requestedAgentGlobalId = searchParams.get('agentGlobalId');
   const requestedAgentId = searchParams.get('agentId');
+  const requestedAgentKey = requestedAgentGlobalId || requestedAgentId
+    ? `${requestedAgentGlobalId ?? ''}:${requestedAgentId ?? ''}`
+    : null;
 
   useEffect(() => {
-    const requestedAgent = agents.find((agent) =>
-      (requestedAgentGlobalId && agent.id === requestedAgentGlobalId) ||
-      (requestedAgentId && agent.agent_id === requestedAgentId),
-    );
-    if (requestedAgent && selectedId !== requestedAgent.id) {
-      setSelectedId(requestedAgent.id);
-      setIsCreatingNew(false);
-      setMode('edit');
-      return;
+    if (requestedAgentKey && consumedRequestedAgentRef.current !== requestedAgentKey) {
+      const requestedAgent = agents.find((agent) =>
+        (requestedAgentGlobalId && agent.id === requestedAgentGlobalId) ||
+        (requestedAgentId && agent.agent_id === requestedAgentId),
+      );
+      if (requestedAgent) {
+        consumedRequestedAgentRef.current = requestedAgentKey;
+        setSelectedId(requestedAgent.id);
+        setIsCreatingNew(false);
+        setMode('edit');
+        return;
+      }
     }
     if (selectedAgent) {
       setForm(agentToForm(selectedAgent));
@@ -70,7 +77,7 @@ export function AgentsPage() {
       return;
     }
     if (agents.length === 0 && selectedId) setSelectedId(null);
-  }, [agents, isCreatingNew, mode, requestedAgentGlobalId, requestedAgentId, selectedAgent, selectedId]);
+  }, [agents, isCreatingNew, mode, requestedAgentGlobalId, requestedAgentId, requestedAgentKey, selectedAgent, selectedId]);
 
   const create = useMutation({
     mutationFn: (input: AgentInput) => api.createAgent(cleanAgentInput(input)),

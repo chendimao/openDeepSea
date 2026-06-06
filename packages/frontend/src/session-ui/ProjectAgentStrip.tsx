@@ -1,12 +1,10 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Bot, ChevronDown, Settings } from 'lucide-react';
+import { Bot } from 'lucide-react';
 import { ProjectSettingsDialog } from '../components/SettingsDialogs';
 import { api } from '../lib/api';
 import type { Project, ProjectUsedRoomAgent } from '../lib/types';
 
 export function ProjectAgentStrip({ project }: { project: Project }): JSX.Element {
-  const [openAgentId, setOpenAgentId] = useState<string | null>(null);
   const { data } = useQuery({
     queryKey: ['project-used-agents', project.id],
     queryFn: () => api.getProjectUsedAgents(project.id),
@@ -31,75 +29,28 @@ export function ProjectAgentStrip({ project }: { project: Project }): JSX.Elemen
         <AgentAvatar
           key={`${agent.global_agent_id ?? agent.agent_id}`}
           agent={agent}
-          open={openAgentId === agent.agent_id}
-          onToggle={() => setOpenAgentId((current) => current === agent.agent_id ? null : agent.agent_id)}
         />
       ))}
     </div>
   );
 }
 
-function AgentAvatar({
-  agent,
-  open,
-  onToggle,
-}: {
+function AgentAvatar({ agent }: {
   agent: ProjectUsedRoomAgent;
-  open: boolean;
-  onToggle: () => void;
 }): JSX.Element {
-  const binding = agent.room_bindings[0];
-  const hasMultipleBindings = agent.room_bindings.length > 1;
   const title = `${agent.name} · ${backendLabel(agent.acp_backend)}`;
 
-  if (!hasMultipleBindings && binding) {
-    return (
-      <button
-        type="button"
-        className="deepsea-agent-avatar"
-        title={title}
-        aria-label={`设置 ${agent.name}`}
-        data-enabled={agent.acp_enabled ? 'true' : undefined}
-        onClick={() => openAgentSettings(agent)}
-      >
-        <span>{initial(agent.name)}</span>
-      </button>
-    );
-  }
-
   return (
-    <div className="deepsea-agent-avatar-wrap">
-      <button
-        type="button"
-        className="deepsea-agent-avatar"
-        title={title}
-        aria-label={`选择 ${agent.name} 的群聊设置`}
-        aria-expanded={open}
-        data-enabled={agent.acp_enabled ? 'true' : undefined}
-        onClick={onToggle}
-      >
-        <span>{initial(agent.name)}</span>
-        <ChevronDown aria-hidden="true" />
-      </button>
-      {open && (
-        <div className="deepsea-agent-binding-popover" role="menu" aria-label={`${agent.name} 设置位置`}>
-          {agent.room_bindings.map((item) => (
-            <button
-              type="button"
-              key={item.room_agent_id}
-              role="menuitem"
-              onClick={() => openAgentSettings(agent)}
-            >
-              <span>
-                <strong>{item.room_name}</strong>
-                <em>{backendLabel(item.acp_backend)}</em>
-              </span>
-              <Settings aria-hidden="true" />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      className="deepsea-agent-avatar"
+      title={title}
+      aria-label={`设置 ${agent.name}`}
+      data-enabled={agent.acp_enabled ? 'true' : undefined}
+      onClick={() => openAgentSettings(agent)}
+    >
+      <span>{initial(agent.name)}</span>
+    </button>
   );
 }
 
