@@ -76,6 +76,15 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /当前状态/);
 });
 
+test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
+  const { activeSessions: _activeSessions, ...legacyPayload } = createPayload();
+
+  const html = renderSessionShell(legacyPayload as unknown as SessionWorkspacePayload);
+
+  assert.match(html, /活跃会话/);
+  assert.match(html, /SessionOS 迁移/);
+});
+
 test('SessionShell renders empty run state without fake run values', () => {
   const payload = createPayload();
   payload.activeSession.runs = [];

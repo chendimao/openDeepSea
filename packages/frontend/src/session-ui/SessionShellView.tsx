@@ -323,14 +323,14 @@ function ContextPressure({ pressure, compact = false }: { pressure: number; comp
 }
 
 function ActiveSessionsRail({
-  sessions,
+  sessions = [],
   currentSession,
   currentProjectId,
   currentProjectName,
   onCommand,
   onOpenSession,
 }: {
-  sessions: ActiveSessionSummary[];
+  sessions?: ActiveSessionSummary[];
   currentSession: Session;
   currentProjectId: string;
   currentProjectName: string;
@@ -351,7 +351,7 @@ function ActiveSessionsRail({
       session.project_name,
       session.project_path,
       session.latest_event_summary ?? '',
-    ].some((value) => value.toLowerCase().includes(normalizedQuery));
+    ].some((value) => (value ?? '').toLowerCase().includes(normalizedQuery));
   });
 
   return (
