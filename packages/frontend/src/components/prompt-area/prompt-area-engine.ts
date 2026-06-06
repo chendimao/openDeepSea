@@ -4,6 +4,12 @@
  */
 import type { Segment, ChipSegment, TriggerConfig, TriggerPosition, ActiveTrigger } from './types'
 
+type EditableChipSuggestion = {
+  value: string
+  label: string
+  data?: unknown
+}
+
 // ---------------------------------------------------------------------------
 // Serialization
 // ---------------------------------------------------------------------------
@@ -265,6 +271,75 @@ export function revertChipAtIndex(
     ...segments.slice(index + 1),
   ]
   return { segments: mergeAdjacentTextSegments(result), revertedText }
+}
+
+export function commitEditedChip(
+  segments: Segment[],
+  index: number,
+  editedText: string,
+  suggestions: EditableChipSuggestion[],
+): { segments: Segment[]; committed: Segment; cursorOffset: number } | null {
+  if (index < 0 || index >= segments.length) return null
+  const original = segments[index]
+  if (original.type !== 'chip') return null
+
+  const normalizedText = normalizeEditedChipText(editedText, original.trigger)
+  if (!normalizedText) {
+    const committed: Segment = { type: 'text', text: original.trigger }
+    return replaceChipWithCommittedSegment(segments, index, committed)
+  }
+
+  const match = suggestions.find((suggestion) => {
+    return suggestion.label === normalizedText || suggestion.value === normalizedText
+  })
+
+  if (match) {
+    const committed: Segment = {
+      type: 'chip',
+      trigger: original.trigger,
+      value: match.value,
+      displayText: match.label,
+      ...(match.data !== undefined ? { data: match.data } : {}),
+      ...(original.autoResolved ? { autoResolved: true } : {}),
+    }
+    return replaceChipWithCommittedSegment(segments, index, committed)
+  }
+
+  const committed: Segment = { type: 'text', text: `${original.trigger}${normalizedText}` }
+  return replaceChipWithCommittedSegment(segments, index, committed)
+}
+
+export async function commitEditedChipWithTriggerSearch(
+  segments: Segment[],
+  index: number,
+  editedText: string,
+  triggers: TriggerConfig[],
+  options?: { signal?: AbortSignal },
+): Promise<{ segments: Segment[]; committed: Segment; cursorOffset: number } | null> {
+  if (index < 0 || index >= segments.length) return null
+  const original = segments[index]
+  if (original.type !== 'chip') return null
+
+  const normalizedText = normalizeEditedChipText(editedText, original.trigger)
+  const trigger = triggers.find((config) => config.char === original.trigger)
+  if (!trigger?.onSearch || !normalizedText) {
+    return commitEditedChip(segments, index, editedText, [])
+  }
+
+  const fallbackController = new AbortController()
+  const foundSuggestions = await trigger.onSearch(normalizedText, {
+    signal: options?.signal ?? fallbackController.signal,
+  })
+  const suggestions = foundSuggestions.map((suggestion) => {
+    const selectedLabel = trigger.onSelect?.(suggestion) || suggestion.label
+    return {
+      value: suggestion.value,
+      label: selectedLabel,
+      data: suggestion.data,
+    }
+  })
+
+  return commitEditedChip(segments, index, editedText, suggestions)
 }
 
 // ---------------------------------------------------------------------------
@@ -650,4 +725,35 @@ export function mergeAdjacentTextSegments(segments: Segment[]): Segment[] {
   }
 
   return result
+}
+
+function normalizeEditedChipText(text: string, trigger: string): string {
+  const trimmed = text.trim()
+  return trimmed.startsWith(trigger) ? trimmed.slice(trigger.length).trim() : trimmed
+}
+
+function replaceChipWithCommittedSegment(
+  segments: Segment[],
+  index: number,
+  committed: Segment,
+): { segments: Segment[]; committed: Segment; cursorOffset: number } {
+  const nextSegments = mergeAdjacentTextSegments([
+    ...segments.slice(0, index),
+    committed,
+    ...segments.slice(index + 1),
+  ])
+
+  let cursorOffset = 0
+  for (let i = 0; i < index; i++) {
+    const segment = segments[i]
+    cursorOffset += segment.type === 'text' ? segment.text.length : segment.trigger.length + segment.displayText.length
+  }
+  cursorOffset +=
+    committed.type === 'text' ? committed.text.length : committed.trigger.length + committed.displayText.length
+
+  return {
+    segments: nextSegments,
+    committed,
+    cursorOffset,
+  }
 }

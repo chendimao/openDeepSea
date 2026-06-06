@@ -373,3 +373,48 @@ test('searchWorkspaceFiles excludes extra ignored dirs', async () => {
   const withoutExtra = await searchWorkspaceFiles(root, 'target', '', []);
   assert.ok(withoutExtra.entries.some((entry) => entry.path.startsWith('vendor/')));
 });
+
+test('searchWorkspaceFiles includes matching directories', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openclaw-room-ws-dir-match-'));
+  mkdirSync(join(root, 'my-folder'), { recursive: true });
+  writeFileSync(join(root, 'my-folder', 'file.txt'), 'content');
+  writeFileSync(join(root, 'my-file.txt'), 'content');
+
+  const results = await searchWorkspaceFiles(root, 'my-', '', []);
+  const dirs = results.entries.filter((entry) => entry.type === 'directory');
+  const files = results.entries.filter((entry) => entry.type === 'file');
+
+  assert.ok(dirs.length >= 1, 'should include matching directories');
+  assert.ok(dirs.some((entry) => entry.name === 'my-folder'), 'should match my-folder directory');
+  assert.ok(files.some((entry) => entry.name === 'my-file.txt'), 'should match my-file.txt');
+});
+
+test('searchWorkspaceFiles supports path-like queries from the project root', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openclaw-room-ws-path-query-'));
+  mkdirSync(join(root, 'docs', 'superpowers'), { recursive: true });
+  writeFileSync(join(root, 'docs', 'super-guide.md'), 'content');
+  writeFileSync(join(root, 'super-root.md'), 'content');
+
+  const results = await searchWorkspaceFiles(root, 'docs/super', '', []);
+
+  assert.deepEqual(
+    results.entries.map((entry) => entry.path),
+    ['docs/super-guide.md', 'docs/superpowers'],
+  );
+  assert.equal(results.entries.some((entry) => entry.path === 'super-root.md'), false);
+});
+
+test('searchWorkspaceFiles supports path-like queries inside the current workspace path', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'openclaw-room-ws-scoped-path-query-'));
+  mkdirSync(join(root, 'packages', 'frontend', 'src'), { recursive: true });
+  mkdirSync(join(root, 'src'), { recursive: true });
+  writeFileSync(join(root, 'packages', 'frontend', 'src', 'App.tsx'), 'content');
+  writeFileSync(join(root, 'src', 'App.tsx'), 'content');
+
+  const results = await searchWorkspaceFiles(root, 'src/App', 'packages/frontend', []);
+
+  assert.deepEqual(
+    results.entries.map((entry) => entry.path),
+    ['packages/frontend/src/App.tsx'],
+  );
+});

@@ -347,12 +347,18 @@ export async function searchWorkspaceFiles(
   inputPath = '',
   extraIgnoredDirs: string[] = [],
 ): Promise<WorkspaceSearchResponse> {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
+  const searchQuery = parseWorkspaceSearchQuery(query);
+  if (!searchQuery.rawQuery) {
     throw workspaceFileError('WORKSPACE_SEARCH_QUERY_INVALID');
   }
 
-  const resolved = await resolveWorkspacePath(projectPath, inputPath);
+  const baseResolved = await resolveWorkspacePath(projectPath, inputPath);
+  ensureWorkspacePathAllowed(baseResolved.relativePath, baseResolved.symlinkTargetRelativePath);
+
+  const searchRootPath = joinRelativePath(baseResolved.relativePath, searchQuery.directoryPath);
+  const resolved = searchRootPath === baseResolved.relativePath
+    ? baseResolved
+    : await resolveWorkspacePath(projectPath, searchRootPath);
   ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
 
   const rootStats = await lstat(resolved.absolutePath);
@@ -440,13 +446,16 @@ export async function searchWorkspaceFiles(
 
         visitedFiles += 1;
 
-        if (name.toLowerCase().includes(normalizedQuery)) {
+        if (matchesWorkspaceSearchEntry(name, relativeEntryPath, searchQuery.nameQuery)) {
           results.push({ path: relativeEntryPath, name, type: 'file' });
         }
         continue;
       }
 
       if (entryStats.isDirectory()) {
+        if (matchesWorkspaceSearchEntry(name, relativeEntryPath, searchQuery.nameQuery)) {
+          results.push({ path: relativeEntryPath, name, type: 'directory' });
+        }
         if (current.depth < WORKSPACE_SEARCH_MAX_DEPTH) {
           queue.push({
             absolutePath: absoluteEntryPath,
@@ -461,7 +470,7 @@ export async function searchWorkspaceFiles(
 
       visitedFiles += 1;
 
-      if (name.toLowerCase().includes(normalizedQuery)) {
+      if (matchesWorkspaceSearchEntry(name, relativeEntryPath, searchQuery.nameQuery)) {
         results.push({ path: relativeEntryPath, name, type: 'file' });
       }
     }
@@ -475,6 +484,27 @@ export async function searchWorkspaceFiles(
     entries: results.slice(0, WORKSPACE_SEARCH_LIMIT),
     truncated,
   };
+}
+
+function parseWorkspaceSearchQuery(query: string): { rawQuery: string; directoryPath: string; nameQuery: string } {
+  const rawQuery = query.trim().replaceAll('\\', '/');
+  if (!rawQuery) return { rawQuery: '', directoryPath: '', nameQuery: '' };
+
+  const slashIndex = rawQuery.lastIndexOf('/');
+  if (slashIndex < 0) {
+    return { rawQuery, directoryPath: '', nameQuery: rawQuery.toLowerCase() };
+  }
+
+  return {
+    rawQuery,
+    directoryPath: normalizeWorkspacePath(rawQuery.slice(0, slashIndex)),
+    nameQuery: rawQuery.slice(slashIndex + 1).trim().toLowerCase(),
+  };
+}
+
+function matchesWorkspaceSearchEntry(name: string, relativePath: string, nameQuery: string): boolean {
+  if (!nameQuery) return true;
+  return name.toLowerCase().includes(nameQuery) || relativePath.toLowerCase().includes(nameQuery);
 }
 
 function normalizeIgnoredPath(inputPath: string): string {

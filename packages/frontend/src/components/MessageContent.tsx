@@ -1,6 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { AgentTimeline, AgentTimelineItem } from './AgentTimeline';
+import {
+  isStructuredJsonObject,
+  StructuredJsonTree,
+  type StructuredJsonObject,
+  type StructuredJsonValue,
+} from './structuredJson';
 import { useI18n } from '../lib/i18n';
 import type { Agent, MessageTrace, RoomAgent, Task } from '../lib/types';
 import { buildAgentTranscript, type AgentTranscriptModel } from './agent-timeline/transcript';
@@ -9,29 +15,10 @@ type MessagePart =
   | { type: 'text'; value: string }
   | { type: 'code'; value: string; language: string };
 
-type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
-type JsonObject = { [key: string]: JsonValue };
+type JsonValue = StructuredJsonValue;
+type JsonObject = StructuredJsonObject;
 
 const fencePattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
-
-const jsonFieldLabels: Record<string, string> = {
-  task_readiness: '任务准备状态',
-  task_execution: '任务执行',
-  state: '状态',
-  status: '状态',
-  summary: '摘要',
-  reason: '原因',
-  next_steps: '下一步',
-  agent_id: '智能体',
-  goal: '目标',
-  ready: '是否就绪',
-  confidence: '置信度',
-  title: '标题',
-  description: '描述',
-  missing_questions: '缺失问题',
-  recommended_mode: '推荐模式',
-  execution_intent: '执行意图',
-};
 
 const jsonValueLabels: Record<string, string> = {
   formal_workflow: '正式工作流',
@@ -451,7 +438,7 @@ function JsonBlock({
           <TaskReadinessSummary readiness={taskReadiness} />
         ) : (
           <div className="json-tree" aria-label={t('message.jsonTreeAria')}>
-            <JsonTree value={data} />
+            <StructuredJsonTree value={data} />
           </div>
         )
       ) : (
@@ -498,15 +485,15 @@ function JsonMetric({ label, value }: { label: string; value: string }): JSX.Ele
 }
 
 function getTaskReadiness(data: JsonValue): JsonObject | null {
-  if (!isJsonObject(data)) return null;
+  if (!isStructuredJsonObject(data)) return null;
   const value = data.task_readiness;
-  return isJsonObject(value) ? value : null;
+  return isStructuredJsonObject(value) ? value : null;
 }
 
 function getTaskExecution(data: JsonValue): JsonObject | null {
-  if (!isJsonObject(data)) return null;
+  if (!isStructuredJsonObject(data)) return null;
   const value = data.task_execution;
-  return isJsonObject(value) ? value : null;
+  return isStructuredJsonObject(value) ? value : null;
 }
 
 function shouldHideWorkflowJsonBlock(
@@ -517,67 +504,6 @@ function shouldHideWorkflowJsonBlock(
     return true;
   }
   return options.suppressTaskExecutionSummary && Boolean(getTaskExecution(data));
-}
-
-function JsonTree({ value }: { value: JsonValue }): JSX.Element {
-  if (Array.isArray(value)) {
-    if (value.length === 0) return <span className="json-empty">[]</span>;
-    return (
-      <ol className="json-tree-list is-array">
-        {value.map((item, index) => (
-          <li key={index}>
-            <span className="json-index">{index}</span>
-            <JsonTree value={item} />
-          </li>
-        ))}
-      </ol>
-    );
-  }
-
-  if (isJsonObject(value)) {
-    const entries = Object.entries(value);
-    if (entries.length === 0) return <span className="json-empty">{'{}'}</span>;
-    return (
-      <dl className="json-tree-list">
-        {entries.map(([key, entryValue]) => (
-          <div key={key} className={`json-tree-row ${getJsonTreeRowClass(entryValue)}`}>
-            <dt>
-              <span>{jsonFieldLabels[key] ?? key}</span>
-              {jsonFieldLabels[key] && <small>{key}</small>}
-            </dt>
-            <dd><JsonTree value={entryValue} /></dd>
-          </div>
-        ))}
-      </dl>
-    );
-  }
-
-  return <JsonPrimitive value={value} />;
-}
-
-function getJsonTreeRowClass(value: JsonValue): string {
-  if (Array.isArray(value) || isJsonObject(value)) return 'is-nested';
-  if (typeof value === 'string' && getTextDisplayWidth(value) > 24) return 'is-long';
-  return 'is-compact';
-}
-
-function getTextDisplayWidth(value: string): number {
-  return Array.from(value).reduce((width, character) => (
-    width + (character.charCodeAt(0) > 255 ? 2 : 1)
-  ), 0);
-}
-
-function JsonPrimitive({ value }: { value: Exclude<JsonValue, JsonValue[] | JsonObject> }): JSX.Element {
-  if (value === null) return <span className="json-primitive is-null">null</span>;
-  if (typeof value === 'boolean') {
-    return <span className="json-primitive is-boolean">{value ? '是' : '否'}</span>;
-  }
-  if (typeof value === 'number') return <span className="json-primitive is-number">{String(value)}</span>;
-  return <span className="json-primitive is-string">{value}</span>;
-}
-
-function isJsonObject(value: JsonValue): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function formatConfidence(value: number): string {

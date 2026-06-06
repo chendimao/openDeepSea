@@ -1,0 +1,517 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner "项目工作区" [ref=e4]:
+      - link "深海指挥中心" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "深海指挥中心" [ref=e7]
+        - generic [ref=e20]:
+          - generic [ref=e21]: 深海指挥中心
+          - generic [ref=e22]: 本地智能体控制台
+      - navigation "项目工作区" [ref=e23]:
+        - link "开发" [ref=e24] [cursor=pointer]:
+          - /url: /
+          - img [ref=e25]
+          - generic [ref=e28]: 开发
+        - link "聊天" [ref=e29] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e30]
+          - generic [ref=e32]: 聊天
+        - link "智能体" [ref=e33] [cursor=pointer]:
+          - /url: /agents
+          - img [ref=e34]
+          - generic [ref=e37]: 智能体
+        - link "技能" [ref=e38] [cursor=pointer]:
+          - /url: /skills
+          - img [ref=e39]
+          - generic [ref=e42]: 技能
+        - link "资源库" [ref=e43] [cursor=pointer]:
+          - /url: /files
+          - img [ref=e44]
+          - generic [ref=e46]: 资源库
+        - link "测试" [ref=e47] [cursor=pointer]:
+          - /url: /test
+          - img [ref=e48]
+          - generic [ref=e51]: 测试
+      - generic [ref=e52]:
+        - button "搜索 / 快速命令" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+          - generic [ref=e57]: 搜索 / 快速命令
+          - generic [ref=e58]: ⌘K
+        - button "深海指挥中心" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+          - generic [ref=e63]: 深海指挥中心
+          - img [ref=e64]
+        - button "新增项目" [ref=e66] [cursor=pointer]:
+          - img [ref=e67]
+        - button "系统设置" [ref=e68] [cursor=pointer]:
+          - img [ref=e69]
+    - main [ref=e73]:
+      - generic [ref=e74]:
+        - complementary "项目列表" [ref=e75]:
+          - generic [ref=e76]:
+            - generic [ref=e77]: 项目
+            - button "新增项目" [ref=e78] [cursor=pointer]:
+              - img [ref=e79]
+          - generic [ref=e80]:
+            - img [ref=e81]
+            - textbox "搜索项目" [ref=e84]
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - button "深海指挥中心" [ref=e87] [cursor=pointer]:
+                - img [ref=e88]
+                - generic [ref=e90]: 深海指挥中心
+                - img [ref=e91]
+              - button "深海指挥中心 操作" [ref=e93] [cursor=pointer]:
+                - img [ref=e94]
+            - generic [ref=e98]:
+              - button "Superpowers review runtime project" [ref=e99] [cursor=pointer]:
+                - img [ref=e100]
+                - generic [ref=e102]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e103] [cursor=pointer]:
+                - img [ref=e104]
+            - generic [ref=e108]:
+              - button "Superpowers review runtime project" [ref=e109] [cursor=pointer]:
+                - img [ref=e110]
+                - generic [ref=e112]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e113] [cursor=pointer]:
+                - img [ref=e114]
+            - generic [ref=e118]:
+              - button "消息意图自动路由复测 1780146034" [ref=e119] [cursor=pointer]:
+                - img [ref=e120]
+                - generic [ref=e122]: 消息意图自动路由复测 1780146034
+              - button "消息意图自动路由复测 1780146034 操作" [ref=e123] [cursor=pointer]:
+                - img [ref=e124]
+            - generic [ref=e128]:
+              - button "消息意图自动路由浏览器测试 1780145481" [ref=e129] [cursor=pointer]:
+                - img [ref=e130]
+                - generic [ref=e132]: 消息意图自动路由浏览器测试 1780145481
+              - button "消息意图自动路由浏览器测试 1780145481 操作" [ref=e133] [cursor=pointer]:
+                - img [ref=e134]
+            - generic [ref=e138]:
+              - button "Superpowers review runtime project" [ref=e139] [cursor=pointer]:
+                - img [ref=e140]
+                - generic [ref=e142]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e143] [cursor=pointer]:
+                - img [ref=e144]
+            - generic [ref=e148]:
+              - button "Superpowers review runtime project" [ref=e149] [cursor=pointer]:
+                - img [ref=e150]
+                - generic [ref=e152]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e153] [cursor=pointer]:
+                - img [ref=e154]
+            - generic [ref=e158]:
+              - button "Superpowers review runtime project" [ref=e159] [cursor=pointer]:
+                - img [ref=e160]
+                - generic [ref=e162]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e163] [cursor=pointer]:
+                - img [ref=e164]
+            - generic [ref=e168]:
+              - button "Superpowers review runtime project" [ref=e169] [cursor=pointer]:
+                - img [ref=e170]
+                - generic [ref=e172]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e173] [cursor=pointer]:
+                - img [ref=e174]
+            - generic [ref=e178]:
+              - button "Superpowers review runtime project" [ref=e179] [cursor=pointer]:
+                - img [ref=e180]
+                - generic [ref=e182]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e183] [cursor=pointer]:
+                - img [ref=e184]
+            - generic [ref=e188]:
+              - button "Superpowers review runtime project" [ref=e189] [cursor=pointer]:
+                - img [ref=e190]
+                - generic [ref=e192]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e193] [cursor=pointer]:
+                - img [ref=e194]
+            - generic [ref=e198]:
+              - button "Superpowers review runtime project" [ref=e199] [cursor=pointer]:
+                - img [ref=e200]
+                - generic [ref=e202]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e203] [cursor=pointer]:
+                - img [ref=e204]
+            - generic [ref=e208]:
+              - button "Superpowers review runtime project" [ref=e209] [cursor=pointer]:
+                - img [ref=e210]
+                - generic [ref=e212]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e213] [cursor=pointer]:
+                - img [ref=e214]
+            - generic [ref=e218]:
+              - button "Superpowers review runtime project" [ref=e219] [cursor=pointer]:
+                - img [ref=e220]
+                - generic [ref=e222]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e223] [cursor=pointer]:
+                - img [ref=e224]
+            - generic [ref=e228]:
+              - button "Superpowers review runtime project" [ref=e229] [cursor=pointer]:
+                - img [ref=e230]
+                - generic [ref=e232]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e233] [cursor=pointer]:
+                - img [ref=e234]
+            - generic [ref=e238]:
+              - button "Superpowers review runtime project" [ref=e239] [cursor=pointer]:
+                - img [ref=e240]
+                - generic [ref=e242]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e243] [cursor=pointer]:
+                - img [ref=e244]
+            - generic [ref=e248]:
+              - button "任务工作区合并浏览器测试 1780133715" [ref=e249] [cursor=pointer]:
+                - img [ref=e250]
+                - generic [ref=e252]: 任务工作区合并浏览器测试 1780133715
+              - button "任务工作区合并浏览器测试 1780133715 操作" [ref=e253] [cursor=pointer]:
+                - img [ref=e254]
+            - generic [ref=e258]:
+              - button "M1-M4 完整闭环浏览器测试 1780129193852" [ref=e259] [cursor=pointer]:
+                - img [ref=e260]
+                - generic [ref=e262]: M1-M4 完整闭环浏览器测试 1780129193852
+              - button "M1-M4 完整闭环浏览器测试 1780129193852 操作" [ref=e263] [cursor=pointer]:
+                - img [ref=e264]
+            - generic [ref=e268]:
+              - button "M1-M4 完整闭环浏览器测试 1780128968350" [ref=e269] [cursor=pointer]:
+                - img [ref=e270]
+                - generic [ref=e272]: M1-M4 完整闭环浏览器测试 1780128968350
+              - button "M1-M4 完整闭环浏览器测试 1780128968350 操作" [ref=e273] [cursor=pointer]:
+                - img [ref=e274]
+            - generic [ref=e278]:
+              - button "M1-M4 完整闭环浏览器测试 1780128844098" [ref=e279] [cursor=pointer]:
+                - img [ref=e280]
+                - generic [ref=e282]: M1-M4 完整闭环浏览器测试 1780128844098
+              - button "M1-M4 完整闭环浏览器测试 1780128844098 操作" [ref=e283] [cursor=pointer]:
+                - img [ref=e284]
+            - generic [ref=e288]:
+              - button "Create Task No Dispatch Browser 1780116982784" [ref=e289] [cursor=pointer]:
+                - img [ref=e290]
+                - generic [ref=e292]: Create Task No Dispatch Browser 1780116982784
+              - button "Create Task No Dispatch Browser 1780116982784 操作" [ref=e293] [cursor=pointer]:
+                - img [ref=e294]
+            - generic [ref=e298]:
+              - button "Ask User No Dispatch Browser 1780116332506" [ref=e299] [cursor=pointer]:
+                - img [ref=e300]
+                - generic [ref=e302]: Ask User No Dispatch Browser 1780116332506
+              - button "Ask User No Dispatch Browser 1780116332506 操作" [ref=e303] [cursor=pointer]:
+                - img [ref=e304]
+            - generic [ref=e308]:
+              - button "Terminal Activity Browser 1780115407009" [ref=e309] [cursor=pointer]:
+                - img [ref=e310]
+                - generic [ref=e312]: Terminal Activity Browser 1780115407009
+              - button "Terminal Activity Browser 1780115407009 操作" [ref=e313] [cursor=pointer]:
+                - img [ref=e314]
+            - generic [ref=e318]:
+              - button "Terminal Explicit Browser 1780114705765" [ref=e319] [cursor=pointer]:
+                - img [ref=e320]
+                - generic [ref=e322]: Terminal Explicit Browser 1780114705765
+              - button "Terminal Explicit Browser 1780114705765 操作" [ref=e323] [cursor=pointer]:
+                - img [ref=e324]
+            - generic [ref=e328]:
+              - button "Switch Task Browser 1780113695" [ref=e329] [cursor=pointer]:
+                - img [ref=e330]
+                - generic [ref=e332]: Switch Task Browser 1780113695
+              - button "Switch Task Browser 1780113695 操作" [ref=e333] [cursor=pointer]:
+                - img [ref=e334]
+            - generic [ref=e338]:
+              - button "Chat Layer Browser 1780112910" [ref=e339] [cursor=pointer]:
+                - img [ref=e340]
+                - generic [ref=e342]: Chat Layer Browser 1780112910
+              - button "Chat Layer Browser 1780112910 操作" [ref=e343] [cursor=pointer]:
+                - img [ref=e344]
+            - generic [ref=e348]:
+              - button "M3 层过滤浏览器验收 1780111539" [ref=e349] [cursor=pointer]:
+                - img [ref=e350]
+                - generic [ref=e352]: M3 层过滤浏览器验收 1780111539
+              - button "M3 层过滤浏览器验收 1780111539 操作" [ref=e353] [cursor=pointer]:
+                - img [ref=e354]
+            - generic [ref=e358]:
+              - button "AI Task OS 浏览器验收 1780110855" [ref=e359] [cursor=pointer]:
+                - img [ref=e360]
+                - generic [ref=e362]: AI Task OS 浏览器验收 1780110855
+              - button "AI Task OS 浏览器验收 1780110855 操作" [ref=e363] [cursor=pointer]:
+                - img [ref=e364]
+            - generic [ref=e368]:
+              - button "Terminal Active Smoke 1780110217" [ref=e369] [cursor=pointer]:
+                - img [ref=e370]
+                - generic [ref=e372]: Terminal Active Smoke 1780110217
+              - button "Terminal Active Smoke 1780110217 操作" [ref=e373] [cursor=pointer]:
+                - img [ref=e374]
+            - generic [ref=e378]:
+              - button "Browser UI Task OS 589474" [ref=e379] [cursor=pointer]:
+                - img [ref=e380]
+                - generic [ref=e382]: Browser UI Task OS 589474
+              - button "Browser UI Task OS 589474 操作" [ref=e383] [cursor=pointer]:
+                - img [ref=e384]
+            - generic [ref=e388]:
+              - button "Runtime Diff Smoke 192342" [ref=e389] [cursor=pointer]:
+                - img [ref=e390]
+                - generic [ref=e392]: Runtime Diff Smoke 192342
+              - button "Runtime Diff Smoke 192342 操作" [ref=e393] [cursor=pointer]:
+                - img [ref=e394]
+            - generic [ref=e398]:
+              - button "Browser Autocreate 024302" [ref=e399] [cursor=pointer]:
+                - img [ref=e400]
+                - generic [ref=e402]: Browser Autocreate 024302
+              - button "Browser Autocreate 024302 操作" [ref=e403] [cursor=pointer]:
+                - img [ref=e404]
+            - generic [ref=e408]:
+              - button "API Autocreate 024236" [ref=e409] [cursor=pointer]:
+                - img [ref=e410]
+                - generic [ref=e412]: API Autocreate 024236
+              - button "API Autocreate 024236 操作" [ref=e413] [cursor=pointer]:
+                - img [ref=e414]
+            - generic [ref=e418]:
+              - button "AI Task OS Activate Smoke 024111" [ref=e419] [cursor=pointer]:
+                - img [ref=e420]
+                - generic [ref=e422]: AI Task OS Activate Smoke 024111
+              - button "AI Task OS Activate Smoke 024111 操作" [ref=e423] [cursor=pointer]:
+                - img [ref=e424]
+            - generic [ref=e428]:
+              - button "AI Task OS Final Smoke 023048" [ref=e429] [cursor=pointer]:
+                - img [ref=e430]
+                - generic [ref=e432]: AI Task OS Final Smoke 023048
+              - button "AI Task OS Final Smoke 023048 操作" [ref=e433] [cursor=pointer]:
+                - img [ref=e434]
+            - generic [ref=e438]:
+              - button "AI Task OS Browser Smoke 022342" [ref=e439] [cursor=pointer]:
+                - img [ref=e440]
+                - generic [ref=e442]: AI Task OS Browser Smoke 022342
+              - button "AI Task OS Browser Smoke 022342 操作" [ref=e443] [cursor=pointer]:
+                - img [ref=e444]
+            - generic [ref=e448]:
+              - button "Superpowers review runtime project" [ref=e449] [cursor=pointer]:
+                - img [ref=e450]
+                - generic [ref=e452]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e453] [cursor=pointer]:
+                - img [ref=e454]
+            - generic [ref=e458]:
+              - button "Superpowers review runtime project" [ref=e459] [cursor=pointer]:
+                - img [ref=e460]
+                - generic [ref=e462]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e463] [cursor=pointer]:
+                - img [ref=e464]
+            - generic [ref=e468]:
+              - button "Superpowers review runtime project" [ref=e469] [cursor=pointer]:
+                - img [ref=e470]
+                - generic [ref=e472]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e473] [cursor=pointer]:
+                - img [ref=e474]
+            - generic [ref=e478]:
+              - button "Superpowers review runtime project" [ref=e479] [cursor=pointer]:
+                - img [ref=e480]
+                - generic [ref=e482]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e483] [cursor=pointer]:
+                - img [ref=e484]
+            - generic [ref=e488]:
+              - button "Superpowers review runtime project" [ref=e489] [cursor=pointer]:
+                - img [ref=e490]
+                - generic [ref=e492]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e493] [cursor=pointer]:
+                - img [ref=e494]
+            - generic [ref=e498]:
+              - button "Superpowers review runtime project" [ref=e499] [cursor=pointer]:
+                - img [ref=e500]
+                - generic [ref=e502]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e503] [cursor=pointer]:
+                - img [ref=e504]
+            - generic [ref=e508]:
+              - button "卫统数据采集及上报" [ref=e509] [cursor=pointer]:
+                - img [ref=e510]
+                - generic [ref=e512]: 卫统数据采集及上报
+              - button "卫统数据采集及上报 操作" [ref=e513] [cursor=pointer]:
+                - img [ref=e514]
+            - generic [ref=e518]:
+              - button "Superpowers review runtime project" [ref=e519] [cursor=pointer]:
+                - img [ref=e520]
+                - generic [ref=e522]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e523] [cursor=pointer]:
+                - img [ref=e524]
+            - generic [ref=e528]:
+              - button "Superpowers review runtime project" [ref=e529] [cursor=pointer]:
+                - img [ref=e530]
+                - generic [ref=e532]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e533] [cursor=pointer]:
+                - img [ref=e534]
+            - generic [ref=e538]:
+              - button "Superpowers review runtime project" [ref=e539] [cursor=pointer]:
+                - img [ref=e540]
+                - generic [ref=e542]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e543] [cursor=pointer]:
+                - img [ref=e544]
+            - generic [ref=e548]:
+              - button "Superpowers review runtime project" [ref=e549] [cursor=pointer]:
+                - img [ref=e550]
+                - generic [ref=e552]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e553] [cursor=pointer]:
+                - img [ref=e554]
+            - generic [ref=e558]:
+              - button "Superpowers review runtime project" [ref=e559] [cursor=pointer]:
+                - img [ref=e560]
+                - generic [ref=e562]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e563] [cursor=pointer]:
+                - img [ref=e564]
+            - generic [ref=e568]:
+              - button "Superpowers review runtime project" [ref=e569] [cursor=pointer]:
+                - img [ref=e570]
+                - generic [ref=e572]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e573] [cursor=pointer]:
+                - img [ref=e574]
+            - generic [ref=e578]:
+              - button "Superpowers review runtime project" [ref=e579] [cursor=pointer]:
+                - img [ref=e580]
+                - generic [ref=e582]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e583] [cursor=pointer]:
+                - img [ref=e584]
+            - generic [ref=e588]:
+              - button "Superpowers review runtime project" [ref=e589] [cursor=pointer]:
+                - img [ref=e590]
+                - generic [ref=e592]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e593] [cursor=pointer]:
+                - img [ref=e594]
+            - generic [ref=e598]:
+              - button "Superpowers review runtime project" [ref=e599] [cursor=pointer]:
+                - img [ref=e600]
+                - generic [ref=e602]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e603] [cursor=pointer]:
+                - img [ref=e604]
+            - generic [ref=e608]:
+              - button "Superpowers review runtime project" [ref=e609] [cursor=pointer]:
+                - img [ref=e610]
+                - generic [ref=e612]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e613] [cursor=pointer]:
+                - img [ref=e614]
+            - generic [ref=e618]:
+              - button "Superpowers review runtime project" [ref=e619] [cursor=pointer]:
+                - img [ref=e620]
+                - generic [ref=e622]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e623] [cursor=pointer]:
+                - img [ref=e624]
+            - generic [ref=e628]:
+              - button "Superpowers review runtime project" [ref=e629] [cursor=pointer]:
+                - img [ref=e630]
+                - generic [ref=e632]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e633] [cursor=pointer]:
+                - img [ref=e634]
+            - generic [ref=e638]:
+              - button "Superpowers review runtime project" [ref=e639] [cursor=pointer]:
+                - img [ref=e640]
+                - generic [ref=e642]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e643] [cursor=pointer]:
+                - img [ref=e644]
+            - generic [ref=e648]:
+              - button "Superpowers review runtime project" [ref=e649] [cursor=pointer]:
+                - img [ref=e650]
+                - generic [ref=e652]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e653] [cursor=pointer]:
+                - img [ref=e654]
+            - generic [ref=e658]:
+              - button "Superpowers review runtime project" [ref=e659] [cursor=pointer]:
+                - img [ref=e660]
+                - generic [ref=e662]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e663] [cursor=pointer]:
+                - img [ref=e664]
+            - generic [ref=e668]:
+              - button "Superpowers review runtime project" [ref=e669] [cursor=pointer]:
+                - img [ref=e670]
+                - generic [ref=e672]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e673] [cursor=pointer]:
+                - img [ref=e674]
+            - generic [ref=e678]:
+              - button "Superpowers review runtime project" [ref=e679] [cursor=pointer]:
+                - img [ref=e680]
+                - generic [ref=e682]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e683] [cursor=pointer]:
+                - img [ref=e684]
+            - generic [ref=e688]:
+              - button "Superpowers review runtime project" [ref=e689] [cursor=pointer]:
+                - img [ref=e690]
+                - generic [ref=e692]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e693] [cursor=pointer]:
+                - img [ref=e694]
+            - generic [ref=e698]:
+              - button "Superpowers review runtime project" [ref=e699] [cursor=pointer]:
+                - img [ref=e700]
+                - generic [ref=e702]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e703] [cursor=pointer]:
+                - img [ref=e704]
+            - generic [ref=e708]:
+              - button "Superpowers review runtime project" [ref=e709] [cursor=pointer]:
+                - img [ref=e710]
+                - generic [ref=e712]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e713] [cursor=pointer]:
+                - img [ref=e714]
+            - generic [ref=e718]:
+              - button "Superpowers review runtime project" [ref=e719] [cursor=pointer]:
+                - img [ref=e720]
+                - generic [ref=e722]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e723] [cursor=pointer]:
+                - img [ref=e724]
+            - generic [ref=e728]:
+              - button "Superpowers review runtime project" [ref=e729] [cursor=pointer]:
+                - img [ref=e730]
+                - generic [ref=e732]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e733] [cursor=pointer]:
+                - img [ref=e734]
+            - generic [ref=e738]:
+              - button "Superpowers review runtime project" [ref=e739] [cursor=pointer]:
+                - img [ref=e740]
+                - generic [ref=e742]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e743] [cursor=pointer]:
+                - img [ref=e744]
+            - generic [ref=e748]:
+              - button "Superpowers review runtime project" [ref=e749] [cursor=pointer]:
+                - img [ref=e750]
+                - generic [ref=e752]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e753] [cursor=pointer]:
+                - img [ref=e754]
+            - generic [ref=e758]:
+              - button "Superpowers review runtime project" [ref=e759] [cursor=pointer]:
+                - img [ref=e760]
+                - generic [ref=e762]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e763] [cursor=pointer]:
+                - img [ref=e764]
+            - generic [ref=e768]:
+              - button "Superpowers review runtime project" [ref=e769] [cursor=pointer]:
+                - img [ref=e770]
+                - generic [ref=e772]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e773] [cursor=pointer]:
+                - img [ref=e774]
+            - generic [ref=e778]:
+              - button "Superpowers review runtime project" [ref=e779] [cursor=pointer]:
+                - img [ref=e780]
+                - generic [ref=e782]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e783] [cursor=pointer]:
+                - img [ref=e784]
+            - generic [ref=e788]:
+              - button "Superpowers review runtime project" [ref=e789] [cursor=pointer]:
+                - img [ref=e790]
+                - generic [ref=e792]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e793] [cursor=pointer]:
+                - img [ref=e794]
+            - generic [ref=e798]:
+              - button "Superpowers review runtime project" [ref=e799] [cursor=pointer]:
+                - img [ref=e800]
+                - generic [ref=e802]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e803] [cursor=pointer]:
+                - img [ref=e804]
+            - generic [ref=e808]:
+              - button "Superpowers review runtime project" [ref=e809] [cursor=pointer]:
+                - img [ref=e810]
+                - generic [ref=e812]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e813] [cursor=pointer]:
+                - img [ref=e814]
+            - generic [ref=e818]:
+              - button "Superpowers review runtime project" [ref=e819] [cursor=pointer]:
+                - img [ref=e820]
+                - generic [ref=e822]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e823] [cursor=pointer]:
+                - img [ref=e824]
+        - generic [ref=e829]:
+          - img [ref=e831]
+          - generic [ref=e833]: 这个项目还没有群聊
+          - paragraph [ref=e834]: 创建群聊后可以开始任务协作。
+          - button "新增群聊" [ref=e836] [cursor=pointer]:
+            - img [ref=e837]
+            - text: 新增群聊
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e838]:
+        - img [ref=e840]
+        - generic [ref=e842]:
+          - generic [ref=e843]: Provider Superpowers 已就绪
+          - generic [ref=e844]: Claude Code、Codex CLI、OpenCode

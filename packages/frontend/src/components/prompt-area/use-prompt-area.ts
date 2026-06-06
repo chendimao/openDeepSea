@@ -11,6 +11,7 @@ import type {
   PromptAreaHandle,
 } from './types'
 import {
+  commitEditedChipWithTriggerSearch,
   detectActiveTrigger,
   segmentsToPlainText,
   segmentsEqual,
@@ -134,6 +135,9 @@ export function usePromptArea({
   const [activeTrigger, setActiveTrigger] = useState<ActiveTrigger | null>(null)
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0)
   const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null)
+  const editingChipIndex = useRef<number | null>(null)
+  const editingChipAbort = useRef<AbortController | null>(null)
+  const isCommittingChipEdit = useRef(false)
 
   const {
     suggestions,
@@ -283,6 +287,34 @@ export function usePromptArea({
     [triggers, markdownEnabled],
   )
 
+  const getSegmentIndexForChipNode = useCallback(
+    (editor: HTMLElement, chipNode: HTMLElement): number => {
+      const chipIdx = indexOfChildNode(editor, chipNode)
+      if (chipIdx === -1) return -1
+
+      let segIdx = 0
+      for (let i = 0; i < chipIdx; i++) {
+        const child = editor.childNodes[i]
+        if (child.nodeType === Node.TEXT_NODE && (child.textContent ?? '') !== '') {
+          segIdx++
+        } else if (isChipElement(child)) {
+          segIdx++
+        } else if (isBRElement(child)) {
+          segIdx++
+        }
+      }
+      return segIdx
+    },
+    [],
+  )
+
+  const cancelChipEdit = useCallback(() => {
+    editingChipAbort.current?.abort()
+    editingChipAbort.current = null
+    editingChipIndex.current = null
+    renderSegmentsToDOM(lastRenderedValue.current)
+  }, [renderSegmentsToDOM])
+
   // -----------------------------------------------------------------------
   // Trigger detection (extracted so events module can call it)
   // -----------------------------------------------------------------------
@@ -394,6 +426,131 @@ export function usePromptArea({
     onChipAdd,
     onImagePaste,
   })
+
+  const commitChipEdit = useCallback(
+    async (input: HTMLInputElement) => {
+      if (isCommittingChipEdit.current) return
+      const index = editingChipIndex.current
+      if (index === null) return
+
+      isCommittingChipEdit.current = true
+      const currentSegments = lastRenderedValue.current
+      const original = currentSegments[index]
+      if (!original || original.type !== 'chip') {
+        isCommittingChipEdit.current = false
+        cancelChipEdit()
+        return
+      }
+
+      editingChipAbort.current?.abort()
+      const abortController = new AbortController()
+      editingChipAbort.current = abortController
+
+      let result: { segments: Segment[]; committed: Segment; cursorOffset: number } | null = null
+      try {
+        result = await commitEditedChipWithTriggerSearch(currentSegments, index, input.value, triggers, {
+          signal: abortController.signal,
+        })
+      } catch (error) {
+        const trigger = triggers.find((item) => item.char === original.trigger)
+        if (!abortController.signal.aborted) {
+          trigger?.onSearchError?.(error)
+        }
+      }
+
+      if (!result && !abortController.signal.aborted) {
+        result = await commitEditedChipWithTriggerSearch(currentSegments, index, input.value, [])
+      }
+
+      if (abortController.signal.aborted) {
+        isCommittingChipEdit.current = false
+        return
+      }
+
+      editingChipAbort.current = null
+      editingChipIndex.current = null
+      if (!result) {
+        isCommittingChipEdit.current = false
+        renderSegmentsToDOM(currentSegments)
+        return
+      }
+
+      events.pushUndo(currentSegments)
+      lastRenderedValue.current = result.segments
+      onChange(result.segments)
+      renderSegmentsToDOM(result.segments)
+      const editor = editorRef.current
+      if (editor) {
+        setCursorAtOffset(editor, result.cursorOffset)
+        editor.focus()
+      }
+
+      if (result.committed.type === 'chip') {
+        onChipAdd?.(result.committed)
+      } else {
+        onChipDelete?.(original)
+      }
+      isCommittingChipEdit.current = false
+    },
+    [
+      cancelChipEdit,
+      events,
+      onChange,
+      onChipAdd,
+      onChipDelete,
+      renderSegmentsToDOM,
+      triggers,
+    ],
+  )
+
+  const startChipEdit = useCallback(
+    (chipEl: HTMLElement) => {
+      const editor = editorRef.current
+      if (!editor) return
+
+      const segIdx = getSegmentIndexForChipNode(editor, chipEl)
+      if (segIdx === -1) return
+
+      const segments = readSegmentsFromDOM()
+      const chip = segments[segIdx]
+      if (!chip || chip.type !== 'chip') return
+
+      editingChipIndex.current = segIdx
+      editingChipAbort.current?.abort()
+      isCommittingChipEdit.current = false
+      lastRenderedValue.current = segments
+
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.value = `${chip.trigger}${chip.displayText}`
+      input.className = 'prompt-area-chip-edit'
+      input.setAttribute('aria-label', 'Edit chip')
+      input.dataset.chipEditor = 'true'
+
+      while (chipEl.firstChild) {
+        chipEl.removeChild(chipEl.firstChild)
+      }
+      chipEl.appendChild(input)
+      chipEl.classList.add('prompt-area-chip--editing')
+
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          void commitChipEdit(input)
+        } else if (event.key === 'Escape') {
+          event.preventDefault()
+          cancelChipEdit()
+        }
+      })
+      input.addEventListener('blur', () => {
+        void commitChipEdit(input)
+      })
+
+      input.focus()
+      input.select()
+    },
+    [cancelChipEdit, commitChipEdit, getSegmentIndexForChipNode, readSegmentsFromDOM],
+  )
 
   // -----------------------------------------------------------------------
   // Sync value prop -> DOM on external changes
@@ -545,7 +702,13 @@ export function usePromptArea({
 
         if (isChipElement(node)) {
           // Spawn ripple effect
-          const chipEl = node as HTMLElement
+          const chipEl = node
+          if (e.detail >= 2) {
+            e.preventDefault()
+            startChipEdit(chipEl)
+            return
+          }
+
           const rect = chipEl.getBoundingClientRect()
           const ripple = document.createElement('span')
           ripple.className = 'prompt-area-chip-ripple'
@@ -580,7 +743,7 @@ export function usePromptArea({
         node = node.parentNode
       }
     },
-    [onChipClick, onLinkClick],
+    [onChipClick, onLinkClick, startChipEdit],
   )
 
   // -----------------------------------------------------------------------
@@ -590,21 +753,8 @@ export function usePromptArea({
   const removeChipNodeFromDOM = useCallback(
     (editor: HTMLElement, chipNode: HTMLElement): boolean => {
       const segments = readSegmentsFromDOM()
-      const chipIdx = indexOfChildNode(editor, chipNode)
-      if (chipIdx === -1) return false
-
-      // Map DOM child index to segment index
-      let segIdx = 0
-      for (let i = 0; i < chipIdx; i++) {
-        const child = editor.childNodes[i]
-        if (child.nodeType === Node.TEXT_NODE && (child.textContent ?? '') !== '') {
-          segIdx++
-        } else if (isChipElement(child)) {
-          segIdx++
-        } else if (isBRElement(child)) {
-          segIdx++
-        }
-      }
+      const segIdx = getSegmentIndexForChipNode(editor, chipNode)
+      if (segIdx === -1) return false
 
       const deletedChip = segments[segIdx]
       const newSegments = removeChipAtIndex(segments, segIdx)
@@ -617,7 +767,7 @@ export function usePromptArea({
 
       return true
     },
-    [readSegmentsFromDOM, onChange, renderSegmentsToDOM, onChipDelete],
+    [getSegmentIndexForChipNode, readSegmentsFromDOM, onChange, renderSegmentsToDOM, onChipDelete],
   )
 
   // -----------------------------------------------------------------------
@@ -627,21 +777,8 @@ export function usePromptArea({
   const revertChipNodeToText = useCallback(
     (editor: HTMLElement, chipNode: HTMLElement): boolean => {
       const segments = readSegmentsFromDOM()
-      const chipIdx = indexOfChildNode(editor, chipNode)
-      if (chipIdx === -1) return false
-
-      // Map DOM child index to segment index
-      let segIdx = 0
-      for (let i = 0; i < chipIdx; i++) {
-        const child = editor.childNodes[i]
-        if (child.nodeType === Node.TEXT_NODE && (child.textContent ?? '') !== '') {
-          segIdx++
-        } else if (isChipElement(child)) {
-          segIdx++
-        } else if (isBRElement(child)) {
-          segIdx++
-        }
-      }
+      const segIdx = getSegmentIndexForChipNode(editor, chipNode)
+      if (segIdx === -1) return false
 
       const revertedChip = segments[segIdx]
       const result = revertChipAtIndex(segments, segIdx)
@@ -669,7 +806,7 @@ export function usePromptArea({
 
       return true
     },
-    [readSegmentsFromDOM, onChange, renderSegmentsToDOM, onChipDelete],
+    [getSegmentIndexForChipNode, readSegmentsFromDOM, onChange, renderSegmentsToDOM, onChipDelete],
   )
 
   // -----------------------------------------------------------------------

@@ -1,0 +1,215 @@
+- generic [ref=e2]:
+  - generic [ref=e4]:
+    - complementary "项目工作区" [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - generic [ref=e8]:
+            - img "深海指挥中心" [ref=e10]
+            - generic [ref=e23]:
+              - generic [ref=e24]: 深海指挥中心
+              - generic [ref=e25]: 本地智能体控制台
+            - generic [ref=e26]:
+              - button "新增项目" [ref=e27] [cursor=pointer]:
+                - img [ref=e28]
+              - button "系统设置" [ref=e29] [cursor=pointer]:
+                - img [ref=e30]
+          - button "搜索 / 快速命令 ⌘K" [ref=e33] [cursor=pointer]:
+            - img [ref=e34]
+            - generic [ref=e37]: 搜索 / 快速命令
+            - generic [ref=e38]: ⌘K
+        - generic [ref=e39]:
+          - link "开发" [ref=e40] [cursor=pointer]:
+            - /url: /
+            - img [ref=e41]
+            - generic [ref=e44]: 开发
+          - link "聊天" [ref=e45] [cursor=pointer]:
+            - /url: /chat
+            - img [ref=e46]
+            - generic [ref=e48]: 聊天
+          - link "智能体" [ref=e49] [cursor=pointer]:
+            - /url: /agents
+            - img [ref=e50]
+            - generic [ref=e53]: 智能体
+          - link "技能" [ref=e54] [cursor=pointer]:
+            - /url: /skills
+            - img [ref=e55]
+            - generic [ref=e58]: 技能
+          - link "资源库" [ref=e59] [cursor=pointer]:
+            - /url: /files
+            - img [ref=e60]
+            - generic [ref=e62]: 资源库
+          - link "测试" [ref=e63] [cursor=pointer]:
+            - /url: /test
+            - img [ref=e64]
+            - generic [ref=e67]: 测试
+        - generic [ref=e68]:
+          - generic [ref=e69]:
+            - generic [ref=e70]: 最近项目
+            - generic [ref=e72]: 暂无项目
+          - generic [ref=e73]:
+            - generic [ref=e74]: 最近群聊
+            - generic [ref=e76]: 暂无最近群聊
+    - main [ref=e77]:
+      - generic [ref=e78]:
+        - generic [ref=e79]:
+          - generic [ref=e80]:
+            - link "返回项目" [ref=e81] [cursor=pointer]:
+              - /url: /projects/_VyRtATQJ743
+            - generic [ref=e82]:
+              - generic [ref=e83]: 开发闭环看板
+              - generic [ref=e84]: 开发闭环看板 · 项目路径未加载
+          - generic "全局搜索" [ref=e85]:
+            - img [ref=e86]
+            - searchbox "全局搜索" [ref=e89]
+            - generic [ref=e90]: ⌘K
+          - generic [ref=e91]:
+            - generic [ref=e92]: 暂无智能体
+            - button "群聊设置" [disabled] [ref=e93]:
+              - img [ref=e94]
+              - generic [ref=e97]: 设置
+            - button "记忆" [ref=e98] [cursor=pointer]:
+              - img [ref=e99]
+              - generic [ref=e109]: 记忆
+            - button "邀请智能体" [ref=e110] [cursor=pointer]:
+              - img [ref=e111]
+              - generic [ref=e116]: 邀请智能体
+            - generic "Current user" [ref=e117]: U
+        - generic [ref=e118]:
+          - region "工作区视图" [ref=e119]:
+            - generic [ref=e120]:
+              - generic [ref=e121]:
+                - generic [ref=e122]: 聊天
+                - generic [ref=e123]: Conversation Flow
+              - generic "工作区视图" [ref=e124]:
+                - generic [ref=e125]:
+                  - button "群聊" [pressed] [ref=e126] [cursor=pointer]:
+                    - img [ref=e127]
+                    - text: 群聊
+                  - button "文件" [ref=e129] [cursor=pointer]:
+                    - img [ref=e130]
+                    - text: 文件
+              - button "新建任务" [ref=e132] [cursor=pointer]:
+                - img [ref=e133]
+                - generic [ref=e134]: 新建任务
+            - generic:
+              - generic:
+                - log:
+                  - generic [ref=e137]:
+                    - img [ref=e139]
+                    - generic [ref=e141]: 还没有消息
+                    - paragraph [ref=e142]: 先添加一个智能体，再开始对话。
+                    - button "邀请智能体" [ref=e144] [cursor=pointer]:
+                      - img [ref=e145]
+                      - text: 邀请智能体
+                - generic [ref=e148]:
+                  - generic [ref=e150]: 发送到：全局聊天
+                  - generic [ref=e151]:
+                    - generic [ref=e153]:
+                      - textbox "先邀请一个智能体才能开始对话..." [disabled] [ref=e154]
+                      - generic: 先邀请一个智能体才能开始对话...
+                    - generic [ref=e155]:
+                      - generic [ref=e156]: 当前策略：只有被 @ 的智能体会回复；无 @ 时不会触发回复。
+                      - generic [ref=e157]:
+                        - button "Choose File" [disabled] [ref=e158]
+                        - button "选择附件" [disabled]:
+                          - img
+                        - button "引用项目文件" [disabled]:
+                          - img
+                        - button "发送消息" [disabled]:
+                          - img
+                          - text: 发送
+          - complementary "任务工作区" [ref=e159]:
+            - generic [ref=e160]:
+              - img [ref=e161]
+              - generic [ref=e164]:
+                - generic [ref=e165]: 任务工作区
+                - generic [ref=e166]: 选择一个任务开始
+              - generic [ref=e167]: "0"
+            - generic [ref=e168]:
+              - region "任务列表" [ref=e169]:
+                - generic "任务状态筛选" [ref=e170]:
+                  - button "待办" [ref=e171] [cursor=pointer]
+                  - button "进行中" [ref=e172] [cursor=pointer]
+                  - button "待审查" [ref=e173] [cursor=pointer]
+                  - button "已完成" [ref=e174] [cursor=pointer]
+                  - button "失败" [ref=e175] [cursor=pointer]
+                - generic [ref=e177]: 暂无任务
+                - region "活动汇总" [ref=e178]:
+                  - generic [ref=e179]: 活动汇总
+                  - generic [ref=e180]: 暂无活动
+              - region "当前任务" [ref=e181]:
+                - generic [ref=e182]:
+                  - generic [ref=e183]:
+                    - img [ref=e184]
+                    - generic [ref=e187]: 选择一个任务开始
+                    - paragraph [ref=e188]: 不会自动激活任务。选择任务后，群聊消息才会进入当前任务上下文。
+                  - generic [ref=e189]:
+                    - generic [ref=e190]:
+                      - generic [ref=e191]:
+                        - img [ref=e192]
+                        - generic [ref=e195]:
+                          - heading [level=4] [ref=e196]: Execution Plan
+                          - paragraph [ref=e197]: 3 steps
+                      - generic [ref=e198]:
+                        - generic [ref=e199]:
+                          - generic [ref=e200]: "1"
+                          - generic [ref=e201]:
+                            - strong [ref=e202]: 分析需求与上下文
+                            - generic [ref=e203]: completed
+                        - generic [ref=e204]:
+                          - generic [ref=e205]: "2"
+                          - generic [ref=e206]:
+                            - strong [ref=e207]: 生成 UI 预览
+                            - generic [ref=e208]: running
+                        - generic [ref=e209]:
+                          - generic [ref=e210]: "3"
+                          - generic [ref=e211]:
+                            - strong [ref=e212]: 等待验证
+                            - generic [ref=e213]: waiting
+                    - generic [ref=e214]:
+                      - generic [ref=e215]:
+                        - img [ref=e216]
+                        - generic [ref=e219]:
+                          - heading [level=4] [ref=e220]: Realtime Status
+                          - paragraph [ref=e221]: waiting
+                      - generic [ref=e222]:
+                        - img [ref=e223]
+                        - generic [ref=e226]:
+                          - strong [ref=e227]: AI Agent
+                          - generic [ref=e228]: AI 正在生成 UI 预览...
+                      - generic [ref=e230]:
+                        - generic [ref=e231]:
+                          - generic [ref=e232]: Tokens
+                          - strong [ref=e233]: "0"
+                        - generic [ref=e234]:
+                          - generic [ref=e235]: Tool Calls
+                          - strong [ref=e236]: "0"
+                        - generic [ref=e237]:
+                          - generic [ref=e238]: File Reads
+                          - strong [ref=e239]: "0"
+                        - generic [ref=e240]:
+                          - generic [ref=e241]: File Changes
+                          - strong [ref=e242]: "0"
+                    - generic [ref=e243]:
+                      - generic [ref=e244]:
+                        - img [ref=e245]
+                        - generic [ref=e249]:
+                          - heading [level=4] [ref=e250]: Tool Calls
+                          - paragraph [ref=e251]: preview
+                      - generic [ref=e252]:
+                        - generic [ref=e253]:
+                          - img [ref=e254]
+                          - strong [ref=e257]: search_files
+                          - generic [ref=e258]: waiting
+                          - time [ref=e259]: "--:--"
+                        - generic [ref=e260]:
+                          - img [ref=e261]
+                          - strong [ref=e264]: read_file
+                          - generic [ref=e265]: waiting
+                          - time [ref=e266]: "--:--"
+                        - generic [ref=e267]:
+                          - img [ref=e268]
+                          - strong [ref=e271]: generate_preview
+                          - generic [ref=e272]: waiting
+                          - time [ref=e273]: "--:--"
+  - region "Notifications alt+T"

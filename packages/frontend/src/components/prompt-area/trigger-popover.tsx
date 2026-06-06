@@ -134,7 +134,7 @@ export function TriggerPopover({
             role="option"
             aria-selected={index === selectedIndex}
             className={cn(
-              'flex w-full cursor-pointer items-start gap-2 rounded-md px-3 py-2 text-left text-[12.5px]',
+              'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px]',
               'text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-primary)]',
               index === selectedIndex && 'bg-[var(--color-surface-raised)] text-[var(--color-primary)]',
             )}
@@ -142,15 +142,13 @@ export function TriggerPopover({
               e.preventDefault() // Prevent blur on the editor
               onSelect(suggestion)
             }}>
-            {suggestion.icon && <span className="mt-0.5 shrink-0">{suggestion.icon}</span>}
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{suggestion.label}</div>
-              {suggestion.description && (
-                <div className="text-muted-foreground truncate text-xs">
-                  {suggestion.description}
-                </div>
-              )}
-            </div>
+            {suggestion.icon && <span className="shrink-0">{suggestion.icon}</span>}
+            <span className="min-w-0 flex-1 truncate font-medium">{suggestion.label}</span>
+            {suggestion.description && (
+              <span className="shrink-0 truncate text-[11px] text-[var(--color-fg-muted)] opacity-70 max-w-[45%] text-right">
+                {suggestion.description}
+              </span>
+            )}
           </button>
         ))
       )}

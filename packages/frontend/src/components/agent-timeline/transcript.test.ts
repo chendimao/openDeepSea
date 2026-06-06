@@ -63,7 +63,7 @@ test('buildAgentTranscript does not split markdown code fences around tool event
         input: '{"path":"RoomPage.tsx"}',
       }),
       event('text-2', 3, 'assistant_message', '助手回复', {
-        text: '  "planner_decision": {\n    "awaiting_user_confirmation": true\n  }\n}\n```\n',
+        text: '  "task_execution": {\n    "state": "ready_to_execute"\n  }\n}\n```\n',
       }),
       event('tool-2', 4, 'tool_result', '工具结果 Read', {
         id: 'read-2',
@@ -77,7 +77,7 @@ test('buildAgentTranscript does not split markdown code fences around tool event
   assert.deepEqual(model.items.map((item) => item.type), ['text', 'event', 'event']);
   assert.equal(
     model.items[0]?.type === 'text' ? model.items[0].text : '',
-    '计划如下：\n\n```json\n{\n  "planner_decision": {\n    "awaiting_user_confirmation": true\n  }\n}\n```',
+    '计划如下：\n\n```json\n{\n  "task_execution": {\n    "state": "ready_to_execute"\n  }\n}\n```',
   );
 });
 

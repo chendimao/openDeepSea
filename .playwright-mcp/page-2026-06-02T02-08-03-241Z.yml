@@ -1,0 +1,2543 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner "项目工作区" [ref=e4]:
+      - link "深海指挥中心" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "深海指挥中心" [ref=e7]
+        - generic [ref=e20]:
+          - generic [ref=e21]: 深海指挥中心
+          - generic [ref=e22]: 本地智能体控制台
+      - navigation "项目工作区" [ref=e23]:
+        - link "开发" [ref=e24] [cursor=pointer]:
+          - /url: /
+          - img [ref=e25]
+          - generic [ref=e28]: 开发
+        - link "聊天" [ref=e29] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e30]
+          - generic [ref=e32]: 聊天
+        - link "智能体" [ref=e33] [cursor=pointer]:
+          - /url: /agents
+          - img [ref=e34]
+          - generic [ref=e37]: 智能体
+        - link "技能" [ref=e38] [cursor=pointer]:
+          - /url: /skills
+          - img [ref=e39]
+          - generic [ref=e42]: 技能
+        - link "资源库" [ref=e43] [cursor=pointer]:
+          - /url: /files
+          - img [ref=e44]
+          - generic [ref=e46]: 资源库
+        - link "测试" [ref=e47] [cursor=pointer]:
+          - /url: /test
+          - img [ref=e48]
+          - generic [ref=e51]: 测试
+      - generic [ref=e52]:
+        - button "搜索 / 快速命令" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+          - generic [ref=e57]: 搜索 / 快速命令
+          - generic [ref=e58]: ⌘K
+        - button "深海指挥中心" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+          - generic [ref=e63]: 深海指挥中心
+          - img [ref=e64]
+        - button "新增项目" [ref=e66] [cursor=pointer]:
+          - img [ref=e67]
+        - button "系统设置" [ref=e68] [cursor=pointer]:
+          - img [ref=e69]
+    - main [ref=e73]:
+      - generic [ref=e74]:
+        - complementary "项目列表" [ref=e75]:
+          - generic [ref=e76]:
+            - generic [ref=e77]: 项目
+            - button "新增项目" [ref=e78] [cursor=pointer]:
+              - img [ref=e79]
+          - generic [ref=e80]:
+            - img [ref=e81]
+            - textbox "搜索项目" [ref=e84]
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - button "深海指挥中心" [ref=e87] [cursor=pointer]:
+                - img [ref=e88]
+                - generic [ref=e90]: 深海指挥中心
+                - img [ref=e91]
+              - button "深海指挥中心 操作" [ref=e93] [cursor=pointer]:
+                - img [ref=e94]
+            - generic [ref=e98]:
+              - button "Superpowers review runtime project" [ref=e99] [cursor=pointer]:
+                - img [ref=e100]
+                - generic [ref=e102]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e103] [cursor=pointer]:
+                - img [ref=e104]
+            - generic [ref=e108]:
+              - button "Superpowers review runtime project" [ref=e109] [cursor=pointer]:
+                - img [ref=e110]
+                - generic [ref=e112]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e113] [cursor=pointer]:
+                - img [ref=e114]
+            - generic [ref=e118]:
+              - button "消息意图自动路由复测 1780146034" [ref=e119] [cursor=pointer]:
+                - img [ref=e120]
+                - generic [ref=e122]: 消息意图自动路由复测 1780146034
+              - button "消息意图自动路由复测 1780146034 操作" [ref=e123] [cursor=pointer]:
+                - img [ref=e124]
+            - generic [ref=e128]:
+              - button "消息意图自动路由浏览器测试 1780145481" [ref=e129] [cursor=pointer]:
+                - img [ref=e130]
+                - generic [ref=e132]: 消息意图自动路由浏览器测试 1780145481
+              - button "消息意图自动路由浏览器测试 1780145481 操作" [ref=e133] [cursor=pointer]:
+                - img [ref=e134]
+            - generic [ref=e138]:
+              - button "Superpowers review runtime project" [ref=e139] [cursor=pointer]:
+                - img [ref=e140]
+                - generic [ref=e142]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e143] [cursor=pointer]:
+                - img [ref=e144]
+            - generic [ref=e148]:
+              - button "Superpowers review runtime project" [ref=e149] [cursor=pointer]:
+                - img [ref=e150]
+                - generic [ref=e152]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e153] [cursor=pointer]:
+                - img [ref=e154]
+            - generic [ref=e158]:
+              - button "Superpowers review runtime project" [ref=e159] [cursor=pointer]:
+                - img [ref=e160]
+                - generic [ref=e162]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e163] [cursor=pointer]:
+                - img [ref=e164]
+            - generic [ref=e168]:
+              - button "Superpowers review runtime project" [ref=e169] [cursor=pointer]:
+                - img [ref=e170]
+                - generic [ref=e172]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e173] [cursor=pointer]:
+                - img [ref=e174]
+            - generic [ref=e178]:
+              - button "Superpowers review runtime project" [ref=e179] [cursor=pointer]:
+                - img [ref=e180]
+                - generic [ref=e182]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e183] [cursor=pointer]:
+                - img [ref=e184]
+            - generic [ref=e188]:
+              - button "Superpowers review runtime project" [ref=e189] [cursor=pointer]:
+                - img [ref=e190]
+                - generic [ref=e192]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e193] [cursor=pointer]:
+                - img [ref=e194]
+            - generic [ref=e198]:
+              - button "Superpowers review runtime project" [ref=e199] [cursor=pointer]:
+                - img [ref=e200]
+                - generic [ref=e202]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e203] [cursor=pointer]:
+                - img [ref=e204]
+            - generic [ref=e208]:
+              - button "Superpowers review runtime project" [ref=e209] [cursor=pointer]:
+                - img [ref=e210]
+                - generic [ref=e212]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e213] [cursor=pointer]:
+                - img [ref=e214]
+            - generic [ref=e218]:
+              - button "Superpowers review runtime project" [ref=e219] [cursor=pointer]:
+                - img [ref=e220]
+                - generic [ref=e222]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e223] [cursor=pointer]:
+                - img [ref=e224]
+            - generic [ref=e228]:
+              - button "Superpowers review runtime project" [ref=e229] [cursor=pointer]:
+                - img [ref=e230]
+                - generic [ref=e232]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e233] [cursor=pointer]:
+                - img [ref=e234]
+            - generic [ref=e238]:
+              - button "Superpowers review runtime project" [ref=e239] [cursor=pointer]:
+                - img [ref=e240]
+                - generic [ref=e242]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e243] [cursor=pointer]:
+                - img [ref=e244]
+            - generic [ref=e248]:
+              - button "任务工作区合并浏览器测试 1780133715" [ref=e249] [cursor=pointer]:
+                - img [ref=e250]
+                - generic [ref=e252]: 任务工作区合并浏览器测试 1780133715
+              - button "任务工作区合并浏览器测试 1780133715 操作" [ref=e253] [cursor=pointer]:
+                - img [ref=e254]
+            - generic [ref=e258]:
+              - button "M1-M4 完整闭环浏览器测试 1780129193852" [ref=e259] [cursor=pointer]:
+                - img [ref=e260]
+                - generic [ref=e262]: M1-M4 完整闭环浏览器测试 1780129193852
+              - button "M1-M4 完整闭环浏览器测试 1780129193852 操作" [ref=e263] [cursor=pointer]:
+                - img [ref=e264]
+            - generic [ref=e268]:
+              - button "M1-M4 完整闭环浏览器测试 1780128968350" [ref=e269] [cursor=pointer]:
+                - img [ref=e270]
+                - generic [ref=e272]: M1-M4 完整闭环浏览器测试 1780128968350
+              - button "M1-M4 完整闭环浏览器测试 1780128968350 操作" [ref=e273] [cursor=pointer]:
+                - img [ref=e274]
+            - generic [ref=e278]:
+              - button "M1-M4 完整闭环浏览器测试 1780128844098" [ref=e279] [cursor=pointer]:
+                - img [ref=e280]
+                - generic [ref=e282]: M1-M4 完整闭环浏览器测试 1780128844098
+              - button "M1-M4 完整闭环浏览器测试 1780128844098 操作" [ref=e283] [cursor=pointer]:
+                - img [ref=e284]
+            - generic [ref=e288]:
+              - button "Create Task No Dispatch Browser 1780116982784" [ref=e289] [cursor=pointer]:
+                - img [ref=e290]
+                - generic [ref=e292]: Create Task No Dispatch Browser 1780116982784
+              - button "Create Task No Dispatch Browser 1780116982784 操作" [ref=e293] [cursor=pointer]:
+                - img [ref=e294]
+            - generic [ref=e298]:
+              - button "Ask User No Dispatch Browser 1780116332506" [ref=e299] [cursor=pointer]:
+                - img [ref=e300]
+                - generic [ref=e302]: Ask User No Dispatch Browser 1780116332506
+              - button "Ask User No Dispatch Browser 1780116332506 操作" [ref=e303] [cursor=pointer]:
+                - img [ref=e304]
+            - generic [ref=e308]:
+              - button "Terminal Activity Browser 1780115407009" [ref=e309] [cursor=pointer]:
+                - img [ref=e310]
+                - generic [ref=e312]: Terminal Activity Browser 1780115407009
+              - button "Terminal Activity Browser 1780115407009 操作" [ref=e313] [cursor=pointer]:
+                - img [ref=e314]
+            - generic [ref=e318]:
+              - button "Terminal Explicit Browser 1780114705765" [ref=e319] [cursor=pointer]:
+                - img [ref=e320]
+                - generic [ref=e322]: Terminal Explicit Browser 1780114705765
+              - button "Terminal Explicit Browser 1780114705765 操作" [ref=e323] [cursor=pointer]:
+                - img [ref=e324]
+            - generic [ref=e328]:
+              - button "Switch Task Browser 1780113695" [ref=e329] [cursor=pointer]:
+                - img [ref=e330]
+                - generic [ref=e332]: Switch Task Browser 1780113695
+              - button "Switch Task Browser 1780113695 操作" [ref=e333] [cursor=pointer]:
+                - img [ref=e334]
+            - generic [ref=e338]:
+              - button "Chat Layer Browser 1780112910" [ref=e339] [cursor=pointer]:
+                - img [ref=e340]
+                - generic [ref=e342]: Chat Layer Browser 1780112910
+              - button "Chat Layer Browser 1780112910 操作" [ref=e343] [cursor=pointer]:
+                - img [ref=e344]
+            - generic [ref=e348]:
+              - button "M3 层过滤浏览器验收 1780111539" [ref=e349] [cursor=pointer]:
+                - img [ref=e350]
+                - generic [ref=e352]: M3 层过滤浏览器验收 1780111539
+              - button "M3 层过滤浏览器验收 1780111539 操作" [ref=e353] [cursor=pointer]:
+                - img [ref=e354]
+            - generic [ref=e358]:
+              - button "AI Task OS 浏览器验收 1780110855" [ref=e359] [cursor=pointer]:
+                - img [ref=e360]
+                - generic [ref=e362]: AI Task OS 浏览器验收 1780110855
+              - button "AI Task OS 浏览器验收 1780110855 操作" [ref=e363] [cursor=pointer]:
+                - img [ref=e364]
+            - generic [ref=e368]:
+              - button "Terminal Active Smoke 1780110217" [ref=e369] [cursor=pointer]:
+                - img [ref=e370]
+                - generic [ref=e372]: Terminal Active Smoke 1780110217
+              - button "Terminal Active Smoke 1780110217 操作" [ref=e373] [cursor=pointer]:
+                - img [ref=e374]
+            - generic [ref=e378]:
+              - button "Browser UI Task OS 589474" [ref=e379] [cursor=pointer]:
+                - img [ref=e380]
+                - generic [ref=e382]: Browser UI Task OS 589474
+              - button "Browser UI Task OS 589474 操作" [ref=e383] [cursor=pointer]:
+                - img [ref=e384]
+            - generic [ref=e388]:
+              - button "Runtime Diff Smoke 192342" [ref=e389] [cursor=pointer]:
+                - img [ref=e390]
+                - generic [ref=e392]: Runtime Diff Smoke 192342
+              - button "Runtime Diff Smoke 192342 操作" [ref=e393] [cursor=pointer]:
+                - img [ref=e394]
+            - generic [ref=e398]:
+              - button "Browser Autocreate 024302" [ref=e399] [cursor=pointer]:
+                - img [ref=e400]
+                - generic [ref=e402]: Browser Autocreate 024302
+              - button "Browser Autocreate 024302 操作" [ref=e403] [cursor=pointer]:
+                - img [ref=e404]
+            - generic [ref=e408]:
+              - button "API Autocreate 024236" [ref=e409] [cursor=pointer]:
+                - img [ref=e410]
+                - generic [ref=e412]: API Autocreate 024236
+              - button "API Autocreate 024236 操作" [ref=e413] [cursor=pointer]:
+                - img [ref=e414]
+            - generic [ref=e418]:
+              - button "AI Task OS Activate Smoke 024111" [ref=e419] [cursor=pointer]:
+                - img [ref=e420]
+                - generic [ref=e422]: AI Task OS Activate Smoke 024111
+              - button "AI Task OS Activate Smoke 024111 操作" [ref=e423] [cursor=pointer]:
+                - img [ref=e424]
+            - generic [ref=e428]:
+              - button "AI Task OS Final Smoke 023048" [ref=e429] [cursor=pointer]:
+                - img [ref=e430]
+                - generic [ref=e432]: AI Task OS Final Smoke 023048
+              - button "AI Task OS Final Smoke 023048 操作" [ref=e433] [cursor=pointer]:
+                - img [ref=e434]
+            - generic [ref=e438]:
+              - button "AI Task OS Browser Smoke 022342" [ref=e439] [cursor=pointer]:
+                - img [ref=e440]
+                - generic [ref=e442]: AI Task OS Browser Smoke 022342
+              - button "AI Task OS Browser Smoke 022342 操作" [ref=e443] [cursor=pointer]:
+                - img [ref=e444]
+            - generic [ref=e448]:
+              - button "Superpowers review runtime project" [ref=e449] [cursor=pointer]:
+                - img [ref=e450]
+                - generic [ref=e452]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e453] [cursor=pointer]:
+                - img [ref=e454]
+            - generic [ref=e458]:
+              - button "Superpowers review runtime project" [ref=e459] [cursor=pointer]:
+                - img [ref=e460]
+                - generic [ref=e462]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e463] [cursor=pointer]:
+                - img [ref=e464]
+            - generic [ref=e468]:
+              - button "Superpowers review runtime project" [ref=e469] [cursor=pointer]:
+                - img [ref=e470]
+                - generic [ref=e472]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e473] [cursor=pointer]:
+                - img [ref=e474]
+            - generic [ref=e478]:
+              - button "Superpowers review runtime project" [ref=e479] [cursor=pointer]:
+                - img [ref=e480]
+                - generic [ref=e482]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e483] [cursor=pointer]:
+                - img [ref=e484]
+            - generic [ref=e488]:
+              - button "Superpowers review runtime project" [ref=e489] [cursor=pointer]:
+                - img [ref=e490]
+                - generic [ref=e492]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e493] [cursor=pointer]:
+                - img [ref=e494]
+            - generic [ref=e498]:
+              - button "Superpowers review runtime project" [ref=e499] [cursor=pointer]:
+                - img [ref=e500]
+                - generic [ref=e502]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e503] [cursor=pointer]:
+                - img [ref=e504]
+            - generic [ref=e508]:
+              - button "卫统数据采集及上报" [ref=e509] [cursor=pointer]:
+                - img [ref=e510]
+                - generic [ref=e512]: 卫统数据采集及上报
+              - button "卫统数据采集及上报 操作" [ref=e513] [cursor=pointer]:
+                - img [ref=e514]
+            - generic [ref=e518]:
+              - button "Superpowers review runtime project" [ref=e519] [cursor=pointer]:
+                - img [ref=e520]
+                - generic [ref=e522]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e523] [cursor=pointer]:
+                - img [ref=e524]
+            - generic [ref=e528]:
+              - button "Superpowers review runtime project" [ref=e529] [cursor=pointer]:
+                - img [ref=e530]
+                - generic [ref=e532]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e533] [cursor=pointer]:
+                - img [ref=e534]
+            - generic [ref=e538]:
+              - button "Superpowers review runtime project" [ref=e539] [cursor=pointer]:
+                - img [ref=e540]
+                - generic [ref=e542]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e543] [cursor=pointer]:
+                - img [ref=e544]
+            - generic [ref=e548]:
+              - button "Superpowers review runtime project" [ref=e549] [cursor=pointer]:
+                - img [ref=e550]
+                - generic [ref=e552]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e553] [cursor=pointer]:
+                - img [ref=e554]
+            - generic [ref=e558]:
+              - button "Superpowers review runtime project" [ref=e559] [cursor=pointer]:
+                - img [ref=e560]
+                - generic [ref=e562]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e563] [cursor=pointer]:
+                - img [ref=e564]
+            - generic [ref=e568]:
+              - button "Superpowers review runtime project" [ref=e569] [cursor=pointer]:
+                - img [ref=e570]
+                - generic [ref=e572]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e573] [cursor=pointer]:
+                - img [ref=e574]
+            - generic [ref=e578]:
+              - button "Superpowers review runtime project" [ref=e579] [cursor=pointer]:
+                - img [ref=e580]
+                - generic [ref=e582]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e583] [cursor=pointer]:
+                - img [ref=e584]
+            - generic [ref=e588]:
+              - button "Superpowers review runtime project" [ref=e589] [cursor=pointer]:
+                - img [ref=e590]
+                - generic [ref=e592]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e593] [cursor=pointer]:
+                - img [ref=e594]
+            - generic [ref=e598]:
+              - button "Superpowers review runtime project" [ref=e599] [cursor=pointer]:
+                - img [ref=e600]
+                - generic [ref=e602]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e603] [cursor=pointer]:
+                - img [ref=e604]
+            - generic [ref=e608]:
+              - button "Superpowers review runtime project" [ref=e609] [cursor=pointer]:
+                - img [ref=e610]
+                - generic [ref=e612]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e613] [cursor=pointer]:
+                - img [ref=e614]
+            - generic [ref=e618]:
+              - button "Superpowers review runtime project" [ref=e619] [cursor=pointer]:
+                - img [ref=e620]
+                - generic [ref=e622]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e623] [cursor=pointer]:
+                - img [ref=e624]
+            - generic [ref=e628]:
+              - button "Superpowers review runtime project" [ref=e629] [cursor=pointer]:
+                - img [ref=e630]
+                - generic [ref=e632]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e633] [cursor=pointer]:
+                - img [ref=e634]
+            - generic [ref=e638]:
+              - button "Superpowers review runtime project" [ref=e639] [cursor=pointer]:
+                - img [ref=e640]
+                - generic [ref=e642]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e643] [cursor=pointer]:
+                - img [ref=e644]
+            - generic [ref=e648]:
+              - button "Superpowers review runtime project" [ref=e649] [cursor=pointer]:
+                - img [ref=e650]
+                - generic [ref=e652]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e653] [cursor=pointer]:
+                - img [ref=e654]
+            - generic [ref=e658]:
+              - button "Superpowers review runtime project" [ref=e659] [cursor=pointer]:
+                - img [ref=e660]
+                - generic [ref=e662]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e663] [cursor=pointer]:
+                - img [ref=e664]
+            - generic [ref=e668]:
+              - button "Superpowers review runtime project" [ref=e669] [cursor=pointer]:
+                - img [ref=e670]
+                - generic [ref=e672]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e673] [cursor=pointer]:
+                - img [ref=e674]
+            - generic [ref=e678]:
+              - button "Superpowers review runtime project" [ref=e679] [cursor=pointer]:
+                - img [ref=e680]
+                - generic [ref=e682]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e683] [cursor=pointer]:
+                - img [ref=e684]
+            - generic [ref=e688]:
+              - button "Superpowers review runtime project" [ref=e689] [cursor=pointer]:
+                - img [ref=e690]
+                - generic [ref=e692]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e693] [cursor=pointer]:
+                - img [ref=e694]
+            - generic [ref=e698]:
+              - button "Superpowers review runtime project" [ref=e699] [cursor=pointer]:
+                - img [ref=e700]
+                - generic [ref=e702]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e703] [cursor=pointer]:
+                - img [ref=e704]
+            - generic [ref=e708]:
+              - button "Superpowers review runtime project" [ref=e709] [cursor=pointer]:
+                - img [ref=e710]
+                - generic [ref=e712]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e713] [cursor=pointer]:
+                - img [ref=e714]
+            - generic [ref=e718]:
+              - button "Superpowers review runtime project" [ref=e719] [cursor=pointer]:
+                - img [ref=e720]
+                - generic [ref=e722]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e723] [cursor=pointer]:
+                - img [ref=e724]
+            - generic [ref=e728]:
+              - button "Superpowers review runtime project" [ref=e729] [cursor=pointer]:
+                - img [ref=e730]
+                - generic [ref=e732]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e733] [cursor=pointer]:
+                - img [ref=e734]
+            - generic [ref=e738]:
+              - button "Superpowers review runtime project" [ref=e739] [cursor=pointer]:
+                - img [ref=e740]
+                - generic [ref=e742]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e743] [cursor=pointer]:
+                - img [ref=e744]
+            - generic [ref=e748]:
+              - button "Superpowers review runtime project" [ref=e749] [cursor=pointer]:
+                - img [ref=e750]
+                - generic [ref=e752]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e753] [cursor=pointer]:
+                - img [ref=e754]
+            - generic [ref=e758]:
+              - button "Superpowers review runtime project" [ref=e759] [cursor=pointer]:
+                - img [ref=e760]
+                - generic [ref=e762]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e763] [cursor=pointer]:
+                - img [ref=e764]
+            - generic [ref=e768]:
+              - button "Superpowers review runtime project" [ref=e769] [cursor=pointer]:
+                - img [ref=e770]
+                - generic [ref=e772]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e773] [cursor=pointer]:
+                - img [ref=e774]
+            - generic [ref=e778]:
+              - button "Superpowers review runtime project" [ref=e779] [cursor=pointer]:
+                - img [ref=e780]
+                - generic [ref=e782]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e783] [cursor=pointer]:
+                - img [ref=e784]
+            - generic [ref=e788]:
+              - button "Superpowers review runtime project" [ref=e789] [cursor=pointer]:
+                - img [ref=e790]
+                - generic [ref=e792]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e793] [cursor=pointer]:
+                - img [ref=e794]
+            - generic [ref=e798]:
+              - button "Superpowers review runtime project" [ref=e799] [cursor=pointer]:
+                - img [ref=e800]
+                - generic [ref=e802]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e803] [cursor=pointer]:
+                - img [ref=e804]
+            - generic [ref=e808]:
+              - button "Superpowers review runtime project" [ref=e809] [cursor=pointer]:
+                - img [ref=e810]
+                - generic [ref=e812]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e813] [cursor=pointer]:
+                - img [ref=e814]
+            - generic [ref=e818]:
+              - button "Superpowers review runtime project" [ref=e819] [cursor=pointer]:
+                - img [ref=e820]
+                - generic [ref=e822]: Superpowers review runtime project
+              - button "Superpowers review runtime project 操作" [ref=e823] [cursor=pointer]:
+                - img [ref=e824]
+        - generic [ref=e828]:
+          - generic "群聊切换" [ref=e845]:
+            - generic [ref=e846]:
+              - generic [ref=e847]:
+                - link "测试6" [ref=e848] [cursor=pointer]:
+                  - /url: /projects/ZwgdJRslFpih/rooms/vcHtzxxovkbl
+                  - generic [ref=e849]: 测试6
+                - button "测试6 操作" [ref=e850] [cursor=pointer]:
+                  - img [ref=e851]
+              - generic [ref=e855]:
+                - link "测试5" [ref=e856] [cursor=pointer]:
+                  - /url: /projects/ZwgdJRslFpih/rooms/UXLTSTCiuI37
+                  - generic [ref=e857]: 测试5
+                - button "测试5 操作" [ref=e858] [cursor=pointer]:
+                  - img [ref=e859]
+              - generic [ref=e863]:
+                - link "测试4" [ref=e864] [cursor=pointer]:
+                  - /url: /projects/ZwgdJRslFpih/rooms/pjBJuOB2zFuQ
+                  - generic [ref=e865]: 测试4
+                - button "测试4 操作" [ref=e866] [cursor=pointer]:
+                  - img [ref=e867]
+              - generic [ref=e871]:
+                - link "测试3" [ref=e872] [cursor=pointer]:
+                  - /url: /projects/ZwgdJRslFpih/rooms/gUWswhKg2Ej6
+                  - generic [ref=e873]: 测试3
+                - button "测试3 操作" [ref=e874] [cursor=pointer]:
+                  - img [ref=e875]
+              - generic [ref=e879]:
+                - link "测试2" [ref=e880] [cursor=pointer]:
+                  - /url: /projects/ZwgdJRslFpih/rooms/4W9p1G9kcWrE
+                  - generic [ref=e881]: 测试2
+                - button "测试2 操作" [ref=e882] [cursor=pointer]:
+                  - img [ref=e883]
+              - generic [ref=e887]:
+                - link "测试" [ref=e888] [cursor=pointer]:
+                  - /url: /projects/ZwgdJRslFpih/rooms/d0BH081nfKvb
+                  - generic [ref=e889]: 测试
+                - button "测试 操作" [ref=e890] [cursor=pointer]:
+                  - img [ref=e891]
+            - button "新增群聊" [ref=e895] [cursor=pointer]:
+              - img [ref=e896]
+          - generic [ref=e898]:
+            - complementary "任务工作区" [ref=e899]:
+              - generic [ref=e900]:
+                - img [ref=e901]
+                - generic [ref=e904]:
+                  - generic [ref=e905]: 任务工作区
+                  - generic [ref=e906]: "#OJ0BdO · 去掉header菜单中的测试菜单"
+                - generic [ref=e907]: "2"
+              - generic [ref=e908]:
+                - region "任务列表" [ref=e909]:
+                  - generic "任务状态筛选" [ref=e910]:
+                    - button "待办" [ref=e911] [cursor=pointer]
+                    - button "进行中" [ref=e912] [cursor=pointer]
+                    - button "待审查" [ref=e913] [cursor=pointer]
+                    - button "已完成" [ref=e914] [cursor=pointer]
+                    - button "失败" [ref=e915] [cursor=pointer]
+                  - generic [ref=e916]:
+                    - article [ref=e917]:
+                      - 'button "去掉header菜单中的测试菜单 10小时前 待办 #OJ0BdO" [ref=e918] [cursor=pointer]':
+                        - generic [ref=e919]:
+                          - heading "去掉header菜单中的测试菜单" [level=4] [ref=e920]
+                          - time [ref=e921]: 10小时前
+                        - generic [ref=e922]:
+                          - generic [ref=e923]: 待办
+                          - generic [ref=e924]: "#OJ0BdO"
+                    - article [ref=e925]:
+                      - 'button "test 19小时前 进行中 #Ylh8ie" [ref=e926] [cursor=pointer]':
+                        - generic [ref=e927]:
+                          - heading "test" [level=4] [ref=e928]
+                          - time [ref=e929]: 19小时前
+                        - generic [ref=e930]:
+                          - generic [ref=e931]: 进行中
+                          - generic [ref=e932]: "#Ylh8ie"
+                  - region "活动汇总" [ref=e933]:
+                    - generic [ref=e934]: 活动汇总
+                    - generic [ref=e935]:
+                      - generic [ref=e937]: 消息已归入任务
+                      - generic [ref=e938]: 10小时前
+                    - generic [ref=e939]:
+                      - generic [ref=e941]: 任务已创建
+                      - generic [ref=e942]: 10小时前
+                    - generic [ref=e945]: 11小时前
+                    - generic [ref=e948]: 11小时前
+                - region "当前任务" [ref=e949]:
+                  - generic [ref=e950]:
+                    - generic [ref=e951]:
+                      - button "任务工作区" [ref=e952] [cursor=pointer]
+                      - generic [ref=e953]: /
+                      - strong [ref=e954]: "#OJ0BdO"
+                    - generic [ref=e955]:
+                      - generic [ref=e956]:
+                        - heading "去掉header菜单中的测试菜单" [level=3] [ref=e957]
+                        - paragraph [ref=e958]: 消息模式：light_task 任务意图：implementation 去掉header菜单中的测试菜单
+                      - generic [ref=e959]:
+                        - button "定位开始消息" [ref=e960] [cursor=pointer]:
+                          - img [ref=e961]
+                        - button "任务已更新" [ref=e964] [cursor=pointer]:
+                          - img [ref=e965]
+                        - button "回到全局聊天" [ref=e968] [cursor=pointer]:
+                          - img [ref=e969]
+                    - generic [ref=e973]:
+                      - generic [ref=e974]:
+                        - generic [ref=e975]: Status
+                        - strong [ref=e976]: 待办
+                      - generic [ref=e977]:
+                        - generic [ref=e978]: Owner
+                        - strong [ref=e979]: 未指派
+                      - generic [ref=e980]:
+                        - generic [ref=e981]: Priority
+                        - strong [ref=e982]: 普通
+                      - generic [ref=e983]:
+                        - generic [ref=e984]: ETA
+                        - strong [ref=e985]: 需要决策时询问我
+                      - generic [ref=e986]:
+                        - generic [ref=e987]: Create Time
+                        - strong [ref=e988]: 10小时前
+                      - generic [ref=e990]:
+                        - generic [ref=e991]: Progress
+                        - strong [ref=e992]: 12%
+                  - tablist "任务工作栏" [ref=e995]:
+                    - tab "记录" [selected] [ref=e996] [cursor=pointer]
+                    - tab "计划" [ref=e997] [cursor=pointer]
+                    - tab "运行" [ref=e998] [cursor=pointer]
+                    - tab "资源" [ref=e999] [cursor=pointer]
+                  - generic [ref=e3562]:
+                    - generic [ref=e3563]:
+                      - img [ref=e3564]
+                      - generic [ref=e3567]:
+                        - heading "Records" [level=4] [ref=e3568]
+                        - paragraph [ref=e3569]: 4 items
+                    - generic [ref=e3570]:
+                      - article [ref=e3571]:
+                        - generic [ref=e3572]:
+                          - strong [ref=e3573]: You
+                          - time [ref=e3574]: 10小时前
+                        - generic [ref=e3577]: 去掉header菜单中的测试菜单
+                      - article [ref=e3578]:
+                        - generic [ref=e3579]:
+                          - strong [ref=e3580]: System
+                          - time [ref=e3581]: 10小时前
+                        - generic [ref=e3584]: "已创建任务 #OJ0BdOkbv7b9：去掉header菜单中的测试菜单，优先级 normal，未指派"
+                      - article [ref=e3585]:
+                        - generic [ref=e3586]:
+                          - strong [ref=e3587]: System
+                          - time [ref=e3588]: 10小时前
+                        - generic [ref=e3591]: 消息已路由到任务：去掉header菜单中的测试菜单
+                      - article [ref=e3592]:
+                        - generic [ref=e3593]:
+                          - strong [ref=e3594]: 规划师
+                          - time [ref=e3595]: 10小时前
+                        - generic [ref=e3598]:
+                          - paragraph [ref=e3601]: 我先定位 header 菜单的实现位置和测试菜单相关引用，只做只读检查，然后给出可执行计划与验收方式。
+                          - generic [ref=e3603]:
+                            - paragraph [ref=e3604]: 目标清晰：从 header 顶部导航中移除“测试”菜单入口。
+                            - paragraph [ref=e3605]:
+                              - generic [ref=e3606]:
+                                - text: 边界建议：只移除 header 菜单项，不删除
+                                - code [ref=e3607]: /test
+                                - text: 路由、
+                                - code [ref=e3608]: TestPage.tsx
+                                - text: 或 i18n 中的
+                                - code [ref=e3609]: test.*
+                                - text: 文案，避免把“隐藏入口”扩大成“删除测试页功能”。若需要彻底删除测试页，可作为后续任务。
+                            - paragraph [ref=e3610]:
+                              - text: 执行计划：
+                              - generic [ref=e3611]:
+                                - text: 1. 修改
+                                - code [ref=e3612]: packages/frontend/src/components/AppShell.tsx
+                              - generic [ref=e3613]:
+                                - text: "- 删除"
+                                - code [ref=e3614]: TestTube2
+                                - text: 图标 import
+                              - generic [ref=e3615]:
+                                - text: "- 删除导航里的"
+                                - code [ref=e3616]: "<SidebarLink to=\"/test\" ... label={t('shell.nav.test')} />"
+                              - generic [ref=e3617]:
+                                - text: 2. 不改
+                                - code [ref=e3618]: main.tsx
+                              - generic [ref=e3619]:
+                                - text: "- 保留"
+                                - code [ref=e3620]: /test
+                                - text: 路由，避免已有链接或历史地址直接失效
+                              - generic [ref=e3621]: 3. 验证
+                              - generic [ref=e3622]:
+                                - text: "- 运行"
+                                - code [ref=e3623]: npm run build
+                              - generic [ref=e3624]: "- 手动检查 header 中不再出现“测试/Test”"
+                              - generic [ref=e3625]: "- 访问其他 header 菜单确认导航正常"
+                            - paragraph [ref=e3626]:
+                              - generic [ref=e3627]:
+                                - text: 风险：如果产品预期是“彻底移除测试计数器功能”，仅删 header 入口不够，还需要同步删除
+                                - code [ref=e3628]: /test
+                                - text: route、
+                                - code [ref=e3629]: TestPage.tsx
+                                - text: 和相关 i18n key。
+                            - generic [ref=e3630]:
+                              - generic [ref=e3631]:
+                                - generic [ref=e3632]:
+                                  - generic [ref=e3633]: 结构化
+                                  - generic [ref=e3634]: json
+                                - generic [ref=e3635]:
+                                  - generic "JSON 显示模式" [ref=e3636]:
+                                    - button "结构化" [pressed] [ref=e3637] [cursor=pointer]
+                                    - button "原文" [ref=e3638] [cursor=pointer]
+                                  - button "复制" [ref=e3639] [cursor=pointer]:
+                                    - img [ref=e3640]
+                                    - text: 复制
+                              - region "任务准备状态" [ref=e3643]:
+                                - generic [ref=e3644]:
+                                  - generic [ref=e3645]: 任务准备状态
+                                  - strong [ref=e3646]: 去掉 header 菜单中的测试菜单
+                                - generic [ref=e3647]:
+                                  - generic [ref=e3648]:
+                                    - term [ref=e3649]: 是否就绪
+                                    - definition [ref=e3650]: 是
+                                  - generic [ref=e3651]:
+                                    - term [ref=e3652]: 置信度
+                                    - definition [ref=e3653]: 94%
+                                  - generic [ref=e3654]:
+                                    - term [ref=e3655]: 推荐模式
+                                    - definition [ref=e3656]: 正式工作流
+                                  - generic [ref=e3657]:
+                                    - term [ref=e3658]: 执行意图
+                                    - definition [ref=e3659]: 实现
+                                  - generic [ref=e3660]:
+                                    - term [ref=e3661]: 缺失问题
+                                    - definition [ref=e3662]: 0 个
+                            - generic [ref=e3663]:
+                              - generic [ref=e3664]:
+                                - generic [ref=e3665]:
+                                  - generic [ref=e3666]: 结构化
+                                  - generic [ref=e3667]: json
+                                - generic [ref=e3668]:
+                                  - generic "JSON 显示模式" [ref=e3669]:
+                                    - button "结构化" [pressed] [ref=e3670] [cursor=pointer]
+                                    - button "原文" [ref=e3671] [cursor=pointer]
+                                  - button "复制" [ref=e3672] [cursor=pointer]:
+                                    - img [ref=e3673]
+                                    - text: 复制
+                              - generic "JSON 结构化内容" [ref=e3676]:
+                                - generic [ref=e3678]:
+                                  - term [ref=e3679]:
+                                    - generic [ref=e3680]: 规划决策
+                                    - generic [ref=e3681]: planner_decision
+                                  - definition [ref=e3682]:
+                                    - generic [ref=e3683]:
+                                      - generic [ref=e3684]:
+                                        - term [ref=e3685]:
+                                          - generic [ref=e3686]: 模式
+                                          - generic [ref=e3687]: mode
+                                        - definition [ref=e3688]: pause_after_suggestion
+                                      - generic [ref=e3689]:
+                                        - term [ref=e3690]:
+                                          - generic [ref=e3691]: 状态
+                                          - generic [ref=e3692]: status
+                                        - definition [ref=e3693]: suggested
+                                      - generic [ref=e3694]:
+                                        - term [ref=e3695]:
+                                          - generic [ref=e3696]: 摘要
+                                          - generic [ref=e3697]: summary
+                                        - definition [ref=e3698]: 建议交给 frontend-executor 按最小范围移除 header 测试菜单入口并验证构建
+                                      - generic [ref=e3699]:
+                                        - term [ref=e3700]:
+                                          - generic [ref=e3701]: 下一步
+                                          - generic [ref=e3702]: next_steps
+                                        - definition [ref=e3703]:
+                                          - list [ref=e3704]:
+                                            - listitem [ref=e3705]:
+                                              - generic [ref=e3706]: "0"
+                                              - generic [ref=e3707]:
+                                                - generic [ref=e3708]:
+                                                  - term [ref=e3709]:
+                                                    - generic [ref=e3710]: 智能体
+                                                    - generic [ref=e3711]: agent_id
+                                                  - definition: frontend-executor
+                                                - generic [ref=e3712]:
+                                                  - term [ref=e3713]:
+                                                    - generic [ref=e3714]: 目标
+                                                    - generic [ref=e3715]: goal
+                                                  - definition: 移除 AppShell header 中的测试菜单入口，清理未使用图标 import，并运行 npm run build 验证
+                                      - generic [ref=e3716]:
+                                        - term [ref=e3717]:
+                                          - generic [ref=e3718]: 等待确认
+                                          - generic [ref=e3719]: awaiting_user_confirmation
+                                        - definition [ref=e3720]: 是
+                        - generic [ref=e3721]:
+                          - generic [ref=e3722]: 规划决策
+                          - generic [ref=e3723]:
+                            - generic [ref=e3724]:
+                              - generic [ref=e3725]:
+                                - generic [ref=e3726]: Planner
+                                - generic [ref=e3727]: 建议后暂停
+                                - generic [ref=e3728]: 已建议
+                              - generic [ref=e3729]:
+                                - generic [ref=e3730]: 1 步
+                                - generic [ref=e3731]: 等待确认
+                            - paragraph [ref=e3732]: 建议交给 frontend-executor 按最小范围移除 header 测试菜单入口并验证构建
+                            - list [ref=e3733]:
+                              - listitem [ref=e3734]:
+                                - generic [ref=e3735]:
+                                  - generic [ref=e3736]: "#1"
+                                  - generic "frontend-executor" [ref=e3737]
+                                - generic [ref=e3738]: 移除 AppShell header 中的测试菜单入口，清理未使用图标 import，并运行 npm run build 验证
+                            - paragraph [ref=e3739]: 缺席智能体：frontend-executor。 继续时会自动从全局智能体库查找并加入。
+                            - button "按建议继续" [ref=e3741] [cursor=pointer]
+                        - generic [ref=e3742]:
+                          - generic [ref=e3743]: ACP 流转记录
+                          - region "ACP 执行过程" [ref=e3744]:
+                            - generic [ref=e3745]:
+                              - generic [ref=e3746]:
+                                - generic [ref=e3747]: ACP
+                                - generic [ref=e3748]: 执行过程
+                              - generic [ref=e3749]: 6 条事件
+                            - group [ref=e3750]:
+                              - generic "Explored 23:33:35 Read SKILL.md · /Users/chendimao/.codex/superpowers/skills/writing-plans/SKILL.md 完成" [ref=e3751] [cursor=pointer]:
+                                - img [ref=e3753]
+                                - generic [ref=e3755]: Explored
+                                - time [ref=e3756]: 23:33:35
+                                - strong [ref=e3757]: Read SKILL.md · /Users/chendimao/.codex/superpowers/skills/writing-plans/SKILL.md
+                                - generic [ref=e3758]: 完成
+                            - group [ref=e3759]:
+                              - generic "Explored 23:33:35 Read SKILL.md · /Users/chendimao/.codex/superpowers/skills/brainstorming/SKILL.md 完成" [ref=e3760] [cursor=pointer]:
+                                - img [ref=e3762]
+                                - generic [ref=e3764]: Explored
+                                - time [ref=e3765]: 23:33:35
+                                - strong [ref=e3766]: Read SKILL.md · /Users/chendimao/.codex/superpowers/skills/brainstorming/SKILL.md
+                                - generic [ref=e3767]: 完成
+                            - group [ref=e3768]:
+                              - generic "Explored 23:34:29 Search test|Test|shell\\.nav\\.test|测试 in frontend 完成" [ref=e3769] [cursor=pointer]:
+                                - img [ref=e3771]
+                                - generic [ref=e3773]: Explored
+                                - time [ref=e3774]: 23:34:29
+                                - strong [ref=e3775]: Search test|Test|shell\.nav\.test|测试 in frontend
+                                - generic [ref=e3776]: 完成
+                            - group [ref=e3777]:
+                              - generic "Explored 23:34:29 Read main.tsx · /Users/chendimao/WWW/openclaw-room/packages/frontend/src/main.tsx 完成" [ref=e3778] [cursor=pointer]:
+                                - img [ref=e3780]
+                                - generic [ref=e3782]: Explored
+                                - time [ref=e3783]: 23:34:29
+                                - strong [ref=e3784]: Read main.tsx · /Users/chendimao/WWW/openclaw-room/packages/frontend/src/main.tsx
+                                - generic [ref=e3785]: 完成
+                            - group [ref=e3786]:
+                              - generic "Explored 23:34:29 Read i18n.tsx · /Users/chendimao/WWW/openclaw-room/packages/frontend/src/lib/i18n.tsx 完成" [ref=e3787] [cursor=pointer]:
+                                - img [ref=e3789]
+                                - generic [ref=e3791]: Explored
+                                - time [ref=e3792]: 23:34:29
+                                - strong [ref=e3793]: Read i18n.tsx · /Users/chendimao/WWW/openclaw-room/packages/frontend/src/lib/i18n.tsx
+                                - generic [ref=e3794]: 完成
+                            - group [ref=e3795]:
+                              - generic "Explored 23:34:29 Read AppShell.tsx · /Users/chendimao/WWW/openclaw-room/packages/frontend/src/components/AppShell.tsx 完成" [ref=e3796] [cursor=pointer]:
+                                - img [ref=e3798]
+                                - generic [ref=e3800]: Explored
+                                - time [ref=e3801]: 23:34:29
+                                - strong [ref=e3802]: Read AppShell.tsx · /Users/chendimao/WWW/openclaw-room/packages/frontend/src/components/AppShell.tsx
+                                - generic [ref=e3803]: 完成
+                        - generic [ref=e3805]:
+                          - strong [ref=e3807]: 规划师
+                          - generic [ref=e3808]: codex · 10小时前
+                          - emphasis [ref=e3809]: completed
+            - region "工作区视图" [ref=e1249]:
+              - generic [ref=e1250]:
+                - generic [ref=e1252]: 聊天
+                - generic [ref=e1253]:
+                  - button "配置 规划师" [ref=e1255] [cursor=pointer]:
+                    - generic "规划师" [ref=e1256]:
+                      - generic [ref=e1257]: 规划
+                  - button "群聊设置" [ref=e1259] [cursor=pointer]:
+                    - img [ref=e1260]
+                    - generic [ref=e1263]: 设置
+                  - button "记忆" [ref=e1264] [cursor=pointer]:
+                    - img [ref=e1265]
+                    - generic [ref=e1275]: 记忆
+              - generic [ref=e1277]:
+                - log [ref=e1278]:
+                  - generic [ref=e1280]:
+                    - article [ref=e1281]:
+                      - generic [ref=e1282]:
+                        - generic [ref=e1283]:
+                          - generic [ref=e1284]:
+                            - generic [ref=e1285]: 你
+                            - generic [ref=e1286]: 1天前
+                          - generic [ref=e1287]:
+                            - button "回复此消息" [ref=e1288] [cursor=pointer]:
+                              - img [ref=e1289]
+                            - button "保存为记忆" [ref=e1292] [cursor=pointer]:
+                              - img [ref=e1293]
+                        - generic [ref=e1295]:
+                          - generic [ref=e1297]: hi
+                          - article [ref=e1298]:
+                            - generic [ref=e1299]:
+                              - generic [ref=e1300]:
+                                - img [ref=e1302]
+                                - generic [ref=e1304]:
+                                  - generic [ref=e1305]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e1306]
+                              - generic [ref=e1307]:
+                                - img [ref=e1308]
+                                - generic [ref=e1311]: 需要确认
+                            - generic [ref=e1312]:
+                              - generic [ref=e1313]:
+                                - generic [ref=e1314]: 意图
+                                - strong [ref=e1315]: 普通聊天
+                              - generic [ref=e1316]:
+                                - generic [ref=e1317]: 动作
+                                - strong [ref=e1318]: 询问确认
+                              - generic [ref=e1319]:
+                                - generic [ref=e1320]: 来源
+                                - strong [ref=e1321]: 规则
+                              - generic [ref=e1322]:
+                                - generic [ref=e1323]: 置信度
+                                - strong [ref=e1324]: 60%
+                            - generic [ref=e1327]:
+                              - generic [ref=e1328]: 依据
+                              - paragraph [ref=e1329]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e1330]:
+                              - generic [ref=e1331]: 选择消息类型
+                              - generic [ref=e1332]:
+                                - button "按 Brainstorming 继续" [ref=e1333] [cursor=pointer]:
+                                  - img [ref=e1334]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e1344] [cursor=pointer]:
+                                  - img [ref=e1345]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e1347] [cursor=pointer]:
+                                  - img [ref=e1348]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e1350] [cursor=pointer]:
+                                  - img [ref=e1351]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e1360] [cursor=pointer]:
+                                  - img [ref=e1361]
+                                  - text: 进入 Workflow
+                    - article [ref=e1365]:
+                      - generic [ref=e1366]:
+                        - generic [ref=e1367]:
+                          - generic [ref=e1368]:
+                            - generic [ref=e1369]: 你
+                            - generic [ref=e1370]: 1天前
+                          - generic [ref=e1371]:
+                            - button "回复此消息" [ref=e1372] [cursor=pointer]:
+                              - img [ref=e1373]
+                            - button "保存为记忆" [ref=e1376] [cursor=pointer]:
+                              - img [ref=e1377]
+                        - generic [ref=e1379]:
+                          - generic [ref=e1381]: "@规划师 HI"
+                          - article [ref=e1382]:
+                            - generic [ref=e1383]:
+                              - generic [ref=e1384]:
+                                - img [ref=e1386]
+                                - generic [ref=e1388]:
+                                  - generic [ref=e1389]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e1390]
+                              - generic [ref=e1391]:
+                                - img [ref=e1392]
+                                - generic [ref=e1395]: 需要确认
+                            - generic [ref=e1396]:
+                              - generic [ref=e1397]:
+                                - generic [ref=e1398]: 意图
+                                - strong [ref=e1399]: 普通聊天
+                              - generic [ref=e1400]:
+                                - generic [ref=e1401]: 动作
+                                - strong [ref=e1402]: 询问确认
+                              - generic [ref=e1403]:
+                                - generic [ref=e1404]: 来源
+                                - strong [ref=e1405]: 规则
+                              - generic [ref=e1406]:
+                                - generic [ref=e1407]: 置信度
+                                - strong [ref=e1408]: 60%
+                            - generic [ref=e1411]:
+                              - generic [ref=e1412]: 依据
+                              - paragraph [ref=e1413]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e1414]:
+                              - generic [ref=e1415]: 选择消息类型
+                              - generic [ref=e1416]:
+                                - button "按 Brainstorming 继续" [ref=e1417] [cursor=pointer]:
+                                  - img [ref=e1418]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e1428] [cursor=pointer]:
+                                  - img [ref=e1429]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e1431] [cursor=pointer]:
+                                  - img [ref=e1432]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e1434] [cursor=pointer]:
+                                  - img [ref=e1435]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e1444] [cursor=pointer]:
+                                  - img [ref=e1445]
+                                  - text: 进入 Workflow
+                    - article [ref=e1449]:
+                      - generic "规划师" [ref=e1450]:
+                        - generic [ref=e1451]: 规划
+                      - generic [ref=e1453]:
+                        - generic [ref=e1454]:
+                          - generic [ref=e1455]:
+                            - generic [ref=e1456]: 规划师
+                            - generic [ref=e1457]: 1天前
+                          - generic [ref=e1458]: ACP:codex
+                          - generic [ref=e1459]:
+                            - button "预览" [pressed] [ref=e1460] [cursor=pointer]:
+                              - img [ref=e1461]
+                            - button "原文" [ref=e1464] [cursor=pointer]:
+                              - img [ref=e1465]
+                            - button "回复此消息" [ref=e1468] [cursor=pointer]:
+                              - img [ref=e1469]
+                            - button "保存为记忆" [ref=e1472] [cursor=pointer]:
+                              - img [ref=e1473]
+                        - generic [ref=e1479]:
+                          - paragraph [ref=e1480]:
+                            - generic [ref=e1481]:
+                              - text: 我会先按会话约束加载
+                              - code [ref=e1482]: using-superpowers
+                              - text: ，只做轻量判断；当前请求是问候，不进入实现 workflow。个人路径下没有这个 skill 文件，我改用当前可用列表里的
+                              - code [ref=e1483]: .agents
+                              - text: 版本继续完成判断。我在，当前已按
+                              - code [ref=e1484]: using-superpowers
+                              - text: 做了轻量 workflow 判断。
+                          - paragraph [ref=e1485]: 目前只有问候，没有具体任务，所以不进入实现或正式 workflow。你可以直接告诉我目标、边界或要拆解的功能；我会先澄清需求，再输出可交给执行智能体的计划。
+                        - generic [ref=e1486]:
+                          - img [ref=e1487]
+                          - generic [ref=e1490]: ACP 调用记录
+                          - generic [ref=e1491]: ACP:codex · completed
+                    - article [ref=e1492]:
+                      - generic [ref=e1493]:
+                        - generic [ref=e1494]:
+                          - generic [ref=e1495]:
+                            - generic [ref=e1496]: 你
+                            - generic [ref=e1497]: 19小时前
+                          - generic [ref=e1498]:
+                            - button "回复此消息" [ref=e1499] [cursor=pointer]:
+                              - img [ref=e1500]
+                            - button "保存为记忆" [ref=e1503] [cursor=pointer]:
+                              - img [ref=e1504]
+                        - generic [ref=e1508]: 创建任务：test
+                    - article [ref=e1509]:
+                      - 'button "任务已创建 test 进行中 test，优先级 normal，未指派 Task ID #Ylh8ie7tB5 Owner 未分配 Priority 普通 Status 进行中 Time 19小时前 Progress 54%" [ref=e1510] [cursor=pointer]':
+                        - generic [ref=e1511]:
+                          - generic [ref=e1512]:
+                            - img [ref=e1514]
+                            - generic [ref=e1516]:
+                              - generic [ref=e1517]: 任务已创建
+                              - generic "test" [ref=e1518]
+                          - generic [ref=e1519]: 进行中
+                        - generic "test，优先级 normal，未指派" [ref=e1520]
+                        - generic [ref=e1521]:
+                          - generic [ref=e1522]:
+                            - generic [ref=e1523]: Task ID
+                            - text: "#Ylh8ie7tB5"
+                          - generic [ref=e1524]:
+                            - generic [ref=e1525]: Owner
+                            - text: 未分配
+                          - generic [ref=e1526]:
+                            - generic [ref=e1527]: Priority
+                            - text: 普通
+                          - generic [ref=e1528]:
+                            - generic [ref=e1529]: Status
+                            - text: 进行中
+                          - generic [ref=e1530]:
+                            - generic [ref=e1531]: Time
+                            - text: 19小时前
+                        - generic [ref=e1532]:
+                          - generic [ref=e1533]: Progress
+                          - strong [ref=e1534]: 54%
+                    - article [ref=e1537]:
+                      - 'button "任务状态更新 test 进行中 任务「test」状态变更为 in_progress Task ID #Ylh8ie7tB5 Owner 未分配 Priority 普通 Status 进行中 Time 19小时前 Progress 54%" [ref=e1538] [cursor=pointer]':
+                        - generic [ref=e1539]:
+                          - generic [ref=e1540]:
+                            - img [ref=e1542]
+                            - generic [ref=e1544]:
+                              - generic [ref=e1545]: 任务状态更新
+                              - generic "test" [ref=e1546]
+                          - generic [ref=e1547]: 进行中
+                        - generic "任务「test」状态变更为 in_progress" [ref=e1548]
+                        - generic [ref=e1549]:
+                          - generic [ref=e1550]:
+                            - generic [ref=e1551]: Task ID
+                            - text: "#Ylh8ie7tB5"
+                          - generic [ref=e1552]:
+                            - generic [ref=e1553]: Owner
+                            - text: 未分配
+                          - generic [ref=e1554]:
+                            - generic [ref=e1555]: Priority
+                            - text: 普通
+                          - generic [ref=e1556]:
+                            - generic [ref=e1557]: Status
+                            - text: 进行中
+                          - generic [ref=e1558]:
+                            - generic [ref=e1559]: Time
+                            - text: 19小时前
+                        - generic [ref=e1560]:
+                          - generic [ref=e1561]: Progress
+                          - strong [ref=e1562]: 54%
+                    - article [ref=e1565]:
+                      - generic [ref=e1566]:
+                        - generic [ref=e1567]:
+                          - generic [ref=e1568]:
+                            - generic [ref=e1569]: 你
+                            - generic [ref=e1570]: 18小时前
+                          - generic [ref=e1571]:
+                            - button "回复此消息" [ref=e1572] [cursor=pointer]:
+                              - img [ref=e1573]
+                            - button "保存为记忆" [ref=e1576] [cursor=pointer]:
+                              - img [ref=e1577]
+                        - generic [ref=e1579]:
+                          - generic [ref=e1581]: hi
+                          - article [ref=e1582]:
+                            - generic [ref=e1583]:
+                              - generic [ref=e1584]:
+                                - img [ref=e1586]
+                                - generic [ref=e1588]:
+                                  - generic [ref=e1589]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e1590]
+                              - generic [ref=e1591]:
+                                - img [ref=e1592]
+                                - generic [ref=e1595]: 需要确认
+                            - generic [ref=e1596]:
+                              - generic [ref=e1597]:
+                                - generic [ref=e1598]: 意图
+                                - strong [ref=e1599]: 普通聊天
+                              - generic [ref=e1600]:
+                                - generic [ref=e1601]: 动作
+                                - strong [ref=e1602]: 询问确认
+                              - generic [ref=e1603]:
+                                - generic [ref=e1604]: 来源
+                                - strong [ref=e1605]: 规则
+                              - generic [ref=e1606]:
+                                - generic [ref=e1607]: 置信度
+                                - strong [ref=e1608]: 60%
+                            - generic [ref=e1611]:
+                              - generic [ref=e1612]: 依据
+                              - paragraph [ref=e1613]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e1614]:
+                              - generic [ref=e1615]: 选择消息类型
+                              - generic [ref=e1616]:
+                                - button "按 Brainstorming 继续" [ref=e1617] [cursor=pointer]:
+                                  - img [ref=e1618]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e1628] [cursor=pointer]:
+                                  - img [ref=e1629]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e1631] [cursor=pointer]:
+                                  - img [ref=e1632]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e1634] [cursor=pointer]:
+                                  - img [ref=e1635]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e1644] [cursor=pointer]:
+                                  - img [ref=e1645]
+                                  - text: 进入 Workflow
+                    - article [ref=e1649]:
+                      - generic "规划师" [ref=e1650]:
+                        - generic [ref=e1651]: 规划
+                      - generic [ref=e1653]:
+                        - generic [ref=e1654]:
+                          - generic [ref=e1655]:
+                            - generic [ref=e1656]: 规划师
+                            - generic [ref=e1657]: 18小时前
+                          - generic [ref=e1658]: ACP:codex
+                          - generic [ref=e1659]:
+                            - button "预览" [pressed] [ref=e1660] [cursor=pointer]:
+                              - img [ref=e1661]
+                            - button "原文" [ref=e1664] [cursor=pointer]:
+                              - img [ref=e1665]
+                            - button "回复此消息" [ref=e1668] [cursor=pointer]:
+                              - img [ref=e1669]
+                            - button "保存为记忆" [ref=e1672] [cursor=pointer]:
+                              - img [ref=e1673]
+                        - generic [ref=e1677]:
+                          - paragraph [ref=e1680]: 我会先按本项目规则做一次轻量 workflow 判断；当前只是问候，不进入实现或规划流程。
+                          - paragraph [ref=e1683]:
+                            - generic [ref=e1684]:
+                              - text: 系统列出的
+                              - code [ref=e1685]: using-superpowers
+                              - text: 路径和本机实际路径有差异，我会改读可用的个人 skill 路径；这仍然只是确认是否需要进入工作流。
+                          - generic [ref=e1687]:
+                            - paragraph [ref=e1688]: 你好，我在。当前请求只是问候，不需要进入正式 workflow，也不会修改代码。
+                            - paragraph [ref=e1689]:
+                              - generic [ref=e1690]:
+                                - text: 我本次使用了
+                                - code [ref=e1691]: using-superpowers
+                                - text: 做会话入口判断；由于当前没有明确实现、修复或分析目标，下一步等你给具体需求。
+                        - button "ACP 调用记录 ACP:codex · completed 查看任务记录" [ref=e1692] [cursor=pointer]:
+                          - img [ref=e1693]
+                          - generic [ref=e1696]: ACP 调用记录
+                          - generic [ref=e1697]: ACP:codex · completed
+                          - strong [ref=e1698]: 查看任务记录
+                    - article [ref=e1699]:
+                      - generic [ref=e1700]:
+                        - generic [ref=e1701]:
+                          - generic [ref=e1702]:
+                            - generic [ref=e1703]: 你
+                            - generic [ref=e1704]: 17小时前
+                          - generic [ref=e1705]:
+                            - button "回复此消息" [ref=e1706] [cursor=pointer]:
+                              - img [ref=e1707]
+                            - button "保存为记忆" [ref=e1710] [cursor=pointer]:
+                              - img [ref=e1711]
+                        - generic [ref=e1713]:
+                          - generic [ref=e1715]: hi
+                          - article [ref=e1716]:
+                            - generic [ref=e1717]:
+                              - generic [ref=e1718]:
+                                - img [ref=e1720]
+                                - generic [ref=e1722]:
+                                  - generic [ref=e1723]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e1724]
+                              - generic [ref=e1725]:
+                                - img [ref=e1726]
+                                - generic [ref=e1729]: 需要确认
+                            - generic [ref=e1730]:
+                              - generic [ref=e1731]:
+                                - generic [ref=e1732]: 意图
+                                - strong [ref=e1733]: 普通聊天
+                              - generic [ref=e1734]:
+                                - generic [ref=e1735]: 动作
+                                - strong [ref=e1736]: 询问确认
+                              - generic [ref=e1737]:
+                                - generic [ref=e1738]: 来源
+                                - strong [ref=e1739]: 规则
+                              - generic [ref=e1740]:
+                                - generic [ref=e1741]: 置信度
+                                - strong [ref=e1742]: 60%
+                            - generic [ref=e1745]:
+                              - generic [ref=e1746]: 依据
+                              - paragraph [ref=e1747]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e1748]:
+                              - generic [ref=e1749]: 选择消息类型
+                              - generic [ref=e1750]:
+                                - button "按 Brainstorming 继续" [ref=e1751] [cursor=pointer]:
+                                  - img [ref=e1752]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e1762] [cursor=pointer]:
+                                  - img [ref=e1763]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e1765] [cursor=pointer]:
+                                  - img [ref=e1766]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e1768] [cursor=pointer]:
+                                  - img [ref=e1769]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e1778] [cursor=pointer]:
+                                  - img [ref=e1779]
+                                  - text: 进入 Workflow
+                    - article [ref=e1783]:
+                      - generic [ref=e1784]:
+                        - generic [ref=e1785]:
+                          - generic [ref=e1786]:
+                            - generic [ref=e1787]: 你
+                            - generic [ref=e1788]: 16小时前
+                          - generic [ref=e1789]:
+                            - button "回复此消息" [ref=e1790] [cursor=pointer]:
+                              - img [ref=e1791]
+                            - button "保存为记忆" [ref=e1794] [cursor=pointer]:
+                              - img [ref=e1795]
+                        - generic [ref=e1797]:
+                          - generic [ref=e1799]: hi
+                          - article [ref=e1800]:
+                            - generic [ref=e1801]:
+                              - generic [ref=e1802]:
+                                - img [ref=e1804]
+                                - generic [ref=e1806]:
+                                  - generic [ref=e1807]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e1808]
+                              - generic [ref=e1809]:
+                                - img [ref=e1810]
+                                - generic [ref=e1813]: 需要确认
+                            - generic [ref=e1814]:
+                              - generic [ref=e1815]:
+                                - generic [ref=e1816]: 意图
+                                - strong [ref=e1817]: 普通聊天
+                              - generic [ref=e1818]:
+                                - generic [ref=e1819]: 动作
+                                - strong [ref=e1820]: 询问确认
+                              - generic [ref=e1821]:
+                                - generic [ref=e1822]: 来源
+                                - strong [ref=e1823]: 规则
+                              - generic [ref=e1824]:
+                                - generic [ref=e1825]: 置信度
+                                - strong [ref=e1826]: 60%
+                            - generic [ref=e1829]:
+                              - generic [ref=e1830]: 依据
+                              - paragraph [ref=e1831]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e1832]:
+                              - generic [ref=e1833]: 选择消息类型
+                              - generic [ref=e1834]:
+                                - button "按 Brainstorming 继续" [ref=e1835] [cursor=pointer]:
+                                  - img [ref=e1836]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e1846] [cursor=pointer]:
+                                  - img [ref=e1847]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e1849] [cursor=pointer]:
+                                  - img [ref=e1850]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e1852] [cursor=pointer]:
+                                  - img [ref=e1853]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e1862] [cursor=pointer]:
+                                  - img [ref=e1863]
+                                  - text: 进入 Workflow
+                    - article [ref=e1867]:
+                      - generic "规划师" [ref=e1868]:
+                        - generic [ref=e1869]: 规划
+                      - generic [ref=e1871]:
+                        - generic [ref=e1872]:
+                          - generic [ref=e1873]:
+                            - generic [ref=e1874]: 规划师
+                            - generic [ref=e1875]: 16小时前
+                          - generic [ref=e1876]: ACP:codex
+                          - generic [ref=e1877]:
+                            - button "预览" [pressed] [ref=e1878] [cursor=pointer]:
+                              - img [ref=e1879]
+                            - button "原文" [ref=e1882] [cursor=pointer]:
+                              - img [ref=e1883]
+                            - button "回复此消息" [ref=e1886] [cursor=pointer]:
+                              - img [ref=e1887]
+                            - button "保存为记忆" [ref=e1890] [cursor=pointer]:
+                              - img [ref=e1891]
+                        - generic [ref=e1895]:
+                          - paragraph [ref=e1898]: 我先按项目规则做轻量入口判断：当前只是问候，不进入实现、规划或任务生成流程。
+                          - generic [ref=e1900]:
+                            - paragraph [ref=e1901]: 你好，我在。当前只是问候，不需要进入正式 workflow，也不会生成任务或修改代码。
+                            - paragraph [ref=e1902]:
+                              - generic [ref=e1903]:
+                                - text: 本次使用了
+                                - code [ref=e1904]: using-superpowers
+                                - text: 做会话入口判断。
+                        - button "ACP 调用记录 ACP:codex · completed 查看任务记录" [ref=e1905] [cursor=pointer]:
+                          - img [ref=e1906]
+                          - generic [ref=e1909]: ACP 调用记录
+                          - generic [ref=e1910]: ACP:codex · completed
+                          - strong [ref=e1911]: 查看任务记录
+                    - article [ref=e1912]:
+                      - generic [ref=e1913]:
+                        - generic [ref=e1914]:
+                          - generic [ref=e1915]:
+                            - generic [ref=e1916]: 你
+                            - generic [ref=e1917]: 13小时前
+                          - generic [ref=e1918]:
+                            - button "回复此消息" [ref=e1919] [cursor=pointer]:
+                              - img [ref=e1920]
+                            - button "保存为记忆" [ref=e1923] [cursor=pointer]:
+                              - img [ref=e1924]
+                        - generic [ref=e1926]:
+                          - generic [ref=e1928]: aaaaa
+                          - article [ref=e1929]:
+                            - generic [ref=e1930]:
+                              - generic [ref=e1931]:
+                                - img [ref=e1933]
+                                - generic [ref=e1935]:
+                                  - generic [ref=e1936]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e1937]
+                              - generic [ref=e1938]:
+                                - img [ref=e1939]
+                                - generic [ref=e1942]: 需要确认
+                            - generic [ref=e1943]:
+                              - generic [ref=e1944]:
+                                - generic [ref=e1945]: 意图
+                                - strong [ref=e1946]: 普通聊天
+                              - generic [ref=e1947]:
+                                - generic [ref=e1948]: 动作
+                                - strong [ref=e1949]: 询问确认
+                              - generic [ref=e1950]:
+                                - generic [ref=e1951]: 来源
+                                - strong [ref=e1952]: 规则
+                              - generic [ref=e1953]:
+                                - generic [ref=e1954]: 置信度
+                                - strong [ref=e1955]: 60%
+                            - generic [ref=e1958]:
+                              - generic [ref=e1959]: 依据
+                              - paragraph [ref=e1960]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e1961]:
+                              - generic [ref=e1962]: 选择消息类型
+                              - generic [ref=e1963]:
+                                - button "按 Brainstorming 继续" [ref=e1964] [cursor=pointer]:
+                                  - img [ref=e1965]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e1975] [cursor=pointer]:
+                                  - img [ref=e1976]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e1978] [cursor=pointer]:
+                                  - img [ref=e1979]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e1981] [cursor=pointer]:
+                                  - img [ref=e1982]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e1991] [cursor=pointer]:
+                                  - img [ref=e1992]
+                                  - text: 进入 Workflow
+                    - article [ref=e1996]:
+                      - generic [ref=e1997]:
+                        - generic [ref=e1998]:
+                          - generic [ref=e1999]:
+                            - generic [ref=e2000]: 你
+                            - generic [ref=e2001]: 12小时前
+                          - generic [ref=e2002]:
+                            - button "回复此消息" [ref=e2003] [cursor=pointer]:
+                              - img [ref=e2004]
+                            - button "保存为记忆" [ref=e2007] [cursor=pointer]:
+                              - img [ref=e2008]
+                        - generic [ref=e2010]:
+                          - generic [ref=e2013]:
+                            - generic "#task:Ylh8ie7tB5Cd" [ref=e2014]: 任务:test
+                            - text: 你好
+                          - article [ref=e2015]:
+                            - generic [ref=e2016]:
+                              - generic [ref=e2017]:
+                                - img [ref=e2019]
+                                - generic [ref=e2021]:
+                                  - generic [ref=e2022]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e2023]
+                              - generic [ref=e2024]:
+                                - img [ref=e2025]
+                                - generic [ref=e2028]: 需要确认
+                            - generic [ref=e2029]:
+                              - generic [ref=e2030]:
+                                - generic [ref=e2031]: 意图
+                                - strong [ref=e2032]: 普通聊天
+                              - generic [ref=e2033]:
+                                - generic [ref=e2034]: 动作
+                                - strong [ref=e2035]: 询问确认
+                              - generic [ref=e2036]:
+                                - generic [ref=e2037]: 来源
+                                - strong [ref=e2038]: 规则
+                              - generic [ref=e2039]:
+                                - generic [ref=e2040]: 置信度
+                                - strong [ref=e2041]: 60%
+                            - generic [ref=e2044]:
+                              - generic [ref=e2045]: 依据
+                              - paragraph [ref=e2046]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e2047]:
+                              - generic [ref=e2048]: 选择消息类型
+                              - generic [ref=e2049]:
+                                - button "按 Brainstorming 继续" [ref=e2050] [cursor=pointer]:
+                                  - img [ref=e2051]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e2061] [cursor=pointer]:
+                                  - img [ref=e2062]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e2064] [cursor=pointer]:
+                                  - img [ref=e2065]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e2067] [cursor=pointer]:
+                                  - img [ref=e2068]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e2077] [cursor=pointer]:
+                                  - img [ref=e2078]
+                                  - text: 进入 Workflow
+                    - article [ref=e2082]:
+                      - generic "规划师" [ref=e2083]:
+                        - generic [ref=e2084]: 规划
+                      - generic [ref=e2086]:
+                        - generic [ref=e2087]:
+                          - generic [ref=e2088]:
+                            - generic [ref=e2089]: 规划师
+                            - generic [ref=e2090]: 12小时前
+                          - generic [ref=e2091]: ACP:codex
+                          - generic [ref=e2092]:
+                            - button "预览" [pressed] [ref=e2093] [cursor=pointer]:
+                              - img [ref=e2094]
+                            - button "原文" [ref=e2097] [cursor=pointer]:
+                              - img [ref=e2098]
+                            - button "回复此消息" [ref=e2101] [cursor=pointer]:
+                              - img [ref=e2102]
+                            - button "保存为记忆" [ref=e2105] [cursor=pointer]:
+                              - img [ref=e2106]
+                        - generic [ref=e2110]:
+                          - paragraph [ref=e2113]:
+                            - generic [ref=e2114]:
+                              - text: 我先按项目规则做一次轻量 workflow 判断；当前只是问候，不进入实现、规划或任务生成流程。为了符合会话入口要求，我会读取
+                              - code [ref=e2115]: using-superpowers
+                              - text: 的最小说明后直接回复。
+                          - paragraph [ref=e2118]:
+                            - generic [ref=e2119]:
+                              - text: 系统给出的个人 skill 路径当前不存在；我改读可用的
+                              - code [ref=e2120]: .agents
+                              - text: 路径，只做入口判断，不做代码操作。
+                          - generic [ref=e2122]:
+                            - paragraph [ref=e2123]: 你好，我在。
+                            - paragraph [ref=e2124]:
+                              - generic [ref=e2125]:
+                                - text: 当前只是问候，不需要进入正式 workflow，也不会生成任务或修改代码。本次使用了
+                                - code [ref=e2126]: using-superpowers
+                                - text: 做会话入口判断。
+                        - button "ACP 调用记录 ACP:codex · completed 查看任务记录" [ref=e2127] [cursor=pointer]:
+                          - img [ref=e2128]
+                          - generic [ref=e2131]: ACP 调用记录
+                          - generic [ref=e2132]: ACP:codex · completed
+                          - strong [ref=e2133]: 查看任务记录
+                    - article [ref=e2134]:
+                      - generic [ref=e2135]:
+                        - generic [ref=e2136]:
+                          - generic [ref=e2137]:
+                            - generic [ref=e2138]: 你
+                            - generic [ref=e2139]: 12小时前
+                          - generic [ref=e2140]:
+                            - button "回复此消息" [ref=e2141] [cursor=pointer]:
+                              - img [ref=e2142]
+                            - button "保存为记忆" [ref=e2145] [cursor=pointer]:
+                              - img [ref=e2146]
+                        - generic [ref=e2148]:
+                          - generic [ref=e2150]: ˙
+                          - article [ref=e2151]:
+                            - generic [ref=e2152]:
+                              - generic [ref=e2153]:
+                                - img [ref=e2155]
+                                - generic [ref=e2157]:
+                                  - generic [ref=e2158]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e2159]
+                              - generic [ref=e2160]:
+                                - img [ref=e2161]
+                                - generic [ref=e2164]: 需要确认
+                            - generic [ref=e2165]:
+                              - generic [ref=e2166]:
+                                - generic [ref=e2167]: 意图
+                                - strong [ref=e2168]: 普通聊天
+                              - generic [ref=e2169]:
+                                - generic [ref=e2170]: 动作
+                                - strong [ref=e2171]: 询问确认
+                              - generic [ref=e2172]:
+                                - generic [ref=e2173]: 来源
+                                - strong [ref=e2174]: 规则
+                              - generic [ref=e2175]:
+                                - generic [ref=e2176]: 置信度
+                                - strong [ref=e2177]: 60%
+                            - generic [ref=e2180]:
+                              - generic [ref=e2181]: 依据
+                              - paragraph [ref=e2182]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e2183]:
+                              - generic [ref=e2184]: 选择消息类型
+                              - generic [ref=e2185]:
+                                - button "按 Brainstorming 继续" [ref=e2186] [cursor=pointer]:
+                                  - img [ref=e2187]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e2197] [cursor=pointer]:
+                                  - img [ref=e2198]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e2200] [cursor=pointer]:
+                                  - img [ref=e2201]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e2203] [cursor=pointer]:
+                                  - img [ref=e2204]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e2213] [cursor=pointer]:
+                                  - img [ref=e2214]
+                                  - text: 进入 Workflow
+                    - article [ref=e2218]:
+                      - generic "规划师" [ref=e2219]:
+                        - generic [ref=e2220]: 规划
+                      - generic [ref=e2222]:
+                        - generic [ref=e2223]:
+                          - generic [ref=e2224]:
+                            - generic [ref=e2225]: 规划师
+                            - generic [ref=e2226]: 12小时前
+                          - generic [ref=e2227]: ACP:codex
+                          - generic [ref=e2228]:
+                            - button "预览" [pressed] [ref=e2229] [cursor=pointer]:
+                              - img [ref=e2230]
+                            - button "原文" [ref=e2233] [cursor=pointer]:
+                              - img [ref=e2234]
+                            - button "回复此消息" [ref=e2237] [cursor=pointer]:
+                              - img [ref=e2238]
+                            - button "保存为记忆" [ref=e2241] [cursor=pointer]:
+                              - img [ref=e2242]
+                        - generic [ref=e2246]:
+                          - paragraph [ref=e2249]: 我先按当前房间规则做 workflow 判断：这条消息没有明确实现目标，且当前运行边界是只读规划师，所以不会进入代码修改流程。接下来只需要确认你要规划的具体任务。
+                          - generic [ref=e2251]:
+                            - paragraph [ref=e2252]:
+                              - generic [ref=e2253]:
+                                - text: 已使用
+                                - code [ref=e2254]: using-superpowers
+                                - text: 做入口判断。
+                            - paragraph [ref=e2255]: 当前没有可规划的具体需求，且你的身份边界是“规划师 / 只读 / 不亲自改代码”。请直接给我一个目标，例如：
+                            - list [ref=e2256]:
+                              - listitem [ref=e2257]: 要创建什么任务
+                              - listitem [ref=e2258]: 要实现/修复/优化哪个功能
+                              - listitem [ref=e2259]: 目标范围、验收标准、是否需要拆给前端/后端执行智能体
+                            - paragraph [ref=e2260]: 收到明确目标后，我会输出：目标、边界、风险、验证方式，以及可进入 workflow 的执行计划。
+                        - generic [ref=e2261]:
+                          - img [ref=e2262]
+                          - generic [ref=e2265]: ACP 调用记录
+                          - generic [ref=e2266]: ACP:codex · completed
+                    - article [ref=e2267]:
+                      - generic [ref=e2268]:
+                        - generic [ref=e2269]:
+                          - generic [ref=e2270]:
+                            - generic [ref=e2271]: 你
+                            - generic [ref=e2272]: 11小时前
+                          - generic [ref=e2273]:
+                            - button "回复此消息" [ref=e2274] [cursor=pointer]:
+                              - img [ref=e2275]
+                            - button "保存为记忆" [ref=e2278] [cursor=pointer]:
+                              - img [ref=e2279]
+                        - generic [ref=e2281]:
+                          - generic [ref=e2283]: hi
+                          - article [ref=e2284]:
+                            - generic [ref=e2285]:
+                              - generic [ref=e2286]:
+                                - img [ref=e2288]
+                                - generic [ref=e2290]:
+                                  - generic [ref=e2291]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e2292]
+                              - generic [ref=e2293]:
+                                - img [ref=e2294]
+                                - generic [ref=e2297]: 需要确认
+                            - generic [ref=e2298]:
+                              - generic [ref=e2299]:
+                                - generic [ref=e2300]: 意图
+                                - strong [ref=e2301]: 普通聊天
+                              - generic [ref=e2302]:
+                                - generic [ref=e2303]: 动作
+                                - strong [ref=e2304]: 询问确认
+                              - generic [ref=e2305]:
+                                - generic [ref=e2306]: 来源
+                                - strong [ref=e2307]: 规则
+                              - generic [ref=e2308]:
+                                - generic [ref=e2309]: 置信度
+                                - strong [ref=e2310]: 60%
+                            - generic [ref=e2313]:
+                              - generic [ref=e2314]: 依据
+                              - paragraph [ref=e2315]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e2316]:
+                              - generic [ref=e2317]: 选择消息类型
+                              - generic [ref=e2318]:
+                                - button "按 Brainstorming 继续" [ref=e2319] [cursor=pointer]:
+                                  - img [ref=e2320]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e2330] [cursor=pointer]:
+                                  - img [ref=e2331]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e2333] [cursor=pointer]:
+                                  - img [ref=e2334]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e2336] [cursor=pointer]:
+                                  - img [ref=e2337]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e2346] [cursor=pointer]:
+                                  - img [ref=e2347]
+                                  - text: 进入 Workflow
+                    - article [ref=e2351]:
+                      - generic "规划师" [ref=e2352]:
+                        - generic [ref=e2353]: 规划
+                      - generic [ref=e2355]:
+                        - generic [ref=e2356]:
+                          - generic [ref=e2357]:
+                            - generic [ref=e2358]: 规划师
+                            - generic [ref=e2359]: 11小时前
+                          - generic [ref=e2360]: ACP:codex
+                          - generic [ref=e2361]:
+                            - button "预览" [pressed] [ref=e2362] [cursor=pointer]:
+                              - img [ref=e2363]
+                            - button "原文" [ref=e2366] [cursor=pointer]:
+                              - img [ref=e2367]
+                            - button "回复此消息" [ref=e2370] [cursor=pointer]:
+                              - img [ref=e2371]
+                            - button "保存为记忆" [ref=e2374] [cursor=pointer]:
+                              - img [ref=e2375]
+                        - generic [ref=e2379]:
+                          - paragraph [ref=e2382]: 我先按房间规则做入口 workflow 判断；当前消息是问候，运行边界也是只读规划师，所以只会确认状态，不进入实现计划。
+                          - generic [ref=e2384]:
+                            - paragraph [ref=e2385]:
+                              - generic [ref=e2386]:
+                                - text: 我在。当前已按
+                                - code [ref=e2387]: using-superpowers
+                                - text: 做了入口判断。
+                            - paragraph [ref=e2388]: 你这条消息只有问候，还没有具体任务；我作为规划师会先等待你给出目标，再明确目标、边界、风险、验证方式，并输出可进入 workflow 的执行计划。
+                        - generic [ref=e2389]:
+                          - img [ref=e2390]
+                          - generic [ref=e2393]: ACP 调用记录
+                          - generic [ref=e2394]: ACP:codex · completed
+                    - article [ref=e2395]:
+                      - generic [ref=e2396]:
+                        - generic [ref=e2397]:
+                          - generic [ref=e2398]:
+                            - generic [ref=e2399]: 你
+                            - generic [ref=e2400]: 11小时前
+                          - generic [ref=e2401]:
+                            - button "回复此消息" [ref=e2402] [cursor=pointer]:
+                              - img [ref=e2403]
+                            - button "保存为记忆" [ref=e2406] [cursor=pointer]:
+                              - img [ref=e2407]
+                        - generic [ref=e2409]:
+                          - generic [ref=e2411]: hi
+                          - article [ref=e2412]:
+                            - generic [ref=e2413]:
+                              - generic [ref=e2414]:
+                                - img [ref=e2416]
+                                - generic [ref=e2418]:
+                                  - generic [ref=e2419]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e2420]
+                              - generic [ref=e2421]:
+                                - img [ref=e2422]
+                                - generic [ref=e2425]: 需要确认
+                            - generic [ref=e2426]:
+                              - generic [ref=e2427]:
+                                - generic [ref=e2428]: 意图
+                                - strong [ref=e2429]: 普通聊天
+                              - generic [ref=e2430]:
+                                - generic [ref=e2431]: 动作
+                                - strong [ref=e2432]: 询问确认
+                              - generic [ref=e2433]:
+                                - generic [ref=e2434]: 来源
+                                - strong [ref=e2435]: 规则
+                              - generic [ref=e2436]:
+                                - generic [ref=e2437]: 置信度
+                                - strong [ref=e2438]: 60%
+                            - generic [ref=e2441]:
+                              - generic [ref=e2442]: 依据
+                              - paragraph [ref=e2443]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e2444]:
+                              - generic [ref=e2445]: 选择消息类型
+                              - generic [ref=e2446]:
+                                - button "按 Brainstorming 继续" [ref=e2447] [cursor=pointer]:
+                                  - img [ref=e2448]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e2458] [cursor=pointer]:
+                                  - img [ref=e2459]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e2461] [cursor=pointer]:
+                                  - img [ref=e2462]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e2464] [cursor=pointer]:
+                                  - img [ref=e2465]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e2474] [cursor=pointer]:
+                                  - img [ref=e2475]
+                                  - text: 进入 Workflow
+                    - article [ref=e2479]:
+                      - generic "规划师" [ref=e2480]:
+                        - generic [ref=e2481]: 规划
+                      - generic [ref=e2483]:
+                        - generic [ref=e2484]:
+                          - generic [ref=e2485]:
+                            - generic [ref=e2486]: 规划师
+                            - generic [ref=e2487]: 11小时前
+                          - generic [ref=e2488]: ACP:codex
+                          - generic [ref=e2489]:
+                            - button "预览" [pressed] [ref=e2490] [cursor=pointer]:
+                              - img [ref=e2491]
+                            - button "原文" [ref=e2494] [cursor=pointer]:
+                              - img [ref=e2495]
+                            - button "回复此消息" [ref=e2498] [cursor=pointer]:
+                              - img [ref=e2499]
+                            - button "保存为记忆" [ref=e2502] [cursor=pointer]:
+                              - img [ref=e2503]
+                        - generic [ref=e2507]:
+                          - paragraph [ref=e2510]: 我先按房间规则做入口 workflow 判断；这条消息只是问候，所以不会进入实现或任务拆解。
+                          - generic [ref=e2512]:
+                            - paragraph [ref=e2513]:
+                              - generic [ref=e2514]:
+                                - text: 我在。已按
+                                - code [ref=e2515]: using-superpowers
+                                - text: 做入口判断。
+                            - paragraph [ref=e2516]:
+                              - generic [ref=e2517]:
+                                - text: 当前请求只是
+                                - code [ref=e2518]: hi
+                                - text: ，没有具体规划目标；我不会进入实现 workflow。你可以直接发要规划的任务、功能范围或验收标准，我会按“目标、边界、风险、验证方式”拆成可执行计划。
+                        - generic [ref=e2519]:
+                          - img [ref=e2520]
+                          - generic [ref=e2523]: ACP 调用记录
+                          - generic [ref=e2524]: ACP:codex · completed
+                    - article [ref=e2525]:
+                      - generic [ref=e2526]:
+                        - generic [ref=e2527]:
+                          - generic [ref=e2528]:
+                            - generic [ref=e2529]: 你
+                            - generic [ref=e2530]: 11小时前
+                          - generic [ref=e2531]:
+                            - button "回复此消息" [ref=e2532] [cursor=pointer]:
+                              - img [ref=e2533]
+                            - button "保存为记忆" [ref=e2536] [cursor=pointer]:
+                              - img [ref=e2537]
+                        - generic [ref=e2539]:
+                          - generic [ref=e2541]: hi
+                          - article [ref=e2542]:
+                            - generic [ref=e2543]:
+                              - generic [ref=e2544]:
+                                - img [ref=e2546]
+                                - generic [ref=e2548]:
+                                  - generic [ref=e2549]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e2550]
+                              - generic [ref=e2551]:
+                                - img [ref=e2552]
+                                - generic [ref=e2555]: 需要确认
+                            - generic [ref=e2556]:
+                              - generic [ref=e2557]:
+                                - generic [ref=e2558]: 意图
+                                - strong [ref=e2559]: 普通聊天
+                              - generic [ref=e2560]:
+                                - generic [ref=e2561]: 动作
+                                - strong [ref=e2562]: 询问确认
+                              - generic [ref=e2563]:
+                                - generic [ref=e2564]: 来源
+                                - strong [ref=e2565]: 规则
+                              - generic [ref=e2566]:
+                                - generic [ref=e2567]: 置信度
+                                - strong [ref=e2568]: 60%
+                            - generic [ref=e2571]:
+                              - generic [ref=e2572]: 依据
+                              - paragraph [ref=e2573]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e2574]:
+                              - generic [ref=e2575]: 选择消息类型
+                              - generic [ref=e2576]:
+                                - button "按 Brainstorming 继续" [ref=e2577] [cursor=pointer]:
+                                  - img [ref=e2578]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e2588] [cursor=pointer]:
+                                  - img [ref=e2589]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e2591] [cursor=pointer]:
+                                  - img [ref=e2592]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e2594] [cursor=pointer]:
+                                  - img [ref=e2595]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e2604] [cursor=pointer]:
+                                  - img [ref=e2605]
+                                  - text: 进入 Workflow
+                    - article [ref=e2609]:
+                      - generic "规划师" [ref=e2610]:
+                        - generic [ref=e2611]: 规划
+                      - generic [ref=e2613]:
+                        - generic [ref=e2614]:
+                          - generic [ref=e2615]:
+                            - generic [ref=e2616]: 规划师
+                            - generic [ref=e2617]: 11小时前
+                          - generic [ref=e2618]: ACP:codex
+                          - generic [ref=e2619]:
+                            - button "预览" [pressed] [ref=e2620] [cursor=pointer]:
+                              - img [ref=e2621]
+                            - button "原文" [ref=e2624] [cursor=pointer]:
+                              - img [ref=e2625]
+                            - button "回复此消息" [ref=e2628] [cursor=pointer]:
+                              - img [ref=e2629]
+                            - button "保存为记忆" [ref=e2632] [cursor=pointer]:
+                              - img [ref=e2633]
+                        - generic [ref=e2637]:
+                          - paragraph [ref=e2640]: 我先按房间规则做入口 workflow 判断；当前消息只是问候，且运行边界是规划师只读，所以不会进入实现或任务拆解。
+                          - generic [ref=e2642]:
+                            - paragraph [ref=e2643]:
+                              - generic [ref=e2644]:
+                                - text: 我在。已按
+                                - code [ref=e2645]: using-superpowers
+                                - text: 做入口判断。
+                            - paragraph [ref=e2646]:
+                              - generic [ref=e2647]:
+                                - text: 当前请求只是
+                                - code [ref=e2648]: hi
+                                - text: ，没有具体规划目标；我不会进入实现 workflow。你可以直接发要规划的任务、功能范围或验收标准，我会按目标、边界、风险、验证方式拆成可执行计划。
+                            - paragraph [ref=e2649]: "```json"
+                        - generic [ref=e2650]:
+                          - img [ref=e2651]
+                          - generic [ref=e2654]: ACP 调用记录
+                          - generic [ref=e2655]: ACP:codex · interrupted
+                    - article [ref=e2656]:
+                      - generic [ref=e2657]:
+                        - generic [ref=e2658]:
+                          - generic [ref=e2659]:
+                            - generic [ref=e2660]: 你
+                            - generic [ref=e2661]: 11小时前
+                          - generic [ref=e2662]:
+                            - button "回复此消息" [ref=e2663] [cursor=pointer]:
+                              - img [ref=e2664]
+                            - button "保存为记忆" [ref=e2667] [cursor=pointer]:
+                              - img [ref=e2668]
+                        - generic [ref=e2670]:
+                          - generic [ref=e2672]: hi
+                          - article [ref=e2673]:
+                            - generic [ref=e2674]:
+                              - generic [ref=e2675]:
+                                - img [ref=e2677]
+                                - generic [ref=e2679]:
+                                  - generic [ref=e2680]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e2681]
+                              - generic [ref=e2682]:
+                                - img [ref=e2683]
+                                - generic [ref=e2686]: 需要确认
+                            - generic [ref=e2687]:
+                              - generic [ref=e2688]:
+                                - generic [ref=e2689]: 意图
+                                - strong [ref=e2690]: 普通聊天
+                              - generic [ref=e2691]:
+                                - generic [ref=e2692]: 动作
+                                - strong [ref=e2693]: 询问确认
+                              - generic [ref=e2694]:
+                                - generic [ref=e2695]: 来源
+                                - strong [ref=e2696]: 规则
+                              - generic [ref=e2697]:
+                                - generic [ref=e2698]: 置信度
+                                - strong [ref=e2699]: 60%
+                            - generic [ref=e2702]:
+                              - generic [ref=e2703]: 依据
+                              - paragraph [ref=e2704]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e2705]:
+                              - generic [ref=e2706]: 选择消息类型
+                              - generic [ref=e2707]:
+                                - button "按 Brainstorming 继续" [ref=e2708] [cursor=pointer]:
+                                  - img [ref=e2709]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e2719] [cursor=pointer]:
+                                  - img [ref=e2720]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e2722] [cursor=pointer]:
+                                  - img [ref=e2723]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e2725] [cursor=pointer]:
+                                  - img [ref=e2726]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e2735] [cursor=pointer]:
+                                  - img [ref=e2736]
+                                  - text: 进入 Workflow
+                    - article [ref=e2740]:
+                      - generic "规划师" [ref=e2741]:
+                        - generic [ref=e2742]: 规划
+                      - generic [ref=e2744]:
+                        - generic [ref=e2745]:
+                          - generic [ref=e2746]:
+                            - generic [ref=e2747]: 规划师
+                            - generic [ref=e2748]: 11小时前
+                          - generic [ref=e2749]: ACP:codex
+                          - generic [ref=e2750]:
+                            - button "回复此消息" [ref=e2751] [cursor=pointer]:
+                              - img [ref=e2752]
+                            - button "保存为记忆" [ref=e2755] [cursor=pointer]:
+                              - img [ref=e2756]
+                        - paragraph [ref=e2763]: 我在。
+                        - generic [ref=e2764]:
+                          - img [ref=e2765]
+                          - generic [ref=e2768]: ACP 调用记录
+                          - generic [ref=e2769]: ACP:codex · completed
+                    - article [ref=e2770]:
+                      - generic [ref=e2771]:
+                        - generic [ref=e2772]:
+                          - generic [ref=e2773]:
+                            - generic [ref=e2774]: 你
+                            - generic [ref=e2775]: 11小时前
+                          - generic [ref=e2776]:
+                            - button "回复此消息" [ref=e2777] [cursor=pointer]:
+                              - img [ref=e2778]
+                            - button "保存为记忆" [ref=e2781] [cursor=pointer]:
+                              - img [ref=e2782]
+                        - generic [ref=e2784]:
+                          - generic [ref=e2786]: 当前群聊有哪些任务
+                          - article [ref=e2787]:
+                            - generic [ref=e2788]:
+                              - generic [ref=e2789]:
+                                - img [ref=e2791]
+                                - generic [ref=e2793]:
+                                  - generic [ref=e2794]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e2795]
+                              - generic [ref=e2796]:
+                                - img [ref=e2797]
+                                - generic [ref=e2800]: 已自动识别
+                            - generic [ref=e2801]:
+                              - generic [ref=e2802]:
+                                - generic [ref=e2803]: 意图
+                                - strong [ref=e2804]: 普通聊天
+                              - generic [ref=e2805]:
+                                - generic [ref=e2806]: 动作
+                                - strong [ref=e2807]: 留在聊天
+                              - generic [ref=e2808]:
+                                - generic [ref=e2809]: 来源
+                                - strong [ref=e2810]: 规则
+                              - generic [ref=e2811]:
+                                - generic [ref=e2812]: 置信度
+                                - strong [ref=e2813]: 88%
+                            - generic [ref=e2816]:
+                              - generic [ref=e2817]: 依据
+                              - paragraph [ref=e2818]: 命中 chat 规则信号
+                            - generic "命中信号" [ref=e2819]:
+                              - generic [ref=e2820]: 聊
+                    - article [ref=e2821]:
+                      - generic "规划师" [ref=e2822]:
+                        - generic [ref=e2823]: 规划
+                      - generic [ref=e2825]:
+                        - generic [ref=e2826]:
+                          - generic [ref=e2827]:
+                            - generic [ref=e2828]: 规划师
+                            - generic [ref=e2829]: 11小时前
+                          - generic [ref=e2830]: ACP:codex
+                          - generic [ref=e2831]:
+                            - button "预览" [pressed] [ref=e2832] [cursor=pointer]:
+                              - img [ref=e2833]
+                            - button "原文" [ref=e2836] [cursor=pointer]:
+                              - img [ref=e2837]
+                            - button "回复此消息" [ref=e2840] [cursor=pointer]:
+                              - img [ref=e2841]
+                            - button "保存为记忆" [ref=e2844] [cursor=pointer]:
+                              - img [ref=e2845]
+                        - generic [ref=e2849]:
+                          - paragraph [ref=e2852]: 我先快速确认当前入口规则，然后只回答你问的任务列表。
+                          - generic [ref=e2854]:
+                            - paragraph [ref=e2855]: 当前群聊里明确出现的任务只有 1 个：
+                            - list [ref=e2856]:
+                              - listitem [ref=e2857]:
+                                - code [ref=e2858]: 创建任务：test
+                            - paragraph [ref=e2859]:
+                              - generic [ref=e2860]:
+                                - text: 其余消息都是
+                                - code [ref=e2861]: hi
+                                - text: /
+                                - code [ref=e2862]: HI
+                                - text: 问候，没有形成可执行任务。
+                        - generic [ref=e2863]:
+                          - img [ref=e2864]
+                          - generic [ref=e2867]: ACP 调用记录
+                          - generic [ref=e2868]: ACP:codex · completed
+                    - article [ref=e2869]:
+                      - generic [ref=e2870]:
+                        - generic [ref=e2871]:
+                          - generic [ref=e2872]:
+                            - generic [ref=e2873]: 你
+                            - generic [ref=e2874]: 11小时前
+                          - generic [ref=e2875]:
+                            - button "回复此消息" [ref=e2876] [cursor=pointer]:
+                              - img [ref=e2877]
+                            - button "保存为记忆" [ref=e2880] [cursor=pointer]:
+                              - img [ref=e2881]
+                        - generic [ref=e2883]:
+                          - generic [ref=e2885]: 总结一下这个任务的内容,test
+                          - article [ref=e2886]:
+                            - generic [ref=e2887]:
+                              - generic [ref=e2888]:
+                                - img [ref=e2890]
+                                - generic [ref=e2892]:
+                                  - generic [ref=e2893]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e2894]
+                              - generic [ref=e2895]:
+                                - img [ref=e2896]
+                                - generic [ref=e2899]: 需要确认
+                            - generic [ref=e2900]:
+                              - generic [ref=e2901]:
+                                - generic [ref=e2902]: 意图
+                                - strong [ref=e2903]: 普通聊天
+                              - generic [ref=e2904]:
+                                - generic [ref=e2905]: 动作
+                                - strong [ref=e2906]: 询问确认
+                              - generic [ref=e2907]:
+                                - generic [ref=e2908]: 来源
+                                - strong [ref=e2909]: 规则
+                              - generic [ref=e2910]:
+                                - generic [ref=e2911]: 置信度
+                                - strong [ref=e2912]: 60%
+                            - generic [ref=e2915]:
+                              - generic [ref=e2916]: 依据
+                              - paragraph [ref=e2917]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e2918]:
+                              - generic [ref=e2919]: 选择消息类型
+                              - generic [ref=e2920]:
+                                - button "按 Brainstorming 继续" [ref=e2921] [cursor=pointer]:
+                                  - img [ref=e2922]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e2932] [cursor=pointer]:
+                                  - img [ref=e2933]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e2935] [cursor=pointer]:
+                                  - img [ref=e2936]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e2938] [cursor=pointer]:
+                                  - img [ref=e2939]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e2948] [cursor=pointer]:
+                                  - img [ref=e2949]
+                                  - text: 进入 Workflow
+                    - article [ref=e2953]:
+                      - generic "规划师" [ref=e2954]:
+                        - generic [ref=e2955]: 规划
+                      - generic [ref=e2957]:
+                        - generic [ref=e2958]:
+                          - generic [ref=e2959]:
+                            - generic [ref=e2960]: 规划师
+                            - generic [ref=e2961]: 11小时前
+                          - generic [ref=e2962]: ACP:codex
+                          - generic [ref=e2963]:
+                            - button "预览" [pressed] [ref=e2964] [cursor=pointer]:
+                              - img [ref=e2965]
+                            - button "原文" [ref=e2968] [cursor=pointer]:
+                              - img [ref=e2969]
+                            - button "回复此消息" [ref=e2972] [cursor=pointer]:
+                              - img [ref=e2973]
+                            - button "保存为记忆" [ref=e2976] [cursor=pointer]:
+                              - img [ref=e2977]
+                        - generic [ref=e2981]:
+                          - paragraph [ref=e2984]: 我先快速确认入口规则，然后只总结当前任务本身，不扩展成实现计划。
+                          - generic [ref=e2986]:
+                            - paragraph [ref=e2987]:
+                              - generic [ref=e2988]:
+                                - text: 当前任务内容很简单：创建一个名为
+                                - code [ref=e2989]: test
+                                - text: 的任务。
+                            - paragraph [ref=e2990]:
+                              - generic [ref=e2991]:
+                                - text: 已知上下文里没有进一步的目标、范围、验收标准或执行要求；后续的
+                                - code [ref=e2992]: hi
+                                - text: 只是问候，不改变任务内容。当前可总结为：任务标题是
+                                - code [ref=e2993]: test
+                                - text: ，任务详情暂未补充，需要用户继续说明要做什么、由谁执行、完成标准是什么。
+                        - generic [ref=e2994]:
+                          - img [ref=e2995]
+                          - generic [ref=e2998]: ACP 调用记录
+                          - generic [ref=e2999]: ACP:codex · completed
+                    - article [ref=e3000]:
+                      - generic [ref=e3001]:
+                        - generic [ref=e3002]:
+                          - generic [ref=e3003]:
+                            - generic [ref=e3004]: 你
+                            - generic [ref=e3005]: 11小时前
+                          - generic [ref=e3006]:
+                            - button "回复此消息" [ref=e3007] [cursor=pointer]:
+                              - img [ref=e3008]
+                            - button "保存为记忆" [ref=e3011] [cursor=pointer]:
+                              - img [ref=e3012]
+                        - generic [ref=e3014]:
+                          - generic [ref=e3016]: 去掉header菜单中的测试菜单
+                          - article [ref=e3017]:
+                            - generic [ref=e3018]:
+                              - generic [ref=e3019]:
+                                - img [ref=e3021]
+                                - generic [ref=e3023]:
+                                  - generic [ref=e3024]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e3025]
+                              - generic [ref=e3026]:
+                                - img [ref=e3027]
+                                - generic [ref=e3030]: 需要确认
+                            - generic [ref=e3031]:
+                              - generic [ref=e3032]:
+                                - generic [ref=e3033]: 意图
+                                - strong [ref=e3034]: 普通聊天
+                              - generic [ref=e3035]:
+                                - generic [ref=e3036]: 动作
+                                - strong [ref=e3037]: 询问确认
+                              - generic [ref=e3038]:
+                                - generic [ref=e3039]: 来源
+                                - strong [ref=e3040]: 规则
+                              - generic [ref=e3041]:
+                                - generic [ref=e3042]: 置信度
+                                - strong [ref=e3043]: 60%
+                            - generic [ref=e3046]:
+                              - generic [ref=e3047]: 依据
+                              - paragraph [ref=e3048]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e3049]:
+                              - generic [ref=e3050]: 选择消息类型
+                              - generic [ref=e3051]:
+                                - button "按 Brainstorming 继续" [ref=e3052] [cursor=pointer]:
+                                  - img [ref=e3053]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e3063] [cursor=pointer]:
+                                  - img [ref=e3064]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e3066] [cursor=pointer]:
+                                  - img [ref=e3067]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e3069] [cursor=pointer]:
+                                  - img [ref=e3070]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e3079] [cursor=pointer]:
+                                  - img [ref=e3080]
+                                  - text: 进入 Workflow
+                    - article [ref=e3084]:
+                      - generic "规划师" [ref=e3085]:
+                        - generic [ref=e3086]: 规划
+                      - generic [ref=e3088]:
+                        - generic [ref=e3089]:
+                          - generic [ref=e3090]:
+                            - generic [ref=e3091]: 规划师
+                            - generic [ref=e3092]: 11小时前
+                          - generic [ref=e3093]: ACP:codex
+                          - generic [ref=e3094]:
+                            - button "预览" [pressed] [ref=e3095] [cursor=pointer]:
+                              - img [ref=e3096]
+                            - button "原文" [ref=e3099] [cursor=pointer]:
+                              - img [ref=e3100]
+                            - button "回复此消息" [ref=e3103] [cursor=pointer]:
+                              - img [ref=e3104]
+                            - button "保存为记忆" [ref=e3107] [cursor=pointer]:
+                              - img [ref=e3108]
+                        - generic [ref=e3114]:
+                          - paragraph [ref=e3115]: 目标明确：去掉 header 导航里的“测试”菜单入口。
+                          - paragraph [ref=e3116]:
+                            - generic [ref=e3117]:
+                              - text: 边界建议：只移除 header/menu 中的测试入口，不删除
+                              - code [ref=e3118]: TestPage
+                              - text: 、路由或 i18n 文案，避免影响已有
+                              - code [ref=e3119]: /test
+                              - text: 页面兼容性。
+                            - generic [ref=e3120]: 风险：如果产品目标是彻底移除测试功能，仅隐藏菜单不够，还需要同步删除路由、页面和翻译 key。
+                            - generic [ref=e3121]:
+                              - text: 验证方式：修改后运行
+                              - code [ref=e3122]: npm run build
+                              - text: ，并手动确认 header 中不再出现“测试”菜单。
+                        - generic [ref=e3123]:
+                          - img [ref=e3124]
+                          - generic [ref=e3127]: ACP 调用记录
+                          - generic [ref=e3128]: ACP:codex · completed
+                    - article [ref=e3129]:
+                      - generic [ref=e3130]:
+                        - generic [ref=e3131]:
+                          - generic [ref=e3132]:
+                            - generic [ref=e3133]: 你
+                            - generic [ref=e3134]: 11小时前
+                          - generic [ref=e3135]:
+                            - button "回复此消息" [ref=e3136] [cursor=pointer]:
+                              - img [ref=e3137]
+                            - button "保存为记忆" [ref=e3140] [cursor=pointer]:
+                              - img [ref=e3141]
+                        - generic [ref=e3143]:
+                          - generic [ref=e3145]: 你是谁
+                          - article [ref=e3146]:
+                            - generic [ref=e3147]:
+                              - generic [ref=e3148]:
+                                - img [ref=e3150]
+                                - generic [ref=e3152]:
+                                  - generic [ref=e3153]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e3154]
+                              - generic [ref=e3155]:
+                                - img [ref=e3156]
+                                - generic [ref=e3159]: 需要确认
+                            - generic [ref=e3160]:
+                              - generic [ref=e3161]:
+                                - generic [ref=e3162]: 意图
+                                - strong [ref=e3163]: 普通聊天
+                              - generic [ref=e3164]:
+                                - generic [ref=e3165]: 动作
+                                - strong [ref=e3166]: 询问确认
+                              - generic [ref=e3167]:
+                                - generic [ref=e3168]: 来源
+                                - strong [ref=e3169]: 规则
+                              - generic [ref=e3170]:
+                                - generic [ref=e3171]: 置信度
+                                - strong [ref=e3172]: 60%
+                            - generic [ref=e3175]:
+                              - generic [ref=e3176]: 依据
+                              - paragraph [ref=e3177]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e3178]:
+                              - generic [ref=e3179]: 选择消息类型
+                              - generic [ref=e3180]:
+                                - button "按 Brainstorming 继续" [ref=e3181] [cursor=pointer]:
+                                  - img [ref=e3182]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e3192] [cursor=pointer]:
+                                  - img [ref=e3193]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e3195] [cursor=pointer]:
+                                  - img [ref=e3196]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e3198] [cursor=pointer]:
+                                  - img [ref=e3199]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e3208] [cursor=pointer]:
+                                  - img [ref=e3209]
+                                  - text: 进入 Workflow
+                    - article [ref=e3213]:
+                      - generic "规划师" [ref=e3214]:
+                        - generic [ref=e3215]: 规划
+                      - generic [ref=e3217]:
+                        - generic [ref=e3218]:
+                          - generic [ref=e3219]:
+                            - generic [ref=e3220]: 规划师
+                            - generic [ref=e3221]: 11小时前
+                          - generic [ref=e3222]: ACP:codex
+                          - generic [ref=e3223]:
+                            - button "回复此消息" [ref=e3224] [cursor=pointer]:
+                              - img [ref=e3225]
+                            - button "保存为记忆" [ref=e3228] [cursor=pointer]:
+                              - img [ref=e3229]
+                        - paragraph [ref=e3236]:
+                          - text: 我是规划师，负责澄清需求、确认目标与边界、拆解实施步骤、识别风险和依赖。
+                          - generic [ref=e3237]: 我不直接改代码；如果你要实现或修复功能，我会产出可交给执行智能体的计划。
+                        - generic [ref=e3238]:
+                          - img [ref=e3239]
+                          - generic [ref=e3242]: ACP 调用记录
+                          - generic [ref=e3243]: ACP:codex · completed
+                    - article [ref=e3244]:
+                      - generic [ref=e3245]:
+                        - generic [ref=e3246]:
+                          - generic [ref=e3247]:
+                            - generic [ref=e3248]: 你
+                            - generic [ref=e3249]: 11小时前
+                          - generic [ref=e3250]:
+                            - button "回复此消息" [ref=e3251] [cursor=pointer]:
+                              - img [ref=e3252]
+                            - button "保存为记忆" [ref=e3255] [cursor=pointer]:
+                              - img [ref=e3256]
+                        - generic [ref=e3258]:
+                          - generic [ref=e3260]: 去掉header菜单中的测试菜单
+                          - article [ref=e3261]:
+                            - generic [ref=e3262]:
+                              - generic [ref=e3263]:
+                                - img [ref=e3265]
+                                - generic [ref=e3267]:
+                                  - generic [ref=e3268]: 消息意图
+                                  - heading "普通聊天" [level=3] [ref=e3269]
+                              - generic [ref=e3270]:
+                                - img [ref=e3271]
+                                - generic [ref=e3274]: 需要确认
+                            - generic [ref=e3275]:
+                              - generic [ref=e3276]:
+                                - generic [ref=e3277]: 意图
+                                - strong [ref=e3278]: 普通聊天
+                              - generic [ref=e3279]:
+                                - generic [ref=e3280]: 动作
+                                - strong [ref=e3281]: 询问确认
+                              - generic [ref=e3282]:
+                                - generic [ref=e3283]: 来源
+                                - strong [ref=e3284]: 规则
+                              - generic [ref=e3285]:
+                                - generic [ref=e3286]: 置信度
+                                - strong [ref=e3287]: 60%
+                            - generic [ref=e3290]:
+                              - generic [ref=e3291]: 依据
+                              - paragraph [ref=e3292]: 未命中明确任务类信号，按聊天意图处理
+                            - generic [ref=e3293]:
+                              - generic [ref=e3294]: 选择消息类型
+                              - generic [ref=e3295]:
+                                - button "按 Brainstorming 继续" [ref=e3296] [cursor=pointer]:
+                                  - img [ref=e3297]
+                                  - text: 按 Brainstorming 继续
+                                - button "改为普通聊天" [ref=e3307] [cursor=pointer]:
+                                  - img [ref=e3308]
+                                  - text: 改为普通聊天
+                                - button "改为轻量任务" [ref=e3310] [cursor=pointer]:
+                                  - img [ref=e3311]
+                                  - text: 改为轻量任务
+                                - button "进入 Debugger" [ref=e3313] [cursor=pointer]:
+                                  - img [ref=e3314]
+                                  - text: 进入 Debugger
+                                - button "进入 Workflow" [ref=e3323] [cursor=pointer]:
+                                  - img [ref=e3324]
+                                  - text: 进入 Workflow
+                    - article [ref=e3328]:
+                      - generic "规划师" [ref=e3329]:
+                        - generic [ref=e3330]: 规划
+                      - generic [ref=e3332]:
+                        - generic [ref=e3333]:
+                          - generic [ref=e3334]:
+                            - generic [ref=e3335]: 规划师
+                            - generic [ref=e3336]: 11小时前
+                          - generic [ref=e3337]: ACP:codex
+                          - generic [ref=e3338]:
+                            - button "预览" [pressed] [ref=e3339] [cursor=pointer]:
+                              - img [ref=e3340]
+                            - button "原文" [ref=e3343] [cursor=pointer]:
+                              - img [ref=e3344]
+                            - button "回复此消息" [ref=e3347] [cursor=pointer]:
+                              - img [ref=e3348]
+                            - button "保存为记忆" [ref=e3351] [cursor=pointer]:
+                              - img [ref=e3352]
+                        - generic [ref=e3356]:
+                          - paragraph [ref=e3359]: 我先确认当前规划边界，只产出可交给执行智能体的任务定义，不直接改代码。
+                          - generic [ref=e3361]:
+                            - paragraph [ref=e3362]: 目标明确：从 header 导航菜单中移除“测试”菜单入口。
+                            - paragraph [ref=e3363]:
+                              - generic [ref=e3364]:
+                                - text: 边界建议：只移除 header/menu 里的入口，不删除
+                                - code [ref=e3365]: /test
+                                - text: 路由、
+                                - code [ref=e3366]: TestPage
+                                - text: 页面或 i18n 文案，避免影响已有页面兼容性。风险是如果你想彻底下线测试功能，仅隐藏菜单还不够，需要另开任务删除路由、页面和翻译 key。验证方式：执行修改后运行
+                                - code [ref=e3367]: npm run build
+                                - text: ，并手动确认 header 中不再出现“测试”。
+                        - generic [ref=e3368]:
+                          - img [ref=e3369]
+                          - generic [ref=e3372]: ACP 调用记录
+                          - generic [ref=e3373]: ACP:codex · completed
+                    - article [ref=e3374]:
+                      - generic [ref=e3375]:
+                        - generic [ref=e3376]:
+                          - generic [ref=e3377]:
+                            - generic [ref=e3378]: 你
+                            - generic [ref=e3379]: 10小时前
+                          - generic [ref=e3380]:
+                            - button "回复此消息" [ref=e3381] [cursor=pointer]:
+                              - img [ref=e3382]
+                            - button "保存为记忆" [ref=e3385] [cursor=pointer]:
+                              - img [ref=e3386]
+                        - generic [ref=e3388]:
+                          - generic [ref=e3390]: 去掉header菜单中的测试菜单
+                          - article [ref=e3391]:
+                            - generic [ref=e3392]:
+                              - generic [ref=e3393]:
+                                - img [ref=e3395]
+                                - generic [ref=e3397]:
+                                  - generic [ref=e3398]: 消息意图
+                                  - heading "轻量任务" [level=3] [ref=e3399]
+                              - generic [ref=e3400]:
+                                - img [ref=e3401]
+                                - generic [ref=e3404]: 已自动识别
+                            - generic [ref=e3405]:
+                              - generic [ref=e3406]:
+                                - generic [ref=e3407]: 意图
+                                - strong [ref=e3408]: 轻量任务
+                              - generic [ref=e3409]:
+                                - generic [ref=e3410]: 动作
+                                - strong [ref=e3411]: 创建轻量任务
+                              - generic [ref=e3412]:
+                                - generic [ref=e3413]: 来源
+                                - strong [ref=e3414]: Classifier
+                              - generic [ref=e3415]:
+                                - generic [ref=e3416]: 置信度
+                                - strong [ref=e3417]: 93%
+                            - generic [ref=e3420]:
+                              - generic [ref=e3421]: 依据
+                              - paragraph [ref=e3422]: 用户要求移除特定 UI 菜单入口，属于小范围明确改动
+                            - generic "命中信号" [ref=e3423]:
+                              - generic [ref=e3424]: 去掉
+                              - generic [ref=e3425]: header菜单
+                              - generic [ref=e3426]: 测试菜单
+                    - article [ref=e3427]:
+                      - 'button "任务已创建 去掉header菜单中的测试菜单 待处理 去掉header菜单中的测试菜单 Task ID #OJ0BdOkbv7 Owner 未分配 Priority 普通 Status 待处理 Time 10小时前 Progress 14%" [ref=e3428] [cursor=pointer]':
+                        - generic [ref=e3429]:
+                          - generic [ref=e3430]:
+                            - img [ref=e3432]
+                            - generic [ref=e3434]:
+                              - generic [ref=e3435]: 任务已创建
+                              - generic "去掉header菜单中的测试菜单" [ref=e3436]
+                          - generic [ref=e3437]: 待处理
+                        - generic "去掉header菜单中的测试菜单" [ref=e3438]
+                        - generic [ref=e3439]:
+                          - generic [ref=e3440]:
+                            - generic [ref=e3441]: Task ID
+                            - text: "#OJ0BdOkbv7"
+                          - generic [ref=e3442]:
+                            - generic [ref=e3443]: Owner
+                            - text: 未分配
+                          - generic [ref=e3444]:
+                            - generic [ref=e3445]: Priority
+                            - text: 普通
+                          - generic [ref=e3446]:
+                            - generic [ref=e3447]: Status
+                            - text: 待处理
+                          - generic [ref=e3448]:
+                            - generic [ref=e3449]: Time
+                            - text: 10小时前
+                        - generic [ref=e3450]:
+                          - generic [ref=e3451]: Progress
+                          - strong [ref=e3452]: 14%
+                    - article [ref=e3455]:
+                      - generic "规划师" [ref=e3456]:
+                        - generic [ref=e3457]: 规划
+                      - generic [ref=e3459]:
+                        - generic [ref=e3460]:
+                          - generic [ref=e3461]:
+                            - generic [ref=e3462]: 规划师
+                            - generic [ref=e3463]: 10小时前
+                          - generic [ref=e3464]: ACP:codex
+                          - generic [ref=e3465]:
+                            - button "预览" [pressed] [ref=e3466] [cursor=pointer]:
+                              - img [ref=e3467]
+                            - button "原文" [ref=e3470] [cursor=pointer]:
+                              - img [ref=e3471]
+                            - button "回复此消息" [ref=e3474] [cursor=pointer]:
+                              - img [ref=e3475]
+                            - button "保存为记忆" [ref=e3478] [cursor=pointer]:
+                              - img [ref=e3479]
+                        - generic [ref=e3483]:
+                          - paragraph [ref=e3486]: 我先定位 header 菜单的实现位置和测试菜单相关引用，只做只读检查，然后给出可执行计划与验收方式。
+                          - generic [ref=e3488]:
+                            - paragraph [ref=e3489]: 目标清晰：从 header 顶部导航中移除“测试”菜单入口。
+                            - paragraph [ref=e3490]:
+                              - generic [ref=e3491]:
+                                - text: 边界建议：只移除 header 菜单项，不删除
+                                - code [ref=e3492]: /test
+                                - text: 路由、
+                                - code [ref=e3493]: TestPage.tsx
+                                - text: 或 i18n 中的
+                                - code [ref=e3494]: test.*
+                                - text: 文案，避免把“隐藏入口”扩大成“删除测试页功能”。若需要彻底删除测试页，可作为后续任务。
+                            - paragraph [ref=e3495]:
+                              - text: 执行计划：
+                              - generic [ref=e3496]:
+                                - text: 1. 修改
+                                - code [ref=e3497]: packages/frontend/src/components/AppShell.tsx
+                              - generic [ref=e3498]:
+                                - text: "- 删除"
+                                - code [ref=e3499]: TestTube2
+                                - text: 图标 import
+                              - generic [ref=e3500]:
+                                - text: "- 删除导航里的"
+                                - code [ref=e3501]: "<SidebarLink to=\"/test\" ... label={t('shell.nav.test')} />"
+                              - generic [ref=e3502]:
+                                - text: 2. 不改
+                                - code [ref=e3503]: main.tsx
+                              - generic [ref=e3504]:
+                                - text: "- 保留"
+                                - code [ref=e3505]: /test
+                                - text: 路由，避免已有链接或历史地址直接失效
+                              - generic [ref=e3506]: 3. 验证
+                              - generic [ref=e3507]:
+                                - text: "- 运行"
+                                - code [ref=e3508]: npm run build
+                              - generic [ref=e3509]: "- 手动检查 header 中不再出现“测试/Test”"
+                              - generic [ref=e3510]: "- 访问其他 header 菜单确认导航正常"
+                            - paragraph [ref=e3511]:
+                              - generic [ref=e3512]:
+                                - text: 风险：如果产品预期是“彻底移除测试计数器功能”，仅删 header 入口不够，还需要同步删除
+                                - code [ref=e3513]: /test
+                                - text: route、
+                                - code [ref=e3514]: TestPage.tsx
+                                - text: 和相关 i18n key。
+                        - button "规划决策 1 个后续步骤 查看任务记录" [ref=e3515] [cursor=pointer]:
+                          - img [ref=e3516]
+                          - generic [ref=e3519]: 规划决策
+                          - generic [ref=e3520]: 1 个后续步骤
+                          - strong [ref=e3521]: 查看任务记录
+                        - button "ACP 调用记录 ACP:codex · completed 查看任务记录" [ref=e3522] [cursor=pointer]:
+                          - img [ref=e3523]
+                          - generic [ref=e3526]: ACP 调用记录
+                          - generic [ref=e3527]: ACP:codex · completed
+                          - strong [ref=e3528]: 查看任务记录
+                  - button "回到底部" [ref=e3810] [cursor=pointer]:
+                    - img [ref=e3811]
+                - generic [ref=e3529]:
+                  - generic [ref=e3530]:
+                    - generic [ref=e3531]:
+                      - generic [ref=e3532]: 默认回复 规划师
+                      - generic [ref=e3533]: 我先定位 header 菜单的实现位置和测试菜单相关引用，只做只读检查，然后给出可执行计划与验收方式。目标清晰：从 header 顶部导航中移除“测试”菜单入口。 边界建议：只移除 he...
+                      - button "取消引用" [ref=e3534] [cursor=pointer]:
+                        - img [ref=e3535]
+                    - generic [ref=e3539]: "默认：全局聊天 · 用 # 指定任务"
+                  - generic [ref=e3540]:
+                    - generic [ref=e3542]:
+                      - textbox "发送消息，或 @ 智能体定向协作" [active] [ref=e3543]
+                      - generic: 发送消息，或 @ 智能体定向协作
+                    - generic [ref=e3544]:
+                      - generic [ref=e3545]: 当前策略：无 @ 时由 规划师 回复。
+                      - generic [ref=e3546]:
+                        - button "Choose File" [ref=e3547]
+                        - button "Tool" [ref=e3548] [cursor=pointer]:
+                          - img [ref=e3549]
+                          - generic [ref=e3551]: Tool
+                        - button "选择附件" [ref=e3552] [cursor=pointer]:
+                          - img [ref=e3553]
+                        - button "引用项目文件" [ref=e3557] [cursor=pointer]:
+                          - img [ref=e3558]
+                        - button "发送消息" [disabled]:
+                          - img
+                          - text: 发送
+  - region "Notifications alt+T"

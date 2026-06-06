@@ -29,6 +29,25 @@ test('BrainstormingOptionsPanel marks selected options', () => {
   assert.match(html, /aria-pressed="true"/);
 });
 
+test('BrainstormingOptionsPanel allows long unbroken option text to wrap on narrow screens', () => {
+  const html = renderToStaticMarkup(
+    <BrainstormingOptionsPanel
+      options={[{
+        id: 'long-text',
+        title: 'RunLongCommandWithoutSpacesThatCouldOverflowOnMobileScreens',
+        summary: 'https://example.com/path/with/a/very/long/hash/abcdef1234567890abcdef1234567890',
+        benefits: ['packages/frontend/src/components/chat/BrainstormingOptionsPanel.tsx'],
+        risks: ['LongUnbrokenRiskTextWithoutSpaces'],
+        maturity: 'actionable',
+      }]}
+    />,
+  );
+
+  assert.match(html, /<h4 class="[^"]*break-words/);
+  assert.match(html, /<p class="[^"]*break-words/);
+  assert.match(html, /<span class="[^"]*break-words/);
+});
+
 test('BrainstormingOptionsPanel invokes onSelect from button handler', () => {
   let selected: BrainstormingOption | null = null;
   const element = BrainstormingOptionsPanel({

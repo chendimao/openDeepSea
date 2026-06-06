@@ -324,6 +324,52 @@ test('AgentTimeline renders lossless execution details as dedicated detail field
   assert.match(html, /diff-line is-added/);
 });
 
+test('AgentTimeline renders structured json detail objects with Chinese field labels', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'tool-structured-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'planner',
+            seq: 1,
+            type: 'tool_result',
+            status: 'completed',
+            title: '工具结果 planner payload',
+            payload: {
+              id: 'tool-structured-1',
+              name: 'planner',
+              output: {
+                superpowers: {
+                  tddEvidence: [
+                    {
+                      stage: 'GREEN',
+                      command: 'cd packages/frontend && node --import tsx --test src/components/MessageContent.test.tsx src/components/AgentTimeline.test.tsx',
+                      passed: true,
+                      summary: '结构化详情已通过',
+                    },
+                  ],
+                },
+              },
+            },
+            created_at: 1000,
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /agent-timeline-detail-field is-output/);
+  assert.match(html, /agent-timeline-json-tree/);
+  assert.match(html, /超能力/);
+  assert.match(html, /TDD 证据/);
+  assert.match(html, /阶段/);
+  assert.match(html, /命令/);
+  assert.match(html, /是否通过/);
+  assert.match(html, /摘要/);
+});
 
 test('AgentTimeline renders subagent lifecycle events', () => {
   const html = renderToStaticMarkup(
@@ -653,21 +699,19 @@ test('AgentTimeline returns null when only assistant message stream chunks exist
 
 function setupBrowserStubs(): void {
   Object.assign(globalThis, { React });
-
-  if (!('localStorage' in globalThis)) {
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: {
-        getItem: () => null,
-        setItem: () => undefined,
-      },
-      configurable: true,
-    });
-  }
-
-  if (!('document' in globalThis)) {
-    Object.defineProperty(globalThis, 'document', {
-      value: { documentElement: { lang: 'zh' } },
-      configurable: true,
-    });
-  }
+  Object.defineProperty(globalThis, 'window', {
+    value: globalThis,
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      getItem: () => null,
+      setItem: () => undefined,
+    },
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, 'document', {
+    value: { documentElement: { lang: 'zh' } },
+    configurable: true,
+  });
 }

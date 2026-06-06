@@ -1,0 +1,53 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner "项目工作区" [ref=e4]:
+      - link "深海指挥中心" [ref=e5] [cursor=pointer]:
+        - /url: /
+        - img "深海指挥中心" [ref=e7]
+        - generic [ref=e20]:
+          - generic [ref=e21]: 深海指挥中心
+          - generic [ref=e22]: 本地智能体控制台
+      - navigation "项目工作区" [ref=e23]:
+        - link "开发" [ref=e24] [cursor=pointer]:
+          - /url: /
+          - img [ref=e25]
+          - generic [ref=e28]: 开发
+        - link "聊天" [ref=e29] [cursor=pointer]:
+          - /url: /chat
+          - img [ref=e30]
+          - generic [ref=e32]: 聊天
+        - link "智能体" [ref=e33] [cursor=pointer]:
+          - /url: /agents
+          - img [ref=e34]
+          - generic [ref=e37]: 智能体
+        - link "技能" [ref=e38] [cursor=pointer]:
+          - /url: /skills
+          - img [ref=e39]
+          - generic [ref=e42]: 技能
+        - link "资源库" [ref=e43] [cursor=pointer]:
+          - /url: /files
+          - img [ref=e44]
+          - generic [ref=e46]: 资源库
+        - link "测试" [ref=e47] [cursor=pointer]:
+          - /url: /test
+          - img [ref=e48]
+          - generic [ref=e51]: 测试
+      - generic [ref=e52]:
+        - button "搜索 / 快速命令" [ref=e53] [cursor=pointer]:
+          - img [ref=e54]
+          - generic [ref=e57]: 搜索 / 快速命令
+          - generic [ref=e58]: ⌘K
+        - button "最近项目" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+          - generic [ref=e63]: 最近项目
+          - img [ref=e64]
+        - button "新增项目" [ref=e66] [cursor=pointer]:
+          - img [ref=e67]
+        - button "系统设置" [ref=e68] [cursor=pointer]:
+          - img [ref=e69]
+    - main [ref=e73]:
+      - generic [ref=e75]:
+        - generic [ref=e76]: 还没有项目
+        - paragraph [ref=e77]: 创建第一个项目后，开发工作台会在这里显示项目群聊。
+        - button "新增项目" [ref=e79] [cursor=pointer]
+  - region "Notifications alt+T"

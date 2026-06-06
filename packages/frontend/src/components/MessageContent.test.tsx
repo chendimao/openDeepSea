@@ -294,6 +294,97 @@ test('recognizes application json fences with CRLF and metadata', () => {
   assert.match(html, /CRLF JSON/);
 });
 
+test('renders structured superpowers json with Chinese keys and panel classes', () => {
+  const content = [
+    '```json',
+    JSON.stringify({
+      superpowers: {
+        tddEvidence: [
+          {
+            stage: 'RED',
+            command: 'cd packages/frontend && node --import tsx --test src/components/MessageContent.test.tsx src/components/AgentTimeline.test.tsx',
+            passed: false,
+            summary: '结构化字段还未中文化',
+          },
+        ],
+        choice_options: [
+          {
+            id: 'option-a',
+            title: '最小改动',
+            summary: '只增强 JSON 结构展示',
+            benefits: ['范围小', '风险低'],
+            risks: ['覆盖有限'],
+            maturity: 'recommended',
+            recommended: true,
+          },
+        ],
+      },
+    }, null, 2),
+    '```',
+  ].join('\n');
+
+  const html = renderMessage(content);
+
+  assert.match(html, /json-tree/);
+  assert.match(html, /json-tree-row is-nested/);
+  assert.match(html, /超能力/);
+  assert.match(html, /TDD 证据/);
+  assert.match(html, /阶段/);
+  assert.match(html, /命令/);
+  assert.match(html, /是否通过/);
+  assert.match(html, /摘要/);
+  assert.match(html, /候选方案/);
+  assert.match(html, /收益/);
+  assert.match(html, /风险/);
+  assert.match(html, /成熟度/);
+  assert.match(html, /推荐/);
+});
+
+test('renders nested structured json as compact cards instead of sprawling tree rows', () => {
+  const content = [
+    '```json',
+    JSON.stringify({
+      superpowers: {
+        tddEvidence: [
+          {
+            stage: 'RED',
+            command: 'npm test -- MessageContent.test.tsx',
+            passed: false,
+            summary: '测试按预期失败',
+          },
+          {
+            stage: 'GREEN',
+            command: 'npm test -- MessageContent.test.tsx',
+            passed: true,
+            summary: '实现后通过',
+          },
+        ],
+        choice_options: [
+          {
+            id: 'compact_cards',
+            title: '紧凑卡片',
+            benefits: ['更易扫读', '更少占用空间'],
+            risks: ['极长字段仍需换行'],
+            recommended: true,
+          },
+        ],
+      },
+    }, null, 2),
+    '```',
+  ].join('\n');
+
+  const html = renderMessage(content);
+
+  assert.match(html, /json-card-grid/);
+  assert.match(html, /json-card/);
+  assert.match(html, /json-card-title/);
+  assert.match(html, /json-card-field/);
+  assert.match(html, /json-inline-list/);
+  assert.match(html, /TDD 证据/);
+  assert.match(html, /候选方案/);
+  assert.doesNotMatch(html, /<span class="json-index">0<\/span>/);
+});
+
 test('falls back to code block for non-json and invalid json fences', () => {
   const nonJsonHtml = renderMessage('```ts\nconst mode = "implementation";\n```');
   const invalidJsonHtml = renderMessage('```json\n{"task_readiness":\n```');
@@ -643,21 +734,19 @@ function task(input: Pick<Task, 'id' | 'title'>): Task {
 
 function setupBrowserStubs(): void {
   Object.assign(globalThis, { React });
-
-  if (!('localStorage' in globalThis)) {
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: {
-        getItem: () => null,
-        setItem: () => undefined,
-      },
-      configurable: true,
-    });
-  }
-
-  if (!('document' in globalThis)) {
-    Object.defineProperty(globalThis, 'document', {
-      value: { documentElement: { lang: 'zh' } },
-      configurable: true,
-    });
-  }
+  Object.defineProperty(globalThis, 'window', {
+    value: globalThis,
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      getItem: () => null,
+      setItem: () => undefined,
+    },
+    configurable: true,
+  });
+  Object.defineProperty(globalThis, 'document', {
+    value: { documentElement: { lang: 'zh' } },
+    configurable: true,
+  });
 }

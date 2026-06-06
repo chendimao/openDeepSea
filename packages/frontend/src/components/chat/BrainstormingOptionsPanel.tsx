@@ -52,8 +52,8 @@ export function BrainstormingOptionsPanel({
             <div className="flex items-start gap-2">
               <Icon className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" strokeWidth={1.8} aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <h4 className="text-[13px] font-semibold leading-5 text-slate-900">{option.title}</h4>
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <h4 className="min-w-0 break-words text-[13px] font-semibold leading-5 text-slate-900">{option.title}</h4>
                   {option.recommended && (
                     <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700">
                       推荐
@@ -63,7 +63,7 @@ export function BrainstormingOptionsPanel({
                     {maturityLabels[option.maturity]}
                   </span>
                 </div>
-                <p className="mt-1 leading-5 text-slate-700">{option.summary}</p>
+                <p className="mt-1 min-w-0 break-words leading-5 text-slate-700">{option.summary}</p>
                 <OptionList items={option.benefits} />
                 <OptionList items={option.risks} tone="risk" />
               </div>
@@ -97,9 +97,9 @@ function OptionList({ items, tone = 'benefit' }: { items: string[]; tone?: 'bene
   return (
     <ul className={cn('mt-1.5 space-y-0.5 text-xs leading-5', tone === 'risk' ? 'text-amber-700' : 'text-slate-600')}>
       {items.slice(0, 3).map((item) => (
-        <li key={item} className="flex gap-1.5">
+        <li key={item} className="flex min-w-0 gap-1.5">
           <span aria-hidden="true">-</span>
-          <span>{item}</span>
+          <span className="min-w-0 break-words">{item}</span>
         </li>
       ))}
     </ul>

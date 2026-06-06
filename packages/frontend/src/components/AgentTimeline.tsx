@@ -9,6 +9,7 @@ import type {
   MessageTraceToolCall,
 } from '../lib/types';
 import { buildAgentTimelineModel, type AgentTimelineDiagnostics } from './agent-timeline/model';
+import { StructuredJsonTree, toStructuredJsonValue } from './structuredJson';
 
 const planStatusLabels: Record<string, string> = {
   pending: '待处理',
@@ -347,7 +348,7 @@ function EventKeyValue({ payload }: { payload: Record<string, unknown> }): JSX.E
               {key === 'patch' || key === 'diff' ? (
                 <DiffLines value={stringifyPayload(value)} />
               ) : (
-                <pre className="agent-timeline-pre agent-timeline-detail-pre">{stringifyPayload(value)}</pre>
+                renderDetailValue(value)
               )}
             </section>
           ))}
@@ -731,7 +732,22 @@ function renderValue(value: unknown): ReactNode {
   if (typeof value === 'string') return formatKnownValue(value);
   if (typeof value === 'number') return String(value);
   if (typeof value === 'boolean') return value ? '是' : '否';
-  return <pre className="agent-timeline-pre is-inline-json">{stringifyJson(value)}</pre>;
+  return (
+    <div className="agent-timeline-json-tree">
+      <StructuredJsonTree value={toStructuredJsonValue(value)} />
+    </div>
+  );
+}
+
+function renderDetailValue(value: unknown): ReactNode {
+  if (typeof value === 'string') {
+    return <pre className="agent-timeline-pre agent-timeline-detail-pre">{value}</pre>;
+  }
+  return (
+    <div className="agent-timeline-json-tree">
+      <StructuredJsonTree value={toStructuredJsonValue(value)} />
+    </div>
+  );
 }
 
 function formatFieldLabel(key: string): string {
