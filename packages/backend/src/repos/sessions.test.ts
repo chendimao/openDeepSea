@@ -93,6 +93,80 @@ test('session schema creates agent runtime and event tables', () => {
   assert.ok(runColumns.some((column) => column.name === 'agent_id'));
 });
 
+test('session schema includes active workspace columns', () => {
+  const columns = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>;
+
+  assert.ok(columns.some((column) => column.name === 'closed_at'));
+  assert.ok(columns.some((column) => column.name === 'pinned_at'));
+  assert.ok(columns.some((column) => column.name === 'last_viewed_at'));
+});
+
+test('sessionRepo active workspace list includes unclosed sessions across projects and excludes closed sessions', () => {
+  const projectA = projectRepo.create({
+    name: 'Active A',
+    path: mkdtempSync(join(tmpdir(), 'active-a-')),
+  });
+  const projectB = projectRepo.create({
+    name: 'Active B',
+    path: mkdtempSync(join(tmpdir(), 'active-b-')),
+  });
+  const first = sessionRepo.create({
+    project_id: projectA.id,
+    title: 'First',
+  });
+  const second = sessionRepo.create({
+    project_id: projectB.id,
+    title: 'Second',
+  });
+
+  sessionRepo.close(first.id);
+
+  const sessions = sessionRepo.listActiveWorkspaceSessions();
+
+  assert.deepEqual(sessions.map((session) => session.id), [second.id]);
+  assert.equal(sessionRepo.get(first.id)?.closed_at !== null, true);
+});
+
+test('sessionRepo pins active workspace sessions ahead of recent unpinned sessions', () => {
+  const project = projectRepo.create({
+    name: 'Pinned Active',
+    path: mkdtempSync(join(tmpdir(), 'active-pinned-')),
+  });
+  const normal = sessionRepo.create({
+    project_id: project.id,
+    title: 'Normal',
+  });
+  const pinned = sessionRepo.create({
+    project_id: project.id,
+    title: 'Pinned',
+  });
+
+  sessionRepo.pin(pinned.id);
+
+  const sessions = sessionRepo.listActiveWorkspaceSessions();
+
+  assert.equal(sessions[0]?.id, pinned.id);
+  assert.ok(sessions.some((session) => session.id === normal.id));
+  assert.equal(sessionRepo.get(pinned.id)?.pinned_at !== null, true);
+});
+
+test('sessionRepo touchViewed updates last viewed without closing the session', () => {
+  const project = projectRepo.create({
+    name: 'Viewed Active',
+    path: mkdtempSync(join(tmpdir(), 'active-viewed-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Viewed',
+  });
+
+  sessionRepo.touchViewed(session.id);
+
+  const viewed = sessionRepo.get(session.id);
+  assert.equal(viewed?.closed_at, null);
+  assert.equal(viewed?.last_viewed_at !== null, true);
+});
+
 test('session agent runtime repo stores provider session per agent', () => {
   const project = projectRepo.create({
     name: 'agent runtime project',

@@ -49,7 +49,11 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /管理所有工作区/);
   assert.match(html, /上下文压力/);
   assert.match(html, /Session status bar/);
-  assert.match(html, /会话历史/);
+  assert.match(html, /活跃会话/);
+  assert.match(html, /Active Sessions/);
+  assert.match(html, /接口联调/);
+  assert.match(html, /AnotherProject/);
+  assert.doesNotMatch(html, /会话历史/);
   assert.match(html, /3. 对话记录/);
   assert.match(html, /prompt-area-container/);
   assert.match(html, /支持 @ 文件/);
@@ -65,7 +69,7 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /data-command="\/new"/);
   assert.match(html, /data-command="\/compact"/);
   assert.match(html, /\/fork history:history-1/);
-  assert.match(html, /History Records/);
+  assert.match(html, /Active Sessions/);
   assert.doesNotMatch(html, /task-workspace/);
   assert.doesNotMatch(html, /Deepsea Command/);
   assert.doesNotMatch(html, /deepsea-model-status/);
@@ -325,7 +329,7 @@ export function createPayload(): SessionWorkspacePayload {
         id: 'session-1',
         project_id: 'project-1',
         title: 'SessionOS 迁移',
-        current_goal: '把旧协作工作流切换为会话历史模型',
+        current_goal: '把旧协作工作流切换为活跃会话模型',
         mode: 'code',
         phase: 'implementing',
         status: 'active',
@@ -338,6 +342,9 @@ export function createPayload(): SessionWorkspacePayload {
         forked_from_history_record_id: null,
         latest_compaction_id: null,
         latest_context_manifest_id: 'context-1',
+        closed_at: null,
+        pinned_at: null,
+        last_viewed_at: now - 120_000,
         created_at: now - 7_200_000,
         updated_at: now,
         archived_at: null,
@@ -405,6 +412,40 @@ export function createPayload(): SessionWorkspacePayload {
         created_at: now - 30_000,
       }],
     },
+    activeSessions: [
+      {
+        id: 'session-2',
+        project_id: 'project-2',
+        project_name: 'AnotherProject',
+        project_path: '/workspace/another',
+        title: '接口联调',
+        status: 'blocked',
+        phase: 'blocked',
+        provider: 'codex',
+        model: 'gpt-5.3-codex',
+        pinned_at: now - 4_000,
+        updated_at: now - 8_000,
+        unread_count: 2,
+        active_run_count: 1,
+        latest_event_summary: '等待后端 schema 决策',
+      },
+      {
+        id: 'session-1',
+        project_id: 'project-1',
+        project_name: 'OpenClaw',
+        project_path: '/workspace/openclaw',
+        title: 'SessionOS 迁移',
+        status: 'active',
+        phase: 'implementing',
+        provider: 'codex',
+        model: 'gpt-5.5',
+        pinned_at: null,
+        updated_at: now,
+        unread_count: 0,
+        active_run_count: 0,
+        latest_event_summary: 'Updated session UI',
+      },
+    ],
     historyRecords: [{
       id: 'history-1',
       project_id: 'project-1',
@@ -426,7 +467,7 @@ export function createPayload(): SessionWorkspacePayload {
       updated_at: now - 3_600_000,
     }],
     status: {
-      goal: '把旧协作工作流切换为会话历史模型',
+      goal: '把旧协作工作流切换为活跃会话模型',
       mode: 'code',
       phase: 'implementing',
       status: 'active',
@@ -525,7 +566,7 @@ export function createPayload(): SessionWorkspacePayload {
     },
     contract: {
       sessionId: 'session-1',
-      objective: '把旧协作工作流切换为会话历史模型',
+      objective: '把旧协作工作流切换为活跃会话模型',
       scope: '仅补齐 Session OS 后端接入',
       risks: ['retry 可能重复执行 prompt'],
       acceptanceCriteria: ['页面不显示静态 mock 数据'],

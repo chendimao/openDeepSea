@@ -21,6 +21,8 @@ import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
 import { buildContextManifestDraft } from './session-context.js';
 import { buildStatusSnapshot } from './session-status.js';
+import { broadcastActiveSessionRemove, broadcastActiveSessionUpsert } from './session-active-broadcast.js';
+import { buildActiveSessionSummaries } from './session-active-view-model.js';
 import {
   buildSessionBottomStatus,
   buildSessionInspectorSnapshot,
@@ -42,6 +44,7 @@ export const sessionRouter = Router();
 
 const sessionModeSchema = z.enum(['ask', 'plan', 'code', 'debug', 'review']);
 
+sessionRouter.get('/active-sessions', listActiveSessions);
 sessionRouter.get('/projects/:projectId/sessions', listProjectSessions);
 sessionRouter.post('/projects/:projectId/sessions', createProjectSession);
 sessionRouter.get('/sessions/:sessionId', getSessionDetail);
@@ -49,6 +52,10 @@ sessionRouter.patch('/sessions/:sessionId', updateSession);
 sessionRouter.get('/history-records/:historyRecordId', getHistoryRecord);
 sessionRouter.post('/history-records/:historyRecordId/resume-brief/regenerate', regenerateResumeBrief);
 sessionRouter.get('/history-records/:historyRecordId/export', exportHistoryRecord);
+
+function listActiveSessions(_req: unknown, res: Response): void {
+  res.json(buildActiveSessionSummaries());
+}
 
 function listProjectSessions(req: { params: { projectId: string }; query: Record<string, unknown> }, res: Response): void {
   const project = projectRepo.get(req.params.projectId);
@@ -85,6 +92,7 @@ function createProjectSession(req: { params: { projectId: string }; body: unknow
     model: parsed.data.model,
     workspace_path: project.path,
   });
+  broadcastActiveSessionUpsert(session);
   res.status(201).json(session);
 }
 
@@ -127,7 +135,12 @@ function updateSession(req: { params: { sessionId: string }; body: unknown }, re
     res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
-  res.json(sessionRepo.update(session.id, parsed.data));
+  const updated = sessionRepo.update(session.id, parsed.data);
+  if (updated) {
+    if (updated.closed_at !== null) broadcastActiveSessionRemove(updated.id);
+    else broadcastActiveSessionUpsert(updated);
+  }
+  res.json(updated);
 }
 
 function getHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
@@ -177,6 +190,7 @@ export function buildWorkspacePayload(project: Project, activeSession: Session):
       ...detail,
       planItems: inspector.planItems,
     },
+    activeSessions: buildActiveSessionSummaries(),
     historyRecords: historyRecordRepo.listByProject(project.id),
     status: buildSessionStatus(activeSession),
     context: sessionContextRepo.getLatestBySession(activeSession.id) ?? null,

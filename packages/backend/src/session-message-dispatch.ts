@@ -8,6 +8,7 @@ import {
   sessionRepo,
 } from './repos/sessions.js';
 import { createContextManifest } from './session.routes.js';
+import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import { buildSessionFileReferenceContext } from './session-file-reference-context.js';
 import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import { runSessionAgent } from './session-runtime.js';
@@ -71,6 +72,7 @@ export async function dispatchSessionUserMessage(input: {
     sessionId: runtimeSession.id,
     message,
   });
+  broadcastActiveSessionUpsert(runtimeSession.id);
   const fileReferenceContext = await buildSessionFileReferenceContext({
     project,
     workspacePath,
@@ -96,6 +98,7 @@ export async function dispatchSessionUserMessage(input: {
       summary: (error as Error).message,
     });
     wsHub.broadcastSession(runtimeSession.id, { type: 'session_evidence:new', sessionId: runtimeSession.id, event });
+    broadcastActiveSessionUpsert(runtimeSession.id);
   });
   return message;
 }

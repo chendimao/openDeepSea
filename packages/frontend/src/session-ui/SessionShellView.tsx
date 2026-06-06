@@ -3,12 +3,9 @@ import {
   CheckCircle2,
   ChevronDown,
   FileText,
-  Filter,
   GitFork,
-  History,
   MessageSquare,
   Minimize2,
-  MoreVertical,
   Plus,
   RefreshCcw,
   Repeat2,
@@ -22,8 +19,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import React, { useState } from 'react';
 import type {
-  HistoryRecord,
-  HistoryRecordStatus,
+  ActiveSessionSummary,
   Session,
   SessionBottomStatus,
   SessionContract,
@@ -32,7 +28,6 @@ import type {
   SessionAgentEvent,
   SessionEvidenceEvent,
   SessionMessage,
-  SessionMode,
   SessionPlanItem,
   SessionRun,
   SessionToolRow,
@@ -57,7 +52,7 @@ export function SessionShellView({
   onCancelRun,
   onRetryRun,
   onSaveContract,
-  onFilterHistory,
+  onOpenSession,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -65,10 +60,9 @@ export function SessionShellView({
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
-  onFilterHistory?: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) => void;
+  onOpenSession?: (projectId: string, sessionId: string) => void;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
-  const recentHistory = payload.historyRecords.slice(0, 12);
   const forkTarget = payload.historyRecords[0]?.id;
 
   return (
@@ -79,11 +73,13 @@ export function SessionShellView({
         forkTarget={forkTarget}
       />
       <main className="deepsea-main">
-        <HistoryRail
-          records={recentHistory}
-          activeSession={payload.activeSession.session}
+        <ActiveSessionsRail
+          sessions={payload.activeSessions}
+          currentSession={payload.activeSession.session}
+          currentProjectId={payload.project.id}
+          currentProjectName={payload.project.name}
           onCommand={onCommand}
-          onFilterHistory={onFilterHistory}
+          onOpenSession={onOpenSession}
         />
         <TranscriptCanvas
           detail={payload.activeSession}
@@ -326,36 +322,54 @@ function ContextPressure({ pressure, compact = false }: { pressure: number; comp
   );
 }
 
-function HistoryRail({
-  records,
-  activeSession,
+function ActiveSessionsRail({
+  sessions,
+  currentSession,
+  currentProjectId,
+  currentProjectName,
   onCommand,
-  onFilterHistory,
+  onOpenSession,
 }: {
-  records: HistoryRecord[];
-  activeSession: Session;
+  sessions: ActiveSessionSummary[];
+  currentSession: Session;
+  currentProjectId: string;
+  currentProjectName: string;
   onCommand: (command: string) => void;
-  onFilterHistory?: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) => void;
+  onOpenSession?: (projectId: string, sessionId: string) => void;
 }): JSX.Element {
   const [q, setQ] = useState('');
+  const normalizedQuery = q.trim().toLowerCase();
+  const visibleSessions = ensureCurrentActiveSessionSummary(
+    sessions,
+    currentSession,
+    currentProjectId,
+    currentProjectName,
+  ).filter((session) => {
+    if (!normalizedQuery) return true;
+    return [
+      session.title,
+      session.project_name,
+      session.project_path,
+      session.latest_event_summary ?? '',
+    ].some((value) => value.toLowerCase().includes(normalizedQuery));
+  });
+
   return (
-    <aside className="deepsea-history" aria-label="History Records">
+    <aside className="deepsea-history" aria-label="Active Sessions">
       <div className="deepsea-history__header">
         <div className="deepsea-history__title">
           <div>
-            <History aria-hidden="true" />
-            <h2>会话历史</h2>
+            <MessageSquare aria-hidden="true" />
+            <h2>活跃会话</h2>
           </div>
           <div className="deepsea-history__tools">
-            <Filter aria-hidden="true" />
-            <MoreVertical aria-hidden="true" />
+            <span className="deepsea-active-count">{visibleSessions.length}</span>
           </div>
         </div>
         <form
           className="deepsea-search"
           onSubmit={(event) => {
             event.preventDefault();
-            onFilterHistory?.({ q, status: 'all', mode: 'all' });
           }}
         >
           <Search aria-hidden="true" />
@@ -363,52 +377,55 @@ function HistoryRail({
             type="search"
             value={q}
             onChange={(event) => setQ(event.currentTarget.value)}
-            placeholder="搜索历史..."
+            placeholder="搜索活跃会话..."
           />
         </form>
       </div>
 
       <div className="deepsea-history__list">
-        <article className="deepsea-history-card is-active">
-          <span className="deepsea-history-card__rail" />
-          <div>
-            <h3 title={activeSession.title}>{formatCompactSessionTitle(activeSession.title)}</h3>
-            <p className="deepsea-mono">{formatTimeRange(activeSession.created_at, activeSession.updated_at)}</p>
-            <div className="deepsea-history-card__footer">
-              <span className="deepsea-status-chip" data-tone="primary">运行中</span>
-              <span className="deepsea-agent-mini">
-                <Brain aria-hidden="true" />
-                {formatProviderModel(activeSession.provider ?? 'codex', activeSession.model)}
-              </span>
-            </div>
-          </div>
-        </article>
-
-        {records.length === 0 ? (
-          <div className="deepsea-empty">暂无历史记录。使用 New 后会把两段 New 之间的对话归档到这里。</div>
-        ) : records.map((record) => (
-          <article className="deepsea-history-card" data-status={record.status} key={record.id}>
-            <span className="deepsea-history-card__rail" />
-            <div>
-              <h3>{record.title}</h3>
-              <p>{record.summary}</p>
-              <p className="deepsea-mono">{formatTimeRange(record.started_at, record.ended_at)}</p>
-              <div className="deepsea-history-card__footer">
-                <span className="deepsea-status-chip" data-tone={sessionStatusTone(record.status)}>
-                  {historyStatusLabel(record.status)}
-                </span>
-                <div className="deepsea-card-actions">
-                  <button type="button" title="Resume" onClick={() => onCommand(`/resume ${record.id}`)}>
-                    <RefreshCcw aria-hidden="true" />
-                  </button>
-                  <button type="button" title="Fork" onClick={() => onCommand(`/fork history:${record.id}`)}>
-                    <GitFork aria-hidden="true" />
-                  </button>
+        {visibleSessions.length === 0 ? (
+          <div className="deepsea-empty">没有匹配的活跃会话。</div>
+        ) : visibleSessions.map((session) => {
+          const isCurrent = session.id === currentSession.id;
+          return (
+            <button
+              type="button"
+              aria-current={isCurrent ? 'true' : undefined}
+              className={`deepsea-history-card deepsea-active-session-card${isCurrent ? ' is-active' : ''}`}
+              data-status={session.status}
+              data-current={isCurrent ? 'true' : undefined}
+              data-running={session.active_run_count > 0 ? 'true' : undefined}
+              data-pinned={session.pinned_at !== null ? 'true' : undefined}
+              key={session.id}
+              onClick={() => onOpenSession?.(session.project_id, session.id)}
+            >
+              <span className="deepsea-history-card__rail" />
+              <div>
+                <div className="deepsea-active-session-card__project">
+                  <span>{session.project_name}</span>
+                  <em>{formatRelativeTime(Date.now(), session.updated_at)}</em>
                 </div>
+                <h3 title={session.title}>{formatCompactSessionTitle(session.title)}</h3>
+                <p>{session.latest_event_summary ?? session.project_path}</p>
+                <div className="deepsea-history-card__footer">
+                  <span className="deepsea-status-chip" data-tone={session.active_run_count > 0 ? 'primary' : sessionStatusTone(session.status)}>
+                    {activeSessionStatusLabel(session)}
+                  </span>
+                  <span className="deepsea-agent-mini">
+                    <Brain aria-hidden="true" />
+                    {formatProviderModel(session.provider ?? 'codex', session.model)}
+                  </span>
+                </div>
+                {(session.unread_count > 0 || session.pinned_at !== null) && (
+                  <div className="deepsea-active-session-card__meta">
+                    {session.pinned_at !== null && <span>置顶</span>}
+                    {session.unread_count > 0 && <span>{session.unread_count} 未读</span>}
+                  </div>
+                )}
               </div>
-            </div>
-          </article>
-        ))}
+            </button>
+          );
+        })}
       </div>
 
       <div className="deepsea-history__footer">
@@ -1122,14 +1139,41 @@ function formatCompactSessionTitle(title: string, maxLength = 17): string {
   return `${title.slice(0, maxLength)}...`;
 }
 
-function historyStatusLabel(status: string): string {
+function ensureCurrentActiveSessionSummary(
+  sessions: ActiveSessionSummary[],
+  currentSession: Session,
+  currentProjectId: string,
+  currentProjectName: string,
+): ActiveSessionSummary[] {
+  if (sessions.some((session) => session.id === currentSession.id)) return sessions;
+  return [{
+    id: currentSession.id,
+    project_id: currentProjectId,
+    project_name: currentProjectName,
+    project_path: currentSession.workspace_path ?? currentSession.worktree_path ?? '',
+    title: currentSession.title,
+    status: currentSession.status,
+    phase: currentSession.phase,
+    provider: currentSession.provider,
+    model: currentSession.model,
+    pinned_at: currentSession.pinned_at,
+    updated_at: currentSession.updated_at,
+    unread_count: 0,
+    active_run_count: 0,
+    latest_event_summary: currentSession.current_goal,
+  }, ...sessions];
+}
+
+function activeSessionStatusLabel(session: ActiveSessionSummary): string {
+  if (session.active_run_count > 0) return `运行中 ${session.active_run_count}`;
   const labels: Record<string, string> = {
-    archived: '已归档',
+    active: '空闲',
     completed: '已完成',
     blocked: '阻塞',
     failed: '失败',
+    archived: '已归档',
   };
-  return labels[status] ?? status;
+  return labels[session.status] ?? session.status;
 }
 
 function formatClock(timestamp: number): string {
@@ -1139,13 +1183,6 @@ function formatClock(timestamp: number): string {
     second: '2-digit',
     hour12: false,
   }).format(new Date(timestamp));
-}
-
-function formatTimeRange(start: number, end: number): string {
-  const startLabel = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(start));
-  const endLabel = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(end));
-  const minutes = Math.max(1, Math.round((end - start) / 60_000));
-  return `${startLabel} - ${endLabel} | ${minutes}m`;
 }
 
 function formatDuration(start: number, end: number): string {

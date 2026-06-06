@@ -78,9 +78,29 @@ export interface Session {
   forked_from_history_record_id: string | null;
   latest_compaction_id: string | null;
   latest_context_manifest_id: string | null;
+  closed_at: number | null;
+  pinned_at: number | null;
+  last_viewed_at: number | null;
   created_at: number;
   updated_at: number;
   archived_at: number | null;
+}
+
+export interface ActiveSessionSummary {
+  id: string;
+  project_id: string;
+  project_name: string;
+  project_path: string;
+  title: string;
+  status: SessionStatus;
+  phase: SessionPhase;
+  provider: AcpBackend | null;
+  model: string | null;
+  pinned_at: number | null;
+  updated_at: number;
+  unread_count: number;
+  active_run_count: number;
+  latest_event_summary: string | null;
 }
 
 export interface SessionMessage {
@@ -370,6 +390,7 @@ export interface SessionHistoryFilters {
 export interface SessionWorkspacePayload {
   project: Project;
   activeSession: SessionDetail;
+  activeSessions: ActiveSessionSummary[];
   historyRecords: HistoryRecord[];
   status: StatusSnapshot;
   context: SessionContextManifest | null;

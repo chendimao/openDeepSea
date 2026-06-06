@@ -14,6 +14,7 @@ export interface Project {
 export type MessageRoutingMode = 'mentions_only' | 'fallback_reply';
 export type SettingsScope = 'system' | 'project' | 'room';
 export type {
+  ActiveSessionSummary,
   HistoryRecord,
   HistoryRecordStatus,
   Session,
@@ -1329,6 +1330,9 @@ export type WsServerEvent =
   | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
+  | { type: 'active_sessions:snapshot'; sessions: import('./session-types.js').ActiveSessionSummary[] }
+  | { type: 'active_session:upsert'; session: import('./session-types.js').ActiveSessionSummary }
+  | { type: 'active_session:remove'; sessionId: string }
   | {
       type: 'session_workspace:snapshot';
       projectId: string;
@@ -1379,6 +1383,8 @@ export type WsServerEvent =
 export type WsClientEvent =
   | { type: 'subscribe'; roomId: string }
   | { type: 'unsubscribe'; roomId: string }
+  | { type: 'active_sessions:subscribe' }
+  | { type: 'active_sessions:unsubscribe' }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }

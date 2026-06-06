@@ -10,6 +10,7 @@ import {
   sessionRunRepo,
 } from './repos/sessions.js';
 import { runRegistry } from './run-registry.js';
+import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import { buildSessionInspectorSnapshot } from './session-workspace-view-model.js';
 import { wsHub } from './ws-hub.js';
 import type {
@@ -74,6 +75,7 @@ export async function runSessionAgent(input: {
   });
   const controller = runRegistry.create(run.id);
   wsHub.broadcastSession(session.id, { type: 'session_run:created', sessionId: session.id, run });
+  broadcastActiveSessionUpsert(session.id);
 
   try {
     const result = await resolveAdapter(input.provider).invoke({
@@ -153,6 +155,7 @@ export function retrySessionAgentRun(runId: string): void {
       payload: { source_run_id: run.id, agent_id: run.agent_id },
     });
     wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
+    broadcastActiveSessionUpsert(run.session_id);
   });
 }
 
@@ -224,6 +227,7 @@ export function recordSessionChunk(input: {
     },
   });
   wsHub.broadcastSession(input.sessionId, { type: 'session_evidence:new', sessionId: input.sessionId, event });
+  broadcastActiveSessionUpsert(input.sessionId);
   if (shouldBroadcastInspectorSnapshot(evidenceType)) {
     broadcastSessionInspectorSnapshot(input.sessionId);
   }
@@ -265,6 +269,7 @@ function finishSessionRun(input: {
     sessionId: updated.session_id,
     run: updated,
   });
+  broadcastActiveSessionUpsert(updated.session_id);
   const finalEvent = sessionAgentEventRepo.create({
     session_id: updated.session_id,
     agent_id: input.agentId,
@@ -295,6 +300,7 @@ function finishSessionRun(input: {
       payload: { run_id: updated.id },
     });
     wsHub.broadcastSession(updated.session_id, { type: 'session_evidence:new', sessionId: updated.session_id, event });
+    broadcastActiveSessionUpsert(updated.session_id);
   }
   return updated;
 }
@@ -335,6 +341,7 @@ function persistProviderSession(input: {
       sessionId: input.sessionId,
       run: updated,
     });
+    broadcastActiveSessionUpsert(input.sessionId);
   }
   return updated;
 }

@@ -285,8 +285,9 @@ test('websocket command new returns a fresh workspace snapshot', () => {
   const event = JSON.parse(sent.at(-1)!);
   assert.equal(event.type, 'session_workspace:snapshot');
   assert.notEqual(event.payload.activeSession.session.id, session.id);
-  assert.equal(historyRecordRepo.getBySession(session.id)?.status, 'archived');
-  assert.equal(sessionEvidenceRepo.listBySession(session.id).at(-1)?.event_type, 'new');
+  assert.equal(historyRecordRepo.getBySession(session.id), undefined);
+  assert.equal(sessionRepo.get(session.id)?.closed_at, null);
+  assert.equal(sessionEvidenceRepo.listBySession(event.payload.activeSession.session.id).at(-1)?.event_type, 'new');
 });
 
 test('websocket command status sends a status snapshot event', () => {
@@ -314,10 +315,10 @@ test('websocket command status sends a status snapshot event', () => {
   assert.equal(event.sessionId, session.id);
 });
 
-test('websocket command new preserves archive resume brief and changed files', () => {
+test('websocket command new title names a fresh session without archiving current session', () => {
   const project = projectRepo.create({
-    name: 'socket archive command project',
-    path: mkdtempSync(join(tmpdir(), 'socket-archive-command-')),
+    name: 'socket titled new command project',
+    path: mkdtempSync(join(tmpdir(), 'socket-titled-new-command-')),
   });
   const session = sessionRepo.create({
     project_id: project.id,
@@ -339,18 +340,20 @@ test('websocket command new preserves archive resume brief and changed files', (
     title: 'Updated file',
     payload: { path: 'packages/frontend/src/pages/SessionWorkspacePage.tsx' },
   });
-  const { socket } = createSocket();
+  const { socket, sent } = createSocket();
 
   handleSessionSocketEvent(socket, {
     type: 'session.command.run',
     sessionId: session.id,
-    command: '/new title: WebSocket 归档',
+    command: '/new title: WebSocket 新会话',
   });
 
-  const record = historyRecordRepo.getBySession(session.id);
-  assert.equal(record?.title, 'WebSocket 归档');
-  assert.deepEqual(record?.changed_files, ['packages/frontend/src/pages/SessionWorkspacePage.tsx']);
-  assert.match(record?.resume_brief ?? '', /完成 WebSocket-only 会话/);
+  const event = JSON.parse(sent.at(-1)!);
+  assert.equal(event.type, 'session_workspace:snapshot');
+  assert.equal(event.payload.activeSession.session.title, 'WebSocket 新会话');
+  assert.notEqual(event.payload.activeSession.session.id, session.id);
+  assert.equal(historyRecordRepo.getBySession(session.id), undefined);
+  assert.equal(sessionRepo.get(session.id)?.closed_at, null);
 });
 
 test('websocket fork from history inherits resume brief context and increments fork count', () => {

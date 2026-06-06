@@ -222,6 +222,9 @@ function createPayload(sessionId: string): SessionWorkspacePayload {
         forked_from_history_record_id: null,
         latest_compaction_id: null,
         latest_context_manifest_id: null,
+        closed_at: null,
+        pinned_at: null,
+        last_viewed_at: null,
         created_at: now,
         updated_at: now,
         archived_at: null,
@@ -253,6 +256,7 @@ function createPayload(sessionId: string): SessionWorkspacePayload {
       checkpoints: [],
       evidence: [],
     },
+    activeSessions: [],
     historyRecords: [],
     status: {
       status: 'active',

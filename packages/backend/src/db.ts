@@ -332,6 +332,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   forked_from_history_record_id TEXT,
   latest_compaction_id TEXT,
   latest_context_manifest_id TEXT,
+  closed_at INTEGER,
+  pinned_at INTEGER,
+  last_viewed_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   archived_at INTEGER,
@@ -341,6 +344,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_project_status_updated ON sessions(project_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_project_archived ON sessions(project_id, archived_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_forked_from_session ON sessions(forked_from_session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_active_workspace ON sessions(closed_at, pinned_at IS NULL, pinned_at DESC, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS session_messages (
   id TEXT PRIMARY KEY,
@@ -1008,6 +1012,19 @@ if (!projectColumnNames.has('sort_order')) {
   db.exec('ALTER TABLE projects ADD COLUMN sort_order INTEGER');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_projects_sort ON projects(pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC)');
+
+const sessionColumns = db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[];
+const sessionColumnNames = new Set(sessionColumns.map((column) => column.name));
+if (!sessionColumnNames.has('closed_at')) {
+  db.exec('ALTER TABLE sessions ADD COLUMN closed_at INTEGER');
+}
+if (!sessionColumnNames.has('pinned_at')) {
+  db.exec('ALTER TABLE sessions ADD COLUMN pinned_at INTEGER');
+}
+if (!sessionColumnNames.has('last_viewed_at')) {
+  db.exec('ALTER TABLE sessions ADD COLUMN last_viewed_at INTEGER');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_active_workspace ON sessions(closed_at, pinned_at IS NULL, pinned_at DESC, updated_at DESC)');
 
 const sessionRunColumns = db.prepare('PRAGMA table_info(session_runs)').all() as { name: string }[];
 const sessionRunColumnNames = new Set(sessionRunColumns.map((column) => column.name));

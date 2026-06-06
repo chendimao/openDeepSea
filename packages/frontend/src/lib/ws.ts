@@ -1,4 +1,5 @@
 import type {
+  ActiveSessionSummary,
   AgentRun,
   AgentRunStatus,
   AgentTimelineEvent,
@@ -50,6 +51,9 @@ export type WsServerEvent =
   | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
+  | { type: 'active_sessions:snapshot'; sessions: ActiveSessionSummary[] }
+  | { type: 'active_session:upsert'; session: ActiveSessionSummary }
+  | { type: 'active_session:remove'; sessionId: string }
   | { type: 'session_workspace:snapshot'; projectId: string; sessionId: string; payload: SessionWorkspacePayload }
   | { type: 'session_error'; sessionId: string; error: string }
   | { type: 'session_status:snapshot'; sessionId: string; status: import('./types').StatusSnapshot }
@@ -87,6 +91,8 @@ export type WsServerEvent =
 export type WsClientEvent =
   | { type: 'subscribe'; roomId: string }
   | { type: 'unsubscribe'; roomId: string }
+  | { type: 'active_sessions:subscribe' }
+  | { type: 'active_sessions:unsubscribe' }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }
@@ -122,6 +128,7 @@ class RoomSocket {
   private listeners = new Set<Listener>();
   private subscribed = new Set<string>();
   private subscribedSessions = new Set<string>();
+  private subscribedActiveSessions = false;
   private pendingClientEvents: WsClientEvent[] = [];
   private retry = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -144,6 +151,7 @@ class RoomSocket {
         this.closeWhenOpen &&
         this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
+        !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) {
         this.closeWhenOpen = false;
@@ -152,6 +160,7 @@ class RoomSocket {
             this.ws !== ws ||
             this.subscribed.size > 0 ||
             this.subscribedSessions.size > 0 ||
+            this.subscribedActiveSessions ||
             this.pendingClientEvents.length > 0
           ) return;
           this.ws = null;
@@ -160,6 +169,7 @@ class RoomSocket {
         return;
       }
       this.closeWhenOpen = false;
+      if (this.subscribedActiveSessions) ws.send(JSON.stringify({ type: 'active_sessions:subscribe' }));
       for (const id of this.subscribed) ws.send(JSON.stringify({ type: 'subscribe', roomId: id }));
       for (const id of this.subscribedSessions) ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: id }));
       const pending = this.pendingClientEvents.splice(0);
@@ -179,6 +189,7 @@ class RoomSocket {
       if (
         this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
+        !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) return;
       this.retry++;
@@ -201,6 +212,7 @@ class RoomSocket {
       if (
         this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
+        !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) return;
       this.connect();
@@ -239,6 +251,24 @@ class RoomSocket {
     this.subscribedSessions.delete(sessionId);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'session:unsubscribe', sessionId }));
+    }
+    this.closeIfIdle();
+  }
+
+  subscribeActiveSessions(): void {
+    this.closeWhenOpen = false;
+    this.subscribedActiveSessions = true;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'active_sessions:subscribe' }));
+    } else {
+      this.connectSoon();
+    }
+  }
+
+  unsubscribeActiveSessions(): void {
+    this.subscribedActiveSessions = false;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'active_sessions:unsubscribe' }));
     }
     this.closeIfIdle();
   }
@@ -344,7 +374,12 @@ class RoomSocket {
   }
 
   private closeIfIdle(): void {
-    if (this.subscribed.size > 0 || this.subscribedSessions.size > 0 || this.pendingClientEvents.length > 0) return;
+    if (
+      this.subscribed.size > 0 ||
+      this.subscribedSessions.size > 0 ||
+      this.subscribedActiveSessions ||
+      this.pendingClientEvents.length > 0
+    ) return;
     if (this.connectTimer) {
       clearTimeout(this.connectTimer);
       this.connectTimer = null;

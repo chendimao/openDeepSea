@@ -79,3 +79,44 @@ test('session stream broadcasts include agent and sequence envelope', () => {
 
   wsHub.removeSocket(sessionSocket.socket);
 });
+
+test('active session subscribers receive upsert and remove broadcasts', () => {
+  const activeSocket = createSocket();
+  const sessionSocket = createSocket();
+
+  wsHub.subscribeActiveSessions(activeSocket.socket);
+  wsHub.subscribeSession('session-active', sessionSocket.socket);
+
+  wsHub.broadcastActiveSessions({
+    type: 'active_session:upsert',
+    session: {
+      id: 'session-active',
+      project_id: 'project-1',
+      project_name: 'Project 1',
+      project_path: '/tmp/project-1',
+      title: '活跃会话',
+      status: 'active',
+      phase: 'idle',
+      provider: null,
+      model: null,
+      pinned_at: null,
+      updated_at: 1,
+      unread_count: 0,
+      active_run_count: 0,
+      latest_event_summary: null,
+    },
+  });
+  wsHub.broadcastActiveSessions({
+    type: 'active_session:remove',
+    sessionId: 'session-active',
+  });
+
+  assert.deepEqual(activeSocket.sent.map((payload) => JSON.parse(payload).type), [
+    'active_session:upsert',
+    'active_session:remove',
+  ]);
+  assert.equal(sessionSocket.sent.length, 0);
+
+  wsHub.removeSocket(activeSocket.socket);
+  wsHub.removeSocket(sessionSocket.socket);
+});

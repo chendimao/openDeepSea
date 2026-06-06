@@ -1,5 +1,5 @@
 import React from 'react';
-import type { HistoryRecordStatus, SessionMode, SessionWorkspacePayload } from '../lib/types';
+import type { SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView } from './SessionShellView';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 
@@ -10,7 +10,7 @@ export function SessionShell({
   onCancelRun,
   onRetryRun,
   onSaveContract,
-  onFilterHistory,
+  onOpenSession,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -18,7 +18,7 @@ export function SessionShell({
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
-  onFilterHistory?: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) => void;
+  onOpenSession?: (projectId: string, sessionId: string) => void;
 }): JSX.Element {
   return (
     <SessionShellView
@@ -28,7 +28,7 @@ export function SessionShell({
       onCancelRun={onCancelRun}
       onRetryRun={onRetryRun}
       onSaveContract={onSaveContract}
-      onFilterHistory={onFilterHistory}
+      onOpenSession={onOpenSession}
     />
   );
 }

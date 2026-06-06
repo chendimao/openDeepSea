@@ -76,6 +76,14 @@ export const sessionRepo = {
     `).all(projectId) as Session[];
   },
 
+  listActiveWorkspaceSessions(): Session[] {
+    return db.prepare(`
+      SELECT * FROM sessions
+      WHERE closed_at IS NULL
+      ORDER BY pinned_at IS NULL ASC, pinned_at DESC, updated_at DESC
+    `).all() as Session[];
+  },
+
   update(
     id: string,
     patch: Partial<Pick<
@@ -92,6 +100,9 @@ export const sessionRepo = {
       | 'branch_name'
       | 'latest_compaction_id'
       | 'latest_context_manifest_id'
+      | 'closed_at'
+      | 'pinned_at'
+      | 'last_viewed_at'
       | 'archived_at'
     >>,
   ): Session | undefined {
@@ -112,6 +123,9 @@ export const sessionRepo = {
       'branch_name',
       'latest_compaction_id',
       'latest_context_manifest_id',
+      'closed_at',
+      'pinned_at',
+      'last_viewed_at',
       'archived_at',
     ] as const) {
       if (patch[key] !== undefined) {
@@ -129,6 +143,22 @@ export const sessionRepo = {
   archive(id: string): Session | undefined {
     const timestamp = now();
     return this.update(id, { status: 'archived', phase: 'archived', archived_at: timestamp });
+  },
+
+  close(id: string): Session | undefined {
+    return this.update(id, { closed_at: now() });
+  },
+
+  pin(id: string): Session | undefined {
+    return this.update(id, { pinned_at: now() });
+  },
+
+  unpin(id: string): Session | undefined {
+    return this.update(id, { pinned_at: null });
+  },
+
+  touchViewed(id: string): Session | undefined {
+    return this.update(id, { last_viewed_at: now() });
   },
 };
 

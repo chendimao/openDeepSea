@@ -229,3 +229,44 @@ test('sessionSocket switches session subscriptions without rebuilding physical s
     globalThis.WebSocket = originalWebSocket;
   }
 });
+
+test('sessionSocket subscribes active sessions and focused session on one physical socket', async () => {
+  FakeWebSocket.instances = [];
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { location: { protocol: 'http:', host: 'localhost:5173' } },
+  });
+  globalThis.WebSocket = FakeWebSocket as never;
+
+  try {
+    const { sessionSocket } = await import(`./ws.ts?ws-active-test-${Date.now()}`);
+
+    sessionSocket.subscribeActiveSessions();
+    sessionSocket.subscribeSession('session-1');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const socket = FakeWebSocket.instances[0]!;
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.emit('open');
+
+    assert.equal(FakeWebSocket.instances.length, 1);
+    assert.deepEqual(socket.sent.map((payload) => JSON.parse(payload)), [
+      { type: 'active_sessions:subscribe' },
+      { type: 'session:subscribe', sessionId: 'session-1' },
+    ]);
+
+    sessionSocket.unsubscribeActiveSessions();
+    assert.deepEqual(socket.sent.map((payload) => JSON.parse(payload)).at(-1), {
+      type: 'active_sessions:unsubscribe',
+    });
+    sessionSocket.destroy();
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    });
+    globalThis.WebSocket = originalWebSocket;
+  }
+});

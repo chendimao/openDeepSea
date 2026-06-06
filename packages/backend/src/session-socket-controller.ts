@@ -22,6 +22,7 @@ import { dispatchSessionUserMessage } from './session-message-dispatch.js';
 import { retrySessionAgentRun, runSessionAgent } from './session-runtime.js';
 import { parseSessionCommand } from './session-command.js';
 import { buildHistorySummary } from './session-summary.js';
+import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import { buildSessionStatus, buildWorkspacePayload, createContextManifest } from './session.routes.js';
 import { wsHub } from './ws-hub.js';
 import type { HistoryRecord, Project, Session, SessionEvidenceEvent, SessionRun, WsClientEvent, WsServerEvent } from './types.js';
@@ -152,17 +153,23 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
   const command = parseSessionCommand(commandText);
   if (command.kind === 'new') {
     const project = requireProject(session.project_id);
-    const record = createHistoryRecordForSession(session, command.args.title);
+    const title = typeof command.args.title === 'string' ? command.args.title : 'New Session';
     const next = sessionRepo.create({
       project_id: project.id,
-      title: command.args.blank ? 'New Session' : `继续：${record.title}`,
-      current_goal: command.args.blank ? null : session.current_goal,
+      title,
+      current_goal: null,
       mode: session.mode,
       provider: session.provider,
       model: session.model,
       workspace_path: session.workspace_path ?? project.path,
     });
-    sessionRepo.archive(session.id);
+    sessionEvidenceRepo.create({
+      session_id: next.id,
+      event_type: 'new',
+      title: 'Session created',
+      payload: { source_session_id: session.id },
+    });
+    broadcastActiveSessionUpsert(next.id);
     sendWorkspaceSnapshot(socket, project, next);
     return true;
   }
@@ -212,6 +219,7 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
       title: 'History resumed',
       payload: { history_record_id: record.id },
     });
+    broadcastActiveSessionUpsert(next.id);
     sendWorkspaceSnapshot(socket, project, next);
     return true;
   }
@@ -239,6 +247,7 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
         title: 'History fork created',
         payload: { history_record_id: record.id },
       });
+      broadcastActiveSessionUpsert(fork.id);
       sendWorkspaceSnapshot(socket, recordProject, fork);
       return true;
     }
@@ -267,6 +276,8 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
       title: 'Fork created',
       payload: { source_session_id: session.id },
     });
+    broadcastActiveSessionUpsert(session.id);
+    broadcastActiveSessionUpsert(fork.id);
     sendWorkspaceSnapshot(socket, project, fork);
     return true;
   }
@@ -301,6 +312,7 @@ function applyCompact(
     payload: { compaction_id: compaction.id },
   });
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  broadcastActiveSessionUpsert(session.id);
   sendWorkspaceSnapshot(socket, requireProject(session.project_id), sessionRepo.get(session.id) ?? session);
   return true;
 }
@@ -318,6 +330,7 @@ function discardCompact(socket: WebSocket, sessionId: string, compactionId: stri
     payload: { compaction_id: compaction.id },
   });
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  broadcastActiveSessionUpsert(session.id);
   sendWorkspaceSnapshot(socket, requireProject(session.project_id), session);
   return true;
 }
@@ -339,6 +352,7 @@ function saveContract(
     payload: { contract_updated: true },
   });
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  broadcastActiveSessionUpsert(session.id);
   sendWorkspaceSnapshot(socket, requireProject(session.project_id), session);
   return true;
 }
@@ -458,6 +472,7 @@ async function createCheckpoint(socket: WebSocket, session: Session, title: stri
   });
   sessionCheckpointRepo.updateEvidenceEvent(checkpoint.id, event.id);
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  broadcastActiveSessionUpsert(session.id);
   sendWorkspaceSnapshot(socket, project, session);
 }
 
@@ -562,6 +577,7 @@ function sendSessionWorkspaceSnapshot(socket: WebSocket, projectId: string, sess
       provider: null,
       workspace_path: project.path,
     });
+  broadcastActiveSessionUpsert(activeSession);
   send(socket, {
     type: 'session_workspace:snapshot',
     projectId: project.id,
@@ -604,6 +620,7 @@ function retryRun(input: RunControlInput): boolean {
     payload: { source_run_id: run.id, agent_id: run.agent_id },
   });
   wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
+  broadcastActiveSessionUpsert(run.session_id);
   return true;
 }
 
@@ -636,6 +653,7 @@ function broadcastRunStopped(run: SessionRun, status: 'paused' | 'cancelled'): v
     sessionId: run.session_id,
     run,
   });
+  broadcastActiveSessionUpsert(run.session_id);
   const finalEvent = sessionAgentEventRepo.create({
     session_id: run.session_id,
     agent_id: run.agent_id,

@@ -9,7 +9,7 @@ import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import type {
-  HistoryRecordStatus,
+  ActiveSessionSummary,
   SessionCompaction,
   SessionMode,
   SessionWorkspacePayload,
@@ -38,6 +38,7 @@ export function SessionWorkspacePage({
   const { t } = useI18n();
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
+  const [activeSessions, setActiveSessions] = useState<ActiveSessionSummary[] | null>(null);
   const previousSessionIdRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const { data: projects = [], isLoading: projectsLoading } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
@@ -47,6 +48,11 @@ export function SessionWorkspacePage({
     if (!navigationEnabled) return;
     if (!projectId && activeProjectId) navigate(`/projects/${activeProjectId}`, { replace: true });
   }, [activeProjectId, navigate, navigationEnabled, projectId]);
+
+  useEffect(() => {
+    sessionSocket.subscribeActiveSessions();
+    return () => sessionSocket.unsubscribeActiveSessions();
+  }, []);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -73,6 +79,7 @@ export function SessionWorkspacePage({
     return sessionSocket.on((event: WsServerEvent) => {
       if (event.type === 'session_workspace:snapshot') {
         if (event.projectId !== activeProjectId) return;
+        setActiveSessions(event.payload.activeSessions);
         setWorkspacePayload(event.payload);
         const nextNavigation = getSnapshotNavigation(
           event.projectId,
@@ -83,6 +90,33 @@ export function SessionWorkspacePage({
         if (nextNavigation) {
           navigate(nextNavigation.to, { replace: nextNavigation.replace });
         }
+        return;
+      }
+      if (event.type === 'active_sessions:snapshot') {
+        setActiveSessions(event.sessions);
+        setWorkspacePayload((current) => current ? { ...current, activeSessions: event.sessions } : current);
+        return;
+      }
+      if (event.type === 'active_session:upsert') {
+        setActiveSessions((current) => upsertActiveSessionSummary(current ?? [], event.session));
+        setWorkspacePayload((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            activeSessions: upsertActiveSessionSummary(current.activeSessions, event.session),
+          };
+        });
+        return;
+      }
+      if (event.type === 'active_session:remove') {
+        setActiveSessions((current) => (current ?? []).filter((session) => session.id !== event.sessionId));
+        setWorkspacePayload((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            activeSessions: current.activeSessions.filter((session) => session.id !== event.sessionId),
+          };
+        });
         return;
       }
       if (event.type === 'session_error') {
@@ -173,7 +207,10 @@ export function SessionWorkspacePage({
   return (
     <>
     <SessionShell
-      payload={workspacePayload}
+      payload={{
+        ...workspacePayload,
+        activeSessions: activeSessions ?? workspacePayload.activeSessions,
+      }}
       onSendMessage={(message) => runSessionCommand(message, workspacePayload, {
         sendMessage: (message) => sessionSocket.sendSessionMessage(message),
         runCommand: (message) => sessionSocket.runSessionCommand(message),
@@ -187,8 +224,12 @@ export function SessionWorkspacePage({
       onSaveContract={(input) => {
         sessionSocket.saveSessionContract({ sessionId: workspacePayload.activeSession.session.id, ...input });
       }}
-      onFilterHistory={(filters) => {
-        sessionSocket.filterHistoryRecords({ projectId: activeProjectId, ...filters });
+      onOpenSession={(projectId, sessionId) => {
+        if (navigationEnabled) {
+          navigate(`/projects/${projectId}/sessions/${sessionId}`);
+          return;
+        }
+        sessionSocket.requestSessionWorkspace({ projectId, sessionId });
       }}
     />
     {compactPreview && (
@@ -246,6 +287,18 @@ export function isCompactPreviewForActiveSession(
 
 function isSessionWorkspaceEvent(event: WsServerEvent): boolean {
   return event.type.startsWith('session_') || event.type === 'session:updated' || event.type === 'history_record:new';
+}
+
+export function upsertActiveSessionSummary(
+  sessions: ActiveSessionSummary[],
+  session: ActiveSessionSummary,
+): ActiveSessionSummary[] {
+  return [session, ...sessions.filter((item) => item.id !== session.id)]
+    .sort((left, right) =>
+      Number(left.pinned_at === null) - Number(right.pinned_at === null) ||
+      (right.pinned_at ?? 0) - (left.pinned_at ?? 0) ||
+      right.updated_at - left.updated_at
+    );
 }
 
 type SessionCommandResult = { kind: 'noop' } | null;
