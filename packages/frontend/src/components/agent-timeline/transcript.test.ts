@@ -60,7 +60,7 @@ test('buildAgentTranscript does not split markdown code fences around tool event
       event('tool-1', 2, 'tool_result', '工具结果 Read', {
         id: 'read-1',
         name: 'Read',
-        input: '{"path":"RoomPage.tsx"}',
+        input: '{"path":"SessionWorkspacePage.tsx"}',
       }),
       event('text-2', 3, 'assistant_message', '助手回复', {
         text: '  "task_execution": {\n    "state": "ready_to_execute"\n  }\n}\n```\n',

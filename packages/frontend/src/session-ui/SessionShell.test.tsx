@@ -4,7 +4,11 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { SessionWorkspacePayload } from '../lib/types';
 import { I18nProvider } from '../lib/i18n';
-import { SessionShellView, getSessionRunThinkingDuration } from './SessionShellView';
+import {
+  SessionShellView,
+  formatSessionTranscriptContentForPreview,
+  getSessionRunThinkingDuration,
+} from './SessionShellView';
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
@@ -150,6 +154,42 @@ test('SessionShell renders markdown controls and thinking duration in transcript
   assert.match(html, /思考 18s/);
   assert.match(html, /markdown-preview/);
   assert.match(html, /分析结果/);
+});
+
+test('SessionShell segments compact streamed run output in preview timeline', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.stdout = [
+    '我会先按项目规则加载 `using-superpowers`，然后做只读项目分析。',
+    '先看根目录、workspace 脚本和源码入口。',
+    '初步确认是 npm workspaces：后端 Express/SQLite/ACP runtime，前端 React/Vite。',
+    '当前未提交改动集中在 Session 空状态。',
+    '后端入口把 HTTP API、WebSocket、上传静态资源、workflow 监控恢复和 provider superpowers 启动检查都挂在一个进程里。',
+    '前端根路由目前以 Session Workspace 为主页面。',
+    '测试文件数量明显不少，尤其后端覆盖 ACP、workflow、repos、session、skills 等核心域。',
+    '✅ 结论：当前项目是一个本地优先的 ACP 多智能体协作项目管理系统。',
+    '本次使用技能：`using-superpowers`。',
+  ].join('');
+  run.started_at = 1_000;
+  run.updated_at = 19_000;
+  run.completed_at = 19_000;
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /思考 18s/);
+  assert.match(html, /markdown-preview/);
+  assert.match(html, /只读项目分析。<\/span><span><br\/>先看根目录/);
+  assert.match(html, /Session Workspace 为主页面。<\/span><span><br\/>测试文件数量明显不少/);
+  assert.match(html, /核心域。/);
+  assert.match(html, /✅ 结论：当前项目是一个本地优先的 ACP 多智能体协作项目管理系统。/);
+  assert.match(html, /本次使用技能/);
+});
+
+test('formatSessionTranscriptContentForPreview keeps short and already structured text stable', () => {
+  assert.equal(formatSessionTranscriptContentForPreview('短回复。'), '短回复。');
+
+  const structured = ['第一段。', '', '第二段。', '', '- 列表项'].join('\n');
+  assert.equal(formatSessionTranscriptContentForPreview(structured), structured);
 });
 
 test('getSessionRunThinkingDuration formats active and completed durations', () => {

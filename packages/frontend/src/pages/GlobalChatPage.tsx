@@ -1,12 +1,12 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bot, Database, MessageCircle, MessagesSquare, Plus, Save, Send, Settings2, Trash2, User } from 'lucide-react';
+import { Bot, Database, MessageCircle, MessagesSquare, Plus, Save, Send, Settings2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import type { GlobalChatMessage, GlobalChatSession } from '../lib/types';
 import { Button } from '../components/ui/Button';
-import { MessageContent } from '../components/MessageContent';
+import { SessionMessageBubble } from '../session-ui/SessionMessageBubble';
 import { cn } from '../lib/utils';
 
 export function GlobalChatPage(): JSX.Element {
@@ -290,65 +290,45 @@ function GlobalChatBubble({ message }: { message: GlobalChatMessage }): JSX.Elem
   });
 
   return (
-    <article className={cn('flex gap-3', isUser && 'flex-row-reverse')}>
-      <div className={cn(
-        'flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
-        isUser ? 'bg-[var(--color-primary)] text-white' : 'bg-[var(--color-surface-raised)] text-[var(--color-primary)]',
-      )}>
-        {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
-      </div>
-      <div className={cn('max-w-[min(760px,82%)]', isUser && 'text-right')}>
-        <div className="mb-1 flex items-center gap-2 text-[11px] text-[var(--color-muted)]">
-          <span>{isUser ? t('room.currentUser') : t('globalChat.title')}</span>
-          <span>{formatRelativeTime(message.created_at)}</span>
-        </div>
-        <div className={cn(
-          'rounded-md border px-3 py-2 text-left shadow-sm',
-          isUser
-            ? 'border-[var(--color-primary)] bg-[var(--color-primary)] text-white'
-            : 'border-[var(--color-border)] bg-[var(--color-surface-raised)] text-[var(--color-fg)]',
-          message.status === 'failed' && 'border-red-300',
-        )}>
-          {isUser ? (
-            <div className="whitespace-pre-wrap text-[13px] leading-relaxed">{message.content}</div>
-          ) : (
-            <MessageContent content={message.content} />
+    <SessionMessageBubble
+      role={message.role}
+      roleLabel={isUser ? t('room.currentUser') : t('globalChat.title')}
+      content={message.content}
+      timeLabel={formatRelativeTime(message.created_at)}
+      statusLabel={message.status === 'failed' ? '失败' : null}
+      actions={!isUser ? (
+        <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => saveMemory.mutate()}
+            disabled={saveMemory.isPending}
+            className="inline-flex min-h-[22px] items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-[10px] font-semibold text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)]"
+          >
+            <Save className="h-3.5 w-3.5" />
+            {t('globalChat.saveMemory')}
+          </button>
+          {(refs.length > 0 || configRefs.length > 0) && (
+            <details className="rounded-md border border-[var(--color-border)] px-2 py-1 text-[10px] text-[var(--color-fg-muted)]">
+              <summary className="cursor-pointer">{t('globalChat.references')}</summary>
+              <div className="mt-2 space-y-1">
+                {refs.map((ref) => (
+                  <div key={ref.id} className="flex items-center gap-1">
+                    <Database className="h-3 w-3" />
+                    <span>{ref.title}</span>
+                  </div>
+                ))}
+                {configRefs.map((ref) => (
+                  <div key={ref} className="flex items-center gap-1">
+                    <Settings2 className="h-3 w-3" />
+                    <span>{t('globalChat.configReference')}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </div>
-        {!isUser && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => saveMemory.mutate()}
-              disabled={saveMemory.isPending}
-              className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)]"
-            >
-              <Save className="h-3.5 w-3.5" />
-              {t('globalChat.saveMemory')}
-            </button>
-            {(refs.length > 0 || configRefs.length > 0) && (
-              <details className="rounded-md border border-[var(--color-border)] px-2 py-1 text-[11px] text-[var(--color-fg-muted)]">
-                <summary className="cursor-pointer">{t('globalChat.references')}</summary>
-                <div className="mt-2 space-y-1">
-                  {refs.map((ref) => (
-                    <div key={ref.id} className="flex items-center gap-1">
-                      <Database className="h-3 w-3" />
-                      <span>{ref.title}</span>
-                    </div>
-                  ))}
-                  {configRefs.map((ref) => (
-                    <div key={ref} className="flex items-center gap-1">
-                      <Settings2 className="h-3 w-3" />
-                      <span>{t('globalChat.configReference')}</span>
-                    </div>
-                  ))}
-                </div>
-              </details>
-            )}
-          </div>
-        )}
-      </div>
-    </article>
+      ) : null}
+    />
   );
 }
 

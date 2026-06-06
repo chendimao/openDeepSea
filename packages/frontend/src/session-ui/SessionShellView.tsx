@@ -4,7 +4,6 @@ import {
   Brain,
   CheckCircle2,
   ChevronDown,
-  Eye,
   FileText,
   Filter,
   GitFork,
@@ -43,8 +42,12 @@ import type {
   SessionWorkspacePayload,
   StatusSnapshot,
 } from '../lib/types';
-import { MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
-import { ProjectAgentStrip } from './ProjectAgentStrip';
+import { MessageContent } from '../components/MessageContent';
+import {
+  MarkdownDisplaySwitch,
+  SessionMessageBubble,
+  type SessionMessageDisplayMode,
+} from './SessionMessageBubble';
 import { sessionStatusTone } from './session-ui-model';
 
 export function SessionShellView({
@@ -223,7 +226,6 @@ function TopCommandBar({
               <Settings aria-hidden="true" />
             </button>
           </div>
-          <ProjectAgentStrip project={payload.project} />
         </div>
       </div>
     </>
@@ -431,9 +433,9 @@ function TranscriptCanvas({
   onCommand: (command: string) => void;
 }): JSX.Element {
   const timeline = buildTranscriptTimeline(detail).slice(-36);
-  const [displayModes, setDisplayModes] = useState<Record<string, 'preview' | 'source'>>({});
-  const displayModeFor = (key: string): 'preview' | 'source' => displayModes[key] ?? 'preview';
-  const setDisplayModeFor = (key: string, mode: 'preview' | 'source') => {
+  const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
+  const displayModeFor = (key: string): SessionMessageDisplayMode => displayModes[key] ?? 'preview';
+  const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
     setDisplayModes((current) => ({ ...current, [key]: mode }));
   };
 
@@ -455,17 +457,20 @@ function TranscriptCanvas({
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
         ) : timeline.map((item) => {
           if (item.kind === 'message') {
+            const displayMode = displayModeFor(item.key);
             return (
               <TranscriptMessage
                 key={item.key}
                 message={item.message}
-                displayMode={displayModeFor(item.key)}
+                displayMode={displayMode}
                 onDisplayModeChange={(mode) => setDisplayModeFor(item.key, mode)}
               />
             );
           }
           const runEvidence = evidence.filter((event) => event.source_run_id === item.run.id);
           const output = runOutputText(item.run);
+          const displayMode = displayModeFor(item.key);
+          const displayOutput = displayMode === 'source' ? output : formatSessionTranscriptContentForPreview(output);
           return (
             <React.Fragment key={item.key}>
               <AgentThoughtPanel run={item.run} evidence={runEvidence} />
@@ -476,12 +481,12 @@ function TranscriptCanvas({
                   <ThinkingDurationBadge run={item.run} />
                   <MarkdownDisplaySwitch
                     content={output}
-                    mode={displayModeFor(item.key)}
+                    mode={displayMode}
                     onModeChange={(mode) => setDisplayModeFor(item.key, mode)}
                   />
                 </div>
                 <div className="deepsea-run-log-body">
-                  <MessageContent content={output} mode={displayModeFor(item.key)} suppressTraceEvents />
+                  <MessageContent content={displayOutput} mode={displayMode} suppressTraceEvents />
                 </div>
               </article>
             </React.Fragment>
@@ -520,58 +525,19 @@ function TranscriptMessage({
   onDisplayModeChange,
 }: {
   message: SessionMessage;
-  displayMode: 'preview' | 'source';
-  onDisplayModeChange: (mode: 'preview' | 'source') => void;
+  displayMode: SessionMessageDisplayMode;
+  onDisplayModeChange: (mode: SessionMessageDisplayMode) => void;
 }): JSX.Element {
-  const role = message.role === 'assistant' ? 'ASSISTANT' : message.role.toUpperCase();
   return (
-    <article className="deepsea-message" data-role={message.role}>
-      <header>
-        <span>{role}</span>
-        <time className="deepsea-mono">{formatClock(message.created_at)}</time>
-        {(message.status === 'queued' || message.status === 'streaming') && <strong>思考中</strong>}
-        <MarkdownDisplaySwitch content={message.content} mode={displayMode} onModeChange={onDisplayModeChange} />
-      </header>
-      <div className="deepsea-message-body">
-        <MessageContent content={message.content} mode={displayMode} suppressTraceEvents />
-      </div>
-    </article>
-  );
-}
-
-function MarkdownDisplaySwitch({
-  content,
-  mode,
-  onModeChange,
-}: {
-  content: string;
-  mode: 'preview' | 'source';
-  onModeChange: (mode: 'preview' | 'source') => void;
-}): JSX.Element | null {
-  if (!isMarkdownMessageContent(content)) return null;
-  return (
-    <div className="deepsea-markdown-switch" aria-label="Markdown 显示模式">
-      <button
-        type="button"
-        className={mode === 'preview' ? 'is-active' : undefined}
-        aria-label="预览"
-        aria-pressed={mode === 'preview'}
-        onClick={() => onModeChange('preview')}
-      >
-        <Eye aria-hidden="true" />
-        <span>预览</span>
-      </button>
-      <button
-        type="button"
-        className={mode === 'source' ? 'is-active' : undefined}
-        aria-label="源码"
-        aria-pressed={mode === 'source'}
-        onClick={() => onModeChange('source')}
-      >
-        <FileText aria-hidden="true" />
-        <span>源码</span>
-      </button>
-    </div>
+    <SessionMessageBubble
+      role={message.role}
+      content={message.content}
+      previewContent={formatSessionTranscriptContentForPreview(message.content)}
+      timeLabel={formatClock(message.created_at)}
+      statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
+      displayMode={displayMode}
+      onDisplayModeChange={onDisplayModeChange}
+    />
   );
 }
 
@@ -823,6 +789,24 @@ function runOutputText(run: SessionRun): string {
   if (run.status === 'completed') return '未返回可展示回复。';
   if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';
   return '等待智能体输出...';
+}
+
+export function formatSessionTranscriptContentForPreview(content: string): string {
+  const normalized = content.replace(/\r\n?/g, '\n').trim();
+  if (!shouldSegmentCompactTranscript(normalized)) return content;
+
+  return normalized
+    .replace(/([。！？])((?:✅|⚠️|🎯|📋|🛠️|📎|🧠|🔍|📊)\s)/g, '$1\n\n$2')
+    .replace(/([。！？])((?:结论|项目概况|关键模块|质量状态|当前 diff|建议优先级|本次使用技能)[：:])/g, '$1\n\n$2')
+    .replace(/([。！？])(?=\S)/g, '$1\n')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+function shouldSegmentCompactTranscript(content: string): boolean {
+  if (content.length < 180) return false;
+  if (content.includes('```')) return false;
+  const newlineCount = (content.match(/\n/g) ?? []).length;
+  return newlineCount < Math.max(3, Math.floor(content.length / 900));
 }
 
 export function getSessionRunThinkingDuration(

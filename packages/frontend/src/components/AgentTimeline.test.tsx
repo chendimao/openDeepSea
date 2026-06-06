@@ -248,7 +248,7 @@ test('AgentTimeline renders lightweight tool detail placeholders without heavy p
             payload: {
               id: 'call-1',
               name: 'Read',
-              path: 'packages/frontend/src/pages/RoomPage.tsx',
+              path: 'packages/frontend/src/pages/SessionWorkspacePage.tsx',
               detail_omitted: true,
               detail_event_id: 'tool-result-1',
             },
@@ -260,7 +260,7 @@ test('AgentTimeline renders lightweight tool detail placeholders without heavy p
   );
 
   assert.match(html, /Explored/);
-  assert.match(html, /Read · packages\/frontend\/src\/pages\/RoomPage\.tsx/);
+  assert.match(html, /Read · packages\/frontend\/src\/pages\/SessionWorkspacePage\.tsx/);
   assert.match(html, /展开后加载完整详情/);
   assert.doesNotMatch(html, /文件正文/);
   assert.doesNotMatch(html, /输出/);

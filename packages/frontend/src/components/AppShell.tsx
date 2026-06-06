@@ -33,10 +33,6 @@ export function AppShell({
   const location = useLocation();
   const { t } = useI18n();
   const themeStyle = getThemeStyle(theme);
-  const isRoomRoute = Boolean(getRoomId(location.pathname));
-  const isSessionWorkspaceRoute = location.pathname === '/' ||
-    /^\/projects\/[^/]+\/?$/.test(location.pathname) ||
-    /^\/projects\/[^/]+\/sessions\/[^/]+\/?$/.test(location.pathname);
   const isSessionWorkspaceRoute = location.pathname === '/' ||
     /^\/projects\/[^/]+\/?$/.test(location.pathname) ||
     /^\/projects\/[^/]+\/sessions\/[^/]+\/?$/.test(location.pathname);
@@ -99,12 +95,10 @@ export function AppShell({
               <span />
             </button>
           </div>
-          {!isSessionWorkspaceRoute && (
-            <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
-          )}
+          <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
         </div>
       </header>
-      <div className={cn('app-grid', isRoomRoute && 'app-grid--room')}>
+      <div className="app-grid">
         <main className="app-main">{children}</main>
       </div>
       <CommandMenu
@@ -146,9 +140,4 @@ function HeaderNavLink({
       <span>{label}</span>
     </NavLink>
   );
-}
-
-function getRoomId(pathname: string): string | undefined {
-  const [, first, , second, roomId] = pathname.split('/');
-  return first === 'projects' && second === 'rooms' ? roomId : undefined;
 }

@@ -27,14 +27,11 @@ Object.defineProperty(globalThis, 'localStorage', {
   configurable: true,
 });
 
-test('project route renders Session shell loading state instead of old room UI', () => {
+test('project route renders Session shell loading state', () => {
   const html = renderSessionWorkspace('/projects/project-1', '/projects/:projectId');
 
   assert.match(html, /session-shell/);
   assert.match(html, /加载 Session/);
-  assert.doesNotMatch(html, /RoomWorkbench/);
-  assert.doesNotMatch(html, /TaskWorkspacePanel/);
-  assert.doesNotMatch(html, /chat-panel/);
 });
 
 test('root session route shows project onboarding when no projects exist', () => {
