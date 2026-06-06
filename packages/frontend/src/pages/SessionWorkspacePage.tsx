@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
@@ -18,8 +18,8 @@ import { SessionShell } from '../session-ui/SessionShell';
 export function SessionWorkspacePage(): JSX.Element {
   const { projectId = '', sessionId } = useParams();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
+  const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
   const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
   const activeProjectId = projectId || projects[0]?.id || '';
 
@@ -27,54 +27,63 @@ export function SessionWorkspacePage(): JSX.Element {
     if (!projectId && activeProjectId) navigate(`/projects/${activeProjectId}`, { replace: true });
   }, [activeProjectId, navigate, projectId]);
 
-  const workspace = useQuery({
-    queryKey: ['session-workspace', activeProjectId, sessionId ?? 'active'],
-    queryFn: () => api.getSessionWorkspace(activeProjectId, { sessionId }),
-    enabled: Boolean(activeProjectId),
-  });
+  useEffect(() => {
+    if (!activeProjectId) return;
+    sessionSocket.requestSessionWorkspace({ projectId: activeProjectId, sessionId });
+  }, [activeProjectId, sessionId]);
 
   useEffect(() => {
-    const sessionId = workspace.data?.activeSession.session.id;
-    if (!sessionId) return;
-    sessionSocket.subscribeSession(sessionId);
-    return () => sessionSocket.unsubscribeSession(sessionId);
-  }, [workspace.data?.activeSession.session.id]);
+    const activeSessionId = workspacePayload?.activeSession.session.id;
+    if (!activeSessionId) return;
+    sessionSocket.subscribeSession(activeSessionId);
+    return () => sessionSocket.unsubscribeSession(activeSessionId);
+  }, [workspacePayload?.activeSession.session.id]);
 
   useEffect(() => {
     return sessionSocket.on((event: WsServerEvent) => {
+      if (event.type === 'session_workspace:snapshot') {
+        if (event.projectId !== activeProjectId) return;
+        setWorkspacePayload(event.payload);
+        return;
+      }
+      if (event.type === 'session_error') {
+        toast.error(event.error);
+        return;
+      }
+      if (!activeProjectId || !workspacePayload) return;
       if (!shouldRefreshSessionWorkspace(event)) return;
-      void queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] });
+      if ('sessionId' in event && event.sessionId !== workspacePayload.activeSession.session.id) return;
+      sessionSocket.requestSessionWorkspace({
+        projectId: activeProjectId,
+        sessionId: workspacePayload.activeSession.session.id,
+      });
     });
-  }, [activeProjectId, queryClient]);
+  }, [activeProjectId, workspacePayload]);
 
   const runCommand = useMutation({
-    mutationFn: (content: string) => runSessionCommand(content, workspace.data!),
+    mutationFn: (content: string) => runSessionCommand(content, workspacePayload!, {
+      sendMessage: (message) => sessionSocket.sendSessionMessage(message),
+    }),
     onSuccess: (result) => {
-      if (!result) return queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] });
+      if (!result) return undefined;
       if (result.kind === 'workspace') {
         const nextSessionId = result.payload.activeSession.session.id;
-        queryClient.setQueryData(['session-workspace', result.payload.project.id, nextSessionId], result.payload);
+        setWorkspacePayload(result.payload);
         if (nextSessionId !== sessionId || result.payload.project.id !== activeProjectId) {
           navigate(`/projects/${result.payload.project.id}/sessions/${nextSessionId}`);
         }
-        return queryClient.invalidateQueries({ queryKey: ['session-workspace', result.payload.project.id] });
+        return undefined;
       }
       if (result.kind === 'compact') {
         setCompactPreview(result.compaction);
         return undefined;
       }
       if (result.kind === 'status') {
-        queryClient.setQueryData<SessionWorkspacePayload>(
-          ['session-workspace', activeProjectId, sessionId ?? 'active'],
-          (current) => current ? { ...current, status: result.status } : current,
-        );
+        setWorkspacePayload((current) => current ? { ...current, status: result.status } : current);
         return undefined;
       }
       if (result.kind === 'context') {
-        queryClient.setQueryData<SessionWorkspacePayload>(
-          ['session-workspace', activeProjectId, sessionId ?? 'active'],
-          (current) => current ? { ...current, context: result.context } : current,
-        );
+        setWorkspacePayload((current) => current ? { ...current, context: result.context } : current);
         return undefined;
       }
       return undefined;
@@ -84,42 +93,35 @@ export function SessionWorkspacePage(): JSX.Element {
 
   const applyCompact = useMutation({
     mutationFn: (summary: string) =>
-      api.applyCompact(workspace.data!.activeSession.session.id, compactPreview!.id, {
+      api.applyCompact(workspacePayload!.activeSession.session.id, compactPreview!.id, {
         applied_summary: summary,
         user_edited: summary !== compactPreview!.preview_summary,
       }),
     onSuccess: () => {
       setCompactPreview(null);
-      return queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] });
+      requestActiveWorkspaceSnapshot(activeProjectId, workspacePayload);
+      return undefined;
     },
     onError: (error) => toast.error((error as Error).message),
   });
 
   const discardCompact = useMutation({
-    mutationFn: (compactionId: string) => api.discardCompact(workspace.data!.activeSession.session.id, compactionId),
+    mutationFn: (compactionId: string) => api.discardCompact(workspacePayload!.activeSession.session.id, compactionId),
     onSuccess: () => {
       setCompactPreview(null);
-      return queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] });
+      requestActiveWorkspaceSnapshot(activeProjectId, workspacePayload);
+      return undefined;
     },
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const cancelRun = useMutation({
-    mutationFn: api.cancelSessionRun,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] }),
-    onError: (error) => toast.error((error as Error).message),
-  });
-
-  const retryRun = useMutation({
-    mutationFn: api.retrySessionRun,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] }),
     onError: (error) => toast.error((error as Error).message),
   });
 
   const saveContract = useMutation({
     mutationFn: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) =>
-      api.updateSessionContract(workspace.data!.activeSession.session.id, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['session-workspace', activeProjectId] }),
+      api.updateSessionContract(workspacePayload!.activeSession.session.id, input),
+    onSuccess: () => {
+      requestActiveWorkspaceSnapshot(activeProjectId, workspacePayload);
+      return undefined;
+    },
     onError: (error) => toast.error((error as Error).message),
   });
 
@@ -127,10 +129,7 @@ export function SessionWorkspacePage(): JSX.Element {
     mutationFn: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) =>
       api.listHistoryRecords(activeProjectId, filters),
     onSuccess: (records) => {
-      queryClient.setQueryData<SessionWorkspacePayload>(
-        ['session-workspace', activeProjectId, sessionId ?? 'active'],
-        (current) => current ? { ...current, historyRecords: records } : current,
-      );
+      setWorkspacePayload((current) => current ? { ...current, historyRecords: records } : current);
     },
     onError: (error) => toast.error((error as Error).message),
   });
@@ -142,7 +141,7 @@ export function SessionWorkspacePage(): JSX.Element {
       </div>
     );
   }
-  if (!workspace.data) {
+  if (!workspacePayload) {
     return (
       <div className="session-shell">
         <div className="session-loading">加载 Session</div>
@@ -153,19 +152,19 @@ export function SessionWorkspacePage(): JSX.Element {
   return (
     <>
     <SessionShell
-      payload={workspace.data}
+      payload={workspacePayload}
       onSendMessage={(content) => runCommand.mutate(content)}
       onCommand={(command) => {
         if (command === '/compact') {
-          void api.previewCompact(workspace.data.activeSession.session.id).then(setCompactPreview).catch((error) => {
+          void api.previewCompact(workspacePayload.activeSession.session.id).then(setCompactPreview).catch((error) => {
             toast.error((error as Error).message);
           });
           return;
         }
         runCommand.mutate(command);
       }}
-      onCancelRun={(runId) => cancelRun.mutate(runId)}
-      onRetryRun={(runId) => retryRun.mutate(runId)}
+      onCancelRun={(runId) => runSessionControl(workspacePayload, runId, 'agent.run.cancel')}
+      onRetryRun={(runId) => runSessionControl(workspacePayload, runId, 'agent.run.retry')}
       onSaveContract={(input) => saveContract.mutate(input)}
       onFilterHistory={(filters) => filterHistory.mutate(filters)}
     />
@@ -184,6 +183,7 @@ export function SessionWorkspacePage(): JSX.Element {
 
 export function shouldRefreshSessionWorkspace(event: WsServerEvent): boolean {
   if (!isSessionWorkspaceEvent(event)) return false;
+  if (event.type === 'session_workspace:snapshot') return false;
   if (event.type === 'session_run:stream' && !event.done) return false;
   return true;
 }
@@ -199,17 +199,22 @@ type SessionCommandResult =
   | { kind: 'context'; context: SessionContextManifest }
   | { kind: 'noop' };
 
-export async function runSessionCommand(content: string, payload: SessionWorkspacePayload): Promise<SessionCommandResult | null> {
+export async function runSessionCommand(
+  content: string,
+  payload: SessionWorkspacePayload,
+  input: {
+    sendMessage: (message: { sessionId: string; content: string; agentId?: string; mode?: SessionMode }) => void;
+  },
+): Promise<SessionCommandResult | null> {
   const sessionId = payload.activeSession.session.id;
   const trimmed = content.trim();
   if (trimmed === '/new') return { kind: 'workspace', payload: await api.newSessionFromCurrent(sessionId) };
   if (trimmed.startsWith('/new ')) {
-    return { kind: 'workspace', payload: await api.sendSessionMessage(sessionId, { content }) as SessionWorkspacePayload };
+    return { kind: 'workspace', payload: await api.newSessionFromCurrent(sessionId, parseNewCommand(trimmed)) };
   }
   if (trimmed === '/compact') return { kind: 'compact', compaction: await api.previewCompact(sessionId) };
   if (trimmed.startsWith('/compact ')) {
-    const response = await api.sendSessionMessage(sessionId, { content });
-    return isSessionCompaction(response) ? { kind: 'compact', compaction: response } : null;
+    return { kind: 'compact', compaction: await api.previewCompact(sessionId, parseCompactCommand(trimmed)) };
   }
   if (trimmed === '/status') {
     return { kind: 'status', status: await api.getSessionStatus(sessionId) };
@@ -227,14 +232,49 @@ export async function runSessionCommand(content: string, payload: SessionWorkspa
     const historyRecordId = trimmed.replace('/fork history:', '').trim();
     return historyRecordId ? { kind: 'workspace', payload: await api.forkHistoryRecord(historyRecordId) } : { kind: 'noop' };
   }
-  await api.sendSessionMessage(sessionId, { content });
+  input.sendMessage({ sessionId, content, agentId: 'planner', mode: payload.activeSession.session.mode });
   return null;
 }
 
-function isSessionCompaction(value: unknown): value is SessionCompaction {
-  return typeof value === 'object' &&
-    value !== null &&
-    'preview_summary' in value &&
-    'status' in value &&
-    !('activeSession' in value);
+function requestActiveWorkspaceSnapshot(
+  activeProjectId: string,
+  payload: SessionWorkspacePayload | null,
+): void {
+  if (!activeProjectId || !payload) return;
+  sessionSocket.requestSessionWorkspace({
+    projectId: activeProjectId,
+    sessionId: payload.activeSession.session.id,
+  });
+}
+
+function runSessionControl(
+  payload: SessionWorkspacePayload,
+  runId: string,
+  type: 'agent.run.cancel' | 'agent.run.retry',
+): void {
+  const run = payload.activeSession.runs.find((item) => item.id === runId);
+  const agentId = run?.agent_id || 'planner';
+  sessionSocket.runSessionControl({
+    type,
+    sessionId: payload.activeSession.session.id,
+    agentId,
+    runId,
+  });
+}
+
+function parseNewCommand(command: string): { title?: string; blank?: boolean } {
+  const body = command.replace(/^\/new\s*/, '').trim();
+  return {
+    ...(body.startsWith('title:') ? { title: body.replace(/^title:\s*/, '').trim() } : {}),
+    ...(body === 'blank' || body.includes('blank:true') ? { blank: true } : {}),
+  };
+}
+
+function parseCompactCommand(command: string): { focus?: string } {
+  const body = command.replace(/^\/compact\s*/, '').trim();
+  return body.startsWith('focus:')
+    ? { focus: body.replace(/^focus:\s*/, '').trim() }
+    : body
+      ? { focus: body }
+      : {};
 }

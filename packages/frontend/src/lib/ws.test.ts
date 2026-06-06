@@ -11,6 +11,7 @@ class FakeWebSocket {
   readonly OPEN = FakeWebSocket.OPEN;
   readyState = FakeWebSocket.CONNECTING;
   closed = false;
+  sent: string[] = [];
   listeners = new Map<string, Listener[]>();
 
   constructor(readonly url: string) {
@@ -23,8 +24,8 @@ class FakeWebSocket {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
   }
 
-  send(): void {
-    // no-op for lifecycle tests
+  send(payload: string): void {
+    this.sent.push(payload);
   }
 
   close(): void {
@@ -109,5 +110,71 @@ test('sessionSocket closes idle connecting sockets after open without reconnecti
     });
     globalThis.WebSocket = originalWebSocket;
     globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+test('sessionSocket queues session messages until websocket opens', async () => {
+  FakeWebSocket.instances = [];
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { location: { protocol: 'http:', host: 'localhost:5173' } },
+  });
+  globalThis.WebSocket = FakeWebSocket as never;
+
+  try {
+    const { sessionSocket } = await import(`./ws.ts?ws-send-test-${Date.now()}`);
+    sessionSocket.subscribeSession('session-1');
+    sessionSocket.sendSessionMessage({ sessionId: 'session-1', content: '继续', agentId: 'planner' });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const socket = FakeWebSocket.instances[0]!;
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.emit('open');
+
+    assert.deepEqual(socket.sent.map((payload) => JSON.parse(payload)), [
+      { type: 'session:subscribe', sessionId: 'session-1' },
+      { type: 'session.message.send', sessionId: 'session-1', content: '继续', agentId: 'planner' },
+    ]);
+    sessionSocket.destroy();
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    });
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
+test('sessionSocket opens for workspace requests before any subscription exists', async () => {
+  FakeWebSocket.instances = [];
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { location: { protocol: 'http:', host: 'localhost:5173' } },
+  });
+  globalThis.WebSocket = FakeWebSocket as never;
+
+  try {
+    const { sessionSocket } = await import(`./ws.ts?ws-workspace-test-${Date.now()}`);
+    sessionSocket.requestSessionWorkspace({ projectId: 'project-1' });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const socket = FakeWebSocket.instances[0]!;
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.emit('open');
+
+    assert.deepEqual(socket.sent.map((payload) => JSON.parse(payload)), [
+      { type: 'session.workspace.request', projectId: 'project-1' },
+    ]);
+    sessionSocket.destroy();
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    });
+    globalThis.WebSocket = originalWebSocket;
   }
 });

@@ -65,9 +65,9 @@ test('/new creates history record, archives source session and creates next sess
     content: '第一段需求',
   });
 
-  const res = await request(`/api/sessions/${session.id}/messages`, {
+  const res = await request(`/api/sessions/${session.id}/new`, {
     method: 'POST',
-    body: JSON.stringify({ content: '/new title: 第一段完成' }),
+    body: JSON.stringify({ title: '第一段完成' }),
   });
 
   assert.equal(res.status, 201);

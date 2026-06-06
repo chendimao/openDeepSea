@@ -8,7 +8,9 @@ import type {
   Session,
   SessionEvidenceEvent,
   SessionMessage,
+  SessionMode,
   SessionRun,
+  SessionWorkspacePayload,
   Task,
   TaskArtifact,
   TaskEvent,
@@ -43,6 +45,8 @@ export type WsServerEvent =
   | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
+  | { type: 'session_workspace:snapshot'; projectId: string; sessionId: string; payload: SessionWorkspacePayload }
+  | { type: 'session_error'; sessionId: string; error: string }
   | { type: 'session:updated'; sessionId: string; session: Session }
   | { type: 'session_message:new'; sessionId: string; message: SessionMessage }
   | { type: 'session_run:created'; sessionId: string; run: SessionRun }
@@ -63,6 +67,18 @@ export type WsServerEvent =
   | { type: 'task:updated'; task: Task }
   | { type: 'task:deleted'; taskId: string };
 
+export type WsClientEvent =
+  | { type: 'subscribe'; roomId: string }
+  | { type: 'unsubscribe'; roomId: string }
+  | { type: 'session:subscribe'; sessionId: string }
+  | { type: 'session:unsubscribe'; sessionId: string }
+  | { type: 'session.workspace.request'; projectId: string; sessionId?: string }
+  | { type: 'session.message.send'; sessionId: string; content: string; agentId?: string; mode?: SessionMode }
+  | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
+  | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
+  | { type: 'agent.run.cancel'; sessionId: string; agentId: string; runId: string }
+  | { type: 'agent.run.retry'; sessionId: string; agentId: string; runId: string };
+
 type Listener = (event: WsServerEvent) => void;
 
 class RoomSocket {
@@ -70,6 +86,7 @@ class RoomSocket {
   private listeners = new Set<Listener>();
   private subscribed = new Set<string>();
   private subscribedSessions = new Set<string>();
+  private pendingClientEvents: WsClientEvent[] = [];
   private retry = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,10 +104,20 @@ class RoomSocket {
     this.ws = ws;
     ws.addEventListener('open', () => {
       this.retry = 0;
-      if (this.closeWhenOpen && this.subscribed.size === 0 && this.subscribedSessions.size === 0) {
+      if (
+        this.closeWhenOpen &&
+        this.subscribed.size === 0 &&
+        this.subscribedSessions.size === 0 &&
+        this.pendingClientEvents.length === 0
+      ) {
         this.closeWhenOpen = false;
         setTimeout(() => {
-          if (this.ws !== ws || this.subscribed.size > 0 || this.subscribedSessions.size > 0) return;
+          if (
+            this.ws !== ws ||
+            this.subscribed.size > 0 ||
+            this.subscribedSessions.size > 0 ||
+            this.pendingClientEvents.length > 0
+          ) return;
           this.ws = null;
           ws.close();
         }, 0);
@@ -99,6 +126,8 @@ class RoomSocket {
       this.closeWhenOpen = false;
       for (const id of this.subscribed) ws.send(JSON.stringify({ type: 'subscribe', roomId: id }));
       for (const id of this.subscribedSessions) ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: id }));
+      const pending = this.pendingClientEvents.splice(0);
+      for (const event of pending) ws.send(JSON.stringify(event));
     });
     ws.addEventListener('message', (e) => {
       try {
@@ -111,7 +140,11 @@ class RoomSocket {
     ws.addEventListener('close', () => {
       if (this.ws === ws) this.ws = null;
       this.closeWhenOpen = false;
-      if (this.subscribed.size === 0 && this.subscribedSessions.size === 0) return;
+      if (
+        this.subscribed.size === 0 &&
+        this.subscribedSessions.size === 0 &&
+        this.pendingClientEvents.length === 0
+      ) return;
       this.retry++;
       const delay = Math.min(1000 * 2 ** this.retry, 10000);
       this.retryTimer = setTimeout(() => this.connect(), delay);
@@ -129,7 +162,11 @@ class RoomSocket {
     if (this.connectTimer) return;
     this.connectTimer = setTimeout(() => {
       this.connectTimer = null;
-      if (this.subscribed.size === 0 && this.subscribedSessions.size === 0) return;
+      if (
+        this.subscribed.size === 0 &&
+        this.subscribedSessions.size === 0 &&
+        this.pendingClientEvents.length === 0
+      ) return;
       this.connect();
     }, 0);
   }
@@ -170,16 +207,53 @@ class RoomSocket {
     this.closeIfIdle();
   }
 
+  requestSessionWorkspace(input: { projectId: string; sessionId?: string | null }): void {
+    this.sendOrQueue({
+      type: 'session.workspace.request',
+      projectId: input.projectId,
+      ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    });
+  }
+
+  sendSessionMessage(input: { sessionId: string; content: string; agentId?: string; mode?: SessionMode }): void {
+    this.sendOrQueue({
+      type: 'session.message.send',
+      sessionId: input.sessionId,
+      content: input.content,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
+      ...(input.mode ? { mode: input.mode } : {}),
+    });
+  }
+
+  runSessionControl(input:
+    | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
+    | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
+    | { type: 'agent.run.cancel'; sessionId: string; agentId: string; runId: string }
+    | { type: 'agent.run.retry'; sessionId: string; agentId: string; runId: string }
+  ): void {
+    this.sendOrQueue(input);
+  }
+
   destroy(): void {
     if (this.connectTimer) clearTimeout(this.connectTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.connectTimer = null;
+    this.pendingClientEvents = [];
     this.ws?.close();
     this.ws = null;
   }
 
+  private sendOrQueue(event: WsClientEvent): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(event));
+      return;
+    }
+    this.pendingClientEvents.push(event);
+    this.connectSoon();
+  }
+
   private closeIfIdle(): void {
-    if (this.subscribed.size > 0 || this.subscribedSessions.size > 0) return;
+    if (this.subscribed.size > 0 || this.subscribedSessions.size > 0 || this.pendingClientEvents.length > 0) return;
     if (this.connectTimer) {
       clearTimeout(this.connectTimer);
       this.connectTimer = null;

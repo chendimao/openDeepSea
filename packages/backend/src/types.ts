@@ -1289,6 +1289,13 @@ export type WsServerEvent =
   | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
+  | {
+      type: 'session_workspace:snapshot';
+      projectId: string;
+      sessionId: string;
+      payload: import('./session-types.js').SessionWorkspacePayload;
+    }
+  | { type: 'session_error'; sessionId: string; error: string }
   | { type: 'session:updated'; sessionId: string; session: import('./session-types.js').Session }
   | { type: 'session_message:new'; sessionId: string; message: import('./session-types.js').SessionMessage }
   | { type: 'session_run:created'; sessionId: string; run: import('./session-types.js').SessionRun }
@@ -1314,4 +1321,16 @@ export type WsClientEvent =
   | { type: 'unsubscribe'; roomId: string }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
+  | { type: 'session.workspace.request'; projectId: string; sessionId?: string }
+  | {
+      type: 'session.message.send';
+      sessionId: string;
+      content: string;
+      agentId?: string;
+      mode?: import('./session-types.js').SessionMode;
+    }
+  | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
+  | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
+  | { type: 'agent.run.cancel'; sessionId: string; agentId: string; runId: string }
+  | { type: 'agent.run.retry'; sessionId: string; agentId: string; runId: string }
   | { type: 'message:send'; roomId: string; content: string; mentions?: string[] };

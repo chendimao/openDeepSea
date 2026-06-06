@@ -31,6 +31,66 @@ setSessionRuntimeAdapterForTest({
   },
 });
 
+test('legacy HTTP session workspace route is removed', async () => {
+  const project = projectRepo.create({
+    name: 'removed workspace route project',
+    path: mkdtempSync(join(tmpdir(), 'removed-session-workspace-route-')),
+  });
+
+  const res = await request(`/api/projects/${project.id}/session-workspace`);
+
+  assert.equal(res.status, 404);
+});
+
+test('legacy HTTP session message route is removed', async () => {
+  const project = projectRepo.create({
+    name: 'removed message route project',
+    path: mkdtempSync(join(tmpdir(), 'removed-session-message-route-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Removed Message Route',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  const res = await request(`/api/sessions/${session.id}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content: 'should not work over http' }),
+  });
+
+  assert.equal(res.status, 404);
+});
+
+test('legacy HTTP session run control routes are removed', async () => {
+  const project = projectRepo.create({
+    name: 'removed run route project',
+    path: mkdtempSync(join(tmpdir(), 'removed-session-run-route-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Removed Run Route',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    status: 'running',
+    prompt: 'long task',
+    acp_session_id: 'removed-acp',
+  });
+
+  for (const suffix of ['cancel', 'retry', 'pause', 'resume']) {
+    const res = await request(`/api/session-runs/${run.id}/${suffix}`, { method: 'POST' });
+    assert.equal(res.status, 404);
+  }
+});
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);
   try {
@@ -44,152 +104,6 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }
-
-test('GET project session workspace creates an active session without creating a room or task', async () => {
-  const project = projectRepo.create({
-    name: 'workspace',
-    path: mkdtempSync(join(tmpdir(), 'session-workspace-')),
-  });
-
-  const res = await request(`/api/projects/${project.id}/session-workspace`);
-  assert.equal(res.status, 200);
-  const response = await res.json() as {
-    project: { id: string };
-    activeSession: { session: { id: string; status: string } };
-    historyRecords: unknown[];
-    projectSwitcher: { activeProjectId: string; projects: Array<{ id: string }> };
-    bottomStatus: { indexStatus: string };
-    contract: { sessionId: string };
-    toolRows: unknown[];
-    diffRows: unknown[];
-    historyFilters: { q: string; status: string; mode: string };
-  };
-
-  assert.equal(response.project.id, project.id);
-  assert.equal(response.activeSession.session.status, 'active');
-  assert.deepEqual(response.historyRecords, []);
-  assert.equal(response.projectSwitcher.activeProjectId, project.id);
-  assert.equal(response.projectSwitcher.projects.some((item) => item.id === project.id), true);
-  assert.equal(response.bottomStatus.indexStatus, 'unknown');
-  assert.equal(response.contract.sessionId, response.activeSession.session.id);
-  assert.deepEqual(response.toolRows, []);
-  assert.deepEqual(response.diffRows, []);
-  assert.deepEqual(response.historyFilters, { q: '', status: 'all', mode: 'all' });
-  assert.deepEqual(roomRepo.listByProject(project.id), []);
-  assert.deepEqual(taskRepo.listByProject(project.id), []);
-});
-
-test('GET project session workspace can select a concrete session', async () => {
-  const project = projectRepo.create({
-    name: 'workspace with selected session',
-    path: mkdtempSync(join(tmpdir(), 'session-workspace-selected-')),
-  });
-  const first = sessionRepo.create({ project_id: project.id, title: 'First Session', workspace_path: project.path });
-  const second = sessionRepo.create({ project_id: project.id, title: 'Selected Session', workspace_path: project.path });
-
-  const res = await request(`/api/projects/${project.id}/session-workspace?sessionId=${second.id}`);
-  assert.equal(res.status, 200);
-  const response = await res.json() as { activeSession: { session: { id: string; title: string } } };
-
-  assert.notEqual(response.activeSession.session.id, first.id);
-  assert.equal(response.activeSession.session.id, second.id);
-  assert.equal(response.activeSession.session.title, 'Selected Session');
-});
-
-test('POST session message records message and evidence without creating old task', async () => {
-  const project = projectRepo.create({
-    name: 'message workspace',
-    path: mkdtempSync(join(tmpdir(), 'session-message-workspace-')),
-  });
-  const workspaceRes = await request(`/api/projects/${project.id}/session-workspace`);
-  const workspace = await workspaceRes.json() as { activeSession: { session: { id: string } } };
-  const sessionId = workspace.activeSession.session.id;
-
-  const messageRes = await request(`/api/sessions/${sessionId}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content: '继续实现 Session API', mode: 'code' }),
-  });
-
-  assert.equal(messageRes.status, 202);
-  const messageBody = await messageRes.json() as { message: { content: string } };
-  assert.equal(messageBody.message.content, '继续实现 Session API');
-  assert.equal(sessionRepo.get(sessionId)?.mode, 'code');
-  assert.equal(sessionMessageRepo.listBySession(sessionId).length, 1);
-  assert.deepEqual(taskRepo.listByProject(project.id), []);
-});
-
-test('session message slash commands return status and compact preview', async () => {
-  const project = projectRepo.create({
-    name: 'slash workspace',
-    path: mkdtempSync(join(tmpdir(), 'session-slash-workspace-')),
-  });
-  const session = sessionRepo.create({
-    project_id: project.id,
-    title: 'Slash Session',
-    mode: 'plan',
-    workspace_path: project.path,
-  });
-
-  const statusRes = await request(`/api/sessions/${session.id}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content: '/status' }),
-  });
-  assert.equal(statusRes.status, 200);
-  const status = await statusRes.json() as { mode: string; nextAction: { command: string | null } };
-  assert.equal(status.mode, 'plan');
-  assert.equal(status.nextAction.command, null);
-
-  const compactRes = await request(`/api/sessions/${session.id}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content: '/compact focus: 保留 API 决策' }),
-  });
-  assert.equal(compactRes.status, 201);
-  const compact = await compactRes.json() as { status: string; focus_prompt: string; preview_summary: string };
-  assert.equal(compact.status, 'previewed');
-  assert.equal(compact.focus_prompt, '保留 API 决策');
-  assert.match(compact.preview_summary, /Focus：保留 API 决策/);
-});
-
-test('applied compact is included in the next session runtime prompt', async () => {
-  capturedPrompts.length = 0;
-  const project = projectRepo.create({
-    name: 'compact prompt workspace',
-    path: mkdtempSync(join(tmpdir(), 'session-compact-prompt-')),
-  });
-  const session = sessionRepo.create({
-    project_id: project.id,
-    title: 'Compact Prompt Session',
-    mode: 'code',
-    provider: 'codex',
-    workspace_path: project.path,
-  });
-
-  const previewRes = await request(`/api/sessions/${session.id}/compact/preview`, {
-    method: 'POST',
-    body: JSON.stringify({ focus: '保留架构决策' }),
-  });
-  assert.equal(previewRes.status, 201);
-  const preview = await previewRes.json() as { id: string };
-
-  const applyRes = await request(`/api/sessions/${session.id}/compact/apply`, {
-    method: 'POST',
-    body: JSON.stringify({
-      compaction_id: preview.id,
-      applied_summary: '已保留 SessionOS 架构决策',
-    }),
-  });
-  assert.equal(applyRes.status, 200);
-
-  const messageRes = await request(`/api/sessions/${session.id}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content: '继续实现' }),
-  });
-  assert.equal(messageRes.status, 202);
-
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.match(capturedPrompts.at(-1) ?? '', /已保留 SessionOS 架构决策/);
-  assert.match(capturedPrompts.at(-1) ?? '', /## Context Sources/);
-});
 
 test('/context refreshes stale manifest after compact apply', async () => {
   const project = projectRepo.create({
@@ -252,9 +166,9 @@ test('/new archives the source session into history and opens a new active sessi
     content: '请实现 /new',
   });
 
-  const newRes = await request(`/api/sessions/${session.id}/messages`, {
+  const newRes = await request(`/api/sessions/${session.id}/new`, {
     method: 'POST',
-    body: JSON.stringify({ content: '/new title: 完成第一段' }),
+    body: JSON.stringify({ title: '完成第一段' }),
   });
 
   assert.equal(newRes.status, 201);
@@ -356,46 +270,4 @@ test('POST compact discard marks previewed compaction as discarded', async () =>
   assert.equal(discardRes.status, 200);
   const discarded = await discardRes.json() as { status: string };
   assert.equal(discarded.status, 'discarded');
-});
-
-test('POST session run cancel cancels an active run', async () => {
-  const project = projectRepo.create({
-    name: 'cancel route',
-    path: mkdtempSync(join(tmpdir(), 'session-cancel-route-')),
-  });
-  const session = sessionRepo.create({ project_id: project.id, title: 'Cancel Route' });
-  const run = sessionRunRepo.create({
-    session_id: session.id,
-    provider: 'codex',
-    mode: 'code',
-    prompt: 'long run',
-  });
-
-  const res = await request(`/api/session-runs/${run.id}/cancel`, { method: 'POST' });
-
-  assert.equal(res.status, 200);
-  const body = await res.json() as { status: string };
-  assert.equal(body.status, 'cancelled');
-  assert.equal(sessionRunRepo.get(run.id)?.status, 'cancelled');
-});
-
-test('POST session run retry starts runtime with original prompt', async () => {
-  capturedPrompts.length = 0;
-  const project = projectRepo.create({
-    name: 'retry route',
-    path: mkdtempSync(join(tmpdir(), 'session-retry-route-')),
-  });
-  const session = sessionRepo.create({ project_id: project.id, title: 'Retry Route', provider: 'codex' });
-  const run = sessionRunRepo.create({
-    session_id: session.id,
-    provider: 'codex',
-    mode: 'code',
-    prompt: 'retry this prompt',
-  });
-
-  const res = await request(`/api/session-runs/${run.id}/retry`, { method: 'POST' });
-
-  assert.equal(res.status, 202);
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.match(capturedPrompts.at(-1) ?? '', /retry this prompt/);
 });

@@ -109,7 +109,11 @@ export async function runSessionAgent(input: {
       agentId,
       provider: input.provider,
       model: input.model ?? null,
-      status: controller.signal.aborted ? 'cancelled' : result.exitCode === 0 ? 'completed' : 'failed',
+      status: controller.signal.aborted
+        ? resolveAbortedRunStatus(run.id)
+        : result.exitCode === 0
+          ? 'completed'
+          : 'failed',
       error: result.stderr || null,
     });
   } catch (err) {
@@ -118,7 +122,7 @@ export async function runSessionAgent(input: {
       agentId,
       provider: input.provider,
       model: input.model ?? null,
-      status: controller.signal.aborted ? 'cancelled' : 'failed',
+      status: controller.signal.aborted ? resolveAbortedRunStatus(run.id) : 'failed',
       error: (err as Error).message,
     });
   } finally {
@@ -290,6 +294,10 @@ function finishSessionRun(input: {
 function normalizeAgentId(agentId: string | null | undefined): string {
   const normalized = agentId?.trim();
   return normalized || DEFAULT_SESSION_AGENT_ID;
+}
+
+function resolveAbortedRunStatus(runId: string): 'cancelled' | 'paused' {
+  return runRegistry.getAbortReason(runId) === 'paused' ? 'paused' : 'cancelled';
 }
 
 function persistProviderSession(input: {

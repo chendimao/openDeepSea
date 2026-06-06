@@ -10,7 +10,6 @@ import { now } from './db.js';
 import { projectRepo } from './repos/projects.js';
 import {
   sessionMessageRepo,
-  sessionAgentEventRepo,
   sessionPlanItemRepo,
   sessionRepo,
   sessionRunRepo,
@@ -21,12 +20,10 @@ import { sessionContractRepo } from './repos/session-contracts.js';
 import { sessionContextRepo } from './repos/session-context.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
-import { parseSessionCommand, type ParsedSessionCommand } from './session-command.js';
+import type { ParsedSessionCommand } from './session-command.js';
 import { buildContextManifestDraft } from './session-context.js';
-import { retrySessionAgentRun, runSessionAgent } from './session-runtime.js';
 import { buildHistorySummary } from './session-summary.js';
 import { buildStatusSnapshot } from './session-status.js';
-import { runRegistry } from './run-registry.js';
 import {
   buildSessionBottomStatus,
   buildSessionDiffRows,
@@ -54,30 +51,15 @@ const sessionModeSchema = z.enum(['ask', 'plan', 'code', 'debug', 'review']);
 const historyRecordStatusSchema = z.enum(['completed', 'blocked', 'failed', 'archived']);
 const execFileAsync = promisify(execFile);
 
-sessionRouter.get('/projects/:projectId/session-workspace', (req, res) => {
-  const project = projectRepo.get(req.params.projectId);
-  if (!project) return res.status(404).json({ error: 'project not found' });
-  const requestedSessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : '';
-  const requestedSession = requestedSessionId ? sessionRepo.get(requestedSessionId) : undefined;
-  if (requestedSessionId && (!requestedSession || requestedSession.project_id !== project.id)) {
-    return res.status(404).json({ error: 'session not found' });
-  }
-  const activeSession = requestedSession ?? getOrCreateActiveSession(project);
-  res.json(buildWorkspacePayload(project, activeSession));
-});
-
 sessionRouter.get('/projects/:projectId/sessions', listProjectSessions);
 sessionRouter.post('/projects/:projectId/sessions', createProjectSession);
 sessionRouter.get('/sessions/:sessionId', getSessionDetail);
 sessionRouter.patch('/sessions/:sessionId', updateSession);
-sessionRouter.post('/sessions/:sessionId/messages', createSessionMessage);
 sessionRouter.post('/sessions/:sessionId/new', runNewCommand);
 sessionRouter.post('/sessions/:sessionId/compact/preview', previewSessionCompact);
 sessionRouter.post('/sessions/:sessionId/compact/apply', applySessionCompact);
 sessionRouter.post('/sessions/:sessionId/compact/discard', discardSessionCompact);
 sessionRouter.patch('/sessions/:sessionId/contract', updateSessionContract);
-sessionRouter.post('/session-runs/:runId/cancel', cancelSessionRun);
-sessionRouter.post('/session-runs/:runId/retry', retrySessionRun);
 sessionRouter.get('/sessions/:sessionId/status', getSessionStatus);
 sessionRouter.get('/sessions/:sessionId/context', getSessionContext);
 sessionRouter.get('/sessions/:sessionId/evidence', listSessionEvidence);
@@ -194,70 +176,6 @@ function updateSessionContract(req: { params: { sessionId: string }; body?: unkn
   });
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
   res.json(contract);
-}
-
-function createSessionMessage(req: { params: { sessionId: string }; body: unknown }, res: Response): void {
-  const session = sessionRepo.get(req.params.sessionId);
-  if (!session) {
-    res.status(404).json({ error: 'session not found' });
-    return;
-  }
-  const parsed = z.object({
-    content: z.string().trim().min(1),
-    sender_id: z.string().default('user'),
-    sender_name: z.string().nullable().optional(),
-    mode: sessionModeSchema.optional(),
-  }).safeParse(req.body ?? {});
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.flatten() });
-    return;
-  }
-
-  const command = parseSessionCommand(parsed.data.content);
-  if (command.kind === 'new') return handleNewCommand(res, session, command);
-  if (command.kind === 'compact') return handleCompactPreviewCommand(res, session, command);
-  if (command.kind === 'status') {
-    res.json(buildSessionStatus(session));
-    return;
-  }
-  if (command.kind === 'context') {
-    res.json(ensureContextManifest(session));
-    return;
-  }
-
-  const updatedSession = parsed.data.mode && parsed.data.mode !== session.mode
-    ? sessionRepo.update(session.id, { mode: parsed.data.mode }) ?? session
-    : session;
-  const message = sessionMessageRepo.create({
-    session_id: updatedSession.id,
-    role: 'user',
-    sender_id: parsed.data.sender_id,
-    sender_name: parsed.data.sender_name,
-    content: parsed.data.content,
-  });
-  sessionEvidenceRepo.create({
-    session_id: updatedSession.id,
-    event_type: 'message',
-    source_message_id: message.id,
-    title: 'User message',
-    payload: { message_id: message.id },
-  });
-  const runtimePrompt = buildRuntimePrompt(updatedSession, message.content);
-  void runSessionAgent({
-    sessionId: updatedSession.id,
-    prompt: runtimePrompt,
-    provider: updatedSession.provider ?? 'codex',
-    model: updatedSession.model,
-  }).catch((error) => {
-    sessionEvidenceRepo.create({
-      session_id: updatedSession.id,
-      event_type: 'blocker',
-      severity: 'error',
-      title: 'Session runtime failed',
-      summary: (error as Error).message,
-    });
-  });
-  res.status(202).json({ message });
 }
 
 function runNewCommand(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
@@ -438,73 +356,6 @@ async function createSessionCheckpoint(req: { params: { sessionId: string }; bod
     payload: { checkpoint_id: checkpoint.id },
   });
   res.status(201).json(sessionCheckpointRepo.updateEvidenceEvent(checkpoint.id, evidence.id));
-}
-
-function cancelSessionRun(req: { params: { runId: string } }, res: Response): void {
-  const run = sessionRunRepo.get(req.params.runId);
-  if (!run) {
-    res.status(404).json({ error: 'run not found' });
-    return;
-  }
-  if (!['queued', 'running', 'retrying'].includes(run.status)) {
-    res.status(409).json({ error: 'run is not active' });
-    return;
-  }
-  runRegistry.cancel(run.id);
-  const updated = sessionRunRepo.updateStatus(run.id, 'cancelled', { error: 'Session run cancelled' });
-  if (!updated) {
-    res.status(404).json({ error: 'run not found' });
-    return;
-  }
-  wsHub.broadcastSession(updated.session_id, {
-    type: 'session_run:updated',
-    sessionId: updated.session_id,
-    run: updated,
-  });
-  const finalEvent = sessionAgentEventRepo.create({
-    session_id: updated.session_id,
-    agent_id: updated.agent_id,
-    run_id: updated.id,
-    channel: 'event',
-    event_type: 'run_cancelled',
-    content: '',
-    payload: { status: 'cancelled' },
-  });
-  wsHub.broadcastSession(updated.session_id, {
-    type: 'session_run:stream',
-    sessionId: updated.session_id,
-    agentId: updated.agent_id,
-    runId: updated.id,
-    seq: finalEvent.seq,
-    chunk: '',
-    channel: 'event',
-    done: true,
-  });
-  const event = sessionEvidenceRepo.create({
-    session_id: updated.session_id,
-    event_type: 'status',
-    title: 'Run cancelled',
-    payload: { run_id: updated.id },
-  });
-  wsHub.broadcastSession(updated.session_id, { type: 'session_evidence:new', sessionId: updated.session_id, event });
-  res.json(updated);
-}
-
-function retrySessionRun(req: { params: { runId: string } }, res: Response): void {
-  const run = sessionRunRepo.get(req.params.runId);
-  if (!run) {
-    res.status(404).json({ error: 'run not found' });
-    return;
-  }
-  retrySessionAgentRun(run.id);
-  const event = sessionEvidenceRepo.create({
-    session_id: run.session_id,
-    event_type: 'status',
-    title: 'Run retry requested',
-    payload: { source_run_id: run.id },
-  });
-  wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
-  res.status(202).json({ retried: true, source_run_id: run.id });
 }
 
 function forkSession(req: { params: { sessionId: string }; body?: unknown }, res: Response): void {
@@ -744,10 +595,6 @@ function handleNewCommand(res: Response, session: Session, command: ParsedSessio
   res.status(201).json(buildWorkspacePayload(project, next));
 }
 
-function handleCompactPreviewCommand(res: Response, session: Session, command: ParsedSessionCommand): void {
-  res.status(201).json(createCompactPreview(session, command));
-}
-
 function createCompactPreview(
   session: Session,
   command: ParsedSessionCommand,
@@ -772,7 +619,7 @@ function createCompactPreview(
   });
 }
 
-function buildWorkspacePayload(project: Project, activeSession: Session): SessionWorkspacePayload {
+export function buildWorkspacePayload(project: Project, activeSession: Session): SessionWorkspacePayload {
   const detail = buildSessionDetail(activeSession);
   const evidence = detail.evidence.slice(-100);
   return {
@@ -801,18 +648,6 @@ function buildSessionDetail(session: Session): SessionDetail {
     checkpoints: sessionCheckpointRepo.listBySession(session.id),
     evidence: sessionEvidenceRepo.listBySession(session.id),
   };
-}
-
-function getOrCreateActiveSession(project: Project): Session {
-  const existing = sessionRepo.listByProject(project.id).find((session) => session.status === 'active');
-  if (existing) return existing;
-  return sessionRepo.create({
-    project_id: project.id,
-    title: 'New Session',
-    mode: 'ask',
-    provider: 'codex',
-    workspace_path: project.path,
-  });
 }
 
 function buildSessionStatus(session: Session): StatusSnapshot {
@@ -844,7 +679,7 @@ function ensureContextManifest(session: Session): SessionContextManifest {
   return createContextManifest(session);
 }
 
-function createContextManifest(session: Session): SessionContextManifest {
+export function createContextManifest(session: Session): SessionContextManifest {
   const project = projectRepo.get(session.project_id);
   const workspacePath = session.worktree_path ?? session.workspace_path ?? project?.path ?? process.cwd();
   const compact = getLatestAppliedCompact(session);
@@ -936,25 +771,6 @@ function collectLatestVerification(evidence: SessionEvidenceEvent[]): string | n
 function readGoalFromResumeBrief(record: HistoryRecord): string | null {
   const firstLine = record.resume_brief.split('\n').find((line) => line.trim().startsWith('目标：'));
   return firstLine ? firstLine.replace(/^目标：/, '').trim() || null : record.title;
-}
-
-function buildRuntimePrompt(session: Session, content: string): string {
-  const manifest = createContextManifest(session);
-  const sourceBlocks = manifest.sources
-    .filter((source) => source.included === 1 && source.excerpt?.trim())
-    .map((source) => [
-      `### ${source.title} (${source.source_type})`,
-      `Reason: ${source.reason ?? 'session context'}`,
-      source.excerpt!.trim(),
-    ].join('\n'));
-  const goal = session.current_goal?.trim();
-  return [
-    '本轮 prompt 来源由 SessionOS Context Inspector 记录。',
-    goal ? `当前目标：${goal}` : null,
-    sourceBlocks.length > 0 ? ['## Context Sources', ...sourceBlocks].join('\n\n') : null,
-    '## User Request',
-    content,
-  ].filter(Boolean).join('\n\n');
 }
 
 function inheritLatestAppliedCompact(source: Session, target: Session): void {

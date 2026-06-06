@@ -2,43 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { api } from './api';
 
-test('getSessionWorkspace requests project session workspace endpoint', async () => {
-  const fetchLog = installFetchStub({ activeSession: { session: { id: 'session-1' } } });
-  try {
-    await api.getSessionWorkspace('project-1');
-  } finally {
-    fetchLog.restore();
-  }
-
-  assert.equal(fetchLog.calls[0]?.url, '/api/projects/project-1/session-workspace');
-  assert.equal(fetchLog.calls[0]?.method, 'GET');
-});
-
-test('getSessionWorkspace can request a concrete session workspace endpoint', async () => {
-  const fetchLog = installFetchStub({ activeSession: { session: { id: 'session-2' } } });
-  try {
-    await api.getSessionWorkspace('project-1', { sessionId: 'session-2' });
-  } finally {
-    fetchLog.restore();
-  }
-
-  assert.equal(fetchLog.calls[0]?.url, '/api/projects/project-1/session-workspace?sessionId=session-2');
-  assert.equal(fetchLog.calls[0]?.method, 'GET');
-});
-
-test('sendSessionMessage posts content and mode to session message endpoint', async () => {
-  const fetchLog = installFetchStub({ message: { id: 'message-1' } });
-  try {
-    await api.sendSessionMessage('session-1', { content: '继续执行', mode: 'code' });
-  } finally {
-    fetchLog.restore();
-  }
-
-  assert.equal(fetchLog.calls[0]?.url, '/api/sessions/session-1/messages');
-  assert.equal(fetchLog.calls[0]?.method, 'POST');
-  assert.deepEqual(JSON.parse(fetchLog.calls[0]?.body ?? '{}'), { content: '继续执行', mode: 'code' });
-});
-
 test('applyCompact includes compaction id in request body', async () => {
   const fetchLog = installFetchStub({ id: 'compact-1', status: 'applied' });
   try {
@@ -87,19 +50,6 @@ test('updateSessionContract patches session contract endpoint', async () => {
 
   assert.equal(fetchLog.calls[0]?.url, '/api/sessions/session-1/contract');
   assert.equal(fetchLog.calls[0]?.method, 'PATCH');
-});
-
-test('cancel and retry session run call run endpoints', async () => {
-  const fetchLog = installFetchStub({ ok: true });
-  try {
-    await api.cancelSessionRun('run-1');
-    await api.retrySessionRun('run-1');
-  } finally {
-    fetchLog.restore();
-  }
-
-  assert.equal(fetchLog.calls[0]?.url, '/api/session-runs/run-1/cancel');
-  assert.equal(fetchLog.calls[1]?.url, '/api/session-runs/run-1/retry');
 });
 
 test('discardCompact posts compaction id to discard endpoint', async () => {

@@ -18,6 +18,7 @@ import { recoverWorkflowStartupOrphans, startWorkflowMonitorService } from './wo
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { runSkillsShStartupUpdateCheck } from './skills/update-service.js';
 import { startProviderSuperpowersStartupInstall } from './provider-superpowers.js';
+import { handleSessionSocketEvent } from './session-socket-controller.js';
 import { wsHub } from './ws-hub.js';
 import type { AgentRun, WsClientEvent } from './types.js';
 
@@ -73,6 +74,7 @@ wss.on('connection', (socket) => {
     else if (event.type === 'unsubscribe') wsHub.unsubscribe(event.roomId, socket);
     else if (event.type === 'session:subscribe') wsHub.subscribeSession(event.sessionId, socket);
     else if (event.type === 'session:unsubscribe') wsHub.unsubscribeSession(event.sessionId, socket);
+    else if (handleSessionSocketEvent(socket, event)) return;
   });
   socket.on('close', () => wsHub.removeSocket(socket));
 });
