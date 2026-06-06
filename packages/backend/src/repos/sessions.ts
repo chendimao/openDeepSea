@@ -144,7 +144,7 @@ export const sessionRepo = {
 
   archive(id: string): Session | undefined {
     const timestamp = now();
-    return this.update(id, { status: 'archived', phase: 'archived', closed_at: timestamp, archived_at: timestamp });
+    return this.update(id, { status: 'archived', phase: 'archived', archived_at: timestamp });
   },
 
   close(id: string): Session | undefined {
