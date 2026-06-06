@@ -564,6 +564,7 @@ export interface SessionRun {
   activity_log: string;
   error: string | null;
   acp_session_id: string | null;
+  runtime_profile_snapshot: string | null;
   started_at: number;
   updated_at: number;
   completed_at: number | null;
@@ -847,6 +848,7 @@ export interface ScopedSettings {
   default_workflow_definition_id: string | null;
   superpowers_bootstrap_owner: SuperpowersBootstrapOwner | null;
   workspace_excluded_dirs: string | null;
+  session_planner_acp_backend: AcpBackend | null;
   updated_at: number;
 }
 
@@ -858,6 +860,7 @@ export interface EffectiveSettings {
   default_workflow_definition_id: string | null;
   superpowers_bootstrap_owner: SuperpowersBootstrapOwner;
   workspace_excluded_dirs: string[];
+  session_planner_acp_backend: AcpBackend | null;
 }
 
 export interface WorkspaceSearchResult {
@@ -902,6 +905,7 @@ export interface SettingsResolution {
     auto_distill: SettingsScope;
     default_workflow_definition: SettingsScope;
     superpowers_bootstrap_owner: SettingsScope;
+    session_planner_acp_backend: SettingsScope | 'inherit';
   };
 }
 

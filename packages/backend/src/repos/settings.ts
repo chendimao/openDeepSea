@@ -1,5 +1,6 @@
 import { db, now } from '../db.js';
 import type {
+  AcpBackend,
   AiConfig,
   EffectiveSettings,
   LangChainPlannerSettings,
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: EffectiveSettings = {
   default_workflow_definition_id: null,
   superpowers_bootstrap_owner: 'provider',
   workspace_excluded_dirs: [],
+  session_planner_acp_backend: null,
 };
 
 function normalizeExcludedDirs(dirs: string[]): string[] {
@@ -72,6 +74,7 @@ function emptyScoped(scope: SettingsScope, scopeId: string): ScopedSettings {
     default_workflow_definition_id: null,
     superpowers_bootstrap_owner: null,
     workspace_excluded_dirs: null,
+    session_planner_acp_backend: null,
     updated_at: 0,
   };
 }
@@ -89,6 +92,7 @@ function getScoped(scope: SettingsScope, scopeId: string): ScopedSettings | null
         default_workflow_definition_id,
         superpowers_bootstrap_owner,
         workspace_excluded_dirs,
+        session_planner_acp_backend,
         updated_at
       FROM settings
       WHERE scope = ? AND scope_id = ?`,
@@ -109,6 +113,7 @@ function getSystemRow(): SystemSettingsRow | null {
         default_workflow_definition_id,
         superpowers_bootstrap_owner,
         workspace_excluded_dirs,
+        session_planner_acp_backend,
         langchain_planner_model,
         openai_api_key,
         openai_base_url,
@@ -131,6 +136,7 @@ function upsertScoped(
     default_workflow_definition_id?: string | null;
     superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
     workspace_excluded_dirs?: string[] | null;
+    session_planner_acp_backend?: AcpBackend | null;
   },
 ): ScopedSettings {
   const existing = getScoped(scope, scopeId) ?? emptyScoped(scope, scopeId);
@@ -164,14 +170,19 @@ function upsertScoped(
       : patch.workspace_excluded_dirs === null
         ? null
         : JSON.stringify(normalizeExcludedDirs(patch.workspace_excluded_dirs));
+  const sessionPlannerAcpBackend =
+    patch.session_planner_acp_backend === undefined
+      ? existing.session_planner_acp_backend
+      : normalizeAcpBackend(patch.session_planner_acp_backend);
   const updatedAt = now();
 
   db.prepare(
     `INSERT INTO settings (
       scope, scope_id, message_routing_mode, fallback_agent_id, interaction_mode, auto_distill_enabled,
-      default_workflow_definition_id, superpowers_bootstrap_owner, workspace_excluded_dirs, updated_at
+      default_workflow_definition_id, superpowers_bootstrap_owner, workspace_excluded_dirs,
+      session_planner_acp_backend, updated_at
     )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(scope, scope_id) DO UPDATE SET
        message_routing_mode = excluded.message_routing_mode,
        fallback_agent_id = excluded.fallback_agent_id,
@@ -180,6 +191,7 @@ function upsertScoped(
        default_workflow_definition_id = excluded.default_workflow_definition_id,
        superpowers_bootstrap_owner = excluded.superpowers_bootstrap_owner,
        workspace_excluded_dirs = excluded.workspace_excluded_dirs,
+       session_planner_acp_backend = excluded.session_planner_acp_backend,
        updated_at = excluded.updated_at`,
   ).run(
     scope,
@@ -191,6 +203,7 @@ function upsertScoped(
     defaultWorkflowDefinitionId,
     superpowersBootstrapOwner,
     workspaceExcludedDirs,
+    sessionPlannerAcpBackend,
     updatedAt,
   );
   return getScoped(scope, scopeId)!;
@@ -302,6 +315,11 @@ function normalizedOptionalString(value: string | null | undefined): string | nu
   return trimmed ? trimmed : null;
 }
 
+function normalizeAcpBackend(value: AcpBackend | string | null | undefined): AcpBackend | null {
+  if (value === 'codex' || value === 'claudecode' || value === 'opencode') return value;
+  return null;
+}
+
 function normalizeSuperpowersBootstrapOwner(
   value: SuperpowersBootstrapOwner | string | null | undefined,
 ): SuperpowersBootstrapOwner | null {
@@ -373,6 +391,7 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
     default_workflow_definition_id: defaultWorkflowDefinitionId,
     superpowers_bootstrap_owner: superpowersBootstrapOwner,
     workspace_excluded_dirs: parseExcludedDirs(settings?.workspace_excluded_dirs ?? null),
+    session_planner_acp_backend: null,
     active_ai_config_id: activeAiConfig?.id ?? null,
     ai_configs: aiConfigRows.map(toSafeAiConfig),
     langchain_planner_model: normalizedOptionalString(activeAiConfig?.langchain_planner_model ?? settings?.langchain_planner_model),
@@ -681,6 +700,7 @@ export const settingsRepo = {
       default_workflow_definition_id?: string | null;
       superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
       workspace_excluded_dirs?: string[] | null;
+      session_planner_acp_backend?: AcpBackend | null;
     },
   ): ScopedSettings | null {
     normalizeLegacyRouting();
@@ -703,6 +723,7 @@ export const settingsRepo = {
       default_workflow_definition_id?: string | null;
       superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
       workspace_excluded_dirs?: string[] | null;
+      session_planner_acp_backend?: AcpBackend | null;
     },
   ): ScopedSettings | null {
     normalizeLegacyRouting();
@@ -724,6 +745,7 @@ export const settingsRepo = {
     const projectSuperpowersBootstrapOwner = normalizeSuperpowersBootstrapOwner(project?.superpowers_bootstrap_owner);
     const superpowersBootstrapOwner = projectSuperpowersBootstrapOwner ?? system.superpowers_bootstrap_owner;
     const superpowersBootstrapOwnerSource: SettingsScope = projectSuperpowersBootstrapOwner ? 'project' : 'system';
+    const projectSessionPlannerAcpBackend = normalizeAcpBackend(project?.session_planner_acp_backend);
     const defaultWorkflowDefinitionId = workflowDefinitionRepo.getSuperpowersDefinition().id;
     return {
       system,
@@ -744,6 +766,7 @@ export const settingsRepo = {
           ...system.workspace_excluded_dirs,
           ...parseExcludedDirs(project?.workspace_excluded_dirs ?? null),
         ])),
+        session_planner_acp_backend: projectSessionPlannerAcpBackend,
       },
       sources: {
         message_routing: messageRoutingSource,
@@ -751,6 +774,7 @@ export const settingsRepo = {
         auto_distill: autoDistillSource,
         default_workflow_definition: workflowSource,
         superpowers_bootstrap_owner: superpowersBootstrapOwnerSource,
+        session_planner_acp_backend: projectSessionPlannerAcpBackend ? 'project' : 'inherit',
       },
     };
   },
@@ -779,6 +803,7 @@ export const settingsRepo = {
     const superpowersBootstrapOwnerSource: SettingsScope = roomSuperpowersBootstrapOwner
       ? 'room'
       : projectResolution.sources.superpowers_bootstrap_owner;
+    const roomSessionPlannerAcpBackend = normalizeAcpBackend(roomSettings?.session_planner_acp_backend);
     const defaultWorkflowDefinitionId = workflowDefinitionRepo.getSuperpowersDefinition().id;
     const inheritedRoutingMode = projectResolution.effective.message_routing_mode;
     return {
@@ -797,6 +822,8 @@ export const settingsRepo = {
         default_workflow_definition_id: defaultWorkflowDefinitionId,
         superpowers_bootstrap_owner: superpowersBootstrapOwner,
         workspace_excluded_dirs: projectResolution.effective.workspace_excluded_dirs,
+        session_planner_acp_backend: roomSessionPlannerAcpBackend
+          ?? projectResolution.effective.session_planner_acp_backend,
       },
       sources: {
         message_routing: messageRoutingSource,
@@ -804,6 +831,9 @@ export const settingsRepo = {
         auto_distill: autoDistillSource,
         default_workflow_definition: workflowSource,
         superpowers_bootstrap_owner: superpowersBootstrapOwnerSource,
+        session_planner_acp_backend: roomSessionPlannerAcpBackend
+          ? 'room'
+          : projectResolution.sources.session_planner_acp_backend,
       },
     };
   },

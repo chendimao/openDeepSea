@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS settings (
   default_workflow_definition_id TEXT,
   superpowers_bootstrap_owner TEXT CHECK (superpowers_bootstrap_owner IN ('project', 'provider', 'disabled')),
   workspace_excluded_dirs TEXT,
+  session_planner_acp_backend TEXT,
   langchain_planner_model TEXT,
   openai_api_key TEXT,
   openai_base_url TEXT,
@@ -371,6 +372,7 @@ CREATE TABLE IF NOT EXISTS session_runs (
   activity_log TEXT NOT NULL DEFAULT '',
   error TEXT,
   acp_session_id TEXT,
+  runtime_profile_snapshot TEXT,
   started_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   completed_at INTEGER,
@@ -1012,6 +1014,9 @@ const sessionRunColumnNames = new Set(sessionRunColumns.map((column) => column.n
 if (!sessionRunColumnNames.has('agent_id')) {
   db.exec("ALTER TABLE session_runs ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'planner'");
 }
+if (!sessionRunColumnNames.has('runtime_profile_snapshot')) {
+  db.exec('ALTER TABLE session_runs ADD COLUMN runtime_profile_snapshot TEXT');
+}
 db.exec('CREATE INDEX IF NOT EXISTS idx_session_runs_agent ON session_runs(session_id, agent_id, provider, started_at)');
 
 const skillColumns = db.prepare('PRAGMA table_info(skills)').all() as { name: string }[];
@@ -1478,6 +1483,9 @@ if (!settingsColumnNames.has('superpowers_bootstrap_owner')) {
 }
 if (!settingsColumnNames.has('workspace_excluded_dirs')) {
   db.exec('ALTER TABLE settings ADD COLUMN workspace_excluded_dirs TEXT');
+}
+if (!settingsColumnNames.has('session_planner_acp_backend')) {
+  db.exec('ALTER TABLE settings ADD COLUMN session_planner_acp_backend TEXT');
 }
 
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {

@@ -76,6 +76,37 @@ test('settingsRepo resolves superpowers bootstrap owner with provider default an
   assert.equal(resolution?.sources.superpowers_bootstrap_owner, 'room');
 });
 
+test('settingsRepo resolves project session planner backend override and inheritance', () => {
+  const project = projectRepo.create({
+    name: 'Session Planner Backend',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-session-planner-backend-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Planner Backend Room' });
+
+  let projectResolution = settingsRepo.resolveForProject(project.id);
+  assert.equal(projectResolution?.project?.session_planner_acp_backend ?? null, null);
+  assert.equal(projectResolution?.effective.session_planner_acp_backend, null);
+  assert.equal(projectResolution?.sources.session_planner_acp_backend, 'inherit');
+
+  settingsRepo.updateProject(project.id, { session_planner_acp_backend: 'opencode' });
+
+  projectResolution = settingsRepo.resolveForProject(project.id);
+  assert.equal(projectResolution?.project?.session_planner_acp_backend, 'opencode');
+  assert.equal(projectResolution?.effective.session_planner_acp_backend, 'opencode');
+  assert.equal(projectResolution?.sources.session_planner_acp_backend, 'project');
+
+  const roomResolution = settingsRepo.resolveForRoom(room.id);
+  assert.equal(roomResolution?.effective.session_planner_acp_backend, 'opencode');
+  assert.equal(roomResolution?.sources.session_planner_acp_backend, 'project');
+
+  settingsRepo.updateProject(project.id, { session_planner_acp_backend: null });
+
+  projectResolution = settingsRepo.resolveForProject(project.id);
+  assert.equal(projectResolution?.project?.session_planner_acp_backend, null);
+  assert.equal(projectResolution?.effective.session_planner_acp_backend, null);
+  assert.equal(projectResolution?.sources.session_planner_acp_backend, 'inherit');
+});
+
 test('settingsRepo resolves Superpowers default workflow while preserving saved overrides', async () => {
   const { workflowDefinitionRepo } = await import('./workflow-definitions.js');
   const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-settings-workflow-project-'));

@@ -111,6 +111,7 @@ export interface SessionRun {
   activity_log: string;
   error: string | null;
   acp_session_id: string | null;
+  runtime_profile_snapshot: string | null;
   started_at: number;
   updated_at: number;
   completed_at: number | null;
