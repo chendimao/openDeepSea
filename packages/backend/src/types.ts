@@ -1364,6 +1364,13 @@ export type WsServerEvent =
       agentEvent?: import('./session-types.js').SessionAgentEvent;
     }
   | { type: 'session_evidence:new'; sessionId: string; event: import('./session-types.js').SessionEvidenceEvent }
+  | {
+      type: 'session_inspector:snapshot';
+      sessionId: string;
+      planItems: import('./session-types.js').SessionPlanItem[];
+      toolRows: import('./session-types.js').SessionToolRow[];
+      diffRows: import('./session-types.js').SessionDiffRow[];
+    }
   | { type: 'history_record:new'; projectId: string; record: import('./session-types.js').HistoryRecord }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:created'; task: Task }

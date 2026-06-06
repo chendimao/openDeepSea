@@ -8,10 +8,13 @@ import type {
   RoomAgent,
   Session,
   SessionAgentEvent,
+  SessionDiffRow,
   SessionEvidenceEvent,
   SessionMessage,
   SessionMode,
+  SessionPlanItem,
   SessionRun,
+  SessionToolRow,
   SessionWorkspacePayload,
   Task,
   TaskArtifact,
@@ -69,6 +72,13 @@ export type WsServerEvent =
       agentEvent?: SessionAgentEvent;
     }
   | { type: 'session_evidence:new'; sessionId: string; event: SessionEvidenceEvent }
+  | {
+      type: 'session_inspector:snapshot';
+      sessionId: string;
+      planItems: SessionPlanItem[];
+      toolRows: SessionToolRow[];
+      diffRows: SessionDiffRow[];
+    }
   | { type: 'history_record:new'; projectId: string; record: HistoryRecord }
   | { type: 'task:created'; task: Task }
   | { type: 'task:updated'; task: Task }

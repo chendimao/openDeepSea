@@ -74,6 +74,17 @@ export function applySessionWorkspaceEvent(
       },
     };
   }
+  if (event.type === 'session_inspector:snapshot') {
+    return {
+      ...payload,
+      toolRows: event.toolRows,
+      diffRows: event.diffRows,
+      activeSession: {
+        ...payload.activeSession,
+        planItems: event.planItems,
+      },
+    };
+  }
   return payload;
 }
 

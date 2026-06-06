@@ -10,6 +10,7 @@ import {
   sessionRunRepo,
 } from './repos/sessions.js';
 import { runRegistry } from './run-registry.js';
+import { buildSessionInspectorSnapshot } from './session-workspace-view-model.js';
 import { wsHub } from './ws-hub.js';
 import type {
   AcpBackend,
@@ -223,6 +224,9 @@ export function recordSessionChunk(input: {
     },
   });
   wsHub.broadcastSession(input.sessionId, { type: 'session_evidence:new', sessionId: input.sessionId, event });
+  if (shouldBroadcastInspectorSnapshot(evidenceType)) {
+    broadcastSessionInspectorSnapshot(input.sessionId);
+  }
 }
 
 function finishSessionRun(input: {
@@ -352,6 +356,10 @@ function normalizeStreamChannel(channel: AcpStreamChannel | undefined): 'answer'
 }
 
 function resolveEvidenceType(chunk: AcpStreamChunk): SessionEvidenceType | null {
+  if (chunk.event?.type === 'tool_call' || chunk.event?.type === 'tool_result') {
+    return chunk.event.type;
+  }
+  if (chunk.event?.type === 'file_diff') return 'file_diff';
   if (chunk.event || chunk.rawEvent || chunk.channel === 'event') return 'status';
   if (chunk.channel === 'tool' || chunk.trace?.kind === 'tool') {
     return chunk.rawType === 'tool_result' ? 'tool_result' : 'tool_call';
@@ -362,6 +370,29 @@ function resolveEvidenceType(chunk: AcpStreamChunk): SessionEvidenceType | null 
   if (chunk.rawType === 'test') return 'test';
   if (chunk.rawType === 'build') return 'build';
   return null;
+}
+
+function shouldBroadcastInspectorSnapshot(eventType: SessionEvidenceType): boolean {
+  return eventType === 'status' ||
+    eventType === 'tool_call' ||
+    eventType === 'tool_result' ||
+    eventType === 'file_read' ||
+    eventType === 'file_diff' ||
+    eventType === 'test' ||
+    eventType === 'build' ||
+    eventType === 'browser_check';
+}
+
+function broadcastSessionInspectorSnapshot(sessionId: string): void {
+  const runs = sessionRunRepo.listBySession(sessionId);
+  const evidence = sessionEvidenceRepo.listBySession(sessionId);
+  const agentEvents = runs.flatMap((run) => sessionAgentEventRepo.listByRun(run.id));
+  const snapshot = buildSessionInspectorSnapshot(sessionId, evidence, agentEvents);
+  wsHub.broadcastSession(sessionId, {
+    type: 'session_inspector:snapshot',
+    sessionId,
+    ...snapshot,
+  });
 }
 
 function buildEvidenceTitle(chunk: AcpStreamChunk): string {

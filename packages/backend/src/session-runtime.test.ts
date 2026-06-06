@@ -214,3 +214,63 @@ test('runSessionAgent stores runtime profile snapshot on session run', async () 
   const stored = sessionRunRepo.get(run.id);
   assert.equal(stored?.runtime_profile_snapshot, snapshot);
 });
+
+test('runSessionAgent broadcasts inspector snapshot after ACP tool evidence', async () => {
+  const sent: string[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send: (payload: string) => sent.push(payload),
+  } as unknown as import('ws').WebSocket;
+  const project = projectRepo.create({
+    name: 'runtime inspector project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-inspector-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Inspector',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  wsHub.subscribeSession(session.id, socket);
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk }) => {
+      onChunk({
+        stream: 'stdout',
+        channel: 'tool',
+        text: 'patch SessionShellView\n',
+        rawType: 'tool_call',
+        event: {
+          id: 'tool-apply-patch',
+          message_id: 'message-1',
+          run_id: 'run-1',
+          agent_id: 'planner',
+          seq: 1,
+          type: 'tool_call',
+          status: 'started',
+          title: '调用工具 apply_patch',
+          payload: {
+            name: 'apply_patch',
+            input: '*** Update File: packages/frontend/src/session-ui/SessionShellView.tsx',
+          },
+          created_at: Date.now(),
+        },
+      });
+      return { exitCode: 0, sessionId: 'acp-inspector', stderr: '' };
+    },
+  });
+
+  await runSessionAgent({ sessionId: session.id, prompt: '继续', provider: 'codex' });
+
+  const events = sent.map((payload) =>
+    JSON.parse(payload) as { type: string; toolRows?: Array<{ label: string; target: string }> }
+  );
+  const inspector = events.find((event) => event.type === 'session_inspector:snapshot');
+  assert.equal(inspector?.toolRows?.[0]?.label, 'apply_patch');
+  assert.equal(inspector?.toolRows?.[0]?.target, 'packages/frontend/src/session-ui/SessionShellView.tsx');
+  wsHub.removeSocket(socket);
+});

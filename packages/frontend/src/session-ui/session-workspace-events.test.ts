@@ -144,6 +144,51 @@ test('applySessionWorkspaceEvent applies active session title updates', () => {
   assert.equal(next.projectSwitcher.projects[0]?.recentSessions[0]?.title, '用户在当前会话第一次发送消息...');
 });
 
+test('applySessionWorkspaceEvent replaces inspector rows from snapshot', () => {
+  const payload = createPayload('session-current');
+  const now = Date.now();
+  const next = applySessionWorkspaceEvent(payload, {
+    type: 'session_inspector:snapshot',
+    sessionId: payload.activeSession.session.id,
+    planItems: [{
+      id: 'plan-real',
+      session_id: payload.activeSession.session.id,
+      parent_id: null,
+      title: '真实计划项',
+      description: null,
+      status: 'in_progress',
+      priority: 0,
+      source: 'acp_plan_update',
+      evidence_event_id: 'ev-plan',
+      created_at: now,
+      updated_at: now,
+      completed_at: null,
+    }],
+    toolRows: [{
+      id: 'tool-real',
+      action: 'exec',
+      label: 'exec_command',
+      target: 'npm run build',
+      status: 'completed',
+      durationMs: null,
+      severity: 'info',
+      eventId: 'ev-tool',
+      created_at: now,
+    }],
+    diffRows: [{
+      path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+      status: 'modified',
+      additions: 4,
+      deletions: 1,
+      summary: 'apply_patch',
+    }],
+  });
+
+  assert.equal(next.activeSession.planItems[0]?.title, '真实计划项');
+  assert.equal(next.toolRows[0]?.target, 'npm run build');
+  assert.equal(next.diffRows[0]?.summary, 'apply_patch');
+});
+
 function createPayload(sessionId: string): SessionWorkspacePayload {
   const now = Date.now();
   return {
