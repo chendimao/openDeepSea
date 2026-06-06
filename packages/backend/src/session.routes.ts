@@ -22,7 +22,7 @@ import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
 import { parseSessionCommand, type ParsedSessionCommand } from './session-command.js';
 import { buildContextManifestDraft } from './session-context.js';
-import { runSessionAgent } from './session-runtime.js';
+import { retrySessionAgentRun, runSessionAgent } from './session-runtime.js';
 import { buildHistorySummary } from './session-summary.js';
 import { buildStatusSnapshot } from './session-status.js';
 import { runRegistry } from './run-registry.js';
@@ -484,22 +484,7 @@ function retrySessionRun(req: { params: { runId: string } }, res: Response): voi
     res.status(404).json({ error: 'run not found' });
     return;
   }
-  void runSessionAgent({
-    sessionId: run.session_id,
-    prompt: run.prompt,
-    provider: run.provider,
-    model: run.model,
-  }).catch((error) => {
-    const event = sessionEvidenceRepo.create({
-      session_id: run.session_id,
-      event_type: 'blocker',
-      severity: 'error',
-      title: 'Session retry failed',
-      summary: (error as Error).message,
-      payload: { source_run_id: run.id },
-    });
-    wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
-  });
+  retrySessionAgentRun(run.id);
   const event = sessionEvidenceRepo.create({
     session_id: run.session_id,
     event_type: 'status',

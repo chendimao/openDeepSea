@@ -2,7 +2,12 @@ import { getAdapter } from './acp/index.js';
 import type { AcpStreamChannel, AcpStreamChunk, SessionAdapter } from './acp/types.js';
 import { projectRepo } from './repos/projects.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
-import { sessionRunRepo } from './repos/sessions.js';
+import {
+  DEFAULT_SESSION_AGENT_ID,
+  sessionAgentRuntimeRepo,
+  sessionRepo,
+  sessionRunRepo,
+} from './repos/sessions.js';
 import { runRegistry } from './run-registry.js';
 import { wsHub } from './ws-hub.js';
 import type {
@@ -13,7 +18,6 @@ import type {
   SessionRun,
   SessionRunStatus,
 } from './types.js';
-import { sessionRepo } from './repos/sessions.js';
 
 const STREAM_PAYLOAD_LIMIT = 8000;
 const MAX_EVIDENCE_LINES = 200;
@@ -26,6 +30,7 @@ export function setSessionRuntimeAdapterForTest(adapter?: SessionAdapter): void 
 
 export async function runSessionAgent(input: {
   sessionId: string;
+  agentId?: string;
   prompt: string;
   provider: AcpBackend;
   model?: string | null;
@@ -35,14 +40,33 @@ export async function runSessionAgent(input: {
   const session = requireSession(input.sessionId);
   const project = projectRepo.get(session.project_id);
   if (!project) throw new Error(`Project not found for session ${session.id}`);
+  const agentId = normalizeAgentId(input.agentId);
+  const existingRuntime = sessionAgentRuntimeRepo.getByAgent(session.id, agentId, input.provider);
+  const reusableAcpSessionId = existingRuntime?.provider_session_id ??
+    sessionRunRepo.findReusableAcpSessionId({
+      session_id: session.id,
+      agent_id: agentId,
+      provider: input.provider,
+    });
 
   const run = sessionRunRepo.create({
     session_id: session.id,
+    agent_id: agentId,
     provider: input.provider,
     model: input.model ?? null,
     mode: session.mode,
     phase: session.phase,
     prompt: input.prompt,
+    acp_session_id: reusableAcpSessionId,
+  });
+  sessionAgentRuntimeRepo.upsert({
+    session_id: session.id,
+    agent_id: agentId,
+    provider: input.provider,
+    model: input.model ?? null,
+    provider_session_id: reusableAcpSessionId,
+    status: 'running',
+    current_run_id: run.id,
   });
   const controller = runRegistry.create(run.id);
   wsHub.broadcastSession(session.id, { type: 'session_run:created', sessionId: session.id, run });
@@ -55,26 +79,72 @@ export async function runSessionAgent(input: {
       acpPermissionMode: input.permissionMode ?? 'read-only',
       imagePaths: input.imagePaths ?? [],
       onSession: (acpSessionId) => {
-        const updated = sessionRunRepo.updateStatus(run.id, 'running', { acp_session_id: acpSessionId });
-        if (updated) {
-          wsHub.broadcastSession(session.id, { type: 'session_run:updated', sessionId: session.id, run: updated });
-        }
+        persistProviderSession({
+          runId: run.id,
+          sessionId: session.id,
+          agentId,
+          provider: input.provider,
+          model: input.model ?? null,
+          providerSessionId: acpSessionId,
+          status: 'running',
+        });
       },
       onChunk: (chunk) => recordSessionChunk({ sessionId: session.id, runId: run.id, chunk }),
       signal: controller.signal,
     });
     if (result.sessionId) {
-      const updated = sessionRunRepo.updateStatus(run.id, 'running', { acp_session_id: result.sessionId });
-      if (updated) {
-        wsHub.broadcastSession(session.id, { type: 'session_run:updated', sessionId: session.id, run: updated });
-      }
+      persistProviderSession({
+        runId: run.id,
+        sessionId: session.id,
+        agentId,
+        provider: input.provider,
+        model: input.model ?? null,
+        providerSessionId: result.sessionId,
+        status: 'running',
+      });
     }
-    return finishSessionRun(run.id, controller.signal.aborted ? 'cancelled' : result.exitCode === 0 ? 'completed' : 'failed', result.stderr || null);
+    return finishSessionRun({
+      runId: run.id,
+      agentId,
+      provider: input.provider,
+      model: input.model ?? null,
+      status: controller.signal.aborted ? 'cancelled' : result.exitCode === 0 ? 'completed' : 'failed',
+      error: result.stderr || null,
+    });
   } catch (err) {
-    return finishSessionRun(run.id, controller.signal.aborted ? 'cancelled' : 'failed', (err as Error).message);
+    return finishSessionRun({
+      runId: run.id,
+      agentId,
+      provider: input.provider,
+      model: input.model ?? null,
+      status: controller.signal.aborted ? 'cancelled' : 'failed',
+      error: (err as Error).message,
+    });
   } finally {
     runRegistry.remove(run.id);
   }
+}
+
+export function retrySessionAgentRun(runId: string): void {
+  const run = sessionRunRepo.get(runId);
+  if (!run) throw new Error(`Session run ${runId} not found`);
+  void runSessionAgent({
+    sessionId: run.session_id,
+    agentId: run.agent_id,
+    prompt: run.prompt,
+    provider: run.provider,
+    model: run.model,
+  }).catch((error) => {
+    const event = sessionEvidenceRepo.create({
+      session_id: run.session_id,
+      event_type: 'blocker',
+      severity: 'error',
+      title: 'Session retry failed',
+      summary: (error as Error).message,
+      payload: { source_run_id: run.id, agent_id: run.agent_id },
+    });
+    wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
+  });
 }
 
 export function recordSessionChunk(input: {
@@ -122,13 +192,37 @@ export function recordSessionChunk(input: {
   wsHub.broadcastSession(input.sessionId, { type: 'session_evidence:new', sessionId: input.sessionId, event });
 }
 
-function finishSessionRun(runId: string, status: SessionRunStatus, error?: string | null): SessionRun {
-  const run = sessionRunRepo.get(runId);
-  if (run && error) {
-    sessionRunRepo.appendStderr(runId, error);
+function finishSessionRun(input: {
+  runId: string;
+  agentId: string;
+  provider: AcpBackend;
+  model: string | null;
+  status: SessionRunStatus;
+  error?: string | null;
+}): SessionRun {
+  const run = sessionRunRepo.get(input.runId);
+  if (run && input.error) {
+    sessionRunRepo.appendStderr(input.runId, input.error);
   }
-  const updated = sessionRunRepo.updateStatus(runId, status, { error: status === 'failed' ? error ?? null : null });
-  if (!updated) throw new Error(`Session run ${runId} not found`);
+  const updated = sessionRunRepo.updateStatus(input.runId, input.status, {
+    error: input.status === 'failed' ? input.error ?? null : null,
+  });
+  if (!updated) throw new Error(`Session run ${input.runId} not found`);
+  sessionAgentRuntimeRepo.upsert({
+    session_id: updated.session_id,
+    agent_id: input.agentId,
+    provider: input.provider,
+    model: input.model,
+    provider_session_id: updated.acp_session_id,
+    status: input.status === 'paused'
+      ? 'paused'
+      : input.status === 'failed'
+        ? 'failed'
+        : input.status === 'completed'
+          ? 'completed'
+          : 'idle',
+    current_run_id: ['running', 'queued', 'retrying', 'paused'].includes(input.status) ? updated.id : null,
+  });
   wsHub.broadcastSession(updated.session_id, {
     type: 'session_run:updated',
     sessionId: updated.session_id,
@@ -137,22 +231,58 @@ function finishSessionRun(runId: string, status: SessionRunStatus, error?: strin
   wsHub.broadcastSession(updated.session_id, {
     type: 'session_run:stream',
     sessionId: updated.session_id,
-    runId,
+    runId: input.runId,
     chunk: '',
     channel: 'answer',
     done: true,
   });
-  if (status === 'failed') {
+  if (input.status === 'failed') {
     const event = sessionEvidenceRepo.create({
       session_id: updated.session_id,
       event_type: 'blocker',
       severity: 'error',
       source_run_id: updated.id,
       title: 'Session runtime failed',
-      summary: error ?? updated.error,
+      summary: input.error ?? updated.error,
       payload: { run_id: updated.id },
     });
     wsHub.broadcastSession(updated.session_id, { type: 'session_evidence:new', sessionId: updated.session_id, event });
+  }
+  return updated;
+}
+
+function normalizeAgentId(agentId: string | null | undefined): string {
+  const normalized = agentId?.trim();
+  return normalized || DEFAULT_SESSION_AGENT_ID;
+}
+
+function persistProviderSession(input: {
+  runId: string;
+  sessionId: string;
+  agentId: string;
+  provider: AcpBackend;
+  model: string | null;
+  providerSessionId: string;
+  status: 'idle' | 'running' | 'paused' | 'failed' | 'completed';
+}): SessionRun | undefined {
+  const updated = sessionRunRepo.updateStatus(input.runId, 'running', {
+    acp_session_id: input.providerSessionId,
+  });
+  sessionAgentRuntimeRepo.upsert({
+    session_id: input.sessionId,
+    agent_id: input.agentId,
+    provider: input.provider,
+    model: input.model,
+    provider_session_id: input.providerSessionId,
+    status: input.status,
+    current_run_id: input.runId,
+  });
+  if (updated) {
+    wsHub.broadcastSession(input.sessionId, {
+      type: 'session_run:updated',
+      sessionId: input.sessionId,
+      run: updated,
+    });
   }
   return updated;
 }
