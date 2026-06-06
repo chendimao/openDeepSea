@@ -76,6 +76,10 @@ test('buildSessionTitleFromMessage preserves ordinary leading numbers', () => {
   assert.equal(buildSessionTitleFromMessage('1. 修复会话标题'), '修复会话标题');
 });
 
+test('buildSessionTitleFromMessage derives a title from code-only messages', () => {
+  assert.equal(buildSessionTitleFromMessage('```ts\nconst a = 1;\n```'), 'const a = 1');
+});
+
 function createNoopAdapter() {
   return {
     backend: 'codex' as const,

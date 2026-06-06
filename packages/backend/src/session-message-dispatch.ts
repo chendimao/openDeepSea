@@ -86,15 +86,20 @@ function shouldRenameFromFirstUserMessage(session: Session): boolean {
 }
 
 export function buildSessionTitleFromMessage(content: string): string {
-  const normalized = content
-    .replace(/```[\s\S]*?```/g, ' ')
+  const normalized = normalizeSessionTitleContent(content, { keepCodeBlocks: false }) ||
+    normalizeSessionTitleContent(content, { keepCodeBlocks: true });
+  const fallback = normalized || DEFAULT_SESSION_TITLE;
+  return truncateTitle(fallback, AUTO_SESSION_TITLE_LIMIT);
+}
+
+function normalizeSessionTitleContent(content: string, options: { keepCodeBlocks: boolean }): string {
+  return content
+    .replace(/```[^\n]*\n?([\s\S]*?)```/g, options.keepCodeBlocks ? '$1' : ' ')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/^\s{0,3}(?:[#>*-]+\s*|\d+[.)]\s+)/gm, '')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/^[,，。.!！?？:：;；\s]+|[,，。.!！?？:：;；\s]+$/g, '');
-  const fallback = normalized || DEFAULT_SESSION_TITLE;
-  return truncateTitle(fallback, AUTO_SESSION_TITLE_LIMIT);
 }
 
 function truncateTitle(title: string, limit: number): string {
