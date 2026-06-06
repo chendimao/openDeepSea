@@ -952,7 +952,6 @@
 .deepsea-run-log {
   border-left-color: var(--deepsea-ok);
   background: rgba(255, 255, 255, 0.05);
-  opacity: 0.6;
 }
 .deepsea-agent-thought {
   overflow: hidden;
