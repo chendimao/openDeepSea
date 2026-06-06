@@ -126,6 +126,52 @@ test('websocket pause marks the active run as paused instead of cancelled', () =
   assert.equal(sessionRunRepo.get(run.id)?.status, 'paused');
 });
 
+test('websocket run controls reject mismatched session or agent ids', () => {
+  const project = projectRepo.create({
+    name: 'socket ownership project',
+    path: mkdtempSync(join(tmpdir(), 'socket-ownership-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Socket Ownership',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const otherSession = sessionRepo.create({
+    project_id: project.id,
+    title: 'Other Socket Ownership',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    status: 'running',
+    prompt: 'long task',
+  });
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'agent.run.cancel',
+    sessionId: otherSession.id,
+    agentId: 'planner',
+    runId: run.id,
+  });
+  handleSessionSocketEvent(socket, {
+    type: 'agent.run.cancel',
+    sessionId: session.id,
+    agentId: 'reviewer',
+    runId: run.id,
+  });
+
+  assert.equal(sessionRunRepo.get(run.id)?.status, 'running');
+  assert.equal(sent.map((payload) => JSON.parse(payload).type).filter((type) => type === 'session_error').length, 2);
+});
+
 test('websocket command new returns a fresh workspace snapshot', () => {
   const project = projectRepo.create({
     name: 'socket new command project',

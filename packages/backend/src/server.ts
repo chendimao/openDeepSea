@@ -19,6 +19,7 @@ import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { runSkillsShStartupUpdateCheck } from './skills/update-service.js';
 import { startProviderSuperpowersStartupInstall } from './provider-superpowers.js';
 import { handleSessionSocketEvent } from './session-socket-controller.js';
+import { validateWebSocketAccess } from './websocket-access.js';
 import { wsHub } from './ws-hub.js';
 import type { AgentRun, WsClientEvent } from './types.js';
 
@@ -60,7 +61,14 @@ app.use(projectFileUploadRoute, express.static(projectFileUploadRoot, {
 app.use('/api', router);
 
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+const wss = new WebSocketServer({
+  server: httpServer,
+  path: '/ws',
+  verifyClient: ({ req }, done) => {
+    const access = validateWebSocketAccess(req);
+    done(access.ok, access.ok ? undefined : access.status, access.ok ? undefined : access.reason);
+  },
+});
 
 wss.on('connection', (socket) => {
   socket.on('message', (raw) => {

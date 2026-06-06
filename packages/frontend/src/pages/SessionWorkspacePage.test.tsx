@@ -8,6 +8,7 @@ import type { SessionWorkspacePayload } from '../lib/types';
 import type { WsServerEvent } from '../lib/ws';
 import {
   getSnapshotNavigation,
+  isCompactPreviewForActiveSession,
   runSessionCommand,
   SessionWorkspacePage,
   shouldRefreshSessionWorkspace,
@@ -124,6 +125,22 @@ test('getSnapshotNavigation pushes when websocket command switches sessions', ()
     replace: false,
   });
   assert.equal(getSnapshotNavigation('project-1', 'session-1', 'session-1'), null);
+});
+
+test('isCompactPreviewForActiveSession ignores previews from inactive sessions', () => {
+  const sameSession = isCompactPreviewForActiveSession('session-1', {
+    type: 'session_compact:preview',
+    sessionId: 'session-1',
+    compaction: { id: 'compact-1' },
+  } as Extract<WsServerEvent, { type: 'session_compact:preview' }>);
+  const otherSession = isCompactPreviewForActiveSession('session-1', {
+    type: 'session_compact:preview',
+    sessionId: 'session-2',
+    compaction: { id: 'compact-2' },
+  } as Extract<WsServerEvent, { type: 'session_compact:preview' }>);
+
+  assert.equal(sameSession, true);
+  assert.equal(otherSession, false);
 });
 
 function createCommandPayload(): SessionWorkspacePayload {

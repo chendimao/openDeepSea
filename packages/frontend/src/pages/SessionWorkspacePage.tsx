@@ -20,6 +20,7 @@ export function SessionWorkspacePage(): JSX.Element {
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
   const previousSessionIdRef = useRef<string | null>(null);
+  const activeSessionIdRef = useRef<string | null>(null);
   const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
   const activeProjectId = projectId || projects[0]?.id || '';
 
@@ -34,6 +35,7 @@ export function SessionWorkspacePage(): JSX.Element {
 
   useEffect(() => {
     const activeSessionId = workspacePayload?.activeSession.session.id;
+    activeSessionIdRef.current = activeSessionId ?? null;
     if (!activeSessionId) return;
     sessionSocket.replaceSessionSubscription(previousSessionIdRef.current, activeSessionId);
     previousSessionIdRef.current = activeSessionId;
@@ -75,7 +77,9 @@ export function SessionWorkspacePage(): JSX.Element {
         return;
       }
       if (event.type === 'session_compact:preview') {
-        setCompactPreview(event.compaction);
+        if (isCompactPreviewForActiveSession(activeSessionIdRef.current, event)) {
+          setCompactPreview(event.compaction);
+        }
         return;
       }
       if (event.type === 'history_records:snapshot') {
@@ -186,6 +190,13 @@ export function getSnapshotNavigation(
     to: `/projects/${projectId}/sessions/${nextSessionId}`,
     replace: !currentSessionId,
   };
+}
+
+export function isCompactPreviewForActiveSession(
+  activeSessionId: string | null | undefined,
+  event: Extract<WsServerEvent, { type: 'session_compact:preview' }>,
+): boolean {
+  return Boolean(activeSessionId && activeSessionId === event.sessionId);
 }
 
 function isSessionWorkspaceEvent(event: WsServerEvent): boolean {

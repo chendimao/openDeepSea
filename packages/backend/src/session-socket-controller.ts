@@ -116,10 +116,10 @@ export function handleSessionSocketEvent(socket: WebSocket, event: WsClientEvent
       });
       return true;
     }
-    if (parsed.data.type === 'agent.run.pause') return pauseRun(parsed.data.runId);
-    if (parsed.data.type === 'agent.run.resume') return resumeRun(parsed.data.runId, parsed.data.content);
-    if (parsed.data.type === 'agent.run.cancel') return cancelRun(parsed.data.runId);
-    if (parsed.data.type === 'agent.run.retry') return retryRun(parsed.data.runId);
+    if (parsed.data.type === 'agent.run.pause') return pauseRun(parsed.data);
+    if (parsed.data.type === 'agent.run.resume') return resumeRun(parsed.data);
+    if (parsed.data.type === 'agent.run.cancel') return cancelRun(parsed.data);
+    if (parsed.data.type === 'agent.run.retry') return retryRun(parsed.data);
     if (parsed.data.type === 'session.command.run') return runSessionCommand(socket, parsed.data.sessionId, parsed.data.command);
     if (parsed.data.type === 'session.compact.apply') {
       return applyCompact(socket, parsed.data.sessionId, parsed.data.compactionId, {
@@ -559,8 +559,14 @@ function sendSessionWorkspaceSnapshot(socket: WebSocket, projectId: string, sess
   });
 }
 
-function pauseRun(runId: string): boolean {
-  const run = requireActiveRun(runId, ['queued', 'running', 'retrying']);
+type RunControlInput = {
+  sessionId: string;
+  agentId: string;
+  runId: string;
+};
+
+function pauseRun(input: RunControlInput): boolean {
+  const run = requireOwnedRun(input, ['queued', 'running', 'retrying']);
   runRegistry.pause(run.id);
   const updated = sessionRunRepo.updateStatus(run.id, 'paused', { error: 'Session run paused' });
   if (!updated) throw new Error('run not found');
@@ -568,8 +574,8 @@ function pauseRun(runId: string): boolean {
   return true;
 }
 
-function cancelRun(runId: string): boolean {
-  const run = requireActiveRun(runId, ['queued', 'running', 'retrying', 'paused']);
+function cancelRun(input: RunControlInput): boolean {
+  const run = requireOwnedRun(input, ['queued', 'running', 'retrying', 'paused']);
   runRegistry.cancel(run.id);
   const updated = sessionRunRepo.updateStatus(run.id, 'cancelled', { error: 'Session run cancelled' });
   if (!updated) throw new Error('run not found');
@@ -577,9 +583,8 @@ function cancelRun(runId: string): boolean {
   return true;
 }
 
-function retryRun(runId: string): boolean {
-  const run = sessionRunRepo.get(runId);
-  if (!run) throw new Error('run not found');
+function retryRun(input: RunControlInput): boolean {
+  const run = requireOwnedRun(input);
   retrySessionAgentRun(run.id);
   const event = sessionEvidenceRepo.create({
     session_id: run.session_id,
@@ -591,24 +596,26 @@ function retryRun(runId: string): boolean {
   return true;
 }
 
-function resumeRun(runId: string, content?: string): boolean {
-  const run = sessionRunRepo.get(runId);
-  if (!run) throw new Error('run not found');
+function resumeRun(input: RunControlInput & { content?: string }): boolean {
+  const run = requireOwnedRun(input);
   if (run.status !== 'paused') throw new Error('run is not paused');
   void runSessionAgent({
     sessionId: run.session_id,
     agentId: run.agent_id || DEFAULT_SESSION_AGENT_ID,
-    prompt: content ?? '继续刚才暂停的任务。',
+    prompt: input.content ?? '继续刚才暂停的任务。',
     provider: run.provider,
     model: run.model,
   });
   return true;
 }
 
-function requireActiveRun(runId: string, statuses: SessionRun['status'][]): SessionRun {
-  const run = sessionRunRepo.get(runId);
+function requireOwnedRun(input: RunControlInput, statuses?: SessionRun['status'][]): SessionRun {
+  const run = sessionRunRepo.get(input.runId);
   if (!run) throw new Error('run not found');
-  if (!statuses.includes(run.status)) throw new Error('run is not active');
+  if (run.session_id !== input.sessionId || run.agent_id !== input.agentId) {
+    throw new Error('run does not belong to session agent');
+  }
+  if (statuses && !statuses.includes(run.status)) throw new Error('run is not active');
   return run;
 }
 
