@@ -50,7 +50,9 @@ export type WsServerEvent =
   | {
       type: 'session_run:stream';
       sessionId: string;
+      agentId: string;
       runId: string;
+      seq: number;
       chunk: string;
       channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
       done: boolean;

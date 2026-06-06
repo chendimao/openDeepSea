@@ -131,6 +131,7 @@ export function createPayload(): SessionWorkspacePayload {
       runs: [{
         id: 'run-1',
         session_id: 'session-1',
+        agent_id: 'planner',
         provider: 'codex',
         model: 'gpt-test',
         status: 'completed',

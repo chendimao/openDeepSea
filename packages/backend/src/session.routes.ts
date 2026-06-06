@@ -10,6 +10,7 @@ import { now } from './db.js';
 import { projectRepo } from './repos/projects.js';
 import {
   sessionMessageRepo,
+  sessionAgentEventRepo,
   sessionPlanItemRepo,
   sessionRepo,
   sessionRunRepo,
@@ -460,12 +461,23 @@ function cancelSessionRun(req: { params: { runId: string } }, res: Response): vo
     sessionId: updated.session_id,
     run: updated,
   });
+  const finalEvent = sessionAgentEventRepo.create({
+    session_id: updated.session_id,
+    agent_id: updated.agent_id,
+    run_id: updated.id,
+    channel: 'event',
+    event_type: 'run_cancelled',
+    content: '',
+    payload: { status: 'cancelled' },
+  });
   wsHub.broadcastSession(updated.session_id, {
     type: 'session_run:stream',
     sessionId: updated.session_id,
+    agentId: updated.agent_id,
     runId: updated.id,
+    seq: finalEvent.seq,
     chunk: '',
-    channel: 'answer',
+    channel: 'event',
     done: true,
   });
   const event = sessionEvidenceRepo.create({

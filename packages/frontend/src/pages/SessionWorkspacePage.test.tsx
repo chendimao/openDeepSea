@@ -82,7 +82,9 @@ test('shouldRefreshSessionWorkspace skips unfinished stream events', () => {
   const event = {
     type: 'session_run:stream',
     sessionId: 'session-1',
+    agentId: 'planner',
     runId: 'run-1',
+    seq: 1,
     chunk: 'partial',
     channel: 'answer',
     done: false,
@@ -95,9 +97,11 @@ test('shouldRefreshSessionWorkspace refreshes completed stream events', () => {
   const event = {
     type: 'session_run:stream',
     sessionId: 'session-1',
+    agentId: 'planner',
     runId: 'run-1',
+    seq: 2,
     chunk: '',
-    channel: 'answer',
+    channel: 'event',
     done: true,
   } as WsServerEvent;
 

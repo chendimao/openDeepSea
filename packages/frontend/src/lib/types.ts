@@ -467,7 +467,15 @@ export type SessionPhase =
   | 'completed'
   | 'archived';
 export type SessionStatus = 'active' | 'blocked' | 'completed' | 'archived' | 'failed';
-export type SessionRunStatus = 'queued' | 'running' | 'retrying' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+export type SessionRunStatus =
+  | 'queued'
+  | 'running'
+  | 'retrying'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
 export type SessionMessageRole = 'user' | 'assistant' | 'system';
 export type SessionMessageType = 'text' | 'system' | 'agent_stream';
 export type SessionMessageStatus = 'queued' | 'streaming' | 'completed' | 'failed';
@@ -544,6 +552,7 @@ export interface SessionMessage {
 export interface SessionRun {
   id: string;
   session_id: string;
+  agent_id: string;
   provider: AcpBackend;
   model: string | null;
   status: SessionRunStatus;

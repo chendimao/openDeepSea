@@ -7,7 +7,7 @@ import test, { afterEach } from 'node:test';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-session-runtime-')), 'test.db');
 
 const { projectRepo } = await import('./repos/projects.js');
-const { sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
+const { sessionRepo, sessionRunRepo, sessionAgentEventRepo } = await import('./repos/sessions.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const { runSessionAgent, setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 
@@ -112,6 +112,39 @@ test('runSessionAgent isolates provider sessions by agent id', async () => {
     { prompt: 'reviewer', sessionId: null },
     { prompt: 'planner-again', sessionId: 'provider-planner' },
   ]);
+});
+
+test('runSessionAgent records ordered agent stream events', async () => {
+  const project = projectRepo.create({
+    name: 'runtime event project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-events-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Events',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onSession, onChunk }) => {
+      onSession?.('acp-events');
+      onChunk({ stream: 'stdout', channel: 'thinking', text: '分析上下文\n' });
+      onChunk({ stream: 'stdout', channel: 'tool', text: '读取文件\n', rawType: 'tool_call' });
+      onChunk({ stream: 'stdout', channel: 'answer', text: '完成\n' });
+      return { exitCode: 0, sessionId: 'acp-events', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({ sessionId: session.id, agentId: 'planner', prompt: '继续', provider: 'codex' });
+  const events = sessionAgentEventRepo.listByRun(run.id);
+
+  assert.deepEqual(events.slice(0, 3).map((event) => event.seq), [1, 2, 3]);
+  assert.deepEqual(events.slice(0, 3).map((event) => event.channel), ['thinking', 'tool', 'answer']);
+  assert.equal(events[0]?.agent_id, 'planner');
 });
 
 test('runSessionAgent records failed adapter as blocker evidence', async () => {

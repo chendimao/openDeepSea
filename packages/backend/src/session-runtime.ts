@@ -4,6 +4,7 @@ import { projectRepo } from './repos/projects.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import {
   DEFAULT_SESSION_AGENT_ID,
+  sessionAgentEventRepo,
   sessionAgentRuntimeRepo,
   sessionRepo,
   sessionRunRepo,
@@ -89,7 +90,7 @@ export async function runSessionAgent(input: {
           status: 'running',
         });
       },
-      onChunk: (chunk) => recordSessionChunk({ sessionId: session.id, runId: run.id, chunk }),
+      onChunk: (chunk) => recordSessionChunk({ sessionId: session.id, agentId, runId: run.id, chunk }),
       signal: controller.signal,
     });
     if (result.sessionId) {
@@ -149,14 +150,36 @@ export function retrySessionAgentRun(runId: string): void {
 
 export function recordSessionChunk(input: {
   sessionId: string;
+  agentId: string;
   runId: string;
   chunk: AcpStreamChunk;
 }): void {
   const text = input.chunk.text ?? '';
   const channel = normalizeStreamChannel(input.chunk.channel);
+  const streamEvent = sessionAgentEventRepo.create({
+    session_id: input.sessionId,
+    agent_id: input.agentId,
+    run_id: input.runId,
+    channel,
+    event_type: input.chunk.rawType ?? input.chunk.event?.type ?? channel,
+    content: text,
+    payload: {
+      rawType: input.chunk.rawType ?? null,
+      event: input.chunk.event ?? null,
+      trace: input.chunk.trace ?? null,
+      rawEvent: input.chunk.rawEvent ?? null,
+    },
+  });
+
   if (input.chunk.stream === 'stderr') {
     sessionRunRepo.appendStderr(input.runId, text);
-  } else if (input.chunk.channel === 'activity') {
+  } else if (
+    input.chunk.channel === 'activity' ||
+    channel === 'thinking' ||
+    channel === 'tool' ||
+    channel === 'command' ||
+    channel === 'event'
+  ) {
     sessionRunRepo.appendActivity(input.runId, text);
   } else {
     sessionRunRepo.appendStdout(input.runId, text);
@@ -165,7 +188,9 @@ export function recordSessionChunk(input: {
   wsHub.broadcastSession(input.sessionId, {
     type: 'session_run:stream',
     sessionId: input.sessionId,
+    agentId: input.agentId,
     runId: input.runId,
+    seq: streamEvent.seq,
     chunk: text,
     channel,
     done: false,
@@ -228,12 +253,23 @@ function finishSessionRun(input: {
     sessionId: updated.session_id,
     run: updated,
   });
+  const finalEvent = sessionAgentEventRepo.create({
+    session_id: updated.session_id,
+    agent_id: input.agentId,
+    run_id: updated.id,
+    channel: 'event',
+    event_type: `run_${input.status}`,
+    content: '',
+    payload: { status: input.status },
+  });
   wsHub.broadcastSession(updated.session_id, {
     type: 'session_run:stream',
     sessionId: updated.session_id,
-    runId: input.runId,
+    agentId: input.agentId,
+    runId: updated.id,
+    seq: finalEvent.seq,
     chunk: '',
-    channel: 'answer',
+    channel: 'event',
     done: true,
   });
   if (input.status === 'failed') {
