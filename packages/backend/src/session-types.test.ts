@@ -40,6 +40,7 @@ test('SessionWorkspacePayload supports the initial workspace contract', () => {
       },
       messages: [],
       runs: [],
+      agentEvents: [],
       planItems: [],
       compactions: [],
       checkpoints: [],

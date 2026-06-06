@@ -35,6 +35,8 @@ test('applySessionWorkspaceEvent appends answer chunks to matching run stdout', 
 
   const next = applySessionWorkspaceEvent(payload, event);
   assert.equal(next.activeSession.runs[0]?.stdout, 'hello');
+  assert.equal(next.activeSession.agentEvents[0]?.content, 'hello');
+  assert.equal(next.activeSession.agentEvents[0]?.channel, 'answer');
 });
 
 test('applySessionWorkspaceEvent appends thinking chunks to activity log', () => {
@@ -52,6 +54,39 @@ test('applySessionWorkspaceEvent appends thinking chunks to activity log', () =>
 
   const next = applySessionWorkspaceEvent(payload, event);
   assert.equal(next.activeSession.runs[0]?.activity_log, '分析上下文');
+  assert.equal(next.activeSession.agentEvents[0]?.content, '分析上下文');
+  assert.equal(next.activeSession.agentEvents[0]?.channel, 'thinking');
+});
+
+test('applySessionWorkspaceEvent appends empty ACP agent events from stream envelope', () => {
+  const payload = createPayload('session-current');
+  const event: WsServerEvent = {
+    type: 'session_run:stream',
+    sessionId: 'session-current',
+    agentId: 'planner',
+    runId: 'run-1',
+    seq: 3,
+    channel: 'event',
+    chunk: '',
+    done: false,
+    agentEvent: {
+      id: 'agent-event-1',
+      session_id: 'session-current',
+      agent_id: 'planner',
+      run_id: 'run-1',
+      seq: 3,
+      channel: 'event',
+      event_type: 'tool_call',
+      content: '',
+      payload_json: JSON.stringify({ trace: { name: 'Read' } }),
+      created_at: Date.now(),
+    },
+  };
+
+  const next = applySessionWorkspaceEvent(payload, event);
+  assert.equal(next.activeSession.runs[0]?.activity_log, '');
+  assert.equal(next.activeSession.agentEvents[0]?.id, 'agent-event-1');
+  assert.equal(next.activeSession.agentEvents[0]?.event_type, 'tool_call');
 });
 
 test('applySessionWorkspaceEvent does not duplicate messages or evidence', () => {
@@ -167,6 +202,7 @@ function createPayload(sessionId: string): SessionWorkspacePayload {
         updated_at: now,
         completed_at: null,
       }],
+      agentEvents: [],
       planItems: [],
       compactions: [],
       checkpoints: [],

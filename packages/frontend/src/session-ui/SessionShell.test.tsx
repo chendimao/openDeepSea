@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { SessionWorkspacePayload } from '../lib/types';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
-  formatSessionTranscriptContentForPreview,
+  buildSessionRunTranscriptItems,
   getSessionRunThinkingDuration,
 } from './SessionShellView';
 
@@ -156,40 +157,85 @@ test('SessionShell renders markdown controls and thinking duration in transcript
   assert.match(html, /分析结果/);
 });
 
-test('SessionShell segments compact streamed run output in preview timeline', () => {
+test('SessionShell segments run output by ACP event timeline', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
-  run.stdout = [
-    '我会先按项目规则加载 `using-superpowers`，然后做只读项目分析。',
-    '先看根目录、workspace 脚本和源码入口。',
-    '初步确认是 npm workspaces：后端 Express/SQLite/ACP runtime，前端 React/Vite。',
-    '当前未提交改动集中在 Session 空状态。',
-    '后端入口把 HTTP API、WebSocket、上传静态资源、workflow 监控恢复和 provider superpowers 启动检查都挂在一个进程里。',
-    '前端根路由目前以 Session Workspace 为主页面。',
-    '测试文件数量明显不少，尤其后端覆盖 ACP、workflow、repos、session、skills 等核心域。',
-    '✅ 结论：当前项目是一个本地优先的 ACP 多智能体协作项目管理系统。',
-    '本次使用技能：`using-superpowers`。',
-  ].join('');
+  run.stdout = '我会先分析当前项目。找到入口和脚本。已完成。';
   run.started_at = 1_000;
   run.updated_at = 19_000;
   run.completed_at = 19_000;
+  payload.activeSession.agentEvents = [
+    createAgentEvent({ id: 'event-answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '我会先分析当前项目。' }),
+    createAgentEvent({ id: 'event-thinking', seq: 2, channel: 'thinking', event_type: 'reasoning_delta', content: '判断需要读取 package.json。' }),
+    createAgentEvent({
+      id: 'event-read',
+      seq: 3,
+      channel: 'tool',
+      event_type: 'tool_call',
+      content: '',
+      payload_json: JSON.stringify({ rawEvent: { params: { update: { rawInput: { command: ['sed', '-n', '1,120p', 'package.json'] } } } } }),
+    }),
+    createAgentEvent({ id: 'event-answer-2', seq: 4, channel: 'answer', event_type: 'agent_message_chunk', content: '找到入口和脚本。' }),
+    createAgentEvent({
+      id: 'event-command',
+      seq: 5,
+      channel: 'tool',
+      event_type: 'tool_call',
+      content: '',
+      payload_json: JSON.stringify({ rawEvent: { params: { update: { rawInput: { command: ['npm', 'run', 'build'] } } } } }),
+    }),
+    createAgentEvent({ id: 'event-answer-3', seq: 6, channel: 'answer', event_type: 'agent_message_chunk', content: '已完成。' }),
+  ];
 
   const html = renderSessionShell(payload);
 
   assert.match(html, /思考 18s/);
-  assert.match(html, /markdown-preview/);
-  assert.match(html, /只读项目分析。<\/span><span><br\/>先看根目录/);
-  assert.match(html, /Session Workspace 为主页面。<\/span><span><br\/>测试文件数量明显不少/);
-  assert.match(html, /核心域。/);
-  assert.match(html, /✅ 结论：当前项目是一个本地优先的 ACP 多智能体协作项目管理系统。/);
-  assert.match(html, /本次使用技能/);
+  assert.match(html, /我会先分析当前项目。/);
+  assert.match(html, /Thinking/);
+  assert.match(html, /Read File/);
+  assert.match(html, /Run Command/);
+  assert.match(html, /找到入口和脚本。/);
+  assert.match(html, /已完成。/);
+  assert.ok(html.indexOf('我会先分析当前项目。') < html.indexOf('Thinking'));
+  assert.ok(html.indexOf('Thinking') < html.indexOf('Read File'));
+  assert.ok(html.indexOf('Read File') < html.indexOf('找到入口和脚本。'));
+  assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('Run Command'));
+  assert.ok(html.indexOf('Run Command') < html.indexOf('已完成。'));
 });
 
-test('formatSessionTranscriptContentForPreview keeps short and already structured text stable', () => {
-  assert.equal(formatSessionTranscriptContentForPreview('短回复。'), '短回复。');
+test('buildSessionRunTranscriptItems flushes answer text only on ACP event boundaries', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '第一句。' }),
+    createAgentEvent({ id: 'answer-2', seq: 2, channel: 'answer', event_type: 'agent_message_chunk', content: '第二句。' }),
+    createAgentEvent({ id: 'thinking', seq: 3, channel: 'thinking', event_type: 'reasoning_delta', content: '准备搜索。' }),
+    createAgentEvent({ id: 'answer-3', seq: 4, channel: 'answer', event_type: 'agent_message_chunk', content: '第三句。' }),
+  ], 'fallback');
 
-  const structured = ['第一段。', '', '第二段。', '', '- 列表项'].join('\n');
-  assert.equal(formatSessionTranscriptContentForPreview(structured), structured);
+  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
+    '第一句。第二句。',
+    '[Thinking]',
+    '第三句。',
+  ]);
+});
+
+test('buildSessionRunTranscriptItems maps ACP tool names to timeline markers', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '准备修改。' }),
+    createAgentEvent({
+      id: 'edit',
+      seq: 2,
+      channel: 'event',
+      event_type: 'tool_call',
+      payload_json: JSON.stringify({ trace: { name: 'Edit' } }),
+    }),
+    createAgentEvent({ id: 'answer-2', seq: 3, channel: 'answer', event_type: 'agent_message_chunk', content: '修改完成。' }),
+  ], 'fallback');
+
+  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
+    '准备修改。',
+    '[Edit]',
+    '修改完成。',
+  ]);
 });
 
 test('getSessionRunThinkingDuration formats active and completed durations', () => {
@@ -219,6 +265,21 @@ test('SessionShell renders a concise active session title with the full title av
   assert.match(html, /用户在当前会话第一次发送消息的时候.../);
   assert.doesNotMatch(html, />用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出</);
 });
+
+function createAgentEvent(input: Partial<SessionAgentEvent> & Pick<SessionAgentEvent, 'id' | 'seq' | 'channel' | 'event_type'>): SessionAgentEvent {
+  return {
+    id: input.id,
+    session_id: input.session_id ?? 'session-1',
+    agent_id: input.agent_id ?? 'planner',
+    run_id: input.run_id ?? 'run-1',
+    seq: input.seq,
+    channel: input.channel,
+    event_type: input.event_type,
+    content: input.content ?? '',
+    payload_json: input.payload_json ?? null,
+    created_at: input.created_at ?? Date.now(),
+  };
+}
 
 export function createPayload(): SessionWorkspacePayload {
   const now = Date.now();
@@ -287,6 +348,7 @@ export function createPayload(): SessionWorkspacePayload {
         updated_at: now - 40_000,
         completed_at: now - 40_000,
       }],
+      agentEvents: [],
       planItems: [{
         id: 'plan-1',
         session_id: 'session-1',
@@ -466,9 +528,12 @@ export function createPayload(): SessionWorkspacePayload {
 }
 
 function renderSessionShell(payload: SessionWorkspacePayload): string {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderToStaticMarkup(
     <I18nProvider>
-      <SessionShellView payload={payload} onSendMessage={() => undefined} onCommand={() => undefined} />
+      <QueryClientProvider client={queryClient}>
+        <SessionShellView payload={payload} onSendMessage={() => undefined} onCommand={() => undefined} />
+      </QueryClientProvider>
     </I18nProvider>,
   );
 }

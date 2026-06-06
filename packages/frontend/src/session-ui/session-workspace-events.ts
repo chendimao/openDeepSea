@@ -1,4 +1,4 @@
-import type { SessionRun, SessionWorkspacePayload } from '../lib/types';
+import type { SessionAgentEvent, SessionRun, SessionWorkspacePayload } from '../lib/types';
 import type { WsServerEvent } from '../lib/ws';
 
 export function applySessionWorkspaceEvent(
@@ -59,6 +59,7 @@ export function applySessionWorkspaceEvent(
       activeSession: {
         ...payload.activeSession,
         runs: payload.activeSession.runs.map((run) => run.id === event.runId ? appendRunChunk(run, event) : run),
+        agentEvents: appendStreamAgentEvent(payload.activeSession.agentEvents, event),
       },
     };
   }
@@ -95,4 +96,30 @@ function appendRunChunk(run: SessionRun, event: Extract<WsServerEvent, { type: '
     return { ...run, activity_log: `${run.activity_log}${event.chunk}`, updated_at: Date.now() };
   }
   return run;
+}
+
+function appendStreamAgentEvent(
+  events: SessionAgentEvent[],
+  event: Extract<WsServerEvent, { type: 'session_run:stream' }>,
+): SessionAgentEvent[] {
+  if (event.agentEvent) {
+    const agentEvent = event.agentEvent;
+    if (events.some((item) => item.id === agentEvent.id)) return events;
+    return [...events, agentEvent];
+  }
+  if (event.done || !event.chunk) return events;
+  const id = `stream:${event.runId}:${event.seq}`;
+  if (events.some((item) => item.id === id)) return events;
+  return [...events, {
+    id,
+    session_id: event.sessionId,
+    agent_id: event.agentId,
+    run_id: event.runId,
+    seq: event.seq,
+    channel: event.channel,
+    event_type: event.channel,
+    content: event.chunk,
+    payload_json: null,
+    created_at: Date.now(),
+  }];
 }

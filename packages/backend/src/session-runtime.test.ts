@@ -10,12 +10,19 @@ const { projectRepo } = await import('./repos/projects.js');
 const { sessionRepo, sessionRunRepo, sessionAgentEventRepo } = await import('./repos/sessions.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const { runSessionAgent, setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
+const { wsHub } = await import('./ws-hub.js');
 
 afterEach(() => {
   setSessionRuntimeAdapterForTest(undefined);
 });
 
 test('runSessionAgent writes run, stream output and evidence', async () => {
+  const sent: string[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send: (payload: string) => sent.push(payload),
+  } as unknown as import('ws').WebSocket;
   const project = projectRepo.create({
     name: 'runtime project',
     path: mkdtempSync(join(tmpdir(), 'session-runtime-project-')),
@@ -27,6 +34,7 @@ test('runSessionAgent writes run, stream output and evidence', async () => {
     provider: 'codex',
     workspace_path: project.path,
   });
+  wsHub.subscribeSession(session.id, socket);
 
   setSessionRuntimeAdapterForTest({
     backend: 'codex',
@@ -44,6 +52,9 @@ test('runSessionAgent writes run, stream output and evidence', async () => {
   assert.match(sessionRunRepo.get(run.id)!.stdout, /完成/);
   assert.equal(sessionRunRepo.get(run.id)!.acp_session_id, 'acp-1');
   assert.ok(sessionEvidenceRepo.listBySession(session.id).some((event) => event.event_type === 'tool_call'));
+  const streamEvents = sent.map((payload) => JSON.parse(payload) as { type: string; agentEvent?: { event_type: string } });
+  assert.ok(streamEvents.some((event) => event.type === 'session_run:stream' && event.agentEvent?.event_type === 'tool_call'));
+  wsHub.removeSocket(socket);
 });
 
 test('runSessionAgent reuses provider session for same business session agent and provider', async () => {

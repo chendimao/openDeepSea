@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { projectRepo } from './repos/projects.js';
 import {
+  sessionAgentEventRepo,
   sessionMessageRepo,
   sessionPlanItemRepo,
   sessionRepo,
@@ -188,10 +189,12 @@ export function buildWorkspacePayload(project: Project, activeSession: Session):
 }
 
 function buildSessionDetail(session: Session): SessionDetail {
+  const runs = sessionRunRepo.listBySession(session.id);
   return {
     session,
     messages: sessionMessageRepo.listBySession(session.id),
-    runs: sessionRunRepo.listBySession(session.id),
+    runs,
+    agentEvents: runs.flatMap((run) => sessionAgentEventRepo.listByRun(run.id)),
     planItems: sessionPlanItemRepo.listBySession(session.id),
     compactions: sessionCompactionRepo.listBySession(session.id),
     checkpoints: sessionCheckpointRepo.listBySession(session.id),

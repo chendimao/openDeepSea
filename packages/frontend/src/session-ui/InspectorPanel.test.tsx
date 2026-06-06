@@ -54,6 +54,7 @@ function createPayload(): SessionWorkspacePayload {
       },
       messages: [],
       runs: [],
+      agentEvents: [],
       planItems: [],
       compactions: [],
       checkpoints: [],

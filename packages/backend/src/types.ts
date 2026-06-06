@@ -1361,6 +1361,7 @@ export type WsServerEvent =
       chunk: string;
       channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
       done: boolean;
+      agentEvent?: import('./session-types.js').SessionAgentEvent;
     }
   | { type: 'session_evidence:new'; sessionId: string; event: import('./session-types.js').SessionEvidenceEvent }
   | { type: 'history_record:new'; projectId: string; record: import('./session-types.js').HistoryRecord }

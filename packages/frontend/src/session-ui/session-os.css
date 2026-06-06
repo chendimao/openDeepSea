@@ -1041,6 +1041,40 @@
 .deepsea-run-log-body .markdown-preview {
   gap: 8px;
 }
+.deepsea-run-timeline {
+  display: grid;
+  gap: 8px;
+}
+.deepsea-run-timeline__text {
+  min-width: 0;
+}
+.deepsea-run-timeline__event {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--deepsea-border-subtle);
+  border-radius: 6px;
+  background: rgba(242, 244, 246, 0.72);
+  color: var(--deepsea-muted);
+  padding: 4px 7px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.deepsea-run-timeline__event span {
+  color: var(--deepsea-text);
+  font-family: var(--deepsea-mono);
+  font-size: 10px;
+  font-weight: 800;
+}
+.deepsea-run-timeline__event small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--deepsea-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .deepsea-message-body .code-block,
 .deepsea-run-log-body .code-block {
   border-color: var(--deepsea-border-subtle);

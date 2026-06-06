@@ -253,6 +253,7 @@ export interface SessionDetail {
   session: Session;
   messages: SessionMessage[];
   runs: SessionRun[];
+  agentEvents: SessionAgentEvent[];
   planItems: SessionPlanItem[];
   compactions: SessionCompaction[];
   checkpoints: SessionCheckpoint[];

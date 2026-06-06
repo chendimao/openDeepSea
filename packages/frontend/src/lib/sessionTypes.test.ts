@@ -72,6 +72,7 @@ test('session workspace payload keeps active session, history and inspector data
       },
       messages: [],
       runs: [],
+      agentEvents: [],
       planItems: [],
       compactions: [],
       checkpoints: [],

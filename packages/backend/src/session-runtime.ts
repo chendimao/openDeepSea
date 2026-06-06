@@ -201,6 +201,7 @@ export function recordSessionChunk(input: {
     chunk: text,
     channel,
     done: false,
+    agentEvent: streamEvent,
   });
 
   const evidenceType = resolveEvidenceType(input.chunk);

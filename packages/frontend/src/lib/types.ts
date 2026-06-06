@@ -607,6 +607,19 @@ export interface SessionRun {
   completed_at: number | null;
 }
 
+export interface SessionAgentEvent {
+  id: string;
+  session_id: string;
+  agent_id: string;
+  run_id: string;
+  seq: number;
+  channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+  event_type: string;
+  content: string;
+  payload_json: string | null;
+  created_at: number;
+}
+
 export interface SessionPlanItem {
   id: string;
   session_id: string;
@@ -716,6 +729,7 @@ export interface SessionDetail {
   session: Session;
   messages: SessionMessage[];
   runs: SessionRun[];
+  agentEvents: SessionAgentEvent[];
   planItems: SessionPlanItem[];
   compactions: SessionCompaction[];
   checkpoints: SessionCheckpoint[];

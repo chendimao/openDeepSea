@@ -7,6 +7,7 @@ import type {
   Message,
   RoomAgent,
   Session,
+  SessionAgentEvent,
   SessionEvidenceEvent,
   SessionMessage,
   SessionMode,
@@ -65,6 +66,7 @@ export type WsServerEvent =
       chunk: string;
       channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
       done: boolean;
+      agentEvent?: SessionAgentEvent;
     }
   | { type: 'session_evidence:new'; sessionId: string; event: SessionEvidenceEvent }
   | { type: 'history_record:new'; projectId: string; record: HistoryRecord }

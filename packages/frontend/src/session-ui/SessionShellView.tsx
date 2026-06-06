@@ -33,6 +33,7 @@ import type {
   SessionContract,
   SessionDetail,
   SessionDiffRow,
+  SessionAgentEvent,
   SessionEvidenceEvent,
   SessionMessage,
   SessionMode,
@@ -470,9 +471,9 @@ function TranscriptCanvas({
             );
           }
           const runEvidence = evidence.filter((event) => event.source_run_id === item.run.id);
+          const runAgentEvents = (detail.agentEvents ?? []).filter((event) => event.run_id === item.run.id);
           const output = runOutputText(item.run);
           const displayMode = displayModeFor(item.key);
-          const displayOutput = displayMode === 'source' ? output : formatSessionTranscriptContentForPreview(output);
           return (
             <React.Fragment key={item.key}>
               <AgentThoughtPanel run={item.run} evidence={runEvidence} />
@@ -488,7 +489,11 @@ function TranscriptCanvas({
                   />
                 </div>
                 <div className="deepsea-run-log-body">
-                  <MessageContent content={displayOutput} mode={displayMode} suppressTraceEvents />
+                  {displayMode === 'source' ? (
+                    <MessageContent content={output} mode={displayMode} suppressTraceEvents />
+                  ) : (
+                    <SessionRunTimeline events={runAgentEvents} fallbackText={output} />
+                  )}
                 </div>
               </article>
             </React.Fragment>
@@ -534,13 +539,196 @@ function TranscriptMessage({
     <SessionMessageBubble
       role={message.role}
       content={message.content}
-      previewContent={formatSessionTranscriptContentForPreview(message.content)}
       timeLabel={formatClock(message.created_at)}
       statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
       displayMode={displayMode}
       onDisplayModeChange={onDisplayModeChange}
     />
   );
+}
+
+export type SessionRunTranscriptItem =
+  | { type: 'text'; id: string; text: string }
+  | { type: 'event'; id: string; label: string; detail: string | null; created_at: number };
+
+function SessionRunTimeline({
+  events,
+  fallbackText,
+}: {
+  events: SessionAgentEvent[];
+  fallbackText: string;
+}): JSX.Element {
+  const items = buildSessionRunTranscriptItems(events, fallbackText);
+  return (
+    <div className="deepsea-run-timeline">
+      {items.map((item) => item.type === 'text' ? (
+        <div key={item.id} className="deepsea-run-timeline__text">
+          <MessageContent content={item.text} mode="preview" suppressTraceEvents />
+        </div>
+      ) : (
+        <div key={item.id} className="deepsea-run-timeline__event">
+          <span>[{item.label}]</span>
+          {item.detail && <small>{item.detail}</small>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function buildSessionRunTranscriptItems(
+  events: SessionAgentEvent[],
+  fallbackText: string,
+): SessionRunTranscriptItem[] {
+  const items: SessionRunTranscriptItem[] = [];
+  const sortedEvents = [...events].sort((left, right) => left.seq - right.seq || left.created_at - right.created_at);
+  let textBuffer = '';
+  let textIndex = 0;
+
+  const flushText = () => {
+    const text = textBuffer.trim();
+    textBuffer = '';
+    if (!text) return;
+    items.push({ type: 'text', id: `text-${textIndex}`, text });
+    textIndex += 1;
+  };
+
+  for (const event of sortedEvents) {
+    if (isAnswerTextEvent(event)) {
+      textBuffer += event.content;
+      continue;
+    }
+
+    const marker = runEventMarker(event);
+    if (!marker) continue;
+    flushText();
+    items.push({
+      type: 'event',
+      id: `event-${event.id}`,
+      label: marker.label,
+      detail: marker.detail,
+      created_at: event.created_at,
+    });
+  }
+
+  flushText();
+  if (items.length === 0) {
+    const text = fallbackText.trim();
+    return text ? [{ type: 'text', id: 'text-fallback', text }] : [];
+  }
+  return items;
+}
+
+function isAnswerTextEvent(event: SessionAgentEvent): boolean {
+  return event.channel === 'answer' &&
+    event.content.length > 0 &&
+    event.event_type !== 'protocol.stderr';
+}
+
+function runEventMarker(event: SessionAgentEvent): { label: string; detail: string | null } | null {
+  if (event.channel === 'thinking' && event.content.trim()) {
+    return { label: 'Thinking', detail: trimTimelineDetail(event.content) };
+  }
+
+  if (event.channel === 'command' || /command/i.test(event.event_type)) {
+    return { label: 'Run Command', detail: eventCommandDetail(event) };
+  }
+
+  if (/file_diff|patch/i.test(event.event_type)) {
+    return { label: 'Patch', detail: eventCommandDetail(event) };
+  }
+
+  if (event.event_type === 'tool_call' || event.channel === 'tool') {
+    return commandToolMarker(event);
+  }
+
+  return null;
+}
+
+function commandToolMarker(event: SessionAgentEvent): { label: string; detail: string | null } {
+  const toolName = eventToolName(event);
+  const command = eventCommandDetail(event);
+  if (toolName && /^(?:read)$/i.test(toolName)) return { label: 'Read File', detail: command ?? toolName };
+  if (toolName && /^(?:grep|glob|search)$/i.test(toolName)) return { label: 'Search', detail: command ?? toolName };
+  if (toolName && /^(?:edit|multiedit|write)$/i.test(toolName)) return { label: 'Edit', detail: command ?? toolName };
+  if (toolName && /^(?:patch|apply_patch)$/i.test(toolName)) return { label: 'Patch', detail: command ?? toolName };
+  if (command && /\b(?:sed|cat|nl|less|head|tail)\b/.test(command)) return { label: 'Read File', detail: command };
+  if (command && /\b(?:rg|grep|find)\b/.test(command)) return { label: 'Search', detail: command };
+  if (command && /\b(?:apply_patch)\b/.test(command)) return { label: 'Patch', detail: command };
+  if (command && /\b(?:npm|pnpm|yarn|node|tsx|tsc|vite|git)\b/.test(command)) return { label: 'Run Command', detail: command };
+  if (command) return { label: 'Run Command', detail: command };
+  return { label: 'Tool', detail: toolName ?? trimTimelineDetail(event.content) };
+}
+
+function eventToolName(event: SessionAgentEvent): string | null {
+  const payload = parseAgentEventPayload(event.payload_json);
+  return readNestedString(payload, [
+    ['trace', 'name'],
+    ['event', 'payload', 'name'],
+    ['event', 'payload', 'toolName'],
+    ['rawEvent', 'params', 'update', 'name'],
+    ['rawEvent', 'params', 'update', 'toolName'],
+    ['rawEvent', 'params', 'update', 'rawInput', 'name'],
+    ['rawEvent', 'params', 'update', 'rawInput', 'toolName'],
+    ['name'],
+    ['toolName'],
+  ]);
+}
+
+function eventCommandDetail(event: SessionAgentEvent): string | null {
+  const payload = parseAgentEventPayload(event.payload_json);
+  const command = readNestedCommand(payload);
+  return command ?? trimTimelineDetail(event.content);
+}
+
+function parseAgentEventPayload(payloadJson: string | null): unknown {
+  if (!payloadJson) return null;
+  try {
+    return JSON.parse(payloadJson) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function readNestedCommand(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const command = record.command ?? record.cmd;
+  if (typeof command === 'string' && command.trim()) return command.trim();
+  if (Array.isArray(command)) return command.map(String).join(' ').trim() || null;
+
+  const rawInput = record.rawInput;
+  if (rawInput && typeof rawInput === 'object') {
+    const rawCommand = (rawInput as Record<string, unknown>).command;
+    if (typeof rawCommand === 'string' && rawCommand.trim()) return rawCommand.trim();
+    if (Array.isArray(rawCommand)) return rawCommand.map(String).join(' ').trim() || null;
+  }
+
+  for (const key of ['event', 'rawEvent', 'update', 'params']) {
+    const nested = readNestedCommand(record[key]);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function readNestedString(value: unknown, paths: string[][]): string | null {
+  for (const path of paths) {
+    let cursor = value;
+    for (const key of path) {
+      if (!cursor || typeof cursor !== 'object') {
+        cursor = null;
+        break;
+      }
+      cursor = (cursor as Record<string, unknown>)[key];
+    }
+    if (typeof cursor === 'string' && cursor.trim()) return cursor.trim();
+  }
+  return null;
+}
+
+function trimTimelineDetail(value: string | null | undefined): string | null {
+  const text = value?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!text) return null;
+  return text.length > 120 ? `${text.slice(0, 120).trimEnd()}...` : text;
 }
 
 function ThinkingDurationBadge({ run }: { run: SessionRun }): JSX.Element | null {
@@ -791,24 +979,6 @@ function runOutputText(run: SessionRun): string {
   if (run.status === 'completed') return '未返回可展示回复。';
   if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';
   return '等待智能体输出...';
-}
-
-export function formatSessionTranscriptContentForPreview(content: string): string {
-  const normalized = content.replace(/\r\n?/g, '\n').trim();
-  if (!shouldSegmentCompactTranscript(normalized)) return content;
-
-  return normalized
-    .replace(/([。！？])((?:✅|⚠️|🎯|📋|🛠️|📎|🧠|🔍|📊)\s)/g, '$1\n\n$2')
-    .replace(/([。！？])((?:结论|项目概况|关键模块|质量状态|当前 diff|建议优先级|本次使用技能)[：:])/g, '$1\n\n$2')
-    .replace(/([。！？])(?=\S)/g, '$1\n')
-    .replace(/\n{3,}/g, '\n\n');
-}
-
-function shouldSegmentCompactTranscript(content: string): boolean {
-  if (content.length < 180) return false;
-  if (content.includes('```')) return false;
-  const newlineCount = (content.match(/\n/g) ?? []).length;
-  return newlineCount < Math.max(3, Math.floor(content.length / 900));
 }
 
 export function getSessionRunThinkingDuration(
