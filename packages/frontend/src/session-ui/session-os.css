@@ -1409,13 +1409,21 @@
   background: rgba(255, 255, 255, 0.42);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
-.deepsea-composer__field input {
+.deepsea-composer__field input,
+.deepsea-composer__prompt .prompt-area-editor {
   width: 100%;
   min-height: 20px;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--deepsea-text);
+  font-size: 12px;
+}
+.deepsea-composer__prompt .prompt-area-editor {
+  padding: 0;
+}
+.deepsea-composer__prompt .pointer-events-none {
+  color: rgba(100, 116, 139, 0.48);
   font-size: 12px;
 }
 .deepsea-composer__field input::placeholder {

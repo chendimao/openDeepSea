@@ -1,13 +1,10 @@
 import {
-  AlertTriangle,
-  AtSign,
   Brain,
   CheckCircle2,
   ChevronDown,
   FileText,
   Filter,
   GitFork,
-  Hash,
   History,
   MessageSquare,
   Minimize2,
@@ -16,7 +13,6 @@ import {
   RefreshCcw,
   Repeat2,
   Search,
-  SendHorizontal,
   Settings,
   ShieldCheck,
   Square,
@@ -51,6 +47,8 @@ import {
 } from './SessionMessageBubble';
 import { ProjectAgentStrip } from './ProjectAgentStrip';
 import { sessionStatusTone } from './session-ui-model';
+import { SessionFileComposer } from './SessionFileComposer';
+import type { SessionComposerSubmit } from './session-file-composer-model';
 
 export function SessionShellView({
   payload,
@@ -62,7 +60,7 @@ export function SessionShellView({
   onFilterHistory,
 }: {
   payload: SessionWorkspacePayload;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (message: SessionComposerSubmit) => void;
   onCommand: (command: string) => void;
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
@@ -91,7 +89,6 @@ export function SessionShellView({
           detail={payload.activeSession}
           evidence={payload.evidence}
           onSendMessage={onSendMessage}
-          onCommand={onCommand}
         />
         <IntegratedInspector
           payload={payload}
@@ -428,12 +425,10 @@ function TranscriptCanvas({
   detail,
   evidence,
   onSendMessage,
-  onCommand,
 }: {
   detail: SessionDetail;
   evidence: SessionEvidenceEvent[];
-  onSendMessage: (content: string) => void;
-  onCommand: (command: string) => void;
+  onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
   const timeline = buildTranscriptTimeline(detail).slice(-36);
   const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
@@ -500,7 +495,7 @@ function TranscriptCanvas({
           );
         })}
       </div>
-      <DeepseaComposer onCommand={onCommand} onSendMessage={onSendMessage} />
+      <DeepseaComposer projectId={detail.session.project_id} onSendMessage={onSendMessage} />
     </section>
   );
 }
@@ -768,41 +763,13 @@ function AgentThoughtPanel({
 }
 
 function DeepseaComposer({
+  projectId,
   onSendMessage,
 }: {
-  onSendMessage: (content: string) => void;
-  onCommand: (command: string) => void;
+  projectId: string;
+  onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
-  const [content, setContent] = useState('');
-
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const next = content.trim();
-    if (!next) return;
-    onSendMessage(next);
-    setContent('');
-  };
-
-  return (
-    <form className="deepsea-composer" onSubmit={submit}>
-      <div className="deepsea-composer__field">
-        <input
-          aria-label="命令输入"
-          value={content}
-          onChange={(event) => setContent(event.currentTarget.value)}
-          placeholder="输入命令或 / 选择命令，支持 @ 文件、# 历史、! 上下文"
-        />
-        <div className="deepsea-composer__tools">
-          <AtSign aria-hidden="true" />
-          <Hash aria-hidden="true" />
-          <AlertTriangle aria-hidden="true" />
-          <button type="submit" className="deepsea-send-button" aria-label="发送">
-            <SendHorizontal aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-    </form>
-  );
+  return <SessionFileComposer projectId={projectId} onSendMessage={onSendMessage} />;
 }
 
 function IntegratedInspector({

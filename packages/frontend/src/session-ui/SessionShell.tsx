@@ -22,7 +22,7 @@ export function SessionShell({
   return (
     <SessionShellView
       payload={payload}
-      onSendMessage={onSendMessage}
+      onSendMessage={(message) => onSendMessage(message.content)}
       onCommand={onCommand}
       onCancelRun={onCancelRun}
       onRetryRun={onRetryRun}

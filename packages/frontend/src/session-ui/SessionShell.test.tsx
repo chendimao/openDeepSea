@@ -51,6 +51,8 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /Session status bar/);
   assert.match(html, /会话历史/);
   assert.match(html, /3. 对话记录/);
+  assert.match(html, /prompt-area-container/);
+  assert.match(html, /支持 @ 文件/);
   assert.match(html, /目标契约/);
   assert.match(html, /会话计划/);
   assert.match(html, /代理运行/);
