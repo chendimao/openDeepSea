@@ -424,8 +424,7 @@ function TranscriptCanvas({
   onSendMessage: (content: string) => void;
   onCommand: (command: string) => void;
 }): JSX.Element {
-  const messages = detail.messages.slice(-18);
-  const latestRuns = detail.runs.slice(-1);
+  const timeline = buildTranscriptTimeline(detail).slice(-36);
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
       <div className="deepsea-transcript__scroll">
@@ -440,26 +439,22 @@ function TranscriptCanvas({
           </button>
         </div>
 
-        {messages.length === 0 ? (
+        {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
-        ) : messages.map((message) => (
-          <TranscriptMessage
-            key={message.id}
-            message={message}
-          />
-        ))}
-
-        {latestRuns.map((run) => {
-          const runEvidence = evidence.filter((event) => event.source_run_id === run.id);
+        ) : timeline.map((item) => {
+          if (item.kind === 'message') {
+            return <TranscriptMessage key={item.key} message={item.message} />;
+          }
+          const runEvidence = evidence.filter((event) => event.source_run_id === item.run.id);
           return (
-            <React.Fragment key={run.id}>
-              <AgentThoughtPanel run={run} evidence={runEvidence} />
+            <React.Fragment key={item.key}>
+              <AgentThoughtPanel run={item.run} evidence={runEvidence} />
               <article className="deepsea-run-log">
                 <div>
-                  <span className="deepsea-status-chip" data-tone={run.status === 'failed' ? 'danger' : 'ok'}>ASSISTANT</span>
-                  <time className="deepsea-mono">{formatClock(run.started_at)}</time>
+                  <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>ASSISTANT</span>
+                  <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
                 </div>
-                <p>{runOutputText(run)}</p>
+                <p>{runOutputText(item.run)}</p>
               </article>
             </React.Fragment>
           );
@@ -468,6 +463,27 @@ function TranscriptCanvas({
       <DeepseaComposer onCommand={onCommand} onSendMessage={onSendMessage} />
     </section>
   );
+}
+
+type TranscriptTimelineItem =
+  | { kind: 'message'; key: string; timestamp: number; message: SessionMessage }
+  | { kind: 'run'; key: string; timestamp: number; run: SessionRun };
+
+function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[] {
+  return [
+    ...detail.messages.map((message) => ({
+      kind: 'message' as const,
+      key: `message:${message.id}`,
+      timestamp: message.created_at,
+      message,
+    })),
+    ...detail.runs.map((run) => ({
+      kind: 'run' as const,
+      key: `run:${run.id}`,
+      timestamp: run.started_at,
+      run,
+    })),
+  ].sort((left, right) => left.timestamp - right.timestamp || left.key.localeCompare(right.key));
 }
 
 function TranscriptMessage({

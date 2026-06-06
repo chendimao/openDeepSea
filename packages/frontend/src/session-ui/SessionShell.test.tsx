@@ -74,6 +74,55 @@ test('SessionShell renders agent thought above run output without leaking runtim
   assert.ok(html.indexOf('智能体思考过程') < html.indexOf('ASSISTANT'));
 });
 
+test('SessionShell keeps previous assistant replies in transcript timeline', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  const firstMessage = payload.activeSession.messages[0]!;
+  const firstRun = payload.activeSession.runs[0]!;
+  payload.activeSession.messages = [
+    {
+      ...firstMessage,
+      id: 'message-older',
+      content: '第一轮问题',
+      created_at: now - 80_000,
+    },
+    {
+      ...firstMessage,
+      id: 'message-newer',
+      content: '第二轮问题',
+      created_at: now - 40_000,
+    },
+  ];
+  payload.activeSession.runs = [
+    {
+      ...firstRun,
+      id: 'run-older',
+      stdout: '第一轮回复仍然可见',
+      started_at: now - 70_000,
+      updated_at: now - 65_000,
+      completed_at: now - 65_000,
+    },
+    {
+      ...firstRun,
+      id: 'run-newer',
+      stdout: '第二轮回复也可见',
+      started_at: now - 30_000,
+      updated_at: now - 25_000,
+      completed_at: now - 25_000,
+    },
+  ];
+
+  const html = renderToStaticMarkup(
+    <SessionShellView payload={payload} onSendMessage={() => undefined} onCommand={() => undefined} />,
+  );
+
+  assert.match(html, /第一轮回复仍然可见/);
+  assert.match(html, /第二轮回复也可见/);
+  assert.ok(html.indexOf('第一轮问题') < html.indexOf('第一轮回复仍然可见'));
+  assert.ok(html.indexOf('第一轮回复仍然可见') < html.indexOf('第二轮问题'));
+  assert.ok(html.indexOf('第二轮问题') < html.indexOf('第二轮回复也可见'));
+});
+
 export function createPayload(): SessionWorkspacePayload {
   const now = Date.now();
   return {
