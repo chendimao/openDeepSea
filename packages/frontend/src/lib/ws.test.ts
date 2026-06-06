@@ -178,3 +178,41 @@ test('sessionSocket opens for workspace requests before any subscription exists'
     globalThis.WebSocket = originalWebSocket;
   }
 });
+
+test('sessionSocket switches session subscriptions without rebuilding physical socket', async () => {
+  FakeWebSocket.instances = [];
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { location: { protocol: 'http:', host: 'localhost:5173' } },
+  });
+  globalThis.WebSocket = FakeWebSocket as never;
+
+  try {
+    const { sessionSocket } = await import(`./ws.ts?ws-switch-test-${Date.now()}`);
+
+    sessionSocket.subscribeSession('session-a');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const socket = FakeWebSocket.instances[0]!;
+    socket.readyState = FakeWebSocket.OPEN;
+    socket.emit('open');
+
+    sessionSocket.replaceSessionSubscription('session-a', 'session-b');
+
+    assert.equal(FakeWebSocket.instances.length, 1);
+    assert.deepEqual(socket.sent.map((payload) => JSON.parse(payload)), [
+      { type: 'session:subscribe', sessionId: 'session-a' },
+      { type: 'session:unsubscribe', sessionId: 'session-a' },
+      { type: 'session:subscribe', sessionId: 'session-b' },
+    ]);
+    sessionSocket.destroy();
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    });
+    globalThis.WebSocket = originalWebSocket;
+  }
+});

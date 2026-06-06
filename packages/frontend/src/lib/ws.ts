@@ -207,6 +207,22 @@ class RoomSocket {
     this.closeIfIdle();
   }
 
+  replaceSessionSubscription(previousSessionId: string | null | undefined, nextSessionId: string): void {
+    this.closeWhenOpen = false;
+    if (previousSessionId && previousSessionId !== nextSessionId) {
+      this.subscribedSessions.delete(previousSessionId);
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ type: 'session:unsubscribe', sessionId: previousSessionId }));
+      }
+    }
+    this.subscribedSessions.add(nextSessionId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: nextSessionId }));
+    } else {
+      this.connectSoon();
+    }
+  }
+
   requestSessionWorkspace(input: { projectId: string; sessionId?: string | null }): void {
     this.sendOrQueue({
       type: 'session.workspace.request',

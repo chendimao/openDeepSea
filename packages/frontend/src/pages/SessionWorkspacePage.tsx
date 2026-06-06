@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -21,6 +21,7 @@ export function SessionWorkspacePage(): JSX.Element {
   const navigate = useNavigate();
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
+  const previousSessionIdRef = useRef<string | null>(null);
   const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
   const activeProjectId = projectId || projects[0]?.id || '';
 
@@ -36,9 +37,17 @@ export function SessionWorkspacePage(): JSX.Element {
   useEffect(() => {
     const activeSessionId = workspacePayload?.activeSession.session.id;
     if (!activeSessionId) return;
-    sessionSocket.subscribeSession(activeSessionId);
-    return () => sessionSocket.unsubscribeSession(activeSessionId);
+    sessionSocket.replaceSessionSubscription(previousSessionIdRef.current, activeSessionId);
+    previousSessionIdRef.current = activeSessionId;
   }, [workspacePayload?.activeSession.session.id]);
+
+  useEffect(() => {
+    return () => {
+      if (!previousSessionIdRef.current) return;
+      sessionSocket.unsubscribeSession(previousSessionIdRef.current);
+      previousSessionIdRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     return sessionSocket.on((event: WsServerEvent) => {
