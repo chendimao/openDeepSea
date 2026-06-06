@@ -1,4 +1,4 @@
-:root {
+:where(:root) {
   --deepsea-background: #f7f9fb;
   --deepsea-surface: #ffffff;
   --deepsea-surface-soft: rgba(255, 255, 255, 0.42);
@@ -24,6 +24,134 @@
   --deepsea-radius-xl: 12px;
   --deepsea-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --deepsea-sans: Inter, "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+[data-theme="minimal-light"] .deepsea-shell {
+  background:
+    radial-gradient(circle at 14% 10%, rgba(255, 252, 245, 0.92) 0 11%, rgba(255, 252, 245, 0) 30%),
+    radial-gradient(circle at 84% 4%, rgba(226, 161, 91, 0.14) 0 13%, rgba(226, 161, 91, 0) 36%),
+    radial-gradient(circle at 58% 96%, rgba(188, 169, 140, 0.22) 0 16%, rgba(188, 169, 140, 0) 42%),
+    linear-gradient(135deg, #fffaf0 0%, #f7f4ec 42%, var(--deepsea-background) 100%);
+}
+
+[data-theme="minimal-dark"] .deepsea-shell {
+  background:
+    radial-gradient(circle at 18% 8%, rgba(226, 161, 91, 0.13) 0 12%, rgba(226, 161, 91, 0) 34%),
+    radial-gradient(circle at 86% 12%, rgba(240, 181, 111, 0.09) 0 12%, rgba(240, 181, 111, 0) 36%),
+    radial-gradient(circle at 54% 96%, rgba(91, 75, 55, 0.24) 0 18%, rgba(91, 75, 55, 0) 45%),
+    linear-gradient(135deg, #211d16 0%, #17140f 48%, var(--deepsea-background) 100%);
+}
+
+[data-theme="minimal-light"] .deepsea-topbar,
+[data-theme="minimal-dark"] .deepsea-topbar {
+  background: var(--deepsea-surface-strong);
+  border-color: var(--deepsea-border);
+  box-shadow: 0 4px 24px -1px rgba(31, 29, 24, 0.08), inset 0 1px 0 rgba(255, 252, 245, 0.46);
+}
+
+[data-theme="minimal-light"] .deepsea-project-strip,
+[data-theme="minimal-dark"] .deepsea-project-strip {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface) 28%, transparent);
+}
+
+[data-theme="minimal-light"] .deepsea-shell-nav a.is-active,
+[data-theme="minimal-dark"] .deepsea-shell-nav a.is-active {
+  border-color: color-mix(in srgb, var(--deepsea-primary) 28%, var(--deepsea-border));
+  background: color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-surface));
+  color: var(--deepsea-primary);
+  box-shadow: 0 6px 14px rgba(31, 29, 24, 0.07);
+}
+
+[data-theme="minimal-light"] .deepsea-shell-nav a:hover,
+[data-theme="minimal-dark"] .deepsea-shell-nav a:hover,
+[data-theme="minimal-light"] .deepsea-icon-button:hover,
+[data-theme="minimal-dark"] .deepsea-icon-button:hover,
+[data-theme="minimal-light"] .deepsea-strip-settings:hover,
+[data-theme="minimal-dark"] .deepsea-strip-settings:hover {
+  background: color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-surface));
+  color: var(--deepsea-primary);
+}
+
+[data-theme="minimal-light"] .deepsea-command-group,
+[data-theme="minimal-dark"] .deepsea-command-group,
+[data-theme="minimal-light"] .deepsea-project-switcher > button,
+[data-theme="minimal-dark"] .deepsea-project-switcher > button,
+[data-theme="minimal-light"] .deepsea-command-pill,
+[data-theme="minimal-dark"] .deepsea-command-pill {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface) 72%, transparent);
+  color: var(--deepsea-muted);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--deepsea-surface) 70%, transparent);
+}
+
+[data-theme="minimal-light"] .deepsea-command-pill:hover,
+[data-theme="minimal-dark"] .deepsea-command-pill:hover {
+  background: var(--deepsea-surface-strong);
+  color: var(--deepsea-primary);
+}
+
+[data-theme="minimal-light"] .deepsea-command-pill[data-primary="true"],
+[data-theme="minimal-dark"] .deepsea-command-pill[data-primary="true"] {
+  background: linear-gradient(180deg, var(--deepsea-primary-bright), var(--deepsea-primary));
+  color: var(--color-primary-fg);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--deepsea-primary) 24%, transparent);
+}
+
+[data-theme="minimal-light"] .deepsea-history,
+[data-theme="minimal-dark"] .deepsea-history,
+[data-theme="minimal-light"] .deepsea-inspector,
+[data-theme="minimal-dark"] .deepsea-inspector,
+[data-theme="minimal-light"] .deepsea-composer,
+[data-theme="minimal-dark"] .deepsea-composer,
+[data-theme="minimal-light"] .deepsea-bottom-status,
+[data-theme="minimal-dark"] .deepsea-bottom-status,
+[data-theme="minimal-light"] .deepsea-glass-card,
+[data-theme="minimal-dark"] .deepsea-glass-card,
+[data-theme="minimal-light"] .session-workflow-surface,
+[data-theme="minimal-dark"] .session-workflow-surface {
+  border-color: var(--deepsea-border);
+  background: var(--deepsea-surface-soft);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--deepsea-surface) 62%, transparent);
+}
+
+[data-theme="minimal-light"] .deepsea-history__header,
+[data-theme="minimal-dark"] .deepsea-history__header,
+[data-theme="minimal-light"] .deepsea-transcript__heading,
+[data-theme="minimal-dark"] .deepsea-transcript__heading,
+[data-theme="minimal-light"] .deepsea-inspector__header,
+[data-theme="minimal-dark"] .deepsea-inspector__header,
+[data-theme="minimal-light"] .deepsea-card__header,
+[data-theme="minimal-dark"] .deepsea-card__header {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface) 42%, transparent);
+}
+
+[data-theme="minimal-light"] .deepsea-search,
+[data-theme="minimal-dark"] .deepsea-search,
+[data-theme="minimal-light"] .deepsea-message[data-role="assistant"],
+[data-theme="minimal-dark"] .deepsea-message[data-role="assistant"],
+[data-theme="minimal-light"] .deepsea-agent-thought,
+[data-theme="minimal-dark"] .deepsea-agent-thought,
+[data-theme="minimal-light"] .deepsea-composer__field,
+[data-theme="minimal-dark"] .deepsea-composer__field,
+[data-theme="minimal-light"] .deepsea-tool-row,
+[data-theme="minimal-dark"] .deepsea-tool-row {
+  border-color: color-mix(in srgb, var(--deepsea-border) 78%, transparent);
+  background: color-mix(in srgb, var(--deepsea-surface) 54%, transparent);
+}
+
+[data-theme="minimal-light"] .deepsea-message[data-role="user"],
+[data-theme="minimal-dark"] .deepsea-message[data-role="user"] {
+  background: color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-surface));
+}
+
+[data-theme="minimal-light"] .deepsea-agent-thought__header,
+[data-theme="minimal-dark"] .deepsea-agent-thought__header,
+[data-theme="minimal-light"] .deepsea-composer__toolbar,
+[data-theme="minimal-dark"] .deepsea-composer__toolbar {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface) 34%, transparent);
 }
 .deepsea-shell {
   position: relative;
