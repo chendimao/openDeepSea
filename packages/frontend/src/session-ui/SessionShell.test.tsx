@@ -55,11 +55,10 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /会话计划/);
   assert.match(html, /代理运行/);
   assert.match(html, /工具调用/);
-  assert.match(html, /待提交变更/);
-  assert.match(html, /Uncommitted/);
-  assert.match(html, /1 文件已修改/);
+  assert.match(html, /本次会话变更/);
+  assert.match(html, /Session Changes/);
+  assert.match(html, /本会话 1 个文件变更/);
   assert.match(html, /\+12 \/ -3/);
-  assert.match(html, /存在未应用的 Compact 预览/);
   assert.match(html, /立即应用/);
   assert.match(html, /data-command="\/new"/);
   assert.match(html, /data-command="\/compact"/);
@@ -69,6 +68,18 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /Deepsea Command/);
   assert.doesNotMatch(html, /deepsea-model-status/);
   assert.doesNotMatch(html, /当前状态/);
+});
+
+test('SessionShell renders empty run state without fake run values', () => {
+  const payload = createPayload();
+  payload.activeSession.runs = [];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /暂无代理运行/);
+  assert.doesNotMatch(html, /deepsea-run-card/);
+  assert.doesNotMatch(html, /运行耗时/);
+  assert.doesNotMatch(html, new RegExp(['02', '14', '05'].join(':')));
 });
 
 test('SessionShell renders agent thought above run output without leaking runtime prompt', () => {
@@ -317,7 +328,7 @@ export function createPayload(): SessionWorkspacePayload {
         phase: 'implementing',
         status: 'active',
         provider: 'codex',
-        model: 'gpt-test',
+        model: 'gpt-5.5',
         workspace_path: '/workspace/openclaw',
         worktree_path: null,
         branch_name: 'feat/session-os',
@@ -346,7 +357,7 @@ export function createPayload(): SessionWorkspacePayload {
         session_id: 'session-1',
         agent_id: 'planner',
         provider: 'codex',
-        model: 'gpt-test',
+        model: 'gpt-5.5',
         status: 'completed',
         mode: 'code',
         phase: 'implementing',
@@ -442,7 +453,7 @@ export function createPayload(): SessionWorkspacePayload {
       },
       provider: {
         backend: 'codex',
-        model: 'gpt-test',
+        model: 'gpt-5.5',
         permissionMode: 'workspace-write',
       },
     },

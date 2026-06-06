@@ -40,7 +40,7 @@ function createPayload(): SessionWorkspacePayload {
         phase: 'implementing',
         status: 'active',
         provider: 'codex',
-        model: 'gpt-test',
+        model: 'gpt-5.5',
         workspace_path: '/workspace',
         worktree_path: null,
         branch_name: 'feat/session-os',
@@ -91,7 +91,7 @@ function createPayload(): SessionWorkspacePayload {
       },
       provider: {
         backend: 'codex',
-        model: 'gpt-test',
+        model: 'gpt-5.5',
         permissionMode: 'workspace-write',
       },
     },

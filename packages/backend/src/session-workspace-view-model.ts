@@ -336,7 +336,7 @@ function extractFileChangesFromEvidence(event: SessionEvidenceEvent): FileChange
 
   const toolName = evidenceToolName(event);
   const patchPath = patchInput ? extractPatchPath(patchInput) : null;
-  if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && patchPath) {
+  if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && patchInput && patchPath) {
     changes.push({
       path: patchPath,
       status: patchStatus(patchInput),
@@ -366,7 +366,7 @@ function extractFileChangesFromAgentEvent(event: SessionAgentEvent): FileChange[
     const toolName = firstString(candidate.name, candidate.toolName, candidate.tool_name);
     const input = firstString(candidate.input, candidate.arguments, candidate.rawInput);
     const patchPath = input ? extractPatchPath(input) : null;
-    if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && patchPath) {
+    if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && input && patchPath) {
       changes.push({
         path: patchPath,
         status: patchStatus(input),

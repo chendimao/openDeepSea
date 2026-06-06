@@ -381,7 +381,7 @@ function HistoryRail({
               <span className="deepsea-status-chip" data-tone="primary">运行中</span>
               <span className="deepsea-agent-mini">
                 <Brain aria-hidden="true" />
-                {formatProviderModel(activeSession.provider ?? 'codex', activeSession.model ?? 'gpt-test')}
+                {formatProviderModel(activeSession.provider ?? 'codex', activeSession.model)}
               </span>
             </div>
           </div>
@@ -834,7 +834,6 @@ function IntegratedInspector({
         <PlanModule items={payload.activeSession.planItems} />
         <RunModule
           run={activeRun}
-          status={payload.status}
           onCancelRun={onCancelRun}
           onRetryRun={onRetryRun}
         />
@@ -918,19 +917,26 @@ function ContractModule({
 
 function RunModule({
   run,
-  status,
   onCancelRun,
   onRetryRun,
 }: {
   run: SessionRun | null;
-  status: StatusSnapshot;
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
 }): JSX.Element {
-  const provider = run?.provider ?? status.provider.backend ?? 'codex';
-  const model = run?.model ?? status.provider.model ?? 'gpt-test';
-  const runLabel = run?.status ?? status.status;
-  const cancellable = Boolean(run && (run.status === 'queued' || run.status === 'running' || run.status === 'retrying'));
+  if (!run) {
+    return (
+      <section className="deepsea-inspector-section deepsea-run-section">
+        <h3>代理运行 (Active Run)</h3>
+        <div className="deepsea-empty">暂无代理运行</div>
+      </section>
+    );
+  }
+
+  const provider = run.provider;
+  const model = run.model;
+  const runLabel = run.status;
+  const cancellable = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
   return (
     <section className="deepsea-inspector-section deepsea-run-section">
       <h3>代理运行 (Active Run)</h3>
@@ -949,7 +955,7 @@ function RunModule({
             </div>
           </div>
           <div className="deepsea-run-card__time">
-            <strong className="deepsea-mono">{run ? formatDuration(run.started_at, run.completed_at ?? Date.now()) : '02:14:05'}</strong>
+            <strong className="deepsea-mono">{formatDuration(run.started_at, run.completed_at ?? Date.now())}</strong>
             <span>运行耗时</span>
           </div>
         </div>
@@ -963,7 +969,7 @@ function RunModule({
             <StopCircle aria-hidden="true" />
             停止
           </button>
-          <button type="button" aria-label="重新执行" disabled={!run} onClick={() => run && onRetryRun?.(run.id)}>
+          <button type="button" aria-label="重新执行" onClick={() => onRetryRun?.(run.id)}>
             <Repeat2 aria-hidden="true" />
             重试
           </button>
@@ -1076,11 +1082,11 @@ function DiffModule({
   rows: SessionDiffRow[];
   onCommand: (command: string) => void;
 }): JSX.Element {
-  const changedLabel = rows.length === 0 ? '工作区干净' : `${rows.length} 文件已修改`;
+  const changedLabel = rows.length === 0 ? '本会话暂无文件变更' : `本会话 ${rows.length} 个文件变更`;
   return (
     <section className="deepsea-diff-alert">
       <div className="deepsea-diff-alert__header">
-        <h3>待提交变更 <span>(Uncommitted)</span></h3>
+        <h3>本次会话变更 <span>(Session Changes)</span></h3>
         <span data-tone={rows.length === 0 ? 'muted' : 'danger'}>{changedLabel}</span>
       </div>
       <div className="deepsea-diff-card">
@@ -1089,7 +1095,7 @@ function DiffModule({
             <span className="deepsea-diff-row__index">0</span>
             <span className="deepsea-diff-row__file">
               <FileText aria-hidden="true" />
-              <em>working tree clean</em>
+              <em>no session changes</em>
             </span>
             <span className="deepsea-diff-row__status" data-tone="muted">
               <strong data-tone="muted">0</strong>
@@ -1111,7 +1117,6 @@ function DiffModule({
         ))}
       </div>
       <div className="deepsea-diff-alert__footer">
-        <p>存在未应用的 Compact 预览，Fork 可能丢失上下文</p>
         <div>
           <button type="button" onClick={() => onCommand('/compact')}>
             查看预览
@@ -1138,7 +1143,8 @@ function contextPressurePercent(pressure: StatusSnapshot['context']['pressure'])
   return 28;
 }
 
-function formatProviderModel(provider: string, model: string): string {
+function formatProviderModel(provider: string, model: string | null | undefined): string {
+  if (!model) return provider;
   if (provider === 'claude') return model.includes('Claude') ? model : `Claude ${model}`;
   if (provider === 'codex') return model.includes('gpt') ? model : `Codex ${model}`;
   return `${provider} ${model}`;
