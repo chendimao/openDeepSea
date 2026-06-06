@@ -212,9 +212,9 @@ export function buildSessionPlanItemsFromAcp(
   agentEvents: SessionAgentEvent[],
 ): SessionPlanItem[] {
   const latest = [
-    ...evidence.flatMap((event) => extractPlanEntryBatchFromEvidence(event)),
     ...agentEvents.flatMap((event) => extractPlanEntryBatchFromAgentEvent(event)),
-  ].at(-1);
+    ...evidence.flatMap((event) => extractPlanEntryBatchFromEvidence(event)),
+  ].sort((a, b) => a.createdAt - b.createdAt || a.sourceOrder - b.sourceOrder).at(-1);
   if (!latest) return [];
   return latest.entries.map((entry, index) => {
     const title = firstString(entry.title, entry.content, entry.text, entry.description) ?? `计划项 ${index + 1}`;
@@ -245,12 +245,17 @@ export function buildSessionDiffRowsFromAcp(
     ...evidence.flatMap(extractFileChangesFromEvidence),
     ...agentEvents.flatMap(extractFileChangesFromAgentEvent),
   ];
+  const seenSourceKeys = new Set<string>();
 
   for (const change of changes) {
+    if (change.sourceKey) {
+      if (seenSourceKeys.has(change.sourceKey)) continue;
+      seenSourceKeys.add(change.sourceKey);
+    }
     const existing = rows.get(change.path);
     rows.set(change.path, {
       path: change.path,
-      status: change.status ?? existing?.status ?? 'modified',
+      status: mergeDiffStatus(existing?.status ?? null, change.status),
       additions: addNullable(existing?.additions ?? null, change.additions),
       deletions: addNullable(existing?.deletions ?? null, change.deletions),
       summary: change.summary ?? existing?.summary ?? null,
@@ -265,6 +270,7 @@ type PlanEntryBatch = {
   sourceId: string;
   evidenceEventId: string | null;
   createdAt: number;
+  sourceOrder: number;
 };
 
 type FileChange = {
@@ -273,6 +279,7 @@ type FileChange = {
   additions: number | null;
   deletions: number | null;
   summary: string | null;
+  sourceKey: string | null;
 };
 
 function extractPlanEntryBatchFromEvidence(event: SessionEvidenceEvent): PlanEntryBatch[] {
@@ -283,6 +290,7 @@ function extractPlanEntryBatchFromEvidence(event: SessionEvidenceEvent): PlanEnt
     sourceId: event.id,
     evidenceEventId: event.id,
     createdAt: event.created_at,
+    sourceOrder: 1,
   }];
 }
 
@@ -295,6 +303,7 @@ function extractPlanEntryBatchFromAgentEvent(event: SessionAgentEvent): PlanEntr
     sourceId: event.id,
     evidenceEventId: null,
     createdAt: event.created_at,
+    sourceOrder: 0,
   }];
 }
 
@@ -331,19 +340,13 @@ function extractFileChangesFromEvidence(event: SessionEvidenceEvent): FileChange
       additions: firstNumber(eventPayload?.additions, event.payload.additions),
       deletions: firstNumber(eventPayload?.deletions, event.payload.deletions),
       summary: evidenceToolName(event) ?? firstString(event.summary, event.title),
+      sourceKey: fileChangeSourceKey('file_diff', path, eventPayload, event.payload),
     });
   }
 
   const toolName = evidenceToolName(event);
-  const patchPath = patchInput ? extractPatchPath(patchInput) : null;
-  if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && patchInput && patchPath) {
-    changes.push({
-      path: patchPath,
-      status: patchStatus(patchInput),
-      additions: null,
-      deletions: null,
-      summary: toolName,
-    });
+  if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && patchInput) {
+    changes.push(...extractPatchFileChanges(patchInput, toolName, fileChangeSourceKey('patch', null, eventPayload, event.payload)));
   }
   return changes;
 }
@@ -361,19 +364,13 @@ function extractFileChangesFromAgentEvent(event: SessionAgentEvent): FileChange[
         additions: firstNumber(candidate.additions),
         deletions: firstNumber(candidate.deletions),
         summary: firstString(candidate.name, candidate.title, event.event_type),
+        sourceKey: fileChangeSourceKey('file_diff', path, candidate),
       });
     }
     const toolName = firstString(candidate.name, candidate.toolName, candidate.tool_name);
     const input = firstString(candidate.input, candidate.arguments, candidate.rawInput);
-    const patchPath = input ? extractPatchPath(input) : null;
-    if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && input && patchPath) {
-      changes.push({
-        path: patchPath,
-        status: patchStatus(input),
-        additions: null,
-        deletions: null,
-        summary: toolName,
-      });
+    if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName) && input) {
+      changes.push(...extractPatchFileChanges(input, toolName, fileChangeSourceKey('patch', null, candidate)));
     }
   }
   return changes;
@@ -405,7 +402,25 @@ function expandPayloadCandidates(source: Record<string, unknown> | null): Record
   const payload = record(source.payload);
   const rawEvent = record(source.rawEvent);
   const rawEventPayload = record(rawEvent?.payload);
-  return [source, event, eventPayload, payload, rawEvent, rawEventPayload].filter(isRecord);
+  return [
+    source,
+    event,
+    withInheritedEventType(eventPayload, event),
+    payload,
+    rawEvent,
+    withInheritedEventType(rawEventPayload, rawEvent),
+  ].filter(isRecord);
+}
+
+function withInheritedEventType(
+  payload: Record<string, unknown> | null,
+  event: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!payload) return null;
+  const eventType = firstString(event?.type, event?.event_type, event?.rawType);
+  return eventType && !firstString(payload.type, payload.event_type, payload.rawType)
+    ? { ...payload, type: eventType }
+    : payload;
 }
 
 function normalizePlanStatus(value: string | null): SessionPlanItemStatus {
@@ -417,15 +432,70 @@ function normalizePlanStatus(value: string | null): SessionPlanItemStatus {
   return 'pending';
 }
 
-function extractPatchPath(input: string): string | null {
-  const match = /^\*\*\* (?:Update|Add|Delete) File: (.+)$/m.exec(input);
-  return match?.[1]?.trim() || null;
+function fileChangeSourceKey(
+  kind: 'file_diff' | 'patch',
+  path: string | null,
+  ...sources: Array<Record<string, unknown> | null>
+): string | null {
+  for (const source of sources) {
+    const event = record(source?.event);
+    const rawEvent = record(source?.rawEvent);
+    const key = firstString(
+      source?.tool_call_id,
+      source?.toolCallId,
+      source?.id,
+      source?.event_id,
+      source?.eventId,
+      event?.tool_call_id,
+      event?.toolCallId,
+      event?.id,
+      rawEvent?.tool_call_id,
+      rawEvent?.toolCallId,
+      rawEvent?.id,
+    );
+    if (key) return path ? `${kind}:${key}:${path}` : `${kind}:${key}`;
+  }
+  return null;
 }
 
-function patchStatus(input: string): SessionDiffRow['status'] {
-  if (/^\*\*\* Add File:/m.test(input)) return 'added';
-  if (/^\*\*\* Delete File:/m.test(input)) return 'deleted';
+function extractPatchPath(input: string): string | null {
+  return extractPatchFileChanges(input, null, null)[0]?.path ?? null;
+}
+
+function extractPatchFileChanges(input: string, summary: string | null, sourceKey: string | null): FileChange[] {
+  const changes: FileChange[] = [];
+  const headerPattern = /^\*\*\* (Update|Add|Delete) File: (.+)$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = headerPattern.exec(input)) !== null) {
+    const action = match[1];
+    const path = match[2]?.trim();
+    if (!action || !path) continue;
+    changes.push({
+      path,
+      status: patchHeaderStatus(action),
+      additions: null,
+      deletions: null,
+      summary,
+      sourceKey: sourceKey ? `${sourceKey}:${path}` : null,
+    });
+  }
+  return changes;
+}
+
+function patchHeaderStatus(action: string): SessionDiffRow['status'] {
+  if (action === 'Add') return 'added';
+  if (action === 'Delete') return 'deleted';
   return 'modified';
+}
+
+function mergeDiffStatus(
+  existing: SessionDiffRow['status'] | null,
+  next: SessionDiffRow['status'] | null,
+): SessionDiffRow['status'] {
+  if (!existing) return next ?? 'modified';
+  if (!next || next === 'modified') return existing;
+  if (existing === 'modified') return next;
+  return existing;
 }
 
 function addNullable(left: number | null, right: number | null): number | null {

@@ -133,6 +133,7 @@ export function TriggerPopover({
             return (
               <div
                 key={`group:${row.label}:${rowIndex}`}
+                role="presentation"
                 className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-fg-muted)] opacity-70">
                 {row.label}
               </div>

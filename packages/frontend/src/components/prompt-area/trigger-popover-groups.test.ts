@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { buildTriggerPopoverRows } from './trigger-popover-groups'
 import type { TriggerSuggestion } from './types'
@@ -27,4 +28,13 @@ test('buildTriggerPopoverRows inserts group headers when group changes', () => {
 test('buildTriggerPopoverRows keeps ungrouped suggestions selectable', () => {
   const rows = buildTriggerPopoverRows([{ value: 'plain', label: 'Plain' }])
   assert.deepEqual(rows, [{ type: 'item', suggestion: { value: 'plain', label: 'Plain' }, suggestionIndex: 0 }])
+})
+
+test('TriggerPopover marks group headers as presentational inside the listbox', () => {
+  const source = readFileSync(new URL('./trigger-popover.tsx', import.meta.url), 'utf8')
+
+  assert.match(
+    source,
+    /key=\{`group:\$\{row\.label\}:\$\{rowIndex\}`\}\s+role="presentation"/,
+  )
 })

@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import type { SessionAgentEvent } from './types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-session-view-model-')), 'test.db');
 
@@ -129,6 +130,46 @@ test('buildSessionPlanItemsFromAcp derives plan items from ACP plan_update evide
   ]);
 });
 
+test('buildSessionPlanItemsFromAcp selects the newest ACP plan batch across evidence and agent events', () => {
+  const project = projectRepo.create({
+    name: 'plan order project',
+    path: mkdtempSync(join(tmpdir(), 'session-plan-order-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Plan Order Session' });
+  const newerEvidence = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: '新计划',
+    payload: {
+      event: {
+        type: 'plan_update',
+        payload: {
+          entries: [{ id: 'new-plan', title: '新计划项', status: 'in_progress' }],
+        },
+      },
+    },
+  });
+  const olderAgentEvent = createAgentEvent({
+    sessionId: session.id,
+    id: 'older-agent-plan',
+    createdAt: newerEvidence.created_at - 10_000,
+    payload: {
+      event: {
+        type: 'plan_update',
+        payload: {
+          entries: [{ id: 'old-plan', title: '旧计划项', status: 'completed' }],
+        },
+      },
+    },
+  });
+
+  const items = buildSessionPlanItemsFromAcp(session.id, [newerEvidence], [olderAgentEvent]);
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.id, 'new-plan');
+  assert.equal(items[0]?.title, '新计划项');
+});
+
 test('buildSessionToolRows prefers ACP tool names and targets', () => {
   const project = projectRepo.create({
     name: 'tool acp project',
@@ -219,6 +260,228 @@ test('buildSessionDiffRowsFromAcp includes only ACP file changes and aggregates 
   }]);
 });
 
+test('buildSessionDiffRowsFromAcp does not double count the same ACP file diff from evidence and agent event', () => {
+  const project = projectRepo.create({
+    name: 'diff dedupe project',
+    path: mkdtempSync(join(tmpdir(), 'session-diff-dedupe-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Diff Dedupe Session' });
+  const payload = {
+    event: {
+      type: 'file_diff',
+      payload: {
+        tool_call_id: 'tool-diff-1',
+        path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+        additions: 12,
+        deletions: 3,
+      },
+    },
+  };
+  const evidence = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'file_diff',
+    title: '文件变更',
+    payload,
+  });
+  const agentEvent = createAgentEvent({
+    sessionId: session.id,
+    id: 'agent-diff-1',
+    createdAt: evidence.created_at,
+    payload: {
+      type: 'file_diff',
+      tool_call_id: 'tool-diff-1',
+      path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+      additions: 12,
+      deletions: 3,
+    },
+  });
+
+  const rows = buildSessionDiffRowsFromAcp([evidence], [agentEvent]);
+
+  assert.deepEqual(rows, [{
+    path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+    status: 'modified',
+    additions: 12,
+    deletions: 3,
+    summary: '文件变更',
+  }]);
+});
+
+test('buildSessionDiffRowsFromAcp keeps diff stats when a patch tool call and file diff share a tool id', () => {
+  const project = projectRepo.create({
+    name: 'diff tool id project',
+    path: mkdtempSync(join(tmpdir(), 'session-diff-tool-id-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Diff Tool Id Session' });
+  const patchEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'tool_call',
+    title: '调用工具 apply_patch',
+    payload: {
+      event: {
+        id: 'timeline-tool-1',
+        type: 'tool_call',
+        payload: {
+          id: 'tool-shared-1',
+          name: 'apply_patch',
+          input: '*** Update File: packages/frontend/src/session-ui/SessionShellView.tsx',
+        },
+      },
+    },
+  });
+  const diffEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'file_diff',
+    title: '文件变更',
+    payload: {
+      event: {
+        id: 'timeline-diff-1',
+        type: 'file_diff',
+        payload: {
+          tool_call_id: 'tool-shared-1',
+          path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+          additions: 12,
+          deletions: 3,
+        },
+      },
+    },
+  });
+
+  const rows = buildSessionDiffRowsFromAcp([patchEvent, diffEvent], []);
+
+  assert.deepEqual(rows, [{
+    path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+    status: 'modified',
+    additions: 12,
+    deletions: 3,
+    summary: '文件变更',
+  }]);
+});
+
+test('buildSessionDiffRowsFromAcp preserves specific patch status when merging later diff stats', () => {
+  const project = projectRepo.create({
+    name: 'diff patch status project',
+    path: mkdtempSync(join(tmpdir(), 'session-diff-patch-status-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Diff Patch Status Session' });
+  const patchEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'tool_call',
+    title: '调用工具 apply_patch',
+    payload: {
+      event: {
+        type: 'tool_call',
+        payload: {
+          id: 'tool-add-1',
+          name: 'apply_patch',
+          input: '*** Add File: packages/frontend/src/session-ui/new-panel.tsx',
+        },
+      },
+    },
+  });
+  const diffEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'file_diff',
+    title: '文件变更',
+    payload: {
+      event: {
+        type: 'file_diff',
+        payload: {
+          tool_call_id: 'tool-add-1',
+          path: 'packages/frontend/src/session-ui/new-panel.tsx',
+          additions: 5,
+          deletions: 0,
+        },
+      },
+    },
+  });
+
+  const rows = buildSessionDiffRowsFromAcp([patchEvent, diffEvent], []);
+
+  assert.deepEqual(rows, [{
+    path: 'packages/frontend/src/session-ui/new-panel.tsx',
+    status: 'added',
+    additions: 5,
+    deletions: 0,
+    summary: '文件变更',
+  }]);
+});
+
+test('buildSessionDiffRowsFromAcp extracts nested file diff payloads from ACP agent events', () => {
+  const project = projectRepo.create({
+    name: 'diff nested agent project',
+    path: mkdtempSync(join(tmpdir(), 'session-diff-nested-agent-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Diff Nested Agent Session' });
+  const agentEvent = createAgentEvent({
+    sessionId: session.id,
+    id: 'agent-nested-diff-1',
+    createdAt: Date.now(),
+    payload: {
+      event: {
+        id: 'timeline-diff-1',
+        type: 'file_diff',
+        payload: {
+          tool_call_id: 'tool-nested-1',
+          path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+          additions: 4,
+          deletions: 1,
+        },
+      },
+    },
+  });
+
+  const rows = buildSessionDiffRowsFromAcp([], [agentEvent]);
+
+  assert.deepEqual(rows, [{
+    path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+    status: 'modified',
+    additions: 4,
+    deletions: 1,
+    summary: 'status',
+  }]);
+});
+
+test('buildSessionDiffRowsFromAcp extracts every file from a multi-file apply_patch call', () => {
+  const project = projectRepo.create({
+    name: 'diff multi patch project',
+    path: mkdtempSync(join(tmpdir(), 'session-diff-multi-patch-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Diff Multi Patch Session' });
+  const patchEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'tool_call',
+    title: '调用工具 apply_patch',
+    payload: {
+      event: {
+        type: 'tool_call',
+        payload: {
+          name: 'apply_patch',
+          input: [
+            '*** Begin Patch',
+            '*** Update File: packages/frontend/src/session-ui/SessionShellView.tsx',
+            '@@',
+            '-old',
+            '+new',
+            '*** Add File: packages/frontend/src/session-ui/new-panel.tsx',
+            '+export const value = 1;',
+            '*** Delete File: packages/frontend/src/session-ui/old-panel.tsx',
+            '*** End Patch',
+          ].join('\n'),
+        },
+      },
+    },
+  });
+
+  const rows = buildSessionDiffRowsFromAcp([patchEvent], []);
+
+  assert.deepEqual(rows.map((row) => ({ path: row.path, status: row.status })), [
+    { path: 'packages/frontend/src/session-ui/SessionShellView.tsx', status: 'modified' },
+    { path: 'packages/frontend/src/session-ui/new-panel.tsx', status: 'added' },
+    { path: 'packages/frontend/src/session-ui/old-panel.tsx', status: 'deleted' },
+  ]);
+});
+
 test('buildSessionInspectorSnapshot combines plan, tool and session change rows', () => {
   const project = projectRepo.create({
     name: 'inspector project',
@@ -273,3 +536,23 @@ test('buildSessionBottomStatus derives response and error metrics from runs', ()
   assert.equal(rows.errorRate, 0.5);
   assert.equal(rows.indexStatus, 'unknown');
 });
+
+function createAgentEvent(input: {
+  sessionId: string;
+  id: string;
+  createdAt: number;
+  payload: Record<string, unknown>;
+}): SessionAgentEvent {
+  return {
+    id: input.id,
+    session_id: input.sessionId,
+    agent_id: 'planner',
+    run_id: 'run-1',
+    seq: 1,
+    channel: 'event',
+    event_type: 'status',
+    content: '',
+    payload_json: JSON.stringify(input.payload),
+    created_at: input.createdAt,
+  };
+}
