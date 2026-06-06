@@ -44,7 +44,7 @@ import type {
   SessionWorkspacePayload,
   StatusSnapshot,
 } from '../lib/types';
-import { evidenceTypeLabel, sessionStatusTone } from './session-ui-model';
+import { sessionStatusTone } from './session-ui-model';
 
 export function SessionShellView({
   payload,
@@ -474,6 +474,7 @@ function TranscriptCanvas({
   onCommand: (command: string) => void;
 }): JSX.Element {
   const messages = detail.messages.slice(-18);
+  const latestRuns = detail.runs.slice(-1);
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
       <div className="deepsea-transcript__scroll">
@@ -492,21 +493,26 @@ function TranscriptCanvas({
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
         ) : messages.map((message) => (
           <TranscriptMessage
-            evidence={evidence.filter((event) => event.source_message_id === message.id)}
             key={message.id}
             message={message}
           />
         ))}
 
-        {detail.runs.slice(-1).map((run) => (
-          <article className="deepsea-run-log" key={run.id}>
-            <div>
-              <span className="deepsea-status-chip" data-tone={run.status === 'failed' ? 'danger' : 'ok'}>ASSISTANT</span>
-              <time className="deepsea-mono">{formatClock(run.started_at)}</time>
-            </div>
-            <p>{run.stdout || run.stderr || run.activity_log || run.prompt || 'No output yet'}</p>
-          </article>
-        ))}
+        {latestRuns.map((run) => {
+          const runEvidence = evidence.filter((event) => event.source_run_id === run.id);
+          return (
+            <React.Fragment key={run.id}>
+              <AgentThoughtPanel run={run} evidence={runEvidence} />
+              <article className="deepsea-run-log">
+                <div>
+                  <span className="deepsea-status-chip" data-tone={run.status === 'failed' ? 'danger' : 'ok'}>ASSISTANT</span>
+                  <time className="deepsea-mono">{formatClock(run.started_at)}</time>
+                </div>
+                <p>{runOutputText(run)}</p>
+              </article>
+            </React.Fragment>
+          );
+        })}
       </div>
       <DeepseaComposer onCommand={onCommand} onSendMessage={onSendMessage} />
     </section>
@@ -515,10 +521,8 @@ function TranscriptCanvas({
 
 function TranscriptMessage({
   message,
-  evidence,
 }: {
   message: SessionMessage;
-  evidence: SessionEvidenceEvent[];
 }): JSX.Element {
   const role = message.role === 'assistant' ? 'ASSISTANT' : message.role.toUpperCase();
   return (
@@ -529,19 +533,32 @@ function TranscriptMessage({
         {(message.status === 'queued' || message.status === 'streaming') && <strong>思考中</strong>}
       </header>
       <p>{message.content}</p>
-      {evidence.length > 0 && (
-        <div className="deepsea-evidence-tray">
-          <div>
-            <FileText aria-hidden="true" />
-            <span>
-              <strong>证据摘要</strong>
-              <em>{evidence.length} 条记录，最近为 {evidenceTypeLabel(evidence[evidence.length - 1].event_type)}</em>
-            </span>
-          </div>
-          <ChevronDown aria-hidden="true" />
-        </div>
-      )}
     </article>
+  );
+}
+
+function AgentThoughtPanel({
+  run,
+  evidence,
+}: {
+  run: SessionRun;
+  evidence: SessionEvidenceEvent[];
+}): JSX.Element | null {
+  const thought = agentThoughtText(run, evidence);
+  if (!thought) return null;
+  const status = run.status === 'failed' ? 'RISK' : run.status === 'completed' ? 'VERIFIED' : 'RUNNING';
+  return (
+    <section className="deepsea-agent-thought" aria-label="智能体思考过程">
+      <div className="deepsea-agent-thought__header">
+        <span>
+          <Brain aria-hidden="true" />
+          <strong>智能体思考过程</strong>
+          <em>Agent Thought Process</em>
+        </span>
+        <mark>{status}</mark>
+      </div>
+      <p>{thought}</p>
+    </section>
   );
 }
 
@@ -749,6 +766,31 @@ function RunModule({
       </div>
     </section>
   );
+}
+
+function runOutputText(run: SessionRun): string {
+  const output = run.stdout.trim() || run.stderr.trim();
+  if (output) return output;
+  if (run.status === 'completed') return '未返回可展示回复。';
+  if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';
+  return '等待智能体输出...';
+}
+
+function agentThoughtText(run: SessionRun, evidence: SessionEvidenceEvent[]): string | null {
+  const activity = trimDisplayText(run.activity_log);
+  if (activity) return activity;
+  const evidenceText = evidence
+    .map((event) => trimDisplayText(event.summary ?? event.title))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join('\n');
+  return evidenceText || null;
+}
+
+function trimDisplayText(value: string | null | undefined): string {
+  const text = value?.trim() ?? '';
+  if (text.length <= 1200) return text;
+  return `${text.slice(0, 1200).trimEnd()}\n...`;
 }
 
 function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {

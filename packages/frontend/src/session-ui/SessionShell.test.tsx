@@ -59,6 +59,26 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /当前状态/);
 });
 
+test('SessionShell renders agent thought above run output without leaking runtime prompt', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.prompt = '本轮 prompt 来源由 SessionOS Context Inspector 记录。\n\n## Context Sources\n### AGENTS.md\n内部运行时提示不应显示';
+  run.status = 'running';
+  run.stdout = '';
+  run.stderr = '';
+  run.activity_log = '分析用户问题，检查会话上下文，并准备简短回复。';
+
+  const html = renderToStaticMarkup(
+    <SessionShellView payload={payload} onSendMessage={() => undefined} onCommand={() => undefined} />,
+  );
+
+  assert.doesNotMatch(html, /本轮 prompt 来源由 SessionOS Context Inspector 记录/);
+  assert.match(html, /智能体思考过程/);
+  assert.match(html, /分析用户问题，检查会话上下文，并准备简短回复。/);
+  assert.match(html, /等待智能体输出/);
+  assert.ok(html.indexOf('智能体思考过程') < html.indexOf('ASSISTANT'));
+});
+
 export function createPayload(): SessionWorkspacePayload {
   const now = Date.now();
   return {
