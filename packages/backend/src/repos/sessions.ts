@@ -193,15 +193,16 @@ export const sessionRunRepo = {
     phase?: SessionPhase | null;
     prompt: string;
     acp_session_id?: string | null;
+    runtime_profile_snapshot?: string | null;
   }): SessionRun {
     const id = nanoid(16);
     const timestamp = now();
     db.prepare(`
       INSERT INTO session_runs (
         id, session_id, agent_id, provider, model, status, mode, phase,
-        prompt, acp_session_id, started_at, updated_at
+        prompt, acp_session_id, runtime_profile_snapshot, started_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.session_id,
@@ -213,6 +214,7 @@ export const sessionRunRepo = {
       input.phase ?? null,
       input.prompt,
       input.acp_session_id ?? null,
+      input.runtime_profile_snapshot ?? null,
       timestamp,
       timestamp,
     );

@@ -82,7 +82,7 @@ function createProjectSession(req: { params: { projectId: string }; body: unknow
     title: parsed.data.title,
     current_goal: parsed.data.current_goal,
     mode: parsed.data.mode,
-    provider: parsed.data.provider ?? 'codex',
+    provider: parsed.data.provider ?? null,
     model: parsed.data.model,
     workspace_path: project.path,
   });

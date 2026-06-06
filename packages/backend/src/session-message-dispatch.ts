@@ -5,6 +5,7 @@ import {
   sessionRepo,
 } from './repos/sessions.js';
 import { createContextManifest } from './session.routes.js';
+import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import { runSessionAgent } from './session-runtime.js';
 import { wsHub } from './ws-hub.js';
 import type { Session, SessionMessage, SessionMode } from './types.js';
@@ -43,12 +44,15 @@ export function dispatchSessionUserMessage(input: {
     sessionId: updatedSession.id,
     message,
   });
+  const plannerRuntime = resolveSessionPlannerRuntime(updatedSession.project_id);
   void runSessionAgent({
     sessionId: updatedSession.id,
-    agentId,
+    agentId: plannerRuntime.agentId,
     prompt: buildRuntimePrompt(updatedSession, message.content),
-    provider: updatedSession.provider ?? 'codex',
+    provider: plannerRuntime.backend,
     model: updatedSession.model,
+    permissionMode: plannerRuntime.permissionMode,
+    runtimeProfileSnapshot: buildSessionPlannerRuntimeSnapshot(plannerRuntime),
   }).catch((error) => {
     const event = sessionEvidenceRepo.create({
       session_id: updatedSession.id,

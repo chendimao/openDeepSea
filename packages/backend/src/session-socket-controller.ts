@@ -149,7 +149,7 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
       title: command.args.blank ? 'New Session' : `继续：${record.title}`,
       current_goal: command.args.blank ? null : session.current_goal,
       mode: session.mode,
-      provider: session.provider ?? 'codex',
+      provider: session.provider,
       model: session.model,
       workspace_path: session.workspace_path ?? project.path,
     });
@@ -181,7 +181,7 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
       title: `Resume: ${record.title}`,
       current_goal: readGoalFromResumeBrief(record.resume_brief) ?? record.title,
       mode: record.mode,
-      provider: 'codex',
+      provider: null,
       workspace_path: project.path,
       forked_from_history_record_id: record.id,
     });
@@ -218,7 +218,7 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
         title: `Fork: ${record.title}`,
         current_goal: readGoalFromResumeBrief(record.resume_brief) ?? record.title,
         mode: record.mode,
-        provider: 'codex',
+        provider: null,
         workspace_path: recordProject.path,
         forked_from_history_record_id: record.id,
       });
@@ -548,7 +548,7 @@ function sendSessionWorkspaceSnapshot(socket: WebSocket, projectId: string, sess
       project_id: project.id,
       title: 'New Session',
       mode: 'ask',
-      provider: 'codex',
+      provider: null,
       workspace_path: project.path,
     });
   send(socket, {

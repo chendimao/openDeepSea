@@ -36,6 +36,7 @@ export async function runSessionAgent(input: {
   provider: AcpBackend;
   model?: string | null;
   permissionMode?: AcpPermissionMode | null;
+  runtimeProfileSnapshot?: string | null;
   imagePaths?: string[];
 }): Promise<SessionRun> {
   const session = requireSession(input.sessionId);
@@ -59,6 +60,7 @@ export async function runSessionAgent(input: {
     phase: session.phase,
     prompt: input.prompt,
     acp_session_id: reusableAcpSessionId,
+    runtime_profile_snapshot: input.runtimeProfileSnapshot ?? null,
   });
   sessionAgentRuntimeRepo.upsert({
     session_id: session.id,
@@ -139,6 +141,7 @@ export function retrySessionAgentRun(runId: string): void {
     prompt: run.prompt,
     provider: run.provider,
     model: run.model,
+    runtimeProfileSnapshot: run.runtime_profile_snapshot,
   }).catch((error) => {
     const event = sessionEvidenceRepo.create({
       session_id: run.session_id,

@@ -172,3 +172,34 @@ test('runSessionAgent records failed adapter as blocker evidence', async () => {
   assert.match(run.error ?? '', /adapter failed/);
   assert.ok(sessionEvidenceRepo.listBySession(session.id).some((event) => event.event_type === 'blocker'));
 });
+
+test('runSessionAgent stores runtime profile snapshot on session run', async () => {
+  const project = projectRepo.create({
+    name: 'runtime profile snapshot project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-profile-snapshot-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Snapshot',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'snapshot-acp', stderr: '' }),
+  });
+
+  const snapshot = JSON.stringify({ backend_source: 'builtin', permission_mode: 'read-only' });
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    agentId: 'planner',
+    prompt: '继续',
+    provider: 'codex',
+    runtimeProfileSnapshot: snapshot,
+  });
+
+  const stored = sessionRunRepo.get(run.id);
+  assert.equal(stored?.runtime_profile_snapshot, snapshot);
+});
