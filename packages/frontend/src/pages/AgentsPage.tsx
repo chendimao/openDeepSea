@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Bot, MessageCircleQuestion, Plus, RotateCcw, Save, Search, Trash2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { AgentConversationBuilder } from '../components/AgentConversationBuilder';
@@ -22,6 +23,7 @@ const EMPTY_FORM: AgentInput = {
 };
 
 export function AgentsPage() {
+  const [searchParams] = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [query, setQuery] = useState('');
@@ -44,8 +46,20 @@ export function AgentsPage() {
       `${agent.name} ${agent.agent_id} ${agent.description ?? ''}`.toLowerCase().includes(needle),
     );
   }, [agents, query]);
+  const requestedAgentGlobalId = searchParams.get('agentGlobalId');
+  const requestedAgentId = searchParams.get('agentId');
 
   useEffect(() => {
+    const requestedAgent = agents.find((agent) =>
+      (requestedAgentGlobalId && agent.id === requestedAgentGlobalId) ||
+      (requestedAgentId && agent.agent_id === requestedAgentId),
+    );
+    if (requestedAgent && selectedId !== requestedAgent.id) {
+      setSelectedId(requestedAgent.id);
+      setIsCreatingNew(false);
+      setMode('edit');
+      return;
+    }
     if (selectedAgent) {
       setForm(agentToForm(selectedAgent));
       setIsCreatingNew(false);
@@ -56,7 +70,7 @@ export function AgentsPage() {
       return;
     }
     if (agents.length === 0 && selectedId) setSelectedId(null);
-  }, [agents, isCreatingNew, mode, selectedAgent, selectedId]);
+  }, [agents, isCreatingNew, mode, requestedAgentGlobalId, requestedAgentId, selectedAgent, selectedId]);
 
   const create = useMutation({
     mutationFn: (input: AgentInput) => api.createAgent(cleanAgentInput(input)),

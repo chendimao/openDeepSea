@@ -421,6 +421,43 @@ export interface Agent {
   references?: AgentReference[];
 }
 
+export interface ProjectUsedAgentsPayload {
+  planner: {
+    kind: 'session_planner';
+    agent_id: 'planner';
+    name: string;
+    effective_acp_backend: AcpBackend;
+    project_override_acp_backend: AcpBackend | null;
+    backend_source: 'project' | 'builtin';
+    runtime_profile: {
+      permission_mode: AcpPermissionMode;
+      runtime_backend: AgentRuntimeBackend;
+      tool_policy: AgentToolPolicy;
+      workspace_policy: AgentWorkspacePolicy;
+      memory_scope: AgentMemoryScope;
+    };
+  };
+  agents: ProjectUsedRoomAgent[];
+}
+
+export interface ProjectUsedRoomAgent {
+  kind: 'room_agent';
+  global_agent_id: string | null;
+  agent_id: string;
+  name: string;
+  acp_enabled: boolean;
+  acp_backend: AcpBackend | null;
+  room_bindings: ProjectUsedRoomAgentBinding[];
+}
+
+export interface ProjectUsedRoomAgentBinding {
+  room_id: string;
+  room_name: string;
+  room_agent_id: string;
+  acp_backend: AcpBackend | null;
+  workflow_role: WorkflowRole | null;
+}
+
 export type AgentInput = {
   agent_id: string;
   name: string;

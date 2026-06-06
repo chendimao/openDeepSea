@@ -37,6 +37,7 @@ import {
 } from '../lib/theme';
 import {
   type Agent,
+  type AcpBackend,
   type AiConfig,
   type EffectiveSettings,
   type MessageRoutingMode,
@@ -60,6 +61,7 @@ type SettingsPatch = {
   auto_distill_enabled?: boolean | null;
   superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
   workspace_excluded_dirs?: string[] | null;
+  session_planner_acp_backend?: AcpBackend | null;
 };
 
 type SystemSettingsSavePatch = {
@@ -89,6 +91,8 @@ const SUPERPOWERS_BOOTSTRAP_OPTIONS: Array<{ value: SuperpowersBootstrapOwner; d
   { value: 'provider', descriptionKey: 'settings.superpowersBootstrap.provider.description' },
   { value: 'disabled', descriptionKey: 'settings.superpowersBootstrap.disabled.description' },
 ];
+
+const SESSION_PLANNER_BACKEND_OPTIONS: AcpBackend[] = ['codex', 'claudecode', 'opencode'];
 
 const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   message_routing_mode: 'fallback_reply',
@@ -202,6 +206,7 @@ export function ProjectSettingsDialog({
     mutationFn: (patch: SettingsPatch) => api.updateProjectSettings(project.id, patch),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['project-used-agents', project.id] });
       toast.success(t('settings.projectSaved'));
       setOpen(false);
     },
@@ -1107,6 +1112,9 @@ function ProjectSettingsForm({
       ? 'inherit'
       : Boolean(own.auto_distill_enabled),
   );
+  const [sessionPlannerBackend, setSessionPlannerBackend] = useState<AcpBackend | 'inherit'>(
+    own?.session_planner_acp_backend ?? 'inherit',
+  );
   const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
   const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
 
@@ -1124,6 +1132,7 @@ function ProjectSettingsForm({
               auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
               superpowers_bootstrap_owner: superpowersBootstrapOwner === 'inherit' ? null : superpowersBootstrapOwner,
               workspace_excluded_dirs: workspaceExcludedDirs,
+              session_planner_acp_backend: sessionPlannerBackend === 'inherit' ? null : sessionPlannerBackend,
             })
           }
         >
@@ -1164,10 +1173,21 @@ function ProjectSettingsForm({
           onModeChange={setSuperpowersBootstrapOwner}
         />
       </SettingGroup>
+      <SettingGroup title={t('settings.sessionPlannerAgent' as MessageKey)} icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
+        <SessionPlannerBackendSection
+          mode={sessionPlannerBackend}
+          inheritedLabel={t('settings.sessionPlannerBackend.inherit.description' as MessageKey)}
+          onModeChange={setSessionPlannerBackend}
+        />
+      </SettingGroup>
       <SettingGroup title={t('settings.workspaceExcludedDirs')} icon={<FolderX className="h-4 w-4" strokeWidth={1.75} />}>
         <ExcludedDirsEditor value={workspaceExcludedDirs} onChange={setWorkspaceExcludedDirs} />
       </SettingGroup>
-      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit' || superpowersBootstrapOwner !== 'inherit') && (
+      {(routingMode !== 'inherit' ||
+        interactionMode !== 'inherit' ||
+        autoDistillEnabled !== 'inherit' ||
+        superpowersBootstrapOwner !== 'inherit' ||
+        sessionPlannerBackend !== 'inherit') && (
         <ResetInheritanceButton
           onClick={() => {
             setRoutingMode('inherit');
@@ -1175,6 +1195,7 @@ function ProjectSettingsForm({
             setInteractionMode('inherit');
             setAutoDistillEnabled('inherit');
             setSuperpowersBootstrapOwner('inherit');
+            setSessionPlannerBackend('inherit');
           }}
         />
       )}
@@ -1485,6 +1506,37 @@ function SuperpowersBootstrapSection({
   );
 }
 
+function SessionPlannerBackendSection({
+  mode,
+  inheritedLabel,
+  onModeChange,
+}: {
+  mode: AcpBackend | 'inherit';
+  inheritedLabel: string;
+  onModeChange: (mode: AcpBackend | 'inherit') => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className="grid gap-2 md:grid-cols-4">
+      <OptionButton
+        active={mode === 'inherit'}
+        title={t('settings.inheritParentSettings')}
+        description={inheritedLabel}
+        onClick={() => onModeChange('inherit')}
+      />
+      {SESSION_PLANNER_BACKEND_OPTIONS.map((backend) => (
+        <OptionButton
+          key={backend}
+          active={mode === backend}
+          title={acpBackendLabel(backend, t)}
+          description={t(`settings.sessionPlannerBackend.${backend}.description` as MessageKey)}
+          onClick={() => onModeChange(backend)}
+        />
+      ))}
+    </div>
+  );
+}
+
 function OptionButton({
   active,
   title,
@@ -1566,6 +1618,13 @@ function InheritanceSummary({
           label={t('settings.superpowersBootstrapOwner')}
           value={superpowersBootstrapOwnerLabel(settings.effective.superpowers_bootstrap_owner, t)}
           source={settingsScopeLabel(settings.sources.superpowers_bootstrap_owner)}
+        />
+        <SummaryItem
+          label={t('settings.sessionPlannerAgent' as MessageKey)}
+          value={settings.effective.session_planner_acp_backend
+            ? acpBackendLabel(settings.effective.session_planner_acp_backend, t)
+            : t('settings.sessionPlannerBackend.inherit' as MessageKey)}
+          source={settingsScopeLabel(settings.sources.session_planner_acp_backend)}
         />
       </div>
       <p className="mt-2 leading-relaxed">
@@ -1688,4 +1747,11 @@ function superpowersBootstrapOwnerLabel(
   t: (key: MessageKey, vars?: Record<string, string>) => string,
 ): string {
   return t(`settings.superpowersBootstrap.${owner}` as MessageKey);
+}
+
+function acpBackendLabel(
+  backend: AcpBackend,
+  t: (key: MessageKey, vars?: Record<string, string>) => string,
+): string {
+  return t(`acp.backend.${backend}` as MessageKey);
 }

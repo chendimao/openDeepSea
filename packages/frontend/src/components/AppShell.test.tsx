@@ -41,7 +41,25 @@ test('AppShell renders the shared Deepsea header with system settings entry', ()
   assert.match(html, /聊天/);
   assert.match(html, /智能体/);
   assert.match(html, /资源/);
+  assert.doesNotMatch(html, /alt="Profile"/);
   assert.doesNotMatch(html, /projects\/project-1\/rooms/);
+});
+
+test('AppShell keeps profile avatar on non-session routes', () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/agents']}>
+          <AppShell theme="minimal-light" onThemeChange={() => undefined}>
+            <div>content</div>
+          </AppShell>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </I18nProvider>,
+  );
+
+  assert.match(html, /alt="Profile"/);
 });
 
 test('AppShell does not open a global websocket without a concrete subscription', () => {

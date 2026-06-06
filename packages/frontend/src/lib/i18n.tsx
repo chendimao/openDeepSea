@@ -550,6 +550,12 @@ const zhMessages = {
   'settings.superpowersBootstrap.project.description': '由 OpenDeepSea 在会话入口注入 using-superpowers。仅作为兼容回退使用。',
   'settings.superpowersBootstrap.provider.description': 'OpenDeepSea 不注入启动指令，交给 ACP provider 自身的 Superpowers 插件处理。',
   'settings.superpowersBootstrap.disabled.description': 'OpenDeepSea 和受控 ACP 环境都不主动注入 Superpowers 启动指令。',
+  'settings.sessionPlannerAgent': '会话规划智能体',
+  'settings.sessionPlannerBackend.inherit': '继承内置 Planner',
+  'settings.sessionPlannerBackend.inherit.description': '使用系统内置 Planner 的默认 ACP 后端；项目只保存覆盖值。',
+  'settings.sessionPlannerBackend.codex.description': '项目会话消息通过 Codex ACP 后端运行内置 Planner。',
+  'settings.sessionPlannerBackend.claudecode.description': '项目会话消息通过 Claude Code ACP 后端运行内置 Planner。',
+  'settings.sessionPlannerBackend.opencode.description': '项目会话消息通过 OpenCode ACP 后端运行内置 Planner。',
   'settings.workspaceExcludedDirs': '工作区排除目录',
   'settings.workspaceExcludedDirsDescription': '在文件搜索和目录浏览中额外排除的文件夹名称，追加到默认黑名单（node_modules、.git、dist 等）之上。',
   'settings.projectInfo': '项目信息',
@@ -583,6 +589,7 @@ const zhMessages = {
   'settings.scope.room': '群聊级',
   'settings.scope.project': '项目级',
   'settings.scope.system': '系统级',
+  'settings.scope.inherit': '继承',
   'projectRouting.updated': '项目消息路由已更新',
   'projectRouting.aria': '项目消息路由设置',
   'projectRouting.title': '项目消息路由',
@@ -1515,6 +1522,12 @@ const enMessages: Record<keyof typeof zhMessages, string> = {
   'settings.superpowersBootstrap.project.description': 'OpenDeepSea injects using-superpowers at session start. Keep this only as a compatibility fallback.',
   'settings.superpowersBootstrap.provider.description': 'OpenDeepSea skips bootstrap injection and lets the ACP provider Superpowers plugin handle it.',
   'settings.superpowersBootstrap.disabled.description': 'Neither OpenDeepSea nor the controlled ACP environment actively injects the Superpowers bootstrap.',
+  'settings.sessionPlannerAgent': 'Session planner agent',
+  'settings.sessionPlannerBackend.inherit': 'Inherit built-in Planner',
+  'settings.sessionPlannerBackend.inherit.description': 'Use the built-in Planner default ACP backend. The project only stores overrides.',
+  'settings.sessionPlannerBackend.codex.description': 'Run the built-in Planner for project session messages through the Codex ACP backend.',
+  'settings.sessionPlannerBackend.claudecode.description': 'Run the built-in Planner for project session messages through the Claude Code ACP backend.',
+  'settings.sessionPlannerBackend.opencode.description': 'Run the built-in Planner for project session messages through the OpenCode ACP backend.',
   'settings.workspaceExcludedDirs': 'Workspace excluded folders',
   'settings.workspaceExcludedDirsDescription': 'Additional folder names excluded from file search and directory browsing, appended to the default blacklist (node_modules, .git, dist, etc.).',
   'settings.projectInfo': 'Project information',
@@ -1548,6 +1561,7 @@ const enMessages: Record<keyof typeof zhMessages, string> = {
   'settings.scope.room': 'Room level',
   'settings.scope.project': 'Project level',
   'settings.scope.system': 'System level',
+  'settings.scope.inherit': 'Inherited',
   'projectRouting.updated': 'Project message routing updated',
   'projectRouting.aria': 'Project message routing settings',
   'projectRouting.title': 'Project message routing',
@@ -1970,7 +1984,7 @@ type I18nContextValue = {
   workflowStageLabel: (stage: WorkflowStage) => string;
   memoryScopeLabel: (scope: MemoryScope) => string;
   memoryTypeLabel: (type: MemoryType) => string;
-  settingsScopeLabel: (scope: SettingsScope) => string;
+  settingsScopeLabel: (scope: SettingsScope | 'inherit') => string;
 };
 
 const I18nContext = createContext<I18nContextValue | null>(null);

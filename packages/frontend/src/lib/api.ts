@@ -32,6 +32,7 @@ import type {
   PlatformSkillSummary,
   ProviderSuperpowersStatus,
   ProjectFile,
+  ProjectUsedAgentsPayload,
   ResourceDetail,
   ResourceListItem,
   Project,
@@ -251,6 +252,8 @@ export const api = {
     request<void>(`/agents/${id}`, { method: 'DELETE' }),
   restoreAgentDefaults: (id: string) =>
     request<Agent>(`/agents/${id}/restore-defaults`, { method: 'POST' }),
+  getProjectUsedAgents: (projectId: string) =>
+    request<ProjectUsedAgentsPayload>(`/projects/${projectId}/agents/used`),
 
   getSystemSettings: () => request<SettingsResolution['system']>('/settings/system'),
   updateSystemSettings: (input: {
@@ -312,6 +315,7 @@ export const api = {
       default_workflow_definition_id?: string | null;
       superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
       workspace_excluded_dirs?: string[] | null;
+      session_planner_acp_backend?: AcpBackend | null;
     },
   ) =>
     request<SettingsResolution>(`/projects/${projectId}/settings`, {
