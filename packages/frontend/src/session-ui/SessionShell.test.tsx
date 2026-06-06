@@ -111,6 +111,18 @@ test('SessionShell renders active sessions grouped under every project in the le
   assert.match(html, /data-project-session-row="true"/);
 });
 
+test('SessionShell renders project row actions for the active project tree', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /aria-label="打开 OpenClaw 项目操作菜单"/);
+  assert.match(html, /aria-label="新建 OpenClaw 会话"/);
+  assert.match(html, /在“访达”中打开/);
+  assert.match(html, /创建永久工作树/);
+  assert.match(html, /编辑名称/);
+  assert.match(html, /归档聊天/);
+  assert.match(html, /移除/);
+});
+
 test('SessionShell does not add an archived current session to the project tree fallback', () => {
   const payload = createPayload();
   payload.activeSessions = [];

@@ -1,13 +1,17 @@
 import {
+  Archive,
   Brain,
   CheckCircle2,
   ChevronDown,
   Edit3,
+  Ellipsis,
+  ExternalLink,
   FileText,
   Filter,
   FolderOpen,
   FolderPlus,
   GitFork,
+  GitBranch,
   MessageSquare,
   Minimize2,
   Plus,
@@ -17,8 +21,10 @@ import {
   Settings,
   ShieldCheck,
   Square,
+  SquarePen,
   StopCircle,
   Timer,
+  Trash2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import React, { useState } from 'react';
@@ -56,6 +62,7 @@ export function SessionShellView({
   onRetryRun,
   onSaveContract,
   onOpenSession,
+  onCreateSession,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -64,6 +71,7 @@ export function SessionShellView({
   onRetryRun?: (runId: string) => void;
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
+  onCreateSession?: (projectId: string) => void | Promise<void>;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
   const forkTarget = payload.historyRecords[0]?.id;
@@ -84,6 +92,7 @@ export function SessionShellView({
           currentProjectName={payload.project.name}
           onCommand={onCommand}
           onOpenSession={onOpenSession}
+          onCreateSession={onCreateSession}
         />
         <TranscriptCanvas
           detail={payload.activeSession}
@@ -336,6 +345,14 @@ type ProjectSessionTreeProject = {
 
 type ProjectSwitcherProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
 
+const projectActionMenuItems: Array<{ label: string; icon: LucideIcon; danger?: boolean }> = [
+  { label: '在“访达”中打开', icon: ExternalLink },
+  { label: '创建永久工作树', icon: GitBranch },
+  { label: '编辑名称', icon: SquarePen },
+  { label: '归档聊天', icon: Archive },
+  { label: '移除', icon: Trash2, danger: true },
+];
+
 function ProjectSessionTreeRail({
   projects = [],
   sessions = [],
@@ -344,6 +361,7 @@ function ProjectSessionTreeRail({
   currentProjectName,
   onCommand,
   onOpenSession,
+  onCreateSession,
 }: {
   projects?: ProjectSwitcherProject[];
   sessions?: ActiveSessionSummary[];
@@ -352,6 +370,7 @@ function ProjectSessionTreeRail({
   currentProjectName: string;
   onCommand: (command: string) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
+  onCreateSession?: (projectId: string) => void | Promise<void>;
 }): JSX.Element {
   const [q, setQ] = useState('');
   const normalizedQuery = q.trim().toLowerCase();
@@ -365,6 +384,7 @@ function ProjectSessionTreeRail({
   const [expandedProjectIds, setExpandedProjectIds] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(tree.map((project) => [project.id, true]))
   );
+  const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
   const visibleProjects = filterProjectSessionTree(tree, normalizedQuery);
 
   return (
@@ -413,6 +433,7 @@ function ProjectSessionTreeRail({
           const expanded = normalizedQuery
             ? true
             : expandedProjectIds[project.id] ?? true;
+          const projectMenuOpen = openProjectMenuId === project.id;
           return (
             <section
               className="deepsea-project-tree-section"
@@ -420,22 +441,78 @@ function ProjectSessionTreeRail({
               data-empty={project.sessions.length === 0 ? 'true' : undefined}
               key={project.id}
             >
-              <button
-                type="button"
-                className="deepsea-project-node__button"
-                aria-expanded={expanded}
-                onClick={() =>
-                  setExpandedProjectIds((current) => ({
-                    ...current,
-                    [project.id]: !(current[project.id] ?? true),
-                  }))
-                }
-              >
-                <FolderOpen aria-hidden="true" />
-                <span className="deepsea-project-node__label">
-                  <strong>{project.name}</strong>
-                </span>
-              </button>
+              <div className="deepsea-project-node">
+                <button
+                  type="button"
+                  className="deepsea-project-node__button"
+                  aria-expanded={expanded}
+                  onClick={() =>
+                    setExpandedProjectIds((current) => ({
+                      ...current,
+                      [project.id]: !(current[project.id] ?? true),
+                    }))
+                  }
+                >
+                  <FolderOpen aria-hidden="true" />
+                  <span className="deepsea-project-node__label">
+                    <strong>{project.name}</strong>
+                  </span>
+                </button>
+                <div className="deepsea-project-node__actions">
+                  <button
+                    type="button"
+                    className="deepsea-project-node__icon-button"
+                    aria-expanded={projectMenuOpen}
+                    aria-haspopup="menu"
+                    aria-label={`打开 ${project.name} 项目操作菜单`}
+                    onClick={() => setOpenProjectMenuId((current) => (current === project.id ? null : project.id))}
+                  >
+                    <Ellipsis aria-hidden="true" />
+                  </button>
+                  <div
+                    className="deepsea-project-node__menu"
+                    data-state={projectMenuOpen ? 'open' : 'closed'}
+                    role="menu"
+                    aria-hidden={projectMenuOpen ? undefined : true}
+                    aria-label={`${project.name} 项目操作`}
+                  >
+                    {projectActionMenuItems.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          type="button"
+                          className="deepsea-project-node__menu-item"
+                          data-danger={item.danger ? 'true' : undefined}
+                          data-disabled="true"
+                          data-project-menu-item={item.label}
+                          disabled
+                          key={item.label}
+                          role="menuitem"
+                        >
+                          <Icon aria-hidden="true" />
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    className="deepsea-project-node__icon-button"
+                    data-project-create-session={project.id}
+                    aria-label={`新建 ${project.name} 会话`}
+                    onClick={() => {
+                      setOpenProjectMenuId(null);
+                      if (onCreateSession) {
+                        void onCreateSession(project.id);
+                        return;
+                      }
+                      onCommand('/new');
+                    }}
+                  >
+                    <SquarePen aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
               {expanded && (
                 <div className="deepsea-project-node__sessions">
                   {project.sessions.length === 0 ? (

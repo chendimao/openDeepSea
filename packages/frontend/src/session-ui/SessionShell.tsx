@@ -11,6 +11,7 @@ export function SessionShell({
   onRetryRun,
   onSaveContract,
   onOpenSession,
+  onCreateSession,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -19,6 +20,7 @@ export function SessionShell({
   onRetryRun?: (runId: string) => void;
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
+  onCreateSession?: (projectId: string) => void | Promise<void>;
 }): JSX.Element {
   return (
     <SessionShellView
@@ -29,6 +31,7 @@ export function SessionShell({
       onRetryRun={onRetryRun}
       onSaveContract={onSaveContract}
       onOpenSession={onOpenSession}
+      onCreateSession={onCreateSession}
     />
   );
 }

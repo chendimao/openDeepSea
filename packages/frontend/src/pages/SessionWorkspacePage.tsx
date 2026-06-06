@@ -204,6 +204,25 @@ export function SessionWorkspacePage({
     );
   }
 
+  const createProjectSession = async (targetProjectId: string): Promise<void> => {
+    try {
+      const sourceSession = workspacePayload.activeSession.session;
+      const nextSession = await api.createSession(targetProjectId, {
+        title: 'New Session',
+        mode: sourceSession.mode,
+        provider: sourceSession.provider,
+        model: sourceSession.model,
+      });
+      if (navigationEnabled) {
+        navigate(`/projects/${targetProjectId}/sessions/${nextSession.id}`);
+        return;
+      }
+      sessionSocket.requestSessionWorkspace({ projectId: targetProjectId, sessionId: nextSession.id });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '新建会话失败');
+    }
+  };
+
   return (
     <>
     <SessionShell
@@ -231,6 +250,7 @@ export function SessionWorkspacePage({
         }
         sessionSocket.requestSessionWorkspace({ projectId, sessionId });
       }}
+      onCreateSession={createProjectSession}
     />
     {compactPreview && (
       <div className="session-overlay" role="dialog" aria-label="Compact Preview">
