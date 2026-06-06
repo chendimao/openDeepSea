@@ -6,6 +6,24 @@ export function applySessionWorkspaceEvent(
   event: WsServerEvent,
 ): SessionWorkspacePayload {
   if (!isActiveSessionEvent(payload, event)) return payload;
+  if (event.type === 'session:updated') {
+    return {
+      ...payload,
+      activeSession: {
+        ...payload.activeSession,
+        session: event.session,
+      },
+      projectSwitcher: {
+        ...payload.projectSwitcher,
+        projects: payload.projectSwitcher.projects.map((project) => ({
+          ...project,
+          recentSessions: project.recentSessions.map((session) =>
+            session.id === event.session.id ? { ...session, title: event.session.title, updated_at: event.session.updated_at } : session
+          ),
+        })),
+      },
+    };
+  }
   if (event.type === 'session_message:new') {
     if (payload.activeSession.messages.some((message) => message.id === event.message.id)) return payload;
     return {

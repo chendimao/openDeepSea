@@ -77,6 +77,38 @@ test('applySessionWorkspaceEvent does not duplicate messages or evidence', () =>
   assert.equal(twice.activeSession.messages.length, 1);
 });
 
+test('applySessionWorkspaceEvent applies active session title updates', () => {
+  const payload = createPayload('session-current');
+  payload.projectSwitcher.projects = [{
+    id: 'project-1',
+    name: 'Project',
+    path: '/tmp/project',
+    active: true,
+    recentSessions: [{
+      id: 'session-current',
+      title: 'Session',
+      status: 'active',
+      updated_at: payload.activeSession.session.updated_at,
+      href: '/projects/project-1/sessions/session-current',
+      source: 'session',
+    }],
+  }];
+  const event: WsServerEvent = {
+    type: 'session:updated',
+    sessionId: 'session-current',
+    session: {
+      ...payload.activeSession.session,
+      title: '用户在当前会话第一次发送消息...',
+      updated_at: Date.now() + 1000,
+    },
+  };
+
+  const next = applySessionWorkspaceEvent(payload, event);
+
+  assert.equal(next.activeSession.session.title, '用户在当前会话第一次发送消息...');
+  assert.equal(next.projectSwitcher.projects[0]?.recentSessions[0]?.title, '用户在当前会话第一次发送消息...');
+});
+
 function createPayload(sessionId: string): SessionWorkspacePayload {
   const now = Date.now();
   return {
@@ -130,6 +162,7 @@ function createPayload(sessionId: string): SessionWorkspacePayload {
         activity_log: '',
         error: null,
         acp_session_id: null,
+        runtime_profile_snapshot: null,
         started_at: now,
         updated_at: now,
         completed_at: null,
