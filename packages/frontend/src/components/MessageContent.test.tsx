@@ -317,6 +317,18 @@ test('renders markdown images as lazy previews with a safe referrer policy', () 
   assert.match(html, /<img src="\/uploads\/session-preview\.png" alt="架构截图" loading="lazy" decoding="async" referrerPolicy="no-referrer"\/>/);
 });
 
+test('rejects non-image-safe markdown image urls without affecting normal links', () => {
+  const html = renderMessage([
+    '![邮件](mailto:test@example.com)',
+    '![锚点](#preview)',
+    '[联系](mailto:test@example.com)',
+  ].join('\n'));
+
+  assert.doesNotMatch(html, /<img[^>]+src="mailto:test@example\.com"/);
+  assert.doesNotMatch(html, /<img[^>]+src="#preview"/);
+  assert.match(html, /<a href="mailto:test@example\.com" target="_blank" rel="noreferrer noopener">联系<\/a>/);
+});
+
 test('keeps soft line breaks readable in markdown text previews', () => {
   const html = renderMessage(['[日志](https://example.com/log)', '第一行', '第二行'].join('\n'));
 

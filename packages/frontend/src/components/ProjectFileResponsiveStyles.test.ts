@@ -22,4 +22,8 @@ test('file management styles keep source controls usable on desktop and mobile',
   assert.match(css, /@media \(max-width: 76[78]px\)\s*\{[\s\S]*?\.project-file-view\.is-card,[\s\S]*?grid-template-columns:\s*1fr/s);
   assert.match(css, /\.file-preview-dialog\s*\{[^}]*width:\s*min\(94vw, 1040px\)/s);
   assert.match(css, /\.file-preview-markdown\s*\{[^}]*max-height:\s*min\(72dvh, 720px\)/s);
+  assert.match(css, /(?:^|\n)\s{2}\.markdown-preview img\s*\{[^}]*max-width:\s*100%/s);
+  assert.match(css, /\.file-preview-markdown \.markdown-preview img\s*\{[^}]*max-width:\s*100%/s);
+  assert.match(css, /\.file-preview-markdown \.markdown-preview img\s*\{[^}]*max-height:\s*min\(560px, 64vh\)/s);
+  assert.match(css, /\.file-preview-markdown \.markdown-preview img\s*\{[^}]*object-fit:\s*contain/s);
 });

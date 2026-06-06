@@ -590,7 +590,7 @@ function createMarkdownComponents(
     td: ({ children }) => <td>{renderChildren(children)}</td>,
     th: ({ children }) => <th>{renderChildren(children)}</th>,
     img: ({ src, alt }) => {
-      const safeSrc = src ? sanitizeMarkdownHref(src) : null;
+      const safeSrc = src ? sanitizeMarkdownImageSrc(src) : null;
       if (!safeSrc) return null;
       return <img src={safeSrc} alt={alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" />;
     },
@@ -775,6 +775,19 @@ function sanitizeMarkdownHref(href: string): string | null {
   try {
     const url = new URL(trimmed);
     return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeMarkdownImageSrc(src: string): string | null {
+  const trimmed = src.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('/')) return trimmed;
+
+  try {
+    const url = new URL(trimmed);
+    return ['http:', 'https:'].includes(url.protocol) ? trimmed : null;
   } catch {
     return null;
   }

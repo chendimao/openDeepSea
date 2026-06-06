@@ -8197,6 +8197,22 @@
     text-underline-offset: 3px;
   }
 
+  .markdown-preview img {
+    display: block;
+    max-width: 100%;
+    max-height: min(560px, 64vh);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-fg) 4%, transparent);
+    object-fit: contain;
+  }
+
+  .file-preview-markdown .markdown-preview img {
+    max-width: 100%;
+    max-height: min(560px, 64vh);
+    object-fit: contain;
+  }
+
   .markdown-preview :not(pre) > code {
     border: 1px solid var(--color-border);
     border-radius: 4px;
