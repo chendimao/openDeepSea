@@ -127,7 +127,13 @@ test('sessionSocket queues session messages until websocket opens', async () => 
   try {
     const { sessionSocket } = await import(`./ws.ts?ws-send-test-${Date.now()}`);
     sessionSocket.subscribeSession('session-1');
-    sessionSocket.sendSessionMessage({ sessionId: 'session-1', content: '继续', agentId: 'planner' });
+    sessionSocket.sendSessionMessage({
+      sessionId: 'session-1',
+      content: '继续',
+      agentId: 'planner',
+      workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+      libraryFileRefs: ['asset:doc-1'],
+    });
     await new Promise((resolve) => setTimeout(resolve, 5));
     const socket = FakeWebSocket.instances[0]!;
     socket.readyState = FakeWebSocket.OPEN;
@@ -135,7 +141,14 @@ test('sessionSocket queues session messages until websocket opens', async () => 
 
     assert.deepEqual(socket.sent.map((payload) => JSON.parse(payload)), [
       { type: 'session:subscribe', sessionId: 'session-1' },
-      { type: 'session.message.send', sessionId: 'session-1', content: '继续', agentId: 'planner' },
+      {
+        type: 'session.message.send',
+        sessionId: 'session-1',
+        content: '继续',
+        agentId: 'planner',
+        workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+        libraryFileRefs: ['asset:doc-1'],
+      },
     ]);
     sessionSocket.destroy();
   } finally {

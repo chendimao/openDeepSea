@@ -1,10 +1,11 @@
 import { SendHorizontal } from 'lucide-react';
 import React, { useState } from 'react';
+import type { SessionComposerSubmit } from './session-file-composer-model';
 
 export function SessionComposer({
   onSendMessage,
 }: {
-  onSendMessage: (content: string) => void;
+  onSendMessage: (message: string | SessionComposerSubmit) => void;
 }): JSX.Element {
   const [content, setContent] = useState('');
 

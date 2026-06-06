@@ -1,6 +1,7 @@
 import React from 'react';
 import type { HistoryRecordStatus, SessionMode, SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView } from './SessionShellView';
+import type { SessionComposerSubmit } from './session-file-composer-model';
 
 export function SessionShell({
   payload,
@@ -12,7 +13,7 @@ export function SessionShell({
   onFilterHistory,
 }: {
   payload: SessionWorkspacePayload;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (message: SessionComposerSubmit) => void;
   onCommand: (command: string) => void;
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
@@ -22,7 +23,7 @@ export function SessionShell({
   return (
     <SessionShellView
       payload={payload}
-      onSendMessage={(message) => onSendMessage(message.content)}
+      onSendMessage={onSendMessage}
       onCommand={onCommand}
       onCancelRun={onCancelRun}
       onRetryRun={onRetryRun}

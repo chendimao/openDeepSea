@@ -90,7 +90,15 @@ export type WsClientEvent =
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }
-  | { type: 'session.message.send'; sessionId: string; content: string; agentId?: string; mode?: SessionMode }
+  | {
+      type: 'session.message.send';
+      sessionId: string;
+      content: string;
+      agentId?: string;
+      mode?: SessionMode;
+      workspaceFileRefs?: string[];
+      libraryFileRefs?: string[];
+    }
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
   | { type: 'agent.run.cancel'; sessionId: string; agentId: string; runId: string }
@@ -259,13 +267,22 @@ class RoomSocket {
     });
   }
 
-  sendSessionMessage(input: { sessionId: string; content: string; agentId?: string; mode?: SessionMode }): void {
+  sendSessionMessage(input: {
+    sessionId: string;
+    content: string;
+    agentId?: string;
+    mode?: SessionMode;
+    workspaceFileRefs?: string[];
+    libraryFileRefs?: string[];
+  }): void {
     this.sendOrQueue({
       type: 'session.message.send',
       sessionId: input.sessionId,
       content: input.content,
       ...(input.agentId ? { agentId: input.agentId } : {}),
       ...(input.mode ? { mode: input.mode } : {}),
+      ...(input.workspaceFileRefs && input.workspaceFileRefs.length > 0 ? { workspaceFileRefs: input.workspaceFileRefs } : {}),
+      ...(input.libraryFileRefs && input.libraryFileRefs.length > 0 ? { libraryFileRefs: input.libraryFileRefs } : {}),
     });
   }
 

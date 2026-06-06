@@ -18,6 +18,7 @@ import { sessionSocket, type WsServerEvent } from '../lib/ws';
 import { CompactPreviewSurface } from '../session-ui/CompactPreviewSurface';
 import { SessionShell } from '../session-ui/SessionShell';
 import { applySessionWorkspaceEvent } from '../session-ui/session-workspace-events';
+import type { SessionComposerSubmit } from '../session-ui/session-file-composer-model';
 
 type SessionWorkspacePageProps = {
   projectIdOverride?: string;
@@ -173,7 +174,7 @@ export function SessionWorkspacePage({
     <>
     <SessionShell
       payload={workspacePayload}
-      onSendMessage={(content) => runSessionCommand(content, workspacePayload, {
+      onSendMessage={(message) => runSessionCommand(message, workspacePayload, {
         sendMessage: (message) => sessionSocket.sendSessionMessage(message),
         runCommand: (message) => sessionSocket.runSessionCommand(message),
       })}
@@ -250,21 +251,36 @@ function isSessionWorkspaceEvent(event: WsServerEvent): boolean {
 type SessionCommandResult = { kind: 'noop' } | null;
 
 export function runSessionCommand(
-  content: string,
+  input: string | SessionComposerSubmit,
   payload: SessionWorkspacePayload,
-  input: {
-    sendMessage: (message: { sessionId: string; content: string; agentId?: string; mode?: SessionMode }) => void;
+  handlers: {
+    sendMessage: (message: {
+      sessionId: string;
+      content: string;
+      agentId?: string;
+      mode?: SessionMode;
+      workspaceFileRefs?: string[];
+      libraryFileRefs?: string[];
+    }) => void;
     runCommand: (message: { sessionId: string; command: string }) => void;
   },
 ): SessionCommandResult {
   const sessionId = payload.activeSession.session.id;
-  const trimmed = content.trim();
+  const message = typeof input === 'string' ? { content: input } : input;
+  const trimmed = message.content.trim();
   if (trimmed === '/resume' || trimmed === '/history') return { kind: 'noop' };
   if (trimmed.startsWith('/')) {
-    input.runCommand({ sessionId, command: trimmed });
+    handlers.runCommand({ sessionId, command: trimmed });
     return null;
   }
-  input.sendMessage({ sessionId, content, agentId: 'planner', mode: payload.activeSession.session.mode });
+  handlers.sendMessage({
+    sessionId,
+    content: message.content,
+    agentId: 'planner',
+    mode: payload.activeSession.session.mode,
+    ...(message.workspaceFileRefs && message.workspaceFileRefs.length > 0 ? { workspaceFileRefs: message.workspaceFileRefs } : {}),
+    ...(message.libraryFileRefs && message.libraryFileRefs.length > 0 ? { libraryFileRefs: message.libraryFileRefs } : {}),
+  });
   return null;
 }
 

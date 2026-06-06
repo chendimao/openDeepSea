@@ -3,13 +3,14 @@ import type { SessionDetail } from '../lib/types';
 import { ObjectiveContract } from './ObjectiveContract';
 import { SessionComposer } from './SessionComposer';
 import { SessionTranscript } from './SessionTranscript';
+import type { SessionComposerSubmit } from './session-file-composer-model';
 
 export function ActiveSessionSurface({
   detail,
   onSendMessage,
 }: {
   detail: SessionDetail;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (message: string | SessionComposerSubmit) => void;
 }): JSX.Element {
   const activeRun = [...detail.runs].reverse().find((run) =>
     run.status === 'queued' || run.status === 'running' || run.status === 'retrying'

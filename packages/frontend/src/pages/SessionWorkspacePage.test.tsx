@@ -91,7 +91,7 @@ test('runSessionCommand treats empty history command as local no-op', () => {
 });
 
 test('runSessionCommand sends normal messages through websocket callback', () => {
-  const sent: Array<{ sessionId: string; content: string; agentId?: string }> = [];
+  const sent: Array<{ sessionId: string; content: string; agentId?: string; mode?: string }> = [];
   const result = runSessionCommand('继续实现', createCommandPayload(), {
     sendMessage: (message) => sent.push(message),
     runCommand: () => undefined,
@@ -99,6 +99,50 @@ test('runSessionCommand sends normal messages through websocket callback', () =>
 
   assert.equal(result, null);
   assert.deepEqual(sent, [{ sessionId: 'session-1', content: '继续实现', agentId: 'planner', mode: 'code' }]);
+});
+
+test('runSessionCommand forwards session file refs on normal messages', () => {
+  const sent: Array<{
+    sessionId: string;
+    content: string;
+    agentId?: string;
+    mode?: string;
+    workspaceFileRefs?: string[];
+    libraryFileRefs?: string[];
+  }> = [];
+  const result = runSessionCommand({
+    content: '继续实现',
+    workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+    libraryFileRefs: ['asset:doc-1'],
+  }, createCommandPayload(), {
+    sendMessage: (message) => sent.push(message),
+    runCommand: () => undefined,
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(sent, [{
+    sessionId: 'session-1',
+    content: '继续实现',
+    agentId: 'planner',
+    mode: 'code',
+    workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+    libraryFileRefs: ['asset:doc-1'],
+  }]);
+});
+
+test('runSessionCommand does not attach refs to slash commands', () => {
+  const commands: Array<{ sessionId: string; command: string }> = [];
+  const result = runSessionCommand({
+    content: '/compact',
+    workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+    libraryFileRefs: ['asset:doc-1'],
+  }, createCommandPayload(), {
+    sendMessage: () => undefined,
+    runCommand: (message) => commands.push(message),
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(commands, [{ sessionId: 'session-1', command: '/compact' }]);
 });
 
 test('shouldRefreshSessionWorkspace skips unfinished stream events', () => {
