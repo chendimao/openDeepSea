@@ -252,6 +252,81 @@ test('buildSessionToolRows includes legacy status evidence with raw ACP tool typ
   assert.equal(rows[0]?.status, 'running');
 });
 
+test('buildSessionToolRows merges ACP tool updates with execution detail and duration', () => {
+  const project = projectRepo.create({
+    name: 'raw output tool project',
+    path: mkdtempSync(join(tmpdir(), 'session-raw-output-tool-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Raw Output Tool Session' });
+  const startedAt = 1_780_000_001_000;
+  const completedAt = 1_780_000_004_250;
+  const startEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: 'tool_call',
+    payload: {
+      rawType: 'tool_call',
+      rawEvent: {
+        params: {
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: 'call-shell-1',
+            kind: 'execute',
+            status: 'in_progress',
+            title: 'echo hi',
+            rawInput: {
+              call_id: 'call-shell-1',
+              started_at_ms: startedAt,
+              command: ['/bin/zsh', '-lc', 'echo hi'],
+              cwd: '/workspace',
+            },
+          },
+        },
+      },
+    },
+  });
+  const updateEvent = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: 'tool_call_update',
+    payload: {
+      rawType: 'tool_call_update',
+      rawEvent: {
+        params: {
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'call-shell-1',
+            status: 'completed',
+            rawOutput: {
+              call_id: 'call-shell-1',
+              started_at_ms: startedAt,
+              completed_at_ms: completedAt,
+              command: ['/bin/zsh', '-lc', 'echo hi'],
+              cwd: '/workspace',
+              stdout: 'hi\n',
+              stderr: '',
+              exit_code: 0,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const rows = buildSessionToolRows([startEvent, updateEvent]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.target, 'echo hi');
+  assert.equal(rows[0]?.status, 'completed');
+  assert.equal(rows[0]?.durationMs, 3250);
+  assert.equal(rows[0]?.command, 'echo hi');
+  assert.equal(rows[0]?.output, 'hi');
+  assert.match(rows[0]?.detail ?? '', /\$ echo hi/);
+  assert.match(rows[0]?.detail ?? '', /hi/);
+  assert.equal(rows[0]?.startedAt, startedAt);
+  assert.equal(rows[0]?.completedAt, completedAt);
+});
+
 test('buildSessionDiffRowsFromAcp includes only ACP file changes and aggregates duplicate files', () => {
   const project = projectRepo.create({
     name: 'diff acp project',

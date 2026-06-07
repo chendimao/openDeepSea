@@ -7,6 +7,7 @@ import type {
   SessionBottomStatus,
   SessionDiffRow,
   SessionEvidenceEvent,
+  SessionEvidenceSeverity,
   SessionEvidenceType,
   SessionPlanItem,
   SessionPlanItemStatus,
@@ -27,6 +28,7 @@ const TOOL_EVIDENCE_TYPES = new Set<SessionEvidenceType>([
   'build',
   'browser_check',
 ]);
+const MAX_TOOL_DETAIL_CHARS = 12_000;
 
 export function buildSessionProjectSwitcher(activeProjectId: string): SessionProjectSwitcher {
   const projects = projectRepo.list().map((project) => ({
@@ -112,24 +114,228 @@ function readUsageValue(usage: object, keys: string[]): number {
 }
 
 export function buildSessionToolRows(evidence: SessionEvidenceEvent[]): SessionToolRow[] {
-  return evidence
-    .filter(isToolEvidence)
-    .slice(-20)
-    .map((event) => ({
-      id: event.id,
-      action: evidenceAction(event),
-      label: evidenceLabel(event),
-      target: evidenceTarget(event),
-      status: evidenceStatus(event),
-      durationMs: firstNumber(event.payload.durationMs, acpEventPayload(event)?.durationMs),
-      severity: event.severity,
-      eventId: event.id,
-      created_at: event.created_at,
-    }));
+  const rows: SessionToolRow[] = [];
+  const rowIndexesByCallId = new Map<string, number>();
+  for (const event of evidence.filter(isToolEvidence)) {
+    const row = buildToolRow(event);
+    const callId = evidenceToolCallId(event);
+    const existingIndex = callId ? rowIndexesByCallId.get(callId) : undefined;
+    if (existingIndex !== undefined) {
+      rows[existingIndex] = mergeToolRows(rows[existingIndex]!, row);
+      continue;
+    }
+    if (callId) rowIndexesByCallId.set(callId, rows.length);
+    rows.push(row);
+  }
+  return rows.slice(-20);
 }
 
 function isToolEvidence(event: SessionEvidenceEvent): boolean {
   return effectiveToolEvidenceType(event) !== null;
+}
+
+function buildToolRow(event: SessionEvidenceEvent): SessionToolRow {
+  const command = evidenceCommand(event);
+  const output = evidenceOutput(event);
+  const startedAt = evidenceStartedAt(event);
+  const completedAt = evidenceCompletedAt(event);
+  return {
+    id: event.id,
+    action: evidenceAction(event),
+    label: evidenceLabel(event),
+    target: evidenceTarget(event),
+    status: evidenceStatus(event),
+    durationMs: evidenceDurationMs(event, startedAt, completedAt),
+    command,
+    output,
+    detail: buildToolDetail(command, output, event),
+    startedAt,
+    completedAt,
+    severity: event.severity,
+    eventId: event.id,
+    created_at: event.created_at,
+  };
+}
+
+function mergeToolRows(left: SessionToolRow, right: SessionToolRow): SessionToolRow {
+  const command = right.command ?? left.command ?? null;
+  const output = right.output ?? left.output ?? null;
+  const detail = right.detail ?? left.detail ?? null;
+  const startedAt = firstNumber(left.startedAt, right.startedAt);
+  const completedAt = firstNumber(right.completedAt, left.completedAt);
+  return {
+    ...left,
+    action: right.action === 'tool' ? left.action : right.action,
+    label: isGenericToolLabel(right.label) ? left.label : right.label,
+    target: isGenericToolTarget(right.target) ? left.target : right.target,
+    status: mergeToolStatus(left.status, right.status),
+    durationMs: right.durationMs ?? left.durationMs ?? (
+      startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null
+    ),
+    command,
+    output,
+    detail,
+    startedAt,
+    completedAt,
+    severity: mergeSeverity(left.severity, right.severity),
+    eventId: right.eventId,
+  };
+}
+
+function evidenceToolCallId(event: SessionEvidenceEvent): string | null {
+  const rawUpdate = acpRawUpdate(event);
+  const rawInput = record(rawUpdate?.rawInput);
+  const rawOutput = acpRawOutput(event);
+  const eventPayload = acpEventPayload(event);
+  return firstString(
+    rawUpdate?.toolCallId,
+    rawUpdate?.tool_call_id,
+    rawInput?.call_id,
+    rawInput?.toolCallId,
+    rawOutput?.call_id,
+    rawOutput?.toolCallId,
+    eventPayload?.tool_call_id,
+    eventPayload?.toolCallId,
+    event.payload.tool_call_id,
+    event.payload.toolCallId,
+  );
+}
+
+function evidenceCommand(event: SessionEvidenceEvent): string | null {
+  const trace = record(event.payload.trace);
+  const rawUpdate = acpRawUpdate(event);
+  const rawInput = record(rawUpdate?.rawInput);
+  const rawOutput = acpRawOutput(event);
+  return firstString(
+    rawInputCommand(rawOutput),
+    rawInputCommand(rawInput),
+    trace?.command,
+    event.payload.command,
+  );
+}
+
+function evidenceOutput(event: SessionEvidenceEvent): string | null {
+  const rawOutput = acpRawOutput(event);
+  const stdout = firstString(rawOutput?.stdout, rawOutput?.output, rawOutput?.aggregated_output, rawOutput?.formatted_output);
+  const stderr = firstString(rawOutput?.stderr);
+  const content = extractToolContentText(rawOutput?.content);
+  const parts = [
+    stdout,
+    stderr ? `[stderr]\n${stderr}` : null,
+    content,
+  ].filter((part): part is string => Boolean(part));
+  return trimToolDetail(parts.join('\n\n')) || null;
+}
+
+function evidenceStartedAt(event: SessionEvidenceEvent): number | null {
+  const rawUpdate = acpRawUpdate(event);
+  const rawInput = record(rawUpdate?.rawInput);
+  const rawOutput = acpRawOutput(event);
+  return firstNumber(
+    event.payload.startedAt,
+    event.payload.started_at,
+    rawOutput?.started_at_ms,
+    rawOutput?.startedAt,
+    rawInput?.started_at_ms,
+    rawInput?.startedAt,
+  );
+}
+
+function evidenceCompletedAt(event: SessionEvidenceEvent): number | null {
+  const rawUpdate = acpRawUpdate(event);
+  const rawOutput = acpRawOutput(event);
+  return firstNumber(
+    event.payload.completedAt,
+    event.payload.completed_at,
+    rawOutput?.completed_at_ms,
+    rawOutput?.completedAt,
+    rawUpdate?.completed_at_ms,
+    rawUpdate?.completedAt,
+  );
+}
+
+function evidenceDurationMs(
+  event: SessionEvidenceEvent,
+  startedAt: number | null,
+  completedAt: number | null,
+): number | null {
+  const eventPayload = acpEventPayload(event);
+  const rawUpdate = acpRawUpdate(event);
+  const rawOutput = acpRawOutput(event);
+  const explicit = firstNumber(
+    event.payload.durationMs,
+    eventPayload?.durationMs,
+    rawUpdate?.durationMs,
+    rawOutput?.durationMs,
+  );
+  if (explicit !== null) return explicit;
+  return startedAt !== null && completedAt !== null
+    ? Math.max(0, completedAt - startedAt)
+    : null;
+}
+
+function buildToolDetail(command: string | null, output: string | null, event: SessionEvidenceEvent): string | null {
+  const rawOutput = acpRawOutput(event);
+  const exitCode = firstNumber(rawOutput?.exit_code, rawOutput?.exitCode);
+  const parts = [
+    command ? `$ ${command}` : null,
+    output,
+    exitCode !== null ? `退出码 ${exitCode}` : null,
+  ].filter((part): part is string => Boolean(part));
+  return trimToolDetail(parts.join('\n\n')) || null;
+}
+
+function acpRawOutput(event: SessionEvidenceEvent): Record<string, unknown> | null {
+  const rawUpdate = acpRawUpdate(event);
+  return record(rawUpdate?.rawOutput) ?? record(rawUpdate?.output);
+}
+
+function extractToolContentText(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  const parts = value.flatMap((item) => {
+    const itemRecord = record(item);
+    const content = record(itemRecord?.content);
+    return firstString(content?.text, itemRecord?.text) ?? [];
+  });
+  return parts.join('\n').trim() || null;
+}
+
+function trimToolDetail(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= MAX_TOOL_DETAIL_CHARS) return trimmed;
+  return `${trimmed.slice(0, MAX_TOOL_DETAIL_CHARS).trimEnd()}\n\n[已截断]`;
+}
+
+function isGenericToolLabel(value: string): boolean {
+  return value === 'tool_call' || value === 'tool_call_update' || value === 'exec_command';
+}
+
+function isGenericToolTarget(value: string): boolean {
+  return value === 'tool_call' || value === 'tool_call_update';
+}
+
+function mergeToolStatus(
+  left: SessionToolRow['status'],
+  right: SessionToolRow['status'],
+): SessionToolRow['status'] {
+  if (right === 'failed' || left === 'failed') return 'failed';
+  if (right === 'completed') return 'completed';
+  if (left === 'completed') return 'completed';
+  if (right === 'running' || left === 'running') return 'running';
+  return right === 'unknown' ? left : right;
+}
+
+function mergeSeverity(
+  left: SessionEvidenceSeverity,
+  right: SessionEvidenceSeverity,
+): SessionEvidenceSeverity {
+  const rank: Record<SessionEvidenceSeverity, number> = {
+    info: 0,
+    warning: 1,
+    error: 2,
+    critical: 3,
+  };
+  return rank[right] > rank[left] ? right : left;
 }
 
 function evidenceAction(event: SessionEvidenceEvent): SessionToolRow['action'] {

@@ -1186,6 +1186,14 @@ function ToolDetailDialog({ row, onClose }: { row: SessionToolRow; onClose: () =
           <span>目标</span>
           <code>{row.target}</code>
         </div>
+        <div className="deepsea-tool-detail-dialog__execution">
+          <span>执行内容</span>
+          {row.detail || row.output ? (
+            <pre>{row.detail ?? row.output}</pre>
+          ) : (
+            <p>暂无执行内容</p>
+          )}
+        </div>
         <dl className="deepsea-tool-detail-grid">
           <div>
             <dt>状态</dt>
