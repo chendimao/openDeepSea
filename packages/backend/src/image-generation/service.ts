@@ -24,6 +24,10 @@ import {
   type ImageProviderProfileRepository,
 } from './provider-profiles.js';
 import { ImageGenerationQueue } from './queue.js';
+import {
+  assertSessionCanReceiveImageGenerationJob,
+  recordSessionImageGenerationJobMessage,
+} from '../session-message-dispatch.js';
 
 const DEFAULT_WAIT_TIMEOUT_MS = 120000;
 const DEFAULT_POLL_INTERVAL_MS = 250;
@@ -112,6 +116,7 @@ async function createJob(
 ): Promise<{ job: ImageGenerationJob; outputs: ImageGenerationOutput[] }> {
   const jobRepo = deps.jobRepo ?? imageGenerationJobRepo;
   assertValidImageCount(input.count);
+  assertSessionCanReceiveImageGenerationJob(input.project_id, input.session_id);
   const sourceFiles = resolveSourceFiles(input);
   const { source_file_ids: _sourceFileIds, ...jobInput } = input;
   const job = jobRepo.create(jobInput);
@@ -124,6 +129,9 @@ async function createJob(
     });
   });
   publishJobEvent(deps, 'image_job:created', job);
+  if (job.session_id) {
+    recordSessionImageGenerationJobMessage({ sessionId: job.session_id, job });
+  }
   queue.enqueue(job.id);
   return { job, outputs: jobRepo.listOutputs(job.id) };
 }

@@ -14,7 +14,7 @@ const { fileRepo } = await import('../repos/files.js');
 const { messageRepo } = await import('../repos/messages.js');
 const { projectRepo } = await import('../repos/projects.js');
 const { roomRepo } = await import('../repos/rooms.js');
-const { sessionRepo } = await import('../repos/sessions.js');
+const { sessionMessageRepo, sessionRepo } = await import('../repos/sessions.js');
 const { taskRepo } = await import('../repos/tasks.js');
 const { router } = await import('../routes.js');
 const { imageGenerationJobRepo } = await import('./jobs.js');
@@ -320,6 +320,52 @@ test('image job route validates project boundaries and image-to-image source fil
   assert.equal(completed.job.status, 'completed');
   assert.equal(capturedSourceCount, 1);
   assert.equal(imageGenerationJobRepo.listSourceImages(created.job.id)[0]?.file_id, sourceFile.id);
+});
+
+test('image job route records a session status message when created from a session', async () => {
+  const project = createProjectForTest('session-job-message');
+  const profile = createActiveProfile(project.id);
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Session Image Job',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async () => ({ images: [{ data: Buffer.from('session-image'), mimeType: 'image/png' }] }),
+  });
+  setImageGenerationRouteDeps({ service });
+
+  const createRes = await request(`/api/projects/${project.id}/image-jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: session.id,
+      provider_profile_id: profile.id,
+      workflow: 'generate',
+      prompt: 'session apple',
+      count: 1,
+      quality: 'auto',
+      size: 'auto',
+    }),
+  });
+
+  assert.equal(createRes.status, 202);
+  const created = await createRes.json() as { job: ImageGenerationJob };
+  const [message] = sessionMessageRepo.listBySession(session.id);
+  assert.equal(message?.role, 'system');
+  assert.equal(message?.sender_id, 'image-generation');
+  assert.equal(message?.message_type, 'system');
+  assert.match(message?.content ?? '', /session apple/);
+  const metadata = JSON.parse(message?.metadata ?? '{}') as {
+    image_generation_job_id?: string;
+    attachments?: unknown[];
+  };
+  assert.equal(metadata.image_generation_job_id, created.job.id);
+  assert.equal(metadata.attachments, undefined);
 });
 
 test('image job routes hide cross project resources', async () => {

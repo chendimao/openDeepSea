@@ -299,6 +299,29 @@ test('image generation service validates count before creating or running jobs',
   );
 });
 
+test('image generation service rejects session jobs outside the project before creating jobs', async () => {
+  const { project, profile } = createFixture('session-project-boundary');
+  const other = createFixture('session-project-boundary-other');
+  const foreignSession = sessionRepo.create({
+    project_id: other.project.id,
+    title: 'Foreign Image Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: other.project.path,
+  });
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async () => imageResponse('unused'),
+  });
+
+  await assert.rejects(
+    service.createJob(createJobInput(project.id, profile.id, { session_id: foreignSession.id })),
+    /session project mismatch/,
+  );
+  assert.deepEqual(imageGenerationJobRepo.listByProject(project.id), []);
+});
+
 test('image generation service project scoped methods reject cross project jobs', async () => {
   const { project, profile } = createFixture('project-boundary');
   const other = createFixture('project-boundary-other');
@@ -404,12 +427,14 @@ test('image generation service broadcasts one event per socket across project se
   }));
   await service.waitForCompletion(created.job.id);
 
-  assert.deepEqual(sent.map((payload) => JSON.parse(payload).type), [
+  const eventTypes = sent.map((payload) => JSON.parse(payload).type as string);
+  assert.deepEqual(eventTypes.filter((type) => type.startsWith('image_job:')), [
     'image_job:created',
     'image_job:updated',
     'image_job:output_added',
     'image_job:completed',
   ]);
+  assert.equal(eventTypes.filter((type) => type === 'session_message:new').length, 1);
   wsHub.removeSocket(socket);
 });
 

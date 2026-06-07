@@ -15,6 +15,7 @@ import { runSessionAgent } from './session-runtime.js';
 import { wsHub } from './ws-hub.js';
 import { isIgnoredWorkspacePath, normalizeWorkspacePath, resolveWorkspacePath } from './workspace-files.js';
 import type { MessageAttachmentMetadata, ProjectFile, Session, SessionMessage, SessionMode } from './types.js';
+import type { ImageGenerationJob, ImageGenerationOutput } from './image-generation/types.js';
 
 const DEFAULT_SESSION_TITLE = 'New Session';
 const AUTO_SESSION_TITLE_LIMIT = 25;
@@ -103,6 +104,43 @@ export async function dispatchSessionUserMessage(input: {
   return message;
 }
 
+export function assertSessionCanReceiveImageGenerationJob(
+  projectId: string,
+  sessionId: string | null | undefined,
+): void {
+  if (!sessionId) return;
+  const session = sessionRepo.get(sessionId);
+  if (!session) throw new Error('session not found');
+  if (session.project_id !== projectId) throw new Error('session project mismatch');
+}
+
+export function recordSessionImageGenerationJobMessage(input: {
+  sessionId: string;
+  job: ImageGenerationJob;
+  outputs?: ImageGenerationOutput[];
+}): SessionMessage {
+  assertSessionCanReceiveImageGenerationJob(input.job.project_id, input.sessionId);
+  if (input.job.session_id !== input.sessionId) {
+    throw new Error('image generation job session mismatch');
+  }
+  const message = sessionMessageRepo.create({
+    session_id: input.sessionId,
+    role: 'system',
+    sender_id: 'image-generation',
+    sender_name: 'Image Generation',
+    content: `图片生成任务已创建：${truncateImageGenerationPrompt(input.job.prompt)}`,
+    message_type: 'system',
+    metadata: buildImageGenerationJobMessageMetadata(input.job, input.outputs ?? []),
+  });
+  wsHub.broadcastSession(input.sessionId, {
+    type: 'session_message:new',
+    sessionId: input.sessionId,
+    message,
+  });
+  broadcastActiveSessionUpsert(input.sessionId);
+  return message;
+}
+
 function buildUserMessageMetadata(input: {
   agentId: string;
   workspaceFileRefs: string[];
@@ -115,6 +153,33 @@ function buildUserMessageMetadata(input: {
     ...(input.libraryFileRefs.length > 0 ? { library_file_refs: input.libraryFileRefs } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
   };
+}
+
+function buildImageGenerationJobMessageMetadata(
+  job: ImageGenerationJob,
+  outputs: ImageGenerationOutput[],
+): Record<string, unknown> {
+  const attachments = outputs.map((output) => ({
+    id: output.file_id,
+    fileId: output.file_id,
+    name: output.name,
+    mimeType: output.mime_type,
+    size: output.size,
+    url: output.url,
+    isImage: output.mime_type.startsWith('image/'),
+  }));
+  return {
+    image_generation_job_id: job.id,
+    image_generation_status: job.status,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  };
+}
+
+function truncateImageGenerationPrompt(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, ' ').trim();
+  const chars = Array.from(normalized);
+  if (chars.length <= 80) return normalized;
+  return `${chars.slice(0, 80).join('').trimEnd()}...`;
 }
 
 function buildLibraryAttachmentMetadata(libraryFileRefs: string[]): MessageAttachmentMetadata[] {
