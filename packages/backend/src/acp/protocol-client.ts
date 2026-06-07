@@ -321,11 +321,12 @@ export async function invokeProtocolSession(
     }
     child?.kill('SIGTERM');
     const retrySafe = initialized && promptStarted && !eventReceived;
+    const fallbackSafe = !args.signal?.aborted && !promptStarted && !eventReceived;
     return {
       exitCode: -1,
       sessionId: activeSessionId,
       stderr: stderr ? `${stderr}\n${message}` : message,
-      fallbackSafe: !initialized && !promptStarted && !eventReceived,
+      fallbackSafe,
       retrySafe,
       resumeUnavailable,
       sessionHandoffPending,

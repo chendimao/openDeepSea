@@ -124,6 +124,37 @@ test('invokeProtocolSession returns fallback-safe result when agent cannot resum
   assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), '');
 });
 
+test('invokeProtocolSession marks pre-prompt resumeSession failure as fallback-safe', async () => {
+  const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_CAN_RESUME: '1',
+        OPENCLAW_FAKE_ACP_FAIL_RESUME: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: 'old-session-id',
+    prompt: 'hello',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, -1);
+  assert.equal(result.sessionId, 'old-session-id');
+  assert.equal(result.fallbackSafe, true);
+  assert.equal(result.retrySafe, false);
+  assert.match(result.stderr, /fake resumeSession failure/);
+  assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), '');
+});
+
 test('invokeProtocolSession prepends handoff for forced new session handoff', async () => {
   const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
 

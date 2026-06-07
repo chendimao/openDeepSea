@@ -12,6 +12,9 @@ if (process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE) {
 
 const sessionId = process.env.OPENCLAW_FAKE_CLI_SESSION_ID ?? 'fake-cli-session';
 const exitCode = Number(process.env.OPENCLAW_FAKE_CLI_EXIT_CODE ?? '0');
+if (process.env.OPENCLAW_FAKE_CLI_STDOUT_BEFORE_EXIT) {
+  process.stdout.write(process.env.OPENCLAW_FAKE_CLI_STDOUT_BEFORE_EXIT);
+}
 if (Number.isFinite(exitCode) && exitCode !== 0) {
   process.stderr.write(process.env.OPENCLAW_FAKE_CLI_STDERR ?? 'fake cli failure');
   process.exit(exitCode);

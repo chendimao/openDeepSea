@@ -206,6 +206,7 @@ export async function fallbackToProtocolNewSessionAfterCliResumeFailure(input: {
   if (!input.protocolConfig.enabled) return null;
   if (!input.protocolResult?.resumeUnavailable) return null;
   if (input.cliResult.exitCode === 0) return null;
+  if (input.cliResult.fallbackSafe === false) return null;
 
   emitFakeResumeFallback(input.onChunk, input.backend, input.cliResult.stderr);
   return invokeProtocolSession({
@@ -307,7 +308,7 @@ function runStreaming(
   onSession?: (sessionId: string) => void,
   stdin?: string,
   envOverrides?: Record<string, string>,
-): Promise<{ exitCode: number; sessionId: string | null; stderr: string }> {
+): Promise<AcpInvokeResult> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, {
       cwd,
@@ -316,6 +317,7 @@ function runStreaming(
     });
     let stderr = '';
     let detectedSession: string | null = null;
+    let fallbackSafe = true;
     let stdoutBuffer = '';
     const normalizeStdout = createStdoutNormalizer();
     if (!child.stdout || !child.stderr) {
@@ -330,6 +332,7 @@ function runStreaming(
     stdout.setEncoding('utf-8');
     stderrStream.setEncoding('utf-8');
     stdout.on('data', (data: string) => {
+      if (data.trim()) fallbackSafe = false;
       const parsed = takeCompleteLines(stdoutBuffer + data);
       stdoutBuffer = parsed.rest;
       for (const chunk of normalizeStdout(parsed.complete)) {
@@ -350,16 +353,17 @@ function runStreaming(
     child.on('error', (err) => {
       stderr += `\n[spawn error] ${(err as Error).message}`;
       onChunk({ stream: 'stderr', text: `\n[spawn error] ${(err as Error).message}` });
-      resolve({ exitCode: -1, sessionId: detectedSession, stderr });
+      resolve({ exitCode: -1, sessionId: detectedSession, stderr, fallbackSafe });
     });
     child.on('close', (code) => {
       if (stdoutBuffer) {
+        if (stdoutBuffer.trim()) fallbackSafe = false;
         for (const chunk of normalizeStdout(stdoutBuffer)) {
           onChunk({ stream: 'stdout', ...chunk });
         }
         stdoutBuffer = '';
       }
-      resolve({ exitCode: code ?? 0, sessionId: detectedSession, stderr });
+      resolve({ exitCode: code ?? 0, sessionId: detectedSession, stderr, fallbackSafe });
     });
     signal?.addEventListener('abort', () => {
       child.kill('SIGTERM');
