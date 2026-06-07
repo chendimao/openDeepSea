@@ -158,6 +158,40 @@ test('runSessionAgent records ordered agent stream events', async () => {
   assert.equal(events[0]?.agent_id, 'planner');
 });
 
+test('runSessionAgent records activity chunks outside answer output', async () => {
+  const project = projectRepo.create({
+    name: 'runtime activity project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-activity-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Activity',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk }) => {
+      onChunk({ stream: 'stderr', channel: 'activity', text: '[ACP fallback] using legacy CLI\n', rawType: 'protocol_fallback' });
+      onChunk({ stream: 'stdout', channel: 'activity', text: '开始命令：rtk find skills\n' });
+      onChunk({ stream: 'stdout', channel: 'answer', text: '✅ 结论：skills 已分析。\n' });
+      return { exitCode: 0, sessionId: 'acp-activity', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({ sessionId: session.id, agentId: 'planner', prompt: '分析 skills', provider: 'codex' });
+  const storedRun = sessionRunRepo.get(run.id);
+  const events = sessionAgentEventRepo.listByRun(run.id);
+
+  assert.match(storedRun?.stderr ?? '', /ACP fallback/);
+  assert.match(storedRun?.activity_log ?? '', /开始命令/);
+  assert.equal(storedRun?.stdout, '✅ 结论：skills 已分析。\n');
+  assert.deepEqual(events.slice(0, 3).map((event) => event.channel), ['activity', 'activity', 'answer']);
+});
+
 test('runSessionAgent records failed adapter as blocker evidence', async () => {
   const project = projectRepo.create({
     name: 'runtime failure project',

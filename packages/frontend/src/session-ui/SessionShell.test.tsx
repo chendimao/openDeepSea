@@ -614,6 +614,45 @@ test('buildSessionRunTranscriptItems drops ACP tool markers from chat transcript
   ]);
 });
 
+test('buildSessionRunTranscriptItems hides legacy activity events misclassified as answer', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({
+      id: 'fallback',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'protocol_fallback',
+      content: '[ACP fallback] codex protocol server unavailable, using legacy CLI.\n',
+    }),
+    createAgentEvent({
+      id: 'command-start',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'item.started',
+      content: "开始命令：/bin/zsh -lc 'rtk find .'\n",
+      payload_json: JSON.stringify({ trace: null }),
+    }),
+    createAgentEvent({
+      id: 'answer',
+      seq: 3,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '✅ 结论：页面已分析。',
+    }),
+    createAgentEvent({
+      id: 'command-completed',
+      seq: 4,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: "完成命令：/bin/zsh -lc 'rtk find .'\n",
+      payload_json: JSON.stringify({ trace: null }),
+    }),
+  ], '[ACP fallback]\n开始命令：rtk find\n✅ 结论：页面已分析。\n完成命令：rtk find');
+
+  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
+    '✅ 结论：页面已分析。',
+  ]);
+});
+
 test('SessionShell renders a concise active session title with the full title available', () => {
   const payload = createPayload();
   payload.activeSession.session.title = '用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出';

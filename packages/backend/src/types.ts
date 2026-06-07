@@ -1363,7 +1363,7 @@ export type WsServerEvent =
       runId: string;
       seq: number;
       chunk: string;
-      channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      channel: import('./session-types.js').SessionAgentEventChannel;
       done: boolean;
       agentEvent?: import('./session-types.js').SessionAgentEvent;
     }

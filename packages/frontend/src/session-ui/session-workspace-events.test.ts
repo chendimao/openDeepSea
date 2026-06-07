@@ -58,6 +58,26 @@ test('applySessionWorkspaceEvent appends thinking chunks to activity log', () =>
   assert.equal(next.activeSession.agentEvents[0]?.channel, 'thinking');
 });
 
+test('applySessionWorkspaceEvent appends activity chunks to activity log', () => {
+  const payload = createPayload('session-current');
+  const event: WsServerEvent = {
+    type: 'session_run:stream',
+    sessionId: 'session-current',
+    agentId: 'planner',
+    runId: 'run-1',
+    seq: 3,
+    channel: 'activity',
+    chunk: '开始命令：rtk find skills',
+    done: false,
+  };
+
+  const next = applySessionWorkspaceEvent(payload, event);
+  assert.equal(next.activeSession.runs[0]?.stdout, '');
+  assert.equal(next.activeSession.runs[0]?.activity_log, '开始命令：rtk find skills');
+  assert.equal(next.activeSession.agentEvents[0]?.content, '开始命令：rtk find skills');
+  assert.equal(next.activeSession.agentEvents[0]?.channel, 'activity');
+});
+
 test('applySessionWorkspaceEvent appends empty ACP agent events from stream envelope', () => {
   const payload = createPayload('session-current');
   const event: WsServerEvent = {

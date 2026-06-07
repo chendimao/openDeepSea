@@ -11,6 +11,7 @@ import {
 } from './repos/sessions.js';
 import { runRegistry } from './run-registry.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
+import type { SessionAgentEventChannel } from './session-types.js';
 import { buildSessionInspectorSnapshot } from './session-workspace-view-model.js';
 import { wsHub } from './ws-hub.js';
 import type {
@@ -357,8 +358,16 @@ function resolveAdapter(provider: AcpBackend): SessionAdapter {
   return getAdapter(provider);
 }
 
-function normalizeStreamChannel(channel: AcpStreamChannel | undefined): 'answer' | 'thinking' | 'tool' | 'command' | 'event' {
-  if (channel === 'thinking' || channel === 'tool' || channel === 'command' || channel === 'event') return channel;
+function normalizeStreamChannel(channel: AcpStreamChannel | undefined): SessionAgentEventChannel {
+  if (
+    channel === 'activity' ||
+    channel === 'thinking' ||
+    channel === 'tool' ||
+    channel === 'command' ||
+    channel === 'event'
+  ) {
+    return channel;
+  }
   return 'answer';
 }
 

@@ -669,7 +669,7 @@ function TranscriptCanvas({
           }
           const runEvidence = evidence.filter((event) => event.source_run_id === item.run.id);
           const runAgentEvents = (detail.agentEvents ?? []).filter((event) => event.run_id === item.run.id);
-          const output = runOutputText(item.run);
+          const output = runOutputText(item.run, runAgentEvents);
           const displayMode = displayModeFor(item.key);
           const runLabel = agentNamesById.get(item.run.agent_id) ?? item.run.agent_id;
           return (
@@ -879,7 +879,7 @@ export function buildSessionRunTranscriptItems(
 function isAnswerTextEvent(event: SessionAgentEvent): boolean {
   return event.channel === 'answer' &&
     event.content.length > 0 &&
-    event.event_type !== 'protocol.stderr';
+    !isLegacyActivityAnswerEvent(event);
 }
 
 function runEventMarker(event: SessionAgentEvent): { label: string; detail: string | null } | null {
@@ -1259,8 +1259,8 @@ function RunModule({
   );
 }
 
-function runOutputText(run: SessionRun): string {
-  const output = run.stdout.trim() || run.stderr.trim();
+function runOutputText(run: SessionRun, events: SessionAgentEvent[] = []): string {
+  const output = sanitizeRunOutputText(run.stdout, events).trim() || run.stderr.trim();
   if (output) return output;
   if (run.status === 'completed') return '未返回可展示回复。';
   if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';
@@ -1268,6 +1268,42 @@ function runOutputText(run: SessionRun): string {
   if (run.status === 'paused') return '运行已暂停。';
   if (run.status === 'interrupted') return '运行已中断。';
   return '等待智能体输出...';
+}
+
+function sanitizeRunOutputText(output: string, events: SessionAgentEvent[]): string {
+  let text = output;
+  for (const event of events) {
+    if (!isLegacyActivityAnswerEvent(event) || !event.content) continue;
+    text = text.split(event.content).join('');
+  }
+  return text;
+}
+
+function isLegacyActivityAnswerEvent(event: SessionAgentEvent): boolean {
+  if (event.channel !== 'answer') return false;
+  if (event.event_type === 'protocol.stderr' || event.event_type === 'protocol_fallback') return true;
+  if (
+    (event.event_type === 'item.started' || event.event_type === 'item.completed') &&
+    (hasCommandTrace(event) || hasLegacyCommandActivityText(event.content))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function hasLegacyCommandActivityText(content: string): boolean {
+  const trimmed = content.trimStart();
+  return trimmed.startsWith('开始命令：') || trimmed.startsWith('完成命令：');
+}
+
+function hasCommandTrace(event: SessionAgentEvent): boolean {
+  if (!event.payload_json) return false;
+  try {
+    const payload = JSON.parse(event.payload_json) as { trace?: { kind?: unknown } | null };
+    return payload.trace?.kind === 'command';
+  } catch {
+    return false;
+  }
 }
 
 function runThoughtStatusLabel(status: SessionRun['status']): string {

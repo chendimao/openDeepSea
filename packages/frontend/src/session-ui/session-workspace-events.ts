@@ -109,6 +109,7 @@ function appendRunChunk(run: SessionRun, event: Extract<WsServerEvent, { type: '
     return { ...run, stdout: `${run.stdout}${event.chunk}`, updated_at: Date.now() };
   }
   if (
+    event.channel === 'activity' ||
     event.channel === 'thinking' ||
     event.channel === 'tool' ||
     event.channel === 'command' ||

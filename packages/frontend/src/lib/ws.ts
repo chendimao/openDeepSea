@@ -9,6 +9,7 @@ import type {
   RoomAgent,
   Session,
   SessionAgentEvent,
+  SessionAgentEventChannel,
   SessionDiffRow,
   SessionEvidenceEvent,
   SessionMessage,
@@ -36,7 +37,7 @@ export type WsServerEvent =
       done: boolean;
       seq?: number;
       runId?: string;
-      channel?: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      channel?: SessionAgentEventChannel;
       event?: AgentTimelineEvent;
       status?: 'streaming' | AgentRunStatus;
       error?: string | null;
@@ -71,7 +72,7 @@ export type WsServerEvent =
       runId: string;
       seq: number;
       chunk: string;
-      channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      channel: SessionAgentEventChannel;
       done: boolean;
       agentEvent?: SessionAgentEvent;
     }

@@ -26,6 +26,7 @@ export type SessionAgentRuntimeStatus = 'idle' | 'running' | 'paused' | 'failed'
 export type SessionMessageRole = 'user' | 'assistant' | 'system';
 export type SessionMessageType = 'text' | 'system' | 'agent_stream';
 export type SessionMessageStatus = 'queued' | 'streaming' | 'completed' | 'failed';
+export type SessionAgentEventChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command' | 'event';
 export type SessionPlanItemStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'failed' | 'skipped';
 export type SessionCompactionStrategy = 'manual' | 'focus' | 'aggressive' | 'conservative' | 'auto_suggested';
 export type SessionCompactionStatus = 'previewed' | 'applied' | 'superseded' | 'discarded' | 'failed';
@@ -157,7 +158,7 @@ export interface SessionAgentEvent {
   agent_id: string;
   run_id: string;
   seq: number;
-  channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+  channel: SessionAgentEventChannel;
   event_type: string;
   content: string;
   payload_json: string | null;
