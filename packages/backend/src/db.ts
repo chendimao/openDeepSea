@@ -13,6 +13,55 @@ export const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
+resetIncompatibleKnowledgeSchema();
+
+function resetIncompatibleKnowledgeSchema(): void {
+  const sourcesSql = readTableSql('knowledge_sources');
+  const chunksSql = readTableSql('knowledge_chunks');
+  const hasKnowledgeSchema = Boolean(sourcesSql || chunksSql);
+  if (!hasKnowledgeSchema) return;
+  if (isCurrentKnowledgeSourcesSchema(sourcesSql) && (!chunksSql || isCurrentKnowledgeChunksSchema(chunksSql))) return;
+
+  db.exec(`
+    DROP TRIGGER IF EXISTS trg_knowledge_chunks_delete_fts;
+    DROP TRIGGER IF EXISTS trg_knowledge_sources_delete_fts;
+    DROP TABLE IF EXISTS knowledge_usage_refs;
+    DROP TABLE IF EXISTS knowledge_chunk_fts;
+    DROP TABLE IF EXISTS knowledge_chunks;
+    DROP TABLE IF EXISTS knowledge_extractions;
+    DROP TABLE IF EXISTS knowledge_sources;
+  `);
+}
+
+function readTableSql(name: string): string | null {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(name) as { sql: string | null } | undefined;
+  return row?.sql ?? null;
+}
+
+function isCurrentKnowledgeSourcesSchema(sql: string | null): boolean {
+  if (!sql) return false;
+  return [
+    "'workspace_doc'",
+    "'web_page'",
+    "'session_note'",
+    "'disabled'",
+    'room_id TEXT',
+    'size INTEGER',
+    'parser_version TEXT',
+    'last_processed_at INTEGER',
+  ].every((needle) => sql.includes(needle));
+}
+
+function isCurrentKnowledgeChunksSchema(sql: string | null): boolean {
+  if (!sql) return false;
+  return [
+    "'body'",
+    'enabled INTEGER',
+  ].every((needle) => sql.includes(needle));
+}
+
 db.exec(`
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
@@ -219,6 +268,116 @@ CREATE TABLE IF NOT EXISTS resource_assets (
 );
 CREATE INDEX IF NOT EXISTS idx_resource_assets_project ON resource_assets(project_id, asset_type, group_key, created_at);
 CREATE INDEX IF NOT EXISTS idx_resource_assets_source_message ON resource_assets(source_message_id);
+
+CREATE TABLE IF NOT EXISTS knowledge_sources (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  room_id TEXT,
+  source_type TEXT NOT NULL CHECK (
+    source_type IN (
+      'resource_asset', 'uploaded_file', 'agent_document', 'message', 'task', 'workspace_file',
+      'workspace_doc', 'web_page', 'session_note', 'url', 'manual'
+    )
+  ),
+  source_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  mime_type TEXT,
+  size INTEGER,
+  uri TEXT,
+  content_hash TEXT,
+  parser TEXT,
+  parser_version TEXT,
+  summary TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'ready', 'failed', 'stale', 'disabled')),
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  indexed_at INTEGER,
+  last_processed_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL,
+  UNIQUE (project_id, source_type, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_sources_project_status
+  ON knowledge_sources(project_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_sources_source
+  ON knowledge_sources(source_type, source_id);
+
+CREATE TABLE IF NOT EXISTS knowledge_extractions (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  plain_text TEXT NOT NULL,
+  markdown TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES knowledge_sources(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_extractions_source
+  ON knowledge_extractions(source_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  extraction_id TEXT,
+  chunk_index INTEGER NOT NULL,
+  chunk_type TEXT NOT NULL CHECK (chunk_type IN ('plain_text', 'markdown', 'code', 'table', 'summary', 'body')),
+  heading TEXT,
+  content TEXT NOT NULL,
+  token_estimate INTEGER,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (source_id) REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (extraction_id) REFERENCES knowledge_extractions(id) ON DELETE SET NULL,
+  UNIQUE (source_id, chunk_index)
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_source
+  ON knowledge_chunks(source_id, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_extraction
+  ON knowledge_chunks(extraction_id, chunk_index);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunk_fts USING fts5(
+  chunk_id UNINDEXED,
+  source_id UNINDEXED,
+  project_id UNINDEXED,
+  title UNINDEXED,
+  heading,
+  content,
+  tokenize = 'unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_chunks_delete_fts
+AFTER DELETE ON knowledge_chunks
+BEGIN
+  DELETE FROM knowledge_chunk_fts WHERE chunk_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_sources_delete_fts
+AFTER DELETE ON knowledge_sources
+BEGIN
+  DELETE FROM knowledge_chunk_fts WHERE source_id = OLD.id;
+END;
+
+CREATE TABLE IF NOT EXISTS knowledge_usage_refs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  chunk_id TEXT,
+  ref_type TEXT NOT NULL,
+  ref_id TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_id) REFERENCES knowledge_sources(id) ON DELETE CASCADE,
+  FOREIGN KEY (chunk_id) REFERENCES knowledge_chunks(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_usage_refs_project
+  ON knowledge_usage_refs(project_id, ref_type, ref_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_knowledge_usage_refs_source
+  ON knowledge_usage_refs(source_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
@@ -927,6 +1086,35 @@ export function migrateUniqueAgentDocumentSourceMessage(database: Database.Datab
 
 migrateUniqueAgentDocumentSourceMessage();
 
+const knowledgeSourceColumns = db.prepare('PRAGMA table_info(knowledge_sources)').all() as { name: string }[];
+const knowledgeSourceColumnNames = new Set(knowledgeSourceColumns.map((column) => column.name));
+if (!knowledgeSourceColumnNames.has('room_id')) {
+  db.exec('ALTER TABLE knowledge_sources ADD COLUMN room_id TEXT');
+}
+if (!knowledgeSourceColumnNames.has('size')) {
+  db.exec('ALTER TABLE knowledge_sources ADD COLUMN size INTEGER');
+}
+if (!knowledgeSourceColumnNames.has('parser')) {
+  db.exec('ALTER TABLE knowledge_sources ADD COLUMN parser TEXT');
+}
+if (!knowledgeSourceColumnNames.has('parser_version')) {
+  db.exec('ALTER TABLE knowledge_sources ADD COLUMN parser_version TEXT');
+}
+if (!knowledgeSourceColumnNames.has('summary')) {
+  db.exec('ALTER TABLE knowledge_sources ADD COLUMN summary TEXT');
+}
+if (!knowledgeSourceColumnNames.has('last_processed_at')) {
+  db.exec('ALTER TABLE knowledge_sources ADD COLUMN last_processed_at INTEGER');
+}
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_knowledge_sources_project_status
+    ON knowledge_sources(project_id, status, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_knowledge_sources_room
+    ON knowledge_sources(room_id, updated_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_knowledge_sources_source
+    ON knowledge_sources(source_type, source_id);
+`);
+
 const projectColumns = db.prepare('PRAGMA table_info(projects)').all() as { name: string }[];
 const projectColumnNames = new Set(projectColumns.map((column) => column.name));
 if (!projectColumnNames.has('message_routing_mode')) {
@@ -1362,6 +1550,12 @@ BEGIN
     );
 END;
 `);
+
+const knowledgeChunkColumns = db.prepare('PRAGMA table_info(knowledge_chunks)').all() as { name: string }[];
+const knowledgeChunkColumnNames = new Set(knowledgeChunkColumns.map((column) => column.name));
+if (!knowledgeChunkColumnNames.has('enabled')) {
+  db.exec('ALTER TABLE knowledge_chunks ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))');
+}
 
 const settingsColumns = db.prepare('PRAGMA table_info(settings)').all() as { name: string }[];
 const settingsColumnNames = new Set(settingsColumns.map((column) => column.name));
