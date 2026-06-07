@@ -1321,7 +1321,13 @@ function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
             <p>{row.target}</p>
             <span className="deepsea-tool-row-duration">{formatToolDisplayDuration(row)}</span>
             <span className="deepsea-tool-row-time">{formatRelativeTime(Date.now(), row.created_at)}</span>
-            {row.status === 'running' ? <span>...</span> : <CheckCircle2 aria-hidden="true" />}
+            <span
+              className="deepsea-tool-row-state"
+              data-tool-row-status={row.status}
+              aria-label={`工具调用状态：${toolStatusLabel(row.status)}`}
+            >
+              <ToolStatusIcon status={row.status} />
+            </span>
           </button>
         ))}
       </div>
@@ -1554,6 +1560,12 @@ function toolStatusLabel(status: SessionToolRow['status']): string {
   if (status === 'running') return '运行中';
   if (status === 'failed') return '失败';
   return '已完成';
+}
+
+function ToolStatusIcon({ status }: { status: SessionToolRow['status'] }): JSX.Element {
+  if (status === 'failed') return <X aria-hidden="true" />;
+  if (status === 'running') return <Ellipsis aria-hidden="true" />;
+  return <CheckCircle2 aria-hidden="true" />;
 }
 
 function formatToolDuration(durationMs: number | null): string {

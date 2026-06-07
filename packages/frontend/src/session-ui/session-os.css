@@ -2082,7 +2082,10 @@
   height: 13px;
 }
 .deepsea-tool-table {
-  overflow: hidden;
+  max-height: min(320px, 36dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.05);
@@ -2128,11 +2131,11 @@
   white-space: nowrap;
 }
 .deepsea-tool-table button[data-tone="warn"] strong,
-.deepsea-tool-table button[data-tone="warn"] > span:last-child {
+.deepsea-tool-table button[data-tone="warn"] .deepsea-tool-row-state {
   color: var(--deepsea-warn);
 }
 .deepsea-tool-table button[data-tone="danger"] strong,
-.deepsea-tool-table button[data-tone="danger"] > span:last-child {
+.deepsea-tool-table button[data-tone="danger"] .deepsea-tool-row-state {
   color: var(--deepsea-danger);
 }
 .deepsea-tool-table p {
@@ -2153,10 +2156,20 @@
 .deepsea-tool-row-time {
   text-align: right;
 }
-.deepsea-tool-table svg {
+.deepsea-tool-row-state {
+  display: inline-grid;
+  place-items: center;
+  color: var(--deepsea-ok);
+}
+.deepsea-tool-row-state[data-tool-row-status="running"] {
+  color: var(--deepsea-warn);
+}
+.deepsea-tool-row-state[data-tool-row-status="failed"] {
+  color: var(--deepsea-danger);
+}
+.deepsea-tool-row-state svg {
   width: 14px;
   height: 14px;
-  color: var(--deepsea-ok);
 }
 .deepsea-tool-detail-overlay {
   position: fixed;

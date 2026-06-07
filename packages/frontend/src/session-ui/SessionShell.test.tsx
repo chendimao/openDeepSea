@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -13,6 +14,8 @@ import {
   getSessionRunThinkingDuration,
   isTranscriptNearBottom,
 } from './SessionShellView';
+
+const sessionOsCss = readFileSync(new URL('./session-os.css', import.meta.url), 'utf8');
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
@@ -64,8 +67,9 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /AnotherProject/);
   assert.doesNotMatch(html, /会话历史/);
   assert.match(html, /3. 对话记录/);
-  assert.match(html, /prompt-area-container/);
-  assert.match(html, /支持 @ 文件/);
+  assert.doesNotMatch(html, /prompt-area-container/);
+  assert.match(html, /data-session-composer-textarea="true"/);
+  assert.match(html, /粘贴文件会上传到项目文件库/);
   assert.match(html, /目标契约/);
   assert.match(html, /会话计划/);
   assert.match(html, /代理运行/);
@@ -155,6 +159,27 @@ test('SessionShell renders compact tool rows without ordinal numbers', () => {
   assert.doesNotMatch(html, /<span class="deepsea-tool-row-index">1<\/span>/);
   assert.match(html, /class="deepsea-tool-row-duration"/);
   assert.match(html, /class="deepsea-tool-row-time"/);
+});
+
+test('SessionShell renders failed tool rows with an X status icon', () => {
+  const payload = createPayload();
+  payload.toolRows[0] = {
+    ...payload.toolRows[0]!,
+    status: 'failed',
+    severity: 'error',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-tool-row-status="failed"/);
+  assert.match(html, /aria-label="工具调用状态：失败"/);
+  assert.match(html, /data-tool-row-status="failed"[^>]*><svg[^>]+lucide-x/s);
+});
+
+test('SessionShell keeps the tool call list height bounded with internal scrolling', () => {
+  assert.match(sessionOsCss, /\.deepsea-tool-table\s*\{[^}]*max-height:\s*min\(320px,\s*36dvh\)/s);
+  assert.match(sessionOsCss, /\.deepsea-tool-table\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(sessionOsCss, /\.deepsea-tool-table\s*\{[^}]*overscroll-behavior:\s*contain/s);
 });
 
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
