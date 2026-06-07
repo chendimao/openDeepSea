@@ -1,5 +1,6 @@
 import React from 'react';
 import type { SessionDetail } from '../lib/types';
+import { ImageJobStatusCard, parseImageGenerationJobIdFromMetadata } from '../image-generation/ImageJobStatusCard';
 import { evidenceTypeLabel, formatSessionAge } from './session-ui-model';
 
 export function SessionTranscript({ detail }: { detail: SessionDetail }): JSX.Element {
@@ -14,16 +15,22 @@ export function SessionTranscript({ detail }: { detail: SessionDetail }): JSX.El
         <div className="session-empty">发送第一条消息开始当前会话。</div>
       ) : (
         <>
-          {detail.messages.map((message) => (
-            <article className="session-message" data-role={message.role} key={message.id}>
-              <header>
-                <strong>{message.sender_name ?? message.sender_id}</strong>
-                <span>{message.role}</span>
-                <time>{formatSessionAge(now, message.created_at)}</time>
-              </header>
-              <p>{message.content}</p>
-            </article>
-          ))}
+          {detail.messages.map((message) => {
+            const imageJobId = parseImageGenerationJobIdFromMetadata(message.metadata);
+            return (
+              <React.Fragment key={message.id}>
+                <article className="session-message" data-role={message.role}>
+                  <header>
+                    <strong>{message.sender_name ?? message.sender_id}</strong>
+                    <span>{message.role}</span>
+                    <time>{formatSessionAge(now, message.created_at)}</time>
+                  </header>
+                  <p>{message.content}</p>
+                </article>
+                {imageJobId && <ImageJobStatusCard projectId={detail.session.project_id} jobId={imageJobId} />}
+              </React.Fragment>
+            );
+          })}
           {detail.runs.map((run) => (
             <details className="session-run-row" key={run.id}>
               <summary>

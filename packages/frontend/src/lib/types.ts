@@ -1337,6 +1337,8 @@ export interface ResourceDetail {
 
 export interface MessageMetadata {
   attachments: MessageAttachmentMetadata[];
+  image_generation_job_id?: string;
+  image_generation_status?: ImageGenerationStatus;
   reply_to?: MessageReplyMetadata;
   intent_result?: MessageIntentResult;
   task_execution?: TaskExecutionDecision;

@@ -48,6 +48,7 @@ import type {
 import { api } from '../lib/api';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { MessageContent } from '../components/MessageContent';
+import { ImageJobStatusCard } from '../image-generation/ImageJobStatusCard';
 import {
   MarkdownDisplaySwitch,
   SessionMessageBubble,
@@ -661,6 +662,7 @@ function TranscriptCanvas({
             return (
               <TranscriptMessage
                 key={item.key}
+                projectId={projectId}
                 message={item.message}
                 displayMode={displayMode}
                 onDisplayModeChange={(mode) => setDisplayModeFor(item.key, mode)}
@@ -703,7 +705,11 @@ function TranscriptCanvas({
         <div aria-hidden="true" className="deepsea-transcript__end" data-transcript-end="true" ref={transcriptEndRef} />
       </div>
       <div className="deepsea-composer-anchor" ref={composerRef}>
-        <DeepseaComposer projectId={detail.session.project_id} onSendMessage={onSendMessage} />
+        <DeepseaComposer
+          projectId={detail.session.project_id}
+          sessionId={detail.session.id}
+          onSendMessage={onSendMessage}
+        />
       </div>
     </section>
   );
@@ -776,26 +782,32 @@ export function buildTranscriptFollowKey({
 }
 
 function TranscriptMessage({
+  projectId,
   message,
   displayMode,
   onDisplayModeChange,
 }: {
+  projectId: string;
   message: SessionMessage;
   displayMode: SessionMessageDisplayMode;
   onDisplayModeChange: (mode: SessionMessageDisplayMode) => void;
 }): JSX.Element {
   const metadata = parseMessageMetadata(message.metadata);
+  const imageJobId = metadata.image_generation_job_id;
   return (
-    <SessionMessageBubble
-      role={message.role}
-      content={message.content}
-      timeLabel={formatClock(message.created_at)}
-      statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
-      roleLabel={message.sender_name ?? message.sender_id}
-      attachments={metadata.attachments}
-      displayMode={displayMode}
-      onDisplayModeChange={onDisplayModeChange}
-    />
+    <>
+      <SessionMessageBubble
+        role={message.role}
+        content={message.content}
+        timeLabel={formatClock(message.created_at)}
+        statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
+        roleLabel={message.sender_name ?? message.sender_id}
+        attachments={metadata.attachments}
+        displayMode={displayMode}
+        onDisplayModeChange={onDisplayModeChange}
+      />
+      {imageJobId && <ImageJobStatusCard projectId={projectId} jobId={imageJobId} />}
+    </>
   );
 }
 
@@ -1082,12 +1094,14 @@ function isRunThoughtOpenByDefault(status: SessionRun['status']): boolean {
 
 function DeepseaComposer({
   projectId,
+  sessionId,
   onSendMessage,
 }: {
   projectId: string;
+  sessionId: string;
   onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
-  return <SessionFileComposer projectId={projectId} onSendMessage={onSendMessage} />;
+  return <SessionFileComposer projectId={projectId} sessionId={sessionId} onSendMessage={onSendMessage} />;
 }
 
 function IntegratedInspector({

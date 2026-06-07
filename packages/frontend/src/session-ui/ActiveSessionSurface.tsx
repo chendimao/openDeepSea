@@ -37,7 +37,11 @@ export function ActiveSessionSurface({
         )}
         <SessionTranscript detail={detail} />
       </div>
-      <SessionComposer onSendMessage={onSendMessage} />
+      <SessionComposer
+        projectId={detail.session.project_id}
+        sessionId={detail.session.id}
+        onSendMessage={onSendMessage}
+      />
     </main>
   );
 }

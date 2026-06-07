@@ -3,6 +3,7 @@ import {
   FileText,
   Hash,
   Image as ImageIcon,
+  ImagePlus,
   Paperclip,
   SendHorizontal,
   X,
@@ -11,6 +12,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { MarkdownPreview } from '../components/MessageContent';
+import { ImageGenerationDialog } from '../image-generation/ImageGenerationDialog';
 import {
   buildAttachmentPreviewKind,
   buildSessionComposerSubmitFromText,
@@ -35,14 +37,17 @@ type PreviewState =
 
 export function SessionFileComposer({
   projectId,
+  sessionId,
   onSendMessage,
 }: {
   projectId: string;
+  sessionId?: string;
   onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<PendingSessionAttachment[]>([]);
   const [preview, setPreview] = useState<PreviewState>(null);
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -114,59 +119,80 @@ export function SessionFileComposer({
   };
 
   return (
-    <form
-      className="deepsea-composer"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <div className="deepsea-composer__field">
-        {attachments.length > 0 && (
-          <AttachmentStrip
-            attachments={attachments}
-            isUploading={isUploading}
-            onPreview={setPreview}
-            onRemove={removeAttachment}
+    <>
+      <form
+        className="deepsea-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        <div className="deepsea-composer__field">
+          {attachments.length > 0 && (
+            <AttachmentStrip
+              attachments={attachments}
+              isUploading={isUploading}
+              onPreview={setPreview}
+              onRemove={removeAttachment}
+            />
+          )}
+          <textarea
+            ref={textareaRef}
+            className="deepsea-composer__textarea"
+            data-session-composer-textarea="true"
+            value={content}
+            rows={2}
+            aria-label="命令输入"
+            disabled={isUploading}
+            placeholder="输入消息，粘贴文件会上传到项目文件库"
+            onChange={(event) => setContent(event.currentTarget.value)}
+            onPaste={(event) => {
+              const files = filesFromClipboard(event.clipboardData);
+              if (files.length === 0) return;
+              event.preventDefault();
+              addFiles(files);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              void submit();
+            }}
           />
-        )}
-        <textarea
-          ref={textareaRef}
-          className="deepsea-composer__textarea"
-          data-session-composer-textarea="true"
-          value={content}
-          rows={2}
-          aria-label="命令输入"
-          disabled={isUploading}
-          placeholder="输入消息，粘贴文件会上传到项目文件库"
-          onChange={(event) => setContent(event.currentTarget.value)}
-          onPaste={(event) => {
-            const files = filesFromClipboard(event.clipboardData);
-            if (files.length === 0) return;
-            event.preventDefault();
-            addFiles(files);
-          }}
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            void submit();
-          }}
-        />
-        <div className="deepsea-composer__tools">
-          <Paperclip aria-hidden="true" />
-          <Hash aria-hidden="true" />
-          <AlertTriangle aria-hidden="true" />
-          <span className="deepsea-composer__upload-hint">
-            {isUploading ? '上传中...' : '粘贴文件会上传到项目文件库'}
-          </span>
-          <button type="submit" className="deepsea-send-button" aria-label="发送" disabled={!canSubmit}>
-            <SendHorizontal aria-hidden="true" />
-          </button>
+          <div className="deepsea-composer__tools">
+            <Paperclip aria-hidden="true" />
+            <Hash aria-hidden="true" />
+            <AlertTriangle aria-hidden="true" />
+            <span className="deepsea-composer__upload-hint">
+              {isUploading ? '上传中...' : '粘贴文件会上传到项目文件库'}
+            </span>
+            {sessionId && (
+              <button
+                type="button"
+                className="deepsea-composer-tool-button"
+                aria-label="生成图片"
+                disabled={isUploading}
+                onClick={() => setImageDialogOpen(true)}
+              >
+                <ImagePlus aria-hidden="true" />
+              </button>
+            )}
+            <button type="submit" className="deepsea-send-button" aria-label="发送" disabled={!canSubmit}>
+              <SendHorizontal aria-hidden="true" />
+            </button>
+          </div>
+          {error && <p className="deepsea-composer__error">{error}</p>}
         </div>
-        {error && <p className="deepsea-composer__error">{error}</p>}
-      </div>
-      <AttachmentPreviewDialog preview={preview} onPreviewChange={setPreview} />
-    </form>
+        <AttachmentPreviewDialog preview={preview} onPreviewChange={setPreview} />
+      </form>
+      {sessionId && (
+        <ImageGenerationDialog
+          projectId={projectId}
+          sessionId={sessionId}
+          open={imageDialogOpen}
+          onOpenChange={setImageDialogOpen}
+        />
+      )}
+    </>
   );
 }
 

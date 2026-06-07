@@ -8,15 +8,17 @@ export type ImageGenerationWsEvent = Extract<WsServerEvent, {
     | 'image_job:failed'
     | 'image_job:canceled'
     | 'image_job:output_added'
-    | 'image_job:completed';
+  | 'image_job:completed';
 }>;
+
+const projectSubscriptionRefs = new Map<string, number>();
 
 export function useImageGenerationEvents(
   projectId: string,
   onEvent: (event: ImageGenerationWsEvent) => void,
 ): void {
   useEffect(() => {
-    roomSocket.subscribeProject(projectId);
+    retainProjectSubscription(projectId);
     const off = roomSocket.on((event) => {
       if (isImageGenerationEvent(event) && event.projectId === projectId) {
         onEvent(event);
@@ -24,9 +26,25 @@ export function useImageGenerationEvents(
     });
     return () => {
       off();
-      roomSocket.unsubscribeProject(projectId);
+      releaseProjectSubscription(projectId);
     };
   }, [projectId, onEvent]);
+}
+
+function retainProjectSubscription(projectId: string): void {
+  const current = projectSubscriptionRefs.get(projectId) ?? 0;
+  projectSubscriptionRefs.set(projectId, current + 1);
+  if (current === 0) roomSocket.subscribeProject(projectId);
+}
+
+function releaseProjectSubscription(projectId: string): void {
+  const current = projectSubscriptionRefs.get(projectId) ?? 0;
+  if (current <= 1) {
+    projectSubscriptionRefs.delete(projectId);
+    roomSocket.unsubscribeProject(projectId);
+    return;
+  }
+  projectSubscriptionRefs.set(projectId, current - 1);
 }
 
 function isImageGenerationEvent(event: WsServerEvent): event is ImageGenerationWsEvent {
