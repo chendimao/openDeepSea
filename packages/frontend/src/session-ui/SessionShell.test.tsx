@@ -570,16 +570,17 @@ test('SessionShell hides ACP tool records from chat transcript', () => {
   ];
 
   const html = renderSessionShell(payload);
+  const runLogIndex = html.indexOf('class="deepsea-run-log"');
 
   assert.match(html, /思考 18s/);
-  assert.match(html, /我会先分析当前项目。/);
+  assert.ok(html.indexOf('我会先分析当前项目。') < runLogIndex);
   assert.match(html, /找到入口和脚本。/);
   assert.match(html, /已完成。/);
   assert.doesNotMatch(html, /Thinking/);
   assert.doesNotMatch(html, /Read File/);
   assert.doesNotMatch(html, /Run Command/);
   assert.doesNotMatch(html, /判断需要读取 package\.json/);
-  assert.ok(html.indexOf('我会先分析当前项目。') < html.indexOf('找到入口和脚本。'));
+  assert.ok(runLogIndex < html.indexOf('找到入口和脚本。'));
   assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('已完成。'));
 });
 
@@ -705,7 +706,81 @@ test('SessionShell moves completed legacy process preface into collapsed thought
 
   assert.doesNotMatch(thoughtTag, /\sopen=""/);
   assert.ok(html.indexOf('我会直接按上传文件读取图片') < html.indexOf('class="deepsea-run-log"'));
+  assert.equal(html.match(/我会直接按上传文件读取图片/g)?.length, 1);
   assert.match(html, /✅ 结论：截图展示的是工具调用列表。/);
+});
+
+test('SessionShell deduplicates legacy process text already present in activity log', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.activity_log = '开始命令：rtk find\n我会直接按上传文件读取图片，然后基于截图内容做结构化分析。';
+  run.stdout = '我会直接按上传文件读取图片，然后基于截图内容做结构化分析。✅ 结论：截图展示的是工具调用列表。';
+  payload.activeSession.agentEvents = [
+    createAgentEvent({
+      id: 'preface',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '我会直接按上传文件读取图片，然后基于截图内容做结构化分析。',
+    }),
+    createAgentEvent({
+      id: 'final',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '✅ 结论：截图展示的是工具调用列表。',
+    }),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.equal(html.match(/我会直接按上传文件读取图片/g)?.length, 1);
+  assert.match(html, /✅ 结论：截图展示的是工具调用列表。/);
+});
+
+test('SessionShell moves legacy stdout process preface into collapsed thought without agent events', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.stdout = [
+    '我先按本仓库规则确认本轮需要使用的工作流说明，然后检查本机与项目里的 skills 目录。',
+    '本次使用技能：using-superpowers，用于遵循项目的 skill 启动规则。',
+    '当前会话可见的 skills 主要有：',
+    '系统 / Codex 技能',
+  ].join('\n');
+  run.stderr = '';
+  run.activity_log = '';
+  payload.activeSession.agentEvents = [];
+
+  const html = renderSessionShell(payload);
+  const runLogIndex = html.indexOf('class="deepsea-run-log"');
+
+  assert.ok(html.indexOf('我先按本仓库规则确认') < runLogIndex);
+  assert.ok(html.indexOf('本次使用技能') < runLogIndex);
+  assert.ok(html.indexOf('当前会话可见的 skills 主要有') > runLogIndex);
+  assert.doesNotMatch(getAgentThoughtTag(html), /\sopen=""/);
+});
+
+test('SessionShell hides legacy stdout process-only output from run body', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.stdout = [
+    '我会先恢复现场：读取 Superpowers 入口要求和当前未提交改动。',
+    '本轮使用 using-superpowers 做会话入口检查。',
+    '当前现场只有一个前端 UI 文件被改动。',
+    '准备编辑前做一个小范围计划更新。',
+  ].join('');
+  run.stderr = '';
+  run.activity_log = '';
+  payload.activeSession.agentEvents = [];
+
+  const html = renderSessionShell(payload);
+  const runLogIndex = html.indexOf('class="deepsea-run-log"');
+
+  assert.ok(html.indexOf('我会先恢复现场') < runLogIndex);
+  assert.match(html, /未返回可展示回复。/);
 });
 
 test('SessionShell hides legacy activity persisted in stderr fallback', () => {

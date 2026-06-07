@@ -856,7 +856,7 @@ export function buildSessionRunTranscriptItems(
   let textIndex = 0;
 
   const flushText = () => {
-    const text = textBuffer.trim();
+    const text = splitLegacyProcessOutputText(textBuffer).visibleText.trim();
     textBuffer = '';
     if (!text) return;
     items.push({ type: 'text', id: `text-${textIndex}`, text });
@@ -899,6 +899,7 @@ function isLegacyProcessAnswerEvent(
   answerEvents: SessionAgentEvent[],
   finalAnswerIndex: number,
 ): boolean {
+  if (isProcessPreludeText(event.content) && index < answerEvents.length - 1) return true;
   if (event.event_type !== 'item.completed') return false;
   if (finalAnswerIndex > 0 && index < finalAnswerIndex) return true;
   return index < answerEvents.length - 1 && isProcessPreludeText(event.content);
@@ -1321,7 +1322,7 @@ function sanitizeRunOutputText(output: string, events: SessionAgentEvent[]): str
     if (!event.content) continue;
     text = removeOnce(text, event.content);
   }
-  return text;
+  return splitLegacyProcessOutputText(text).visibleText;
 }
 
 function removeOnce(text: string, needle: string): string {
@@ -1393,7 +1394,9 @@ function formatSessionDuration(durationMs: number): string {
 function agentThoughtText(run: SessionRun, evidence: SessionEvidenceEvent[], agentEvents: SessionAgentEvent[]): string | null {
   const activity = trimDisplayText(run.activity_log);
   const legacyProcess = trimDisplayText(extractLegacyProcessThoughtText(agentEvents));
-  const thoughtParts = [activity, legacyProcess].filter(Boolean);
+  const legacyStdoutProcess = trimDisplayText(splitLegacyProcessOutputText(run.stdout).processText);
+  const legacyStderrProcess = trimDisplayText(splitLegacyProcessOutputText(run.stderr).processText);
+  const thoughtParts = uniqueDisplayParts([activity, legacyProcess, legacyStdoutProcess, legacyStderrProcess]);
   if (thoughtParts.length > 0) return thoughtParts.join('\n');
   const evidenceText = evidence
     .map((event) => trimDisplayText(event.summary ?? event.title))
@@ -1404,11 +1407,62 @@ function agentThoughtText(run: SessionRun, evidence: SessionEvidenceEvent[], age
 }
 
 function extractLegacyProcessThoughtText(events: SessionAgentEvent[]): string {
-  return hiddenLegacyAnswerEvents(events)
-    .filter((event) => event.event_type === 'item.completed' && isProcessPreludeText(event.content))
+  return uniqueDisplayParts(hiddenLegacyAnswerEvents(events)
+    .filter((event) => isProcessPreludeText(event.content))
     .map((event) => stripAnsiCodes(event.content).trim())
-    .filter(Boolean)
+    .filter(Boolean))
     .join('\n');
+}
+
+function uniqueDisplayParts(parts: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const part of parts) {
+    const text = part.trim();
+    if (!text || seen.has(text) || unique.some((existing) => existing.includes(text))) continue;
+    seen.add(text);
+    unique.push(text);
+  }
+  return unique;
+}
+
+function splitLegacyProcessOutputText(output: string): { visibleText: string; processText: string } {
+  const text = output.trimStart();
+  if (!isProcessPreludeText(text)) return { visibleText: output, processText: '' };
+
+  const segments = splitDisplaySentences(text);
+  const processSegments: string[] = [];
+  let cursor = 0;
+  while (cursor < segments.length && isLegacyProcessNarrationSegment(segments[cursor] ?? '')) {
+    processSegments.push(segments[cursor] ?? '');
+    cursor += 1;
+  }
+  if (processSegments.length === 0) return { visibleText: output, processText: '' };
+
+  const remaining = segments.slice(cursor).join('').trimStart();
+  const processText = processSegments.join('').trim();
+  if (!remaining) return { visibleText: '', processText };
+  if (processSegments.length >= 3 && !hasVisibleAnswerSignal(remaining)) {
+    return { visibleText: '', processText: text.trim() };
+  }
+  return { visibleText: remaining, processText };
+}
+
+function splitDisplaySentences(text: string): string[] {
+  const segments = text.match(/[^。！？\n]+[。！？]?|\n+/g);
+  return segments ?? [text];
+}
+
+function isLegacyProcessNarrationSegment(segment: string): boolean {
+  const text = stripAnsiCodes(segment).trimStart();
+  if (!text) return true;
+  return /^(?:我会先|我先|我会直接|我会按|我现在|我会把|我会开始|我还发现|我接下来|我将|接下来我会|我已经|本轮使用|本次使用|当前现场|目标是|边界限定|主要风险|验证用|现有测试|准备编辑前|改动会|这样|刚才|现在准备|Active Run\b)/.test(text);
+}
+
+function hasVisibleAnswerSignal(text: string): boolean {
+  return /(?:✅\s*)?(?:\*\*)?结论(?:\*\*)?[：:]|当前会话可见|系统 \/|个人 \/|项目 \/|Superpowers 技能|^以下|^主要|^建议|^结果|^原因/m.test(
+    stripAnsiCodes(text).trimStart(),
+  );
 }
 
 function trimDisplayText(value: string | null | undefined): string {
