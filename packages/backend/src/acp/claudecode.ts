@@ -3,6 +3,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AcpBackend, AcpPermissionMode, CliSessionSummary } from '../types.js';
+import type { ProviderRuntimeConfig } from '../provider-configs/types.js';
 import type { AcpInvokeResult, AcpStreamChannel, AcpStreamChunk, AcpStreamTrace, SessionAdapter } from './types.js';
 import { invokeProtocolSession } from './protocol-client.js';
 import { getAcpServerConfig, type AcpServerConfig } from './protocol-registry.js';
@@ -92,8 +93,9 @@ export const claudeCodeAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, providerRuntimeConfig, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('claudecode');
+    const mergedEnvOverrides = mergeRuntimeEnvOverrides(buildClaudeCodeRuntimeEnvOverrides(providerRuntimeConfig), envOverrides);
     let resumeUnavailableResult: AcpInvokeResult | null = null;
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
@@ -107,7 +109,7 @@ export const claudeCodeAdapter: SessionAdapter = {
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
-        envOverrides,
+        envOverrides: mergedEnvOverrides,
         onChunk,
         onSession,
         signal,
@@ -131,7 +133,7 @@ export const claudeCodeAdapter: SessionAdapter = {
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
-    const cliResult = await runStreaming('claude', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, envOverrides);
+    const cliResult = await runStreaming('claude', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, mergedEnvOverrides);
     const fakeResumeResult = await fallbackToProtocolNewSessionAfterCliResumeFailure({
       backend: 'claudecode',
       protocolConfig,
@@ -144,7 +146,7 @@ export const claudeCodeAdapter: SessionAdapter = {
       imagePaths,
       acpPermissionMode,
       acpWritableDirs,
-      envOverrides,
+      envOverrides: mergedEnvOverrides,
       onChunk,
       onSession,
       signal,
@@ -173,6 +175,17 @@ export function buildClaudeCodeInvocation(args: {
   }
   if (args.sessionId) cliArgs.push('--resume', args.sessionId);
   return { args: cliArgs, stdin: buildClaudeCodePrompt(args.prompt, args.imagePaths ?? []) };
+}
+
+export function buildClaudeCodeRuntimeEnvOverrides(
+  config: ProviderRuntimeConfig | null | undefined,
+): Record<string, string> {
+  if (!config?.run_overrides_enabled) return {};
+  const env: Record<string, string> = {};
+  if (config.model?.trim()) env.ANTHROPIC_MODEL = config.model.trim();
+  if (config.base_url?.trim()) env.ANTHROPIC_BASE_URL = config.base_url.trim();
+  if (config.api_key?.trim()) env.ANTHROPIC_API_KEY = config.api_key.trim();
+  return env;
 }
 
 export function withSessionHandoffForNewSession(
@@ -297,6 +310,14 @@ function normalizeWritableDirs(dirs: string[]): string[] {
     normalized.push(dir);
   }
   return normalized;
+}
+
+function mergeRuntimeEnvOverrides(
+  runtimeEnv: Record<string, string>,
+  envOverrides?: Record<string, string>,
+): Record<string, string> | undefined {
+  const merged = { ...(envOverrides ?? {}), ...runtimeEnv };
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function runStreaming(
@@ -478,6 +499,8 @@ function normalizeStdoutChunkWithSnapshots(
           if (activityChunk) return [...traceChunks, activityChunk];
           return traceChunks;
         }
+        const legacyProcessTrace = legacyProcessAgentMessageTrace(obj, text, rawType);
+        if (legacyProcessTrace) return [...traceChunks, legacyProcessTrace];
         const delta = toAnswerTextDelta(obj, text, snapshots);
         if (!delta) return traceChunks;
         return [...traceChunks, {
@@ -623,6 +646,28 @@ function buildTraceChunk(
   trace: AcpStreamTrace,
 ): NormalizedStdoutChunk {
   return { channel, text, rawType, trace };
+}
+
+function legacyProcessAgentMessageTrace(
+  obj: Record<string, unknown>,
+  text: string,
+  rawType: string | undefined,
+): NormalizedStdoutChunk | null {
+  if (!isCodexAgentMessage(obj)) return null;
+  const normalizedText = text.trim();
+  if (!isLegacyProcessAgentMessageText(normalizedText)) return null;
+  return buildTraceChunk('thinking', normalizedText, rawType, { kind: 'thinking', text: normalizedText });
+}
+
+function isLegacyProcessAgentMessageText(value: string): boolean {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (!text) return false;
+  if (/^(?:当前|结论|总结|已完成|可以|不能|不建议|建议|原因|问题|修复|结果)[^。！？]*[：:]/.test(text)) {
+    return false;
+  }
+  return /^(?:我会先|我先|我会直接|我会按|我现在|接下来我会|我已经|本轮使用|本次使用|若确认)/.test(text) ||
+    /^刚才[\s\S]{0,240}?(?:发现|确认|定位|检查)[\s\S]{0,240}?(?:现在|接下来|继续|补查|再)/.test(text) ||
+    /^当前(?:仓库|目录|现场|页面|代码|工作区|环境)[^。！？\n]*(?:接下来|避免|先|再|继续|读取|确认|定位|找到|只做)/.test(text);
 }
 
 function toAnswerTextDelta(obj: Record<string, unknown>, text: string, snapshots: Map<string, string>): string {

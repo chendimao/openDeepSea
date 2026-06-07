@@ -35,6 +35,19 @@ test('buildOpenCodeArgs maps bypass to dangerously skip permissions', () => {
   );
 });
 
+test('buildOpenCodeArgs omits model flag when no runtime model is resolved', () => {
+  assert.deepEqual(
+    buildOpenCodeArgs({
+      sessionId: null,
+      prompt: 'hello',
+      filePaths: [],
+      permissionMode: 'bypass',
+      model: null,
+    }),
+    ['run', '--format', 'json', '--dangerously-skip-permissions', 'hello'],
+  );
+});
+
 test('buildOpenCodeArgs leaves non-bypass modes to opencode defaults', () => {
   assert.deepEqual(
     buildOpenCodeArgs({

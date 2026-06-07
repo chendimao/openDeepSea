@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CliSessionSummary } from '../types.js';
 import type { AcpPermissionMode } from '../types.js';
+import type { ProviderRuntimeConfig } from '../provider-configs/types.js';
 import type { SessionAdapter } from './types.js';
 import { emitProtocolFallback, fallbackToProtocolNewSessionAfterCliResumeFailure, runStreaming, withSessionHandoffForNewSession } from './claudecode.js';
 import { invokeProtocolSession } from './protocol-client.js';
@@ -11,7 +12,6 @@ import { getAcpServerConfig } from './protocol-registry.js';
 import type { AcpInvokeResult } from './types.js';
 
 const DB_PATH = join(homedir(), '.local', 'share', 'opencode', 'opencode.db');
-const DEFAULT_OPENCODE_MODEL = 'gwenapi/gpt-5.5';
 
 interface OpenCodeRow {
   id: string;
@@ -71,8 +71,9 @@ export const openCodeAdapter: SessionAdapter = {
     }
   },
 
-  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, providerRuntimeConfig, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('opencode');
+    const mergedEnvOverrides = mergeRuntimeEnvOverrides(buildOpenCodeRuntimeEnvOverrides(providerRuntimeConfig), envOverrides);
     let resumeUnavailableResult: AcpInvokeResult | null = null;
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
@@ -86,7 +87,7 @@ export const openCodeAdapter: SessionAdapter = {
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
-        envOverrides,
+        envOverrides: mergedEnvOverrides,
         onChunk,
         onSession,
         signal,
@@ -108,9 +109,9 @@ export const openCodeAdapter: SessionAdapter = {
       prompt: legacyPrompt,
       filePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
-      model: process.env.OPENCLAW_OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL,
+      model: resolveOpenCodeModel(providerRuntimeConfig, process.env.OPENCLAW_OPENCODE_MODEL),
     });
-    const cliResult = await runStreaming('opencode', args, projectPath, onChunk, signal, onSession, undefined, envOverrides);
+    const cliResult = await runStreaming('opencode', args, projectPath, onChunk, signal, onSession, undefined, mergedEnvOverrides);
     const fakeResumeResult = await fallbackToProtocolNewSessionAfterCliResumeFailure({
       backend: 'opencode',
       protocolConfig,
@@ -123,7 +124,7 @@ export const openCodeAdapter: SessionAdapter = {
       imagePaths,
       acpPermissionMode,
       acpWritableDirs,
-      envOverrides,
+      envOverrides: mergedEnvOverrides,
       onChunk,
       onSession,
       signal,
@@ -137,11 +138,13 @@ export function buildOpenCodeArgs(args: {
   prompt: string;
   filePaths?: string[];
   permissionMode: AcpPermissionMode;
-  model: string;
+  model: string | null;
 }): string[] {
   const cliArgs: string[] = ['run'];
   if (args.sessionId) cliArgs.push('--session', args.sessionId);
-  cliArgs.push('--format', 'json', '--model', args.model);
+  cliArgs.push('--format', 'json');
+  const model = normalizedString(args.model);
+  if (model) cliArgs.push('--model', model);
   if (args.permissionMode === 'bypass') {
     cliArgs.push('--dangerously-skip-permissions');
   }
@@ -150,6 +153,47 @@ export function buildOpenCodeArgs(args: {
   }
   cliArgs.push(args.prompt);
   return cliArgs;
+}
+
+function resolveOpenCodeModel(
+  providerRuntimeConfig: ProviderRuntimeConfig | null | undefined,
+  envModel: string | undefined,
+): string | null {
+  if (providerRuntimeConfig?.run_overrides_enabled) {
+    const runtimeModel = normalizedString(providerRuntimeConfig.model);
+    if (runtimeModel) return runtimeModel;
+  }
+  return normalizedString(envModel);
+}
+
+function buildOpenCodeRuntimeEnvOverrides(config?: ProviderRuntimeConfig | null): Record<string, string> {
+  if (!config?.run_overrides_enabled) return {};
+  return compactEnv({
+    OPENAI_BASE_URL: config.base_url,
+    OPENAI_API_KEY: config.api_key,
+  });
+}
+
+function mergeRuntimeEnvOverrides(
+  runtimeEnv: Record<string, string>,
+  envOverrides?: Record<string, string>,
+): Record<string, string> | undefined {
+  const merged = { ...(envOverrides ?? {}), ...runtimeEnv };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function compactEnv(input: Record<string, string | null | undefined>): Record<string, string> {
+  const output: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    const normalized = normalizedString(value);
+    if (normalized) output[key] = normalized;
+  }
+  return output;
+}
+
+function normalizedString(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }
 
 function normalizeFilePaths(paths: string[]): string[] {

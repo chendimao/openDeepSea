@@ -12,6 +12,7 @@ import { classifyAgentDocument } from './agent-document-classifier.js';
 import { applyIntentToRouteResult } from './message-intent-router.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
+import { providerConfigService } from './provider-configs/service.js';
 import { agentRunRepo } from './repos/agent-runs.js';
 import { fileRepo } from './repos/files.js';
 import { memoryRepo } from './repos/memory.js';
@@ -859,6 +860,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   if (!backend) {
     throw new Error(`Agent ${agent.agent_name} has no ACP backend configured`);
   }
+  const providerRuntimeConfig = providerConfigService.resolveProviderRuntimeConfig(backend);
   const taskExecutor = args.taskId
     ? taskExecutorRepo.ensure({
         task_id: args.taskId,
@@ -1141,6 +1143,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       imagePaths: args.imagePaths,
       acpPermissionMode: intentAnalysisSource ? 'read-only' : runtimeProfile.acpPermissionMode,
       acpWritableDirs: intentAnalysisSource ? [] : runtimeProfile.writableDirs,
+      providerRuntimeConfig,
       envOverrides: superpowersBootstrapEnvOverrides,
       onChunk: (chunk) => {
         if (chunk.rawType === 'protocol.retry') onRetry(chunk.text);

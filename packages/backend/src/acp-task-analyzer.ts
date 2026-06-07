@@ -1,4 +1,5 @@
 import type { SessionAdapter } from './acp/types.js';
+import { providerConfigService } from './provider-configs/service.js';
 import type {
   MessageIntentResult,
   RouteResult,
@@ -46,6 +47,7 @@ export function createAcpTaskAnalyzer(input: {
         prompt: buildAcpTaskAnalyzerPrompt({ message, intentResult, routeResult, agent: input.agent }),
         acpPermissionMode: 'read-only',
         acpWritableDirs: [],
+        providerRuntimeConfig: providerConfigService.resolveProviderRuntimeConfig(input.adapter.backend),
         envOverrides: {
           OPENCLAW_SUPERPOWERS_BOOTSTRAP_OWNER: 'project',
           OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER: 'project',

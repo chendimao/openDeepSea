@@ -48,6 +48,7 @@ import { workflowContextRepo } from './repos/workflow-context.js';
 import { workflowDefinitionRepo } from './repos/workflow-definitions.js';
 import { searchProjectRooms } from './room-search.js';
 import { platformSkillsRouter } from './platform-skills/routes.js';
+import { providerConfigRouter } from './provider-configs/routes.js';
 import { pickDirectory } from './system-dialogs.js';
 import {
   getProjectOverview,
@@ -134,6 +135,7 @@ import {
 export const router = Router();
 router.use('/platform-skills', platformSkillsRouter);
 router.use(sessionRouter);
+router.use(providerConfigRouter);
 
 // ---------- System context ----------
 router.get('/context/system', (_req, res) => {

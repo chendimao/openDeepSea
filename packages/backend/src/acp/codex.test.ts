@@ -38,6 +38,42 @@ test('buildCodexExecArgs defaults to bypassing approvals and sandbox', () => {
   );
 });
 
+test('buildCodexExecInvocation injects managed model and reasoning overrides', () => {
+  assert.deepEqual(
+    buildCodexExecInvocation({
+      sessionId: null,
+      prompt: 'hello',
+      imagePaths: [],
+      permissionMode: 'bypass',
+      writableDirs: [],
+      providerRuntimeConfig: {
+        provider: 'codex',
+        source: 'managed_profile',
+        profile_id: 'profile-codex',
+        model: 'gpt-5.5',
+        base_url: 'https://codex.example/v1',
+        api_key: 'sk-codex1234',
+        reasoning_effort: 'xhigh',
+        run_overrides_enabled: true,
+      },
+    }),
+    {
+      args: [
+        'exec',
+        '--json',
+        '--skip-git-repo-check',
+        '--model',
+        'gpt-5.5',
+        '-c',
+        'model_reasoning_effort=xhigh',
+        '--dangerously-bypass-approvals-and-sandbox',
+        '-',
+      ],
+      stdin: 'hello',
+    },
+  );
+});
+
 test('buildCodexExecArgs supports workspace-write with the current project directory', () => {
   assert.deepEqual(
     buildCodexExecInvocation({

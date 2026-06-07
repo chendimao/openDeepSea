@@ -106,6 +106,48 @@ CREATE TABLE IF NOT EXISTS ai_configs (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS provider_config_sources (
+  provider TEXT PRIMARY KEY CHECK (provider IN ('claudecode', 'opencode', 'codex')),
+  config_dir TEXT,
+  use_default_config_dir INTEGER NOT NULL DEFAULT 1 CHECK (use_default_config_dir IN (0, 1)),
+  auto_sync_enabled INTEGER NOT NULL DEFAULT 1 CHECK (auto_sync_enabled IN (0, 1)),
+  last_sync_at INTEGER,
+  last_sync_status TEXT NOT NULL DEFAULT 'idle' CHECK (last_sync_status IN ('idle', 'success', 'failed')),
+  last_sync_error TEXT,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS provider_config_snapshots (
+  provider TEXT PRIMARY KEY CHECK (provider IN ('claudecode', 'opencode', 'codex')),
+  config_dir TEXT NOT NULL,
+  config_file TEXT,
+  detected_model TEXT,
+  detected_base_url TEXT,
+  api_key_set INTEGER NOT NULL DEFAULT 0 CHECK (api_key_set IN (0, 1)),
+  api_key_preview TEXT,
+  reasoning_effort TEXT,
+  raw_summary_json TEXT NOT NULL DEFAULT '{}',
+  synced_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS provider_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  provider TEXT NOT NULL CHECK (provider IN ('claudecode', 'opencode', 'codex')),
+  model TEXT,
+  base_url TEXT,
+  api_key TEXT,
+  reasoning_effort TEXT,
+  run_overrides_enabled INTEGER NOT NULL DEFAULT 1 CHECK (run_overrides_enabled IN (0, 1)),
+  is_active INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),
+  created_from_snapshot_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_profiles_active
+  ON provider_profiles(provider)
+  WHERE is_active = 1;
+
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,

@@ -1,5 +1,6 @@
 import { parseClassifierIntentResult, type MessageIntentClassifierInvoker } from './message-intent-router.js';
 import type { SessionAdapter } from './acp/types.js';
+import { providerConfigService } from './provider-configs/service.js';
 import type { RoomAgent } from './types.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -21,6 +22,7 @@ export function createAcpMessageIntentClassifier(input: {
         prompt: buildAcpIntentClassifierPrompt(message, ruleResult, input.agent),
         acpPermissionMode: 'read-only',
         acpWritableDirs: [],
+        providerRuntimeConfig: providerConfigService.resolveProviderRuntimeConfig(input.adapter.backend),
         envOverrides: {
           OPENDEEPSEA_SUPERPOWERS_BOOTSTRAP_OWNER: 'project',
           OPENDEEPSEA_SUPERPOWERS_DISABLED: '1',

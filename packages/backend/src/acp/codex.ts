@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AcpPermissionMode, CliSessionSummary } from '../types.js';
+import type { ProviderRuntimeConfig } from '../provider-configs/types.js';
 import type { SessionAdapter } from './types.js';
 import { emitProtocolFallback, fallbackToProtocolNewSessionAfterCliResumeFailure, runStreaming, withSessionHandoffForNewSession } from './claudecode.js';
 import { invokeProtocolSession, isAcpStreamDisconnected } from './protocol-client.js';
@@ -119,8 +120,9 @@ export const codexAdapter: SessionAdapter = {
     return summaries;
   },
 
-  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
+  async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, providerRuntimeConfig, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('codex');
+    const mergedEnvOverrides = mergeRuntimeEnvOverrides(buildCodexRuntimeEnvOverrides(providerRuntimeConfig), envOverrides);
     let resumeUnavailableResult: AcpInvokeResult | null = null;
     if (protocolConfig.enabled) {
       let protocolResult = await invokeProtocolSession({
@@ -134,7 +136,7 @@ export const codexAdapter: SessionAdapter = {
         imagePaths,
         acpPermissionMode,
         acpWritableDirs,
-        envOverrides,
+        envOverrides: mergedEnvOverrides,
         onChunk,
         onSession,
         signal,
@@ -162,7 +164,7 @@ export const codexAdapter: SessionAdapter = {
           imagePaths,
           acpPermissionMode,
           acpWritableDirs,
-          envOverrides,
+          envOverrides: mergedEnvOverrides,
           onChunk,
           onSession,
           signal,
@@ -186,8 +188,9 @@ export const codexAdapter: SessionAdapter = {
       imagePaths: imagePaths ?? [],
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
+      providerRuntimeConfig,
     });
-    const cliResult = await runStreaming('codex', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, envOverrides);
+    const cliResult = await runStreaming('codex', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, mergedEnvOverrides);
     const fakeResumeResult = await fallbackToProtocolNewSessionAfterCliResumeFailure({
       backend: 'codex',
       protocolConfig,
@@ -200,7 +203,7 @@ export const codexAdapter: SessionAdapter = {
       imagePaths,
       acpPermissionMode,
       acpWritableDirs,
-      envOverrides,
+      envOverrides: mergedEnvOverrides,
       onChunk,
       onSession,
       signal,
@@ -253,8 +256,16 @@ export function buildCodexExecInvocation(args: {
   imagePaths?: string[];
   permissionMode: AcpPermissionMode;
   writableDirs: string[];
+  providerRuntimeConfig?: ProviderRuntimeConfig | null;
 }): { args: string[]; stdin: string } {
   const cliArgs: string[] = ['exec', '--json', '--skip-git-repo-check'];
+  const runtimeConfig = args.providerRuntimeConfig;
+  const runtimeEnabled = Boolean(runtimeConfig?.run_overrides_enabled);
+  const runtimeModel = runtimeEnabled ? normalizedString(runtimeConfig?.model) : null;
+  const runtimeReasoning = runtimeEnabled ? normalizedString(runtimeConfig?.reasoning_effort) : null;
+
+  if (runtimeModel) cliArgs.push('--model', runtimeModel);
+  if (runtimeReasoning) cliArgs.push('-c', `model_reasoning_effort=${runtimeReasoning}`);
 
   if (args.permissionMode === 'bypass') {
     cliArgs.push('--dangerously-bypass-approvals-and-sandbox');
@@ -295,4 +306,34 @@ function normalizeWritableDirs(dirs: string[]): string[] {
     normalized.push(dir);
   }
   return normalized;
+}
+
+export function buildCodexRuntimeEnvOverrides(config?: ProviderRuntimeConfig | null): Record<string, string> {
+  if (!config?.run_overrides_enabled) return {};
+  return compactEnv({
+    OPENAI_BASE_URL: config.base_url,
+    OPENAI_API_KEY: config.api_key,
+  });
+}
+
+function mergeRuntimeEnvOverrides(
+  runtimeEnv: Record<string, string>,
+  envOverrides?: Record<string, string>,
+): Record<string, string> | undefined {
+  const merged = { ...(envOverrides ?? {}), ...runtimeEnv };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function compactEnv(input: Record<string, string | null | undefined>): Record<string, string> {
+  const output: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    const normalized = normalizedString(value);
+    if (normalized) output[key] = normalized;
+  }
+  return output;
+}
+
+function normalizedString(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
 }

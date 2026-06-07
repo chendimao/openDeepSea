@@ -1,5 +1,6 @@
 import { getAdapter } from './acp/index.js';
 import type { AcpStreamChannel, AcpStreamChunk, SessionAdapter } from './acp/types.js';
+import { providerConfigService } from './provider-configs/service.js';
 import { projectRepo } from './repos/projects.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionTokenUsageRepo } from './repos/session-token-usage.js';
@@ -48,6 +49,7 @@ export async function runSessionAgent(input: {
   if (!project) throw new Error(`Project not found for session ${session.id}`);
   const agentId = normalizeAgentId(input.agentId);
   const existingRuntime = sessionAgentRuntimeRepo.getByAgent(session.id, agentId, input.provider);
+  const providerRuntimeConfig = providerConfigService.resolveProviderRuntimeConfig(input.provider);
   const reusableAcpSessionId = existingRuntime?.provider_session_id ??
     sessionRunRepo.findReusableAcpSessionId({
       session_id: session.id,
@@ -86,6 +88,7 @@ export async function runSessionAgent(input: {
       prompt: input.prompt,
       acpPermissionMode: input.permissionMode ?? 'read-only',
       imagePaths: input.imagePaths ?? [],
+      providerRuntimeConfig,
       onSession: (acpSessionId) => {
         persistProviderSession({
           runId: run.id,

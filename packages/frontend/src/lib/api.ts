@@ -20,6 +20,7 @@ import type {
   GlobalChatMessage,
   GlobalChatSendResponse,
   GlobalChatSession,
+  ManagedProviderProfile,
   MemoryEntry,
   MemoryInput,
   MemorySearchResult,
@@ -29,6 +30,8 @@ import type {
   PlatformSkillAggregate,
   PlatformSkillProvider,
   PlatformSkillSummary,
+  ProviderConfigList,
+  ProviderConfigSource,
   ProviderSuperpowersStatus,
   ProjectFile,
   ProjectUsedAgentsPayload,
@@ -264,6 +267,63 @@ export const api = {
     }),
   listAiConfigs: () =>
     request<{ active_ai_config_id: string | null; items: AiConfig[] }>('/settings/ai-configs'),
+  getProviderConfigs: () =>
+    request<ProviderConfigList>('/settings/provider-configs'),
+  updateProviderConfigSource: (
+    provider: AcpBackend,
+    input: {
+      config_dir?: string | null;
+      use_default_config_dir?: boolean;
+      auto_sync_enabled?: boolean;
+    },
+  ) =>
+    request<ProviderConfigSource>(`/settings/provider-configs/${provider}/source`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  syncProviderConfig: (provider: AcpBackend) =>
+    request<{
+      source: ProviderConfigSource;
+      snapshot: ProviderConfigList['snapshots'][number] | null;
+    }>(`/settings/provider-configs/${provider}/sync`, { method: 'POST' }),
+  syncAllProviderConfigs: () =>
+    request<ProviderConfigList>('/settings/provider-configs/sync', { method: 'POST' }),
+  importProviderProfile: (provider: AcpBackend) =>
+    request<ManagedProviderProfile>(`/settings/provider-configs/${provider}/import-profile`, { method: 'POST' }),
+  createProviderProfile: (input: {
+    name: string;
+    provider: AcpBackend;
+    model?: string | null;
+    base_url?: string | null;
+    api_key?: string | null;
+    reasoning_effort?: string | null;
+    run_overrides_enabled?: boolean;
+    activate?: boolean;
+  }) =>
+    request<ManagedProviderProfile>('/settings/provider-profiles', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateProviderProfile: (
+    id: string,
+    input: {
+      name?: string | null;
+      model?: string | null;
+      base_url?: string | null;
+      api_key?: string | null;
+      reasoning_effort?: string | null;
+      run_overrides_enabled?: boolean;
+      activate?: boolean;
+    },
+  ) =>
+    request<ManagedProviderProfile>(`/settings/provider-profiles/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  activateProviderProfile: (id: string) =>
+    request<ManagedProviderProfile>(`/settings/provider-profiles/${id}/activate`, { method: 'POST' }),
+  deleteProviderProfile: (id: string) =>
+    request<void>(`/settings/provider-profiles/${id}`, { method: 'DELETE' }),
   createAiConfig: (input: {
     name: string;
     langchain_planner_model: string;

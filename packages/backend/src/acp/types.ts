@@ -5,6 +5,7 @@ import type {
   AgentTimelineEvent,
   CliSessionSummary,
 } from '../types.js';
+import type { ProviderRuntimeConfig } from '../provider-configs/types.js';
 
 export type AcpStreamChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command' | 'event';
 export type AcpSessionHandoffMode = 'new_session' | 'force';
@@ -56,6 +57,7 @@ export interface SessionAdapter {
     acpPermissionMode?: AcpPermissionMode | null;
     /** Final absolute directories allowed for write access. Empty means no additional write scope. */
     acpWritableDirs?: string[] | null;
+    providerRuntimeConfig?: ProviderRuntimeConfig | null;
     envOverrides?: Record<string, string>;
     onChunk: (chunk: AcpStreamChunk) => void;
     onSession?: (sessionId: string) => void;

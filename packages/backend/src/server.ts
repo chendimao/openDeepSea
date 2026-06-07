@@ -17,6 +17,7 @@ import {
 import { recoverWorkflowStartupOrphans, startWorkflowMonitorService } from './workflows/workflow-monitor-service.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { startProviderSuperpowersStartupInstall } from './provider-superpowers.js';
+import { providerConfigService } from './provider-configs/service.js';
 import { handleSessionSocketEvent } from './session-socket-controller.js';
 import { buildActiveSessionSummaries } from './session-active-view-model.js';
 import { validateWebSocketAccess } from './websocket-access.js';
@@ -100,6 +101,9 @@ httpServer.listen(PORT, () => {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
   void startWorkflowMonitoringAfterStartupRecovery();
+  void providerConfigService.syncAutoEnabledProviders().catch((err) => {
+    console.warn(`[provider-configs] startup sync failed: ${(err as Error).message}`);
+  });
   if (process.env.OPENDEEPSEA_PROVIDER_SUPERPOWERS_AUTO_INSTALL !== '0') {
     void startProviderSuperpowersStartupInstall().catch((err) => {
       console.warn(`[superpowers] provider startup install failed: ${(err as Error).message}`);

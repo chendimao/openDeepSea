@@ -2,14 +2,18 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
+  AlertTriangle,
   CheckCircle2,
   Circle,
+  Download,
+  FolderOpen,
   KeyRound,
   Pencil,
   Plus,
   Globe2,
   Moon,
   PanelTop,
+  RefreshCw,
   RotateCcw,
   Save,
   Settings2,
@@ -39,7 +43,12 @@ import {
   type AcpBackend,
   type AiConfig,
   type EffectiveSettings,
+  type ManagedProviderProfile,
   type MessageRoutingMode,
+  type ProviderConfigList,
+  type ProviderConfigSource,
+  type ProviderDiscoveredSnapshot,
+  type ProviderRuntimeConfig,
   type Project,
   type Room,
   type RoomAgent,
@@ -133,6 +142,19 @@ type AiConfigDraft = {
   clearOpenaiApiKey: boolean;
 };
 
+type ProviderProfileDraft = {
+  provider: AcpBackend;
+  name: string;
+  model: string;
+  baseUrl: string;
+  apiKey: string;
+  clearApiKey: boolean;
+  reasoningEffort: string;
+  runOverridesEnabled: boolean;
+};
+
+const PROVIDER_CONFIG_ORDER: AcpBackend[] = ['codex', 'claudecode', 'opencode'];
+
 export function SystemSettingsDialog({
   children,
   theme,
@@ -153,6 +175,15 @@ export function SystemSettingsDialog({
   const { data: aiConfigs } = useQuery({
     queryKey: ['settings', 'ai-configs'],
     queryFn: api.listAiConfigs,
+    enabled: open,
+  });
+  const {
+    data: providerConfigs,
+    isLoading: isProviderConfigsLoading,
+    error: providerConfigsError,
+  } = useQuery({
+    queryKey: ['settings', 'provider-configs'],
+    queryFn: api.getProviderConfigs,
     enabled: open,
   });
   const { data: agents = [] } = useQuery({
@@ -184,6 +215,9 @@ export function SystemSettingsDialog({
           theme={theme}
           value={settings}
           aiConfigs={aiConfigs ?? { active_ai_config_id: settings.active_ai_config_id, items: settings.ai_configs ?? [] }}
+          providerConfigs={providerConfigs ?? null}
+          isProviderConfigsLoading={isProviderConfigsLoading}
+          providerConfigsError={providerConfigsError instanceof Error ? providerConfigsError.message : null}
           fallbackOptions={toGlobalFallbackOptions(agents)}
           isSaving={save.isPending}
           onThemeChange={onThemeChange}
@@ -304,6 +338,9 @@ function SystemSettingsForm({
   theme,
   value,
   aiConfigs,
+  providerConfigs,
+  isProviderConfigsLoading,
+  providerConfigsError,
   fallbackOptions,
   isSaving,
   onThemeChange,
@@ -312,6 +349,9 @@ function SystemSettingsForm({
   theme: ThemeMode;
   value: SystemSettings;
   aiConfigs: { active_ai_config_id: string | null; items: AiConfig[] };
+  providerConfigs: ProviderConfigList | null;
+  isProviderConfigsLoading: boolean;
+  providerConfigsError: string | null;
   fallbackOptions: FallbackAgentOption[];
   isSaving: boolean;
   onThemeChange: (theme: ThemeMode) => void;
@@ -334,6 +374,12 @@ function SystemSettingsForm({
   );
   const [aiConfigMode, setAiConfigMode] = useState<'edit' | 'create'>(aiConfigs.items.length > 0 ? 'edit' : 'create');
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
+  const [providerProfileMode, setProviderProfileMode] = useState<'edit' | 'create'>('edit');
+  const [selectedProviderProfileId, setSelectedProviderProfileId] = useState<string | null>(null);
+  const [providerProfileDraft, setProviderProfileDraft] = useState<ProviderProfileDraft>(() =>
+    createEmptyProviderProfileDraft('codex', 0),
+  );
+  const [providerProfileError, setProviderProfileError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('general');
   const queryClient = useQueryClient();
   const { t } = useI18n();
@@ -407,6 +453,150 @@ function SystemSettingsForm({
     updateAiConfigMutation.isPending ||
     activateAiConfigMutation.isPending ||
     deleteAiConfigMutation.isPending;
+  const refreshProviderConfigQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['settings', 'provider-configs'] }),
+      queryClient.invalidateQueries({ queryKey: ['settings'] }),
+    ]);
+  };
+  const updateProviderSourceMutation = useMutation({
+    mutationFn: ({ provider, input }: {
+      provider: AcpBackend;
+      input: Parameters<typeof api.updateProviderConfigSource>[1];
+    }) => api.updateProviderConfigSource(provider, input),
+    onSuccess: async () => {
+      await refreshProviderConfigQueries();
+      toast.success(t('settings.providerSourceSaved'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const bulkAutoSyncMutation = useMutation({
+    mutationFn: async ({ enabled }: { enabled: boolean }) => {
+      await Promise.all(PROVIDER_CONFIG_ORDER.map((provider) =>
+        api.updateProviderConfigSource(provider, { auto_sync_enabled: enabled }),
+      ));
+    },
+    onSuccess: async (_result, variables) => {
+      await refreshProviderConfigQueries();
+      toast.success(variables.enabled ? t('settings.providerAutoSyncEnabled') : t('settings.providerAutoSyncDisabled'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const chooseProviderConfigDirMutation = useMutation({
+    mutationFn: async (provider: AcpBackend) => {
+      const picked = await api.pickDirectory();
+      if (picked.canceled) return null;
+      return api.updateProviderConfigSource(provider, {
+        use_default_config_dir: false,
+        config_dir: picked.path,
+      });
+    },
+    onSuccess: async (source) => {
+      if (!source) return;
+      await refreshProviderConfigQueries();
+      toast.success(t('settings.providerSourceSaved'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const syncProviderMutation = useMutation({
+    mutationFn: api.syncProviderConfig,
+    onSuccess: async (result) => {
+      await refreshProviderConfigQueries();
+      if (result.source.last_sync_status === 'failed') {
+        toast.error(t('settings.providerSyncFailed', { provider: providerLabel(result.source.provider) }));
+      } else {
+        toast.success(t('settings.providerSynced', { provider: providerLabel(result.source.provider) }));
+      }
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const syncAllProviderConfigsMutation = useMutation({
+    mutationFn: api.syncAllProviderConfigs,
+    onSuccess: async (result) => {
+      await refreshProviderConfigQueries();
+      const failedCount = result.sources.filter((source) => source.last_sync_status === 'failed').length;
+      if (failedCount > 0) {
+        toast.error(t('settings.providerSyncAllFailed', { count: failedCount }));
+      } else {
+        toast.success(t('settings.providerSyncAllDone'));
+      }
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const importProviderProfileMutation = useMutation({
+    mutationFn: api.importProviderProfile,
+    onSuccess: async (profile) => {
+      await refreshProviderConfigQueries();
+      setProviderProfileMode('edit');
+      setSelectedProviderProfileId(profile.id);
+      setProviderProfileDraft(createDraftFromProviderProfile(profile));
+      setProviderProfileError(null);
+      toast.success(t('settings.providerProfileImported'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const createProviderProfileMutation = useMutation({
+    mutationFn: api.createProviderProfile,
+    onSuccess: async (profile) => {
+      await refreshProviderConfigQueries();
+      setProviderProfileMode('edit');
+      setSelectedProviderProfileId(profile.id);
+      setProviderProfileDraft(createDraftFromProviderProfile(profile));
+      setProviderProfileError(null);
+      toast.success(t('settings.providerProfileSaved'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const updateProviderProfileMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: Parameters<typeof api.updateProviderProfile>[1] }) =>
+      api.updateProviderProfile(id, input),
+    onSuccess: async (profile) => {
+      await refreshProviderConfigQueries();
+      setProviderProfileMode('edit');
+      setSelectedProviderProfileId(profile.id);
+      setProviderProfileDraft(createDraftFromProviderProfile(profile));
+      setProviderProfileError(null);
+      toast.success(t('settings.providerProfileSaved'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const activateProviderProfileMutation = useMutation({
+    mutationFn: api.activateProviderProfile,
+    onSuccess: async (profile) => {
+      await refreshProviderConfigQueries();
+      setProviderProfileMode('edit');
+      setSelectedProviderProfileId(profile.id);
+      setProviderProfileDraft(createDraftFromProviderProfile(profile));
+      setProviderProfileError(null);
+      toast.success(t('settings.providerProfileActivated'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const deleteProviderProfileMutation = useMutation({
+    mutationFn: api.deleteProviderProfile,
+    onSuccess: async (_result, deletedId) => {
+      await refreshProviderConfigQueries();
+      const nextProfiles = providerConfigs?.profiles.filter((profile) => profile.id !== deletedId) ?? [];
+      const nextProfile = nextProfiles.find((profile) => profile.is_active) ?? nextProfiles[0] ?? null;
+      setProviderProfileMode(nextProfile ? 'edit' : 'create');
+      setSelectedProviderProfileId(nextProfile?.id ?? null);
+      setProviderProfileDraft(nextProfile ? createDraftFromProviderProfile(nextProfile) : createEmptyProviderProfileDraft('codex', 0));
+      setProviderProfileError(null);
+      toast.success(t('settings.providerProfileDeleted'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+  const providerConfigBusy =
+    updateProviderSourceMutation.isPending ||
+    bulkAutoSyncMutation.isPending ||
+    chooseProviderConfigDirMutation.isPending ||
+    syncProviderMutation.isPending ||
+    syncAllProviderConfigsMutation.isPending ||
+    importProviderProfileMutation.isPending ||
+    createProviderProfileMutation.isPending ||
+    updateProviderProfileMutation.isPending ||
+    activateProviderProfileMutation.isPending ||
+    deleteProviderProfileMutation.isPending;
   const saveAiConfig = (activate: boolean) => {
     const validationError = validateAiConfigDraft(aiConfigDraft, t);
     if (validationError) {
@@ -430,6 +620,32 @@ function SystemSettingsForm({
       createAiConfigMutation.mutate(input);
     }
   };
+  const saveProviderProfile = (activate: boolean) => {
+    const normalizedName = providerProfileDraft.name.trim();
+    if (!normalizedName) {
+      setProviderProfileError(t('settings.providerProfileNameRequired'));
+      return;
+    }
+    const input = {
+      name: normalizedName,
+      provider: providerProfileDraft.provider,
+      model: providerProfileDraft.model.trim() || null,
+      base_url: providerProfileDraft.baseUrl.trim() || null,
+      reasoning_effort: providerProfileDraft.reasoningEffort.trim() || null,
+      run_overrides_enabled: providerProfileDraft.runOverridesEnabled,
+      activate,
+      ...(providerProfileDraft.clearApiKey
+        ? { api_key: null }
+        : providerProfileDraft.apiKey.trim()
+          ? { api_key: providerProfileDraft.apiKey.trim() }
+          : {}),
+    };
+    if (providerProfileMode === 'edit' && selectedProviderProfileId) {
+      updateProviderProfileMutation.mutate({ id: selectedProviderProfileId, input });
+    } else {
+      createProviderProfileMutation.mutate(input);
+    }
+  };
 
   useEffect(() => {
     const nextSelectedId = aiConfigs.active_ai_config_id ?? aiConfigs.items[0]?.id ?? null;
@@ -438,6 +654,24 @@ function SystemSettingsForm({
     setAiConfigMode(aiConfigs.items.length > 0 ? 'edit' : 'create');
     setAiConfigError(null);
   }, [aiConfigs.active_ai_config_id, aiConfigs.items]);
+  useEffect(() => {
+    if (!providerConfigs || providerProfileMode === 'create') return;
+    const nextProfile =
+      providerConfigs.profiles.find((profile) => profile.id === selectedProviderProfileId) ??
+      providerConfigs.profiles.find((profile) => profile.is_active) ??
+      providerConfigs.profiles[0] ??
+      null;
+    if (!nextProfile) {
+      setProviderProfileMode('create');
+      setSelectedProviderProfileId(null);
+      setProviderProfileDraft(createEmptyProviderProfileDraft('codex', 0));
+      setProviderProfileError(null);
+      return;
+    }
+    setSelectedProviderProfileId(nextProfile.id);
+    setProviderProfileDraft(createDraftFromProviderProfile(nextProfile));
+    setProviderProfileError(null);
+  }, [providerConfigs, providerProfileMode, selectedProviderProfileId]);
   const categories: Array<{
     value: SystemSettingsCategory;
     title: string;
@@ -621,10 +855,54 @@ function SystemSettingsForm({
             </div>
           )}
           {activeCategory === 'model' && (
-            <div className="space-y-3">
+            <div className="space-y-5">
+              <ProviderConfigCenter
+                configs={providerConfigs}
+                isLoading={isProviderConfigsLoading}
+                error={providerConfigsError}
+                profileMode={providerProfileMode}
+                selectedProfileId={selectedProviderProfileId}
+                profileDraft={providerProfileDraft}
+                profileError={providerProfileError}
+                isBusy={providerConfigBusy}
+                onToggleAllAutoSync={(enabled) => bulkAutoSyncMutation.mutate({ enabled })}
+                onToggleProviderAutoSync={(provider, enabled) =>
+                  updateProviderSourceMutation.mutate({ provider, input: { auto_sync_enabled: enabled } })
+                }
+                onChooseConfigDir={(provider) => chooseProviderConfigDirMutation.mutate(provider)}
+                onUseDefaultConfigDir={(provider) =>
+                  updateProviderSourceMutation.mutate({
+                    provider,
+                    input: { use_default_config_dir: true, config_dir: null },
+                  })
+                }
+                onSyncProvider={(provider) => syncProviderMutation.mutate(provider)}
+                onSyncAllProviders={() => syncAllProviderConfigsMutation.mutate()}
+                onImportProfile={(provider) => importProviderProfileMutation.mutate(provider)}
+                onCreateProfile={(provider) => {
+                  setProviderProfileMode('create');
+                  setSelectedProviderProfileId(null);
+                  setProviderProfileDraft(createEmptyProviderProfileDraft(provider, providerConfigs?.profiles.length ?? 0));
+                  setProviderProfileError(null);
+                }}
+                onSelectProfile={(profile) => {
+                  setProviderProfileMode('edit');
+                  setSelectedProviderProfileId(profile.id);
+                  setProviderProfileDraft(createDraftFromProviderProfile(profile));
+                  setProviderProfileError(null);
+                }}
+                onProfileDraftChange={(patch) => {
+                  setProviderProfileDraft((current) => ({ ...current, ...patch }));
+                  setProviderProfileError(null);
+                }}
+                onSaveProfile={() => saveProviderProfile(false)}
+                onSaveAndActivateProfile={() => saveProviderProfile(true)}
+                onActivateProfile={(profileId) => activateProviderProfileMutation.mutate(profileId)}
+                onDeleteProfile={(profileId) => deleteProviderProfileMutation.mutate(profileId)}
+              />
               <SubSettingSection
-                title={t('settings.modelProvider')}
-                description={t('settings.modelProviderDescription')}
+                title={t('settings.plannerModelProvider')}
+                description={t('settings.plannerModelProviderDescription')}
                 icon={<Sparkles className="h-4 w-4" strokeWidth={1.75} />}
               >
                 <ModelSettingsSection
@@ -663,6 +941,534 @@ function SystemSettingsForm({
         </section>
       </div>
     </SettingsDialogBody>
+  );
+}
+
+function ProviderConfigCenter({
+  configs,
+  isLoading,
+  error,
+  profileMode,
+  selectedProfileId,
+  profileDraft,
+  profileError,
+  isBusy,
+  onToggleAllAutoSync,
+  onToggleProviderAutoSync,
+  onChooseConfigDir,
+  onUseDefaultConfigDir,
+  onSyncProvider,
+  onSyncAllProviders,
+  onImportProfile,
+  onCreateProfile,
+  onSelectProfile,
+  onProfileDraftChange,
+  onSaveProfile,
+  onSaveAndActivateProfile,
+  onActivateProfile,
+  onDeleteProfile,
+}: {
+  configs: ProviderConfigList | null;
+  isLoading: boolean;
+  error: string | null;
+  profileMode: 'edit' | 'create';
+  selectedProfileId: string | null;
+  profileDraft: ProviderProfileDraft;
+  profileError: string | null;
+  isBusy: boolean;
+  onToggleAllAutoSync: (enabled: boolean) => void;
+  onToggleProviderAutoSync: (provider: AcpBackend, enabled: boolean) => void;
+  onChooseConfigDir: (provider: AcpBackend) => void;
+  onUseDefaultConfigDir: (provider: AcpBackend) => void;
+  onSyncProvider: (provider: AcpBackend) => void;
+  onSyncAllProviders: () => void;
+  onImportProfile: (provider: AcpBackend) => void;
+  onCreateProfile: (provider: AcpBackend) => void;
+  onSelectProfile: (profile: ManagedProviderProfile) => void;
+  onProfileDraftChange: (patch: Partial<ProviderProfileDraft>) => void;
+  onSaveProfile: () => void;
+  onSaveAndActivateProfile: () => void;
+  onActivateProfile: (profileId: string) => void;
+  onDeleteProfile: (profileId: string) => void;
+}): JSX.Element {
+  const { t, formatRelativeTime } = useI18n();
+  const sources = PROVIDER_CONFIG_ORDER.map((provider) => resolveProviderSource(configs, provider));
+  const allAutoSyncEnabled = sources.every((source) => source.auto_sync_enabled);
+  const anyAutoSyncEnabled = sources.some((source) => source.auto_sync_enabled);
+
+  return (
+    <section className="space-y-4" aria-label={t('settings.providerConfigCenter')}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-[13px] font-semibold text-[var(--color-fg)]">{t('settings.providerConfigCenter')}</h4>
+          <p className="mt-1 max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+            {t('settings.providerConfigCenterDescription')}
+          </p>
+        </div>
+        <Button type="button" size="sm" variant="secondary" disabled={isBusy || isLoading} onClick={onSyncAllProviders}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          {t('settings.syncAllProviders')}
+        </Button>
+      </div>
+
+      <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="flex min-w-0 items-start gap-2 text-[12px] text-[var(--color-fg)]">
+            <input
+              type="checkbox"
+              checked={allAutoSyncEnabled}
+              ref={(node) => {
+                if (node) node.indeterminate = anyAutoSyncEnabled && !allAutoSyncEnabled;
+              }}
+              disabled={isBusy || isLoading}
+              onChange={(event) => onToggleAllAutoSync(event.currentTarget.checked)}
+              className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-[var(--color-primary)]"
+            />
+            <span className="min-w-0">
+              <span className="block font-semibold">{t('settings.providerAutoSync')}</span>
+              <span className="mt-1 block leading-relaxed text-[var(--color-fg-muted)]">
+                {t('settings.providerAutoSyncDescription')}
+              </span>
+            </span>
+          </label>
+          <span className="rounded-full bg-[var(--color-surface)] px-2 py-1 text-[11px] font-medium text-[var(--color-fg-muted)]">
+            {allAutoSyncEnabled
+              ? t('settings.providerAutoSyncOn')
+              : anyAutoSyncEnabled
+                ? t('settings.providerAutoSyncMixed')
+                : t('settings.providerAutoSyncOff')}
+          </span>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="rounded-md border border-dashed border-[var(--color-border-strong)] px-3 py-5 text-[12px] text-[var(--color-fg-muted)]">
+          {t('settings.providerConfigsLoading')}
+        </div>
+      )}
+      {error && (
+        <div className="flex items-start gap-2 rounded-md border border-[color-mix(in_srgb,var(--color-danger)_40%,var(--color-border))] bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-surface))] p-3 text-[12px] leading-relaxed text-[var(--color-fg)]">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-danger)]" strokeWidth={1.75} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="grid gap-3 xl:grid-cols-3">
+        {PROVIDER_CONFIG_ORDER.map((provider) => (
+          <ProviderConfigCard
+            key={provider}
+            provider={provider}
+            source={resolveProviderSource(configs, provider)}
+            snapshot={resolveProviderSnapshot(configs, provider)}
+            runtime={resolveProviderRuntime(configs, provider)}
+            isBusy={isBusy || isLoading}
+            formatRelativeTime={formatRelativeTime}
+            onToggleAutoSync={(enabled) => onToggleProviderAutoSync(provider, enabled)}
+            onChooseConfigDir={() => onChooseConfigDir(provider)}
+            onUseDefaultConfigDir={() => onUseDefaultConfigDir(provider)}
+            onSync={() => onSyncProvider(provider)}
+            onImportProfile={() => onImportProfile(provider)}
+            onCreateProfile={() => onCreateProfile(provider)}
+          />
+        ))}
+      </div>
+
+      <ProviderProfileSection
+        configs={configs}
+        mode={profileMode}
+        selectedProfileId={selectedProfileId}
+        draft={profileDraft}
+        error={profileError}
+        isBusy={isBusy || isLoading}
+        onCreateProfile={onCreateProfile}
+        onSelectProfile={onSelectProfile}
+        onDraftChange={onProfileDraftChange}
+        onSaveProfile={onSaveProfile}
+        onSaveAndActivateProfile={onSaveAndActivateProfile}
+        onActivateProfile={onActivateProfile}
+        onDeleteProfile={onDeleteProfile}
+      />
+    </section>
+  );
+}
+
+function ProviderConfigCard({
+  provider,
+  source,
+  snapshot,
+  runtime,
+  isBusy,
+  formatRelativeTime,
+  onToggleAutoSync,
+  onChooseConfigDir,
+  onUseDefaultConfigDir,
+  onSync,
+  onImportProfile,
+  onCreateProfile,
+}: {
+  provider: AcpBackend;
+  source: ProviderConfigSource;
+  snapshot: ProviderDiscoveredSnapshot | null;
+  runtime: ProviderRuntimeConfig;
+  isBusy: boolean;
+  formatRelativeTime: (timestamp: number) => string;
+  onToggleAutoSync: (enabled: boolean) => void;
+  onChooseConfigDir: () => void;
+  onUseDefaultConfigDir: () => void;
+  onSync: () => void;
+  onImportProfile: () => void;
+  onCreateProfile: () => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const StatusIcon = source.last_sync_status === 'failed'
+    ? AlertTriangle
+    : source.last_sync_status === 'success'
+      ? CheckCircle2
+      : Circle;
+  const statusColor = source.last_sync_status === 'failed'
+    ? 'text-[var(--color-danger)]'
+    : source.last_sync_status === 'success'
+      ? 'text-[var(--color-success)]'
+      : 'text-[var(--color-fg-muted)]';
+
+  return (
+    <article className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h5 className="truncate text-[13px] font-semibold text-[var(--color-fg)]">{providerLabel(provider)}</h5>
+          <div className={cn('mt-1 inline-flex items-center gap-1 text-[11px] font-medium', statusColor)}>
+            <StatusIcon className="h-3 w-3" strokeWidth={1.75} />
+            {providerSyncStatusLabel(source.last_sync_status, t)}
+          </div>
+        </div>
+        <label className="inline-flex shrink-0 items-center gap-1.5 text-[11px] text-[var(--color-fg-muted)]">
+          <input
+            type="checkbox"
+            checked={source.auto_sync_enabled}
+            disabled={isBusy}
+            onChange={(event) => onToggleAutoSync(event.currentTarget.checked)}
+            className="h-3.5 w-3.5 accent-[var(--color-primary)]"
+          />
+          {t('settings.providerAutoSyncShort')}
+        </label>
+      </div>
+
+      <div className="mt-3 space-y-2 text-[12px]">
+        <ProviderField label={t('settings.providerConfigDir')} value={source.use_default_config_dir ? t('settings.defaultConfigDir') : source.config_dir ?? t('common.none')} mono />
+        <ProviderField label={t('settings.providerLastSync')} value={source.last_sync_at ? formatRelativeTime(source.last_sync_at) : t('settings.providerNeverSynced')} />
+        {source.last_sync_error && (
+          <div className="rounded-md bg-[color-mix(in_srgb,var(--color-danger)_8%,var(--color-surface-raised))] px-2 py-1.5 text-[11px] leading-relaxed text-[var(--color-danger)]">
+            {source.last_sync_error}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <Button type="button" size="sm" variant="secondary" disabled={isBusy} onClick={onChooseConfigDir}>
+          <FolderOpen className="h-3.5 w-3.5" />
+          {t('settings.chooseConfigDir')}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={isBusy || source.use_default_config_dir} onClick={onUseDefaultConfigDir}>
+          <RotateCcw className="h-3.5 w-3.5" />
+          {t('settings.useDefaultConfigDir')}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={isBusy} onClick={onSync}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          {t('settings.syncProvider')}
+        </Button>
+      </div>
+
+      <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h6 className="text-[12px] font-semibold text-[var(--color-fg)]">{t('settings.discoveredProviderConfig')}</h6>
+          <Button type="button" size="sm" variant="ghost" disabled={isBusy || !snapshot} onClick={onImportProfile}>
+            <Download className="h-3.5 w-3.5" />
+            {t('settings.importProviderProfile')}
+          </Button>
+        </div>
+        {snapshot ? (
+          <div className="space-y-1.5">
+            <ProviderField label={t('settings.providerModel')} value={snapshot.detected_model ?? t('common.none')} mono />
+            <ProviderField label={t('settings.providerBaseUrl')} value={snapshot.detected_base_url ?? t('common.none')} mono />
+            <ProviderField
+              label={t('settings.providerApiKey')}
+              value={snapshot.api_key_set ? t('settings.providerApiKeySaved', { preview: snapshot.api_key_preview ?? '' }) : t('settings.openaiApiKeyNotSaved')}
+            />
+            <ProviderField label={t('settings.providerReasoning')} value={snapshot.reasoning_effort ?? t('common.none')} mono />
+          </div>
+        ) : (
+          <p className="rounded-md border border-dashed border-[var(--color-border-strong)] px-2 py-3 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+            {t('settings.providerSnapshotMissing')}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h6 className="text-[12px] font-semibold text-[var(--color-fg)]">{t('settings.providerRuntimeSummary')}</h6>
+          <Button type="button" size="sm" variant="ghost" disabled={isBusy} onClick={onCreateProfile}>
+            <Plus className="h-3.5 w-3.5" />
+            {t('settings.newProviderProfile')}
+          </Button>
+        </div>
+        <div className="space-y-1.5">
+          <ProviderField label={t('settings.providerRuntimeSource')} value={providerRuntimeSourceLabel(runtime.source, t)} />
+          <ProviderField label={t('settings.providerModel')} value={runtime.model ?? t('common.none')} mono />
+          <ProviderField label={t('settings.providerBaseUrl')} value={runtime.base_url ?? t('common.none')} mono />
+          <ProviderField
+            label={t('settings.providerApiKey')}
+            value={runtime.api_key_set ? t('settings.providerApiKeySaved', { preview: runtime.api_key_preview ?? '' }) : t('settings.openaiApiKeyNotSaved')}
+          />
+          <ProviderField
+            label={t('settings.providerRunOverrides')}
+            value={runtime.run_overrides_enabled ? t('settings.providerRunOverridesOn') : t('settings.providerRunOverridesOff')}
+          />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ProviderField({ label, value, mono = false }: { label: string; value: string; mono?: boolean }): JSX.Element {
+  return (
+    <div className="grid min-w-0 grid-cols-[96px_minmax(0,1fr)] items-start gap-2">
+      <span className="text-[11px] text-[var(--color-fg-muted)]">{label}</span>
+      <span className={cn('min-w-0 truncate text-[11.5px] text-[var(--color-fg)]', mono && 'font-mono')}>{value}</span>
+    </div>
+  );
+}
+
+function ProviderProfileSection({
+  configs,
+  mode,
+  selectedProfileId,
+  draft,
+  error,
+  isBusy,
+  onCreateProfile,
+  onSelectProfile,
+  onDraftChange,
+  onSaveProfile,
+  onSaveAndActivateProfile,
+  onActivateProfile,
+  onDeleteProfile,
+}: {
+  configs: ProviderConfigList | null;
+  mode: 'edit' | 'create';
+  selectedProfileId: string | null;
+  draft: ProviderProfileDraft;
+  error: string | null;
+  isBusy: boolean;
+  onCreateProfile: (provider: AcpBackend) => void;
+  onSelectProfile: (profile: ManagedProviderProfile) => void;
+  onDraftChange: (patch: Partial<ProviderProfileDraft>) => void;
+  onSaveProfile: () => void;
+  onSaveAndActivateProfile: () => void;
+  onActivateProfile: (profileId: string) => void;
+  onDeleteProfile: (profileId: string) => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const profiles = configs?.profiles ?? [];
+  const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) ?? null;
+  const canDelete = mode === 'edit' && Boolean(selectedProfile);
+
+  return (
+    <section className="border-t border-[var(--color-border)] pt-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-[13px] font-semibold text-[var(--color-fg)]">{t('settings.managedProviderProfiles')}</h4>
+          <p className="mt-1 max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+            {t('settings.managedProviderProfilesDescription')}
+          </p>
+        </div>
+        <Button type="button" size="sm" variant="secondary" disabled={isBusy} onClick={() => onCreateProfile(draft.provider)}>
+          <Plus className="h-3.5 w-3.5" />
+          {t('settings.newProviderProfile')}
+        </Button>
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(320px,1.1fr)]">
+        <div className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          {profiles.length === 0 ? (
+            <div className="rounded-md border border-dashed border-[var(--color-border-strong)] px-3 py-6 text-center">
+              <KeyRound className="mx-auto h-5 w-5 text-[var(--color-accent)]" strokeWidth={1.75} />
+              <div className="mt-2 text-[12px] font-semibold text-[var(--color-fg)]">{t('settings.providerProfileEmptyTitle')}</div>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+                {t('settings.providerProfileEmptyDescription')}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {profiles.map((profile) => {
+                const isSelected = profile.id === selectedProfileId;
+                return (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    className={cn(
+                      'w-full rounded-md border p-3 text-left transition-colors ease-ocean',
+                      isSelected
+                        ? 'border-[var(--color-accent)] bg-[var(--color-surface-raised)]'
+                        : 'border-[var(--color-border)] bg-[var(--color-surface-raised)] hover:border-[var(--color-border-strong)]',
+                    )}
+                    onClick={() => onSelectProfile(profile)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          {profile.is_active ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-[var(--color-success)]" strokeWidth={1.9} />
+                          ) : (
+                            <Circle className="h-3.5 w-3.5 flex-shrink-0 text-[var(--color-muted)]" strokeWidth={1.7} />
+                          )}
+                          <span className="truncate text-[13px] font-semibold text-[var(--color-fg)]">{profile.name}</span>
+                        </div>
+                        <div className="mt-1 truncate font-mono text-[11.5px] text-[var(--color-fg-muted)]">
+                          {profile.model ?? t('common.none')}
+                        </div>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-[var(--color-surface)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-fg-muted)]">
+                        {providerLabel(profile.provider)}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h5 className="text-[12px] font-semibold text-[var(--color-fg)]">
+                {mode === 'create' ? t('settings.providerProfileCreateTitle') : t('settings.providerProfileEditTitle')}
+              </h5>
+              <p className="mt-1 text-[11px] leading-relaxed text-[var(--color-fg-muted)]">
+                {mode === 'create' ? t('settings.providerProfileCreateDescription') : t('settings.providerProfileEditDescription')}
+              </p>
+            </div>
+            {mode === 'edit' && selectedProfile && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-raised)] px-2 py-1 text-[10.5px] font-semibold text-[var(--color-fg-muted)]">
+                {selectedProfile.is_active ? t('settings.aiConfigCurrent') : t('settings.aiConfigStandby')}
+              </span>
+            )}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <SegmentedSetting
+                label={t('settings.providerProfileProvider')}
+                ariaLabel={t('settings.providerProfileProvider')}
+                options={PROVIDER_CONFIG_ORDER.map((provider) => ({ value: provider, label: providerLabel(provider) }))}
+                value={draft.provider}
+                onChange={(provider) => onDraftChange({ provider })}
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>{t('settings.providerProfileName')}</Label>
+              <Input
+                value={draft.name}
+                onChange={(event) => onDraftChange({ name: event.target.value })}
+                placeholder={t('settings.providerProfileNamePlaceholder')}
+              />
+            </div>
+            <div>
+              <Label>{t('settings.providerModel')}</Label>
+              <Input
+                value={draft.model}
+                onChange={(event) => onDraftChange({ model: event.target.value })}
+                placeholder="gpt-5.5"
+                className="font-mono"
+              />
+            </div>
+            <div>
+              <Label>{t('settings.providerReasoning')}</Label>
+              <Input
+                value={draft.reasoningEffort}
+                onChange={(event) => onDraftChange({ reasoningEffort: event.target.value })}
+                placeholder="xhigh"
+                className="font-mono"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>{t('settings.providerBaseUrl')}</Label>
+              <Input
+                value={draft.baseUrl}
+                onChange={(event) => onDraftChange({ baseUrl: event.target.value })}
+                placeholder="https://api.openai.com/v1"
+                className="font-mono"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <Label>{t('settings.providerApiKey')}</Label>
+              <Input
+                type="password"
+                value={draft.apiKey}
+                onChange={(event) => onDraftChange({ apiKey: event.target.value, clearApiKey: false })}
+                placeholder={t('settings.providerApiKeyPlaceholder')}
+                className="font-mono"
+                disabled={draft.clearApiKey}
+                autoComplete="new-password"
+              />
+              <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+                {selectedProfile?.api_key_set
+                  ? t('settings.providerApiKeySaved', { preview: selectedProfile.api_key_preview ?? '' })
+                  : t('settings.openaiApiKeyNotSaved')}
+              </p>
+              {selectedProfile?.api_key_set && (
+                <label className="mt-2 flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-[12px] text-[var(--color-fg-muted)]">
+                  <input
+                    type="checkbox"
+                    checked={draft.clearApiKey}
+                    onChange={(event) => onDraftChange({ clearApiKey: event.target.checked, apiKey: '' })}
+                    className="h-3.5 w-3.5 accent-[var(--color-primary)]"
+                  />
+                  <span>{t('settings.clearProviderApiKey')}</span>
+                </label>
+              )}
+            </div>
+            <label className="sm:col-span-2 flex items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-[12px] text-[var(--color-fg)]">
+              <input
+                type="checkbox"
+                checked={draft.runOverridesEnabled}
+                onChange={(event) => onDraftChange({ runOverridesEnabled: event.currentTarget.checked })}
+                className="mt-0.5 h-3.5 w-3.5 accent-[var(--color-primary)]"
+              />
+              <span>
+                <span className="block font-semibold">{t('settings.providerRunOverrides')}</span>
+                <span className="mt-1 block leading-relaxed text-[var(--color-fg-muted)]">
+                  {t('settings.providerRunOverridesDescription')}
+                </span>
+              </span>
+            </label>
+          </div>
+          {error && <p className="mt-3 text-[12px] leading-relaxed text-[var(--color-danger)]">{error}</p>}
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
+            {canDelete && (
+              <Button type="button" size="sm" variant="danger" disabled={isBusy} onClick={() => selectedProfile && onDeleteProfile(selectedProfile.id)}>
+                <Trash2 className="h-3.5 w-3.5" />
+                {t('settings.providerProfileDelete')}
+              </Button>
+            )}
+            {selectedProfile && !selectedProfile.is_active && (
+              <Button type="button" size="sm" variant="secondary" disabled={isBusy} onClick={() => onActivateProfile(selectedProfile.id)}>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {t('settings.providerProfileActivate')}
+              </Button>
+            )}
+            <Button type="button" size="sm" variant="secondary" disabled={isBusy} onClick={onSaveProfile}>
+              <Save className="h-3.5 w-3.5" />
+              {mode === 'create' ? t('settings.providerProfileCreate') : t('settings.providerProfileSave')}
+            </Button>
+            <Button type="button" size="sm" disabled={isBusy} onClick={onSaveAndActivateProfile}>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {t('settings.providerProfileSaveAndActivate')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1761,6 +2567,90 @@ function pickFallbackAgentId(value: string, options: FallbackAgentOption[]): str
   if (options.length === 0) return '';
   if (options.some((agent) => agent.agent_id === value)) return value;
   return options.find((agent) => agent.agent_id === 'planner')?.agent_id ?? options[0].agent_id;
+}
+
+function providerLabel(provider: AcpBackend): string {
+  if (provider === 'codex') return 'Codex';
+  if (provider === 'claudecode') return 'Claude Code';
+  return 'OpenCode';
+}
+
+function resolveProviderSource(configs: ProviderConfigList | null, provider: AcpBackend): ProviderConfigSource {
+  return configs?.sources.find((source) => source.provider === provider) ?? {
+    provider,
+    config_dir: null,
+    use_default_config_dir: true,
+    auto_sync_enabled: true,
+    last_sync_at: null,
+    last_sync_status: 'idle',
+    last_sync_error: null,
+    updated_at: 0,
+  };
+}
+
+function resolveProviderSnapshot(
+  configs: ProviderConfigList | null,
+  provider: AcpBackend,
+): ProviderDiscoveredSnapshot | null {
+  return configs?.snapshots.find((snapshot) => snapshot.provider === provider) ?? null;
+}
+
+function resolveProviderRuntime(configs: ProviderConfigList | null, provider: AcpBackend): ProviderRuntimeConfig {
+  return configs?.runtime.find((runtime) => runtime.provider === provider) ?? {
+    provider,
+    source: 'cli_default',
+    profile_id: null,
+    model: null,
+    base_url: null,
+    api_key_set: false,
+    api_key_preview: null,
+    reasoning_effort: null,
+    run_overrides_enabled: false,
+  };
+}
+
+function providerSyncStatusLabel(
+  status: ProviderConfigSource['last_sync_status'],
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+): string {
+  if (status === 'success') return t('settings.providerSyncSuccess');
+  if (status === 'failed') return t('settings.providerSyncFailedShort');
+  return t('settings.providerSyncIdle');
+}
+
+function providerRuntimeSourceLabel(
+  source: ProviderRuntimeConfig['source'],
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+): string {
+  if (source === 'managed_profile') return t('settings.providerRuntimeSourceManaged');
+  if (source === 'discovered_snapshot') return t('settings.providerRuntimeSourceSnapshot');
+  return t('settings.providerRuntimeSourceCliDefault');
+}
+
+function createEmptyProviderProfileDraft(provider: AcpBackend, count: number): ProviderProfileDraft {
+  return {
+    provider,
+    name: `${providerLabel(provider)} profile ${count + 1}`,
+    model: '',
+    baseUrl: '',
+    apiKey: '',
+    clearApiKey: false,
+    reasoningEffort: '',
+    runOverridesEnabled: true,
+  };
+}
+
+function createDraftFromProviderProfile(profile: ManagedProviderProfile): ProviderProfileDraft {
+  return {
+    provider: profile.provider,
+    name: profile.name,
+    model: profile.model ?? '',
+    baseUrl: profile.base_url ?? '',
+    apiKey: '',
+    clearApiKey: false,
+    reasoningEffort: profile.reasoning_effort ?? '',
+    runOverridesEnabled: profile.run_overrides_enabled,
+  };
 }
 
 function createEmptyAiConfigDraft(count: number): AiConfigDraft {
