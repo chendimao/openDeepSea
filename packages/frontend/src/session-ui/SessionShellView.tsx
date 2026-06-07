@@ -24,9 +24,10 @@ import {
   StopCircle,
   Timer,
   Trash2,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type {
   ActiveSessionSummary,
   Session,
@@ -1118,6 +1119,17 @@ function trimDisplayText(value: string | null | undefined): string {
 }
 
 function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
+  const [selectedRow, setSelectedRow] = useState<SessionToolRow | null>(null);
+
+  useEffect(() => {
+    if (!selectedRow) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedRow(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedRow]);
+
   return (
     <section className="deepsea-inspector-section">
       <div className="deepsea-module-title">
@@ -1129,17 +1141,79 @@ function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
       ) : (
       <div className="deepsea-tool-table">
         {rows.map((row, index) => (
-          <div key={row.id} data-tone={toolRowTone(row)}>
+          <button
+            type="button"
+            key={row.id}
+            data-tone={toolRowTone(row)}
+            data-tool-row-button="true"
+            aria-label={`查看工具调用详情：${row.target}`}
+            onClick={() => setSelectedRow(row)}
+          >
             <span>{index + 1}</span>
             <strong>{toolActionLabel(row.action)}</strong>
             <p>{row.target}</p>
-            <span>{row.durationMs === null ? '--' : `${(row.durationMs / 1000).toFixed(1)}s`}</span>
+            <span>{formatToolDuration(row.durationMs)}</span>
             {row.status === 'running' ? <span>...</span> : <CheckCircle2 aria-hidden="true" />}
-          </div>
+          </button>
         ))}
       </div>
       )}
+      {selectedRow ? <ToolDetailDialog row={selectedRow} onClose={() => setSelectedRow(null)} /> : null}
     </section>
+  );
+}
+
+function ToolDetailDialog({ row, onClose }: { row: SessionToolRow; onClose: () => void }): JSX.Element {
+  return (
+    <div className="deepsea-tool-detail-overlay" onClick={onClose}>
+      <div
+        className="deepsea-tool-detail-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="工具调用详情"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="deepsea-tool-detail-dialog__header">
+          <div>
+            <span>{toolActionLabel(row.action)}</span>
+            <h3>{row.label}</h3>
+          </div>
+          <button type="button" aria-label="关闭工具调用详情" onClick={onClose} autoFocus>
+            <X aria-hidden="true" />
+          </button>
+        </div>
+        <div className="deepsea-tool-detail-dialog__target">
+          <span>目标</span>
+          <code>{row.target}</code>
+        </div>
+        <dl className="deepsea-tool-detail-grid">
+          <div>
+            <dt>状态</dt>
+            <dd data-status={row.status}>{toolStatusLabel(row.status)}</dd>
+          </div>
+          <div>
+            <dt>耗时</dt>
+            <dd>{formatToolDuration(row.durationMs)}</dd>
+          </div>
+          <div>
+            <dt>级别</dt>
+            <dd>{row.severity}</dd>
+          </div>
+          <div>
+            <dt>动作</dt>
+            <dd>{row.action}</dd>
+          </div>
+          <div>
+            <dt>Event ID</dt>
+            <dd>{row.eventId}</dd>
+          </div>
+          <div>
+            <dt>记录时间</dt>
+            <dd>{formatToolTimestamp(row.created_at)}</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
   );
 }
 
@@ -1298,6 +1372,28 @@ function toolActionLabel(action: string): string {
   if (normalized === 'BROWSER') return '浏览器验证';
   if (normalized === 'EXEC') return '执行命令';
   return '工具调用';
+}
+
+function toolStatusLabel(status: SessionToolRow['status']): string {
+  if (status === 'running') return '运行中';
+  if (status === 'failed') return '失败';
+  return '已完成';
+}
+
+function formatToolDuration(durationMs: number | null): string {
+  return durationMs === null ? '--' : `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function formatToolTimestamp(timestamp: number): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(timestamp));
 }
 
 function formatRelativeTime(now: number, timestamp: number): string {

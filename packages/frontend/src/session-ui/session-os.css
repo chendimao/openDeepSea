@@ -2031,16 +2031,33 @@
   font-family: var(--deepsea-mono);
   font-size: 10px;
 }
-.deepsea-tool-table div {
+.deepsea-tool-table button {
   display: grid;
   grid-template-columns: 16px auto minmax(0, 1fr) 38px 16px;
   align-items: center;
   gap: 10px;
+  width: 100%;
   min-height: 33px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
   padding: 0 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 160ms ease, transform 160ms ease;
 }
-.deepsea-tool-table div:last-child {
+.deepsea-tool-table button:hover,
+.deepsea-tool-table button:focus-visible {
+  background: rgba(37, 99, 235, 0.08);
+}
+.deepsea-tool-table button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.42);
+  outline-offset: -2px;
+}
+.deepsea-tool-table button:last-child {
   border-bottom: 0;
 }
 .deepsea-tool-table span:first-child {
@@ -2054,12 +2071,12 @@
   font-family: var(--deepsea-sans);
   font-size: 10px;
 }
-.deepsea-tool-table div[data-tone="warn"] strong,
-.deepsea-tool-table div[data-tone="warn"] > span:last-child {
+.deepsea-tool-table button[data-tone="warn"] strong,
+.deepsea-tool-table button[data-tone="warn"] > span:last-child {
   color: var(--deepsea-warn);
 }
-.deepsea-tool-table div[data-tone="danger"] strong,
-.deepsea-tool-table div[data-tone="danger"] > span:last-child {
+.deepsea-tool-table button[data-tone="danger"] strong,
+.deepsea-tool-table button[data-tone="danger"] > span:last-child {
   color: var(--deepsea-danger);
 }
 .deepsea-tool-table p {
@@ -2069,7 +2086,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.deepsea-tool-table div > span:nth-last-child(2) {
+.deepsea-tool-table button > span:nth-last-child(2) {
   color: rgba(100, 116, 139, 0.52);
   text-align: right;
 }
@@ -2077,6 +2094,130 @@
   width: 14px;
   height: 14px;
   color: var(--deepsea-ok);
+}
+.deepsea-tool-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.36);
+  backdrop-filter: blur(10px);
+}
+.deepsea-tool-detail-dialog {
+  width: min(560px, 100%);
+  max-height: min(680px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: var(--shadow-dialog);
+  color: var(--deepsea-text);
+}
+.deepsea-tool-detail-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 18px 18px 14px;
+}
+.deepsea-tool-detail-dialog__header span {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--deepsea-primary);
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 900;
+}
+.deepsea-tool-detail-dialog__header h3 {
+  margin: 8px 0 0;
+  font-size: 17px;
+  line-height: 1.2;
+}
+.deepsea-tool-detail-dialog__header button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: rgba(15, 23, 42, 0.72);
+}
+.deepsea-tool-detail-dialog__header button:hover,
+.deepsea-tool-detail-dialog__header button:focus-visible {
+  background: rgba(15, 23, 42, 0.06);
+}
+.deepsea-tool-detail-dialog__header svg {
+  width: 16px;
+  height: 16px;
+}
+.deepsea-tool-detail-dialog__target {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+}
+.deepsea-tool-detail-dialog__target span,
+.deepsea-tool-detail-grid dt {
+  color: rgba(100, 116, 139, 0.82);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.deepsea-tool-detail-dialog__target code {
+  display: block;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.06);
+  padding: 12px;
+  color: rgba(15, 23, 42, 0.82);
+  font-family: var(--deepsea-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.deepsea-tool-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0 18px 18px;
+}
+.deepsea-tool-detail-grid div {
+  min-width: 0;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.58);
+  padding: 10px;
+}
+.deepsea-tool-detail-grid dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  color: rgba(15, 23, 42, 0.84);
+  font-family: var(--deepsea-mono);
+  font-size: 11px;
+}
+.deepsea-tool-detail-grid dd[data-status="running"] {
+  color: var(--deepsea-warn);
+}
+.deepsea-tool-detail-grid dd[data-status="failed"] {
+  color: var(--deepsea-danger);
+}
+@media (max-width: 640px) {
+  .deepsea-tool-detail-overlay {
+    padding: 14px;
+  }
+  .deepsea-tool-detail-grid {
+    grid-template-columns: 1fr;
+  }
 }
 .deepsea-plan-list {
   display: grid;

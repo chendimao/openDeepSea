@@ -81,6 +81,13 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /当前状态/);
 });
 
+test('SessionShell renders tool rows as detail buttons', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /data-tool-row-button="true"/);
+  assert.match(html, /aria-label="查看工具调用详情：packages\/frontend\/src\/session-ui\/SessionShell\.tsx"/);
+});
+
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
   const { activeSessions: _activeSessions, ...legacyPayload } = createPayload();
 
