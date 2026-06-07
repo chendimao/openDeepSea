@@ -117,6 +117,14 @@ test('SessionShell renders tool row relative record time beside duration', () =>
   assert.match(html, /class="deepsea-tool-row-time">刚刚<\/span>/);
 });
 
+test('SessionShell renders compact tool rows without ordinal numbers', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.doesNotMatch(html, /<span class="deepsea-tool-row-index">1<\/span>/);
+  assert.match(html, /class="deepsea-tool-row-duration"/);
+  assert.match(html, /class="deepsea-tool-row-time"/);
+});
+
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
   const { activeSessions: _activeSessions, ...legacyPayload } = createPayload();
 

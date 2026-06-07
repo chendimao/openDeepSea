@@ -1174,7 +1174,7 @@ function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
         <div className="deepsea-empty">暂无工具调用</div>
       ) : (
       <div className="deepsea-tool-table">
-        {rows.map((row, index) => (
+        {rows.map((row) => (
           <button
             type="button"
             key={row.id}
@@ -1183,7 +1183,6 @@ function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
             aria-label={`查看工具调用详情：${row.target}`}
             onClick={() => setSelectedRow(row)}
           >
-            <span>{index + 1}</span>
             <strong>{toolActionLabel(row.action)}</strong>
             <p>{row.target}</p>
             <span className="deepsea-tool-row-duration">{formatToolDisplayDuration(row)}</span>
