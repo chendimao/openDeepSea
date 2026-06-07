@@ -46,6 +46,7 @@ export interface GenerateImageToolOutput {
 export interface GenerateImageToolDeps {
   service?: ImageGenerationService;
   profileRepo?: Pick<ImageProviderProfileRepository, 'getActive' | 'getForProject'>;
+  onResult?: (result: GenerateImageToolOutput) => void | Promise<void>;
 }
 
 export const generateImageToolInputSchema = {
@@ -135,11 +136,15 @@ export function createGenerateImageSessionTool(
     name: 'generate_image',
     description: 'Generate text-to-image or image-to-image outputs and save them as project resources.',
     input_schema: generateImageSessionToolInputSchema,
-    execute: async (input) => runGenerateImageTool({
-      ...coerceToolRecord(input),
-      project_id: session.project_id,
-      session_id: session.id,
-    }, deps),
+    execute: async (input) => {
+      const result = await runGenerateImageTool({
+        ...coerceToolRecord(input),
+        project_id: session.project_id,
+        session_id: session.id,
+      }, deps);
+      await deps.onResult?.(result);
+      return result;
+    },
   };
 }
 

@@ -95,7 +95,7 @@ export async function runSessionAgent(input: {
       prompt: input.prompt,
       acpPermissionMode: permissionMode,
       imagePaths: input.imagePaths ?? [],
-      tools: buildSessionRuntimeTools(session, permissionMode),
+      tools: buildSessionRuntimeTools(session, permissionMode, run.id),
       onSession: (acpSessionId) => {
         persistProviderSession({
           runId: run.id,
@@ -150,10 +150,23 @@ export async function runSessionAgent(input: {
 export function buildSessionRuntimeTools(
   session: Pick<Session, 'id' | 'project_id'>,
   permissionMode: AcpPermissionMode,
+  runId?: string | null,
 ): SessionToolDefinition[] {
   if (!canUseProjectTools(permissionMode)) return [];
+  const generateImageToolDeps = generateImageToolDepsOverride ?? {};
   return [
-    createGenerateImageSessionTool(session, generateImageToolDepsOverride ?? {}),
+    createGenerateImageSessionTool(session, {
+      ...generateImageToolDeps,
+      onResult: async (result) => {
+        await generateImageToolDeps.onResult?.(result);
+        const { recordSessionImageGenerationToolResultEvidence } = await import('./session-message-dispatch.js');
+        recordSessionImageGenerationToolResultEvidence({
+          sessionId: session.id,
+          sourceRunId: runId ?? null,
+          result,
+        });
+      },
+    }),
   ];
 }
 

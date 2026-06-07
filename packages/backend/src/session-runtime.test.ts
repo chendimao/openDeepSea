@@ -559,4 +559,9 @@ test('runSessionAgent exposes generate_image tool bound to session project scope
   assert.equal(job?.project_id, project.id);
   assert.equal(job?.session_id, session.id);
   assert.equal(JSON.stringify(toolResult).includes('runtime-tool-secret'), false);
+  const event = sessionEvidenceRepo.listBySession(session.id)
+    .find((item) => item.title === '图片生成结果');
+  assert.equal(event?.event_type, 'tool_result');
+  assert.equal(event?.source_run_id, run.id);
+  assert.deepEqual(event?.payload.outputs, toolResult.outputs);
 });

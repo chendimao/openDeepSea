@@ -13,6 +13,7 @@ const { sessionMessageRepo, sessionRepo, sessionRunRepo } = await import('./repo
 const {
   dispatchSessionUserMessage,
   recordSessionImageGenerationJobMessage,
+  recordSessionImageGenerationToolResultEvidence,
 } = await import('./session-message-dispatch.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 
@@ -402,4 +403,58 @@ test('recordSessionImageGenerationJobMessage rejects mismatched job and target s
     /image generation job session mismatch/,
   );
   assert.equal(sessionMessageRepo.listBySession(targetSession.id).length, 0);
+});
+
+test('recordSessionImageGenerationToolResultEvidence stores generated outputs as session evidence', () => {
+  const project = projectRepo.create({
+    name: 'Session Image Tool Evidence',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-image-tool-evidence-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Session Image Tool Evidence',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    phase: 'implementing',
+    prompt: '生成图片',
+  });
+
+  const event = recordSessionImageGenerationToolResultEvidence({
+    sessionId: session.id,
+    sourceRunId: run.id,
+    result: {
+      job_id: 'image-tool-job-1',
+      status: 'completed',
+      error: null,
+      outputs: [{
+        file_id: 'file-generated-1',
+        resource_id: 'file:file-generated-1',
+        url: '/uploads/files/project/generated.png',
+        slot: 1,
+      }],
+    },
+  });
+
+  assert.equal(event.event_type, 'tool_result');
+  assert.equal(event.source_run_id, run.id);
+  assert.equal(event.title, '图片生成结果');
+  assert.match(event.summary ?? '', /1 张图片/);
+  assert.deepEqual(event.payload, {
+    tool_name: 'generate_image',
+    job_id: 'image-tool-job-1',
+    status: 'completed',
+    error: null,
+    outputs: [{
+      file_id: 'file-generated-1',
+      resource_id: 'file:file-generated-1',
+      url: '/uploads/files/project/generated.png',
+      slot: 1,
+    }],
+  });
 });

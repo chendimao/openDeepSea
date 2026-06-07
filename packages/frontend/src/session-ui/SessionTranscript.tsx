@@ -46,10 +46,48 @@ export function SessionTranscript({ detail }: { detail: SessionDetail }): JSX.El
               <span>{event.seq}</span>
               <strong>{evidenceTypeLabel(event.event_type)}</strong>
               <p>{event.summary ?? event.title}</p>
+              <GeneratedImageEvidenceInline payload={event.payload} />
             </article>
           ))}
         </>
       )}
     </section>
+  );
+}
+
+function GeneratedImageEvidenceInline({
+  payload,
+}: {
+  payload: Record<string, unknown>;
+}): JSX.Element | null {
+  if (payload['tool_name'] !== 'generate_image') return null;
+  const outputs = payload['outputs'];
+  if (!Array.isArray(outputs)) return null;
+  const images = outputs
+    .filter((output): output is Record<string, unknown> => !!output && typeof output === 'object' && !Array.isArray(output))
+    .map((output, index) => ({
+      fileId: typeof output['file_id'] === 'string' ? output['file_id'] : `image-${index + 1}`,
+      url: typeof output['url'] === 'string' ? output['url'] : '',
+      slot: typeof output['slot'] === 'number' ? output['slot'] : index + 1,
+    }))
+    .filter((output) => output.url);
+  if (images.length === 0) return null;
+
+  return (
+    <div className="deepsea-generated-artifacts" aria-label="图片生成结果">
+      <div className="deepsea-generated-artifacts__grid">
+        {images.map((image) => (
+          <a
+            key={`${image.fileId}:${image.slot}`}
+            href={image.url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`打开生成图片：${image.fileId}`}
+          >
+            <img src={image.url} alt={`生成图片 ${image.slot}`} />
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }

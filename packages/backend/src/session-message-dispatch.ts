@@ -16,6 +16,7 @@ import { wsHub } from './ws-hub.js';
 import { isIgnoredWorkspacePath, normalizeWorkspacePath, resolveWorkspacePath } from './workspace-files.js';
 import type { MessageAttachmentMetadata, ProjectFile, Session, SessionMessage, SessionMode } from './types.js';
 import type { ImageGenerationJob, ImageGenerationOutput } from './image-generation/types.js';
+import type { GenerateImageToolOutput } from './image-generation/tool.js';
 
 const DEFAULT_SESSION_TITLE = 'New Session';
 const AUTO_SESSION_TITLE_LIMIT = 25;
@@ -141,6 +142,35 @@ export function recordSessionImageGenerationJobMessage(input: {
   return message;
 }
 
+export function recordSessionImageGenerationToolResultEvidence(input: {
+  sessionId: string;
+  sourceRunId?: string | null;
+  result: GenerateImageToolOutput;
+}) {
+  const event = sessionEvidenceRepo.create({
+    session_id: input.sessionId,
+    event_type: 'tool_result',
+    severity: imageToolEvidenceSeverity(input.result),
+    source_run_id: input.sourceRunId ?? null,
+    title: '图片生成结果',
+    summary: imageToolEvidenceSummary(input.result),
+    payload: {
+      tool_name: 'generate_image',
+      job_id: input.result.job_id,
+      status: input.result.status,
+      error: input.result.error,
+      outputs: input.result.outputs,
+    },
+  });
+  wsHub.broadcastSession(input.sessionId, {
+    type: 'session_evidence:new',
+    sessionId: input.sessionId,
+    event,
+  });
+  broadcastActiveSessionUpsert(input.sessionId);
+  return event;
+}
+
 function buildUserMessageMetadata(input: {
   agentId: string;
   workspaceFileRefs: string[];
@@ -180,6 +210,19 @@ function truncateImageGenerationPrompt(prompt: string): string {
   const chars = Array.from(normalized);
   if (chars.length <= 80) return normalized;
   return `${chars.slice(0, 80).join('').trimEnd()}...`;
+}
+
+function imageToolEvidenceSeverity(result: GenerateImageToolOutput): 'info' | 'warning' | 'error' {
+  if (result.status === 'failed') return 'error';
+  if (result.status === 'canceled') return 'warning';
+  return 'info';
+}
+
+function imageToolEvidenceSummary(result: GenerateImageToolOutput): string {
+  if (result.outputs.length > 0) return `已生成 ${result.outputs.length} 张图片。`;
+  if (result.error) return result.error;
+  if (result.status === 'canceled') return '图片生成任务已取消。';
+  return '图片生成未返回图片。';
 }
 
 function buildLibraryAttachmentMetadata(libraryFileRefs: string[]): MessageAttachmentMetadata[] {
