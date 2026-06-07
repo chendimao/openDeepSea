@@ -104,6 +104,7 @@ test('image generation schema exposes required columns indexes and foreign keys'
   assertIndexNames('image_generation_outputs', ['idx_image_generation_outputs_job']);
   assertIndexNames('image_generation_source_images', ['idx_image_generation_source_images_job']);
 
+  assertForeignKeys('image_provider_profiles', ['project_id->projects.id:CASCADE']);
   assertForeignKeys('image_generation_jobs', [
     'project_id->projects.id:CASCADE',
     'provider_profile_id->image_provider_profiles.id:RESTRICT',
