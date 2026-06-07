@@ -1420,6 +1420,11 @@ function uniqueDisplayParts(parts: string[]): string[] {
   for (const part of parts) {
     const text = part.trim();
     if (!text || seen.has(text) || unique.some((existing) => existing.includes(text))) continue;
+    for (let index = unique.length - 1; index >= 0; index -= 1) {
+      if (!text.includes(unique[index] ?? '')) continue;
+      seen.delete(unique[index] ?? '');
+      unique.splice(index, 1);
+    }
     seen.add(text);
     unique.push(text);
   }
