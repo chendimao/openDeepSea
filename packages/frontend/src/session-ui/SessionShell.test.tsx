@@ -305,12 +305,30 @@ test('SessionShell renders agent thought above run output without leaking runtim
   run.activity_log = '分析用户问题，检查会话上下文，并准备简短回复。';
 
   const html = renderSessionShell(payload);
+  const thoughtTag = getAgentThoughtTag(html);
 
   assert.doesNotMatch(html, /本轮 prompt 来源由 SessionOS Context Inspector 记录/);
   assert.match(html, /智能体思考过程/);
   assert.match(html, /分析用户问题，检查会话上下文，并准备简短回复。/);
   assert.match(html, /等待智能体输出/);
+  assert.match(thoughtTag, /data-active="true"/);
+  assert.match(thoughtTag, /\sopen=""/);
   assert.ok(html.indexOf('智能体思考过程') < html.indexOf('planner'));
+});
+
+test('SessionShell collapses completed agent thought by default', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.activity_log = '完成态思考文本默认隐藏，用户需要时可展开查看。';
+
+  const html = renderSessionShell(payload);
+  const thoughtTag = getAgentThoughtTag(html);
+
+  assert.match(thoughtTag, /data-active="false"/);
+  assert.doesNotMatch(thoughtTag, /\sopen=""/);
+  assert.match(html, /展开/);
+  assert.match(html, /完成态思考文本默认隐藏，用户需要时可展开查看。/);
 });
 
 test('SessionShell keeps previous assistant replies in transcript timeline', () => {
@@ -635,6 +653,12 @@ test('SessionShell renders a concise active session title with the full title av
   assert.match(html, /用户在当前会话第一次发送消息的时候.../);
   assert.doesNotMatch(html, />用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出</);
 });
+
+function getAgentThoughtTag(html: string): string {
+  const match = html.match(/<details class="deepsea-agent-thought"[^>]*>/);
+  assert.ok(match, 'expected an agent thought details element');
+  return match[0];
+}
 
 function createAgentEvent(input: Partial<SessionAgentEvent> & Pick<SessionAgentEvent, 'id' | 'seq' | 'channel' | 'event_type'>): SessionAgentEvent {
   return {

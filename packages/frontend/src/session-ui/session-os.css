@@ -1770,12 +1770,26 @@ button.deepsea-message-attachment {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.05);
   padding: 6px 8px;
+  cursor: pointer;
+  list-style: none;
 }
-.deepsea-agent-thought__header span {
+.deepsea-agent-thought__header::-webkit-details-marker {
+  display: none;
+}
+.deepsea-agent-thought:not([open]) .deepsea-agent-thought__header {
+  border-bottom-color: transparent;
+}
+.deepsea-agent-thought__title,
+.deepsea-agent-thought__meta,
+.deepsea-agent-thought__toggle {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 6px;
+}
+.deepsea-agent-thought__meta {
+  flex-shrink: 0;
+  gap: 5px;
 }
 .deepsea-agent-thought__header svg {
   width: 14px;
@@ -1802,6 +1816,34 @@ button.deepsea-message-attachment {
   font-family: var(--deepsea-mono);
   font-size: 8px;
   font-weight: 800;
+}
+.deepsea-agent-thought__toggle {
+  border: 1px solid rgba(100, 116, 139, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.42);
+  color: rgba(71, 85, 105, 0.82);
+  padding: 1px 6px 1px 4px;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.deepsea-agent-thought__toggle svg {
+  width: 10px;
+  height: 10px;
+  color: currentColor;
+  transition: transform 160ms ease;
+}
+.deepsea-agent-thought[open] .deepsea-agent-thought__toggle svg {
+  transform: rotate(180deg);
+}
+.deepsea-agent-thought__header:hover .deepsea-agent-thought__toggle {
+  border-color: rgba(37, 99, 235, 0.18);
+  color: var(--deepsea-primary);
+}
+.deepsea-agent-thought__header:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.36);
+  outline-offset: -2px;
 }
 .deepsea-agent-thought p {
   max-height: 104px;

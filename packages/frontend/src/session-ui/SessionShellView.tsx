@@ -1032,21 +1032,52 @@ function AgentThoughtPanel({
   evidence: SessionEvidenceEvent[];
 }): JSX.Element | null {
   const thought = agentThoughtText(run, evidence);
+  const defaultOpen = isRunThoughtOpenByDefault(run.status);
+  const [openState, setOpenState] = useState(() => ({
+    runId: run.id,
+    status: run.status,
+    open: defaultOpen,
+  }));
+  const open = openState.runId === run.id && openState.status === run.status ? openState.open : defaultOpen;
+
   if (!thought) return null;
   const status = runThoughtStatusLabel(run.status);
   return (
-    <section className="deepsea-agent-thought" aria-label="智能体思考过程">
-      <div className="deepsea-agent-thought__header">
-        <span>
+    <details
+      className="deepsea-agent-thought"
+      aria-label="智能体思考过程"
+      data-active={defaultOpen ? 'true' : 'false'}
+      open={open}
+      onToggle={(event) => setOpenState({
+        runId: run.id,
+        status: run.status,
+        open: event.currentTarget.open,
+      })}
+    >
+      <summary
+        className="deepsea-agent-thought__header"
+        aria-label={open ? '收起智能体思考过程' : '展开智能体思考过程'}
+      >
+        <span className="deepsea-agent-thought__title">
           <Brain aria-hidden="true" />
           <strong>智能体思考过程</strong>
           <em>Agent Thought Process</em>
         </span>
-        <mark>{status}</mark>
-      </div>
+        <span className="deepsea-agent-thought__meta">
+          <mark>{status}</mark>
+          <span className="deepsea-agent-thought__toggle">
+            <ChevronDown aria-hidden="true" />
+            <span>{open ? '收起' : '展开'}</span>
+          </span>
+        </span>
+      </summary>
       <p>{thought}</p>
-    </section>
+    </details>
   );
+}
+
+function isRunThoughtOpenByDefault(status: SessionRun['status']): boolean {
+  return status === 'queued' || status === 'running' || status === 'retrying' || status === 'paused';
 }
 
 function DeepseaComposer({
