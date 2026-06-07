@@ -1388,6 +1388,8 @@ export type WsClientEvent =
   | { type: 'unsubscribe'; roomId: string }
   | { type: 'active_sessions:subscribe' }
   | { type: 'active_sessions:unsubscribe' }
+  | { type: 'project:subscribe'; projectId: string }
+  | { type: 'project:unsubscribe'; projectId: string }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }

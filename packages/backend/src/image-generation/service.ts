@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileRepo } from '../repos/files.js';
 import type { ProjectFile } from '../types.js';
+import { wsHub } from '../ws-hub.js';
 import type {
   ImageGenerationJob,
   ImageGenerationJobCreateInput,
@@ -493,10 +494,19 @@ function publishCompletedEvent(
 
 function publish(deps: ImageGenerationServiceDeps, event: ImageGenerationWsEvent): void {
   try {
-    deps.publishEvent?.(event);
+    (deps.publishEvent ?? publishImageJobEvent)(event);
   } catch {
     // Event delivery must not corrupt durable job state.
   }
+}
+
+function publishImageJobEvent(event: ImageGenerationWsEvent): void {
+  wsHub.broadcastScoped({
+    projectId: event.projectId,
+    sessionId: event.sessionId,
+    roomId: event.roomId,
+    event,
+  });
 }
 
 function isTerminalStatus(status: ImageGenerationJob['status']): boolean {

@@ -88,6 +88,8 @@ wss.on('connection', (socket) => {
       }
     }
     else if (event.type === 'active_sessions:unsubscribe') wsHub.unsubscribeActiveSessions(socket);
+    else if (event.type === 'project:subscribe') wsHub.subscribeProject(event.projectId, socket);
+    else if (event.type === 'project:unsubscribe') wsHub.unsubscribeProject(event.projectId, socket);
     else if (event.type === 'session:subscribe') wsHub.subscribeSession(event.sessionId, socket);
     else if (event.type === 'session:unsubscribe') wsHub.unsubscribeSession(event.sessionId, socket);
     else if (handleSessionSocketEvent(socket, event)) return;

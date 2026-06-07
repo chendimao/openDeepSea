@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import type { WebSocket } from 'ws';
 import type { ImageGenerationJobCreateInput, ImageProviderProfileInput } from './types.js';
 import type { ImageGenerationRuntimeResponse } from './openai-compatible.js';
 import type { Project } from '../types.js';
@@ -11,9 +12,12 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-imag
 
 const { db, now } = await import('../db.js');
 const { projectRepo } = await import('../repos/projects.js');
+const { roomRepo } = await import('../repos/rooms.js');
+const { sessionRepo } = await import('../repos/sessions.js');
 const { imageGenerationJobRepo } = await import('./jobs.js');
 const { imageProviderProfileRepo } = await import('./provider-profiles.js');
 const { createImageGenerationService } = await import('./service.js');
+const { wsHub } = await import('../ws-hub.js');
 
 test('image generation queue runs one job at a time', async () => {
   const { project, profile } = createFixture('serial');
@@ -338,6 +342,75 @@ test('image generation service publishes lifecycle events', async () => {
     'image_job:output_added',
     'image_job:completed',
   ]);
+});
+
+test('image generation service broadcasts job events to project subscribers by default', async () => {
+  const { project, profile } = createFixture('default-broadcast');
+  const sent: string[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send: (payload: string) => sent.push(payload),
+  } as unknown as WebSocket;
+  wsHub.subscribeProject(project.id, socket);
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async () => imageResponse('png-broadcast'),
+  });
+
+  const created = await service.createJob(createJobInput(project.id, profile.id));
+  await service.waitForCompletion(created.job.id);
+
+  assert.deepEqual(sent.map((payload) => JSON.parse(payload).type), [
+    'image_job:created',
+    'image_job:updated',
+    'image_job:output_added',
+    'image_job:completed',
+  ]);
+  wsHub.removeSocket(socket);
+});
+
+test('image generation service broadcasts one event per socket across project session and room subscriptions', async () => {
+  const { project, profile } = createFixture('default-broadcast-dedupe');
+  const room = roomRepo.create({
+    project_id: project.id,
+    name: 'Image broadcast dedupe room',
+    ensureDefaultPlanner: false,
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Image broadcast dedupe session',
+    workspace_path: project.path,
+  });
+  const sent: string[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send: (payload: string) => sent.push(payload),
+  } as unknown as WebSocket;
+  wsHub.subscribeProject(project.id, socket);
+  wsHub.subscribeSession(session.id, socket);
+  wsHub.subscribe(room.id, socket);
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async () => imageResponse('png-broadcast-dedupe'),
+  });
+
+  const created = await service.createJob(createJobInput(project.id, profile.id, {
+    session_id: session.id,
+    room_id: room.id,
+  }));
+  await service.waitForCompletion(created.job.id);
+
+  assert.deepEqual(sent.map((payload) => JSON.parse(payload).type), [
+    'image_job:created',
+    'image_job:updated',
+    'image_job:output_added',
+    'image_job:completed',
+  ]);
+  wsHub.removeSocket(socket);
 });
 
 function createFixture(
