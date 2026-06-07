@@ -248,13 +248,29 @@ test('SessionShell includes project tree row pin and drag feedback styles', () =
   assert.match(sessionOsCss, /\.deepsea-project-node:focus-within \.deepsea-project-node__actions/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions:has\(\.deepsea-project-node__icon-button\[aria-expanded="true"\]\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*display:\s*grid/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*grid-template-columns:\s*24px minmax\(0,\s*1fr\)/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*grid-template-columns:\s*28px minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*border:\s*0/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*background:\s*transparent/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*opacity:\s*0/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap:hover \.deepsea-project-session-pin/s);
   assert.match(sessionOsCss, /\.deepsea-project-tree-section\[data-drop-target="true"\]/s);
   assert.match(sessionOsCss, /\.deepsea-project-tree-section\[data-dragging="true"\]/s);
+});
+
+test('SessionShell project rail CSS keeps the reference-style compact hierarchy', () => {
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading\s*\{[^}]*margin-bottom:\s*16px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*font-size:\s*18px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*24px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*34px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__button\s*\{[^}]*padding:\s*4px 14px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__label strong\s*\{[^}]*font-size:\s*17px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*8px 0 10px 30px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*min-height:\s*32px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*5px 10px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__title\s*\{[^}]*font-size:\s*15px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*min-width:\s*52px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*font-size:\s*14px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*text-align:\s*right/s);
 });
 
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
