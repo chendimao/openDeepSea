@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { constants } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
-import { access, readFile } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -52,14 +52,65 @@ test('persist generated output writes project file and creates output record', a
   assert.deepEqual(imageGenerationJobRepo.listOutputs(job.id), [result.output]);
 });
 
+test('persist generated output rejects project mismatch without creating files', async () => {
+  const { project, job } = createJobFixture('project-mismatch');
+  const otherProject = createProjectForTest('project-mismatch-other');
+
+  await assert.rejects(
+    persistImageGenerationOutput({
+      projectId: otherProject.id,
+      jobId: job.id,
+      slot: 1,
+      image: { data: Buffer.from('png-data'), mimeType: 'image/png' },
+    }),
+    /image generation job project mismatch/,
+  );
+
+  assert.deepEqual(fileRepo.listByProject(otherProject.id), []);
+  assert.deepEqual(imageGenerationJobRepo.listOutputs(job.id), []);
+  await assert.rejects(readdir(buildProjectFileUploadDir(otherProject.id)));
+  assert.equal(project.id, job.project_id);
+});
+
+test('persist generated output cleans physical file and rolls back file row when append fails', async () => {
+  const { project, job } = createJobFixture('append-fails');
+  await persistImageGenerationOutput({
+    projectId: project.id,
+    jobId: job.id,
+    slot: 1,
+    image: { data: Buffer.from('first'), mimeType: 'image/png' },
+  });
+  const uploadDir = buildProjectFileUploadDir(project.id);
+  const filesBefore = await readdir(uploadDir);
+
+  await assert.rejects(
+    persistImageGenerationOutput({
+      projectId: project.id,
+      jobId: job.id,
+      slot: 1,
+      image: { data: Buffer.from('duplicate'), mimeType: 'image/png' },
+    }),
+    /UNIQUE constraint failed|constraint/i,
+  );
+
+  assert.equal(fileRepo.listByProject(project.id).length, 1);
+  assert.equal(imageGenerationJobRepo.listOutputs(job.id).length, 1);
+  assert.deepEqual(await readdir(uploadDir), filesBefore);
+});
+
 function createJobFixture(name: string): { project: Project; profile: ImageProviderProfile; job: ImageGenerationJob } {
+  const project = createProjectForTest(name);
+  const profile = createImageProviderProfileForTest(project.id);
+  const job = imageGenerationJobRepo.create(createJobInput(project.id, profile.id));
+  return { project, profile, job };
+}
+
+function createProjectForTest(name: string): Project {
   const project = projectRepo.create({
     name: `image generation output ${name}`,
     path: mkdtempSync(join(tmpdir(), `opendeepsea-image-generation-output-${name}-`)),
   });
-  const profile = createImageProviderProfileForTest(project.id);
-  const job = imageGenerationJobRepo.create(createJobInput(project.id, profile.id));
-  return { project, profile, job };
+  return project;
 }
 
 function createImageProviderProfileForTest(projectId: string): ImageProviderProfile {

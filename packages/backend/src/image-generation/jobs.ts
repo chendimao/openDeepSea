@@ -11,6 +11,7 @@ import type {
 } from './types.js';
 
 const JOB_NOT_FOUND_MESSAGE = 'image generation job not found';
+const FILE_NOT_FOUND_MESSAGE = 'image generation file not found';
 const RECOVER_INTERRUPTED_MESSAGE = '后端重启，图片生成任务已停止。';
 
 export interface ImageGenerationJobRepository {
@@ -49,6 +50,7 @@ export const imageGenerationJobRepo: ImageGenerationJobRepository = {
 };
 
 function create(input: ImageGenerationJobCreateInput): ImageGenerationJob {
+  assertProviderProfileBelongsToProject(input.provider_profile_id, input.project_id);
   const id = nanoid(16);
   const timestamp = now();
   db.prepare(
@@ -186,7 +188,8 @@ function markCompleted(jobId: string, message: string | null): ImageGenerationJo
 }
 
 function appendOutput(input: ImageGenerationOutputCreateInput): ImageGenerationOutput {
-  requireJob(input.job_id);
+  const job = requireJob(input.job_id);
+  assertFileBelongsToJobProject(input.file_id, job.project_id);
   const id = nanoid(16);
   db.prepare(
     `INSERT INTO image_generation_outputs (
@@ -221,7 +224,8 @@ function listOutputs(jobId: string): ImageGenerationOutput[] {
 }
 
 function addSourceImage(input: ImageGenerationSourceImageCreateInput): ImageGenerationSourceImage {
-  requireJob(input.job_id);
+  const job = requireJob(input.job_id);
+  assertFileBelongsToJobProject(input.file_id, job.project_id);
   const id = nanoid(16);
   db.prepare(
     `INSERT INTO image_generation_source_images (
@@ -283,4 +287,38 @@ function requireJob(jobId: string): ImageGenerationJob {
     throw new Error(JOB_NOT_FOUND_MESSAGE);
   }
   return job;
+}
+
+function assertProviderProfileBelongsToProject(profileId: string, projectId: string): void {
+  const profile = db
+    .prepare(
+      `SELECT project_id
+       FROM image_provider_profiles
+       WHERE id = ?
+         AND deleted_at IS NULL`,
+    )
+    .get(profileId) as { project_id: string } | undefined;
+  if (!profile) {
+    throw new Error('image provider profile not found');
+  }
+  if (profile.project_id !== projectId) {
+    throw new Error('image provider profile project mismatch');
+  }
+}
+
+function assertFileBelongsToJobProject(fileId: string, projectId: string): void {
+  const file = db
+    .prepare(
+      `SELECT project_id
+       FROM files
+       WHERE id = ?
+         AND deleted_at IS NULL`,
+    )
+    .get(fileId) as { project_id: string } | undefined;
+  if (!file) {
+    throw new Error(FILE_NOT_FOUND_MESSAGE);
+  }
+  if (file.project_id !== projectId) {
+    throw new Error('image generation file project mismatch');
+  }
 }

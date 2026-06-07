@@ -1,5 +1,6 @@
-import { writeFile } from 'node:fs/promises';
+import { unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { db } from '../db.js';
 import { fileRepo } from '../repos/files.js';
 import {
   buildProjectFileUrl,
@@ -26,12 +27,41 @@ export async function persistImageGenerationOutput(input: PersistImageGeneration
   file: ProjectFile;
   output: ImageGenerationOutput;
 }> {
+  const job = imageGenerationJobRepo.get(input.jobId);
+  if (!job) throw new Error('image generation job not found');
+  if (job.project_id !== input.projectId) {
+    throw new Error('image generation job project mismatch');
+  }
+
   const uploadDir = await ensureProjectFileUploadDir(input.projectId);
   const extension = extensionFromMimeType(input.image.mimeType);
   const storedName = safeUploadFileName(`image-${input.slot}.${extension}`);
   const storagePath = join(uploadDir, storedName);
   await writeFile(storagePath, input.image.data);
 
+  try {
+    return persistOutputRecord({
+      input,
+      extension,
+      storedName,
+      storagePath,
+    });
+  } catch (error) {
+    await unlink(storagePath).catch(() => {});
+    throw error;
+  }
+}
+
+const persistOutputRecord = db.transaction((params: {
+  input: PersistImageGenerationOutputInput;
+  extension: string;
+  storedName: string;
+  storagePath: string;
+}): {
+  file: ProjectFile;
+  output: ImageGenerationOutput;
+} => {
+  const { input, extension, storedName, storagePath } = params;
   const file = fileRepo.create({
     project_id: input.projectId,
     original_name: `generated-image-${input.slot}.${extension}`,
@@ -55,7 +85,7 @@ export async function persistImageGenerationOutput(input: PersistImageGeneration
     height: input.image.height ?? null,
   });
   return { file, output };
-}
+});
 
 export function extensionFromMimeType(mimeType: string): string {
   switch (mimeType.toLowerCase()) {
