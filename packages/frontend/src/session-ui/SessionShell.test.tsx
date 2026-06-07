@@ -353,7 +353,7 @@ test('SessionShell renders markdown controls and thinking duration in transcript
   assert.match(html, /分析结果/);
 });
 
-test('SessionShell segments run output by ACP event timeline', () => {
+test('SessionShell hides ACP tool records from chat transcript', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.stdout = '我会先分析当前项目。找到入口和脚本。已完成。';
@@ -387,19 +387,17 @@ test('SessionShell segments run output by ACP event timeline', () => {
 
   assert.match(html, /思考 18s/);
   assert.match(html, /我会先分析当前项目。/);
-  assert.match(html, /Thinking/);
-  assert.match(html, /Read File/);
-  assert.match(html, /Run Command/);
   assert.match(html, /找到入口和脚本。/);
   assert.match(html, /已完成。/);
-  assert.ok(html.indexOf('我会先分析当前项目。') < html.indexOf('Thinking'));
-  assert.ok(html.indexOf('Thinking') < html.indexOf('Read File'));
-  assert.ok(html.indexOf('Read File') < html.indexOf('找到入口和脚本。'));
-  assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('Run Command'));
-  assert.ok(html.indexOf('Run Command') < html.indexOf('已完成。'));
+  assert.doesNotMatch(html, /Thinking/);
+  assert.doesNotMatch(html, /Read File/);
+  assert.doesNotMatch(html, /Run Command/);
+  assert.doesNotMatch(html, /判断需要读取 package\.json/);
+  assert.ok(html.indexOf('我会先分析当前项目。') < html.indexOf('找到入口和脚本。'));
+  assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('已完成。'));
 });
 
-test('buildSessionRunTranscriptItems flushes answer text only on ACP event boundaries', () => {
+test('buildSessionRunTranscriptItems keeps only answer text in chat transcript', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '第一句。' }),
     createAgentEvent({ id: 'answer-2', seq: 2, channel: 'answer', event_type: 'agent_message_chunk', content: '第二句。' }),
@@ -408,13 +406,11 @@ test('buildSessionRunTranscriptItems flushes answer text only on ACP event bound
   ], 'fallback');
 
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    '第一句。第二句。',
-    '[Thinking]',
-    '第三句。',
+    '第一句。第二句。第三句。',
   ]);
 });
 
-test('buildSessionRunTranscriptItems maps ACP tool names to timeline markers', () => {
+test('buildSessionRunTranscriptItems drops ACP tool markers from chat transcript', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '准备修改。' }),
     createAgentEvent({
@@ -428,9 +424,7 @@ test('buildSessionRunTranscriptItems maps ACP tool names to timeline markers', (
   ], 'fallback');
 
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    '准备修改。',
-    '[Edit]',
-    '修改完成。',
+    '准备修改。修改完成。',
   ]);
 });
 

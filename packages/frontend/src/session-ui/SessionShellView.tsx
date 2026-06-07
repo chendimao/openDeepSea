@@ -746,19 +746,7 @@ export function buildSessionRunTranscriptItems(
   for (const event of sortedEvents) {
     if (isAnswerTextEvent(event)) {
       textBuffer += event.content;
-      continue;
     }
-
-    const marker = runEventMarker(event);
-    if (!marker) continue;
-    flushText();
-    items.push({
-      type: 'event',
-      id: `event-${event.id}`,
-      label: marker.label,
-      detail: marker.detail,
-      created_at: event.created_at,
-    });
   }
 
   flushText();
