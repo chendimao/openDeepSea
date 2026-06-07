@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildAttachmentPreviewKind,
+  buildSessionComposerSubmitFromText,
   buildSessionComposerSubmit,
   buildSessionFileSuggestions,
+  collectProjectFileIds,
   collectSessionFileRefsFromSegments,
+  formatComposerAttachmentMeta,
   type SessionFileReferenceChip,
 } from './session-file-composer-model';
 import type { ProjectFile, WorkspaceSearchResult } from '../lib/types';
@@ -102,6 +106,49 @@ test('buildSessionComposerSubmit serializes text and selected file refs', () => 
     workspaceFileRefs: ['src/app.ts'],
     libraryFileRefs: [],
   });
+});
+
+test('buildSessionComposerSubmitFromText serializes text and uploaded project file refs', () => {
+  assert.deepEqual(buildSessionComposerSubmitFromText({
+    content: '  分析附件  ',
+    uploadedFiles: [
+      createProjectFile({ id: 'file:upload-1', original_name: 'notes.md', source_type: 'uploaded_file' }),
+      createProjectFile({ id: 'file:upload-1', original_name: 'notes.md', source_type: 'uploaded_file' }),
+      createProjectFile({ id: 'asset:doc-1', original_name: 'handoff.md', source_type: 'agent_document' }),
+    ],
+  }), {
+    content: '分析附件',
+    workspaceFileRefs: [],
+    libraryFileRefs: ['file:upload-1', 'asset:doc-1'],
+  });
+});
+
+test('buildSessionComposerSubmitFromText allows attachment-only messages', () => {
+  assert.deepEqual(buildSessionComposerSubmitFromText({
+    content: '   ',
+    uploadedFiles: [
+      createProjectFile({ id: 'file:image-1', original_name: 'screen.png', source_type: 'uploaded_file', mime_type: 'image/png' }),
+    ],
+  }), {
+    content: '',
+    workspaceFileRefs: [],
+    libraryFileRefs: ['file:image-1'],
+  });
+
+  assert.equal(buildSessionComposerSubmitFromText({ content: '   ', uploadedFiles: [] }), null);
+});
+
+test('attachment helpers identify preview kind and project file ids', () => {
+  assert.equal(buildAttachmentPreviewKind({ name: 'screen.png', type: 'image/png' }), 'image');
+  assert.equal(buildAttachmentPreviewKind({ name: 'notes.md', type: 'text/markdown' }), 'text');
+  assert.equal(buildAttachmentPreviewKind({ name: 'data.json', type: 'application/json' }), 'text');
+  assert.equal(buildAttachmentPreviewKind({ name: 'archive.zip', type: 'application/zip' }), 'file');
+  assert.equal(formatComposerAttachmentMeta({ name: 'notes.md', size: 1536, type: 'text/markdown' }), 'MD · 1.5 KB · text/markdown');
+  assert.deepEqual(collectProjectFileIds([
+    createProjectFile({ id: 'file:upload-1', original_name: 'notes.md', source_type: 'uploaded_file' }),
+    createProjectFile({ id: 'file:upload-1', original_name: 'notes.md', source_type: 'uploaded_file' }),
+    createProjectFile({ id: 'asset:doc-1', original_name: 'handoff.md', source_type: 'agent_document' }),
+  ]), ['file:upload-1', 'asset:doc-1']);
 });
 
 function createProjectFile(input: Partial<ProjectFile> & Pick<ProjectFile, 'id' | 'original_name' | 'source_type'>): ProjectFile {

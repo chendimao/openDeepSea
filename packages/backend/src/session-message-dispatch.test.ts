@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { afterEach } from 'node:test';
@@ -84,6 +84,68 @@ test('dispatchSessionUserMessage stores normalized file refs in message metadata
   assert.deepEqual(metadata.library_file_refs, [libraryFile.id]);
 });
 
+test('dispatchSessionUserMessage stores uploaded project file refs as message attachments', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Uploaded Attachment Metadata',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-uploaded-attachment-')),
+  });
+  const storedPath = join(project.path, 'brief.txt');
+  writeFileSync(storedPath, '用户粘贴的文本附件');
+  const uploadedFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'brief.txt',
+    stored_name: 'stored-brief.txt',
+    mime_type: 'text/plain',
+    size: 27,
+    url: '/uploads/files/project/brief.txt',
+    storage_path: storedPath,
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Uploaded Attachment Metadata',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-uploaded-metadata', stderr: '' }),
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '分析附件',
+    libraryFileRefs: [uploadedFile.id],
+  });
+
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    library_file_refs?: string[];
+    attachments?: Array<{
+      id: string;
+      fileId: string;
+      name: string;
+      mimeType: string;
+      size: number;
+      url: string;
+      isImage: boolean;
+      deleted: boolean;
+    }>;
+  };
+  assert.deepEqual(metadata.library_file_refs, [uploadedFile.id]);
+  assert.deepEqual(metadata.attachments, [{
+    id: uploadedFile.id,
+    fileId: uploadedFile.id,
+    name: 'brief.txt',
+    mimeType: 'text/plain',
+    size: 27,
+    isImage: false,
+    url: '/uploads/files/project/brief.txt',
+    deleted: false,
+  }]);
+});
+
 test('dispatchSessionUserMessage rejects foreign library refs before creating a message', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Reject File Refs',
@@ -149,4 +211,62 @@ test('dispatchSessionUserMessage injects referenced file context into runtime pr
   assert.match(prompts[0] ?? '', /## Referenced Files/);
   assert.match(prompts[0] ?? '', /Source: src\/app\.ts/);
   assert.match(prompts[0] ?? '', /export const app = true/);
+});
+
+test('dispatchSessionUserMessage injects uploaded text and image project files into runtime context', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'session-dispatch-uploaded-context-'));
+  const textPath = join(root, 'notes.md');
+  const imagePath = join(root, 'screen.png');
+  writeFileSync(textPath, '# 粘贴文本\n\n请读取这段内容。\n');
+  writeFileSync(imagePath, 'fake-png');
+  const project = projectRepo.create({ name: 'Dispatch Uploaded Context', path: root });
+  const textFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'notes.md',
+    stored_name: 'stored-notes.md',
+    mime_type: 'text/markdown',
+    size: 42,
+    url: '/uploads/files/project/notes.md',
+    storage_path: textPath,
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const imageFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'screen.png',
+    stored_name: 'stored-screen.png',
+    mime_type: 'image/png',
+    size: 8,
+    url: '/uploads/files/project/screen.png',
+    storage_path: imagePath,
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Uploaded Context Session',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const captured: Array<{ prompt: string; imagePaths?: string[] }> = [];
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt, imagePaths }) => {
+      captured.push({ prompt, imagePaths });
+      return { exitCode: 0, sessionId: 'codex-uploaded-context', stderr: '' };
+    },
+  });
+
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '分析粘贴附件',
+    libraryFileRefs: [textFile.id, imageFile.id],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.match(captured[0]?.prompt ?? '', /Library: notes\.md/);
+  assert.match(captured[0]?.prompt ?? '', /请读取这段内容/);
+  assert.deepEqual(captured[0]?.imagePaths, [realpathSync(imagePath)]);
 });

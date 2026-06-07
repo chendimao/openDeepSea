@@ -14,7 +14,7 @@ import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from
 import { runSessionAgent } from './session-runtime.js';
 import { wsHub } from './ws-hub.js';
 import { isIgnoredWorkspacePath, normalizeWorkspacePath, resolveWorkspacePath } from './workspace-files.js';
-import type { Session, SessionMessage, SessionMode } from './types.js';
+import type { MessageAttachmentMetadata, ProjectFile, Session, SessionMessage, SessionMode } from './types.js';
 
 const DEFAULT_SESSION_TITLE = 'New Session';
 const AUTO_SESSION_TITLE_LIMIT = 25;
@@ -108,11 +108,29 @@ function buildUserMessageMetadata(input: {
   workspaceFileRefs: string[];
   libraryFileRefs: string[];
 }): Record<string, unknown> {
+  const attachments = buildLibraryAttachmentMetadata(input.libraryFileRefs);
   return {
     target_agent_id: input.agentId,
     ...(input.workspaceFileRefs.length > 0 ? { workspace_file_refs: input.workspaceFileRefs } : {}),
     ...(input.libraryFileRefs.length > 0 ? { library_file_refs: input.libraryFileRefs } : {}),
+    ...(attachments.length > 0 ? { attachments } : {}),
   };
+}
+
+function buildLibraryAttachmentMetadata(libraryFileRefs: string[]): MessageAttachmentMetadata[] {
+  return libraryFileRefs
+    .map((ref) => fileRepo.get(ref))
+    .filter((file): file is ProjectFile => file?.source_type === 'uploaded_file')
+    .map((file) => ({
+      id: file.id,
+      fileId: file.id,
+      name: file.original_name,
+      mimeType: file.mime_type,
+      size: file.size,
+      url: file.url,
+      isImage: file.mime_type.startsWith('image/'),
+      deleted: file.deleted_at !== null,
+    }));
 }
 
 async function normalizeWorkspaceFileRefs(workspacePath: string, refs: string[] | undefined): Promise<string[]> {

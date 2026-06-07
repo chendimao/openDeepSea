@@ -1,6 +1,7 @@
 import { File, FileText, Folder } from 'lucide-react';
 import React from 'react';
 import type { ProjectFile, WorkspaceSearchResult } from '../lib/types';
+import { formatFileSize } from '../lib/composerModel';
 import type { Segment, TriggerSuggestion } from '../components/prompt-area/types';
 import { segmentsToPlainText } from '../components/prompt-area/prompt-area-engine';
 
@@ -10,6 +11,14 @@ export type SessionComposerSubmit = {
   content: string;
   workspaceFileRefs?: string[];
   libraryFileRefs?: string[];
+};
+
+export type ComposerAttachmentPreviewKind = 'image' | 'text' | 'file';
+
+export type ComposerAttachmentFileLike = {
+  name: string;
+  size: number;
+  type?: string;
 };
 
 export type SessionFileReferenceChip =
@@ -123,6 +132,54 @@ export function buildSessionComposerSubmit(segments: Segment[]): SessionComposer
   };
 }
 
+export function buildSessionComposerSubmitFromText(input: {
+  content: string;
+  workspaceFileRefs?: string[];
+  libraryFileRefs?: string[];
+  uploadedFiles?: ProjectFile[];
+}): SessionComposerSubmit | null {
+  const content = input.content.trim();
+  const workspaceFileRefs = dedupeStrings(input.workspaceFileRefs ?? []);
+  const libraryFileRefs = dedupeStrings([
+    ...(input.libraryFileRefs ?? []),
+    ...collectProjectFileIds(input.uploadedFiles ?? []),
+  ]);
+  if (!content && workspaceFileRefs.length === 0 && libraryFileRefs.length === 0) return null;
+  return {
+    content,
+    workspaceFileRefs,
+    libraryFileRefs,
+  };
+}
+
+export function collectProjectFileIds(files: ProjectFile[]): string[] {
+  return dedupeStrings(files.map((file) => file.id));
+}
+
+export function buildAttachmentPreviewKind(file: Pick<ComposerAttachmentFileLike, 'name' | 'type'>): ComposerAttachmentPreviewKind {
+  const type = (file.type ?? '').toLowerCase();
+  const extension = getFileExtension(file.name);
+  if (type.startsWith('image/')) return 'image';
+  if (
+    type.startsWith('text/') ||
+    type.includes('json') ||
+    type.includes('xml') ||
+    type.includes('yaml') ||
+    ['csv', 'js', 'jsx', 'md', 'mdx', 'ts', 'tsx', 'txt', 'xml', 'yaml', 'yml'].includes(extension)
+  ) {
+    return 'text';
+  }
+  return 'file';
+}
+
+export function formatComposerAttachmentMeta(file: ComposerAttachmentFileLike): string {
+  return [
+    getFileExtension(file.name).toUpperCase() || null,
+    formatFileSize(file.size),
+    file.type?.trim() || null,
+  ].filter(Boolean).join(' · ');
+}
+
 function formatProjectFileDescription(file: ProjectFile): string {
   const size = file.size > 0 ? `${Math.ceil(file.size / 1024)}KB` : '0KB';
   return `${file.mime_type} · ${size}`;
@@ -131,4 +188,22 @@ function formatProjectFileDescription(file: ProjectFile): string {
 function formatProjectFileTitle(file: ProjectFile): string {
   const path = file.storage_path?.trim() || file.url?.trim() || file.stored_name.trim() || file.original_name;
   return path.includes(file.original_name) ? path : `${path} · ${file.original_name}`;
+}
+
+function getFileExtension(name: string): string {
+  const index = name.lastIndexOf('.');
+  if (index === -1 || index === name.length - 1) return '';
+  return name.slice(index + 1).toLowerCase();
+}
+
+function dedupeStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
 }

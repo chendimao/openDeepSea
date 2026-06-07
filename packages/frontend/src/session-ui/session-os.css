@@ -1792,7 +1792,7 @@
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 .deepsea-composer__field input,
-.deepsea-composer__prompt .prompt-area-editor {
+.deepsea-composer__textarea {
   width: 100%;
   min-height: 20px;
   border: 0;
@@ -1801,15 +1801,107 @@
   color: var(--deepsea-text);
   font-size: 12px;
 }
-.deepsea-composer__prompt .prompt-area-editor {
+.deepsea-composer__textarea {
+  display: block;
+  max-height: 104px;
   padding: 0;
+  resize: none;
+  line-height: 1.5;
+  scrollbar-width: thin;
 }
-.deepsea-composer__prompt .pointer-events-none {
+.deepsea-composer__field input::placeholder,
+.deepsea-composer__textarea::placeholder {
   color: rgba(100, 116, 139, 0.48);
+}
+.deepsea-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.deepsea-composer-attachment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  width: min(240px, 100%);
+  min-width: 0;
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.42);
+  overflow: hidden;
+}
+.deepsea-composer-attachment__preview {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 6px 7px;
+  color: inherit;
+  text-align: left;
+}
+.deepsea-composer-attachment__preview:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+.deepsea-composer-attachment__image,
+.deepsea-composer-attachment__icon {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+}
+.deepsea-composer-attachment__image {
+  object-fit: cover;
+}
+.deepsea-composer-attachment__icon {
+  display: grid;
+  place-items: center;
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--deepsea-primary);
+}
+.deepsea-composer-attachment__icon svg {
+  width: 16px;
+  height: 16px;
+}
+.deepsea-composer-attachment__body {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.deepsea-composer-attachment__body strong,
+.deepsea-composer-attachment__body small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-composer-attachment__body strong {
+  color: var(--deepsea-text);
   font-size: 12px;
+  font-weight: 700;
 }
-.deepsea-composer__field input::placeholder {
-  color: rgba(100, 116, 139, 0.48);
+.deepsea-composer-attachment__body small {
+  color: rgba(71, 85, 105, 0.76);
+  font-size: 10px;
+}
+.deepsea-composer-attachment__remove {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(71, 85, 105, 0.72);
+}
+.deepsea-composer-attachment__remove:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+.deepsea-composer-attachment__remove svg {
+  width: 14px;
+  height: 14px;
 }
 .deepsea-composer__tools {
   display: flex;
@@ -1825,6 +1917,18 @@
   width: 18px;
   height: 18px;
 }
+.deepsea-composer__upload-hint {
+  margin-right: auto;
+  color: rgba(71, 85, 105, 0.74);
+  font-size: 11px;
+  transform: scale(1.3333);
+  transform-origin: left center;
+}
+.deepsea-composer__error {
+  margin: 6px 0 0;
+  color: #b91c1c;
+  font-size: 11px;
+}
 .deepsea-send-button {
   display: grid;
   place-items: center;
@@ -1835,6 +1939,51 @@
   background: var(--deepsea-primary-bright);
   color: #fff;
   box-shadow: 0 10px 20px rgba(0, 74, 198, 0.22);
+}
+.deepsea-send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+.deepsea-attachment-preview {
+  width: min(92vw, 760px);
+}
+.deepsea-attachment-preview__stage {
+  display: grid;
+  place-items: center;
+  max-height: min(70vh, 680px);
+  overflow: auto;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.06);
+}
+.deepsea-attachment-preview__stage img {
+  display: block;
+  max-width: 100%;
+  max-height: min(68vh, 660px);
+  object-fit: contain;
+}
+.deepsea-attachment-preview__text {
+  max-height: min(70vh, 680px);
+  overflow: auto;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.82);
+  padding: 12px;
+}
+.deepsea-attachment-preview__text pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--deepsea-text);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.deepsea-attachment-preview__state {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  color: rgba(71, 85, 105, 0.82);
+  font-size: 13px;
 }
 .deepsea-inspector {
   display: grid;

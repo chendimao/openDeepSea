@@ -1,4 +1,4 @@
-import { lstat } from 'node:fs/promises';
+import { lstat, readFile, realpath } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { fileRepo } from './repos/files.js';
 import type { Project, ProjectFile } from './types.js';
@@ -15,6 +15,22 @@ const MAX_AGENT_DOCUMENT_CHARS = 16 * 1024;
 const MAX_LIBRARY_TOTAL_CHARS = 32 * 1024;
 const MAX_SESSION_FILE_REFS = 12;
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']);
+const TEXT_EXTENSIONS = new Set([
+  '.css',
+  '.csv',
+  '.html',
+  '.js',
+  '.json',
+  '.jsx',
+  '.md',
+  '.mdx',
+  '.ts',
+  '.tsx',
+  '.txt',
+  '.xml',
+  '.yaml',
+  '.yml',
+]);
 
 export interface SessionFileReferenceContext {
   promptAddition: string;
@@ -81,6 +97,26 @@ export async function buildSessionFileReferenceContext(input: {
       blocks.push(renderContentBlock(`Library: ${file.original_name}`, content, truncated));
       continue;
     }
+    if (file.source_type === 'uploaded_file') {
+      if (isImageFile(file)) {
+        const imagePath = await resolveUploadedFilePath(file);
+        if (imagePath) imagePaths.push(imagePath);
+        blocks.push(renderMetadataBlock(`Library Metadata: ${file.original_name}`, [
+          'Image file passed as image path when supported.',
+          `MIME: ${file.mime_type}`,
+          `Size: ${file.size}`,
+        ]));
+        continue;
+      }
+      if (isTextFile(file) && libraryBudget > 0) {
+        const content = await readUploadedTextFile(file, libraryBudget);
+        if (content) {
+          libraryBudget -= content.content.length;
+          blocks.push(renderContentBlock(`Library: ${file.original_name}`, content.content, content.truncated));
+          continue;
+        }
+      }
+    }
     blocks.push(renderLibraryMetadataBlock(file));
   }
 
@@ -98,11 +134,56 @@ function isImagePath(path: string): boolean {
   return IMAGE_EXTENSIONS.has(extname(path).toLowerCase());
 }
 
+function isImageFile(file: ProjectFile): boolean {
+  return file.mime_type.startsWith('image/') || isImagePath(file.original_name) || isImagePath(file.storage_path);
+}
+
+function isTextFile(file: ProjectFile): boolean {
+  const mimeType = file.mime_type.toLowerCase();
+  return mimeType.startsWith('text/') ||
+    mimeType.includes('json') ||
+    mimeType.includes('xml') ||
+    mimeType.includes('yaml') ||
+    TEXT_EXTENSIONS.has(extname(file.original_name).toLowerCase()) ||
+    TEXT_EXTENSIONS.has(extname(file.storage_path).toLowerCase());
+}
+
 async function resolveWorkspaceImagePath(projectPath: string, safePath: string): Promise<string | null> {
   try {
     const resolved = await resolveWorkspacePath(projectPath, safePath);
     const stats = await lstat(resolved.absolutePath);
     return stats.isFile() ? resolved.absolutePath : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveUploadedFilePath(file: ProjectFile): Promise<string | null> {
+  if (!file.storage_path) return null;
+  try {
+    const stats = await lstat(file.storage_path);
+    if (!stats.isFile()) return null;
+    return realpath(file.storage_path);
+  } catch {
+    return null;
+  }
+}
+
+async function readUploadedTextFile(
+  file: ProjectFile,
+  budget: number,
+): Promise<{ content: string; truncated: boolean } | null> {
+  if (!file.storage_path || budget <= 0) return null;
+  try {
+    const stats = await lstat(file.storage_path);
+    if (!stats.isFile()) return null;
+    const raw = await readFile(file.storage_path, 'utf8');
+    const limit = Math.min(MAX_AGENT_DOCUMENT_CHARS, budget);
+    const content = raw.slice(0, limit);
+    return {
+      content,
+      truncated: raw.length > limit,
+    };
   } catch {
     return null;
   }
