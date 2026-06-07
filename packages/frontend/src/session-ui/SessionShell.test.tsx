@@ -336,6 +336,9 @@ test('SessionShell uses Radix project action menu with only rename and remove it
   assert.doesNotMatch(sessionShellViewSource, /aria-hidden={projectMenuOpen/);
   assert.doesNotMatch(sessionShellViewSource, /data-state={projectMenuOpen/);
   assert.doesNotMatch(sessionShellViewSource, /role="menuitem"/);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-project-node__menu\s*\{[^}]*position:\s*absolute/s);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-project-node__menu\s*\{[^}]*top:\s*30px/s);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-project-node__menu\s*\{[^}]*right:\s*8px/s);
 });
 
 test('SessionShell source wires project and session action callbacks', () => {
