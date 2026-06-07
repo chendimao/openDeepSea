@@ -88,6 +88,35 @@ test('SessionShell renders tool rows as detail buttons', () => {
   assert.match(html, /aria-label="查看工具调用详情：packages\/frontend\/src\/session-ui\/SessionShell\.tsx"/);
 });
 
+test('SessionShell renders active run as compact list row', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /deepsea-run-table/);
+  assert.match(html, /1 条记录/);
+  assert.match(html, /gpt-5\.5/);
+  assert.match(html, /aria-label="运行状态：完成"/);
+  assert.match(html, /aria-label="停止运行"/);
+  assert.match(html, /aria-label="重新执行"/);
+  assert.doesNotMatch(html, /deepsea-run-card/);
+  assert.doesNotMatch(html, /运行耗时/);
+});
+
+test('SessionShell renders active run danger state without success semantics', () => {
+  const payload = createPayload();
+  payload.activeSession.runs[0] = {
+    ...payload.activeSession.runs[0]!,
+    status: 'failed',
+    error: '执行失败',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-tone="danger"/);
+  assert.match(html, /aria-label="运行状态：失败"/);
+  assert.match(html, /<strong>失败<\/strong>/);
+  assert.doesNotMatch(html, /aria-label="运行状态：完成"/);
+});
+
 test('SessionShell renders tool row duration from the full session run when available', () => {
   const payload = createPayload();
   payload.toolRows[0] = {

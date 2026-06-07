@@ -899,6 +899,13 @@ function runStatusView(status: SessionRun['status']): { label: string; tone: 'ok
   return { label: '运行中', tone: 'warn' };
 }
 
+function RunStatusIcon({ tone }: { tone: ReturnType<typeof runStatusView>['tone'] }): JSX.Element {
+  if (tone === 'ok') return <CheckCircle2 aria-hidden="true" />;
+  if (tone === 'warn') return <Ellipsis aria-hidden="true" />;
+  if (tone === 'danger') return <X aria-hidden="true" />;
+  return <Square aria-hidden="true" />;
+}
+
 function AgentThoughtPanel({
   run,
   evidence,
@@ -1056,7 +1063,10 @@ function RunModule({
   if (!run) {
     return (
       <section className="deepsea-inspector-section deepsea-run-section">
-        <h3>代理运行 (Active Run)</h3>
+        <div className="deepsea-module-title">
+          <h3>代理运行 (Active Run)</h3>
+          <span>0 条记录</span>
+        </div>
         <div className="deepsea-empty">暂无代理运行</div>
       </section>
     );
@@ -1064,44 +1074,36 @@ function RunModule({
 
   const provider = run.provider;
   const model = run.model;
-  const runLabel = run.status;
+  const status = runStatusView(run.status);
   const cancellable = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
   return (
     <section className="deepsea-inspector-section deepsea-run-section">
-      <h3>代理运行 (Active Run)</h3>
-      <div className="deepsea-run-card">
-        <div className="deepsea-run-card__top">
-          <div className="deepsea-run-card__agent">
-            <span>
-              <Brain aria-hidden="true" />
-            </span>
-            <div>
-              <strong className="deepsea-mono">{formatProviderModel(provider, model)}</strong>
-              <em>
-                <i />
-                {runLabel}
-              </em>
-            </div>
+      <div className="deepsea-module-title">
+        <h3>代理运行 (Active Run)</h3>
+        <span>1 条记录</span>
+      </div>
+      <div className="deepsea-run-table">
+        <div data-tone={status.tone}>
+          <strong>{status.label}</strong>
+          <p className="deepsea-mono">{formatProviderModel(provider, model)}</p>
+          <span className="deepsea-run-row-duration">{formatDuration(run.started_at, run.completed_at ?? Date.now())}</span>
+          <span className="deepsea-run-row-time">{formatRelativeTime(Date.now(), run.started_at)}</span>
+          <span className="deepsea-run-row-state" aria-label={`运行状态：${status.label}`}>
+            <RunStatusIcon tone={status.tone} />
+          </span>
+          <div className="deepsea-run-row-actions">
+            <button
+              type="button"
+              aria-label="停止运行"
+              disabled={!cancellable}
+              onClick={() => run && onCancelRun?.(run.id)}
+            >
+              <StopCircle aria-hidden="true" />
+            </button>
+            <button type="button" aria-label="重新执行" onClick={() => onRetryRun?.(run.id)}>
+              <Repeat2 aria-hidden="true" />
+            </button>
           </div>
-          <div className="deepsea-run-card__time">
-            <strong className="deepsea-mono">{formatDuration(run.started_at, run.completed_at ?? Date.now())}</strong>
-            <span>运行耗时</span>
-          </div>
-        </div>
-        <div className="deepsea-run-card__actions">
-          <button
-            type="button"
-            aria-label="停止运行"
-            disabled={!cancellable}
-            onClick={() => run && onCancelRun?.(run.id)}
-          >
-            <StopCircle aria-hidden="true" />
-            停止
-          </button>
-          <button type="button" aria-label="重新执行" onClick={() => onRetryRun?.(run.id)}>
-            <Repeat2 aria-hidden="true" />
-            重试
-          </button>
         </div>
       </div>
     </section>
