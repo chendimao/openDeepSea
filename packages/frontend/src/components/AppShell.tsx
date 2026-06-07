@@ -6,6 +6,7 @@ import {
   Bot,
   FileText,
   History,
+  Image as ImageIcon,
   MessageCircle,
   Settings,
   ShieldCheck,
@@ -41,6 +42,9 @@ export function AppShell({
   const isSessionWorkspaceRoute = location.pathname === '/' ||
     /^\/projects\/[^/]+\/?$/.test(location.pathname) ||
     /^\/projects\/[^/]+\/sessions\/[^/]+\/?$/.test(location.pathname);
+  const activeProjectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1]
+    ?? sessionWorkspaceHref.match(/^\/projects\/([^/]+)/)?.[1]
+    ?? null;
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -51,6 +55,9 @@ export function AppShell({
     setSessionWorkspaceHref(getLastSessionWorkspaceHref());
     return subscribeLastSessionWorkspaceHref(setSessionWorkspaceHref);
   }, []);
+
+  const imageWorkbenchProjectId = activeProjectId ?? projects[0]?.id ?? null;
+  const imageWorkbenchHref = imageWorkbenchProjectId ? `/projects/${imageWorkbenchProjectId}/images` : sessionWorkspaceHref;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -85,6 +92,12 @@ export function AppShell({
             <HeaderNavLink to="/chat" icon={MessageCircle} label="聊天" />
             <HeaderNavLink to="/agents" icon={Bot} label="智能体" />
             <HeaderNavLink to="/skills" icon={ShieldCheck} label="技能" />
+            <HeaderNavLink
+              to={imageWorkbenchHref}
+              active={/^\/projects\/[^/]+\/images\/?$/.test(location.pathname)}
+              icon={ImageIcon}
+              label="图片"
+            />
             <HeaderNavLink
               to="/files"
               active={location.pathname === '/files' || /^\/projects\/[^/]+\/files\/?$/.test(location.pathname)}

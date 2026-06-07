@@ -36,6 +36,7 @@ test('AppShell renders the shared Deepsea header with system settings entry', ()
   assert.match(html, /会话/);
   assert.match(html, /聊天/);
   assert.match(html, /智能体/);
+  assert.match(html, /图片/);
   assert.match(html, /资源/);
   assert.doesNotMatch(html, /alt="Profile"/);
   assert.doesNotMatch(html, /projects\/project-1\/rooms/);
@@ -54,6 +55,23 @@ test('AppShell points Session nav to the last concrete session route', () => {
   const html = renderAppShell('/agents');
 
   assert.match(html, /href="\/projects\/project-1\/sessions\/session-1"/);
+  assert.match(html, /href="\/projects\/project-1\/images"/);
+});
+
+test('AppShell highlights image workbench without activating resource nav', () => {
+  const html = renderAppShell('/projects/project-1/images');
+
+  assert.match(html, /<a(?=[^>]*href="\/projects\/project-1\/images")(?=[^>]*class="is-active")/);
+  assert.match(html, /href="\/files"/);
+  assert.doesNotMatch(html, /<a(?=[^>]*href="\/files")(?=[^>]*class="is-active")/);
+});
+
+test('AppShell keeps image nav safe without a project context', () => {
+  storedHref = null;
+  const html = renderAppShell('/chat');
+
+  assert.match(html, /href="\/"/);
+  assert.doesNotMatch(html, /href="\/projects\/undefined\/images"/);
 });
 
 test('AppShell does not open a global websocket without a concrete subscription', () => {

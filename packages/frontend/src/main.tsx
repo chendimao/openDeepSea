@@ -9,6 +9,7 @@ import { I18nProvider } from './lib/i18n';
 import { AgentsPage } from './pages/AgentsPage';
 import { FilesPage } from './pages/FilesPage';
 import { GlobalChatPage } from './pages/GlobalChatPage';
+import { ImageWorkbenchPage } from './pages/ImageWorkbenchPage';
 import { SessionWorkspaceKeepAliveHost } from './pages/SessionWorkspaceKeepAliveHost';
 import { SkillsPage } from './pages/SkillsPage';
 import { TestPage } from './pages/TestPage';
@@ -55,6 +56,7 @@ function RootApp(): JSX.Element {
               <Route path="/test" element={<TestPage />} />
               <Route path="/projects/:projectId" element={null} />
               <Route path="/projects/:projectId/sessions/:sessionId" element={null} />
+              <Route path="/projects/:projectId/images" element={<ImageWorkbenchPage />} />
               <Route path="/projects/:projectId/files" element={<FilesPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
