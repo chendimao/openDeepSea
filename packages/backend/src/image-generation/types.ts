@@ -1,5 +1,6 @@
 export type ImageGenerationWorkflow = 'generate' | 'image-to-image';
 export type ImageGenerationStatus = 'queued' | 'running' | 'canceling' | 'completed' | 'failed' | 'canceled';
+export type ImageJobGroupBy = 'prompt' | 'task' | 'session';
 export type ImageProviderCompatProfileId = 'openai' | 'openai-sdk' | 'images-edits' | 'chat-completions';
 
 export interface ImageProviderProfileRow {
@@ -55,6 +56,14 @@ export interface ImageGenerationJob {
   started_at: number | null;
   completed_at: number | null;
   updated_at: number;
+}
+
+export interface ImageJobGroup {
+  key: string;
+  label: string;
+  count: number;
+  latest_job_id: string;
+  latest_updated_at: number;
 }
 
 export interface ImageGenerationOutput {
@@ -116,6 +125,21 @@ export interface ImageGenerationSourceImageCreateInput {
   url: string;
   origin_job_id?: string | null;
   origin_output_id?: string | null;
+}
+
+export interface ImagePromptPreset {
+  id: string;
+  project_id: string;
+  title: string;
+  prompt: string;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export interface ImagePromptPresetInput {
+  title: string;
+  prompt: string;
 }
 
 export type ImageGenerationWsEvent =

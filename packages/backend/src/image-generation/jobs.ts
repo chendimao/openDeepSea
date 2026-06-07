@@ -3,6 +3,8 @@ import { db, now } from '../db.js';
 import type {
   ImageGenerationJob,
   ImageGenerationJobCreateInput,
+  ImageJobGroup,
+  ImageJobGroupBy,
   ImageGenerationOutput,
   ImageGenerationOutputCreateInput,
   ImageGenerationSourceImage,
@@ -21,6 +23,7 @@ export interface ImageGenerationJobRepository {
     projectId: string,
     filters?: { status?: ImageGenerationStatus; sessionId?: string; roomId?: string },
   ): ImageGenerationJob[];
+  listGroupsByProject(projectId: string, groupBy: ImageJobGroupBy): ImageJobGroup[];
   markRunning(jobId: string): ImageGenerationJob;
   markRunningIfQueued(jobId: string): ImageGenerationJob | undefined;
   markCanceling(jobId: string): ImageGenerationJob;
@@ -39,6 +42,7 @@ export const imageGenerationJobRepo: ImageGenerationJobRepository = {
   create,
   get,
   listByProject,
+  listGroupsByProject,
   markRunning,
   markRunningIfQueued,
   markCanceling,
@@ -116,6 +120,52 @@ function listByProject(
        ORDER BY updated_at DESC, created_at DESC`,
     )
     .all(...args) as ImageGenerationJob[];
+}
+
+function listGroupsByProject(projectId: string, groupBy: ImageJobGroupBy): ImageJobGroup[] {
+  const groups = new Map<string, ImageJobGroup>();
+  for (const job of listByProject(projectId)) {
+    const { key, label } = resolveImageJobGroup(job, groupBy);
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, {
+        key,
+        label,
+        count: 1,
+        latest_job_id: job.id,
+        latest_updated_at: job.updated_at,
+      });
+      continue;
+    }
+    current.count += 1;
+    if (job.updated_at > current.latest_updated_at) {
+      current.latest_job_id = job.id;
+      current.latest_updated_at = job.updated_at;
+    }
+  }
+
+  return [...groups.values()].sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return b.latest_updated_at - a.latest_updated_at;
+  });
+}
+
+function resolveImageJobGroup(
+  job: ImageGenerationJob,
+  groupBy: ImageJobGroupBy,
+): { key: string; label: string } {
+  if (groupBy === 'prompt') {
+    const prompt = job.prompt.trim();
+    return { key: prompt || 'empty-prompt', label: prompt || '空提示词' };
+  }
+  if (groupBy === 'session') {
+    return job.session_id
+      ? { key: job.session_id, label: `会话 ${job.session_id}` }
+      : { key: 'none', label: '未关联会话' };
+  }
+  return job.source_task_id
+    ? { key: job.source_task_id, label: `任务 ${job.source_task_id}` }
+    : { key: 'none', label: '未关联任务' };
 }
 
 function markRunning(jobId: string): ImageGenerationJob {

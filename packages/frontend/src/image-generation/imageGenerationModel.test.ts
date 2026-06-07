@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildPromptPresetPayload,
   buildProviderProfilePayload,
+  createPromptPresetDraft,
   createProviderProfileFormState,
+  filterImageJobGroups,
 } from './imageGenerationModel';
 
 test('provider form keeps blank api key as preserve existing secret', () => {
@@ -57,4 +60,39 @@ test('provider form state never includes saved raw api key', () => {
   assert.equal(state.apiKey, '');
   assert.equal(state.name, 'Saved Provider');
   assert.equal(state.hasSavedApiKey, true);
+});
+
+test('prompt preset draft uses current prompt and payload trims fields', () => {
+  const draft = createPromptPresetDraft('  生成一张深海主题产品海报，使用冷色调  ');
+  const payload = buildPromptPresetPayload({
+    ...draft,
+    title: '',
+  });
+
+  assert.equal(draft.prompt, '生成一张深海主题产品海报，使用冷色调');
+  assert.deepEqual(payload, {
+    title: '生成一张深海主题产品海报',
+    prompt: '生成一张深海主题产品海报，使用冷色调',
+  });
+});
+
+test('image job group filters match group label and key', () => {
+  const groups = filterImageJobGroups([
+    {
+      key: 'apple poster',
+      label: 'Apple Poster',
+      count: 2,
+      latest_job_id: 'job-1',
+      latest_updated_at: 2,
+    },
+    {
+      key: 'banana poster',
+      label: 'Banana Poster',
+      count: 1,
+      latest_job_id: 'job-2',
+      latest_updated_at: 1,
+    },
+  ], 'APPLE');
+
+  assert.deepEqual(groups.map((group) => group.key), ['apple poster']);
 });

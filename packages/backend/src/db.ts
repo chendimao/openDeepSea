@@ -384,6 +384,20 @@ CREATE TABLE IF NOT EXISTS image_generation_source_images (
 );
 CREATE INDEX IF NOT EXISTS idx_image_generation_source_images_job
   ON image_generation_source_images(job_id, slot);
+
+CREATE TABLE IF NOT EXISTS image_prompt_presets (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_image_prompt_presets_project
+  ON image_prompt_presets(project_id, deleted_at, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,

@@ -27,6 +27,7 @@ export function ImageJobQueue({ projectId }: { projectId: string }): JSX.Element
       queryClient.setQueryData<ImageJobListResponse>(queryKey, (current) => ({
         jobs: upsertJob(current?.jobs ?? [], event.job),
       }));
+      void queryClient.invalidateQueries({ queryKey: ['image-job-groups', projectId] });
     }
     if (event.type === 'image_job:output_added' || event.type === 'image_job:completed') {
       void queryClient.invalidateQueries({ queryKey: ['image-job-details', projectId] });

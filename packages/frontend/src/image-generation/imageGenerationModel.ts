@@ -1,4 +1,6 @@
 import type {
+  ImageJobGroup,
+  ImagePromptPresetInput,
   ImageProviderCompatProfileId,
   ImageProviderProfile,
   ImageProviderProfileInput,
@@ -51,4 +53,39 @@ export function buildProviderProfilePayload(form: ProviderProfileFormState): Ima
     compat_profile_id: form.compatProfileId,
     supports_count_parameter: form.supportsCountParameter,
   };
+}
+
+export type PromptPresetDraft = {
+  title: string;
+  prompt: string;
+};
+
+export function createPromptPresetDraft(currentPrompt = ''): PromptPresetDraft {
+  return {
+    title: '',
+    prompt: currentPrompt.trim(),
+  };
+}
+
+export function buildPromptPresetPayload(draft: PromptPresetDraft): ImagePromptPresetInput {
+  const prompt = draft.prompt.trim();
+  return {
+    title: draft.title.trim() || buildPromptPresetTitle(prompt),
+    prompt,
+  };
+}
+
+export function filterImageJobGroups(groups: ImageJobGroup[], query: string): ImageJobGroup[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return groups;
+  return groups.filter((group) =>
+    group.key.toLowerCase().includes(normalizedQuery) ||
+    group.label.toLowerCase().includes(normalizedQuery),
+  );
+}
+
+function buildPromptPresetTitle(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, ' ').trim();
+  const [firstPhrase] = normalized.split(/[，。,.!?！？;；]/);
+  return (firstPhrase || normalized).slice(0, 20) || '未命名提示词';
 }

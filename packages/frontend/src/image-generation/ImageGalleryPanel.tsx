@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Image as ImageIcon } from 'lucide-react';
+import { Image as ImageIcon, Tags } from 'lucide-react';
 import { api } from '../lib/api';
-import type { ImageGenerationOutput, ImageJobDetailResponse, ProjectFile } from '../lib/types';
+import type { ImageGenerationOutput, ImageJobDetailResponse, ImageJobGroup, ProjectFile } from '../lib/types';
 import { ImageLineagePanel } from './ImageLineagePanel';
 
 export type GalleryItem = {
@@ -31,6 +31,10 @@ export function ImageGalleryPanel({ projectId }: { projectId: string }): JSX.Ele
     queryKey: ['image-gallery-resources', projectId],
     queryFn: () => api.listResourceFiles(projectId, { sourceType: 'uploaded_file' }),
   });
+  const { data: promptGroups = [] } = useQuery({
+    queryKey: ['image-job-groups', projectId, 'prompt'],
+    queryFn: () => api.listImageJobGroups(projectId, 'prompt'),
+  });
   const items = buildGalleryItems(projectId, details, resources);
 
   if (items.length === 0) {
@@ -49,6 +53,7 @@ export function ImageGalleryPanel({ projectId }: { projectId: string }): JSX.Ele
 
   return (
     <div>
+      <ImagePromptGroupStrip groups={promptGroups} />
       <ImageLineagePanel details={details} />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
         {items.map((item) => (
@@ -67,6 +72,29 @@ export function ImageGalleryPanel({ projectId }: { projectId: string }): JSX.Ele
         ))}
       </div>
     </div>
+  );
+}
+
+function ImagePromptGroupStrip({ groups }: { groups: ImageJobGroup[] }): JSX.Element | null {
+  if (groups.length === 0) return null;
+  return (
+    <section aria-label="提示词分组" className="mb-4 border-b border-[var(--color-border)] pb-4">
+      <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold">
+        <Tags className="h-3.5 w-3.5 text-[var(--color-accent)]" aria-hidden="true" />
+        <span>提示词分组</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {groups.slice(0, 8).map((group) => (
+          <span
+            key={group.key}
+            className="inline-flex max-w-full items-center gap-2 border border-[var(--color-border)] bg-[var(--color-bg-soft)] px-2 py-1 text-[11px]"
+          >
+            <span className="max-w-[180px] truncate">{group.label}</span>
+            <span className="font-mono text-[10px] text-[var(--color-fg-subtle)]">{group.count}</span>
+          </span>
+        ))}
+      </div>
+    </section>
   );
 }
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { listImageProviderModels } from './provider-models.js';
 import { imageProviderProfileRepo } from './provider-profiles.js';
 import { imageGenerationJobRepo } from './jobs.js';
+import { imagePromptPresetRepo } from './prompt-presets.js';
 import {
   imageGenerationService,
   type ImageGenerationService,
@@ -61,6 +62,19 @@ const imageJobListQuerySchema = z.object({
   status: z.enum(['queued', 'running', 'canceling', 'completed', 'failed', 'canceled']).optional(),
   sessionId: z.string().min(1).optional(),
   roomId: z.string().min(1).optional(),
+});
+
+const imageJobGroupQuerySchema = z.object({
+  groupBy: z.enum(['prompt', 'task', 'session']).default('prompt'),
+});
+
+const imagePromptPresetListQuerySchema = z.object({
+  q: z.string().trim().min(1).optional(),
+});
+
+const imagePromptPresetSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  prompt: z.string().trim().min(1).max(8000),
 });
 
 imageGenerationRouter.get('/projects/:projectId/image-provider-profiles', (req, res) => {
@@ -151,6 +165,15 @@ imageGenerationRouter.get('/projects/:projectId/image-jobs', (req, res) => {
   });
 });
 
+imageGenerationRouter.get('/projects/:projectId/image-jobs/groups', (req, res) => {
+  const projectId = requireProject(req.params.projectId, res);
+  if (!projectId) return;
+  const parsed = imageJobGroupQuerySchema.safeParse(req.query);
+  if (!parsed.success) return respondValidationError(res, parsed.error);
+
+  res.json(imageGenerationJobRepo.listGroupsByProject(projectId, parsed.data.groupBy));
+});
+
 imageGenerationRouter.post('/projects/:projectId/image-jobs', async (req, res) => {
   const projectId = requireProject(req.params.projectId, res);
   if (!projectId) return;
@@ -223,6 +246,36 @@ imageGenerationRouter.delete('/projects/:projectId/image-jobs/:jobId', (req, res
   const projectId = requireProject(req.params.projectId, res);
   if (!projectId) return;
   res.status(405).json({ error: 'image generation job deletion is not supported' });
+});
+
+imageGenerationRouter.get('/projects/:projectId/image-prompt-presets', (req, res) => {
+  const projectId = requireProject(req.params.projectId, res);
+  if (!projectId) return;
+  const parsed = imagePromptPresetListQuerySchema.safeParse(req.query);
+  if (!parsed.success) return respondValidationError(res, parsed.error);
+
+  res.json(imagePromptPresetRepo.list(projectId, { query: parsed.data.q }));
+});
+
+imageGenerationRouter.post('/projects/:projectId/image-prompt-presets', (req, res) => {
+  const projectId = requireProject(req.params.projectId, res);
+  if (!projectId) return;
+  const parsed = imagePromptPresetSchema.safeParse(req.body);
+  if (!parsed.success) return respondValidationError(res, parsed.error);
+
+  try {
+    res.status(201).json(imagePromptPresetRepo.create(projectId, parsed.data));
+  } catch (error) {
+    respondImageGenerationError(res, error);
+  }
+});
+
+imageGenerationRouter.delete('/projects/:projectId/image-prompt-presets/:presetId', (req, res) => {
+  const projectId = requireProject(req.params.projectId, res);
+  if (!projectId) return;
+  const deleted = imagePromptPresetRepo.softDelete(projectId, req.params.presetId);
+  if (!deleted) return res.status(404).json({ error: 'image prompt preset not found' });
+  res.json(deleted);
 });
 
 function getService(): ImageGenerationService {

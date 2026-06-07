@@ -7,6 +7,7 @@ import { Input, Textarea } from '../components/ui/Input';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import type { ImageGenerationWorkflow, ImageJobCreateInput, ProjectFile } from '../lib/types';
+import { PromptBankPanel } from './PromptBankPanel';
 import { SourceImagePicker } from './SourceImagePicker';
 
 export type ImageJobFormState = {
@@ -38,6 +39,7 @@ export function ImageJobForm({ projectId }: { projectId: string }): JSX.Element 
     mutationFn: () => api.createImageJob(projectId, buildImageJobPayload(state)),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['image-jobs', projectId] });
+      await queryClient.invalidateQueries({ queryKey: ['image-job-groups', projectId] });
       setState((current) => ({ ...current, prompt: '', sourceFiles: current.workflow === 'generate' ? [] : current.sourceFiles }));
       setError(null);
       toast.success('图片任务已创建');
@@ -130,6 +132,12 @@ export function ImageJobFormView({
           placeholder="描述你想生成的画面"
         />
       </label>
+
+      <PromptBankPanel
+        projectId={projectId}
+        currentPrompt={state.prompt}
+        onInsertPrompt={(prompt) => onStateChange({ prompt })}
+      />
 
       {state.workflow === 'image-to-image' && (
         <div className="space-y-1.5">

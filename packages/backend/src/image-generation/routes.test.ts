@@ -454,6 +454,88 @@ test('image job routes hide cross project resources', async () => {
   assert.equal(imageGenerationJobRepo.get(job.id)?.status, 'queued');
 });
 
+test('image job routes group jobs by prompt', async () => {
+  const project = createProjectForTest('groups');
+  const otherProject = createProjectForTest('groups-other');
+  const profile = createActiveProfile(project.id);
+  const otherProfile = createActiveProfile(otherProject.id);
+  const appleFirst = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'apple poster' }));
+  const banana = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'banana poster' }));
+  const appleLatest = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'apple poster' }));
+  imageGenerationJobRepo.create(createJobInput(otherProject.id, otherProfile.id, { prompt: 'apple poster' }));
+  imageGenerationJobRepo.markCompleted(appleFirst.id, 'done');
+  imageGenerationJobRepo.markCompleted(banana.id, 'done');
+  const latest = imageGenerationJobRepo.markCompleted(appleLatest.id, 'done');
+  const latestUpdatedAt = latest.updated_at + 1000;
+  db.prepare('UPDATE image_generation_jobs SET updated_at = ? WHERE id = ?').run(latestUpdatedAt, appleLatest.id);
+
+  const response = await request(`/api/projects/${project.id}/image-jobs/groups?groupBy=prompt`);
+
+  assert.equal(response.status, 200);
+  const groups = await response.json() as Array<{
+    key: string;
+    label: string;
+    count: number;
+    latest_job_id: string;
+    latest_updated_at: number;
+  }>;
+  assert.deepEqual(groups.map((group) => [group.key, group.count]), [
+    ['apple poster', 2],
+    ['banana poster', 1],
+  ]);
+  assert.equal(groups[0]?.label, 'apple poster');
+  assert.equal(groups[0]?.latest_job_id, appleLatest.id);
+  assert.equal(groups[0]?.latest_updated_at, latestUpdatedAt);
+
+  const invalidResponse = await request(`/api/projects/${project.id}/image-jobs/groups?groupBy=provider`);
+  assert.equal(invalidResponse.status, 400);
+});
+
+test('image prompt preset routes create search and delete project scoped presets', async () => {
+  const project = createProjectForTest('prompt-presets');
+  const otherProject = createProjectForTest('prompt-presets-other');
+
+  const createRes = await request(`/api/projects/${project.id}/image-prompt-presets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: '  海报模板  ',
+      prompt: '  生成一张深海主题产品海报  ',
+    }),
+  });
+
+  assert.equal(createRes.status, 201);
+  const created = await createRes.json() as {
+    id: string;
+    project_id: string;
+    title: string;
+    prompt: string;
+    deleted_at: number | null;
+  };
+  assert.equal(created.project_id, project.id);
+  assert.equal(created.title, '海报模板');
+  assert.equal(created.prompt, '生成一张深海主题产品海报');
+  assert.equal(created.deleted_at, null);
+
+  const searchRes = await request(`/api/projects/${project.id}/image-prompt-presets?q=深海`);
+  assert.equal(searchRes.status, 200);
+  const searched = await searchRes.json() as Array<{ id: string }>;
+  assert.deepEqual(searched.map((preset) => preset.id), [created.id]);
+
+  const crossProjectDeleteRes = await request(`/api/projects/${otherProject.id}/image-prompt-presets/${created.id}`, {
+    method: 'DELETE',
+  });
+  assert.equal(crossProjectDeleteRes.status, 404);
+
+  const deleteRes = await request(`/api/projects/${project.id}/image-prompt-presets/${created.id}`, {
+    method: 'DELETE',
+  });
+  assert.equal(deleteRes.status, 200);
+  const afterDeleteRes = await request(`/api/projects/${project.id}/image-prompt-presets`);
+  const afterDelete = await afterDeleteRes.json() as Array<{ id: string }>;
+  assert.deepEqual(afterDelete.map((preset) => preset.id), []);
+});
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);
   const address = server.address();
