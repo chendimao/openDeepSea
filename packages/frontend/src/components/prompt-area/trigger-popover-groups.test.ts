@@ -49,3 +49,9 @@ test('TriggerPopover uses opaque popover colors instead of transparent surfaces'
   assert.match(css, /--color-popover:\s*#ffffff;/i)
   assert.match(css, /--color-popover:\s*#111927;/i)
 })
+
+test('TriggerPopover exposes suggestion full text through native title tooltips', () => {
+  const source = readFileSync(new URL('./trigger-popover.tsx', import.meta.url), 'utf8')
+
+  assert.match(source, /title=\{suggestion\.title \?\? suggestion\.description \?\? suggestion\.label\}/)
+})

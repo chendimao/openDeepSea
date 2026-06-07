@@ -21,8 +21,27 @@ test('buildSessionFileSuggestions groups source and library results', () => {
 
   assert.equal(suggestions[0]?.groupLabel, 'Source');
   assert.equal(suggestions[0]?.value, 'workspace:packages/frontend/src/session-ui/SessionShellView.tsx');
+  assert.equal(suggestions[0]?.title, 'packages/frontend/src/session-ui/SessionShellView.tsx');
   assert.equal(suggestions[1]?.groupLabel, 'Library');
   assert.equal(suggestions[1]?.value, 'library:asset:doc-1');
+  assert.equal(suggestions[1]?.title, '/files/session-design.md');
+});
+
+test('buildSessionFileSuggestions exposes uploaded file path and original name as tooltip title', () => {
+  const suggestions = buildSessionFileSuggestions({
+    workspace: [],
+    library: [
+      createProjectFile({
+        id: 'file:upload-1',
+        original_name: 'brief.pdf',
+        stored_name: 'stored.pdf',
+        source_type: 'uploaded_file',
+        storage_path: '/tmp/opendeepsea/project-1/stored.pdf',
+      }),
+    ],
+  });
+
+  assert.equal(suggestions[0]?.title, '/tmp/opendeepsea/project-1/stored.pdf · brief.pdf');
 });
 
 test('collectSessionFileRefsFromSegments extracts only valid session file chips', () => {

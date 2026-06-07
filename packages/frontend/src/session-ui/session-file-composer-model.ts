@@ -35,6 +35,7 @@ export function buildSessionFileSuggestions(input: {
   const workspaceSuggestions = input.workspace.slice(0, 6).map((entry): TriggerSuggestion => ({
     value: `workspace:${entry.path}`,
     label: entry.name,
+    title: entry.path,
     description: entry.path,
     icon: entry.type === 'directory'
       ? React.createElement(Folder, { className: 'h-3.5 w-3.5 text-amber-500', strokeWidth: 1.8 })
@@ -55,6 +56,7 @@ export function buildSessionFileSuggestions(input: {
     .map((file): TriggerSuggestion => ({
       value: `library:${file.id}`,
       label: file.original_name,
+      title: formatProjectFileTitle(file),
       description: file.source_type === 'agent_document' ? '智能体文档' : formatProjectFileDescription(file),
       icon: React.createElement(FileText, { className: 'h-3.5 w-3.5 text-blue-500', strokeWidth: 1.8 }),
       groupLabel: 'Library',
@@ -124,4 +126,9 @@ export function buildSessionComposerSubmit(segments: Segment[]): SessionComposer
 function formatProjectFileDescription(file: ProjectFile): string {
   const size = file.size > 0 ? `${Math.ceil(file.size / 1024)}KB` : '0KB';
   return `${file.mime_type} · ${size}`;
+}
+
+function formatProjectFileTitle(file: ProjectFile): string {
+  const path = file.storage_path?.trim() || file.url?.trim() || file.stored_name.trim() || file.original_name;
+  return path.includes(file.original_name) ? path : `${path} · ${file.original_name}`;
 }

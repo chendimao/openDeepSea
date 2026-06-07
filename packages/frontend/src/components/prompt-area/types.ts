@@ -65,6 +65,8 @@ export type TriggerSuggestion = {
   value: string
   /** Display label shown in the dropdown */
   label: string
+  /** Optional full text shown by the browser tooltip when the item is hovered */
+  title?: string
   /** Optional description shown below the label */
   description?: string
   /** Optional icon element rendered before the label */

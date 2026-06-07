@@ -147,6 +147,7 @@ export function TriggerPopover({
               type="button"
               role="option"
               aria-selected={suggestionIndex === selectedIndex}
+              title={suggestion.title ?? suggestion.description ?? suggestion.label}
               className={cn(
                 'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px]',
                 'text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-popover-raised)] hover:text-[var(--color-primary)]',
