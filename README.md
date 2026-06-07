@@ -69,6 +69,11 @@ npm run dev
 
 # 如需单独后端热重载调试，可使用：
 # npm run dev:backend:watch
+# 如需前后端分开启动，可分别使用：
+# npm run dev:backend
+# npm run dev:frontend
+# 上述脚本会默认共享 OPENDEEPSEA_LOCAL_TOKEN=openclaw-room-dev-token；
+# 如果手动覆盖该变量，前后端必须使用同一个值。
 # 注意：运行正式 workflow 时建议使用默认 dev 后端，避免后端热重启中断执行中的 ACP 会话。
 
 # 前端: http://localhost:5173
