@@ -267,6 +267,9 @@ test('SessionShell project rail CSS keeps the reference-style compact hierarchy'
   assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*8px 0 10px 30px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*min-height:\s*32px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*5px 10px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*box-shadow:\s*none/s);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row__title\s*\{[^}]*font-size:\s*15px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*min-width:\s*52px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*font-size:\s*14px/s);

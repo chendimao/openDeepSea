@@ -1006,9 +1006,9 @@
   background: rgba(255, 255, 255, 0.2);
 }
 .deepsea-project-session-row[data-current="true"] {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.42);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  border-color: transparent;
+  background: rgba(67, 70, 84, 0.1);
+  box-shadow: none;
 }
 .deepsea-project-session-row__title {
   min-width: 0;
