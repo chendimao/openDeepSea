@@ -9,6 +9,7 @@ import type { SessionAgentEvent } from './types.js';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-session-view-model-')), 'test.db');
 
 const { projectRepo } = await import('./repos/projects.js');
+const { db } = await import('./db.js');
 const { sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { historyRecordRepo } = await import('./repos/history-records.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
@@ -325,6 +326,54 @@ test('buildSessionToolRows merges ACP tool updates with execution detail and dur
   assert.match(rows[0]?.detail ?? '', /hi/);
   assert.equal(rows[0]?.startedAt, startedAt);
   assert.equal(rows[0]?.completedAt, completedAt);
+});
+
+test('buildSessionToolRows includes the parent run duration for tool display', () => {
+  const project = projectRepo.create({
+    name: 'tool run duration project',
+    path: mkdtempSync(join(tmpdir(), 'session-tool-run-duration-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Tool Run Duration Session' });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    provider: 'codex',
+    mode: 'code',
+    prompt: 'read local file',
+  });
+  db.prepare('UPDATE session_runs SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?')
+    .run('completed', run.started_at + 21_423, run.started_at + 21_423, run.id);
+  const event = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    source_run_id: run.id,
+    title: 'tool_call_update',
+    payload: {
+      rawType: 'tool_call_update',
+      rawEvent: {
+        params: {
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'call-shell-run-duration',
+            status: 'completed',
+            rawOutput: {
+              call_id: 'call-shell-run-duration',
+              started_at_ms: 1_780_000_001_532,
+              completed_at_ms: 1_780_000_001_875,
+              command: ['/bin/zsh', '-lc', 'sed -n "1,160p" SKILL.md'],
+              stdout: 'content\n',
+              exit_code: 0,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const rows = buildSessionToolRows([event], [sessionRunRepo.get(run.id)!]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.durationMs, 343);
+  assert.equal(rows[0]?.runDurationMs, 21_423);
 });
 
 test('buildSessionDiffRowsFromAcp includes only ACP file changes and aggregates duplicate files', () => {

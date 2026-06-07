@@ -88,6 +88,20 @@ test('SessionShell renders tool rows as detail buttons', () => {
   assert.match(html, /aria-label="查看工具调用详情：packages\/frontend\/src\/session-ui\/SessionShell\.tsx"/);
 });
 
+test('SessionShell renders tool row duration from the full session run when available', () => {
+  const payload = createPayload();
+  payload.toolRows[0] = {
+    ...payload.toolRows[0]!,
+    durationMs: 343,
+    runDurationMs: 21_423,
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /21\.4s/);
+  assert.doesNotMatch(html, /0\.3s/);
+});
+
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
   const { activeSessions: _activeSessions, ...legacyPayload } = createPayload();
 

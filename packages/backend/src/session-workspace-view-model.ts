@@ -17,7 +17,7 @@ import type {
 } from './types.js';
 import { historyRecordRepo } from './repos/history-records.js';
 import { projectRepo } from './repos/projects.js';
-import { sessionRepo } from './repos/sessions.js';
+import { sessionRepo, sessionRunRepo } from './repos/sessions.js';
 
 const TOOL_EVIDENCE_TYPES = new Set<SessionEvidenceType>([
   'tool_call',
@@ -113,11 +113,12 @@ function readUsageValue(usage: object, keys: string[]): number {
   return 0;
 }
 
-export function buildSessionToolRows(evidence: SessionEvidenceEvent[]): SessionToolRow[] {
+export function buildSessionToolRows(evidence: SessionEvidenceEvent[], runs: SessionRun[] = []): SessionToolRow[] {
   const rows: SessionToolRow[] = [];
   const rowIndexesByCallId = new Map<string, number>();
+  const runDurationsById = buildRunDurationsById(runs);
   for (const event of evidence.filter(isToolEvidence)) {
-    const row = buildToolRow(event);
+    const row = buildToolRow(event, runDurationsById);
     const callId = evidenceToolCallId(event);
     const existingIndex = callId ? rowIndexesByCallId.get(callId) : undefined;
     if (existingIndex !== undefined) {
@@ -134,7 +135,7 @@ function isToolEvidence(event: SessionEvidenceEvent): boolean {
   return effectiveToolEvidenceType(event) !== null;
 }
 
-function buildToolRow(event: SessionEvidenceEvent): SessionToolRow {
+function buildToolRow(event: SessionEvidenceEvent, runDurationsById: Map<string, number>): SessionToolRow {
   const command = evidenceCommand(event);
   const output = evidenceOutput(event);
   const startedAt = evidenceStartedAt(event);
@@ -146,6 +147,7 @@ function buildToolRow(event: SessionEvidenceEvent): SessionToolRow {
     target: evidenceTarget(event),
     status: evidenceStatus(event),
     durationMs: evidenceDurationMs(event, startedAt, completedAt),
+    runDurationMs: evidenceRunDurationMs(event, runDurationsById),
     command,
     output,
     detail: buildToolDetail(command, output, event),
@@ -172,6 +174,7 @@ function mergeToolRows(left: SessionToolRow, right: SessionToolRow): SessionTool
     durationMs: right.durationMs ?? left.durationMs ?? (
       startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null
     ),
+    runDurationMs: right.runDurationMs ?? left.runDurationMs ?? null,
     command,
     output,
     detail,
@@ -180,6 +183,32 @@ function mergeToolRows(left: SessionToolRow, right: SessionToolRow): SessionTool
     severity: mergeSeverity(left.severity, right.severity),
     eventId: right.eventId,
   };
+}
+
+function buildRunDurationsById(runs: SessionRun[]): Map<string, number> {
+  return new Map(runs.flatMap((run) => {
+    if (!run.completed_at) return [];
+    return [[run.id, Math.max(0, run.completed_at - run.started_at)]];
+  }));
+}
+
+function evidenceRunDurationMs(event: SessionEvidenceEvent, runDurationsById: Map<string, number>): number | null {
+  const runId = evidenceRunId(event);
+  return runId ? runDurationsById.get(runId) ?? null : null;
+}
+
+function evidenceRunId(event: SessionEvidenceEvent): string | null {
+  const eventPayload = acpEventPayload(event);
+  const rawUpdate = acpRawUpdate(event);
+  return firstString(
+    event.source_run_id,
+    event.payload.runId,
+    event.payload.run_id,
+    eventPayload?.runId,
+    eventPayload?.run_id,
+    rawUpdate?.runId,
+    rawUpdate?.run_id,
+  );
 }
 
 function evidenceToolCallId(event: SessionEvidenceEvent): string | null {
@@ -450,7 +479,7 @@ export function buildSessionInspectorSnapshot(
 ): SessionInspectorSnapshot {
   return {
     planItems: buildSessionPlanItemsFromAcp(sessionId, evidence, agentEvents),
-    toolRows: buildSessionToolRows(evidence),
+    toolRows: buildSessionToolRows(evidence, sessionRunRepo.listBySession(sessionId)),
     diffRows: buildSessionDiffRowsFromAcp(evidence, agentEvents),
   };
 }

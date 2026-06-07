@@ -368,6 +368,7 @@ export interface SessionToolRow {
   target: string;
   status: 'completed' | 'running' | 'failed' | 'unknown';
   durationMs: number | null;
+  runDurationMs?: number | null;
   command?: string | null;
   output?: string | null;
   detail?: string | null;

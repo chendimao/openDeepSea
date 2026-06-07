@@ -1152,7 +1152,7 @@ function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
             <span>{index + 1}</span>
             <strong>{toolActionLabel(row.action)}</strong>
             <p>{row.target}</p>
-            <span>{formatToolDuration(row.durationMs)}</span>
+            <span>{formatToolDisplayDuration(row)}</span>
             {row.status === 'running' ? <span>...</span> : <CheckCircle2 aria-hidden="true" />}
           </button>
         ))}
@@ -1201,7 +1201,7 @@ function ToolDetailDialog({ row, onClose }: { row: SessionToolRow; onClose: () =
           </div>
           <div>
             <dt>耗时</dt>
-            <dd>{formatToolDuration(row.durationMs)}</dd>
+            <dd>{formatToolDisplayDuration(row)}</dd>
           </div>
           <div>
             <dt>级别</dt>
@@ -1390,6 +1390,10 @@ function toolStatusLabel(status: SessionToolRow['status']): string {
 
 function formatToolDuration(durationMs: number | null): string {
   return durationMs === null ? '--' : `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function formatToolDisplayDuration(row: SessionToolRow): string {
+  return formatToolDuration(row.runDurationMs ?? row.durationMs);
 }
 
 function formatToolTimestamp(timestamp: number): string {
