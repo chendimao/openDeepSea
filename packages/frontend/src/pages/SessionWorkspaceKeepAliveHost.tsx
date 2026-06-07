@@ -6,6 +6,7 @@ import {
   getSessionWorkspaceRouteParams,
   type SessionWorkspaceRouteParams,
 } from './sessionWorkspaceRoute';
+import { rememberLastSessionWorkspaceRoute } from '../lib/sessionWorkspaceRouteMemory';
 
 export function SessionWorkspaceKeepAliveHost(): JSX.Element {
   const location = useLocation();
@@ -15,7 +16,9 @@ export function SessionWorkspaceKeepAliveHost(): JSX.Element {
   );
 
   useEffect(() => {
-    if (routeParams.active) setLastSessionRoute(routeParams);
+    if (!routeParams.active) return;
+    setLastSessionRoute(routeParams);
+    rememberLastSessionWorkspaceRoute(routeParams);
   }, [routeParams.active, routeParams.projectId, routeParams.sessionId]);
 
   const active = routeParams.active;

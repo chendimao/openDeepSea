@@ -18,6 +18,10 @@ import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
 import { SystemSettingsDialog } from './SettingsDialogs';
 import { getThemeStyle, type ThemeMode } from '../lib/theme';
+import {
+  getLastSessionWorkspaceHref,
+  subscribeLastSessionWorkspaceHref,
+} from '../lib/sessionWorkspaceRouteMemory';
 
 export function AppShell({
   children,
@@ -30,6 +34,7 @@ export function AppShell({
 }): JSX.Element {
   const [commandOpen, setCommandOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [sessionWorkspaceHref, setSessionWorkspaceHref] = useState(getLastSessionWorkspaceHref);
   const location = useLocation();
   const { t } = useI18n();
   const themeStyle = getThemeStyle(theme);
@@ -41,6 +46,11 @@ export function AppShell({
     queryFn: api.listProjects,
     refetchInterval: 30_000,
   });
+
+  useEffect(() => {
+    setSessionWorkspaceHref(getLastSessionWorkspaceHref());
+    return subscribeLastSessionWorkspaceHref(setSessionWorkspaceHref);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -66,7 +76,7 @@ export function AppShell({
           </NavLink>
           <nav className="deepsea-shell-nav" aria-label={t('shell.sidebar.aria')}>
             <HeaderNavLink
-              to="/"
+              to={sessionWorkspaceHref}
               active={isSessionWorkspaceRoute}
               exact
               icon={History}

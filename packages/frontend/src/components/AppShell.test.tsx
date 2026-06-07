@@ -7,31 +7,27 @@ import { MemoryRouter } from 'react-router-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
 import { AppShell } from './AppShell';
+import { rememberLastSessionWorkspaceRoute } from '../lib/sessionWorkspaceRouteMemory';
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
 Object.defineProperty(globalThis, 'localStorage', {
   value: {
-    getItem: () => null,
-    setItem: () => undefined,
-    removeItem: () => undefined,
+    getItem: (key: string) => key === 'opendeepsea.lastSessionWorkspaceHref.v1' ? storedHref : null,
+    setItem: (key: string, value: string) => {
+      if (key === 'opendeepsea.lastSessionWorkspaceHref.v1') storedHref = value;
+    },
+    removeItem: (key: string) => {
+      if (key === 'opendeepsea.lastSessionWorkspaceHref.v1') storedHref = null;
+    },
   },
   configurable: true,
 });
 
+let storedHref: string | null = null;
+
 test('AppShell renders the shared Deepsea header with system settings entry', () => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const html = renderToStaticMarkup(
-    <I18nProvider>
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/projects/project-1']}>
-          <AppShell theme="minimal-light" onThemeChange={() => undefined}>
-            <div>content</div>
-          </AppShell>
-        </MemoryRouter>
-      </QueryClientProvider>
-    </I18nProvider>,
-  );
+  const html = renderAppShell('/projects/project-1');
 
   assert.match(html, /deepsea-topbar app-header/);
   assert.match(html, /深海指挥中心/);
@@ -46,20 +42,18 @@ test('AppShell renders the shared Deepsea header with system settings entry', ()
 });
 
 test('AppShell keeps profile avatar on non-session routes', () => {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const html = renderToStaticMarkup(
-    <I18nProvider>
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={['/agents']}>
-          <AppShell theme="minimal-light" onThemeChange={() => undefined}>
-            <div>content</div>
-          </AppShell>
-        </MemoryRouter>
-      </QueryClientProvider>
-    </I18nProvider>,
-  );
+  const html = renderAppShell('/agents');
 
   assert.match(html, /alt="Profile"/);
+});
+
+test('AppShell points Session nav to the last concrete session route', () => {
+  storedHref = null;
+  rememberLastSessionWorkspaceRoute({ active: true, projectId: 'project-1', sessionId: 'session-1' });
+
+  const html = renderAppShell('/agents');
+
+  assert.match(html, /href="\/projects\/project-1\/sessions\/session-1"/);
 });
 
 test('AppShell does not open a global websocket without a concrete subscription', () => {
@@ -68,3 +62,19 @@ test('AppShell does not open a global websocket without a concrete subscription'
   assert.doesNotMatch(source, /roomSocket\.connect\(/);
   assert.doesNotMatch(source, /roomSocket\.destroy\(/);
 });
+
+function renderAppShell(initialEntry: string): string {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  return renderToStaticMarkup(
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <AppShell theme="minimal-light" onThemeChange={() => undefined}>
+            <div>content</div>
+          </AppShell>
+        </MemoryRouter>
+      </QueryClientProvider>
+    </I18nProvider>,
+  );
+}
