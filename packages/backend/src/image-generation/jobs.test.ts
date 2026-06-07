@@ -3,10 +3,18 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import type {
+  ImageGenerationJobCreateInput,
+  ImageProviderProfile,
+} from './types.js';
+import type { Project, ProjectFile } from '../types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-image-generation-jobs-')), 'test.db');
 
 const { db, now } = await import('../db.js');
+const { fileRepo } = await import('../repos/files.js');
+const { projectRepo } = await import('../repos/projects.js');
+const { imageGenerationJobRepo } = await import('./jobs.js');
 
 test('image generation schema creates provider job output and source tables', () => {
   const tables = db.prepare(`
@@ -173,6 +181,283 @@ test('image generation schema supports queued running and canceling startup reco
   ]);
 });
 
+test('image job repo creates queued jobs and lists them by project and status', () => {
+  const project = createProjectForTest('jobs-list');
+  const otherProject = createProjectForTest('jobs-list-other');
+  const profile = createImageProviderProfileForTest(project.id);
+  const otherProfile = createImageProviderProfileForTest(otherProject.id);
+  const sessionId = createSessionForTest(project.id);
+
+  const job = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, {
+    session_id: sessionId,
+    source_agent_id: 'agent-1',
+  }));
+  imageGenerationJobRepo.create(createJobInput(otherProject.id, otherProfile.id));
+
+  assert.equal(job.project_id, project.id);
+  assert.equal(job.session_id, sessionId);
+  assert.equal(job.source_agent_id, 'agent-1');
+  assert.equal(job.source_task_id, null);
+  assert.equal(job.status, 'queued');
+  assert.equal(job.message, null);
+  assert.equal(job.error, null);
+  assert.equal(job.started_at, null);
+  assert.equal(job.completed_at, null);
+  assert.deepEqual(imageGenerationJobRepo.get(job.id), job);
+
+  assert.deepEqual(imageGenerationJobRepo.listByProject(project.id).map((row) => row.id), [job.id]);
+  assert.deepEqual(imageGenerationJobRepo.listByProject(project.id, { status: 'queued' }).map((row) => row.id), [job.id]);
+  assert.deepEqual(imageGenerationJobRepo.listByProject(otherProject.id).map((row) => row.project_id), [otherProject.id]);
+
+  const running = imageGenerationJobRepo.markRunning(job.id);
+
+  assert.equal(running.status, 'running');
+  assert.notEqual(running.started_at, null);
+  assert.deepEqual(running, imageGenerationJobRepo.get(job.id));
+  assert.deepEqual(imageGenerationJobRepo.listByProject(project.id, { status: 'queued' }), []);
+  assert.deepEqual(imageGenerationJobRepo.listByProject(project.id, { status: 'running' }).map((row) => row.id), [job.id]);
+  assert.deepEqual(imageGenerationJobRepo.listByProject(project.id, { sessionId }).map((row) => row.id), [job.id]);
+});
+
+test('image job repo rejects provider profiles from another project', () => {
+  const project = createProjectForTest('provider-boundary');
+  const otherProject = createProjectForTest('provider-boundary-other');
+  const otherProfile = createImageProviderProfileForTest(otherProject.id);
+
+  assert.throws(
+    () => imageGenerationJobRepo.create(createJobInput(project.id, otherProfile.id)),
+    /provider profile project mismatch/,
+  );
+});
+
+test('image job repo status transitions return latest rows and throw when missing', () => {
+  const { project, profile } = createJobFixture('status');
+  const runningJob = imageGenerationJobRepo.create(createJobInput(project.id, profile.id));
+
+  const running = imageGenerationJobRepo.markRunning(runningJob.id);
+  assert.equal(running.status, 'running');
+  assert.notEqual(running.started_at, null);
+  assert.equal(running.completed_at, null);
+  assert.deepEqual(running, imageGenerationJobRepo.get(runningJob.id));
+
+  const canceling = imageGenerationJobRepo.markCanceling(runningJob.id);
+  assert.equal(canceling.status, 'canceling');
+  assert.deepEqual(canceling, imageGenerationJobRepo.get(runningJob.id));
+
+  const canceled = imageGenerationJobRepo.markCanceled(runningJob.id, '用户取消');
+  assert.equal(canceled.status, 'canceled');
+  assert.equal(canceled.message, '用户取消');
+  assert.equal(canceled.error, null);
+  assert.notEqual(canceled.completed_at, null);
+  assert.deepEqual(canceled, imageGenerationJobRepo.get(runningJob.id));
+
+  const failedJob = imageGenerationJobRepo.create(createJobInput(project.id, profile.id));
+  const failed = imageGenerationJobRepo.markFailed(failedJob.id, 'provider error');
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.error, 'provider error');
+  assert.notEqual(failed.completed_at, null);
+  assert.deepEqual(failed, imageGenerationJobRepo.get(failedJob.id));
+
+  const completedJob = imageGenerationJobRepo.create(createJobInput(project.id, profile.id));
+  const completed = imageGenerationJobRepo.markCompleted(completedJob.id, null);
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.message, null);
+  assert.equal(completed.error, null);
+  assert.notEqual(completed.completed_at, null);
+  assert.deepEqual(completed, imageGenerationJobRepo.get(completedJob.id));
+
+  assert.throws(() => imageGenerationJobRepo.markRunning('missing-job'), /image generation job not found/);
+  assert.throws(() => imageGenerationJobRepo.markCompleted('missing-job', null), /image generation job not found/);
+});
+
+test('image job repo appends outputs and source images', () => {
+  const { project, profile } = createJobFixture('relations');
+  const job = imageGenerationJobRepo.create(createJobInput(project.id, profile.id));
+  const outputFile = createProjectFileForTest(project.id, 'output.png', 'image/png', 3);
+
+  const output = imageGenerationJobRepo.appendOutput({
+    job_id: job.id,
+    file_id: outputFile.id,
+    slot: 1,
+    name: outputFile.original_name,
+    url: outputFile.url,
+    mime_type: outputFile.mime_type,
+    size: outputFile.size,
+    width: 64,
+    height: 32,
+  });
+
+  assert.equal(output.job_id, job.id);
+  assert.equal(output.file_id, outputFile.id);
+  assert.equal(output.slot, 1);
+  assert.equal(output.width, 64);
+  assert.equal(output.height, 32);
+  assert.deepEqual(imageGenerationJobRepo.listOutputs(job.id), [output]);
+
+  const source = imageGenerationJobRepo.addSourceImage({
+    job_id: job.id,
+    file_id: outputFile.id,
+    slot: 1,
+    url: outputFile.url,
+    origin_job_id: job.id,
+    origin_output_id: output.id,
+  });
+
+  assert.equal(source.job_id, job.id);
+  assert.equal(source.file_id, outputFile.id);
+  assert.equal(source.origin_job_id, job.id);
+  assert.equal(source.origin_output_id, output.id);
+  assert.deepEqual(imageGenerationJobRepo.listSourceImages(job.id), [source]);
+});
+
+test('image job repo rejects output and source files from another project', () => {
+  const { project, profile } = createJobFixture('file-boundary');
+  const otherProject = createProjectForTest('file-boundary-other');
+  const job = imageGenerationJobRepo.create(createJobInput(project.id, profile.id));
+  const otherFile = createProjectFileForTest(otherProject.id, 'other.png', 'image/png', 3);
+
+  assert.throws(
+    () =>
+      imageGenerationJobRepo.appendOutput({
+        job_id: job.id,
+        file_id: otherFile.id,
+        slot: 1,
+        name: otherFile.original_name,
+        url: otherFile.url,
+        mime_type: otherFile.mime_type,
+        size: otherFile.size,
+      }),
+    /file project mismatch/,
+  );
+  assert.throws(
+    () =>
+      imageGenerationJobRepo.addSourceImage({
+        job_id: job.id,
+        file_id: otherFile.id,
+        slot: 1,
+        url: otherFile.url,
+      }),
+    /file project mismatch/,
+  );
+});
+
+test('image job repo rejects cross project and mismatched source image lineage', () => {
+  const { project, profile } = createJobFixture('lineage-boundary');
+  const otherProject = createProjectForTest('lineage-boundary-other');
+  const otherProfile = createImageProviderProfileForTest(otherProject.id);
+  const job = imageGenerationJobRepo.create(createJobInput(project.id, profile.id));
+  const originJob = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'origin' }));
+  const otherOriginJob = imageGenerationJobRepo.create(createJobInput(otherProject.id, otherProfile.id));
+  const sourceFile = createProjectFileForTest(project.id, 'source.png', 'image/png', 5);
+  const otherSourceFile = createProjectFileForTest(project.id, 'other-source.png', 'image/png', 5);
+  const otherProjectSourceFile = createProjectFileForTest(otherProject.id, 'other-project-source.png', 'image/png', 5);
+  const originOutput = imageGenerationJobRepo.appendOutput({
+    job_id: originJob.id,
+    file_id: sourceFile.id,
+    slot: 1,
+    name: sourceFile.original_name,
+    url: sourceFile.url,
+    mime_type: sourceFile.mime_type,
+    size: sourceFile.size,
+  });
+  const otherOriginOutput = imageGenerationJobRepo.appendOutput({
+    job_id: otherOriginJob.id,
+    file_id: otherProjectSourceFile.id,
+    slot: 1,
+    name: otherProjectSourceFile.original_name,
+    url: otherProjectSourceFile.url,
+    mime_type: otherProjectSourceFile.mime_type,
+    size: otherProjectSourceFile.size,
+  });
+
+  assert.throws(
+    () =>
+      imageGenerationJobRepo.addSourceImage({
+        job_id: job.id,
+        file_id: sourceFile.id,
+        slot: 1,
+        url: sourceFile.url,
+        origin_job_id: originJob.id,
+      }),
+    /source image lineage requires both origin_job_id and origin_output_id/,
+  );
+  assert.throws(
+    () =>
+      imageGenerationJobRepo.addSourceImage({
+        job_id: job.id,
+        file_id: sourceFile.id,
+        slot: 1,
+        url: sourceFile.url,
+        origin_output_id: originOutput.id,
+      }),
+    /source image lineage requires both origin_job_id and origin_output_id/,
+  );
+  assert.throws(
+    () =>
+      imageGenerationJobRepo.addSourceImage({
+        job_id: job.id,
+        file_id: sourceFile.id,
+        slot: 1,
+        url: sourceFile.url,
+        origin_job_id: otherOriginJob.id,
+        origin_output_id: otherOriginOutput.id,
+      }),
+    /origin job project mismatch/,
+  );
+  assert.throws(
+    () =>
+      imageGenerationJobRepo.addSourceImage({
+        job_id: job.id,
+        file_id: sourceFile.id,
+        slot: 1,
+        url: sourceFile.url,
+        origin_job_id: job.id,
+        origin_output_id: originOutput.id,
+      }),
+    /origin output job mismatch/,
+  );
+  assert.throws(
+    () =>
+      imageGenerationJobRepo.addSourceImage({
+        job_id: job.id,
+        file_id: otherSourceFile.id,
+        slot: 1,
+        url: otherSourceFile.url,
+        origin_job_id: originJob.id,
+        origin_output_id: originOutput.id,
+      }),
+    /origin output file mismatch/,
+  );
+});
+
+test('image job repo recovers interrupted jobs as canceled', () => {
+  imageGenerationJobRepo.recoverInterruptedJobs();
+  const { project, profile } = createJobFixture('recover');
+  const queued = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'queued' }));
+  const running = imageGenerationJobRepo.markRunning(
+    imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'running' })).id,
+  );
+  const canceling = imageGenerationJobRepo.markCanceling(
+    imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'canceling' })).id,
+  );
+  const completed = imageGenerationJobRepo.markCompleted(
+    imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'completed' })).id,
+    'done',
+  );
+
+  const recoveredCount = imageGenerationJobRepo.recoverInterruptedJobs();
+
+  assert.equal(recoveredCount, 3);
+  for (const jobId of [queued.id, running.id, canceling.id]) {
+    const recovered = imageGenerationJobRepo.get(jobId);
+    assert.equal(recovered?.status, 'canceled');
+    assert.equal(recovered?.message, '后端重启，图片生成任务已停止。');
+    assert.equal(recovered?.error, null);
+    assert.notEqual(recovered?.completed_at, null);
+  }
+  assert.equal(imageGenerationJobRepo.get(completed.id)?.status, 'completed');
+});
+
 function assertColumnNames(table: string, expected: string[]): void {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   assert.deepEqual(rows.map((row) => row.name), expected);
@@ -279,4 +564,101 @@ function insertSourceImage(input: {
     )
     VALUES (?, ?, ?, ?, '/uploads/source.png', NULL, NULL, ?)
   `).run(input.sourceImageId, input.jobId, input.fileId, input.slot, now());
+}
+
+function createJobFixture(name: string): { project: Project; profile: ImageProviderProfile } {
+  const project = createProjectForTest(name);
+  return {
+    project,
+    profile: createImageProviderProfileForTest(project.id),
+  };
+}
+
+function createProjectForTest(name: string): Project {
+  return projectRepo.create({
+    name: `image generation ${name}`,
+    path: mkdtempSync(join(tmpdir(), `opendeepsea-image-generation-${name}-`)),
+  });
+}
+
+function createImageProviderProfileForTest(projectId: string): ImageProviderProfile {
+  const id = `profile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const timestamp = now();
+  db.prepare(
+    `INSERT INTO image_provider_profiles (
+      id, project_id, name, base_url, api_key, model, compat_profile_id,
+      supports_count_parameter, active, created_at, updated_at, deleted_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+  ).run(
+    id,
+    projectId,
+    `Profile ${id}`,
+    'https://api.example.test/v1',
+    'test-key',
+    'test-image-model',
+    'openai',
+    1,
+    1,
+    timestamp,
+    timestamp,
+  );
+  return db.prepare('SELECT * FROM image_provider_profiles WHERE id = ?').get(id) as ImageProviderProfile;
+}
+
+function createSessionForTest(projectId: string): string {
+  const id = `session-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const timestamp = now();
+  db.prepare(
+    `INSERT INTO sessions (
+      id, project_id, title, current_goal, mode, phase, status, provider, model, workspace_path,
+      worktree_path, branch_name, forked_from_session_id, forked_from_history_record_id,
+      latest_compaction_id, latest_context_manifest_id, closed_at, pinned_at, last_viewed_at,
+      created_at, updated_at, archived_at
+    )
+    VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, NULL)`,
+  ).run(id, projectId, `Session ${id}`, 'code', 'active', 'active', timestamp, timestamp);
+  return id;
+}
+
+function createJobInput(
+  projectId: string,
+  profileId: string,
+  overrides: Partial<ImageGenerationJobCreateInput> = {},
+): ImageGenerationJobCreateInput {
+  return {
+    project_id: projectId,
+    room_id: null,
+    session_id: null,
+    source_message_id: null,
+    source_agent_id: null,
+    source_task_id: null,
+    provider_profile_id: profileId,
+    workflow: 'generate',
+    prompt: 'apple',
+    count: 1,
+    quality: 'auto',
+    size: 'auto',
+    ...overrides,
+  };
+}
+
+function createProjectFileForTest(
+  projectId: string,
+  originalName: string,
+  mimeType: string,
+  size: number,
+): ProjectFile {
+  const storedName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${originalName}`;
+  return fileRepo.create({
+    project_id: projectId,
+    original_name: originalName,
+    stored_name: storedName,
+    mime_type: mimeType,
+    size,
+    url: `/uploads/files/${projectId}/${storedName}`,
+    storage_path: join(tmpdir(), storedName),
+    uploaded_by_id: 'test',
+    uploaded_by_name: '测试',
+  });
 }
