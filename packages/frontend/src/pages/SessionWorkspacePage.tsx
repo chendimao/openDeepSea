@@ -118,7 +118,10 @@ export function applyProjectSwitcherProjectPatch(
 export function removeProjectFromWorkspacePayload(
   payload: SessionWorkspacePayload,
   projectId: string,
-): SessionWorkspacePayload {
+): SessionWorkspacePayload | null {
+  if (payload.activeSession.session.project_id === projectId || payload.project.id === projectId) {
+    return null;
+  }
   return {
     ...payload,
     projectSwitcher: {
@@ -129,28 +132,45 @@ export function removeProjectFromWorkspacePayload(
   };
 }
 
+export function removeProjectFromProjectList(
+  projects: Project[] | undefined,
+  projectId: string,
+): Project[] | undefined {
+  return projects?.filter((project) => project.id !== projectId);
+}
+
 export function updateActiveSessionPinnedAt(
   payload: SessionWorkspacePayload,
-  sessionId: string,
-  pinnedAt: number | null,
+  session: Session,
 ): SessionWorkspacePayload {
-  const existingSummary = payload.activeSessions.find((session) => session.id === sessionId);
-  const activeSummary = payload.activeSession.session.id === sessionId
-    ? projectSessionToActiveSummary({ session: payload.activeSession.session, project: payload.project })
+  const existingSummary = payload.activeSessions.find((item) => item.id === session.id);
+  const activeSummary = payload.activeSession.session.id === session.id
+    ? projectSessionToActiveSummary({ session, project: payload.project })
     : null;
   const nextSummary = existingSummary ?? activeSummary;
+  if (!nextSummary) return payload;
+
+  const nextActiveSession = payload.activeSession.session.id === session.id
+    ? {
+      ...payload.activeSession,
+      session: { ...payload.activeSession.session, ...session },
+    }
+    : payload.activeSession;
 
   return {
     ...payload,
-    activeSession: payload.activeSession.session.id === sessionId
-      ? {
-        ...payload.activeSession,
-        session: { ...payload.activeSession.session, pinned_at: pinnedAt },
-      }
-      : payload.activeSession,
-    activeSessions: nextSummary
-      ? upsertActiveSessionSummary(payload.activeSessions, { ...nextSummary, pinned_at: pinnedAt })
-      : payload.activeSessions,
+    activeSession: nextActiveSession,
+    activeSessions: upsertActiveSessionSummary(payload.activeSessions, {
+      ...nextSummary,
+      title: session.title,
+      status: session.status,
+      phase: session.phase,
+      provider: session.provider,
+      model: session.model,
+      pinned_at: session.pinned_at,
+      updated_at: session.updated_at,
+      latest_event_summary: session.current_goal,
+    }),
   };
 }
 
@@ -326,6 +346,10 @@ export function SessionWorkspacePage({
     mutationFn: (projectId: string) => api.deleteProject(projectId),
     onSuccess: (_result, projectId) => {
       const removingActiveProject = workspacePayload?.activeSession.session.project_id === projectId;
+      queryClient.setQueryData<Project[] | undefined>(
+        ['projects'],
+        (current) => removeProjectFromProjectList(current, projectId),
+      );
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       setWorkspacePayload((current) => current ? removeProjectFromWorkspacePayload(current, projectId) : current);
       setActiveSessions((current) => current?.filter((session) => session.project_id !== projectId) ?? current);
@@ -373,18 +397,15 @@ export function SessionWorkspacePage({
       api.updateSession(session.id, { pinned_at: session.pinned_at === null ? Date.now() : null }),
     onSuccess: (session) => {
       setWorkspacePayload((current) =>
-        current ? updateActiveSessionPinnedAt(current, session.id, session.pinned_at) : current
+        current ? updateActiveSessionPinnedAt(current, session) : current
       );
       setActiveSessions((current) => {
-        const base = current ?? workspacePayload?.activeSessions ?? [];
+        if (!current) return current;
+        const base = current;
         const existing = base.find((item) => item.id === session.id);
-        const activeSummary = workspacePayload?.activeSession.session.id === session.id && workspacePayload
-          ? projectSessionToActiveSummary({ session: workspacePayload.activeSession.session, project: workspacePayload.project })
-          : null;
-        const nextSummary = existing ?? activeSummary;
-        return nextSummary
+        return existing
           ? upsertActiveSessionSummary(base, {
-            ...nextSummary,
+            ...existing,
             title: session.title,
             status: session.status,
             phase: session.phase,

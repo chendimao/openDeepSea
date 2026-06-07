@@ -14,6 +14,7 @@ import {
   getSnapshotNavigation,
   isCompactPreviewForActiveSession,
   projectSessionToActiveSummary,
+  removeProjectFromProjectList,
   removeProjectFromWorkspacePayload,
   runSessionCommand,
   SessionWorkspacePage,
@@ -288,16 +289,65 @@ test('removeProjectFromWorkspacePayload removes project and its active sessions'
   const payload = createCommandPayload();
   const next = removeProjectFromWorkspacePayload(payload, 'project-2');
 
+  assert.ok(next);
+  assert.equal(next.project.id, 'project-1');
   assert.equal(next.projectSwitcher.projects.some((project) => project.id === 'project-2'), false);
   assert.equal(next.activeSessions.some((session) => session.project_id === 'project-2'), false);
 });
 
-test('updateActiveSessionPinnedAt updates active summaries and current session', () => {
+test('removeProjectFromWorkspacePayload clears current workspace when removing the active project', () => {
   const payload = createCommandPayload();
-  const next = updateActiveSessionPinnedAt(payload, 'session-1', 123);
+  const next = removeProjectFromWorkspacePayload(payload, 'project-1');
+
+  assert.equal(next, null);
+});
+
+test('removeProjectFromProjectList removes deleted projects from query cache data', () => {
+  const payload = createCommandPayload();
+  const next = removeProjectFromProjectList(payload.projectSwitcher.projects.map((project) => ({
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    description: null,
+    pinned_at: project.pinned_at,
+    sort_order: project.sort_order,
+    message_routing_mode: 'mentions_only',
+    fallback_agent_id: null,
+    created_at: project.created_at ?? 0,
+    updated_at: 0,
+  })), 'project-1');
+
+  assert.deepEqual(next?.map((project) => project.id), ['project-2']);
+});
+
+test('updateActiveSessionPinnedAt updates active summaries and current session from returned session', () => {
+  const payload = createCommandPayload();
+  const returnedSession = {
+    ...payload.activeSession.session,
+    title: 'Pinned Session',
+    pinned_at: 123,
+    updated_at: 500,
+  };
+  const next = updateActiveSessionPinnedAt(payload, returnedSession);
 
   assert.equal(next.activeSession.session.pinned_at, 123);
+  assert.equal(next.activeSession.session.title, 'Pinned Session');
+  assert.equal(next.activeSession.session.updated_at, 500);
   assert.equal(next.activeSessions.find((session) => session.id === 'session-1')?.pinned_at, 123);
+  assert.equal(next.activeSessions.find((session) => session.id === 'session-1')?.title, 'Pinned Session');
+  assert.equal(next.activeSessions.find((session) => session.id === 'session-1')?.updated_at, 500);
+});
+
+test('updateActiveSessionPinnedAt leaves payload unchanged when the returned session is unknown', () => {
+  const payload = createCommandPayload();
+  const unknownSession = {
+    ...payload.activeSession.session,
+    id: 'missing-session',
+    pinned_at: 123,
+  };
+  const next = updateActiveSessionPinnedAt(payload, unknownSession);
+
+  assert.equal(next, payload);
 });
 
 test('shouldRefreshSessionWorkspace skips unfinished stream events', () => {
