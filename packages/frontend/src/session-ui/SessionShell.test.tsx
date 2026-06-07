@@ -190,7 +190,7 @@ test('SessionShell renders agent thought above run output without leaking runtim
   assert.match(html, /智能体思考过程/);
   assert.match(html, /分析用户问题，检查会话上下文，并准备简短回复。/);
   assert.match(html, /等待智能体输出/);
-  assert.ok(html.indexOf('智能体思考过程') < html.indexOf('ASSISTANT'));
+  assert.ok(html.indexOf('智能体思考过程') < html.indexOf('planner'));
 });
 
 test('SessionShell keeps previous assistant replies in transcript timeline', () => {
@@ -238,6 +238,48 @@ test('SessionShell keeps previous assistant replies in transcript timeline', () 
   assert.ok(html.indexOf('第一轮问题') < html.indexOf('第一轮回复仍然可见'));
   assert.ok(html.indexOf('第一轮回复仍然可见') < html.indexOf('第二轮问题'));
   assert.ok(html.indexOf('第二轮问题') < html.indexOf('第二轮回复也可见'));
+});
+
+test('SessionShell renders actual agent names for assistant transcript entries', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  const userMessage = payload.activeSession.messages[0]!;
+  const run = payload.activeSession.runs[0]!;
+  payload.activeSession.messages = [
+    {
+      ...userMessage,
+      id: 'message-user',
+      sender_id: 'user',
+      sender_name: '大哥',
+      role: 'user',
+      content: '请修复群聊消息标签',
+      created_at: now - 80_000,
+    },
+    {
+      ...userMessage,
+      id: 'message-agent',
+      sender_id: 'frontend-executor',
+      sender_name: '前端执行官',
+      role: 'assistant',
+      content: '我会更新消息标签。',
+      created_at: now - 70_000,
+    },
+  ];
+  payload.activeSession.runs = [{
+    ...run,
+    agent_id: 'frontend-executor',
+    stdout: '已更新消息标签。',
+    started_at: now - 60_000,
+    updated_at: now - 55_000,
+    completed_at: now - 55_000,
+  }];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /前端执行官/);
+  assert.ok(html.indexOf('前端执行官') < html.indexOf('我会更新消息标签。'));
+  assert.ok(html.lastIndexOf('前端执行官') < html.indexOf('已更新消息标签。'));
+  assert.doesNotMatch(html, /ASSISTANT/);
 });
 
 test('SessionShell renders markdown controls and thinking duration in transcript', () => {

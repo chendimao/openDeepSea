@@ -558,6 +558,7 @@ function TranscriptCanvas({
   const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
     setDisplayModes((current) => ({ ...current, [key]: mode }));
   };
+  const agentNamesById = buildAgentNamesById(detail.messages);
 
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
@@ -591,12 +592,15 @@ function TranscriptCanvas({
           const runAgentEvents = (detail.agentEvents ?? []).filter((event) => event.run_id === item.run.id);
           const output = runOutputText(item.run);
           const displayMode = displayModeFor(item.key);
+          const runLabel = agentNamesById.get(item.run.agent_id) ?? item.run.agent_id;
           return (
             <React.Fragment key={item.key}>
               <AgentThoughtPanel run={item.run} evidence={runEvidence} />
               <article className="deepsea-run-log">
                 <div>
-                  <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>ASSISTANT</span>
+                  <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>
+                    {runLabel}
+                  </span>
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
                   <ThinkingDurationBadge run={item.run} />
                   <MarkdownDisplaySwitch
@@ -658,10 +662,18 @@ function TranscriptMessage({
       content={message.content}
       timeLabel={formatClock(message.created_at)}
       statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
+      roleLabel={message.sender_name ?? message.sender_id}
       displayMode={displayMode}
       onDisplayModeChange={onDisplayModeChange}
     />
   );
+}
+
+function buildAgentNamesById(messages: SessionMessage[]): Map<string, string> {
+  return new Map(messages.flatMap((message) => {
+    if (message.role !== 'assistant') return [];
+    return [[message.sender_id, message.sender_name ?? message.sender_id]];
+  }));
 }
 
 export type SessionRunTranscriptItem =
