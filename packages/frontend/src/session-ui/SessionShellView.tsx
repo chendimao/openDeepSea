@@ -915,7 +915,7 @@ function AgentThoughtPanel({
 }): JSX.Element | null {
   const thought = agentThoughtText(run, evidence);
   if (!thought) return null;
-  const status = run.status === 'failed' ? 'RISK' : run.status === 'completed' ? 'VERIFIED' : 'RUNNING';
+  const status = runThoughtStatusLabel(run.status);
   return (
     <section className="deepsea-agent-thought" aria-label="智能体思考过程">
       <div className="deepsea-agent-thought__header">
@@ -1115,7 +1115,18 @@ function runOutputText(run: SessionRun): string {
   if (output) return output;
   if (run.status === 'completed') return '未返回可展示回复。';
   if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';
+  if (run.status === 'cancelled') return '运行已取消。';
+  if (run.status === 'paused') return '运行已暂停。';
+  if (run.status === 'interrupted') return '运行已中断。';
   return '等待智能体输出...';
+}
+
+function runThoughtStatusLabel(status: SessionRun['status']): string {
+  if (status === 'failed' || status === 'interrupted') return 'RISK';
+  if (status === 'completed') return 'VERIFIED';
+  if (status === 'cancelled') return 'CANCELLED';
+  if (status === 'paused') return 'PAUSED';
+  return 'RUNNING';
 }
 
 export function getSessionRunThinkingDuration(
