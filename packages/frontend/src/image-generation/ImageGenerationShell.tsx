@@ -1,4 +1,5 @@
 import { Image as ImageIcon, Layers, Settings2, Sparkles } from 'lucide-react';
+import { ImageJobForm } from './ImageJobForm';
 import { ProviderProfilePanel } from './ProviderProfilePanel';
 
 export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.Element {
@@ -31,10 +32,7 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
           </h2>
           <div className="mt-4 space-y-4 text-[12px] text-[var(--color-fg-muted)]">
             <ProviderProfilePanel projectId={projectId} />
-            <div className="border-t border-[var(--color-border)] pt-3">
-              <PlaceholderRow label="Workflow" value="文生图 / 图生图" />
-              <PlaceholderRow label="Prompt" value="后续任务接入表单" />
-            </div>
+            <ImageJobForm projectId={projectId} />
           </div>
         </section>
 
@@ -70,15 +68,6 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
           </div>
         </section>
       </main>
-    </div>
-  );
-}
-
-function PlaceholderRow({ label, value }: { label: string; value: string }): JSX.Element {
-  return (
-    <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] pb-2">
-      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--color-fg-subtle)]">{label}</span>
-      <span className="truncate">{value}</span>
     </div>
   );
 }
