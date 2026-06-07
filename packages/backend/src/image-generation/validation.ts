@@ -14,12 +14,16 @@ export function normalizeImageBaseUrl(value: string): string {
   try {
     const url = new URL(trimmed);
     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol');
+    if (url.username || url.password) throw new Error('base_url must not include credentials');
     const pathname = url.pathname.replace(/\/+$/, '');
     url.pathname = pathname.endsWith('/v1') ? pathname : `${pathname}/v1`;
     url.search = '';
     url.hash = '';
     return url.toString().replace(/\/+$/, '');
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message === 'base_url must not include credentials') {
+      throw error;
+    }
     throw new Error('base_url must be a valid http(s) URL');
   }
 }
@@ -52,6 +56,10 @@ export function normalizeImageCompatProfileId(
   return profileId;
 }
 
-export function normalizeSupportsCountParameter(value: boolean | undefined): 0 | 1 {
-  return value === false ? 0 : 1;
+export function normalizeSupportsCountParameter(value: unknown): 0 | 1 {
+  if (value === undefined) return 1;
+  if (typeof value !== 'boolean') {
+    throw new Error('supports_count_parameter must be a boolean');
+  }
+  return value ? 1 : 0;
 }

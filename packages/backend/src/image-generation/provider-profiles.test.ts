@@ -18,6 +18,10 @@ function createProject(name: string) {
 
 test('normalizeImageBaseUrl appends v1 for OpenAI root URL', () => {
   assert.equal(normalizeImageBaseUrl('https://api.openai.com'), 'https://api.openai.com/v1');
+  assert.throws(
+    () => normalizeImageBaseUrl('https://key:secret@example.com/v1'),
+    /base_url must not include credentials/,
+  );
 });
 
 test('provider profiles create active safe profile and clear other active profiles', () => {
@@ -81,7 +85,7 @@ test('provider profile update preserves empty or omitted api key and replaces ne
 
   assert.equal(omittedKey.model, 'gpt-image-3');
   assert.equal(omittedKey.has_api_key, 1);
-  assert.equal(imageProviderProfileRepo.get(created.id)?.api_key, 'secret-key');
+  assert.equal(imageProviderProfileRepo.getForProject(project.id, created.id)?.api_key, 'secret-key');
 
   imageProviderProfileRepo.update(project.id, created.id, {
     name: 'OpenAI Images Updated',
@@ -92,7 +96,7 @@ test('provider profile update preserves empty or omitted api key and replaces ne
     supports_count_parameter: false,
   });
 
-  assert.equal(imageProviderProfileRepo.get(created.id)?.api_key, 'secret-key');
+  assert.equal(imageProviderProfileRepo.getForProject(project.id, created.id)?.api_key, 'secret-key');
 
   imageProviderProfileRepo.update(project.id, created.id, {
     name: 'OpenAI Images Updated',
@@ -103,7 +107,52 @@ test('provider profile update preserves empty or omitted api key and replaces ne
     supports_count_parameter: true,
   });
 
-  assert.equal(imageProviderProfileRepo.get(created.id)?.api_key, 'new-secret');
+  assert.equal(imageProviderProfileRepo.getForProject(project.id, created.id)?.api_key, 'new-secret');
+});
+
+test('provider profile secret reads require project boundary', () => {
+  const project = createProject('provider-secret-boundary');
+  const otherProject = createProject('provider-secret-boundary-other');
+  const created = imageProviderProfileRepo.create(project.id, {
+    name: 'OpenAI Images',
+    base_url: 'https://api.openai.com',
+    api_key: 'secret-key',
+    model: 'gpt-image-2',
+    compat_profile_id: 'openai',
+    supports_count_parameter: true,
+  });
+
+  assert.equal(imageProviderProfileRepo.getForProject(project.id, created.id)?.api_key, 'secret-key');
+  assert.equal(imageProviderProfileRepo.getForProject(otherProject.id, created.id), undefined);
+});
+
+test('provider profile safe outputs never serialize raw api keys', () => {
+  const project = createProject('provider-safe-output');
+  const created = imageProviderProfileRepo.create(project.id, {
+    name: 'OpenAI Images',
+    base_url: 'https://api.openai.com',
+    api_key: 'secret-key',
+    model: 'gpt-image-2',
+    compat_profile_id: 'openai',
+    supports_count_parameter: true,
+  });
+  const updated = imageProviderProfileRepo.update(project.id, created.id, {
+    name: 'OpenAI Images Updated',
+    base_url: 'https://api.openai.com',
+    api_key: 'new-secret',
+    model: 'gpt-image-3',
+    compat_profile_id: 'openai',
+    supports_count_parameter: true,
+  });
+  const activated = imageProviderProfileRepo.activate(project.id, created.id);
+  const listed = imageProviderProfileRepo.list(project.id);
+  const deleted = imageProviderProfileRepo.softDelete(project.id, created.id);
+
+  for (const safeValue of [created, updated, activated, listed, deleted]) {
+    const serialized = JSON.stringify(safeValue);
+    assert.doesNotMatch(serialized, /secret-key|new-secret/);
+    assertNoRawApiKeyField(safeValue);
+  }
 });
 
 test('provider profiles reject duplicate active names case-insensitively', () => {
@@ -192,7 +241,7 @@ test('provider profiles soft delete and CRUD ignore deleted profiles', () => {
     imageProviderProfileRepo.list(project.id).map((profile) => profile.id),
     [remaining.id],
   );
-  assert.equal(imageProviderProfileRepo.get(deleted.id), undefined);
+  assert.equal(imageProviderProfileRepo.getForProject(project.id, deleted.id), undefined);
   assert.equal(imageProviderProfileRepo.getActive(project.id)?.id, remaining.id);
   assert.throws(
     () =>
@@ -208,3 +257,29 @@ test('provider profiles soft delete and CRUD ignore deleted profiles', () => {
   );
   assert.throws(() => imageProviderProfileRepo.activate(project.id, deleted.id), /not found/i);
 });
+
+test('provider profile validation rejects invalid optional flags', () => {
+  const project = createProject('provider-invalid-flags');
+
+  assert.throws(
+    () =>
+      imageProviderProfileRepo.create(project.id, {
+        name: 'OpenAI Images',
+        base_url: 'https://api.openai.com',
+        api_key: 'secret-key',
+        model: 'gpt-image-2',
+        compat_profile_id: 'openai',
+        supports_count_parameter: 'false' as unknown as boolean,
+      }),
+    /supports_count_parameter must be a boolean/,
+  );
+});
+
+function assertNoRawApiKeyField(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) assertNoRawApiKeyField(item);
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  assert.equal(Object.hasOwn(value, 'api_key'), false);
+}

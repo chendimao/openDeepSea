@@ -16,7 +16,7 @@ import {
 
 export interface ImageProviderProfileRepository {
   list(projectId: string): SafeImageProviderProfile[];
-  get(profileId: string): ImageProviderProfileWithSecret | undefined;
+  getForProject(projectId: string, profileId: string): ImageProviderProfileWithSecret | undefined;
   getActive(projectId: string): ImageProviderProfileWithSecret | undefined;
   create(projectId: string, input: ImageProviderProfileInput): SafeImageProviderProfile;
   update(projectId: string, profileId: string, input: ImageProviderProfileInput): SafeImageProviderProfile;
@@ -80,18 +80,6 @@ function normalizeProfileInput(input: ImageProviderProfileInput): NormalizedImag
     compat_profile_id: normalizeImageCompatProfileId(input.compat_profile_id),
     supports_count_parameter: normalizeSupportsCountParameter(input.supports_count_parameter),
   };
-}
-
-function getProfileById(profileId: string): ImageProviderProfileWithSecret | undefined {
-  const row = db
-    .prepare(
-      `SELECT *
-       FROM image_provider_profiles
-       WHERE id = ?
-         AND deleted_at IS NULL`,
-    )
-    .get(profileId) as ImageProviderProfileRow | undefined;
-  return row ? toProfile(row) : undefined;
 }
 
 function getProfileForProject(projectId: string, profileId: string): ImageProviderProfileWithSecret | undefined {
@@ -290,8 +278,8 @@ export const imageProviderProfileRepo: ImageProviderProfileRepository = {
     return rows.map((row) => toSafeProfile(toProfile(row)));
   },
 
-  get(profileId: string): ImageProviderProfileWithSecret | undefined {
-    return getProfileById(profileId);
+  getForProject(projectId: string, profileId: string): ImageProviderProfileWithSecret | undefined {
+    return getProfileForProject(projectId, profileId);
   },
 
   getActive(projectId: string): ImageProviderProfileWithSecret | undefined {
