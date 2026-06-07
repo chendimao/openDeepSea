@@ -438,7 +438,7 @@ test('syncExpandedProjectIds opens the current project without overwriting exist
 });
 
 test('shouldIgnoreProjectDragStart is SSR-safe and wired into project drag start', () => {
-  const globalWithElement = globalThis as typeof globalThis & { Element?: unknown };
+  const globalWithElement = globalThis as { Element?: unknown };
   const originalElement = globalWithElement.Element;
 
   assert.equal(shouldIgnoreProjectDragStart(null), false);
