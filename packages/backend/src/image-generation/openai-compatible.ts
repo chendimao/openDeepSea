@@ -47,7 +47,7 @@ export async function requestOpenAICompatibleImageGeneration(
 ): Promise<ImageGenerationRuntimeResponse> {
   const fetcher = input.fetchImpl ?? fetch;
   const normalizedBaseUrl = normalizeImageBaseUrl(input.baseUrl);
-  const response = await fetcher(`${normalizedBaseUrl}/images/generations`, {
+  const response = await requestImageRuntimeEndpoint(`${normalizedBaseUrl}/images/generations`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${input.apiKey}`,
@@ -55,7 +55,7 @@ export async function requestOpenAICompatibleImageGeneration(
     },
     body: JSON.stringify(buildImageGenerationPayload(input)),
     signal: input.signal,
-  });
+  }, fetcher, input.apiKey);
 
   return parseImageRuntimeResponse(response, fetcher, input.signal, input.apiKey);
 }
@@ -76,12 +76,12 @@ export async function requestOpenAICompatibleImageEdit(
     body.append('image[]', new Blob([toArrayBuffer(source.data)], { type: source.mimeType }), source.name);
   }
 
-  const response = await fetcher(`${normalizedBaseUrl}/images/edits`, {
+  const response = await requestImageRuntimeEndpoint(`${normalizedBaseUrl}/images/edits`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${input.apiKey}` },
     body,
     signal: input.signal,
-  });
+  }, fetcher, input.apiKey);
 
   return parseImageRuntimeResponse(response, fetcher, input.signal, input.apiKey);
 }
@@ -94,6 +94,20 @@ function buildImageGenerationPayload(input: ImageGenerationRuntimeRequest): Reco
     ...(input.quality === 'auto' ? {} : { quality: input.quality }),
     ...(input.size === 'auto' ? {} : { size: input.size }),
   };
+}
+
+async function requestImageRuntimeEndpoint(
+  url: string,
+  init: RequestInit,
+  fetchImpl: FetchLike,
+  apiKey: string,
+): Promise<Response> {
+  try {
+    return await fetchImpl(url, init);
+  } catch (err) {
+    if (isAbortError(err)) throw err;
+    throw new Error(`图片生成请求失败：${sanitizeRuntimeError(err, apiKey)}`);
+  }
 }
 
 async function parseImageRuntimeResponse(
@@ -212,6 +226,10 @@ function isImageRuntimePayloadItem(value: unknown): value is ImageRuntimePayload
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError';
 }
 
 function normalizeContentType(value: string | null): string {

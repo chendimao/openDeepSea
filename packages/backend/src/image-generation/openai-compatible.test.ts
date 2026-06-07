@@ -118,6 +118,30 @@ test('runtime normalizes HTTP errors without leaking API keys', async () => {
   );
 });
 
+test('runtime normalizes generation request failures without leaking API keys', async () => {
+  await assert.rejects(
+    requestOpenAICompatibleImageGeneration({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'sk-runtime-secret',
+      model: 'gpt-image-2',
+      prompt: 'apple',
+      count: 1,
+      quality: 'auto',
+      size: 'auto',
+      fetchImpl: async () => {
+        throw new Error('Authorization: Bearer sk-runtime-secret network failed');
+      },
+    }),
+    (err) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /图片生成请求失败/);
+      assert.match(err.message, /\[REDACTED_CREDENTIAL\]/);
+      assert.doesNotMatch(err.message, /sk-runtime-secret/);
+      return true;
+    },
+  );
+});
+
 test('runtime reports non JSON responses as readable errors', async () => {
   await assert.rejects(
     requestOpenAICompatibleImageGeneration({
@@ -183,4 +207,33 @@ test('runtime sends image edits as multipart form data', async () => {
   assert.equal(sourceFile.type, 'image/png');
   assert.equal(await sourceFile.text(), 'source-a');
   assert.deepEqual(response.images[0]?.data, pngBytes);
+});
+
+test('runtime normalizes edit request failures without leaking API keys', async () => {
+  await assert.rejects(
+    requestOpenAICompatibleImageEdit({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'sk-runtime-secret',
+      model: 'gpt-image-2',
+      prompt: 'retouch',
+      count: 1,
+      quality: 'auto',
+      size: 'auto',
+      sourceImages: [{
+        data: Buffer.from('source'),
+        mimeType: 'image/png',
+        name: 'source.png',
+      }],
+      fetchImpl: async () => {
+        throw new Error('Bearer sk-runtime-secret edit failed');
+      },
+    }),
+    (err) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /图片生成请求失败/);
+      assert.match(err.message, /Bearer \[REDACTED_CREDENTIAL\]/);
+      assert.doesNotMatch(err.message, /sk-runtime-secret/);
+      return true;
+    },
+  );
 });
