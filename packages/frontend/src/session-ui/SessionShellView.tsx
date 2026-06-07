@@ -1,19 +1,17 @@
 import {
-  Archive,
   Brain,
   CheckCircle2,
   ChevronDown,
   Edit3,
   Ellipsis,
-  ExternalLink,
   FileText,
   Filter,
   FolderOpen,
   FolderPlus,
   GitFork,
-  GitBranch,
   MessageSquare,
   Minimize2,
+  Pin,
   RefreshCcw,
   Repeat2,
   Search,
@@ -29,6 +27,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 import type {
   ActiveSessionSummary,
   ProjectUsedAgentsPayload,
@@ -47,6 +46,7 @@ import type {
 } from '../lib/types';
 import { api } from '../lib/api';
 import { parseMessageMetadata } from '../lib/messageMetadata';
+import { isPinnedItem, layerIds, reorderWithinLayer } from '../lib/sortableItems';
 import { MessageContent } from '../components/MessageContent';
 import {
   MarkdownDisplaySwitch,
@@ -66,6 +66,10 @@ export function SessionShellView({
   onSaveContract,
   onOpenSession,
   onCreateSession,
+  onRenameProject,
+  onRemoveProject,
+  onReorderProjects,
+  onToggleSessionPin,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -75,6 +79,10 @@ export function SessionShellView({
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
   onCreateSession?: (projectId: string) => void | Promise<void>;
+  onRenameProject?: (project: ProjectSwitcherProject) => void;
+  onRemoveProject?: (project: ProjectSwitcherProject) => void;
+  onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
+  onToggleSessionPin?: (session: ActiveSessionSummary) => void;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
   const forkTarget = payload.historyRecords[0]?.id;
@@ -91,6 +99,10 @@ export function SessionShellView({
           onCommand={onCommand}
           onOpenSession={onOpenSession}
           onCreateSession={onCreateSession}
+          onRenameProject={onRenameProject}
+          onRemoveProject={onRemoveProject}
+          onReorderProjects={onReorderProjects}
+          onToggleSessionPin={onToggleSessionPin}
         />
         <TranscriptCanvas
           detail={payload.activeSession}
@@ -244,18 +256,42 @@ type ProjectSessionTreeProject = {
   name: string;
   path: string;
   active: boolean;
+  created_at?: number;
+  pinned_at?: number | null;
+  sort_order?: number | null;
+  recentSessions: ProjectSwitcherProject['recentSessions'];
   sessions: ActiveSessionSummary[];
 };
 
 type ProjectSwitcherProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
 
-const projectActionMenuItems: Array<{ label: string; icon: LucideIcon; danger?: boolean }> = [
-  { label: '在“访达”中打开', icon: ExternalLink },
-  { label: '创建永久工作树', icon: GitBranch },
+const projectActionMenuItems: Array<{
+  label: '编辑名称' | '移除';
+  icon: LucideIcon;
+  danger?: boolean;
+}> = [
   { label: '编辑名称', icon: SquarePen },
-  { label: '归档聊天', icon: Archive },
   { label: '移除', icon: Trash2, danger: true },
 ];
+
+export function buildProjectReorderInput(
+  projects: ProjectSwitcherProject[],
+  activeId: string,
+  overId: string,
+): { ids: string[]; pinned: boolean } | null {
+  const sortableProjects = projects.map((project, index) => ({
+    ...project,
+    created_at: project.created_at ?? -index,
+    pinned_at: project.pinned_at ?? null,
+    sort_order: project.sort_order ?? null,
+  }));
+  const next = reorderWithinLayer(sortableProjects, activeId, overId);
+  const moved = next.find((project) => project.id === activeId);
+  if (!moved) return null;
+  const pinned = isPinnedItem(moved);
+  const ids = layerIds(next, pinned);
+  return ids.length > 0 ? { ids, pinned } : null;
+}
 
 function ProjectSessionTreeRail({
   projects = [],
@@ -266,6 +302,10 @@ function ProjectSessionTreeRail({
   onCommand,
   onOpenSession,
   onCreateSession,
+  onRenameProject,
+  onRemoveProject,
+  onReorderProjects,
+  onToggleSessionPin,
 }: {
   projects?: ProjectSwitcherProject[];
   sessions?: ActiveSessionSummary[];
@@ -275,6 +315,10 @@ function ProjectSessionTreeRail({
   onCommand: (command: string) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
   onCreateSession?: (projectId: string) => void | Promise<void>;
+  onRenameProject?: (project: ProjectSwitcherProject) => void;
+  onRemoveProject?: (project: ProjectSwitcherProject) => void;
+  onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
+  onToggleSessionPin?: (session: ActiveSessionSummary) => void;
 }): JSX.Element {
   const [q, setQ] = useState('');
   const normalizedQuery = q.trim().toLowerCase();
@@ -286,9 +330,11 @@ function ProjectSessionTreeRail({
     currentProjectName,
   });
   const [expandedProjectIds, setExpandedProjectIds] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(tree.map((project) => [project.id, true]))
+    Object.fromEntries(tree.map((project) => [project.id, project.id === currentProjectId]))
   );
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
+  const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
+  const [dropProjectId, setDropProjectId] = useState<string | null>(null);
   const visibleProjects = filterProjectSessionTree(tree, normalizedQuery);
   const createSessionForProject = (projectId: string) => {
     setExpandedProjectIds((current) => ({ ...current, [projectId]: true }));
@@ -298,6 +344,20 @@ function ProjectSessionTreeRail({
       return;
     }
     onCommand('/new');
+  };
+  const resetDragState = () => {
+    setDraggingProjectId(null);
+    setDropProjectId(null);
+  };
+  const handleProjectDrop = (event: DragEvent<HTMLElement>, targetProjectId: string) => {
+    event.preventDefault();
+    if (!draggingProjectId || draggingProjectId === targetProjectId) {
+      resetDragState();
+      return;
+    }
+    const input = buildProjectReorderInput(tree, draggingProjectId, targetProjectId);
+    if (input) onReorderProjects?.(input);
+    resetDragState();
   };
 
   return (
@@ -350,24 +410,44 @@ function ProjectSessionTreeRail({
         ) : visibleProjects.map((project) => {
           const expanded = normalizedQuery
             ? true
-            : expandedProjectIds[project.id] ?? true;
+            : expandedProjectIds[project.id] ?? project.id === currentProjectId;
           const projectMenuOpen = openProjectMenuId === project.id;
           return (
             <section
               className="deepsea-project-tree-section"
               data-active={project.active ? 'true' : undefined}
+              data-dragging={draggingProjectId === project.id ? 'true' : undefined}
+              data-drop-target={dropProjectId === project.id ? 'true' : undefined}
               data-empty={project.sessions.length === 0 ? 'true' : undefined}
+              draggable
               key={project.id}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', project.id);
+                setDraggingProjectId(project.id);
+              }}
+              onDragOver={(event) => {
+                if (!draggingProjectId || draggingProjectId === project.id) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                setDropProjectId(project.id);
+              }}
+              onDragLeave={() => {
+                if (dropProjectId === project.id) setDropProjectId(null);
+              }}
+              onDrop={(event) => handleProjectDrop(event, project.id)}
+              onDragEnd={resetDragState}
             >
               <div className="deepsea-project-node">
                 <button
                   type="button"
                   className="deepsea-project-node__button"
                   aria-expanded={expanded}
+                  aria-label={`切换 ${project.name} 项目展开状态`}
                   onClick={() =>
                     setExpandedProjectIds((current) => ({
                       ...current,
-                      [project.id]: !(current[project.id] ?? true),
+                      [project.id]: !(current[project.id] ?? project.id === currentProjectId),
                     }))
                   }
                 >
@@ -401,10 +481,13 @@ function ProjectSessionTreeRail({
                           type="button"
                           className="deepsea-project-node__menu-item"
                           data-danger={item.danger ? 'true' : undefined}
-                          data-disabled="true"
                           data-project-menu-item={item.label}
-                          disabled
                           key={item.label}
+                          onClick={() => {
+                            setOpenProjectMenuId(null);
+                            if (item.label === '编辑名称') onRenameProject?.(project);
+                            else onRemoveProject?.(project);
+                          }}
                           role="menuitem"
                         >
                           <Icon aria-hidden="true" />
@@ -433,6 +516,7 @@ function ProjectSessionTreeRail({
                       currentSessionId={currentSession.id}
                       key={session.id}
                       onOpenSession={onOpenSession}
+                      onToggleSessionPin={onToggleSessionPin}
                       session={session}
                     />
                   ))}
@@ -450,29 +534,50 @@ function ProjectSessionRow({
   session,
   currentSessionId,
   onOpenSession,
+  onToggleSessionPin,
 }: {
   session: ActiveSessionSummary;
   currentSessionId: string;
   onOpenSession?: (projectId: string, sessionId: string) => void;
+  onToggleSessionPin?: (session: ActiveSessionSummary) => void;
 }): JSX.Element {
   const isCurrent = session.id === currentSessionId;
   return (
-    <button
-      type="button"
-      aria-current={isCurrent ? 'true' : undefined}
-      className="deepsea-project-session-row"
+    <div
+      className="deepsea-project-session-row-wrap"
       data-current={isCurrent ? 'true' : undefined}
-      data-project-session-row="true"
-      data-running={session.active_run_count > 0 ? 'true' : undefined}
-      data-status={session.status}
-      data-pinned={session.pinned_at !== null ? 'true' : undefined}
-      onClick={() => onOpenSession?.(session.project_id, session.id)}
+      data-pinned={session.pinned_at !== null ? 'true' : 'false'}
     >
-      <span className="deepsea-project-session-row__title" title={session.title}>
-        {formatCompactSessionTitle(session.title, 31)}
-      </span>
-      <time className="deepsea-project-session-row__time">{formatRelativeTime(Date.now(), session.updated_at)}</time>
-    </button>
+      <button
+        type="button"
+        className="deepsea-project-session-pin"
+        data-session-pin-button="true"
+        data-pinned={session.pinned_at !== null ? 'true' : 'false'}
+        aria-label={`${session.pinned_at !== null ? '取消置顶会话' : '置顶会话'}：${session.title}`}
+        aria-pressed={session.pinned_at !== null}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleSessionPin?.(session);
+        }}
+      >
+        <Pin aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        aria-current={isCurrent ? 'true' : undefined}
+        className="deepsea-project-session-row"
+        data-current={isCurrent ? 'true' : undefined}
+        data-project-session-row="true"
+        data-running={session.active_run_count > 0 ? 'true' : undefined}
+        data-status={session.status}
+        onClick={() => onOpenSession?.(session.project_id, session.id)}
+      >
+        <span className="deepsea-project-session-row__title" title={session.title}>
+          {formatCompactSessionTitle(session.title, 31)}
+        </span>
+        <time className="deepsea-project-session-row__time">{formatRelativeTime(Date.now(), session.updated_at)}</time>
+      </button>
+    </div>
   );
 }
 
@@ -502,6 +607,10 @@ function buildProjectSessionTree(input: {
     name: project.name,
     path: project.path,
     active: project.active,
+    created_at: project.created_at,
+    pinned_at: project.pinned_at,
+    sort_order: project.sort_order,
+    recentSessions: project.recentSessions,
     sessions: sessionsByProjectId.get(project.id) ?? [],
   }));
 
@@ -514,6 +623,7 @@ function buildProjectSessionTree(input: {
       name: session.project_name || '其他项目',
       path: session.project_path,
       active: false,
+      recentSessions: [],
       sessions: [],
     };
     orphanProject.sessions.push(session);

@@ -1,7 +1,9 @@
 import React from 'react';
-import type { SessionWorkspacePayload } from '../lib/types';
+import type { ActiveSessionSummary, SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView } from './SessionShellView';
 import type { SessionComposerSubmit } from './session-file-composer-model';
+
+type SessionShellProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
 
 export function SessionShell({
   payload,
@@ -12,6 +14,10 @@ export function SessionShell({
   onSaveContract,
   onOpenSession,
   onCreateSession,
+  onRenameProject,
+  onRemoveProject,
+  onReorderProjects,
+  onToggleSessionPin,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -21,6 +27,10 @@ export function SessionShell({
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
   onCreateSession?: (projectId: string) => void | Promise<void>;
+  onRenameProject?: (project: SessionShellProject) => void;
+  onRemoveProject?: (project: SessionShellProject) => void;
+  onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
+  onToggleSessionPin?: (session: ActiveSessionSummary) => void;
 }): JSX.Element {
   return (
     <SessionShellView
@@ -32,6 +42,10 @@ export function SessionShell({
       onSaveContract={onSaveContract}
       onOpenSession={onOpenSession}
       onCreateSession={onCreateSession}
+      onRenameProject={onRenameProject}
+      onRemoveProject={onRemoveProject}
+      onReorderProjects={onReorderProjects}
+      onToggleSessionPin={onToggleSessionPin}
     />
   );
 }

@@ -8,6 +8,7 @@ import type { ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePaylo
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
+  buildProjectReorderInput,
   buildTranscriptFollowKey,
   buildSessionRunTranscriptItems,
   getLatestUserMessageKey,
@@ -63,7 +64,7 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /暂无聊天/);
   assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /Project Sessions/);
-  assert.match(html, /接口联调/);
+  assert.doesNotMatch(html, /接口联调/);
   assert.match(html, /AnotherProject/);
   assert.doesNotMatch(html, /会话历史/);
   assert.match(html, /3. 对话记录/);
@@ -232,7 +233,7 @@ test('SessionShell renders current session when active sessions are absent from 
   assert.match(html, /SessionOS 迁移/);
 });
 
-test('SessionShell renders active sessions grouped under every project in the left project tree', () => {
+test('SessionShell expands the current project by default and collapses other projects', () => {
   const payload = createPayload();
   payload.projectSwitcher.projects.push({
     id: 'project-empty',
@@ -250,22 +251,53 @@ test('SessionShell renders active sessions grouped under every project in the le
   assert.match(html, /AnotherProject/);
   assert.match(html, /EmptyProject/);
   assert.match(html, /SessionOS 迁移/);
-  assert.match(html, /接口联调/);
-  assert.match(html, /暂无活跃会话/);
+  assert.doesNotMatch(html, /接口联调/);
+  assert.doesNotMatch(html, /暂无活跃会话/);
   assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /aria-expanded="false"/);
   assert.match(html, /data-project-session-row="true"/);
 });
 
-test('SessionShell renders project row actions for the active project tree', () => {
+test('SessionShell renders project row actions as enabled menu buttons', () => {
   const html = renderSessionShell(createPayload());
 
   assert.match(html, /aria-label="打开 OpenClaw 项目操作菜单"/);
   assert.match(html, /aria-label="新建 OpenClaw 会话"/);
-  assert.match(html, /在“访达”中打开/);
-  assert.match(html, /创建永久工作树/);
   assert.match(html, /编辑名称/);
-  assert.match(html, /归档聊天/);
   assert.match(html, /移除/);
+  assert.doesNotMatch(html, /在“访达”中打开/);
+  assert.doesNotMatch(html, /创建永久工作树/);
+  assert.doesNotMatch(html, /归档聊天/);
+  assert.doesNotMatch(html, /data-disabled="true"/);
+});
+
+test('SessionShell renders project row without a collapse icon before the project name', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.doesNotMatch(html, /data-project-collapse-icon="true"/);
+  assert.match(html, /lucide-folder-open/);
+});
+
+test('SessionShell renders session pin buttons independently from opening sessions', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /data-session-pin-button="true"/);
+  assert.match(html, /aria-label="置顶会话：SessionOS 迁移"/);
+  assert.match(html, /data-session-pin-button="true"[^>]*data-pinned="false"/);
+});
+
+test('buildProjectReorderInput returns same-layer reorder ids', () => {
+  const now = Date.now();
+  const projects = [
+    { id: 'project-1', name: 'A', path: '/a', active: false, recentSessions: [], created_at: now - 3, pinned_at: null, sort_order: 1 },
+    { id: 'project-2', name: 'B', path: '/b', active: false, recentSessions: [], created_at: now - 2, pinned_at: null, sort_order: 2 },
+    { id: 'project-3', name: 'C', path: '/c', active: false, recentSessions: [], created_at: now - 1, pinned_at: null, sort_order: 3 },
+  ];
+
+  assert.deepEqual(buildProjectReorderInput(projects, 'project-3', 'project-1'), {
+    ids: ['project-3', 'project-1', 'project-2'],
+    pinned: false,
+  });
 });
 
 test('SessionShell does not add an archived current session to the project tree fallback', () => {

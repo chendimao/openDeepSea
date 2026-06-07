@@ -712,6 +712,9 @@ export interface SessionProjectSwitcher {
     name: string;
     path: string;
     active: boolean;
+    created_at?: number;
+    pinned_at?: number | null;
+    sort_order?: number | null;
     recentSessions: Array<{
       id: string;
       title: string;
