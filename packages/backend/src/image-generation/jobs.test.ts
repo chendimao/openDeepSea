@@ -67,6 +67,29 @@ test('image generation schema exposes required columns indexes and foreign keys'
     'completed_at',
     'updated_at',
   ]);
+  assertColumnNames('image_generation_outputs', [
+    'id',
+    'job_id',
+    'file_id',
+    'slot',
+    'name',
+    'url',
+    'mime_type',
+    'size',
+    'width',
+    'height',
+    'created_at',
+  ]);
+  assertColumnNames('image_generation_source_images', [
+    'id',
+    'job_id',
+    'file_id',
+    'slot',
+    'url',
+    'origin_job_id',
+    'origin_output_id',
+    'created_at',
+  ]);
 
   assertIndexNames('image_provider_profiles', [
     'idx_image_provider_profiles_one_active',
@@ -81,19 +104,23 @@ test('image generation schema exposes required columns indexes and foreign keys'
   assertIndexNames('image_generation_outputs', ['idx_image_generation_outputs_job']);
   assertIndexNames('image_generation_source_images', ['idx_image_generation_source_images_job']);
 
-  assertForeignKeyTargets('image_generation_jobs', [
-    'image_provider_profiles',
-    'messages',
-    'projects',
-    'rooms',
-    'sessions',
-    'tasks',
+  assertForeignKeys('image_generation_jobs', [
+    'project_id->projects.id:CASCADE',
+    'provider_profile_id->image_provider_profiles.id:RESTRICT',
+    'room_id->rooms.id:SET NULL',
+    'session_id->sessions.id:SET NULL',
+    'source_message_id->messages.id:SET NULL',
+    'source_task_id->tasks.id:SET NULL',
   ]);
-  assertForeignKeyTargets('image_generation_outputs', ['files', 'image_generation_jobs']);
-  assertForeignKeyTargets('image_generation_source_images', [
-    'files',
-    'image_generation_jobs',
-    'image_generation_outputs',
+  assertForeignKeys('image_generation_outputs', [
+    'file_id->files.id:CASCADE',
+    'job_id->image_generation_jobs.id:CASCADE',
+  ]);
+  assertForeignKeys('image_generation_source_images', [
+    'file_id->files.id:RESTRICT',
+    'job_id->image_generation_jobs.id:CASCADE',
+    'origin_job_id->image_generation_jobs.id:SET NULL',
+    'origin_output_id->image_generation_outputs.id:SET NULL',
   ]);
 });
 
@@ -159,10 +186,17 @@ function assertIndexNames(table: string, expected: string[]): void {
   assert.deepEqual(indexNames, expected);
 }
 
-function assertForeignKeyTargets(table: string, expected: string[]): void {
-  const rows = db.prepare(`PRAGMA foreign_key_list(${table})`).all() as Array<{ table: string }>;
-  const targets = [...new Set(rows.map((row) => row.table))].sort();
-  assert.deepEqual(targets, expected);
+function assertForeignKeys(table: string, expected: string[]): void {
+  const rows = db.prepare(`PRAGMA foreign_key_list(${table})`).all() as Array<{
+    from: string;
+    table: string;
+    to: string;
+    on_delete: string;
+  }>;
+  const keys = rows
+    .map((row) => `${row.from}->${row.table}.${row.to}:${row.on_delete}`)
+    .sort();
+  assert.deepEqual(keys, expected);
 }
 
 function createSchemaFixture(suffix: string): { projectId: string; profileId: string; fileId: string } {
