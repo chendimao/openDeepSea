@@ -2,7 +2,7 @@ export type ImageGenerationWorkflow = 'generate' | 'image-to-image';
 export type ImageGenerationStatus = 'queued' | 'running' | 'canceling' | 'completed' | 'failed' | 'canceled';
 export type ImageProviderCompatProfileId = 'openai' | 'openai-sdk' | 'images-edits' | 'chat-completions';
 
-export interface ImageProviderProfile {
+export interface ImageProviderProfileRow {
   id: string;
   project_id: string;
   name: string;
@@ -17,11 +17,13 @@ export interface ImageProviderProfile {
   deleted_at: number | null;
 }
 
-export type ImageProviderProfileWithSecret = ImageProviderProfile;
+export type ImageProviderProfileWithSecret = ImageProviderProfileRow;
 
-export type SafeImageProviderProfile = Omit<ImageProviderProfile, 'api_key'> & {
+export type SafeImageProviderProfile = Omit<ImageProviderProfileRow, 'api_key'> & {
   has_api_key: 0 | 1;
 };
+
+export type ImageProviderProfile = SafeImageProviderProfile;
 
 export interface ImageProviderProfileInput {
   name: string;
