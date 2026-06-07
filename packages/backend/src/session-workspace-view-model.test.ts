@@ -213,6 +213,45 @@ test('buildSessionToolRows prefers ACP tool names and targets', () => {
   assert.equal(rows[1]?.target, 'npm run build');
 });
 
+test('buildSessionToolRows includes legacy status evidence with raw ACP tool type', () => {
+  const project = projectRepo.create({
+    name: 'legacy raw tool project',
+    path: mkdtempSync(join(tmpdir(), 'session-legacy-raw-tool-project-')),
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Legacy Raw Tool Session' });
+  const event = sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: 'tool_call',
+    payload: {
+      rawType: 'tool_call',
+      rawEvent: {
+        method: 'session/update',
+        params: {
+          sessionId: 'acp-session',
+          update: {
+            sessionUpdate: 'tool_call',
+            kind: 'execute',
+            rawInput: {
+              command: ['/bin/zsh', '-lc', 'echo hi'],
+              cwd: '/workspace',
+            },
+            status: 'in_progress',
+            title: 'echo hi',
+          },
+        },
+      },
+    },
+  });
+
+  const rows = buildSessionToolRows([event]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.action, 'exec');
+  assert.equal(rows[0]?.target, 'echo hi');
+  assert.equal(rows[0]?.status, 'running');
+});
+
 test('buildSessionDiffRowsFromAcp includes only ACP file changes and aggregates duplicate files', () => {
   const project = projectRepo.create({
     name: 'diff acp project',

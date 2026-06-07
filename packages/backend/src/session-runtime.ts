@@ -363,19 +363,24 @@ function normalizeStreamChannel(channel: AcpStreamChannel | undefined): 'answer'
 }
 
 function resolveEvidenceType(chunk: AcpStreamChunk): SessionEvidenceType | null {
-  if (chunk.event?.type === 'tool_call' || chunk.event?.type === 'tool_result') {
-    return chunk.event.type;
-  }
-  if (chunk.event?.type === 'file_diff') return 'file_diff';
-  if (chunk.event || chunk.rawEvent || chunk.channel === 'event') return 'status';
+  const evidenceType = normalizeEvidenceRawType(chunk.rawType) ?? normalizeEvidenceRawType(chunk.event?.type);
+  if (evidenceType) return evidenceType;
   if (chunk.channel === 'tool' || chunk.trace?.kind === 'tool') {
     return chunk.rawType === 'tool_result' ? 'tool_result' : 'tool_call';
   }
   if (chunk.channel === 'command' || chunk.trace?.kind === 'command') return 'tool_call';
-  if (chunk.rawType === 'file_diff') return 'file_diff';
-  if (chunk.rawType === 'file_read') return 'file_read';
-  if (chunk.rawType === 'test') return 'test';
-  if (chunk.rawType === 'build') return 'build';
+  if (chunk.event || chunk.rawEvent || chunk.channel === 'event') return 'status';
+  return null;
+}
+
+function normalizeEvidenceRawType(rawType: string | undefined): SessionEvidenceType | null {
+  if (rawType === 'tool_call' || rawType === 'tool_call_update') return 'tool_call';
+  if (rawType === 'tool_result') return 'tool_result';
+  if (rawType === 'file_diff') return 'file_diff';
+  if (rawType === 'file_read') return 'file_read';
+  if (rawType === 'test') return 'test';
+  if (rawType === 'build') return 'build';
+  if (rawType === 'browser_check') return 'browser_check';
   return null;
 }
 

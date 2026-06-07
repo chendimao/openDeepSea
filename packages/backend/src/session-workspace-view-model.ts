@@ -7,6 +7,7 @@ import type {
   SessionBottomStatus,
   SessionDiffRow,
   SessionEvidenceEvent,
+  SessionEvidenceType,
   SessionPlanItem,
   SessionPlanItemStatus,
   SessionProjectSwitcher,
@@ -16,6 +17,16 @@ import type {
 import { historyRecordRepo } from './repos/history-records.js';
 import { projectRepo } from './repos/projects.js';
 import { sessionRepo } from './repos/sessions.js';
+
+const TOOL_EVIDENCE_TYPES = new Set<SessionEvidenceType>([
+  'tool_call',
+  'tool_result',
+  'file_read',
+  'file_diff',
+  'test',
+  'build',
+  'browser_check',
+]);
 
 export function buildSessionProjectSwitcher(activeProjectId: string): SessionProjectSwitcher {
   const projects = projectRepo.list().map((project) => ({
@@ -118,25 +129,19 @@ export function buildSessionToolRows(evidence: SessionEvidenceEvent[]): SessionT
 }
 
 function isToolEvidence(event: SessionEvidenceEvent): boolean {
-  return (
-    event.event_type === 'tool_call' ||
-    event.event_type === 'tool_result' ||
-    event.event_type === 'file_read' ||
-    event.event_type === 'file_diff' ||
-    event.event_type === 'test' ||
-    event.event_type === 'build' ||
-    event.event_type === 'browser_check'
-  );
+  return effectiveToolEvidenceType(event) !== null;
 }
 
 function evidenceAction(event: SessionEvidenceEvent): SessionToolRow['action'] {
   const trace = record(event.payload.trace);
+  const eventType = effectiveToolEvidenceType(event) ?? event.event_type;
   const toolName = evidenceToolName(event);
-  if (trace?.kind === 'command') return 'exec';
-  if (event.event_type === 'file_read') return 'read';
-  if (event.event_type === 'file_diff') return 'edit';
-  if (event.event_type === 'test' || event.event_type === 'build') return 'exec';
-  if (event.event_type === 'browser_check') return 'browser';
+  const rawUpdate = acpRawUpdate(event);
+  if (trace?.kind === 'command' || rawUpdate?.kind === 'execute') return 'exec';
+  if (eventType === 'file_read') return 'read';
+  if (eventType === 'file_diff') return 'edit';
+  if (eventType === 'test' || eventType === 'build') return 'exec';
+  if (eventType === 'browser_check') return 'browser';
   if (toolName && /^(read)$/i.test(toolName)) return 'read';
   if (toolName && /^(write)$/i.test(toolName)) return 'write';
   if (toolName && /^(edit|multiedit|patch|apply_patch)$/i.test(toolName)) return 'edit';
@@ -145,21 +150,34 @@ function evidenceAction(event: SessionEvidenceEvent): SessionToolRow['action'] {
 
 function evidenceLabel(event: SessionEvidenceEvent): string {
   const trace = record(event.payload.trace);
+  const eventType = effectiveToolEvidenceType(event) ?? event.event_type;
   const toolName = evidenceToolName(event);
+  const rawUpdate = acpRawUpdate(event);
   if (toolName) return toolName;
   if (trace?.kind === 'command') return 'exec_command';
-  if (event.event_type === 'file_read') return '读取文件';
-  if (event.event_type === 'file_diff') return '文件变更';
-  if (event.event_type === 'test') return '测试';
-  if (event.event_type === 'build') return '构建';
-  if (event.event_type === 'browser_check') return '浏览器验证';
+  if (rawUpdate?.kind === 'execute') return 'exec_command';
+  if (eventType === 'file_read') return '读取文件';
+  if (eventType === 'file_diff') return '文件变更';
+  if (eventType === 'test') return '测试';
+  if (eventType === 'build') return '构建';
+  if (eventType === 'browser_check') return '浏览器验证';
+  const rawTitle = firstString(rawUpdate?.title);
+  if (rawTitle) return rawTitle;
   return event.title;
 }
 
 function evidenceTarget(event: SessionEvidenceEvent): string {
   const trace = record(event.payload.trace);
   const eventPayload = acpEventPayload(event);
-  const input = firstString(eventPayload?.input, eventPayload?.arguments, eventPayload?.rawInput, event.payload.input);
+  const rawUpdate = acpRawUpdate(event);
+  const input = firstString(
+    eventPayload?.input,
+    eventPayload?.arguments,
+    eventPayload?.rawInput,
+    event.payload.input,
+    rawInputCommand(rawUpdate?.rawInput),
+  );
+  const rawTitle = firstString(rawUpdate?.title);
   const target = firstString(
     eventPayload?.path,
     eventPayload?.file,
@@ -170,8 +188,11 @@ function evidenceTarget(event: SessionEvidenceEvent): string {
     event.payload.file_path,
     event.payload.filePath,
     trace?.command,
+    rawInputCommand(rawUpdate?.rawInput),
     event.payload.command,
     input ? extractPatchPath(input) : null,
+    input,
+    rawTitle,
     event.summary,
     event.title,
   );
@@ -181,11 +202,33 @@ function evidenceTarget(event: SessionEvidenceEvent): string {
 function evidenceStatus(event: SessionEvidenceEvent): SessionToolRow['status'] {
   if (event.severity === 'error' || event.severity === 'critical') return 'failed';
   const acpEvent = record(event.payload.event);
-  const status = firstString(acpEvent?.status, event.payload.status);
-  if (status === 'running' || status === 'delta' || status === 'started') return 'running';
+  const rawUpdate = acpRawUpdate(event);
+  const status = firstString(acpEvent?.status, rawUpdate?.status, event.payload.status);
+  if (status === 'running' || status === 'delta' || status === 'started' || status === 'in_progress') return 'running';
   if (status === 'completed' || status === 'succeeded' || status === 'success') return 'completed';
   if (status === 'failed' || status === 'error') return 'failed';
   return 'completed';
+}
+
+function effectiveToolEvidenceType(event: SessionEvidenceEvent): SessionEvidenceType | null {
+  if (TOOL_EVIDENCE_TYPES.has(event.event_type)) return event.event_type;
+  const rawType = evidenceRawType(event);
+  if (rawType === 'tool_call_update') return 'tool_call';
+  return TOOL_EVIDENCE_TYPES.has(rawType as SessionEvidenceType)
+    ? rawType as SessionEvidenceType
+    : null;
+}
+
+function evidenceRawType(event: SessionEvidenceEvent): string | null {
+  const acpEvent = record(event.payload.event);
+  const rawEvent = record(event.payload.rawEvent);
+  const rawUpdate = acpRawUpdate(event);
+  return firstString(
+    event.payload.rawType,
+    acpEvent?.type,
+    rawEvent?.type,
+    rawUpdate?.sessionUpdate,
+  );
 }
 
 export interface SessionInspectorSnapshot {
@@ -393,6 +436,24 @@ function evidenceToolName(event: SessionEvidenceEvent): string | null {
 function acpEventPayload(event: SessionEvidenceEvent): Record<string, unknown> | null {
   const acpEvent = record(event.payload.event);
   return record(acpEvent?.payload) ?? record(event.payload.payload);
+}
+
+function acpRawUpdate(event: SessionEvidenceEvent): Record<string, unknown> | null {
+  const rawEvent = record(event.payload.rawEvent);
+  const params = record(rawEvent?.params);
+  return record(params?.update) ?? record(rawEvent?.update);
+}
+
+function rawInputCommand(value: unknown): string | null {
+  const rawInput = record(value);
+  const command = rawInput?.command;
+  if (Array.isArray(command)) {
+    const parts = command.filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+      .map((part) => part.trim());
+    if (parts.length >= 3 && parts[1] === '-lc') return parts.slice(2).join(' ');
+    return parts.length > 0 ? parts.join(' ') : null;
+  }
+  return firstString(command, rawInput?.cmd);
 }
 
 function expandPayloadCandidates(source: Record<string, unknown> | null): Record<string, unknown>[] {

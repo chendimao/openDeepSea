@@ -275,6 +275,107 @@ test('runSessionAgent broadcasts inspector snapshot after ACP tool evidence', as
   wsHub.removeSocket(socket);
 });
 
+test('runSessionAgent records raw ACP event tool calls as tool evidence', async () => {
+  const project = projectRepo.create({
+    name: 'runtime raw tool project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-raw-tool-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Raw Tool',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk, onSession }) => {
+      onSession?.('acp-raw-tool');
+      onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawType: 'tool_call',
+        rawEvent: {
+          method: 'session/update',
+          params: {
+            sessionId: 'acp-raw-tool',
+            update: {
+              sessionUpdate: 'tool_call',
+              kind: 'execute',
+              rawInput: {
+                command: ['/bin/zsh', '-lc', 'echo hi'],
+                cwd: '/workspace',
+              },
+              status: 'in_progress',
+              title: 'echo hi',
+            },
+          },
+        },
+      });
+      return { exitCode: 0, sessionId: 'acp-raw-tool', stderr: '' };
+    },
+  });
+
+  await runSessionAgent({ sessionId: session.id, prompt: '继续', provider: 'codex' });
+
+  const rawToolEvidence = sessionEvidenceRepo.listBySession(session.id)
+    .find((event) => event.payload.rawType === 'tool_call');
+  assert.equal(rawToolEvidence?.event_type, 'tool_call');
+});
+
+test('runSessionAgent prefers normalized tool event when raw type is generic', async () => {
+  const project = projectRepo.create({
+    name: 'runtime normalized tool project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-normalized-tool-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Normalized Tool',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk, onSession }) => {
+      onSession?.('acp-normalized-tool');
+      onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawType: 'session_update',
+        event: {
+          id: 'tool-read',
+          message_id: 'message-1',
+          run_id: 'run-1',
+          agent_id: 'planner',
+          seq: 1,
+          type: 'tool_call',
+          status: 'started',
+          title: '调用工具 read',
+          payload: {
+            name: 'read',
+            path: 'packages/backend/src/session-runtime.ts',
+          },
+          created_at: Date.now(),
+        },
+      });
+      return { exitCode: 0, sessionId: 'acp-normalized-tool', stderr: '' };
+    },
+  });
+
+  await runSessionAgent({ sessionId: session.id, prompt: '继续', provider: 'codex' });
+
+  const genericRawEvidence = sessionEvidenceRepo.listBySession(session.id)
+    .find((event) => event.payload.rawType === 'session_update');
+  assert.equal(genericRawEvidence?.event_type, 'tool_call');
+});
+
 test('runSessionAgent forwards imagePaths to session adapter', async () => {
   const project = projectRepo.create({
     name: 'runtime image project',
