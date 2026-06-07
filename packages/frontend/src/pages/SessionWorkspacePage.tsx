@@ -12,6 +12,7 @@ import type {
   AcpBackend,
   ActiveSessionSummary,
   Project,
+  PlatformSkillRef,
   Session,
   SessionCompaction,
   SessionMode,
@@ -424,6 +425,7 @@ export function runSessionCommand(
       mode?: SessionMode;
       workspaceFileRefs?: string[];
       libraryFileRefs?: string[];
+      platformSkillRefs?: PlatformSkillRef[];
     }) => void;
     runCommand: (message: { sessionId: string; command: string }) => void;
   },
@@ -443,6 +445,7 @@ export function runSessionCommand(
     mode: payload.activeSession.session.mode,
     ...(message.workspaceFileRefs && message.workspaceFileRefs.length > 0 ? { workspaceFileRefs: message.workspaceFileRefs } : {}),
     ...(message.libraryFileRefs && message.libraryFileRefs.length > 0 ? { libraryFileRefs: message.libraryFileRefs } : {}),
+    ...(message.platformSkillRefs && message.platformSkillRefs.length > 0 ? { platformSkillRefs: message.platformSkillRefs } : {}),
   });
   return null;
 }

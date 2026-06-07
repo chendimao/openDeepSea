@@ -179,7 +179,6 @@ test('review and acceptance ACP prompts do not include OpenDeepSea skill context
 
   const acpPrompts: string[] = [];
   const tools = createGraphTools({
-    buildSkillContext: async () => 'OpenDeepSea active skills for this runtime:\nSkill: should-not-reach-acp',
     runAcpAgent: async (input) => {
       acpPrompts.push(input.prompt);
       const runRow = agentRunRepo.create({

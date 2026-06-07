@@ -9,8 +9,6 @@ import { projectRepo } from '../../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
 import { agentRepo } from '../../repos/agents.js';
 import { settingsRepo } from '../../repos/settings.js';
-import { formatSkillPrompt } from '../../skills/prompt.js';
-import { selectSkills } from '../../skills/selector.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { formatWorkflowContextEntries, workflowContextRepo } from '../../repos/workflow-context.js';
 import { workflowRepo } from '../../repos/workflows.js';
@@ -30,7 +28,6 @@ import type {
   WorkflowRun,
   WorkflowStep,
   SettingsResolution,
-  SkillRuntimeScope,
 } from '../../types.js';
 import type { WorkflowPromptKind } from '../prompts.js';
 import { wsHub } from '../../ws-hub.js';
@@ -44,7 +41,6 @@ import { parseGraphState, type SupervisorAssignmentHint } from './state.js';
 export interface GraphRuntimeDeps {
   planner?: (input: LangChainPlannerInput, options?: LangChainPlannerOptions) => Promise<ParsedPlan>;
   supervisor?: (input: WorkflowSupervisorInput, options?: WorkflowSupervisorOptions) => Promise<WorkflowSupervisorDecision>;
-  buildSkillContext?: (input: BuildSkillContextInput) => Promise<string>;
   scheduleRetry?: (input: { runId: string; attempt: number; delayMs: number; error: string }, retry: () => void) => void;
   distillTask?: typeof distillFromTask;
   runAcpAgent?: (input: RespondAsAgentInput) => Promise<{
@@ -52,14 +48,6 @@ export interface GraphRuntimeDeps {
     message: Message;
     status: AgentRunStatus;
   }>;
-}
-
-export interface BuildSkillContextInput {
-  runtimeScopes: SkillRuntimeScope[];
-  projectId?: string | null;
-  roomId?: string | null;
-  agentId?: string | null;
-  message?: string;
 }
 
 interface WorkflowRuntimeContext {
@@ -79,7 +67,6 @@ type CreateChildTaskInput = Parameters<typeof taskRepo.create>[0];
 export interface GraphTools {
   readWorkflowContext: (workflowRunId: string) => WorkflowRuntimeContext;
   generatePlan: (input: LangChainPlannerInput, options?: LangChainPlannerOptions) => Promise<ParsedPlan>;
-  buildSkillContext: (input: BuildSkillContextInput) => Promise<string>;
   createGraphStep: typeof workflowRepo.createStep;
   updateGraphStep: typeof workflowRepo.updateStep;
   createArtifact: typeof workflowRepo.createArtifact;
@@ -148,8 +135,6 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
         if (input.onRunCreated) await input.onRunCreated(run);
       },
     }));
-  const buildSkillContext = deps.buildSkillContext ?? buildDefaultSkillContext;
-
   return {
     readWorkflowContext(workflowRunId: string) {
       const run = workflowRepo.getRun(workflowRunId);
@@ -186,7 +171,6 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     async generatePlan(input: LangChainPlannerInput, options?: LangChainPlannerOptions) {
       return planner(input, options);
     },
-    buildSkillContext,
     createGraphStep: workflowRepo.createStep.bind(workflowRepo),
     updateGraphStep: workflowRepo.updateStep.bind(workflowRepo),
     createArtifact: workflowRepo.createArtifact.bind(workflowRepo),
@@ -294,20 +278,4 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
       return 'development';
     },
   };
-}
-
-export async function buildDefaultSkillContext(input: BuildSkillContextInput): Promise<string> {
-  try {
-    const skills = await selectSkills({
-      runtimeScopes: input.runtimeScopes,
-      projectId: input.projectId,
-      roomId: input.roomId,
-      agentId: input.agentId,
-      message: input.message,
-    });
-    return formatSkillPrompt(skills);
-  } catch (err) {
-    console.warn(`[skills] failed to build graph skill context: ${(err as Error).message}`);
-    return '';
-  }
 }

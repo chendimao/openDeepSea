@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -11,7 +11,6 @@ const { messageRepo } = await import('../repos/messages.js');
 const { projectRepo } = await import('../repos/projects.js');
 const { roomRepo } = await import('../repos/rooms.js');
 const { settingsRepo } = await import('../repos/settings.js');
-const { skillRepo } = await import('../skills/repo.js');
 const { taskRepo } = await import('../repos/tasks.js');
 const { workflowRepo } = await import('../repos/workflows.js');
 const { buildTaskSummaryMemoryContent, rememberAcceptedTask } = await import('./orchestrator.js');
@@ -108,56 +107,29 @@ test('rememberAcceptedTask saves task summary but skips LLM distill when auto di
   assert.equal(memories[0]?.source_id, run.id);
 });
 
-test('rememberAcceptedTask passes memory skill context to legacy task distillation', async () => {
-  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-legacy-memory-skill-project-'));
-  const skillPath = mkdtempSync(join(tmpdir(), 'openclaw-room-legacy-memory-skill-dir-'));
-  mkdirSync(skillPath, { recursive: true });
-  writeFileSync(join(skillPath, 'SKILL.md'), [
-    '---',
-    'name: legacy-memory-skill',
-    'description: Legacy memory skill',
-    '---',
-    'Distill legacy workflow memory with this guidance.',
-  ].join('\n'));
-  const project = projectRepo.create({ name: 'Legacy Workflow Memory Skill', path: projectPath });
-  const room = roomRepo.create({ project_id: project.id, name: 'Legacy Workflow Room' });
+test('rememberAcceptedTask distills accepted task without legacy skill context', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-memory-distill-project-'));
+  const project = projectRepo.create({ name: 'Workflow Memory Distill', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Workflow Distill Room' });
   const task = taskRepo.create({
     project_id: project.id,
     room_id: room.id,
-    title: 'Legacy memory distill',
-    description: 'Ensure legacy task distill receives skill context.',
-  });
-  const skill = skillRepo.createSkill({
-    id: `legacy-memory-skill-${Date.now()}`,
-    name: 'legacy-memory-skill',
-    description: 'Legacy memory skill',
-    source_type: 'manual',
-    install_path: skillPath,
-    runtime_scopes: ['memory'],
-    trigger_mode: 'always_for_scope',
-    trigger_keywords: [],
-    priority: 10,
-  });
-  skillRepo.upsertBinding({
-    id: `legacy-memory-binding-${Date.now()}`,
-    skill_id: skill.id,
-    scope: 'room',
-    scope_id: room.id,
-    enabled: true,
+    title: 'Workflow memory distill',
+    description: 'Ensure task distill runs without legacy skill context.',
   });
   messageRepo.create({
     room_id: room.id,
     sender_type: 'user',
     sender_id: 'user',
     sender_name: 'You',
-    content: '请实现 legacy memory skill。',
+    content: '请实现 workflow memory distill。',
   });
   messageRepo.create({
     room_id: room.id,
     sender_type: 'agent',
     sender_id: 'executor',
     sender_name: 'Executor',
-    content: 'legacy memory skill 已实现。',
+    content: 'workflow memory distill 已实现。',
   });
   messageRepo.create({
     room_id: room.id,
@@ -175,21 +147,20 @@ test('rememberAcceptedTask passes memory skill context to legacy task distillati
   });
   settingsRepo.updateRoom(room.id, { auto_distill_enabled: true });
 
-  let capturedSkillContext = '';
+  let distillCalled = false;
   rememberAcceptedTask(run, {
     verdict: 'pass',
-    acceptedCriteria: ['legacy memory skill captured'],
+    acceptedCriteria: ['memory distill captured'],
     failedCriteria: [],
     notes: 'Accepted.',
   }, {
     distillTask: async (input) => {
-      capturedSkillContext = input.skillContext ?? '';
+      distillCalled = true;
+      assert.equal(Object.hasOwn(input, 'skillContext'), false);
     },
   });
 
-  await waitFor(() => capturedSkillContext.includes('legacy-memory-skill'));
-  assert.match(capturedSkillContext, /OpenDeepSea active skills for this runtime/);
-  assert.match(capturedSkillContext, /Skill: legacy-memory-skill/);
+  await waitFor(() => distillCalled);
 });
 
 test('graph memory node distills accepted task only when auto distill is enabled', async () => {

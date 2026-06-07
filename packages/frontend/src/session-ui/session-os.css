@@ -1909,6 +1909,7 @@ button.deepsea-message-attachment {
   -webkit-backdrop-filter: blur(36px) saturate(1.2);
 }
 .deepsea-composer__field {
+  position: relative;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 8px;
   background: transparent;
@@ -1945,6 +1946,88 @@ button.deepsea-message-attachment {
 .deepsea-composer__field input::placeholder,
 .deepsea-composer__textarea::placeholder {
   color: rgba(100, 116, 139, 0.48);
+}
+.deepsea-skill-picker {
+  position: absolute;
+  right: 10px;
+  bottom: calc(100% + 8px);
+  left: 10px;
+  z-index: 2;
+  max-height: min(320px, 48vh);
+  overflow: hidden;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.96);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px) saturate(1.15);
+  -webkit-backdrop-filter: blur(24px) saturate(1.15);
+}
+.deepsea-skill-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.1);
+  padding: 8px 10px;
+  color: rgba(71, 85, 105, 0.82);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.deepsea-skill-picker__header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--deepsea-primary);
+  font-family: var(--deepsea-mono);
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+.deepsea-skill-picker__state {
+  padding: 14px 10px;
+  color: rgba(71, 85, 105, 0.78);
+  font-size: 12px;
+}
+.deepsea-skill-picker__item {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 10px;
+  color: var(--deepsea-text);
+  text-align: left;
+}
+.deepsea-skill-picker__item + .deepsea-skill-picker__item {
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+.deepsea-skill-picker__item:hover,
+.deepsea-skill-picker__item.is-active {
+  background: rgba(37, 99, 235, 0.08);
+}
+.deepsea-skill-picker__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--deepsea-primary);
+  font-family: var(--deepsea-mono);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-skill-picker__description {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(71, 85, 105, 0.78);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .deepsea-composer-attachments {
   display: flex;
@@ -2059,6 +2142,19 @@ button.deepsea-message-attachment {
 .deepsea-composer__tools > svg {
   width: 18px;
   height: 18px;
+}
+.deepsea-composer__dollar {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(100, 116, 139, 0.28);
+  border-radius: 999px;
+  color: rgba(71, 85, 105, 0.82);
+  font-family: var(--deepsea-mono);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 .deepsea-composer__upload-hint {
   margin-right: auto;

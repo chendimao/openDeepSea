@@ -16,7 +16,6 @@ import {
 } from './uploads.js';
 import { recoverWorkflowStartupOrphans, startWorkflowMonitorService } from './workflows/workflow-monitor-service.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
-import { runSkillsShStartupUpdateCheck } from './skills/update-service.js';
 import { startProviderSuperpowersStartupInstall } from './provider-superpowers.js';
 import { handleSessionSocketEvent } from './session-socket-controller.js';
 import { buildActiveSessionSummaries } from './session-active-view-model.js';
@@ -101,7 +100,6 @@ httpServer.listen(PORT, () => {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
   void startWorkflowMonitoringAfterStartupRecovery();
-  void runSkillsShStartupUpdateCheck();
   if (process.env.OPENDEEPSEA_PROVIDER_SUPERPOWERS_AUTO_INSTALL !== '0') {
     void startProviderSuperpowersStartupInstall().catch((err) => {
       console.warn(`[superpowers] provider startup install failed: ${(err as Error).message}`);

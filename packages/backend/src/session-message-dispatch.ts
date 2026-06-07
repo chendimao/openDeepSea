@@ -13,12 +13,26 @@ import { buildSessionFileReferenceContext } from './session-file-reference-conte
 import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import { runSessionAgent } from './session-runtime.js';
 import { wsHub } from './ws-hub.js';
+import { getPlatformSkill } from './platform-skills/service.js';
 import { isIgnoredWorkspacePath, normalizeWorkspacePath, resolveWorkspacePath } from './workspace-files.js';
-import type { MessageAttachmentMetadata, ProjectFile, Session, SessionMessage, SessionMode } from './types.js';
+import type {
+  MessageAttachmentMetadata,
+  PlatformSkillRef,
+  ProjectFile,
+  Session,
+  SessionMessage,
+  SessionMode,
+} from './types.js';
+import type { PlatformSkill } from './platform-skills/types.js';
 
 const DEFAULT_SESSION_TITLE = 'New Session';
 const AUTO_SESSION_TITLE_LIMIT = 25;
 const MAX_SESSION_FILE_REFS = 12;
+const MAX_PLATFORM_SKILL_REFS = 8;
+
+type ResolvedPlatformSkillRef = PlatformSkillRef & {
+  description: string | null;
+};
 
 export async function dispatchSessionUserMessage(input: {
   sessionId: string;
@@ -29,6 +43,7 @@ export async function dispatchSessionUserMessage(input: {
   agentId?: string | null;
   workspaceFileRefs?: string[];
   libraryFileRefs?: string[];
+  platformSkillRefs?: PlatformSkillRef[];
 }): Promise<SessionMessage> {
   const session = sessionRepo.get(input.sessionId);
   if (!session) throw new Error('session not found');
@@ -37,6 +52,8 @@ export async function dispatchSessionUserMessage(input: {
   const workspacePath = session.worktree_path ?? session.workspace_path ?? project.path;
   const workspaceFileRefs = await normalizeWorkspaceFileRefs(workspacePath, input.workspaceFileRefs);
   const libraryFileRefs = normalizeLibraryFileRefs(project.id, input.libraryFileRefs);
+  const plannerRuntime = resolveSessionPlannerRuntime(session.project_id);
+  const platformSkillRefs = await normalizePlatformSkillRefs(input.platformSkillRefs, plannerRuntime.backend);
   const updatedSession = input.mode && input.mode !== session.mode
     ? sessionRepo.update(session.id, { mode: input.mode }) ?? session
     : session;
@@ -48,7 +65,7 @@ export async function dispatchSessionUserMessage(input: {
     sender_id: input.senderId ?? 'user',
     sender_name: input.senderName ?? null,
     content: input.content,
-    metadata: buildUserMessageMetadata({ agentId, workspaceFileRefs, libraryFileRefs }),
+    metadata: buildUserMessageMetadata({ agentId, workspaceFileRefs, libraryFileRefs, platformSkillRefs }),
   });
   const runtimeSession = shouldRenameSession
     ? sessionRepo.update(updatedSession.id, { title: buildSessionTitleFromMessage(input.content) }) ?? updatedSession
@@ -79,11 +96,15 @@ export async function dispatchSessionUserMessage(input: {
     workspaceFileRefs,
     libraryFileRefs,
   });
-  const plannerRuntime = resolveSessionPlannerRuntime(runtimeSession.project_id);
   void runSessionAgent({
     sessionId: runtimeSession.id,
     agentId: plannerRuntime.agentId,
-    prompt: buildRuntimePrompt(runtimeSession, message.content, fileReferenceContext.promptAddition),
+    prompt: buildRuntimePrompt(
+      runtimeSession,
+      message.content,
+      fileReferenceContext.promptAddition,
+      buildPlatformSkillsPrompt(platformSkillRefs),
+    ),
     provider: plannerRuntime.backend,
     model: runtimeSession.model,
     permissionMode: plannerRuntime.permissionMode,
@@ -107,12 +128,18 @@ function buildUserMessageMetadata(input: {
   agentId: string;
   workspaceFileRefs: string[];
   libraryFileRefs: string[];
+  platformSkillRefs: ResolvedPlatformSkillRef[];
 }): Record<string, unknown> {
   const attachments = buildLibraryAttachmentMetadata(input.libraryFileRefs);
   return {
     target_agent_id: input.agentId,
     ...(input.workspaceFileRefs.length > 0 ? { workspace_file_refs: input.workspaceFileRefs } : {}),
     ...(input.libraryFileRefs.length > 0 ? { library_file_refs: input.libraryFileRefs } : {}),
+    ...(input.platformSkillRefs.length > 0
+      ? {
+          platform_skill_refs: input.platformSkillRefs.map(({ provider, name }) => ({ provider, name })),
+        }
+      : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
   };
 }
@@ -174,6 +201,44 @@ function normalizeLibraryFileRefs(projectId: string, refs: string[] | undefined)
   });
 }
 
+async function normalizePlatformSkillRefs(
+  refs: PlatformSkillRef[] | undefined,
+  plannerBackend: PlatformSkillRef['provider'],
+): Promise<ResolvedPlatformSkillRef[]> {
+  const normalized: ResolvedPlatformSkillRef[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs ?? []) {
+    const provider = ref.provider;
+    const name = ref.name.trim();
+    if (!name) continue;
+    if (provider !== plannerBackend) {
+      throw new Error('platform skill provider must match planner backend');
+    }
+    const key = `${provider}:${name.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    const skill = await getAvailablePlatformSkill(provider, name);
+    normalized.push({
+      provider,
+      name: skill.name,
+      description: skill.description,
+    });
+    seen.add(key);
+    if (normalized.length >= MAX_PLATFORM_SKILL_REFS) break;
+  }
+  return normalized;
+}
+
+async function getAvailablePlatformSkill(
+  provider: PlatformSkillRef['provider'],
+  name: string,
+): Promise<PlatformSkill> {
+  const skill = await getPlatformSkill(provider, name).catch(() => null);
+  if (!skill || !skill.valid) {
+    throw new Error('platform skill is not available');
+  }
+  return skill;
+}
+
 function dedupeRefs(refs: string[] | undefined): string[] {
   const uniqueRefs: string[] = [];
   const seen = new Set<string>();
@@ -215,7 +280,12 @@ function truncateTitle(title: string, limit: number): string {
   return `${chars.slice(0, limit).join('').trimEnd()}...`;
 }
 
-export function buildRuntimePrompt(session: Session, content: string, referencedFilesBlock = ''): string {
+export function buildRuntimePrompt(
+  session: Session,
+  content: string,
+  referencedFilesBlock = '',
+  platformSkillsBlock = '',
+): string {
   const manifest = createContextManifest(session);
   const sourceBlocks = manifest.sources
     .filter((source) => source.included === 1 && source.excerpt?.trim())
@@ -230,7 +300,21 @@ export function buildRuntimePrompt(session: Session, content: string, referenced
     goal ? `当前目标：${goal}` : null,
     sourceBlocks.length > 0 ? ['## Context Sources', ...sourceBlocks].join('\n\n') : null,
     referencedFilesBlock.trim() || null,
+    platformSkillsBlock.trim() || null,
     '## User Request',
     content,
   ].filter(Boolean).join('\n\n');
+}
+
+function buildPlatformSkillsPrompt(skills: ResolvedPlatformSkillRef[]): string {
+  if (skills.length === 0) return '';
+  return [
+    '## Explicit Platform Skills',
+    '用户通过 `$` 显式选择了 planner 当前 ACP backend 的 provider-native skills。请在本轮调用中按 provider 原生语义使用这些 skills。',
+    ...skills.map((skill) => [
+      `- $${skill.name}`,
+      `  provider: ${skill.provider}`,
+      skill.description ? `  description: ${skill.description}` : null,
+    ].filter(Boolean).join('\n')),
+  ].join('\n');
 }

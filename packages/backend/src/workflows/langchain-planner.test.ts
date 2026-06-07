@@ -114,15 +114,12 @@ test('buildPlannerMessages uses current product name in system prompt', () => {
   assert.equal(systemContent.includes(`Open${'Claw'} Room`), false);
 });
 
-test('buildPlannerMessages appends skill context after schema rules', () => {
-  const [systemMessage] = buildPlannerMessages(basePlannerInput(), {
-    skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: planner-skill',
-  });
+test('buildPlannerMessages omits legacy skill context injection', () => {
+  const [systemMessage] = buildPlannerMessages(basePlannerInput());
 
   const systemContent = String(systemMessage?.content);
   assert.match(systemContent, /Return only a fenced JSON object/);
-  assert.match(systemContent, /OpenDeepSea active skills for this runtime/);
-  assert.ok(systemContent.indexOf('Return only a fenced JSON object') < systemContent.indexOf('OpenDeepSea active skills'));
+  assert.doesNotMatch(systemContent, /OpenDeepSea active skills for this runtime/);
 });
 
 test('generateLangChainPlan validates model output into ParsedPlan', async () => {
@@ -202,16 +199,15 @@ test('generateLangChainPlan validates model output into ParsedPlan', async () =>
   assert.equal(plan.tasks[0]?.suggestedRole, 'executor');
 });
 
-test('generateLangChainPlan passes skill context to planner messages', async () => {
+test('generateLangChainPlan does not pass legacy skill context to planner messages', async () => {
   await generateLangChainPlan(
     basePlannerInput(),
     {
       async invoke(messages) {
-        assert.match(String(messages[0]?.content), /Skill: planner-skill/);
+        assert.doesNotMatch(String(messages[0]?.content), /OpenDeepSea active skills for this runtime/);
         return validPlannerOutput();
       },
     },
-    { skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: planner-skill' },
   );
 });
 

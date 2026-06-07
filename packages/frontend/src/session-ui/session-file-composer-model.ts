@@ -1,6 +1,6 @@
 import { File, FileText, Folder } from 'lucide-react';
 import React from 'react';
-import type { ProjectFile, WorkspaceSearchResult } from '../lib/types';
+import type { PlatformSkill, PlatformSkillRef, ProjectFile, WorkspaceSearchResult } from '../lib/types';
 import { formatFileSize } from '../lib/composerModel';
 import type { Segment, TriggerSuggestion } from '../components/prompt-area/types';
 import { segmentsToPlainText } from '../components/prompt-area/prompt-area-engine';
@@ -11,6 +11,7 @@ export type SessionComposerSubmit = {
   content: string;
   workspaceFileRefs?: string[];
   libraryFileRefs?: string[];
+  platformSkillRefs?: PlatformSkillRef[];
 };
 
 export type ComposerAttachmentPreviewKind = 'image' | 'text' | 'file';
@@ -137,18 +138,64 @@ export function buildSessionComposerSubmitFromText(input: {
   workspaceFileRefs?: string[];
   libraryFileRefs?: string[];
   uploadedFiles?: ProjectFile[];
+  platformSkills?: PlatformSkill[];
 }): SessionComposerSubmit | null {
-  const content = input.content.trim();
+  const platformSkillExtraction = extractPlatformSkillRefsFromText(input.content, input.platformSkills ?? []);
+  const content = platformSkillExtraction.content.trim();
   const workspaceFileRefs = dedupeStrings(input.workspaceFileRefs ?? []);
   const libraryFileRefs = dedupeStrings([
     ...(input.libraryFileRefs ?? []),
     ...collectProjectFileIds(input.uploadedFiles ?? []),
   ]);
-  if (!content && workspaceFileRefs.length === 0 && libraryFileRefs.length === 0) return null;
+  if (
+    !content &&
+    workspaceFileRefs.length === 0 &&
+    libraryFileRefs.length === 0 &&
+    platformSkillExtraction.platformSkillRefs.length === 0
+  ) return null;
   return {
     content,
     workspaceFileRefs,
     libraryFileRefs,
+    ...(platformSkillExtraction.platformSkillRefs.length > 0
+      ? { platformSkillRefs: platformSkillExtraction.platformSkillRefs }
+      : {}),
+  };
+}
+
+export function extractPlatformSkillRefsFromText(content: string, platformSkills: PlatformSkill[]): {
+  content: string;
+  platformSkillRefs: PlatformSkillRef[];
+} {
+  if (platformSkills.length === 0) {
+    return { content: content.trim(), platformSkillRefs: [] };
+  }
+
+  const byName = new Map<string, PlatformSkill>();
+  for (const skill of platformSkills) {
+    if (!skill.valid) continue;
+    byName.set(skill.name.toLowerCase(), skill);
+  }
+  if (byName.size === 0) {
+    return { content: content.trim(), platformSkillRefs: [] };
+  }
+
+  const refs: PlatformSkillRef[] = [];
+  const seen = new Set<string>();
+  const cleaned = content.replace(/(^|[\s([{，。！？、])\$([A-Za-z0-9._:-]+)/gu, (match, prefix: string, rawName: string) => {
+    const skill = byName.get(rawName.toLowerCase());
+    if (!skill) return match;
+    const key = `${skill.provider}:${skill.name.toLowerCase()}`;
+    if (!seen.has(key)) {
+      refs.push({ provider: skill.provider, name: skill.name });
+      seen.add(key);
+    }
+    return prefix;
+  });
+
+  return {
+    content: cleaned.trim(),
+    platformSkillRefs: refs,
   };
 }
 

@@ -96,7 +96,6 @@ export interface WorkflowRecoverySupervisorOptions {
   invoker?: PlannerInvoker;
   disableModel?: boolean;
   maxAttempts?: number;
-  skillContext?: string;
 }
 
 export function parseWorkflowRecoveryDecision(raw: string): WorkflowRecoveryDecision {
@@ -112,10 +111,7 @@ export function parseWorkflowRecoveryDecision(raw: string): WorkflowRecoveryDeci
   };
 }
 
-export function buildRecoverySupervisorMessages(
-  input: WorkflowRecoveryInput,
-  options: { skillContext?: string } = {},
-): PlannerMessage[] {
+export function buildRecoverySupervisorMessages(input: WorkflowRecoveryInput): PlannerMessage[] {
   return [
     new SystemMessage([
       'You are the workflow recovery supervisor for OpenDeepSea.',
@@ -126,7 +122,6 @@ export function buildRecoverySupervisorMessages(
       'Use retry_with_global_agent when the room lacks a suitable executor and a global agent should be provisioned.',
       'Use ask_user when recovery needs product/user judgement.',
       'confidence must be a number from 0 to 1.',
-      options.skillContext?.trim() ? `\n${options.skillContext.trim()}` : null,
     ].join('\n')),
     new HumanMessage(formatRecoveryInput(input)),
   ];
@@ -146,7 +141,7 @@ export async function decideRecovery(
   }
 
   const maxAttempts = Math.max(1, options.maxAttempts ?? 1);
-  const messages = buildRecoverySupervisorMessages(input, { skillContext: options.skillContext });
+  const messages = buildRecoverySupervisorMessages(input);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {

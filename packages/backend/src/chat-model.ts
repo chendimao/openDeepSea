@@ -19,10 +19,6 @@ export interface ModelChatInvoker {
   invoke(messages: Array<SystemMessage | HumanMessage>): Promise<MessageContent>;
 }
 
-export interface ModelChatOptions {
-  skillContext?: string;
-}
-
 export interface ConfiguredModelTestResult {
   ok: boolean;
   status: 'success' | 'missing_credentials' | 'failed';
@@ -49,18 +45,14 @@ export function isModelChatConfigured(): boolean {
 export async function generateModelChatReply(
   input: ModelChatInput,
   invoker: ModelChatInvoker = createDefaultModelChatInvoker(),
-  options: ModelChatOptions = {},
 ): Promise<string> {
-  const content = await invoker.invoke(buildModelChatMessages(input, options));
+  const content = await invoker.invoke(buildModelChatMessages(input));
   const text = extractPlannerText(content).trim();
   if (!text) throw new Error('Model chat completed without output');
   return text;
 }
 
-export function buildModelChatMessages(
-  input: ModelChatInput,
-  options: ModelChatOptions = {},
-): Array<SystemMessage | HumanMessage> {
+export function buildModelChatMessages(input: ModelChatInput): Array<SystemMessage | HumanMessage> {
   const history = input.recentMessages
     .filter((message) => message.id !== input.userMessage.id)
     .slice(-12)
@@ -80,7 +72,6 @@ export function buildModelChatMessages(
       `当前项目：${input.project.name}`,
       `项目路径：${input.project.path}`,
       `当前群聊：${input.room.name}`,
-      options.skillContext?.trim() ? `\n${options.skillContext.trim()}` : null,
     ].join('\n')),
     new HumanMessage([
       history ? `最近对话：\n${history}` : '最近对话：无',

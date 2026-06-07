@@ -45,17 +45,8 @@ import type {
   Session,
   SessionDetail,
   SessionMode,
-  Skill,
-  SkillBinding,
-  SkillBindingScope,
-  SkillRun,
-  SkillPreviewResponse,
+  SessionPlannerPlatformSkillsResponse,
   SkillsShSearchResult,
-  SkillsShUpdateResult,
-  SkillUpdateApplyMode,
-  SkillUpdateCheckMode,
-  SkillRuntimeScope,
-  SkillTriggerMode,
   SuperpowersBootstrapOwner,
   Task,
   TaskActionKind,
@@ -398,27 +389,12 @@ export const api = {
   deleteWorkflowDefinition: (id: string) =>
     request<void>(`/workflow-definitions/${id}`, { method: 'DELETE' }),
 
-  listSkills: () => workspaceRequest<Skill[]>('/skills'),
-  importLocalSkill: (path: string) =>
-    workspaceRequest<Skill>('/skills/import/local', {
-      method: 'POST',
-      body: JSON.stringify({ path }),
-    }),
-  searchSkillMarketplace: (query: string) => {
-    const params = new URLSearchParams();
-    if (query.trim()) params.set('q', query.trim());
-    const search = params.toString();
-    return workspaceRequest<SkillsShSearchResult[]>(`/skills/marketplace${search ? `?${search}` : ''}`);
-  },
-  importSkillsShSkill: (installLabel: string) =>
-    workspaceRequest<Skill>('/skills/import/skills-sh', {
-      method: 'POST',
-      body: JSON.stringify({ installLabel }),
-    }),
   listPlatformSkillSummaries: () =>
     workspaceRequest<PlatformSkillSummary[]>('/platform-skills/platforms'),
   listPlatformSkillAggregates: () =>
     workspaceRequest<PlatformSkillAggregate[]>('/platform-skills'),
+  listSessionPlannerPlatformSkills: (projectId: string) =>
+    workspaceRequest<SessionPlannerPlatformSkillsResponse>(`/platform-skills/session-planner/${projectId}`),
   listPlatformSkills: (provider: PlatformSkillProvider) =>
     workspaceRequest<PlatformSkill[]>(`/platform-skills/${provider}`),
   getPlatformSkill: (provider: PlatformSkillProvider, skillName: string) =>
@@ -449,71 +425,6 @@ export const api = {
     }),
   deletePlatformSkill: (provider: PlatformSkillProvider, skillName: string) =>
     workspaceRequest<void>(`/platform-skills/${provider}/${encodeURIComponent(skillName)}`, { method: 'DELETE' }),
-  updateSkill: (
-    id: string,
-    input: {
-      name?: string;
-      description?: string | null;
-      runtime_scopes?: SkillRuntimeScope[];
-      trigger_mode?: SkillTriggerMode;
-      trigger_keywords?: string[];
-      enabled?: boolean;
-      priority?: number;
-      update_check_mode?: SkillUpdateCheckMode;
-      update_apply_mode?: SkillUpdateApplyMode;
-    },
-  ) =>
-    workspaceRequest<Skill>(`/skills/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    }),
-  listSkillRuns: (filters: { skillId?: string; projectId?: string; roomId?: string; agentId?: string } = {}) => {
-    const params = new URLSearchParams();
-    if (filters.skillId) params.set('skillId', filters.skillId);
-    if (filters.projectId) params.set('projectId', filters.projectId);
-    if (filters.roomId) params.set('roomId', filters.roomId);
-    if (filters.agentId) params.set('agentId', filters.agentId);
-    const query = params.toString();
-    return workspaceRequest<SkillRun[]>(`/skills/runs${query ? `?${query}` : ''}`);
-  },
-  checkSkillUpdate: (id: string) =>
-    workspaceRequest<SkillsShUpdateResult>(`/skills/${id}/updates`),
-  deleteSkill: (id: string) =>
-    workspaceRequest<void>(`/skills/${id}`, { method: 'DELETE' }),
-  listSkillBindings: (filters: { scope?: SkillBindingScope; scopeId?: string; skillId?: string } = {}) => {
-    const params = new URLSearchParams();
-    if (filters.scope) params.set('scope', filters.scope);
-    if (filters.scopeId) params.set('scopeId', filters.scopeId);
-    if (filters.skillId) params.set('skillId', filters.skillId);
-    const query = params.toString();
-    return workspaceRequest<SkillBinding[]>(`/skills/bindings${query ? `?${query}` : ''}`);
-  },
-  upsertSkillBinding: (input: {
-    id?: string;
-    skill_id: string;
-    scope: SkillBindingScope;
-    scope_id: string;
-    enabled?: boolean;
-    priority_override?: number | null;
-  }) =>
-    workspaceRequest<SkillBinding>('/skills/bindings', {
-      method: 'PUT',
-      body: JSON.stringify(input),
-    }),
-  deleteSkillBinding: (id: string) =>
-    workspaceRequest<void>(`/skills/bindings/${id}`, { method: 'DELETE' }),
-  previewSkillSelection: (input: {
-    runtimeScopes: SkillRuntimeScope[];
-    projectId?: string | null;
-    roomId?: string | null;
-    agentId?: string | null;
-    message?: string;
-    skillIds?: string[];
-  }) =>
-    workspaceRequest<SkillPreviewResponse>('/skills/preview-selection', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
 
   listProjects: () => request<Project[]>('/projects'),
   pickDirectory: () =>

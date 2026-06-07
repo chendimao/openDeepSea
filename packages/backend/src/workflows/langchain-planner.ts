@@ -29,7 +29,6 @@ export interface PlannerInvoker {
 
 export interface LangChainPlannerOptions {
   maxAttempts?: number;
-  skillContext?: string;
 }
 
 export class LangChainPlannerError extends Error {
@@ -72,7 +71,7 @@ export async function generateLangChainPlan(
   options: LangChainPlannerOptions = {},
 ): Promise<ParsedPlan> {
   const maxAttempts = Math.max(1, options.maxAttempts ?? 2);
-  const messages = buildPlannerMessages(input, { skillContext: options.skillContext });
+  const messages = buildPlannerMessages(input);
   let lastOutput = '';
   let lastError: unknown;
 
@@ -89,11 +88,7 @@ export async function generateLangChainPlan(
   throw new LangChainPlannerError(`LangChain Planner failed after ${maxAttempts} attempts: ${detail}`, lastOutput, lastError);
 }
 
-export interface PlannerMessageOptions {
-  skillContext?: string;
-}
-
-export function buildPlannerMessages(input: LangChainPlannerInput, options: PlannerMessageOptions = {}): PlannerMessage[] {
+export function buildPlannerMessages(input: LangChainPlannerInput): PlannerMessage[] {
   return [
     new SystemMessage(
       [
@@ -107,7 +102,6 @@ export function buildPlannerMessages(input: LangChainPlannerInput, options: Plan
         'Use needsApproval=false only when the plan can proceed without a user decision.',
         '如果 task.description 包含“产品经理方案背景”，将该背景结构化为可执行工程计划；不要重新向产品经理发起需求分析。',
         '不要把明确的 implementation 或 debug_fix 任务改写为 analysis_only、planning_only 或只读分析。',
-        options.skillContext?.trim() ? `\n${options.skillContext.trim()}` : null,
       ].join('\n'),
     ),
     new HumanMessage(formatPlannerInput(input)),

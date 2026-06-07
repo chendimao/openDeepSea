@@ -53,7 +53,7 @@ test('distillFromConversation stores candidates from model text', async () => {
   assert.equal(created.source_id, `${reply.id}#distill-1`);
 });
 
-test('distillFromConversation appends skill context after memory extraction rules', async () => {
+test('distillFromConversation omits legacy skill context injection', async () => {
   const project = projectRepo.create({ name: 'Distill Skill Context', path: createProjectDir() });
   const room = roomRepo.create({ project_id: project.id, name: 'Distill Skill Context Room' });
   messageRepo.create({
@@ -76,7 +76,6 @@ test('distillFromConversation appends skill context after memory extraction rule
     projectId: project.id,
     roomId: room.id,
     triggerMessageId: reply.id,
-    skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: memory-skill',
     modelInvoker: async (prompt) => {
       capturedPrompt = prompt;
       return '[]';
@@ -84,8 +83,7 @@ test('distillFromConversation appends skill context after memory extraction rule
   });
 
   assert.match(capturedPrompt, /仅提取新的、有价值的信息/);
-  assert.match(capturedPrompt, /Skill: memory-skill/);
-  assert.ok(capturedPrompt.indexOf('仅提取新的、有价值的信息') < capturedPrompt.indexOf('Skill: memory-skill'));
+  assert.doesNotMatch(capturedPrompt, /OpenDeepSea active skills for this runtime/);
 });
 
 test('distillFromConversation skips when model is not configured', async () => {
@@ -155,7 +153,7 @@ test('distillFromTask stores candidates from model text', async () => {
   assert.equal(taskMemory.source_id, 'workflow-task-distill-stores#distill-2');
 });
 
-test('distillFromTask appends skill context after task extraction rules', async () => {
+test('distillFromTask omits legacy skill context injection', async () => {
   const { project, room, task } = createTaskDistillContext('Task Distill Skill Context');
   let capturedPrompt = '';
 
@@ -166,7 +164,6 @@ test('distillFromTask appends skill context after task extraction rules', async 
     taskTitle: task.title,
     taskSummary: '任务完成。',
     sourceId: 'workflow-task-distill-skill-context',
-    skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: task-memory-skill',
     modelInvoker: async (prompt) => {
       capturedPrompt = prompt;
       return '[]';
@@ -174,8 +171,7 @@ test('distillFromTask appends skill context after task extraction rules', async 
   });
 
   assert.match(capturedPrompt, /提取架构决策/);
-  assert.match(capturedPrompt, /Skill: task-memory-skill/);
-  assert.ok(capturedPrompt.indexOf('提取架构决策') < capturedPrompt.indexOf('Skill: task-memory-skill'));
+  assert.doesNotMatch(capturedPrompt, /OpenDeepSea active skills for this runtime/);
 });
 
 test('distillFromTask ignores malformed model JSON without writing memory', async () => {

@@ -55,7 +55,6 @@ export interface WorkflowSupervisorInput {
 
 export interface WorkflowSupervisorOptions {
   maxAttempts?: number;
-  skillContext?: string;
 }
 
 export class WorkflowSupervisorError extends Error {
@@ -82,11 +81,7 @@ export function parseWorkflowSupervisorDecision(raw: string): WorkflowSupervisor
   };
 }
 
-export interface SupervisorMessageOptions {
-  skillContext?: string;
-}
-
-export function buildSupervisorMessages(input: WorkflowSupervisorInput, options: SupervisorMessageOptions = {}): PlannerMessage[] {
+export function buildSupervisorMessages(input: WorkflowSupervisorInput): PlannerMessage[] {
   return [
     new SystemMessage([
       'You are the workflow supervisor for OpenDeepSea.',
@@ -99,7 +94,6 @@ export function buildSupervisorMessages(input: WorkflowSupervisorInput, options:
       'When task.execution_intent is implementation or debug_fix, prefer the development workflow with implementation, review, verification, acceptance, and memory stages.',
       'confidence must be a number from 0 to 1.',
       'Assignments are advisory and must reference listed room agent IDs.',
-      options.skillContext?.trim() ? `\n${options.skillContext.trim()}` : null,
     ].join('\n')),
     new HumanMessage(formatSupervisorInput(input)),
   ];
@@ -111,7 +105,7 @@ export async function generateWorkflowSupervisorDecision(
   options: WorkflowSupervisorOptions = {},
 ): Promise<WorkflowSupervisorDecision> {
   const maxAttempts = Math.max(1, options.maxAttempts ?? 2);
-  const messages = buildSupervisorMessages(input, { skillContext: options.skillContext });
+  const messages = buildSupervisorMessages(input);
   let lastOutput = '';
   let lastError: unknown;
 

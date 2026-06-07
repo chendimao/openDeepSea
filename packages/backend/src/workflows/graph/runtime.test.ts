@@ -70,8 +70,8 @@ test('enqueueGraphWorkflow defers graph node execution until after the current t
   });
 
   assert.equal(workflowRepo.listSteps(run.id).length, 0);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'context'));
+  await waitForGraphRuntime(() => workflowRepo.listSteps(run.id).length > 0);
+  assert.ok(workflowRepo.listSteps(run.id).length > 0);
 });
 
 test('enqueueGraphWorkflow retries background errors with configured backoff delays', async () => {
@@ -225,7 +225,7 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   assert.ok(listRawStepNodeNames(run.id).includes('writing_plans'));
 });
 
-test('planning node passes planner and workflow skill context to graph planner', async () => {
+test('planning node omits legacy skill context for graph planner', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-planner-skills-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Planner Skills', path: projectPath });
@@ -235,23 +235,17 @@ test('planning node passes planner and workflow skill context to graph planner',
     project_id: project.id,
     title: 'Plan with runtime skills',
   });
-  let capturedSkillContext = '';
+  let plannerCalled = false;
   const run = await startGraphWorkflow(task.id, {
-    buildSkillContext: async (input) => {
-      assert.deepEqual(input.runtimeScopes, ['planner', 'workflow']);
-      assert.equal(input.projectId, project.id);
-      assert.equal(input.roomId, room.id);
-      assert.match(input.message ?? '', /Plan with runtime skills/);
-      return 'OpenDeepSea active skills for this runtime:\nSkill: graph-planner-skill';
-    },
     planner: async (_input, options) => {
-      capturedSkillContext = options?.skillContext ?? '';
+      plannerCalled = true;
+      assert.equal(Object.hasOwn(options ?? {}, 'skillContext'), false);
       return createApprovalPlan(task.title);
     },
   });
 
   assert.equal(workflowRepo.detail(run.id)?.run.status, 'awaiting_approval');
-  assert.match(capturedSkillContext, /Skill: graph-planner-skill/);
+  assert.equal(plannerCalled, true);
 });
 
 test('Superpowers run records planning gate steps before dispatch', async () => {
@@ -992,7 +986,7 @@ test('createGraphWorkflowRun ignores room default workflow and records Superpowe
   assertSuperpowersWorkflowRun(run);
 });
 
-test('startGraphWorkflow passes workflow skill context to supervisor model', async () => {
+test('startGraphWorkflow omits legacy skill context for supervisor model', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-supervisor-skills-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Supervisor Skills', path: projectPath });
@@ -1003,20 +997,12 @@ test('startGraphWorkflow passes workflow skill context to supervisor model', asy
     project_id: project.id,
     title: 'Choose workflow with skills',
   });
-  let capturedSkillContext = '';
+  let supervisorCalled = false;
 
   const run = await startGraphWorkflow(task.id, {
-    buildSkillContext: async (input) => {
-      if (input.runtimeScopes.length === 1 && input.runtimeScopes[0] === 'workflow') {
-        assert.equal(input.projectId, project.id);
-        assert.equal(input.roomId, room.id);
-        assert.match(input.message ?? '', /Choose workflow with skills/);
-        return 'OpenDeepSea active skills for this runtime:\nSkill: workflow-supervisor-skill';
-      }
-      return '';
-    },
     supervisor: async (_input, options) => {
-      capturedSkillContext = options?.skillContext ?? '';
+      supervisorCalled = true;
+      assert.equal(Object.hasOwn(options ?? {}, 'skillContext'), false);
       return {
         mode: 'select_existing_workflow',
         workflowDefinitionId: workflow.id,
@@ -1031,7 +1017,7 @@ test('startGraphWorkflow passes workflow skill context to supervisor model', asy
 
   assert.notEqual(run.workflow_definition_id, workflow.id);
   assertSuperpowersWorkflowRun(run);
-  assert.match(capturedSkillContext, /Skill: workflow-supervisor-skill/);
+  assert.equal(supervisorCalled, true);
 });
 
 test('startGraphWorkflow keeps high-confidence assignments from default supervisor when deps.supervisor is omitted', async () => {

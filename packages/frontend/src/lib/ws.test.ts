@@ -133,6 +133,7 @@ test('sessionSocket queues session messages until websocket opens', async () => 
       agentId: 'planner',
       workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
       libraryFileRefs: ['asset:doc-1'],
+      platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
     });
     await new Promise((resolve) => setTimeout(resolve, 5));
     const socket = FakeWebSocket.instances[0]!;
@@ -148,6 +149,7 @@ test('sessionSocket queues session messages until websocket opens', async () => 
         agentId: 'planner',
         workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
         libraryFileRefs: ['asset:doc-1'],
+        platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
       },
     ]);
     sessionSocket.destroy();

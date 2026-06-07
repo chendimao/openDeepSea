@@ -52,21 +52,6 @@ export type {
   SessionWorkspacePayload,
   StatusSnapshot,
 } from './session-types.js';
-export type {
-  Skill,
-  SkillBinding,
-  SkillBindingScope,
-  SkillExecutableRuntime,
-  SkillPermissions,
-  SkillRun,
-  SkillRunInvoker,
-  SkillRunStatus,
-  SkillRuntimeScope,
-  SkillSourceType,
-  SkillTriggerMode,
-  SkillUpdateApplyMode,
-  SkillUpdateCheckMode,
-} from './skills/types.js';
 
 export interface Room {
   id: string;
@@ -104,6 +89,10 @@ export interface RoomSearchResponse {
 }
 
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
+export interface PlatformSkillRef {
+  provider: AcpBackend;
+  name: string;
+}
 export type AcpPermissionMode = 'bypass' | 'workspace-write' | 'read-only';
 export type AcpSessionHandoffReason =
   | 'manual_new_session'
@@ -1396,6 +1385,7 @@ export type WsClientEvent =
       mode?: import('./session-types.js').SessionMode;
       workspaceFileRefs?: string[];
       libraryFileRefs?: string[];
+      platformSkillRefs?: PlatformSkillRef[];
     }
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }

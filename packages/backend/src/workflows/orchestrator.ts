@@ -7,8 +7,6 @@ import { memoryRepo } from '../repos/memory.js';
 import { projectRepo } from '../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../repos/rooms.js';
 import { settingsRepo } from '../repos/settings.js';
-import { formatSkillPrompt } from '../skills/prompt.js';
-import { selectSkills } from '../skills/selector.js';
 import { taskRepo } from '../repos/tasks.js';
 import { workflowRepo } from '../repos/workflows.js';
 import { runRegistry } from '../run-registry.js';
@@ -615,8 +613,7 @@ function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
   });
 
   const memoryContext = buildPlannerMemoryContext(context.project.id, context.room.id, task.id);
-  void buildLegacyPlannerSkillContext(context, task, memoryContext)
-    .then((skillContext) => generateLangChainPlan({
+  void generateLangChainPlan({
       projectName: context.project.name,
       projectPath: context.project.path,
       room: context.room,
@@ -624,7 +621,7 @@ function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
       agents: context.agents,
       memories: memoryContext ? [memoryContext] : [],
       recentMessages: buildPlannerRecentMessages(context.room.id),
-    }, undefined, { skillContext }))
+    })
     .then((plan) => {
       const latest = workflowRepo.getRun(run.id);
       const latestStep = workflowRepo.getStep(step.id);
@@ -653,29 +650,6 @@ function startLangChainPlanningStage(run: WorkflowRun, task: Task): void {
       }
       block(latest, error);
     });
-}
-
-async function buildLegacyPlannerSkillContext(
-  context: ReturnType<typeof getContext>,
-  task: Task,
-  memoryContext: string,
-): Promise<string> {
-  try {
-    const skills = await selectSkills({
-      runtimeScopes: ['planner'],
-      projectId: context.project.id,
-      roomId: context.room.id,
-      message: [
-        task.title,
-        task.description ?? '',
-        memoryContext,
-      ].filter(Boolean).join('\n\n'),
-    });
-    return formatSkillPrompt(skills);
-  } catch (err) {
-    console.warn(`[skills] failed to build legacy planner skill context: ${(err as Error).message}`);
-    return '';
-  }
 }
 
 function buildPlannerRecentMessages(roomId: string): string[] {
@@ -1290,46 +1264,17 @@ export function rememberAcceptedTask(
     const autoDistillEnabled = settingsRepo.resolveForRoom(run.room_id)?.effective.auto_distill_enabled ?? true;
     if (!autoDistillEnabled) return;
 
-    // Async deep distillation from full task conversation
-    buildLegacyMemorySkillContext(run, completedTask, taskSummary, verdict)
-      .then((skillContext) => (deps.distillTask ?? distillFromTask)({
+    // Async deep distillation from full task conversation.
+    (deps.distillTask ?? distillFromTask)({
       projectId: run.project_id,
       roomId: run.room_id,
       taskId: run.task_id,
       taskTitle: completedTask.title,
       taskSummary,
       sourceId: run.id,
-      skillContext,
-    })).catch((err) => console.warn(`[distill] task distill error: ${(err as Error).message}`));
+    }).catch((err) => console.warn(`[distill] task distill error: ${(err as Error).message}`));
   } catch (err) {
     console.warn(`[memory] failed to save workflow task summary: ${(err as Error).message}`);
-  }
-}
-
-async function buildLegacyMemorySkillContext(
-  run: WorkflowRun,
-  task: Task,
-  taskSummary: string,
-  verdict: ParsedAcceptanceVerdict,
-): Promise<string> {
-  try {
-    const skills = await selectSkills({
-      runtimeScopes: ['memory'],
-      projectId: run.project_id,
-      roomId: run.room_id,
-      message: [
-        task.title,
-        task.description ?? '',
-        taskSummary,
-        verdict.notes,
-        verdict.acceptedCriteria.join('\n'),
-        verdict.failedCriteria.join('\n'),
-      ].filter(Boolean).join('\n\n'),
-    });
-    return formatSkillPrompt(skills);
-  } catch (err) {
-    console.warn(`[skills] failed to build legacy memory skill context: ${(err as Error).message}`);
-    return '';
   }
 }
 

@@ -91,7 +91,7 @@ test('memory node stores accepted task summary and completes graph state', async
   assert.equal(state.currentNode, 'memory');
 });
 
-test('memory node passes memory skill context to task distillation', async () => {
+test('memory node omits legacy skill context during task distillation', async () => {
   const projectPath = join(tmpdir(), `graph-memory-node-skill-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Memory Skill Node', path: projectPath });
@@ -123,17 +123,11 @@ test('memory node passes memory skill context to task distillation', async () =>
     }),
   });
 
-  let capturedSkillContext = '';
+  let distillCalled = false;
   const tools = createGraphTools({
-    buildSkillContext: async (input) => {
-      assert.deepEqual(input.runtimeScopes, ['memory']);
-      assert.equal(input.projectId, project.id);
-      assert.equal(input.roomId, room.id);
-      assert.match(input.message ?? '', /Memory skill task/);
-      return 'OpenDeepSea active skills for this runtime:\nSkill: memory-runtime-skill';
-    },
     distillTask: async (input) => {
-      capturedSkillContext = input.skillContext ?? '';
+      distillCalled = true;
+      assert.equal(Object.hasOwn(input, 'skillContext'), false);
     },
   });
 
@@ -158,7 +152,7 @@ test('memory node passes memory skill context to task distillation', async () =>
     error: null,
   });
 
-  assert.match(capturedSkillContext, /Skill: memory-runtime-skill/);
+  assert.equal(distillCalled, true);
 });
 
 test('memory node without acceptance artifact skips task summary but still completes graph state', async () => {

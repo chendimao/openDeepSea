@@ -234,75 +234,12 @@ export type TaskEventType =
   | 'workflow_failed'
   | 'workflow_memory_written';
 export type SettingsScope = 'system' | 'project' | 'room';
-export type SkillRuntimeScope = 'planner' | 'model_chat' | 'workflow' | 'memory' | 'review';
-export type SkillTriggerMode = 'manual' | 'keyword' | 'always_for_scope';
-export type SkillBindingScope = 'system' | 'project' | 'room' | 'agent';
-export type SkillSourceType = 'local_directory' | 'git_repo' | 'manual' | 'skills_sh';
-export type SkillExecutableRuntime = 'node' | 'python' | 'shell';
-export type SkillUpdateCheckMode = 'off' | 'startup' | 'manual';
-export type SkillUpdateApplyMode = 'prompt';
-export type SkillRunInvoker = 'workflow' | 'agent' | 'manual';
-export type SkillRunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type PlatformSkillProvider = 'codex' | 'claudecode' | 'opencode';
 export type PlatformSkillInstallMode = 'copy' | 'symlink' | 'unknown';
 
-export interface SkillPermissions {
-  filesystem: 'project';
-  network: boolean;
-  commands: string[];
-}
-
-export interface Skill {
-  id: string;
+export interface PlatformSkillRef {
+  provider: PlatformSkillProvider;
   name: string;
-  description: string | null;
-  source_type: SkillSourceType;
-  source_uri: string | null;
-  source_uri_set: boolean;
-  manifest_path: string | null;
-  runtime_scopes: SkillRuntimeScope[];
-  trigger_mode: SkillTriggerMode;
-  trigger_keywords: string[];
-  enabled: 0 | 1;
-  priority: number;
-  checksum: string | null;
-  package_version: string | null;
-  package_revision: string | null;
-  runtime_type: SkillExecutableRuntime | null;
-  entrypoint: string | null;
-  permissions: SkillPermissions | null;
-  install_source_label: string | null;
-  update_check_mode: SkillUpdateCheckMode;
-  update_apply_mode: SkillUpdateApplyMode;
-  last_update_checked_at: number | null;
-  available_version: string | null;
-  available_revision: string | null;
-  install_path_set: boolean;
-  install_path_label?: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface SkillBinding {
-  id: string;
-  skill_id: string;
-  scope: SkillBindingScope;
-  scope_id: string;
-  enabled: 0 | 1;
-  priority_override: number | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface SkillPreviewResponse {
-  skills: Array<{
-    id: string;
-    name: string;
-    reasons: string[];
-    effectivePriority: number;
-    truncated: boolean;
-  }>;
-  promptPreview: string;
 }
 
 export interface SkillsShSearchResult {
@@ -315,16 +252,6 @@ export interface SkillsShSearchResult {
   installs: number | null;
   version: string | null;
   revision: string | null;
-}
-
-export interface SkillsShUpdateResult {
-  skillId: string;
-  hasUpdate: boolean;
-  currentVersion: string | null;
-  currentRevision: string | null;
-  availableVersion: string | null;
-  availableRevision: string | null;
-  checkedAt: number;
 }
 
 export interface PlatformSkillSummary {
@@ -351,6 +278,11 @@ export interface PlatformSkill {
   issues: string[];
 }
 
+export interface SessionPlannerPlatformSkillsResponse {
+  provider: PlatformSkillProvider;
+  skills: PlatformSkill[];
+}
+
 export interface PlatformSkillAggregateIssue {
   provider: PlatformSkillProvider;
   message: string;
@@ -367,29 +299,6 @@ export interface PlatformSkillAggregate {
   valid: boolean;
   issues: PlatformSkillAggregateIssue[];
   lastModifiedAt: number | null;
-}
-
-export interface SkillRun {
-  id: string;
-  skill_id: string;
-  project_id: string | null;
-  room_id: string | null;
-  agent_id: string | null;
-  invoked_by: SkillRunInvoker;
-  runtime: SkillExecutableRuntime;
-  entrypoint: string;
-  input: unknown;
-  allowed_paths_count: number;
-  allowed_paths_set: boolean;
-  network_enabled: 0 | 1;
-  status: SkillRunStatus;
-  exit_code: number | null;
-  stdout: string | null;
-  stderr: string | null;
-  result: unknown;
-  error: string | null;
-  created_at: number;
-  updated_at: number;
 }
 
 export interface AgentReference {

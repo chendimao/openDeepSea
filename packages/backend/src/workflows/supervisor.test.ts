@@ -160,18 +160,12 @@ test('buildSupervisorMessages includes task, workflows, and executable agents', 
   assert.match(content, /前端实现流程/);
 });
 
-test('buildSupervisorMessages appends workflow skill context after base rules', () => {
-  const messages = buildSupervisorMessages(baseSupervisorInput(), {
-    skillContext: 'OpenDeepSea active skills for this runtime:\nSkill: workflow-supervisor-skill',
-  });
+test('buildSupervisorMessages omits legacy workflow skill context injection', () => {
+  const messages = buildSupervisorMessages(baseSupervisorInput());
 
   const systemContent = String(messages[0]?.content);
   assert.match(systemContent, /Choose the best existing published workflow definition/);
-  assert.match(systemContent, /Skill: workflow-supervisor-skill/);
-  assert.ok(
-    systemContent.indexOf('Choose the best existing published workflow definition') <
-      systemContent.indexOf('Skill: workflow-supervisor-skill'),
-  );
+  assert.doesNotMatch(systemContent, /OpenDeepSea active skills for this runtime/);
 });
 
 test('buildSupervisorMessages includes execution intent routing rules for analysis-only tasks', () => {

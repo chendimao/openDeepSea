@@ -228,7 +228,6 @@ async function resolveSupervisorAssignmentsForTask(
   definition: WorkflowDefinition,
 ): Promise<WorkflowSupervisorDecision['assignments']> {
   const { task, room, project } = requireTaskContext(taskId);
-  const tools = createGraphTools(deps);
   const defaultSupervisor = (deps as SupervisorDepsOverride).defaultSupervisor;
   const supervisor = deps.supervisor
     ?? defaultSupervisor
@@ -236,23 +235,13 @@ async function resolveSupervisorAssignmentsForTask(
       generateWorkflowSupervisorDecision(input, undefined, options));
 
   try {
-    const skillContext = await tools.buildSkillContext({
-      runtimeScopes: ['workflow'],
-      projectId: project.id,
-      roomId: room.id,
-      message: [
-        task.title,
-        task.description ?? '',
-        `${definition.name}: ${definition.description ?? ''}`,
-      ].filter(Boolean).join('\n\n'),
-    });
     const decision = await supervisor({
       project,
       room,
       task,
       agents: roomAgentRepo.listByRoom(room.id),
       workflowDefinitions: [definition],
-    }, { skillContext });
+    });
     return decision.confidence >= SUPERVISOR_CONFIDENCE_THRESHOLD ? decision.assignments : [];
   } catch {
     return [];

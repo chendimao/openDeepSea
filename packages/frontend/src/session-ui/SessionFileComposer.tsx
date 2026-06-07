@@ -1,16 +1,17 @@
 import {
   AlertTriangle,
   FileText,
-  Hash,
   Image as ImageIcon,
   Paperclip,
   SendHorizontal,
   X,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { MarkdownPreview } from '../components/MessageContent';
+import type { PlatformSkill } from '../lib/types';
 import {
   buildAttachmentPreviewKind,
   buildSessionComposerSubmitFromText,
@@ -21,6 +22,7 @@ import {
 } from './session-file-composer-model';
 
 const MAX_SESSION_ATTACHMENTS = 5;
+const MAX_SKILL_SUGGESTIONS = 8;
 
 type PendingSessionAttachment = {
   id: string;
@@ -32,6 +34,12 @@ type PendingSessionAttachment = {
 type PreviewState =
   | { attachment: PendingSessionAttachment; content?: string; loading?: boolean; error?: string }
   | null;
+
+type ActiveSkillTrigger = {
+  start: number;
+  end: number;
+  query: string;
+};
 
 export function SessionFileComposer({
   projectId,
@@ -45,8 +53,17 @@ export function SessionFileComposer({
   const [preview, setPreview] = useState<PreviewState>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cursorPosition, setCursorPosition] = useState(0);
+  const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
+  const [dismissedSkillTriggerKey, setDismissedSkillTriggerKey] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentsRef = useRef<PendingSessionAttachment[]>([]);
+  const plannerSkillsQuery = useQuery({
+    queryKey: ['platform-skills', 'session-planner', projectId],
+    queryFn: () => api.listSessionPlannerPlatformSkills(projectId),
+    enabled: Boolean(projectId),
+    staleTime: 10_000,
+  });
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -59,6 +76,30 @@ export function SessionFileComposer({
   }, []);
 
   const canSubmit = !isUploading && (content.trim().length > 0 || attachments.length > 0);
+  const platformSkills = plannerSkillsQuery.data?.skills ?? [];
+  const rawActiveSkillTrigger = getActiveSkillTrigger(content, cursorPosition);
+  const rawActiveSkillTriggerKey = rawActiveSkillTrigger ? formatSkillTriggerKey(rawActiveSkillTrigger) : null;
+  const activeSkillTrigger = rawActiveSkillTriggerKey === dismissedSkillTriggerKey
+    ? null
+    : rawActiveSkillTrigger;
+  const skillSuggestions = activeSkillTrigger
+    ? filterSkillSuggestions(platformSkills, activeSkillTrigger.query)
+    : [];
+  const showSkillPicker = Boolean(activeSkillTrigger) && (
+    plannerSkillsQuery.isLoading ||
+    plannerSkillsQuery.isError ||
+    skillSuggestions.length > 0 ||
+    platformSkills.length === 0
+  );
+
+  useEffect(() => {
+    setSelectedSkillIndex(0);
+  }, [activeSkillTrigger?.query, plannerSkillsQuery.data?.provider]);
+
+  useEffect(() => {
+    if (selectedSkillIndex < skillSuggestions.length) return;
+    setSelectedSkillIndex(Math.max(0, skillSuggestions.length - 1));
+  }, [selectedSkillIndex, skillSuggestions.length]);
 
   const addFiles = (files: File[]) => {
     if (files.length === 0) return;
@@ -92,7 +133,7 @@ export function SessionFileComposer({
       const uploadedFiles = attachments.length > 0
         ? await api.uploadProjectFiles(projectId, attachments.map((attachment) => attachment.file))
         : [];
-      const message = buildSessionComposerSubmitFromText({ content, uploadedFiles });
+      const message = buildSessionComposerSubmitFromText({ content, uploadedFiles, platformSkills });
       if (!message) return;
       onSendMessage(message);
       clearComposer();
@@ -113,6 +154,23 @@ export function SessionFileComposer({
     textareaRef.current?.focus();
   };
 
+  const updateCursorFromTextarea = () => {
+    setCursorPosition(textareaRef.current?.selectionStart ?? 0);
+  };
+
+  const insertSkill = (skill: PlatformSkill) => {
+    if (!activeSkillTrigger) return;
+    const nextContent = `${content.slice(0, activeSkillTrigger.start)}$${skill.name} ${content.slice(activeSkillTrigger.end)}`;
+    const nextCursor = activeSkillTrigger.start + skill.name.length + 2;
+    setContent(nextContent);
+    setCursorPosition(nextCursor);
+    setDismissedSkillTriggerKey(null);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
+
   return (
     <form
       className="deepsea-composer"
@@ -122,6 +180,16 @@ export function SessionFileComposer({
       }}
     >
       <div className="deepsea-composer__field">
+        {showSkillPicker && (
+          <SkillPicker
+            provider={plannerSkillsQuery.data?.provider ?? null}
+            loading={plannerSkillsQuery.isLoading}
+            error={plannerSkillsQuery.isError ? '读取 planner skills 失败' : null}
+            skills={skillSuggestions}
+            selectedIndex={selectedSkillIndex}
+            onSelect={insertSkill}
+          />
+        )}
         {attachments.length > 0 && (
           <AttachmentStrip
             attachments={attachments}
@@ -139,7 +207,13 @@ export function SessionFileComposer({
           aria-label="命令输入"
           disabled={isUploading}
           placeholder="输入消息，粘贴文件会上传到项目文件库"
-          onChange={(event) => setContent(event.currentTarget.value)}
+          onChange={(event) => {
+            setContent(event.currentTarget.value);
+            setCursorPosition(event.currentTarget.selectionStart);
+          }}
+          onClick={updateCursorFromTextarea}
+          onSelect={updateCursorFromTextarea}
+          onKeyUp={updateCursorFromTextarea}
           onPaste={(event) => {
             const files = filesFromClipboard(event.clipboardData);
             if (files.length === 0) return;
@@ -147,6 +221,32 @@ export function SessionFileComposer({
             addFiles(files);
           }}
           onKeyDown={(event) => {
+            if (showSkillPicker) {
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (skillSuggestions.length > 0) {
+                  setSelectedSkillIndex((index) => Math.min(skillSuggestions.length - 1, index + 1));
+                }
+                return;
+              }
+              if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (skillSuggestions.length > 0) {
+                  setSelectedSkillIndex((index) => Math.max(0, index - 1));
+                }
+                return;
+              }
+              if ((event.key === 'Enter' || event.key === 'Tab') && skillSuggestions[selectedSkillIndex]) {
+                event.preventDefault();
+                insertSkill(skillSuggestions[selectedSkillIndex]);
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                if (rawActiveSkillTriggerKey) setDismissedSkillTriggerKey(rawActiveSkillTriggerKey);
+                return;
+              }
+            }
             if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
             event.preventDefault();
             void submit();
@@ -154,7 +254,7 @@ export function SessionFileComposer({
         />
         <div className="deepsea-composer__tools">
           <Paperclip aria-hidden="true" />
-          <Hash aria-hidden="true" />
+          <span className="deepsea-composer__dollar" aria-hidden="true">$</span>
           <AlertTriangle aria-hidden="true" />
           <span className="deepsea-composer__upload-hint">
             {isUploading ? '上传中...' : '粘贴文件会上传到项目文件库'}
@@ -167,6 +267,51 @@ export function SessionFileComposer({
       </div>
       <AttachmentPreviewDialog preview={preview} onPreviewChange={setPreview} />
     </form>
+  );
+}
+
+function SkillPicker({
+  provider,
+  loading,
+  error,
+  skills,
+  selectedIndex,
+  onSelect,
+}: {
+  provider: string | null;
+  loading: boolean;
+  error: string | null;
+  skills: PlatformSkill[];
+  selectedIndex: number;
+  onSelect: (skill: PlatformSkill) => void;
+}): JSX.Element {
+  return (
+    <div className="deepsea-skill-picker" role="listbox" aria-label="Planner backend skills">
+      <div className="deepsea-skill-picker__header">
+        <span>Planner skills</span>
+        {provider && <strong>{provider}</strong>}
+      </div>
+      {loading && <div className="deepsea-skill-picker__state">读取 skills...</div>}
+      {!loading && error && <div className="deepsea-skill-picker__state">{error}</div>}
+      {!loading && !error && skills.length === 0 && <div className="deepsea-skill-picker__state">当前 planner backend 没有可用 skills</div>}
+      {!loading && !error && skills.map((skill, index) => (
+        <button
+          key={`${skill.provider}:${skill.name}`}
+          type="button"
+          role="option"
+          aria-selected={index === selectedIndex}
+          className={index === selectedIndex ? 'deepsea-skill-picker__item is-active' : 'deepsea-skill-picker__item'}
+          title={skill.description ?? skill.name}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            onSelect(skill);
+          }}
+        >
+          <span className="deepsea-skill-picker__name">${skill.name}</span>
+          {skill.description && <span className="deepsea-skill-picker__description">{skill.description}</span>}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -313,4 +458,47 @@ function filesFromClipboard(data: DataTransfer): File[] {
     .filter((item) => item.kind === 'file')
     .map((item) => item.getAsFile())
     .filter((file): file is File => file !== null);
+}
+
+function getActiveSkillTrigger(content: string, cursorPosition: number): ActiveSkillTrigger | null {
+  const cursor = Math.max(0, Math.min(cursorPosition, content.length));
+  const beforeCursor = content.slice(0, cursor);
+  const match = /(^|[\s([{，。！？、])\$([A-Za-z0-9._:-]*)$/u.exec(beforeCursor);
+  if (!match) return null;
+  const prefix = match[1] ?? '';
+  return {
+    start: match.index + prefix.length,
+    end: cursor,
+    query: match[2] ?? '',
+  };
+}
+
+function formatSkillTriggerKey(trigger: ActiveSkillTrigger): string {
+  return `${trigger.start}:${trigger.end}:${trigger.query}`;
+}
+
+function filterSkillSuggestions(skills: PlatformSkill[], query: string): PlatformSkill[] {
+  const needle = query.trim().toLowerCase();
+  const seen = new Set<string>();
+  return skills
+    .filter((skill) => {
+      if (!skill.valid) return false;
+      const key = `${skill.provider}:${skill.name.toLowerCase()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      if (!needle) return true;
+      return skill.name.toLowerCase().includes(needle) ||
+        (skill.description ?? '').toLowerCase().includes(needle);
+    })
+    .sort((left, right) => compareSkillSuggestion(left, right, needle))
+    .slice(0, MAX_SKILL_SUGGESTIONS);
+}
+
+function compareSkillSuggestion(left: PlatformSkill, right: PlatformSkill, needle: string): number {
+  if (needle) {
+    const leftStartsWith = left.name.toLowerCase().startsWith(needle);
+    const rightStartsWith = right.name.toLowerCase().startsWith(needle);
+    if (leftStartsWith !== rightStartsWith) return leftStartsWith ? -1 : 1;
+  }
+  return left.name.localeCompare(right.name);
 }

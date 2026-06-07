@@ -1665,16 +1665,6 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           });
           const autoDistillEnabled = tools.resolveRoomSettings(context.room.id)?.effective.auto_distill_enabled ?? true;
           if (autoDistillEnabled) {
-            const skillContext = await tools.buildSkillContext({
-              runtimeScopes: ['memory'],
-              projectId: context.project.id,
-              roomId: context.room.id,
-              message: [
-                context.task.title,
-                taskSummary,
-                acceptanceArtifact.content,
-              ].join('\n\n'),
-            });
             tools.distillTask({
               projectId: context.project.id,
               roomId: context.room.id,
@@ -1682,7 +1672,6 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
               taskTitle: context.task.title,
               taskSummary,
               sourceId: context.run.id,
-              skillContext,
             }).catch((err) => console.warn(`[distill] graph task distill error: ${(err as Error).message}`));
           }
         } catch (err) {
@@ -1806,17 +1795,6 @@ async function generatePlannerPlanForContext(
   tools: GraphTools,
   context: ReturnType<GraphTools['readWorkflowContext']>,
 ) {
-  const skillContext = await tools.buildSkillContext({
-    runtimeScopes: ['planner', 'workflow'],
-    projectId: context.project.id,
-    roomId: context.room.id,
-    message: [
-      context.task.title,
-      context.task.description ?? '',
-      context.workflowContext,
-      context.recentMessages.join('\n'),
-    ].filter(Boolean).join('\n\n'),
-  });
   return tools.generatePlan({
     projectName: context.project.name,
     projectPath: context.project.path,
@@ -1825,7 +1803,7 @@ async function generatePlannerPlanForContext(
     agents: context.agents,
     memories: context.memories ? [context.memories] : [],
     recentMessages: context.recentMessages,
-  }, { skillContext });
+  });
 }
 
 function selectAssignmentHintForPlanTask(

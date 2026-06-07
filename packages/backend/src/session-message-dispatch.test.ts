@@ -5,6 +5,9 @@ import { join } from 'node:path';
 import test, { afterEach } from 'node:test';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-session-dispatch-')), 'test.db');
+const platformSkillsHome = mkdtempSync(join(tmpdir(), 'openclaw-room-session-platform-skills-home-'));
+process.env.HOME = platformSkillsHome;
+process.env.CODEX_HOME = join(platformSkillsHome, '.codex');
 
 const { projectRepo } = await import('./repos/projects.js');
 const { fileRepo } = await import('./repos/files.js');
@@ -43,6 +46,92 @@ test('dispatchSessionUserMessage uses project Session Planner backend instead of
   assert.equal(run?.agent_id, 'planner');
   assert.equal(run?.provider, 'opencode');
   assert.match(run?.runtime_profile_snapshot ?? '', /"backend_source":"project"/);
+});
+
+test('dispatchSessionUserMessage injects explicit planner platform skill refs into runtime prompt', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Platform Skill Refs',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-platform-skills-')),
+  });
+  createPlatformSkill('codex', 'frontend-design', 'Frontend design workflow.');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Platform Skill Refs',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-platform-skill', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '优化会话输入框',
+    platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const metadata = JSON.parse(message.metadata ?? '{}') as {
+    platform_skill_refs?: Array<{ provider: string; name: string }>;
+  };
+  assert.deepEqual(metadata.platform_skill_refs, [{ provider: 'codex', name: 'frontend-design' }]);
+  assert.match(prompts[0] ?? '', /## Explicit Platform Skills/);
+  assert.match(prompts[0] ?? '', /\$frontend-design/);
+  assert.match(prompts[0] ?? '', /Frontend design workflow\./);
+});
+
+test('dispatchSessionUserMessage rejects platform skill refs outside planner backend', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Reject Foreign Platform Skill Provider',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-reject-platform-provider-')),
+  });
+  settingsRepo.updateProject(project.id, { session_planner_acp_backend: 'opencode' });
+  createPlatformSkill('codex', 'frontend-design', 'Frontend design workflow.');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Reject Foreign Platform Skill Provider',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  await assert.rejects(
+    () => dispatchSessionUserMessage({
+      sessionId: session.id,
+      content: '不要创建这条消息',
+      platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
+    }),
+    /platform skill provider must match planner backend/,
+  );
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+});
+
+test('dispatchSessionUserMessage rejects missing planner platform skill refs', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Reject Missing Platform Skill',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-reject-missing-platform-skill-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Reject Missing Platform Skill',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  await assert.rejects(
+    () => dispatchSessionUserMessage({
+      sessionId: session.id,
+      content: '不要创建这条消息',
+      platformSkillRefs: [{ provider: 'codex', name: 'missing-skill' }],
+    }),
+    /platform skill is not available/,
+  );
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
 });
 
 test('dispatchSessionUserMessage stores normalized file refs in message metadata', async () => {
@@ -270,3 +359,22 @@ test('dispatchSessionUserMessage injects uploaded text and image project files i
   assert.match(captured[0]?.prompt ?? '', /请读取这段内容/);
   assert.deepEqual(captured[0]?.imagePaths, [realpathSync(imagePath)]);
 });
+
+function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name: string, description: string): void {
+  const root = provider === 'codex'
+    ? join(process.env.CODEX_HOME!, 'skills')
+    : provider === 'claudecode'
+      ? join(platformSkillsHome, '.claude', 'skills')
+      : join(platformSkillsHome, '.config', 'opencode', 'skills');
+  const dir = join(root, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'SKILL.md'), [
+    '---',
+    `name: ${name}`,
+    `description: ${description}`,
+    '---',
+    '',
+    `Use ${name}.`,
+    '',
+  ].join('\n'));
+}

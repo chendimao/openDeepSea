@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, mkdtempSync, readlinkSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -14,6 +14,8 @@ process.env.OPENDEEPSEA_LOCAL_TOKEN = 'platform-routes-token';
 const LOCAL_TOKEN = process.env.OPENDEEPSEA_LOCAL_TOKEN;
 
 const { router } = await import('../routes.js');
+const { projectRepo } = await import('../repos/projects.js');
+const { settingsRepo } = await import('../repos/settings.js');
 const express = (await import('express')).default;
 
 const app = express();
@@ -71,6 +73,30 @@ test('platform skills routes list platforms and scan empty roots', async () => {
   const listRes = await request('/api/platform-skills/codex');
   assert.equal(listRes.status, 200);
   assert.deepEqual(await listRes.json(), []);
+});
+
+test('platform skills routes list only current session planner backend skills for a project', async () => {
+  const project = projectRepo.create({
+    name: 'Planner Platform Skill Route',
+    path: mkdtempSync(join(tmpdir(), 'opendeepsea-platform-planner-route-project-')),
+  });
+  settingsRepo.updateProject(project.id, { session_planner_acp_backend: 'opencode' });
+  createPlatformSkill('codex', 'planner-route-codex-only', 'Codex-only skill.');
+  createPlatformSkill('opencode', 'planner-route-opencode', 'OpenCode planner skill.');
+
+  const res = await request(`/api/platform-skills/session-planner/${project.id}`);
+  assert.equal(res.status, 200);
+  const body = await res.json() as {
+    provider: string;
+    skills: Array<{ provider: string; name: string; description: string | null; valid: boolean }>;
+  };
+  assert.equal(body.provider, 'opencode');
+  assert.equal(body.skills.every((skill) => skill.provider === 'opencode'), true);
+  assert.equal(body.skills.some((skill) => skill.name === 'planner-route-codex-only'), false);
+  const plannerSkill = body.skills.find((skill) => skill.name === 'planner-route-opencode');
+  assert.ok(plannerSkill);
+  assert.equal(plannerSkill.description, 'OpenCode planner skill.');
+  assert.equal(plannerSkill.valid, true);
 });
 
 test('platform skills routes search marketplace and install package to multiple platforms', async () => {
@@ -184,6 +210,25 @@ test('platform skills routes search marketplace and install package to multiple 
   assert.equal(lstatSync(updatedLinkPath).isSymbolicLink(), true);
   assert.notEqual(readlinkSync(updatedLinkPath), firstLinkTarget);
 });
+
+function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name: string, description: string): void {
+  const root = provider === 'codex'
+    ? join(process.env.CODEX_HOME!, 'skills')
+    : provider === 'claudecode'
+      ? join(testHome, '.claude', 'skills')
+      : join(testHome, '.config', 'opencode', 'skills');
+  const dir = join(root, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'SKILL.md'), [
+    '---',
+    `name: ${name}`,
+    `description: ${description}`,
+    '---',
+    '',
+    `Use ${name}.`,
+    '',
+  ].join('\n'));
+}
 
 test('platform skills routes list aggregated skills across providers', async () => {
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {

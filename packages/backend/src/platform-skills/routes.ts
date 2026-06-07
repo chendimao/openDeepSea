@@ -6,8 +6,9 @@ import { dirname, join } from 'node:path';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { validateLocalAccess } from '../local-access.js';
-import { writeSkillsShPackage } from '../skills/installer-runner.js';
-import { SkillsShClient } from '../skills/skills-sh-client.js';
+import { resolveSessionPlannerRuntime } from '../session-planner-runtime.js';
+import { writeSkillsShPackage } from './installer-runner.js';
+import { SkillsShClient } from './skills-sh-client.js';
 import {
   assertCanInstallDirectoryToPlatforms,
   getPlatformSkill,
@@ -116,6 +117,22 @@ platformSkillsRouter.post('/import-local', async (req, res) => {
 
 platformSkillsRouter.get('/', async (_req, res) => {
   res.json(await listPlatformSkillAggregates());
+});
+
+platformSkillsRouter.get('/session-planner/:projectId', async (req, res) => {
+  try {
+    const runtime = resolveSessionPlannerRuntime(req.params.projectId);
+    const skills = await listPlatformSkills(runtime.backend);
+    res.json({
+      provider: runtime.backend,
+      skills: skills.filter((skill) => skill.valid),
+    });
+  } catch (err) {
+    if ((err as Error).message === 'project not found') {
+      return res.status(404).json({ error: 'project not found' });
+    }
+    res.status(400).json({ error: (err as Error).message });
+  }
 });
 
 platformSkillsRouter.get('/:provider', async (req, res) => {

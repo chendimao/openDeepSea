@@ -11,7 +11,7 @@ import {
   getComposerAttachmentInteractionState,
   type SessionFileReferenceChip,
 } from './session-file-composer-model';
-import type { ProjectFile, WorkspaceSearchResult } from '../lib/types';
+import type { PlatformSkill, ProjectFile, WorkspaceSearchResult } from '../lib/types';
 import type { Segment } from '../components/prompt-area/types';
 
 test('buildSessionFileSuggestions groups source and library results', () => {
@@ -124,6 +124,35 @@ test('buildSessionComposerSubmitFromText serializes text and uploaded project fi
   });
 });
 
+test('buildSessionComposerSubmitFromText extracts planner platform skill refs from dollar tokens', () => {
+  assert.deepEqual(buildSessionComposerSubmitFromText({
+    content: '  $frontend-design 优化 SessionFileComposer，并再次使用 $FRONTEND-DESIGN  ',
+    platformSkills: [
+      createPlatformSkill({ provider: 'codex', name: 'frontend-design', description: 'Frontend workflow.' }),
+      createPlatformSkill({ provider: 'opencode', name: 'backend', description: 'Wrong backend.' }),
+    ],
+  }), {
+    content: '优化 SessionFileComposer，并再次使用',
+    workspaceFileRefs: [],
+    libraryFileRefs: [],
+    platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
+  });
+});
+
+test('buildSessionComposerSubmitFromText preserves user formatting while removing dollar skill tokens', () => {
+  assert.deepEqual(buildSessionComposerSubmitFromText({
+    content: '$frontend-design\n请保留代码缩进：\n  const value  = 1;',
+    platformSkills: [
+      createPlatformSkill({ provider: 'codex', name: 'frontend-design', description: 'Frontend workflow.' }),
+    ],
+  }), {
+    content: '请保留代码缩进：\n  const value  = 1;',
+    workspaceFileRefs: [],
+    libraryFileRefs: [],
+    platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
+  });
+});
+
 test('buildSessionComposerSubmitFromText allows attachment-only messages', () => {
   assert.deepEqual(buildSessionComposerSubmitFromText({
     content: '   ',
@@ -188,5 +217,21 @@ function createProjectFile(input: Partial<ProjectFile> & Pick<ProjectFile, 'id' 
     last_referenced_message_id: input.last_referenced_message_id ?? null,
     last_referenced_room_id: input.last_referenced_room_id ?? null,
     last_referenced_room_name: input.last_referenced_room_name ?? null,
+  };
+}
+
+function createPlatformSkill(input: Pick<PlatformSkill, 'provider' | 'name' | 'description'>): PlatformSkill {
+  return {
+    provider: input.provider,
+    name: input.name,
+    description: input.description,
+    path: `/skills/${input.name}`,
+    manifestPath: `/skills/${input.name}/SKILL.md`,
+    installMode: 'copy',
+    sourceLabel: null,
+    version: null,
+    lastModifiedAt: 1,
+    valid: true,
+    issues: [],
   };
 }

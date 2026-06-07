@@ -31,6 +31,10 @@ import type { HistoryRecord, Project, Session, SessionEvidenceEvent, SessionRun,
 const execFileAsync = promisify(execFile);
 
 const sessionFileRefListSchema = z.array(z.string().trim().min(1)).max(12).optional();
+const platformSkillRefSchema = z.object({
+  provider: z.enum(['codex', 'claudecode', 'opencode']),
+  name: z.string().trim().min(1),
+});
 
 const socketEventSchema = z.discriminatedUnion('type', [
   z.object({
@@ -46,6 +50,7 @@ const socketEventSchema = z.discriminatedUnion('type', [
     mode: z.enum(['ask', 'plan', 'code', 'debug', 'review']).optional(),
     workspaceFileRefs: sessionFileRefListSchema,
     libraryFileRefs: sessionFileRefListSchema,
+    platformSkillRefs: z.array(platformSkillRefSchema).max(8).optional(),
   }),
   z.object({
     type: z.literal('agent.run.pause'),
@@ -122,6 +127,7 @@ export function handleSessionSocketEvent(socket: WebSocket, event: WsClientEvent
         mode: parsed.data.mode,
         workspaceFileRefs: parsed.data.workspaceFileRefs,
         libraryFileRefs: parsed.data.libraryFileRefs,
+        platformSkillRefs: parsed.data.platformSkillRefs,
       }).catch((error) => {
         send(socket, { type: 'session_error', sessionId, error: (error as Error).message });
       });

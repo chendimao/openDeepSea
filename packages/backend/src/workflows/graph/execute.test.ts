@@ -78,7 +78,6 @@ test('execute node starts assigned ACP agent and records completed implementatio
     prompt: string;
   }> = [];
   const tools = createGraphTools({
-    buildSkillContext: async () => 'OpenDeepSea active skills for this runtime:\nSkill: should-not-reach-execute-acp',
     runAcpAgent: async (input) => {
       const runRow = agentRunRepo.create({
         room_id: room.id,

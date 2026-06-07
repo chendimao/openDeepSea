@@ -24,7 +24,6 @@ import {
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useI18n, type Locale, type MessageKey } from '../lib/i18n';
-import { SkillsSettingsPanel } from './SkillsSettingsPanel';
 import {
   createThemeMode,
   getThemeStyle,
@@ -111,7 +110,7 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   openai_api_key_preview: null,
 };
 
-type SystemSettingsCategory = 'general' | 'chat' | 'model' | 'skills';
+type SystemSettingsCategory = 'general' | 'chat' | 'model';
 
 type AiConfigDraft = {
   name: string;
@@ -448,12 +447,6 @@ function SystemSettingsForm({
       description: t('settings.modelSettingsDescription'),
       icon: Sparkles,
     },
-    {
-      value: 'skills',
-      title: t('settings.skills'),
-      description: t('settings.skillsDescription'),
-      icon: ShieldCheck,
-    },
   ];
   const activeCategoryMeta = categories.find((category) => category.value === activeCategory) ?? categories[0];
   const ActiveCategoryIcon = activeCategoryMeta.icon;
@@ -631,7 +624,6 @@ function SystemSettingsForm({
               </SubSettingSection>
             </div>
           )}
-          {activeCategory === 'skills' && <SkillsSettingsPanel />}
         </section>
       </div>
     </SettingsDialogBody>

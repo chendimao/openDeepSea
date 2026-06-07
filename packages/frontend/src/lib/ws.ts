@@ -6,6 +6,7 @@ import type {
   HistoryRecord,
   HistoryRecordStatus,
   Message,
+  PlatformSkillRef,
   RoomAgent,
   Session,
   SessionAgentEvent,
@@ -105,6 +106,7 @@ export type WsClientEvent =
       mode?: SessionMode;
       workspaceFileRefs?: string[];
       libraryFileRefs?: string[];
+      platformSkillRefs?: PlatformSkillRef[];
     }
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
@@ -305,6 +307,7 @@ class RoomSocket {
     mode?: SessionMode;
     workspaceFileRefs?: string[];
     libraryFileRefs?: string[];
+    platformSkillRefs?: PlatformSkillRef[];
   }): void {
     this.sendOrQueue({
       type: 'session.message.send',
@@ -314,6 +317,7 @@ class RoomSocket {
       ...(input.mode ? { mode: input.mode } : {}),
       ...(input.workspaceFileRefs && input.workspaceFileRefs.length > 0 ? { workspaceFileRefs: input.workspaceFileRefs } : {}),
       ...(input.libraryFileRefs && input.libraryFileRefs.length > 0 ? { libraryFileRefs: input.libraryFileRefs } : {}),
+      ...(input.platformSkillRefs && input.platformSkillRefs.length > 0 ? { platformSkillRefs: input.platformSkillRefs } : {}),
     });
   }
 
