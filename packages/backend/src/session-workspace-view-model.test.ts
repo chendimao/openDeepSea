@@ -700,6 +700,32 @@ test('buildSessionBottomStatus derives response and error metrics from runs', ()
   assert.equal(rows.indexStatus, 'unknown');
 });
 
+test('buildSessionBottomStatus uses session token usage summary over legacy evidence usage', () => {
+  const rows = buildSessionBottomStatus([], [{
+    id: 'legacy-usage',
+    session_id: 'session-1',
+    seq: 1,
+    event_type: 'status',
+    severity: 'info',
+    source_run_id: null,
+    source_message_id: null,
+    title: 'Legacy usage',
+    summary: null,
+    payload: { usage: { input_tokens: 1, output_tokens: 2 } },
+    created_at: Date.now(),
+  }], {
+    input: 150,
+    output: 30,
+    total: 180,
+  });
+
+  assert.deepEqual(rows.tokenUsage, {
+    input: 150,
+    output: 30,
+    total: 180,
+  });
+});
+
 function createAgentEvent(input: {
   sessionId: string;
   id: string;

@@ -48,6 +48,8 @@ export type {
   SessionRun,
   SessionRunStatus,
   SessionStatus,
+  SessionTokenUsageRecord,
+  SessionTokenUsageSummary,
   SessionToolRow,
   SessionWorkspacePayload,
   StatusSnapshot,
@@ -1346,6 +1348,11 @@ export type WsServerEvent =
   | { type: 'session_message:new'; sessionId: string; message: import('./session-types.js').SessionMessage }
   | { type: 'session_run:created'; sessionId: string; run: import('./session-types.js').SessionRun }
   | { type: 'session_run:updated'; sessionId: string; run: import('./session-types.js').SessionRun }
+  | {
+      type: 'session_bottom_status:snapshot';
+      sessionId: string;
+      bottomStatus: import('./session-types.js').SessionBottomStatus;
+    }
   | {
       type: 'session_run:stream';
       sessionId: string;

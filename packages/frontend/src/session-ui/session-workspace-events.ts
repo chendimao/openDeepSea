@@ -63,6 +63,12 @@ export function applySessionWorkspaceEvent(
       },
     };
   }
+  if (event.type === 'session_bottom_status:snapshot') {
+    return {
+      ...payload,
+      bottomStatus: event.bottomStatus,
+    };
+  }
   if (event.type === 'session_run:stream') {
     return {
       ...payload,

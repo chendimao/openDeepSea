@@ -9,6 +9,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-se
 const { projectRepo } = await import('./repos/projects.js');
 const { sessionRepo, sessionRunRepo, sessionAgentEventRepo } = await import('./repos/sessions.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
+const { sessionTokenUsageRepo } = await import('./repos/session-token-usage.js');
 const { runSessionAgent, setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 const { wsHub } = await import('./ws-hub.js');
 
@@ -359,6 +360,147 @@ test('runSessionAgent records raw ACP event tool calls as tool evidence', async 
   const rawToolEvidence = sessionEvidenceRepo.listBySession(session.id)
     .find((event) => event.payload.rawType === 'tool_call');
   assert.equal(rawToolEvidence?.event_type, 'tool_call');
+});
+
+test('runSessionAgent records token usage snapshots from ACP usage updates and broadcasts bottom status', async () => {
+  const sent: string[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send: (payload: string) => sent.push(payload),
+  } as unknown as import('ws').WebSocket;
+  const project = projectRepo.create({
+    name: 'runtime token usage project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-token-usage-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Token Usage',
+    mode: 'code',
+    provider: 'codex',
+    model: 'gpt-5.5',
+    workspace_path: project.path,
+  });
+  wsHub.subscribeSession(session.id, socket);
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk, onSession }) => {
+      onSession?.('acp-token-usage');
+      onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawType: 'usage_update',
+        rawEvent: {
+          method: 'session/update',
+          params: {
+            sessionId: 'acp-token-usage',
+            update: {
+              sessionUpdate: 'usage_update',
+              usage: {
+                input_tokens: 200,
+                output_tokens: 40,
+                total_tokens: 240,
+                input_tokens_details: { cached_tokens: 25 },
+                output_tokens_details: { reasoning_tokens: 12 },
+              },
+            },
+          },
+        },
+      });
+      return { exitCode: 0, sessionId: 'acp-token-usage', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    agentId: 'planner',
+    prompt: '继续',
+    provider: 'codex',
+    model: 'gpt-5.5',
+  });
+
+  const usageRows = sessionTokenUsageRepo.listBySession(session.id);
+  assert.equal(usageRows.length, 1);
+  assert.equal(usageRows[0]?.run_id, run.id);
+  assert.equal(usageRows[0]?.agent_id, 'planner');
+  assert.equal(usageRows[0]?.provider, 'codex');
+  assert.equal(usageRows[0]?.model, 'gpt-5.5');
+  assert.equal(usageRows[0]?.input_tokens, 200);
+  assert.equal(usageRows[0]?.output_tokens, 40);
+  assert.equal(usageRows[0]?.total_tokens, 240);
+  assert.equal(usageRows[0]?.cached_input_tokens, 25);
+  assert.equal(usageRows[0]?.reasoning_tokens, 12);
+
+  const events = sent.map((payload) =>
+    JSON.parse(payload) as { type: string; bottomStatus?: { tokenUsage: { input: number; output: number; total: number } | null } }
+  );
+  const bottomStatus = events.find((event) => event.type === 'session_bottom_status:snapshot');
+  assert.deepEqual(bottomStatus?.bottomStatus?.tokenUsage, {
+    input: 200,
+    output: 40,
+    total: 240,
+  });
+  wsHub.removeSocket(socket);
+});
+
+test('runSessionAgent includes Anthropic cache token fields in input usage totals', async () => {
+  const project = projectRepo.create({
+    name: 'runtime anthropic token usage project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-anthropic-token-usage-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Anthropic Token Usage',
+    mode: 'code',
+    provider: 'claudecode',
+    model: 'claude-sonnet-4-5',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'claudecode',
+    listSessions: async () => [],
+    invoke: async ({ onChunk, onSession }) => {
+      onSession?.('acp-anthropic-token-usage');
+      onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawType: 'message_delta',
+        rawEvent: {
+          message: {
+            usage: {
+              input_tokens: 80,
+              cache_creation_input_tokens: 30,
+              cache_read_input_tokens: 20,
+              output_tokens: 25,
+            },
+          },
+        },
+      });
+      return { exitCode: 0, sessionId: 'acp-anthropic-token-usage', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    agentId: 'reviewer',
+    prompt: '继续',
+    provider: 'claudecode',
+    model: 'claude-sonnet-4-5',
+  });
+
+  const usageRows = sessionTokenUsageRepo.listBySession(session.id);
+
+  assert.equal(usageRows.length, 1);
+  assert.equal(usageRows[0]?.run_id, run.id);
+  assert.equal(usageRows[0]?.input_tokens, 130);
+  assert.equal(usageRows[0]?.output_tokens, 25);
+  assert.equal(usageRows[0]?.total_tokens, 155);
+  assert.equal(usageRows[0]?.cached_input_tokens, 50);
 });
 
 test('runSessionAgent prefers normalized tool event when raw type is generic', async () => {

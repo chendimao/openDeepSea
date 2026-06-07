@@ -20,6 +20,7 @@ import { sessionContractRepo } from './repos/session-contracts.js';
 import { sessionContextRepo } from './repos/session-context.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
+import { sessionTokenUsageRepo } from './repos/session-token-usage.js';
 import { buildContextManifestDraft } from './session-context.js';
 import { buildStatusSnapshot } from './session-status.js';
 import { broadcastActiveSessionRemove, broadcastActiveSessionUpsert } from './session-active-broadcast.js';
@@ -200,7 +201,11 @@ export function buildWorkspacePayload(project: Project, activeSession: Session):
     context: sessionContextRepo.getLatestBySession(activeSession.id) ?? null,
     evidence,
     projectSwitcher: buildSessionProjectSwitcher(project.id),
-    bottomStatus: buildSessionBottomStatus(detail.runs, detail.evidence),
+    bottomStatus: buildSessionBottomStatus(
+      detail.runs,
+      detail.evidence,
+      sessionTokenUsageRepo.summarizeBySession(activeSession.id),
+    ),
     contract: sessionContractRepo.getOrCreate(activeSession),
     toolRows: inspector.toolRows,
     diffRows: inspector.diffRows,

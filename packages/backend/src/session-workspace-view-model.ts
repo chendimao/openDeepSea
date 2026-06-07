@@ -13,6 +13,7 @@ import type {
   SessionPlanItemStatus,
   SessionProjectSwitcher,
   SessionRun,
+  SessionTokenUsageSummary,
   SessionToolRow,
 } from './types.js';
 import { historyRecordRepo } from './repos/history-records.js';
@@ -71,7 +72,11 @@ function buildRecentProjectSessions(project: Project): SessionProjectSwitcher['p
     .slice(0, 3);
 }
 
-export function buildSessionBottomStatus(runs: SessionRun[], evidence: SessionEvidenceEvent[]): SessionBottomStatus {
+export function buildSessionBottomStatus(
+  runs: SessionRun[],
+  evidence: SessionEvidenceEvent[],
+  tokenUsageSummary: SessionTokenUsageSummary | null = null,
+): SessionBottomStatus {
   const recentRuns = runs.slice(-20);
   const lastCompleted = [...recentRuns].reverse().find((run) => run.completed_at !== null && run.started_at);
   const failedCount = recentRuns.filter((run) => run.status === 'failed').length;
@@ -86,7 +91,7 @@ export function buildSessionBottomStatus(runs: SessionRun[], evidence: SessionEv
       : null,
     errorRate: recentRuns.length > 0 ? failedCount / recentRuns.length : 0,
     networkLatencyMs: null,
-    tokenUsage: collectTokenUsage(evidence),
+    tokenUsage: tokenUsageSummary ?? collectTokenUsage(evidence),
   };
 }
 

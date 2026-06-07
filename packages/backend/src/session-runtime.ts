@@ -2,6 +2,7 @@ import { getAdapter } from './acp/index.js';
 import type { AcpStreamChannel, AcpStreamChunk, SessionAdapter } from './acp/types.js';
 import { projectRepo } from './repos/projects.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
+import { sessionTokenUsageRepo } from './repos/session-token-usage.js';
 import {
   DEFAULT_SESSION_AGENT_ID,
   sessionAgentEventRepo,
@@ -12,7 +13,7 @@ import {
 import { runRegistry } from './run-registry.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import type { SessionAgentEventChannel } from './session-types.js';
-import { buildSessionInspectorSnapshot } from './session-workspace-view-model.js';
+import { buildSessionBottomStatus, buildSessionInspectorSnapshot } from './session-workspace-view-model.js';
 import { wsHub } from './ws-hub.js';
 import type {
   AcpBackend,
@@ -210,6 +211,8 @@ export function recordSessionChunk(input: {
     agentEvent: streamEvent,
   });
 
+  recordTokenUsageSnapshot(input);
+
   const evidenceType = resolveEvidenceType(input.chunk);
   if (!evidenceType) return;
   const event = sessionEvidenceRepo.create({
@@ -233,6 +236,147 @@ export function recordSessionChunk(input: {
   if (shouldBroadcastInspectorSnapshot(evidenceType)) {
     broadcastSessionInspectorSnapshot(input.sessionId);
   }
+}
+
+function recordTokenUsageSnapshot(input: {
+  sessionId: string;
+  agentId: string;
+  runId: string;
+  chunk: AcpStreamChunk;
+}): void {
+  const usage = extractTokenUsageFromChunk(input.chunk);
+  if (!usage) return;
+  const run = sessionRunRepo.get(input.runId);
+  sessionTokenUsageRepo.create({
+    session_id: input.sessionId,
+    run_id: input.runId,
+    agent_id: run?.agent_id ?? input.agentId,
+    provider: run?.provider ?? null,
+    model: run?.model ?? null,
+    input_tokens: usage.inputTokens,
+    output_tokens: usage.outputTokens,
+    total_tokens: usage.totalTokens,
+    cached_input_tokens: usage.cachedInputTokens,
+    reasoning_tokens: usage.reasoningTokens,
+    source: 'provider_usage',
+    is_final: usage.isFinal,
+    raw_payload: usage.rawPayload,
+  });
+  broadcastSessionBottomStatus(input.sessionId);
+}
+
+function extractTokenUsageFromChunk(chunk: AcpStreamChunk): {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedInputTokens: number | null;
+  reasoningTokens: number | null;
+  isFinal: boolean;
+  rawPayload: Record<string, unknown>;
+} | null {
+  const candidate = findUsageCandidate([
+    chunk.event?.payload,
+    chunk.event,
+    chunk.rawEvent,
+  ]);
+  if (!candidate) return null;
+  const inputTokens = firstTokenNumber(candidate, ['input_tokens', 'inputTokens', 'prompt_tokens', 'promptTokens', 'input']);
+  const outputTokens = firstTokenNumber(candidate, ['output_tokens', 'outputTokens', 'completion_tokens', 'completionTokens', 'output']);
+  const totalTokens = firstTokenNumber(candidate, ['total_tokens', 'totalTokens', 'total']);
+  const inputDetails = record(candidate['input_tokens_details']) ?? record(candidate['inputTokenDetails']);
+  const outputDetails = record(candidate['output_tokens_details']) ?? record(candidate['outputTokenDetails']);
+  const cacheReadInputTokens = firstTokenNumber(candidate, [
+    'cache_read_input_tokens',
+    'cacheReadInputTokens',
+  ]);
+  const cacheCreationInputTokens = firstTokenNumber(candidate, [
+    'cache_creation_input_tokens',
+    'cacheCreationInputTokens',
+  ]);
+  const cachedInputTokens = firstTokenNumber(candidate, [
+    'cached_input_tokens',
+    'cachedInputTokens',
+  ]) ?? sumTokenNumbers([cacheReadInputTokens, cacheCreationInputTokens])
+    ?? firstTokenNumber(inputDetails, ['cached_tokens', 'cachedTokens']);
+  const reasoningTokens = firstTokenNumber(candidate, ['reasoning_tokens', 'reasoningTokens'])
+    ?? firstTokenNumber(outputDetails, ['reasoning_tokens', 'reasoningTokens']);
+  const normalizedInput = normalizeInputTokens(inputTokens, cacheReadInputTokens, cacheCreationInputTokens);
+  const normalizedOutput = outputTokens ?? 0;
+  const normalizedTotal = totalTokens ?? normalizedInput + normalizedOutput;
+  if (normalizedTotal <= 0) return null;
+
+  return {
+    inputTokens: normalizedInput,
+    outputTokens: normalizedOutput,
+    totalTokens: normalizedTotal,
+    cachedInputTokens,
+    reasoningTokens,
+    isFinal: chunk.rawType === 'usage_update' ||
+      candidate['is_final'] === true ||
+      candidate['isFinal'] === true ||
+      candidate['final'] === true,
+    rawPayload: {
+      rawType: chunk.rawType ?? null,
+      usage: candidate,
+    },
+  };
+}
+
+function findUsageCandidate(values: unknown[]): Record<string, unknown> | null {
+  const queue = values
+    .map(record)
+    .filter((value): value is Record<string, unknown> => value !== null);
+  const seen = new Set<Record<string, unknown>>();
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (seen.has(current)) continue;
+    seen.add(current);
+    if (hasTokenUsageShape(current)) return current;
+    for (const value of Object.values(current)) {
+      const child = record(value);
+      if (child) queue.push(child);
+    }
+  }
+  return null;
+}
+
+function hasTokenUsageShape(value: Record<string, unknown>): boolean {
+  return firstTokenNumber(value, [
+    'input_tokens',
+    'inputTokens',
+    'prompt_tokens',
+    'promptTokens',
+    'output_tokens',
+    'outputTokens',
+    'completion_tokens',
+    'completionTokens',
+    'total_tokens',
+    'totalTokens',
+  ]) !== null;
+}
+
+function firstTokenNumber(recordValue: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!recordValue) return null;
+  for (const key of keys) {
+    const value = recordValue[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return Math.round(value);
+  }
+  return null;
+}
+
+function normalizeInputTokens(
+  inputTokens: number | null,
+  cacheReadInputTokens: number | null,
+  cacheCreationInputTokens: number | null,
+): number {
+  const baseInputTokens = inputTokens ?? 0;
+  const anthropicCacheTokens = sumTokenNumbers([cacheReadInputTokens, cacheCreationInputTokens]) ?? 0;
+  return baseInputTokens + anthropicCacheTokens;
+}
+
+function sumTokenNumbers(values: Array<number | null>): number | null {
+  const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  return total > 0 ? total : null;
 }
 
 function finishSessionRun(input: {
@@ -405,6 +549,17 @@ function shouldBroadcastInspectorSnapshot(eventType: SessionEvidenceType): boole
     eventType === 'browser_check';
 }
 
+function broadcastSessionBottomStatus(sessionId: string): void {
+  const runs = sessionRunRepo.listBySession(sessionId);
+  const evidence = sessionEvidenceRepo.listBySession(sessionId);
+  const bottomStatus = buildSessionBottomStatus(runs, evidence, sessionTokenUsageRepo.summarizeBySession(sessionId));
+  wsHub.broadcastSession(sessionId, {
+    type: 'session_bottom_status:snapshot',
+    sessionId,
+    bottomStatus,
+  });
+}
+
 function broadcastSessionInspectorSnapshot(sessionId: string): void {
   const runs = sessionRunRepo.listBySession(sessionId);
   const evidence = sessionEvidenceRepo.listBySession(sessionId);
@@ -429,4 +584,10 @@ function buildEvidenceTitle(chunk: AcpStreamChunk): string {
 function trimEvidenceText(text: string): string {
   const lines = text.split('\n').slice(0, MAX_EVIDENCE_LINES).join('\n');
   return lines.length > STREAM_PAYLOAD_LIMIT ? lines.slice(0, STREAM_PAYLOAD_LIMIT) : lines;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }

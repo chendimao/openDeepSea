@@ -192,7 +192,7 @@ function BottomStatusBar({
       <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
         <FileText aria-hidden="true" />
-        <span className="deepsea-bottom-status__label">API 消耗</span>
+        <span className="deepsea-bottom-status__label">Token 消耗</span>
         <strong>{status.tokenUsage ? `${status.tokenUsage.total.toLocaleString()} tokens` : '--'}</strong>
       </div>
       <span className="deepsea-bottom-status__divider" />

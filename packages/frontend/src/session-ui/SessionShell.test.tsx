@@ -92,6 +92,21 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /当前状态/);
 });
 
+test('SessionShell renders current session token usage in the bottom status bar', () => {
+  const payload = createPayload();
+  payload.bottomStatus.tokenUsage = {
+    input: 10_000,
+    output: 2_345,
+    total: 12_345,
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /Token 消耗/);
+  assert.match(html, /12,345 tokens/);
+  assert.doesNotMatch(html, /API 消耗/);
+});
+
 test('SessionShell renders tool rows as detail buttons', () => {
   const html = renderSessionShell(createPayload());
 

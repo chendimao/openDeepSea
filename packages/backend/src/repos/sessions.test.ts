@@ -19,6 +19,7 @@ const { sessionEvidenceRepo } = await import('./session-evidence.js');
 const { sessionContextRepo } = await import('./session-context.js');
 const { sessionCompactionRepo } = await import('./session-compactions.js');
 const { sessionCheckpointRepo } = await import('./session-checkpoints.js');
+const { sessionTokenUsageRepo } = await import('./session-token-usage.js');
 
 test('session schema creates all new tables', () => {
   const rows = db.prepare(`
@@ -33,6 +34,7 @@ test('session schema creates all new tables', () => {
         'session_context_sources',
         'session_compactions',
         'session_evidence_events',
+        'session_token_usage',
         'session_checkpoints',
         'history_records'
       )
@@ -49,6 +51,7 @@ test('session schema creates all new tables', () => {
     'session_messages',
     'session_plan_items',
     'session_runs',
+    'session_token_usage',
     'sessions',
   ]);
 });
@@ -62,6 +65,8 @@ test('session schema creates the primary lookup indexes', () => {
         'idx_session_messages_session',
         'idx_session_runs_session',
         'idx_session_evidence_session',
+        'idx_session_token_usage_session',
+        'idx_session_token_usage_run',
         'idx_history_project'
       )
     ORDER BY name
@@ -72,8 +77,83 @@ test('session schema creates the primary lookup indexes', () => {
     'idx_session_evidence_session',
     'idx_session_messages_session',
     'idx_session_runs_session',
+    'idx_session_token_usage_run',
+    'idx_session_token_usage_session',
     'idx_sessions_project_status_updated',
   ]);
+});
+
+test('sessionTokenUsageRepo summarizes latest token usage snapshot per run', () => {
+  const project = projectRepo.create({
+    name: 'Token Usage Project',
+    path: mkdtempSync(join(tmpdir(), 'token-usage-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Token Usage Session',
+  });
+  const firstRun = sessionRunRepo.create({
+    session_id: session.id,
+    provider: 'codex',
+    model: 'gpt-5.5',
+    mode: 'code',
+    prompt: 'first',
+  });
+  const secondRun = sessionRunRepo.create({
+    session_id: session.id,
+    provider: 'codex',
+    model: 'gpt-5.5',
+    mode: 'code',
+    prompt: 'second',
+  });
+
+  sessionTokenUsageRepo.create({
+    session_id: session.id,
+    run_id: firstRun.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    model: 'gpt-5.5',
+    input_tokens: 100,
+    output_tokens: 20,
+    total_tokens: 120,
+    source: 'provider_usage',
+    raw_payload: { usage: 'first partial' },
+  });
+  sessionTokenUsageRepo.create({
+    session_id: session.id,
+    run_id: firstRun.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    model: 'gpt-5.5',
+    input_tokens: 150,
+    output_tokens: 30,
+    total_tokens: 180,
+    source: 'provider_usage',
+    is_final: true,
+    raw_payload: { usage: 'first final' },
+  });
+  sessionTokenUsageRepo.create({
+    session_id: session.id,
+    run_id: secondRun.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    model: 'gpt-5.5',
+    input_tokens: 70,
+    output_tokens: 25,
+    total_tokens: 95,
+    source: 'provider_usage',
+    is_final: true,
+    raw_payload: { usage: 'second final' },
+  });
+
+  const summary = sessionTokenUsageRepo.summarizeBySession(session.id);
+
+  assert.deepEqual(summary, {
+    input: 220,
+    output: 55,
+    total: 275,
+  });
+  sessionRepo.close(session.id);
 });
 
 test('session schema creates agent runtime and event tables', () => {

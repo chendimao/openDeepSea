@@ -78,6 +78,69 @@ test('applySessionWorkspaceEvent appends activity chunks to activity log', () =>
   assert.equal(next.activeSession.agentEvents[0]?.channel, 'activity');
 });
 
+test('applySessionWorkspaceEvent updates bottom status token usage snapshot', () => {
+  const payload = createPayload('session-current');
+  payload.bottomStatus = {
+    health: 'ok',
+    healthLabel: '良好',
+    indexStatus: 'unknown',
+    indexLabel: '未接入索引',
+    lastResponseMs: null,
+    errorRate: 0,
+    networkLatencyMs: null,
+    tokenUsage: null,
+  };
+  const event = {
+    type: 'session_bottom_status:snapshot',
+    sessionId: 'session-current',
+    bottomStatus: {
+      health: 'ok',
+      healthLabel: '良好',
+      indexStatus: 'unknown',
+      indexLabel: '未接入索引',
+      lastResponseMs: 1200,
+      errorRate: 0,
+      networkLatencyMs: null,
+      tokenUsage: { input: 200, output: 40, total: 240 },
+    },
+  } as WsServerEvent;
+
+  const next = applySessionWorkspaceEvent(payload, event);
+
+  assert.deepEqual(next.bottomStatus.tokenUsage, { input: 200, output: 40, total: 240 });
+  assert.equal(next.bottomStatus.lastResponseMs, 1200);
+});
+
+test('applySessionWorkspaceEvent ignores bottom status snapshots for another session', () => {
+  const payload = createPayload('session-current');
+  payload.bottomStatus = {
+    health: 'ok',
+    healthLabel: '良好',
+    indexStatus: 'unknown',
+    indexLabel: '未接入索引',
+    lastResponseMs: null,
+    errorRate: 0,
+    networkLatencyMs: null,
+    tokenUsage: null,
+  };
+  const event = {
+    type: 'session_bottom_status:snapshot',
+    sessionId: 'session-other',
+    bottomStatus: {
+      health: 'ok',
+      healthLabel: '良好',
+      indexStatus: 'unknown',
+      indexLabel: '未接入索引',
+      lastResponseMs: 1200,
+      errorRate: 0,
+      networkLatencyMs: null,
+      tokenUsage: { input: 200, output: 40, total: 240 },
+    },
+  } as WsServerEvent;
+
+  assert.equal(applySessionWorkspaceEvent(payload, event), payload);
+});
+
 test('applySessionWorkspaceEvent appends empty ACP agent events from stream envelope', () => {
   const payload = createPayload('session-current');
   const event: WsServerEvent = {

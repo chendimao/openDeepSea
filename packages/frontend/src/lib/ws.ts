@@ -18,6 +18,7 @@ import type {
   SessionPlanItem,
   SessionRun,
   SessionToolRow,
+  SessionBottomStatus,
   SessionWorkspacePayload,
   Task,
   TaskArtifact,
@@ -66,6 +67,7 @@ export type WsServerEvent =
   | { type: 'session_message:new'; sessionId: string; message: SessionMessage }
   | { type: 'session_run:created'; sessionId: string; run: SessionRun }
   | { type: 'session_run:updated'; sessionId: string; run: SessionRun }
+  | { type: 'session_bottom_status:snapshot'; sessionId: string; bottomStatus: SessionBottomStatus }
   | {
       type: 'session_run:stream';
       sessionId: string;

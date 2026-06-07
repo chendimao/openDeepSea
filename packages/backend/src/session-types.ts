@@ -138,6 +138,30 @@ export interface SessionRun {
   completed_at: number | null;
 }
 
+export interface SessionTokenUsageRecord {
+  id: string;
+  session_id: string;
+  run_id: string | null;
+  agent_id: string | null;
+  provider: AcpBackend | null;
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cached_input_tokens: number | null;
+  reasoning_tokens: number | null;
+  source: string;
+  is_final: 0 | 1;
+  raw_payload: Record<string, unknown>;
+  created_at: number;
+}
+
+export interface SessionTokenUsageSummary {
+  input: number;
+  output: number;
+  total: number;
+}
+
 export interface SessionAgentRuntime {
   id: string;
   session_id: string;

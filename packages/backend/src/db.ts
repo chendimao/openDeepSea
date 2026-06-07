@@ -475,6 +475,32 @@ CREATE TABLE IF NOT EXISTS session_runs (
 CREATE INDEX IF NOT EXISTS idx_session_runs_session ON session_runs(session_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_session_runs_status ON session_runs(status, updated_at);
 
+CREATE TABLE IF NOT EXISTS session_token_usage (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  run_id TEXT,
+  agent_id TEXT,
+  provider TEXT,
+  model TEXT,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  cached_input_tokens INTEGER,
+  reasoning_tokens INTEGER,
+  source TEXT NOT NULL,
+  is_final INTEGER NOT NULL DEFAULT 0 CHECK (is_final IN (0, 1)),
+  raw_payload TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (run_id) REFERENCES session_runs(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_token_usage_session
+  ON session_token_usage(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_session_token_usage_run
+  ON session_token_usage(run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_session_token_usage_provider
+  ON session_token_usage(provider, model, created_at);
+
 CREATE TABLE IF NOT EXISTS session_agent_runtimes (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
