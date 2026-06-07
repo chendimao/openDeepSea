@@ -1,3 +1,5 @@
+import type { ImageGenerationWsEvent } from './image-generation/types.js';
+
 export interface Project {
   id: string;
   name: string;
@@ -1304,6 +1306,7 @@ export interface CliSessionSummary {
 }
 
 export type WsServerEvent =
+  | ImageGenerationWsEvent
   | { type: 'message:new'; roomId: string; message: Message }
   | { type: 'task_event:new'; roomId: string; event: TaskEvent }
   | { type: 'task:activated'; roomId: string; taskId: string }

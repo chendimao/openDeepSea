@@ -288,6 +288,102 @@ CREATE TABLE IF NOT EXISTS resource_assets (
 );
 CREATE INDEX IF NOT EXISTS idx_resource_assets_project ON resource_assets(project_id, asset_type, group_key, created_at);
 CREATE INDEX IF NOT EXISTS idx_resource_assets_source_message ON resource_assets(source_message_id);
+
+CREATE TABLE IF NOT EXISTS image_provider_profiles (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  api_key TEXT NOT NULL,
+  model TEXT NOT NULL,
+  compat_profile_id TEXT NOT NULL,
+  supports_count_parameter INTEGER NOT NULL DEFAULT 1 CHECK (supports_count_parameter IN (0, 1)),
+  active INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0, 1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_image_provider_profiles_project
+  ON image_provider_profiles(project_id, deleted_at, active, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_image_provider_profiles_project_name
+  ON image_provider_profiles(project_id, lower(name))
+  WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_image_provider_profiles_one_active
+  ON image_provider_profiles(project_id)
+  WHERE active = 1 AND deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS image_generation_jobs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  room_id TEXT,
+  session_id TEXT,
+  source_message_id TEXT,
+  source_agent_id TEXT,
+  source_task_id TEXT,
+  provider_profile_id TEXT NOT NULL,
+  workflow TEXT NOT NULL CHECK (workflow IN ('generate', 'image-to-image')),
+  prompt TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  quality TEXT NOT NULL,
+  size TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'canceling', 'completed', 'failed', 'canceled')),
+  message TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  completed_at INTEGER,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+  FOREIGN KEY (provider_profile_id) REFERENCES image_provider_profiles(id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_image_generation_jobs_project
+  ON image_generation_jobs(project_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_image_generation_jobs_session
+  ON image_generation_jobs(session_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_image_generation_jobs_room
+  ON image_generation_jobs(room_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS image_generation_outputs (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  file_id TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (job_id) REFERENCES image_generation_jobs(id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+  UNIQUE (job_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_image_generation_outputs_job
+  ON image_generation_outputs(job_id, slot);
+
+CREATE TABLE IF NOT EXISTS image_generation_source_images (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  file_id TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  origin_job_id TEXT,
+  origin_output_id TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (job_id) REFERENCES image_generation_jobs(id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE RESTRICT,
+  FOREIGN KEY (origin_job_id) REFERENCES image_generation_jobs(id) ON DELETE SET NULL,
+  FOREIGN KEY (origin_output_id) REFERENCES image_generation_outputs(id) ON DELETE SET NULL,
+  UNIQUE (job_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_image_generation_source_images_job
+  ON image_generation_source_images(job_id, slot);
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
