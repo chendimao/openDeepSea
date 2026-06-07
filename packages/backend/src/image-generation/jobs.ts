@@ -226,6 +226,7 @@ function listOutputs(jobId: string): ImageGenerationOutput[] {
 function addSourceImage(input: ImageGenerationSourceImageCreateInput): ImageGenerationSourceImage {
   const job = requireJob(input.job_id);
   assertFileBelongsToJobProject(input.file_id, job.project_id);
+  assertSourceImageLineageBelongsToProject(input, job.project_id);
   const id = nanoid(16);
   db.prepare(
     `INSERT INTO image_generation_source_images (
@@ -320,5 +321,40 @@ function assertFileBelongsToJobProject(fileId: string, projectId: string): void 
   }
   if (file.project_id !== projectId) {
     throw new Error('image generation file project mismatch');
+  }
+}
+
+function assertSourceImageLineageBelongsToProject(
+  input: ImageGenerationSourceImageCreateInput,
+  projectId: string,
+): void {
+  if (input.origin_job_id) {
+    const originJob = requireJob(input.origin_job_id);
+    if (originJob.project_id !== projectId) {
+      throw new Error('image generation origin job project mismatch');
+    }
+  }
+
+  if (!input.origin_output_id) return;
+
+  const originOutput = db
+    .prepare(
+      `SELECT image_generation_outputs.file_id, image_generation_outputs.job_id, image_generation_jobs.project_id
+       FROM image_generation_outputs
+       JOIN image_generation_jobs ON image_generation_jobs.id = image_generation_outputs.job_id
+       WHERE image_generation_outputs.id = ?`,
+    )
+    .get(input.origin_output_id) as { file_id: string; job_id: string; project_id: string } | undefined;
+  if (!originOutput) {
+    throw new Error('image generation origin output not found');
+  }
+  if (originOutput.project_id !== projectId) {
+    throw new Error('image generation origin output project mismatch');
+  }
+  if (input.origin_job_id && originOutput.job_id !== input.origin_job_id) {
+    throw new Error('image generation origin output job mismatch');
+  }
+  if (originOutput.file_id !== input.file_id) {
+    throw new Error('image generation origin output file mismatch');
   }
 }
