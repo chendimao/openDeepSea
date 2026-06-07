@@ -289,17 +289,32 @@ test('SessionShell expands the current project by default and collapses other pr
   assert.match(html, /data-project-session-row="true"/);
 });
 
-test('SessionShell renders project row actions as enabled menu buttons', () => {
+test('SessionShell hides project-level actions for orphan fallback projects', () => {
   const html = renderSessionShell(createPayload());
 
   assert.match(html, /aria-label="打开 OpenClaw 项目操作菜单"/);
   assert.match(html, /aria-label="新建 OpenClaw 会话"/);
-  assert.match(html, /编辑名称/);
-  assert.match(html, /移除/);
+  assert.doesNotMatch(html, /aria-label="打开 AnotherProject 项目操作菜单"/);
+  assert.doesNotMatch(html, /aria-label="新建 AnotherProject 会话"/);
+});
+
+test('SessionShell uses Radix project action menu with only rename and remove items', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(sessionShellViewSource, /import \* as DropdownMenu from '@radix-ui\/react-dropdown-menu'/);
+  assert.match(sessionShellViewSource, /<DropdownMenu\.Root/);
+  assert.match(sessionShellViewSource, /<DropdownMenu\.Trigger asChild>/);
+  assert.match(sessionShellViewSource, /<DropdownMenu\.Item/);
+  assert.match(sessionShellViewSource, /编辑名称/);
+  assert.match(sessionShellViewSource, /移除/);
   assert.doesNotMatch(html, /在“访达”中打开/);
   assert.doesNotMatch(html, /创建永久工作树/);
   assert.doesNotMatch(html, /归档聊天/);
-  assert.doesNotMatch(html, /data-disabled="true"/);
+  assert.doesNotMatch(sessionShellViewSource, /data-disabled="true"/);
+  assert.doesNotMatch(sessionShellViewSource, /<div\s+className="deepsea-project-node__menu"/);
+  assert.doesNotMatch(sessionShellViewSource, /aria-hidden={projectMenuOpen/);
+  assert.doesNotMatch(sessionShellViewSource, /data-state={projectMenuOpen/);
+  assert.doesNotMatch(sessionShellViewSource, /role="menuitem"/);
 });
 
 test('SessionShell renders project row without a collapse icon before the project name', () => {

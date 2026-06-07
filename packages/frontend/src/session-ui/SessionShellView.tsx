@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
@@ -516,56 +517,65 @@ function ProjectSessionTreeRail({
                     <strong>{project.name}</strong>
                   </span>
                 </button>
-                <div className="deepsea-project-node__actions">
-                  <button
-                    type="button"
-                    className="deepsea-project-node__icon-button"
-                    aria-expanded={projectMenuOpen}
-                    aria-haspopup="menu"
-                    aria-label={`打开 ${project.name} 项目操作菜单`}
-                    onClick={() => setOpenProjectMenuId((current) => (current === project.id ? null : project.id))}
-                  >
-                    <Ellipsis aria-hidden="true" />
-                  </button>
-                  <div
-                    className="deepsea-project-node__menu"
-                    data-state={projectMenuOpen ? 'open' : 'closed'}
-                    role="menu"
-                    aria-hidden={projectMenuOpen ? undefined : true}
-                    aria-label={`${project.name} 项目操作`}
-                  >
-                    {projectActionMenuItems.map((item) => {
-                      const Icon = item.icon;
-                      return (
+                {project.sortable ? (
+                  <div className="deepsea-project-node__actions">
+                    <DropdownMenu.Root
+                      open={projectMenuOpen}
+                      onOpenChange={(open) => setOpenProjectMenuId(open ? project.id : null)}
+                    >
+                      <DropdownMenu.Trigger asChild>
                         <button
                           type="button"
-                          className="deepsea-project-node__menu-item"
-                          data-danger={item.danger ? 'true' : undefined}
-                          data-project-menu-item={item.label}
-                          key={item.label}
-                          onClick={() => {
-                            setOpenProjectMenuId(null);
-                            if (item.label === '编辑名称') onRenameProject?.(project);
-                            else onRemoveProject?.(project);
-                          }}
-                          role="menuitem"
+                          className="deepsea-project-node__icon-button"
+                          aria-label={`打开 ${project.name} 项目操作菜单`}
                         >
-                          <Icon aria-hidden="true" />
-                          <span>{item.label}</span>
+                          <Ellipsis aria-hidden="true" />
                         </button>
-                      );
-                    })}
+                      </DropdownMenu.Trigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content
+                          align="end"
+                          sideOffset={6}
+                          className="deepsea-project-node__menu"
+                        >
+                          {projectActionMenuItems.map((item) => {
+                            const Icon = item.icon;
+                            return (
+                              <DropdownMenu.Item
+                                asChild
+                                key={item.label}
+                                onSelect={() => {
+                                  setOpenProjectMenuId(null);
+                                  if (item.label === '编辑名称') onRenameProject?.(project);
+                                  else onRemoveProject?.(project);
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  className="deepsea-project-node__menu-item"
+                                  data-danger={item.danger ? 'true' : undefined}
+                                  data-project-menu-item={item.label}
+                                >
+                                  <Icon aria-hidden="true" />
+                                  <span>{item.label}</span>
+                                </button>
+                              </DropdownMenu.Item>
+                            );
+                          })}
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.Root>
+                    <button
+                      type="button"
+                      className="deepsea-project-node__icon-button"
+                      data-project-create-session={project.id}
+                      aria-label={`新建 ${project.name} 会话`}
+                      onClick={() => createSessionForProject(project.id)}
+                    >
+                      <SquarePen aria-hidden="true" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="deepsea-project-node__icon-button"
-                    data-project-create-session={project.id}
-                    aria-label={`新建 ${project.name} 会话`}
-                    onClick={() => createSessionForProject(project.id)}
-                  >
-                    <SquarePen aria-hidden="true" />
-                  </button>
-                </div>
+                ) : null}
               </div>
               {expanded && (
                 <div className="deepsea-project-node__sessions">
