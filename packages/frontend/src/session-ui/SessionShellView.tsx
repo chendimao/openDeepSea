@@ -260,6 +260,7 @@ type ProjectSessionTreeProject = {
   pinned_at?: number | null;
   sort_order?: number | null;
   recentSessions: ProjectSwitcherProject['recentSessions'];
+  sortable: boolean;
   sessions: ActiveSessionSummary[];
 };
 
@@ -296,18 +297,29 @@ export function buildProjectReorderInput(
   return ids.length > 0 ? { ids, pinned } : null;
 }
 
+type ProjectDragTarget = Pick<ProjectSwitcherProject, 'id' | 'pinned_at'> & { sortable?: boolean };
+
 function canDropProjectOn(
-  projects: ProjectSwitcherProject[],
+  projects: ProjectDragTarget[],
   draggingProjectId: string | null,
   targetProjectId: string,
 ): boolean {
   if (!draggingProjectId || draggingProjectId === targetProjectId) return false;
   const active = projects.find((project) => project.id === draggingProjectId);
   const target = projects.find((project) => project.id === targetProjectId);
-  if (!active || !target) return false;
+  if (!isSortableProjectDragTarget(active) || !isSortableProjectDragTarget(target)) return false;
   const activePinned = (active.pinned_at ?? null) !== null;
   const targetPinned = (target.pinned_at ?? null) !== null;
   return activePinned === targetPinned;
+}
+
+function isSortableProjectDragTarget(project: ProjectDragTarget | undefined): project is ProjectDragTarget {
+  return Boolean(project && project.sortable !== false && !project.id.startsWith('orphan:'));
+}
+
+export function shouldIgnoreProjectDragStart(target: EventTarget | null): boolean {
+  if (typeof Element === 'undefined' || !(target instanceof Element)) return false;
+  return Boolean(target.closest('button, [role="menu"], .deepsea-project-session-row-wrap'));
 }
 
 export function syncExpandedProjectIds(
@@ -391,13 +403,13 @@ function ProjectSessionTreeRail({
     setDraggingProjectId(null);
     setDropProjectId(null);
   };
-  const handleProjectDrop = (event: DragEvent<HTMLElement>, targetProjectId: string) => {
+  const handleProjectDrop = (event: DragEvent<HTMLElement>, targetProject: ProjectSessionTreeProject) => {
     event.preventDefault();
-    if (!draggingProjectId || draggingProjectId === targetProjectId) {
+    if (!targetProject.sortable || !draggingProjectId || draggingProjectId === targetProject.id) {
       resetDragState();
       return;
     }
-    const input = buildProjectReorderInput(tree, draggingProjectId, targetProjectId);
+    const input = buildProjectReorderInput(projects, draggingProjectId, targetProject.id);
     if (input) onReorderProjects?.(input);
     resetDragState();
   };
@@ -461,15 +473,21 @@ function ProjectSessionTreeRail({
               data-dragging={draggingProjectId === project.id ? 'true' : undefined}
               data-drop-target={dropProjectId === project.id ? 'true' : undefined}
               data-empty={project.sessions.length === 0 ? 'true' : undefined}
-              draggable
+              data-sortable={project.sortable ? 'true' : 'false'}
+              draggable={project.sortable}
               key={project.id}
               onDragStart={(event) => {
+                if (!project.sortable || shouldIgnoreProjectDragStart(event.target)) {
+                  event.preventDefault();
+                  resetDragState();
+                  return;
+                }
                 event.dataTransfer.effectAllowed = 'move';
                 event.dataTransfer.setData('text/plain', project.id);
                 setDraggingProjectId(project.id);
               }}
               onDragOver={(event) => {
-                if (!canDropProjectOn(tree, draggingProjectId, project.id)) return;
+                if (!project.sortable || !canDropProjectOn(projects, draggingProjectId, project.id)) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'move';
                 setDropProjectId(project.id);
@@ -477,7 +495,7 @@ function ProjectSessionTreeRail({
               onDragLeave={() => {
                 if (dropProjectId === project.id) setDropProjectId(null);
               }}
-              onDrop={(event) => handleProjectDrop(event, project.id)}
+              onDrop={(event) => handleProjectDrop(event, project)}
               onDragEnd={resetDragState}
             >
               <div className="deepsea-project-node">
@@ -653,6 +671,7 @@ function buildProjectSessionTree(input: {
     pinned_at: project.pinned_at,
     sort_order: project.sort_order,
     recentSessions: project.recentSessions,
+    sortable: true,
     sessions: sessionsByProjectId.get(project.id) ?? [],
   }));
 
@@ -666,6 +685,7 @@ function buildProjectSessionTree(input: {
       path: session.project_path,
       active: false,
       recentSessions: [],
+      sortable: false,
       sessions: [],
     };
     orphanProject.sessions.push(session);

@@ -14,10 +14,12 @@ import {
   getLatestUserMessageKey,
   getSessionRunThinkingDuration,
   isTranscriptNearBottom,
+  shouldIgnoreProjectDragStart,
   syncExpandedProjectIds,
 } from './SessionShellView';
 
 const sessionOsCss = readFileSync(new URL('./session-os.css', import.meta.url), 'utf8');
+const sessionShellViewSource = readFileSync(new URL('./SessionShellView.tsx', import.meta.url), 'utf8');
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
@@ -267,6 +269,8 @@ test('SessionShell expands the current project by default and collapses other pr
   assert.doesNotMatch(html, /暂无活跃会话/);
   assert.match(html, /aria-expanded="true"/);
   assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /data-sortable="true"[^>]*draggable="true"/);
+  assert.match(html, /data-sortable="false"[^>]*draggable="false"[\s\S]*AnotherProject/);
   assert.match(html, /data-project-session-row="true"/);
 });
 
@@ -323,6 +327,11 @@ test('buildProjectReorderInput ignores same item and cross-layer reorders', () =
   assert.equal(buildProjectReorderInput(projects, 'project-2', 'project-2'), null);
   assert.equal(buildProjectReorderInput(projects, 'project-1', 'project-2'), null);
   assert.equal(buildProjectReorderInput(projects, 'missing-project', 'project-2'), null);
+  assert.equal(buildProjectReorderInput(projects, 'orphan:x', 'project-2'), null);
+  assert.equal(buildProjectReorderInput([
+    ...projects,
+    { id: 'orphan:x', name: 'Orphan', path: '/orphan', active: false, recentSessions: [], created_at: now, pinned_at: null, sort_order: null },
+  ], 'project-2', 'orphan:x'), null);
 });
 
 test('syncExpandedProjectIds opens the current project without overwriting existing project state', () => {
@@ -339,6 +348,12 @@ test('syncExpandedProjectIds opens the current project without overwriting exist
       'project-4': false,
     },
   );
+});
+
+test('shouldIgnoreProjectDragStart is SSR-safe and wired into project drag start', () => {
+  assert.equal(shouldIgnoreProjectDragStart(null), false);
+  assert.equal(shouldIgnoreProjectDragStart({} as EventTarget), false);
+  assert.match(sessionShellViewSource, /shouldIgnoreProjectDragStart\(event\.target\)/);
 });
 
 test('SessionShell does not add an archived current session to the project tree fallback', () => {
