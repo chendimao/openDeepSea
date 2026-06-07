@@ -344,7 +344,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_project_status_updated ON sessions(project_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_project_archived ON sessions(project_id, archived_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_forked_from_session ON sessions(forked_from_session_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_active_workspace ON sessions(closed_at, pinned_at IS NULL, pinned_at DESC, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS session_messages (
   id TEXT PRIMARY KEY,
