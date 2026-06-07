@@ -9,13 +9,16 @@ import { I18nProvider } from '../lib/i18n';
 import type { SessionMode, SessionWorkspacePayload } from '../lib/types';
 import type { WsServerEvent } from '../lib/ws';
 import {
+  applyProjectSwitcherProjectPatch,
   createProjectSessionAndSelect,
   getSnapshotNavigation,
   isCompactPreviewForActiveSession,
   projectSessionToActiveSummary,
+  removeProjectFromWorkspacePayload,
   runSessionCommand,
   SessionWorkspacePage,
   shouldRefreshSessionWorkspace,
+  updateActiveSessionPinnedAt,
 } from './SessionWorkspacePage';
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
@@ -265,6 +268,38 @@ test('projectSessionToActiveSummary creates a rail record under the target proje
   });
 });
 
+test('applyProjectSwitcherProjectPatch updates project switcher and active project name', () => {
+  const payload = createCommandPayload();
+  const next = applyProjectSwitcherProjectPatch(payload, {
+    id: 'project-1',
+    name: 'openDeepSea',
+    path: '/workspace/openclaw',
+  });
+
+  assert.equal(next.project.name, 'openDeepSea');
+  assert.equal(next.project.path, '/workspace/openclaw');
+  assert.equal(next.projectSwitcher.projects[0]?.name, 'openDeepSea');
+  assert.equal(next.activeSessions[0]?.project_name, 'openDeepSea');
+  assert.equal(next.activeSessions[0]?.project_path, '/workspace/openclaw');
+  assert.equal(next.activeSession.session.workspace_path, payload.activeSession.session.workspace_path);
+});
+
+test('removeProjectFromWorkspacePayload removes project and its active sessions', () => {
+  const payload = createCommandPayload();
+  const next = removeProjectFromWorkspacePayload(payload, 'project-2');
+
+  assert.equal(next.projectSwitcher.projects.some((project) => project.id === 'project-2'), false);
+  assert.equal(next.activeSessions.some((session) => session.project_id === 'project-2'), false);
+});
+
+test('updateActiveSessionPinnedAt updates active summaries and current session', () => {
+  const payload = createCommandPayload();
+  const next = updateActiveSessionPinnedAt(payload, 'session-1', 123);
+
+  assert.equal(next.activeSession.session.pinned_at, 123);
+  assert.equal(next.activeSessions.find((session) => session.id === 'session-1')?.pinned_at, 123);
+});
+
 test('shouldRefreshSessionWorkspace skips unfinished stream events', () => {
   const event = {
     type: 'session_run:stream',
@@ -342,7 +377,158 @@ test('isCompactPreviewForActiveSession ignores previews from inactive sessions',
 });
 
 function createCommandPayload(): SessionWorkspacePayload {
-  return { activeSession: { session: { id: 'session-1', mode: 'code' } } } as SessionWorkspacePayload;
+  const project = {
+    id: 'project-1',
+    name: 'OpenDeepSea',
+    path: '/workspace/opendeepsea',
+    description: null,
+    pinned_at: null,
+    sort_order: 1,
+    message_routing_mode: 'mentions_only',
+    fallback_agent_id: null,
+    created_at: 100,
+    updated_at: 200,
+  } as const;
+  const activeSession = createTestSession({
+    id: 'session-1',
+    project_id: 'project-1',
+    mode: 'code',
+  });
+
+  return {
+    project,
+    activeSession: {
+      session: activeSession,
+      messages: [],
+      runs: [],
+      agentEvents: [],
+      planItems: [],
+      compactions: [],
+      checkpoints: [],
+      evidence: [],
+    },
+    activeSessions: [
+      {
+        id: 'session-1',
+        project_id: 'project-1',
+        project_name: 'OpenDeepSea',
+        project_path: '/workspace/opendeepsea',
+        title: 'SessionOS 迁移',
+        status: 'active',
+        phase: 'idle',
+        provider: 'codex',
+        model: 'gpt-5.5',
+        pinned_at: null,
+        updated_at: 200,
+        unread_count: 0,
+        active_run_count: 0,
+        latest_event_summary: null,
+      },
+      {
+        id: 'session-2',
+        project_id: 'project-2',
+        project_name: 'AnotherProject',
+        project_path: '/workspace/another',
+        title: '接口联调',
+        status: 'active',
+        phase: 'idle',
+        provider: 'codex',
+        model: 'gpt-5.5',
+        pinned_at: null,
+        updated_at: 180,
+        unread_count: 0,
+        active_run_count: 0,
+        latest_event_summary: null,
+      },
+    ],
+    historyRecords: [],
+    status: {
+      goal: null,
+      mode: 'code',
+      phase: 'idle',
+      status: 'active',
+      context: {
+        totalTokenEstimate: 0,
+        latestCompactionId: null,
+        retainedRecentMessages: 0,
+        pressure: 'low',
+      },
+      git: {
+        branchName: null,
+        changedFileCount: 0,
+        hasUncommittedDiff: false,
+        conflictRisk: 'none',
+      },
+      verification: {
+        lastCommand: null,
+        status: 'unknown',
+        completedAt: null,
+      },
+      blocker: null,
+      nextAction: {
+        label: '继续',
+        command: null,
+        reason: 'ready',
+      },
+      provider: {
+        backend: 'codex',
+        model: 'gpt-5.5',
+        permissionMode: null,
+      },
+    },
+    context: null,
+    evidence: [],
+    projectSwitcher: {
+      activeProjectId: 'project-1',
+      projects: [
+        {
+          id: 'project-1',
+          name: 'OpenDeepSea',
+          path: '/workspace/opendeepsea',
+          active: true,
+          created_at: 100,
+          pinned_at: null,
+          sort_order: 1,
+          recentSessions: [],
+        },
+        {
+          id: 'project-2',
+          name: 'AnotherProject',
+          path: '/workspace/another',
+          active: false,
+          created_at: 90,
+          pinned_at: null,
+          sort_order: 2,
+          recentSessions: [],
+        },
+      ],
+    },
+    bottomStatus: {
+      health: 'ok',
+      healthLabel: 'OK',
+      indexStatus: 'ready',
+      indexLabel: 'Ready',
+      lastResponseMs: null,
+      errorRate: null,
+      networkLatencyMs: null,
+      tokenUsage: null,
+    },
+    contract: {
+      sessionId: 'session-1',
+      objective: '',
+      scope: null,
+      risks: [],
+      acceptanceCriteria: [],
+      updated_at: 100,
+    },
+    toolRows: [],
+    diffRows: [],
+    historyFilters: {
+      q: '',
+      status: 'all',
+      mode: 'all',
+    },
+  };
 }
 
 function createTestSession(input: {

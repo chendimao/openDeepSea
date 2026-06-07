@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { FolderPlus, Plus } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FolderPlus, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { CreateProjectDialog } from '../components/CreateProjectDialog';
 import { Button } from '../components/ui/Button';
+import { Dialog, DialogContent } from '../components/ui/Dialog';
+import { Input } from '../components/ui/Input';
 import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
@@ -31,6 +33,7 @@ type SessionWorkspacePageProps = {
 };
 
 type CreateSessionInput = NonNullable<Parameters<typeof api.createSession>[1]>;
+type SessionSwitcherProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
 type CreateSessionAndSelectInput = {
   targetProjectId: string;
   sourceSession: Pick<Session, 'id' | 'mode' | 'provider' | 'model'>;
@@ -89,6 +92,68 @@ export function projectSessionToActiveSummary({
   };
 }
 
+export function applyProjectSwitcherProjectPatch(
+  payload: SessionWorkspacePayload,
+  project: Pick<Project, 'id' | 'name' | 'path'>,
+): SessionWorkspacePayload {
+  return {
+    ...payload,
+    project: payload.project.id === project.id
+      ? { ...payload.project, name: project.name, path: project.path }
+      : payload.project,
+    projectSwitcher: {
+      ...payload.projectSwitcher,
+      projects: payload.projectSwitcher.projects.map((item) =>
+        item.id === project.id ? { ...item, name: project.name, path: project.path } : item
+      ),
+    },
+    activeSessions: payload.activeSessions.map((session) =>
+      session.project_id === project.id
+        ? { ...session, project_name: project.name, project_path: project.path }
+        : session
+    ),
+  };
+}
+
+export function removeProjectFromWorkspacePayload(
+  payload: SessionWorkspacePayload,
+  projectId: string,
+): SessionWorkspacePayload {
+  return {
+    ...payload,
+    projectSwitcher: {
+      ...payload.projectSwitcher,
+      projects: payload.projectSwitcher.projects.filter((project) => project.id !== projectId),
+    },
+    activeSessions: payload.activeSessions.filter((session) => session.project_id !== projectId),
+  };
+}
+
+export function updateActiveSessionPinnedAt(
+  payload: SessionWorkspacePayload,
+  sessionId: string,
+  pinnedAt: number | null,
+): SessionWorkspacePayload {
+  const existingSummary = payload.activeSessions.find((session) => session.id === sessionId);
+  const activeSummary = payload.activeSession.session.id === sessionId
+    ? projectSessionToActiveSummary({ session: payload.activeSession.session, project: payload.project })
+    : null;
+  const nextSummary = existingSummary ?? activeSummary;
+
+  return {
+    ...payload,
+    activeSession: payload.activeSession.session.id === sessionId
+      ? {
+        ...payload.activeSession,
+        session: { ...payload.activeSession.session, pinned_at: pinnedAt },
+      }
+      : payload.activeSession,
+    activeSessions: nextSummary
+      ? upsertActiveSessionSummary(payload.activeSessions, { ...nextSummary, pinned_at: pinnedAt })
+      : payload.activeSessions,
+  };
+}
+
 export function SessionWorkspacePage({
   projectIdOverride,
   sessionIdOverride,
@@ -99,9 +164,13 @@ export function SessionWorkspacePage({
   const sessionId = sessionIdOverride ?? routeSessionId;
   const navigate = useNavigate();
   const { t } = useI18n();
+  const queryClient = useQueryClient();
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionSummary[] | null>(null);
+  const [renameProject, setRenameProject] = useState<SessionSwitcherProject | null>(null);
+  const [removeProject, setRemoveProject] = useState<SessionSwitcherProject | null>(null);
+  const [renameProjectName, setRenameProjectName] = useState('');
   const previousSessionIdRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const { data: projects = [], isLoading: projectsLoading } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
@@ -234,6 +303,105 @@ export function SessionWorkspacePage({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigationEnabled, workspacePayload?.activeSession.runs]);
 
+  const renameProjectMutation = useMutation({
+    mutationFn: (input: { projectId: string; name: string }) => api.updateProject(input.projectId, { name: input.name }),
+    onSuccess: (project) => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      setWorkspacePayload((current) => current ? applyProjectSwitcherProjectPatch(current, project) : current);
+      setActiveSessions((current) => current?.map((session) =>
+        session.project_id === project.id
+          ? { ...session, project_name: project.name, project_path: project.path }
+          : session
+      ) ?? current);
+      setRenameProject(null);
+      setRenameProjectName('');
+      toast.success('项目名称已更新');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '项目名称更新失败');
+    },
+  });
+
+  const removeProjectMutation = useMutation({
+    mutationFn: (projectId: string) => api.deleteProject(projectId),
+    onSuccess: (_result, projectId) => {
+      const removingActiveProject = workspacePayload?.activeSession.session.project_id === projectId;
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      setWorkspacePayload((current) => current ? removeProjectFromWorkspacePayload(current, projectId) : current);
+      setActiveSessions((current) => current?.filter((session) => session.project_id !== projectId) ?? current);
+      setRemoveProject(null);
+      toast.success('项目已移除');
+      if (removingActiveProject && navigationEnabled) navigate('/');
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : '项目移除失败';
+      toast.error(message.includes('409') ? '项目仍有运行中的智能体或工作流，请先停止或等待完成。' : message);
+    },
+  });
+
+  const reorderProjectsMutation = useMutation({
+    mutationFn: (input: { ids: string[]; pinned: boolean }) => api.reorderProjects(input),
+    onSuccess: (projects) => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      setWorkspacePayload((current) => current ? {
+        ...current,
+        projectSwitcher: {
+          ...current.projectSwitcher,
+          projects: projects.map((project) => {
+            const existing = current.projectSwitcher.projects.find((item) => item.id === project.id);
+            return {
+              id: project.id,
+              name: project.name,
+              path: project.path,
+              active: existing?.active ?? project.id === current.project.id,
+              recentSessions: existing?.recentSessions ?? [],
+              created_at: project.created_at,
+              pinned_at: project.pinned_at,
+              sort_order: project.sort_order,
+            };
+          }),
+        },
+      } : current);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '项目排序失败');
+    },
+  });
+
+  const toggleSessionPinMutation = useMutation({
+    mutationFn: (session: ActiveSessionSummary) =>
+      api.updateSession(session.id, { pinned_at: session.pinned_at === null ? Date.now() : null }),
+    onSuccess: (session) => {
+      setWorkspacePayload((current) =>
+        current ? updateActiveSessionPinnedAt(current, session.id, session.pinned_at) : current
+      );
+      setActiveSessions((current) => {
+        const base = current ?? workspacePayload?.activeSessions ?? [];
+        const existing = base.find((item) => item.id === session.id);
+        const activeSummary = workspacePayload?.activeSession.session.id === session.id && workspacePayload
+          ? projectSessionToActiveSummary({ session: workspacePayload.activeSession.session, project: workspacePayload.project })
+          : null;
+        const nextSummary = existing ?? activeSummary;
+        return nextSummary
+          ? upsertActiveSessionSummary(base, {
+            ...nextSummary,
+            title: session.title,
+            status: session.status,
+            phase: session.phase,
+            provider: session.provider,
+            model: session.model,
+            pinned_at: session.pinned_at,
+            updated_at: session.updated_at,
+            latest_event_summary: session.current_goal,
+          })
+          : current;
+      });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '会话置顶更新失败');
+    },
+  });
+
   if (!activeProjectId) {
     return (
       <div className="session-shell session-shell--empty">
@@ -320,7 +488,103 @@ export function SessionWorkspacePage({
         sessionSocket.requestSessionWorkspace({ projectId, sessionId });
       }}
       onCreateSession={createProjectSession}
+      onRenameProject={(project) => {
+        setRenameProject(project);
+        setRenameProjectName(project.name);
+      }}
+      onRemoveProject={(project) => setRemoveProject(project)}
+      onReorderProjects={(input) => reorderProjectsMutation.mutate(input)}
+      onToggleSessionPin={(session) => toggleSessionPinMutation.mutate(session)}
     />
+    <Dialog
+      open={renameProject !== null}
+      onOpenChange={(open) => {
+        if (!open) {
+          setRenameProject(null);
+          setRenameProjectName('');
+        }
+      }}
+    >
+      <DialogContent title="编辑项目名称" description={renameProject?.path}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const name = renameProjectName.trim();
+            if (!renameProject || !name) return;
+            renameProjectMutation.mutate({ projectId: renameProject.id, name });
+          }}
+        >
+          <label
+            htmlFor="session-project-rename"
+            className="mb-1.5 block text-[12px] font-medium text-[var(--color-fg-muted)]"
+          >
+            项目名称
+          </label>
+          <Input
+            id="session-project-rename"
+            value={renameProjectName}
+            onChange={(event) => setRenameProjectName(event.target.value)}
+            autoFocus
+          />
+          <div className="mt-5 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setRenameProject(null);
+                setRenameProjectName('');
+              }}
+              disabled={renameProjectMutation.isPending}
+            >
+              取消
+            </Button>
+            <Button type="submit" disabled={renameProjectMutation.isPending || renameProjectName.trim().length === 0}>
+              {renameProjectMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              保存名称
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+    <Dialog
+      open={removeProject !== null}
+      onOpenChange={(open) => {
+        if (!open) setRemoveProject(null);
+      }}
+    >
+      <DialogContent
+        title="移除项目"
+        description={removeProject ? `将从 OpenDeepSea 中移除「${removeProject.name}」。不会删除本地项目文件夹。` : undefined}
+      >
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2.5">
+          <div className="text-[11px] font-medium text-[var(--color-fg-muted)]">本地项目文件夹</div>
+          <div className="mt-1 break-all font-mono text-[12px] text-[var(--color-fg)]">{removeProject?.path}</div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setRemoveProject(null)}
+            disabled={removeProjectMutation.isPending}
+          >
+            取消
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => {
+              if (removeProject) removeProjectMutation.mutate(removeProject.id);
+            }}
+            disabled={removeProjectMutation.isPending}
+          >
+            {removeProjectMutation.isPending
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <Trash2 className="h-3.5 w-3.5" />}
+            {removeProjectMutation.isPending ? '正在移除' : '移除'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
     {compactPreview && (
       <div className="session-overlay" role="dialog" aria-label="Compact Preview">
         <CompactPreviewSurface
