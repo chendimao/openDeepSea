@@ -29,6 +29,7 @@ export interface ImageGenerationJobRepository {
   markCompleted(jobId: string, message: string | null): ImageGenerationJob;
   appendOutput(input: ImageGenerationOutputCreateInput): ImageGenerationOutput;
   listOutputs(jobId: string): ImageGenerationOutput[];
+  findOutputByFileId(fileId: string): ImageGenerationOutput | undefined;
   addSourceImage(input: ImageGenerationSourceImageCreateInput): ImageGenerationSourceImage;
   listSourceImages(jobId: string): ImageGenerationSourceImage[];
   recoverInterruptedJobs(): number;
@@ -46,6 +47,7 @@ export const imageGenerationJobRepo: ImageGenerationJobRepository = {
   markCompleted,
   appendOutput,
   listOutputs,
+  findOutputByFileId,
   addSourceImage,
   listSourceImages,
   recoverInterruptedJobs,
@@ -241,6 +243,18 @@ function listOutputs(jobId: string): ImageGenerationOutput[] {
        ORDER BY slot ASC, created_at ASC`,
     )
     .all(jobId) as ImageGenerationOutput[];
+}
+
+function findOutputByFileId(fileId: string): ImageGenerationOutput | undefined {
+  return db
+    .prepare(
+      `SELECT *
+       FROM image_generation_outputs
+       WHERE file_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+    )
+    .get(fileId) as ImageGenerationOutput | undefined;
 }
 
 function addSourceImage(input: ImageGenerationSourceImageCreateInput): ImageGenerationSourceImage {

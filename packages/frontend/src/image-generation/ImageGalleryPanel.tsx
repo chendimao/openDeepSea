@@ -3,8 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Image as ImageIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ImageGenerationOutput, ImageJobDetailResponse, ProjectFile } from '../lib/types';
+import { ImageLineagePanel } from './ImageLineagePanel';
 
-type GalleryItem = {
+export type GalleryItem = {
   id: string;
   title: string;
   url: string;
@@ -47,37 +48,46 @@ export function ImageGalleryPanel({ projectId }: { projectId: string }): JSX.Ele
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-      {items.map((item) => (
-        <a key={item.id} href={item.href} className="group block">
-          <span className="block aspect-square overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-soft)]">
-            {item.url ? (
-              <img src={item.url} alt={item.title} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
-            ) : (
-              <span className="flex h-full items-center justify-center text-[var(--color-fg-subtle)]">
-                <ImageIcon className="h-6 w-6" aria-hidden="true" />
-              </span>
-            )}
-          </span>
-          <span className="mt-1 block truncate text-[11px] text-[var(--color-fg-muted)]">{item.label}</span>
-        </a>
-      ))}
+    <div>
+      <ImageLineagePanel details={details} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+        {items.map((item) => (
+          <a key={item.id} href={item.href} className="group block">
+            <span className="block aspect-square overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-soft)]">
+              {item.url ? (
+                <img src={item.url} alt={item.title} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
+              ) : (
+                <span className="flex h-full items-center justify-center text-[var(--color-fg-subtle)]">
+                  <ImageIcon className="h-6 w-6" aria-hidden="true" />
+                </span>
+              )}
+            </span>
+            <span className="mt-1 block truncate text-[11px] text-[var(--color-fg-muted)]">{item.label}</span>
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
 
-function buildGalleryItems(
+export function buildGalleryItems(
   projectId: string,
   details: ImageJobDetailResponse[],
   resources: ProjectFile[],
 ): GalleryItem[] {
   const outputItems = details.flatMap((detail) => detail.outputs.map((output) => outputToGalleryItem(projectId, output)));
-  const outputFileIds = new Set(details.flatMap((detail) => detail.outputs.map((output) => output.file_id)));
+  const outputFileIds = new Set(
+    details.flatMap((detail) => detail.outputs.map((output) => normalizeFileId(output.file_id))),
+  );
   const resourceItems = resources
     .filter((file) => file.mime_type.toLowerCase().startsWith('image/'))
-    .filter((file) => !outputFileIds.has(file.id))
+    .filter((file) => !outputFileIds.has(normalizeFileId(file.id)))
     .map((file) => resourceToGalleryItem(projectId, file));
   return [...outputItems, ...resourceItems];
+}
+
+function normalizeFileId(fileId: string): string {
+  return fileId.startsWith('file:') ? fileId.slice('file:'.length) : fileId;
 }
 
 function outputToGalleryItem(projectId: string, output: ImageGenerationOutput): GalleryItem {

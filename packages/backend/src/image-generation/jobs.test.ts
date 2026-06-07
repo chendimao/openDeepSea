@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -15,6 +15,7 @@ const { db, now } = await import('../db.js');
 const { fileRepo } = await import('../repos/files.js');
 const { projectRepo } = await import('../repos/projects.js');
 const { imageGenerationJobRepo } = await import('./jobs.js');
+const { createImageGenerationService } = await import('./service.js');
 
 test('image generation schema creates provider job output and source tables', () => {
   const tables = db.prepare(`
@@ -428,6 +429,43 @@ test('image job repo rejects cross project and mismatched source image lineage',
       }),
     /origin output file mismatch/,
   );
+});
+
+test('image-to-image job records origin output when source file comes from generated output', async () => {
+  const { project, profile } = createJobFixture('lineage-service');
+  const parentJob = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'parent image' }));
+  const parentFile = createProjectFileForTest(project.id, 'parent-output.png', 'image/png', 7);
+  writeFileSync(parentFile.storage_path, Buffer.from('parent-output'));
+  const parentOutput = imageGenerationJobRepo.appendOutput({
+    job_id: parentJob.id,
+    file_id: parentFile.id,
+    slot: 1,
+    name: parentFile.original_name,
+    url: parentFile.url,
+    mime_type: parentFile.mime_type,
+    size: parentFile.size,
+  });
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async () => ({
+      images: [{ data: Buffer.from('child-output'), mimeType: 'image/png' }],
+    }),
+  });
+
+  const created = await service.createJob({
+    ...createJobInput(project.id, profile.id, {
+      workflow: 'image-to-image',
+      prompt: 'child variant',
+    }),
+    source_file_ids: [parentFile.id],
+  });
+  const [sourceImage] = imageGenerationJobRepo.listSourceImages(created.job.id);
+  await service.waitForCompletion(created.job.id);
+
+  assert.equal(sourceImage?.file_id, parentFile.id);
+  assert.equal(sourceImage?.origin_job_id, parentJob.id);
+  assert.equal(sourceImage?.origin_output_id, parentOutput.id);
 });
 
 test('image job repo recovers interrupted jobs as canceled', () => {

@@ -1,6 +1,5 @@
 import { readFile } from 'node:fs/promises';
 import { fileRepo } from '../repos/files.js';
-import type { ProjectFile } from '../types.js';
 import { wsHub } from '../ws-hub.js';
 import type {
   ImageGenerationJob,
@@ -24,6 +23,7 @@ import {
   type ImageProviderProfileRepository,
 } from './provider-profiles.js';
 import { ImageGenerationQueue } from './queue.js';
+import { resolveImageSourceFiles, type ImageSourceFile } from './source-images.js';
 import {
   assertSessionCanReceiveImageGenerationJob,
   recordSessionImageGenerationJobMessage,
@@ -117,15 +117,17 @@ async function createJob(
   const jobRepo = deps.jobRepo ?? imageGenerationJobRepo;
   assertValidImageCount(input.count);
   assertSessionCanReceiveImageGenerationJob(input.project_id, input.session_id);
-  const sourceFiles = resolveSourceFiles(input);
+  const sourceFiles = resolveSourceFiles(input, jobRepo);
   const { source_file_ids: _sourceFileIds, ...jobInput } = input;
   const job = jobRepo.create(jobInput);
-  sourceFiles.forEach((file, index) => {
+  sourceFiles.forEach((source) => {
     jobRepo.addSourceImage({
       job_id: job.id,
-      file_id: file.id,
-      slot: index + 1,
-      url: file.url,
+      file_id: source.file.id,
+      slot: source.slot,
+      url: source.file.url,
+      origin_job_id: source.origin_job_id,
+      origin_output_id: source.origin_output_id,
     });
   });
   publishJobEvent(deps, 'image_job:created', job);
@@ -527,7 +529,10 @@ function assertValidImageCount(count: number): void {
   }
 }
 
-function resolveSourceFiles(input: ImageGenerationCreateJobInput): ProjectFile[] {
+function resolveSourceFiles(
+  input: ImageGenerationCreateJobInput,
+  jobRepo: ImageGenerationJobRepository,
+): ImageSourceFile[] {
   const sourceFileIds = input.source_file_ids ?? [];
   if (input.workflow === 'image-to-image' && sourceFileIds.length === 0) {
     throw new Error('image-to-image workflow requires at least one source image');
@@ -537,18 +542,7 @@ function resolveSourceFiles(input: ImageGenerationCreateJobInput): ProjectFile[]
   }
   if (sourceFileIds.length === 0) return [];
 
-  return sourceFileIds.map((fileId) => {
-    const file = fileRepo.get(fileId);
-    if (!file) throw new Error('image generation source file not found');
-    if (file.deleted_at !== null) throw new Error('image generation source file not found');
-    if (file.project_id !== input.project_id) {
-      throw new Error('image generation source file project mismatch');
-    }
-    if (!file.mime_type.toLowerCase().startsWith('image/')) {
-      throw new Error('image generation source file must be an image');
-    }
-    return file;
-  });
+  return resolveImageSourceFiles(input.project_id, sourceFileIds, { jobRepo });
 }
 
 function throwIfAborted(signal: AbortSignal): void {
