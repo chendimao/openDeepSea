@@ -284,6 +284,15 @@ function ProjectSessionTreeRail({
   );
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
   const visibleProjects = filterProjectSessionTree(tree, normalizedQuery);
+  const createSessionForProject = (projectId: string) => {
+    setExpandedProjectIds((current) => ({ ...current, [projectId]: true }));
+    setOpenProjectMenuId(null);
+    if (onCreateSession) {
+      void onCreateSession(projectId);
+      return;
+    }
+    onCommand('/new');
+  };
 
   return (
     <aside className="deepsea-history" aria-label="Project Sessions">
@@ -293,13 +302,7 @@ function ProjectSessionTreeRail({
             type="button"
             className="deepsea-project-tree-action-row"
             data-project-create-session={currentProjectId}
-            onClick={() => {
-              if (onCreateSession) {
-                void onCreateSession(currentProjectId);
-                return;
-              }
-              onCommand('/new');
-            }}
+            onClick={() => createSessionForProject(currentProjectId)}
           >
             <span>
               <Edit3 aria-hidden="true" />
@@ -409,14 +412,7 @@ function ProjectSessionTreeRail({
                     className="deepsea-project-node__icon-button"
                     data-project-create-session={project.id}
                     aria-label={`新建 ${project.name} 会话`}
-                    onClick={() => {
-                      setOpenProjectMenuId(null);
-                      if (onCreateSession) {
-                        void onCreateSession(project.id);
-                        return;
-                      }
-                      onCommand('/new');
-                    }}
+                    onClick={() => createSessionForProject(project.id)}
                   >
                     <SquarePen aria-hidden="true" />
                   </button>
