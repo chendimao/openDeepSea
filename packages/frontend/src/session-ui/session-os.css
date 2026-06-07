@@ -2033,7 +2033,7 @@
 }
 .deepsea-tool-table button {
   display: grid;
-  grid-template-columns: 16px auto minmax(0, 1fr) minmax(88px, auto) 16px;
+  grid-template-columns: 16px auto minmax(0, 1fr) 48px 68px 16px;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -2086,10 +2086,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.deepsea-tool-table button > span:nth-last-child(2) {
+.deepsea-tool-row-duration,
+.deepsea-tool-row-time {
   color: rgba(100, 116, 139, 0.52);
-  text-align: right;
   white-space: nowrap;
+}
+.deepsea-tool-row-duration {
+  text-align: right;
+}
+.deepsea-tool-row-time {
+  text-align: right;
 }
 .deepsea-tool-table svg {
   width: 14px;

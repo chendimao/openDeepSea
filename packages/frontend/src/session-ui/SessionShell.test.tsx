@@ -113,7 +113,8 @@ test('SessionShell renders tool row relative record time beside duration', () =>
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /21\.4s · 刚刚/);
+  assert.match(html, /class="deepsea-tool-row-duration">21\.4s<\/span>/);
+  assert.match(html, /class="deepsea-tool-row-time">刚刚<\/span>/);
 });
 
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
