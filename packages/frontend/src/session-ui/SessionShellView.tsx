@@ -912,7 +912,7 @@ function isFinalAnswerStart(content: string): boolean {
 
 function isProcessPreludeText(content: string): boolean {
   const text = stripAnsiCodes(content).trimStart();
-  return /^(?:我会先|我先|我会直接|我会按|我现在|接下来我会|我已经)/.test(text);
+  return /^(?:我会先|我先|我会直接|我会按|我现在|接下来我会|我已经|本轮使用|本次使用)/.test(text);
 }
 
 function isLegacyTerminalNoiseAnswerEvent(event: SessionAgentEvent): boolean {

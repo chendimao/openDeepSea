@@ -699,6 +699,23 @@ test('buildSessionRunTranscriptItems hides tokenized legacy process-only answer'
   assert.deepEqual(items, []);
 });
 
+test('buildSessionRunTranscriptItems trims skill preface before visible answer in same chunk', () => {
+  const content = '本次使用技能：using-superpowers，用于遵循项目的 skill 启动规则。\n\n当前会话可见的 skills 主要有：\n\n系统 / Codex 技能';
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({
+      id: 'answer',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content,
+    }),
+  ], content);
+
+  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
+    '当前会话可见的 skills 主要有：\n\n系统 / Codex 技能',
+  ]);
+});
+
 test('SessionShell moves completed legacy process preface into collapsed thought', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
