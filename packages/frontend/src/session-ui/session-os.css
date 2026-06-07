@@ -775,6 +775,13 @@
   position: relative;
   min-width: 0;
 }
+.deepsea-project-tree-section[data-dragging="true"] {
+  opacity: 0.58;
+}
+.deepsea-project-tree-section[data-drop-target="true"] .deepsea-project-node {
+  background: rgba(255, 255, 255, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.28);
+}
 .deepsea-project-node {
   display: flex;
   width: 100%;
@@ -811,6 +818,7 @@
 .deepsea-project-node__button:focus-visible,
 .deepsea-project-node__icon-button:focus-visible,
 .deepsea-project-node__menu-item:focus-visible,
+.deepsea-project-session-pin:focus-visible,
 .deepsea-project-session-row:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.62);
   outline-offset: 2px;
@@ -937,6 +945,42 @@
   padding: 0 12px;
   font-size: 12px;
 }
+.deepsea-project-session-row-wrap {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  border-radius: 8px;
+}
+.deepsea-project-session-pin {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(67, 70, 84, 0.5);
+  opacity: 0;
+  padding: 0;
+  transition: opacity 160ms, background 160ms, color 160ms;
+}
+.deepsea-project-session-pin svg {
+  width: 14px;
+  height: 14px;
+}
+.deepsea-project-session-row-wrap:hover .deepsea-project-session-pin,
+.deepsea-project-session-row-wrap:focus-within .deepsea-project-session-pin,
+.deepsea-project-session-pin[data-pinned="true"] {
+  opacity: 1;
+}
+.deepsea-project-session-pin:hover,
+.deepsea-project-session-pin[data-pinned="true"] {
+  background: rgba(255, 255, 255, 0.28);
+  color: rgba(67, 70, 84, 0.88);
+}
 .deepsea-project-session-row {
   display: flex;
   gap: 8px;
@@ -950,6 +994,7 @@
   padding: 8px 12px;
   text-align: left;
   transition: background 160ms, border-color 160ms;
+  white-space: nowrap;
 }
 .deepsea-project-session-row:hover {
   background: rgba(255, 255, 255, 0.2);

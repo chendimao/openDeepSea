@@ -14,6 +14,7 @@ import {
   getLatestUserMessageKey,
   getSessionRunThinkingDuration,
   isTranscriptNearBottom,
+  syncExpandedProjectIds,
 } from './SessionShellView';
 
 const sessionOsCss = readFileSync(new URL('./session-os.css', import.meta.url), 'utf8');
@@ -223,6 +224,17 @@ test('SessionShell keeps the tool call list height bounded with internal scrolli
   assert.match(sessionOsCss, /\.deepsea-tool-table\s*\{[^}]*overscroll-behavior:\s*contain/s);
 });
 
+test('SessionShell includes project tree row pin and drag feedback styles', () => {
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*display:\s*grid/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*grid-template-columns:\s*24px minmax\(0,\s*1fr\)/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*border:\s*0/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*background:\s*transparent/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*opacity:\s*0/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap:hover \.deepsea-project-session-pin/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-section\[data-drop-target="true"\]/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-section\[data-dragging="true"\]/s);
+});
+
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
   const { activeSessions: _activeSessions, ...legacyPayload } = createPayload();
 
@@ -298,6 +310,35 @@ test('buildProjectReorderInput returns same-layer reorder ids', () => {
     ids: ['project-3', 'project-1', 'project-2'],
     pinned: false,
   });
+});
+
+test('buildProjectReorderInput ignores same item and cross-layer reorders', () => {
+  const now = Date.now();
+  const projects = [
+    { id: 'project-1', name: 'A', path: '/a', active: false, recentSessions: [], created_at: now - 3, pinned_at: now - 10, sort_order: 1 },
+    { id: 'project-2', name: 'B', path: '/b', active: false, recentSessions: [], created_at: now - 2, pinned_at: null, sort_order: 2 },
+    { id: 'project-3', name: 'C', path: '/c', active: false, recentSessions: [], created_at: now - 1, pinned_at: null, sort_order: 3 },
+  ];
+
+  assert.equal(buildProjectReorderInput(projects, 'project-2', 'project-2'), null);
+  assert.equal(buildProjectReorderInput(projects, 'project-1', 'project-2'), null);
+  assert.equal(buildProjectReorderInput(projects, 'missing-project', 'project-2'), null);
+});
+
+test('syncExpandedProjectIds opens the current project without overwriting existing project state', () => {
+  assert.deepEqual(
+    syncExpandedProjectIds(
+      { 'project-1': true, 'project-2': false, 'project-3': true },
+      [{ id: 'project-1' }, { id: 'project-2' }, { id: 'project-3' }, { id: 'project-4' }],
+      'project-2',
+    ),
+    {
+      'project-1': true,
+      'project-2': true,
+      'project-3': true,
+      'project-4': false,
+    },
+  );
 });
 
 test('SessionShell does not add an archived current session to the project tree fallback', () => {

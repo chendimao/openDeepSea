@@ -46,7 +46,7 @@ import type {
 } from '../lib/types';
 import { api } from '../lib/api';
 import { parseMessageMetadata } from '../lib/messageMetadata';
-import { isPinnedItem, layerIds, reorderWithinLayer } from '../lib/sortableItems';
+import { isPinnedItem, layerIds, reorderWithinLayer, sortPinnedItems } from '../lib/sortableItems';
 import { MessageContent } from '../components/MessageContent';
 import {
   MarkdownDisplaySwitch,
@@ -279,18 +279,53 @@ export function buildProjectReorderInput(
   activeId: string,
   overId: string,
 ): { ids: string[]; pinned: boolean } | null {
+  if (activeId === overId || !canDropProjectOn(projects, activeId, overId)) return null;
   const sortableProjects = projects.map((project, index) => ({
     ...project,
     created_at: project.created_at ?? -index,
     pinned_at: project.pinned_at ?? null,
     sort_order: project.sort_order ?? null,
   }));
-  const next = reorderWithinLayer(sortableProjects, activeId, overId);
-  const moved = next.find((project) => project.id === activeId);
+  const moved = sortableProjects.find((project) => project.id === activeId);
   if (!moved) return null;
   const pinned = isPinnedItem(moved);
+  const beforeIds = layerIds(sortPinnedItems(sortableProjects), pinned);
+  const next = reorderWithinLayer(sortableProjects, activeId, overId);
   const ids = layerIds(next, pinned);
+  if (ids.join('\0') === beforeIds.join('\0')) return null;
   return ids.length > 0 ? { ids, pinned } : null;
+}
+
+function canDropProjectOn(
+  projects: ProjectSwitcherProject[],
+  draggingProjectId: string | null,
+  targetProjectId: string,
+): boolean {
+  if (!draggingProjectId || draggingProjectId === targetProjectId) return false;
+  const active = projects.find((project) => project.id === draggingProjectId);
+  const target = projects.find((project) => project.id === targetProjectId);
+  if (!active || !target) return false;
+  const activePinned = (active.pinned_at ?? null) !== null;
+  const targetPinned = (target.pinned_at ?? null) !== null;
+  return activePinned === targetPinned;
+}
+
+export function syncExpandedProjectIds(
+  current: Record<string, boolean>,
+  projects: Pick<ProjectSwitcherProject, 'id'>[],
+  currentProjectId: string,
+): Record<string, boolean> {
+  return Object.fromEntries(projects.map((project) => [
+    project.id,
+    project.id === currentProjectId ? true : current[project.id] ?? false,
+  ]));
+}
+
+function expandedProjectIdsEqual(left: Record<string, boolean>, right: Record<string, boolean>): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key) => left[key] === right[key]);
 }
 
 function ProjectSessionTreeRail({
@@ -336,6 +371,13 @@ function ProjectSessionTreeRail({
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [dropProjectId, setDropProjectId] = useState<string | null>(null);
   const visibleProjects = filterProjectSessionTree(tree, normalizedQuery);
+  const treeProjectIdKey = tree.map((project) => project.id).join('\0');
+  useEffect(() => {
+    setExpandedProjectIds((current) => {
+      const next = syncExpandedProjectIds(current, tree, currentProjectId);
+      return expandedProjectIdsEqual(current, next) ? current : next;
+    });
+  }, [currentProjectId, treeProjectIdKey]);
   const createSessionForProject = (projectId: string) => {
     setExpandedProjectIds((current) => ({ ...current, [projectId]: true }));
     setOpenProjectMenuId(null);
@@ -427,7 +469,7 @@ function ProjectSessionTreeRail({
                 setDraggingProjectId(project.id);
               }}
               onDragOver={(event) => {
-                if (!draggingProjectId || draggingProjectId === project.id) return;
+                if (!canDropProjectOn(tree, draggingProjectId, project.id)) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'move';
                 setDropProjectId(project.id);
