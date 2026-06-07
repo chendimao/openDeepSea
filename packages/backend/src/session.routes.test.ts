@@ -134,6 +134,41 @@ test('legacy HTTP session command routes are removed', async () => {
   }
 });
 
+test('session PATCH updates pinned_at for active session ordering', async () => {
+  const project = projectRepo.create({
+    name: 'session pin patch project',
+    path: mkdtempSync(join(tmpdir(), 'session-pin-patch-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Pin Me',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  const pinnedAt = Date.now();
+  const pinRes = await request(`/api/sessions/${session.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ pinned_at: pinnedAt }),
+  });
+
+  assert.equal(pinRes.status, 200);
+  const pinned = await pinRes.json() as { pinned_at: number | null };
+  assert.equal(pinned.pinned_at, pinnedAt);
+  assert.equal(sessionRepo.get(session.id)?.pinned_at, pinnedAt);
+
+  const unpinRes = await request(`/api/sessions/${session.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ pinned_at: null }),
+  });
+
+  assert.equal(unpinRes.status, 200);
+  const unpinned = await unpinRes.json() as { pinned_at: number | null };
+  assert.equal(unpinned.pinned_at, null);
+  assert.equal(sessionRepo.get(session.id)?.pinned_at, null);
+});
+
 test('session workspace payload backfills attachments from legacy library file refs', () => {
   const project = projectRepo.create({
     name: 'legacy attachment refs project',

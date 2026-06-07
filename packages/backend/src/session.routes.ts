@@ -133,6 +133,7 @@ function updateSession(req: { params: { sessionId: string }; body: unknown }, re
     status: z.enum(['active', 'blocked', 'completed', 'archived', 'failed']).optional(),
     provider: z.enum(['claudecode', 'opencode', 'codex']).nullable().optional(),
     model: z.string().trim().min(1).nullable().optional(),
+    pinned_at: z.number().int().nullable().optional(),
   }).strict().safeParse(req.body ?? {});
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.flatten() });

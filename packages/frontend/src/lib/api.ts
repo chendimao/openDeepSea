@@ -452,7 +452,10 @@ export const api = {
   getSession: (sessionId: string) => request<SessionDetail>(`/sessions/${sessionId}`),
   updateSession: (
     sessionId: string,
-    input: Partial<Pick<Session, 'title' | 'current_goal' | 'mode' | 'phase' | 'status' | 'provider' | 'model'>>,
+    input: Partial<Pick<
+      Session,
+      'title' | 'current_goal' | 'mode' | 'phase' | 'status' | 'provider' | 'model' | 'pinned_at'
+    >>,
   ) =>
     request<Session>(`/sessions/${sessionId}`, {
       method: 'PATCH',

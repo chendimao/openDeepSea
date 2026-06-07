@@ -185,6 +185,55 @@ test('resource asset delete endpoint keeps encoded resource ids', async () => {
   assert.equal(requestedMethod, 'DELETE');
 });
 
+test('updateSession sends pinned_at patch payload', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  let requestedMethod = '';
+  let requestedBody = '';
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input);
+    requestedMethod = init?.method ?? 'GET';
+    requestedBody = String(init?.body ?? '');
+    return new Response(JSON.stringify({
+      id: 'session-1',
+      project_id: 'project-1',
+      title: 'Session',
+      current_goal: null,
+      mode: 'code',
+      phase: 'idle',
+      status: 'active',
+      provider: 'codex',
+      model: 'gpt-5.5',
+      workspace_path: '/tmp/project',
+      worktree_path: null,
+      branch_name: null,
+      forked_from_session_id: null,
+      forked_from_history_record_id: null,
+      latest_compaction_id: null,
+      latest_context_manifest_id: null,
+      closed_at: null,
+      pinned_at: 123,
+      last_viewed_at: null,
+      created_at: 1,
+      updated_at: 2,
+      archived_at: null,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    await api.updateSession('session-1', { pinned_at: 123 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(requestedUrl, '/api/sessions/session-1');
+  assert.equal(requestedMethod, 'PATCH');
+  assert.equal(requestedBody, JSON.stringify({ pinned_at: 123 }));
+});
+
 test('listRoomTaskEvents requests replay projection when enabled', async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl = '';
