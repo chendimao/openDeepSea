@@ -8,9 +8,11 @@ import {
   type ImageGenerationService,
 } from './service.js';
 import type { ImageGenerationJob, ImageGenerationStatus } from './types.js';
+import { messageRepo } from '../repos/messages.js';
 import { projectRepo } from '../repos/projects.js';
 import { roomRepo } from '../repos/rooms.js';
 import { sessionRepo } from '../repos/sessions.js';
+import { taskRepo } from '../repos/tasks.js';
 
 type ModelFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -158,6 +160,8 @@ imageGenerationRouter.post('/projects/:projectId/image-jobs', async (req, res) =
   try {
     assertRoomBelongsToProject(projectId, parsed.data.room_id ?? null);
     assertSessionBelongsToProject(projectId, parsed.data.session_id ?? null);
+    assertSourceMessageBelongsToProject(projectId, parsed.data.source_message_id ?? null);
+    assertSourceTaskBelongsToProject(projectId, parsed.data.source_task_id ?? null);
     const providerProfileId = resolveProviderProfileId(projectId, parsed.data.provider_profile_id ?? null);
     const result = await getService().createJob({
       project_id: projectId,
@@ -262,6 +266,22 @@ function assertSessionBelongsToProject(projectId: string, sessionId: string | nu
   const session = sessionRepo.get(sessionId);
   if (!session) throw new Error('session not found');
   if (session.project_id !== projectId) throw new Error('session project mismatch');
+}
+
+function assertSourceMessageBelongsToProject(projectId: string, messageId: string | null): void {
+  if (!messageId) return;
+  const message = messageRepo.get(messageId);
+  if (!message) throw new Error('source message not found');
+  const room = roomRepo.get(message.room_id);
+  if (!room) throw new Error('source message not found');
+  if (room.project_id !== projectId) throw new Error('source message project mismatch');
+}
+
+function assertSourceTaskBelongsToProject(projectId: string, taskId: string | null): void {
+  if (!taskId) return;
+  const task = taskRepo.get(taskId);
+  if (!task) throw new Error('source task not found');
+  if (task.project_id !== projectId) throw new Error('source task project mismatch');
 }
 
 function resolveProviderProfileId(projectId: string, profileId: string | null): string {

@@ -6,6 +6,7 @@ import { getAdapter } from './acp/index.js';
 import { getLocalAccessToken, isTrustedOrigin } from './local-access.js';
 import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
+import { imageGenerationJobRepo } from './image-generation/jobs.js';
 import {
   ensureMessageUploadDir,
   ensureProjectFileUploadRoot,
@@ -102,6 +103,7 @@ httpServer.listen(PORT, () => {
   if (!configuredLocalAccessToken) {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
+  recoverImageGenerationJobsAfterStartup();
   void startWorkflowMonitoringAfterStartupRecovery();
   void runSkillsShStartupUpdateCheck();
   if (process.env.OPENDEEPSEA_PROVIDER_SUPERPOWERS_AUTO_INSTALL !== '0') {
@@ -110,6 +112,17 @@ httpServer.listen(PORT, () => {
     });
   }
 });
+
+function recoverImageGenerationJobsAfterStartup(): void {
+  try {
+    const recoveredJobs = imageGenerationJobRepo.recoverInterruptedJobs();
+    if (recoveredJobs > 0) {
+      console.warn(`[image-generation] Marked ${recoveredJobs} interrupted job(s) as canceled`);
+    }
+  } catch (err) {
+    console.warn(`[image-generation] startup recovery failed: ${(err as Error).message}`);
+  }
+}
 
 async function buildInterruptedRunReason(run: AgentRun): Promise<string> {
   const base = 'Backend restarted before agent run completed';

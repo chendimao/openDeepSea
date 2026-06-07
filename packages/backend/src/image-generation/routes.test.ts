@@ -11,9 +11,11 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-imag
 
 const { db, now } = await import('../db.js');
 const { fileRepo } = await import('../repos/files.js');
+const { messageRepo } = await import('../repos/messages.js');
 const { projectRepo } = await import('../repos/projects.js');
 const { roomRepo } = await import('../repos/rooms.js');
 const { sessionRepo } = await import('../repos/sessions.js');
+const { taskRepo } = await import('../repos/tasks.js');
 const { router } = await import('../routes.js');
 const { imageGenerationJobRepo } = await import('./jobs.js');
 const { imageProviderProfileRepo } = await import('./provider-profiles.js');
@@ -330,6 +332,22 @@ test('image job routes hide cross project resources', async () => {
     imageGenerationJobRepo.create(createJobInput(otherProject.id, otherProfile.id)).id,
     'failed elsewhere',
   );
+  const otherRoom = roomRepo.create({
+    project_id: otherProject.id,
+    name: 'Other boundary room',
+    ensureDefaultPlanner: false,
+  });
+  const otherMessage = messageRepo.create({
+    room_id: otherRoom.id,
+    sender_type: 'user',
+    sender_id: 'user',
+    content: 'other project message',
+  });
+  const otherTask = taskRepo.create({
+    project_id: otherProject.id,
+    room_id: otherRoom.id,
+    title: 'Other project task',
+  });
   const otherFile = await createProjectFileForTest(otherProject.id, 'other-source.png', 'image/png', Buffer.from('other'));
   setImageGenerationRouteDeps({
     service: createImageGenerationService({
@@ -363,6 +381,30 @@ test('image job routes hide cross project resources', async () => {
     }),
   });
   assert.equal(sourceFileRes.status, 404);
+
+  const sourceMessageRes = await request(`/api/projects/${project.id}/image-jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      workflow: 'generate',
+      prompt: 'apple from foreign message',
+      count: 1,
+      source_message_id: otherMessage.id,
+    }),
+  });
+  assert.equal(sourceMessageRes.status, 404);
+
+  const sourceTaskRes = await request(`/api/projects/${project.id}/image-jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      workflow: 'generate',
+      prompt: 'apple from foreign task',
+      count: 1,
+      source_task_id: otherTask.id,
+    }),
+  });
+  assert.equal(sourceTaskRes.status, 404);
   assert.equal(imageGenerationJobRepo.get(job.id)?.status, 'queued');
 });
 
