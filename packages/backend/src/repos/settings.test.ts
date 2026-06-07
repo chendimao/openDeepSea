@@ -292,6 +292,30 @@ test('settingsRepo stores system planner settings while redacting api key respon
   assert.equal(settingsRepo.getLangChainPlannerSettings().openai_api_key, null);
 });
 
+test('settingsRepo stores trims and clears global session prompt', () => {
+  const defaultSystem = settingsRepo.getSystem();
+  assert.equal(defaultSystem.global_session_prompt, null);
+
+  const updated = settingsRepo.updateSystem({
+    global_session_prompt: '  请始终先说明执行边界。\n  ',
+  });
+
+  assert.equal(updated.global_session_prompt, '请始终先说明执行边界。');
+  assert.equal(settingsRepo.getSystem().global_session_prompt, '请始终先说明执行边界。');
+
+  const preserved = settingsRepo.updateSystem({ langchain_planner_model: 'planner-model' });
+  assert.equal(preserved.global_session_prompt, '请始终先说明执行边界。');
+
+  const clearedByEmpty = settingsRepo.updateSystem({ global_session_prompt: '   ' });
+  assert.equal(clearedByEmpty.global_session_prompt, null);
+
+  const updatedAgain = settingsRepo.updateSystem({ global_session_prompt: '系统级会话约束' });
+  assert.equal(updatedAgain.global_session_prompt, '系统级会话约束');
+
+  const clearedByNull = settingsRepo.updateSystem({ global_session_prompt: null });
+  assert.equal(clearedByNull.global_session_prompt, null);
+});
+
 test('settingsRepo persists AI configs and exposes the active config as runtime planner settings', () => {
   clearAiConfigs();
   const first = settingsRepo.createAiConfig({

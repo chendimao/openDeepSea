@@ -18,6 +18,7 @@ const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js')
 
 afterEach(() => {
   setSessionRuntimeAdapterForTest(undefined);
+  settingsRepo.updateSystem({ global_session_prompt: null });
 });
 
 test('dispatchSessionUserMessage uses project Session Planner backend instead of session provider', async () => {
@@ -84,6 +85,79 @@ test('dispatchSessionUserMessage injects explicit planner platform skill refs in
   assert.match(prompts[0] ?? '', /## Explicit Platform Skills/);
   assert.match(prompts[0] ?? '', /\$frontend-design/);
   assert.match(prompts[0] ?? '', /Frontend design workflow\./);
+});
+
+test('dispatchSessionUserMessage prepends global session prompt before context and user request', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Global Session Prompt',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-global-prompt-')),
+  });
+  settingsRepo.updateSystem({ global_session_prompt: '全局规则：先遵循系统设置注入。' });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Global Session Prompt',
+    provider: 'codex',
+    workspace_path: project.path,
+    current_goal: '完成会话提示词验收',
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-global-session-prompt', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '分析当前状态',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const prompt = prompts[0] ?? '';
+  assert.equal(message.content, '分析当前状态');
+  assert.ok(prompt.startsWith('## Global Session Instruction\n全局规则：先遵循系统设置注入。'));
+  assert.ok(
+    prompt.indexOf('## Global Session Instruction') <
+      prompt.indexOf('本轮 prompt 来源由 SessionOS Context Inspector 记录。'),
+  );
+  assert.ok(
+    prompt.indexOf('本轮 prompt 来源由 SessionOS Context Inspector 记录。') <
+      prompt.indexOf('当前目标：完成会话提示词验收'),
+  );
+  assert.ok(prompt.indexOf('当前目标：完成会话提示词验收') < prompt.indexOf('## User Request'));
+  assert.ok(prompt.endsWith('## User Request\n\n分析当前状态'));
+});
+
+test('dispatchSessionUserMessage omits global session prompt block when setting is empty', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Empty Global Session Prompt',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-empty-global-prompt-')),
+  });
+  settingsRepo.updateSystem({ global_session_prompt: null });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Empty Global Session Prompt',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-empty-global-session-prompt', stderr: '' };
+    },
+  });
+
+  await dispatchSessionUserMessage({ sessionId: session.id, content: '保持现有 prompt' });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.doesNotMatch(prompts[0] ?? '', /## Global Session Instruction/);
+  assert.match(prompts[0] ?? '', /## User Request\n\n保持现有 prompt/);
 });
 
 test('dispatchSessionUserMessage rejects platform skill refs outside planner backend', async () => {

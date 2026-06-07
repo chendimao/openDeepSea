@@ -2,6 +2,7 @@ import { lstat } from 'node:fs/promises';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { fileRepo } from './repos/files.js';
 import { projectRepo } from './repos/projects.js';
+import { settingsRepo } from './repos/settings.js';
 import {
   DEFAULT_SESSION_AGENT_ID,
   sessionMessageRepo,
@@ -107,6 +108,7 @@ export async function dispatchSessionUserMessage(input: {
       message.content,
       fileReferenceContext.promptAddition,
       buildPlatformSkillsPrompt(platformSkillRefs),
+      settingsRepo.getSystem().global_session_prompt,
     ),
     provider: plannerRuntime.backend,
     model: runtimeSession.model,
@@ -300,6 +302,7 @@ export function buildRuntimePrompt(
   content: string,
   referencedFilesBlock = '',
   platformSkillsBlock = '',
+  globalSessionPrompt: string | null = null,
 ): string {
   const manifest = createContextManifest(session);
   const sourceBlocks = manifest.sources
@@ -311,6 +314,7 @@ export function buildRuntimePrompt(
     ].join('\n'));
   const goal = session.current_goal?.trim();
   return [
+    buildGlobalSessionInstructionBlock(globalSessionPrompt) || null,
     '本轮 prompt 来源由 SessionOS Context Inspector 记录。',
     goal ? `当前目标：${goal}` : null,
     sourceBlocks.length > 0 ? ['## Context Sources', ...sourceBlocks].join('\n\n') : null,
@@ -319,6 +323,11 @@ export function buildRuntimePrompt(
     '## User Request',
     content,
   ].filter(Boolean).join('\n\n');
+}
+
+export function buildGlobalSessionInstructionBlock(prompt: string | null | undefined): string {
+  const trimmed = prompt?.trim();
+  return trimmed ? `## Global Session Instruction\n${trimmed}` : '';
 }
 
 function buildPlatformSkillsPrompt(skills: ResolvedPlatformSkillRef[]): string {

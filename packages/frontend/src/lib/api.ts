@@ -256,6 +256,7 @@ export const api = {
     openai_base_url?: string | null;
     openai_api_key?: string | null;
     workspace_excluded_dirs?: string[];
+    global_session_prompt?: string | null;
   }) =>
     request<SettingsResolution['system']>('/settings/system', {
       method: 'PATCH',

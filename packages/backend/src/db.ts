@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS settings (
   openai_api_key TEXT,
   openai_base_url TEXT,
   active_ai_config_id TEXT,
+  global_session_prompt TEXT,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (scope, scope_id)
 );
@@ -1588,6 +1589,9 @@ if (!settingsColumnNames.has('workspace_excluded_dirs')) {
 }
 if (!settingsColumnNames.has('session_planner_acp_backend')) {
   db.exec('ALTER TABLE settings ADD COLUMN session_planner_acp_backend TEXT');
+}
+if (!settingsColumnNames.has('global_session_prompt')) {
+  db.exec('ALTER TABLE settings ADD COLUMN global_session_prompt TEXT');
 }
 
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {

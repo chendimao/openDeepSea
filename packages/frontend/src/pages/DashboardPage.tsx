@@ -124,7 +124,7 @@ export function DashboardPage() {
                   )}
 
                   <div className="pointer-events-none mt-5 flex items-center gap-4 text-[11px] font-mono text-[var(--color-fg-muted)]">
-                    <span className="flex items-center gap-1">
+                    <span className="flex items-center gap-1" title={t('project.stats.contextsTitle')}>
                       <MessageSquare className="h-3 w-3" strokeWidth={1.75} />
                       {t('project.stats.rooms', { count: p.stats?.rooms ?? 0 })}
                     </span>

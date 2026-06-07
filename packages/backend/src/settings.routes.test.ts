@@ -167,6 +167,37 @@ test('system settings route trims planner fields and never returns raw api key',
   assert.equal('openai_api_key' in fetched, false);
 });
 
+test('system settings route stores global session prompt and rejects oversized prompt', async () => {
+  const patchRes = await request('/api/settings/system', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      global_session_prompt: '  全局优先：先说明计划。\n',
+    }),
+  });
+  assert.equal(patchRes.status, 200);
+  const patched = await patchRes.json() as Record<string, unknown>;
+  assert.equal(patched.global_session_prompt, '全局优先：先说明计划。');
+
+  const getRes = await request('/api/settings/system');
+  assert.equal(getRes.status, 200);
+  const fetched = await getRes.json() as Record<string, unknown>;
+  assert.equal(fetched.global_session_prompt, '全局优先：先说明计划。');
+
+  const clearRes = await request('/api/settings/system', {
+    method: 'PATCH',
+    body: JSON.stringify({ global_session_prompt: '   ' }),
+  });
+  assert.equal(clearRes.status, 200);
+  const cleared = await clearRes.json() as Record<string, unknown>;
+  assert.equal(cleared.global_session_prompt, null);
+
+  const oversizedRes = await request('/api/settings/system', {
+    method: 'PATCH',
+    body: JSON.stringify({ global_session_prompt: 'x'.repeat(12001) }),
+  });
+  assert.equal(oversizedRes.status, 400);
+});
+
 test('settings routes persist superpowers bootstrap owner without affecting AI config secrets', async () => {
   const systemRes = await request('/api/settings/system', {
     method: 'PATCH',

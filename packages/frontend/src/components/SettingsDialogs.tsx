@@ -70,10 +70,22 @@ type SystemSettingsSavePatch = {
   auto_distill_enabled: boolean;
   superpowers_bootstrap_owner: SuperpowersBootstrapOwner;
   workspace_excluded_dirs?: string[];
+  global_session_prompt?: string | null;
   langchain_planner_model?: string | null;
   openai_base_url?: string | null;
   openai_api_key?: string | null;
 };
+
+export const GLOBAL_SESSION_PROMPT_LIMIT = 12000;
+
+export function buildGlobalSessionPromptSaveValue(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+export function buildGlobalSessionPromptCounterLabel(value: string): string {
+  return `${value.length} / ${GLOBAL_SESSION_PROMPT_LIMIT}`;
+}
 
 const ROUTING_OPTIONS: Array<{ value: MessageRoutingMode; descriptionKey: MessageKey }> = [
   { value: 'mentions_only', descriptionKey: 'settings.routing.mentions_only.description' },
@@ -108,9 +120,10 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   openai_base_url: null,
   openai_api_key_set: false,
   openai_api_key_preview: null,
+  global_session_prompt: null,
 };
 
-type SystemSettingsCategory = 'general' | 'chat' | 'model';
+type SystemSettingsCategory = 'general' | 'sessionPrompt' | 'chat' | 'model';
 
 type AiConfigDraft = {
   name: string;
@@ -167,7 +180,7 @@ export function SystemSettingsDialog({
         className="max-h-[88vh] w-[min(94vw,900px)] overflow-y-auto"
       >
         <SystemSettingsForm
-          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.active_ai_config_id ?? ''}:${aiConfigs?.items.length ?? 0}`}
+          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.active_ai_config_id ?? ''}:${settings.global_session_prompt ?? ''}:${aiConfigs?.items.length ?? 0}`}
           theme={theme}
           value={settings}
           aiConfigs={aiConfigs ?? { active_ai_config_id: settings.active_ai_config_id, items: settings.ai_configs ?? [] }}
@@ -312,6 +325,7 @@ function SystemSettingsForm({
     value.superpowers_bootstrap_owner,
   );
   const [workspaceExcludedDirs, setWorkspaceExcludedDirs] = useState<string[]>(value.workspace_excluded_dirs ?? []);
+  const [globalSessionPrompt, setGlobalSessionPrompt] = useState(value.global_session_prompt ?? '');
   const [selectedAiConfigId, setSelectedAiConfigId] = useState<string | null>(
     aiConfigs.active_ai_config_id ?? aiConfigs.items[0]?.id ?? null,
   );
@@ -324,6 +338,7 @@ function SystemSettingsForm({
   const queryClient = useQueryClient();
   const { t } = useI18n();
   const requiresFallback = routingMode !== 'mentions_only';
+  const isGlobalSessionPromptOverLimit = globalSessionPrompt.length > GLOBAL_SESSION_PROMPT_LIMIT;
   const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
   const selectedAiConfig = aiConfigs.items.find((item) => item.id === selectedAiConfigId) ?? null;
   const activeAiConfig = aiConfigs.items.find((item) => item.id === aiConfigs.active_ai_config_id) ?? null;
@@ -436,6 +451,12 @@ function SystemSettingsForm({
       icon: Settings2,
     },
     {
+      value: 'sessionPrompt',
+      title: t('settings.sessionPromptSettings'),
+      description: t('settings.sessionPromptSettingsDescription'),
+      icon: ShieldCheck,
+    },
+    {
       value: 'chat',
       title: t('settings.chatSettings'),
       description: t('settings.chatSettingsDescription'),
@@ -456,7 +477,7 @@ function SystemSettingsForm({
       footer={
         <Button
           type="button"
-          disabled={isSaving || (requiresFallback && !selectedFallbackAgentId)}
+          disabled={isSaving || isGlobalSessionPromptOverLimit || (requiresFallback && !selectedFallbackAgentId)}
           onClick={() => {
             const patch: SystemSettingsSavePatch = {
               message_routing_mode: routingMode,
@@ -465,6 +486,7 @@ function SystemSettingsForm({
               auto_distill_enabled: autoDistillEnabled,
               superpowers_bootstrap_owner: superpowersBootstrapOwner,
               workspace_excluded_dirs: workspaceExcludedDirs,
+              global_session_prompt: buildGlobalSessionPromptSaveValue(globalSessionPrompt),
             };
             onSave(patch);
           }}
@@ -533,6 +555,20 @@ function SystemSettingsForm({
                 icon={<Globe2 className="h-4 w-4" strokeWidth={1.75} />}
               >
                 <LanguageSection />
+              </SubSettingSection>
+            </div>
+          )}
+          {activeCategory === 'sessionPrompt' && (
+            <div className="space-y-3">
+              <SubSettingSection
+                title={t('settings.globalSessionPrompt')}
+                description={t('settings.globalSessionPromptDescription')}
+                icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}
+              >
+                <GlobalSessionPromptSection
+                  value={globalSessionPrompt}
+                  onChange={setGlobalSessionPrompt}
+                />
               </SubSettingSection>
             </div>
           )}
@@ -652,6 +688,44 @@ function SubSettingSection({
       </div>
       {children}
     </section>
+  );
+}
+
+function GlobalSessionPromptSection({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const isOverLimit = value.length > GLOBAL_SESSION_PROMPT_LIMIT;
+  return (
+    <div className="space-y-2">
+      <textarea
+        className={cn(
+          'min-h-[180px] w-full resize-y rounded-md border bg-[var(--color-surface)] px-3 py-2 text-[12.5px] leading-relaxed text-[var(--color-fg)] placeholder:text-[var(--color-fg-muted)] focus:border-[var(--color-accent)] focus:outline-none',
+          isOverLimit ? 'border-[var(--color-danger)]' : 'border-[var(--color-border)]',
+        )}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        placeholder={t('settings.globalSessionPromptPlaceholder')}
+        aria-label={t('settings.globalSessionPrompt')}
+      />
+      <div className="flex items-center justify-between gap-3 text-[11px]">
+        <span className="text-[var(--color-fg-muted)]">
+          {value.trim() ? t('settings.globalSessionPromptEnabled') : t('settings.globalSessionPromptEmpty')}
+        </span>
+        <span className={isOverLimit ? 'font-semibold text-[var(--color-danger)]' : 'font-mono text-[var(--color-fg-muted)]'}>
+          {buildGlobalSessionPromptCounterLabel(value)}
+        </span>
+      </div>
+      {isOverLimit && (
+        <p className="text-[11px] text-[var(--color-danger)]">
+          {t('settings.globalSessionPromptTooLong', { count: GLOBAL_SESSION_PROMPT_LIMIT })}
+        </p>
+      )}
+    </div>
   );
 }
 

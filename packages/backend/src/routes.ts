@@ -330,6 +330,12 @@ const nullableTrimmedStringSchema = z.union([z.string(), z.null()]).optional().t
   return trimmed || null;
 });
 
+const GLOBAL_SESSION_PROMPT_MAX_LENGTH = 12000;
+const globalSessionPromptSchema = nullableTrimmedStringSchema.refine(
+  (value) => value === undefined || value === null || value.length <= GLOBAL_SESSION_PROMPT_MAX_LENGTH,
+  { message: `global_session_prompt must be at most ${GLOBAL_SESSION_PROMPT_MAX_LENGTH} characters` },
+);
+
 const agentInputSchema = z.object({
   agent_id: z.string().min(1),
   name: z.string().min(1),
@@ -361,6 +367,7 @@ const systemSettingsPatchSchema = z
     langchain_planner_model: nullableTrimmedStringSchema,
     openai_api_key: nullableTrimmedStringSchema,
     openai_base_url: nullableTrimmedStringSchema,
+    global_session_prompt: globalSessionPromptSchema,
   })
   .refine(
     (value) =>
@@ -686,6 +693,7 @@ router.patch('/settings/system', (req, res) => {
     openai_base_url: parsed.data.openai_base_url,
     superpowers_bootstrap_owner: parsed.data.superpowers_bootstrap_owner ?? undefined,
     workspace_excluded_dirs: parsed.data.workspace_excluded_dirs ?? undefined,
+    global_session_prompt: parsed.data.global_session_prompt,
   }));
 });
 

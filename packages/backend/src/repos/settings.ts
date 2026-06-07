@@ -18,6 +18,7 @@ import { workflowDefinitionRepo } from './workflow-definitions.js';
 
 const SYSTEM_SCOPE_ID = 'default';
 const DEFAULT_FALLBACK_AGENT_ID = 'planner';
+const GLOBAL_SESSION_PROMPT_MAX_LENGTH = 12000;
 
 const DEFAULT_SETTINGS: EffectiveSettings = {
   message_routing_mode: 'fallback_reply',
@@ -51,6 +52,7 @@ interface SystemSettingsRow extends ScopedSettings {
   openai_api_key: string | null;
   openai_base_url: string | null;
   active_ai_config_id: string | null;
+  global_session_prompt: string | null;
 }
 
 interface AiConfigRow {
@@ -118,6 +120,7 @@ function getSystemRow(): SystemSettingsRow | null {
         openai_api_key,
         openai_base_url,
         active_ai_config_id,
+        global_session_prompt,
         updated_at
       FROM settings
       WHERE scope = 'system' AND scope_id = ?`,
@@ -315,6 +318,15 @@ function normalizedOptionalString(value: string | null | undefined): string | nu
   return trimmed ? trimmed : null;
 }
 
+function normalizeGlobalSessionPrompt(value: string | null | undefined): string | null {
+  const normalized = normalizedOptionalString(value);
+  if (!normalized) return null;
+  if (normalized.length > GLOBAL_SESSION_PROMPT_MAX_LENGTH) {
+    throw new Error(`global_session_prompt must be at most ${GLOBAL_SESSION_PROMPT_MAX_LENGTH} characters`);
+  }
+  return normalized;
+}
+
 function normalizeAcpBackend(value: AcpBackend | string | null | undefined): AcpBackend | null {
   if (value === 'codex' || value === 'claudecode' || value === 'opencode') return value;
   return null;
@@ -398,6 +410,7 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
     openai_base_url: normalizedOptionalString(activeAiConfig?.openai_base_url ?? settings?.openai_base_url),
     openai_api_key_set: Boolean(openaiApiKey),
     openai_api_key_preview: openaiApiKeyPreview,
+    global_session_prompt: normalizeGlobalSessionPrompt(settings?.global_session_prompt),
   };
 }
 
@@ -450,6 +463,7 @@ export const settingsRepo = {
     openai_base_url?: string | null;
     superpowers_bootstrap_owner?: SuperpowersBootstrapOwner;
     workspace_excluded_dirs?: string[] | null;
+    global_session_prompt?: string | null;
   }): SystemSettings {
     normalizeLegacyRouting();
     const existing = getSystemRow();
@@ -496,6 +510,10 @@ export const settingsRepo = {
         : patch.workspace_excluded_dirs === null
           ? null
           : JSON.stringify(normalizeExcludedDirs(patch.workspace_excluded_dirs));
+    const globalSessionPrompt =
+      patch.global_session_prompt === undefined
+        ? normalizeGlobalSessionPrompt(existing?.global_session_prompt)
+        : normalizeGlobalSessionPrompt(patch.global_session_prompt);
     const updatedAt = now();
 
     db.prepare(
@@ -513,9 +531,10 @@ export const settingsRepo = {
         active_ai_config_id,
         superpowers_bootstrap_owner,
         workspace_excluded_dirs,
+        global_session_prompt,
         updated_at
       )
-       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(scope, scope_id) DO UPDATE SET
          message_routing_mode = excluded.message_routing_mode,
          fallback_agent_id = excluded.fallback_agent_id,
@@ -528,6 +547,7 @@ export const settingsRepo = {
          active_ai_config_id = excluded.active_ai_config_id,
          superpowers_bootstrap_owner = excluded.superpowers_bootstrap_owner,
          workspace_excluded_dirs = excluded.workspace_excluded_dirs,
+         global_session_prompt = excluded.global_session_prompt,
          updated_at = excluded.updated_at`,
     ).run(
       SYSTEM_SCOPE_ID,
@@ -542,6 +562,7 @@ export const settingsRepo = {
       shouldClearActiveAiConfig ? null : existing?.active_ai_config_id ?? null,
       superpowersBootstrapOwner ?? DEFAULT_SETTINGS.superpowers_bootstrap_owner,
       workspaceExcludedDirs,
+      globalSessionPrompt,
       updatedAt,
     );
 

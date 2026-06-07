@@ -860,6 +860,7 @@ export interface SystemSettings extends EffectiveSettings {
   openai_base_url: string | null;
   openai_api_key_set: boolean;
   openai_api_key_preview: string | null;
+  global_session_prompt: string | null;
 }
 
 export interface AiConfig {
