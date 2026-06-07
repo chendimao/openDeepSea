@@ -1441,6 +1441,11 @@
   padding: 5px 7px;
   text-decoration: none;
 }
+button.deepsea-message-attachment {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
 .deepsea-message-attachment:hover {
   background: rgba(37, 99, 235, 0.06);
 }
@@ -1486,6 +1491,23 @@
 .deepsea-message-attachment__body small {
   color: rgba(71, 85, 105, 0.76);
   font-size: 10px;
+}
+.deepsea-message-image-preview {
+  width: min(92vw, 960px);
+}
+.deepsea-message-image-preview__stage {
+  display: grid;
+  max-height: min(76vh, 760px);
+  place-items: center;
+  overflow: auto;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.06);
+}
+.deepsea-message-image-preview__stage img {
+  display: block;
+  max-width: 100%;
+  max-height: min(72vh, 720px);
+  object-fit: contain;
 }
 .deepsea-run-log,
 .deepsea-run-log-body {

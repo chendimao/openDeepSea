@@ -130,6 +130,7 @@ test('SessionShell renders uploaded attachments on transcript messages', () => {
   assert.match(html, /brief\.txt/);
   assert.match(html, /screen\.png/);
   assert.match(html, /src="\/uploads\/files\/project-1\/screen\.png"/);
+  assert.match(html, /aria-label="预览图片附件：screen\.png"/);
   assert.match(html, /1\.5 KB/);
   assert.match(html, /2\.0 KB/);
 });

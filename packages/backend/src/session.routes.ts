@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { fileRepo } from './repos/files.js';
 import { projectRepo } from './repos/projects.js';
 import {
   sessionAgentEventRepo,
@@ -31,10 +32,12 @@ import {
 import type {
   HistoryRecord,
   Project,
+  ProjectFile,
   Session,
   SessionCompaction,
   SessionContextManifest,
   SessionDetail,
+  SessionMessage,
   SessionMode,
   SessionWorkspacePayload,
   StatusSnapshot,
@@ -208,7 +211,9 @@ function buildSessionDetail(session: Session): SessionDetail {
   const runs = sessionRunRepo.listBySession(session.id);
   return {
     session,
-    messages: sessionMessageRepo.listBySession(session.id),
+    messages: sessionMessageRepo.listBySession(session.id).map((message) =>
+      backfillSessionMessageAttachments(session.project_id, message)
+    ),
     runs,
     agentEvents: runs.flatMap((run) => sessionAgentEventRepo.listByRun(run.id)),
     planItems: sessionPlanItemRepo.listBySession(session.id),
@@ -216,6 +221,59 @@ function buildSessionDetail(session: Session): SessionDetail {
     checkpoints: sessionCheckpointRepo.listBySession(session.id),
     evidence: sessionEvidenceRepo.listBySession(session.id),
   };
+}
+
+function backfillSessionMessageAttachments(projectId: string, message: SessionMessage): SessionMessage {
+  const metadata = parseMessageMetadataRecord(message.metadata);
+  const libraryFileRefs = Array.isArray(metadata.library_file_refs)
+    ? metadata.library_file_refs.filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0)
+    : [];
+  if (libraryFileRefs.length === 0) return message;
+
+  const existingAttachments = Array.isArray(metadata.attachments) ? metadata.attachments : [];
+  const existingFileIds = new Set(existingAttachments
+    .map((attachment) => isRecord(attachment) && typeof attachment.fileId === 'string' ? attachment.fileId : null)
+    .filter((fileId): fileId is string => fileId !== null));
+  const backfilledAttachments = libraryFileRefs
+    .filter((ref) => !existingFileIds.has(ref))
+    .map((ref) => fileRepo.get(ref))
+    .filter((file): file is ProjectFile => isBackfillableUploadedFile(projectId, file))
+    .map((file) => ({
+      id: file.id,
+      fileId: file.id,
+      name: file.original_name,
+      mimeType: file.mime_type,
+      size: file.size,
+      url: file.url,
+      isImage: file.mime_type.startsWith('image/'),
+      deleted: file.deleted_at !== null,
+    }));
+  if (backfilledAttachments.length === 0) return message;
+  return {
+    ...message,
+    metadata: JSON.stringify({
+      ...metadata,
+      attachments: [...existingAttachments, ...backfilledAttachments],
+    }),
+  };
+}
+
+function isBackfillableUploadedFile(projectId: string, file: ProjectFile | undefined): file is ProjectFile {
+  return Boolean(file && file.project_id === projectId && file.source_type === 'uploaded_file');
+}
+
+function parseMessageMetadataRecord(metadata: string | null): Record<string, unknown> {
+  if (!metadata) return {};
+  try {
+    const parsed = JSON.parse(metadata) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 export function buildSessionStatus(session: Session): StatusSnapshot {

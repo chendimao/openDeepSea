@@ -1,6 +1,7 @@
 import { Eye, FileText, Image as ImageIcon, Paperclip } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { MarkdownPreview, MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
+import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { formatFileSize } from '../lib/composerModel';
 import type { MessageAttachmentMetadata } from '../lib/types';
 
@@ -62,29 +63,59 @@ function SessionMessageAttachments({
 }: {
   attachments: MessageAttachmentMetadata[];
 }): JSX.Element | null {
+  const [previewAttachment, setPreviewAttachment] = useState<MessageAttachmentMetadata | null>(null);
   if (attachments.length === 0) return null;
   return (
-    <div className="deepsea-message-attachments" aria-label="消息附件">
-      {attachments.map((attachment) => attachment.deleted ? (
-        <span
-          key={attachment.id}
-          className="deepsea-message-attachment"
-          data-deleted="true"
-        >
-          <SessionMessageAttachmentContent attachment={attachment} />
-        </span>
-      ) : (
-        <a
-          key={attachment.id}
-          className="deepsea-message-attachment"
-          href={attachment.url}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <SessionMessageAttachmentContent attachment={attachment} />
-        </a>
-      ))}
-    </div>
+    <>
+      <div className="deepsea-message-attachments" aria-label="消息附件">
+        {attachments.map((attachment) => {
+          if (attachment.deleted) {
+            return (
+              <span
+                key={attachment.id}
+                className="deepsea-message-attachment"
+                data-deleted="true"
+              >
+                <SessionMessageAttachmentContent attachment={attachment} />
+              </span>
+            );
+          }
+          if (attachment.isImage) {
+            return (
+              <button
+                key={attachment.id}
+                type="button"
+                className="deepsea-message-attachment"
+                aria-label={`预览图片附件：${attachment.name}`}
+                onClick={() => setPreviewAttachment(attachment)}
+              >
+                <SessionMessageAttachmentContent attachment={attachment} />
+              </button>
+            );
+          }
+          return (
+            <a
+              key={attachment.id}
+              className="deepsea-message-attachment"
+              href={attachment.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <SessionMessageAttachmentContent attachment={attachment} />
+            </a>
+          );
+        })}
+      </div>
+      <Dialog open={!!previewAttachment} onOpenChange={(open) => !open && setPreviewAttachment(null)}>
+        <DialogContent className="deepsea-message-image-preview" title={previewAttachment?.name}>
+          {previewAttachment && (
+            <div className="deepsea-message-image-preview__stage">
+              <img src={previewAttachment.url} alt={previewAttachment.name} />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
