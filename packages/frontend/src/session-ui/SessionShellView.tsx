@@ -1573,7 +1573,7 @@ function formatToolDuration(durationMs: number | null): string {
 }
 
 function formatToolDisplayDuration(row: SessionToolRow): string {
-  return formatToolDuration(row.runDurationMs ?? row.durationMs);
+  return formatToolDuration(row.durationMs);
 }
 
 function formatToolTimestamp(timestamp: number): string {

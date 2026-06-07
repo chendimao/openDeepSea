@@ -124,7 +124,7 @@ test('SessionShell renders active run danger state without success semantics', (
   assert.doesNotMatch(html, /aria-label="运行状态：完成"/);
 });
 
-test('SessionShell renders tool row duration from the full session run when available', () => {
+test('SessionShell renders tool row duration from the individual tool event', () => {
   const payload = createPayload();
   payload.toolRows[0] = {
     ...payload.toolRows[0]!,
@@ -134,8 +134,8 @@ test('SessionShell renders tool row duration from the full session run when avai
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /21\.4s/);
-  assert.doesNotMatch(html, /0\.3s/);
+  assert.match(html, /0\.3s/);
+  assert.doesNotMatch(html, /21\.4s/);
 });
 
 test('SessionShell renders tool row relative record time beside duration', () => {
@@ -149,7 +149,7 @@ test('SessionShell renders tool row relative record time beside duration', () =>
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /class="deepsea-tool-row-duration">21\.4s<\/span>/);
+  assert.match(html, /class="deepsea-tool-row-duration">0\.3s<\/span>/);
   assert.match(html, /class="deepsea-tool-row-time">刚刚<\/span>/);
 });
 
