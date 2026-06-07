@@ -1,11 +1,6 @@
 import type {
-  AgentRun,
-  AgentRunStatus,
-  AgentTimelineEvent,
   HistoryRecord,
   HistoryRecordStatus,
-  Message,
-  RoomAgent,
   Session,
   SessionAgentEvent,
   SessionEvidenceEvent,
@@ -14,39 +9,9 @@ import type {
   SessionRun,
   SessionWorkspacePayload,
   Task,
-  TaskArtifact,
-  TaskEvent,
-  WorkflowRun,
-  WorkflowStep,
 } from './types';
 
 export type WsServerEvent =
-  | { type: 'message:new'; roomId: string; message: Message }
-  | { type: 'task_event:new'; roomId: string; event: TaskEvent }
-  | { type: 'task:activated'; roomId: string; taskId: string }
-  | {
-      type: 'message:stream';
-      roomId: string;
-      messageId: string;
-      chunk: string;
-      done: boolean;
-      seq?: number;
-      runId?: string;
-      channel?: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
-      event?: AgentTimelineEvent;
-      status?: 'streaming' | AgentRunStatus;
-      error?: string | null;
-      message?: Message;
-    }
-  | { type: 'agent_run:created'; roomId: string; run: AgentRun }
-  | { type: 'agent_run:updated'; roomId: string; run: AgentRun }
-  | { type: 'room:agent_joined'; roomId: string; agent: RoomAgent }
-  | { type: 'room:agent_left'; roomId: string; roomAgentId: string }
-  | { type: 'workflow:created'; roomId: string; workflow: WorkflowRun }
-  | { type: 'workflow:updated'; roomId: string; workflow: WorkflowRun }
-  | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
-  | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
-  | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
   | { type: 'session_workspace:snapshot'; projectId: string; sessionId: string; payload: SessionWorkspacePayload }
   | { type: 'session_error'; sessionId: string; error: string }
   | { type: 'session_status:snapshot'; sessionId: string; status: import('./types').StatusSnapshot }
@@ -75,8 +40,6 @@ export type WsServerEvent =
   | { type: 'task:deleted'; taskId: string };
 
 export type WsClientEvent =
-  | { type: 'subscribe'; roomId: string }
-  | { type: 'unsubscribe'; roomId: string }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }
@@ -99,10 +62,9 @@ export type WsClientEvent =
 
 type Listener = (event: WsServerEvent) => void;
 
-class RoomSocket {
+class SessionSocket {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
-  private subscribed = new Set<string>();
   private subscribedSessions = new Set<string>();
   private pendingClientEvents: WsClientEvent[] = [];
   private retry = 0;
@@ -124,7 +86,6 @@ class RoomSocket {
       this.retry = 0;
       if (
         this.closeWhenOpen &&
-        this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
         this.pendingClientEvents.length === 0
       ) {
@@ -132,7 +93,6 @@ class RoomSocket {
         setTimeout(() => {
           if (
             this.ws !== ws ||
-            this.subscribed.size > 0 ||
             this.subscribedSessions.size > 0 ||
             this.pendingClientEvents.length > 0
           ) return;
@@ -142,7 +102,6 @@ class RoomSocket {
         return;
       }
       this.closeWhenOpen = false;
-      for (const id of this.subscribed) ws.send(JSON.stringify({ type: 'subscribe', roomId: id }));
       for (const id of this.subscribedSessions) ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: id }));
       const pending = this.pendingClientEvents.splice(0);
       for (const event of pending) ws.send(JSON.stringify(event));
@@ -159,7 +118,6 @@ class RoomSocket {
       if (this.ws === ws) this.ws = null;
       this.closeWhenOpen = false;
       if (
-        this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
         this.pendingClientEvents.length === 0
       ) return;
@@ -181,30 +139,11 @@ class RoomSocket {
     this.connectTimer = setTimeout(() => {
       this.connectTimer = null;
       if (
-        this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
         this.pendingClientEvents.length === 0
       ) return;
       this.connect();
     }, 0);
-  }
-
-  subscribe(roomId: string): void {
-    this.closeWhenOpen = false;
-    this.subscribed.add(roomId);
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'subscribe', roomId }));
-    } else {
-      this.connectSoon();
-    }
-  }
-
-  unsubscribe(roomId: string): void {
-    this.subscribed.delete(roomId);
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'unsubscribe', roomId }));
-    }
-    this.closeIfIdle();
   }
 
   subscribeSession(sessionId: string): void {
@@ -317,7 +256,7 @@ class RoomSocket {
   }
 
   private closeIfIdle(): void {
-    if (this.subscribed.size > 0 || this.subscribedSessions.size > 0 || this.pendingClientEvents.length > 0) return;
+    if (this.subscribedSessions.size > 0 || this.pendingClientEvents.length > 0) return;
     if (this.connectTimer) {
       clearTimeout(this.connectTimer);
       this.connectTimer = null;
@@ -338,5 +277,4 @@ class RoomSocket {
   }
 }
 
-export const roomSocket = new RoomSocket();
-export const sessionSocket = roomSocket;
+export const sessionSocket = new SessionSocket();

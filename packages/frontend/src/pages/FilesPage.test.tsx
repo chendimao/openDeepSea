@@ -208,10 +208,9 @@ test('resource library uses unified resource list when a project is selected', a
   try {
     const files = await listResourceLibraryFiles({
       projectId: 'project-1',
-      roomId: 'room-1',
       sourceType: 'agent_document',
     });
-    assert.equal(requestedUrl, '/api/projects/project-1/resource-assets?roomId=room-1&resourceType=agent_document');
+    assert.equal(requestedUrl, '/api/projects/project-1/resource-assets?resourceType=agent_document');
     assert.equal(files[0]?.source_type, 'agent_document');
   } finally {
     globalThis.fetch = originalFetch;
@@ -232,7 +231,7 @@ function translateFileMessage(key: string, params?: Record<string, string | numb
     'files.source.agentDocument': '智能体文档',
     'files.source.unknown': '未知资源',
     'files.sourceSummary.uploadedBy': '上传者：{user}',
-    'files.sourceSummary.uploadedByInRoom': '上传者：{user} · 来源群聊：{room}',
+    'files.sourceSummary.uploadedByInRoom': '上传者：{user} · 来源上下文：{room}',
     'files.sourceSummary.uploadedInRoom': '上传来源：{room}',
     'files.sourceSummary.uploadedUnknown': '上传来源：未记录',
     'files.sourceSummary.agent': '智能体：{agent}',

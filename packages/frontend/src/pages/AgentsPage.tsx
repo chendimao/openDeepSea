@@ -120,7 +120,7 @@ export function AgentsPage() {
     onSuccess: (refs) => {
       if (refs) {
         setDeleteReferences(refs);
-        toast.error('该智能体正在被聊天室使用');
+        toast.error('该智能体正在被历史上下文使用');
         return;
       }
       queryClient.invalidateQueries({ queryKey: ['agents'] });
@@ -152,7 +152,7 @@ export function AgentsPage() {
             <h1 className="font-display text-[22px] font-semibold tracking-tight">智能体</h1>
           </div>
           <p className="mt-1 text-[12.5px] text-[var(--color-fg-muted)]">
-            管理全局智能体库。聊天室可以从这里拉入智能体，并保留聊天室级会话与权限配置。
+            管理全局智能体库。项目会话可以从这里使用智能体，并保留历史上下文的兼容配置。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -317,7 +317,7 @@ function AgentEditor({
             </h2>
             <div className="mt-1 flex items-center gap-2">
               <p className="font-mono text-[11px] text-[var(--color-fg-muted)]">
-                {isNew ? '创建后可被任意聊天室拉入' : selectedAgent?.agent_id}
+                {isNew ? '创建后可被项目会话使用' : selectedAgent?.agent_id}
               </p>
               {isBuiltIn ? (
                 <span className="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10.5px] text-[var(--color-fg-muted)]">
@@ -350,7 +350,7 @@ function AgentEditor({
       <div className="flex-1 overflow-y-auto px-5 py-5">
         {deleteReferences && (
           <div className="mb-4 rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-3 py-3 text-[12.5px] text-[var(--color-fg)]">
-            <div className="font-medium text-[var(--color-danger)]">该智能体正在被聊天室使用，不能直接删除。</div>
+            <div className="font-medium text-[var(--color-danger)]">该智能体正在被历史上下文使用，不能直接删除。</div>
             <div className="mt-2 space-y-1">
               {deleteReferences.map((ref) => (
                 <div key={ref.room_id} className="font-mono text-[11px] text-[var(--color-fg-muted)]">

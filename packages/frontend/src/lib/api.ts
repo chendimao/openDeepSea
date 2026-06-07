@@ -2,28 +2,16 @@ import type {
   AcpBackend,
   AiConfig,
   Agent,
-  AgentTimelineEvent,
   AgentInput,
-  AgentRun,
-  AgentRunRetryResult,
-  BrainstormingOptionSelection,
-  MessageChoiceOptionSelection,
   AgentMemoryScope,
-  AgentRuntimeBackend,
-  AgentToolCapability,
-  AgentToolPolicy,
-  AgentWorkspacePolicy,
   BuiltInAgentTemplate,
   CliSession,
-  CollaborationDecision,
-  CollaborationRunSummary,
   GlobalChatMessage,
   GlobalChatSendResponse,
   GlobalChatSession,
   MemoryEntry,
   MemoryInput,
   MemorySearchResult,
-  Message,
   MessageRoutingMode,
   PlatformSkill,
   PlatformSkillAggregate,
@@ -36,10 +24,7 @@ import type {
   ResourceDetail,
   ResourceListItem,
   Project,
-  Room,
-  RoomAgent,
   RoomCrewTemplate,
-  RoomSearchResponse,
   SettingsResolution,
   HistoryRecord,
   Session,
@@ -58,10 +43,7 @@ import type {
   SkillTriggerMode,
   SuperpowersBootstrapOwner,
   Task,
-  TaskActionKind,
-  TaskActionStartResult,
   TaskEvent,
-  TaskExecutionDecision,
   TaskEventListResponse,
   TaskExecutorListItem,
   TaskInteractionMode,
@@ -82,7 +64,6 @@ type WorkflowDefinitionListFilters = {
   scope?: WorkflowDefinitionScope;
   status?: WorkflowDefinitionStatus;
   projectId?: string;
-  roomId?: string;
   includeArchived?: boolean;
 };
 
@@ -322,37 +303,16 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
-  getRoomSettings: (roomId: string) =>
-    request<SettingsResolution>(`/rooms/${roomId}/settings`),
-  updateRoomSettings: (
-    roomId: string,
-    input: {
-      message_routing_mode?: MessageRoutingMode | null;
-      fallback_agent_id?: string | null;
-      interaction_mode?: TaskInteractionMode | null;
-      auto_distill_enabled?: boolean | null;
-      default_workflow_definition_id?: string | null;
-      superpowers_bootstrap_owner?: SuperpowersBootstrapOwner | null;
-    },
-  ) =>
-    request<SettingsResolution>(`/rooms/${roomId}/settings`, {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    }),
-
   listWorkflowDefinitions: (filters: WorkflowDefinitionListFilters | QueryFunctionContextLike = {}) => {
     const normalizedFilters = isQueryFunctionContextLike(filters) ? {} : filters;
     const params = new URLSearchParams();
     if (normalizedFilters.scope) params.set('scope', normalizedFilters.scope);
     if (normalizedFilters.status) params.set('status', normalizedFilters.status);
     if (normalizedFilters.projectId) params.set('projectId', normalizedFilters.projectId);
-    if (normalizedFilters.roomId) params.set('roomId', normalizedFilters.roomId);
     if (normalizedFilters.includeArchived) params.set('includeArchived', '1');
     const query = params.toString();
     return request<WorkflowDefinition[]>(`/workflow-definitions${query ? `?${query}` : ''}`);
   },
-  listRoomWorkflowDefinitions: (roomId: string) =>
-    request<WorkflowDefinition[]>(`/rooms/${roomId}/workflow-definitions`),
   createWorkflowDefinition: (input: {
     name: string;
     description?: string | null;
@@ -553,23 +513,21 @@ export const api = {
     request<HistoryRecord>(`/history-records/${historyRecordId}/resume-brief/regenerate`, { method: 'POST' }),
   exportHistoryRecord: (historyRecordId: string) =>
     request<{ record: HistoryRecord; sourceSession: SessionDetail | null }>(`/history-records/${historyRecordId}/export`),
-  listFiles: (filters: { projectId?: string; roomId?: string; sourceType?: ProjectFile['source_type'] } = {}) => {
-    if (filters.projectId && !filters.roomId) {
+  listFiles: (filters: { projectId?: string; sourceType?: ProjectFile['source_type'] } = {}) => {
+    if (filters.projectId) {
       return api.listResourceFiles(filters.projectId, { sourceType: filters.sourceType });
     }
     const params = new URLSearchParams();
     if (filters.projectId) params.set('projectId', filters.projectId);
-    if (filters.roomId) params.set('roomId', filters.roomId);
     if (filters.sourceType) params.set('sourceType', filters.sourceType);
     const query = params.toString();
     return request<ProjectFile[]>(`/files${query ? `?${query}` : ''}`);
   },
   listResourceFiles: async (
     projectId: string,
-    filters: { roomId?: string; sourceType?: ProjectFile['source_type'] } = {},
+    filters: { sourceType?: ProjectFile['source_type'] } = {},
   ) => {
     const params = new URLSearchParams();
-    if (filters.roomId) params.set('roomId', filters.roomId);
     if (filters.sourceType) params.set('resourceType', filters.sourceType);
     const query = params.toString();
     const resources = await request<ResourceListItem[]>(`/projects/${projectId}/resource-assets${query ? `?${query}` : ''}`);
@@ -680,247 +638,10 @@ export const api = {
     }),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
-  listRooms: (projectId: string) => request<Room[]>(`/projects/${projectId}/rooms`),
-  searchRooms: (projectId: string, input: { query: string }) => {
-    const params = new URLSearchParams();
-    params.set('q', input.query);
-    return request<RoomSearchResponse>(`/projects/${projectId}/rooms/search?${params.toString()}`);
-  },
-  createRoom: (projectId: string, input: { name: string; description?: string; crew_template_id?: string }) =>
-    request<Room>(`/projects/${projectId}/rooms`, { method: 'POST', body: JSON.stringify(input) }),
-  getRoom: (id: string) => request<Room>(`/rooms/${id}`),
-  updateRoom: (
-    id: string,
-    input: { name?: string; last_opened_at?: number | null; pinned_at?: number | null; sort_order?: number | null },
-  ) =>
-    request<Room>(`/rooms/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(input),
-    }),
-  reorderRooms: (projectId: string, input: { ids: string[]; pinned: boolean }) =>
-    request<Room[]>(`/projects/${projectId}/rooms/reorder`, {
-      method: 'PUT',
-      body: JSON.stringify(input),
-    }),
-  deleteRoom: (id: string) => request<void>(`/rooms/${id}`, { method: 'DELETE' }),
-
-  listRoomAgents: (roomId: string) => request<RoomAgent[]>(`/rooms/${roomId}/agents`),
-  addRoomAgent: (
-    roomId: string,
-    input: {
-      global_agent_id?: string;
-      agent_id?: string;
-      agent_name?: string;
-      agent_role?: string;
-      acp_enabled?: boolean;
-      acp_backend?: AcpBackend | null;
-      acp_session_id?: string | null;
-      acp_session_label?: string | null;
-      acp_permission_mode?: 'bypass' | 'workspace-write' | 'read-only';
-      runtime_backend?: AgentRuntimeBackend | null;
-      tool_policy?: AgentToolPolicy | null;
-      workspace_policy?: AgentWorkspacePolicy | null;
-      memory_scope?: AgentMemoryScope | null;
-    },
-  ) => request<RoomAgent>(`/rooms/${roomId}/agents`, { method: 'POST', body: JSON.stringify(input) }),
-  addRoomAgentsBatch: (roomId: string, global_agent_ids: string[]) =>
-    request<RoomAgent[]>(`/rooms/${roomId}/agents/batch`, {
-      method: 'POST',
-      body: JSON.stringify({ global_agent_ids }),
-    }),
-  addRoomAgentFromTemplate: (roomId: string, template_id: string) =>
-    request<RoomAgent>(`/rooms/${roomId}/agents/from-template`, {
-      method: 'POST',
-      body: JSON.stringify({ template_id }),
-    }),
-  removeRoomAgent: (
-    roomId: string,
-    agentId: string,
-    input?: { task_action?: 'unassign' | 'transfer'; transfer_to_room_agent_id?: string },
-  ) =>
-    request<void>(`/rooms/${roomId}/agents/${agentId}`, {
-      method: 'DELETE',
-      body: input ? JSON.stringify(input) : undefined,
-    }),
-  setAgentAcp: (
-    roomId: string,
-    agentId: string,
-    config: {
-      acp_enabled: boolean;
-      acp_backend: AcpBackend | null;
-      acp_session_id: string | null;
-      acp_session_label?: string | null;
-      acp_permission_mode?: 'bypass' | 'workspace-write' | 'read-only';
-      runtime_backend?: AgentRuntimeBackend | null;
-      tool_policy?: { allowed: AgentToolCapability[] } | null;
-      workspace_policy?: { read: string[]; write: string[] } | null;
-      memory_scope?: AgentMemoryScope | null;
-      memory_max_context_chars?: number | null;
-    },
-  ) =>
-    request<RoomAgent>(`/rooms/${roomId}/agents/${agentId}/acp`, {
-      method: 'PUT',
-      body: JSON.stringify(config),
-    }),
-  setAgentWorkflowRole: (roomId: string, agentId: string, workflow_role: WorkflowRole | null) =>
-    request<RoomAgent>(`/rooms/${roomId}/agents/${agentId}/workflow-role`, {
-      method: 'PATCH',
-      body: JSON.stringify({ workflow_role }),
-    }),
-
   listAcpSessions: (projectId: string, backend: AcpBackend) =>
     request<CliSession[]>(`/projects/${projectId}/acp-sessions?backend=${backend}`),
 
-  listMessages: (roomId: string) => request<Message[]>(`/rooms/${roomId}/messages`),
-  getMessageTraceEvent: (roomId: string, messageId: string, eventId: string) =>
-    request<AgentTimelineEvent>(
-      `/rooms/${roomId}/messages/${encodeURIComponent(messageId)}/trace-events/${encodeURIComponent(eventId)}`,
-    ),
-  listAgentRuns: (roomId: string) => request<AgentRun[]>(`/rooms/${roomId}/agent-runs`),
-  cancelAgentRun: (id: string) =>
-    request<AgentRun>(`/agent-runs/${id}/cancel`, { method: 'POST' }),
-  retryAgentRun: (id: string) =>
-    request<AgentRunRetryResult>(`/agent-runs/${id}/retry`, { method: 'POST' }),
-  sendMessage: (
-    roomId: string,
-    input: {
-      content: string;
-      mentions?: string[];
-      files?: File[];
-      fileIds?: string[];
-      fileRefs?: string[];
-      replyToMessageId?: string;
-      activeTaskId?: string | null;
-      choiceOptionSelection?: MessageChoiceOptionSelection;
-      brainstormingOptionSelection?: BrainstormingOptionSelection;
-    },
-  ) => {
-    if (input.files && input.files.length > 0) {
-      const form = new FormData();
-      form.append('content', input.content);
-      if (input.replyToMessageId) {
-        form.append('reply_to_message_id', input.replyToMessageId);
-      }
-      if (input.mentions && input.mentions.length > 0) {
-        form.append('mentions', JSON.stringify(input.mentions));
-      }
-      if (input.fileIds && input.fileIds.length > 0) {
-        form.append('fileIds', JSON.stringify(input.fileIds));
-      }
-      if (input.fileRefs && input.fileRefs.length > 0) {
-        form.append('fileRefs', JSON.stringify(input.fileRefs));
-      }
-      if (input.activeTaskId) {
-        form.append('active_task_id', input.activeTaskId);
-      }
-      input.files.forEach((file) => form.append('files', file));
-      return request<Message>(`/rooms/${roomId}/messages`, {
-        method: 'POST',
-        body: form,
-      });
-    }
-    return request<Message>(`/rooms/${roomId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({
-        content: input.content,
-        mentions: input.mentions,
-        fileIds: input.fileIds,
-        fileRefs: input.fileRefs,
-        reply_to_message_id: input.replyToMessageId,
-        active_task_id: input.activeTaskId,
-        choice_option_selection: input.choiceOptionSelection,
-        brainstorming_option_selection: input.brainstormingOptionSelection,
-      }),
-    });
-  },
-  startCollaboration: (
-    roomId: string,
-    input: { source_message_id: string; decision: CollaborationDecision },
-  ) =>
-    request<{ run: CollaborationRunSummary }>(`/rooms/${roomId}/collaborations`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  promoteMessageToWorkflow: (
-    roomId: string,
-    messageId: string,
-    input: { decision?: CollaborationDecision } = {},
-  ) =>
-    request<{ task: Task; workflow: WorkflowRun }>(`/rooms/${roomId}/messages/${messageId}/promote-to-workflow`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  dispatchTaskExecution: (
-    roomId: string,
-    input: { source_message_id: string; task_execution: TaskExecutionDecision },
-  ) =>
-    request<{
-      accepted: true;
-      dispatched: number;
-      added_agents: Array<{ agent_id: string; agent_name: string }>;
-      deferred_steps: TaskExecutionDecision['next_steps'];
-    }>(
-      `/rooms/${roomId}/task-execution/dispatch`,
-      {
-        method: 'POST',
-        body: JSON.stringify(input),
-      },
-    ),
-  startTaskAction: (
-    roomId: string,
-    taskId: string,
-    input: { action: TaskActionKind; sender_id?: string; sender_name?: string },
-  ) =>
-    request<TaskActionStartResult>(`/rooms/${roomId}/tasks/${taskId}/actions`, {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-
   listProjectTasks: (projectId: string) => request<Task[]>(`/projects/${projectId}/tasks`),
-  listRoomTasks: (roomId: string) => request<Task[]>(`/rooms/${roomId}/tasks`),
-  listRoomTaskEvents: (
-    roomId: string,
-    input: { taskId?: string; layer?: TaskEvent['layer']; limit?: number; replay?: boolean } = {},
-  ) => {
-    const params = new URLSearchParams();
-    if (input.taskId) params.set('taskId', input.taskId);
-    if (input.layer) params.set('layer', input.layer);
-    if (input.limit) params.set('limit', String(input.limit));
-    if (input.replay) params.set('replay', '1');
-    const query = params.toString();
-    return request<TaskEventListResponse>(`/rooms/${roomId}/task-events${query ? `?${query}` : ''}`);
-  },
-  createTask: (
-    roomId: string,
-    input: {
-      title: string;
-      description?: string;
-      priority?: Task['priority'];
-      interaction_mode?: Task['interaction_mode'];
-      assigned_agent_id?: string;
-      parent_task_id?: string;
-    },
-  ) => request<Task>(`/rooms/${roomId}/tasks`, { method: 'POST', body: JSON.stringify(input) }),
-  createTaskWithConversation: (
-    roomId: string,
-    input: {
-      title: string;
-      description?: string;
-      priority?: Task['priority'];
-      interaction_mode?: Task['interaction_mode'];
-      assigned_agent_id?: string;
-      parent_task_id?: string;
-      origin?: 'manual' | 'slash_command' | 'chat_plan';
-      sender_id?: string;
-      sender_name?: string;
-      user_message?: string;
-      source_message_id?: string | null;
-    },
-  ) =>
-    request<{ task: Task; userMessage: Message | null; systemMessage: Message }>(
-      `/rooms/${roomId}/tasks/conversation`,
-      { method: 'POST', body: JSON.stringify(input) },
-    ),
   updateTask: (
     id: string,
     patch: Partial<Pick<Task, 'title' | 'description' | 'priority' | 'interaction_mode' | 'assigned_agent_id' | 'status'>>,
@@ -928,49 +649,16 @@ export const api = {
     request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   listTaskExecutors: (taskId: string) =>
     request<TaskExecutorListItem[]>(`/tasks/${taskId}/executors`),
-  activateTask: (roomId: string, taskId: string) =>
-    request<{ roomId: string; taskId: string }>(`/rooms/${roomId}/tasks/${taskId}/activate`, { method: 'POST' }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   startWorkflow: (taskId: string) =>
     request<WorkflowRun>(`/tasks/${taskId}/workflows`, { method: 'POST' }),
-  startWorkflowWithConversation: (
-    roomId: string,
-    taskId: string,
-    input: {
-      content?: string;
-      sender_id?: string;
-      sender_name?: string;
-      source_message_id?: string;
-      source?: 'chat_command' | 'task_button' | 'auto_start';
-    } = {},
-  ) =>
-    request<WorkflowRun>(`/rooms/${roomId}/tasks/${taskId}/workflows/start-with-conversation`, {
-      method: 'POST',
-      body: JSON.stringify({ ...input, source: input.source ?? 'task_button' }),
-    }),
   listTaskWorkflows: (taskId: string) =>
     request<WorkflowRun[]>(`/tasks/${taskId}/workflows`),
-  listRoomWorkflows: (roomId: string) =>
-    request<WorkflowRun[]>(`/rooms/${roomId}/workflows`),
   getWorkflow: (id: string) =>
     request<WorkflowDetail>(`/workflows/${id}`),
   approveWorkflowPlan: (id: string) =>
     request<WorkflowRun>(`/workflows/${id}/approve-plan`, { method: 'POST' }),
-  approveWorkflowPlanWithConversation: (
-    roomId: string,
-    workflowId: string,
-    input: {
-      content?: string;
-      sender_id?: string;
-      sender_name?: string;
-      source?: 'approval_button';
-    } = {},
-  ) =>
-    request<WorkflowRun>(`/rooms/${roomId}/workflows/${workflowId}/approve-plan-with-conversation`, {
-      method: 'POST',
-      body: JSON.stringify({ ...input, source: input.source ?? 'approval_button' }),
-    }),
   submitWorkflowDecisions: (
     id: string,
     answers: Array<{ decisionId: string; optionId: string }>,

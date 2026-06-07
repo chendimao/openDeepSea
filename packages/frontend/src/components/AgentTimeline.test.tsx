@@ -234,7 +234,6 @@ test('AgentTimeline renders lightweight tool detail placeholders without heavy p
   const html = renderToStaticMarkup(
     <I18nProvider>
       <AgentTimeline
-        roomId="room-1"
         events={[
           {
             id: 'tool-1',
@@ -261,7 +260,7 @@ test('AgentTimeline renders lightweight tool detail placeholders without heavy p
 
   assert.match(html, /Explored/);
   assert.match(html, /Read · packages\/frontend\/src\/pages\/SessionWorkspacePage\.tsx/);
-  assert.match(html, /展开后加载完整详情/);
+  assert.match(html, /完整详情已省略/);
   assert.doesNotMatch(html, /文件正文/);
   assert.doesNotMatch(html, /输出/);
 });
