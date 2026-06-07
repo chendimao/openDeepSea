@@ -249,12 +249,14 @@ function backfillSessionMessageAttachments(projectId: string, message: SessionMe
       deleted: file.deleted_at !== null,
     }));
   if (backfilledAttachments.length === 0) return message;
-  return {
+  const nextMetadata = JSON.stringify({
+    ...metadata,
+    attachments: [...existingAttachments, ...backfilledAttachments],
+  });
+  const updated = sessionMessageRepo.updateMetadata(message.id, nextMetadata);
+  return updated ?? {
     ...message,
-    metadata: JSON.stringify({
-      ...metadata,
-      attachments: [...existingAttachments, ...backfilledAttachments],
-    }),
+    metadata: nextMetadata,
   };
 }
 

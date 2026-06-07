@@ -25,7 +25,17 @@ export function applySessionWorkspaceEvent(
     };
   }
   if (event.type === 'session_message:new') {
-    if (payload.activeSession.messages.some((message) => message.id === event.message.id)) return payload;
+    if (payload.activeSession.messages.some((message) => message.id === event.message.id)) {
+      return {
+        ...payload,
+        activeSession: {
+          ...payload.activeSession,
+          messages: payload.activeSession.messages.map((message) =>
+            message.id === event.message.id ? event.message : message
+          ),
+        },
+      };
+    }
     return {
       ...payload,
       activeSession: {

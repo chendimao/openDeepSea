@@ -185,6 +185,9 @@ test('session workspace payload backfills attachments from legacy library file r
     isImage: true,
     deleted: false,
   }]);
+  const storedMessage = sessionMessageRepo.get(message.id);
+  assert.ok(storedMessage?.metadata);
+  assert.deepEqual(JSON.parse(storedMessage.metadata).attachments, metadata.attachments);
 });
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {

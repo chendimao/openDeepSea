@@ -112,6 +112,52 @@ test('applySessionWorkspaceEvent does not duplicate messages or evidence', () =>
   assert.equal(twice.activeSession.messages.length, 1);
 });
 
+test('applySessionWorkspaceEvent refreshes duplicate messages with enriched metadata', () => {
+  const payload = createPayload('session-current');
+  const now = Date.now();
+  const message = {
+    id: 'message-1',
+    session_id: 'session-current',
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '分析内容',
+    message_type: 'text',
+    status: 'completed',
+    metadata: JSON.stringify({ library_file_refs: ['file-image-1'] }),
+    created_at: now,
+  } as const;
+  const enrichedMessage = {
+    ...message,
+    metadata: JSON.stringify({
+      library_file_refs: ['file-image-1'],
+      attachments: [{
+        id: 'file-image-1',
+        fileId: 'file-image-1',
+        name: 'screen.png',
+        mimeType: 'image/png',
+        size: 2048,
+        url: '/uploads/files/project-1/screen.png',
+        isImage: true,
+      }],
+    }),
+  } as const;
+
+  const once = applySessionWorkspaceEvent(payload, {
+    type: 'session_message:new',
+    sessionId: 'session-current',
+    message,
+  });
+  const twice = applySessionWorkspaceEvent(once, {
+    type: 'session_message:new',
+    sessionId: 'session-current',
+    message: enrichedMessage,
+  });
+
+  assert.equal(twice.activeSession.messages.length, 1);
+  assert.equal(twice.activeSession.messages[0]?.metadata, enrichedMessage.metadata);
+});
+
 test('applySessionWorkspaceEvent applies active session title updates', () => {
   const payload = createPayload('session-current');
   payload.projectSwitcher.projects = [{

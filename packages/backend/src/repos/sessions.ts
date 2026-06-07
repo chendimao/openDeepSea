@@ -204,6 +204,13 @@ export const sessionMessageRepo = {
     return db.prepare('SELECT * FROM session_messages WHERE id = ?').get(id) as SessionMessage | undefined;
   },
 
+  updateMetadata(id: string, metadata: Record<string, unknown> | string | null): SessionMessage | undefined {
+    const existing = this.get(id);
+    if (!existing) return undefined;
+    db.prepare('UPDATE session_messages SET metadata = ? WHERE id = ?').run(stringifyMetadata(metadata), id);
+    return this.get(id);
+  },
+
   listBySession(sessionId: string, input: { limit?: number } = {}): SessionMessage[] {
     const limit = input.limit ?? 500;
     return db.prepare(`
