@@ -653,6 +653,61 @@ test('buildSessionRunTranscriptItems hides legacy activity events misclassified 
   ]);
 });
 
+test('buildSessionRunTranscriptItems hides legacy process preface before final answer', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({
+      id: 'preface',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '我会直接按上传文件读取图片，然后基于截图内容做结构化分析。',
+    }),
+    createAgentEvent({
+      id: 'final',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '✅ 结论：截图展示的是工具调用列表。',
+    }),
+  ], '我会直接按上传文件读取图片，然后基于截图内容做结构化分析。✅ 结论：截图展示的是工具调用列表。');
+
+  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
+    '✅ 结论：截图展示的是工具调用列表。',
+  ]);
+});
+
+test('SessionShell moves completed legacy process preface into collapsed thought', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.stdout = '我会直接按上传文件读取图片，然后基于截图内容做结构化分析。✅ 结论：截图展示的是工具调用列表。';
+  run.stderr = '';
+  run.activity_log = '';
+  payload.activeSession.agentEvents = [
+    createAgentEvent({
+      id: 'preface',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '我会直接按上传文件读取图片，然后基于截图内容做结构化分析。',
+    }),
+    createAgentEvent({
+      id: 'final',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '✅ 结论：截图展示的是工具调用列表。',
+    }),
+  ];
+
+  const html = renderSessionShell(payload);
+  const thoughtTag = getAgentThoughtTag(html);
+
+  assert.doesNotMatch(thoughtTag, /\sopen=""/);
+  assert.ok(html.indexOf('我会直接按上传文件读取图片') < html.indexOf('class="deepsea-run-log"'));
+  assert.match(html, /✅ 结论：截图展示的是工具调用列表。/);
+});
+
 test('SessionShell hides legacy activity persisted in stderr fallback', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;

@@ -851,6 +851,7 @@ export function buildSessionRunTranscriptItems(
 ): SessionRunTranscriptItem[] {
   const items: SessionRunTranscriptItem[] = [];
   const sortedEvents = [...events].sort((left, right) => left.seq - right.seq || left.created_at - right.created_at);
+  const hiddenEventIds = new Set(hiddenLegacyAnswerEvents(sortedEvents).map((event) => event.id));
   let textBuffer = '';
   let textIndex = 0;
 
@@ -863,7 +864,7 @@ export function buildSessionRunTranscriptItems(
   };
 
   for (const event of sortedEvents) {
-    if (isAnswerTextEvent(event)) {
+    if (isAnswerTextEvent(event) && !hiddenEventIds.has(event.id)) {
       textBuffer += event.content;
     }
   }
@@ -880,6 +881,48 @@ function isAnswerTextEvent(event: SessionAgentEvent): boolean {
   return event.channel === 'answer' &&
     event.content.length > 0 &&
     !isLegacyActivityAnswerEvent(event);
+}
+
+function hiddenLegacyAnswerEvents(events: SessionAgentEvent[]): SessionAgentEvent[] {
+  const answerEvents = events.filter((event) => event.channel === 'answer' && event.content.length > 0);
+  const finalAnswerIndex = answerEvents.findIndex((event) => isFinalAnswerStart(event.content));
+  return answerEvents.filter((event, index) =>
+    isLegacyActivityAnswerEvent(event) ||
+    isLegacyTerminalNoiseAnswerEvent(event) ||
+    isLegacyProcessAnswerEvent(event, index, answerEvents, finalAnswerIndex),
+  );
+}
+
+function isLegacyProcessAnswerEvent(
+  event: SessionAgentEvent,
+  index: number,
+  answerEvents: SessionAgentEvent[],
+  finalAnswerIndex: number,
+): boolean {
+  if (event.event_type !== 'item.completed') return false;
+  if (finalAnswerIndex > 0 && index < finalAnswerIndex) return true;
+  return index < answerEvents.length - 1 && isProcessPreludeText(event.content);
+}
+
+function isFinalAnswerStart(content: string): boolean {
+  const text = stripAnsiCodes(content).trimStart();
+  return /^(?:✅\s*)?(?:\*\*)?结论(?:\*\*)?[：:]/.test(text);
+}
+
+function isProcessPreludeText(content: string): boolean {
+  const text = stripAnsiCodes(content).trimStart();
+  return /^(?:我会先|我先|我会直接|我会按|我现在|接下来我会|我已经)/.test(text);
+}
+
+function isLegacyTerminalNoiseAnswerEvent(event: SessionAgentEvent): boolean {
+  if (event.channel !== 'answer') return false;
+  const text = stripAnsiCodes(event.content).trimStart();
+  return /\bcodex_core::tools::router\b/.test(text) ||
+    /^\d{4}-\d{2}-\d{2}T[^\n]*(?:ERROR|WARN)\b/.test(text);
+}
+
+function stripAnsiCodes(value: string): string {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '');
 }
 
 function runEventMarker(event: SessionAgentEvent): { label: string; detail: string | null } | null {
@@ -1027,11 +1070,13 @@ function RunStatusIcon({ tone }: { tone: ReturnType<typeof runStatusView>['tone'
 function AgentThoughtPanel({
   run,
   evidence,
+  agentEvents,
 }: {
   run: SessionRun;
   evidence: SessionEvidenceEvent[];
+  agentEvents: SessionAgentEvent[];
 }): JSX.Element | null {
-  const thought = agentThoughtText(run, evidence);
+  const thought = agentThoughtText(run, evidence, agentEvents);
   const defaultOpen = isRunThoughtOpenByDefault(run.status);
   const [openState, setOpenState] = useState(() => ({
     runId: run.id,
@@ -1272,11 +1317,17 @@ function runOutputText(run: SessionRun, events: SessionAgentEvent[] = []): strin
 
 function sanitizeRunOutputText(output: string, events: SessionAgentEvent[]): string {
   let text = output;
-  for (const event of events) {
-    if (!isLegacyActivityAnswerEvent(event) || !event.content) continue;
-    text = text.split(event.content).join('');
+  for (const event of hiddenLegacyAnswerEvents(events)) {
+    if (!event.content) continue;
+    text = removeOnce(text, event.content);
   }
   return text;
+}
+
+function removeOnce(text: string, needle: string): string {
+  const index = text.indexOf(needle);
+  if (index < 0) return text;
+  return `${text.slice(0, index)}${text.slice(index + needle.length)}`;
 }
 
 function isLegacyActivityAnswerEvent(event: SessionAgentEvent): boolean {
@@ -1339,15 +1390,25 @@ function formatSessionDuration(durationMs: number): string {
   return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
-function agentThoughtText(run: SessionRun, evidence: SessionEvidenceEvent[]): string | null {
+function agentThoughtText(run: SessionRun, evidence: SessionEvidenceEvent[], agentEvents: SessionAgentEvent[]): string | null {
   const activity = trimDisplayText(run.activity_log);
-  if (activity) return activity;
+  const legacyProcess = trimDisplayText(extractLegacyProcessThoughtText(agentEvents));
+  const thoughtParts = [activity, legacyProcess].filter(Boolean);
+  if (thoughtParts.length > 0) return thoughtParts.join('\n');
   const evidenceText = evidence
     .map((event) => trimDisplayText(event.summary ?? event.title))
     .filter(Boolean)
     .slice(0, 3)
     .join('\n');
   return evidenceText || null;
+}
+
+function extractLegacyProcessThoughtText(events: SessionAgentEvent[]): string {
+  return hiddenLegacyAnswerEvents(events)
+    .filter((event) => event.event_type === 'item.completed' && isProcessPreludeText(event.content))
+    .map((event) => stripAnsiCodes(event.content).trim())
+    .filter(Boolean)
+    .join('\n');
 }
 
 function trimDisplayText(value: string | null | undefined): string {
