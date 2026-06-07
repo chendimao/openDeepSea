@@ -186,7 +186,8 @@ test('runSessionAgent records activity chunks outside answer output', async () =
   const storedRun = sessionRunRepo.get(run.id);
   const events = sessionAgentEventRepo.listByRun(run.id);
 
-  assert.match(storedRun?.stderr ?? '', /ACP fallback/);
+  assert.doesNotMatch(storedRun?.stderr ?? '', /ACP fallback/);
+  assert.match(storedRun?.activity_log ?? '', /ACP fallback/);
   assert.match(storedRun?.activity_log ?? '', /开始命令/);
   assert.equal(storedRun?.stdout, '✅ 结论：skills 已分析。\n');
   assert.deepEqual(events.slice(0, 3).map((event) => event.channel), ['activity', 'activity', 'answer']);

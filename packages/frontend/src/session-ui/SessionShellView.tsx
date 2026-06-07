@@ -674,7 +674,7 @@ function TranscriptCanvas({
           const runLabel = agentNamesById.get(item.run.agent_id) ?? item.run.agent_id;
           return (
             <React.Fragment key={item.key}>
-              <AgentThoughtPanel run={item.run} evidence={runEvidence} />
+              <AgentThoughtPanel run={item.run} evidence={runEvidence} agentEvents={runAgentEvents} />
               <article className="deepsea-run-log">
                 <div>
                   <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>
@@ -1260,7 +1260,7 @@ function RunModule({
 }
 
 function runOutputText(run: SessionRun, events: SessionAgentEvent[] = []): string {
-  const output = sanitizeRunOutputText(run.stdout, events).trim() || run.stderr.trim();
+  const output = sanitizeRunOutputText(run.stdout, events).trim() || sanitizeRunOutputText(run.stderr, events).trim();
   if (output) return output;
   if (run.status === 'completed') return '未返回可展示回复。';
   if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';

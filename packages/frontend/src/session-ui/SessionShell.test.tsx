@@ -653,6 +653,38 @@ test('buildSessionRunTranscriptItems hides legacy activity events misclassified 
   ]);
 });
 
+test('SessionShell hides legacy activity persisted in stderr fallback', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.stdout = '';
+  run.stderr = '[ACP fallback] codex protocol server unavailable, using legacy CLI.\n开始命令：rtk find .\n';
+  run.activity_log = '';
+  payload.activeSession.agentEvents = [
+    createAgentEvent({
+      id: 'fallback',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'protocol_fallback',
+      content: '[ACP fallback] codex protocol server unavailable, using legacy CLI.\n',
+    }),
+    createAgentEvent({
+      id: 'command-start',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'item.started',
+      content: '开始命令：rtk find .\n',
+      payload_json: JSON.stringify({ trace: null }),
+    }),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.doesNotMatch(html, /ACP fallback/);
+  assert.doesNotMatch(html, /开始命令/);
+  assert.match(html, /未返回可展示回复。/);
+});
+
 test('SessionShell renders a concise active session title with the full title available', () => {
   const payload = createPayload();
   payload.activeSession.session.title = '用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出';

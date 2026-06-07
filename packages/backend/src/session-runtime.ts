@@ -183,16 +183,17 @@ export function recordSessionChunk(input: {
     },
   });
 
-  if (input.chunk.stream === 'stderr') {
-    sessionRunRepo.appendStderr(input.runId, text);
-  } else if (
-    input.chunk.channel === 'activity' ||
+  const isActivityChannel =
+    channel === 'activity' ||
     channel === 'thinking' ||
     channel === 'tool' ||
     channel === 'command' ||
-    channel === 'event'
-  ) {
+    channel === 'event';
+
+  if (isActivityChannel) {
     sessionRunRepo.appendActivity(input.runId, text);
+  } else if (input.chunk.stream === 'stderr') {
+    sessionRunRepo.appendStderr(input.runId, text);
   } else {
     sessionRunRepo.appendStdout(input.runId, text);
   }
