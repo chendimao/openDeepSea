@@ -37,6 +37,13 @@ export interface AcpStreamChunk {
   rawEvent?: Record<string, unknown>;
 }
 
+export interface SessionToolDefinition {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  execute: (input: Record<string, unknown>) => Promise<unknown>;
+}
+
 export interface SessionAdapter {
   backend: AcpBackend;
   /** List sessions whose cwd matches the given project path. */
@@ -53,6 +60,7 @@ export interface SessionAdapter {
     sessionHandoff?: string | null;
     sessionHandoffMode?: AcpSessionHandoffMode;
     imagePaths?: string[];
+    tools?: SessionToolDefinition[];
     acpPermissionMode?: AcpPermissionMode | null;
     /** Final absolute directories allowed for write access. Empty means no additional write scope. */
     acpWritableDirs?: string[] | null;

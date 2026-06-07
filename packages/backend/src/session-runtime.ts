@@ -1,5 +1,9 @@
 import { getAdapter } from './acp/index.js';
-import type { AcpStreamChannel, AcpStreamChunk, SessionAdapter } from './acp/types.js';
+import type { AcpStreamChannel, AcpStreamChunk, SessionAdapter, SessionToolDefinition } from './acp/types.js';
+import {
+  createGenerateImageSessionTool,
+  type GenerateImageToolDeps,
+} from './image-generation/tool.js';
 import { projectRepo } from './repos/projects.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import {
@@ -27,9 +31,14 @@ const STREAM_PAYLOAD_LIMIT = 8000;
 const MAX_EVIDENCE_LINES = 200;
 
 let adapterOverride: SessionAdapter | undefined;
+let generateImageToolDepsOverride: GenerateImageToolDeps | undefined;
 
 export function setSessionRuntimeAdapterForTest(adapter?: SessionAdapter): void {
   adapterOverride = adapter;
+}
+
+export function setSessionRuntimeGenerateImageToolDepsForTest(deps?: GenerateImageToolDeps): void {
+  generateImageToolDepsOverride = deps;
 }
 
 export async function runSessionAgent(input: {
@@ -46,6 +55,7 @@ export async function runSessionAgent(input: {
   const project = projectRepo.get(session.project_id);
   if (!project) throw new Error(`Project not found for session ${session.id}`);
   const agentId = normalizeAgentId(input.agentId);
+  const permissionMode = input.permissionMode ?? 'read-only';
   const existingRuntime = sessionAgentRuntimeRepo.getByAgent(session.id, agentId, input.provider);
   const reusableAcpSessionId = existingRuntime?.provider_session_id ??
     sessionRunRepo.findReusableAcpSessionId({
@@ -83,8 +93,9 @@ export async function runSessionAgent(input: {
       projectPath: session.worktree_path ?? session.workspace_path ?? project.path,
       sessionId: run.acp_session_id,
       prompt: input.prompt,
-      acpPermissionMode: input.permissionMode ?? 'read-only',
+      acpPermissionMode: permissionMode,
       imagePaths: input.imagePaths ?? [],
+      tools: buildSessionRuntimeTools(session, permissionMode),
       onSession: (acpSessionId) => {
         persistProviderSession({
           runId: run.id,
@@ -134,6 +145,20 @@ export async function runSessionAgent(input: {
   } finally {
     runRegistry.remove(run.id);
   }
+}
+
+export function buildSessionRuntimeTools(
+  session: Pick<Session, 'id' | 'project_id'>,
+  permissionMode: AcpPermissionMode,
+): SessionToolDefinition[] {
+  if (!canUseProjectTools(permissionMode)) return [];
+  return [
+    createGenerateImageSessionTool(session, generateImageToolDepsOverride ?? {}),
+  ];
+}
+
+function canUseProjectTools(permissionMode: AcpPermissionMode): boolean {
+  return permissionMode === 'workspace-write' || permissionMode === 'bypass';
 }
 
 export function retrySessionAgentRun(runId: string): void {

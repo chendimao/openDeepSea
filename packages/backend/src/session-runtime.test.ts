@@ -9,11 +9,19 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-se
 const { projectRepo } = await import('./repos/projects.js');
 const { sessionRepo, sessionRunRepo, sessionAgentEventRepo } = await import('./repos/sessions.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
-const { runSessionAgent, setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
+const {
+  runSessionAgent,
+  setSessionRuntimeAdapterForTest,
+  setSessionRuntimeGenerateImageToolDepsForTest,
+} = await import('./session-runtime.js');
 const { wsHub } = await import('./ws-hub.js');
+const { imageGenerationJobRepo } = await import('./image-generation/jobs.js');
+const { imageProviderProfileRepo } = await import('./image-generation/provider-profiles.js');
+const { createImageGenerationService } = await import('./image-generation/service.js');
 
 afterEach(() => {
   setSessionRuntimeAdapterForTest(undefined);
+  setSessionRuntimeGenerateImageToolDepsForTest(undefined);
 });
 
 test('runSessionAgent writes run, stream output and evidence', async () => {
@@ -440,4 +448,115 @@ test('runSessionAgent forwards imagePaths to session adapter', async () => {
   });
 
   assert.deepEqual(seen, [['/tmp/screen.png']]);
+});
+
+test('runSessionAgent omits project tools in read-only mode', async () => {
+  const project = projectRepo.create({
+    name: 'runtime read only tool project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-readonly-tool-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Readonly Tool',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  let observedToolCount: number | null = null;
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async (args) => {
+      observedToolCount = args.tools?.length ?? 0;
+      return { exitCode: 0, sessionId: 'read-only-tool-acp', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({ sessionId: session.id, prompt: '只读分析', provider: 'codex' });
+
+  assert.equal(run.status, 'completed');
+  assert.equal(observedToolCount, 0);
+});
+
+test('runSessionAgent exposes generate_image tool bound to session project scope', async () => {
+  type RuntimeTool = {
+    name: string;
+    description: string;
+    input_schema: Record<string, unknown>;
+    execute: (input: Record<string, unknown>) => Promise<unknown>;
+  };
+
+  const project = projectRepo.create({
+    name: 'runtime image tool project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-image-tool-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Image Tool',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const profile = imageProviderProfileRepo.create(project.id, {
+    name: 'Runtime Images',
+    base_url: 'https://example.com/v1',
+    api_key: 'runtime-tool-secret',
+    model: 'gpt-image-2',
+  });
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async (request) => {
+      assert.equal(request.profileId, profile.id);
+      return {
+        images: [
+          {
+            data: Buffer.from(`png:${request.prompt}`),
+            mimeType: 'image/png',
+          },
+        ],
+      };
+    },
+  });
+  let capturedToolResult: unknown;
+
+  setSessionRuntimeGenerateImageToolDepsForTest({ service });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async (args) => {
+      const tools = ((args as { tools?: RuntimeTool[] }).tools ?? []);
+      const tool = tools.find((item) => item.name === 'generate_image');
+      assert.ok(tool);
+      const serializedSchema = JSON.stringify(tool.input_schema);
+      assert.match(tool.description, /Generate text-to-image/);
+      assert.equal(serializedSchema.includes('api_key'), false);
+      assert.equal(serializedSchema.includes('base_url'), false);
+
+      capturedToolResult = await tool.execute({
+        project_id: 'malicious-project',
+        session_id: 'malicious-session',
+        prompt: 'bound apple',
+        workflow: 'generate',
+        provider_profile_id: null,
+      });
+
+      return { exitCode: 0, sessionId: 'image-tool-acp', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    prompt: '生成图片',
+    provider: 'codex',
+    permissionMode: 'workspace-write',
+  });
+  const toolResult = capturedToolResult as { job_id: string; status: string; outputs: unknown[] } | undefined;
+  assert.ok(toolResult);
+  assert.equal(run.status, 'completed');
+  assert.equal(toolResult.status, 'completed');
+  assert.equal(toolResult.outputs.length, 1);
+  const job = imageGenerationJobRepo.get(toolResult.job_id);
+  assert.equal(job?.project_id, project.id);
+  assert.equal(job?.session_id, session.id);
+  assert.equal(JSON.stringify(toolResult).includes('runtime-tool-secret'), false);
 });
