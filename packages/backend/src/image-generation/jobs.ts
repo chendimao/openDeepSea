@@ -22,6 +22,7 @@ export interface ImageGenerationJobRepository {
     filters?: { status?: ImageGenerationStatus; sessionId?: string; roomId?: string },
   ): ImageGenerationJob[];
   markRunning(jobId: string): ImageGenerationJob;
+  markRunningIfQueued(jobId: string): ImageGenerationJob | undefined;
   markCanceling(jobId: string): ImageGenerationJob;
   markCanceled(jobId: string, message: string): ImageGenerationJob;
   markFailed(jobId: string, error: string): ImageGenerationJob;
@@ -38,6 +39,7 @@ export const imageGenerationJobRepo: ImageGenerationJobRepository = {
   get,
   listByProject,
   markRunning,
+  markRunningIfQueued,
   markCanceling,
   markCanceled,
   markFailed,
@@ -128,6 +130,24 @@ function markRunning(jobId: string): ImageGenerationJob {
      WHERE id = ?`,
     [timestamp, timestamp, jobId],
   );
+}
+
+function markRunningIfQueued(jobId: string): ImageGenerationJob | undefined {
+  const timestamp = now();
+  const result = db
+    .prepare(
+      `UPDATE image_generation_jobs
+       SET status = 'running',
+           started_at = COALESCE(started_at, ?),
+           completed_at = NULL,
+           message = NULL,
+           error = NULL,
+           updated_at = ?
+       WHERE id = ?
+         AND status = 'queued'`,
+    )
+    .run(timestamp, timestamp, jobId);
+  return result.changes > 0 ? requireJob(jobId) : undefined;
 }
 
 function markCanceling(jobId: string): ImageGenerationJob {
