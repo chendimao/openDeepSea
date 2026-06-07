@@ -242,6 +242,11 @@ test('SessionShell keeps the tool call list height bounded with internal scrolli
 });
 
 test('SessionShell includes project tree row pin and drag feedback styles', () => {
+  assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*opacity:\s*0/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node:hover \.deepsea-project-node__actions/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node:focus-within \.deepsea-project-node__actions/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__actions:has\(\.deepsea-project-node__icon-button\[aria-expanded="true"\]\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*display:\s*grid/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*grid-template-columns:\s*24px minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*border:\s*0/s);

@@ -850,6 +850,15 @@
   align-items: center;
   gap: 2px;
   padding-right: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease-out;
+}
+.deepsea-project-node:hover .deepsea-project-node__actions,
+.deepsea-project-node:focus-within .deepsea-project-node__actions,
+.deepsea-project-node__actions:has(.deepsea-project-node__icon-button[aria-expanded="true"]) {
+  opacity: 1;
+  pointer-events: auto;
 }
 .deepsea-project-node__icon-button {
   display: grid;
