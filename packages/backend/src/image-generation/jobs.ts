@@ -328,6 +328,9 @@ function assertSourceImageLineageBelongsToProject(
   input: ImageGenerationSourceImageCreateInput,
   projectId: string,
 ): void {
+  if ((input.origin_job_id ? 1 : 0) !== (input.origin_output_id ? 1 : 0)) {
+    throw new Error('source image lineage requires both origin_job_id and origin_output_id');
+  }
   if (input.origin_job_id) {
     const originJob = requireJob(input.origin_job_id);
     if (originJob.project_id !== projectId) {
