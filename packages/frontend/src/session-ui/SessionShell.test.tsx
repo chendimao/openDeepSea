@@ -102,6 +102,20 @@ test('SessionShell renders tool row duration from the full session run when avai
   assert.doesNotMatch(html, /0\.3s/);
 });
 
+test('SessionShell renders tool row relative record time beside duration', () => {
+  const payload = createPayload();
+  payload.toolRows[0] = {
+    ...payload.toolRows[0]!,
+    durationMs: 343,
+    runDurationMs: 21_423,
+    created_at: Date.now(),
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /21\.4s · 刚刚/);
+});
+
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
   const { activeSessions: _activeSessions, ...legacyPayload } = createPayload();
 

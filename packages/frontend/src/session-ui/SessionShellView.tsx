@@ -1164,7 +1164,7 @@ function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
             <span>{index + 1}</span>
             <strong>{toolActionLabel(row.action)}</strong>
             <p>{row.target}</p>
-            <span>{formatToolDisplayDuration(row)}</span>
+            <span>{formatToolRowMeta(row)}</span>
             {row.status === 'running' ? <span>...</span> : <CheckCircle2 aria-hidden="true" />}
           </button>
         ))}
@@ -1406,6 +1406,10 @@ function formatToolDuration(durationMs: number | null): string {
 
 function formatToolDisplayDuration(row: SessionToolRow): string {
   return formatToolDuration(row.runDurationMs ?? row.durationMs);
+}
+
+function formatToolRowMeta(row: SessionToolRow): string {
+  return `${formatToolDisplayDuration(row)} · ${formatRelativeTime(Date.now(), row.created_at)}`;
 }
 
 function formatToolTimestamp(timestamp: number): string {
