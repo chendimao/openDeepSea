@@ -677,6 +677,28 @@ test('buildSessionRunTranscriptItems hides legacy process preface before final a
   ]);
 });
 
+test('buildSessionRunTranscriptItems hides tokenized legacy process-only answer', () => {
+  const text = [
+    '我会先恢复现场：读取 Superpowers 入口要求和当前未提交改动。',
+    '本轮使用 using-superpowers 做会话入口检查。',
+    '若确认是前端实现/调整，会再按需加载前端相关 skill。',
+    '当前现场只有一个前端 UI 文件被改动。',
+    '我会继续把这块做完整。',
+  ].join('');
+  const items = buildSessionRunTranscriptItems(
+    [...text].map((char, index) => createAgentEvent({
+      id: `chunk-${index}`,
+      seq: index + 1,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: char,
+    })),
+    text,
+  );
+
+  assert.deepEqual(items, []);
+});
+
 test('SessionShell moves completed legacy process preface into collapsed thought', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;

@@ -871,7 +871,7 @@ export function buildSessionRunTranscriptItems(
 
   flushText();
   if (items.length === 0) {
-    const text = fallbackText.trim();
+    const text = splitLegacyProcessOutputText(fallbackText).visibleText.trim();
     return text ? [{ type: 'text', id: 'text-fallback', text }] : [];
   }
   return items;
@@ -1456,7 +1456,7 @@ function splitDisplaySentences(text: string): string[] {
 function isLegacyProcessNarrationSegment(segment: string): boolean {
   const text = stripAnsiCodes(segment).trimStart();
   if (!text) return true;
-  return /^(?:我会先|我先|我会直接|我会按|我现在|我会把|我会开始|我还发现|我接下来|我将|接下来我会|我已经|本轮使用|本次使用|当前现场|目标是|边界限定|主要风险|验证用|现有测试|准备编辑前|改动会|这样|刚才|现在准备|Active Run\b)/.test(text);
+  return /^(?:我会先|我先|我会直接|我会按|我现在|我会把|我会开始|我会继续|我还发现|我接下来|我将|接下来我会|我已经|本轮使用|本次使用|若确认|当前现场|目标是|边界限定|主要风险|验证用|现有测试|准备编辑前|改动会|这样|刚才|现在准备|Active Run\b)/.test(text);
 }
 
 function hasVisibleAnswerSignal(text: string): boolean {
