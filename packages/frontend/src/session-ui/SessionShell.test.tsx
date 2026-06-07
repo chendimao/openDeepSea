@@ -317,6 +317,21 @@ test('SessionShell uses Radix project action menu with only rename and remove it
   assert.doesNotMatch(sessionShellViewSource, /role="menuitem"/);
 });
 
+test('SessionShell source wires project and session action callbacks', () => {
+  assert.match(
+    sessionShellViewSource,
+    /<DropdownMenu\.Item[\s\S]*onSelect=\{\(\) => \{[\s\S]*if \(item\.label === '编辑名称'\) onRenameProject\?\.\(project\);[\s\S]*else onRemoveProject\?\.\(project\);[\s\S]*\}\}/,
+  );
+  assert.match(
+    sessionShellViewSource,
+    /onClick=\{\(event\) => \{[\s\S]*event\.stopPropagation\(\);[\s\S]*onToggleSessionPin\?\.\(session\);[\s\S]*\}\}/,
+  );
+  assert.match(
+    sessionShellViewSource,
+    /const input = buildProjectReorderInput\(projects, draggingProjectId, targetProject\.id\);[\s\S]*if \(input\) onReorderProjects\?\.\(input\);/,
+  );
+});
+
 test('SessionShell renders project row without a collapse icon before the project name', () => {
   const html = renderSessionShell(createPayload());
 
@@ -357,11 +372,26 @@ test('buildProjectReorderInput ignores same item and cross-layer reorders', () =
   assert.equal(buildProjectReorderInput(projects, 'project-2', 'project-2'), null);
   assert.equal(buildProjectReorderInput(projects, 'project-1', 'project-2'), null);
   assert.equal(buildProjectReorderInput(projects, 'missing-project', 'project-2'), null);
+  assert.equal(buildProjectReorderInput(projects, 'project-2', 'missing-project'), null);
   assert.equal(buildProjectReorderInput(projects, 'orphan:x', 'project-2'), null);
   assert.equal(buildProjectReorderInput([
     ...projects,
     { id: 'orphan:x', name: 'Orphan', path: '/orphan', active: false, recentSessions: [], created_at: now, pinned_at: null, sort_order: null },
   ], 'project-2', 'orphan:x'), null);
+});
+
+test('buildProjectReorderInput returns pinned layer ids for pinned same-layer reorder', () => {
+  const now = Date.now();
+  const projects = [
+    { id: 'project-1', name: 'A', path: '/a', active: false, recentSessions: [], created_at: now - 3, pinned_at: now - 30, sort_order: 1 },
+    { id: 'project-2', name: 'B', path: '/b', active: false, recentSessions: [], created_at: now - 2, pinned_at: now - 20, sort_order: 2 },
+    { id: 'project-3', name: 'C', path: '/c', active: false, recentSessions: [], created_at: now - 1, pinned_at: null, sort_order: 3 },
+  ];
+
+  assert.deepEqual(buildProjectReorderInput(projects, 'project-2', 'project-1'), {
+    ids: ['project-2', 'project-1'],
+    pinned: true,
+  });
 });
 
 test('syncExpandedProjectIds opens the current project without overwriting existing project state', () => {
@@ -381,8 +411,27 @@ test('syncExpandedProjectIds opens the current project without overwriting exist
 });
 
 test('shouldIgnoreProjectDragStart is SSR-safe and wired into project drag start', () => {
+  const globalWithElement = globalThis as typeof globalThis & { Element?: unknown };
+  const originalElement = globalWithElement.Element;
+
   assert.equal(shouldIgnoreProjectDragStart(null), false);
   assert.equal(shouldIgnoreProjectDragStart({} as EventTarget), false);
+  class FakeElement {
+    constructor(private readonly match: boolean) {}
+
+    closest(): object | null {
+      return this.match ? {} : null;
+    }
+  }
+  globalWithElement.Element = FakeElement;
+  try {
+    assert.equal(shouldIgnoreProjectDragStart(new FakeElement(true) as unknown as EventTarget), true);
+    assert.equal(shouldIgnoreProjectDragStart(new FakeElement(false) as unknown as EventTarget), false);
+    assert.equal(shouldIgnoreProjectDragStart(null), false);
+  } finally {
+    if (originalElement === undefined) delete globalWithElement.Element;
+    else globalWithElement.Element = originalElement;
+  }
   assert.match(sessionShellViewSource, /shouldIgnoreProjectDragStart\(event\.target\)/);
 });
 
