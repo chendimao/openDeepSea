@@ -3,9 +3,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AcpPermissionMode, CliSessionSummary } from '../types.js';
 import type { SessionAdapter } from './types.js';
-import { emitProtocolFallback, runStreaming, withSessionHandoffForNewSession } from './claudecode.js';
+import { emitProtocolFallback, fallbackToProtocolNewSessionAfterCliResumeFailure, runStreaming, withSessionHandoffForNewSession } from './claudecode.js';
 import { invokeProtocolSession, isAcpStreamDisconnected } from './protocol-client.js';
 import { getAcpServerConfig } from './protocol-registry.js';
+import type { AcpInvokeResult } from './types.js';
 
 const CODEX_ACP_NETWORK_RETRY_DELAYS_MS = [10_000, 30_000, 60_000, 180_000, 300_000] as const;
 
@@ -120,6 +121,7 @@ export const codexAdapter: SessionAdapter = {
 
   async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('codex');
+    let resumeUnavailableResult: AcpInvokeResult | null = null;
     if (protocolConfig.enabled) {
       let protocolResult = await invokeProtocolSession({
         backend: 'codex',
@@ -173,6 +175,7 @@ export const codexAdapter: SessionAdapter = {
       ) {
         return protocolResult;
       }
+      resumeUnavailableResult = protocolResult.resumeUnavailable ? protocolResult : null;
       emitProtocolFallback(onChunk, 'codex', protocolResult.stderr);
     }
 
@@ -184,7 +187,25 @@ export const codexAdapter: SessionAdapter = {
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
-    return runStreaming('codex', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, envOverrides);
+    const cliResult = await runStreaming('codex', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, envOverrides);
+    const fakeResumeResult = await fallbackToProtocolNewSessionAfterCliResumeFailure({
+      backend: 'codex',
+      protocolConfig,
+      protocolResult: resumeUnavailableResult,
+      cliResult,
+      projectPath,
+      prompt,
+      previousSessionId: sessionId,
+      sessionHandoff,
+      imagePaths,
+      acpPermissionMode,
+      acpWritableDirs,
+      envOverrides,
+      onChunk,
+      onSession,
+      signal,
+    });
+    return fakeResumeResult ?? cliResult;
   },
 };
 

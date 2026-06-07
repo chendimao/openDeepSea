@@ -5,9 +5,10 @@ import { join } from 'node:path';
 import type { CliSessionSummary } from '../types.js';
 import type { AcpPermissionMode } from '../types.js';
 import type { SessionAdapter } from './types.js';
-import { emitProtocolFallback, runStreaming, withSessionHandoffForNewSession } from './claudecode.js';
+import { emitProtocolFallback, fallbackToProtocolNewSessionAfterCliResumeFailure, runStreaming, withSessionHandoffForNewSession } from './claudecode.js';
 import { invokeProtocolSession } from './protocol-client.js';
 import { getAcpServerConfig } from './protocol-registry.js';
+import type { AcpInvokeResult } from './types.js';
 
 const DB_PATH = join(homedir(), '.local', 'share', 'opencode', 'opencode.db');
 const DEFAULT_OPENCODE_MODEL = 'gwenapi/gpt-5.5';
@@ -72,6 +73,7 @@ export const openCodeAdapter: SessionAdapter = {
 
   async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('opencode');
+    let resumeUnavailableResult: AcpInvokeResult | null = null;
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
         backend: 'opencode',
@@ -96,6 +98,7 @@ export const openCodeAdapter: SessionAdapter = {
       ) {
         return protocolResult;
       }
+      resumeUnavailableResult = protocolResult.resumeUnavailable ? protocolResult : null;
       emitProtocolFallback(onChunk, 'opencode', protocolResult.stderr);
     }
 
@@ -107,7 +110,25 @@ export const openCodeAdapter: SessionAdapter = {
       permissionMode: acpPermissionMode ?? 'bypass',
       model: process.env.OPENCLAW_OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL,
     });
-    return runStreaming('opencode', args, projectPath, onChunk, signal, onSession, undefined, envOverrides);
+    const cliResult = await runStreaming('opencode', args, projectPath, onChunk, signal, onSession, undefined, envOverrides);
+    const fakeResumeResult = await fallbackToProtocolNewSessionAfterCliResumeFailure({
+      backend: 'opencode',
+      protocolConfig,
+      protocolResult: resumeUnavailableResult,
+      cliResult,
+      projectPath,
+      prompt,
+      previousSessionId: sessionId,
+      sessionHandoff,
+      imagePaths,
+      acpPermissionMode,
+      acpWritableDirs,
+      envOverrides,
+      onChunk,
+      onSession,
+      signal,
+    });
+    return fakeResumeResult ?? cliResult;
   },
 };
 

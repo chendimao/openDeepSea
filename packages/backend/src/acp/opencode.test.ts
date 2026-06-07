@@ -116,3 +116,61 @@ test('openCodeAdapter falls back to CLI resume when ACP cannot resume saved sess
     else process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE = previousCapture;
   }
 });
+
+test('openCodeAdapter falls back to ACP new session when CLI resume fails', async () => {
+  const previousMode = process.env.OPENCLAW_ACP_MODE;
+  const previousCommand = process.env.OPENCLAW_ACP_OPENCODE_COMMAND;
+  const previousPath = process.env.PATH;
+  const previousCapture = process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE;
+  const previousCliExit = process.env.OPENCLAW_FAKE_CLI_EXIT_CODE;
+  const previousCliStderr = process.env.OPENCLAW_FAKE_CLI_STDERR;
+  const previousEcho = process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT;
+  const captureFile = join(mkdtempSync(join(tmpdir(), 'openclaw-opencode-cli-fail-')), 'capture.jsonl');
+  const binDir = createFakeCliBin('opencode');
+  process.env.OPENCLAW_ACP_MODE = 'auto';
+  process.env.OPENCLAW_ACP_OPENCODE_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
+  process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE = captureFile;
+  process.env.OPENCLAW_FAKE_CLI_EXIT_CODE = '9';
+  process.env.OPENCLAW_FAKE_CLI_STDERR = 'opencode resume failed';
+  process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT = '1';
+  process.env.PATH = `${binDir}:${previousPath ?? ''}`;
+
+  try {
+    const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+    const result = await openCodeAdapter.invoke({
+      projectPath: process.cwd(),
+      sessionId: 'saved-opencode-session',
+      prompt: 'continue',
+      sessionHandoff: 'previous opencode summary',
+      onChunk: (chunk) => chunks.push(chunk),
+      envOverrides: {
+        NODE_OPTIONS: `--import ${tsxLoaderPath}`,
+      },
+    });
+
+    const capture = JSON.parse(readFileSync(captureFile, 'utf-8').trim()) as { argv: string[]; stdin: string };
+    const answer = chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join('');
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.sessionId, 'fake-session-1');
+    assert.equal(capture.argv.includes('--session'), true);
+    assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.fake_resume_fallback'), true);
+    assert.match(answer, /Previous ACP session could not be resumed/);
+    assert.match(answer, /previous opencode summary/);
+    assert.match(answer, /当前请求：\s*continue/);
+  } finally {
+    if (previousMode === undefined) delete process.env.OPENCLAW_ACP_MODE;
+    else process.env.OPENCLAW_ACP_MODE = previousMode;
+    if (previousCommand === undefined) delete process.env.OPENCLAW_ACP_OPENCODE_COMMAND;
+    else process.env.OPENCLAW_ACP_OPENCODE_COMMAND = previousCommand;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousCapture === undefined) delete process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE;
+    else process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE = previousCapture;
+    if (previousCliExit === undefined) delete process.env.OPENCLAW_FAKE_CLI_EXIT_CODE;
+    else process.env.OPENCLAW_FAKE_CLI_EXIT_CODE = previousCliExit;
+    if (previousCliStderr === undefined) delete process.env.OPENCLAW_FAKE_CLI_STDERR;
+    else process.env.OPENCLAW_FAKE_CLI_STDERR = previousCliStderr;
+    if (previousEcho === undefined) delete process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT;
+    else process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT = previousEcho;
+  }
+});

@@ -2,10 +2,10 @@ import { spawn } from 'node:child_process';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { CliSessionSummary } from '../types.js';
-import type { AcpStreamChannel, AcpStreamChunk, AcpStreamTrace, SessionAdapter } from './types.js';
+import type { AcpBackend, AcpPermissionMode, CliSessionSummary } from '../types.js';
+import type { AcpInvokeResult, AcpStreamChannel, AcpStreamChunk, AcpStreamTrace, SessionAdapter } from './types.js';
 import { invokeProtocolSession } from './protocol-client.js';
-import { getAcpServerConfig } from './protocol-registry.js';
+import { getAcpServerConfig, type AcpServerConfig } from './protocol-registry.js';
 
 type NormalizedStdoutChunk = {
   channel: AcpStreamChannel;
@@ -94,6 +94,7 @@ export const claudeCodeAdapter: SessionAdapter = {
 
   async invoke({ projectPath, sessionId, prompt, sessionHandoff, sessionHandoffMode, imagePaths, acpPermissionMode, acpWritableDirs, envOverrides, onChunk, onSession, signal }) {
     const protocolConfig = getAcpServerConfig('claudecode');
+    let resumeUnavailableResult: AcpInvokeResult | null = null;
     if (protocolConfig.enabled) {
       const protocolResult = await invokeProtocolSession({
         backend: 'claudecode',
@@ -118,6 +119,7 @@ export const claudeCodeAdapter: SessionAdapter = {
       ) {
         return protocolResult;
       }
+      resumeUnavailableResult = protocolResult.resumeUnavailable ? protocolResult : null;
       emitProtocolFallback(onChunk, 'claudecode', protocolResult.stderr);
     }
 
@@ -129,7 +131,25 @@ export const claudeCodeAdapter: SessionAdapter = {
       permissionMode: acpPermissionMode ?? 'bypass',
       writableDirs: acpWritableDirs ?? [],
     });
-    return runStreaming('claude', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, envOverrides);
+    const cliResult = await runStreaming('claude', invocation.args, projectPath, onChunk, signal, onSession, invocation.stdin, envOverrides);
+    const fakeResumeResult = await fallbackToProtocolNewSessionAfterCliResumeFailure({
+      backend: 'claudecode',
+      protocolConfig,
+      protocolResult: resumeUnavailableResult,
+      cliResult,
+      projectPath,
+      prompt,
+      previousSessionId: sessionId,
+      sessionHandoff,
+      imagePaths,
+      acpPermissionMode,
+      acpWritableDirs,
+      envOverrides,
+      onChunk,
+      onSession,
+      signal,
+    });
+    return fakeResumeResult ?? cliResult;
   },
 };
 
@@ -164,6 +184,84 @@ export function withSessionHandoffForNewSession(
   const normalized = sessionHandoff?.trim();
   if (!normalized || (sessionId && sessionHandoffMode !== 'force')) return prompt;
   return `${normalized}\n\n当前请求：\n${prompt}`;
+}
+
+export async function fallbackToProtocolNewSessionAfterCliResumeFailure(input: {
+  backend: AcpBackend;
+  protocolConfig: AcpServerConfig;
+  protocolResult: AcpInvokeResult | null;
+  cliResult: AcpInvokeResult;
+  projectPath: string;
+  prompt: string;
+  previousSessionId: string | null;
+  sessionHandoff?: string | null;
+  imagePaths?: string[];
+  acpPermissionMode?: AcpPermissionMode | null;
+  acpWritableDirs?: string[] | null;
+  envOverrides?: Record<string, string>;
+  onChunk: (chunk: AcpStreamChunk) => void;
+  onSession?: (sessionId: string) => void;
+  signal?: AbortSignal;
+}): Promise<AcpInvokeResult | null> {
+  if (!input.protocolConfig.enabled) return null;
+  if (!input.protocolResult?.resumeUnavailable) return null;
+  if (input.cliResult.exitCode === 0) return null;
+
+  emitFakeResumeFallback(input.onChunk, input.backend, input.cliResult.stderr);
+  return invokeProtocolSession({
+    backend: input.backend,
+    server: input.protocolConfig,
+    projectPath: input.projectPath,
+    sessionId: null,
+    prompt: input.prompt,
+    sessionHandoff: buildFakeResumeHandoff({
+      previousSessionId: input.previousSessionId,
+      sessionHandoff: input.sessionHandoff,
+      cliError: input.cliResult.stderr,
+    }),
+    sessionHandoffMode: 'force',
+    imagePaths: input.imagePaths,
+    acpPermissionMode: input.acpPermissionMode,
+    acpWritableDirs: input.acpWritableDirs,
+    envOverrides: input.envOverrides,
+    onChunk: input.onChunk,
+    onSession: input.onSession,
+    signal: input.signal,
+  });
+}
+
+function buildFakeResumeHandoff(input: {
+  previousSessionId: string | null;
+  sessionHandoff?: string | null;
+  cliError: string;
+}): string {
+  return [
+    'Previous ACP session could not be resumed.',
+    `Previous ACP session id: ${input.previousSessionId ?? 'unknown'}`,
+    'The ACP server does not support resumeSession and CLI resume failed.',
+    input.cliError.trim() ? `CLI resume error: ${trimForHandoff(input.cliError)}` : null,
+    input.sessionHandoff?.trim() ? ['Existing session handoff:', input.sessionHandoff.trim()].join('\n') : null,
+    'Continue from the available OpenDeepSea session context and the current request.',
+  ].filter(Boolean).join('\n');
+}
+
+function emitFakeResumeFallback(
+  onChunk: (chunk: AcpStreamChunk) => void,
+  backend: AcpBackend,
+  reason: string,
+): void {
+  const summary = reason.trim() || 'CLI resume failed';
+  onChunk({
+    stream: 'stderr',
+    text: `[ACP fake resume] ${backend} CLI resume failed, starting a new ACP session with handoff context. ${summary}\n`,
+    channel: 'activity',
+    rawType: 'protocol.fake_resume_fallback',
+  });
+}
+
+function trimForHandoff(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length <= 800 ? normalized : `${normalized.slice(0, 797)}...`;
 }
 
 export function buildClaudeCodeArgs(args: {
