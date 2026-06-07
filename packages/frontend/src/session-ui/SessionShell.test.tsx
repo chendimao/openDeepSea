@@ -375,6 +375,10 @@ test('SessionShell renders run status beside thinking duration in transcript', (
   run.error = null;
   const completedHtml = renderSessionShell(payload);
   assert.match(completedHtml, /class="deepsea-run-status" data-tone="ok">完成<\/span>/);
+
+  run.status = 'cancelled';
+  const cancelledHtml = renderSessionShell(payload);
+  assert.match(cancelledHtml, /class="deepsea-run-status" data-tone="muted">已取消<\/span>/);
 });
 
 test('SessionShell hides ACP tool records from chat transcript', () => {

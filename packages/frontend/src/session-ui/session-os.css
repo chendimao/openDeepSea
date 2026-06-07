@@ -1392,6 +1392,10 @@
   background: var(--deepsea-danger-soft);
   color: var(--deepsea-danger);
 }
+.deepsea-run-status[data-tone="muted"] {
+  background: rgba(100, 116, 139, 0.12);
+  color: rgba(71, 85, 105, 0.82);
+}
 .deepsea-message p,
 .deepsea-message-body,
 .deepsea-run-log-body,

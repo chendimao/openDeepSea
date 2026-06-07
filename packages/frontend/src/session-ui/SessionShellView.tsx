@@ -891,9 +891,11 @@ function RunStatusBadge({ status }: { status: SessionRun['status'] }): JSX.Eleme
   );
 }
 
-function runStatusView(status: SessionRun['status']): { label: string; tone: 'ok' | 'warn' | 'danger' } {
-  if (status === 'failed') return { label: '失败', tone: 'danger' };
+function runStatusView(status: SessionRun['status']): { label: string; tone: 'ok' | 'warn' | 'danger' | 'muted' } {
+  if (status === 'failed' || status === 'interrupted') return { label: '失败', tone: 'danger' };
   if (status === 'completed') return { label: '完成', tone: 'ok' };
+  if (status === 'paused') return { label: '已暂停', tone: 'muted' };
+  if (status === 'cancelled') return { label: '已取消', tone: 'muted' };
   return { label: '运行中', tone: 'warn' };
 }
 
