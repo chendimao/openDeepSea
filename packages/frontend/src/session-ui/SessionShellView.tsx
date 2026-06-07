@@ -614,6 +614,7 @@ function TranscriptCanvas({
                   </span>
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
                   <ThinkingDurationBadge run={item.run} />
+                  <RunStatusBadge status={item.run.status} />
                   <MarkdownDisplaySwitch
                     content={output}
                     mode={displayMode}
@@ -879,6 +880,21 @@ function ThinkingDurationBadge({ run }: { run: SessionRun }): JSX.Element | null
       {duration.label}
     </span>
   );
+}
+
+function RunStatusBadge({ status }: { status: SessionRun['status'] }): JSX.Element {
+  const view = runStatusView(status);
+  return (
+    <span className="deepsea-run-status" data-tone={view.tone}>
+      {view.label}
+    </span>
+  );
+}
+
+function runStatusView(status: SessionRun['status']): { label: string; tone: 'ok' | 'warn' | 'danger' } {
+  if (status === 'failed') return { label: '失败', tone: 'danger' };
+  if (status === 'completed') return { label: '完成', tone: 'ok' };
+  return { label: '运行中', tone: 'warn' };
 }
 
 function AgentThoughtPanel({

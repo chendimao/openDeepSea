@@ -353,6 +353,30 @@ test('SessionShell renders markdown controls and thinking duration in transcript
   assert.match(html, /分析结果/);
 });
 
+test('SessionShell renders run status beside thinking duration in transcript', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'running';
+  run.stdout = '正在处理。';
+  run.started_at = 1_000;
+  run.updated_at = 19_000;
+  run.completed_at = null;
+
+  const runningHtml = renderSessionShell(payload);
+  assert.match(runningHtml, /class="deepsea-run-status" data-tone="warn">运行中<\/span>/);
+
+  run.status = 'failed';
+  run.error = '执行失败';
+  run.completed_at = 19_000;
+  const failedHtml = renderSessionShell(payload);
+  assert.match(failedHtml, /class="deepsea-run-status" data-tone="danger">失败<\/span>/);
+
+  run.status = 'completed';
+  run.error = null;
+  const completedHtml = renderSessionShell(payload);
+  assert.match(completedHtml, /class="deepsea-run-status" data-tone="ok">完成<\/span>/);
+});
+
 test('SessionShell hides ACP tool records from chat transcript', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
