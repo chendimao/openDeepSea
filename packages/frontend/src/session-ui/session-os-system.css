@@ -496,7 +496,7 @@
   .deepsea-transcript__scroll {
     padding: 20px 16px;
   }
-  .deepsea-composer {
+  .deepsea-composer-anchor {
     position: static;
     right: auto;
     bottom: auto;

@@ -7,8 +7,11 @@ import type { ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePaylo
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
+  buildTranscriptFollowKey,
   buildSessionRunTranscriptItems,
+  getLatestUserMessageKey,
   getSessionRunThinkingDuration,
+  isTranscriptNearBottom,
 } from './SessionShellView';
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
@@ -358,6 +361,43 @@ test('SessionShell resolves run labels from project agent names instead of ids',
   assert.ok(html.indexOf('前端执行官') < html.indexOf('已执行前端任务。'));
   assert.doesNotMatch(html, /frontend-executor/);
   assert.doesNotMatch(html, /ASSISTANT/);
+});
+
+test('SessionShell renders a transcript end anchor for composer-safe auto scroll', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /data-transcript-scroll="true"/);
+  assert.match(html, /data-transcript-end="true"/);
+});
+
+test('isTranscriptNearBottom respects the transcript follow threshold', () => {
+  assert.equal(isTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 780, clientHeight: 200 } as HTMLElement), true);
+  assert.equal(isTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 500, clientHeight: 200 } as HTMLElement), false);
+});
+
+test('buildTranscriptFollowKey changes when active run output streams in place', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  const firstKey = buildTranscriptFollowKey({
+    runs: [{ ...run, id: 'run-streaming', stdout: '第一段', updated_at: 10 }],
+    timelineEndKey: 'run:run-streaming',
+  });
+  const secondKey = buildTranscriptFollowKey({
+    runs: [{ ...run, id: 'run-streaming', stdout: '第一段\n第二段', updated_at: 11 }],
+    timelineEndKey: 'run:run-streaming',
+  });
+
+  assert.notEqual(firstKey, secondKey);
+});
+
+test('getLatestUserMessageKey ignores assistant messages', () => {
+  const payload = createPayload();
+  const base = payload.activeSession.messages[0]!;
+
+  assert.equal(getLatestUserMessageKey([
+    { ...base, id: 'assistant-message', role: 'assistant', created_at: 20 },
+    { ...base, id: 'user-message', role: 'user', created_at: 10 },
+  ]), 'user-message:10');
 });
 
 test('SessionShell renders markdown controls and thinking duration in transcript', () => {

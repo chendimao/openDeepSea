@@ -1203,6 +1203,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  --deepsea-composer-space: 160px;
   background: transparent;
 }
 .deepsea-transcript__scroll {
@@ -1211,7 +1212,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 16px 160px;
+  padding: 16px 16px var(--deepsea-composer-space);
+  scroll-padding-bottom: var(--deepsea-composer-space);
 }
 .deepsea-transcript__heading {
   display: flex;
@@ -1759,12 +1761,14 @@
     transform: rotate(360deg);
   }
 }
-.deepsea-composer {
+.deepsea-composer-anchor {
   position: absolute;
   right: 24px;
   bottom: 6px;
   left: 24px;
   z-index: 40;
+}
+.deepsea-composer {
   display: grid;
   gap: 8px;
   border-color: rgba(255, 255, 255, 0.4);

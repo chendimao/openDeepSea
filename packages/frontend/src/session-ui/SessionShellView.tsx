@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ActiveSessionSummary,
   ProjectUsedAgentsPayload,
@@ -558,12 +558,26 @@ function TranscriptCanvas({
   projectId: string;
   onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const followTranscriptRef = useRef(true);
   const { data: projectAgents } = useQuery({
     queryKey: ['project-used-agents', projectId],
     queryFn: () => api.getProjectUsedAgents(projectId),
     staleTime: 20_000,
   });
   const timeline = buildTranscriptTimeline(detail).slice(-36);
+  const timelineEndKey = timeline.at(-1)?.key ?? 'empty';
+  const timelineFollowKey = useMemo(
+    () => buildTranscriptFollowKey({
+      agentEvents: detail.agentEvents,
+      runs: detail.runs,
+      timelineEndKey,
+    }),
+    [detail.agentEvents, detail.runs, timelineEndKey],
+  );
+  const latestUserMessageKey = useMemo(() => getLatestUserMessageKey(detail.messages), [detail.messages]);
   const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
   const displayModeFor = (key: string): SessionMessageDisplayMode => displayModes[key] ?? 'preview';
   const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
@@ -571,9 +585,62 @@ function TranscriptCanvas({
   };
   const agentNamesById = buildAgentNamesById(detail.messages, projectAgents);
 
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript) return undefined;
+
+    const updateFollowState = () => {
+      followTranscriptRef.current = isTranscriptNearBottom(transcript);
+    };
+
+    updateFollowState();
+    transcript.addEventListener('scroll', updateFollowState, { passive: true });
+    return () => transcript.removeEventListener('scroll', updateFollowState);
+  }, []);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    const composer = composerRef.current;
+    if (!transcript || !composer) return undefined;
+
+    const updateComposerSpace = () => {
+      const composerRect = composer.getBoundingClientRect();
+      const transcriptRect = transcript.getBoundingClientRect();
+      const overlap = Math.max(0, transcriptRect.bottom - composerRect.top);
+      const nextSpace = Math.ceil(Math.max(160, overlap + 24));
+      transcript.style.setProperty('--deepsea-composer-space', `${nextSpace}px`);
+    };
+
+    updateComposerSpace();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+
+    const resizeObserver = new ResizeObserver(updateComposerSpace);
+    resizeObserver.observe(composer);
+    resizeObserver.observe(transcript);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    const transcriptEnd = transcriptEndRef.current;
+    if (!transcript || !transcriptEnd) return;
+
+    followTranscriptRef.current = true;
+    transcriptEnd.scrollIntoView({ block: 'end' });
+  }, [latestUserMessageKey]);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    const transcriptEnd = transcriptEndRef.current;
+    if (!transcript || !transcriptEnd) return;
+
+    if (!followTranscriptRef.current) return;
+    transcriptEnd.scrollIntoView({ block: 'end' });
+  }, [timelineFollowKey]);
+
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
-      <div className="deepsea-transcript__scroll">
+      <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
         <div className="deepsea-transcript__heading">
           <h2>
             <MessageSquare aria-hidden="true" />
@@ -632,8 +699,11 @@ function TranscriptCanvas({
             </React.Fragment>
           );
         })}
+        <div aria-hidden="true" className="deepsea-transcript__end" data-transcript-end="true" ref={transcriptEndRef} />
       </div>
-      <DeepseaComposer projectId={detail.session.project_id} onSendMessage={onSendMessage} />
+      <div className="deepsea-composer-anchor" ref={composerRef}>
+        <DeepseaComposer projectId={detail.session.project_id} onSendMessage={onSendMessage} />
+      </div>
     </section>
   );
 }
@@ -657,6 +727,51 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
       run,
     })),
   ].sort((left, right) => left.timestamp - right.timestamp || left.key.localeCompare(right.key));
+}
+
+const TRANSCRIPT_FOLLOW_THRESHOLD_PX = 220;
+
+export function isTranscriptNearBottom(
+  transcript: Pick<HTMLElement, 'clientHeight' | 'scrollHeight' | 'scrollTop'>,
+): boolean {
+  const distanceFromBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight;
+  return distanceFromBottom <= TRANSCRIPT_FOLLOW_THRESHOLD_PX;
+}
+
+export function getLatestUserMessageKey(messages: SessionMessage[]): string {
+  const latestUserMessage = [...messages]
+    .filter((message) => message.role === 'user')
+    .sort((left, right) => right.created_at - left.created_at || right.id.localeCompare(left.id))[0];
+  return latestUserMessage ? `${latestUserMessage.id}:${latestUserMessage.created_at}` : 'none';
+}
+
+export function buildTranscriptFollowKey({
+  agentEvents,
+  runs,
+  timelineEndKey,
+}: {
+  agentEvents?: SessionAgentEvent[];
+  runs: SessionRun[];
+  timelineEndKey: string;
+}): string {
+  const latestRun = [...runs].sort((left, right) =>
+    right.updated_at - left.updated_at || right.id.localeCompare(left.id)
+  )[0];
+  const latestAgentEvent = [...(agentEvents ?? [])].sort((left, right) =>
+    right.seq - left.seq || right.created_at - left.created_at || right.id.localeCompare(left.id)
+  )[0];
+  return [
+    timelineEndKey,
+    latestRun?.id ?? 'no-run',
+    latestRun?.status ?? 'no-status',
+    latestRun?.updated_at ?? 0,
+    latestRun?.stdout.length ?? 0,
+    latestRun?.stderr.length ?? 0,
+    latestRun?.activity_log.length ?? 0,
+    latestAgentEvent?.id ?? 'no-event',
+    latestAgentEvent?.seq ?? 0,
+    latestAgentEvent?.content.length ?? 0,
+  ].join(':');
 }
 
 function TranscriptMessage({
