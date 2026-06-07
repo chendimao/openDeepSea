@@ -27,9 +27,11 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
 import type {
   ActiveSessionSummary,
+  ProjectUsedAgentsPayload,
   Session,
   SessionContract,
   SessionDetail,
@@ -43,6 +45,7 @@ import type {
   SessionWorkspacePayload,
   StatusSnapshot,
 } from '../lib/types';
+import { api } from '../lib/api';
 import { MessageContent } from '../components/MessageContent';
 import {
   MarkdownDisplaySwitch,
@@ -91,6 +94,7 @@ export function SessionShellView({
         <TranscriptCanvas
           detail={payload.activeSession}
           evidence={payload.evidence}
+          projectId={payload.project.id}
           onSendMessage={onSendMessage}
         />
         <IntegratedInspector
@@ -546,19 +550,26 @@ function filterProjectSessionTree(
 function TranscriptCanvas({
   detail,
   evidence,
+  projectId,
   onSendMessage,
 }: {
   detail: SessionDetail;
   evidence: SessionEvidenceEvent[];
+  projectId: string;
   onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
+  const { data: projectAgents } = useQuery({
+    queryKey: ['project-used-agents', projectId],
+    queryFn: () => api.getProjectUsedAgents(projectId),
+    staleTime: 20_000,
+  });
   const timeline = buildTranscriptTimeline(detail).slice(-36);
   const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
   const displayModeFor = (key: string): SessionMessageDisplayMode => displayModes[key] ?? 'preview';
   const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
     setDisplayModes((current) => ({ ...current, [key]: mode }));
   };
-  const agentNamesById = buildAgentNamesById(detail.messages);
+  const agentNamesById = buildAgentNamesById(detail.messages, projectAgents);
 
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
@@ -669,11 +680,22 @@ function TranscriptMessage({
   );
 }
 
-function buildAgentNamesById(messages: SessionMessage[]): Map<string, string> {
-  return new Map(messages.flatMap((message) => {
-    if (message.role !== 'assistant') return [];
-    return [[message.sender_id, message.sender_name ?? message.sender_id]];
-  }));
+function buildAgentNamesById(
+  messages: SessionMessage[],
+  projectAgents?: ProjectUsedAgentsPayload,
+): Map<string, string> {
+  const names = new Map<string, string>();
+  if (projectAgents) {
+    names.set(projectAgents.planner.agent_id, projectAgents.planner.name);
+    for (const agent of projectAgents.agents) {
+      names.set(agent.agent_id, agent.name);
+    }
+  }
+  for (const message of messages) {
+    if (message.role !== 'assistant' || !message.sender_name) continue;
+    names.set(message.sender_id, message.sender_name);
+  }
+  return names;
 }
 
 export type SessionRunTranscriptItem =

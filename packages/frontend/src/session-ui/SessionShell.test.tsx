@@ -3,7 +3,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
+import type { ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
@@ -293,6 +293,32 @@ test('SessionShell renders actual agent names for assistant transcript entries',
   assert.match(html, /前端执行官/);
   assert.ok(html.indexOf('前端执行官') < html.indexOf('我会更新消息标签。'));
   assert.ok(html.lastIndexOf('前端执行官') < html.indexOf('已更新消息标签。'));
+  assert.doesNotMatch(html, /ASSISTANT/);
+});
+
+test('SessionShell resolves run labels from project agent names instead of ids', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  payload.activeSession.messages = [{
+    ...payload.activeSession.messages[0]!,
+    content: '请执行前端任务',
+  }];
+  payload.activeSession.runs = [{
+    ...run,
+    agent_id: 'frontend-executor',
+    stdout: '已执行前端任务。',
+  }];
+
+  const html = renderSessionShell(payload, {
+    projectAgents: createProjectUsedAgentsPayload({
+      agent_id: 'frontend-executor',
+      name: '前端执行官',
+    }),
+  });
+
+  assert.match(html, /前端执行官/);
+  assert.ok(html.indexOf('前端执行官') < html.indexOf('已执行前端任务。'));
+  assert.doesNotMatch(html, /frontend-executor/);
   assert.doesNotMatch(html, /ASSISTANT/);
 });
 
@@ -737,8 +763,49 @@ export function createPayload(): SessionWorkspacePayload {
   };
 }
 
-function renderSessionShell(payload: SessionWorkspacePayload): string {
+function createProjectUsedAgentsPayload(agent: { agent_id: string; name: string }): ProjectUsedAgentsPayload {
+  return {
+    planner: {
+      kind: 'session_planner',
+      agent_id: 'planner',
+      name: 'Planner',
+      effective_acp_backend: 'codex',
+      project_override_acp_backend: null,
+      backend_source: 'builtin',
+      runtime_profile: {
+        permission_mode: 'workspace-write',
+        runtime_backend: 'acp',
+        tool_policy: { allowed: [] },
+        workspace_policy: { read: ['.'], write: ['.'] },
+        memory_scope: 'project',
+      },
+    },
+    agents: [{
+      kind: 'room_agent',
+      global_agent_id: null,
+      agent_id: agent.agent_id,
+      name: agent.name,
+      acp_enabled: true,
+      acp_backend: 'codex',
+      room_bindings: [{
+        room_id: 'room-1',
+        room_name: 'Room One',
+        room_agent_id: 'room-agent-1',
+        acp_backend: 'codex',
+        workflow_role: 'executor',
+      }],
+    }],
+  };
+}
+
+function renderSessionShell(
+  payload: SessionWorkspacePayload,
+  options: { projectAgents?: ProjectUsedAgentsPayload } = {},
+): string {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (options.projectAgents) {
+    queryClient.setQueryData(['project-used-agents', payload.project.id], options.projectAgents);
+  }
   return renderToStaticMarkup(
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
