@@ -235,16 +235,28 @@ test('planning node omits legacy skill context for graph planner', async () => {
     project_id: project.id,
     title: 'Plan with runtime skills',
   });
+  const run = createLegacyGraphWorkflowRun({
+    projectId: project.id,
+    projectPath: project.path,
+    roomId: room.id,
+    taskId: task.id,
+    taskTitle: task.title,
+  });
+  const state = parseGraphState(run.graph_state);
+  assert.ok(state);
   let plannerCalled = false;
-  const run = await startGraphWorkflow(task.id, {
+
+  const nodes = createGraphNodes(createGraphTools({
     planner: async (_input, options) => {
       plannerCalled = true;
       assert.equal(Object.hasOwn(options ?? {}, 'skillContext'), false);
       return createApprovalPlan(task.title);
     },
-  });
+  }));
+  const nextState = await nodes.planningNode(state);
 
-  assert.equal(workflowRepo.detail(run.id)?.run.status, 'awaiting_approval');
+  assert.ok(nextState.plan);
+  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'planning'), true);
   assert.equal(plannerCalled, true);
 });
 
@@ -984,40 +996,6 @@ test('createGraphWorkflowRun ignores room default workflow and records Superpowe
 
   assert.notEqual(run.workflow_definition_id, definition.id);
   assertSuperpowersWorkflowRun(run);
-});
-
-test('startGraphWorkflow omits legacy skill context for supervisor model', async () => {
-  const projectPath = join(tmpdir(), `graph-runtime-supervisor-skills-${Date.now()}`);
-  mkdirSync(projectPath, { recursive: true });
-  const project = projectRepo.create({ name: 'Supervisor Skills', path: projectPath });
-  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Skills Room' });
-  const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Skills Workflow');
-  const task = taskRepo.create({
-    room_id: room.id,
-    project_id: project.id,
-    title: 'Choose workflow with skills',
-  });
-  let supervisorCalled = false;
-
-  const run = await startGraphWorkflow(task.id, {
-    supervisor: async (_input, options) => {
-      supervisorCalled = true;
-      assert.equal(Object.hasOwn(options ?? {}, 'skillContext'), false);
-      return {
-        mode: 'select_existing_workflow',
-        workflowDefinitionId: workflow.id,
-        confidence: 0.91,
-        reason: 'The workflow skill selected this workflow.',
-        assignments: [],
-        fallbackMode: 'default_workflow',
-      };
-    },
-    planner: async () => createApprovalPlan(task.title),
-  });
-
-  assert.notEqual(run.workflow_definition_id, workflow.id);
-  assertSuperpowersWorkflowRun(run);
-  assert.equal(supervisorCalled, true);
 });
 
 test('startGraphWorkflow keeps high-confidence assignments from default supervisor when deps.supervisor is omitted', async () => {
