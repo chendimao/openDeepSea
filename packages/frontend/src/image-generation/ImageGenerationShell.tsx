@@ -1,5 +1,7 @@
 import { Image as ImageIcon, Layers, Settings2, Sparkles } from 'lucide-react';
+import { ImageGalleryPanel } from './ImageGalleryPanel';
 import { ImageJobForm } from './ImageJobForm';
+import { ImageJobQueue } from './ImageJobQueue';
 import { ProviderProfilePanel } from './ProviderProfilePanel';
 
 export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.Element {
@@ -44,8 +46,8 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
             <Layers className="h-4 w-4 text-[var(--color-accent)]" aria-hidden="true" />
             <span>任务队列</span>
           </h2>
-          <div className="mt-4 rounded border border-dashed border-[var(--color-border)] px-3 py-6 text-center text-[12px] text-[var(--color-fg-muted)]">
-            图片任务会在这里按状态排列
+          <div className="mt-4">
+            <ImageJobQueue projectId={projectId} />
           </div>
         </section>
 
@@ -57,14 +59,8 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
             <ImageIcon className="h-4 w-4 text-[var(--color-accent)]" aria-hidden="true" />
             <span>项目图库</span>
           </h2>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-            {Array.from({ length: 8 }, (_, index) => (
-              <div
-                key={index}
-                className="aspect-square border border-dashed border-[var(--color-border)] bg-[var(--color-bg-soft)]"
-                aria-hidden="true"
-              />
-            ))}
+          <div className="mt-4">
+            <ImageGalleryPanel projectId={projectId} />
           </div>
         </section>
       </main>
