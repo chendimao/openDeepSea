@@ -95,6 +95,45 @@ test('SessionShell renders tool rows as detail buttons', () => {
   assert.match(html, /aria-label="查看工具调用详情：packages\/frontend\/src\/session-ui\/SessionShell\.tsx"/);
 });
 
+test('SessionShell renders uploaded attachments on transcript messages', () => {
+  const payload = createPayload();
+  payload.activeSession.messages[0] = {
+    ...payload.activeSession.messages[0]!,
+    content: '分析这些附件',
+    metadata: JSON.stringify({
+      attachments: [
+        {
+          id: 'file-text-1',
+          fileId: 'file-text-1',
+          name: 'brief.txt',
+          mimeType: 'text/plain',
+          size: 1536,
+          url: '/uploads/files/project-1/brief.txt',
+          isImage: false,
+        },
+        {
+          id: 'file-image-1',
+          fileId: 'file-image-1',
+          name: 'screen.png',
+          mimeType: 'image/png',
+          size: 2048,
+          url: '/uploads/files/project-1/screen.png',
+          isImage: true,
+        },
+      ],
+    }),
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /deepsea-message-attachments/);
+  assert.match(html, /brief\.txt/);
+  assert.match(html, /screen\.png/);
+  assert.match(html, /src="\/uploads\/files\/project-1\/screen\.png"/);
+  assert.match(html, /1\.5 KB/);
+  assert.match(html, /2\.0 KB/);
+});
+
 test('SessionShell renders active run as compact list row', () => {
   const html = renderSessionShell(createPayload());
 

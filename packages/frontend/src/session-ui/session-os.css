@@ -1422,6 +1422,71 @@
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.deepsea-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.deepsea-message-attachment {
+  display: flex;
+  min-width: 0;
+  max-width: min(260px, 100%);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.42);
+  color: inherit;
+  padding: 5px 7px;
+  text-decoration: none;
+}
+.deepsea-message-attachment:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+.deepsea-message-attachment[data-deleted="true"] {
+  opacity: 0.68;
+}
+.deepsea-message-attachment__thumb {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--deepsea-primary);
+  overflow: hidden;
+}
+.deepsea-message-attachment__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.deepsea-message-attachment__thumb svg {
+  width: 16px;
+  height: 16px;
+}
+.deepsea-message-attachment__body {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.deepsea-message-attachment__body strong,
+.deepsea-message-attachment__body small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-message-attachment__body strong {
+  color: var(--deepsea-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+.deepsea-message-attachment__body small {
+  color: rgba(71, 85, 105, 0.76);
+  font-size: 10px;
+}
 .deepsea-run-log,
 .deepsea-run-log-body {
   min-width: 0;
@@ -1809,6 +1874,10 @@
   line-height: 1.5;
   scrollbar-width: thin;
 }
+.deepsea-composer__textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
 .deepsea-composer__field input::placeholder,
 .deepsea-composer__textarea::placeholder {
   color: rgba(100, 116, 139, 0.48);
@@ -1843,6 +1912,16 @@
 }
 .deepsea-composer-attachment__preview:hover {
   background: rgba(37, 99, 235, 0.06);
+}
+.deepsea-composer-attachment__preview:disabled,
+.deepsea-composer-attachment__remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+.deepsea-composer-attachment__preview:disabled:hover,
+.deepsea-composer-attachment__remove:disabled:hover {
+  background: transparent;
+  color: rgba(71, 85, 105, 0.72);
 }
 .deepsea-composer-attachment__image,
 .deepsea-composer-attachment__icon {

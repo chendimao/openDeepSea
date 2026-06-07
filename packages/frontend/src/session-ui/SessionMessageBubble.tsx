@@ -1,6 +1,8 @@
-import { Eye, FileText } from 'lucide-react';
+import { Eye, FileText, Image as ImageIcon, Paperclip } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { MarkdownPreview, MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
+import { formatFileSize } from '../lib/composerModel';
+import type { MessageAttachmentMetadata } from '../lib/types';
 
 export type SessionMessageBubbleRole = 'user' | 'assistant' | 'system';
 export type SessionMessageDisplayMode = 'preview' | 'source';
@@ -13,6 +15,7 @@ export function SessionMessageBubble({
   statusLabel,
   actions,
   roleLabel,
+  attachments = [],
   displayMode,
   onDisplayModeChange,
 }: {
@@ -23,6 +26,7 @@ export function SessionMessageBubble({
   statusLabel?: string | null;
   actions?: ReactNode;
   roleLabel?: string;
+  attachments?: MessageAttachmentMetadata[];
   displayMode?: SessionMessageDisplayMode;
   onDisplayModeChange?: (mode: SessionMessageDisplayMode) => void;
 }): JSX.Element {
@@ -47,9 +51,73 @@ export function SessionMessageBubble({
         ) : (
           <MessageContent content={displayContent} mode={activeDisplayMode} suppressTraceEvents />
         )}
+        <SessionMessageAttachments attachments={attachments} />
       </div>
     </article>
   );
+}
+
+function SessionMessageAttachments({
+  attachments,
+}: {
+  attachments: MessageAttachmentMetadata[];
+}): JSX.Element | null {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="deepsea-message-attachments" aria-label="消息附件">
+      {attachments.map((attachment) => attachment.deleted ? (
+        <span
+          key={attachment.id}
+          className="deepsea-message-attachment"
+          data-deleted="true"
+        >
+          <SessionMessageAttachmentContent attachment={attachment} />
+        </span>
+      ) : (
+        <a
+          key={attachment.id}
+          className="deepsea-message-attachment"
+          href={attachment.url}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <SessionMessageAttachmentContent attachment={attachment} />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function SessionMessageAttachmentContent({
+  attachment,
+}: {
+  attachment: MessageAttachmentMetadata;
+}): JSX.Element {
+  return (
+    <>
+      <span className="deepsea-message-attachment__thumb">
+        {attachment.isImage && !attachment.deleted ? (
+          <img src={attachment.url} alt="" />
+        ) : attachment.isImage ? (
+          <ImageIcon aria-hidden="true" />
+        ) : (
+          <Paperclip aria-hidden="true" />
+        )}
+      </span>
+      <span className="deepsea-message-attachment__body">
+        <strong title={attachment.name}>{attachment.name}</strong>
+        <small>{formatSessionAttachmentMeta(attachment)}</small>
+      </span>
+    </>
+  );
+}
+
+function formatSessionAttachmentMeta(attachment: MessageAttachmentMetadata): string {
+  return [
+    attachment.deleted ? '已删除' : null,
+    formatFileSize(attachment.size),
+    attachment.mimeType,
+  ].filter(Boolean).join(' · ');
 }
 
 export function MarkdownDisplaySwitch({

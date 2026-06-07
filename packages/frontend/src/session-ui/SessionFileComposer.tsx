@@ -15,6 +15,7 @@ import {
   buildAttachmentPreviewKind,
   buildSessionComposerSubmitFromText,
   formatComposerAttachmentMeta,
+  getComposerAttachmentInteractionState,
   type ComposerAttachmentPreviewKind,
   type SessionComposerSubmit,
 } from './session-file-composer-model';
@@ -124,6 +125,7 @@ export function SessionFileComposer({
         {attachments.length > 0 && (
           <AttachmentStrip
             attachments={attachments}
+            isUploading={isUploading}
             onPreview={setPreview}
             onRemove={removeAttachment}
           />
@@ -135,6 +137,7 @@ export function SessionFileComposer({
           value={content}
           rows={2}
           aria-label="命令输入"
+          disabled={isUploading}
           placeholder="输入消息，粘贴文件会上传到项目文件库"
           onChange={(event) => setContent(event.currentTarget.value)}
           onPaste={(event) => {
@@ -169,13 +172,16 @@ export function SessionFileComposer({
 
 function AttachmentStrip({
   attachments,
+  isUploading,
   onPreview,
   onRemove,
 }: {
   attachments: PendingSessionAttachment[];
+  isUploading: boolean;
   onPreview: (preview: PreviewState) => void;
   onRemove: (attachment: PendingSessionAttachment) => void;
 }): JSX.Element {
+  const interaction = getComposerAttachmentInteractionState({ isUploading });
   return (
     <div className="deepsea-composer-attachments" role="list" aria-label="待发送附件">
       {attachments.map((attachment) => (
@@ -187,6 +193,7 @@ function AttachmentStrip({
           <button
             type="button"
             className="deepsea-composer-attachment__preview"
+            disabled={!interaction.canPreview}
             onClick={() => onPreview({
               attachment,
               ...(attachment.previewKind === 'text' ? { loading: true } : {}),
@@ -202,6 +209,7 @@ function AttachmentStrip({
             type="button"
             aria-label={`移除 ${attachment.file.name}`}
             className="deepsea-composer-attachment__remove"
+            disabled={!interaction.canRemove}
             onClick={() => onRemove(attachment)}
           >
             <X aria-hidden="true" />

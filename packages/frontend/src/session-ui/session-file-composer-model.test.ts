@@ -8,6 +8,7 @@ import {
   collectProjectFileIds,
   collectSessionFileRefsFromSegments,
   formatComposerAttachmentMeta,
+  getComposerAttachmentInteractionState,
   type SessionFileReferenceChip,
 } from './session-file-composer-model';
 import type { ProjectFile, WorkspaceSearchResult } from '../lib/types';
@@ -149,6 +150,17 @@ test('attachment helpers identify preview kind and project file ids', () => {
     createProjectFile({ id: 'file:upload-1', original_name: 'notes.md', source_type: 'uploaded_file' }),
     createProjectFile({ id: 'asset:doc-1', original_name: 'handoff.md', source_type: 'agent_document' }),
   ]), ['file:upload-1', 'asset:doc-1']);
+});
+
+test('composer attachment controls are locked while uploading', () => {
+  assert.deepEqual(getComposerAttachmentInteractionState({ isUploading: false }), {
+    canPreview: true,
+    canRemove: true,
+  });
+  assert.deepEqual(getComposerAttachmentInteractionState({ isUploading: true }), {
+    canPreview: false,
+    canRemove: false,
+  });
 });
 
 function createProjectFile(input: Partial<ProjectFile> & Pick<ProjectFile, 'id' | 'original_name' | 'source_type'>): ProjectFile {

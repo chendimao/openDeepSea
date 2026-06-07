@@ -180,6 +180,16 @@ export function formatComposerAttachmentMeta(file: ComposerAttachmentFileLike): 
   ].filter(Boolean).join(' · ');
 }
 
+export function getComposerAttachmentInteractionState(input: { isUploading: boolean }): {
+  canPreview: boolean;
+  canRemove: boolean;
+} {
+  return {
+    canPreview: !input.isUploading,
+    canRemove: !input.isUploading,
+  };
+}
+
 function formatProjectFileDescription(file: ProjectFile): string {
   const size = file.size > 0 ? `${Math.ceil(file.size / 1024)}KB` : '0KB';
   return `${file.mime_type} · ${size}`;

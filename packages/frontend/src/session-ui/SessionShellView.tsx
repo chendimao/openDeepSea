@@ -46,6 +46,7 @@ import type {
   StatusSnapshot,
 } from '../lib/types';
 import { api } from '../lib/api';
+import { parseMessageMetadata } from '../lib/messageMetadata';
 import { MessageContent } from '../components/MessageContent';
 import {
   MarkdownDisplaySwitch,
@@ -783,6 +784,7 @@ function TranscriptMessage({
   displayMode: SessionMessageDisplayMode;
   onDisplayModeChange: (mode: SessionMessageDisplayMode) => void;
 }): JSX.Element {
+  const metadata = parseMessageMetadata(message.metadata);
   return (
     <SessionMessageBubble
       role={message.role}
@@ -790,6 +792,7 @@ function TranscriptMessage({
       timeLabel={formatClock(message.created_at)}
       statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
       roleLabel={message.sender_name ?? message.sender_id}
+      attachments={metadata.attachments}
       displayMode={displayMode}
       onDisplayModeChange={onDisplayModeChange}
     />
