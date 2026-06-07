@@ -647,7 +647,7 @@ test('SessionShell hides ACP tool records from chat transcript', () => {
   const thoughtTextIndex = html.indexOf('判断需要读取 package.json。');
 
   assert.match(html, /思考 18s/);
-  assert.ok(runLogIndex < html.indexOf('我会先分析当前项目。'));
+  assert.ok(html.indexOf('我会先分析当前项目。') < runLogIndex);
   assert.match(html, /找到入口和脚本。/);
   assert.match(html, /已完成。/);
   assert.doesNotMatch(html, /Thinking/);
@@ -655,7 +655,7 @@ test('SessionShell hides ACP tool records from chat transcript', () => {
   assert.doesNotMatch(html, /Run Command/);
   assert.ok(thoughtTextIndex >= 0);
   assert.ok(thoughtTextIndex < runLogIndex);
-  assert.ok(html.indexOf('我会先分析当前项目。') < html.indexOf('找到入口和脚本。'));
+  assert.ok(runLogIndex < html.indexOf('找到入口和脚本。'));
   assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('已完成。'));
 });
 
@@ -690,7 +690,7 @@ test('buildSessionRunTranscriptItems drops ACP tool markers from chat transcript
   ]);
 });
 
-test('buildSessionRunTranscriptItems keeps answer text without content sniffing', () => {
+test('buildSessionRunTranscriptItems hides legacy activity events misclassified as answer', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({
       id: 'fallback',
@@ -725,7 +725,71 @@ test('buildSessionRunTranscriptItems keeps answer text without content sniffing'
   ], '[ACP fallback]\n开始命令：rtk find\n✅ 结论：页面已分析。\n完成命令：rtk find');
 
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    "[ACP fallback] codex protocol server unavailable, using legacy CLI.\n开始命令：/bin/zsh -lc 'rtk find .'\n✅ 结论：页面已分析。完成命令：/bin/zsh -lc 'rtk find .'",
+    '✅ 结论：页面已分析。',
+  ]);
+});
+
+test('buildSessionRunTranscriptItems hides structured process chunks before visible answer', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({
+      id: 'preface-1',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '我会按项目本地目录来核对：优先看当前仓库里的 `.agents/skills` / `.codex/skills`。',
+    }),
+    createAgentEvent({
+      id: 'preface-2',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '当前仓库里只定位到 1 个项目级 skill 文件；`.codex/skills` 下没有项目共享 skill。接下来读一下它的元信息，避免只按目录名猜测。',
+    }),
+    createAgentEvent({
+      id: 'final',
+      seq: 3,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '当前项目级安装的 skill 只有 1 个：\n\n- `impeccable`',
+    }),
+  ], [
+    '我会按项目本地目录来核对：优先看当前仓库里的 `.agents/skills` / `.codex/skills`。',
+    '当前仓库里只定位到 1 个项目级 skill 文件；`.codex/skills` 下没有项目共享 skill。接下来读一下它的元信息，避免只按目录名猜测。',
+    '当前项目级安装的 skill 只有 1 个：\n\n- `impeccable`',
+  ].join(''));
+
+  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
+    '当前项目级安装的 skill 只有 1 个：\n\n- `impeccable`',
+  ]);
+});
+
+test('buildSessionRunTranscriptItems hides follow-up process chunks before global skills answer', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({
+      id: 'preface-1',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '我会按“全局安装”先核对 `~/.codex/skills`，再单独标出 Superpowers 插件缓存里暴露的技能。',
+    }),
+    createAgentEvent({
+      id: 'preface-2',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '刚才第一轮发现 `~/.codex/skills` 里有普通用户技能，也发现 Superpowers 有两份同名来源。现在补查隐藏目录和 `~/.agents/skills`，因为全局技能里有一部分放在这些位置。',
+    }),
+    createAgentEvent({
+      id: 'final',
+      seq: 3,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '当前全局安装/暴露的 skills，按唯一名称去重后共 **28 个**。',
+    }),
+  ], '');
+
+  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
+    '当前全局安装/暴露的 skills，按唯一名称去重后共 **28 个**。',
   ]);
 });
 
@@ -759,7 +823,7 @@ test('buildSessionRunTranscriptItems ignores structured non-answer channels', ()
   ]);
 });
 
-test('buildSessionRunTranscriptItems keeps tokenized answer text literally', () => {
+test('buildSessionRunTranscriptItems hides tokenized legacy process-only answer', () => {
   const text = [
     '我会先恢复现场：读取 Superpowers 入口要求和当前未提交改动。',
     '本轮使用 using-superpowers 做会话入口检查。',
@@ -778,12 +842,10 @@ test('buildSessionRunTranscriptItems keeps tokenized answer text literally', () 
     text,
   );
 
-  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    text,
-  ]);
+  assert.deepEqual(items, []);
 });
 
-test('SessionShell keeps process-looking answer text in run body', () => {
+test('SessionShell moves completed legacy process preface into collapsed thought', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.status = 'completed';
@@ -808,46 +870,48 @@ test('SessionShell keeps process-looking answer text in run body', () => {
   ];
 
   const html = renderSessionShell(payload);
-  const runLogIndex = html.indexOf('class="deepsea-run-log"');
+  const thoughtTag = getAgentThoughtTag(html);
 
-  assert.ok(runLogIndex < html.indexOf('我会直接按上传文件读取图片'));
+  assert.doesNotMatch(thoughtTag, /\sopen=""/);
+  assert.ok(html.indexOf('我会直接按上传文件读取图片') < html.indexOf('class="deepsea-run-log"'));
+  assert.equal(html.match(/我会直接按上传文件读取图片/g)?.length, 1);
   assert.match(html, /✅ 结论：截图展示的是工具调用列表。/);
 });
 
-test('SessionShell renders activity log in collapsed thought and answer in body', () => {
+test('SessionShell renders run thought inside assistant message area', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.status = 'completed';
-  run.activity_log = '我会直接按上传文件读取图片，然后基于截图内容做结构化分析。';
-  run.stdout = '✅ 结论：截图展示的是工具调用列表。';
+  run.stdout = '我会按项目本地目录来核对。当前项目级安装的 skill 只有 1 个：impeccable';
+  run.activity_log = '';
   payload.activeSession.agentEvents = [
     createAgentEvent({
-      id: 'thinking',
+      id: 'preface',
       seq: 1,
-      channel: 'thinking',
-      event_type: 'reasoning_delta',
-      content: '我会直接按上传文件读取图片，然后基于截图内容做结构化分析。',
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '我会按项目本地目录来核对。',
     }),
     createAgentEvent({
       id: 'final',
       seq: 2,
       channel: 'answer',
-      event_type: 'item.completed',
-      content: '✅ 结论：截图展示的是工具调用列表。',
+      event_type: 'agent_message_chunk',
+      content: '当前项目级安装的 skill 只有 1 个：impeccable',
     }),
   ];
 
   const html = renderSessionShell(payload);
+  const assistantIndex = html.indexOf('class="deepsea-message deepsea-message--agent-run" data-role="assistant"');
+  const thoughtIndex = html.indexOf('class="deepsea-agent-thought"');
   const runLogIndex = html.indexOf('class="deepsea-run-log"');
-  const thoughtTag = getAgentThoughtTag(html);
 
-  assert.doesNotMatch(getAgentThoughtTag(html), /\sopen=""/);
-  assert.ok(html.indexOf('我会直接按上传文件读取图片') < runLogIndex);
-  assert.ok(runLogIndex < html.indexOf('✅ 结论：截图展示的是工具调用列表。'));
-  assert.match(thoughtTag, /智能体思考过程/);
+  assert.ok(assistantIndex >= 0);
+  assert.ok(thoughtIndex > assistantIndex);
+  assert.ok(runLogIndex > thoughtIndex);
 });
 
-test('SessionShell renders stderr literally when stdout is empty', () => {
+test('SessionShell hides legacy activity persisted in stderr fallback', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.status = 'completed';
@@ -868,14 +932,14 @@ test('SessionShell renders stderr literally when stdout is empty', () => {
       channel: 'answer',
       event_type: 'item.started',
       content: '开始命令：rtk find .\n',
-      payload_json: JSON.stringify({ trace: null }),
     }),
   ];
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /ACP fallback/);
-  assert.match(html, /开始命令/);
+  assert.doesNotMatch(html, /ACP fallback/);
+  assert.doesNotMatch(html, /开始命令/);
+  assert.match(html, /未返回可展示回复。/);
 });
 
 test('SessionShell renders a concise active session title with the full title available', () => {

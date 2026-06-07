@@ -242,18 +242,6 @@ export interface PlatformSkillRef {
   name: string;
 }
 
-export interface SkillsShSearchResult {
-  id: string;
-  name: string;
-  skillId: string | null;
-  source: string | null;
-  installLabel: string;
-  description: string | null;
-  installs: number | null;
-  version: string | null;
-  revision: string | null;
-}
-
 export interface PlatformSkillSummary {
   provider: PlatformSkillProvider;
   label: string;

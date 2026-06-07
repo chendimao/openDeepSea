@@ -2,20 +2,12 @@ import { existsSync } from 'node:fs';
 import { constants } from 'node:fs';
 import {
   access,
-  copyFile,
   lstat,
-  mkdir,
-  mkdtemp,
   readdir,
   readFile,
-  rename,
-  rm,
-  stat,
-  symlink,
-  writeFile,
 } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, join, relative, resolve, sep } from 'node:path';
 import type {
   PlatformSkill,
   PlatformSkillAggregate,
@@ -31,30 +23,9 @@ const PLATFORM_LABELS: Record<PlatformSkillProvider, string> = {
   opencode: 'OpenCode',
 };
 
-const SKIPPED_DIRS = new Set(['.git', 'node_modules']);
-const MAX_FILE_BYTES = 1024 * 1024;
 const PLATFORM_SKILL_METADATA_FILE = '.opendeepsea-platform-skill.json';
 
 export const PLATFORM_PROVIDERS: PlatformSkillProvider[] = ['codex', 'claudecode', 'opencode'];
-
-export interface InstallDirectoryInput {
-  sourceDir: string;
-  targets: PlatformSkillProvider[];
-  installMode: Exclude<PlatformSkillInstallMode, 'unknown'>;
-  sourceLabel: string | null;
-}
-
-interface InstallTargetPlan {
-  provider: PlatformSkillProvider;
-  root: string;
-  target: string;
-}
-
-interface InstallPlan {
-  sourceDir: string;
-  safeName: string;
-  targets: InstallTargetPlan[];
-}
 
 interface ParsedSkillManifest {
   name: string;
@@ -153,72 +124,6 @@ export async function getPlatformSkill(provider: PlatformSkillProvider, skillNam
   const targetStats = await lstat(target).catch(() => null);
   if (!targetStats) return null;
   return readPlatformSkill(provider, root, skillName);
-}
-
-export async function assertCanInstallDirectoryToPlatforms(input: Pick<InstallDirectoryInput, 'sourceDir' | 'targets'>): Promise<void> {
-  await createInstallPlan(input.sourceDir, input.targets);
-}
-
-export async function installDirectoryToPlatforms(input: InstallDirectoryInput): Promise<PlatformSkill[]> {
-  const plan = await createInstallPlan(input.sourceDir, input.targets);
-
-  const installed: PlatformSkill[] = [];
-  for (const { provider, root, target } of plan.targets) {
-    await mkdir(root, { recursive: true });
-    if (input.installMode === 'symlink') {
-      await symlink(plan.sourceDir, target, 'dir');
-    } else {
-      await copySkillDirectoryAtomically(plan.sourceDir, target);
-    }
-    await writePlatformSkillMetadata(target, { sourceLabel: input.sourceLabel });
-    installed.push(await readPlatformSkill(provider, root, plan.safeName, input.sourceLabel));
-  }
-  return installed;
-}
-
-export async function removePlatformSkill(provider: PlatformSkillProvider, skillName: string): Promise<boolean> {
-  const root = resolve(resolvePlatformRoot(provider));
-  assertSafeSkillDirectoryName(skillName);
-  const target = resolve(root, skillName);
-  if (!isPathInside(root, target)) {
-    throw new Error('refusing to remove a skill outside the platform skills directory');
-  }
-  const targetStats = await lstat(target).catch((err: NodeJS.ErrnoException) => {
-    if (err.code === 'ENOENT') return null;
-    throw err;
-  });
-  if (!targetStats) return false;
-  await rm(target, { recursive: true, force: true });
-  return true;
-}
-
-async function createInstallPlan(inputSourceDir: string, targets: PlatformSkillProvider[]): Promise<InstallPlan> {
-  const sourceDir = resolve(inputSourceDir);
-  const sourceStats = await stat(sourceDir).catch(() => null);
-  if (!sourceStats?.isDirectory()) throw new Error('source skill path must be a directory');
-
-  const manifest = await readManifest(sourceDir).catch(() => null);
-  if (!manifest) throw new Error('SKILL.md is required');
-  const safeName = sanitizeSkillName(manifest.name || basename(sourceDir));
-  assertSafeSkillDirectoryName(safeName);
-
-  const seen = new Set<PlatformSkillProvider>();
-  const plans: InstallTargetPlan[] = [];
-  for (const provider of targets) {
-    if (seen.has(provider)) throw new Error(`duplicate install target: ${provider}`);
-    seen.add(provider);
-    const root = resolve(resolvePlatformRoot(provider));
-    const target = resolve(root, safeName);
-    if (!isPathInside(root, target)) throw new Error('target skill path escapes platform root');
-    const targetStats = await lstat(target).catch((err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT') return null;
-      throw err;
-    });
-    if (targetStats) throw new Error(`${provider} skill "${safeName}" already exists`);
-    plans.push({ provider, root, target });
-  }
-
-  return { sourceDir, safeName, targets: plans };
 }
 
 async function readPlatformSkill(
@@ -326,10 +231,6 @@ function stripQuotes(value: string): string {
   return value.replace(/^['"]|['"]$/g, '');
 }
 
-function sanitizeSkillName(value: string): string {
-  return value.trim().replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
-}
-
 function assertSafeSkillDirectoryName(value: string): void {
   const trimmed = value.trim();
   if (!trimmed || trimmed === '.' || trimmed === '..') {
@@ -340,51 +241,8 @@ function assertSafeSkillDirectoryName(value: string): void {
   }
 }
 
-async function copySkillDirectoryAtomically(source: string, target: string): Promise<void> {
-  const tempTarget = await mkdtemp(join(dirname(target), `.tmp-${basename(target)}-`));
-  let published = false;
-  try {
-    await copySkillDirectory(source, tempTarget, source);
-    await rename(tempTarget, target);
-    published = true;
-  } finally {
-    if (!published) {
-      await rm(tempTarget, { recursive: true, force: true });
-    }
-  }
-}
-
-async function copySkillDirectory(source: string, target: string, root: string): Promise<void> {
-  await mkdir(target, { recursive: true });
-  const entries = await readdir(source);
-  for (const entry of entries) {
-    if (SKIPPED_DIRS.has(entry)) continue;
-    const sourceEntry = join(source, entry);
-    const targetEntry = join(target, entry);
-    const entryStat = await lstat(sourceEntry);
-    if (entryStat.isSymbolicLink()) continue;
-    if (entryStat.isDirectory()) {
-      await copySkillDirectory(sourceEntry, targetEntry, root);
-      continue;
-    }
-    if (!entryStat.isFile()) continue;
-    if (entryStat.size > MAX_FILE_BYTES) continue;
-    const resolved = resolve(sourceEntry);
-    if (!isPathInside(root, resolved)) continue;
-    await copyFile(sourceEntry, targetEntry);
-  }
-}
-
 interface PlatformSkillMetadata {
   sourceLabel: string | null;
-}
-
-async function writePlatformSkillMetadata(skillPath: string, metadata: PlatformSkillMetadata): Promise<void> {
-  await writeFile(
-    join(skillPath, PLATFORM_SKILL_METADATA_FILE),
-    `${JSON.stringify(metadata, null, 2)}\n`,
-    'utf-8',
-  );
 }
 
 async function readPlatformSkillMetadata(skillPath: string): Promise<PlatformSkillMetadata | null> {

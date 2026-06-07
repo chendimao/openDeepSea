@@ -54,6 +54,9 @@ export async function dispatchSessionUserMessage(input: {
   const libraryFileRefs = normalizeLibraryFileRefs(project.id, input.libraryFileRefs);
   const plannerRuntime = resolveSessionPlannerRuntime(session.project_id);
   const platformSkillRefs = await normalizePlatformSkillRefs(input.platformSkillRefs, plannerRuntime.backend);
+  if (!hasUserMessagePayload(input.content, workspaceFileRefs, libraryFileRefs, platformSkillRefs)) {
+    throw new Error('session message content or references are required');
+  }
   const updatedSession = input.mode && input.mode !== session.mode
     ? sessionRepo.update(session.id, { mode: input.mode }) ?? session
     : session;
@@ -158,6 +161,18 @@ function buildLibraryAttachmentMetadata(libraryFileRefs: string[]): MessageAttac
       isImage: file.mime_type.startsWith('image/'),
       deleted: file.deleted_at !== null,
     }));
+}
+
+function hasUserMessagePayload(
+  content: string,
+  workspaceFileRefs: string[],
+  libraryFileRefs: string[],
+  platformSkillRefs: ResolvedPlatformSkillRef[],
+): boolean {
+  return content.trim().length > 0 ||
+    workspaceFileRefs.length > 0 ||
+    libraryFileRefs.length > 0 ||
+    platformSkillRefs.length > 0;
 }
 
 async function normalizeWorkspaceFileRefs(workspacePath: string, refs: string[] | undefined): Promise<string[]> {

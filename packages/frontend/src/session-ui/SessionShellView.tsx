@@ -821,13 +821,13 @@ function TranscriptCanvas({
           }
           const runEvidence = evidence.filter((event) => event.source_run_id === item.run.id);
           const runAgentEvents = (detail.agentEvents ?? []).filter((event) => event.run_id === item.run.id);
-          const output = runOutputText(item.run);
+          const output = runOutputText(item.run, runAgentEvents);
           const displayMode = displayModeFor(item.key);
           const runLabel = agentNamesById.get(item.run.agent_id) ?? item.run.agent_id;
           return (
-            <React.Fragment key={item.key}>
+            <article key={item.key} className="deepsea-message deepsea-message--agent-run" data-role="assistant">
               <AgentThoughtPanel run={item.run} evidence={runEvidence} agentEvents={runAgentEvents} />
-              <article className="deepsea-run-log">
+              <section className="deepsea-run-log" aria-label={`${runLabel} 回复`}>
                 <div>
                   <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>
                     {runLabel}
@@ -848,8 +848,8 @@ function TranscriptCanvas({
                     <SessionRunTimeline events={runAgentEvents} fallbackText={output} />
                   )}
                 </div>
-              </article>
-            </React.Fragment>
+              </section>
+            </article>
           );
         })}
         <div aria-hidden="true" className="deepsea-transcript__end" data-transcript-end="true" ref={transcriptEndRef} />
@@ -1003,11 +1003,12 @@ export function buildSessionRunTranscriptItems(
 ): SessionRunTranscriptItem[] {
   const items: SessionRunTranscriptItem[] = [];
   const sortedEvents = [...events].sort((left, right) => left.seq - right.seq || left.created_at - right.created_at);
+  const hiddenEventIds = new Set(hiddenLegacyAnswerEvents(sortedEvents).map((event) => event.id));
   let textBuffer = '';
   let textIndex = 0;
 
   const flushText = () => {
-    const text = textBuffer.trim();
+    const text = splitLegacyProcessOutputText(textBuffer).visibleText.trim();
     textBuffer = '';
     if (!text) return;
     items.push({ type: 'text', id: `text-${textIndex}`, text });
@@ -1015,21 +1016,74 @@ export function buildSessionRunTranscriptItems(
   };
 
   for (const event of sortedEvents) {
-    if (isAnswerTextEvent(event)) {
+    if (isAnswerTextEvent(event) && !hiddenEventIds.has(event.id)) {
       textBuffer += event.content;
     }
   }
 
   flushText();
   if (items.length === 0) {
-    const text = fallbackText.trim();
+    const text = splitLegacyProcessOutputText(fallbackText).visibleText.trim();
     return text ? [{ type: 'text', id: 'text-fallback', text }] : [];
   }
   return items;
 }
 
 function isAnswerTextEvent(event: SessionAgentEvent): boolean {
-  return event.channel === 'answer' && event.content.length > 0;
+  return event.channel === 'answer' &&
+    event.content.length > 0 &&
+    !isLegacyActivityAnswerEvent(event);
+}
+
+function hiddenLegacyAnswerEvents(events: SessionAgentEvent[]): SessionAgentEvent[] {
+  const answerEvents = events.filter((event) => event.channel === 'answer' && event.content.length > 0);
+  return answerEvents.filter((event, index) =>
+    isLegacyActivityAnswerEvent(event) ||
+    isLegacyTerminalNoiseAnswerEvent(event) ||
+    isLegacyProcessAnswerEvent(event, index, answerEvents),
+  );
+}
+
+function isLegacyProcessAnswerEvent(
+  event: SessionAgentEvent,
+  index: number,
+  answerEvents: SessionAgentEvent[],
+): boolean {
+  if (index >= answerEvents.length - 1) return false;
+  return isProcessPreludeText(event.content);
+}
+
+function isLegacyActivityAnswerEvent(event: SessionAgentEvent): boolean {
+  if (event.channel !== 'answer') return false;
+  if (event.event_type === 'protocol.stderr' || event.event_type === 'protocol_fallback') return true;
+  if (
+    (event.event_type === 'item.started' || event.event_type === 'item.completed') &&
+    (hasCommandTrace(event) || hasLegacyCommandActivityText(event.content))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function isLegacyTerminalNoiseAnswerEvent(event: SessionAgentEvent): boolean {
+  if (event.channel !== 'answer') return false;
+  const text = stripAnsiCodes(event.content).trimStart();
+  return /\bcodex_core::tools::router\b/.test(text) ||
+    /^\d{4}-\d{2}-\d{2}T[^\n]*(?:ERROR|WARN)\b/.test(text);
+}
+
+function hasCommandTrace(event: SessionAgentEvent): boolean {
+  const payload = parseAgentEventPayload(event.payload_json);
+  return Boolean(readNestedCommand(payload));
+}
+
+function hasLegacyCommandActivityText(content: string): boolean {
+  const text = stripAnsiCodes(content).trimStart();
+  return /^(?:\[ACP fallback\]|开始命令：|完成命令：|执行命令\b|\$\s)/.test(text);
+}
+
+function stripAnsiCodes(value: string): string {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '');
 }
 
 function runEventMarker(event: SessionAgentEvent): { label: string; detail: string | null } | null {
@@ -1411,8 +1465,8 @@ function RunModule({
   );
 }
 
-function runOutputText(run: SessionRun): string {
-  const output = run.stdout.trim() || run.stderr.trim();
+function runOutputText(run: SessionRun, events: SessionAgentEvent[] = []): string {
+  const output = sanitizeRunOutputText(run.stdout, events).trim() || sanitizeRunOutputText(run.stderr, events).trim();
   if (output) return output;
   if (run.status === 'completed') return '未返回可展示回复。';
   if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';
@@ -1420,6 +1474,21 @@ function runOutputText(run: SessionRun): string {
   if (run.status === 'paused') return '运行已暂停。';
   if (run.status === 'interrupted') return '运行已中断。';
   return '等待智能体输出...';
+}
+
+function sanitizeRunOutputText(output: string, events: SessionAgentEvent[]): string {
+  let text = output;
+  for (const event of hiddenLegacyAnswerEvents(events)) {
+    if (!event.content) continue;
+    text = removeOnce(text, event.content);
+  }
+  return splitLegacyProcessOutputText(text).visibleText;
+}
+
+function removeOnce(text: string, needle: string): string {
+  const index = text.indexOf(needle);
+  if (index < 0) return text;
+  return `${text.slice(0, index)}${text.slice(index + needle.length)}`;
 }
 
 function runThoughtStatusLabel(status: SessionRun['status']): string {
@@ -1461,7 +1530,14 @@ function agentThoughtText(run: SessionRun, evidence: SessionEvidenceEvent[], age
     .filter((event) => event.channel === 'thinking' || event.channel === 'activity')
     .map((event) => trimDisplayText(event.content))
     .filter(Boolean);
-  const thoughtParts = uniqueDisplayParts([activity, ...structuredThoughts]);
+  const hiddenAnswerThoughts = hiddenLegacyAnswerEvents(agentEvents)
+    .filter((event) => isProcessPreludeText(event.content))
+    .map((event) => trimDisplayText(event.content))
+    .filter(Boolean);
+  const outputThought = agentEvents.length === 0
+    ? trimDisplayText(splitLegacyProcessOutputText(run.stdout || run.stderr).thoughtText)
+    : '';
+  const thoughtParts = uniqueDisplayParts([activity, ...structuredThoughts, ...hiddenAnswerThoughts, outputThought]);
   if (thoughtParts.length > 0) return thoughtParts.join('\n');
   const evidenceText = evidence
     .map((event) => trimDisplayText(event.summary ?? event.title))
@@ -1469,6 +1545,58 @@ function agentThoughtText(run: SessionRun, evidence: SessionEvidenceEvent[], age
     .slice(0, 3)
     .join('\n');
   return evidenceText || null;
+}
+
+function splitLegacyProcessOutputText(output: string): { thoughtText: string; visibleText: string } {
+  const text = stripAnsiCodes(output);
+  const trimmed = text.trim();
+  if (!trimmed) return { thoughtText: '', visibleText: '' };
+
+  const visibleStart = findVisibleAnswerStart(text);
+  if (visibleStart > 0 && isProcessLikeText(text.slice(0, visibleStart))) {
+    return {
+      thoughtText: text.slice(0, visibleStart).trim(),
+      visibleText: text.slice(visibleStart).trimStart(),
+    };
+  }
+  if (visibleStart === 0) {
+    return { thoughtText: '', visibleText: text };
+  }
+  if (isProcessOnlyText(text)) {
+    return { thoughtText: trimmed, visibleText: '' };
+  }
+  return { thoughtText: '', visibleText: text };
+}
+
+function findVisibleAnswerStart(text: string): number {
+  const finalAnswerMatch = text.match(/(?:✅\s*)?(?:\*\*)?结论(?:\*\*)?[：:]/);
+  const finalAnswerIndex = finalAnswerMatch?.index ?? -1;
+  const skillAnswerMatch = text.match(/当前(?:会话可见的|项目级安装的|项目(?:中|里)?安装的|项目.*?安装了?|全局安装\/暴露的)\s*(?:skill|skills)/i);
+  const skillAnswerIndex = skillAnswerMatch?.index ?? -1;
+  const indexes = [finalAnswerIndex, skillAnswerIndex].filter((index) => index >= 0);
+  return indexes.length > 0 ? Math.min(...indexes) : -1;
+}
+
+function isProcessOnlyText(value: string): boolean {
+  const text = stripAnsiCodes(value).trim();
+  if (!text) return false;
+  if (findVisibleAnswerStart(text) >= 0) return false;
+  return isProcessPreludeText(text) || hasLegacyCommandActivityText(text);
+}
+
+function isProcessLikeText(value: string): boolean {
+  const text = stripAnsiCodes(value).replace(/\s+/g, ' ').trim();
+  if (!text) return false;
+  return isProcessPreludeText(text) ||
+    /当前(?:仓库|目录|现场|页面|代码|工作区)[^。！？\n]*(?:接下来|避免|先|再|继续|读取|确认|定位|找到)/.test(text) ||
+    /(?:接下来|然后)(?:我会|读一下|检查|确认|继续|编辑|运行)/.test(text);
+}
+
+function isProcessPreludeText(content: string): boolean {
+  const text = stripAnsiCodes(content).trimStart();
+  return /^(?:我会先|我先|我会直接|我会按|我现在|接下来我会|我已经|本轮使用|本次使用|若确认)/.test(text) ||
+    /^刚才[\s\S]{0,240}?(?:发现|确认|定位|检查)[\s\S]{0,240}?(?:现在|接下来|继续|补查|再)/.test(text) ||
+    /^当前(?:仓库|目录|现场|页面|代码|工作区)[^。！？\n]*(?:接下来|避免|先|再|继续|读取|确认|定位|找到)/.test(text);
 }
 
 function uniqueDisplayParts(parts: string[]): string[] {

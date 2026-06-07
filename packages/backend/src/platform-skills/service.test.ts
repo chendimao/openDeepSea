@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { existsSync, lstatSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import test from 'node:test';
 
 const testHome = mkdtempSync(join(tmpdir(), 'opendeepsea-platform-skills-home-'));
@@ -11,17 +11,13 @@ process.env.CODEX_HOME = join(testHome, '.custom-codex');
 
 const {
   getPlatformDefinitions,
-  installDirectoryToPlatforms,
+  getPlatformSkill,
   listPlatformSkillAggregates,
   listPlatformSkills,
-  removePlatformSkill,
   resolvePlatformRoot,
 } = await import('./service.js');
 
-const tempSources: string[] = [];
-
 test.after(async () => {
-  await Promise.all(tempSources.map((dir) => rm(dir, { recursive: true, force: true })));
   await rm(testHome, { recursive: true, force: true });
 });
 
@@ -38,170 +34,46 @@ test('getPlatformDefinitions exposes all supported platforms in stable order', (
   );
 });
 
-test('installDirectoryToPlatforms copies a local skill and listPlatformSkills reads metadata', async () => {
-  const source = await createSourceSkill('copy-skill', 'Copied skill.');
-
-  const installed = await installDirectoryToPlatforms({
-    sourceDir: source,
-    targets: ['codex'],
-    installMode: 'copy',
-    sourceLabel: `local:${basename(source)}`,
+test('listPlatformSkills scans native skill directories and reads metadata', async () => {
+  const skillDir = await createPlatformSkill('codex', 'copy-skill', 'Copied skill.', {
+    sourceLabel: 'external:copy-skill',
+    version: '1.2.3',
   });
-
-  assert.equal(installed.length, 1);
-  assert.equal(installed[0]?.provider, 'codex');
-  assert.equal(installed[0]?.name, 'copy-skill');
-  assert.equal(installed[0]?.installMode, 'copy');
-  assert.equal(existsSync(join(process.env.CODEX_HOME!, 'skills', 'copy-skill', 'assets', 'note.txt')), true);
+  await mkdir(join(skillDir, 'assets'));
+  await writeFile(join(skillDir, 'assets', 'note.txt'), 'asset');
 
   const listed = await listPlatformSkills('codex');
   const skill = listed.find((item) => item.name === 'copy-skill');
   assert.ok(skill);
   assert.equal(skill.description, 'Copied skill.');
-  assert.equal(skill.sourceLabel, `local:${basename(source)}`);
+  assert.equal(skill.sourceLabel, 'external:copy-skill');
   assert.equal(skill.version, '1.2.3');
+  assert.equal(skill.installMode, 'copy');
   assert.equal(skill.valid, true);
 });
 
-test('installDirectoryToPlatforms rejects concurrent copy install to the same target', async () => {
-  const source = await createSourceSkill('race-skill', 'Concurrent install.');
-  const results = await Promise.allSettled([
-    installDirectoryToPlatforms({
-      sourceDir: source,
-      targets: ['codex'],
-      installMode: 'copy',
-      sourceLabel: `local:${basename(source)}-a`,
-    }),
-    installDirectoryToPlatforms({
-      sourceDir: source,
-      targets: ['codex'],
-      installMode: 'copy',
-      sourceLabel: `local:${basename(source)}-b`,
-    }),
-  ]);
-
-  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
-  assert.equal(results.filter((result) => result.status === 'rejected').length, 1);
-  const listed = await listPlatformSkills('codex');
-  assert.equal(listed.filter((item) => item.name === 'race-skill').length, 1);
-});
-
 test('listPlatformSkills uses directory name as the stable API identifier', async () => {
-  const source = await createSourceSkill('Fancy Skill', 'Skill with a display name.');
-
-  const installed = await installDirectoryToPlatforms({
-    sourceDir: source,
-    targets: ['opencode'],
-    installMode: 'copy',
-    sourceLabel: `local:${basename(source)}`,
+  await createPlatformSkill('opencode', 'Fancy-Skill', 'Skill with a display name.', {
+    manifestName: 'Fancy Skill',
   });
 
-  assert.equal(installed[0]?.name, 'Fancy-Skill');
-  assert.equal(existsSync(join(testHome, '.config', 'opencode', 'skills', 'Fancy-Skill')), true);
-
-  const removed = await removePlatformSkill('opencode', installed[0]!.name);
-  assert.equal(removed, true);
-  assert.equal(existsSync(join(testHome, '.config', 'opencode', 'skills', 'Fancy-Skill')), false);
+  const listed = await listPlatformSkills('opencode');
+  const skill = listed.find((item) => item.name === 'Fancy-Skill');
+  assert.ok(skill);
+  assert.equal(skill.name, 'Fancy-Skill');
+  assert.equal(skill.description, 'Skill with a display name.');
 });
 
-test('installDirectoryToPlatforms rejects unsafe skill names without touching platform root', async () => {
-  const source = await createSourceSkill('.', 'Unsafe skill name.');
-  const keepDir = join(process.env.CODEX_HOME!, 'skills', 'keep-skill');
-  await mkdir(keepDir, { recursive: true });
-  await writeFile(join(keepDir, 'SKILL.md'), '---\nname: keep-skill\n---\n');
-
-  await assert.rejects(
-    () => installDirectoryToPlatforms({
-      sourceDir: source,
-      targets: ['codex'],
-      installMode: 'copy',
-      sourceLabel: `local:${basename(source)}`,
-    }),
-    /safe directory name/,
-  );
-  assert.equal(existsSync(keepDir), true);
-
-  await assert.rejects(
-    () => removePlatformSkill('codex', '.'),
-    /safe directory name/,
-  );
-  assert.equal(existsSync(keepDir), true);
+test('getPlatformSkill returns null for unsafe or missing entries', async () => {
+  assert.equal(await getPlatformSkill('codex', '../outside'), null);
+  assert.equal(await getPlatformSkill('codex', 'missing-skill'), null);
 });
 
-test('installDirectoryToPlatforms preflights all targets before writing any platform', async () => {
-  const source = await createSourceSkill('partial-skill', 'Partial install should not happen.');
-  const conflictDir = join(testHome, '.config', 'opencode', 'skills', 'partial-skill');
-  await mkdir(conflictDir, { recursive: true });
-  await writeFile(join(conflictDir, 'SKILL.md'), '---\nname: partial-skill\n---\n');
+test('listPlatformSkills marks malformed and broken entries invalid', async () => {
+  const badDir = join(testHome, '.config', 'opencode', 'skills', 'bad-skill');
+  await mkdir(badDir, { recursive: true });
+  writeFileSync(join(badDir, 'README.md'), 'missing manifest');
 
-  await assert.rejects(
-    () => installDirectoryToPlatforms({
-      sourceDir: source,
-      targets: ['claudecode', 'opencode'],
-      installMode: 'copy',
-      sourceLabel: `local:${basename(source)}`,
-    }),
-    /already exists/,
-  );
-
-  assert.equal(existsSync(join(testHome, '.claude', 'skills', 'partial-skill')), false);
-  assert.equal(existsSync(conflictDir), true);
-});
-
-test('installDirectoryToPlatforms symlinks the whole skill directory for advanced mode', async () => {
-  const source = await createSourceSkill('linked-skill', 'Linked skill.');
-  const installed = await installDirectoryToPlatforms({
-    sourceDir: source,
-    targets: ['claudecode'],
-    installMode: 'symlink',
-    sourceLabel: `local:${basename(source)}`,
-  });
-
-  assert.equal(installed.length, 1);
-  assert.equal(installed[0]?.provider, 'claudecode');
-  assert.equal(installed[0]?.installMode, 'symlink');
-  const target = join(testHome, '.claude', 'skills', 'linked-skill');
-  assert.equal(lstatSync(target).isSymbolicLink(), true);
-  assert.equal(existsSync(join(target, 'SKILL.md')), true);
-});
-
-test('installDirectoryToPlatforms rejects duplicate skill directories', async () => {
-  const source = await createSourceSkill('copy-skill', 'Duplicate skill.');
-
-  await assert.rejects(
-    () => installDirectoryToPlatforms({
-      sourceDir: source,
-      targets: ['codex'],
-      installMode: 'copy',
-      sourceLabel: `local:${basename(source)}`,
-    }),
-    /already exists/i,
-  );
-});
-
-test('removePlatformSkill deletes copies and only unlinks symlinks', async () => {
-  const removedCopy = await removePlatformSkill('codex', 'copy-skill');
-  assert.equal(removedCopy, true);
-  assert.equal(existsSync(join(process.env.CODEX_HOME!, 'skills', 'copy-skill')), false);
-
-  const sourceLinked = await createSourceSkill('source-linked', 'Source linked skill.');
-  const linkPath = join(testHome, '.claude', 'skills', 'source-linked');
-  await installDirectoryToPlatforms({
-    sourceDir: sourceLinked,
-    targets: ['claudecode'],
-    installMode: 'symlink',
-    sourceLabel: `local:${basename(sourceLinked)}`,
-  });
-  assert.equal(existsSync(join(sourceLinked, 'SKILL.md')), true);
-  assert.equal(existsSync(join(linkPath, 'SKILL.md')), true);
-
-  const removedLink = await removePlatformSkill('claudecode', 'source-linked');
-  assert.equal(removedLink, true);
-  assert.equal(existsSync(linkPath), false);
-  assert.equal(existsSync(join(sourceLinked, 'SKILL.md')), true);
-});
-
-test('removePlatformSkill can delete a broken symlink entry', async () => {
   const root = join(testHome, '.claude', 'skills');
   const source = await createSourceSkill('broken-linked', 'Broken linked skill.');
   const linkPath = join(root, 'broken-linked');
@@ -209,48 +81,29 @@ test('removePlatformSkill can delete a broken symlink entry', async () => {
   await symlink(source, linkPath, 'dir');
   await rm(source, { recursive: true, force: true });
 
-  const listed = await listPlatformSkills('claudecode');
-  const broken = listed.find((item) => item.name === 'broken-linked');
-  assert.ok(broken);
-  assert.equal(broken.installMode, 'symlink');
-  assert.equal(broken.valid, false);
-
-  const removed = await removePlatformSkill('claudecode', 'broken-linked');
-  assert.equal(removed, true);
-  assert.equal(existsSync(linkPath), false);
-});
-
-test('listPlatformSkills marks malformed entries invalid', async () => {
-  const badDir = join(testHome, '.config', 'opencode', 'skills', 'bad-skill');
-  await mkdir(badDir, { recursive: true });
-  writeFileSync(join(badDir, 'README.md'), 'missing manifest');
-
-  const listed = await listPlatformSkills('opencode');
-  const bad = listed.find((item) => item.name === 'bad-skill');
+  const bad = (await listPlatformSkills('opencode')).find((item) => item.name === 'bad-skill');
   assert.ok(bad);
   assert.equal(bad.valid, false);
   assert.match(bad.issues.join('\n'), /SKILL\.md is required/);
+
+  const broken = (await listPlatformSkills('claudecode')).find((item) => item.name === 'broken-linked');
+  assert.ok(broken);
+  assert.equal(broken.installMode, 'symlink');
+  assert.equal(broken.valid, false);
+  assert.match(broken.issues.join('\n'), /SKILL\.md is required/);
 });
 
 test('listPlatformSkillAggregates merges skills across platforms with stable provider ordering', async () => {
-  const codexSource = await createSourceSkill('matrix-shared', 'Codex matrix skill.');
+  await createPlatformSkill('codex', 'matrix-shared', 'Codex matrix skill.');
+
   const claudeSource = await createSourceSkill('matrix-shared', 'Claude matrix skill.');
+  const claudeRoot = join(testHome, '.claude', 'skills');
+  await mkdir(claudeRoot, { recursive: true });
+  await symlink(claudeSource, join(claudeRoot, 'matrix-shared'), 'dir');
+
   const invalidDir = join(testHome, '.config', 'opencode', 'skills', 'matrix-invalid');
   await mkdir(invalidDir, { recursive: true });
   writeFileSync(join(invalidDir, 'README.md'), 'missing manifest');
-
-  await installDirectoryToPlatforms({
-    sourceDir: codexSource,
-    targets: ['codex'],
-    installMode: 'copy',
-    sourceLabel: `local:${basename(codexSource)}`,
-  });
-  await installDirectoryToPlatforms({
-    sourceDir: claudeSource,
-    targets: ['claudecode'],
-    installMode: 'symlink',
-    sourceLabel: `local:${basename(claudeSource)}`,
-  });
 
   const aggregates = await listPlatformSkillAggregates();
   const shared = aggregates.find((item) => item.name === 'matrix-shared');
@@ -275,27 +128,53 @@ test('listPlatformSkillAggregates merges skills across platforms with stable pro
   assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
 });
 
-test('removePlatformSkill rejects path traversal outside platform root', async () => {
-  await assert.rejects(
-    () => removePlatformSkill('codex', '../outside'),
-    /safe directory name/,
-  );
-});
+async function createPlatformSkill(
+  provider: 'codex' | 'claudecode' | 'opencode',
+  name: string,
+  description: string,
+  options: {
+    manifestName?: string;
+    sourceLabel?: string;
+    version?: string;
+  } = {},
+): Promise<string> {
+  const dir = join(resolveProviderRoot(provider), name);
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, 'SKILL.md'), [
+    '---',
+    `name: ${options.manifestName ?? name}`,
+    `description: ${description}`,
+    `version: ${options.version ?? '1.0.0'}`,
+    '---',
+    '',
+    `Use ${name}.`,
+    '',
+  ].join('\n'));
+  if (options.sourceLabel) {
+    await writeFile(
+      join(dir, '.opendeepsea-platform-skill.json'),
+      `${JSON.stringify({ sourceLabel: options.sourceLabel })}\n`,
+    );
+  }
+  return dir;
+}
 
 async function createSourceSkill(name: string, description: string): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), `opendeepsea-platform-source-${name}-`));
-  tempSources.push(dir);
-
   await writeFile(join(dir, 'SKILL.md'), [
     '---',
     `name: ${name}`,
     `description: ${description}`,
-    'version: 1.2.3',
     '---',
     '',
-    'Follow platform instructions.',
+    `Use ${name}.`,
+    '',
   ].join('\n'));
-  await mkdir(join(dir, 'assets'));
-  await writeFile(join(dir, 'assets', 'note.txt'), 'asset');
   return dir;
+}
+
+function resolveProviderRoot(provider: 'codex' | 'claudecode' | 'opencode'): string {
+  if (provider === 'codex') return join(process.env.CODEX_HOME!, 'skills');
+  if (provider === 'claudecode') return join(testHome, '.claude', 'skills');
+  return join(testHome, '.config', 'opencode', 'skills');
 }

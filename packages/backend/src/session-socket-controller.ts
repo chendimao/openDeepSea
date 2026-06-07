@@ -45,7 +45,7 @@ const socketEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('session.message.send'),
     sessionId: z.string().trim().min(1),
-    content: z.string().trim().min(1),
+    content: z.string(),
     agentId: z.string().trim().min(1).optional(),
     mode: z.enum(['ask', 'plan', 'code', 'debug', 'review']).optional(),
     workspaceFileRefs: sessionFileRefListSchema,

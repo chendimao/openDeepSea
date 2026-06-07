@@ -27,7 +27,6 @@ import type {
   MessageRoutingMode,
   PlatformSkill,
   PlatformSkillAggregate,
-  PlatformSkillInstallMode,
   PlatformSkillProvider,
   PlatformSkillSummary,
   ProviderSuperpowersStatus,
@@ -46,7 +45,6 @@ import type {
   SessionDetail,
   SessionMode,
   SessionPlannerPlatformSkillsResponse,
-  SkillsShSearchResult,
   SuperpowersBootstrapOwner,
   Task,
   TaskActionKind,
@@ -399,32 +397,6 @@ export const api = {
     workspaceRequest<PlatformSkill[]>(`/platform-skills/${provider}`),
   getPlatformSkill: (provider: PlatformSkillProvider, skillName: string) =>
     workspaceRequest<PlatformSkill>(`/platform-skills/${provider}/${encodeURIComponent(skillName)}`),
-  searchPlatformSkillMarketplace: (query: string) => {
-    const params = new URLSearchParams();
-    if (query.trim()) params.set('q', query.trim());
-    const search = params.toString();
-    return workspaceRequest<SkillsShSearchResult[]>(`/platform-skills/marketplace${search ? `?${search}` : ''}`);
-  },
-  installPlatformSkill: (input: {
-    installLabel: string;
-    targets: PlatformSkillProvider[];
-    installMode: Exclude<PlatformSkillInstallMode, 'unknown'>;
-  }) =>
-    workspaceRequest<PlatformSkill[]>('/platform-skills/install', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  importLocalPlatformSkill: (input: {
-    path: string;
-    targets: PlatformSkillProvider[];
-    installMode: Exclude<PlatformSkillInstallMode, 'unknown'>;
-  }) =>
-    workspaceRequest<PlatformSkill[]>('/platform-skills/import-local', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    }),
-  deletePlatformSkill: (provider: PlatformSkillProvider, skillName: string) =>
-    workspaceRequest<void>(`/platform-skills/${provider}/${encodeURIComponent(skillName)}`, { method: 'DELETE' }),
 
   listProjects: () => request<Project[]>('/projects'),
   pickDirectory: () =>

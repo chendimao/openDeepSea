@@ -6,6 +6,9 @@ import test, { afterEach } from 'node:test';
 import type { WebSocket } from 'ws';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-session-socket-')), 'test.db');
+const platformSkillsHome = mkdtempSync(join(tmpdir(), 'opendeepsea-session-socket-platform-skills-home-'));
+process.env.HOME = platformSkillsHome;
+process.env.CODEX_HOME = join(platformSkillsHome, '.codex');
 
 const { projectRepo } = await import('./repos/projects.js');
 const { fileRepo } = await import('./repos/files.js');
@@ -75,6 +78,80 @@ test('websocket message send starts planner run and sends no HTTP response objec
   assert.equal(run.agent_id, 'planner');
   assert.match(seenPrompts[0] ?? '', /继续实现/);
   assert.equal(sent.some((payload) => JSON.parse(payload).type === 'session_error'), false);
+});
+
+test('websocket message send accepts platform skill refs without text content', async () => {
+  const project = projectRepo.create({
+    name: 'socket skill only project',
+    path: mkdtempSync(join(tmpdir(), 'socket-skill-only-project-')),
+  });
+  createPlatformSkill('codex', 'frontend-design', 'Frontend design workflow.');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Socket Skill Only',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const seenPrompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      seenPrompts.push(prompt);
+      return { exitCode: 0, sessionId: 'socket-skill-only-acp', stderr: '' };
+    },
+  });
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'session.message.send',
+    sessionId: session.id,
+    content: '',
+    platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
+  });
+
+  await waitFor(() => sessionRunRepo.listBySession(session.id).length === 1);
+  const [message] = sessionMessageRepo.listBySession(session.id);
+  const metadata = JSON.parse(message?.metadata ?? '{}') as {
+    platform_skill_refs?: Array<{ provider: string; name: string }>;
+  };
+  assert.equal(message?.content, '');
+  assert.deepEqual(metadata.platform_skill_refs, [{ provider: 'codex', name: 'frontend-design' }]);
+  assert.match(seenPrompts[0] ?? '', /\$frontend-design/);
+  assert.equal(sent.some((payload) => JSON.parse(payload).type === 'session_error'), false);
+});
+
+test('websocket message send rejects empty content without references', async () => {
+  const project = projectRepo.create({
+    name: 'socket empty payload project',
+    path: mkdtempSync(join(tmpdir(), 'socket-empty-payload-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Socket Empty Payload',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'socket-empty-payload-acp', stderr: '' }),
+  });
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'session.message.send',
+    sessionId: session.id,
+    content: '   ',
+  });
+
+  await waitFor(() => sent.some((payload) => JSON.parse(payload).type === 'session_error'));
+  assert.equal(sessionMessageRepo.listBySession(session.id).length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  const error = sent.map((payload) => JSON.parse(payload)).find((event) => event.type === 'session_error');
+  assert.match(error?.error ?? '', /content or references are required/);
 });
 
 test('websocket message send stores normalized file refs in message metadata', async () => {
@@ -464,3 +541,22 @@ test('websocket checkpoint command creates checkpoint through websocket path', a
   assert.equal(sessionCheckpointRepo.listBySession(session.id)[0]?.title, '保存当前状态');
   assert.equal(sessionEvidenceRepo.listBySession(session.id).at(-1)?.event_type, 'checkpoint');
 });
+
+function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name: string, description: string): void {
+  const root = provider === 'codex'
+    ? join(process.env.CODEX_HOME!, 'skills')
+    : provider === 'claudecode'
+      ? join(platformSkillsHome, '.claude', 'skills')
+      : join(platformSkillsHome, '.config', 'opencode', 'skills');
+  const dir = join(root, name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'SKILL.md'), [
+    '---',
+    `name: ${name}`,
+    `description: ${description}`,
+    '---',
+    '',
+    `Use ${name}.`,
+    '',
+  ].join('\n'));
+}

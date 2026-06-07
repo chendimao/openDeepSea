@@ -48,15 +48,3 @@ export interface PlatformSkillAggregate {
   issues: PlatformSkillAggregateIssue[];
   lastModifiedAt: number | null;
 }
-
-export interface InstallPlatformSkillInput {
-  installLabel: string;
-  targets: PlatformSkillProvider[];
-  installMode: Exclude<PlatformSkillInstallMode, 'unknown'>;
-}
-
-export interface ImportLocalPlatformSkillInput {
-  path: string;
-  targets: PlatformSkillProvider[];
-  installMode: Exclude<PlatformSkillInstallMode, 'unknown'>;
-}
