@@ -57,6 +57,7 @@ export async function invokeProtocolSession(
   let promptShouldIncludeHandoff = Boolean(args.sessionHandoff?.trim() && args.sessionHandoffMode === 'force');
   let sessionHandoffPending = false;
   let sessionHandoffReason: AcpSessionHandoffReason | undefined;
+  let resumeUnavailable = false;
   let rejectStreamDisconnect: ((error: Error) => void) | null = null;
   const stageTimeoutMs = args.stageTimeoutMs ?? readProtocolStageTimeoutMs(process.env.OPENCLAW_ACP_STAGE_TIMEOUT_MS);
   const promptTimeoutMs = args.promptTimeoutMs ?? readProtocolTimeoutMs(
@@ -189,6 +190,22 @@ export async function invokeProtocolSession(
         'ACP resumeSession timed out',
       );
     } else {
+      resumeUnavailable = Boolean(activeSessionId && !canResumeSession(agentCapabilities));
+      if (resumeUnavailable) {
+        args.signal?.removeEventListener('abort', abortHandler);
+        await shutdownProtocolChild({
+          child,
+          childExit,
+          closeSession: () => Promise.resolve(),
+        });
+        return {
+          exitCode: -1,
+          sessionId: activeSessionId,
+          stderr: 'ACP resumeSession unavailable',
+          fallbackSafe: true,
+          resumeUnavailable: true,
+        };
+      }
       promptShouldIncludeHandoff = true;
       const newSession = await withTimeout(
         connection.newSession({
@@ -280,7 +297,8 @@ export async function invokeProtocolSession(
       exitCode,
       sessionId: activeSessionId,
       stderr,
-      fallbackSafe: false,
+      fallbackSafe: resumeUnavailable && !eventReceived,
+      resumeUnavailable,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -309,6 +327,7 @@ export async function invokeProtocolSession(
       stderr: stderr ? `${stderr}\n${message}` : message,
       fallbackSafe: !initialized && !promptStarted && !eventReceived,
       retrySafe,
+      resumeUnavailable,
       sessionHandoffPending,
       sessionHandoffReason,
     };

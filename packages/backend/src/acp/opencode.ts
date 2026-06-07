@@ -89,7 +89,11 @@ export const openCodeAdapter: SessionAdapter = {
         onSession,
         signal,
       });
-      if (protocolResult.exitCode === 0 || protocolConfig.mode === 'protocol' || protocolResult.fallbackSafe === false) {
+      if (
+        (protocolResult.exitCode === 0 && !protocolResult.resumeUnavailable) ||
+        protocolConfig.mode === 'protocol' ||
+        protocolResult.fallbackSafe === false
+      ) {
         return protocolResult;
       }
       emitProtocolFallback(onChunk, 'opencode', protocolResult.stderr);

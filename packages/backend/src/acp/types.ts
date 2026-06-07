@@ -69,6 +69,7 @@ export interface AcpInvokeResult {
   stderr: string;
   fallbackSafe?: boolean;
   retrySafe?: boolean;
+  resumeUnavailable?: boolean;
   sessionHandoffPending?: boolean;
   sessionHandoffReason?: AcpSessionHandoffReason;
 }

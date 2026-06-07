@@ -153,7 +153,7 @@ export const codexAdapter: SessionAdapter = {
           backend: 'codex',
           server: protocolConfig,
           projectPath,
-          sessionId: protocolResult.sessionId ?? sessionId,
+          sessionId,
           prompt,
           sessionHandoff,
           sessionHandoffMode,
@@ -166,7 +166,11 @@ export const codexAdapter: SessionAdapter = {
           signal,
         });
       }
-      if (protocolResult.exitCode === 0 || protocolConfig.mode === 'protocol' || protocolResult.fallbackSafe === false) {
+      if (
+        (protocolResult.exitCode === 0 && !protocolResult.resumeUnavailable) ||
+        protocolConfig.mode === 'protocol' ||
+        protocolResult.fallbackSafe === false
+      ) {
         return protocolResult;
       }
       emitProtocolFallback(onChunk, 'codex', protocolResult.stderr);
