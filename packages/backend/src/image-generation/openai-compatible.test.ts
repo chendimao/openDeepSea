@@ -73,6 +73,38 @@ test('runtime downloads ordinary URL image generation results', async () => {
   assert.equal(response.images[0]?.mimeType, 'image/webp');
 });
 
+test('runtime normalizes URL download failures without leaking API keys', async () => {
+  let requestCount = 0;
+
+  await assert.rejects(
+    requestOpenAICompatibleImageGeneration({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'sk-runtime-secret',
+      model: 'gpt-image-2',
+      prompt: 'apple',
+      count: 1,
+      quality: 'auto',
+      size: 'auto',
+      fetchImpl: async () => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return new Response(JSON.stringify({
+            data: [{ url: 'https://cdn.example.com/generated.webp' }],
+          }));
+        }
+        throw new Error('Bearer sk-runtime-secret download failed');
+      },
+    }),
+    (err) => {
+      assert.ok(err instanceof Error);
+      assert.match(err.message, /图片资源下载失败/);
+      assert.match(err.message, /Bearer \[REDACTED_CREDENTIAL\]/);
+      assert.doesNotMatch(err.message, /sk-runtime-secret/);
+      return true;
+    },
+  );
+});
+
 test('runtime decodes data URL image generation results', async () => {
   const jpegBytes = Buffer.from('fake-jpeg');
   const response = await requestOpenAICompatibleImageGeneration({
