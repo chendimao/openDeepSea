@@ -103,7 +103,7 @@ export function TriggerPopover({
       ref={popoverRef}
       className={cn(
         'max-h-[240px] min-w-[200px] overflow-y-auto',
-        'rounded-lg border border-white/60 bg-[var(--color-surface)] p-2 shadow-[var(--shadow-mention)]',
+        'rounded-lg border border-[var(--color-popover-border)] bg-[var(--color-popover)] p-2 shadow-[var(--shadow-mention)]',
         'text-[var(--color-fg)]',
       )}
       style={style}
@@ -149,8 +149,8 @@ export function TriggerPopover({
               aria-selected={suggestionIndex === selectedIndex}
               className={cn(
                 'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px]',
-                'text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-primary)]',
-                suggestionIndex === selectedIndex && 'bg-[var(--color-surface-raised)] text-[var(--color-primary)]',
+                'text-[var(--color-fg-muted)] transition-colors hover:bg-[var(--color-popover-raised)] hover:text-[var(--color-primary)]',
+                suggestionIndex === selectedIndex && 'bg-[var(--color-popover-raised)] text-[var(--color-primary)]',
               )}
               onMouseDown={(e) => {
                 e.preventDefault() // Prevent blur on the editor

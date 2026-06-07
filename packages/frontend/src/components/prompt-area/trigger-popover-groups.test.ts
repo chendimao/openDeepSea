@@ -38,3 +38,14 @@ test('TriggerPopover marks group headers as presentational inside the listbox', 
     /key=\{`group:\$\{row\.label\}:\$\{rowIndex\}`\}\s+role="presentation"/,
   )
 })
+
+test('TriggerPopover uses opaque popover colors instead of transparent surfaces', () => {
+  const source = readFileSync(new URL('./trigger-popover.tsx', import.meta.url), 'utf8')
+  const css = readFileSync(new URL('../../index.css', import.meta.url), 'utf8')
+
+  assert.match(source, /bg-\[var\(--color-popover\)\]/)
+  assert.match(source, /hover:bg-\[var\(--color-popover-raised\)\]/)
+  assert.doesNotMatch(source, /bg-\[var\(--color-surface\)\]/)
+  assert.match(css, /--color-popover:\s*#ffffff;/i)
+  assert.match(css, /--color-popover:\s*#111927;/i)
+})
