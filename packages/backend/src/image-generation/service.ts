@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { fileRepo } from '../repos/files.js';
+import type { ProjectFile } from '../types.js';
 import type {
   ImageGenerationJob,
   ImageGenerationJobCreateInput,
@@ -28,6 +29,10 @@ const DEFAULT_POLL_INTERVAL_MS = 250;
 const CANCELED_MESSAGE = '用户取消图片生成任务。';
 const MIN_IMAGE_COUNT = 1;
 const MAX_IMAGE_COUNT = 6;
+
+export interface ImageGenerationCreateJobInput extends ImageGenerationJobCreateInput {
+  source_file_ids?: string[];
+}
 
 export interface ImageGenerationServiceRuntimeRequest {
   jobId: string;
@@ -59,7 +64,7 @@ export interface ImageGenerationServiceDeps {
 }
 
 export interface ImageGenerationService {
-  createJob(input: ImageGenerationJobCreateInput): Promise<{
+  createJob(input: ImageGenerationCreateJobInput): Promise<{
     job: ImageGenerationJob;
     outputs: ImageGenerationOutput[];
   }>;
@@ -100,13 +105,23 @@ export function createImageGenerationService(deps: ImageGenerationServiceDeps = 
 export const imageGenerationService = createImageGenerationService();
 
 async function createJob(
-  input: ImageGenerationJobCreateInput,
+  input: ImageGenerationCreateJobInput,
   queue: ImageGenerationQueue,
   deps: ImageGenerationServiceDeps,
 ): Promise<{ job: ImageGenerationJob; outputs: ImageGenerationOutput[] }> {
   const jobRepo = deps.jobRepo ?? imageGenerationJobRepo;
   assertValidImageCount(input.count);
-  const job = jobRepo.create(input);
+  const sourceFiles = resolveSourceFiles(input);
+  const { source_file_ids: _sourceFileIds, ...jobInput } = input;
+  const job = jobRepo.create(jobInput);
+  sourceFiles.forEach((file, index) => {
+    jobRepo.addSourceImage({
+      job_id: job.id,
+      file_id: file.id,
+      slot: index + 1,
+      url: file.url,
+    });
+  });
   publishJobEvent(deps, 'image_job:created', job);
   queue.enqueue(job.id);
   return { job, outputs: jobRepo.listOutputs(job.id) };
@@ -492,6 +507,30 @@ function assertValidImageCount(count: number): void {
   if (!Number.isInteger(count) || count < MIN_IMAGE_COUNT || count > MAX_IMAGE_COUNT) {
     throw new Error(`image generation count must be an integer between ${MIN_IMAGE_COUNT} and ${MAX_IMAGE_COUNT}`);
   }
+}
+
+function resolveSourceFiles(input: ImageGenerationCreateJobInput): ProjectFile[] {
+  const sourceFileIds = input.source_file_ids ?? [];
+  if (input.workflow === 'image-to-image' && sourceFileIds.length === 0) {
+    throw new Error('image-to-image workflow requires at least one source image');
+  }
+  if (input.workflow !== 'image-to-image' && sourceFileIds.length > 0) {
+    throw new Error('source images are only supported for image-to-image workflow');
+  }
+  if (sourceFileIds.length === 0) return [];
+
+  return sourceFileIds.map((fileId) => {
+    const file = fileRepo.get(fileId);
+    if (!file) throw new Error('image generation source file not found');
+    if (file.deleted_at !== null) throw new Error('image generation source file not found');
+    if (file.project_id !== input.project_id) {
+      throw new Error('image generation source file project mismatch');
+    }
+    if (!file.mime_type.toLowerCase().startsWith('image/')) {
+      throw new Error('image generation source file must be an image');
+    }
+    return file;
+  });
 }
 
 function throwIfAborted(signal: AbortSignal): void {

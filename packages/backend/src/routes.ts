@@ -49,6 +49,7 @@ import { workflowDefinitionRepo } from './repos/workflow-definitions.js';
 import { searchProjectRooms } from './room-search.js';
 import { skillsRouter } from './skills/routes.js';
 import { platformSkillsRouter } from './platform-skills/routes.js';
+import { imageGenerationRouter } from './image-generation/routes.js';
 import { pickDirectory } from './system-dialogs.js';
 import {
   getProjectOverview,
@@ -136,6 +137,7 @@ export const router = Router();
 router.use('/skills', skillsRouter);
 router.use('/platform-skills', platformSkillsRouter);
 router.use(sessionRouter);
+router.use(imageGenerationRouter);
 
 // ---------- System context ----------
 router.get('/context/system', (_req, res) => {
