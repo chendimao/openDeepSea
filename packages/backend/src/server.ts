@@ -3,6 +3,7 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { getAdapter } from './acp/index.js';
+import { mountFrontendStatic } from './frontend-static.js';
 import { getLocalAccessToken, isTrustedOrigin } from './local-access.js';
 import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
@@ -27,6 +28,7 @@ import { wsHub } from './ws-hub.js';
 import type { AgentRun, WsClientEvent } from './types.js';
 
 const PORT = Number(process.env.PORT ?? 7330);
+const HOST = process.env.OPENDEEPSEA_HOST?.trim() || process.env.HOST?.trim();
 const configuredLocalAccessToken = process.env.OPENDEEPSEA_LOCAL_TOKEN?.trim();
 const localAccessToken = getLocalAccessToken();
 
@@ -62,6 +64,7 @@ app.use(projectFileUploadRoute, express.static(projectFileUploadRoot, {
   },
 }));
 app.use('/api', router);
+mountFrontendStatic(app);
 
 const httpServer = createServer(app);
 const wss = new WebSocketServer({
@@ -103,8 +106,8 @@ wss.on('connection', (socket) => {
   });
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`[server] backend listening on :${PORT}`);
+const onListen = () => {
+  console.log(`[server] backend listening on ${HOST || '*'}:${PORT}`);
   if (!configuredLocalAccessToken) {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
@@ -118,7 +121,13 @@ httpServer.listen(PORT, () => {
       console.warn(`[superpowers] provider startup install failed: ${(err as Error).message}`);
     });
   }
-});
+};
+
+if (HOST) {
+  httpServer.listen(PORT, HOST, onListen);
+} else {
+  httpServer.listen(PORT, onListen);
+}
 
 function recoverImageGenerationJobsAfterStartup(): void {
   try {

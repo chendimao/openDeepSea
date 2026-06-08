@@ -11,14 +11,35 @@
     "dev:backend": "OPENDEEPSEA_LOCAL_TOKEN=${OPENDEEPSEA_LOCAL_TOKEN:-openclaw-room-dev-token} npm run dev -w @openclaw-room/backend",
     "dev:backend:watch": "OPENDEEPSEA_LOCAL_TOKEN=${OPENDEEPSEA_LOCAL_TOKEN:-openclaw-room-dev-token} npm run dev:watch -w @openclaw-room/backend",
     "dev:frontend": "OPENDEEPSEA_LOCAL_TOKEN=${OPENDEEPSEA_LOCAL_TOKEN:-openclaw-room-dev-token} npm run dev -w @openclaw-room/frontend",
+    "dev:desktop": "OPENDEEPSEA_LOCAL_TOKEN=${OPENDEEPSEA_LOCAL_TOKEN:-openclaw-room-dev-token} concurrently -n frontend,desktop -c magenta,cyan \"npm run dev:frontend\" \"npm run dev -w @openclaw-room/desktop\"",
     "build": "npm run build -w @openclaw-room/backend && npm run build -w @openclaw-room/frontend",
+    "build:desktop": "npm run build:prod -w @openclaw-room/backend && npm run build:prod -w @openclaw-room/frontend && npm run build -w @openclaw-room/desktop",
+    "pack:desktop": "npm run build:desktop && electron-builder --dir --config electron-builder.json",
+    "package:desktop": "npm run build:desktop && electron-builder --config electron-builder.json",
     "openclaw:context": "npm run openclaw:context -w @openclaw-room/backend --",
     "openclaw:knowledge": "npm run openclaw:knowledge -w @openclaw-room/backend --",
     "start": "npm run start -w @openclaw-room/backend"
   },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.22.1",
+    "@langchain/core": "^1.1.46",
+    "@langchain/langgraph": "^1.3.0",
+    "@langchain/openai": "^1.4.5",
+    "better-sqlite3": "^12.10.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "langchain": "^1.4.0",
+    "multer": "^2.1.1",
+    "nanoid": "^5.0.7",
+    "node-pty": "^1.1.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "concurrently": "^9.0.1"
+    "concurrently": "^9.0.1",
+    "electron": "^38.8.6",
+    "electron-builder": "^26.15.2"
   },
   "engines": {
     "node": ">=20"

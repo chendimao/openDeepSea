@@ -3,6 +3,7 @@ node_modules/
 worktrees/
 dist/
 build/
+release/
 .env
 .env.local
 *.log

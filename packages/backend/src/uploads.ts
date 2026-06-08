@@ -1,17 +1,17 @@
 import multer from 'multer';
 import { mkdir, unlink } from 'node:fs/promises';
 import { extname, join, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { nanoid } from 'nanoid';
+import { getOpenDeepSeaDataDir } from './data-dir.js';
 import type { MessageAttachmentMetadata, ProjectFile, ProjectFileCreateInput } from './types.js';
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const dataDir = getOpenDeepSeaDataDir();
 
 export const MAX_MESSAGE_FILES = 5;
 export const MAX_MESSAGE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-export const messageUploadDir = join(__dirname, '..', 'data', 'uploads', 'messages');
+export const messageUploadDir = join(dataDir, 'uploads', 'messages');
 export const messageUploadRoute = '/uploads/messages';
-export const projectFileUploadRoot = join(__dirname, '..', 'data', 'uploads', 'files');
+export const projectFileUploadRoot = join(dataDir, 'uploads', 'files');
 export const projectFileUploadRoute = '/uploads/files';
 
 const allowedMessageUploadMimeTypes = new Set([
