@@ -8,6 +8,11 @@ type SessionTokenUsageRow = Omit<SessionTokenUsageRecord, 'raw_payload'> & {
   raw_payload: string | null;
 };
 
+type SessionTokenUsageSummaryRow = SessionTokenUsageRow & {
+  acp_session_id: string | null;
+  usage_rowid: number;
+};
+
 export const sessionTokenUsageRepo = {
   create(input: {
     session_id: string;
@@ -78,20 +83,24 @@ export const sessionTokenUsageRepo = {
 
   summarizeBySession(sessionId: string): SessionTokenUsageSummary | null {
     const rows = db.prepare(`
-      SELECT * FROM (
-        SELECT
-          session_token_usage.*,
-          ROW_NUMBER() OVER (
-            PARTITION BY COALESCE(run_id, id)
-            ORDER BY is_final DESC, created_at DESC, id DESC
-          ) AS usage_rank
-        FROM session_token_usage
-        WHERE session_id = ?
-      )
-      WHERE usage_rank = 1
-      ORDER BY created_at ASC, id ASC
-    `).all(sessionId) as Array<SessionTokenUsageRow & { usage_rank: number }>;
-    const totals = rows.reduce(
+      SELECT
+        session_token_usage.*,
+        session_token_usage.rowid AS usage_rowid,
+        session_runs.acp_session_id
+      FROM session_token_usage
+      LEFT JOIN session_runs ON session_runs.id = session_token_usage.run_id
+      WHERE session_token_usage.session_id = ?
+      ORDER BY session_token_usage.created_at ASC, session_token_usage.rowid ASC
+    `).all(sessionId) as SessionTokenUsageSummaryRow[];
+    const latestRowsByScope = new Map<string, SessionTokenUsageSummaryRow>();
+    for (const row of rows) {
+      const key = usageSummaryScopeKey(row);
+      const existing = latestRowsByScope.get(key);
+      if (!existing || shouldReplaceSummaryRow(existing, row)) {
+        latestRowsByScope.set(key, row);
+      }
+    }
+    const totals = Array.from(latestRowsByScope.values()).reduce(
       (acc, row) => ({
         input: acc.input + row.input_tokens,
         output: acc.output + row.output_tokens,
@@ -102,6 +111,19 @@ export const sessionTokenUsageRepo = {
     return totals.total > 0 ? totals : null;
   },
 };
+
+function usageSummaryScopeKey(row: SessionTokenUsageSummaryRow): string {
+  if (row.source === 'provider_context_usage') {
+    return `context:${row.provider ?? 'unknown'}:${row.acp_session_id ?? row.run_id ?? row.id}`;
+  }
+  return `run:${row.run_id ?? row.id}`;
+}
+
+function shouldReplaceSummaryRow(left: SessionTokenUsageSummaryRow, right: SessionTokenUsageSummaryRow): boolean {
+  if (left.is_final !== right.is_final) return right.is_final > left.is_final;
+  if (left.created_at !== right.created_at) return right.created_at > left.created_at;
+  return right.usage_rowid > left.usage_rowid;
+}
 
 function parseSessionTokenUsageRow(row: SessionTokenUsageRow): SessionTokenUsageRecord {
   return {

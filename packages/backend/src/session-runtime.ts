@@ -261,7 +261,7 @@ function recordTokenUsageSnapshot(input: {
     total_tokens: usage.totalTokens,
     cached_input_tokens: usage.cachedInputTokens,
     reasoning_tokens: usage.reasoningTokens,
-    source: 'provider_usage',
+    source: usage.source,
     is_final: usage.isFinal,
     raw_payload: usage.rawPayload,
   });
@@ -275,6 +275,7 @@ function extractTokenUsageFromChunk(chunk: AcpStreamChunk): {
   cachedInputTokens: number | null;
   reasoningTokens: number | null;
   isFinal: boolean;
+  source: string;
   rawPayload: Record<string, unknown>;
 } | null {
   const candidate = findUsageCandidate([
@@ -283,6 +284,23 @@ function extractTokenUsageFromChunk(chunk: AcpStreamChunk): {
     chunk.rawEvent,
   ]);
   if (!candidate) return null;
+  const contextUsedTokens = firstTokenNumber(candidate, ['used']);
+  const contextSizeTokens = firstTokenNumber(candidate, ['size']);
+  if (contextUsedTokens !== null && contextSizeTokens !== null) {
+    return {
+      inputTokens: contextUsedTokens,
+      outputTokens: 0,
+      totalTokens: contextUsedTokens,
+      cachedInputTokens: null,
+      reasoningTokens: null,
+      isFinal: false,
+      source: 'provider_context_usage',
+      rawPayload: {
+        rawType: chunk.rawType ?? null,
+        usage: candidate,
+      },
+    };
+  }
   const inputTokens = firstTokenNumber(candidate, ['input_tokens', 'inputTokens', 'prompt_tokens', 'promptTokens', 'input']);
   const outputTokens = firstTokenNumber(candidate, ['output_tokens', 'outputTokens', 'completion_tokens', 'completionTokens', 'output']);
   const totalTokens = firstTokenNumber(candidate, ['total_tokens', 'totalTokens', 'total']);
@@ -307,6 +325,7 @@ function extractTokenUsageFromChunk(chunk: AcpStreamChunk): {
   const normalizedOutput = outputTokens ?? 0;
   const normalizedTotal = totalTokens ?? normalizedInput + normalizedOutput;
   if (normalizedTotal <= 0) return null;
+  const source = chunk.rawType === 'usage_update' ? 'provider_context_usage' : 'provider_usage';
 
   return {
     inputTokens: normalizedInput,
@@ -314,10 +333,12 @@ function extractTokenUsageFromChunk(chunk: AcpStreamChunk): {
     totalTokens: normalizedTotal,
     cachedInputTokens,
     reasoningTokens,
-    isFinal: chunk.rawType === 'usage_update' ||
+    isFinal: source === 'provider_usage' && (
       candidate['is_final'] === true ||
       candidate['isFinal'] === true ||
-      candidate['final'] === true,
+      candidate['final'] === true
+    ),
+    source,
     rawPayload: {
       rawType: chunk.rawType ?? null,
       usage: candidate,
@@ -344,6 +365,9 @@ function findUsageCandidate(values: unknown[]): Record<string, unknown> | null {
 }
 
 function hasTokenUsageShape(value: Record<string, unknown>): boolean {
+  if (firstTokenNumber(value, ['used']) !== null && firstTokenNumber(value, ['size']) !== null) {
+    return true;
+  }
   return firstTokenNumber(value, [
     'input_tokens',
     'inputTokens',

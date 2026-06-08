@@ -428,6 +428,7 @@ test('runSessionAgent records token usage snapshots from ACP usage updates and b
   assert.equal(usageRows[0]?.agent_id, 'planner');
   assert.equal(usageRows[0]?.provider, 'codex');
   assert.equal(usageRows[0]?.model, 'gpt-5.5');
+  assert.equal(usageRows[0]?.source, 'provider_context_usage');
   assert.equal(usageRows[0]?.input_tokens, 200);
   assert.equal(usageRows[0]?.output_tokens, 40);
   assert.equal(usageRows[0]?.total_tokens, 240);
@@ -442,6 +443,94 @@ test('runSessionAgent records token usage snapshots from ACP usage updates and b
     input: 200,
     output: 40,
     total: 240,
+  });
+  wsHub.removeSocket(socket);
+});
+
+test('runSessionAgent records standard ACP context usage updates in real time', async () => {
+  const sent: string[] = [];
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send: (payload: string) => sent.push(payload),
+  } as unknown as import('ws').WebSocket;
+  const project = projectRepo.create({
+    name: 'runtime standard ACP usage project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-standard-acp-usage-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Standard ACP Usage',
+    mode: 'code',
+    provider: 'codex',
+    model: 'gpt-5.5',
+    workspace_path: project.path,
+  });
+  wsHub.subscribeSession(session.id, socket);
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk, onSession }) => {
+      onSession?.('acp-standard-token-usage');
+      onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawType: 'usage_update',
+        rawEvent: {
+          method: 'session/update',
+          params: {
+            sessionId: 'acp-standard-token-usage',
+            update: {
+              sessionUpdate: 'usage_update',
+              used: 53_000,
+              size: 200_000,
+              cost: {
+                amount: 0.045,
+                currency: 'USD',
+              },
+            },
+          },
+        },
+      });
+      return { exitCode: 0, sessionId: 'acp-standard-token-usage', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    agentId: 'planner',
+    prompt: '继续',
+    provider: 'codex',
+    model: 'gpt-5.5',
+  });
+
+  const usageRows = sessionTokenUsageRepo.listBySession(session.id);
+  assert.equal(usageRows.length, 1);
+  assert.equal(usageRows[0]?.run_id, run.id);
+  assert.equal(usageRows[0]?.source, 'provider_context_usage');
+  assert.equal(usageRows[0]?.input_tokens, 53_000);
+  assert.equal(usageRows[0]?.output_tokens, 0);
+  assert.equal(usageRows[0]?.total_tokens, 53_000);
+  assert.deepEqual(usageRows[0]?.raw_payload.usage, {
+    sessionUpdate: 'usage_update',
+    used: 53_000,
+    size: 200_000,
+    cost: {
+      amount: 0.045,
+      currency: 'USD',
+    },
+  });
+
+  const events = sent.map((payload) =>
+    JSON.parse(payload) as { type: string; bottomStatus?: { tokenUsage: { input: number; output: number; total: number } | null } }
+  );
+  const bottomStatus = events.find((event) => event.type === 'session_bottom_status:snapshot');
+  assert.deepEqual(bottomStatus?.bottomStatus?.tokenUsage, {
+    input: 53_000,
+    output: 0,
+    total: 53_000,
   });
   wsHub.removeSocket(socket);
 });

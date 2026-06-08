@@ -156,6 +156,67 @@ test('sessionTokenUsageRepo summarizes latest token usage snapshot per run', () 
   sessionRepo.close(session.id);
 });
 
+test('sessionTokenUsageRepo summarizes latest context usage snapshot per provider session', () => {
+  const project = projectRepo.create({
+    name: 'Context Usage Project',
+    path: mkdtempSync(join(tmpdir(), 'context-usage-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Context Usage Session',
+  });
+  const firstRun = sessionRunRepo.create({
+    session_id: session.id,
+    provider: 'codex',
+    model: 'gpt-5.5',
+    mode: 'code',
+    prompt: 'first',
+    acp_session_id: 'acp-shared-session',
+  });
+  const secondRun = sessionRunRepo.create({
+    session_id: session.id,
+    provider: 'codex',
+    model: 'gpt-5.5',
+    mode: 'code',
+    prompt: 'second',
+    acp_session_id: 'acp-shared-session',
+  });
+
+  sessionTokenUsageRepo.create({
+    session_id: session.id,
+    run_id: firstRun.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    model: 'gpt-5.5',
+    input_tokens: 53_000,
+    output_tokens: 0,
+    total_tokens: 53_000,
+    source: 'provider_context_usage',
+    raw_payload: { usage: { used: 53_000, size: 200_000 } },
+  });
+  sessionTokenUsageRepo.create({
+    session_id: session.id,
+    run_id: secondRun.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    model: 'gpt-5.5',
+    input_tokens: 58_000,
+    output_tokens: 0,
+    total_tokens: 58_000,
+    source: 'provider_context_usage',
+    raw_payload: { usage: { used: 58_000, size: 200_000 } },
+  });
+
+  const summary = sessionTokenUsageRepo.summarizeBySession(session.id);
+
+  assert.deepEqual(summary, {
+    input: 58_000,
+    output: 0,
+    total: 58_000,
+  });
+  sessionRepo.close(session.id);
+});
+
 test('session schema creates agent runtime and event tables', () => {
   const tables = db.prepare(`
     SELECT name FROM sqlite_master
