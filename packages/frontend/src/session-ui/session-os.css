@@ -1700,14 +1700,31 @@ button.deepsea-message-attachment {
   padding: 2px 0 2px 10px;
   color: color-mix(in srgb, var(--deepsea-text) 76%, var(--deepsea-muted));
 }
+.deepsea-message-body .markdown-preview :not(pre) > code,
+.deepsea-run-log-body .markdown-preview :not(pre) > code {
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 24%, var(--deepsea-border-subtle));
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-surface));
+  padding: 1px 5px;
+  color: color-mix(in srgb, var(--deepsea-primary) 70%, var(--deepsea-text));
+  font-family: var(--deepsea-mono);
+  font-size: 0.92em;
+  font-weight: 760;
+  line-height: 1.5;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
 .deepsea-message-body .markdown-preview table,
 .deepsea-run-log-body .markdown-preview table {
   display: block;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));
   border-collapse: collapse;
   border-spacing: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--deepsea-surface) 92%, var(--deepsea-primary));
   font-size: 13px;
   line-height: 18px;
 }
@@ -1715,20 +1732,20 @@ button.deepsea-message-attachment {
 .deepsea-message-body .markdown-preview td,
 .deepsea-run-log-body .markdown-preview th,
 .deepsea-run-log-body .markdown-preview td {
-  border: 1px solid var(--deepsea-border);
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));
   padding: 5px 7px;
   text-align: left;
   vertical-align: top;
 }
 .deepsea-message-body .markdown-preview th,
 .deepsea-run-log-body .markdown-preview th {
-  background: color-mix(in srgb, var(--deepsea-surface-2) 78%, transparent);
+  background: color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-surface-strong));
   color: var(--deepsea-text);
   font-weight: 760;
 }
 .deepsea-message-body .markdown-preview tr:nth-child(even) td,
 .deepsea-run-log-body .markdown-preview tr:nth-child(even) td {
-  background: color-mix(in srgb, var(--deepsea-surface-2) 42%, transparent);
+  background: color-mix(in srgb, var(--deepsea-primary) 4%, var(--deepsea-surface-soft));
 }
 .deepsea-message-body .markdown-preview img,
 .deepsea-run-log-body .markdown-preview img {
