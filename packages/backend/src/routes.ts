@@ -26,6 +26,7 @@ import {
   type GlobalChatInvoker,
   type SafeGlobalChatSettingsSummary,
 } from './global-chat.js';
+import { ingestProjectFileIntoKnowledge } from './knowledge-ingestion.js';
 import { validateLocalAccess } from './local-access.js';
 import { agentRunLinkRepo } from './repos/agent-run-links.js';
 import { agentRunRepo } from './repos/agent-runs.js';
@@ -1040,7 +1041,7 @@ function resolveResourceAssetTypeFilter(input: {
   return filters.every((value) => value === first) ? first : 'conflict';
 }
 
-router.post('/projects/:projectId/resource-assets', (req, res) => {
+router.post('/projects/:projectId/resource-assets', async (req, res) => {
   if (!projectRepo.get(req.params.projectId)) return res.status(404).json({ error: 'project not found' });
   const parsed = resourceAssetInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -1080,6 +1081,10 @@ router.post('/projects/:projectId/resource-assets', (req, res) => {
           metadata: parsed.data.metadata,
         });
     const responseAsset = resourceAssetRepo.getResource(asset.id) ?? asset;
+    if (asset.asset_type === 'agent_document') {
+      const file = fileRepo.get(`asset:${asset.id}`);
+      if (file) await indexProjectFilesIntoKnowledge([file], 'resource asset');
+    }
     res.status(201).json(responseAsset);
   } catch (err) {
     const message = (err as Error).message;
@@ -1220,7 +1225,18 @@ async function handleProjectFilesUpload(req: Request, res: Response): Promise<vo
       uploaded_by_name: typeof req.body.uploaded_by_name === 'string' ? req.body.uploaded_by_name : null,
     },
   )));
+  await indexProjectFilesIntoKnowledge(uploaded, 'project file upload');
   res.status(201).json(uploaded);
+}
+
+async function indexProjectFilesIntoKnowledge(files: ProjectFile[], context: string): Promise<void> {
+  for (const file of files) {
+    try {
+      await ingestProjectFileIntoKnowledge(file);
+    } catch (err) {
+      console.warn(`[knowledge-ingestion] failed to index ${context} ${file.id}: ${(err as Error).message}`);
+    }
+  }
 }
 
 async function unlinkProjectFileSafely(file: ProjectFile): Promise<void> {
@@ -2322,6 +2338,7 @@ async function handleMultipartMessage(req: Request, res: Response): Promise<void
     });
     const finalRouteResult = await finalizeUserMessageRouting({ roomId, userMessageId: userMsg.id, content, routeResult });
     recordMessageFileRefs(room.project_id, roomId, userMsg.id, messageFiles);
+    await indexProjectFilesIntoKnowledge(uploadedFiles, 'room message upload');
     dispatchUserMessageFromRoute({ roomId, userMessageId: userMsg.id, content, mentions, routeResult: finalRouteResult });
     res.status(201).json(messageRepo.get(userMsg.id) ?? userMsg);
   } catch (err) {

@@ -9,6 +9,7 @@ import { createAcpIntentStreamFilter, type AcpIntentStreamFilter } from './acp-i
 import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './agent-runtime.js';
 import { generateModelChatReply, invokeConfiguredModelText, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { classifyAgentDocument } from './agent-document-classifier.js';
+import { ingestProjectFileIntoKnowledge } from './knowledge-ingestion.js';
 import { applyIntentToRouteResult } from './message-intent-router.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
@@ -1936,6 +1937,10 @@ function maybeRegisterAgentDocument(input: {
     });
     if (!file) {
       console.warn(`[agent-document] failed to register resource for message ${input.message.id}`);
+    } else {
+      void ingestProjectFileIntoKnowledge(file).catch((error) => {
+        console.warn(`[knowledge-ingestion] failed to index agent document ${file.id}: ${(error as Error).message}`);
+      });
     }
   } catch (err) {
     console.warn(`[agent-document] failed to register resource for message ${input.message.id}: ${(err as Error).message}`);

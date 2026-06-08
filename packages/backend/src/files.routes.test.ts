@@ -15,6 +15,7 @@ process.env.OPENCLAW_ACP_TASK_ANALYZER = '0';
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { fileRepo } = await import('./repos/files.js');
+const { knowledgeRepo } = await import('./repos/knowledge.js');
 const { messageRepo } = await import('./repos/messages.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
@@ -136,6 +137,10 @@ test('project file routes upload, list, and delete files', async () => {
   assert.equal(uploadedFile.original_name, 'notes.txt');
   assert.match(uploadedFile.url, new RegExp(`^/uploads/files/${project.id}/`));
   await access(uploadedFile.storage_path, constants.F_OK);
+  const sources = knowledgeRepo.listSources({ projectId: project.id, sourceTypes: ['uploaded_file'] });
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0]?.source_id, uploadedFile.id);
+  assert.equal(knowledgeRepo.search({ projectId: project.id, query: 'hello' }).length, 1);
 
   const listRes = await request(`/api/projects/${project.id}/files`);
   assert.equal(listRes.status, 200);
@@ -586,11 +591,18 @@ test('multipart message creates a task for clear create-task intent', async () =
   assert.equal(res.status, 201);
   const message = await res.json() as { id: string; metadata: string | null };
   const metadata = JSON.parse(message.metadata ?? '{}') as {
+    attachments?: Array<{ fileId: string }>;
     task_id?: string;
     route_result?: { action: string; taskId: string | null };
   };
   assert.equal(metadata.route_result?.action, 'create_task');
   assert.ok(metadata.task_id);
+  const attachmentFileId = metadata.attachments?.[0]?.fileId;
+  assert.ok(attachmentFileId);
+  const knowledgeSources = knowledgeRepo.listSources({ projectId: project.id, sourceTypes: ['uploaded_file'] });
+  assert.equal(knowledgeSources.length, 1);
+  assert.equal(knowledgeSources[0]?.source_id, attachmentFileId);
+  assert.equal(knowledgeRepo.search({ projectId: project.id, query: 'acceptance' }).length, 1);
 
   const tasks = taskRepo.listByRoom(room.id);
   assert.equal(tasks.length, 1);

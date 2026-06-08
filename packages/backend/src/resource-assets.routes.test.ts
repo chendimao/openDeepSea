@@ -12,6 +12,7 @@ const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { fileRepo } = await import('./repos/files.js');
+const { knowledgeRepo } = await import('./repos/knowledge.js');
 const { messageRepo } = await import('./repos/messages.js');
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
@@ -161,6 +162,10 @@ test('resource asset routes create, list, filter, detail, and delete agent docum
   assert.equal(created.source_room_id, room.id);
   assert.equal(created.source_agent_id, 'backend-executor');
   assert.equal(created.source_task_id, task.id);
+  const knowledgeSources = knowledgeRepo.listSources({ projectId: project.id, sourceTypes: ['agent_document'] });
+  assert.equal(knowledgeSources.length, 1);
+  assert.equal(knowledgeSources[0]?.source_id, `asset:${created.id}`);
+  assert.equal(knowledgeRepo.search({ projectId: project.id, query: 'Markdown' }).length, 1);
 
   const listRes = await request(`/api/projects/${project.id}/resource-assets?assetType=agent_document&groupKey=agent_documents`);
   assert.equal(listRes.status, 200);
