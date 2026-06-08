@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, NavLink, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
-  Bell,
   Check,
   ChevronDown,
-  CircleHelp,
   Clock3,
   CloudUpload,
   Code2,
@@ -316,7 +314,6 @@ export function KnowledgePage(): JSX.Element {
   }, [filters.keyword, sources.length, sourcesIsError, sourcesLoading, visibleSources]);
 
   const selectedRow = rows.find((row) => row.id === selectedSourceId) ?? rows[0] ?? null;
-  const currentProjectLabel = selectedProject?.name ?? 'Ocean Platform';
   const pathLabel = selectedProject
     ? `${selectedProject.name} · ${selectedProject.path}`
     : '所有项目 · Ocean Platform';
@@ -370,49 +367,6 @@ export function KnowledgePage(): JSX.Element {
           event.currentTarget.value = '';
         }}
       />
-
-      <header className="knowledge-topbar">
-        <div className="flex min-w-0 items-center gap-6">
-          <Link to="/" className="flex shrink-0 items-center gap-2 text-slate-900">
-            <span className="flex h-7 w-7 items-center justify-center rounded bg-[#004AC6] text-[13px] font-black text-white">AI</span>
-            <span className="text-[16px] font-bold tracking-tight">深海指挥中心</span>
-          </Link>
-          <nav className="knowledge-topnav" aria-label="全局导航">
-            <button type="button" className="knowledge-topnav__project">
-              项目：{currentProjectLabel}
-              <ChevronDown className="h-2.5 w-2.5" strokeWidth={2.4} />
-            </button>
-            <NavLink to="/">工作台</NavLink>
-            <NavLink to="/chat">会话</NavLink>
-            <button type="button" aria-disabled="true" title="任务入口暂未配置独立路由">任务</button>
-            <NavLink to="/knowledge" className="is-active">知识库</NavLink>
-            <NavLink to="/agents">智能体</NavLink>
-            <NavLink to="/skills">设置</NavLink>
-          </nav>
-        </div>
-
-        <div className="knowledge-topbar__actions">
-          <div className="knowledge-global-search">
-            <Search className="h-3 w-3 text-slate-400" strokeWidth={2.2} />
-            <input aria-label="全局搜索" placeholder="全局搜索" />
-            <span>⌘K</span>
-          </div>
-          <button type="button" className="knowledge-topbar__icon" aria-label="通知">
-            <Bell className="h-3.5 w-3.5" strokeWidth={1.8} />
-          </button>
-          <button type="button" className="knowledge-topbar__icon" aria-label="帮助">
-            <CircleHelp className="h-3.5 w-3.5" strokeWidth={1.8} />
-          </button>
-          <button type="button" className="knowledge-profile">
-            <img alt="深海用户" src="/deepsea-profile-avatar.png" />
-            <span className="hidden xl:block">
-              <strong>深海用户</strong>
-              <small>管理员</small>
-            </span>
-            <ChevronDown className="h-2.5 w-2.5 text-slate-400" strokeWidth={2.4} />
-          </button>
-        </div>
-      </header>
 
       <div className="knowledge-workbench">
         <KnowledgeSidebar

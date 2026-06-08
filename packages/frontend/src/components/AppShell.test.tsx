@@ -49,6 +49,15 @@ test('AppShell keeps profile avatar on non-session routes', () => {
   assert.match(html, /alt="Profile"/);
 });
 
+test('AppShell renders the shared header on knowledge routes', () => {
+  const html = renderAppShell('/knowledge');
+
+  assert.match(html, /deepsea-topbar app-header/);
+  assert.match(html, /深海指挥中心/);
+  assert.match(html, /知识库/);
+  assert.match(html, /href="\/knowledge"/);
+});
+
 test('AppShell points Session nav to the last concrete session route', () => {
   storedHref = null;
   rememberLastSessionWorkspaceRoute({ active: true, projectId: 'project-1', sessionId: 'session-1' });
