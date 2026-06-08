@@ -47,6 +47,7 @@ import {
   summarizeKnowledgeStats,
   type KnowledgeSource,
   type KnowledgeSourceFilters,
+  type KnowledgeSourceType,
   type KnowledgeSourceStatus,
 } from '../lib/knowledgeDisplay';
 
@@ -153,6 +154,25 @@ const FALLBACK_ROWS: KnowledgeResourceRow[] = [
   },
 ];
 
+const SOURCE_TYPE_FILTERS: Array<{ value: KnowledgeSourceType | ''; label: string }> = [
+  { value: '', label: '全部' },
+  { value: 'agent_document', label: '文档' },
+  { value: 'uploaded_file', label: 'PDF' },
+  { value: 'workspace_file', label: '表格' },
+  { value: 'resource_asset', label: '图片' },
+  { value: 'workspace_doc', label: '代码' },
+];
+
+const STATUS_FILTERS: Array<{ value: KnowledgeSourceStatus | ''; label: string }> = [
+  { value: '', label: '全部' },
+  { value: 'ready', label: '已完成' },
+  { value: 'processing', label: '处理中' },
+  { value: 'pending', label: '待处理' },
+  { value: 'failed', label: '失败' },
+  { value: 'stale', label: '已过期' },
+  { value: 'disabled', label: '已禁用' },
+];
+
 export function KnowledgePage(): JSX.Element {
   const { projectId = '' } = useParams();
   const queryClient = useQueryClient();
@@ -252,7 +272,7 @@ export function KnowledgePage(): JSX.Element {
   ), [activeRoomId, locale, selectedProjectId, summarySources]);
 
   const dashboardStats = useMemo<KnowledgeDashboardStats>(() => {
-    if (summarySources.length < 3) return FALLBACK_STATS;
+    if (summarySources.length === 0) return FALLBACK_STATS;
     const pending = Math.max(0, liveStats.total - liveStats.ready - liveStats.processing - liveStats.failed);
     return {
       total: liveStats.total,
@@ -276,9 +296,15 @@ export function KnowledgePage(): JSX.Element {
 
   const rows = useMemo(() => {
     const liveRows = visibleSources.map(createKnowledgeRow);
-    const baseRows = liveRows.length >= 3 ? liveRows : FALLBACK_ROWS;
+    const hasActiveSearchFilter = Boolean(
+      (filters.keyword ?? '').trim() ||
+      filters.sourceType ||
+      filters.status,
+    );
+    const shouldShowFallback = !hasActiveSearchFilter && !sourcesLoading && !sourcesIsError && sources.length === 0;
+    const baseRows = shouldShowFallback ? FALLBACK_ROWS : liveRows;
     const keyword = (filters.keyword ?? '').trim().toLowerCase();
-    if (!keyword || liveRows.length > 0) return baseRows;
+    if (!keyword) return baseRows;
     return baseRows.filter((row) => [
       row.title,
       row.subtitle,
@@ -287,7 +313,7 @@ export function KnowledgePage(): JSX.Element {
       row.statusLabel,
       ...row.tags,
     ].some((value) => value.toLowerCase().includes(keyword)));
-  }, [filters.keyword, visibleSources]);
+  }, [filters.keyword, sources.length, sourcesIsError, sourcesLoading, visibleSources]);
 
   const selectedRow = rows.find((row) => row.id === selectedSourceId) ?? rows[0] ?? null;
   const currentProjectLabel = selectedProject?.name ?? 'Ocean Platform';
@@ -358,7 +384,7 @@ export function KnowledgePage(): JSX.Element {
             </button>
             <NavLink to="/">工作台</NavLink>
             <NavLink to="/chat">会话</NavLink>
-            <NavLink to="/projects/tasks">任务</NavLink>
+            <button type="button" aria-disabled="true" title="任务入口暂未配置独立路由">任务</button>
             <NavLink to="/knowledge" className="is-active">知识库</NavLink>
             <NavLink to="/agents">智能体</NavLink>
             <NavLink to="/skills">设置</NavLink>
@@ -460,10 +486,37 @@ export function KnowledgePage(): JSX.Element {
               </label>
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2 text-[11px]">
-                  <FilterButton label="项目" value={selectedProject?.name ?? '全部'} />
-                  <FilterButton label="房间" value={selectedRoom?.name ?? '全部'} />
-                  <FilterButton label="类型" value={filters.sourceType ? getKnowledgeSourceTypeDisplay(filters.sourceType, 'zh').label : '全部'} />
-                  <FilterButton label="状态" value={filters.status ? getStatusLabel(filters.status) : '全部'} />
+                  <FilterSelect
+                    label="项目"
+                    value={selectedProjectId}
+                    options={[
+                      { value: '', label: '全部' },
+                      ...projects.map((item) => ({ value: item.id, label: item.name })),
+                    ]}
+                    onChange={(value) => replaceFilters({ ...activeFilters, projectId: value, roomId: '' })}
+                  />
+                  <FilterSelect
+                    label="房间"
+                    value={activeRoomId}
+                    options={[
+                      { value: '', label: '全部' },
+                      ...rooms.map((room) => ({ value: room.id, label: room.name })),
+                    ]}
+                    disabled={!selectedProjectId || rooms.length === 0}
+                    onChange={(value) => patchFilters({ roomId: value })}
+                  />
+                  <FilterSelect
+                    label="类型"
+                    value={filters.sourceType ?? ''}
+                    options={SOURCE_TYPE_FILTERS}
+                    onChange={(value) => patchFilters({ sourceType: value as KnowledgeSourceType | '' })}
+                  />
+                  <FilterSelect
+                    label="状态"
+                    value={filters.status ?? ''}
+                    options={STATUS_FILTERS}
+                    onChange={(value) => patchFilters({ status: value as KnowledgeSourceStatus | '' })}
+                  />
                 </div>
                 <button type="button" className="knowledge-sort-button">
                   最新上传
@@ -475,7 +528,7 @@ export function KnowledgePage(): JSX.Element {
             <KnowledgeResourceTable
               rows={rows}
               selectedRowId={selectedRow?.id ?? ''}
-              loading={sourcesLoading && sources.length === 0 && FALLBACK_ROWS.length === 0}
+              loading={sourcesLoading && rows.length === 0}
               error={sourcesIsError ? sourcesError : null}
               onSelect={(row) => setSelectedSourceId(row.id)}
             />
@@ -706,14 +759,37 @@ function KnowledgeStatsCards({ stats }: { stats: KnowledgeDashboardStats }): JSX
   );
 }
 
-function FilterButton({ label, value }: { label: string; value: string }): JSX.Element {
+function FilterSelect({
+  label,
+  value,
+  options,
+  disabled = false,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}): JSX.Element {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
       <span className="shrink-0 text-slate-400">{label}:</span>
-      <button type="button" className="knowledge-filter-button">
-        <span className="truncate">{value}</span>
+      <label className="knowledge-filter-button">
+        <select
+          value={value}
+          disabled={disabled}
+          aria-label={`${label}筛选`}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {options.map((option) => (
+            <option key={`${label}-${option.value}`} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
         <ChevronDown className="h-2 w-2 shrink-0 text-slate-400" strokeWidth={2.4} />
-      </button>
+      </label>
     </div>
   );
 }

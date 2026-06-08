@@ -10776,6 +10776,30 @@
     line-height: 18px;
   }
 
+  .knowledge-filter-button select {
+    min-width: 0;
+    max-width: 112px;
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    outline: none;
+  }
+
+  .knowledge-filter-button:has(select:disabled) {
+    cursor: not-allowed;
+    color: #94a3b8;
+    background: #f8fafc;
+  }
+
+  .knowledge-filter-button:focus-within {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px #3b82f6;
+  }
+
   .knowledge-filter-button:hover,
   .knowledge-sort-button:hover {
     background: #f9fafb;
