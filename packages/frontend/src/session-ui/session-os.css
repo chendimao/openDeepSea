@@ -1287,6 +1287,10 @@
   padding: 0;
   scroll-padding-bottom: var(--deepsea-composer-space);
 }
+.deepsea-transcript__end {
+  flex: 0 0 var(--deepsea-composer-space);
+  min-height: var(--deepsea-composer-space);
+}
 .deepsea-transcript__heading {
   display: flex;
   align-items: center;

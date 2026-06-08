@@ -660,6 +660,7 @@ test('SessionShell renders a transcript end anchor for composer-safe auto scroll
   assert.match(html, /data-transcript-scroll="true"/);
   assert.match(html, /data-transcript-end="true"/);
   assert.match(sessionOsCss, /\.deepsea-transcript__scroll\s*\{[^}]*padding:\s*0/s);
+  assert.match(sessionOsCss, /\.deepsea-transcript__end\s*\{[^}]*min-height:\s*var\(--deepsea-composer-space\)/s);
 });
 
 test('isTranscriptNearBottom respects the transcript follow threshold', () => {
