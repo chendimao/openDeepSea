@@ -2013,6 +2013,15 @@ button.deepsea-message-attachment {
   background: rgba(255, 255, 255, 0.42);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
+.deepsea-composer__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
 .deepsea-composer__field input,
 .deepsea-composer__textarea {
   width: 100%;
@@ -2284,6 +2293,79 @@ button.deepsea-message-attachment {
   width: 14px;
   height: 14px;
 }
+.deepsea-composer-library-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.deepsea-composer-library-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  width: min(260px, 100%);
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(0, 108, 73, 0.18);
+  border-radius: 8px;
+  background: rgba(0, 108, 73, 0.08);
+  padding: 5px 4px 5px 7px;
+  color: var(--deepsea-text);
+}
+.deepsea-composer-library-file__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(0, 108, 73, 0.1);
+  color: var(--deepsea-ok);
+}
+.deepsea-composer-library-file__icon svg {
+  width: 15px;
+  height: 15px;
+}
+.deepsea-composer-library-file__body {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.deepsea-composer-library-file__body strong,
+.deepsea-composer-library-file__body small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-composer-library-file__body strong {
+  font-size: 12px;
+  font-weight: 750;
+}
+.deepsea-composer-library-file__body small {
+  color: rgba(71, 85, 105, 0.78);
+  font-size: 10px;
+}
+.deepsea-composer-library-file__remove {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(71, 85, 105, 0.72);
+}
+.deepsea-composer-library-file__remove:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+.deepsea-composer-library-file__remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+.deepsea-composer-library-file__remove svg {
+  width: 14px;
+  height: 14px;
+}
 .deepsea-composer__tools {
   display: flex;
   align-items: center;
@@ -2317,6 +2399,39 @@ button.deepsea-message-attachment {
   font-size: 11px;
   transform: scale(1.3333);
   transform-origin: left center;
+}
+.deepsea-composer__file-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.deepsea-composer__icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(100, 116, 139, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.46);
+  color: rgba(71, 85, 105, 0.86);
+  transition: border-color 160ms, background 160ms, color 160ms, transform 160ms;
+}
+.deepsea-composer__icon-button:hover:not(:disabled),
+.deepsea-composer__icon-button:focus-visible {
+  border-color: rgba(37, 99, 235, 0.34);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--deepsea-primary);
+}
+.deepsea-composer__icon-button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.deepsea-composer__icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+.deepsea-composer__icon-button svg {
+  width: 16px;
+  height: 16px;
 }
 .deepsea-composer__error {
   margin: 6px 0 0;

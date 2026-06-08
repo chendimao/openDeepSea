@@ -247,6 +247,16 @@ test('SessionShell keeps planner skill picker bounded with internal scrolling', 
   assert.match(sessionOsCss, /\.deepsea-skill-picker\s*\{[^}]*overscroll-behavior:\s*contain/s);
 });
 
+test('SessionShell renders upload and knowledge file buttons beside send', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /aria-label="上传文件"/);
+  assert.match(html, /aria-label="从知识库选择文件"/);
+  assert.match(html, /type="file"/);
+  assert.match(sessionOsCss, /\.deepsea-composer__file-actions\s*\{[^}]*display:\s*flex/s);
+  assert.match(sessionOsCss, /\.deepsea-composer__icon-button\s*\{[^}]*width:\s*30px/s);
+});
+
 test('SessionShell styles selected planner skill chips separately from attachments', () => {
   assert.match(sessionOsCss, /\.deepsea-composer-skill-chips\s*\{[^}]*flex-wrap:\s*wrap/s);
   assert.match(sessionOsCss, /\.deepsea-composer-skill-chip\s*\{[^}]*background:\s*rgba\(99,\s*102,\s*241,\s*0\.12\)/s);

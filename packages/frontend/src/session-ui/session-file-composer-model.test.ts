@@ -124,6 +124,21 @@ test('buildSessionComposerSubmitFromText serializes text and uploaded project fi
   });
 });
 
+test('buildSessionComposerSubmitFromText merges selected knowledge file refs with uploaded files', () => {
+  assert.deepEqual(buildSessionComposerSubmitFromText({
+    content: '  结合知识库文件分析  ',
+    libraryFileRefs: ['asset:design-1', 'file:existing-1', 'asset:design-1'],
+    uploadedFiles: [
+      createProjectFile({ id: 'file:upload-1', original_name: 'notes.md', source_type: 'uploaded_file' }),
+      createProjectFile({ id: 'file:existing-1', original_name: 'existing.md', source_type: 'uploaded_file' }),
+    ],
+  }), {
+    content: '结合知识库文件分析',
+    workspaceFileRefs: [],
+    libraryFileRefs: ['asset:design-1', 'file:existing-1', 'file:upload-1'],
+  });
+});
+
 test('buildSessionComposerSubmitFromText extracts planner platform skill refs from dollar tokens', () => {
   assert.deepEqual(buildSessionComposerSubmitFromText({
     content: '  $frontend-design 优化 SessionFileComposer，并再次使用 $FRONTEND-DESIGN  ',

@@ -10,18 +10,26 @@ import { Button } from './ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from './ui/Dialog';
 import { Input } from './ui/Input';
 
+type FilePickerSourceType = Extract<ProjectFile['source_type'], 'uploaded_file' | 'agent_document'>;
+
 interface FilePickerDialogProps {
   projectId: string;
   disabled?: boolean;
   selectedFileIds: string[];
   onSelect: (files: ProjectFile[]) => void;
+  sourceType?: FilePickerSourceType | null;
+  title?: string;
+  description?: string;
   children: ReactNode;
 }
 
 export function FilePickerDialog({
   projectId,
+  sourceType = 'uploaded_file',
   selectedFileIds,
   onSelect,
+  title,
+  description,
   children,
 }: FilePickerDialogProps): JSX.Element {
   const { t, locale, formatRelativeTime } = useI18n();
@@ -31,8 +39,8 @@ export function FilePickerDialog({
   const [viewMode, setViewMode] = useState<ProjectFileViewMode>('list');
   const selectedSet = useMemo(() => new Set(selectedFileIds), [selectedFileIds]);
   const { data: files = [], isLoading } = useQuery({
-    queryKey: ['project-files', projectId, 'uploaded_file'],
-    queryFn: () => api.listProjectFiles(projectId, { sourceType: 'uploaded_file' }),
+    queryKey: ['project-files', projectId, sourceType ?? 'all'],
+    queryFn: () => api.listProjectFiles(projectId, sourceType ? { sourceType } : {}),
     enabled: open && !!projectId,
   });
 
@@ -68,8 +76,8 @@ export function FilePickerDialog({
       </DialogTrigger>
       <DialogContent
         className="file-picker-dialog"
-        title={t('files.picker.title')}
-        description={t('files.picker.description')}
+        title={title ?? t('files.picker.title')}
+        description={description ?? t('files.picker.description')}
       >
         <div className="file-picker-toolbar">
           <div className="file-picker-search">
@@ -105,7 +113,7 @@ export function FilePickerDialog({
           </div>
         </div>
 
-        <div className="file-picker-list" aria-label={t('files.picker.title')}>
+        <div className="file-picker-list" aria-label={title ?? t('files.picker.title')}>
           {isLoading ? (
             <div className="file-picker-empty">{t('files.loading')}</div>
           ) : visibleFiles.length === 0 ? (

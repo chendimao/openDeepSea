@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  BookOpen,
   FileText,
   Image as ImageIcon,
   Paperclip,
@@ -10,8 +11,10 @@ import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
+import { FilePickerDialog } from '../components/FilePickerDialog';
 import { MarkdownPreview } from '../components/MessageContent';
-import type { PlatformSkill, PlatformSkillRef } from '../lib/types';
+import type { PlatformSkill, PlatformSkillRef, ProjectFile } from '../lib/types';
+import { formatFileSize } from '../lib/composerModel';
 import {
   buildAttachmentPreviewKind,
   buildSessionComposerSubmitFromText,
@@ -50,6 +53,7 @@ export function SessionFileComposer({
 }): JSX.Element {
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<PendingSessionAttachment[]>([]);
+  const [selectedLibraryFiles, setSelectedLibraryFiles] = useState<ProjectFile[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<PlatformSkill[]>([]);
   const [preview, setPreview] = useState<PreviewState>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -58,6 +62,7 @@ export function SessionFileComposer({
   const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
   const [dismissedSkillTriggerKey, setDismissedSkillTriggerKey] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentsRef = useRef<PendingSessionAttachment[]>([]);
   const plannerSkillsQuery = useQuery({
     queryKey: ['platform-skills', 'session-planner', projectId],
@@ -78,9 +83,15 @@ export function SessionFileComposer({
 
   useEffect(() => {
     setSelectedSkills([]);
+    setSelectedLibraryFiles([]);
   }, [projectId]);
 
-  const canSubmit = !isUploading && (content.trim().length > 0 || attachments.length > 0 || selectedSkills.length > 0);
+  const canSubmit = !isUploading && (
+    content.trim().length > 0 ||
+    attachments.length > 0 ||
+    selectedLibraryFiles.length > 0 ||
+    selectedSkills.length > 0
+  );
   const platformSkills = plannerSkillsQuery.data?.skills ?? [];
   const rawActiveSkillTrigger = getActiveSkillTrigger(content, cursorPosition);
   const rawActiveSkillTriggerKey = rawActiveSkillTrigger ? formatSkillTriggerKey(rawActiveSkillTrigger) : null;
@@ -130,6 +141,26 @@ export function SessionFileComposer({
     setPreview((current) => current?.attachment.id === attachment.id ? null : current);
   };
 
+  const addLibraryFiles = (files: ProjectFile[]) => {
+    if (files.length === 0) return;
+    setError(null);
+    setSelectedLibraryFiles((current) => {
+      const seen = new Set(current.map((file) => file.id));
+      return [
+        ...current,
+        ...files.filter((file) => {
+          if (seen.has(file.id)) return false;
+          seen.add(file.id);
+          return true;
+        }),
+      ];
+    });
+  };
+
+  const removeLibraryFile = (file: ProjectFile) => {
+    setSelectedLibraryFiles((current) => current.filter((item) => item.id !== file.id));
+  };
+
   const submit = async () => {
     if (!canSubmit) return;
     setError(null);
@@ -140,6 +171,7 @@ export function SessionFileComposer({
         : [];
       const message = buildSessionComposerSubmitFromText({
         content,
+        libraryFileRefs: selectedLibraryFiles.map((file) => file.id),
         uploadedFiles,
         platformSkills,
         selectedPlatformSkillRefs: selectedSkills.map(toPlatformSkillRef),
@@ -159,6 +191,7 @@ export function SessionFileComposer({
       if (attachment.objectUrl) URL.revokeObjectURL(attachment.objectUrl);
     }
     setAttachments([]);
+    setSelectedLibraryFiles([]);
     setSelectedSkills([]);
     setPreview(null);
     setContent('');
@@ -195,6 +228,18 @@ export function SessionFileComposer({
         void submit();
       }}
     >
+      <input
+        ref={fileInputRef}
+        className="deepsea-composer__file-input"
+        type="file"
+        multiple
+        aria-label="上传文件"
+        disabled={isUploading}
+        onChange={(event) => {
+          addFiles(Array.from(event.currentTarget.files ?? []));
+          event.currentTarget.value = '';
+        }}
+      />
       <div className="deepsea-composer__field">
         {showSkillPicker && (
           <SkillPicker
@@ -219,6 +264,13 @@ export function SessionFileComposer({
             isUploading={isUploading}
             onPreview={setPreview}
             onRemove={removeAttachment}
+          />
+        )}
+        {selectedLibraryFiles.length > 0 && (
+          <LibraryFileStrip
+            files={selectedLibraryFiles}
+            isUploading={isUploading}
+            onRemove={removeLibraryFile}
           />
         )}
         <textarea
@@ -276,12 +328,41 @@ export function SessionFileComposer({
           }}
         />
         <div className="deepsea-composer__tools">
-          <Paperclip aria-hidden="true" />
           <span className="deepsea-composer__dollar" aria-hidden="true">$</span>
           <AlertTriangle aria-hidden="true" />
           <span className="deepsea-composer__upload-hint">
             {isUploading ? '上传中...' : '粘贴文件会上传到项目文件库'}
           </span>
+          <div className="deepsea-composer__file-actions">
+            <button
+              type="button"
+              className="deepsea-composer__icon-button"
+              aria-label="上传文件"
+              title="上传文件"
+              disabled={isUploading || attachments.length >= MAX_SESSION_ATTACHMENTS}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip aria-hidden="true" />
+            </button>
+            <FilePickerDialog
+              projectId={projectId}
+              sourceType={null}
+              selectedFileIds={selectedLibraryFiles.map((file) => file.id)}
+              title="选择知识库文件"
+              description="从项目知识库选择上传文件或智能体文档附加到消息。"
+              onSelect={addLibraryFiles}
+            >
+              <button
+                type="button"
+                className="deepsea-composer__icon-button"
+                aria-label="从知识库选择文件"
+                title="从知识库选择文件"
+                disabled={isUploading}
+              >
+                <BookOpen aria-hidden="true" />
+              </button>
+            </FilePickerDialog>
+          </div>
           <button type="submit" className="deepsea-send-button" aria-label="发送" disabled={!canSubmit}>
             <SendHorizontal aria-hidden="true" />
           </button>
@@ -430,6 +511,45 @@ function AttachmentStrip({
   );
 }
 
+function LibraryFileStrip({
+  files,
+  isUploading,
+  onRemove,
+}: {
+  files: ProjectFile[];
+  isUploading: boolean;
+  onRemove: (file: ProjectFile) => void;
+}): JSX.Element {
+  return (
+    <div className="deepsea-composer-library-files" role="list" aria-label="已选择知识库文件">
+      {files.map((file) => (
+        <div
+          key={file.id}
+          className="deepsea-composer-library-file"
+          role="listitem"
+        >
+          <span className="deepsea-composer-library-file__icon" aria-hidden="true">
+            <FileText />
+          </span>
+          <span className="deepsea-composer-library-file__body">
+            <strong title={file.original_name}>{file.original_name}</strong>
+            <small>{formatLibraryFileMeta(file)}</small>
+          </span>
+          <button
+            type="button"
+            aria-label={`移除知识库文件 ${file.original_name}`}
+            className="deepsea-composer-library-file__remove"
+            disabled={isUploading}
+            onClick={() => onRemove(file)}
+          >
+            <X aria-hidden="true" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AttachmentThumb({ attachment }: { attachment: PendingSessionAttachment }): JSX.Element {
   if (attachment.previewKind === 'image' && attachment.objectUrl) {
     return <img className="deepsea-composer-attachment__image" src={attachment.objectUrl} alt="" />;
@@ -523,6 +643,15 @@ function filesFromClipboard(data: DataTransfer): File[] {
     .filter((item) => item.kind === 'file')
     .map((item) => item.getAsFile())
     .filter((file): file is File => file !== null);
+}
+
+function formatLibraryFileMeta(file: ProjectFile): string {
+  const source = file.source_type === 'uploaded_file'
+    ? '上传文件'
+    : file.source_type === 'agent_document'
+      ? '智能体文档'
+      : '资源';
+  return [source, formatFileSize(file.size), file.mime_type].filter(Boolean).join(' · ');
 }
 
 function getActiveSkillTrigger(content: string, cursorPosition: number): ActiveSkillTrigger | null {
