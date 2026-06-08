@@ -85,6 +85,8 @@ export function projectSessionToActiveSummary({
     provider: session.provider,
     model: session.model,
     pinned_at: session.pinned_at,
+    created_at: session.created_at,
+    last_viewed_at: session.last_viewed_at,
     updated_at: session.updated_at,
     unread_count: 0,
     active_run_count: 0,
