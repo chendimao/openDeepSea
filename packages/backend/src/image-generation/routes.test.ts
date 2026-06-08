@@ -536,6 +536,50 @@ test('image prompt preset routes create search and delete project scoped presets
   assert.deepEqual(afterDelete.map((preset) => preset.id), []);
 });
 
+test('image output batch routes create manifests and delete selected outputs', async () => {
+  const project = createProjectForTest('output-batch');
+  const profile = createActiveProfile(project.id);
+  const job = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'batch poster' }));
+  const outputFile = await createProjectFileForTest(project.id, 'batch.png', 'image/png', Buffer.from('batch'));
+  const output = imageGenerationJobRepo.appendOutput({
+    job_id: job.id,
+    file_id: outputFile.id,
+    slot: 1,
+    name: outputFile.original_name,
+    url: outputFile.url,
+    mime_type: outputFile.mime_type,
+    size: outputFile.size,
+  });
+  imageGenerationJobRepo.markCompleted(job.id, 'done');
+
+  const manifestRes = await request(`/api/projects/${project.id}/image-outputs/batch/download-manifest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ output_ids: [output.id] }),
+  });
+  assert.equal(manifestRes.status, 200);
+  const manifest = await manifestRes.json() as {
+    outputs: Array<{ id: string; name: string; url: string; file_id: string }>;
+  };
+  assert.deepEqual(manifest.outputs, [{
+    id: output.id,
+    name: output.name,
+    url: output.url,
+    file_id: output.file_id,
+  }]);
+
+  const deleteRes = await request(`/api/projects/${project.id}/image-outputs/batch/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ output_ids: [output.id] }),
+  });
+  assert.equal(deleteRes.status, 200);
+  const deleted = await deleteRes.json() as { deleted_output_ids: string[] };
+  assert.deepEqual(deleted.deleted_output_ids, [output.id]);
+  assert.notEqual(fileRepo.get(outputFile.id)?.deleted_at, null);
+  assert.deepEqual(imageGenerationJobRepo.listOutputs(job.id), []);
+});
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);
   const address = server.address();

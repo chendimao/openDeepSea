@@ -12,6 +12,8 @@ export interface ImageGenerationRuntimeRequest {
   signal?: AbortSignal;
 }
 
+export type ChatCompletionsImageRequest = ImageGenerationRuntimeRequest;
+
 export interface ImageGenerationEditRuntimeRequest extends ImageGenerationRuntimeRequest {
   sourceImages: ImageGenerationRuntimeSourceImage[];
 }
@@ -40,6 +42,10 @@ interface ImageRuntimePayload {
 interface ImageRuntimePayloadItem {
   b64_json?: unknown;
   url?: unknown;
+}
+
+interface ChatCompletionsPayload {
+  choices?: unknown;
 }
 
 export async function requestOpenAICompatibleImageGeneration(
@@ -84,6 +90,28 @@ export async function requestOpenAICompatibleImageEdit(
   }, fetcher, input.apiKey);
 
   return parseImageRuntimeResponse(response, fetcher, input.signal, input.apiKey);
+}
+
+export async function requestChatCompletionsImageGeneration(
+  input: ChatCompletionsImageRequest,
+): Promise<ImageGenerationRuntimeResponse> {
+  const fetcher = input.fetchImpl ?? fetch;
+  const normalizedBaseUrl = normalizeImageBaseUrl(input.baseUrl);
+  const response = await requestImageRuntimeEndpoint(`${normalizedBaseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: input.model,
+      messages: [{ role: 'user', content: input.prompt }],
+      modalities: ['image', 'text'],
+    }),
+    signal: input.signal,
+  }, fetcher, input.apiKey);
+
+  return parseChatCompletionImageResponse(response, fetcher, input.signal, input.apiKey);
 }
 
 function buildImageGenerationPayload(input: ImageGenerationRuntimeRequest): Record<string, string | number> {
@@ -154,6 +182,62 @@ function parseImageRuntimePayload(responseText: string, apiKey: string): ImageRu
     const detail = sanitizeRuntimeError(err, apiKey);
     throw new Error(`图片生成响应不是有效 JSON：${detail}`);
   }
+}
+
+async function parseChatCompletionImageResponse(
+  response: Response,
+  fetchImpl: FetchLike,
+  signal: AbortSignal | undefined,
+  apiKey: string,
+): Promise<ImageGenerationRuntimeResponse> {
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(normalizeImageGenerationError(responseText, response.status, apiKey));
+  }
+
+  const payload = parseChatCompletionsPayload(responseText, apiKey);
+  const images: ImageGenerationRuntimeImage[] = [];
+  for (const url of extractChatCompletionImageUrls(payload)) {
+    if (url.startsWith('data:')) {
+      images.push(decodeDataUrlImage(url, apiKey));
+      continue;
+    }
+    images.push(await downloadImageUrl(url, fetchImpl, signal, apiKey));
+  }
+  return { images };
+}
+
+function parseChatCompletionsPayload(responseText: string, apiKey: string): ChatCompletionsPayload {
+  try {
+    return responseText ? JSON.parse(responseText) as ChatCompletionsPayload : {};
+  } catch (err) {
+    const detail = sanitizeRuntimeError(err, apiKey);
+    throw new Error(`图片生成响应不是有效 JSON：${detail}`);
+  }
+}
+
+function extractChatCompletionImageUrls(payload: ChatCompletionsPayload): string[] {
+  const urls: string[] = [];
+  const choices = Array.isArray(payload.choices) ? payload.choices : [];
+  for (const choice of choices) {
+    if (!isRecord(choice) || !isRecord(choice.message)) continue;
+    const content = choice.message.content;
+    if (!Array.isArray(content)) continue;
+    for (const item of content) {
+      const url = extractChatImageUrl(item);
+      if (url) urls.push(url);
+    }
+  }
+  return urls;
+}
+
+function extractChatImageUrl(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const imageUrl = value.image_url;
+  if (typeof imageUrl === 'string') return imageUrl;
+  if (isRecord(imageUrl) && typeof imageUrl.url === 'string') return imageUrl.url;
+  return null;
 }
 
 async function downloadImageUrl(

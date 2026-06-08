@@ -14,6 +14,7 @@ import {
   type ImageGenerationRuntimeImage,
   type ImageGenerationRuntimeResponse,
   type ImageGenerationRuntimeSourceImage,
+  requestChatCompletionsImageGeneration,
   requestOpenAICompatibleImageEdit,
   requestOpenAICompatibleImageGeneration,
 } from './openai-compatible.js';
@@ -46,6 +47,7 @@ export interface ImageGenerationServiceRuntimeRequest {
   baseUrl: string;
   apiKey: string;
   model: string;
+  compatProfileId: ImageProviderProfileWithSecret['compat_profile_id'];
   prompt: string;
   count: number;
   quality: string;
@@ -354,6 +356,7 @@ async function callRuntime(input: {
     baseUrl: profile.base_url,
     apiKey: profile.api_key,
     model: profile.model,
+    compatProfileId: profile.compat_profile_id,
     prompt: job.prompt,
     count,
     quality: job.quality,
@@ -378,6 +381,19 @@ async function defaultRuntime(request: ImageGenerationServiceRuntimeRequest): Pr
       size: request.size,
       signal: request.signal,
       sourceImages: request.sourceImages,
+    });
+  }
+
+  if (request.compatProfileId === 'chat-completions') {
+    return requestChatCompletionsImageGeneration({
+      baseUrl: request.baseUrl,
+      apiKey: request.apiKey,
+      model: request.model,
+      prompt: request.prompt,
+      count: request.count,
+      quality: request.quality,
+      size: request.size,
+      signal: request.signal,
     });
   }
 

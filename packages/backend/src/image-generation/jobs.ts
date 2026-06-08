@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
+import { fileRepo } from '../repos/files.js';
 import type {
   ImageGenerationJob,
   ImageGenerationJobCreateInput,
@@ -33,6 +34,8 @@ export interface ImageGenerationJobRepository {
   appendOutput(input: ImageGenerationOutputCreateInput): ImageGenerationOutput;
   listOutputs(jobId: string): ImageGenerationOutput[];
   findOutputByFileId(fileId: string): ImageGenerationOutput | undefined;
+  listOutputsByProject(projectId: string, outputIds: string[]): ImageGenerationOutput[];
+  deleteOutputsByProject(projectId: string, outputIds: string[]): ImageGenerationOutput[];
   addSourceImage(input: ImageGenerationSourceImageCreateInput): ImageGenerationSourceImage;
   listSourceImages(jobId: string): ImageGenerationSourceImage[];
   recoverInterruptedJobs(): number;
@@ -52,6 +55,8 @@ export const imageGenerationJobRepo: ImageGenerationJobRepository = {
   appendOutput,
   listOutputs,
   findOutputByFileId,
+  listOutputsByProject,
+  deleteOutputsByProject,
   addSourceImage,
   listSourceImages,
   recoverInterruptedJobs,
@@ -287,9 +292,11 @@ function appendOutput(input: ImageGenerationOutputCreateInput): ImageGenerationO
 function listOutputs(jobId: string): ImageGenerationOutput[] {
   return db
     .prepare(
-      `SELECT *
+      `SELECT image_generation_outputs.*
        FROM image_generation_outputs
+       JOIN files ON files.id = image_generation_outputs.file_id
        WHERE job_id = ?
+         AND files.deleted_at IS NULL
        ORDER BY slot ASC, created_at ASC`,
     )
     .all(jobId) as ImageGenerationOutput[];
@@ -305,6 +312,38 @@ function findOutputByFileId(fileId: string): ImageGenerationOutput | undefined {
        LIMIT 1`,
     )
     .get(fileId) as ImageGenerationOutput | undefined;
+}
+
+function listOutputsByProject(projectId: string, outputIds: string[]): ImageGenerationOutput[] {
+  const uniqueIds = [...new Set(outputIds)];
+  if (uniqueIds.length === 0) return [];
+  const placeholders = uniqueIds.map(() => '?').join(', ');
+  return db
+    .prepare(
+      `SELECT image_generation_outputs.*
+       FROM image_generation_outputs
+       JOIN image_generation_jobs ON image_generation_jobs.id = image_generation_outputs.job_id
+       JOIN files ON files.id = image_generation_outputs.file_id
+       WHERE image_generation_jobs.project_id = ?
+         AND image_generation_outputs.id IN (${placeholders})
+         AND files.deleted_at IS NULL
+       ORDER BY image_generation_outputs.created_at DESC`,
+    )
+    .all(projectId, ...uniqueIds) as ImageGenerationOutput[];
+}
+
+function deleteOutputsByProject(projectId: string, outputIds: string[]): ImageGenerationOutput[] {
+  const outputs = listOutputsByProject(projectId, outputIds);
+  if (outputs.length === 0) return [];
+  const deleteOutput = db.prepare('DELETE FROM image_generation_outputs WHERE id = ?');
+  const deleteMany = db.transaction((rows: ImageGenerationOutput[]) => {
+    for (const output of rows) {
+      fileRepo.softDelete(output.file_id);
+      deleteOutput.run(output.id);
+    }
+  });
+  deleteMany(outputs);
+  return outputs;
 }
 
 function addSourceImage(input: ImageGenerationSourceImageCreateInput): ImageGenerationSourceImage {

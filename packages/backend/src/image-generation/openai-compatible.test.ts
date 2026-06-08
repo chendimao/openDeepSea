@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  requestChatCompletionsImageGeneration,
   requestOpenAICompatibleImageEdit,
   requestOpenAICompatibleImageGeneration,
 } from './openai-compatible.js';
@@ -239,6 +240,43 @@ test('runtime sends image edits as multipart form data', async () => {
   assert.equal(sourceFile.type, 'image/png');
   assert.equal(await sourceFile.text(), 'source-a');
   assert.deepEqual(response.images[0]?.data, pngBytes);
+});
+
+test('chat completions image transport extracts image url from message content', async () => {
+  const pngBytes = Buffer.from('png');
+  let requestedUrl = '';
+  let requestBody: Record<string, unknown> | null = null;
+
+  const result = await requestChatCompletionsImageGeneration({
+    baseUrl: 'https://example.com/v1',
+    apiKey: 'secret',
+    model: 'image-chat-model',
+    prompt: 'apple',
+    count: 1,
+    quality: 'auto',
+    size: 'auto',
+    fetchImpl: async (input, init) => {
+      requestedUrl = String(input);
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{
+          message: {
+            content: [{ type: 'image_url', image_url: { url: `data:image/png;base64,${pngBytes.toString('base64')}` } }],
+          },
+        }],
+      }));
+    },
+  });
+
+  assert.equal(requestedUrl, 'https://example.com/v1/chat/completions');
+  assert.deepEqual(requestBody, {
+    model: 'image-chat-model',
+    messages: [{ role: 'user', content: 'apple' }],
+    modalities: ['image', 'text'],
+  });
+  assert.equal(result.images.length, 1);
+  assert.deepEqual(result.images[0]?.data, pngBytes);
+  assert.equal(result.images[0]?.mimeType, 'image/png');
 });
 
 test('runtime normalizes edit request failures without leaking API keys', async () => {

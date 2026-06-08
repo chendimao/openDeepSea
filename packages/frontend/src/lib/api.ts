@@ -591,6 +591,19 @@ export const api = {
     request<{ job: ImageJobDetailResponse['job'] }>(`/projects/${projectId}/image-jobs/${jobId}/retry`, {
       method: 'POST',
     }),
+  downloadImageOutputManifest: (projectId: string, outputIds: string[]) =>
+    request<{ outputs: Array<{ id: string; name: string; url: string; file_id: string }> }>(
+      `/projects/${projectId}/image-outputs/batch/download-manifest`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ output_ids: outputIds }),
+      },
+    ),
+  deleteImageOutputs: (projectId: string, outputIds: string[]) =>
+    request<{ deleted_output_ids: string[] }>(`/projects/${projectId}/image-outputs/batch/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ output_ids: outputIds }),
+    }),
   listImagePromptPresets: (projectId: string, filters: { q?: string } = {}) => {
     const params = new URLSearchParams();
     if (filters.q) params.set('q', filters.q);

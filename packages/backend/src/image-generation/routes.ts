@@ -77,6 +77,10 @@ const imagePromptPresetSchema = z.object({
   prompt: z.string().trim().min(1).max(8000),
 });
 
+const imageOutputBatchSchema = z.object({
+  output_ids: z.array(z.string().min(1)).min(1).max(100),
+});
+
 imageGenerationRouter.get('/projects/:projectId/image-provider-profiles', (req, res) => {
   const projectId = requireProject(req.params.projectId, res);
   if (!projectId) return;
@@ -278,8 +282,48 @@ imageGenerationRouter.delete('/projects/:projectId/image-prompt-presets/:presetI
   res.json(deleted);
 });
 
+imageGenerationRouter.post('/projects/:projectId/image-outputs/batch/download-manifest', (req, res) => {
+  const projectId = requireProject(req.params.projectId, res);
+  if (!projectId) return;
+  const parsed = imageOutputBatchSchema.safeParse(req.body);
+  if (!parsed.success) return respondValidationError(res, parsed.error);
+  const outputIds = uniqueIds(parsed.data.output_ids);
+  const outputs = imageGenerationJobRepo.listOutputsByProject(projectId, outputIds);
+  if (outputs.length !== outputIds.length) {
+    res.status(404).json({ error: 'image generation output not found' });
+    return;
+  }
+  res.json({
+    outputs: outputs.map((output) => ({
+      id: output.id,
+      name: output.name,
+      url: output.url,
+      file_id: output.file_id,
+    })),
+  });
+});
+
+imageGenerationRouter.post('/projects/:projectId/image-outputs/batch/delete', (req, res) => {
+  const projectId = requireProject(req.params.projectId, res);
+  if (!projectId) return;
+  const parsed = imageOutputBatchSchema.safeParse(req.body);
+  if (!parsed.success) return respondValidationError(res, parsed.error);
+  const outputIds = uniqueIds(parsed.data.output_ids);
+  const outputs = imageGenerationJobRepo.listOutputsByProject(projectId, outputIds);
+  if (outputs.length !== outputIds.length) {
+    res.status(404).json({ error: 'image generation output not found' });
+    return;
+  }
+  const deleted = imageGenerationJobRepo.deleteOutputsByProject(projectId, outputIds);
+  res.json({ deleted_output_ids: deleted.map((output) => output.id) });
+});
+
 function getService(): ImageGenerationService {
   return routeDeps.service ?? imageGenerationService;
+}
+
+function uniqueIds(ids: string[]): string[] {
+  return [...new Set(ids)];
 }
 
 function requireProject(projectId: string | undefined, res: ExpressResponse): string | null {
