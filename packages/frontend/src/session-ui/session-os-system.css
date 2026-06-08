@@ -454,6 +454,12 @@
   .deepsea-topbar__actions {
     justify-content: flex-start;
   }
+  .deepsea-topbar__identity {
+    gap: 10px;
+  }
+  .deepsea-shell-nav {
+    display: none;
+  }
   .deepsea-shell-nav,
   .deepsea-topbar__actions,
   .deepsea-command-group {

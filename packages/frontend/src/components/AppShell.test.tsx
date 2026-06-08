@@ -38,6 +38,8 @@ test('AppShell renders the shared Deepsea header with system settings entry', ()
   assert.match(html, /智能体/);
   assert.match(html, /图片/);
   assert.match(html, /资源/);
+  assert.match(html, /aria-label="菜单"/);
+  assert.match(html, /app-header-menu-button/);
   assert.doesNotMatch(html, /alt="Profile"/);
   assert.doesNotMatch(html, /projects\/project-1\/rooms/);
 });
@@ -79,6 +81,16 @@ test('AppShell does not open a global websocket without a concrete subscription'
 
   assert.doesNotMatch(source, /roomSocket\.connect\(/);
   assert.doesNotMatch(source, /roomSocket\.destroy\(/);
+});
+
+test('AppShell header menu reuses primary navigation and opens command search', () => {
+  const source = readFileSync(new URL('./AppShell.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /<HeaderMenu/);
+  assert.match(source, /items={headerNavItems}/);
+  assert.match(source, /onOpenCommandMenu=\{\(\) => setCommandOpen\(true\)\}/);
+  assert.match(source, /className="deepsea-header-menu"/);
+  assert.match(source, /commandLabel={t\('shell\.searchCommand'\)}/);
 });
 
 function renderAppShell(initialEntry: string): string {
