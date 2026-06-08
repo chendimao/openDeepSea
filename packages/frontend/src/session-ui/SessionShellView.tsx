@@ -1778,6 +1778,8 @@ function ensureCurrentActiveSessionSummary(
     provider: currentSession.provider,
     model: currentSession.model,
     pinned_at: currentSession.pinned_at,
+    created_at: currentSession.created_at,
+    last_viewed_at: currentSession.last_viewed_at,
     updated_at: currentSession.updated_at,
     unread_count: 0,
     active_run_count: 0,
