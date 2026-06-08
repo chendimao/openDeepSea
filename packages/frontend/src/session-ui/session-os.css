@@ -762,15 +762,17 @@
 }
 .deepsea-project-tree-heading button {
   display: grid;
-  width: 15px;
-  height: 15px;
+  width: 22px;
+  height: 22px;
   place-items: center;
   border: 0;
+  border-radius: 6px;
   background: transparent;
   color: rgba(67, 70, 84, 0.4);
   padding: 0;
 }
 .deepsea-project-tree-heading button:hover {
+  background: rgba(67, 70, 84, 0.08);
   color: var(--deepsea-text);
 }
 .deepsea-project-tree-heading svg {

@@ -303,6 +303,8 @@ test('SessionShell project rail CSS keeps the reference-style compact hierarchy'
   );
   assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*font-size:\s*13px/s);
   assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*18px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading button\s*\{[^}]*width:\s*22px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading button\s*\{[^}]*height:\s*22px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*30px/s);
   assert.match(
     sessionOsCss,
