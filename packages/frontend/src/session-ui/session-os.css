@@ -1716,7 +1716,7 @@ button.deepsea-message-attachment {
 .deepsea-message-body .markdown-preview table,
 .deepsea-run-log-body .markdown-preview table {
   display: block;
-  width: 100%;
+  width: max-content;
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));

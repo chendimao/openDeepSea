@@ -24,6 +24,8 @@ test('session markdown preview highlights inline code chips', () => {
 });
 
 test('session markdown preview styles GFM tables within transcript width', () => {
+  assert.match(css, /\.deepsea-message-body \.markdown-preview table[\s\S]*?width:\s*max-content/s);
+  assert.match(css, /\.deepsea-message-body \.markdown-preview table[\s\S]*?max-width:\s*100%/s);
   assert.match(css, /\.deepsea-message-body \.markdown-preview table[\s\S]*?overflow-x:\s*auto/s);
   assert.match(css, /\.deepsea-message-body \.markdown-preview table[\s\S]*?border:\s*1px solid color-mix\(in srgb, var\(--deepsea-primary\) 18%, var\(--deepsea-border-subtle\)\)/s);
   assert.match(css, /\.deepsea-message-body \.markdown-preview th,[\s\S]*?\.deepsea-message-body \.markdown-preview td[\s\S]*?border:\s*1px solid color-mix\(in srgb, var\(--deepsea-primary\) 18%, var\(--deepsea-border-subtle\)\)/s);
