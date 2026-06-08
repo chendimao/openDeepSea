@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
-  Bell,
   Bot,
   Check,
   CheckCircle2,
@@ -16,16 +15,13 @@ import {
   FileCode2,
   GitBranch,
   Grid2X2,
-  History,
   Layers3,
   Loader2,
-  MessageCircle,
   MoreVertical,
   PackagePlus,
   RefreshCcw,
   Search,
   Settings,
-  ShieldCheck,
   Star,
   TerminalSquare,
   Trash2,
@@ -33,7 +29,6 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { NavLink } from 'react-router-dom';
 import { api } from '../lib/api';
 import type {
   PlatformSkill,
@@ -294,7 +289,6 @@ export function SkillsPage(): JSX.Element {
 
   return (
     <div className="skills-command-center">
-      <SkillsTopBar searchQuery={searchQuery} onSearchChange={setSearchQuery} />
       <main className="skills-workspace">
         <SkillsSidebar
           activeStatus={statusFilter}
@@ -328,56 +322,6 @@ export function SkillsPage(): JSX.Element {
       </main>
       <SkillsStatusBar metrics={metrics} />
     </div>
-  );
-}
-
-function SkillsTopBar({
-  searchQuery,
-  onSearchChange,
-}: {
-  searchQuery: string;
-  onSearchChange: (value: string) => void;
-}): JSX.Element {
-  return (
-    <header className="skills-topbar">
-      <div className="skills-topbar__left">
-        <NavLink to="/" className="skills-brand" aria-label="深海指挥中心">
-          <span className="skills-brand__mark">
-            <img alt="深海指挥中心" src="/deepsea-krabs-logo.jpg" />
-          </span>
-          <span className="skills-brand__title">深海指挥中心</span>
-          <span className="skills-ai-badge">AI</span>
-        </NavLink>
-        <nav className="skills-topnav" aria-label="技能管理导航">
-          <NavItem to="/" icon={History} label="工作台" />
-          <NavItem to="/chat" icon={MessageCircle} label="会话" />
-          <button type="button" className="skills-topnav__plain">任务</button>
-          <NavItem to="/knowledge" icon={Database} label="知识库" />
-          <NavItem to="/agents" icon={Bot} label="智能体" />
-          <NavItem to="/skills" icon={ShieldCheck} label="技能" exact />
-          <button type="button" className="skills-topnav__plain">设置</button>
-        </nav>
-      </div>
-      <div className="skills-topbar__right">
-        <label className="skills-global-search">
-          <Search aria-hidden="true" />
-          <input
-            value={searchQuery}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="搜索 skills, 作者, 描述"
-            aria-label="搜索 skills, 作者, 描述"
-          />
-          <span>⌘ K</span>
-        </label>
-        <button type="button" className="skills-icon-button" aria-label="通知"><Bell aria-hidden="true" /></button>
-        <button type="button" className="skills-icon-button" aria-label="帮助"><CircleHelp aria-hidden="true" /></button>
-        <button type="button" className="skills-user-chip" aria-label="用户菜单">
-          <span className="skills-user-chip__avatar">U</span>
-          <span className="skills-user-chip__copy"><b>深海用户</b><small>管理员</small></span>
-          <ChevronDown aria-hidden="true" />
-        </button>
-      </div>
-    </header>
   );
 }
 
@@ -705,10 +649,6 @@ function SkillsStatusBar({ metrics }: { metrics: ReturnType<typeof getMetrics> }
       </div>
     </footer>
   );
-}
-
-function NavItem({ to, icon: Icon, label, exact = false }: { to: string; icon: LucideIcon; label: string; exact?: boolean }): JSX.Element {
-  return <NavLink to={to} end={exact}><Icon aria-hidden="true" />{label}</NavLink>;
 }
 
 function SidebarSection({ title, children }: { title: string; children: ReactNode }): JSX.Element {

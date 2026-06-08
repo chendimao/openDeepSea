@@ -69,52 +69,50 @@ export function AppShell({
   return (
     <div className={cn('flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]', isSessionWorkspaceRoute && 'app-shell--session', isKnowledgeRoute && 'app-shell--knowledge', isSkillsRoute && 'app-shell--skills')}>
       {themeStyle === 'apple' && <div className="liquid-backdrop" aria-hidden="true" />}
-      {!isSkillsRoute && (
-        <header className="deepsea-topbar app-header" aria-label={t('shell.sidebar.aria')}>
-          <div className="deepsea-topbar__identity">
-            <NavLink to="/" className="deepsea-brand" aria-label={t('app.name')}>
-              <span className="deepsea-brand__mark">
-                <img alt="蟹老板 AI 指挥官 Logo" src="/deepsea-krabs-logo.jpg" />
-              </span>
-              <span>深海指挥中心</span>
-            </NavLink>
-            <nav className="deepsea-shell-nav" aria-label={t('shell.sidebar.aria')}>
-              <HeaderNavLink
-                to={sessionWorkspaceHref}
-                active={isSessionWorkspaceRoute}
-                exact
-                icon={History}
-                label="会话"
-              />
-              <HeaderNavLink to="/chat" icon={MessageCircle} label="聊天" />
-              <HeaderNavLink to="/agents" icon={Bot} label="智能体" />
-              <HeaderNavLink to="/skills" icon={ShieldCheck} label="技能" />
-              <HeaderNavLink
-                to="/knowledge"
-                active={location.pathname === '/knowledge' || /^\/projects\/[^/]+\/knowledge\/?$/.test(location.pathname)}
-                icon={Database}
-                label="知识库"
-              />
-            </nav>
-          </div>
-          <div className="deepsea-topbar__actions">
-            <div className="deepsea-action-icons">
-              <SystemSettingsDialog theme={theme} onThemeChange={onThemeChange}>
-                <button type="button" aria-label={t('shell.systemSettings')} className="deepsea-icon-button app-header-settings">
-                  <Settings aria-hidden="true" />
-                </button>
-              </SystemSettingsDialog>
-              <button type="button" className="deepsea-icon-button deepsea-icon-button--alert" aria-label="通知">
-                <Bell aria-hidden="true" />
-                <span />
+      <header className="deepsea-topbar app-header" aria-label={t('shell.sidebar.aria')}>
+        <div className="deepsea-topbar__identity">
+          <NavLink to="/" className="deepsea-brand" aria-label={t('app.name')}>
+            <span className="deepsea-brand__mark">
+              <img alt="蟹老板 AI 指挥官 Logo" src="/deepsea-krabs-logo.jpg" />
+            </span>
+            <span>深海指挥中心</span>
+          </NavLink>
+          <nav className="deepsea-shell-nav" aria-label={t('shell.sidebar.aria')}>
+            <HeaderNavLink
+              to={sessionWorkspaceHref}
+              active={isSessionWorkspaceRoute}
+              exact
+              icon={History}
+              label="会话"
+            />
+            <HeaderNavLink to="/chat" icon={MessageCircle} label="聊天" />
+            <HeaderNavLink to="/agents" icon={Bot} label="智能体" />
+            <HeaderNavLink to="/skills" icon={ShieldCheck} label="技能" />
+            <HeaderNavLink
+              to="/knowledge"
+              active={location.pathname === '/knowledge' || /^\/projects\/[^/]+\/knowledge\/?$/.test(location.pathname)}
+              icon={Database}
+              label="知识库"
+            />
+          </nav>
+        </div>
+        <div className="deepsea-topbar__actions">
+          <div className="deepsea-action-icons">
+            <SystemSettingsDialog theme={theme} onThemeChange={onThemeChange}>
+              <button type="button" aria-label={t('shell.systemSettings')} className="deepsea-icon-button app-header-settings">
+                <Settings aria-hidden="true" />
               </button>
-            </div>
-            {!isSessionWorkspaceRoute && (
-              <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
-            )}
+            </SystemSettingsDialog>
+            <button type="button" className="deepsea-icon-button deepsea-icon-button--alert" aria-label="通知">
+              <Bell aria-hidden="true" />
+              <span />
+            </button>
           </div>
-        </header>
-      )}
+          {!isSessionWorkspaceRoute && (
+            <img alt="Profile" className="deepsea-avatar" src="/deepsea-profile-avatar.png" />
+          )}
+        </div>
+      </header>
       <div className="app-grid">
         <main className="app-main">{children}</main>
       </div>
