@@ -184,7 +184,10 @@ export function buildClaudeCodeRuntimeEnvOverrides(
   const env: Record<string, string> = {};
   if (config.model?.trim()) env.ANTHROPIC_MODEL = config.model.trim();
   if (config.base_url?.trim()) env.ANTHROPIC_BASE_URL = config.base_url.trim();
-  if (config.api_key?.trim()) env.ANTHROPIC_API_KEY = config.api_key.trim();
+  if (config.api_key?.trim()) {
+    const keyEnv = config.api_key_env_var === 'ANTHROPIC_AUTH_TOKEN' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
+    env[keyEnv] = config.api_key.trim();
+  }
   return env;
 }
 

@@ -6,6 +6,7 @@ export const ACP_PROVIDERS = ['codex', 'claudecode', 'opencode'] as const satisf
 
 export type ProviderSyncStatus = 'idle' | 'success' | 'failed';
 export type ProviderRuntimeConfigSource = 'managed_profile' | 'discovered_snapshot' | 'cli_default';
+export type ProviderApiKeyEnvVar = 'OPENAI_API_KEY' | 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN';
 
 export interface ProviderConfigSource {
   provider: AcpBackend;
@@ -26,6 +27,7 @@ export interface ProviderDiscoveredSnapshot {
   detected_base_url: string | null;
   api_key_set: boolean;
   api_key_preview: string | null;
+  api_key_env_var: ProviderApiKeyEnvVar;
   reasoning_effort: string | null;
   raw_summary_json: string;
   synced_at: number;
@@ -38,6 +40,7 @@ export interface ProviderSnapshotInput {
   detected_model: string | null;
   detected_base_url: string | null;
   api_key: string | null;
+  api_key_env_var: ProviderApiKeyEnvVar;
   reasoning_effort: string | null;
   raw_summary: Record<string, unknown>;
 }
@@ -50,6 +53,7 @@ export interface ManagedProviderProfile {
   base_url: string | null;
   api_key_set: boolean;
   api_key_preview: string | null;
+  api_key_env_var: ProviderApiKeyEnvVar;
   reasoning_effort: string | null;
   run_overrides_enabled: boolean;
   is_active: boolean;
@@ -65,6 +69,7 @@ export interface ProviderRuntimeConfig {
   model: string | null;
   base_url: string | null;
   api_key: string | null;
+  api_key_env_var: ProviderApiKeyEnvVar;
   reasoning_effort: string | null;
   run_overrides_enabled: boolean;
 }
@@ -77,6 +82,7 @@ export interface ProviderRuntimeSummary {
   base_url: string | null;
   api_key_set: boolean;
   api_key_preview: string | null;
+  api_key_env_var: ProviderApiKeyEnvVar;
   reasoning_effort: string | null;
   run_overrides_enabled: boolean;
 }

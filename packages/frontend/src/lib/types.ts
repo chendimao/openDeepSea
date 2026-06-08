@@ -876,6 +876,7 @@ export interface AiConfig {
 
 export type ProviderSyncStatus = 'idle' | 'success' | 'failed';
 export type ProviderRuntimeConfigSource = 'managed_profile' | 'discovered_snapshot' | 'cli_default';
+export type ProviderApiKeyEnvVar = 'OPENAI_API_KEY' | 'ANTHROPIC_API_KEY' | 'ANTHROPIC_AUTH_TOKEN';
 
 export interface ProviderConfigSource {
   provider: AcpBackend;
@@ -896,6 +897,7 @@ export interface ProviderDiscoveredSnapshot {
   detected_base_url: string | null;
   api_key_set: boolean;
   api_key_preview: string | null;
+  api_key_env_var: ProviderApiKeyEnvVar;
   reasoning_effort: string | null;
   raw_summary_json: string;
   synced_at: number;
@@ -909,6 +911,7 @@ export interface ManagedProviderProfile {
   base_url: string | null;
   api_key_set: boolean;
   api_key_preview: string | null;
+  api_key_env_var: ProviderApiKeyEnvVar;
   reasoning_effort: string | null;
   run_overrides_enabled: boolean;
   is_active: boolean;
@@ -925,6 +928,7 @@ export interface ProviderRuntimeConfig {
   base_url: string | null;
   api_key_set: boolean;
   api_key_preview: string | null;
+  api_key_env_var: ProviderApiKeyEnvVar;
   reasoning_effort: string | null;
   run_overrides_enabled: boolean;
 }

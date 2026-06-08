@@ -243,12 +243,13 @@ test('SessionShell keeps the tool call list height bounded with internal scrolli
 
 test('SessionShell includes project tree row pin and drag feedback styles', () => {
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*opacity:\s*0/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*position:\s*absolute/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*pointer-events:\s*none/s);
   assert.match(sessionOsCss, /\.deepsea-project-node:hover \.deepsea-project-node__actions/s);
   assert.match(sessionOsCss, /\.deepsea-project-node:focus-within \.deepsea-project-node__actions/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions:has\(\.deepsea-project-node__icon-button\[aria-expanded="true"\]\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*display:\s*grid/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*grid-template-columns:\s*20px minmax\(0,\s*1fr\)/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*grid-template-columns:\s*12px minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*border:\s*0/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*background:\s*transparent/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*opacity:\s*0/s);
@@ -264,8 +265,8 @@ test('SessionShell project rail CSS keeps the reference-style compact hierarchy'
   assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*22px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*30px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__button\s*\{[^}]*padding:\s*3px 10px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-node__label strong\s*\{[^}]*font-size:\s*15px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*4px 0 6px 22px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__label strong\s*\{[^}]*font-size:\s*13px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*4px 0 6px 12px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*min-height:\s*28px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*4px 8px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s);
@@ -769,7 +770,7 @@ test('SessionShell hides ACP tool records from chat transcript', () => {
   const thoughtTextIndex = html.indexOf('判断需要读取 package.json。');
 
   assert.match(html, /思考 18s/);
-  assert.ok(html.indexOf('我会先分析当前项目。') < runLogIndex);
+  assert.ok(runLogIndex < html.indexOf('我会先分析当前项目。'));
   assert.match(html, /找到入口和脚本。/);
   assert.match(html, /已完成。/);
   assert.doesNotMatch(html, /Thinking/);
@@ -812,7 +813,7 @@ test('buildSessionRunTranscriptItems drops ACP tool markers from chat transcript
   ]);
 });
 
-test('buildSessionRunTranscriptItems hides legacy activity events misclassified as answer', () => {
+test('buildSessionRunTranscriptItems keeps answer text without content sniffing', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({
       id: 'fallback',
@@ -847,11 +848,11 @@ test('buildSessionRunTranscriptItems hides legacy activity events misclassified 
   ], '[ACP fallback]\n开始命令：rtk find\n✅ 结论：页面已分析。\n完成命令：rtk find');
 
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    '✅ 结论：页面已分析。',
+    "[ACP fallback] codex protocol server unavailable, using legacy CLI.\n开始命令：/bin/zsh -lc 'rtk find .'\n✅ 结论：页面已分析。完成命令：/bin/zsh -lc 'rtk find .'",
   ]);
 });
 
-test('buildSessionRunTranscriptItems hides structured process chunks before visible answer', () => {
+test('buildSessionRunTranscriptItems keeps process-looking answer chunks before final answer', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({
       id: 'preface-1',
@@ -881,11 +882,15 @@ test('buildSessionRunTranscriptItems hides structured process chunks before visi
   ].join(''));
 
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    '当前项目级安装的 skill 只有 1 个：\n\n- `impeccable`',
+    [
+      '我会按项目本地目录来核对：优先看当前仓库里的 `.agents/skills` / `.codex/skills`。',
+      '当前仓库里只定位到 1 个项目级 skill 文件；`.codex/skills` 下没有项目共享 skill。接下来读一下它的元信息，避免只按目录名猜测。',
+      '当前项目级安装的 skill 只有 1 个：\n\n- `impeccable`',
+    ].join(''),
   ]);
 });
 
-test('buildSessionRunTranscriptItems hides follow-up process chunks before global skills answer', () => {
+test('buildSessionRunTranscriptItems keeps follow-up answer chunks before global skills answer', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({
       id: 'preface-1',
@@ -911,7 +916,11 @@ test('buildSessionRunTranscriptItems hides follow-up process chunks before globa
   ], '');
 
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    '当前全局安装/暴露的 skills，按唯一名称去重后共 **28 个**。',
+    [
+      '我会按“全局安装”先核对 `~/.codex/skills`，再单独标出 Superpowers 插件缓存里暴露的技能。',
+      '刚才第一轮发现 `~/.codex/skills` 里有普通用户技能，也发现 Superpowers 有两份同名来源。现在补查隐藏目录和 `~/.agents/skills`，因为全局技能里有一部分放在这些位置。',
+      '当前全局安装/暴露的 skills，按唯一名称去重后共 **28 个**。',
+    ].join(''),
   ]);
 });
 
@@ -945,7 +954,7 @@ test('buildSessionRunTranscriptItems ignores structured non-answer channels', ()
   ]);
 });
 
-test('buildSessionRunTranscriptItems hides tokenized legacy process-only answer', () => {
+test('buildSessionRunTranscriptItems keeps tokenized answer text literally', () => {
   const text = [
     '我会先恢复现场：读取 Superpowers 入口要求和当前未提交改动。',
     '本轮使用 using-superpowers 做会话入口检查。',
@@ -964,10 +973,10 @@ test('buildSessionRunTranscriptItems hides tokenized legacy process-only answer'
     text,
   );
 
-  assert.deepEqual(items, []);
+  assert.deepEqual(items, [{ type: 'text', id: 'text-0', text }]);
 });
 
-test('SessionShell moves completed legacy process preface into collapsed thought', () => {
+test('SessionShell keeps process-looking answer text in run body', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.status = 'completed';
@@ -992,11 +1001,10 @@ test('SessionShell moves completed legacy process preface into collapsed thought
   ];
 
   const html = renderSessionShell(payload);
-  const thoughtTag = getAgentThoughtTag(html);
+  const runLogIndex = html.indexOf('class="deepsea-run-log"');
 
-  assert.doesNotMatch(thoughtTag, /\sopen=""/);
-  assert.ok(html.indexOf('我会直接按上传文件读取图片') < html.indexOf('class="deepsea-run-log"'));
-  assert.equal(html.match(/我会直接按上传文件读取图片/g)?.length, 1);
+  assert.ok(runLogIndex >= 0);
+  assert.ok(html.indexOf('我会直接按上传文件读取图片') > runLogIndex);
   assert.match(html, /✅ 结论：截图展示的是工具调用列表。/);
 });
 
@@ -1033,7 +1041,7 @@ test('SessionShell renders run thought inside assistant message area', () => {
   assert.ok(runLogIndex > thoughtIndex);
 });
 
-test('SessionShell hides legacy activity persisted in stderr fallback', () => {
+test('SessionShell renders stderr literally when stdout is empty', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.status = 'completed';
@@ -1059,9 +1067,9 @@ test('SessionShell hides legacy activity persisted in stderr fallback', () => {
 
   const html = renderSessionShell(payload);
 
-  assert.doesNotMatch(html, /ACP fallback/);
-  assert.doesNotMatch(html, /开始命令/);
-  assert.match(html, /未返回可展示回复。/);
+  assert.match(html, /ACP fallback/);
+  assert.match(html, /开始命令：rtk find \./);
+  assert.doesNotMatch(html, /未返回可展示回复。/);
 });
 
 test('SessionShell renders a concise active session title with the full title available', () => {

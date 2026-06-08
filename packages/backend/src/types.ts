@@ -18,6 +18,7 @@ export type {
   HistoryRecord,
   HistoryRecordStatus,
   Session,
+  SessionAgentEventChannel,
   SessionAgentEvent,
   SessionAgentRuntime,
   SessionAgentRuntimeStatus,
@@ -1490,3 +1491,15 @@ export type WsClientEvent =
       mode?: import('./session-types.js').SessionMode | 'all';
     }
   | { type: 'message:send'; roomId: string; content: string; mentions?: string[] };
+
+export type {
+  KnowledgeCitation,
+  KnowledgeChunk,
+  KnowledgeChunkType,
+  KnowledgeExtraction,
+  KnowledgeSearchResult,
+  KnowledgeSource,
+  KnowledgeSourceListItem,
+  KnowledgeSourceType,
+  KnowledgeStatus,
+} from './knowledge-types.js';

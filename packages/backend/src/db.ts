@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS provider_config_snapshots (
   detected_base_url TEXT,
   api_key_set INTEGER NOT NULL DEFAULT 0 CHECK (api_key_set IN (0, 1)),
   api_key_preview TEXT,
+  api_key_env_var TEXT,
   reasoning_effort TEXT,
   raw_summary_json TEXT NOT NULL DEFAULT '{}',
   synced_at INTEGER NOT NULL
@@ -137,6 +138,7 @@ CREATE TABLE IF NOT EXISTS provider_profiles (
   model TEXT,
   base_url TEXT,
   api_key TEXT,
+  api_key_env_var TEXT,
   reasoning_effort TEXT,
   run_overrides_enabled INTEGER NOT NULL DEFAULT 1 CHECK (run_overrides_enabled IN (0, 1)),
   is_active INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),
@@ -1624,6 +1626,18 @@ const knowledgeChunkColumns = db.prepare('PRAGMA table_info(knowledge_chunks)').
 const knowledgeChunkColumnNames = new Set(knowledgeChunkColumns.map((column) => column.name));
 if (!knowledgeChunkColumnNames.has('enabled')) {
   db.exec('ALTER TABLE knowledge_chunks ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1))');
+}
+
+const providerSnapshotColumns = db.prepare('PRAGMA table_info(provider_config_snapshots)').all() as { name: string }[];
+const providerSnapshotColumnNames = new Set(providerSnapshotColumns.map((column) => column.name));
+if (!providerSnapshotColumnNames.has('api_key_env_var')) {
+  db.exec('ALTER TABLE provider_config_snapshots ADD COLUMN api_key_env_var TEXT');
+}
+
+const providerProfileColumns = db.prepare('PRAGMA table_info(provider_profiles)').all() as { name: string }[];
+const providerProfileColumnNames = new Set(providerProfileColumns.map((column) => column.name));
+if (!providerProfileColumnNames.has('api_key_env_var')) {
+  db.exec('ALTER TABLE provider_profiles ADD COLUMN api_key_env_var TEXT');
 }
 
 const settingsColumns = db.prepare('PRAGMA table_info(settings)').all() as { name: string }[];

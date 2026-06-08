@@ -6,6 +6,7 @@ import {
   ACP_PROVIDERS,
   defaultProviderConfigDir,
   isAcpProvider,
+  type ProviderApiKeyEnvVar,
   type ManagedProviderProfile,
   type ProviderConfigList,
   type ProviderConfigSource,
@@ -35,6 +36,7 @@ interface SnapshotRow {
   detected_base_url: string | null;
   api_key_set: 0 | 1;
   api_key_preview: string | null;
+  api_key_env_var: string | null;
   reasoning_effort: string | null;
   raw_summary_json: string;
   synced_at: number;
@@ -47,6 +49,7 @@ interface ProfileRow {
   model: string | null;
   base_url: string | null;
   api_key: string | null;
+  api_key_env_var: string | null;
   reasoning_effort: string | null;
   run_overrides_enabled: 0 | 1;
   is_active: 0 | 1;
@@ -160,6 +163,7 @@ export const providerConfigService = {
       detected_model: snapshot.detected_model,
       detected_base_url: snapshot.detected_base_url,
       api_key: null,
+      api_key_env_var: snapshot.api_key_env_var,
       reasoning_effort: snapshot.reasoning_effort,
       raw_summary: parseSummary(snapshot.raw_summary_json),
     }));
@@ -169,6 +173,7 @@ export const providerConfigService = {
       model: discovered.detected_model,
       base_url: discovered.detected_base_url,
       api_key: discovered.api_key,
+      api_key_env_var: discovered.api_key_env_var,
       reasoning_effort: discovered.reasoning_effort,
       run_overrides_enabled: true,
       activate: true,
@@ -182,6 +187,7 @@ export const providerConfigService = {
     model?: string | null;
     base_url?: string | null;
     api_key?: string | null;
+    api_key_env_var?: ProviderApiKeyEnvVar | null;
     reasoning_effort?: string | null;
     run_overrides_enabled?: boolean;
     activate?: boolean;
@@ -194,10 +200,10 @@ export const providerConfigService = {
       if (isActive) deactivateProviderProfiles(input.provider);
       db.prepare(
         `INSERT INTO provider_profiles (
-          id, name, provider, model, base_url, api_key, reasoning_effort,
+          id, name, provider, model, base_url, api_key, api_key_env_var, reasoning_effort,
           run_overrides_enabled, is_active, created_from_snapshot_at, created_at, updated_at
         )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
         requireString(input.name, 'name'),
@@ -205,6 +211,7 @@ export const providerConfigService = {
         normalizedOptionalString(input.model),
         normalizedOptionalString(input.base_url),
         normalizedOptionalString(input.api_key),
+        normalizeApiKeyEnvVar(input.provider, input.api_key_env_var),
         normalizedOptionalString(input.reasoning_effort),
         input.run_overrides_enabled === false ? 0 : 1,
         isActive,
@@ -223,6 +230,7 @@ export const providerConfigService = {
       model?: string | null;
       base_url?: string | null;
       api_key?: string | null;
+      api_key_env_var?: ProviderApiKeyEnvVar | null;
       reasoning_effort?: string | null;
       run_overrides_enabled?: boolean;
       activate?: boolean;
@@ -239,6 +247,7 @@ export const providerConfigService = {
              model = ?,
              base_url = ?,
              api_key = ?,
+             api_key_env_var = ?,
              reasoning_effort = ?,
              run_overrides_enabled = ?,
              is_active = ?,
@@ -249,6 +258,9 @@ export const providerConfigService = {
         patch.model === undefined ? existing.model : normalizedOptionalString(patch.model),
         patch.base_url === undefined ? existing.base_url : normalizedOptionalString(patch.base_url),
         patch.api_key === undefined ? existing.api_key : normalizedOptionalString(patch.api_key),
+        patch.api_key_env_var === undefined
+          ? normalizeApiKeyEnvVar(existing.provider, existing.api_key_env_var)
+          : normalizeApiKeyEnvVar(existing.provider, patch.api_key_env_var),
         patch.reasoning_effort === undefined ? existing.reasoning_effort : normalizedOptionalString(patch.reasoning_effort),
         patch.run_overrides_enabled === undefined ? existing.run_overrides_enabled : patch.run_overrides_enabled ? 1 : 0,
         patch.activate ? 1 : existing.is_active,
@@ -284,6 +296,7 @@ export const providerConfigService = {
         model: normalizedOptionalString(active.model),
         base_url: normalizedOptionalString(active.base_url),
         api_key: normalizedOptionalString(active.api_key),
+        api_key_env_var: normalizeApiKeyEnvVar(provider, active.api_key_env_var),
         reasoning_effort: normalizedOptionalString(active.reasoning_effort),
         run_overrides_enabled: true,
       };
@@ -298,6 +311,7 @@ export const providerConfigService = {
         model: snapshot.detected_model,
         base_url: snapshot.detected_base_url,
         api_key: null,
+        api_key_env_var: snapshot.api_key_env_var,
         reasoning_effort: snapshot.reasoning_effort,
         run_overrides_enabled: false,
       };
@@ -310,6 +324,7 @@ export const providerConfigService = {
       model: null,
       base_url: null,
       api_key: null,
+      api_key_env_var: defaultApiKeyEnvVar(provider),
       reasoning_effort: null,
       run_overrides_enabled: false,
     };
@@ -353,9 +368,9 @@ function upsertSnapshot(input: ProviderSnapshotInput, syncedAt: number): void {
   db.prepare(
     `INSERT INTO provider_config_snapshots (
       provider, config_dir, config_file, detected_model, detected_base_url,
-      api_key_set, api_key_preview, reasoning_effort, raw_summary_json, synced_at
+      api_key_set, api_key_preview, api_key_env_var, reasoning_effort, raw_summary_json, synced_at
     )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(provider) DO UPDATE SET
        config_dir = excluded.config_dir,
        config_file = excluded.config_file,
@@ -363,6 +378,7 @@ function upsertSnapshot(input: ProviderSnapshotInput, syncedAt: number): void {
        detected_base_url = excluded.detected_base_url,
        api_key_set = excluded.api_key_set,
        api_key_preview = excluded.api_key_preview,
+       api_key_env_var = excluded.api_key_env_var,
        reasoning_effort = excluded.reasoning_effort,
        raw_summary_json = excluded.raw_summary_json,
        synced_at = excluded.synced_at`,
@@ -374,6 +390,7 @@ function upsertSnapshot(input: ProviderSnapshotInput, syncedAt: number): void {
     normalizedOptionalString(input.detected_base_url),
     apiKey ? 1 : 0,
     apiKeyPreview(apiKey),
+    normalizeApiKeyEnvVar(input.provider, input.api_key_env_var),
     normalizedOptionalString(input.reasoning_effort),
     JSON.stringify(input.raw_summary),
     syncedAt,
@@ -434,6 +451,7 @@ function toSnapshot(row: SnapshotRow): ProviderDiscoveredSnapshot {
     detected_base_url: row.detected_base_url,
     api_key_set: Boolean(row.api_key_set),
     api_key_preview: row.api_key_preview,
+    api_key_env_var: normalizeApiKeyEnvVar(row.provider, row.api_key_env_var),
     reasoning_effort: row.reasoning_effort,
     raw_summary_json: row.raw_summary_json,
     synced_at: row.synced_at,
@@ -450,6 +468,7 @@ function toSafeProfile(row: ProfileRow): ManagedProviderProfile {
     base_url: row.base_url,
     api_key_set: Boolean(apiKey),
     api_key_preview: apiKeyPreview(apiKey),
+    api_key_env_var: normalizeApiKeyEnvVar(row.provider, row.api_key_env_var),
     reasoning_effort: row.reasoning_effort,
     run_overrides_enabled: Boolean(row.run_overrides_enabled),
     is_active: Boolean(row.is_active),
@@ -467,6 +486,17 @@ function resolveConfigDir(source: ProviderConfigSource): string {
 function apiKeyPreview(apiKey: string | null): string | null {
   if (!apiKey) return null;
   return apiKey.startsWith('sk-') ? `sk-...${apiKey.slice(-4)}` : `...${apiKey.slice(-4)}`;
+}
+
+function normalizeApiKeyEnvVar(provider: AcpBackend, value: string | null | undefined): ProviderApiKeyEnvVar {
+  const normalized = normalizedOptionalString(value);
+  if (provider === 'claudecode' && normalized === 'ANTHROPIC_AUTH_TOKEN') return 'ANTHROPIC_AUTH_TOKEN';
+  if (provider === 'claudecode') return 'ANTHROPIC_API_KEY';
+  return 'OPENAI_API_KEY';
+}
+
+function defaultApiKeyEnvVar(provider: AcpBackend): ProviderApiKeyEnvVar {
+  return normalizeApiKeyEnvVar(provider, null);
 }
 
 function normalizedOptionalString(value: string | null | undefined): string | null {
@@ -504,6 +534,7 @@ function toRuntimeSummary(config: ProviderRuntimeConfig): ProviderRuntimeSummary
     base_url: config.base_url,
     api_key_set: Boolean(normalizedOptionalString(config.api_key)),
     api_key_preview: apiKeyPreview(normalizedOptionalString(config.api_key)),
+    api_key_env_var: config.api_key_env_var,
     reasoning_effort: config.reasoning_effort,
     run_overrides_enabled: config.run_overrides_enabled,
   };

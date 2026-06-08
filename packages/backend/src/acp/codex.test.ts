@@ -53,6 +53,7 @@ test('buildCodexExecInvocation injects managed model and reasoning overrides', (
         model: 'gpt-5.5',
         base_url: 'https://codex.example/v1',
         api_key: 'sk-codex1234',
+        api_key_env_var: 'OPENAI_API_KEY',
         reasoning_effort: 'xhigh',
         run_overrides_enabled: true,
       },

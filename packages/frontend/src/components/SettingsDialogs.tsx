@@ -626,24 +626,24 @@ function SystemSettingsForm({
       setProviderProfileError(t('settings.providerProfileNameRequired'));
       return;
     }
+    const credentialPatch = providerProfileDraft.clearApiKey
+      ? { api_key: null }
+      : providerProfileDraft.apiKey.trim()
+        ? { api_key: providerProfileDraft.apiKey.trim() }
+        : {};
     const input = {
       name: normalizedName,
-      provider: providerProfileDraft.provider,
       model: providerProfileDraft.model.trim() || null,
       base_url: providerProfileDraft.baseUrl.trim() || null,
       reasoning_effort: providerProfileDraft.reasoningEffort.trim() || null,
       run_overrides_enabled: providerProfileDraft.runOverridesEnabled,
       activate,
-      ...(providerProfileDraft.clearApiKey
-        ? { api_key: null }
-        : providerProfileDraft.apiKey.trim()
-          ? { api_key: providerProfileDraft.apiKey.trim() }
-          : {}),
+      ...credentialPatch,
     };
     if (providerProfileMode === 'edit' && selectedProviderProfileId) {
       updateProviderProfileMutation.mutate({ id: selectedProviderProfileId, input });
     } else {
-      createProviderProfileMutation.mutate(input);
+      createProviderProfileMutation.mutate({ provider: providerProfileDraft.provider, ...input });
     }
   };
 
@@ -1357,13 +1357,24 @@ function ProviderProfileSection({
 
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
-              <SegmentedSetting
-                label={t('settings.providerProfileProvider')}
-                ariaLabel={t('settings.providerProfileProvider')}
-                options={PROVIDER_CONFIG_ORDER.map((provider) => ({ value: provider, label: providerLabel(provider) }))}
-                value={draft.provider}
-                onChange={(provider) => onDraftChange({ provider })}
-              />
+              {mode === 'create' ? (
+                <SegmentedSetting
+                  label={t('settings.providerProfileProvider')}
+                  ariaLabel={t('settings.providerProfileProvider')}
+                  options={PROVIDER_CONFIG_ORDER.map((provider) => ({ value: provider, label: providerLabel(provider) }))}
+                  value={draft.provider}
+                  onChange={(provider) => onDraftChange({ provider })}
+                />
+              ) : (
+                <div>
+                  <Label>{t('settings.providerProfileProvider')}</Label>
+                  <div className="mt-1.5 flex min-h-10 items-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3">
+                    <span className="text-[12.5px] font-semibold text-[var(--color-fg)]">
+                      {providerLabel(selectedProfile?.provider ?? draft.provider)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="sm:col-span-2">
               <Label>{t('settings.providerProfileName')}</Label>
@@ -2604,6 +2615,7 @@ function resolveProviderRuntime(configs: ProviderConfigList | null, provider: Ac
     base_url: null,
     api_key_set: false,
     api_key_preview: null,
+    api_key_env_var: provider === 'claudecode' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY',
     reasoning_effort: null,
     run_overrides_enabled: false,
   };

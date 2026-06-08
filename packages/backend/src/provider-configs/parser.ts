@@ -40,6 +40,7 @@ async function discoverCodexConfig(configDir: string): Promise<ProviderSnapshotI
     detected_model: model,
     detected_base_url: baseUrl,
     api_key: apiKey,
+    api_key_env_var: 'OPENAI_API_KEY',
     reasoning_effort: reasoning,
     raw_summary: compactObject({
       model_provider: modelProvider,
@@ -47,6 +48,7 @@ async function discoverCodexConfig(configDir: string): Promise<ProviderSnapshotI
       base_url: baseUrl,
       reasoning_effort: reasoning,
       api_key_set: Boolean(normalizedString(apiKey)),
+      api_key_env_var: 'OPENAI_API_KEY',
     }),
   };
 }
@@ -59,7 +61,10 @@ async function discoverClaudeCodeConfig(configDir: string): Promise<ProviderSnap
     ?? readJsonString(env, 'ANTHROPIC_DEFAULT_SONNET_MODEL')
     ?? readJsonString(env, 'ANTHROPIC_REASONING_MODEL');
   const baseUrl = readJsonString(env, 'ANTHROPIC_BASE_URL');
-  const apiKey = readJsonString(env, 'ANTHROPIC_API_KEY');
+  const anthropicApiKey = readJsonString(env, 'ANTHROPIC_API_KEY');
+  const anthropicAuthToken = readJsonString(env, 'ANTHROPIC_AUTH_TOKEN');
+  const apiKey = anthropicApiKey ?? anthropicAuthToken;
+  const apiKeyEnvVar = anthropicAuthToken && !anthropicApiKey ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY';
   const reasoning = readJsonString(parsed, 'effortLevel') ?? readJsonString(parsed, 'reasoning_effort');
   return {
     provider: 'claudecode',
@@ -68,12 +73,14 @@ async function discoverClaudeCodeConfig(configDir: string): Promise<ProviderSnap
     detected_model: model,
     detected_base_url: baseUrl,
     api_key: apiKey,
+    api_key_env_var: apiKeyEnvVar,
     reasoning_effort: reasoning,
     raw_summary: compactObject({
       model,
       base_url: baseUrl,
       reasoning_effort: reasoning,
       api_key_set: Boolean(normalizedString(apiKey)),
+      api_key_env_var: apiKeyEnvVar,
     }),
   };
 }
@@ -86,8 +93,15 @@ async function discoverOpenCodeConfig(configDir: string): Promise<ProviderSnapsh
   const modelName = model?.includes('/') ? model.split('/').slice(1).join('/') : model;
   const providers = isRecord(parsed.provider) ? parsed.provider : {};
   const providerConfig = providerName && isRecord(providers[providerName]) ? providers[providerName] : {};
-  const baseUrl = readJsonString(providerConfig, 'baseURL') ?? readJsonString(providerConfig, 'baseUrl');
-  const apiKey = readJsonString(providerConfig, 'apiKey') ?? readJsonString(providerConfig, 'api_key');
+  const providerOptions = isRecord(providerConfig.options) ? providerConfig.options : {};
+  const baseUrl = readJsonString(providerConfig, 'baseURL')
+    ?? readJsonString(providerConfig, 'baseUrl')
+    ?? readJsonString(providerOptions, 'baseURL')
+    ?? readJsonString(providerOptions, 'baseUrl');
+  const apiKey = readJsonString(providerConfig, 'apiKey')
+    ?? readJsonString(providerConfig, 'api_key')
+    ?? readJsonString(providerOptions, 'apiKey')
+    ?? readJsonString(providerOptions, 'api_key');
   const models = isRecord(providerConfig.models) ? providerConfig.models : {};
   const modelConfig = modelName && isRecord(models[modelName]) ? models[modelName] : {};
   const options = isRecord(modelConfig.options) ? modelConfig.options : modelConfig;
@@ -99,6 +113,7 @@ async function discoverOpenCodeConfig(configDir: string): Promise<ProviderSnapsh
     detected_model: model,
     detected_base_url: baseUrl,
     api_key: apiKey,
+    api_key_env_var: 'OPENAI_API_KEY',
     reasoning_effort: reasoning,
     raw_summary: compactObject({
       provider: providerName,
@@ -106,6 +121,7 @@ async function discoverOpenCodeConfig(configDir: string): Promise<ProviderSnapsh
       base_url: baseUrl,
       reasoning_effort: reasoning,
       api_key_set: Boolean(normalizedString(apiKey)),
+      api_key_env_var: 'OPENAI_API_KEY',
     }),
   };
 }

@@ -72,6 +72,76 @@ test('syncProviderConfig preserves previous snapshot when parsing fails', async 
   assert.equal(failed.snapshot?.api_key_preview, 'sk-...1234');
 });
 
+test('syncProviderConfig reads OpenCode provider options', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'provider-configs-opencode-options-'));
+  const openCodeDir = join(root, 'opencode');
+  mkdirSync(openCodeDir, { recursive: true });
+  writeFileSync(join(openCodeDir, 'opencode.json'), JSON.stringify({
+    model: 'gwenapi/gpt-5.5',
+    provider: {
+      gwenapi: {
+        models: {
+          'gpt-5.5': {
+            options: { reasoningEffort: 'high' },
+          },
+        },
+        options: {
+          baseURL: 'https://yuzapi.fun',
+          apiKey: 'sk-opencode-options1234',
+        },
+      },
+    },
+  }));
+
+  providerConfigService.updateSource('opencode', {
+    use_default_config_dir: false,
+    config_dir: openCodeDir,
+  });
+  const synced = await providerConfigService.syncProvider('opencode');
+
+  assert.equal(synced.snapshot?.detected_model, 'gwenapi/gpt-5.5');
+  assert.equal(synced.snapshot?.reasoning_effort, 'high');
+  assert.equal(synced.snapshot?.detected_base_url, 'https://yuzapi.fun');
+  assert.equal(synced.snapshot?.api_key_set, true);
+  assert.equal(synced.snapshot?.api_key_preview, 'sk-...1234');
+  assert.equal(JSON.stringify(synced).includes('sk-opencode-options1234'), false);
+});
+
+test('importDiscoveredProfile reads Claude Code auth token without exposing it', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'provider-configs-claude-auth-token-'));
+  const claudeDir = join(root, 'claude');
+  mkdirSync(claudeDir, { recursive: true });
+  writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({
+    env: {
+      ANTHROPIC_MODEL: 'claude-sonnet-4.5',
+      ANTHROPIC_BASE_URL: 'https://anthropic.example',
+      ANTHROPIC_AUTH_TOKEN: 'sk-claude-token1234',
+    },
+  }));
+
+  providerConfigService.updateSource('claudecode', {
+    use_default_config_dir: false,
+    config_dir: claudeDir,
+  });
+  const synced = await providerConfigService.syncProvider('claudecode');
+  assert.equal(synced.snapshot?.api_key_set, true);
+  assert.equal(synced.snapshot?.api_key_preview, 'sk-...1234');
+  assert.equal(JSON.stringify(synced).includes('sk-claude-token1234'), false);
+
+  const imported = await providerConfigService.importProfileFromSnapshot('claudecode');
+  assert.equal(imported?.provider, 'claudecode');
+  assert.equal(imported?.model, 'claude-sonnet-4.5');
+  assert.equal(imported?.base_url, 'https://anthropic.example');
+  assert.equal(imported?.api_key_set, true);
+  assert.equal(imported?.api_key_preview, 'sk-...1234');
+  assert.equal(imported?.api_key_env_var, 'ANTHROPIC_AUTH_TOKEN');
+  assert.equal(JSON.stringify(imported).includes('sk-claude-token1234'), false);
+
+  const runtime = providerConfigService.resolveProviderRuntimeConfig('claudecode');
+  assert.equal(runtime.api_key, 'sk-claude-token1234');
+  assert.equal(runtime.api_key_env_var, 'ANTHROPIC_AUTH_TOKEN');
+});
+
 test('importDiscoveredProfile creates active managed profile only when requested', async () => {
   const root = mkdtempSync(join(tmpdir(), 'provider-configs-import-'));
   const claudeDir = join(root, 'claude');
@@ -153,6 +223,7 @@ test('resolveProviderRuntimeConfig prefers active managed profile over snapshot'
     model: 'snapshot-model',
     base_url: null,
     api_key: null,
+    api_key_env_var: 'OPENAI_API_KEY',
     reasoning_effort: 'medium',
     run_overrides_enabled: false,
   });
@@ -175,6 +246,7 @@ test('resolveProviderRuntimeConfig prefers active managed profile over snapshot'
     model: 'managed-model',
     base_url: 'https://managed.example/v1',
     api_key: 'sk-managed1234',
+    api_key_env_var: 'OPENAI_API_KEY',
     reasoning_effort: 'xhigh',
     run_overrides_enabled: true,
   });

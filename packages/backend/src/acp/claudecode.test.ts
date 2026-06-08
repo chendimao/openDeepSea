@@ -114,6 +114,7 @@ test('buildClaudeCodeRuntimeEnvOverrides maps managed profile to Anthropic env',
       model: 'claude-sonnet-4.5',
       base_url: 'https://claude.example',
       api_key: 'sk-claude1234',
+      api_key_env_var: 'ANTHROPIC_API_KEY',
       reasoning_effort: 'medium',
       run_overrides_enabled: true,
     }),
@@ -121,6 +122,27 @@ test('buildClaudeCodeRuntimeEnvOverrides maps managed profile to Anthropic env',
       ANTHROPIC_MODEL: 'claude-sonnet-4.5',
       ANTHROPIC_BASE_URL: 'https://claude.example',
       ANTHROPIC_API_KEY: 'sk-claude1234',
+    },
+  );
+});
+
+test('buildClaudeCodeRuntimeEnvOverrides preserves imported auth token env var', () => {
+  assert.deepEqual(
+    buildClaudeCodeRuntimeEnvOverrides({
+      provider: 'claudecode',
+      source: 'managed_profile',
+      profile_id: 'profile-claude-token',
+      model: 'claude-sonnet-4.5',
+      base_url: 'https://claude.example',
+      api_key: 'sk-claude-token1234',
+      api_key_env_var: 'ANTHROPIC_AUTH_TOKEN',
+      reasoning_effort: 'medium',
+      run_overrides_enabled: true,
+    }),
+    {
+      ANTHROPIC_MODEL: 'claude-sonnet-4.5',
+      ANTHROPIC_BASE_URL: 'https://claude.example',
+      ANTHROPIC_AUTH_TOKEN: 'sk-claude-token1234',
     },
   );
 });
