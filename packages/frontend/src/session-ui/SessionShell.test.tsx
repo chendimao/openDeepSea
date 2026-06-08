@@ -248,7 +248,7 @@ test('SessionShell includes project tree row pin and drag feedback styles', () =
   assert.match(sessionOsCss, /\.deepsea-project-node:focus-within \.deepsea-project-node__actions/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions:has\(\.deepsea-project-node__icon-button\[aria-expanded="true"\]\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*display:\s*grid/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*grid-template-columns:\s*28px minmax\(0,\s*1fr\)/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*grid-template-columns:\s*20px minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*border:\s*0/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*background:\s*transparent/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-pin\s*\{[^}]*opacity:\s*0/s);
@@ -258,21 +258,22 @@ test('SessionShell includes project tree row pin and drag feedback styles', () =
 });
 
 test('SessionShell project rail CSS keeps the reference-style compact hierarchy', () => {
-  assert.match(sessionOsCss, /\.deepsea-project-tree-heading\s*\{[^}]*margin-bottom:\s*16px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*font-size:\s*18px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*24px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*34px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-node__button\s*\{[^}]*padding:\s*4px 14px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-node__label strong\s*\{[^}]*font-size:\s*17px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*8px 0 10px 30px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*min-height:\s*32px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*5px 10px/s);
+  assert.match(sessionOsCss, /\.deepsea-main\s*\{[^}]*grid-template-columns:\s*292px minmax\(500px,\s*1fr\) 420px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading\s*\{[^}]*margin-bottom:\s*12px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*font-size:\s*16px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*22px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*30px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__button\s*\{[^}]*padding:\s*3px 10px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__label strong\s*\{[^}]*font-size:\s*15px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*4px 0 6px 22px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*min-height:\s*28px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*4px 8px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*box-shadow:\s*none/s);
   assert.doesNotMatch(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row__title\s*\{[^}]*font-size:\s*15px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*min-width:\s*52px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*font-size:\s*14px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__title\s*\{[^}]*font-size:\s*13px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*min-width:\s*46px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*font-size:\s*12px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*text-align:\s*right/s);
 });
 

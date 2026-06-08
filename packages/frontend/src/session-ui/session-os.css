@@ -531,7 +531,7 @@
 }
 .deepsea-main {
   display: grid;
-  grid-template-columns: 320px minmax(500px, 1fr) 420px;
+  grid-template-columns: 292px minmax(500px, 1fr) 420px;
   height: 100%;
   min-height: 0;
   padding-top: 48px;
@@ -660,7 +660,7 @@
 }
 .deepsea-project-tree-actions {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 .deepsea-project-tree-action-row,
@@ -668,11 +668,11 @@
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 34px;
+  min-height: 32px;
   align-items: center;
   border-radius: 8px;
   color: rgba(67, 70, 84, 0.88);
-  padding: 8px 12px;
+  padding: 7px 10px;
   transition: background 160ms, color 160ms;
 }
 .deepsea-project-tree-action-row {
@@ -688,21 +688,21 @@
 }
 .deepsea-project-tree-action-row span,
 .deepsea-project-tree-search-row {
-  gap: 12px;
+  gap: 10px;
 }
 .deepsea-project-tree-action-row span {
   display: inline-flex;
   min-width: 0;
   align-items: center;
   color: var(--deepsea-text);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
 }
 .deepsea-project-tree-action-row svg,
 .deepsea-project-tree-search-row svg {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
 .deepsea-project-tree-action-row kbd {
   border-radius: 4px;
@@ -721,7 +721,7 @@
   background: transparent;
   color: var(--deepsea-text);
   padding: 0;
-  font-size: 13px;
+  font-size: 12px;
 }
 .deepsea-project-tree-search-row input::placeholder {
   color: rgba(67, 70, 84, 0.82);
@@ -729,8 +729,8 @@
 .deepsea-history__list.deepsea-project-tree {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 18px 8px;
+  gap: 3px;
+  padding: 16px 6px;
 }
 .deepsea-project-tree-heading {
   display: flex;
@@ -740,14 +740,14 @@
   gap: 8px;
 }
 .deepsea-project-tree-heading {
-  margin-bottom: 16px;
-  padding: 0 14px;
+  margin-bottom: 12px;
+  padding: 0 12px;
 }
 .deepsea-project-tree-heading > span {
   color: rgba(67, 70, 84, 0.5);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
-  line-height: 24px;
+  line-height: 22px;
 }
 .deepsea-project-tree-heading > div {
   display: inline-flex;
@@ -756,8 +756,8 @@
 }
 .deepsea-project-tree-heading button {
   display: grid;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   place-items: center;
   border: 0;
   background: transparent;
@@ -768,8 +768,8 @@
   color: var(--deepsea-text);
 }
 .deepsea-project-tree-heading svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 .deepsea-project-tree-section {
   position: relative;
@@ -786,7 +786,7 @@
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 34px;
+  min-height: 30px;
   align-items: center;
   justify-content: space-between;
   gap: 4px;
@@ -795,17 +795,17 @@
 }
 .deepsea-project-node__button {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex: 1 1 auto;
   width: auto;
-  min-height: 34px;
+  min-height: 30px;
   min-width: 0;
   align-items: center;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: inherit;
-  padding: 4px 14px;
+  padding: 3px 10px;
   text-align: left;
   transition: background 160ms, color 160ms;
 }
@@ -825,8 +825,8 @@
 }
 .deepsea-project-node__button svg {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   color: rgba(67, 70, 84, 0.66);
 }
 .deepsea-project-node__label {
@@ -840,9 +840,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 500;
-  line-height: 24px;
+  line-height: 20px;
 }
 .deepsea-project-node__actions {
   display: inline-flex;
@@ -862,8 +862,8 @@
 }
 .deepsea-project-node__icon-button {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   place-items: center;
   border: 0;
   border-radius: 6px;
@@ -878,8 +878,8 @@
   color: rgba(67, 70, 84, 0.86);
 }
 .deepsea-project-node__icon-button svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 .deepsea-project-node__menu {
   z-index: 30;
@@ -939,21 +939,21 @@
 .deepsea-project-node__sessions {
   display: grid;
   gap: 0;
-  margin: 8px 0 10px 30px;
+  margin: 4px 0 6px 22px;
   border-left: 0;
   padding-left: 0;
 }
 .deepsea-project-session-empty {
   display: flex;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
   color: rgba(67, 70, 84, 0.42);
-  padding: 0 12px;
-  font-size: 12px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 .deepsea-project-session-row-wrap {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 20px minmax(0, 1fr);
   gap: 0;
   width: 100%;
   min-width: 0;
@@ -962,8 +962,8 @@
 }
 .deepsea-project-session-pin {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 22px;
   place-items: center;
   border: 0;
   border-radius: 6px;
@@ -974,8 +974,8 @@
   transition: opacity 160ms, background 160ms, color 160ms;
 }
 .deepsea-project-session-pin svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 .deepsea-project-session-row-wrap:hover .deepsea-project-session-pin,
 .deepsea-project-session-row-wrap:focus-within .deepsea-project-session-pin,
@@ -989,15 +989,15 @@
 }
 .deepsea-project-session-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: inherit;
-  padding: 5px 10px;
+  padding: 4px 8px;
   text-align: left;
   transition: background 160ms, border-color 160ms;
   white-space: nowrap;
@@ -1015,9 +1015,9 @@
   flex: 1 1 auto;
   overflow: hidden;
   color: rgba(67, 70, 84, 0.82);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 400;
-  line-height: 20px;
+  line-height: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1026,11 +1026,11 @@
 }
 .deepsea-project-session-row__time {
   flex: 0 0 auto;
-  min-width: 52px;
+  min-width: 46px;
   color: rgba(67, 70, 84, 0.4);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 400;
-  line-height: 18px;
+  line-height: 16px;
   text-align: right;
   white-space: nowrap;
 }
