@@ -2,7 +2,11 @@ import { agentRunRepo } from '../repos/agent-runs.js';
 import { workflowIncidentRepo } from '../repos/workflow-incidents.js';
 import { workflowOrchestrator } from './orchestrator.js';
 import { decideRecovery, type WorkflowRecoveryDecision, type WorkflowRecoveryInput } from './recovery-supervisor.js';
-import { executeRecoveryDecision, type WorkflowRecoveryExecutionResult } from './recovery-executor.js';
+import {
+  executeRecoveryDecision,
+  type WorkflowRecoveryExecutionResult,
+  type WorkflowRetryStepHandler,
+} from './recovery-executor.js';
 import { scanWorkflowIncidents, type WorkflowMonitorScanOptions } from './workflow-monitor.js';
 import { projectRepo } from '../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../repos/rooms.js';
@@ -18,6 +22,7 @@ export interface WorkflowMonitorServiceOptions extends WorkflowMonitorScanOption
   disableModel?: boolean;
   scanner?: (options: WorkflowMonitorScanOptions) => WorkflowIncident[];
   recoveryHandler?: (incident: WorkflowIncident) => Promise<WorkflowRecoveryExecutionResult>;
+  retryWorkflowStep?: WorkflowRetryStepHandler;
 }
 
 export interface WorkflowMonitorService {
@@ -81,7 +86,11 @@ export async function runWorkflowMonitorOnce(options: WorkflowMonitorServiceOpti
     }
     const decision = await decideRecovery(input, { disableModel: options.disableModel });
     try {
-      await executeRecoveryDecision({ incident: latest, decision });
+      await executeRecoveryDecision({
+        incident: latest,
+        decision,
+        retryWorkflowStep: options.retryWorkflowStep,
+      });
     } catch (err) {
       markRecoveryExecutionFailure(latest, decision, err);
     }

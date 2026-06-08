@@ -6,6 +6,7 @@ import { getAdapter } from './acp/index.js';
 import { getLocalAccessToken, isTrustedOrigin } from './local-access.js';
 import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
+import { imageGenerationJobRepo } from './image-generation/jobs.js';
 import {
   ensureMessageUploadDir,
   ensureProjectFileUploadRoot,
@@ -19,6 +20,7 @@ import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { runSkillsShStartupUpdateCheck } from './skills/update-service.js';
 import { startProviderSuperpowersStartupInstall } from './provider-superpowers.js';
 import { handleSessionSocketEvent } from './session-socket-controller.js';
+import { buildActiveSessionSummaries } from './session-active-view-model.js';
 import { validateWebSocketAccess } from './websocket-access.js';
 import { wsHub } from './ws-hub.js';
 import type { AgentRun, WsClientEvent } from './types.js';
@@ -80,6 +82,15 @@ wss.on('connection', (socket) => {
     }
     if (event.type === 'subscribe') wsHub.subscribe(event.roomId, socket);
     else if (event.type === 'unsubscribe') wsHub.unsubscribe(event.roomId, socket);
+    else if (event.type === 'active_sessions:subscribe') {
+      wsHub.subscribeActiveSessions(socket);
+      if (socket.readyState === socket.OPEN) {
+        socket.send(JSON.stringify({ type: 'active_sessions:snapshot', sessions: buildActiveSessionSummaries() }));
+      }
+    }
+    else if (event.type === 'active_sessions:unsubscribe') wsHub.unsubscribeActiveSessions(socket);
+    else if (event.type === 'project:subscribe') wsHub.subscribeProject(event.projectId, socket);
+    else if (event.type === 'project:unsubscribe') wsHub.unsubscribeProject(event.projectId, socket);
     else if (event.type === 'session:subscribe') wsHub.subscribeSession(event.sessionId, socket);
     else if (event.type === 'session:unsubscribe') wsHub.unsubscribeSession(event.sessionId, socket);
     else if (handleSessionSocketEvent(socket, event)) return;
@@ -92,6 +103,7 @@ httpServer.listen(PORT, () => {
   if (!configuredLocalAccessToken) {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
+  recoverImageGenerationJobsAfterStartup();
   void startWorkflowMonitoringAfterStartupRecovery();
   void runSkillsShStartupUpdateCheck();
   if (process.env.OPENDEEPSEA_PROVIDER_SUPERPOWERS_AUTO_INSTALL !== '0') {
@@ -100,6 +112,17 @@ httpServer.listen(PORT, () => {
     });
   }
 });
+
+function recoverImageGenerationJobsAfterStartup(): void {
+  try {
+    const recoveredJobs = imageGenerationJobRepo.recoverInterruptedJobs();
+    if (recoveredJobs > 0) {
+      console.warn(`[image-generation] Marked ${recoveredJobs} interrupted job(s) as canceled`);
+    }
+  } catch (err) {
+    console.warn(`[image-generation] startup recovery failed: ${(err as Error).message}`);
+  }
+}
 
 async function buildInterruptedRunReason(run: AgentRun): Promise<string> {
   const base = 'Backend restarted before agent run completed';

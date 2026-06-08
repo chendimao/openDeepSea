@@ -27,3 +27,9 @@ test('session markdown preview constrains inline image previews', () => {
   assert.match(css, /\.deepsea-message-body \.markdown-preview img[\s\S]*?max-height:\s*min\(360px, 56vh\)/s);
   assert.match(css, /\.deepsea-run-log-body \.markdown-preview img[\s\S]*?object-fit:\s*contain/s);
 });
+
+test('session transcript reserves composer-height aware scroll padding', () => {
+  assert.match(css, /--deepsea-composer-space:\s*160px/);
+  assert.match(css, /\.deepsea-transcript__scroll[\s\S]*?padding:\s*16px 16px var\(--deepsea-composer-space\)/s);
+  assert.match(css, /\.deepsea-transcript__scroll[\s\S]*?scroll-padding-bottom:\s*var\(--deepsea-composer-space\)/s);
+});

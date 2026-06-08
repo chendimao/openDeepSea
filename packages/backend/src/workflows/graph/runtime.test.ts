@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-runtime-')), 'test.db');
 
@@ -34,6 +35,15 @@ setVerificationCommandRunnerForTests(async (command) => ({
   stderr: '',
 }));
 test.after(() => setVerificationCommandRunnerForTests(null));
+
+const lowConfidenceSupervisor = async () => ({
+  mode: 'use_default_workflow' as const,
+  workflowDefinitionId: null,
+  confidence: 0.1,
+  reason: 'Use default Superpowers workflow in tests.',
+  assignments: [],
+  fallbackMode: 'default_workflow' as const,
+});
 
 test('enqueueGraphWorkflow defers graph node execution until after the current turn', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-enqueue-${Date.now()}`);
@@ -70,8 +80,8 @@ test('enqueueGraphWorkflow defers graph node execution until after the current t
   });
 
   assert.equal(workflowRepo.listSteps(run.id).length, 0);
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'context'));
+  await waitForGraphRuntime(() => workflowRepo.listSteps(run.id).length > 0);
+  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'planning'));
 });
 
 test('enqueueGraphWorkflow retries background errors with configured backoff delays', async () => {
@@ -192,6 +202,8 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   });
 
   const run = await startGraphWorkflow(task.id, {
+    supervisor: lowConfidenceSupervisor,
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
     planner: async () => ({
       goal: 'Plan with graph',
       summary: 'Graph shell planning',
@@ -237,6 +249,8 @@ test('planning node passes planner and workflow skill context to graph planner',
   });
   let capturedSkillContext = '';
   const run = await startGraphWorkflow(task.id, {
+    supervisor: lowConfidenceSupervisor,
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
     buildSkillContext: async (input) => {
       assert.deepEqual(input.runtimeScopes, ['planner', 'workflow']);
       assert.equal(input.projectId, project.id);
@@ -273,6 +287,7 @@ test('Superpowers run records planning gate steps before dispatch', async () => 
   });
 
   const run = await startGraphWorkflow(task.id, {
+    supervisor: lowConfidenceSupervisor,
     planner: async () => ({
       ...createApprovalPlan(task.title),
       tasks: [{
@@ -947,6 +962,7 @@ test('startGraphWorkflow always records Superpowers definition and runtime profi
       };
     },
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as {
     builtinKey?: string | null;
@@ -1027,6 +1043,7 @@ test('startGraphWorkflow passes workflow skill context to supervisor model', asy
       };
     },
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
 
   assert.notEqual(run.workflow_definition_id, workflow.id);
@@ -1107,6 +1124,7 @@ test('startGraphWorkflow ignores high-confidence supervisor workflow choice for 
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
@@ -1140,6 +1158,7 @@ test('startGraphWorkflow keeps Superpowers workflow on low confidence, invisible
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(lowConfidenceTask.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   assert.notEqual(lowConfidenceRun.workflow_definition_id, defaultDefinition.id);
   assertSuperpowersWorkflowRun(lowConfidenceRun);
@@ -1159,6 +1178,7 @@ test('startGraphWorkflow keeps Superpowers workflow on low confidence, invisible
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(invisibleTask.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   assert.notEqual(invisibleRun.workflow_definition_id, defaultDefinition.id);
   assertSuperpowersWorkflowRun(invisibleRun);
@@ -1173,6 +1193,7 @@ test('startGraphWorkflow keeps Superpowers workflow on low confidence, invisible
       throw new Error('supervisor unavailable');
     },
     planner: async () => createApprovalPlan(failedTask.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   assert.notEqual(failedRun.workflow_definition_id, defaultDefinition.id);
   assertSuperpowersWorkflowRun(failedRun);
@@ -1202,6 +1223,7 @@ test('startGraphWorkflow keeps Superpowers workflow for analysis-only tasks', as
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
@@ -1234,6 +1256,7 @@ test('startGraphWorkflow keeps Superpowers workflow even for analysis-only tasks
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
@@ -1403,7 +1426,9 @@ test('graph workflow invites required built-in agents when the room only has pla
     agents.find((agent) => agent.agent_id === 'backend-executor')?.id,
   );
   assert.deepEqual(
-    calls.map((call) => `${call.stage}:${call.agentId}`),
+    calls
+      .filter((call) => call.stage !== 'planning')
+      .map((call) => `${call.stage}:${call.agentId}`),
     [
       'implementation:frontend-executor',
       'implementation:backend-executor',
@@ -1432,7 +1457,7 @@ test('graph workflow pre-invites domain executors when planner gives broad proje
     title: '细化文件管理功能',
   });
   const calls: Array<{ agentId: string; stage: WorkflowStage | null | undefined }> = [];
-  const broadProjectScope = process.cwd();
+  const broadProjectScope = join(currentProjectRoot(), '.');
 
   await startGraphWorkflow(task.id, {
     planner: async () => ({
@@ -1990,6 +2015,8 @@ test('startGraphWorkflow blocks workflow and fails running graph step when plann
 
   await assert.rejects(
     () => startGraphWorkflow(task.id, {
+      supervisor: lowConfidenceSupervisor,
+      runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
       planner: async () => {
         throw new Error('planner unavailable');
       },
@@ -3249,6 +3276,21 @@ function outputForStage(
   stage: WorkflowStage | null | undefined,
   options: { includeTddEvidence?: boolean; codeReviewOutput?: string } = {},
 ): string {
+  if (stage === 'planning') {
+    return JSON.stringify({
+      superpowers: {
+        designDocPath: 'docs/superpowers/specs/runtime-test-design.md',
+        designReviewVerdict: 'approved',
+        implementationPlanPath: 'docs/superpowers/plans/runtime-test-plan.md',
+        planReviewVerdict: 'approved',
+        worktree: {
+          path: '/tmp/openclaw-room-graph-runtime',
+          branchName: 'runtime-test',
+          baseRef: 'test-fixture',
+        },
+      },
+    });
+  }
   if (stage === 'code_review') {
     if (options.codeReviewOutput) return options.codeReviewOutput;
     return JSON.stringify({
@@ -3278,4 +3320,8 @@ function outputForStage(
       { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
     ],
   });
+}
+
+function currentProjectRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), '../../../../../');
 }

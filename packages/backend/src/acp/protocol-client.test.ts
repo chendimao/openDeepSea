@@ -94,7 +94,7 @@ test('invokeProtocolSession streams ACP session updates as raw protocol events a
   ]);
 });
 
-test('invokeProtocolSession starts a new session when agent cannot resume saved session id', async () => {
+test('invokeProtocolSession returns fallback-safe result when agent cannot resume saved session id', async () => {
   const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
   const sessions: string[] = [];
 
@@ -115,13 +115,47 @@ test('invokeProtocolSession starts a new session when agent cannot resume saved 
     onSession: (sessionId) => sessions.push(sessionId),
   });
 
-  assert.equal(result.exitCode, 0);
-  assert.equal(result.sessionId, 'fake-session-1');
-  assert.deepEqual(sessions, ['fake-session-1']);
-  assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), 'fake answer');
+  assert.equal(result.exitCode, -1);
+  assert.equal(result.sessionId, 'old-session-id');
+  assert.equal(result.stderr, 'ACP resumeSession unavailable');
+  assert.equal(result.resumeUnavailable, true);
+  assert.equal(result.fallbackSafe, true);
+  assert.deepEqual(sessions, []);
+  assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), '');
 });
 
-test('invokeProtocolSession prepends handoff only after resume-unavailable new session', async () => {
+test('invokeProtocolSession marks pre-prompt resumeSession failure as fallback-safe', async () => {
+  const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_CAN_RESUME: '1',
+        OPENCLAW_FAKE_ACP_FAIL_RESUME: '1',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: 'old-session-id',
+    prompt: 'hello',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, -1);
+  assert.equal(result.sessionId, 'old-session-id');
+  assert.equal(result.fallbackSafe, true);
+  assert.equal(result.retrySafe, false);
+  assert.match(result.stderr, /fake resumeSession failure/);
+  assert.equal(chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join(''), '');
+});
+
+test('invokeProtocolSession prepends handoff for forced new session handoff', async () => {
   const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
 
   const result = await invokeProtocolSession({
@@ -138,17 +172,17 @@ test('invokeProtocolSession prepends handoff only after resume-unavailable new s
       },
     },
     projectPath: process.cwd(),
-    sessionId: 'old-session-id',
+    sessionId: null,
     prompt: 'current prompt',
-    sessionHandoff: 'resume unavailable handoff',
-    sessionHandoffMode: 'new_session',
+    sessionHandoff: 'forced handoff context',
+    sessionHandoffMode: 'force',
     onChunk: (chunk) => chunks.push(chunk),
   });
 
   assert.equal(result.exitCode, 0);
   assert.equal(result.sessionId, 'fake-session-1');
   const answer = chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join('');
-  assert.match(answer, /resume unavailable handoff/);
+  assert.match(answer, /forced handoff context/);
   assert.match(answer, /当前请求：\s*current prompt/);
 });
 
@@ -575,7 +609,7 @@ test('invokeProtocolSession completes after answer when ACP shutdown hangs', asy
   try {
     const result = await Promise.race([
       invocation,
-      delay(3_500).then(() => {
+      delay(7_000).then(() => {
         throw new Error('invokeProtocolSession did not resolve after answer text');
       }),
     ]);

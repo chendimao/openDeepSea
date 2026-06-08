@@ -767,8 +767,8 @@ async function resumeGraphWorkflowFromState(
     : null;
   const routeDefinition = runtimeGraph?.executableDefinition
     ?? snapshot?.definition
-    ?? workflowDefinitionRepo.ensureBuiltInDefinitions().definition;
-  const routePlan = compileRoutePlan(routeDefinition, Boolean(runtimeGraph));
+    ?? null;
+  const routePlan = routeDefinition ? compileRoutePlan(routeDefinition, Boolean(runtimeGraph)) : undefined;
   let nextState = state;
   let nodeToRun = nextNodeAfter(null, nextState, routePlan);
 

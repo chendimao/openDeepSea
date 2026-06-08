@@ -25,7 +25,17 @@ export function applySessionWorkspaceEvent(
     };
   }
   if (event.type === 'session_message:new') {
-    if (payload.activeSession.messages.some((message) => message.id === event.message.id)) return payload;
+    if (payload.activeSession.messages.some((message) => message.id === event.message.id)) {
+      return {
+        ...payload,
+        activeSession: {
+          ...payload.activeSession,
+          messages: payload.activeSession.messages.map((message) =>
+            message.id === event.message.id ? event.message : message
+          ),
+        },
+      };
+    }
     return {
       ...payload,
       activeSession: {
@@ -74,6 +84,17 @@ export function applySessionWorkspaceEvent(
       },
     };
   }
+  if (event.type === 'session_inspector:snapshot') {
+    return {
+      ...payload,
+      toolRows: event.toolRows,
+      diffRows: event.diffRows,
+      activeSession: {
+        ...payload.activeSession,
+        planItems: event.planItems,
+      },
+    };
+  }
   return payload;
 }
 
@@ -88,6 +109,7 @@ function appendRunChunk(run: SessionRun, event: Extract<WsServerEvent, { type: '
     return { ...run, stdout: `${run.stdout}${event.chunk}`, updated_at: Date.now() };
   }
   if (
+    event.channel === 'activity' ||
     event.channel === 'thinking' ||
     event.channel === 'tool' ||
     event.channel === 'command' ||

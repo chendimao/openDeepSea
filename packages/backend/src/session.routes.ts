@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { fileRepo } from './repos/files.js';
 import { projectRepo } from './repos/projects.js';
 import {
   sessionAgentEventRepo,
@@ -21,20 +22,22 @@ import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
 import { buildContextManifestDraft } from './session-context.js';
 import { buildStatusSnapshot } from './session-status.js';
+import { broadcastActiveSessionRemove, broadcastActiveSessionUpsert } from './session-active-broadcast.js';
+import { buildActiveSessionSummaries } from './session-active-view-model.js';
 import {
   buildSessionBottomStatus,
-  buildSessionDiffRows,
+  buildSessionInspectorSnapshot,
   buildSessionProjectSwitcher,
-  buildSessionToolRows,
-  resolveSessionWorkspacePath,
 } from './session-workspace-view-model.js';
 import type {
   HistoryRecord,
   Project,
+  ProjectFile,
   Session,
   SessionCompaction,
   SessionContextManifest,
   SessionDetail,
+  SessionMessage,
   SessionMode,
   SessionWorkspacePayload,
   StatusSnapshot,
@@ -44,6 +47,7 @@ export const sessionRouter = Router();
 
 const sessionModeSchema = z.enum(['ask', 'plan', 'code', 'debug', 'review']);
 
+sessionRouter.get('/active-sessions', listActiveSessions);
 sessionRouter.get('/projects/:projectId/sessions', listProjectSessions);
 sessionRouter.post('/projects/:projectId/sessions', createProjectSession);
 sessionRouter.get('/sessions/:sessionId', getSessionDetail);
@@ -51,6 +55,10 @@ sessionRouter.patch('/sessions/:sessionId', updateSession);
 sessionRouter.get('/history-records/:historyRecordId', getHistoryRecord);
 sessionRouter.post('/history-records/:historyRecordId/resume-brief/regenerate', regenerateResumeBrief);
 sessionRouter.get('/history-records/:historyRecordId/export', exportHistoryRecord);
+
+function listActiveSessions(_req: unknown, res: Response): void {
+  res.json(buildActiveSessionSummaries());
+}
 
 function listProjectSessions(req: { params: { projectId: string }; query: Record<string, unknown> }, res: Response): void {
   const project = projectRepo.get(req.params.projectId);
@@ -87,6 +95,7 @@ function createProjectSession(req: { params: { projectId: string }; body: unknow
     model: parsed.data.model,
     workspace_path: project.path,
   });
+  broadcastActiveSessionUpsert(session);
   res.status(201).json(session);
 }
 
@@ -129,7 +138,12 @@ function updateSession(req: { params: { sessionId: string }; body: unknown }, re
     res.status(400).json({ error: parsed.error.flatten() });
     return;
   }
-  res.json(sessionRepo.update(session.id, parsed.data));
+  const updated = sessionRepo.update(session.id, parsed.data);
+  if (updated) {
+    if (updated.closed_at !== null) broadcastActiveSessionRemove(updated.id);
+    else broadcastActiveSessionUpsert(updated);
+  }
+  res.json(updated);
 }
 
 function getHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
@@ -172,9 +186,14 @@ function exportHistoryRecord(req: { params: { historyRecordId: string } }, res: 
 export function buildWorkspacePayload(project: Project, activeSession: Session): SessionWorkspacePayload {
   const detail = buildSessionDetail(activeSession);
   const evidence = detail.evidence.slice(-100);
+  const inspector = buildSessionInspectorSnapshot(activeSession.id, detail.evidence, detail.agentEvents);
   return {
     project,
-    activeSession: detail,
+    activeSession: {
+      ...detail,
+      planItems: inspector.planItems,
+    },
+    activeSessions: buildActiveSessionSummaries(),
     historyRecords: historyRecordRepo.listByProject(project.id),
     status: buildSessionStatus(activeSession),
     context: sessionContextRepo.getLatestBySession(activeSession.id) ?? null,
@@ -182,8 +201,8 @@ export function buildWorkspacePayload(project: Project, activeSession: Session):
     projectSwitcher: buildSessionProjectSwitcher(project.id),
     bottomStatus: buildSessionBottomStatus(detail.runs, detail.evidence),
     contract: sessionContractRepo.getOrCreate(activeSession),
-    toolRows: buildSessionToolRows(evidence),
-    diffRows: buildSessionDiffRows(resolveSessionWorkspacePath(activeSession, project)),
+    toolRows: inspector.toolRows,
+    diffRows: inspector.diffRows,
     historyFilters: { q: '', status: 'all', mode: 'all' },
   };
 }
@@ -192,7 +211,9 @@ function buildSessionDetail(session: Session): SessionDetail {
   const runs = sessionRunRepo.listBySession(session.id);
   return {
     session,
-    messages: sessionMessageRepo.listBySession(session.id),
+    messages: sessionMessageRepo.listBySession(session.id).map((message) =>
+      backfillSessionMessageAttachments(session.project_id, message)
+    ),
     runs,
     agentEvents: runs.flatMap((run) => sessionAgentEventRepo.listByRun(run.id)),
     planItems: sessionPlanItemRepo.listBySession(session.id),
@@ -200,6 +221,61 @@ function buildSessionDetail(session: Session): SessionDetail {
     checkpoints: sessionCheckpointRepo.listBySession(session.id),
     evidence: sessionEvidenceRepo.listBySession(session.id),
   };
+}
+
+function backfillSessionMessageAttachments(projectId: string, message: SessionMessage): SessionMessage {
+  const metadata = parseMessageMetadataRecord(message.metadata);
+  const libraryFileRefs = Array.isArray(metadata.library_file_refs)
+    ? metadata.library_file_refs.filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0)
+    : [];
+  if (libraryFileRefs.length === 0) return message;
+
+  const existingAttachments = Array.isArray(metadata.attachments) ? metadata.attachments : [];
+  const existingFileIds = new Set(existingAttachments
+    .map((attachment) => isRecord(attachment) && typeof attachment.fileId === 'string' ? attachment.fileId : null)
+    .filter((fileId): fileId is string => fileId !== null));
+  const backfilledAttachments = libraryFileRefs
+    .filter((ref) => !existingFileIds.has(ref))
+    .map((ref) => fileRepo.get(ref))
+    .filter((file): file is ProjectFile => isBackfillableUploadedFile(projectId, file))
+    .map((file) => ({
+      id: file.id,
+      fileId: file.id,
+      name: file.original_name,
+      mimeType: file.mime_type,
+      size: file.size,
+      url: file.url,
+      isImage: file.mime_type.startsWith('image/'),
+      deleted: file.deleted_at !== null,
+    }));
+  if (backfilledAttachments.length === 0) return message;
+  const nextMetadata = JSON.stringify({
+    ...metadata,
+    attachments: [...existingAttachments, ...backfilledAttachments],
+  });
+  const updated = sessionMessageRepo.updateMetadata(message.id, nextMetadata);
+  return updated ?? {
+    ...message,
+    metadata: nextMetadata,
+  };
+}
+
+function isBackfillableUploadedFile(projectId: string, file: ProjectFile | undefined): file is ProjectFile {
+  return Boolean(file && file.project_id === projectId && file.source_type === 'uploaded_file');
+}
+
+function parseMessageMetadataRecord(metadata: string | null): Record<string, unknown> {
+  if (!metadata) return {};
+  try {
+    const parsed = JSON.parse(metadata) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 export function buildSessionStatus(session: Session): StatusSnapshot {

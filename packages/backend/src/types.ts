@@ -1,3 +1,5 @@
+import type { ImageGenerationWsEvent } from './image-generation/types.js';
+
 export interface Project {
   id: string;
   name: string;
@@ -14,6 +16,7 @@ export interface Project {
 export type MessageRoutingMode = 'mentions_only' | 'fallback_reply';
 export type SettingsScope = 'system' | 'project' | 'room';
 export type {
+  ActiveSessionSummary,
   HistoryRecord,
   HistoryRecordStatus,
   Session,
@@ -1303,6 +1306,7 @@ export interface CliSessionSummary {
 }
 
 export type WsServerEvent =
+  | ImageGenerationWsEvent
   | { type: 'message:new'; roomId: string; message: Message }
   | { type: 'task_event:new'; roomId: string; event: TaskEvent }
   | { type: 'task:activated'; roomId: string; taskId: string }
@@ -1329,6 +1333,9 @@ export type WsServerEvent =
   | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
+  | { type: 'active_sessions:snapshot'; sessions: import('./session-types.js').ActiveSessionSummary[] }
+  | { type: 'active_session:upsert'; session: import('./session-types.js').ActiveSessionSummary }
+  | { type: 'active_session:remove'; sessionId: string }
   | {
       type: 'session_workspace:snapshot';
       projectId: string;
@@ -1359,11 +1366,18 @@ export type WsServerEvent =
       runId: string;
       seq: number;
       chunk: string;
-      channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      channel: import('./session-types.js').SessionAgentEventChannel;
       done: boolean;
       agentEvent?: import('./session-types.js').SessionAgentEvent;
     }
   | { type: 'session_evidence:new'; sessionId: string; event: import('./session-types.js').SessionEvidenceEvent }
+  | {
+      type: 'session_inspector:snapshot';
+      sessionId: string;
+      planItems: import('./session-types.js').SessionPlanItem[];
+      toolRows: import('./session-types.js').SessionToolRow[];
+      diffRows: import('./session-types.js').SessionDiffRow[];
+    }
   | { type: 'history_record:new'; projectId: string; record: import('./session-types.js').HistoryRecord }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:created'; task: Task }
@@ -1372,6 +1386,10 @@ export type WsServerEvent =
 export type WsClientEvent =
   | { type: 'subscribe'; roomId: string }
   | { type: 'unsubscribe'; roomId: string }
+  | { type: 'active_sessions:subscribe' }
+  | { type: 'active_sessions:unsubscribe' }
+  | { type: 'project:subscribe'; projectId: string }
+  | { type: 'project:unsubscribe'; projectId: string }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }
@@ -1381,6 +1399,8 @@ export type WsClientEvent =
       content: string;
       agentId?: string;
       mode?: import('./session-types.js').SessionMode;
+      workspaceFileRefs?: string[];
+      libraryFileRefs?: string[];
     }
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }

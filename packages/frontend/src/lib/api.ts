@@ -27,6 +27,19 @@ import type {
   RoomCrewTemplate,
   SettingsResolution,
   HistoryRecord,
+  ImageGenerationStatus,
+  ImageJobGroup,
+  ImageJobGroupBy,
+  ImageJobCreateInput,
+  ImageJobCreateResponse,
+  ImageJobDetailResponse,
+  ImageJobListFilters,
+  ImageJobListResponse,
+  ImagePromptPreset,
+  ImagePromptPresetInput,
+  ImageProviderModelsResponse,
+  ImageProviderProfile,
+  ImageProviderProfileInput,
   Session,
   SessionDetail,
   SessionMode,
@@ -133,6 +146,14 @@ export async function workspaceRequest<T>(path: string, init: RequestInit = {}):
 
 function isQueryFunctionContextLike(value: WorkflowDefinitionListFilters | QueryFunctionContextLike): value is QueryFunctionContextLike {
   return typeof value === 'object' && value !== null && 'queryKey' in value;
+}
+
+function buildImageJobQuery(filters: ImageJobListFilters): string {
+  const params = new URLSearchParams();
+  if (filters.sessionId) params.set('sessionId', filters.sessionId);
+  if (filters.roomId) params.set('roomId', filters.roomId);
+  if (filters.status) params.set('status', filters.status);
+  return params.toString();
 }
 
 export function resourceListItemToProjectFile(resource: ResourceListItem): ProjectFile {
@@ -484,6 +505,80 @@ export const api = {
   createProject: (input: { name: string; path: string; description?: string }) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
   getProject: (id: string) => request<Project>(`/projects/${id}`),
+  listImageProviderProfiles: (projectId: string) =>
+    request<ImageProviderProfile[]>(`/projects/${projectId}/image-provider-profiles`),
+  createImageProviderProfile: (projectId: string, input: ImageProviderProfileInput) =>
+    request<ImageProviderProfile>(`/projects/${projectId}/image-provider-profiles`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  updateImageProviderProfile: (projectId: string, profileId: string, input: ImageProviderProfileInput) =>
+    request<ImageProviderProfile>(`/projects/${projectId}/image-provider-profiles/${profileId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  deleteImageProviderProfile: (projectId: string, profileId: string) =>
+    request<ImageProviderProfile>(`/projects/${projectId}/image-provider-profiles/${profileId}`, {
+      method: 'DELETE',
+    }),
+  activateImageProviderProfile: (projectId: string, profileId: string) =>
+    request<ImageProviderProfile>(`/projects/${projectId}/image-provider-profiles/${profileId}/activate`, {
+      method: 'POST',
+    }),
+  listImageProviderModels: (projectId: string, profileId: string) =>
+    request<ImageProviderModelsResponse>(`/projects/${projectId}/image-provider-profiles/models`, {
+      method: 'POST',
+      body: JSON.stringify({ profile_id: profileId }),
+    }),
+  listImageJobs: (projectId: string, filters: ImageJobListFilters = {}) => {
+    const query = buildImageJobQuery(filters);
+    return request<ImageJobListResponse>(`/projects/${projectId}/image-jobs${query ? `?${query}` : ''}`);
+  },
+  listImageJobGroups: (projectId: string, groupBy: ImageJobGroupBy = 'prompt') =>
+    request<ImageJobGroup[]>(`/projects/${projectId}/image-jobs/groups?groupBy=${encodeURIComponent(groupBy)}`),
+  getImageJob: (projectId: string, jobId: string) =>
+    request<ImageJobDetailResponse>(`/projects/${projectId}/image-jobs/${jobId}`),
+  createImageJob: (projectId: string, input: ImageJobCreateInput) =>
+    request<ImageJobCreateResponse>(`/projects/${projectId}/image-jobs`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  cancelImageJob: (projectId: string, jobId: string) =>
+    request<{ job: ImageJobDetailResponse['job'] }>(`/projects/${projectId}/image-jobs/${jobId}/cancel`, {
+      method: 'POST',
+    }),
+  retryImageJob: (projectId: string, jobId: string) =>
+    request<{ job: ImageJobDetailResponse['job'] }>(`/projects/${projectId}/image-jobs/${jobId}/retry`, {
+      method: 'POST',
+    }),
+  downloadImageOutputManifest: (projectId: string, outputIds: string[]) =>
+    request<{ outputs: Array<{ id: string; name: string; url: string; file_id: string }> }>(
+      `/projects/${projectId}/image-outputs/batch/download-manifest`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ output_ids: outputIds }),
+      },
+    ),
+  deleteImageOutputs: (projectId: string, outputIds: string[]) =>
+    request<{ deleted_output_ids: string[] }>(`/projects/${projectId}/image-outputs/batch/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ output_ids: outputIds }),
+    }),
+  listImagePromptPresets: (projectId: string, filters: { q?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (filters.q) params.set('q', filters.q);
+    const query = params.toString();
+    return request<ImagePromptPreset[]>(`/projects/${projectId}/image-prompt-presets${query ? `?${query}` : ''}`);
+  },
+  createImagePromptPreset: (projectId: string, input: ImagePromptPresetInput) =>
+    request<ImagePromptPreset>(`/projects/${projectId}/image-prompt-presets`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  deleteImagePromptPreset: (projectId: string, presetId: string) =>
+    request<ImagePromptPreset>(`/projects/${projectId}/image-prompt-presets/${presetId}`, {
+      method: 'DELETE',
+    }),
   listSessions: (projectId: string, input: { includeArchived?: boolean } = {}) => {
     const params = new URLSearchParams();
     if (input.includeArchived) params.set('includeArchived', '1');

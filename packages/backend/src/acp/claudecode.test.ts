@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
+  claudeCodeAdapter,
   buildClaudeCodeArgs,
   buildClaudeCodeInvocation,
   buildClaudeCodePrompt,
@@ -8,6 +13,22 @@ import {
   filterStderr,
   normalizeStdoutChunk,
 } from './claudecode.js';
+
+const currentDir = fileURLToPath(new URL('.', import.meta.url));
+const tsxLoaderPath = join(currentDir, '../../../../node_modules/tsx/dist/loader.mjs');
+const fakeCliPath = join(currentDir, 'fake-cli-runner.ts');
+
+function createFakeCliBin(commandName: string): string {
+  const binDir = mkdtempSync(join(tmpdir(), `openclaw-${commandName}-bin-`));
+  const commandPath = join(binDir, commandName);
+  writeFileSync(
+    commandPath,
+    `#!/bin/sh\nexec "${process.execPath}" --import "${tsxLoaderPath}" "${fakeCliPath}" "$@"\n`,
+    'utf-8',
+  );
+  chmodSync(commandPath, 0o755);
+  return binDir;
+}
 
 test('buildClaudeCodeArgs maps bypass to bypassPermissions', () => {
   assert.deepEqual(
@@ -95,6 +116,107 @@ test('buildClaudeCodePrompt appends local image paths for Claude Code', () => {
   assert.match(prompt, /Claude Code 图片附件：/);
   assert.match(prompt, /1\. \/tmp\/screen\.png/);
   assert.match(prompt, /2\. \/tmp\/diagram\.webp/);
+});
+
+test('claudeCodeAdapter falls back to CLI resume when ACP cannot resume saved session id', async () => {
+  const previousMode = process.env.OPENCLAW_ACP_MODE;
+  const previousCommand = process.env.OPENCLAW_ACP_CLAUDECODE_COMMAND;
+  const previousPath = process.env.PATH;
+  const previousCapture = process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE;
+  const captureFile = join(mkdtempSync(join(tmpdir(), 'openclaw-claude-cli-')), 'capture.jsonl');
+  const binDir = createFakeCliBin('claude');
+  process.env.OPENCLAW_ACP_MODE = 'auto';
+  process.env.OPENCLAW_ACP_CLAUDECODE_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
+  process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE = captureFile;
+  process.env.PATH = `${binDir}:${previousPath ?? ''}`;
+
+  try {
+    const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+    const result = await claudeCodeAdapter.invoke({
+      projectPath: process.cwd(),
+      sessionId: 'saved-claude-session',
+      prompt: 'continue',
+      onChunk: (chunk) => chunks.push(chunk),
+      envOverrides: {
+        NODE_OPTIONS: `--import ${tsxLoaderPath}`,
+      },
+    });
+
+    const capture = JSON.parse(readFileSync(captureFile, 'utf-8').trim()) as { argv: string[]; stdin: string };
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.sessionId, 'fake-cli-session');
+    assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol_fallback'), true);
+    assert.equal(capture.argv.includes('--resume'), true);
+    assert.equal(capture.argv[capture.argv.indexOf('--resume') + 1], 'saved-claude-session');
+    assert.equal(capture.stdin, 'continue');
+  } finally {
+    if (previousMode === undefined) delete process.env.OPENCLAW_ACP_MODE;
+    else process.env.OPENCLAW_ACP_MODE = previousMode;
+    if (previousCommand === undefined) delete process.env.OPENCLAW_ACP_CLAUDECODE_COMMAND;
+    else process.env.OPENCLAW_ACP_CLAUDECODE_COMMAND = previousCommand;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousCapture === undefined) delete process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE;
+    else process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE = previousCapture;
+  }
+});
+
+test('claudeCodeAdapter falls back to ACP new session when CLI resume fails', async () => {
+  const previousMode = process.env.OPENCLAW_ACP_MODE;
+  const previousCommand = process.env.OPENCLAW_ACP_CLAUDECODE_COMMAND;
+  const previousPath = process.env.PATH;
+  const previousCapture = process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE;
+  const previousCliExit = process.env.OPENCLAW_FAKE_CLI_EXIT_CODE;
+  const previousCliStderr = process.env.OPENCLAW_FAKE_CLI_STDERR;
+  const previousEcho = process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT;
+  const captureFile = join(mkdtempSync(join(tmpdir(), 'openclaw-claude-cli-fail-')), 'capture.jsonl');
+  const binDir = createFakeCliBin('claude');
+  process.env.OPENCLAW_ACP_MODE = 'auto';
+  process.env.OPENCLAW_ACP_CLAUDECODE_COMMAND = `${process.execPath} --import ${tsxLoaderPath} ${join(currentDir, 'fake-acp-server.ts')}`;
+  process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE = captureFile;
+  process.env.OPENCLAW_FAKE_CLI_EXIT_CODE = '9';
+  process.env.OPENCLAW_FAKE_CLI_STDERR = 'claude resume failed';
+  process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT = '1';
+  process.env.PATH = `${binDir}:${previousPath ?? ''}`;
+
+  try {
+    const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
+    const result = await claudeCodeAdapter.invoke({
+      projectPath: process.cwd(),
+      sessionId: 'saved-claude-session',
+      prompt: 'continue',
+      sessionHandoff: 'previous claude summary',
+      onChunk: (chunk) => chunks.push(chunk),
+      envOverrides: {
+        NODE_OPTIONS: `--import ${tsxLoaderPath}`,
+      },
+    });
+
+    const capture = JSON.parse(readFileSync(captureFile, 'utf-8').trim()) as { argv: string[]; stdin: string };
+    const answer = chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join('');
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.sessionId, 'fake-session-1');
+    assert.equal(capture.argv.includes('--resume'), true);
+    assert.equal(chunks.some((chunk) => chunk.rawType === 'protocol.fake_resume_fallback'), true);
+    assert.match(answer, /Previous ACP session could not be resumed/);
+    assert.match(answer, /previous claude summary/);
+    assert.match(answer, /当前请求：\s*continue/);
+  } finally {
+    if (previousMode === undefined) delete process.env.OPENCLAW_ACP_MODE;
+    else process.env.OPENCLAW_ACP_MODE = previousMode;
+    if (previousCommand === undefined) delete process.env.OPENCLAW_ACP_CLAUDECODE_COMMAND;
+    else process.env.OPENCLAW_ACP_CLAUDECODE_COMMAND = previousCommand;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousCapture === undefined) delete process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE;
+    else process.env.OPENCLAW_FAKE_CLI_CAPTURE_FILE = previousCapture;
+    if (previousCliExit === undefined) delete process.env.OPENCLAW_FAKE_CLI_EXIT_CODE;
+    else process.env.OPENCLAW_FAKE_CLI_EXIT_CODE = previousCliExit;
+    if (previousCliStderr === undefined) delete process.env.OPENCLAW_FAKE_CLI_STDERR;
+    else process.env.OPENCLAW_FAKE_CLI_STDERR = previousCliStderr;
+    if (previousEcho === undefined) delete process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT;
+    else process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT = previousEcho;
+  }
 });
 
 test('filterStderr hides stdin progress notices from CLI adapters', () => {

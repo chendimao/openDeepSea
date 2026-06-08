@@ -288,6 +288,116 @@ CREATE TABLE IF NOT EXISTS resource_assets (
 );
 CREATE INDEX IF NOT EXISTS idx_resource_assets_project ON resource_assets(project_id, asset_type, group_key, created_at);
 CREATE INDEX IF NOT EXISTS idx_resource_assets_source_message ON resource_assets(source_message_id);
+
+CREATE TABLE IF NOT EXISTS image_provider_profiles (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  api_key TEXT NOT NULL,
+  model TEXT NOT NULL,
+  compat_profile_id TEXT NOT NULL,
+  supports_count_parameter INTEGER NOT NULL DEFAULT 1 CHECK (supports_count_parameter IN (0, 1)),
+  active INTEGER NOT NULL DEFAULT 0 CHECK (active IN (0, 1)),
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_image_provider_profiles_project
+  ON image_provider_profiles(project_id, deleted_at, active, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_image_provider_profiles_project_name
+  ON image_provider_profiles(project_id, lower(name))
+  WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_image_provider_profiles_one_active
+  ON image_provider_profiles(project_id)
+  WHERE active = 1 AND deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS image_generation_jobs (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  room_id TEXT,
+  session_id TEXT,
+  source_message_id TEXT,
+  source_agent_id TEXT,
+  source_task_id TEXT,
+  provider_profile_id TEXT NOT NULL,
+  workflow TEXT NOT NULL CHECK (workflow IN ('generate', 'image-to-image')),
+  prompt TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  quality TEXT NOT NULL,
+  size TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'canceling', 'completed', 'failed', 'canceled')),
+  message TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  completed_at INTEGER,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_message_id) REFERENCES messages(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+  FOREIGN KEY (provider_profile_id) REFERENCES image_provider_profiles(id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_image_generation_jobs_project
+  ON image_generation_jobs(project_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_image_generation_jobs_session
+  ON image_generation_jobs(session_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_image_generation_jobs_room
+  ON image_generation_jobs(room_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS image_generation_outputs (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  file_id TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (job_id) REFERENCES image_generation_jobs(id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+  UNIQUE (job_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_image_generation_outputs_job
+  ON image_generation_outputs(job_id, slot);
+
+CREATE TABLE IF NOT EXISTS image_generation_source_images (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  file_id TEXT NOT NULL,
+  slot INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  origin_job_id TEXT,
+  origin_output_id TEXT,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (job_id) REFERENCES image_generation_jobs(id) ON DELETE CASCADE,
+  FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE RESTRICT,
+  FOREIGN KEY (origin_job_id) REFERENCES image_generation_jobs(id) ON DELETE SET NULL,
+  FOREIGN KEY (origin_output_id) REFERENCES image_generation_outputs(id) ON DELETE SET NULL,
+  UNIQUE (job_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_image_generation_source_images_job
+  ON image_generation_source_images(job_id, slot);
+
+CREATE TABLE IF NOT EXISTS image_prompt_presets (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_image_prompt_presets_project
+  ON image_prompt_presets(project_id, deleted_at, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS agent_runs (
   id TEXT PRIMARY KEY,
   room_id TEXT NOT NULL,
@@ -332,6 +442,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   forked_from_history_record_id TEXT,
   latest_compaction_id TEXT,
   latest_context_manifest_id TEXT,
+  closed_at INTEGER,
+  pinned_at INTEGER,
+  last_viewed_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   archived_at INTEGER,
@@ -1008,6 +1121,19 @@ if (!projectColumnNames.has('sort_order')) {
   db.exec('ALTER TABLE projects ADD COLUMN sort_order INTEGER');
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_projects_sort ON projects(pinned_at IS NULL, sort_order IS NULL, sort_order, created_at DESC)');
+
+const sessionColumns = db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[];
+const sessionColumnNames = new Set(sessionColumns.map((column) => column.name));
+if (!sessionColumnNames.has('closed_at')) {
+  db.exec('ALTER TABLE sessions ADD COLUMN closed_at INTEGER');
+}
+if (!sessionColumnNames.has('pinned_at')) {
+  db.exec('ALTER TABLE sessions ADD COLUMN pinned_at INTEGER');
+}
+if (!sessionColumnNames.has('last_viewed_at')) {
+  db.exec('ALTER TABLE sessions ADD COLUMN last_viewed_at INTEGER');
+}
+db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_active_workspace ON sessions(closed_at, pinned_at IS NULL, pinned_at DESC, updated_at DESC)');
 
 const sessionRunColumns = db.prepare('PRAGMA table_info(session_runs)').all() as { name: string }[];
 const sessionRunColumnNames = new Set(sessionRunColumns.map((column) => column.name));

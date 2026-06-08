@@ -45,6 +45,9 @@ class FakeAgent implements Agent {
   }
 
   async resumeSession() {
+    if (process.env.OPENCLAW_FAKE_ACP_FAIL_RESUME === '1') {
+      throw new Error(process.env.OPENCLAW_FAKE_ACP_FAIL_RESUME_MESSAGE ?? 'fake resumeSession failure');
+    }
     return {};
   }
 

@@ -1,56 +1,63 @@
 import {
-  AlertTriangle,
-  AtSign,
+  Archive,
   Brain,
   CheckCircle2,
   ChevronDown,
+  Edit3,
+  Ellipsis,
+  ExternalLink,
   FileText,
   Filter,
+  FolderOpen,
+  FolderPlus,
   GitFork,
-  Hash,
-  History,
+  GitBranch,
   MessageSquare,
   Minimize2,
-  MoreVertical,
-  Plus,
   RefreshCcw,
   Repeat2,
   Search,
-  SendHorizontal,
   Settings,
   ShieldCheck,
   Square,
+  SquarePen,
   StopCircle,
   Timer,
+  Trash2,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  HistoryRecord,
-  HistoryRecordStatus,
+  ActiveSessionSummary,
+  ProjectUsedAgentsPayload,
   Session,
-  SessionBottomStatus,
   SessionContract,
   SessionDetail,
   SessionDiffRow,
   SessionAgentEvent,
   SessionEvidenceEvent,
   SessionMessage,
-  SessionMode,
   SessionPlanItem,
   SessionRun,
   SessionToolRow,
   SessionWorkspacePayload,
   StatusSnapshot,
 } from '../lib/types';
+import { api } from '../lib/api';
+import { parseMessageMetadata } from '../lib/messageMetadata';
 import { MessageContent } from '../components/MessageContent';
+import { ImageJobStatusCard } from '../image-generation/ImageJobStatusCard';
 import {
   MarkdownDisplaySwitch,
   SessionMessageBubble,
   type SessionMessageDisplayMode,
 } from './SessionMessageBubble';
 import { ProjectAgentStrip } from './ProjectAgentStrip';
-import { sessionStatusTone } from './session-ui-model';
+import { SessionFileComposer } from './SessionFileComposer';
+import type { SessionComposerSubmit } from './session-file-composer-model';
+import { GeneratedImageEvidencePanel } from './GeneratedImageEvidencePanel';
 
 export function SessionShellView({
   payload,
@@ -59,39 +66,39 @@ export function SessionShellView({
   onCancelRun,
   onRetryRun,
   onSaveContract,
-  onFilterHistory,
+  onOpenSession,
+  onCreateSession,
 }: {
   payload: SessionWorkspacePayload;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (message: SessionComposerSubmit) => void;
   onCommand: (command: string) => void;
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
-  onFilterHistory?: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) => void;
+  onOpenSession?: (projectId: string, sessionId: string) => void;
+  onCreateSession?: (projectId: string) => void | Promise<void>;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
-  const recentHistory = payload.historyRecords.slice(0, 12);
   const forkTarget = payload.historyRecords[0]?.id;
 
   return (
     <section className="session-shell deepsea-shell" aria-label="Session Operations Console">
-      <TopCommandBar
-        payload={payload}
-        onCommand={onCommand}
-        forkTarget={forkTarget}
-      />
       <main className="deepsea-main">
-        <HistoryRail
-          records={recentHistory}
-          activeSession={payload.activeSession.session}
+        <ProjectSessionTreeRail
+          projects={payload.projectSwitcher.projects}
+          sessions={payload.activeSessions}
+          currentSession={payload.activeSession.session}
+          currentProjectId={payload.project.id}
+          currentProjectName={payload.project.name}
           onCommand={onCommand}
-          onFilterHistory={onFilterHistory}
+          onOpenSession={onOpenSession}
+          onCreateSession={onCreateSession}
         />
         <TranscriptCanvas
           detail={payload.activeSession}
           evidence={payload.evidence}
+          projectId={payload.project.id}
           onSendMessage={onSendMessage}
-          onCommand={onCommand}
         />
         <IntegratedInspector
           payload={payload}
@@ -102,12 +109,16 @@ export function SessionShellView({
           onSaveContract={onSaveContract}
         />
       </main>
-      <BottomStatusBar status={payload.bottomStatus} />
+      <BottomStatusBar
+        payload={payload}
+        forkTarget={forkTarget}
+        onCommand={onCommand}
+      />
     </section>
   );
 }
 
-function TopCommandBar({
+function BottomStatusBar({
   payload,
   onCommand,
   forkTarget,
@@ -116,138 +127,20 @@ function TopCommandBar({
   onCommand: (command: string) => void;
   forkTarget?: string;
 }): JSX.Element {
+  const status = payload.bottomStatus;
   const pressure = contextPressurePercent(payload.status.context.pressure);
-  const activeProjectName = payload.project.name;
-  const projects = payload.projectSwitcher.projects;
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
 
-  return (
-    <>
-      <div className="deepsea-project-strip" aria-label="Project command bar">
-        <div className="deepsea-project-breadcrumb">
-          <GitFork aria-hidden="true" />
-          <span className="deepsea-mono">workspace</span>
-          <ChevronDown aria-hidden="true" />
-        </div>
-        <div className="deepsea-project-switcher">
-          <button
-            type="button"
-            aria-expanded={projectMenuOpen}
-            aria-label="切换项目"
-            onClick={() => setProjectMenuOpen((open) => !open)}
-          >
-            <strong>{activeProjectName}</strong>
-            <ChevronDown aria-hidden="true" />
-          </button>
-        </div>
-        <div
-          className="deepsea-project-menu"
-          data-open={projectMenuOpen ? 'true' : undefined}
-          role="dialog"
-          aria-label="项目切换器"
-          aria-hidden={projectMenuOpen ? undefined : true}
-          onClick={() => setProjectMenuOpen(false)}
-        >
-          <div className="deepsea-project-menu__panel" onClick={(event) => event.stopPropagation()}>
-            <div className="deepsea-project-menu__header">
-              <div>
-                <h2>项目切换器</h2>
-                <p>选择一个工作区以继续您的任务</p>
-              </div>
-              <div>
-                <label className="deepsea-project-menu__search">
-                  <Search aria-hidden="true" />
-                  <input type="search" placeholder="搜索项目..." />
-                </label>
-                <button type="button" aria-label="关闭项目切换器" onClick={() => setProjectMenuOpen(false)}>
-                  <span aria-hidden="true">×</span>
-                </button>
-              </div>
-            </div>
-            <div className="deepsea-project-menu__body">
-              <div className="deepsea-project-grid">
-                {projects.map((project) => (
-                  <article className="deepsea-project-card" data-active={project.active ? 'true' : undefined} key={project.id}>
-                    {project.active && (
-                      <div className="deepsea-project-card__active">
-                        <i />
-                        <span>当前激活</span>
-                      </div>
-                    )}
-                    <div className="deepsea-project-card__head">
-                      <h3>{project.name}</h3>
-                      <p className="deepsea-mono">{project.path}</p>
-                    </div>
-                    <div className="deepsea-project-card__sessions">
-                      <span>最近会话</span>
-                      {project.recentSessions.length === 0 ? (
-                        <em>暂无会话</em>
-                      ) : project.recentSessions.map((session) => (
-                        <button
-                          type="button"
-                          key={`${project.id}-${session.source}-${session.id}`}
-                          title={session.title}
-                          onClick={() => {
-                            if (typeof window !== 'undefined') window.location.assign(session.href);
-                          }}
-                        >
-                          <strong>{formatCompactSessionTitle(session.title)}</strong>
-                          <em>{formatRelativeTime(Date.now(), session.updated_at)}</em>
-                        </button>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-                <article className="deepsea-project-card deepsea-project-card--add">
-                  <Plus aria-hidden="true" />
-                  <span>新建项目</span>
-                </article>
-              </div>
-            </div>
-            <div className="deepsea-project-menu__footer">
-              <button type="button">
-                <Settings aria-hidden="true" />
-                管理所有工作区
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="deepsea-strip-actions">
-          <div className="deepsea-command-group" aria-label="Session command actions">
-            <CommandPill label="压缩" kbd="⌘P" icon={Minimize2} command="/compact" onCommand={onCommand} />
-            <CommandPill
-              label="分叉"
-              kbd="⌘B"
-              icon={GitFork}
-              command={forkTarget ? `/fork history:${forkTarget}` : '/fork'}
-              onCommand={onCommand}
-            />
-            <span className="deepsea-strip-divider" />
-            <ContextPressure pressure={pressure} compact />
-            <button type="button" className="deepsea-strip-settings" aria-label="工作区设置">
-              <Settings aria-hidden="true" />
-            </button>
-          </div>
-          <ProjectAgentStrip project={payload.project} />
-        </div>
-      </div>
-    </>
-  );
-}
-
-function BottomStatusBar({ status }: { status: SessionBottomStatus }): JSX.Element {
   return (
     <footer className="deepsea-bottom-status" aria-label="Session status bar">
-      <div className="deepsea-bottom-status__group">
-        <span className="deepsea-bottom-status__label">系统健康状态</span>
-        <span className="deepsea-status-dot" data-tone={healthTone(status.health)} />
-        <strong>{status.healthLabel}</strong>
-      </div>
-      <span className="deepsea-bottom-status__divider" />
-      <div className="deepsea-bottom-status__group">
-        <span className="deepsea-bottom-status__label">索引状态</span>
-        <span className="deepsea-status-dot" data-tone={status.indexStatus === 'ready' ? 'primary' : 'warn'} />
-        <strong>{status.indexLabel}</strong>
+      <div className="deepsea-bottom-status__path" aria-label="当前会话路径">
+        <GitFork aria-hidden="true" />
+        <span className="deepsea-mono">workspace</span>
+        <span>/</span>
+        <strong>{payload.project.name}</strong>
+        <span>/</span>
+        <span title={payload.activeSession.session.title}>
+          {formatCompactSessionTitle(payload.activeSession.session.title, 28)}
+        </span>
       </div>
       <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
@@ -268,6 +161,25 @@ function BottomStatusBar({ status }: { status: SessionBottomStatus }): JSX.Eleme
         <strong>{status.networkLatencyMs === null ? '--' : `${status.networkLatencyMs}ms`}</strong>
       </div>
       <div className="deepsea-bottom-status__spacer" />
+      <div className="deepsea-bottom-status__commands">
+        <div className="deepsea-command-group" aria-label="Session command actions">
+          <CommandPill label="压缩" kbd="⌘P" icon={Minimize2} command="/compact" onCommand={onCommand} />
+          <CommandPill
+            label="分叉"
+            kbd="⌘B"
+            icon={GitFork}
+            command={forkTarget ? `/fork history:${forkTarget}` : '/fork'}
+            onCommand={onCommand}
+          />
+          <span className="deepsea-strip-divider" />
+          <ContextPressure pressure={pressure} compact />
+          <button type="button" className="deepsea-strip-settings" aria-label="工作区设置">
+            <Settings aria-hidden="true" />
+          </button>
+        </div>
+        <ProjectAgentStrip project={payload.project} />
+      </div>
+      <span className="deepsea-bottom-status__divider" />
       <div className="deepsea-bottom-status__group">
         <FileText aria-hidden="true" />
         <span className="deepsea-bottom-status__label">API 消耗</span>
@@ -329,122 +241,409 @@ function ContextPressure({ pressure, compact = false }: { pressure: number; comp
   );
 }
 
-function HistoryRail({
-  records,
-  activeSession,
+type ProjectSessionTreeProject = {
+  id: string;
+  name: string;
+  path: string;
+  active: boolean;
+  sessions: ActiveSessionSummary[];
+};
+
+type ProjectSwitcherProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
+
+const projectActionMenuItems: Array<{ label: string; icon: LucideIcon; danger?: boolean }> = [
+  { label: '在“访达”中打开', icon: ExternalLink },
+  { label: '创建永久工作树', icon: GitBranch },
+  { label: '编辑名称', icon: SquarePen },
+  { label: '归档聊天', icon: Archive },
+  { label: '移除', icon: Trash2, danger: true },
+];
+
+function ProjectSessionTreeRail({
+  projects = [],
+  sessions = [],
+  currentSession,
+  currentProjectId,
+  currentProjectName,
   onCommand,
-  onFilterHistory,
+  onOpenSession,
+  onCreateSession,
 }: {
-  records: HistoryRecord[];
-  activeSession: Session;
+  projects?: ProjectSwitcherProject[];
+  sessions?: ActiveSessionSummary[];
+  currentSession: Session;
+  currentProjectId: string;
+  currentProjectName: string;
   onCommand: (command: string) => void;
-  onFilterHistory?: (filters: { q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }) => void;
+  onOpenSession?: (projectId: string, sessionId: string) => void;
+  onCreateSession?: (projectId: string) => void | Promise<void>;
 }): JSX.Element {
   const [q, setQ] = useState('');
+  const normalizedQuery = q.trim().toLowerCase();
+  const tree = buildProjectSessionTree({
+    projects,
+    sessions,
+    currentSession,
+    currentProjectId,
+    currentProjectName,
+  });
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(tree.map((project) => [project.id, true]))
+  );
+  const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
+  const visibleProjects = filterProjectSessionTree(tree, normalizedQuery);
+  const createSessionForProject = (projectId: string) => {
+    setExpandedProjectIds((current) => ({ ...current, [projectId]: true }));
+    setOpenProjectMenuId(null);
+    if (onCreateSession) {
+      void onCreateSession(projectId);
+      return;
+    }
+    onCommand('/new');
+  };
+
   return (
-    <aside className="deepsea-history" aria-label="History Records">
+    <aside className="deepsea-history" aria-label="Project Sessions">
       <div className="deepsea-history__header">
-        <div className="deepsea-history__title">
-          <div>
-            <History aria-hidden="true" />
-            <h2>会话历史</h2>
-          </div>
-          <div className="deepsea-history__tools">
-            <Filter aria-hidden="true" />
-            <MoreVertical aria-hidden="true" />
-          </div>
+        <div className="deepsea-project-tree-actions">
+          <button
+            type="button"
+            className="deepsea-project-tree-action-row"
+            data-project-create-session={currentProjectId}
+            onClick={() => createSessionForProject(currentProjectId)}
+          >
+            <span>
+              <Edit3 aria-hidden="true" />
+              新建会话
+            </span>
+            <kbd>⌘N</kbd>
+          </button>
+          <form
+            className="deepsea-project-tree-search-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <Search aria-hidden="true" />
+            <input
+              type="search"
+              value={q}
+              onChange={(event) => setQ(event.currentTarget.value)}
+              placeholder="搜索"
+            />
+          </form>
         </div>
-        <form
-          className="deepsea-search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onFilterHistory?.({ q, status: 'all', mode: 'all' });
-          }}
-        >
-          <Search aria-hidden="true" />
-          <input
-            type="search"
-            value={q}
-            onChange={(event) => setQ(event.currentTarget.value)}
-            placeholder="搜索历史..."
-          />
-        </form>
       </div>
 
-      <div className="deepsea-history__list">
-        <article className="deepsea-history-card is-active">
-          <span className="deepsea-history-card__rail" />
+      <div className="deepsea-history__list deepsea-project-tree">
+        <div className="deepsea-project-tree-heading">
+          <span>项目</span>
           <div>
-            <h3 title={activeSession.title}>{formatCompactSessionTitle(activeSession.title)}</h3>
-            <p className="deepsea-mono">{formatTimeRange(activeSession.created_at, activeSession.updated_at)}</p>
-            <div className="deepsea-history-card__footer">
-              <span className="deepsea-status-chip" data-tone="primary">运行中</span>
-              <span className="deepsea-agent-mini">
-                <Brain aria-hidden="true" />
-                {formatProviderModel(activeSession.provider ?? 'codex', activeSession.model ?? 'gpt-test')}
-              </span>
-            </div>
+            <button type="button" aria-label="筛选项目">
+              <Filter aria-hidden="true" />
+            </button>
+            <button type="button" aria-label="新建项目文件夹">
+              <FolderPlus aria-hidden="true" />
+            </button>
           </div>
-        </article>
-
-        {records.length === 0 ? (
-          <div className="deepsea-empty">暂无历史记录。使用 New 后会把两段 New 之间的对话归档到这里。</div>
-        ) : records.map((record) => (
-          <article className="deepsea-history-card" data-status={record.status} key={record.id}>
-            <span className="deepsea-history-card__rail" />
-            <div>
-              <h3>{record.title}</h3>
-              <p>{record.summary}</p>
-              <p className="deepsea-mono">{formatTimeRange(record.started_at, record.ended_at)}</p>
-              <div className="deepsea-history-card__footer">
-                <span className="deepsea-status-chip" data-tone={sessionStatusTone(record.status)}>
-                  {historyStatusLabel(record.status)}
-                </span>
-                <div className="deepsea-card-actions">
-                  <button type="button" title="Resume" onClick={() => onCommand(`/resume ${record.id}`)}>
-                    <RefreshCcw aria-hidden="true" />
+        </div>
+        {visibleProjects.length === 0 ? (
+          <div className="deepsea-empty">没有匹配的项目或会话。</div>
+        ) : visibleProjects.map((project) => {
+          const expanded = normalizedQuery
+            ? true
+            : expandedProjectIds[project.id] ?? true;
+          const projectMenuOpen = openProjectMenuId === project.id;
+          return (
+            <section
+              className="deepsea-project-tree-section"
+              data-active={project.active ? 'true' : undefined}
+              data-empty={project.sessions.length === 0 ? 'true' : undefined}
+              key={project.id}
+            >
+              <div className="deepsea-project-node">
+                <button
+                  type="button"
+                  className="deepsea-project-node__button"
+                  aria-expanded={expanded}
+                  onClick={() =>
+                    setExpandedProjectIds((current) => ({
+                      ...current,
+                      [project.id]: !(current[project.id] ?? true),
+                    }))
+                  }
+                >
+                  <FolderOpen aria-hidden="true" />
+                  <span className="deepsea-project-node__label">
+                    <strong>{project.name}</strong>
+                  </span>
+                </button>
+                <div className="deepsea-project-node__actions">
+                  <button
+                    type="button"
+                    className="deepsea-project-node__icon-button"
+                    aria-expanded={projectMenuOpen}
+                    aria-haspopup="menu"
+                    aria-label={`打开 ${project.name} 项目操作菜单`}
+                    onClick={() => setOpenProjectMenuId((current) => (current === project.id ? null : project.id))}
+                  >
+                    <Ellipsis aria-hidden="true" />
                   </button>
-                  <button type="button" title="Fork" onClick={() => onCommand(`/fork history:${record.id}`)}>
-                    <GitFork aria-hidden="true" />
+                  <div
+                    className="deepsea-project-node__menu"
+                    data-state={projectMenuOpen ? 'open' : 'closed'}
+                    role="menu"
+                    aria-hidden={projectMenuOpen ? undefined : true}
+                    aria-label={`${project.name} 项目操作`}
+                  >
+                    {projectActionMenuItems.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          type="button"
+                          className="deepsea-project-node__menu-item"
+                          data-danger={item.danger ? 'true' : undefined}
+                          data-disabled="true"
+                          data-project-menu-item={item.label}
+                          disabled
+                          key={item.label}
+                          role="menuitem"
+                        >
+                          <Icon aria-hidden="true" />
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    className="deepsea-project-node__icon-button"
+                    data-project-create-session={project.id}
+                    aria-label={`新建 ${project.name} 会话`}
+                    onClick={() => createSessionForProject(project.id)}
+                  >
+                    <SquarePen aria-hidden="true" />
                   </button>
                 </div>
               </div>
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <div className="deepsea-history__footer">
-        <button type="button" className="deepsea-primary-button" data-command="/new" onClick={() => onCommand('/new')}>
-          <Plus aria-hidden="true" />
-          新建会话
-        </button>
+              {expanded && (
+                <div className="deepsea-project-node__sessions">
+                  {project.sessions.length === 0 ? (
+                    <div className="deepsea-project-session-empty">暂无活跃会话</div>
+                  ) : project.sessions.map((session) => (
+                    <ProjectSessionRow
+                      currentSessionId={currentSession.id}
+                      key={session.id}
+                      onOpenSession={onOpenSession}
+                      session={session}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
     </aside>
   );
 }
 
+function ProjectSessionRow({
+  session,
+  currentSessionId,
+  onOpenSession,
+}: {
+  session: ActiveSessionSummary;
+  currentSessionId: string;
+  onOpenSession?: (projectId: string, sessionId: string) => void;
+}): JSX.Element {
+  const isCurrent = session.id === currentSessionId;
+  return (
+    <button
+      type="button"
+      aria-current={isCurrent ? 'true' : undefined}
+      className="deepsea-project-session-row"
+      data-current={isCurrent ? 'true' : undefined}
+      data-project-session-row="true"
+      data-running={session.active_run_count > 0 ? 'true' : undefined}
+      data-status={session.status}
+      data-pinned={session.pinned_at !== null ? 'true' : undefined}
+      onClick={() => onOpenSession?.(session.project_id, session.id)}
+    >
+      <span className="deepsea-project-session-row__title" title={session.title}>
+        {formatCompactSessionTitle(session.title, 31)}
+      </span>
+      <time className="deepsea-project-session-row__time">{formatRelativeTime(Date.now(), session.updated_at)}</time>
+    </button>
+  );
+}
+
+function buildProjectSessionTree(input: {
+  projects: ProjectSwitcherProject[];
+  sessions: ActiveSessionSummary[];
+  currentSession: Session;
+  currentProjectId: string;
+  currentProjectName: string;
+}): ProjectSessionTreeProject[] {
+  const activeSessions = ensureCurrentActiveSessionSummary(
+    input.sessions,
+    input.currentSession,
+    input.currentProjectId,
+    input.currentProjectName,
+  ).filter((session) => session.status !== 'archived');
+  const sessionsByProjectId = new Map<string, ActiveSessionSummary[]>();
+  for (const session of activeSessions) {
+    const bucket = sessionsByProjectId.get(session.project_id) ?? [];
+    bucket.push(session);
+    sessionsByProjectId.set(session.project_id, bucket);
+  }
+
+  const knownProjectIds = new Set(input.projects.map((project) => project.id));
+  const projectNodes: ProjectSessionTreeProject[] = input.projects.map((project) => ({
+    id: project.id,
+    name: project.name,
+    path: project.path,
+    active: project.active,
+    sessions: sessionsByProjectId.get(project.id) ?? [],
+  }));
+
+  const orphanProjects = new Map<string, ProjectSessionTreeProject>();
+  for (const session of activeSessions) {
+    if (knownProjectIds.has(session.project_id)) continue;
+    const orphanId = `orphan:${session.project_id || session.project_name || session.project_path}`;
+    const orphanProject = orphanProjects.get(orphanId) ?? {
+      id: orphanId,
+      name: session.project_name || '其他项目',
+      path: session.project_path,
+      active: false,
+      sessions: [],
+    };
+    orphanProject.sessions.push(session);
+    orphanProjects.set(orphanId, orphanProject);
+  }
+
+  return [...projectNodes, ...orphanProjects.values()];
+}
+
+function filterProjectSessionTree(
+  tree: ProjectSessionTreeProject[],
+  normalizedQuery: string,
+): ProjectSessionTreeProject[] {
+  if (!normalizedQuery) return tree;
+  return tree.flatMap((project) => {
+    const projectMatches = [project.name, project.path].some((value) =>
+      value.toLowerCase().includes(normalizedQuery)
+    );
+    const matchingSessions = project.sessions.filter((session) =>
+      [
+        session.title,
+        session.project_name,
+        session.project_path,
+        session.latest_event_summary ?? '',
+      ].some((value) => value.toLowerCase().includes(normalizedQuery))
+    );
+    if (!projectMatches && matchingSessions.length === 0) return [];
+    return [{
+      ...project,
+      sessions: projectMatches ? project.sessions : matchingSessions,
+    }];
+  });
+}
+
 function TranscriptCanvas({
   detail,
   evidence,
+  projectId,
   onSendMessage,
-  onCommand,
 }: {
   detail: SessionDetail;
   evidence: SessionEvidenceEvent[];
-  onSendMessage: (content: string) => void;
-  onCommand: (command: string) => void;
+  projectId: string;
+  onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
+  const transcriptRef = useRef<HTMLDivElement | null>(null);
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const followTranscriptRef = useRef(true);
+  const { data: projectAgents } = useQuery({
+    queryKey: ['project-used-agents', projectId],
+    queryFn: () => api.getProjectUsedAgents(projectId),
+    staleTime: 20_000,
+  });
   const timeline = buildTranscriptTimeline(detail).slice(-36);
+  const timelineEndKey = timeline.at(-1)?.key ?? 'empty';
+  const timelineFollowKey = useMemo(
+    () => buildTranscriptFollowKey({
+      agentEvents: detail.agentEvents,
+      runs: detail.runs,
+      timelineEndKey,
+    }),
+    [detail.agentEvents, detail.runs, timelineEndKey],
+  );
+  const latestUserMessageKey = useMemo(() => getLatestUserMessageKey(detail.messages), [detail.messages]);
   const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
   const displayModeFor = (key: string): SessionMessageDisplayMode => displayModes[key] ?? 'preview';
   const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
     setDisplayModes((current) => ({ ...current, [key]: mode }));
   };
+  const agentNamesById = buildAgentNamesById(detail.messages, projectAgents);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript) return undefined;
+
+    const updateFollowState = () => {
+      followTranscriptRef.current = isTranscriptNearBottom(transcript);
+    };
+
+    updateFollowState();
+    transcript.addEventListener('scroll', updateFollowState, { passive: true });
+    return () => transcript.removeEventListener('scroll', updateFollowState);
+  }, []);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    const composer = composerRef.current;
+    if (!transcript || !composer) return undefined;
+
+    const updateComposerSpace = () => {
+      const composerRect = composer.getBoundingClientRect();
+      const transcriptRect = transcript.getBoundingClientRect();
+      const overlap = Math.max(0, transcriptRect.bottom - composerRect.top);
+      const nextSpace = Math.ceil(Math.max(160, overlap + 24));
+      transcript.style.setProperty('--deepsea-composer-space', `${nextSpace}px`);
+    };
+
+    updateComposerSpace();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+
+    const resizeObserver = new ResizeObserver(updateComposerSpace);
+    resizeObserver.observe(composer);
+    resizeObserver.observe(transcript);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    const transcriptEnd = transcriptEndRef.current;
+    if (!transcript || !transcriptEnd) return;
+
+    followTranscriptRef.current = true;
+    transcriptEnd.scrollIntoView({ block: 'end' });
+  }, [latestUserMessageKey]);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    const transcriptEnd = transcriptEndRef.current;
+    if (!transcript || !transcriptEnd) return;
+
+    if (!followTranscriptRef.current) return;
+    transcriptEnd.scrollIntoView({ block: 'end' });
+  }, [timelineFollowKey]);
 
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
-      <div className="deepsea-transcript__scroll">
+      <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
         <div className="deepsea-transcript__heading">
           <h2>
             <MessageSquare aria-hidden="true" />
@@ -464,6 +663,7 @@ function TranscriptCanvas({
             return (
               <TranscriptMessage
                 key={item.key}
+                projectId={projectId}
                 message={item.message}
                 displayMode={displayMode}
                 onDisplayModeChange={(mode) => setDisplayModeFor(item.key, mode)}
@@ -472,16 +672,20 @@ function TranscriptCanvas({
           }
           const runEvidence = evidence.filter((event) => event.source_run_id === item.run.id);
           const runAgentEvents = (detail.agentEvents ?? []).filter((event) => event.run_id === item.run.id);
-          const output = runOutputText(item.run);
+          const output = runOutputText(item.run, runAgentEvents);
           const displayMode = displayModeFor(item.key);
+          const runLabel = agentNamesById.get(item.run.agent_id) ?? item.run.agent_id;
           return (
             <React.Fragment key={item.key}>
               <AgentThoughtPanel run={item.run} evidence={runEvidence} />
               <article className="deepsea-run-log">
                 <div>
-                  <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>ASSISTANT</span>
+                  <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>
+                    {runLabel}
+                  </span>
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
                   <ThinkingDurationBadge run={item.run} />
+                  <RunStatusBadge status={item.run.status} />
                   <MarkdownDisplaySwitch
                     content={output}
                     mode={displayMode}
@@ -496,11 +700,19 @@ function TranscriptCanvas({
                   )}
                 </div>
               </article>
+              <GeneratedImageEvidencePanel evidence={runEvidence} />
             </React.Fragment>
           );
         })}
+        <div aria-hidden="true" className="deepsea-transcript__end" data-transcript-end="true" ref={transcriptEndRef} />
       </div>
-      <DeepseaComposer onCommand={onCommand} onSendMessage={onSendMessage} />
+      <div className="deepsea-composer-anchor" ref={composerRef}>
+        <DeepseaComposer
+          projectId={detail.session.project_id}
+          sessionId={detail.session.id}
+          onSendMessage={onSendMessage}
+        />
+      </div>
     </section>
   );
 }
@@ -526,25 +738,97 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
   ].sort((left, right) => left.timestamp - right.timestamp || left.key.localeCompare(right.key));
 }
 
+const TRANSCRIPT_FOLLOW_THRESHOLD_PX = 220;
+
+export function isTranscriptNearBottom(
+  transcript: Pick<HTMLElement, 'clientHeight' | 'scrollHeight' | 'scrollTop'>,
+): boolean {
+  const distanceFromBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight;
+  return distanceFromBottom <= TRANSCRIPT_FOLLOW_THRESHOLD_PX;
+}
+
+export function getLatestUserMessageKey(messages: SessionMessage[]): string {
+  const latestUserMessage = [...messages]
+    .filter((message) => message.role === 'user')
+    .sort((left, right) => right.created_at - left.created_at || right.id.localeCompare(left.id))[0];
+  return latestUserMessage ? `${latestUserMessage.id}:${latestUserMessage.created_at}` : 'none';
+}
+
+export function buildTranscriptFollowKey({
+  agentEvents,
+  runs,
+  timelineEndKey,
+}: {
+  agentEvents?: SessionAgentEvent[];
+  runs: SessionRun[];
+  timelineEndKey: string;
+}): string {
+  const latestRun = [...runs].sort((left, right) =>
+    right.updated_at - left.updated_at || right.id.localeCompare(left.id)
+  )[0];
+  const latestAgentEvent = [...(agentEvents ?? [])].sort((left, right) =>
+    right.seq - left.seq || right.created_at - left.created_at || right.id.localeCompare(left.id)
+  )[0];
+  return [
+    timelineEndKey,
+    latestRun?.id ?? 'no-run',
+    latestRun?.status ?? 'no-status',
+    latestRun?.updated_at ?? 0,
+    latestRun?.stdout.length ?? 0,
+    latestRun?.stderr.length ?? 0,
+    latestRun?.activity_log.length ?? 0,
+    latestAgentEvent?.id ?? 'no-event',
+    latestAgentEvent?.seq ?? 0,
+    latestAgentEvent?.content.length ?? 0,
+  ].join(':');
+}
+
 function TranscriptMessage({
+  projectId,
   message,
   displayMode,
   onDisplayModeChange,
 }: {
+  projectId: string;
   message: SessionMessage;
   displayMode: SessionMessageDisplayMode;
   onDisplayModeChange: (mode: SessionMessageDisplayMode) => void;
 }): JSX.Element {
+  const metadata = parseMessageMetadata(message.metadata);
+  const imageJobId = metadata.image_generation_job_id;
   return (
-    <SessionMessageBubble
-      role={message.role}
-      content={message.content}
-      timeLabel={formatClock(message.created_at)}
-      statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
-      displayMode={displayMode}
-      onDisplayModeChange={onDisplayModeChange}
-    />
+    <>
+      <SessionMessageBubble
+        role={message.role}
+        content={message.content}
+        timeLabel={formatClock(message.created_at)}
+        statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
+        roleLabel={message.sender_name ?? message.sender_id}
+        attachments={metadata.attachments}
+        displayMode={displayMode}
+        onDisplayModeChange={onDisplayModeChange}
+      />
+      {imageJobId && <ImageJobStatusCard projectId={projectId} jobId={imageJobId} />}
+    </>
   );
+}
+
+function buildAgentNamesById(
+  messages: SessionMessage[],
+  projectAgents?: ProjectUsedAgentsPayload,
+): Map<string, string> {
+  const names = new Map<string, string>();
+  if (projectAgents) {
+    names.set(projectAgents.planner.agent_id, projectAgents.planner.name);
+    for (const agent of projectAgents.agents) {
+      names.set(agent.agent_id, agent.name);
+    }
+  }
+  for (const message of messages) {
+    if (message.role !== 'assistant' || !message.sender_name) continue;
+    names.set(message.sender_id, message.sender_name);
+  }
+  return names;
 }
 
 export type SessionRunTranscriptItem =
@@ -595,19 +879,7 @@ export function buildSessionRunTranscriptItems(
   for (const event of sortedEvents) {
     if (isAnswerTextEvent(event)) {
       textBuffer += event.content;
-      continue;
     }
-
-    const marker = runEventMarker(event);
-    if (!marker) continue;
-    flushText();
-    items.push({
-      type: 'event',
-      id: `event-${event.id}`,
-      label: marker.label,
-      detail: marker.detail,
-      created_at: event.created_at,
-    });
   }
 
   flushText();
@@ -621,7 +893,7 @@ export function buildSessionRunTranscriptItems(
 function isAnswerTextEvent(event: SessionAgentEvent): boolean {
   return event.channel === 'answer' &&
     event.content.length > 0 &&
-    event.event_type !== 'protocol.stderr';
+    !isLegacyActivityAnswerEvent(event);
 }
 
 function runEventMarker(event: SessionAgentEvent): { label: string; detail: string | null } | null {
@@ -742,6 +1014,30 @@ function ThinkingDurationBadge({ run }: { run: SessionRun }): JSX.Element | null
   );
 }
 
+function RunStatusBadge({ status }: { status: SessionRun['status'] }): JSX.Element {
+  const view = runStatusView(status);
+  return (
+    <span className="deepsea-run-status" data-tone={view.tone}>
+      {view.label}
+    </span>
+  );
+}
+
+function runStatusView(status: SessionRun['status']): { label: string; tone: 'ok' | 'warn' | 'danger' | 'muted' } {
+  if (status === 'failed' || status === 'interrupted') return { label: '失败', tone: 'danger' };
+  if (status === 'completed') return { label: '完成', tone: 'ok' };
+  if (status === 'paused') return { label: '已暂停', tone: 'muted' };
+  if (status === 'cancelled') return { label: '已取消', tone: 'muted' };
+  return { label: '运行中', tone: 'warn' };
+}
+
+function RunStatusIcon({ tone }: { tone: ReturnType<typeof runStatusView>['tone'] }): JSX.Element {
+  if (tone === 'ok') return <CheckCircle2 aria-hidden="true" />;
+  if (tone === 'warn') return <Ellipsis aria-hidden="true" />;
+  if (tone === 'danger') return <X aria-hidden="true" />;
+  return <Square aria-hidden="true" />;
+}
+
 function AgentThoughtPanel({
   run,
   evidence,
@@ -750,59 +1046,64 @@ function AgentThoughtPanel({
   evidence: SessionEvidenceEvent[];
 }): JSX.Element | null {
   const thought = agentThoughtText(run, evidence);
+  const defaultOpen = isRunThoughtOpenByDefault(run.status);
+  const [openState, setOpenState] = useState(() => ({
+    runId: run.id,
+    status: run.status,
+    open: defaultOpen,
+  }));
+  const open = openState.runId === run.id && openState.status === run.status ? openState.open : defaultOpen;
+
   if (!thought) return null;
-  const status = run.status === 'failed' ? 'RISK' : run.status === 'completed' ? 'VERIFIED' : 'RUNNING';
+  const status = runThoughtStatusLabel(run.status);
   return (
-    <section className="deepsea-agent-thought" aria-label="智能体思考过程">
-      <div className="deepsea-agent-thought__header">
-        <span>
+    <details
+      className="deepsea-agent-thought"
+      aria-label="智能体思考过程"
+      data-active={defaultOpen ? 'true' : 'false'}
+      open={open}
+      onToggle={(event) => setOpenState({
+        runId: run.id,
+        status: run.status,
+        open: event.currentTarget.open,
+      })}
+    >
+      <summary
+        className="deepsea-agent-thought__header"
+        aria-label={open ? '收起智能体思考过程' : '展开智能体思考过程'}
+      >
+        <span className="deepsea-agent-thought__title">
           <Brain aria-hidden="true" />
           <strong>智能体思考过程</strong>
           <em>Agent Thought Process</em>
         </span>
-        <mark>{status}</mark>
-      </div>
+        <span className="deepsea-agent-thought__meta">
+          <mark>{status}</mark>
+          <span className="deepsea-agent-thought__toggle">
+            <ChevronDown aria-hidden="true" />
+            <span>{open ? '收起' : '展开'}</span>
+          </span>
+        </span>
+      </summary>
       <p>{thought}</p>
-    </section>
+    </details>
   );
 }
 
+function isRunThoughtOpenByDefault(status: SessionRun['status']): boolean {
+  return status === 'queued' || status === 'running' || status === 'retrying' || status === 'paused';
+}
+
 function DeepseaComposer({
+  projectId,
+  sessionId,
   onSendMessage,
 }: {
-  onSendMessage: (content: string) => void;
-  onCommand: (command: string) => void;
+  projectId: string;
+  sessionId: string;
+  onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
-  const [content, setContent] = useState('');
-
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const next = content.trim();
-    if (!next) return;
-    onSendMessage(next);
-    setContent('');
-  };
-
-  return (
-    <form className="deepsea-composer" onSubmit={submit}>
-      <div className="deepsea-composer__field">
-        <input
-          aria-label="命令输入"
-          value={content}
-          onChange={(event) => setContent(event.currentTarget.value)}
-          placeholder="输入命令或 / 选择命令，支持 @ 文件、# 历史、! 上下文"
-        />
-        <div className="deepsea-composer__tools">
-          <AtSign aria-hidden="true" />
-          <Hash aria-hidden="true" />
-          <AlertTriangle aria-hidden="true" />
-          <button type="submit" className="deepsea-send-button" aria-label="发送">
-            <SendHorizontal aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-    </form>
-  );
+  return <SessionFileComposer projectId={projectId} sessionId={sessionId} onSendMessage={onSendMessage} />;
 }
 
 function IntegratedInspector({
@@ -834,7 +1135,6 @@ function IntegratedInspector({
         <PlanModule items={payload.activeSession.planItems} />
         <RunModule
           run={activeRun}
-          status={payload.status}
           onCancelRun={onCancelRun}
           onRetryRun={onRetryRun}
         />
@@ -918,67 +1218,116 @@ function ContractModule({
 
 function RunModule({
   run,
-  status,
   onCancelRun,
   onRetryRun,
 }: {
   run: SessionRun | null;
-  status: StatusSnapshot;
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
 }): JSX.Element {
-  const provider = run?.provider ?? status.provider.backend ?? 'codex';
-  const model = run?.model ?? status.provider.model ?? 'gpt-test';
-  const runLabel = run?.status ?? status.status;
-  const cancellable = Boolean(run && (run.status === 'queued' || run.status === 'running' || run.status === 'retrying'));
+  if (!run) {
+    return (
+      <section className="deepsea-inspector-section deepsea-run-section">
+        <div className="deepsea-module-title">
+          <h3>代理运行 (Active Run)</h3>
+          <span>0 条记录</span>
+        </div>
+        <div className="deepsea-empty">暂无代理运行</div>
+      </section>
+    );
+  }
+
+  const provider = run.provider;
+  const model = run.model;
+  const status = runStatusView(run.status);
+  const cancellable = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
   return (
     <section className="deepsea-inspector-section deepsea-run-section">
-      <h3>代理运行 (Active Run)</h3>
-      <div className="deepsea-run-card">
-        <div className="deepsea-run-card__top">
-          <div className="deepsea-run-card__agent">
-            <span>
-              <Brain aria-hidden="true" />
-            </span>
-            <div>
-              <strong className="deepsea-mono">{formatProviderModel(provider, model)}</strong>
-              <em>
-                <i />
-                {runLabel}
-              </em>
-            </div>
+      <div className="deepsea-module-title">
+        <h3>代理运行 (Active Run)</h3>
+        <span>1 条记录</span>
+      </div>
+      <div className="deepsea-run-table">
+        <div data-tone={status.tone}>
+          <strong>{status.label}</strong>
+          <p className="deepsea-mono">{formatProviderModel(provider, model)}</p>
+          <span className="deepsea-run-row-duration">{formatDuration(run.started_at, run.completed_at ?? Date.now())}</span>
+          <span className="deepsea-run-row-time">{formatRelativeTime(Date.now(), run.started_at)}</span>
+          <span className="deepsea-run-row-state" aria-label={`运行状态：${status.label}`}>
+            <RunStatusIcon tone={status.tone} />
+          </span>
+          <div className="deepsea-run-row-actions">
+            <button
+              type="button"
+              aria-label="停止运行"
+              disabled={!cancellable}
+              onClick={() => run && onCancelRun?.(run.id)}
+            >
+              <StopCircle aria-hidden="true" />
+            </button>
+            <button type="button" aria-label="重新执行" onClick={() => onRetryRun?.(run.id)}>
+              <Repeat2 aria-hidden="true" />
+            </button>
           </div>
-          <div className="deepsea-run-card__time">
-            <strong className="deepsea-mono">{run ? formatDuration(run.started_at, run.completed_at ?? Date.now()) : '02:14:05'}</strong>
-            <span>运行耗时</span>
-          </div>
-        </div>
-        <div className="deepsea-run-card__actions">
-          <button
-            type="button"
-            aria-label="停止运行"
-            disabled={!cancellable}
-            onClick={() => run && onCancelRun?.(run.id)}
-          >
-            <StopCircle aria-hidden="true" />
-            停止
-          </button>
-          <button type="button" aria-label="重新执行" disabled={!run} onClick={() => run && onRetryRun?.(run.id)}>
-            <Repeat2 aria-hidden="true" />
-            重试
-          </button>
         </div>
       </div>
     </section>
   );
 }
 
-function runOutputText(run: SessionRun): string {
-  const output = run.stdout.trim() || run.stderr.trim();
+function runOutputText(run: SessionRun, events: SessionAgentEvent[] = []): string {
+  const output = sanitizeRunOutputText(run.stdout, events).trim() || run.stderr.trim();
   if (output) return output;
   if (run.status === 'completed') return '未返回可展示回复。';
   if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';
+  if (run.status === 'cancelled') return '运行已取消。';
+  if (run.status === 'paused') return '运行已暂停。';
+  if (run.status === 'interrupted') return '运行已中断。';
   return '等待智能体输出...';
+}
+
+function sanitizeRunOutputText(output: string, events: SessionAgentEvent[]): string {
+  let text = output;
+  for (const event of events) {
+    if (!isLegacyActivityAnswerEvent(event) || !event.content) continue;
+    text = text.split(event.content).join('');
+  }
+  return text;
+}
+
+function isLegacyActivityAnswerEvent(event: SessionAgentEvent): boolean {
+  if (event.channel !== 'answer') return false;
+  if (event.event_type === 'protocol.stderr' || event.event_type === 'protocol_fallback') return true;
+  if (
+    (event.event_type === 'item.started' || event.event_type === 'item.completed') &&
+    (hasCommandTrace(event) || hasLegacyCommandActivityText(event.content))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function hasLegacyCommandActivityText(content: string): boolean {
+  const trimmed = content.trimStart();
+  return trimmed.startsWith('开始命令：') || trimmed.startsWith('完成命令：');
+}
+
+function hasCommandTrace(event: SessionAgentEvent): boolean {
+  if (!event.payload_json) return false;
+  try {
+    const payload = JSON.parse(event.payload_json) as { trace?: { kind?: unknown } | null };
+    return payload.trace?.kind === 'command';
+  } catch {
+    return false;
+  }
+}
+
+function runThoughtStatusLabel(status: SessionRun['status']): string {
+  if (status === 'failed' || status === 'interrupted') return 'RISK';
+  if (status === 'completed') return 'VERIFIED';
+  if (status === 'cancelled') return 'CANCELLED';
+  if (status === 'paused') return 'PAUSED';
+  return 'RUNNING';
 }
 
 export function getSessionRunThinkingDuration(
@@ -1024,6 +1373,17 @@ function trimDisplayText(value: string | null | undefined): string {
 }
 
 function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
+  const [selectedRow, setSelectedRow] = useState<SessionToolRow | null>(null);
+
+  useEffect(() => {
+    if (!selectedRow) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedRow(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedRow]);
+
   return (
     <section className="deepsea-inspector-section">
       <div className="deepsea-module-title">
@@ -1034,18 +1394,94 @@ function ToolsModule({ rows }: { rows: SessionToolRow[] }): JSX.Element {
         <div className="deepsea-empty">暂无工具调用</div>
       ) : (
       <div className="deepsea-tool-table">
-        {rows.map((row, index) => (
-          <div key={row.id} data-tone={toolRowTone(row)}>
-            <span>{index + 1}</span>
+        {rows.map((row) => (
+          <button
+            type="button"
+            key={row.id}
+            data-tone={toolRowTone(row)}
+            data-tool-row-button="true"
+            aria-label={`查看工具调用详情：${row.target}`}
+            onClick={() => setSelectedRow(row)}
+          >
             <strong>{toolActionLabel(row.action)}</strong>
             <p>{row.target}</p>
-            <span>{row.durationMs === null ? '--' : `${(row.durationMs / 1000).toFixed(1)}s`}</span>
-            {row.status === 'running' ? <span>...</span> : <CheckCircle2 aria-hidden="true" />}
-          </div>
+            <span className="deepsea-tool-row-duration">{formatToolDisplayDuration(row)}</span>
+            <span className="deepsea-tool-row-time">{formatRelativeTime(Date.now(), row.created_at)}</span>
+            <span
+              className="deepsea-tool-row-state"
+              data-tool-row-status={row.status}
+              aria-label={`工具调用状态：${toolStatusLabel(row.status)}`}
+            >
+              <ToolStatusIcon status={row.status} />
+            </span>
+          </button>
         ))}
       </div>
       )}
+      {selectedRow ? <ToolDetailDialog row={selectedRow} onClose={() => setSelectedRow(null)} /> : null}
     </section>
+  );
+}
+
+function ToolDetailDialog({ row, onClose }: { row: SessionToolRow; onClose: () => void }): JSX.Element {
+  return (
+    <div className="deepsea-tool-detail-overlay" onClick={onClose}>
+      <div
+        className="deepsea-tool-detail-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="工具调用详情"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="deepsea-tool-detail-dialog__header">
+          <div>
+            <span>{toolActionLabel(row.action)}</span>
+            <h3>{row.label}</h3>
+          </div>
+          <button type="button" aria-label="关闭工具调用详情" onClick={onClose} autoFocus>
+            <X aria-hidden="true" />
+          </button>
+        </div>
+        <div className="deepsea-tool-detail-dialog__target">
+          <span>目标</span>
+          <code>{row.target}</code>
+        </div>
+        <div className="deepsea-tool-detail-dialog__execution">
+          <span>执行内容</span>
+          {row.detail || row.output ? (
+            <pre>{row.detail ?? row.output}</pre>
+          ) : (
+            <p>暂无执行内容</p>
+          )}
+        </div>
+        <dl className="deepsea-tool-detail-grid">
+          <div>
+            <dt>状态</dt>
+            <dd data-status={row.status}>{toolStatusLabel(row.status)}</dd>
+          </div>
+          <div>
+            <dt>耗时</dt>
+            <dd>{formatToolDisplayDuration(row)}</dd>
+          </div>
+          <div>
+            <dt>级别</dt>
+            <dd>{row.severity}</dd>
+          </div>
+          <div>
+            <dt>动作</dt>
+            <dd>{row.action}</dd>
+          </div>
+          <div>
+            <dt>Event ID</dt>
+            <dd>{row.eventId}</dd>
+          </div>
+          <div>
+            <dt>记录时间</dt>
+            <dd>{formatToolTimestamp(row.created_at)}</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
   );
 }
 
@@ -1076,11 +1512,11 @@ function DiffModule({
   rows: SessionDiffRow[];
   onCommand: (command: string) => void;
 }): JSX.Element {
-  const changedLabel = rows.length === 0 ? '工作区干净' : `${rows.length} 文件已修改`;
+  const changedLabel = rows.length === 0 ? '本会话暂无文件变更' : `本会话 ${rows.length} 个文件变更`;
   return (
     <section className="deepsea-diff-alert">
       <div className="deepsea-diff-alert__header">
-        <h3>待提交变更 <span>(Uncommitted)</span></h3>
+        <h3>本次会话变更 <span>(Session Changes)</span></h3>
         <span data-tone={rows.length === 0 ? 'muted' : 'danger'}>{changedLabel}</span>
       </div>
       <div className="deepsea-diff-card">
@@ -1089,7 +1525,7 @@ function DiffModule({
             <span className="deepsea-diff-row__index">0</span>
             <span className="deepsea-diff-row__file">
               <FileText aria-hidden="true" />
-              <em>working tree clean</em>
+              <em>no session changes</em>
             </span>
             <span className="deepsea-diff-row__status" data-tone="muted">
               <strong data-tone="muted">0</strong>
@@ -1111,7 +1547,6 @@ function DiffModule({
         ))}
       </div>
       <div className="deepsea-diff-alert__footer">
-        <p>存在未应用的 Compact 预览，Fork 可能丢失上下文</p>
         <div>
           <button type="button" onClick={() => onCommand('/compact')}>
             查看预览
@@ -1138,7 +1573,8 @@ function contextPressurePercent(pressure: StatusSnapshot['context']['pressure'])
   return 28;
 }
 
-function formatProviderModel(provider: string, model: string): string {
+function formatProviderModel(provider: string, model: string | null | undefined): string {
+  if (!model) return provider;
   if (provider === 'claude') return model.includes('Claude') ? model : `Claude ${model}`;
   if (provider === 'codex') return model.includes('gpt') ? model : `Codex ${model}`;
   return `${provider} ${model}`;
@@ -1149,14 +1585,34 @@ function formatCompactSessionTitle(title: string, maxLength = 17): string {
   return `${title.slice(0, maxLength)}...`;
 }
 
-function historyStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    archived: '已归档',
-    completed: '已完成',
-    blocked: '阻塞',
-    failed: '失败',
-  };
-  return labels[status] ?? status;
+function ensureCurrentActiveSessionSummary(
+  sessions: ActiveSessionSummary[],
+  currentSession: Session,
+  currentProjectId: string,
+  currentProjectName: string,
+): ActiveSessionSummary[] {
+  if (sessions.some((session) => session.id === currentSession.id)) return sessions;
+  if (!isSessionActiveForRail(currentSession)) return sessions;
+  return [{
+    id: currentSession.id,
+    project_id: currentProjectId,
+    project_name: currentProjectName,
+    project_path: currentSession.workspace_path ?? currentSession.worktree_path ?? '',
+    title: currentSession.title,
+    status: currentSession.status,
+    phase: currentSession.phase,
+    provider: currentSession.provider,
+    model: currentSession.model,
+    pinned_at: currentSession.pinned_at,
+    updated_at: currentSession.updated_at,
+    unread_count: 0,
+    active_run_count: 0,
+    latest_event_summary: currentSession.current_goal,
+  }, ...sessions];
+}
+
+function isSessionActiveForRail(session: Pick<Session, 'closed_at' | 'status' | 'archived_at'>): boolean {
+  return session.closed_at === null && session.status !== 'archived' && session.archived_at === null;
 }
 
 function formatClock(timestamp: number): string {
@@ -1166,13 +1622,6 @@ function formatClock(timestamp: number): string {
     second: '2-digit',
     hour12: false,
   }).format(new Date(timestamp));
-}
-
-function formatTimeRange(start: number, end: number): string {
-  const startLabel = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(start));
-  const endLabel = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(end));
-  const minutes = Math.max(1, Math.round((end - start) / 60_000));
-  return `${startLabel} - ${endLabel} | ${minutes}m`;
 }
 
 function formatDuration(start: number, end: number): string {
@@ -1193,18 +1642,44 @@ function toolActionLabel(action: string): string {
   return '工具调用';
 }
 
+function toolStatusLabel(status: SessionToolRow['status']): string {
+  if (status === 'running') return '运行中';
+  if (status === 'failed') return '失败';
+  return '已完成';
+}
+
+function ToolStatusIcon({ status }: { status: SessionToolRow['status'] }): JSX.Element {
+  if (status === 'failed') return <X aria-hidden="true" />;
+  if (status === 'running') return <Ellipsis aria-hidden="true" />;
+  return <CheckCircle2 aria-hidden="true" />;
+}
+
+function formatToolDuration(durationMs: number | null): string {
+  return durationMs === null ? '--' : `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function formatToolDisplayDuration(row: SessionToolRow): string {
+  return formatToolDuration(row.durationMs);
+}
+
+function formatToolTimestamp(timestamp: number): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(timestamp));
+}
+
 function formatRelativeTime(now: number, timestamp: number): string {
   const diff = Math.max(0, now - timestamp);
   if (diff < 60_000) return '刚刚';
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
   return `${Math.floor(diff / 86_400_000)} 天前`;
-}
-
-function healthTone(health: SessionBottomStatus['health']): 'ok' | 'warn' | 'danger' {
-  if (health === 'error') return 'danger';
-  if (health === 'warning') return 'warn';
-  return 'ok';
 }
 
 function formatResponseTime(value: number | null): string {

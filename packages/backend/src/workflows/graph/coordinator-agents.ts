@@ -286,7 +286,32 @@ function relativizeWorkspacePath(path: string): string {
   const root = findWorkspaceRoot();
   const rel = relative(root, path);
   if (!rel || (!rel.startsWith('..') && !isAbsolute(rel))) return rel || '.';
+  const anchored = relativizeKnownWorkspaceAbsolutePath(path);
+  if (anchored !== null) return anchored;
   return path;
+}
+
+function relativizeKnownWorkspaceAbsolutePath(path: string): string | null {
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  const anchorIndex = parts.findIndex((part) => isWorkspaceAnchor(part));
+  if (anchorIndex >= 0) return parts.slice(anchorIndex).join('/');
+
+  const basename = parts.at(-1) ?? '';
+  if (basename && !basename.includes('.')) return '.';
+  return null;
+}
+
+function isWorkspaceAnchor(segment: string): boolean {
+  return segment === 'packages' ||
+    segment === 'docs' ||
+    segment === '.github' ||
+    segment === 'scripts' ||
+    segment === 'AGENTS.md' ||
+    segment === 'README.md' ||
+    segment === 'PRODUCT.md' ||
+    segment === 'package.json' ||
+    segment === 'package-lock.json';
 }
 
 function findWorkspaceRoot(): string {

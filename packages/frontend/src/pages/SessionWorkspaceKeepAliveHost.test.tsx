@@ -95,6 +95,12 @@ test('SessionWorkspaceKeepAliveHost disables page navigation while hidden', () =
   assert.doesNotMatch(source, /route\.active && \(/);
 });
 
+test('SessionWorkspaceKeepAliveHost records concrete session routes for nav restore', () => {
+  const source = readFileSync(new URL('./SessionWorkspaceKeepAliveHost.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /rememberLastSessionWorkspaceRoute/);
+});
+
 function renderKeepAliveHost(initialEntry: string): string {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queryClient.setQueryData(['projects'], [{ id: 'project-1', name: 'Project 1' }]);

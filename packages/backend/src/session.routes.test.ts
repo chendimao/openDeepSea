@@ -9,10 +9,12 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-se
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
+const { fileRepo } = await import('./repos/files.js');
 const { sessionRepo, sessionMessageRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { historyRecordRepo } = await import('./repos/history-records.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 const { router } = await import('./routes.js');
+const { buildWorkspacePayload } = await import('./session.routes.js');
 const express = (await import('express')).default;
 
 const capturedPrompts: string[] = [];
@@ -130,6 +132,62 @@ test('legacy HTTP session command routes are removed', async () => {
     const res = await request(path, { method });
     assert.equal(res.status, 404);
   }
+});
+
+test('session workspace payload backfills attachments from legacy library file refs', () => {
+  const project = projectRepo.create({
+    name: 'legacy attachment refs project',
+    path: mkdtempSync(join(tmpdir(), 'legacy-session-attachment-refs-')),
+  });
+  const uploadedFile = fileRepo.create({
+    project_id: project.id,
+    original_name: 'screen.png',
+    stored_name: 'stored-screen.png',
+    mime_type: 'image/png',
+    size: 2048,
+    url: `/uploads/files/${project.id}/stored-screen.png`,
+    storage_path: join(project.path, 'stored-screen.png'),
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Legacy Attachment Refs',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '分析内容',
+    metadata: {
+      target_agent_id: 'planner',
+      library_file_refs: [uploadedFile.id],
+    },
+  });
+
+  const payload = buildWorkspacePayload(project, session);
+  const [message] = payload.activeSession.messages;
+  assert.ok(message?.metadata);
+  const metadata = JSON.parse(message.metadata) as {
+    attachments?: Array<{ fileId: string; name: string; url: string; isImage: boolean }>;
+  };
+  assert.deepEqual(metadata.attachments, [{
+    id: uploadedFile.id,
+    fileId: uploadedFile.id,
+    name: 'screen.png',
+    mimeType: 'image/png',
+    size: 2048,
+    url: `/uploads/files/${project.id}/stored-screen.png`,
+    isImage: true,
+    deleted: false,
+  }]);
+  const storedMessage = sessionMessageRepo.get(message.id);
+  assert.ok(storedMessage?.metadata);
+  assert.deepEqual(JSON.parse(storedMessage.metadata).attachments, metadata.attachments);
 });
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {

@@ -516,6 +516,7 @@ export type SessionRunStatus =
 export type SessionMessageRole = 'user' | 'assistant' | 'system';
 export type SessionMessageType = 'text' | 'system' | 'agent_stream';
 export type SessionMessageStatus = 'queued' | 'streaming' | 'completed' | 'failed';
+export type SessionAgentEventChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command' | 'event';
 export type SessionPlanItemStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'failed' | 'skipped';
 export type SessionCompactionStrategy = 'manual' | 'focus' | 'aggressive' | 'conservative' | 'auto_suggested';
 export type SessionCompactionStatus = 'previewed' | 'applied' | 'superseded' | 'discarded' | 'failed';
@@ -568,9 +569,29 @@ export interface Session {
   forked_from_history_record_id: string | null;
   latest_compaction_id: string | null;
   latest_context_manifest_id: string | null;
+  closed_at: number | null;
+  pinned_at: number | null;
+  last_viewed_at: number | null;
   created_at: number;
   updated_at: number;
   archived_at: number | null;
+}
+
+export interface ActiveSessionSummary {
+  id: string;
+  project_id: string;
+  project_name: string;
+  project_path: string;
+  title: string;
+  status: SessionStatus;
+  phase: SessionPhase;
+  provider: AcpBackend | null;
+  model: string | null;
+  pinned_at: number | null;
+  updated_at: number;
+  unread_count: number;
+  active_run_count: number;
+  latest_event_summary: string | null;
 }
 
 export interface SessionMessage {
@@ -613,7 +634,7 @@ export interface SessionAgentEvent {
   agent_id: string;
   run_id: string;
   seq: number;
-  channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+  channel: SessionAgentEventChannel;
   event_type: string;
   content: string;
   payload_json: string | null;
@@ -824,6 +845,12 @@ export interface SessionToolRow {
   target: string;
   status: 'completed' | 'running' | 'failed' | 'unknown';
   durationMs: number | null;
+  runDurationMs?: number | null;
+  command?: string | null;
+  output?: string | null;
+  detail?: string | null;
+  startedAt?: number | null;
+  completedAt?: number | null;
   severity: SessionEvidenceSeverity;
   eventId: string;
   created_at: number;
@@ -846,6 +873,7 @@ export interface SessionHistoryFilters {
 export interface SessionWorkspacePayload {
   project: Project;
   activeSession: SessionDetail;
+  activeSessions: ActiveSessionSummary[];
   historyRecords: HistoryRecord[];
   status: StatusSnapshot;
   context: SessionContextManifest | null;
@@ -1093,6 +1121,153 @@ export interface ProjectFile {
   last_referenced_room_name: string | null;
 }
 
+export type ImageGenerationWorkflow = 'generate' | 'image-to-image';
+export type ImageGenerationStatus = 'queued' | 'running' | 'canceling' | 'completed' | 'failed' | 'canceled';
+export type ImageJobGroupBy = 'prompt' | 'task' | 'session';
+export type ImageProviderCompatProfileId = 'openai' | 'openai-sdk' | 'images-edits' | 'chat-completions';
+
+export interface ImageProviderProfile {
+  id: string;
+  project_id: string;
+  name: string;
+  base_url: string;
+  model: string;
+  compat_profile_id: ImageProviderCompatProfileId;
+  supports_count_parameter: 0 | 1;
+  active: 0 | 1;
+  has_api_key: 0 | 1;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export interface ImageProviderProfileInput {
+  name: string;
+  base_url: string;
+  api_key?: string | null;
+  model: string;
+  compat_profile_id?: ImageProviderCompatProfileId;
+  supports_count_parameter?: boolean;
+}
+
+export interface ImageProviderModel {
+  id: string;
+  category: 'image' | 'other';
+}
+
+export interface ImageProviderModelsResponse {
+  normalized_base_url: string;
+  models: ImageProviderModel[];
+  warning: string | null;
+}
+
+export interface ImageGenerationJob {
+  id: string;
+  project_id: string;
+  room_id: string | null;
+  session_id: string | null;
+  source_message_id: string | null;
+  source_agent_id: string | null;
+  source_task_id: string | null;
+  provider_profile_id: string;
+  workflow: ImageGenerationWorkflow;
+  prompt: string;
+  count: number;
+  quality: string;
+  size: string;
+  status: ImageGenerationStatus;
+  message: string | null;
+  error: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  updated_at: number;
+}
+
+export interface ImageJobGroup {
+  key: string;
+  label: string;
+  count: number;
+  latest_job_id: string;
+  latest_updated_at: number;
+}
+
+export interface ImageGenerationOutput {
+  id: string;
+  job_id: string;
+  file_id: string;
+  slot: number;
+  name: string;
+  url: string;
+  mime_type: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  created_at: number;
+}
+
+export interface ImageGenerationSourceImage {
+  id: string;
+  job_id: string;
+  file_id: string;
+  slot: number;
+  url: string;
+  origin_job_id: string | null;
+  origin_output_id: string | null;
+  created_at: number;
+}
+
+export interface ImageJobCreateInput {
+  room_id?: string | null;
+  session_id?: string | null;
+  source_message_id?: string | null;
+  source_agent_id?: string | null;
+  source_task_id?: string | null;
+  provider_profile_id?: string | null;
+  workflow: ImageGenerationWorkflow;
+  prompt: string;
+  count: number;
+  quality?: string;
+  size?: string;
+  source_file_ids?: string[];
+}
+
+export interface ImageJobListFilters {
+  sessionId?: string;
+  roomId?: string;
+  status?: ImageGenerationStatus;
+}
+
+export interface ImageJobListResponse {
+  jobs: ImageGenerationJob[];
+}
+
+export interface ImageJobDetailResponse {
+  job: ImageGenerationJob;
+  outputs: ImageGenerationOutput[];
+  source_images: ImageGenerationSourceImage[];
+}
+
+export interface ImageJobCreateResponse {
+  job: ImageGenerationJob;
+  outputs: ImageGenerationOutput[];
+}
+
+export interface ImagePromptPreset {
+  id: string;
+  project_id: string;
+  title: string;
+  prompt: string;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+}
+
+export interface ImagePromptPresetInput {
+  title: string;
+  prompt: string;
+}
+
 export type ResourceType = 'uploaded_file' | 'agent_document' | 'unknown';
 
 export interface ResourceSourceInfo {
@@ -1186,6 +1361,8 @@ export interface ResourceDetail {
 
 export interface MessageMetadata {
   attachments: MessageAttachmentMetadata[];
+  image_generation_job_id?: string;
+  image_generation_status?: ImageGenerationStatus;
   reply_to?: MessageReplyMetadata;
   intent_result?: MessageIntentResult;
   task_execution?: TaskExecutionDecision;

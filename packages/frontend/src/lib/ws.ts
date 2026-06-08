@@ -1,17 +1,88 @@
 import type {
+  ActiveSessionSummary,
   HistoryRecord,
   HistoryRecordStatus,
   Session,
   SessionAgentEvent,
+  SessionAgentEventChannel,
+  SessionDiffRow,
   SessionEvidenceEvent,
   SessionMessage,
   SessionMode,
+  SessionPlanItem,
   SessionRun,
+  SessionToolRow,
   SessionWorkspacePayload,
   Task,
 } from './types';
 
+type ImageGenerationJob = {
+  id: string;
+  project_id: string;
+  room_id: string | null;
+  session_id: string | null;
+  source_message_id: string | null;
+  source_agent_id: string | null;
+  source_task_id: string | null;
+  provider_profile_id: string;
+  workflow: 'generate' | 'image-to-image';
+  prompt: string;
+  count: number;
+  quality: string;
+  size: string;
+  status: 'queued' | 'running' | 'canceling' | 'completed' | 'failed' | 'canceled';
+  message: string | null;
+  error: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  updated_at: number;
+};
+
+type ImageGenerationOutput = {
+  id: string;
+  job_id: string;
+  file_id: string;
+  slot: number;
+  name: string;
+  url: string;
+  mime_type: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  created_at: number;
+};
+
+type ImageGenerationWsEvent =
+  | {
+      type: 'image_job:created' | 'image_job:updated' | 'image_job:failed' | 'image_job:canceled';
+      projectId: string;
+      sessionId?: string | null;
+      roomId?: string | null;
+      job: ImageGenerationJob;
+    }
+  | {
+      type: 'image_job:output_added';
+      projectId: string;
+      sessionId?: string | null;
+      roomId?: string | null;
+      jobId: string;
+      output: ImageGenerationOutput;
+    }
+  | {
+      type: 'image_job:completed';
+      projectId: string;
+      sessionId?: string | null;
+      roomId?: string | null;
+      job: ImageGenerationJob;
+      outputs: ImageGenerationOutput[];
+    };
+
 export type WsServerEvent =
+  | ImageGenerationWsEvent
+  | { type: 'active_sessions:snapshot'; sessions: ActiveSessionSummary[] }
+  | { type: 'active_session:upsert'; session: ActiveSessionSummary }
+  | { type: 'active_session:remove'; sessionId: string }
   | { type: 'session_workspace:snapshot'; projectId: string; sessionId: string; payload: SessionWorkspacePayload }
   | { type: 'session_error'; sessionId: string; error: string }
   | { type: 'session_status:snapshot'; sessionId: string; status: import('./types').StatusSnapshot }
@@ -29,21 +100,40 @@ export type WsServerEvent =
       runId: string;
       seq: number;
       chunk: string;
-      channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+      channel: SessionAgentEventChannel;
       done: boolean;
       agentEvent?: SessionAgentEvent;
     }
   | { type: 'session_evidence:new'; sessionId: string; event: SessionEvidenceEvent }
+  | {
+      type: 'session_inspector:snapshot';
+      sessionId: string;
+      planItems: SessionPlanItem[];
+      toolRows: SessionToolRow[];
+      diffRows: SessionDiffRow[];
+    }
   | { type: 'history_record:new'; projectId: string; record: HistoryRecord }
   | { type: 'task:created'; task: Task }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:deleted'; taskId: string };
 
 export type WsClientEvent =
+  | { type: 'active_sessions:subscribe' }
+  | { type: 'active_sessions:unsubscribe' }
+  | { type: 'project:subscribe'; projectId: string }
+  | { type: 'project:unsubscribe'; projectId: string }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }
-  | { type: 'session.message.send'; sessionId: string; content: string; agentId?: string; mode?: SessionMode }
+  | {
+      type: 'session.message.send';
+      sessionId: string;
+      content: string;
+      agentId?: string;
+      mode?: SessionMode;
+      workspaceFileRefs?: string[];
+      libraryFileRefs?: string[];
+    }
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
   | { type: 'agent.run.cancel'; sessionId: string; agentId: string; runId: string }
@@ -66,6 +156,8 @@ class SessionSocket {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
   private subscribedSessions = new Set<string>();
+  private subscribedProjects = new Set<string>();
+  private subscribedActiveSessions = false;
   private pendingClientEvents: WsClientEvent[] = [];
   private retry = 0;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -87,6 +179,8 @@ class SessionSocket {
       if (
         this.closeWhenOpen &&
         this.subscribedSessions.size === 0 &&
+        this.subscribedProjects.size === 0 &&
+        !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) {
         this.closeWhenOpen = false;
@@ -94,6 +188,8 @@ class SessionSocket {
           if (
             this.ws !== ws ||
             this.subscribedSessions.size > 0 ||
+            this.subscribedProjects.size > 0 ||
+            this.subscribedActiveSessions ||
             this.pendingClientEvents.length > 0
           ) return;
           this.ws = null;
@@ -102,7 +198,9 @@ class SessionSocket {
         return;
       }
       this.closeWhenOpen = false;
+      if (this.subscribedActiveSessions) ws.send(JSON.stringify({ type: 'active_sessions:subscribe' }));
       for (const id of this.subscribedSessions) ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: id }));
+      for (const id of this.subscribedProjects) ws.send(JSON.stringify({ type: 'project:subscribe', projectId: id }));
       const pending = this.pendingClientEvents.splice(0);
       for (const event of pending) ws.send(JSON.stringify(event));
     });
@@ -119,6 +217,8 @@ class SessionSocket {
       this.closeWhenOpen = false;
       if (
         this.subscribedSessions.size === 0 &&
+        this.subscribedProjects.size === 0 &&
+        !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) return;
       this.retry++;
@@ -140,6 +240,8 @@ class SessionSocket {
       this.connectTimer = null;
       if (
         this.subscribedSessions.size === 0 &&
+        this.subscribedProjects.size === 0 &&
+        !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) return;
       this.connect();
@@ -160,6 +262,42 @@ class SessionSocket {
     this.subscribedSessions.delete(sessionId);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'session:unsubscribe', sessionId }));
+    }
+    this.closeIfIdle();
+  }
+
+  subscribeProject(projectId: string): void {
+    this.closeWhenOpen = false;
+    this.subscribedProjects.add(projectId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'project:subscribe', projectId }));
+    } else {
+      this.connectSoon();
+    }
+  }
+
+  unsubscribeProject(projectId: string): void {
+    this.subscribedProjects.delete(projectId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'project:unsubscribe', projectId }));
+    }
+    this.closeIfIdle();
+  }
+
+  subscribeActiveSessions(): void {
+    this.closeWhenOpen = false;
+    this.subscribedActiveSessions = true;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'active_sessions:subscribe' }));
+    } else {
+      this.connectSoon();
+    }
+  }
+
+  unsubscribeActiveSessions(): void {
+    this.subscribedActiveSessions = false;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'active_sessions:unsubscribe' }));
     }
     this.closeIfIdle();
   }
@@ -188,13 +326,22 @@ class SessionSocket {
     });
   }
 
-  sendSessionMessage(input: { sessionId: string; content: string; agentId?: string; mode?: SessionMode }): void {
+  sendSessionMessage(input: {
+    sessionId: string;
+    content: string;
+    agentId?: string;
+    mode?: SessionMode;
+    workspaceFileRefs?: string[];
+    libraryFileRefs?: string[];
+  }): void {
     this.sendOrQueue({
       type: 'session.message.send',
       sessionId: input.sessionId,
       content: input.content,
       ...(input.agentId ? { agentId: input.agentId } : {}),
       ...(input.mode ? { mode: input.mode } : {}),
+      ...(input.workspaceFileRefs && input.workspaceFileRefs.length > 0 ? { workspaceFileRefs: input.workspaceFileRefs } : {}),
+      ...(input.libraryFileRefs && input.libraryFileRefs.length > 0 ? { libraryFileRefs: input.libraryFileRefs } : {}),
     });
   }
 
@@ -241,6 +388,11 @@ class SessionSocket {
     if (this.connectTimer) clearTimeout(this.connectTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.connectTimer = null;
+    this.retryTimer = null;
+    this.subscribedSessions.clear();
+    this.subscribedProjects.clear();
+    this.subscribedActiveSessions = false;
+    this.closeWhenOpen = false;
     this.pendingClientEvents = [];
     this.ws?.close();
     this.ws = null;
@@ -256,7 +408,12 @@ class SessionSocket {
   }
 
   private closeIfIdle(): void {
-    if (this.subscribedSessions.size > 0 || this.pendingClientEvents.length > 0) return;
+    if (
+      this.subscribedSessions.size > 0 ||
+      this.subscribedProjects.size > 0 ||
+      this.subscribedActiveSessions ||
+      this.pendingClientEvents.length > 0
+    ) return;
     if (this.connectTimer) {
       clearTimeout(this.connectTimer);
       this.connectTimer = null;

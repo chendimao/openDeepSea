@@ -34,6 +34,9 @@ test('SessionWorkspacePayload supports the initial workspace contract', () => {
         forked_from_history_record_id: null,
         latest_compaction_id: null,
         latest_context_manifest_id: null,
+        closed_at: null,
+        pinned_at: null,
+        last_viewed_at: null,
         created_at: 1,
         updated_at: 2,
         archived_at: null,
@@ -46,6 +49,7 @@ test('SessionWorkspacePayload supports the initial workspace contract', () => {
       checkpoints: [],
       evidence: [],
     },
+    activeSessions: [],
     historyRecords: [],
     status: {
       goal: '实现会话系统',

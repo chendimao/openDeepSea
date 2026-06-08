@@ -22,11 +22,15 @@ import { dispatchSessionUserMessage } from './session-message-dispatch.js';
 import { retrySessionAgentRun, runSessionAgent } from './session-runtime.js';
 import { parseSessionCommand } from './session-command.js';
 import { buildHistorySummary } from './session-summary.js';
+import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
+import { buildActiveSessionSummary } from './session-active-view-model.js';
 import { buildSessionStatus, buildWorkspacePayload, createContextManifest } from './session.routes.js';
 import { wsHub } from './ws-hub.js';
 import type { HistoryRecord, Project, Session, SessionEvidenceEvent, SessionRun, WsClientEvent, WsServerEvent } from './types.js';
 
 const execFileAsync = promisify(execFile);
+
+const sessionFileRefListSchema = z.array(z.string().trim().min(1)).max(12).optional();
 
 const socketEventSchema = z.discriminatedUnion('type', [
   z.object({
@@ -40,6 +44,8 @@ const socketEventSchema = z.discriminatedUnion('type', [
     content: z.string().trim().min(1),
     agentId: z.string().trim().min(1).optional(),
     mode: z.enum(['ask', 'plan', 'code', 'debug', 'review']).optional(),
+    workspaceFileRefs: sessionFileRefListSchema,
+    libraryFileRefs: sessionFileRefListSchema,
   }),
   z.object({
     type: z.literal('agent.run.pause'),
@@ -108,11 +114,16 @@ export function handleSessionSocketEvent(socket: WebSocket, event: WsClientEvent
       return true;
     }
     if (parsed.data.type === 'session.message.send') {
-      dispatchSessionUserMessage({
-        sessionId: parsed.data.sessionId,
+      const { sessionId } = parsed.data;
+      void dispatchSessionUserMessage({
+        sessionId,
         content: parsed.data.content,
         agentId: parsed.data.agentId,
         mode: parsed.data.mode,
+        workspaceFileRefs: parsed.data.workspaceFileRefs,
+        libraryFileRefs: parsed.data.libraryFileRefs,
+      }).catch((error) => {
+        send(socket, { type: 'session_error', sessionId, error: (error as Error).message });
       });
       return true;
     }
@@ -143,17 +154,23 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
   const command = parseSessionCommand(commandText);
   if (command.kind === 'new') {
     const project = requireProject(session.project_id);
-    const record = createHistoryRecordForSession(session, command.args.title);
+    const title = typeof command.args.title === 'string' ? command.args.title : 'New Session';
     const next = sessionRepo.create({
       project_id: project.id,
-      title: command.args.blank ? 'New Session' : `继续：${record.title}`,
-      current_goal: command.args.blank ? null : session.current_goal,
+      title,
+      current_goal: null,
       mode: session.mode,
       provider: session.provider,
       model: session.model,
       workspace_path: session.workspace_path ?? project.path,
     });
-    sessionRepo.archive(session.id);
+    sessionEvidenceRepo.create({
+      session_id: next.id,
+      event_type: 'new',
+      title: 'Session created',
+      payload: { source_session_id: session.id },
+    });
+    broadcastActiveSessionUpsert(next.id);
     sendWorkspaceSnapshot(socket, project, next);
     return true;
   }
@@ -203,6 +220,7 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
       title: 'History resumed',
       payload: { history_record_id: record.id },
     });
+    broadcastActiveSessionUpsert(next.id);
     sendWorkspaceSnapshot(socket, project, next);
     return true;
   }
@@ -230,6 +248,7 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
         title: 'History fork created',
         payload: { history_record_id: record.id },
       });
+      broadcastActiveSessionUpsert(fork.id);
       sendWorkspaceSnapshot(socket, recordProject, fork);
       return true;
     }
@@ -258,6 +277,8 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
       title: 'Fork created',
       payload: { source_session_id: session.id },
     });
+    broadcastActiveSessionUpsert(session.id);
+    broadcastActiveSessionUpsert(fork.id);
     sendWorkspaceSnapshot(socket, project, fork);
     return true;
   }
@@ -267,7 +288,9 @@ function runSessionCommand(socket: WebSocket, sessionId: string, commandText: st
     });
     return true;
   }
-  dispatchSessionUserMessage({ sessionId: session.id, content: commandText, agentId: DEFAULT_SESSION_AGENT_ID });
+  void dispatchSessionUserMessage({ sessionId: session.id, content: commandText, agentId: DEFAULT_SESSION_AGENT_ID }).catch((error) => {
+    send(socket, { type: 'session_error', sessionId: session.id, error: (error as Error).message });
+  });
   return true;
 }
 
@@ -290,6 +313,7 @@ function applyCompact(
     payload: { compaction_id: compaction.id },
   });
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  broadcastActiveSessionUpsert(session.id);
   sendWorkspaceSnapshot(socket, requireProject(session.project_id), sessionRepo.get(session.id) ?? session);
   return true;
 }
@@ -307,6 +331,7 @@ function discardCompact(socket: WebSocket, sessionId: string, compactionId: stri
     payload: { compaction_id: compaction.id },
   });
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  broadcastActiveSessionUpsert(session.id);
   sendWorkspaceSnapshot(socket, requireProject(session.project_id), session);
   return true;
 }
@@ -328,6 +353,7 @@ function saveContract(
     payload: { contract_updated: true },
   });
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  broadcastActiveSessionUpsert(session.id);
   sendWorkspaceSnapshot(socket, requireProject(session.project_id), session);
   return true;
 }
@@ -359,12 +385,21 @@ function requireProject(projectId: string): Project {
 }
 
 function sendWorkspaceSnapshot(socket: WebSocket, project: Project, session: Session): void {
+  const viewedSession = markSessionViewedForSnapshot(session);
   send(socket, {
     type: 'session_workspace:snapshot',
     projectId: project.id,
-    sessionId: session.id,
-    payload: buildWorkspacePayload(project, session),
+    sessionId: viewedSession.id,
+    payload: buildWorkspacePayload(project, viewedSession),
   });
+}
+
+function markSessionViewedForSnapshot(session: Session): Session {
+  const previousSummary = buildActiveSessionSummary(session);
+  if (!previousSummary) return session;
+  const viewedSession = sessionRepo.touchViewed(session.id) ?? session;
+  if (previousSummary.unread_count > 0) broadcastActiveSessionUpsert(viewedSession);
+  return viewedSession;
 }
 
 function createHistoryRecordForSession(session: Session, title?: string | true): HistoryRecord {
@@ -447,6 +482,7 @@ async function createCheckpoint(socket: WebSocket, session: Session, title: stri
   });
   sessionCheckpointRepo.updateEvidenceEvent(checkpoint.id, event.id);
   wsHub.broadcastSession(session.id, { type: 'session_evidence:new', sessionId: session.id, event });
+  broadcastActiveSessionUpsert(session.id);
   sendWorkspaceSnapshot(socket, project, session);
 }
 
@@ -551,12 +587,7 @@ function sendSessionWorkspaceSnapshot(socket: WebSocket, projectId: string, sess
       provider: null,
       workspace_path: project.path,
     });
-  send(socket, {
-    type: 'session_workspace:snapshot',
-    projectId: project.id,
-    sessionId: activeSession.id,
-    payload: buildWorkspacePayload(project, activeSession),
-  });
+  sendWorkspaceSnapshot(socket, project, activeSession);
 }
 
 type RunControlInput = {
@@ -593,6 +624,7 @@ function retryRun(input: RunControlInput): boolean {
     payload: { source_run_id: run.id, agent_id: run.agent_id },
   });
   wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
+  broadcastActiveSessionUpsert(run.session_id);
   return true;
 }
 
@@ -625,6 +657,7 @@ function broadcastRunStopped(run: SessionRun, status: 'paused' | 'cancelled'): v
     sessionId: run.session_id,
     run,
   });
+  broadcastActiveSessionUpsert(run.session_id);
   const finalEvent = sessionAgentEventRepo.create({
     session_id: run.session_id,
     agent_id: run.agent_id,

@@ -58,6 +58,26 @@ test('applySessionWorkspaceEvent appends thinking chunks to activity log', () =>
   assert.equal(next.activeSession.agentEvents[0]?.channel, 'thinking');
 });
 
+test('applySessionWorkspaceEvent appends activity chunks to activity log', () => {
+  const payload = createPayload('session-current');
+  const event: WsServerEvent = {
+    type: 'session_run:stream',
+    sessionId: 'session-current',
+    agentId: 'planner',
+    runId: 'run-1',
+    seq: 3,
+    channel: 'activity',
+    chunk: '开始命令：rtk find skills',
+    done: false,
+  };
+
+  const next = applySessionWorkspaceEvent(payload, event);
+  assert.equal(next.activeSession.runs[0]?.stdout, '');
+  assert.equal(next.activeSession.runs[0]?.activity_log, '开始命令：rtk find skills');
+  assert.equal(next.activeSession.agentEvents[0]?.content, '开始命令：rtk find skills');
+  assert.equal(next.activeSession.agentEvents[0]?.channel, 'activity');
+});
+
 test('applySessionWorkspaceEvent appends empty ACP agent events from stream envelope', () => {
   const payload = createPayload('session-current');
   const event: WsServerEvent = {
@@ -112,6 +132,52 @@ test('applySessionWorkspaceEvent does not duplicate messages or evidence', () =>
   assert.equal(twice.activeSession.messages.length, 1);
 });
 
+test('applySessionWorkspaceEvent refreshes duplicate messages with enriched metadata', () => {
+  const payload = createPayload('session-current');
+  const now = Date.now();
+  const message = {
+    id: 'message-1',
+    session_id: 'session-current',
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '分析内容',
+    message_type: 'text',
+    status: 'completed',
+    metadata: JSON.stringify({ library_file_refs: ['file-image-1'] }),
+    created_at: now,
+  } as const;
+  const enrichedMessage = {
+    ...message,
+    metadata: JSON.stringify({
+      library_file_refs: ['file-image-1'],
+      attachments: [{
+        id: 'file-image-1',
+        fileId: 'file-image-1',
+        name: 'screen.png',
+        mimeType: 'image/png',
+        size: 2048,
+        url: '/uploads/files/project-1/screen.png',
+        isImage: true,
+      }],
+    }),
+  } as const;
+
+  const once = applySessionWorkspaceEvent(payload, {
+    type: 'session_message:new',
+    sessionId: 'session-current',
+    message,
+  });
+  const twice = applySessionWorkspaceEvent(once, {
+    type: 'session_message:new',
+    sessionId: 'session-current',
+    message: enrichedMessage,
+  });
+
+  assert.equal(twice.activeSession.messages.length, 1);
+  assert.equal(twice.activeSession.messages[0]?.metadata, enrichedMessage.metadata);
+});
+
 test('applySessionWorkspaceEvent applies active session title updates', () => {
   const payload = createPayload('session-current');
   payload.projectSwitcher.projects = [{
@@ -142,6 +208,51 @@ test('applySessionWorkspaceEvent applies active session title updates', () => {
 
   assert.equal(next.activeSession.session.title, '用户在当前会话第一次发送消息...');
   assert.equal(next.projectSwitcher.projects[0]?.recentSessions[0]?.title, '用户在当前会话第一次发送消息...');
+});
+
+test('applySessionWorkspaceEvent replaces inspector rows from snapshot', () => {
+  const payload = createPayload('session-current');
+  const now = Date.now();
+  const next = applySessionWorkspaceEvent(payload, {
+    type: 'session_inspector:snapshot',
+    sessionId: payload.activeSession.session.id,
+    planItems: [{
+      id: 'plan-real',
+      session_id: payload.activeSession.session.id,
+      parent_id: null,
+      title: '真实计划项',
+      description: null,
+      status: 'in_progress',
+      priority: 0,
+      source: 'acp_plan_update',
+      evidence_event_id: 'ev-plan',
+      created_at: now,
+      updated_at: now,
+      completed_at: null,
+    }],
+    toolRows: [{
+      id: 'tool-real',
+      action: 'exec',
+      label: 'exec_command',
+      target: 'npm run build',
+      status: 'completed',
+      durationMs: null,
+      severity: 'info',
+      eventId: 'ev-tool',
+      created_at: now,
+    }],
+    diffRows: [{
+      path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+      status: 'modified',
+      additions: 4,
+      deletions: 1,
+      summary: 'apply_patch',
+    }],
+  });
+
+  assert.equal(next.activeSession.planItems[0]?.title, '真实计划项');
+  assert.equal(next.toolRows[0]?.target, 'npm run build');
+  assert.equal(next.diffRows[0]?.summary, 'apply_patch');
 });
 
 function createPayload(sessionId: string): SessionWorkspacePayload {
@@ -177,6 +288,9 @@ function createPayload(sessionId: string): SessionWorkspacePayload {
         forked_from_history_record_id: null,
         latest_compaction_id: null,
         latest_context_manifest_id: null,
+        closed_at: null,
+        pinned_at: null,
+        last_viewed_at: null,
         created_at: now,
         updated_at: now,
         archived_at: null,
@@ -208,6 +322,7 @@ function createPayload(sessionId: string): SessionWorkspacePayload {
       checkpoints: [],
       evidence: [],
     },
+    activeSessions: [],
     historyRecords: [],
     status: {
       status: 'active',

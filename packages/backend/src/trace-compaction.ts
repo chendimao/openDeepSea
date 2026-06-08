@@ -198,32 +198,35 @@ function mergeTimelineStatus(
 
 function compactPayload(payload: Record<string, unknown>, originalBytes: number): Record<string, unknown> {
   return {
-    ...compactRecord(payload),
+    ...compactRecord(payload, { compactLossless: true }),
     truncated: true,
     original_bytes: originalBytes,
   };
 }
 
-function compactValue(value: unknown): unknown {
+function compactValue(value: unknown, options: { compactLossless?: boolean } = {}): unknown {
   if (typeof value === 'string') return compactString(value);
   if (Array.isArray(value)) {
-    const compacted = value.slice(0, MAX_TRACE_ARRAY_ITEMS).map((item) => compactValue(item));
+    const compacted = value.slice(0, MAX_TRACE_ARRAY_ITEMS).map((item) => compactValue(item, options));
     if (value.length > MAX_TRACE_ARRAY_ITEMS) {
       compacted.push(`[truncated ${value.length - MAX_TRACE_ARRAY_ITEMS} items]`);
     }
     return compacted;
   }
-  if (value && typeof value === 'object') return compactRecord(value as Record<string, unknown>);
+  if (value && typeof value === 'object') return compactRecord(value as Record<string, unknown>, options);
   return value;
 }
 
-function compactRecord(value: Record<string, unknown>): Record<string, unknown> {
+function compactRecord(
+  value: Record<string, unknown>,
+  options: { compactLossless?: boolean } = {},
+): Record<string, unknown> {
   const entries = Object.entries(value);
   const compacted: Record<string, unknown> = {};
   for (const [key, item] of entries.slice(0, MAX_TRACE_OBJECT_KEYS)) {
-    compacted[key] = LOSSLESS_PAYLOAD_KEYS.has(key)
+    compacted[key] = !options.compactLossless && LOSSLESS_PAYLOAD_KEYS.has(key)
       ? item
-      : compactValue(item);
+      : compactValue(item, options);
   }
   if (entries.length > MAX_TRACE_OBJECT_KEYS) {
     compacted.__truncated_keys = entries.length - MAX_TRACE_OBJECT_KEYS;

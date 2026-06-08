@@ -1,0 +1,69 @@
+import { Image as ImageIcon, Layers, Settings2, Sparkles } from 'lucide-react';
+import { ImageGalleryPanel } from './ImageGalleryPanel';
+import { ImageJobForm } from './ImageJobForm';
+import { ImageJobQueue } from './ImageJobQueue';
+import { ProviderProfilePanel } from './ProviderProfilePanel';
+
+export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.Element {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-[var(--color-bg)]" data-project-id={projectId}>
+      <header className="workspace-toolbar">
+        <div className="min-w-0">
+          <h1 className="flex items-center gap-2 font-display text-[15px] font-semibold leading-tight">
+            <ImageIcon className="h-4 w-4 text-[var(--color-accent)]" aria-hidden="true" />
+            <span>图片工作台</span>
+          </h1>
+          <div className="mt-1 hidden truncate font-mono text-[11px] text-[var(--color-fg-muted)] sm:block">
+            project:{projectId} · image generation workspace
+          </div>
+        </div>
+        <div className="hidden items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-panel)] px-3 py-1 text-[11px] text-[var(--color-fg-muted)] md:flex">
+          <Sparkles className="h-3.5 w-3.5 text-[var(--color-accent)]" aria-hidden="true" />
+          <span>任务生成、进度追踪、输出沉淀</span>
+        </div>
+      </header>
+
+      <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 lg:grid lg:grid-cols-[320px_minmax(300px,420px)_minmax(0,1fr)]">
+        <section
+          aria-labelledby="image-generation-config-heading"
+          className="min-h-[220px] shrink-0 border border-[var(--color-border)] bg-[var(--color-panel)] p-4 lg:min-h-0 lg:overflow-y-auto"
+        >
+          <h2 id="image-generation-config-heading" className="flex items-center gap-2 text-[13px] font-semibold">
+            <Settings2 className="h-4 w-4 text-[var(--color-accent)]" aria-hidden="true" />
+            <span>生成设置</span>
+          </h2>
+          <div className="mt-4 space-y-4 text-[12px] text-[var(--color-fg-muted)]">
+            <ProviderProfilePanel projectId={projectId} />
+            <ImageJobForm projectId={projectId} />
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="image-generation-jobs-heading"
+          className="min-h-[220px] shrink-0 border border-[var(--color-border)] bg-[var(--color-panel)] p-4 lg:min-h-0 lg:overflow-y-auto"
+        >
+          <h2 id="image-generation-jobs-heading" className="flex items-center gap-2 text-[13px] font-semibold">
+            <Layers className="h-4 w-4 text-[var(--color-accent)]" aria-hidden="true" />
+            <span>任务队列</span>
+          </h2>
+          <div className="mt-4">
+            <ImageJobQueue projectId={projectId} />
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="image-generation-gallery-heading"
+          className="min-h-[260px] shrink-0 border border-[var(--color-border)] bg-[var(--color-panel)] p-4 lg:min-h-0 lg:overflow-y-auto"
+        >
+          <h2 id="image-generation-gallery-heading" className="flex items-center gap-2 text-[13px] font-semibold">
+            <ImageIcon className="h-4 w-4 text-[var(--color-accent)]" aria-hidden="true" />
+            <span>项目图库</span>
+          </h2>
+          <div className="mt-4">
+            <ImageGalleryPanel projectId={projectId} />
+          </div>
+        </section>
+      </main>
+    </div>
+  );
+}

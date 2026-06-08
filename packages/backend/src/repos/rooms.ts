@@ -223,6 +223,7 @@ function resolveExistingAcpConfig(
     acp_backend: AcpBackend | null;
     acp_permission_mode?: AcpPermissionMode | null;
   },
+  options: { refreshBackend?: boolean; refreshPermissionMode?: boolean } = {},
 ): ResolvedAcpConfig {
   if (!existing) {
     return {
@@ -233,8 +234,8 @@ function resolveExistingAcpConfig(
   }
   const hasCustomAcpConfig =
     Boolean(existing.acp_session_id) ||
-    existing.acp_backend !== defaults.acp_backend ||
-    existing.acp_permission_mode !== (defaults.acp_permission_mode ?? 'bypass') ||
+    (!options.refreshBackend && existing.acp_backend !== defaults.acp_backend) ||
+    (!options.refreshPermissionMode && existing.acp_permission_mode !== (defaults.acp_permission_mode ?? 'bypass')) ||
     Boolean(existing.acp_enabled) !== Boolean(defaults.acp_backend);
   if (!hasCustomAcpConfig) {
     return {
@@ -245,8 +246,12 @@ function resolveExistingAcpConfig(
   }
   return {
     acp_enabled: Boolean(existing.acp_enabled),
-    acp_backend: existing.acp_backend,
-    acp_permission_mode: existing.acp_permission_mode,
+    acp_backend: options.refreshBackend
+      ? defaults.acp_backend
+      : existing.acp_backend,
+    acp_permission_mode: options.refreshPermissionMode
+      ? defaults.acp_permission_mode ?? 'bypass'
+      : existing.acp_permission_mode,
   };
 }
 
@@ -494,6 +499,18 @@ export const roomAgentRepo = {
       const acpConfig = resolveExistingAcpConfig(existingRoomAgent, {
         acp_backend: agent.default_acp_backend,
         acp_permission_mode: runtimeBoundary.acp_permission_mode,
+      }, {
+        refreshBackend: Boolean(
+          template &&
+          existingRoomAgent &&
+          (existingRoomAgent.runtime_profile_version ?? 0) < BUILT_IN_RUNTIME_PROFILE_VERSION,
+        ),
+        refreshPermissionMode: Boolean(
+          template &&
+          existingRoomAgent &&
+          (existingRoomAgent.runtime_profile_version ?? 0) < BUILT_IN_RUNTIME_PROFILE_VERSION &&
+          runtimeBoundary.acp_permission_mode !== existingRoomAgent.acp_permission_mode,
+        ),
       });
       db.prepare(
         `UPDATE room_agents
@@ -586,6 +603,10 @@ export const roomAgentRepo = {
     const acpConfig = resolveExistingAcpConfig(withRole, {
       acp_backend: template.acp_backend,
       acp_permission_mode: runtimeBoundary.acp_permission_mode,
+    }, {
+      refreshBackend: (existing.runtime_profile_version ?? 0) < BUILT_IN_RUNTIME_PROFILE_VERSION,
+      refreshPermissionMode: (existing.runtime_profile_version ?? 0) < BUILT_IN_RUNTIME_PROFILE_VERSION &&
+        runtimeBoundary.acp_permission_mode !== existing.acp_permission_mode,
     });
     const withAcp = this.setAcp(withRole.id, {
       acp_enabled: acpConfig.acp_enabled,

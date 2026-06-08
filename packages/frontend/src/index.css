@@ -7,6 +7,9 @@
     --color-bg: #F5F7FB;
     --color-surface: rgba(255, 255, 255, 0.72);
     --color-surface-raised: rgba(255, 255, 255, 0.85);
+    --color-popover: #ffffff;
+    --color-popover-raised: #f2f6fb;
+    --color-popover-border: rgba(15, 23, 42, 0.10);
     --color-border: rgba(0, 0, 0, 0.06);
     --color-border-strong: rgba(37, 99, 235, 0.24);
     --color-fg: #162231;
@@ -117,6 +120,9 @@
     --color-bg: #090d16;
     --color-surface: rgba(17, 25, 39, 0.72);
     --color-surface-raised: rgba(29, 39, 57, 0.78);
+    --color-popover: #111927;
+    --color-popover-raised: #1d2739;
+    --color-popover-border: rgba(148, 163, 184, 0.22);
     --color-border: rgba(148, 163, 184, 0.18);
     --color-border-strong: rgba(148, 163, 184, 0.32);
     --color-fg: #E5E7EB;
@@ -227,6 +233,9 @@
     --color-bg: #F7F4EC;
     --color-surface: #FFFCF5;
     --color-surface-raised: #F0ECE2;
+    --color-popover: #FFFCF5;
+    --color-popover-raised: #F0ECE2;
+    --color-popover-border: #D8D0BF;
     --color-border: #D8D0BF;
     --color-border-strong: #BCA98C;
     --color-fg: #1F1D18;
@@ -282,6 +291,9 @@
     --color-bg: #17140F;
     --color-surface: #211D16;
     --color-surface-raised: #2A251C;
+    --color-popover: #211D16;
+    --color-popover-raised: #2A251C;
+    --color-popover-border: #3D3528;
     --color-border: #3D3528;
     --color-border-strong: #5B4B37;
     --color-fg: #F1E9DA;

@@ -9,7 +9,10 @@ import { WorkspaceEmptyState } from '../components/WorkspaceEmptyState';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import type {
-  HistoryRecordStatus,
+  AcpBackend,
+  ActiveSessionSummary,
+  Project,
+  Session,
   SessionCompaction,
   SessionMode,
   SessionWorkspacePayload,
@@ -18,12 +21,72 @@ import { sessionSocket, type WsServerEvent } from '../lib/ws';
 import { CompactPreviewSurface } from '../session-ui/CompactPreviewSurface';
 import { SessionShell } from '../session-ui/SessionShell';
 import { applySessionWorkspaceEvent } from '../session-ui/session-workspace-events';
+import type { SessionComposerSubmit } from '../session-ui/session-file-composer-model';
 
 type SessionWorkspacePageProps = {
   projectIdOverride?: string;
   sessionIdOverride?: string;
   navigationEnabled?: boolean;
 };
+
+type CreateSessionInput = NonNullable<Parameters<typeof api.createSession>[1]>;
+type CreateSessionAndSelectInput = {
+  targetProjectId: string;
+  sourceSession: Pick<Session, 'id' | 'mode' | 'provider' | 'model'>;
+  navigationEnabled: boolean;
+  createSession: (projectId: string, input: CreateSessionInput) => Promise<Session>;
+  navigate: (to: string, options?: { replace?: boolean }) => void;
+  requestWorkspace: (input: { projectId: string; sessionId: string }) => void;
+  onSessionCreated?: (session: Session) => void;
+};
+
+export async function createProjectSessionAndSelect({
+  targetProjectId,
+  sourceSession,
+  navigationEnabled,
+  createSession,
+  navigate,
+  requestWorkspace,
+  onSessionCreated,
+}: CreateSessionAndSelectInput): Promise<void> {
+  const nextSession = await createSession(targetProjectId, {
+    title: 'New Session',
+    mode: sourceSession.mode,
+    provider: sourceSession.provider as AcpBackend | null,
+    model: sourceSession.model,
+  });
+  onSessionCreated?.(nextSession);
+  requestWorkspace({ projectId: targetProjectId, sessionId: nextSession.id });
+  if (navigationEnabled) {
+    navigate(`/projects/${targetProjectId}/sessions/${nextSession.id}`);
+    return;
+  }
+}
+
+export function projectSessionToActiveSummary({
+  session,
+  project,
+}: {
+  session: Session;
+  project: Pick<Project, 'id' | 'name' | 'path'>;
+}): ActiveSessionSummary {
+  return {
+    id: session.id,
+    project_id: session.project_id,
+    project_name: project.name,
+    project_path: project.path,
+    title: session.title,
+    status: session.status,
+    phase: session.phase,
+    provider: session.provider,
+    model: session.model,
+    pinned_at: session.pinned_at,
+    updated_at: session.updated_at,
+    unread_count: 0,
+    active_run_count: 0,
+    latest_event_summary: session.current_goal,
+  };
+}
 
 export function SessionWorkspacePage({
   projectIdOverride,
@@ -37,6 +100,7 @@ export function SessionWorkspacePage({
   const { t } = useI18n();
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
+  const [activeSessions, setActiveSessions] = useState<ActiveSessionSummary[] | null>(null);
   const previousSessionIdRef = useRef<string | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
   const { data: projects = [], isLoading: projectsLoading } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
@@ -46,6 +110,11 @@ export function SessionWorkspacePage({
     if (!navigationEnabled) return;
     if (!projectId && activeProjectId) navigate(`/projects/${activeProjectId}`, { replace: true });
   }, [activeProjectId, navigate, navigationEnabled, projectId]);
+
+  useEffect(() => {
+    sessionSocket.subscribeActiveSessions();
+    return () => sessionSocket.unsubscribeActiveSessions();
+  }, []);
 
   useEffect(() => {
     if (!activeProjectId) return;
@@ -72,6 +141,7 @@ export function SessionWorkspacePage({
     return sessionSocket.on((event: WsServerEvent) => {
       if (event.type === 'session_workspace:snapshot') {
         if (event.projectId !== activeProjectId) return;
+        setActiveSessions(event.payload.activeSessions);
         setWorkspacePayload(event.payload);
         const nextNavigation = getSnapshotNavigation(
           event.projectId,
@@ -82,6 +152,33 @@ export function SessionWorkspacePage({
         if (nextNavigation) {
           navigate(nextNavigation.to, { replace: nextNavigation.replace });
         }
+        return;
+      }
+      if (event.type === 'active_sessions:snapshot') {
+        setActiveSessions(event.sessions);
+        setWorkspacePayload((current) => current ? { ...current, activeSessions: event.sessions } : current);
+        return;
+      }
+      if (event.type === 'active_session:upsert') {
+        setActiveSessions((current) => upsertActiveSessionSummary(current ?? [], event.session));
+        setWorkspacePayload((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            activeSessions: upsertActiveSessionSummary(current.activeSessions, event.session),
+          };
+        });
+        return;
+      }
+      if (event.type === 'active_session:remove') {
+        setActiveSessions((current) => (current ?? []).filter((session) => session.id !== event.sessionId));
+        setWorkspacePayload((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            activeSessions: current.activeSessions.filter((session) => session.id !== event.sessionId),
+          };
+        });
         return;
       }
       if (event.type === 'session_error') {
@@ -169,11 +266,39 @@ export function SessionWorkspacePage({
     );
   }
 
+  const createProjectSession = async (targetProjectId: string): Promise<void> => {
+    try {
+      await createProjectSessionAndSelect({
+        targetProjectId,
+        sourceSession: workspacePayload.activeSession.session,
+        navigationEnabled,
+        createSession: api.createSession,
+        navigate: (to, options) => navigate(to, options),
+        requestWorkspace: (input) => sessionSocket.requestSessionWorkspace(input),
+        onSessionCreated: (session) => {
+          const project = findProjectForSessionSummary(workspacePayload, targetProjectId);
+          if (!project) return;
+          const summary = projectSessionToActiveSummary({ session, project });
+          setActiveSessions((current) => upsertActiveSessionSummary(current ?? workspacePayload.activeSessions, summary));
+          setWorkspacePayload((current) => current ? {
+            ...current,
+            activeSessions: upsertActiveSessionSummary(current.activeSessions, summary),
+          } : current);
+        },
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '新建会话失败');
+    }
+  };
+
   return (
     <>
     <SessionShell
-      payload={workspacePayload}
-      onSendMessage={(content) => runSessionCommand(content, workspacePayload, {
+      payload={{
+        ...workspacePayload,
+        activeSessions: activeSessions ?? workspacePayload.activeSessions,
+      }}
+      onSendMessage={(message) => runSessionCommand(message, workspacePayload, {
         sendMessage: (message) => sessionSocket.sendSessionMessage(message),
         runCommand: (message) => sessionSocket.runSessionCommand(message),
       })}
@@ -186,9 +311,14 @@ export function SessionWorkspacePage({
       onSaveContract={(input) => {
         sessionSocket.saveSessionContract({ sessionId: workspacePayload.activeSession.session.id, ...input });
       }}
-      onFilterHistory={(filters) => {
-        sessionSocket.filterHistoryRecords({ projectId: activeProjectId, ...filters });
+      onOpenSession={(projectId, sessionId) => {
+        if (navigationEnabled) {
+          navigate(`/projects/${projectId}/sessions/${sessionId}`);
+          return;
+        }
+        sessionSocket.requestSessionWorkspace({ projectId, sessionId });
       }}
+      onCreateSession={createProjectSession}
     />
     {compactPreview && (
       <div className="session-overlay" role="dialog" aria-label="Compact Preview">
@@ -247,24 +377,73 @@ function isSessionWorkspaceEvent(event: WsServerEvent): boolean {
   return event.type.startsWith('session_') || event.type === 'session:updated' || event.type === 'history_record:new';
 }
 
+export function upsertActiveSessionSummary(
+  sessions: ActiveSessionSummary[],
+  session: ActiveSessionSummary,
+): ActiveSessionSummary[] {
+  return [session, ...sessions.filter((item) => item.id !== session.id)]
+    .sort((left, right) =>
+      Number(left.pinned_at === null) - Number(right.pinned_at === null) ||
+      (right.pinned_at ?? 0) - (left.pinned_at ?? 0) ||
+      right.updated_at - left.updated_at
+    );
+}
+
+function findProjectForSessionSummary(
+  payload: SessionWorkspacePayload,
+  projectId: string,
+): Pick<Project, 'id' | 'name' | 'path'> | null {
+  const switcherProject = payload.projectSwitcher.projects.find((project) => project.id === projectId);
+  if (switcherProject) {
+    return {
+      id: switcherProject.id,
+      name: switcherProject.name,
+      path: switcherProject.path,
+    };
+  }
+  if (payload.project.id === projectId) {
+    return {
+      id: payload.project.id,
+      name: payload.project.name,
+      path: payload.project.path,
+    };
+  }
+  return null;
+}
+
 type SessionCommandResult = { kind: 'noop' } | null;
 
 export function runSessionCommand(
-  content: string,
+  input: string | SessionComposerSubmit,
   payload: SessionWorkspacePayload,
-  input: {
-    sendMessage: (message: { sessionId: string; content: string; agentId?: string; mode?: SessionMode }) => void;
+  handlers: {
+    sendMessage: (message: {
+      sessionId: string;
+      content: string;
+      agentId?: string;
+      mode?: SessionMode;
+      workspaceFileRefs?: string[];
+      libraryFileRefs?: string[];
+    }) => void;
     runCommand: (message: { sessionId: string; command: string }) => void;
   },
 ): SessionCommandResult {
   const sessionId = payload.activeSession.session.id;
-  const trimmed = content.trim();
+  const message = typeof input === 'string' ? { content: input } : input;
+  const trimmed = message.content.trim();
   if (trimmed === '/resume' || trimmed === '/history') return { kind: 'noop' };
   if (trimmed.startsWith('/')) {
-    input.runCommand({ sessionId, command: trimmed });
+    handlers.runCommand({ sessionId, command: trimmed });
     return null;
   }
-  input.sendMessage({ sessionId, content, agentId: 'planner', mode: payload.activeSession.session.mode });
+  handlers.sendMessage({
+    sessionId,
+    content: message.content,
+    agentId: 'planner',
+    mode: payload.activeSession.session.mode,
+    ...(message.workspaceFileRefs && message.workspaceFileRefs.length > 0 ? { workspaceFileRefs: message.workspaceFileRefs } : {}),
+    ...(message.libraryFileRefs && message.libraryFileRefs.length > 0 ? { libraryFileRefs: message.libraryFileRefs } : {}),
+  });
   return null;
 }
 

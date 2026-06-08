@@ -25,11 +25,23 @@ const {
   enqueueGraphWorkflow,
   startGraphWorkflow,
 } = await import('./runtime.js');
+const { setVerificationCommandRunnerForTests } = await import('./verification.js');
 
 const originalLangGraphWorkflowEnabled = process.env.LANGGRAPH_WORKFLOW_ENABLED;
 const projectPathsToCleanup: string[] = [];
 const acceptanceNotes = 'Graph runtime completed all steps';
 const acceptanceCriterion = 'Implementation output is reviewed and accepted';
+const verificationCommand = 'node --version';
+
+test.beforeEach(() => {
+  setVerificationCommandRunnerForTests(async (command) => ({
+    command,
+    status: 'passed',
+    exitCode: 0,
+    stdout: 'stubbed graph e2e verification passed',
+    stderr: '',
+  }));
+});
 
 test.afterEach(() => {
   if (originalLangGraphWorkflowEnabled === undefined) {
@@ -37,6 +49,7 @@ test.afterEach(() => {
   } else {
     process.env.LANGGRAPH_WORKFLOW_ENABLED = originalLangGraphWorkflowEnabled;
   }
+  setVerificationCommandRunnerForTests(null);
   setWorkflowOrchestratorGraphDeps({});
   for (const projectPath of projectPathsToCleanup.splice(0)) {
     rmSync(projectPath, { recursive: true, force: true });
@@ -77,8 +90,8 @@ test('graph runtime completes ACP-only development loop', async () => {
         dependsOn: [],
       }],
       reviewFocus: ['runtime completes via ACP-only agents'],
-      verification: [],
-      verificationCommands: [],
+      verification: [verificationCommand],
+      verificationCommands: [{ command: verificationCommand, reason: 'Graph E2E smoke check', required: true }],
       risks: [],
       needsApproval: false,
     }),
@@ -93,7 +106,7 @@ test('graph runtime completes ACP-only development loop', async () => {
         workflowStepId: input.workflowStepId,
         taskId: input.taskId,
       });
-      const output = outputForStage(input.workflowStage);
+      const output = outputForAgentInput(input);
       const agentRun = agentRunRepo.create({
         room_id: input.roomId,
         room_agent_id: input.agent.id,
@@ -129,15 +142,21 @@ test('graph runtime completes ACP-only development loop', async () => {
   const steps = detail.steps;
   const artifacts = detail.artifacts;
   const nodeNames = steps.map((step) => step.node_name);
-  const planningStep = requireStep(steps, 'planning');
+  const brainstormingStep = requireStep(steps, 'brainstorming');
+  const specReviewStep = requireStep(steps, 'spec_review');
+  const worktreeStep = requireStep(steps, 'worktree');
+  const planningStep = requireStep(steps, 'writing_plans');
+  const planReviewStep = requireStep(steps, 'plan_review');
   const dispatchStep = requireStep(steps, 'dispatch');
-  const executeStep = requireStep(steps, 'execute');
-  const reviewStep = requireStep(steps, 'review');
+  const executeStep = requireStep(steps, 'tdd_execute');
+  const specComplianceReviewStep = requireStep(steps, 'spec_compliance_review');
+  const codeQualityReviewStep = requireStep(steps, 'code_quality_review');
   const verifyStep = requireStep(steps, 'verify');
+  const finishBranchStep = requireStep(steps, 'finish_branch');
   const acceptanceStep = requireStep(steps, 'acceptance');
   const planArtifact = requireArtifact(artifacts, 'plan');
   const assignmentArtifact = requireArtifact(artifacts, 'assignment');
-  const reviewArtifact = requireArtifact(artifacts, 'review');
+  const reviewArtifacts = artifacts.filter((artifact) => artifact.artifact_type === 'review');
   const verificationArtifact = artifacts.find((artifact) => artifact.workflow_step_id === verifyStep.id);
   const acceptanceArtifact = requireArtifact(artifacts, 'acceptance');
   const verificationMetadata = verificationArtifact?.metadata ? JSON.parse(verificationArtifact.metadata) as {
@@ -145,84 +164,117 @@ test('graph runtime completes ACP-only development loop', async () => {
   } : null;
 
   assert.equal(run.status, 'completed');
-  assert.equal(run.graph_version, 'phase-b-v1');
+  assert.equal(run.graph_version, 'superpowers-v1');
   assert.equal(taskRepo.get(task.id)?.status, 'done');
-  assertOrderedSubsequence(nodeNames, ['context', 'planning', 'dispatch', 'execute', 'review', 'verify', 'acceptance']);
+  assertOrderedSubsequence(nodeNames, [
+    'context',
+    'brainstorming',
+    'spec_review',
+    'worktree',
+    'writing_plans',
+    'plan_review',
+    'dispatch',
+    'tdd_execute',
+    'spec_compliance_review',
+    'code_quality_review',
+    'verify',
+    'finish_branch',
+    'acceptance',
+  ]);
   assert.equal(verifyStep.status, 'completed');
-  assert.match(verifyStep.result, /\(none\): skipped/);
+  assert.match(verifyStep.result, /node --version: passed/);
   assert.ok(verificationArtifact);
   assert.equal(verificationArtifact.artifact_type, 'implementation_summary');
-  assert.match(verificationArtifact.content, /\(none\): skipped/);
-  assert.equal(verificationMetadata?.results?.[0]?.status, 'skipped');
-  assert.equal(verificationMetadata?.results?.[0]?.command, '(none)');
+  assert.match(verificationArtifact.content, /node --version: passed/);
+  assert.equal(verificationMetadata?.results?.[0]?.status, 'passed');
+  assert.equal(verificationMetadata?.results?.[0]?.command, verificationCommand);
   assert.equal(planArtifact.workflow_step_id, planningStep.id);
   assert.equal(assignmentArtifact.workflow_step_id, dispatchStep.id);
-  assert.equal(reviewArtifact.workflow_step_id, reviewStep.id);
+  assert.deepEqual(
+    reviewArtifacts.map((artifact) => artifact.workflow_step_id),
+    [specComplianceReviewStep.id, codeQualityReviewStep.id],
+  );
   assert.equal(acceptanceArtifact.workflow_step_id, acceptanceStep.id);
   assert.equal(graphState?.status, 'completed');
   assert.equal(graphState?.currentNode, 'memory');
-  assert.equal(graphState?.verificationResults[0]?.status, 'skipped');
-  assert.equal(graphState?.verificationResults[0]?.command, '(none)');
+  assert.equal(graphState?.verificationResults[0]?.status, 'passed');
+  assert.equal(graphState?.verificationResults[0]?.command, verificationCommand);
   assert.equal(graphState?.workflowPlan?.tasks.length, 3);
   assert.deepEqual(
     graphState?.workflowPlan?.tasks.map((item) => ({
       role: item.role,
-      agentId: item.agent_id,
       status: item.status,
       progress: item.progress,
       resultCount: item.result_refs.length,
     })),
     [
-      { role: 'executor', agentId: executor.id, status: 'completed', progress: 100, resultCount: 1 },
-      { role: 'reviewer', agentId: reviewer.id, status: 'completed', progress: 100, resultCount: 2 },
-      { role: 'acceptor', agentId: acceptor.id, status: 'completed', progress: 100, resultCount: 1 },
+      { role: 'executor', status: 'completed', progress: 100, resultCount: 1 },
+      { role: 'reviewer', status: 'completed', progress: 100, resultCount: 1 },
+      { role: 'acceptor', status: 'completed', progress: 100, resultCount: 1 },
     ],
   );
   assertWorkflowEvent(events, 'workflow_started', task.id);
-  assertWorkflowEvent(events, 'workflow_stage_changed', task.id, planningStep.id);
   assertWorkflowEvent(events, 'workflow_plan_ready', task.id, planningStep.id);
   assertWorkflowEvent(events, 'workflow_assignment_created', task.id, dispatchStep.id);
   assertWorkflowEvent(events, 'workflow_stage_changed', childTasks[0]?.id ?? '', executeStep.id);
-  assertWorkflowEvent(events, 'workflow_stage_changed', task.id, reviewStep.id);
-  assertWorkflowEvent(events, 'workflow_stage_changed', task.id, verifyStep.id);
   assertWorkflowEvent(events, 'workflow_stage_changed', task.id, acceptanceStep.id);
   assertWorkflowEvent(events, 'workflow_completed', task.id, acceptanceStep.id);
   assertWorkflowEvent(events, 'workflow_memory_written', task.id);
+  const nonPlanningAgentCalls = agentCalls.filter((call) => call.stage !== 'planning');
+  const implementationCall = nonPlanningAgentCalls.find((call) => call.stage === 'implementation');
   assert.equal(childTasks.length, 1);
-  assert.equal(childTasks[0]?.assigned_agent_id, executor.id);
+  assert.equal(childTasks[0]?.assigned_agent_id, implementationCall?.agentId);
   assert.equal(childTasks[0]?.status, 'done');
-  assert.deepEqual(agentCalls, [
+  assert.deepEqual(nonPlanningAgentCalls.map((call) => ({
+    stage: call.stage,
+    role: call.role,
+    workflowStepId: call.workflowStepId,
+    taskId: call.taskId,
+  })), [
     {
       stage: 'implementation',
       role: 'executor',
-      agentId: executor.id,
       workflowStepId: executeStep.id,
       taskId: childTasks[0]?.id,
     },
     {
       stage: 'code_review',
       role: 'reviewer',
-      agentId: reviewer.id,
-      workflowStepId: reviewStep.id,
+      workflowStepId: specComplianceReviewStep.id,
+      taskId: task.id,
+    },
+    {
+      stage: 'code_review',
+      role: 'reviewer',
+      workflowStepId: codeQualityReviewStep.id,
       taskId: task.id,
     },
     {
       stage: 'acceptance',
       role: 'acceptor',
-      agentId: acceptor.id,
       workflowStepId: acceptanceStep.id,
       taskId: task.id,
     },
   ]);
+  const specComplianceReviewCall = nonPlanningAgentCalls.find((call) =>
+    call.workflowStepId === specComplianceReviewStep.id,
+  );
+  const codeQualityReviewCall = nonPlanningAgentCalls.find((call) =>
+    call.workflowStepId === codeQualityReviewStep.id,
+  );
+  const acceptanceCall = nonPlanningAgentCalls.find((call) => call.workflowStepId === acceptanceStep.id);
   assert.equal(executeStep.stage, 'implementation');
-  assert.equal(executeStep.room_agent_id, executor.id);
-  assert.equal(executeStep.assigned_room_agent_id, executor.id);
-  assert.equal(reviewStep.stage, 'code_review');
-  assert.equal(reviewStep.room_agent_id, reviewer.id);
-  assert.equal(reviewStep.assigned_room_agent_id, reviewer.id);
+  assert.equal(executeStep.room_agent_id, implementationCall?.agentId);
+  assert.equal(executeStep.assigned_room_agent_id, implementationCall?.agentId);
+  assert.equal(specComplianceReviewStep.stage, 'code_review');
+  assert.equal(specComplianceReviewStep.room_agent_id, specComplianceReviewCall?.agentId);
+  assert.equal(specComplianceReviewStep.assigned_room_agent_id, specComplianceReviewCall?.agentId);
+  assert.equal(codeQualityReviewStep.stage, 'code_review');
+  assert.equal(codeQualityReviewStep.room_agent_id, codeQualityReviewCall?.agentId);
+  assert.equal(codeQualityReviewStep.assigned_room_agent_id, codeQualityReviewCall?.agentId);
   assert.equal(acceptanceStep.stage, 'acceptance');
-  assert.equal(acceptanceStep.room_agent_id, acceptor.id);
-  assert.equal(acceptanceStep.assigned_room_agent_id, acceptor.id);
+  assert.equal(acceptanceStep.room_agent_id, acceptanceCall?.agentId);
+  assert.equal(acceptanceStep.assigned_room_agent_id, acceptanceCall?.agentId);
   assert.equal(taskSummary?.title, `任务完成：${task.title}`);
   assert.equal(taskSummary?.source_id, run.id);
   assert.equal(taskSummary?.task_id, task.id);
@@ -277,8 +329,8 @@ test('graph runtime executes every planned child before review', async () => {
         },
       ],
       reviewFocus: ['review only after all implementation children are ready'],
-      verification: [],
-      verificationCommands: [],
+      verification: [verificationCommand],
+      verificationCommands: [{ command: verificationCommand, reason: 'Graph E2E smoke check', required: true }],
       risks: [],
       needsApproval: false,
     }),
@@ -302,7 +354,7 @@ test('graph runtime executes every planned child before review', async () => {
           `review started before all children were implemented: ${JSON.stringify(snapshot)}`,
         );
       }
-      const output = outputForStage(input.workflowStage);
+      const output = outputForAgentInput(input);
       const agentRun = agentRunRepo.create({
         room_id: input.roomId,
         room_agent_id: input.agent.id,
@@ -341,10 +393,10 @@ test('graph runtime executes every planned child before review', async () => {
     childTasks.map((child) => child.id),
   );
   assert.ok(reviewCallIndex > secondImplementationCallIndex);
-  assert.equal(reviewSnapshots.length, 1);
-  assert.equal(agentCalls.at(-1)?.agentId, acceptor.id);
-  assert.equal(implementationCalls.every((call) => call.agentId === executor.id), true);
-  assert.equal(agentCalls.some((call) => call.stage === 'code_review' && call.agentId === reviewer.id), true);
+  assert.equal(reviewSnapshots.length, 2);
+  assert.equal(agentCalls.at(-1)?.role, 'acceptor');
+  assert.equal(implementationCalls.every((call) => call.role === 'executor'), true);
+  assert.equal(agentCalls.some((call) => call.stage === 'code_review' && call.role === 'reviewer'), true);
 });
 
 test('graph review prompt uses workflow context entries instead of raw implementation output', async () => {
@@ -383,8 +435,8 @@ test('graph review prompt uses workflow context entries instead of raw implement
         dependsOn: [],
       }],
       reviewFocus: [],
-      verification: [],
-      verificationCommands: [],
+      verification: [verificationCommand],
+      verificationCommands: [{ command: verificationCommand, reason: 'Graph E2E smoke check', required: true }],
       risks: [],
       needsApproval: false,
     }),
@@ -395,9 +447,7 @@ test('graph review prompt uses workflow context entries instead of raw implement
       if (input.workflowStage === 'code_review') {
         reviewPrompts.push(input.prompt);
       }
-      const output = input.workflowStage === 'implementation'
-        ? longImplementationOutput
-        : outputForStage(input.workflowStage);
+      const output = outputForAgentInput(input, longImplementationOutput);
       const agentRun = agentRunRepo.create({
         room_id: input.roomId,
         room_agent_id: input.agent.id,
@@ -421,18 +471,20 @@ test('graph review prompt uses workflow context entries instead of raw implement
   const run = await workflowOrchestrator.start(task.id);
   const detail = workflowRepo.detail(run.id);
   assert.ok(detail);
-  const executeStep = requireStep(detail.steps, 'execute');
+  const executeStep = requireStep(detail.steps, 'tdd_execute');
   const contextEntries = workflowContextRepo.listByWorkflow(run.id);
   const handoff = contextEntries.find((entry) => entry.entry_type === 'handoff' && entry.workflow_step_id === executeStep.id);
 
   assert.ok(handoff);
-  assert.equal(handoff.raw_char_count, longImplementationOutput.length);
+  assert.equal(handoff.raw_char_count, withTddEvidence(longImplementationOutput).length);
   assert.match(handoff.content, /完整原始输出请查看引用/);
-  assert.equal(reviewPrompts.length, 1);
-  assert.match(reviewPrompts[0] ?? '', /已有工作流上下文/);
-  assert.match(reviewPrompts[0] ?? '', /执行交接：Produce long output/);
-  assert.doesNotMatch(reviewPrompts[0] ?? '', new RegExp(rawNeedle));
-  assert.ok((reviewPrompts[0] ?? '').length < 12_000);
+  assert.equal(reviewPrompts.length, 2);
+  for (const reviewPrompt of reviewPrompts) {
+    assert.match(reviewPrompt, /已有工作流上下文/);
+    assert.match(reviewPrompt, /执行交接：Produce long output/);
+    assert.doesNotMatch(reviewPrompt, new RegExp(rawNeedle));
+    assert.ok(reviewPrompt.length < 12_000);
+  }
   assert.equal(taskRepo.get(task.id)?.status, 'done');
   assert.equal(executor.workflow_role, 'executor');
   assert.equal(reviewer.workflow_role, 'reviewer');
@@ -483,7 +535,7 @@ test('graph workflow blocks when critical context entry creation fails', async (
       }),
       runAcpAgent: async (input) => {
         if (input.workflowStage === 'code_review') reviewPrompts.push(input.prompt);
-        const output = outputForStage(input.workflowStage ?? 'implementation');
+        const output = outputForAgentInput(input);
         const agentRun = agentRunRepo.create({
           room_id: input.roomId,
           room_agent_id: input.agent.id,
@@ -571,6 +623,26 @@ test('background graph continuation failure records workflow_failed event', asyn
   const scheduledRetries: Array<() => void> = [];
 
   enqueueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => {
+      const output = outputForAgentInput(input);
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(input, output),
+        status: 'completed',
+      };
+    },
     planner: async () => {
       throw new Error('background planner unavailable');
     },
@@ -590,12 +662,12 @@ test('background graph continuation failure records workflow_failed event', asyn
   const failureEvent = readWorkflowEvents(room.id, run.id)
     .find((event) => event.event_type === 'workflow_failed' && event.task_id === task.id);
   assert.ok(failureEvent);
-  assert.equal(failureEvent.graph_node, 'planning');
+  assert.equal(failureEvent.graph_node, 'writing_plans');
   assert.equal(failureEvent.workflow_stage, 'planning');
   assert.equal(failureEvent.error, 'background planner unavailable');
   assert.ok(
     workflowRepo.listSteps(run.id).some((step) =>
-      step.id === failureEvent.workflow_step_id && step.node_name === 'planning',
+      step.id === failureEvent.workflow_step_id && step.node_name === 'writing_plans',
     ),
   );
 });
@@ -640,6 +712,26 @@ test('direct graph start records workflow_started event', async () => {
   });
 
   const run = await startGraphWorkflow(task.id, {
+    runAcpAgent: async (input) => {
+      const output = outputForAgentInput(input);
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(input, output),
+        status: 'completed',
+      };
+    },
     planner: async () => ({
       goal: task.title,
       summary: 'Plan pauses for approval.',
@@ -795,7 +887,49 @@ function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'ac
   return withRuntimeBoundary;
 }
 
+function outputForAgentInput(
+  input: RespondAsAgentInput,
+  implementationOutput = 'implementation output from ACP-only executor',
+): string {
+  if (input.workflowStage === 'implementation' && input.prompt.includes('tddEvidence')) {
+    return withTddEvidence(implementationOutput);
+  }
+  return outputForStage(input.workflowStage ?? 'implementation');
+}
+
+function withTddEvidence(content: string): string {
+  return [
+    content,
+    '',
+    '```json',
+    JSON.stringify({
+      superpowers: {
+        tddEvidence: [
+          { stage: 'RED', command: 'node --test graph-e2e', passed: false, summary: 'failed as expected' },
+          { stage: 'GREEN', command: 'node --test graph-e2e', passed: true, summary: 'passed' },
+        ],
+      },
+    }),
+    '```',
+  ].join('\n');
+}
+
 function outputForStage(stage: WorkflowStage): string {
+  if (stage === 'planning') {
+    return JSON.stringify({
+      superpowers: {
+        designDocPath: 'docs/superpowers/specs/graph-e2e-design.md',
+        designReviewVerdict: 'approved',
+        implementationPlanPath: 'docs/superpowers/plans/graph-e2e-plan.md',
+        planReviewVerdict: 'approved',
+        worktree: {
+          path: '/tmp/openclaw-room-graph-e2e-project',
+          branchName: 'graph-e2e',
+          baseRef: 'test-fixture',
+        },
+      },
+    });
+  }
   if (stage === 'implementation') return 'implementation output from ACP-only executor';
   if (stage === 'code_review') {
     return JSON.stringify({
@@ -818,7 +952,7 @@ function outputForStage(stage: WorkflowStage): string {
 
 function requireStep(steps: WorkflowStep[], nodeName: string): WorkflowStep {
   const step = steps.find((item) => item.node_name === nodeName);
-  assert.ok(step, `missing ${nodeName} step`);
+  assert.ok(step, `missing ${nodeName} step; got ${steps.map((item) => item.node_name).join(', ')}`);
   return step;
 }
 

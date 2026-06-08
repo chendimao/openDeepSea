@@ -6,11 +6,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
-import type { SessionWorkspacePayload } from '../lib/types';
+import type { SessionMode, SessionWorkspacePayload } from '../lib/types';
 import type { WsServerEvent } from '../lib/ws';
 import {
+  createProjectSessionAndSelect,
   getSnapshotNavigation,
   isCompactPreviewForActiveSession,
+  projectSessionToActiveSummary,
   runSessionCommand,
   SessionWorkspacePage,
   shouldRefreshSessionWorkspace,
@@ -91,7 +93,7 @@ test('runSessionCommand treats empty history command as local no-op', () => {
 });
 
 test('runSessionCommand sends normal messages through websocket callback', () => {
-  const sent: Array<{ sessionId: string; content: string; agentId?: string }> = [];
+  const sent: Array<{ sessionId: string; content: string; agentId?: string; mode?: string }> = [];
   const result = runSessionCommand('继续实现', createCommandPayload(), {
     sendMessage: (message) => sent.push(message),
     runCommand: () => undefined,
@@ -99,6 +101,168 @@ test('runSessionCommand sends normal messages through websocket callback', () =>
 
   assert.equal(result, null);
   assert.deepEqual(sent, [{ sessionId: 'session-1', content: '继续实现', agentId: 'planner', mode: 'code' }]);
+});
+
+test('runSessionCommand forwards session file refs on normal messages', () => {
+  const sent: Array<{
+    sessionId: string;
+    content: string;
+    agentId?: string;
+    mode?: string;
+    workspaceFileRefs?: string[];
+    libraryFileRefs?: string[];
+  }> = [];
+  const result = runSessionCommand({
+    content: '继续实现',
+    workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+    libraryFileRefs: ['asset:doc-1'],
+  }, createCommandPayload(), {
+    sendMessage: (message) => sent.push(message),
+    runCommand: () => undefined,
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(sent, [{
+    sessionId: 'session-1',
+    content: '继续实现',
+    agentId: 'planner',
+    mode: 'code',
+    workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+    libraryFileRefs: ['asset:doc-1'],
+  }]);
+});
+
+test('runSessionCommand does not attach refs to slash commands', () => {
+  const commands: Array<{ sessionId: string; command: string }> = [];
+  const result = runSessionCommand({
+    content: '/compact',
+    workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+    libraryFileRefs: ['asset:doc-1'],
+  }, createCommandPayload(), {
+    sendMessage: () => undefined,
+    runCommand: (message) => commands.push(message),
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(commands, [{ sessionId: 'session-1', command: '/compact' }]);
+});
+
+test('createProjectSessionAndSelect creates a project session and navigates to it', async () => {
+  const created: Array<{
+    projectId: string;
+    input: { title?: string; mode?: SessionMode; provider?: string | null; model?: string | null };
+  }> = [];
+  const navigations: Array<{ to: string; replace?: boolean }> = [];
+  const snapshots: Array<{ projectId: string; sessionId: string }> = [];
+  const insertedSessionIds: string[] = [];
+
+  await createProjectSessionAndSelect({
+    targetProjectId: 'project-2',
+    sourceSession: {
+      id: 'session-1',
+      mode: 'code',
+      provider: 'codex',
+      model: 'gpt-5.5',
+    },
+    navigationEnabled: true,
+    createSession: async (projectId, input) => {
+      created.push({ projectId, input });
+      return createTestSession({ id: 'session-new', project_id: projectId, mode: input.mode ?? 'ask' });
+    },
+    navigate: (to, options) => navigations.push({ to, replace: options?.replace }),
+    requestWorkspace: (input) => snapshots.push(input),
+    onSessionCreated: (session) => insertedSessionIds.push(session.id),
+  });
+
+  assert.deepEqual(created, [{
+    projectId: 'project-2',
+    input: {
+      title: 'New Session',
+      mode: 'code',
+      provider: 'codex',
+      model: 'gpt-5.5',
+    },
+  }]);
+  assert.deepEqual(insertedSessionIds, ['session-new']);
+  assert.deepEqual(navigations, [{ to: '/projects/project-2/sessions/session-new', replace: undefined }]);
+  assert.deepEqual(snapshots, [{ projectId: 'project-2', sessionId: 'session-new' }]);
+});
+
+test('createProjectSessionAndSelect requests the new snapshot when navigation is disabled', async () => {
+  const navigations: Array<{ to: string; replace?: boolean }> = [];
+  const snapshots: Array<{ projectId: string; sessionId: string }> = [];
+
+  await createProjectSessionAndSelect({
+    targetProjectId: 'project-3',
+    sourceSession: {
+      id: 'session-1',
+      mode: 'review',
+      provider: null,
+      model: null,
+    },
+    navigationEnabled: false,
+    createSession: async (projectId, input) => createTestSession({
+      id: 'session-keep-alive',
+      project_id: projectId,
+      mode: input.mode ?? 'ask',
+    }),
+    navigate: (to, options) => navigations.push({ to, replace: options?.replace }),
+    requestWorkspace: (input) => snapshots.push(input),
+  });
+
+  assert.deepEqual(navigations, []);
+  assert.deepEqual(snapshots, [{ projectId: 'project-3', sessionId: 'session-keep-alive' }]);
+});
+
+test('projectSessionToActiveSummary creates a rail record under the target project', () => {
+  const summary = projectSessionToActiveSummary({
+    session: {
+      id: 'session-new',
+      project_id: 'project-1',
+      title: 'New Session',
+      current_goal: null,
+      mode: 'code',
+      phase: 'idle',
+      status: 'active',
+      provider: 'codex',
+      model: 'gpt-5.5',
+      workspace_path: '/workspace/opendeepsea',
+      worktree_path: null,
+      branch_name: null,
+      forked_from_session_id: null,
+      forked_from_history_record_id: null,
+      latest_compaction_id: null,
+      latest_context_manifest_id: null,
+      pinned_at: null,
+      last_viewed_at: null,
+      closed_at: null,
+      archived_at: null,
+      created_at: 100,
+      updated_at: 200,
+    },
+    project: {
+      id: 'project-1',
+      name: 'OpenDeepSea',
+      path: '/workspace/opendeepsea',
+    },
+  });
+
+  assert.deepEqual(summary, {
+    id: 'session-new',
+    project_id: 'project-1',
+    project_name: 'OpenDeepSea',
+    project_path: '/workspace/opendeepsea',
+    title: 'New Session',
+    status: 'active',
+    phase: 'idle',
+    provider: 'codex',
+    model: 'gpt-5.5',
+    pinned_at: null,
+    updated_at: 200,
+    unread_count: 0,
+    active_run_count: 0,
+    latest_event_summary: null,
+  });
 });
 
 test('shouldRefreshSessionWorkspace skips unfinished stream events', () => {
@@ -179,6 +343,37 @@ test('isCompactPreviewForActiveSession ignores previews from inactive sessions',
 
 function createCommandPayload(): SessionWorkspacePayload {
   return { activeSession: { session: { id: 'session-1', mode: 'code' } } } as SessionWorkspacePayload;
+}
+
+function createTestSession(input: {
+  id: string;
+  project_id: string;
+  mode: SessionMode;
+}) {
+  return {
+    id: input.id,
+    project_id: input.project_id,
+    title: 'New Session',
+    current_goal: null,
+    mode: input.mode,
+    phase: 'idle',
+    status: 'active',
+    provider: null,
+    model: null,
+    workspace_path: '/workspace/project',
+    worktree_path: null,
+    branch_name: null,
+    forked_from_session_id: null,
+    forked_from_history_record_id: null,
+    latest_compaction_id: null,
+    latest_context_manifest_id: null,
+    pinned_at: null,
+    last_viewed_at: null,
+    closed_at: null,
+    archived_at: null,
+    created_at: 100,
+    updated_at: 100,
+  } as const;
 }
 
 function renderSessionWorkspace(

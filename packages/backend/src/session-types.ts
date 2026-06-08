@@ -26,6 +26,7 @@ export type SessionAgentRuntimeStatus = 'idle' | 'running' | 'paused' | 'failed'
 export type SessionMessageRole = 'user' | 'assistant' | 'system';
 export type SessionMessageType = 'text' | 'system' | 'agent_stream';
 export type SessionMessageStatus = 'queued' | 'streaming' | 'completed' | 'failed';
+export type SessionAgentEventChannel = 'answer' | 'activity' | 'thinking' | 'tool' | 'command' | 'event';
 export type SessionPlanItemStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'failed' | 'skipped';
 export type SessionCompactionStrategy = 'manual' | 'focus' | 'aggressive' | 'conservative' | 'auto_suggested';
 export type SessionCompactionStatus = 'previewed' | 'applied' | 'superseded' | 'discarded' | 'failed';
@@ -78,9 +79,29 @@ export interface Session {
   forked_from_history_record_id: string | null;
   latest_compaction_id: string | null;
   latest_context_manifest_id: string | null;
+  closed_at: number | null;
+  pinned_at: number | null;
+  last_viewed_at: number | null;
   created_at: number;
   updated_at: number;
   archived_at: number | null;
+}
+
+export interface ActiveSessionSummary {
+  id: string;
+  project_id: string;
+  project_name: string;
+  project_path: string;
+  title: string;
+  status: SessionStatus;
+  phase: SessionPhase;
+  provider: AcpBackend | null;
+  model: string | null;
+  pinned_at: number | null;
+  updated_at: number;
+  unread_count: number;
+  active_run_count: number;
+  latest_event_summary: string | null;
 }
 
 export interface SessionMessage {
@@ -137,7 +158,7 @@ export interface SessionAgentEvent {
   agent_id: string;
   run_id: string;
   seq: number;
-  channel: 'answer' | 'thinking' | 'tool' | 'command' | 'event';
+  channel: SessionAgentEventChannel;
   event_type: string;
   content: string;
   payload_json: string | null;
@@ -348,6 +369,12 @@ export interface SessionToolRow {
   target: string;
   status: 'completed' | 'running' | 'failed' | 'unknown';
   durationMs: number | null;
+  runDurationMs?: number | null;
+  command?: string | null;
+  output?: string | null;
+  detail?: string | null;
+  startedAt?: number | null;
+  completedAt?: number | null;
   severity: SessionEvidenceSeverity;
   eventId: string;
   created_at: number;
@@ -370,6 +397,7 @@ export interface SessionHistoryFilters {
 export interface SessionWorkspacePayload {
   project: Project;
   activeSession: SessionDetail;
+  activeSessions: ActiveSessionSummary[];
   historyRecords: HistoryRecord[];
   status: StatusSnapshot;
   context: SessionContextManifest | null;

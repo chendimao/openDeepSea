@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
+import type { ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
+  buildTranscriptFollowKey,
   buildSessionRunTranscriptItems,
+  getLatestUserMessageKey,
   getSessionRunThinkingDuration,
+  isTranscriptNearBottom,
 } from './SessionShellView';
+
+const sessionOsCss = readFileSync(new URL('./session-os.css', import.meta.url), 'utf8');
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
@@ -27,14 +33,14 @@ test('SessionShell renders Deepsea command center modules', () => {
   const html = renderSessionShell(createPayload());
 
   assert.match(html, /Session Operations Console/);
-  assert.match(html, /Project command bar/);
   assert.match(html, /项目智能体/);
   assert.match(html, /设置会话规划智能体/);
   assert.match(html, /workspace/);
-  assert.match(html, /切换项目/);
-  assert.match(html, /项目切换器/);
-  assert.match(html, /选择一个工作区以继续您的任务/);
   assert.match(html, /OpenClaw/);
+  assert.doesNotMatch(html, /Project command bar/);
+  assert.doesNotMatch(html, /切换项目/);
+  assert.doesNotMatch(html, /项目切换器/);
+  assert.doesNotMatch(html, /选择一个工作区以继续您的任务/);
   assert.doesNotMatch(html, /deepsea-command-center/);
   assert.doesNotMatch(html, /quantum-core-engine/);
   assert.doesNotMatch(html, /nebula-ui-kit/);
@@ -44,31 +50,285 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /分析当前会话页面结构/);
   assert.doesNotMatch(html, /还原 Deepsea 三栏布局/);
   assert.doesNotMatch(html, /运行浏览器 smoke test/);
-  assert.match(html, /当前激活/);
-  assert.match(html, /新建项目/);
-  assert.match(html, /管理所有工作区/);
+  assert.doesNotMatch(html, /当前激活/);
+  assert.doesNotMatch(html, /deepsea-project-card--add/);
+  assert.doesNotMatch(html, /管理所有工作区/);
   assert.match(html, /上下文压力/);
   assert.match(html, /Session status bar/);
-  assert.match(html, /会话历史/);
+  assert.doesNotMatch(html, /系统健康状态/);
+  assert.doesNotMatch(html, /索引状态/);
+  assert.match(html, /新建会话/);
+  assert.doesNotMatch(html, /新建聊天/);
+  assert.doesNotMatch(html, /deepsea-project-chat-section/);
+  assert.doesNotMatch(html, /暂无聊天/);
+  assert.match(html, /<span>项目<\/span>/);
+  assert.match(html, /Project Sessions/);
+  assert.match(html, /接口联调/);
+  assert.match(html, /AnotherProject/);
+  assert.doesNotMatch(html, /会话历史/);
   assert.match(html, /3. 对话记录/);
+  assert.doesNotMatch(html, /prompt-area-container/);
+  assert.match(html, /data-session-composer-textarea="true"/);
+  assert.match(html, /粘贴文件会上传到项目文件库/);
   assert.match(html, /目标契约/);
   assert.match(html, /会话计划/);
   assert.match(html, /代理运行/);
   assert.match(html, /工具调用/);
-  assert.match(html, /待提交变更/);
-  assert.match(html, /Uncommitted/);
-  assert.match(html, /1 文件已修改/);
+  assert.match(html, /本次会话变更/);
+  assert.match(html, /Session Changes/);
+  assert.match(html, /本会话 1 个文件变更/);
   assert.match(html, /\+12 \/ -3/);
-  assert.match(html, /存在未应用的 Compact 预览/);
   assert.match(html, /立即应用/);
-  assert.match(html, /data-command="\/new"/);
   assert.match(html, /data-command="\/compact"/);
   assert.match(html, /\/fork history:history-1/);
-  assert.match(html, /History Records/);
+  assert.match(html, /Project Sessions/);
   assert.doesNotMatch(html, /task-workspace/);
   assert.doesNotMatch(html, /Deepsea Command/);
   assert.doesNotMatch(html, /deepsea-model-status/);
   assert.doesNotMatch(html, /当前状态/);
+});
+
+test('SessionShell renders tool rows as detail buttons', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /data-tool-row-button="true"/);
+  assert.match(html, /aria-label="查看工具调用详情：packages\/frontend\/src\/session-ui\/SessionShell\.tsx"/);
+});
+
+test('SessionShell renders uploaded attachments on transcript messages', () => {
+  const payload = createPayload();
+  payload.activeSession.messages[0] = {
+    ...payload.activeSession.messages[0]!,
+    content: '分析这些附件',
+    metadata: JSON.stringify({
+      attachments: [
+        {
+          id: 'file-text-1',
+          fileId: 'file-text-1',
+          name: 'brief.txt',
+          mimeType: 'text/plain',
+          size: 1536,
+          url: '/uploads/files/project-1/brief.txt',
+          isImage: false,
+        },
+        {
+          id: 'file-image-1',
+          fileId: 'file-image-1',
+          name: 'screen.png',
+          mimeType: 'image/png',
+          size: 2048,
+          url: '/uploads/files/project-1/screen.png',
+          isImage: true,
+        },
+      ],
+    }),
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /deepsea-message-attachments/);
+  assert.match(html, /brief\.txt/);
+  assert.match(html, /screen\.png/);
+  assert.match(html, /src="\/uploads\/files\/project-1\/screen\.png"/);
+  assert.match(html, /aria-label="预览图片附件：screen\.png"/);
+  assert.match(html, /1\.5 KB/);
+  assert.match(html, /2\.0 KB/);
+});
+
+test('SessionShell renders generated image tool result evidence as transcript artifacts', () => {
+  const payload = createPayload();
+  payload.evidence.push({
+    id: 'evidence-image-tool',
+    session_id: 'session-1',
+    seq: 2,
+    event_type: 'tool_result',
+    severity: 'info',
+    source_run_id: 'run-1',
+    source_message_id: null,
+    title: '图片生成结果',
+    summary: '已生成 1 张图片。',
+    payload: {
+      tool_name: 'generate_image',
+      job_id: 'image-job-1',
+      status: 'completed',
+      error: null,
+      outputs: [{
+        file_id: 'file-image-output-1',
+        resource_id: 'file:file-image-output-1',
+        url: '/uploads/files/project-1/generated.png',
+        slot: 1,
+      }],
+    },
+    created_at: Date.now(),
+  });
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /deepsea-generated-artifacts/);
+  assert.match(html, /图片生成结果/);
+  assert.match(html, /href="\/uploads\/files\/project-1\/generated\.png"/);
+  assert.match(html, /src="\/uploads\/files\/project-1\/generated\.png"/);
+  assert.match(html, /aria-label="打开生成图片：file-image-output-1"/);
+});
+
+test('SessionShell renders active run as compact list row', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /deepsea-run-table/);
+  assert.match(html, /1 条记录/);
+  assert.match(html, /gpt-5\.5/);
+  assert.match(html, /aria-label="运行状态：完成"/);
+  assert.match(html, /aria-label="停止运行"/);
+  assert.match(html, /aria-label="重新执行"/);
+  assert.doesNotMatch(html, /deepsea-run-card/);
+  assert.doesNotMatch(html, /运行耗时/);
+});
+
+test('SessionShell renders active run danger state without success semantics', () => {
+  const payload = createPayload();
+  payload.activeSession.runs[0] = {
+    ...payload.activeSession.runs[0]!,
+    status: 'failed',
+    error: '执行失败',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-tone="danger"/);
+  assert.match(html, /aria-label="运行状态：失败"/);
+  assert.match(html, /<strong>失败<\/strong>/);
+  assert.doesNotMatch(html, /aria-label="运行状态：完成"/);
+});
+
+test('SessionShell renders tool row duration from the individual tool event', () => {
+  const payload = createPayload();
+  payload.toolRows[0] = {
+    ...payload.toolRows[0]!,
+    durationMs: 343,
+    runDurationMs: 21_423,
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /0\.3s/);
+  assert.doesNotMatch(html, /21\.4s/);
+});
+
+test('SessionShell renders tool row relative record time beside duration', () => {
+  const payload = createPayload();
+  payload.toolRows[0] = {
+    ...payload.toolRows[0]!,
+    durationMs: 343,
+    runDurationMs: 21_423,
+    created_at: Date.now(),
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /class="deepsea-tool-row-duration">0\.3s<\/span>/);
+  assert.match(html, /class="deepsea-tool-row-time">刚刚<\/span>/);
+});
+
+test('SessionShell renders compact tool rows without ordinal numbers', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.doesNotMatch(html, /<span class="deepsea-tool-row-index">1<\/span>/);
+  assert.match(html, /class="deepsea-tool-row-duration"/);
+  assert.match(html, /class="deepsea-tool-row-time"/);
+});
+
+test('SessionShell renders failed tool rows with an X status icon', () => {
+  const payload = createPayload();
+  payload.toolRows[0] = {
+    ...payload.toolRows[0]!,
+    status: 'failed',
+    severity: 'error',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-tool-row-status="failed"/);
+  assert.match(html, /aria-label="工具调用状态：失败"/);
+  assert.match(html, /data-tool-row-status="failed"[^>]*><svg[^>]+lucide-x/s);
+});
+
+test('SessionShell keeps the tool call list height bounded with internal scrolling', () => {
+  assert.match(sessionOsCss, /\.deepsea-tool-table\s*\{[^}]*max-height:\s*min\(320px,\s*36dvh\)/s);
+  assert.match(sessionOsCss, /\.deepsea-tool-table\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(sessionOsCss, /\.deepsea-tool-table\s*\{[^}]*overscroll-behavior:\s*contain/s);
+});
+
+test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
+  const { activeSessions: _activeSessions, ...legacyPayload } = createPayload();
+
+  const html = renderSessionShell(legacyPayload as unknown as SessionWorkspacePayload);
+
+  assert.match(html, /新建会话/);
+  assert.match(html, /<span>项目<\/span>/);
+  assert.match(html, /SessionOS 迁移/);
+});
+
+test('SessionShell renders active sessions grouped under every project in the left project tree', () => {
+  const payload = createPayload();
+  payload.projectSwitcher.projects.push({
+    id: 'project-empty',
+    name: 'EmptyProject',
+    path: '/workspace/empty',
+    active: false,
+    recentSessions: [],
+  });
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /新建会话/);
+  assert.match(html, /<span>项目<\/span>/);
+  assert.match(html, /OpenClaw/);
+  assert.match(html, /AnotherProject/);
+  assert.match(html, /EmptyProject/);
+  assert.match(html, /SessionOS 迁移/);
+  assert.match(html, /接口联调/);
+  assert.match(html, /暂无活跃会话/);
+  assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /data-project-session-row="true"/);
+});
+
+test('SessionShell renders project row actions for the active project tree', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /aria-label="打开 OpenClaw 项目操作菜单"/);
+  assert.match(html, /aria-label="新建 OpenClaw 会话"/);
+  assert.match(html, /在“访达”中打开/);
+  assert.match(html, /创建永久工作树/);
+  assert.match(html, /编辑名称/);
+  assert.match(html, /归档聊天/);
+  assert.match(html, /移除/);
+});
+
+test('SessionShell does not add an archived current session to the project tree fallback', () => {
+  const payload = createPayload();
+  payload.activeSessions = [];
+  payload.activeSession.session.status = 'archived';
+  payload.activeSession.session.phase = 'archived';
+  payload.activeSession.session.archived_at = Date.now();
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /新建会话/);
+  assert.match(html, /<span>项目<\/span>/);
+  assert.match(html, /暂无活跃会话/);
+  assert.doesNotMatch(html, /data-project-session-row="true"/);
+});
+
+test('SessionShell renders empty run state without fake run values', () => {
+  const payload = createPayload();
+  payload.activeSession.runs = [];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /暂无代理运行/);
+  assert.doesNotMatch(html, /deepsea-run-card/);
+  assert.doesNotMatch(html, /运行耗时/);
+  assert.doesNotMatch(html, new RegExp(['02', '14', '05'].join(':')));
 });
 
 test('SessionShell renders agent thought above run output without leaking runtime prompt', () => {
@@ -81,12 +341,30 @@ test('SessionShell renders agent thought above run output without leaking runtim
   run.activity_log = '分析用户问题，检查会话上下文，并准备简短回复。';
 
   const html = renderSessionShell(payload);
+  const thoughtTag = getAgentThoughtTag(html);
 
   assert.doesNotMatch(html, /本轮 prompt 来源由 SessionOS Context Inspector 记录/);
   assert.match(html, /智能体思考过程/);
   assert.match(html, /分析用户问题，检查会话上下文，并准备简短回复。/);
   assert.match(html, /等待智能体输出/);
-  assert.ok(html.indexOf('智能体思考过程') < html.indexOf('ASSISTANT'));
+  assert.match(thoughtTag, /data-active="true"/);
+  assert.match(thoughtTag, /\sopen=""/);
+  assert.ok(html.indexOf('智能体思考过程') < html.indexOf('planner'));
+});
+
+test('SessionShell collapses completed agent thought by default', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.activity_log = '完成态思考文本默认隐藏，用户需要时可展开查看。';
+
+  const html = renderSessionShell(payload);
+  const thoughtTag = getAgentThoughtTag(html);
+
+  assert.match(thoughtTag, /data-active="false"/);
+  assert.doesNotMatch(thoughtTag, /\sopen=""/);
+  assert.match(html, /展开/);
+  assert.match(html, /完成态思考文本默认隐藏，用户需要时可展开查看。/);
 });
 
 test('SessionShell keeps previous assistant replies in transcript timeline', () => {
@@ -136,6 +414,111 @@ test('SessionShell keeps previous assistant replies in transcript timeline', () 
   assert.ok(html.indexOf('第二轮问题') < html.indexOf('第二轮回复也可见'));
 });
 
+test('SessionShell renders actual agent names for assistant transcript entries', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  const userMessage = payload.activeSession.messages[0]!;
+  const run = payload.activeSession.runs[0]!;
+  payload.activeSession.messages = [
+    {
+      ...userMessage,
+      id: 'message-user',
+      sender_id: 'user',
+      sender_name: '大哥',
+      role: 'user',
+      content: '请修复群聊消息标签',
+      created_at: now - 80_000,
+    },
+    {
+      ...userMessage,
+      id: 'message-agent',
+      sender_id: 'frontend-executor',
+      sender_name: '前端执行官',
+      role: 'assistant',
+      content: '我会更新消息标签。',
+      created_at: now - 70_000,
+    },
+  ];
+  payload.activeSession.runs = [{
+    ...run,
+    agent_id: 'frontend-executor',
+    stdout: '已更新消息标签。',
+    started_at: now - 60_000,
+    updated_at: now - 55_000,
+    completed_at: now - 55_000,
+  }];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /前端执行官/);
+  assert.ok(html.indexOf('前端执行官') < html.indexOf('我会更新消息标签。'));
+  assert.ok(html.lastIndexOf('前端执行官') < html.indexOf('已更新消息标签。'));
+  assert.doesNotMatch(html, /ASSISTANT/);
+});
+
+test('SessionShell resolves run labels from project agent names instead of ids', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  payload.activeSession.messages = [{
+    ...payload.activeSession.messages[0]!,
+    content: '请执行前端任务',
+  }];
+  payload.activeSession.runs = [{
+    ...run,
+    agent_id: 'frontend-executor',
+    stdout: '已执行前端任务。',
+  }];
+
+  const html = renderSessionShell(payload, {
+    projectAgents: createProjectUsedAgentsPayload({
+      agent_id: 'frontend-executor',
+      name: '前端执行官',
+    }),
+  });
+
+  assert.match(html, /前端执行官/);
+  assert.ok(html.indexOf('前端执行官') < html.indexOf('已执行前端任务。'));
+  assert.doesNotMatch(html, /frontend-executor/);
+  assert.doesNotMatch(html, /ASSISTANT/);
+});
+
+test('SessionShell renders a transcript end anchor for composer-safe auto scroll', () => {
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /data-transcript-scroll="true"/);
+  assert.match(html, /data-transcript-end="true"/);
+});
+
+test('isTranscriptNearBottom respects the transcript follow threshold', () => {
+  assert.equal(isTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 780, clientHeight: 200 } as HTMLElement), true);
+  assert.equal(isTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 500, clientHeight: 200 } as HTMLElement), false);
+});
+
+test('buildTranscriptFollowKey changes when active run output streams in place', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  const firstKey = buildTranscriptFollowKey({
+    runs: [{ ...run, id: 'run-streaming', stdout: '第一段', updated_at: 10 }],
+    timelineEndKey: 'run:run-streaming',
+  });
+  const secondKey = buildTranscriptFollowKey({
+    runs: [{ ...run, id: 'run-streaming', stdout: '第一段\n第二段', updated_at: 11 }],
+    timelineEndKey: 'run:run-streaming',
+  });
+
+  assert.notEqual(firstKey, secondKey);
+});
+
+test('getLatestUserMessageKey ignores assistant messages', () => {
+  const payload = createPayload();
+  const base = payload.activeSession.messages[0]!;
+
+  assert.equal(getLatestUserMessageKey([
+    { ...base, id: 'assistant-message', role: 'assistant', created_at: 20 },
+    { ...base, id: 'user-message', role: 'user', created_at: 10 },
+  ]), 'user-message:10');
+});
+
 test('SessionShell renders markdown controls and thinking duration in transcript', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
@@ -158,7 +541,41 @@ test('SessionShell renders markdown controls and thinking duration in transcript
   assert.match(html, /分析结果/);
 });
 
-test('SessionShell segments run output by ACP event timeline', () => {
+test('SessionShell renders run status beside thinking duration in transcript', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'running';
+  run.stdout = '正在处理。';
+  run.started_at = 1_000;
+  run.updated_at = 19_000;
+  run.completed_at = null;
+
+  const runningHtml = renderSessionShell(payload);
+  assert.match(runningHtml, /class="deepsea-run-status" data-tone="warn">运行中<\/span>/);
+
+  run.status = 'failed';
+  run.error = '执行失败';
+  run.completed_at = 19_000;
+  const failedHtml = renderSessionShell(payload);
+  assert.match(failedHtml, /class="deepsea-run-status" data-tone="danger">失败<\/span>/);
+
+  run.status = 'completed';
+  run.error = null;
+  const completedHtml = renderSessionShell(payload);
+  assert.match(completedHtml, /class="deepsea-run-status" data-tone="ok">完成<\/span>/);
+
+  run.status = 'cancelled';
+  run.stdout = '';
+  run.stderr = '';
+  const cancelledHtml = renderSessionShell(payload);
+  assert.match(cancelledHtml, /class="deepsea-run-status" data-tone="muted">已取消<\/span>/);
+  assert.match(cancelledHtml, /<mark>CANCELLED<\/mark>/);
+  assert.match(cancelledHtml, /运行已取消。/);
+  assert.doesNotMatch(cancelledHtml, /<mark>RUNNING<\/mark>/);
+  assert.doesNotMatch(cancelledHtml, /等待智能体输出/);
+});
+
+test('SessionShell hides ACP tool records from chat transcript', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.stdout = '我会先分析当前项目。找到入口和脚本。已完成。';
@@ -192,19 +609,17 @@ test('SessionShell segments run output by ACP event timeline', () => {
 
   assert.match(html, /思考 18s/);
   assert.match(html, /我会先分析当前项目。/);
-  assert.match(html, /Thinking/);
-  assert.match(html, /Read File/);
-  assert.match(html, /Run Command/);
   assert.match(html, /找到入口和脚本。/);
   assert.match(html, /已完成。/);
-  assert.ok(html.indexOf('我会先分析当前项目。') < html.indexOf('Thinking'));
-  assert.ok(html.indexOf('Thinking') < html.indexOf('Read File'));
-  assert.ok(html.indexOf('Read File') < html.indexOf('找到入口和脚本。'));
-  assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('Run Command'));
-  assert.ok(html.indexOf('Run Command') < html.indexOf('已完成。'));
+  assert.doesNotMatch(html, /Thinking/);
+  assert.doesNotMatch(html, /Read File/);
+  assert.doesNotMatch(html, /Run Command/);
+  assert.doesNotMatch(html, /判断需要读取 package\.json/);
+  assert.ok(html.indexOf('我会先分析当前项目。') < html.indexOf('找到入口和脚本。'));
+  assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('已完成。'));
 });
 
-test('buildSessionRunTranscriptItems flushes answer text only on ACP event boundaries', () => {
+test('buildSessionRunTranscriptItems keeps only answer text in chat transcript', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '第一句。' }),
     createAgentEvent({ id: 'answer-2', seq: 2, channel: 'answer', event_type: 'agent_message_chunk', content: '第二句。' }),
@@ -213,13 +628,11 @@ test('buildSessionRunTranscriptItems flushes answer text only on ACP event bound
   ], 'fallback');
 
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    '第一句。第二句。',
-    '[Thinking]',
-    '第三句。',
+    '第一句。第二句。第三句。',
   ]);
 });
 
-test('buildSessionRunTranscriptItems maps ACP tool names to timeline markers', () => {
+test('buildSessionRunTranscriptItems drops ACP tool markers from chat transcript', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '准备修改。' }),
     createAgentEvent({
@@ -233,9 +646,46 @@ test('buildSessionRunTranscriptItems maps ACP tool names to timeline markers', (
   ], 'fallback');
 
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    '准备修改。',
-    '[Edit]',
-    '修改完成。',
+    '准备修改。修改完成。',
+  ]);
+});
+
+test('buildSessionRunTranscriptItems hides legacy activity events misclassified as answer', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({
+      id: 'fallback',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'protocol_fallback',
+      content: '[ACP fallback] codex protocol server unavailable, using legacy CLI.\n',
+    }),
+    createAgentEvent({
+      id: 'command-start',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'item.started',
+      content: "开始命令：/bin/zsh -lc 'rtk find .'\n",
+      payload_json: JSON.stringify({ trace: null }),
+    }),
+    createAgentEvent({
+      id: 'answer',
+      seq: 3,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: '✅ 结论：页面已分析。',
+    }),
+    createAgentEvent({
+      id: 'command-completed',
+      seq: 4,
+      channel: 'answer',
+      event_type: 'item.completed',
+      content: "完成命令：/bin/zsh -lc 'rtk find .'\n",
+      payload_json: JSON.stringify({ trace: null }),
+    }),
+  ], '[ACP fallback]\n开始命令：rtk find\n✅ 结论：页面已分析。\n完成命令：rtk find');
+
+  assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
+    '✅ 结论：页面已分析。',
   ]);
 });
 
@@ -279,6 +729,12 @@ test('SessionShell renders a concise active session title with the full title av
   assert.doesNotMatch(html, />用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出</);
 });
 
+function getAgentThoughtTag(html: string): string {
+  const match = html.match(/<details class="deepsea-agent-thought"[^>]*>/);
+  assert.ok(match, 'expected an agent thought details element');
+  return match[0];
+}
+
 function createAgentEvent(input: Partial<SessionAgentEvent> & Pick<SessionAgentEvent, 'id' | 'seq' | 'channel' | 'event_type'>): SessionAgentEvent {
   return {
     id: input.id,
@@ -312,12 +768,12 @@ export function createPayload(): SessionWorkspacePayload {
         id: 'session-1',
         project_id: 'project-1',
         title: 'SessionOS 迁移',
-        current_goal: '把旧协作工作流切换为会话历史模型',
+        current_goal: '把旧协作工作流切换为活跃会话模型',
         mode: 'code',
         phase: 'implementing',
         status: 'active',
         provider: 'codex',
-        model: 'gpt-test',
+        model: 'gpt-5.5',
         workspace_path: '/workspace/openclaw',
         worktree_path: null,
         branch_name: 'feat/session-os',
@@ -325,6 +781,9 @@ export function createPayload(): SessionWorkspacePayload {
         forked_from_history_record_id: null,
         latest_compaction_id: null,
         latest_context_manifest_id: 'context-1',
+        closed_at: null,
+        pinned_at: null,
+        last_viewed_at: now - 120_000,
         created_at: now - 7_200_000,
         updated_at: now,
         archived_at: null,
@@ -346,7 +805,7 @@ export function createPayload(): SessionWorkspacePayload {
         session_id: 'session-1',
         agent_id: 'planner',
         provider: 'codex',
-        model: 'gpt-test',
+        model: 'gpt-5.5',
         status: 'completed',
         mode: 'code',
         phase: 'implementing',
@@ -392,6 +851,40 @@ export function createPayload(): SessionWorkspacePayload {
         created_at: now - 30_000,
       }],
     },
+    activeSessions: [
+      {
+        id: 'session-2',
+        project_id: 'project-2',
+        project_name: 'AnotherProject',
+        project_path: '/workspace/another',
+        title: '接口联调',
+        status: 'blocked',
+        phase: 'blocked',
+        provider: 'codex',
+        model: 'gpt-5.3-codex',
+        pinned_at: now - 4_000,
+        updated_at: now - 8_000,
+        unread_count: 2,
+        active_run_count: 1,
+        latest_event_summary: '等待后端 schema 决策',
+      },
+      {
+        id: 'session-1',
+        project_id: 'project-1',
+        project_name: 'OpenClaw',
+        project_path: '/workspace/openclaw',
+        title: 'SessionOS 迁移',
+        status: 'active',
+        phase: 'implementing',
+        provider: 'codex',
+        model: 'gpt-5.5',
+        pinned_at: null,
+        updated_at: now,
+        unread_count: 0,
+        active_run_count: 0,
+        latest_event_summary: 'Updated session UI',
+      },
+    ],
     historyRecords: [{
       id: 'history-1',
       project_id: 'project-1',
@@ -413,7 +906,7 @@ export function createPayload(): SessionWorkspacePayload {
       updated_at: now - 3_600_000,
     }],
     status: {
-      goal: '把旧协作工作流切换为会话历史模型',
+      goal: '把旧协作工作流切换为活跃会话模型',
       mode: 'code',
       phase: 'implementing',
       status: 'active',
@@ -442,7 +935,7 @@ export function createPayload(): SessionWorkspacePayload {
       },
       provider: {
         backend: 'codex',
-        model: 'gpt-test',
+        model: 'gpt-5.5',
         permissionMode: 'workspace-write',
       },
     },
@@ -512,7 +1005,7 @@ export function createPayload(): SessionWorkspacePayload {
     },
     contract: {
       sessionId: 'session-1',
-      objective: '把旧协作工作流切换为会话历史模型',
+      objective: '把旧协作工作流切换为活跃会话模型',
       scope: '仅补齐 Session OS 后端接入',
       risks: ['retry 可能重复执行 prompt'],
       acceptanceCriteria: ['页面不显示静态 mock 数据'],
@@ -540,8 +1033,49 @@ export function createPayload(): SessionWorkspacePayload {
   };
 }
 
-function renderSessionShell(payload: SessionWorkspacePayload): string {
+function createProjectUsedAgentsPayload(agent: { agent_id: string; name: string }): ProjectUsedAgentsPayload {
+  return {
+    planner: {
+      kind: 'session_planner',
+      agent_id: 'planner',
+      name: 'Planner',
+      effective_acp_backend: 'codex',
+      project_override_acp_backend: null,
+      backend_source: 'builtin',
+      runtime_profile: {
+        permission_mode: 'workspace-write',
+        runtime_backend: 'acp',
+        tool_policy: { allowed: [] },
+        workspace_policy: { read: ['.'], write: ['.'] },
+        memory_scope: 'project',
+      },
+    },
+    agents: [{
+      kind: 'room_agent',
+      global_agent_id: null,
+      agent_id: agent.agent_id,
+      name: agent.name,
+      acp_enabled: true,
+      acp_backend: 'codex',
+      room_bindings: [{
+        room_id: 'room-1',
+        room_name: 'Room One',
+        room_agent_id: 'room-agent-1',
+        acp_backend: 'codex',
+        workflow_role: 'executor',
+      }],
+    }],
+  };
+}
+
+function renderSessionShell(
+  payload: SessionWorkspacePayload,
+  options: { projectAgents?: ProjectUsedAgentsPayload } = {},
+): string {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (options.projectAgents) {
+    queryClient.setQueryData(['project-used-agents', payload.project.id], options.projectAgents);
+  }
   return renderToStaticMarkup(
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
