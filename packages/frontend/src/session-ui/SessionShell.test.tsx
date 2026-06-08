@@ -276,8 +276,8 @@ test('SessionShell project rail CSS keeps the reference-style compact hierarchy'
   assert.match(sessionOsCss, /\.deepsea-project-node__button\s*\{[^}]*padding:\s*3px 10px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__button svg\s*\{[^}]*width:\s*14px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__label strong\s*\{[^}]*font-size:\s*13px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*4px 0 6px 12px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*padding-left:\s*4px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*4px 0 6px 0/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*padding-left:\s*16px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*min-height:\s*28px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*4px 8px 4px 4px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap:hover,[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.2\)/s);
