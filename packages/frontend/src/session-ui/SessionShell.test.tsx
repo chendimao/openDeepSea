@@ -241,6 +241,12 @@ test('SessionShell keeps the tool call list height bounded with internal scrolli
   assert.match(sessionOsCss, /\.deepsea-tool-table\s*\{[^}]*overscroll-behavior:\s*contain/s);
 });
 
+test('SessionShell keeps planner skill picker bounded with internal scrolling', () => {
+  assert.match(sessionOsCss, /\.deepsea-skill-picker\s*\{[^}]*max-height:\s*min\(320px,\s*48vh\)/s);
+  assert.match(sessionOsCss, /\.deepsea-skill-picker\s*\{[^}]*overflow-y:\s*auto/s);
+  assert.match(sessionOsCss, /\.deepsea-skill-picker\s*\{[^}]*overscroll-behavior:\s*contain/s);
+});
+
 test('SessionShell includes project tree row pin and drag feedback styles', () => {
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*opacity:\s*0/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*position:\s*absolute/s);
