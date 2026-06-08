@@ -185,6 +185,35 @@ test('resource asset delete endpoint keeps encoded resource ids', async () => {
   assert.equal(requestedMethod, 'DELETE');
 });
 
+test('listKnowledgeSources builds global knowledge query URL', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    await api.listKnowledgeSources({
+      projectId: 'project-1',
+      roomId: 'room-1',
+      status: 'ready',
+      sourceType: 'agent_document',
+      query: '部署 计划',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(
+    requestedUrl,
+    '/api/knowledge?projectId=project-1&roomId=room-1&status=ready&sourceType=agent_document&q=%E9%83%A8%E7%BD%B2+%E8%AE%A1%E5%88%92',
+  );
+});
+
 test('updateSession sends pinned_at patch payload', async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl = '';

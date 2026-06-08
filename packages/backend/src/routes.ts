@@ -33,6 +33,7 @@ import { agentRunRepo } from './repos/agent-runs.js';
 import { agentRepo } from './repos/agents.js';
 import { fileRepo } from './repos/files.js';
 import { globalChatRepo } from './repos/global-chat.js';
+import { knowledgeRepo } from './repos/knowledge.js';
 import { memoryRepo } from './repos/memory.js';
 import { messageRepo } from './repos/messages.js';
 import { replayTaskEvents } from './repos/task-event-replay.js';
@@ -118,6 +119,9 @@ import {
   type TaskExecutionDecision,
   type MessageRoutingMode,
   type ProjectFile,
+  type KnowledgeSourceListItem,
+  type KnowledgeSourceType,
+  type KnowledgeStatus,
   type ResourceAssetGroupKey,
   type ResourceAssetType,
   type Room,
@@ -937,6 +941,57 @@ router.get('/projects/:id', (req, res) => {
   res.json({ ...project, stats: projectRepo.stats(project.id) });
 });
 
+const knowledgeStatusSchema = z.enum(['pending', 'processing', 'ready', 'failed', 'stale', 'disabled']);
+const knowledgeSourceTypeSchema = z.enum([
+  'resource_asset',
+  'uploaded_file',
+  'agent_document',
+  'message',
+  'task',
+  'workspace_file',
+  'workspace_doc',
+  'web_page',
+  'session_note',
+  'url',
+  'manual',
+]);
+const knowledgeListQuerySchema = z.object({
+  projectId: z.string().optional(),
+  roomId: z.string().optional(),
+  status: knowledgeStatusSchema.optional(),
+  sourceType: knowledgeSourceTypeSchema.optional(),
+  q: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+
+router.get('/knowledge', (req, res) => {
+  const parsed = knowledgeListQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { projectId: requestedProjectId, roomId, status, sourceType, q, limit } = parsed.data;
+  let projectId = requestedProjectId;
+
+  if (projectId && !projectRepo.get(projectId)) {
+    return res.status(404).json({ error: 'project not found' });
+  }
+  if (roomId) {
+    const room = roomRepo.get(roomId);
+    if (!room) return res.status(404).json({ error: 'room not found' });
+    if (projectId && room.project_id !== projectId) {
+      return res.status(400).json({ error: 'room does not belong to project' });
+    }
+    projectId = room.project_id;
+  }
+
+  res.json(listKnowledgeSourcesForRoute({
+    projectId,
+    roomId,
+    status,
+    sourceType,
+    query: q,
+    limit,
+  }));
+});
+
 router.get('/files', (req, res) => {
   const parsed = z.object({
     projectId: z.string().optional(),
@@ -1237,6 +1292,43 @@ async function indexProjectFilesIntoKnowledge(files: ProjectFile[], context: str
       console.warn(`[knowledge-ingestion] failed to index ${context} ${file.id}: ${(err as Error).message}`);
     }
   }
+}
+
+function listKnowledgeSourcesForRoute(input: {
+  projectId?: string;
+  roomId?: string;
+  status?: KnowledgeStatus;
+  sourceType?: KnowledgeSourceType;
+  query?: string;
+  limit?: number;
+}): Array<KnowledgeSourceListItem & { project_name: string | null; room_name: string | null }> {
+  const project = input.projectId ? projectRepo.get(input.projectId) : undefined;
+  const projects = input.projectId ? (project ? [project] : []) : projectRepo.list();
+  const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+  const roomNames = new Map<string, string>();
+  const limit = input.limit ?? 100;
+  const sources = projects.flatMap((project) => {
+    for (const room of roomRepo.listByProject(project.id)) {
+      roomNames.set(room.id, room.name);
+    }
+    return knowledgeRepo.listSources({
+      projectId: project.id,
+      roomId: input.roomId,
+      status: input.status,
+      sourceTypes: input.sourceType ? [input.sourceType] : undefined,
+      query: input.query,
+      limit,
+    });
+  });
+
+  return sources
+    .sort((left, right) => right.updated_at - left.updated_at)
+    .slice(0, limit)
+    .map((source) => ({
+      ...source,
+      project_name: projectNames.get(source.project_id) ?? null,
+      room_name: source.room_id ? roomNames.get(source.room_id) ?? null : null,
+    }));
 }
 
 async function unlinkProjectFileSafely(file: ProjectFile): Promise<void> {

@@ -36,7 +36,9 @@ test('AppShell renders the shared Deepsea header with system settings entry', ()
   assert.match(html, /会话/);
   assert.match(html, /聊天/);
   assert.match(html, /智能体/);
-  assert.match(html, /资源/);
+  assert.match(html, /知识库/);
+  assert.match(html, /href="\/knowledge"/);
+  assert.doesNotMatch(html, /资源/);
   assert.doesNotMatch(html, /alt="Profile"/);
   assert.doesNotMatch(html, /projects\/project-1\/rooms/);
 });

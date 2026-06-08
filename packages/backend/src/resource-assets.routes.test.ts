@@ -218,6 +218,53 @@ test('resource asset routes create, list, filter, detail, and delete agent docum
   assert.deepEqual(await afterDeleteRes.json(), []);
 });
 
+test('knowledge route lists indexed sources with project and room labels', async () => {
+  const project = createProject('knowledge-list');
+  const room = roomRepo.create({ project_id: project.id, name: 'Knowledge Room' });
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    room_id: room.id,
+    source_type: 'agent_document',
+    source_id: 'asset:knowledge-doc',
+    title: '知识库方案.md',
+    mime_type: 'text/markdown',
+    size: 128,
+    status: 'ready',
+    summary: '知识库页面接入 header',
+    tags: ['导航'],
+    metadata: { key_points: ['替换资源入口'] },
+  });
+  knowledgeRepo.saveExtraction({
+    source_id: source.id,
+    plain_text: '知识库页面接入 header',
+  });
+  knowledgeRepo.replaceChunks(source.id, [{
+    chunk_type: 'body',
+    content: '知识库页面接入 header',
+    project_id: project.id,
+    room_id: room.id,
+  }]);
+
+  const listRes = await request(`/api/knowledge?projectId=${project.id}&roomId=${room.id}&status=ready&sourceType=agent_document&q=${encodeURIComponent('知识库')}`);
+  assert.equal(listRes.status, 200);
+  const sources = await listRes.json() as Array<{
+    id: string;
+    project_name: string | null;
+    room_name: string | null;
+    source_id: string;
+    title: string;
+    chunk_count: number;
+  }>;
+
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0]?.id, source.id);
+  assert.equal(sources[0]?.project_name, project.name);
+  assert.equal(sources[0]?.room_name, room.name);
+  assert.equal(sources[0]?.source_id, 'asset:knowledge-doc');
+  assert.equal(sources[0]?.title, '知识库方案.md');
+  assert.equal(sources[0]?.chunk_count, 1);
+});
+
 test('resource asset list includes uploaded files without breaking existing file records', async () => {
   const project = createProject('uploaded-file');
   const file = fileRepo.create({

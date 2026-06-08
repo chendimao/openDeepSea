@@ -66,6 +66,11 @@ import type {
   WorkflowRun,
   WorkspaceSearchResponse,
 } from './types';
+import type {
+  KnowledgeSource,
+  KnowledgeSourceStatus,
+  KnowledgeSourceType,
+} from './knowledgeDisplay';
 
 const BASE = '/api';
 const LOCAL_ACCESS_TOKEN_STORAGE_KEY = 'opendeepsea.localToken';
@@ -521,6 +526,24 @@ export const api = {
     const query = params.toString();
     const resources = await request<ResourceListItem[]>(`/projects/${projectId}/resource-assets${query ? `?${query}` : ''}`);
     return resources.map(resourceListItemToProjectFile);
+  },
+  listKnowledgeSources: (filters: {
+    projectId?: string;
+    roomId?: string;
+    status?: KnowledgeSourceStatus | '';
+    sourceType?: KnowledgeSourceType | '';
+    query?: string;
+    limit?: number;
+  } = {}) => {
+    const params = new URLSearchParams();
+    if (filters.projectId) params.set('projectId', filters.projectId);
+    if (filters.roomId) params.set('roomId', filters.roomId);
+    if (filters.status) params.set('status', filters.status);
+    if (filters.sourceType) params.set('sourceType', filters.sourceType);
+    if (filters.query) params.set('q', filters.query);
+    if (filters.limit) params.set('limit', String(filters.limit));
+    const query = params.toString();
+    return request<KnowledgeSource[]>(`/knowledge${query ? `?${query}` : ''}`);
   },
   listProjectFiles: (
     projectId: string,

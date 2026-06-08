@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
   Bot,
-  FileText,
+  Database,
   History,
   MessageCircle,
   Settings,
@@ -86,10 +86,10 @@ export function AppShell({
             <HeaderNavLink to="/agents" icon={Bot} label="智能体" />
             <HeaderNavLink to="/skills" icon={ShieldCheck} label="技能" />
             <HeaderNavLink
-              to="/files"
-              active={location.pathname === '/files' || /^\/projects\/[^/]+\/files\/?$/.test(location.pathname)}
-              icon={FileText}
-              label="资源"
+              to="/knowledge"
+              active={location.pathname === '/knowledge' || /^\/projects\/[^/]+\/knowledge\/?$/.test(location.pathname)}
+              icon={Database}
+              label="知识库"
             />
           </nav>
         </div>
