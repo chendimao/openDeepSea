@@ -808,7 +808,7 @@
   color: inherit;
   padding: 3px 10px;
   text-align: left;
-  transition: background 160ms, color 160ms;
+  transition: background 160ms, color 160ms, padding-right 140ms ease-out;
 }
 .deepsea-project-tree-section[data-active="true"] .deepsea-project-node,
 .deepsea-project-node:hover,
@@ -826,9 +826,14 @@
 }
 .deepsea-project-node__button svg {
   flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   color: rgba(67, 70, 84, 0.66);
+}
+.deepsea-project-node:hover .deepsea-project-node__button,
+.deepsea-project-node:focus-within .deepsea-project-node__button,
+.deepsea-project-node:has(.deepsea-project-node__icon-button[aria-expanded="true"]) .deepsea-project-node__button {
+  padding-right: 56px;
 }
 .deepsea-project-node__label {
   display: block;
@@ -883,8 +888,8 @@
   color: rgba(67, 70, 84, 0.86);
 }
 .deepsea-project-node__icon-button svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 .deepsea-project-node__menu {
   z-index: 30;
@@ -964,6 +969,7 @@
   min-width: 0;
   align-items: center;
   border-radius: 8px;
+  transition: background 160ms;
 }
 .deepsea-project-session-pin {
   display: grid;
@@ -1007,10 +1013,11 @@
   transition: background 160ms, border-color 160ms;
   white-space: nowrap;
 }
-.deepsea-project-session-row:hover {
+.deepsea-project-session-row-wrap:hover,
+.deepsea-project-session-row-wrap:focus-within {
   background: rgba(255, 255, 255, 0.2);
 }
-.deepsea-project-session-row[data-current="true"] {
+.deepsea-project-session-row-wrap[data-current="true"] {
   border-color: transparent;
   background: rgba(67, 70, 84, 0.1);
   box-shadow: none;
@@ -1270,7 +1277,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 16px var(--deepsea-composer-space);
+  padding: 0;
   scroll-padding-bottom: var(--deepsea-composer-space);
 }
 .deepsea-transcript__heading {

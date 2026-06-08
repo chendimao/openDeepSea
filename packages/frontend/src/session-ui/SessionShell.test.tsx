@@ -251,6 +251,7 @@ test('SessionShell includes project tree row pin and drag feedback styles', () =
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*opacity:\s*0/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*position:\s*absolute/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node:hover \.deepsea-project-node__button,[\s\S]*padding-right:\s*56px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node:hover \.deepsea-project-node__actions/s);
   assert.match(sessionOsCss, /\.deepsea-project-node:focus-within \.deepsea-project-node__actions/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions:has\(\.deepsea-project-node__icon-button\[aria-expanded="true"\]\)/s);
@@ -271,12 +272,14 @@ test('SessionShell project rail CSS keeps the reference-style compact hierarchy'
   assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*22px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*30px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__button\s*\{[^}]*padding:\s*3px 10px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node__button svg\s*\{[^}]*width:\s*14px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__label strong\s*\{[^}]*font-size:\s*13px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*4px 0 6px 12px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*min-height:\s*28px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*4px 8px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*box-shadow:\s*none/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap:hover,[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.2\)/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\[data-current="true"\]\s*\{[^}]*box-shadow:\s*none/s);
   assert.doesNotMatch(sessionOsCss, /\.deepsea-project-session-row\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row__title\s*\{[^}]*font-size:\s*13px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*min-width:\s*46px/s);
@@ -653,6 +656,7 @@ test('SessionShell renders a transcript end anchor for composer-safe auto scroll
 
   assert.match(html, /data-transcript-scroll="true"/);
   assert.match(html, /data-transcript-end="true"/);
+  assert.match(sessionOsCss, /\.deepsea-transcript__scroll\s*\{[^}]*padding:\s*0/s);
 });
 
 test('isTranscriptNearBottom respects the transcript follow threshold', () => {
