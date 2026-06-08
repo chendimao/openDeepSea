@@ -816,7 +816,6 @@
   text-align: left;
   transition: background 160ms, color 160ms, padding-right 140ms ease-out;
 }
-.deepsea-project-tree-section[data-active="true"] .deepsea-project-node,
 .deepsea-project-node:hover,
 .deepsea-project-node:focus-within {
   background: rgba(67, 70, 84, 0.1);

@@ -294,7 +294,11 @@ test('SessionShell project rail CSS keeps the reference-style compact hierarchy'
   assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*30px/s);
   assert.match(
     sessionOsCss,
-    /\.deepsea-project-tree-section\[data-active="true"\] \.deepsea-project-node,\s*\.deepsea-project-node:hover,\s*\.deepsea-project-node:focus-within\s*\{\s*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s,
+    /\.deepsea-project-node:hover,\s*\.deepsea-project-node:focus-within\s*\{\s*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s,
+  );
+  assert.doesNotMatch(
+    sessionOsCss,
+    /\.deepsea-project-tree-section\[data-active="true"\] \.deepsea-project-node,[\s\S]*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s,
   );
   assert.match(sessionOsCss, /\.deepsea-project-node__button\s*\{[^}]*padding:\s*3px 10px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__button svg\s*\{[^}]*width:\s*14px/s);
