@@ -69,7 +69,7 @@ export function AppShell({
   return (
     <div className={cn('flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]', isSessionWorkspaceRoute && 'app-shell--session', isKnowledgeRoute && 'app-shell--knowledge', isSkillsRoute && 'app-shell--skills')}>
       {themeStyle === 'apple' && <div className="liquid-backdrop" aria-hidden="true" />}
-      {!isKnowledgeRoute && !isSkillsRoute && (
+      {!isSkillsRoute && (
         <header className="deepsea-topbar app-header" aria-label={t('shell.sidebar.aria')}>
           <div className="deepsea-topbar__identity">
             <NavLink to="/" className="deepsea-brand" aria-label={t('app.name')}>
