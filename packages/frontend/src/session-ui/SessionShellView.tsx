@@ -258,6 +258,7 @@ type ProjectSessionTreeProject = {
   path: string;
   active: boolean;
   created_at?: number;
+  updated_at?: number;
   pinned_at?: number | null;
   sort_order?: number | null;
   recentSessions: ProjectSwitcherProject['recentSessions'];
@@ -266,6 +267,31 @@ type ProjectSessionTreeProject = {
 };
 
 type ProjectSwitcherProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
+
+export type SessionSidebarGroupMode = 'project' | 'time';
+export type SessionSidebarSortMode = 'created' | 'updated';
+export type SessionSidebarVisibility = 'all' | 'pinned';
+
+export type SessionSidebarPrefs = {
+  groupMode: SessionSidebarGroupMode;
+  sortMode: SessionSidebarSortMode;
+  visibility: SessionSidebarVisibility;
+};
+
+export const SESSION_SIDEBAR_PREFS_STORAGE_KEY = 'opendeepsea.sessionSidebar.viewPrefs';
+
+export const DEFAULT_SESSION_SIDEBAR_PREFS: SessionSidebarPrefs = {
+  groupMode: 'project',
+  sortMode: 'updated',
+  visibility: 'all',
+};
+
+export type SessionSidebarModel = {
+  heading: '项目' | '聊天';
+  projects: ProjectSessionTreeProject[];
+  timeRows: ActiveSessionSummary[];
+  emptyMessage: string;
+};
 
 const projectActionMenuItems: Array<{
   label: '编辑名称' | '移除';
@@ -664,6 +690,13 @@ function buildProjectSessionTree(input: {
     input.currentProjectId,
     input.currentProjectName,
   ).filter((session) => session.status !== 'archived');
+  return buildProjectSessionTreeFromActiveSessions(input.projects, activeSessions);
+}
+
+function buildProjectSessionTreeFromActiveSessions(
+  projects: ProjectSwitcherProject[],
+  activeSessions: ActiveSessionSummary[],
+): ProjectSessionTreeProject[] {
   const sessionsByProjectId = new Map<string, ActiveSessionSummary[]>();
   for (const session of activeSessions) {
     const bucket = sessionsByProjectId.get(session.project_id) ?? [];
@@ -671,13 +704,14 @@ function buildProjectSessionTree(input: {
     sessionsByProjectId.set(session.project_id, bucket);
   }
 
-  const knownProjectIds = new Set(input.projects.map((project) => project.id));
-  const projectNodes: ProjectSessionTreeProject[] = input.projects.map((project) => ({
+  const knownProjectIds = new Set(projects.map((project) => project.id));
+  const projectNodes: ProjectSessionTreeProject[] = projects.map((project) => ({
     id: project.id,
     name: project.name,
     path: project.path,
     active: project.active,
     created_at: project.created_at,
+    updated_at: project.updated_at,
     pinned_at: project.pinned_at,
     sort_order: project.sort_order,
     recentSessions: project.recentSessions,
@@ -694,6 +728,8 @@ function buildProjectSessionTree(input: {
       name: session.project_name || '其他项目',
       path: session.project_path,
       active: false,
+      created_at: session.created_at,
+      updated_at: session.updated_at,
       recentSessions: [],
       sortable: false,
       sessions: [],
@@ -703,6 +739,127 @@ function buildProjectSessionTree(input: {
   }
 
   return [...projectNodes, ...orphanProjects.values()];
+}
+
+export function normalizeSessionSidebarPrefs(value: unknown): SessionSidebarPrefs {
+  if (!value || typeof value !== 'object') return DEFAULT_SESSION_SIDEBAR_PREFS;
+  const record = value as Partial<Record<keyof SessionSidebarPrefs, unknown>>;
+  const groupMode = record.groupMode === 'time' || record.groupMode === 'project'
+    ? record.groupMode
+    : DEFAULT_SESSION_SIDEBAR_PREFS.groupMode;
+  const sortMode = record.sortMode === 'created' || record.sortMode === 'updated'
+    ? record.sortMode
+    : DEFAULT_SESSION_SIDEBAR_PREFS.sortMode;
+  const visibility = record.visibility === 'all' || record.visibility === 'pinned'
+    ? record.visibility
+    : DEFAULT_SESSION_SIDEBAR_PREFS.visibility;
+  return { groupMode, sortMode, visibility };
+}
+
+export function readSessionSidebarPrefs(): SessionSidebarPrefs {
+  if (typeof window === 'undefined') return DEFAULT_SESSION_SIDEBAR_PREFS;
+  try {
+    const raw = window.localStorage.getItem(SESSION_SIDEBAR_PREFS_STORAGE_KEY);
+    return normalizeSessionSidebarPrefs(raw ? JSON.parse(raw) : null);
+  } catch {
+    return DEFAULT_SESSION_SIDEBAR_PREFS;
+  }
+}
+
+export function writeSessionSidebarPrefs(prefs: SessionSidebarPrefs): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(SESSION_SIDEBAR_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+}
+
+function getSessionSidebarSortTime(session: ActiveSessionSummary, sortMode: SessionSidebarSortMode): number {
+  if (sortMode === 'created') return session.created_at;
+  return session.last_viewed_at ?? session.updated_at;
+}
+
+function getProjectSidebarSortTime(project: ProjectSessionTreeProject, sortMode: SessionSidebarSortMode): number {
+  if (sortMode === 'created') return project.created_at ?? 0;
+  return project.updated_at ?? project.created_at ?? 0;
+}
+
+export function sortSessionsForSidebar(
+  sessions: ActiveSessionSummary[],
+  sortMode: SessionSidebarSortMode,
+): ActiveSessionSummary[] {
+  return [...sessions].sort((left, right) => {
+    const delta = getSessionSidebarSortTime(right, sortMode) - getSessionSidebarSortTime(left, sortMode);
+    return delta || right.updated_at - left.updated_at || left.title.localeCompare(right.title);
+  });
+}
+
+function sortProjectsForSidebar(
+  projects: ProjectSessionTreeProject[],
+  sortMode: SessionSidebarSortMode,
+): ProjectSessionTreeProject[] {
+  return [...projects].sort((left, right) => {
+    const delta = getProjectSidebarSortTime(right, sortMode) - getProjectSidebarSortTime(left, sortMode);
+    return delta || left.name.localeCompare(right.name);
+  });
+}
+
+function filterSessionsByVisibility(
+  sessions: ActiveSessionSummary[],
+  visibility: SessionSidebarVisibility,
+): ActiveSessionSummary[] {
+  return visibility === 'pinned'
+    ? sessions.filter((session) => session.pinned_at !== null)
+    : sessions;
+}
+
+function filterSessionsByQuery(
+  sessions: ActiveSessionSummary[],
+  normalizedQuery: string,
+): ActiveSessionSummary[] {
+  if (!normalizedQuery) return sessions;
+  return sessions.filter((session) =>
+    [
+      session.title,
+      session.project_name,
+      session.project_path,
+      session.latest_event_summary ?? '',
+    ].some((value) => value.toLowerCase().includes(normalizedQuery))
+  );
+}
+
+export function buildSessionSidebarModel(input: {
+  projects: ProjectSwitcherProject[];
+  sessions: ActiveSessionSummary[];
+  currentSession: Session;
+  currentProjectId: string;
+  currentProjectName: string;
+  normalizedQuery: string;
+  prefs: SessionSidebarPrefs;
+}): SessionSidebarModel {
+  const activeSessions = ensureCurrentActiveSessionSummary(
+    input.sessions,
+    input.currentSession,
+    input.currentProjectId,
+    input.currentProjectName,
+  ).filter((session) => session.status !== 'archived');
+  const visibleSessions = sortSessionsForSidebar(
+    filterSessionsByVisibility(activeSessions, input.prefs.visibility),
+    input.prefs.sortMode,
+  );
+  const tree = buildProjectSessionTreeFromActiveSessions(input.projects, visibleSessions)
+    .map((project) => ({
+      ...project,
+      sessions: sortSessionsForSidebar(project.sessions, input.prefs.sortMode),
+    }));
+  const projects = sortProjectsForSidebar(
+    filterProjectSessionTree(tree, input.normalizedQuery).filter((project) => project.sessions.length > 0),
+    input.prefs.sortMode,
+  );
+  const timeRows = filterSessionsByQuery(visibleSessions, input.normalizedQuery);
+  return {
+    heading: input.prefs.groupMode === 'time' ? '聊天' : '项目',
+    projects: input.prefs.groupMode === 'project' ? projects : [],
+    timeRows: input.prefs.groupMode === 'time' ? timeRows : [],
+    emptyMessage: input.prefs.visibility === 'pinned' ? '暂无置顶会话。' : '没有匹配的会话。',
+  };
 }
 
 function filterProjectSessionTree(

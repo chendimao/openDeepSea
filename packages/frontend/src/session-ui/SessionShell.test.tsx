@@ -4,10 +4,11 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
+import type { ActiveSessionSummary, ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
+  buildSessionSidebarModel,
   buildProjectReorderInput,
   buildTranscriptFollowKey,
   buildSessionRunTranscriptItems,
@@ -15,6 +16,7 @@ import {
   getSessionRunThinkingDuration,
   isTranscriptNearBottom,
   shouldIgnoreProjectDragStart,
+  sortSessionsForSidebar,
   syncExpandedProjectIds,
 } from './SessionShellView';
 
@@ -464,6 +466,148 @@ test('buildProjectReorderInput returns pinned layer ids for pinned same-layer re
     ids: ['project-2', 'project-1'],
     pinned: true,
   });
+});
+
+test('sortSessionsForSidebar uses last viewed time before updated time', () => {
+  const now = Date.now();
+  const sessions = [
+    createActiveSummary({
+      id: 'updated-only',
+      project_id: 'project-1',
+      title: '仅更新',
+      updated_at: now - 1_000,
+      last_viewed_at: null,
+    }),
+    createActiveSummary({
+      id: 'viewed',
+      project_id: 'project-1',
+      title: '已查看',
+      updated_at: now - 10_000,
+      last_viewed_at: now,
+    }),
+    createActiveSummary({
+      id: 'older',
+      project_id: 'project-1',
+      title: '更早',
+      updated_at: now - 20_000,
+      last_viewed_at: null,
+    }),
+  ];
+
+  assert.deepEqual(sortSessionsForSidebar(sessions, 'updated').map((session) => session.id), [
+    'viewed',
+    'updated-only',
+    'older',
+  ]);
+});
+
+test('buildSessionSidebarModel filters pinned sessions and hides empty projects', () => {
+  const now = Date.now();
+  const projects = [
+    {
+      id: 'project-a',
+      name: 'Project A',
+      path: '/workspace/a',
+      active: false,
+      created_at: now - 3_000,
+      updated_at: now - 2_000,
+      pinned_at: null,
+      sort_order: null,
+      recentSessions: [],
+    },
+    {
+      id: 'project-empty',
+      name: 'Empty Project',
+      path: '/workspace/empty',
+      active: false,
+      created_at: now - 1_000,
+      updated_at: now - 1_000,
+      pinned_at: null,
+      sort_order: null,
+      recentSessions: [],
+    },
+  ];
+  const sessions = [
+    createActiveSummary({
+      id: 'normal',
+      project_id: 'project-a',
+      title: '普通会话',
+      pinned_at: null,
+      created_at: now - 4_000,
+      updated_at: now - 4_000,
+    }),
+    createActiveSummary({
+      id: 'pinned',
+      project_id: 'project-a',
+      title: '置顶会话',
+      pinned_at: now,
+      created_at: now - 5_000,
+      updated_at: now - 5_000,
+    }),
+  ];
+  const model = buildSessionSidebarModel({
+    projects,
+    sessions,
+    currentSession: {
+      ...createPayload().activeSession.session,
+      id: 'missing-current',
+      status: 'archived',
+      phase: 'archived',
+      archived_at: now,
+    },
+    currentProjectId: 'project-a',
+    currentProjectName: 'Project A',
+    normalizedQuery: '',
+    prefs: { groupMode: 'project', sortMode: 'updated', visibility: 'pinned' },
+  });
+
+  assert.equal(model.heading, '项目');
+  assert.deepEqual(model.projects.map((project) => project.id), ['project-a']);
+  assert.deepEqual(model.projects[0]?.sessions.map((session) => session.id), ['pinned']);
+  assert.equal(model.emptyMessage, '暂无置顶会话。');
+});
+
+test('buildSessionSidebarModel creates time ordered flat session rows', () => {
+  const now = Date.now();
+  const sessions = [
+    createActiveSummary({
+      id: 'old',
+      project_id: 'project-a',
+      project_name: 'Project A',
+      title: '旧会话',
+      created_at: now - 50_000,
+      updated_at: now - 40_000,
+      last_viewed_at: null,
+    }),
+    createActiveSummary({
+      id: 'recent-view',
+      project_id: 'project-b',
+      project_name: 'Project B',
+      title: '最近查看',
+      created_at: now - 60_000,
+      updated_at: now - 55_000,
+      last_viewed_at: now - 1_000,
+    }),
+  ];
+  const model = buildSessionSidebarModel({
+    projects: [],
+    sessions,
+    currentSession: {
+      ...createPayload().activeSession.session,
+      id: 'archived-current',
+      status: 'archived',
+      phase: 'archived',
+      archived_at: now,
+    },
+    currentProjectId: 'project-a',
+    currentProjectName: 'Project A',
+    normalizedQuery: '',
+    prefs: { groupMode: 'time', sortMode: 'updated', visibility: 'all' },
+  });
+
+  assert.equal(model.heading, '聊天');
+  assert.deepEqual(model.timeRows.map((session) => session.id), ['recent-view', 'old']);
+  assert.deepEqual(model.projects, []);
 });
 
 test('syncExpandedProjectIds opens the current project without overwriting existing project state', () => {
@@ -1612,6 +1756,30 @@ function createProjectUsedAgentsPayload(agent: { agent_id: string; name: string 
         workflow_role: 'executor',
       }],
     }],
+  };
+}
+
+function createActiveSummary(
+  overrides: Partial<ActiveSessionSummary> & Pick<ActiveSessionSummary, 'id' | 'project_id' | 'title'>,
+): ActiveSessionSummary {
+  const now = Date.now();
+  return {
+    id: overrides.id,
+    project_id: overrides.project_id,
+    project_name: overrides.project_name ?? `Project ${overrides.project_id}`,
+    project_path: overrides.project_path ?? `/workspace/${overrides.project_id}`,
+    title: overrides.title,
+    status: overrides.status ?? 'active',
+    phase: overrides.phase ?? 'implementing',
+    provider: overrides.provider ?? 'codex',
+    model: overrides.model ?? 'gpt-5.5',
+    pinned_at: overrides.pinned_at ?? null,
+    created_at: overrides.created_at ?? now,
+    updated_at: overrides.updated_at ?? now,
+    last_viewed_at: overrides.last_viewed_at ?? null,
+    unread_count: overrides.unread_count ?? 0,
+    active_run_count: overrides.active_run_count ?? 0,
+    latest_event_summary: overrides.latest_event_summary ?? null,
   };
 }
 
