@@ -28,6 +28,8 @@ test('buildSessionProjectSwitcher uses real projects and recent session/history 
     name: '真实项目',
     path: mkdtempSync(join(tmpdir(), 'session-switcher-project-')),
   });
+  db.prepare('UPDATE projects SET created_at = ?, updated_at = ? WHERE id = ?').run(1_000, 2_000, project.id);
+  const updatedProject = projectRepo.get(project.id)!;
   const session = sessionRepo.create({ project_id: project.id, title: '真实会话', workspace_path: project.path });
   historyRecordRepo.create({
     project_id: project.id,
@@ -52,9 +54,10 @@ test('buildSessionProjectSwitcher uses real projects and recent session/history 
   assert.equal(switcher.activeProjectId, project.id);
   assert.equal(switcher.projects.some((item) => item.name === '真实项目'), true);
   assert.ok(switcherProject);
-  assert.equal(switcherProject.created_at, project.created_at);
-  assert.equal(switcherProject.pinned_at, project.pinned_at);
-  assert.equal(switcherProject.sort_order, project.sort_order);
+  assert.equal(switcherProject.created_at, updatedProject.created_at);
+  assert.equal(switcherProject.updated_at, updatedProject.updated_at);
+  assert.equal(switcherProject.pinned_at, updatedProject.pinned_at);
+  assert.equal(switcherProject.sort_order, updatedProject.sort_order);
   assert.equal(switcherProject.recentSessions[0]?.title, '真实会话');
 });
 
