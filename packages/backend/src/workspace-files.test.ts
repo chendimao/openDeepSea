@@ -22,6 +22,7 @@ import {
   listWorkspaceDirectory,
   readWorkspaceFilePreview,
   readWorkspaceFileReference,
+  readWorkspaceImageBlob,
   resolveWorkspacePath,
   searchWorkspaceFiles,
 } from './workspace-files.js';
@@ -216,6 +217,26 @@ test('workspace reference allows binary file under size limit', async () => {
     assert.equal(reference.isBinary, true);
     assert.equal(reference.content, null);
     assert.equal(reference.truncated, false);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace image blob returns image bytes and rejects non-images', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-image-');
+
+  try {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    writeFileSync(join(projectRoot, 'sample.png'), png);
+    writeFileSync(join(projectRoot, 'notes.txt'), 'not an image\n');
+
+    const blob = await readWorkspaceImageBlob(projectRoot, 'sample.png');
+    assert.equal(blob.path, 'sample.png');
+    assert.equal(blob.mimeType, 'image/png');
+    assert.equal(blob.size, png.length);
+    assert.equal(blob.bytes.equals(png), true);
+
+    await assert.rejects(() => readWorkspaceImageBlob(projectRoot, 'notes.txt'), /WORKSPACE_FILE_BINARY/);
   } finally {
     cleanupWorkspaceRoot(projectRoot);
   }

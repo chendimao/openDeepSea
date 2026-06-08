@@ -76,6 +76,14 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.yml': 'text/yaml',
   '.toml': 'text/plain',
   '.txt': 'text/plain',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.svg': 'image/svg+xml',
   '.css': 'text/css',
   '.scss': 'text/plain',
   '.less': 'text/plain',
@@ -335,6 +343,38 @@ export async function readWorkspaceFileReference(projectPath: string, inputPath:
       content: isBinary ? null : contentBuffer.toString('utf-8'),
       truncated: false,
       bytes: contentBuffer,
+    };
+  } finally {
+    await fileHandle.close();
+  }
+}
+
+export async function readWorkspaceImageBlob(
+  projectPath: string,
+  inputPath: string,
+): Promise<{ path: string; size: number; mimeType: string; bytes: Buffer }> {
+  const resolved = await resolveWorkspacePath(projectPath, inputPath);
+  ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
+
+  const mimeType = inferMimeType(resolved.relativePath);
+  if (!mimeType.startsWith('image/')) {
+    throw workspaceFileError('WORKSPACE_FILE_BINARY');
+  }
+
+  const fileHandle = await openWorkspaceFileForRead(resolved.absolutePath);
+  try {
+    const fileStats = await fileHandle.stat();
+    if (!fileStats.isFile()) {
+      throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
+    }
+    if (fileStats.size > WORKSPACE_REFERENCE_SIZE_LIMIT) {
+      throw workspaceFileError('WORKSPACE_FILE_TOO_LARGE');
+    }
+    return {
+      path: resolved.relativePath,
+      size: fileStats.size,
+      mimeType,
+      bytes: await readHandleBytes(fileHandle, fileStats.size),
     };
   } finally {
     await fileHandle.close();
