@@ -190,6 +190,7 @@ export function SessionWorkspacePage({
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionSummary[] | null>(null);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [renameProject, setRenameProject] = useState<SessionSwitcherProject | null>(null);
   const [removeProject, setRemoveProject] = useState<SessionSwitcherProject | null>(null);
   const [renameProjectName, setRenameProjectName] = useState('');
@@ -382,6 +383,7 @@ export function SessionWorkspacePage({
               active: existing?.active ?? project.id === current.project.id,
               recentSessions: existing?.recentSessions ?? [],
               created_at: project.created_at,
+              updated_at: project.updated_at,
               pinned_at: project.pinned_at,
               sort_order: project.sort_order,
             };
@@ -511,6 +513,7 @@ export function SessionWorkspacePage({
         sessionSocket.requestSessionWorkspace({ projectId, sessionId });
       }}
       onCreateSession={createProjectSession}
+      onCreateProject={() => setCreateProjectOpen(true)}
       onRenameProject={(project) => {
         setRenameProject(project);
         setRenameProjectName(project.name);
@@ -519,6 +522,7 @@ export function SessionWorkspacePage({
       onReorderProjects={(input) => reorderProjectsMutation.mutate(input)}
       onToggleSessionPin={(session) => toggleSessionPinMutation.mutate(session)}
     />
+    <CreateProjectDialog open={createProjectOpen} onOpenChange={setCreateProjectOpen} />
     <Dialog
       open={renameProject !== null}
       onOpenChange={(open) => {

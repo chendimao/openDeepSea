@@ -24,6 +24,7 @@ import {
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
+const sessionWorkspacePageSource = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
 
 Object.defineProperty(globalThis, 'localStorage', {
   value: {
@@ -52,7 +53,7 @@ test('SessionWorkspacePage can render from keep-alive host route params', () => 
 });
 
 test('SessionWorkspacePage exposes override props for keep-alive host params', () => {
-  const source = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
+  const source = sessionWorkspacePageSource;
 
   assert.match(source, /type SessionWorkspacePageProps =/);
   assert.match(source, /projectIdOverride\?: string/);
@@ -60,6 +61,12 @@ test('SessionWorkspacePage exposes override props for keep-alive host params', (
   assert.match(source, /navigationEnabled\?: boolean/);
   assert.match(source, /if \(!navigationEnabled\) return/);
   assert.match(source, /if \(!navigationEnabled \|\| event\.key !== 'Escape'\) return/);
+});
+
+test('SessionWorkspacePage wires project creation dialog into SessionShell', () => {
+  assert.match(sessionWorkspacePageSource, /const \[createProjectOpen,\s*setCreateProjectOpen\] = useState\(false\)/);
+  assert.match(sessionWorkspacePageSource, /onCreateProject=\{\(\) => setCreateProjectOpen\(true\)\}/);
+  assert.match(sessionWorkspacePageSource, /<CreateProjectDialog open=\{createProjectOpen\} onOpenChange=\{setCreateProjectOpen\}/);
 });
 
 test('root session route shows project onboarding when no projects exist', () => {

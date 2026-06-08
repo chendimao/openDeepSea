@@ -751,9 +751,9 @@
 }
 .deepsea-project-tree-heading > span {
   color: rgba(67, 70, 84, 0.5);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 22px;
+  line-height: 18px;
 }
 .deepsea-project-tree-heading > div {
   display: inline-flex;
@@ -824,6 +824,7 @@
 .deepsea-project-node__button:focus-visible,
 .deepsea-project-node__icon-button:focus-visible,
 .deepsea-project-node__menu-item:focus-visible,
+.deepsea-project-filter-menu__item:focus-visible,
 .deepsea-project-session-pin:focus-visible,
 .deepsea-project-session-row:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.62);
@@ -908,6 +909,55 @@
 }
 .deepsea-project-node__menu[data-state="closed"] {
   display: none;
+}
+.deepsea-project-filter-menu {
+  z-index: 80;
+  min-width: 204px;
+  border: 1px solid rgba(67, 70, 84, 0.11);
+  border-radius: 8px;
+  background: rgba(246, 244, 238, 0.98);
+  color: rgba(67, 70, 84, 0.88);
+  padding: 8px;
+  box-shadow: 0 12px 24px rgba(67, 70, 84, 0.14);
+}
+.deepsea-project-filter-menu__section + .deepsea-project-filter-menu__section {
+  margin-top: 8px;
+  border-top: 1px solid rgba(67, 70, 84, 0.09);
+  padding-top: 8px;
+}
+.deepsea-project-filter-menu__title {
+  margin: 0 8px 4px;
+  color: rgba(67, 70, 84, 0.42);
+  font-size: 11px;
+  line-height: 16px;
+}
+.deepsea-project-filter-menu__item {
+  display: grid;
+  width: 100%;
+  min-height: 28px;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  padding: 0 8px;
+  font-size: 13px;
+  line-height: 18px;
+  outline: none;
+  text-align: left;
+}
+.deepsea-project-filter-menu__item:hover,
+.deepsea-project-filter-menu__item[data-highlighted],
+.deepsea-project-filter-menu__item[data-active="true"] {
+  background: rgba(67, 70, 84, 0.08);
+  color: rgba(67, 70, 84, 0.96);
+}
+.deepsea-project-filter-menu__item svg {
+  width: 16px;
+  height: 16px;
+  color: rgba(67, 70, 84, 0.54);
 }
 .deepsea-project-node__menu-item {
   display: flex;
@@ -1017,6 +1067,28 @@
   padding: 4px 8px 4px 4px;
   text-align: left;
   transition: background 160ms, border-color 160ms;
+  white-space: nowrap;
+}
+.deepsea-project-session-row-wrap--time {
+  padding-left: 2px;
+}
+.deepsea-project-session-row--time {
+  min-height: 42px;
+  padding: 5px 8px 5px 4px;
+}
+.deepsea-project-session-row__stack {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+.deepsea-project-session-row__project {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(67, 70, 84, 0.42);
+  font-size: 11px;
+  line-height: 14px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .deepsea-project-session-row-wrap:hover,
