@@ -25,6 +25,7 @@ export default defineConfig({
             if (
               /^\/api\/projects\/[^/]+\/workspace\/.+/.test(path) ||
               path.startsWith('/api/platform-skills') ||
+              path.startsWith('/api/online-skills') ||
               path.startsWith('/api/terminals')
             ) {
               proxyReq.setHeader('X-OpenDeepSea-Local-Token', localAccessToken);
