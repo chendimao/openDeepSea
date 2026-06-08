@@ -751,6 +751,8 @@ function TranscriptCanvas({
     staleTime: 20_000,
   });
   const timeline = buildTranscriptTimeline(detail).slice(-36);
+  const hasLiveRun = timeline.some((item) => item.kind === 'run' && isRunLive(item.run.status));
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const timelineEndKey = timeline.at(-1)?.key ?? 'empty';
   const timelineFollowKey = useMemo(
     () => buildTranscriptFollowKey({
@@ -767,6 +769,13 @@ function TranscriptCanvas({
     setDisplayModes((current) => ({ ...current, [key]: mode }));
   };
   const agentNamesById = buildAgentNamesById(detail.messages, projectAgents);
+
+  useEffect(() => {
+    if (!hasLiveRun) return undefined;
+    setNowTick(Date.now());
+    const timer = window.setInterval(() => setNowTick(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [hasLiveRun]);
 
   useEffect(() => {
     const transcript = transcriptRef.current;
@@ -862,7 +871,7 @@ function TranscriptCanvas({
                     {runLabel}
                   </span>
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
-                  <ThinkingDurationBadge run={item.run} />
+                  <ThinkingDurationBadge run={item.run} agentEvents={runAgentEvents} now={nowTick} />
                   <RunStatusBadge status={item.run.status} />
                   <MarkdownDisplaySwitch
                     content={output}
@@ -875,7 +884,11 @@ function TranscriptCanvas({
                   {displayMode === 'source' ? (
                     <MessageContent content={output} mode={displayMode} suppressTraceEvents />
                   ) : (
-                    <SessionRunTimeline events={runAgentEvents} fallbackText={output} />
+                    <SessionRunTimeline
+                      events={runAgentEvents}
+                      fallbackText={output}
+                      streaming={isRunLive(item.run.status)}
+                    />
                   )}
                 </div>
               </section>
@@ -1006,16 +1019,24 @@ export type SessionRunTranscriptItem =
 function SessionRunTimeline({
   events,
   fallbackText,
+  streaming,
 }: {
   events: SessionAgentEvent[];
   fallbackText: string;
+  streaming: boolean;
 }): JSX.Element {
   const items = buildSessionRunTranscriptItems(events, fallbackText);
+  const lastTextItemId = [...items].reverse().find((item) => item.type === 'text')?.id ?? null;
   return (
     <div className="deepsea-run-timeline">
       {items.map((item) => item.type === 'text' ? (
         <div key={item.id} className="deepsea-run-timeline__text">
-          <MessageContent content={item.text} mode="preview" suppressTraceEvents />
+          <MessageContent
+            content={item.text}
+            mode="preview"
+            streaming={streaming && item.id === lastTextItemId}
+            suppressTraceEvents
+          />
         </div>
       ) : (
         <div key={item.id} className="deepsea-run-timeline__event">
@@ -1061,6 +1082,12 @@ export function buildSessionRunTranscriptItems(
 function isAnswerTextEvent(event: SessionAgentEvent): boolean {
   return event.channel === 'answer' &&
     event.content.length > 0;
+}
+
+function firstAnswerEvent(events: SessionAgentEvent[]): SessionAgentEvent | null {
+  return [...events]
+    .filter(isAnswerTextEvent)
+    .sort((left, right) => left.created_at - right.created_at || left.seq - right.seq)[0] ?? null;
 }
 
 function runEventMarker(event: SessionAgentEvent): { label: string; detail: string | null } | null {
@@ -1170,8 +1197,16 @@ function trimTimelineDetail(value: string | null | undefined): string | null {
   return text.length > 120 ? `${text.slice(0, 120).trimEnd()}...` : text;
 }
 
-function ThinkingDurationBadge({ run }: { run: SessionRun }): JSX.Element | null {
-  const duration = getSessionRunThinkingDuration(run);
+function ThinkingDurationBadge({
+  run,
+  agentEvents,
+  now,
+}: {
+  run: SessionRun;
+  agentEvents: SessionAgentEvent[];
+  now: number;
+}): JSX.Element | null {
+  const duration = getSessionRunThinkingDuration(run, agentEvents, now);
   if (!duration) return null;
   return (
     <span className="deepsea-thinking-duration" data-active={duration.active ? 'true' : 'false'}>
@@ -1442,6 +1477,10 @@ function RunModule({
   );
 }
 
+function isRunLive(status: SessionRun['status']): boolean {
+  return status === 'queued' || status === 'running' || status === 'retrying';
+}
+
 function runOutputText(run: SessionRun, _events: SessionAgentEvent[] = []): string {
   const output = run.stdout.trim() || run.stderr.trim();
   if (output) return output;
@@ -1462,12 +1501,17 @@ function runThoughtStatusLabel(status: SessionRun['status']): string {
 }
 
 export function getSessionRunThinkingDuration(
-  run: Pick<SessionRun, 'status' | 'started_at' | 'updated_at' | 'completed_at'>,
+  run: Pick<SessionRun, 'status' | 'started_at' | 'updated_at' | 'completed_at'> &
+    Partial<Pick<SessionRun, 'stdout' | 'stderr'>>,
+  agentEvents: SessionAgentEvent[] = [],
   now = Date.now(),
 ): { label: string; active: boolean } | null {
   if (!Number.isFinite(run.started_at) || run.started_at <= 0) return null;
-  const active = run.status === 'queued' || run.status === 'running' || run.status === 'retrying' || run.status === 'paused';
-  const endAt = active ? now : run.completed_at ?? run.updated_at ?? now;
+  const answerAt = firstAnswerEvent(agentEvents)?.created_at ?? null;
+  const live = isRunLive(run.status);
+  const hasOutputFallback = Boolean(run.stdout?.trim() || run.stderr?.trim());
+  const active = live && answerAt === null && !hasOutputFallback;
+  const endAt = answerAt ?? (active ? now : run.completed_at ?? run.updated_at ?? now);
   const durationMs = Math.max(0, endAt - run.started_at);
   return {
     label: `${active ? '思考中' : '思考'} ${formatSessionDuration(durationMs)}`,

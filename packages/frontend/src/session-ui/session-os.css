@@ -1496,8 +1496,8 @@
 .deepsea-run-log p {
   margin: 0;
   color: var(--deepsea-text);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 19px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -1509,8 +1509,8 @@
   width: 100%;
   max-width: 100%;
   color: var(--deepsea-text);
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 19px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -1653,11 +1653,11 @@ button.deepsea-message-attachment {
 }
 .deepsea-message-body .markdown-preview h1,
 .deepsea-run-log-body .markdown-preview h1 {
-  font-size: 16px;
+  font-size: 15px;
 }
 .deepsea-message-body .markdown-preview h2,
 .deepsea-run-log-body .markdown-preview h2 {
-  font-size: 15px;
+  font-size: 14px;
 }
 .deepsea-message-body .markdown-preview h3,
 .deepsea-run-log-body .markdown-preview h3,
@@ -1667,13 +1667,13 @@ button.deepsea-message-attachment {
 .deepsea-run-log-body .markdown-preview h5,
 .deepsea-message-body .markdown-preview h6,
 .deepsea-run-log-body .markdown-preview h6 {
-  font-size: 14px;
+  font-size: 13px;
 }
 .deepsea-message-body .markdown-preview p,
 .deepsea-run-log-body .markdown-preview p {
   margin: 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 19px;
   white-space: normal;
 }
 .deepsea-message-body .markdown-preview ul,
@@ -1689,8 +1689,8 @@ button.deepsea-message-attachment {
 }
 .deepsea-message-body .markdown-preview li,
 .deepsea-run-log-body .markdown-preview li {
-  font-size: 14px;
-  line-height: 20px;
+  font-size: 13px;
+  line-height: 19px;
   white-space: normal;
 }
 .deepsea-message-body .markdown-preview blockquote,
@@ -1760,6 +1760,26 @@ button.deepsea-message-attachment {
   max-width: 100%;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+.deepsea-run-log-body .streaming-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  margin-left: 3px;
+  transform: translateY(2px);
+  border-radius: 2px;
+  background: var(--deepsea-ok);
+  animation: deepsea-cursor-blink 1s steps(2, start) infinite;
+}
+@keyframes deepsea-cursor-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
 }
 .deepsea-run-timeline__event {
   display: inline-flex;

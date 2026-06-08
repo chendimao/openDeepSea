@@ -541,6 +541,8 @@ test('SessionShell renders agent thought above run output without leaking runtim
 
   const html = renderSessionShell(payload);
   const thoughtTag = getAgentThoughtTag(html);
+  const thoughtIndex = html.indexOf('class="deepsea-agent-thought"');
+  const runLogBodyIndex = html.indexOf('class="deepsea-run-log-body"');
 
   assert.doesNotMatch(html, /本轮 prompt 来源由 SessionOS Context Inspector 记录/);
   assert.match(html, /智能体思考过程/);
@@ -548,7 +550,8 @@ test('SessionShell renders agent thought above run output without leaking runtim
   assert.match(html, /等待智能体输出/);
   assert.match(thoughtTag, /data-active="true"/);
   assert.match(thoughtTag, /\sopen=""/);
-  assert.ok(html.indexOf('智能体思考过程') < html.indexOf('planner'));
+  assert.ok(thoughtIndex >= 0);
+  assert.ok(runLogBodyIndex > thoughtIndex);
 });
 
 test('SessionShell collapses completed agent thought by default', () => {
@@ -784,7 +787,7 @@ test('SessionShell hides ACP tool records from chat transcript', () => {
   run.updated_at = 19_000;
   run.completed_at = 19_000;
   payload.activeSession.agentEvents = [
-    createAgentEvent({ id: 'event-answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '我会先分析当前项目。' }),
+    createAgentEvent({ id: 'event-answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '我会先分析当前项目。', created_at: 19_000 }),
     createAgentEvent({ id: 'event-thinking', seq: 2, channel: 'thinking', event_type: 'reasoning_delta', content: '判断需要读取 package.json。' }),
     createAgentEvent({
       id: 'event-read',
@@ -1135,14 +1138,116 @@ test('getSessionRunThinkingDuration formats active and completed durations', () 
     started_at: 1_000,
     updated_at: 1_000,
     completed_at: null,
-  }, 19_400), { label: '思考中 18s', active: true });
+  }, [], 19_400), { label: '思考中 18s', active: true });
 
   assert.deepEqual(getSessionRunThinkingDuration({
     status: 'completed',
     started_at: 1_000,
     updated_at: 126_000,
     completed_at: 126_000,
-  }, 200_000), { label: '思考 2m 5s', active: false });
+  }, [], 200_000), { label: '思考 2m 5s', active: false });
+});
+
+test('getSessionRunThinkingDuration stops at the first answer event', () => {
+  const run = {
+    status: 'running' as const,
+    started_at: 1_000,
+    updated_at: 60_000,
+    completed_at: null,
+  };
+
+  assert.deepEqual(getSessionRunThinkingDuration(run, [
+    createAgentEvent({
+      id: 'thinking-before-answer',
+      seq: 1,
+      channel: 'thinking',
+      event_type: 'reasoning_delta',
+      content: '分析中',
+      created_at: 5_000,
+    }),
+    createAgentEvent({
+      id: 'answer-first',
+      seq: 2,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '开始回复。',
+      created_at: 8_000,
+    }),
+    createAgentEvent({
+      id: 'answer-second',
+      seq: 3,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '继续回复。',
+      created_at: 20_000,
+    }),
+  ], 90_000), { label: '思考 7s', active: false });
+});
+
+test('getSessionRunThinkingDuration does not keep paused runs active', () => {
+  assert.deepEqual(getSessionRunThinkingDuration({
+    status: 'paused',
+    started_at: 1_000,
+    updated_at: 12_000,
+    completed_at: null,
+  }, [], 90_000), { label: '思考 11s', active: false });
+});
+
+test('SessionShell renders a blinking cursor while a run is streaming', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'running';
+  run.stdout = '开始回复。';
+  run.started_at = 1_000;
+  run.updated_at = 8_000;
+  run.completed_at = null;
+  payload.activeSession.agentEvents = [
+    createAgentEvent({
+      id: 'answer',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '开始回复。',
+      created_at: 8_000,
+    }),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /streaming-cursor/);
+});
+
+test('SessionShell hides the streaming cursor after a run completes', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.stdout = '已完成。';
+  run.started_at = 1_000;
+  run.updated_at = 8_000;
+  run.completed_at = 8_000;
+  payload.activeSession.agentEvents = [
+    createAgentEvent({
+      id: 'answer',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '已完成。',
+      created_at: 8_000,
+    }),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.doesNotMatch(html, /streaming-cursor/);
+});
+
+test('SessionShell CSS makes only chat body text one size smaller and defines streaming cursor', () => {
+  assert.match(sessionOsCss, /\.deepsea-message-body,[\s\S]*font-size:\s*13px/);
+  assert.match(sessionOsCss, /\.deepsea-run-log-body,[\s\S]*line-height:\s*19px/);
+  assert.match(sessionOsCss, /\.deepsea-message-body \.message-content,[\s\S]*font-size:\s*13px/);
+  assert.match(sessionOsCss, /\.deepsea-message-body \.markdown-preview p,[\s\S]*font-size:\s*13px/);
+  assert.match(sessionOsCss, /\.deepsea-run-log-body \.streaming-cursor\s*\{/);
+  assert.match(sessionOsCss, /@keyframes deepsea-cursor-blink/);
 });
 
 test('SessionShell renders a concise active session title with the full title available', () => {
