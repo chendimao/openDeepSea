@@ -1,5 +1,9 @@
 import { getAdapter } from './acp/index.js';
-import type { AcpStreamChannel, AcpStreamChunk, SessionAdapter } from './acp/types.js';
+import type { AcpStreamChannel, AcpStreamChunk, SessionAdapter, SessionToolDefinition } from './acp/types.js';
+import {
+  createGenerateImageSessionTool,
+  type GenerateImageToolDeps,
+} from './image-generation/tool.js';
 import { providerConfigService } from './provider-configs/service.js';
 import { projectRepo } from './repos/projects.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
@@ -27,11 +31,20 @@ import type {
 
 const STREAM_PAYLOAD_LIMIT = 8000;
 const MAX_EVIDENCE_LINES = 200;
+const MAX_SESSION_TOOL_BRIDGE_CALLS = 3;
+const SESSION_TOOL_BRIDGE_OPEN_TAG = '<opendeepsea-tool-call';
+const SESSION_TOOL_BRIDGE_OPEN_PATTERN = /<opendeepsea-tool-call\b/i;
+const SESSION_TOOL_BRIDGE_PATTERN = /<opendeepsea-tool-call\s+name=(["'])([^"']+)\1\s*>\s*([\s\S]*?)\s*<\/opendeepsea-tool-call>/gi;
 
 let adapterOverride: SessionAdapter | undefined;
+let generateImageToolDepsOverride: GenerateImageToolDeps | undefined;
 
 export function setSessionRuntimeAdapterForTest(adapter?: SessionAdapter): void {
   adapterOverride = adapter;
+}
+
+export function setSessionRuntimeGenerateImageToolDepsForTest(deps?: GenerateImageToolDeps): void {
+  generateImageToolDepsOverride = deps;
 }
 
 export async function runSessionAgent(input: {
@@ -48,6 +61,7 @@ export async function runSessionAgent(input: {
   const project = projectRepo.get(session.project_id);
   if (!project) throw new Error(`Project not found for session ${session.id}`);
   const agentId = normalizeAgentId(input.agentId);
+  const permissionMode = input.permissionMode ?? 'read-only';
   const existingRuntime = sessionAgentRuntimeRepo.getByAgent(session.id, agentId, input.provider);
   const providerRuntimeConfig = providerConfigService.resolveProviderRuntimeConfig(input.provider);
   const reusableAcpSessionId = existingRuntime?.provider_session_id ??
@@ -80,15 +94,19 @@ export async function runSessionAgent(input: {
   const controller = runRegistry.create(run.id);
   wsHub.broadcastSession(session.id, { type: 'session_run:created', sessionId: session.id, run });
   broadcastActiveSessionUpsert(session.id);
+  const runtimeTools = buildSessionRuntimeTools(session, permissionMode, run.id);
+  const streamedText: string[] = [];
+  const bridgeSanitizer = createSessionToolBridgeSanitizer();
 
   try {
     const result = await resolveAdapter(input.provider).invoke({
       projectPath: session.worktree_path ?? session.workspace_path ?? project.path,
       sessionId: run.acp_session_id,
-      prompt: input.prompt,
-      acpPermissionMode: input.permissionMode ?? 'read-only',
+      prompt: withSessionToolBridgeInstructions(input.prompt, runtimeTools),
+      acpPermissionMode: permissionMode,
       imagePaths: input.imagePaths ?? [],
       providerRuntimeConfig,
+      tools: runtimeTools,
       onSession: (acpSessionId) => {
         persistProviderSession({
           runId: run.id,
@@ -100,7 +118,13 @@ export async function runSessionAgent(input: {
           status: 'running',
         });
       },
-      onChunk: (chunk) => recordSessionChunk({ sessionId: session.id, agentId, runId: run.id, chunk }),
+      onChunk: (chunk) => {
+        if (chunk.stream === 'stdout' && chunk.text) streamedText.push(chunk.text);
+        const visibleChunk = sanitizeSessionToolBridgeChunk(chunk, bridgeSanitizer);
+        if (visibleChunk.text.length > 0 || visibleChunk.channel !== 'answer') {
+          recordSessionChunk({ sessionId: session.id, agentId, runId: run.id, chunk: visibleChunk });
+        }
+      },
       signal: controller.signal,
     });
     if (result.sessionId) {
@@ -111,9 +135,22 @@ export async function runSessionAgent(input: {
         provider: input.provider,
         model: input.model ?? null,
         providerSessionId: result.sessionId,
-        status: 'running',
-      });
-    }
+          status: 'running',
+        });
+      }
+      const flushedChunk = flushSessionToolBridgeSanitizer(bridgeSanitizer);
+      if (flushedChunk && (flushedChunk.text.length > 0 || flushedChunk.channel !== 'answer')) {
+        recordSessionChunk({ sessionId: session.id, agentId, runId: run.id, chunk: flushedChunk });
+      }
+      if (!controller.signal.aborted && result.exitCode === 0) {
+        await executeSessionToolBridgeCalls({
+          sessionId: session.id,
+          agentId,
+          runId: run.id,
+          tools: runtimeTools,
+          text: streamedText.join(''),
+        });
+      }
     return finishSessionRun({
       runId: run.id,
       agentId,
@@ -138,6 +175,192 @@ export async function runSessionAgent(input: {
   } finally {
     runRegistry.remove(run.id);
   }
+}
+
+function withSessionToolBridgeInstructions(prompt: string, tools: SessionToolDefinition[]): string {
+  if (tools.length === 0) return prompt;
+  const toolSpecs = tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.input_schema,
+  }));
+  return `${prompt}\n\n<opendeepsea-session-tools>\n` +
+    '当前 OpenDeepSea 会话提供以下内部工具。需要调用工具时，请在回复中输出一个独立 XML 标记，格式为：\n' +
+    '<opendeepsea-tool-call name="generate_image">\n{"prompt":"...","workflow":"generate","count":1}\n</opendeepsea-tool-call>\n' +
+    '只填写 input_schema 中允许的字段；project_id、session_id 与密钥由 OpenDeepSea 自动绑定，不能写入标记。\n' +
+    '工具调用会在当前轮回复结束后由 OpenDeepSea 执行，并自动保存结果为项目资源和会话证据。\n' +
+    `${JSON.stringify(toolSpecs)}\n` +
+    '</opendeepsea-session-tools>';
+}
+
+async function executeSessionToolBridgeCalls(input: {
+  sessionId: string;
+  agentId: string;
+  runId: string;
+  tools: SessionToolDefinition[];
+  text: string;
+}): Promise<void> {
+  if (input.tools.length === 0 || !input.text.includes('opendeepsea-tool-call')) return;
+  const toolsByName = new Map(input.tools.map((tool) => [tool.name, tool]));
+  SESSION_TOOL_BRIDGE_PATTERN.lastIndex = 0;
+  const matches = [...input.text.matchAll(SESSION_TOOL_BRIDGE_PATTERN)].slice(0, MAX_SESSION_TOOL_BRIDGE_CALLS);
+  for (const match of matches) {
+    const toolName = match[2]?.trim();
+    const rawInput = match[3]?.trim() ?? '';
+    if (!toolName) continue;
+    const tool = toolsByName.get(toolName);
+    if (!tool) continue;
+    const parsedInput = parseSessionToolBridgeInput(rawInput, toolName);
+    recordSessionChunk({
+      sessionId: input.sessionId,
+      agentId: input.agentId,
+      runId: input.runId,
+      chunk: {
+        stream: 'stdout',
+        channel: 'tool',
+        rawType: 'tool_call',
+        text: `OpenDeepSea tool call: ${toolName}\n`,
+        trace: {
+          kind: 'tool',
+          name: toolName,
+          input: JSON.stringify(parsedInput),
+        },
+      },
+    });
+    const result = await tool.execute(parsedInput);
+    recordSessionChunk({
+      sessionId: input.sessionId,
+      agentId: input.agentId,
+      runId: input.runId,
+      chunk: {
+        stream: 'stdout',
+        channel: 'tool',
+        rawType: 'tool_result',
+        text: `OpenDeepSea tool result: ${toolName}\n`,
+        trace: {
+          kind: 'tool',
+          name: toolName,
+          input: JSON.stringify(parsedInput),
+          output: JSON.stringify(result),
+        },
+      },
+    });
+  }
+}
+
+function parseSessionToolBridgeInput(rawInput: string, toolName: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawInput);
+  } catch (error) {
+    throw new Error(`OpenDeepSea session tool ${toolName} input is not valid JSON: ${(error as Error).message}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`OpenDeepSea session tool ${toolName} input must be a JSON object`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+interface SessionToolBridgeSanitizerState {
+  buffer: string;
+  pendingChunk: AcpStreamChunk | null;
+}
+
+function createSessionToolBridgeSanitizer(): SessionToolBridgeSanitizerState {
+  return { buffer: '', pendingChunk: null };
+}
+
+function sanitizeSessionToolBridgeChunk(
+  chunk: AcpStreamChunk,
+  state: SessionToolBridgeSanitizerState,
+): AcpStreamChunk {
+  if (chunk.stream !== 'stdout') return chunk;
+
+  state.buffer += chunk.text;
+  const text = drainSessionToolBridgeVisibleText(state, false);
+  state.pendingChunk = state.buffer.length > 0 ? { ...chunk, text: '' } : null;
+  return { ...chunk, text };
+}
+
+function flushSessionToolBridgeSanitizer(state: SessionToolBridgeSanitizerState): AcpStreamChunk | null {
+  const text = drainSessionToolBridgeVisibleText(state, true);
+  const chunk = state.pendingChunk;
+  state.pendingChunk = null;
+  if (!text) return null;
+  return { ...(chunk ?? { stream: 'stdout', channel: 'answer', text: '' }), text };
+}
+
+function drainSessionToolBridgeVisibleText(state: SessionToolBridgeSanitizerState, flush: boolean): string {
+  let output = '';
+
+  while (state.buffer.length > 0) {
+    const bridgeMatch = firstSessionToolBridgeMatch(state.buffer);
+    const openIndex = findSessionToolBridgeOpenIndex(state.buffer);
+    if (bridgeMatch && (openIndex === -1 || bridgeMatch.index === openIndex)) {
+      output += state.buffer.slice(0, bridgeMatch.index);
+      state.buffer = state.buffer.slice(bridgeMatch.index + bridgeMatch[0].length);
+      continue;
+    }
+
+    if (openIndex >= 0) {
+      output += state.buffer.slice(0, openIndex);
+      state.buffer = flush ? '' : state.buffer.slice(openIndex);
+      break;
+    }
+
+    const holdLength = flush ? 0 : partialSessionToolBridgeOpenLength(state.buffer);
+    output += state.buffer.slice(0, state.buffer.length - holdLength);
+    state.buffer = state.buffer.slice(state.buffer.length - holdLength);
+    break;
+  }
+
+  return output.replace(/\n{3,}/g, '\n\n');
+}
+
+function firstSessionToolBridgeMatch(text: string): RegExpExecArray | null {
+  SESSION_TOOL_BRIDGE_PATTERN.lastIndex = 0;
+  return SESSION_TOOL_BRIDGE_PATTERN.exec(text);
+}
+
+function findSessionToolBridgeOpenIndex(text: string): number {
+  const match = SESSION_TOOL_BRIDGE_OPEN_PATTERN.exec(text);
+  return match?.index ?? -1;
+}
+
+function partialSessionToolBridgeOpenLength(text: string): number {
+  const normalized = text.toLowerCase();
+  const maxLength = Math.min(SESSION_TOOL_BRIDGE_OPEN_TAG.length - 1, normalized.length);
+  for (let length = maxLength; length > 0; length -= 1) {
+    if (SESSION_TOOL_BRIDGE_OPEN_TAG.startsWith(normalized.slice(-length))) return length;
+  }
+  return 0;
+}
+
+export function buildSessionRuntimeTools(
+  session: Pick<Session, 'id' | 'project_id'>,
+  permissionMode: AcpPermissionMode,
+  runId?: string | null,
+): SessionToolDefinition[] {
+  if (!canUseProjectTools(permissionMode)) return [];
+  const generateImageToolDeps = generateImageToolDepsOverride ?? {};
+  return [
+    createGenerateImageSessionTool(session, {
+      ...generateImageToolDeps,
+      onResult: async (result) => {
+        await generateImageToolDeps.onResult?.(result);
+        const { recordSessionImageGenerationToolResultEvidence } = await import('./session-message-dispatch.js');
+        recordSessionImageGenerationToolResultEvidence({
+          sessionId: session.id,
+          sourceRunId: runId ?? null,
+          result,
+        });
+      },
+    }),
+  ];
+}
+
+function canUseProjectTools(permissionMode: AcpPermissionMode): boolean {
+  return permissionMode === 'workspace-write' || permissionMode === 'bypass';
 }
 
 export function retrySessionAgentRun(runId: string): void {

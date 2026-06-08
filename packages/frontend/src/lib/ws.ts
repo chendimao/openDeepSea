@@ -1,13 +1,8 @@
 import type {
   ActiveSessionSummary,
-  AgentRun,
-  AgentRunStatus,
-  AgentTimelineEvent,
   HistoryRecord,
   HistoryRecordStatus,
-  Message,
   PlatformSkillRef,
-  RoomAgent,
   Session,
   SessionAgentEvent,
   SessionAgentEventChannel,
@@ -21,41 +16,74 @@ import type {
   SessionBottomStatus,
   SessionWorkspacePayload,
   Task,
-  TaskArtifact,
-  TaskEvent,
   TerminalProfile,
   TerminalStatus,
-  WorkflowRun,
-  WorkflowStep,
 } from './types';
 
-export type WsServerEvent =
-  | { type: 'message:new'; roomId: string; message: Message }
-  | { type: 'task_event:new'; roomId: string; event: TaskEvent }
-  | { type: 'task:activated'; roomId: string; taskId: string }
+type ImageGenerationJob = {
+  id: string;
+  project_id: string;
+  room_id: string | null;
+  session_id: string | null;
+  source_message_id: string | null;
+  source_agent_id: string | null;
+  source_task_id: string | null;
+  provider_profile_id: string;
+  workflow: 'generate' | 'image-to-image';
+  prompt: string;
+  count: number;
+  quality: string;
+  size: string;
+  status: 'queued' | 'running' | 'canceling' | 'completed' | 'failed' | 'canceled';
+  message: string | null;
+  error: string | null;
+  created_at: number;
+  started_at: number | null;
+  completed_at: number | null;
+  updated_at: number;
+};
+
+type ImageGenerationOutput = {
+  id: string;
+  job_id: string;
+  file_id: string;
+  slot: number;
+  name: string;
+  url: string;
+  mime_type: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  created_at: number;
+};
+
+type ImageGenerationWsEvent =
   | {
-      type: 'message:stream';
-      roomId: string;
-      messageId: string;
-      chunk: string;
-      done: boolean;
-      seq?: number;
-      runId?: string;
-      channel?: SessionAgentEventChannel;
-      event?: AgentTimelineEvent;
-      status?: 'streaming' | AgentRunStatus;
-      error?: string | null;
-      message?: Message;
+      type: 'image_job:created' | 'image_job:updated' | 'image_job:failed' | 'image_job:canceled';
+      projectId: string;
+      sessionId?: string | null;
+      roomId?: string | null;
+      job: ImageGenerationJob;
     }
-  | { type: 'agent_run:created'; roomId: string; run: AgentRun }
-  | { type: 'agent_run:updated'; roomId: string; run: AgentRun }
-  | { type: 'room:agent_joined'; roomId: string; agent: RoomAgent }
-  | { type: 'room:agent_left'; roomId: string; roomAgentId: string }
-  | { type: 'workflow:created'; roomId: string; workflow: WorkflowRun }
-  | { type: 'workflow:updated'; roomId: string; workflow: WorkflowRun }
-  | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
-  | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
-  | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
+  | {
+      type: 'image_job:output_added';
+      projectId: string;
+      sessionId?: string | null;
+      roomId?: string | null;
+      jobId: string;
+      output: ImageGenerationOutput;
+    }
+  | {
+      type: 'image_job:completed';
+      projectId: string;
+      sessionId?: string | null;
+      roomId?: string | null;
+      job: ImageGenerationJob;
+      outputs: ImageGenerationOutput[];
+    };
+
+export type WsServerEvent =
+  | ImageGenerationWsEvent
   | { type: 'active_sessions:snapshot'; sessions: ActiveSessionSummary[] }
   | { type: 'active_session:upsert'; session: ActiveSessionSummary }
   | { type: 'active_session:remove'; sessionId: string }
@@ -100,10 +128,10 @@ export type WsServerEvent =
   | { type: 'task:deleted'; taskId: string };
 
 export type WsClientEvent =
-  | { type: 'subscribe'; roomId: string }
-  | { type: 'unsubscribe'; roomId: string }
   | { type: 'active_sessions:subscribe' }
   | { type: 'active_sessions:unsubscribe' }
+  | { type: 'project:subscribe'; projectId: string }
+  | { type: 'project:unsubscribe'; projectId: string }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }
@@ -140,12 +168,12 @@ export type WsClientEvent =
 
 type Listener = (event: WsServerEvent) => void;
 
-class RoomSocket {
+class SessionSocket {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
-  private subscribed = new Set<string>();
   private subscribedSessions = new Set<string>();
   private subscribedTerminals = new Set<string>();
+  private subscribedProjects = new Set<string>();
   private subscribedActiveSessions = false;
   private pendingClientEvents: WsClientEvent[] = [];
   private retry = 0;
@@ -167,9 +195,9 @@ class RoomSocket {
       this.retry = 0;
       if (
         this.closeWhenOpen &&
-        this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
         this.subscribedTerminals.size === 0 &&
+        this.subscribedProjects.size === 0 &&
         !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) {
@@ -177,9 +205,9 @@ class RoomSocket {
         setTimeout(() => {
           if (
             this.ws !== ws ||
-            this.subscribed.size > 0 ||
             this.subscribedSessions.size > 0 ||
             this.subscribedTerminals.size > 0 ||
+            this.subscribedProjects.size > 0 ||
             this.subscribedActiveSessions ||
             this.pendingClientEvents.length > 0
           ) return;
@@ -190,9 +218,9 @@ class RoomSocket {
       }
       this.closeWhenOpen = false;
       if (this.subscribedActiveSessions) ws.send(JSON.stringify({ type: 'active_sessions:subscribe' }));
-      for (const id of this.subscribed) ws.send(JSON.stringify({ type: 'subscribe', roomId: id }));
       for (const id of this.subscribedSessions) ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: id }));
       for (const id of this.subscribedTerminals) ws.send(JSON.stringify({ type: 'terminal:subscribe', sessionId: id }));
+      for (const id of this.subscribedProjects) ws.send(JSON.stringify({ type: 'project:subscribe', projectId: id }));
       const pending = this.pendingClientEvents.splice(0);
       for (const event of pending) ws.send(JSON.stringify(event));
     });
@@ -208,9 +236,9 @@ class RoomSocket {
       if (this.ws === ws) this.ws = null;
       this.closeWhenOpen = false;
       if (
-        this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
         this.subscribedTerminals.size === 0 &&
+        this.subscribedProjects.size === 0 &&
         !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) return;
@@ -232,32 +260,14 @@ class RoomSocket {
     this.connectTimer = setTimeout(() => {
       this.connectTimer = null;
       if (
-        this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
         this.subscribedTerminals.size === 0 &&
+        this.subscribedProjects.size === 0 &&
         !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) return;
       this.connect();
     }, 0);
-  }
-
-  subscribe(roomId: string): void {
-    this.closeWhenOpen = false;
-    this.subscribed.add(roomId);
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'subscribe', roomId }));
-    } else {
-      this.connectSoon();
-    }
-  }
-
-  unsubscribe(roomId: string): void {
-    this.subscribed.delete(roomId);
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'unsubscribe', roomId }));
-    }
-    this.closeIfIdle();
   }
 
   subscribeSession(sessionId: string): void {
@@ -274,6 +284,24 @@ class RoomSocket {
     this.subscribedSessions.delete(sessionId);
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'session:unsubscribe', sessionId }));
+    }
+    this.closeIfIdle();
+  }
+
+  subscribeProject(projectId: string): void {
+    this.closeWhenOpen = false;
+    this.subscribedProjects.add(projectId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'project:subscribe', projectId }));
+    } else {
+      this.connectSoon();
+    }
+  }
+
+  unsubscribeProject(projectId: string): void {
+    this.subscribedProjects.delete(projectId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'project:unsubscribe', projectId }));
     }
     this.closeIfIdle();
   }
@@ -414,6 +442,12 @@ class RoomSocket {
     if (this.connectTimer) clearTimeout(this.connectTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.connectTimer = null;
+    this.retryTimer = null;
+    this.subscribedSessions.clear();
+    this.subscribedTerminals.clear();
+    this.subscribedProjects.clear();
+    this.subscribedActiveSessions = false;
+    this.closeWhenOpen = false;
     this.pendingClientEvents = [];
     this.ws?.close();
     this.ws = null;
@@ -430,9 +464,9 @@ class RoomSocket {
 
   private closeIfIdle(): void {
     if (
-      this.subscribed.size > 0 ||
       this.subscribedSessions.size > 0 ||
       this.subscribedTerminals.size > 0 ||
+      this.subscribedProjects.size > 0 ||
       this.subscribedActiveSessions ||
       this.pendingClientEvents.length > 0
     ) return;
@@ -456,5 +490,5 @@ class RoomSocket {
   }
 }
 
-export const roomSocket = new RoomSocket();
-export const sessionSocket = roomSocket;
+export const sessionSocket = new SessionSocket();
+export const roomSocket = sessionSocket;

@@ -22,9 +22,12 @@ export interface WorkflowRecoveryExecutionResult {
   detail?: string;
 }
 
+export type WorkflowRetryStepHandler = (workflowRunId: string) => Promise<WorkflowRun>;
+
 export async function executeRecoveryDecision(input: {
   incident: WorkflowIncident;
   decision: WorkflowRecoveryDecision;
+  retryWorkflowStep?: WorkflowRetryStepHandler;
 }): Promise<WorkflowRecoveryExecutionResult> {
   const latestIncident = workflowIncidentRepo.get(input.incident.id) ?? input.incident;
   if (latestIncident.status === 'resolved' || latestIncident.status === 'blocked') {
@@ -48,17 +51,17 @@ export async function executeRecoveryDecision(input: {
 
   switch (input.decision.action) {
     case 'retry_same_agent':
-      return retryWorkflow(latestIncident, input.decision, run, task);
+      return retryWorkflow(latestIncident, input.decision, run, task, input.retryWorkflowStep ?? defaultRetryWorkflowStep);
     case 'retry_with_global_agent':
       ensureGlobalExecutorForRecovery({
         roomId: run.room_id,
         context,
         globalAgentTemplateId: input.decision.globalAgentTemplateId,
       });
-      return retryWorkflow(latestIncident, input.decision, run, task);
+      return retryWorkflow(latestIncident, input.decision, run, task, input.retryWorkflowStep ?? defaultRetryWorkflowStep);
     case 'reassign_agent':
       reassignChildTask(latestIncident, input.decision);
-      return retryWorkflow(latestIncident, input.decision, run, task);
+      return retryWorkflow(latestIncident, input.decision, run, task, input.retryWorkflowStep ?? defaultRetryWorkflowStep);
     case 'split_task':
       return splitTask(latestIncident, input.decision, run, task);
     case 'ask_user':
@@ -73,6 +76,7 @@ async function retryWorkflow(
   decision: WorkflowRecoveryDecision,
   run: WorkflowRun,
   task: Task,
+  retryWorkflowStep: WorkflowRetryStepHandler,
 ): Promise<WorkflowRecoveryExecutionResult> {
   if (agentRunRepo.listActiveByWorkflow(run.id).length > 0) {
     const recorded = writeRecoveryMessage(incident, decision, run, task, '检测到已有运行中的智能体，本次恢复不重复启动。');
@@ -112,10 +116,14 @@ async function retryWorkflow(
     })();
   }
 
-  await workflowOrchestrator.retryStep(run.id);
+  await retryWorkflowStep(run.id);
   const recorded = writeRecoveryMessage(incident, decision, run, task, '已决定恢复执行并重新推进工作流。');
   workflowIncidentRepo.markResolved(incident.id, recorded.message.id);
   return { status: 'executed', messageId: recorded.message.id };
+}
+
+function defaultRetryWorkflowStep(workflowRunId: string): Promise<WorkflowRun> {
+  return workflowOrchestrator.retryStep(workflowRunId);
 }
 
 function reassignChildTask(incident: WorkflowIncident, decision: WorkflowRecoveryDecision): void {

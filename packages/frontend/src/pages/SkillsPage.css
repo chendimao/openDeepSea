@@ -492,6 +492,7 @@
     color: var(--skills-text);
     padding: 20px 20px;
     text-align: left;
+    cursor: pointer;
     transition: background 160ms;
   }
 
@@ -698,8 +699,14 @@
   }
 
   .skills-primary-button {
+    border: 0;
     background: var(--skills-primary);
     color: #fff;
+  }
+
+  .skills-primary-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
   }
 
   .skills-pagination {

@@ -1,6 +1,5 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, type ReactNode, type SyntheticEvent } from 'react';
-import { api } from '../lib/api';
 import type {
   AgentTimelineEvent,
   MessageTrace,
@@ -76,11 +75,9 @@ const knownValueLabels: Record<string, string> = {
 export function AgentTimeline({
   events,
   trace,
-  roomId,
 }: {
   events?: AgentTimelineEvent[];
   trace?: MessageTrace;
-  roomId?: string;
 }): JSX.Element | null {
   const mergedEvents = mergeTimelineEvents(events, traceToEvents(trace));
   const model = buildAgentTimelineModel(mergedEvents);
@@ -98,7 +95,7 @@ export function AgentTimeline({
             <div className="agent-timeline-count">{model.visibleCount} 条事件</div>
           </div>
           {model.visibleEvents.map((event, index) => (
-            <AgentTimelineItem key={event.id ?? `${event.type}-${index}`} event={event} roomId={roomId} />
+            <AgentTimelineItem key={event.id ?? `${event.type}-${index}`} event={event} />
           ))}
         </>
       ) : null}
@@ -111,24 +108,18 @@ export function AgentTimeline({
 
 export function AgentTimelineItem({
   event,
-  roomId,
   presentation = 'timeline',
 }: {
   event: AgentTimelineEvent;
-  roomId?: string;
   presentation?: 'timeline' | 'activity';
 }): JSX.Element {
   const [open, setOpen] = useState(false);
-  const [detailEvent, setDetailEvent] = useState<AgentTimelineEvent | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
   const eventLabel = getTranscriptAction(event);
   const statusLabel = planStatusLabels[String(event.payload.status ?? event.status)] ?? formatEventStatus(event.status);
   const summary = getEventSummary(event);
   const eventTime = formatEventTime(event.created_at);
   const activityCopy = getActivityCopy(event, summary);
-  const displayEvent = detailEvent ?? event;
-  const shouldLoadDetail = shouldLoadEventDetail(event, roomId);
+  const isOmittedDetail = shouldShowOmittedDetail(event);
   const cardClassName = [
     'agent-timeline-card',
     `is-${event.type}`,
@@ -136,23 +127,8 @@ export function AgentTimelineItem({
     presentation === 'activity' ? 'is-activity' : null,
   ].filter(Boolean).join(' ');
 
-  const loadDetail = async (): Promise<void> => {
-    if (!roomId || detailEvent || detailLoading) return;
-    setDetailLoading(true);
-    setDetailError(null);
-    try {
-      setDetailEvent(await api.getMessageTraceEvent(roomId, event.message_id, getEventDetailId(event)));
-    } catch (err) {
-      setDetailError((err as Error).message || '加载失败');
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
   const handleToggle = (e: SyntheticEvent<HTMLDetailsElement>): void => {
-    const nextOpen = e.currentTarget.open;
-    setOpen(nextOpen);
-    if (nextOpen && shouldLoadDetail) void loadDetail();
+    setOpen(e.currentTarget.open);
   };
 
   return (
@@ -184,50 +160,24 @@ export function AgentTimelineItem({
         )}
       </summary>
       <div className="agent-timeline-body">
-        {shouldLoadDetail && !detailEvent ? (
-          <DeferredEventDetail
-            loading={detailLoading}
-            error={detailError}
-            onRetry={() => void loadDetail()}
-          />
-        ) : renderEventBody(displayEvent)}
+        {isOmittedDetail ? <OmittedEventDetail /> : renderEventBody(event)}
       </div>
     </details>
   );
 }
 
-function shouldLoadEventDetail(event: AgentTimelineEvent, roomId: string | undefined): boolean {
-  if (!roomId || event.payload.detail_omitted !== true) return false;
+function shouldShowOmittedDetail(event: AgentTimelineEvent): boolean {
+  if (event.payload.detail_omitted !== true) return false;
   return event.type === 'tool_call'
     || event.type === 'tool_result'
     || event.type === 'command_output'
     || event.type === 'file_diff';
 }
 
-function getEventDetailId(event: AgentTimelineEvent): string {
-  return readString(event.payload.detail_event_id) ?? event.id;
-}
-
-function DeferredEventDetail({
-  loading,
-  error,
-  onRetry,
-}: {
-  loading: boolean;
-  error: string | null;
-  onRetry: () => void;
-}): JSX.Element {
-  if (error) {
-    return (
-      <div className="agent-timeline-detail-state">
-        <span>详情加载失败：{error}</span>
-        <button type="button" onClick={onRetry}>重试</button>
-      </div>
-    );
-  }
+function OmittedEventDetail(): JSX.Element {
   return (
     <div className="agent-timeline-detail-state">
-      {loading ? '正在加载完整详情...' : '展开后加载完整详情'}
+      完整详情已省略
     </div>
   );
 }

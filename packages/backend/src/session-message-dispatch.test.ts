@@ -12,8 +12,12 @@ process.env.CODEX_HOME = join(platformSkillsHome, '.codex');
 const { projectRepo } = await import('./repos/projects.js');
 const { fileRepo } = await import('./repos/files.js');
 const { settingsRepo } = await import('./repos/settings.js');
-const { sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
-const { dispatchSessionUserMessage } = await import('./session-message-dispatch.js');
+const { sessionMessageRepo, sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
+const {
+  dispatchSessionUserMessage,
+  recordSessionImageGenerationJobMessage,
+  recordSessionImageGenerationToolResultEvidence,
+} = await import('./session-message-dispatch.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 
 afterEach(() => {
@@ -376,7 +380,7 @@ test('dispatchSessionUserMessage injects referenced file context into runtime pr
   assert.match(prompts[0] ?? '', /export const app = true/);
 });
 
-test('dispatchSessionUserMessage injects uploaded text and image project files into runtime context', async () => {
+test('dispatchSessionUserMessage injects uploaded text metadata and image project files into runtime context', async () => {
   const root = mkdtempSync(join(tmpdir(), 'session-dispatch-uploaded-context-'));
   const textPath = join(root, 'notes.md');
   const imagePath = join(root, 'screen.png');
@@ -429,9 +433,194 @@ test('dispatchSessionUserMessage injects uploaded text and image project files i
   });
   await new Promise((resolve) => setTimeout(resolve, 30));
 
-  assert.match(captured[0]?.prompt ?? '', /Library: notes\.md/);
-  assert.match(captured[0]?.prompt ?? '', /请读取这段内容/);
+  assert.match(captured[0]?.prompt ?? '', /Library Metadata: notes\.md/);
+  assert.match(captured[0]?.prompt ?? '', /Content not auto-injected/);
+  assert.doesNotMatch(captured[0]?.prompt ?? '', /请读取这段内容/);
   assert.deepEqual(captured[0]?.imagePaths, [realpathSync(imagePath)]);
+});
+
+test('recordSessionImageGenerationJobMessage stores image job id and output attachments', () => {
+  const project = projectRepo.create({
+    name: 'Session Image Job Message',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-image-job-message-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Session Image Job Message',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  const message = recordSessionImageGenerationJobMessage({
+    sessionId: session.id,
+    job: {
+      id: 'image-job-output-test',
+      project_id: project.id,
+      room_id: null,
+      session_id: session.id,
+      source_message_id: null,
+      source_agent_id: null,
+      source_task_id: null,
+      provider_profile_id: 'profile-test',
+      workflow: 'generate',
+      prompt: '生成一张海报',
+      count: 1,
+      quality: 'auto',
+      size: 'auto',
+      status: 'completed',
+      message: null,
+      error: null,
+      created_at: 1,
+      started_at: 2,
+      completed_at: 3,
+      updated_at: 3,
+    },
+    outputs: [{
+      id: 'output-test',
+      job_id: 'image-job-output-test',
+      file_id: 'file-output-test',
+      slot: 1,
+      name: 'generated.png',
+      url: '/uploads/files/generated.png',
+      mime_type: 'image/png',
+      size: 42,
+      width: 1024,
+      height: 1024,
+      created_at: 3,
+    }],
+  });
+
+  const stored = sessionMessageRepo.get(message.id);
+  const metadata = JSON.parse(stored?.metadata ?? '{}') as {
+    image_generation_job_id?: string;
+    image_generation_status?: string;
+    attachments?: Array<{
+      id: string;
+      fileId: string;
+      name: string;
+      mimeType: string;
+      size: number;
+      url: string;
+      isImage: boolean;
+    }>;
+  };
+  assert.equal(message.role, 'system');
+  assert.equal(message.sender_id, 'image-generation');
+  assert.match(message.content, /生成一张海报/);
+  assert.equal(metadata.image_generation_job_id, 'image-job-output-test');
+  assert.equal(metadata.image_generation_status, 'completed');
+  assert.deepEqual(metadata.attachments, [{
+    id: 'file-output-test',
+    fileId: 'file-output-test',
+    name: 'generated.png',
+    mimeType: 'image/png',
+    size: 42,
+    url: '/uploads/files/generated.png',
+    isImage: true,
+  }]);
+});
+
+test('recordSessionImageGenerationJobMessage rejects mismatched job and target session', () => {
+  const project = projectRepo.create({
+    name: 'Session Image Job Mismatch',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-image-job-mismatch-')),
+  });
+  const sourceSession = sessionRepo.create({
+    project_id: project.id,
+    title: 'Source Image Session',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const targetSession = sessionRepo.create({
+    project_id: project.id,
+    title: 'Target Image Session',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  assert.throws(
+    () => recordSessionImageGenerationJobMessage({
+      sessionId: targetSession.id,
+      job: {
+        id: 'image-job-mismatch-test',
+        project_id: project.id,
+        room_id: null,
+        session_id: sourceSession.id,
+        source_message_id: null,
+        source_agent_id: null,
+        source_task_id: null,
+        provider_profile_id: 'profile-test',
+        workflow: 'generate',
+        prompt: '不要写入错误会话',
+        count: 1,
+        quality: 'auto',
+        size: 'auto',
+        status: 'queued',
+        message: null,
+        error: null,
+        created_at: 1,
+        started_at: null,
+        completed_at: null,
+        updated_at: 1,
+      },
+    }),
+    /image generation job session mismatch/,
+  );
+  assert.equal(sessionMessageRepo.listBySession(targetSession.id).length, 0);
+});
+
+test('recordSessionImageGenerationToolResultEvidence stores generated outputs as session evidence', () => {
+  const project = projectRepo.create({
+    name: 'Session Image Tool Evidence',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-image-tool-evidence-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Session Image Tool Evidence',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    phase: 'implementing',
+    prompt: '生成图片',
+  });
+
+  const event = recordSessionImageGenerationToolResultEvidence({
+    sessionId: session.id,
+    sourceRunId: run.id,
+    result: {
+      job_id: 'image-tool-job-1',
+      status: 'completed',
+      error: null,
+      outputs: [{
+        file_id: 'file-generated-1',
+        resource_id: 'file:file-generated-1',
+        url: '/uploads/files/project/generated.png',
+        slot: 1,
+      }],
+    },
+  });
+
+  assert.equal(event.event_type, 'tool_result');
+  assert.equal(event.source_run_id, run.id);
+  assert.equal(event.title, '图片生成结果');
+  assert.match(event.summary ?? '', /1 张图片/);
+  assert.deepEqual(event.payload, {
+    tool_name: 'generate_image',
+    job_id: 'image-tool-job-1',
+    status: 'completed',
+    error: null,
+    outputs: [{
+      file_id: 'file-generated-1',
+      resource_id: 'file:file-generated-1',
+      url: '/uploads/files/project/generated.png',
+      slot: 1,
+    }],
+  });
 });
 
 function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name: string, description: string): void {

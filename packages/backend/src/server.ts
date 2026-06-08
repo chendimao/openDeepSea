@@ -6,6 +6,7 @@ import { getAdapter } from './acp/index.js';
 import { getLocalAccessToken, isTrustedOrigin } from './local-access.js';
 import { projectRepo } from './repos/projects.js';
 import { router } from './routes.js';
+import { imageGenerationJobRepo } from './image-generation/jobs.js';
 import {
   ensureMessageUploadDir,
   ensureProjectFileUploadRoot,
@@ -89,6 +90,8 @@ wss.on('connection', (socket) => {
       }
     }
     else if (event.type === 'active_sessions:unsubscribe') wsHub.unsubscribeActiveSessions(socket);
+    else if (event.type === 'project:subscribe') wsHub.subscribeProject(event.projectId, socket);
+    else if (event.type === 'project:unsubscribe') wsHub.unsubscribeProject(event.projectId, socket);
     else if (event.type === 'session:subscribe') wsHub.subscribeSession(event.sessionId, socket);
     else if (event.type === 'session:unsubscribe') wsHub.unsubscribeSession(event.sessionId, socket);
     else if (handleSessionSocketEvent(socket, event)) return;
@@ -105,6 +108,7 @@ httpServer.listen(PORT, () => {
   if (!configuredLocalAccessToken) {
     console.log(`[server] local access token: ${localAccessToken}`);
   }
+  recoverImageGenerationJobsAfterStartup();
   void startWorkflowMonitoringAfterStartupRecovery();
   void providerConfigService.syncAutoEnabledProviders().catch((err) => {
     console.warn(`[provider-configs] startup sync failed: ${(err as Error).message}`);
@@ -115,6 +119,17 @@ httpServer.listen(PORT, () => {
     });
   }
 });
+
+function recoverImageGenerationJobsAfterStartup(): void {
+  try {
+    const recoveredJobs = imageGenerationJobRepo.recoverInterruptedJobs();
+    if (recoveredJobs > 0) {
+      console.warn(`[image-generation] Marked ${recoveredJobs} interrupted job(s) as canceled`);
+    }
+  } catch (err) {
+    console.warn(`[image-generation] startup recovery failed: ${(err as Error).message}`);
+  }
+}
 
 async function buildInterruptedRunReason(run: AgentRun): Promise<string> {
   const base = 'Backend restarted before agent run completed';

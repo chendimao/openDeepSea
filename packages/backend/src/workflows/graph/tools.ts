@@ -41,6 +41,7 @@ import { parseGraphState, type SupervisorAssignmentHint } from './state.js';
 export interface GraphRuntimeDeps {
   planner?: (input: LangChainPlannerInput, options?: LangChainPlannerOptions) => Promise<ParsedPlan>;
   supervisor?: (input: WorkflowSupervisorInput, options?: WorkflowSupervisorOptions) => Promise<WorkflowSupervisorDecision>;
+  buildSkillContext?: (input: BuildSkillContextInput) => Promise<string>;
   scheduleRetry?: (input: { runId: string; attempt: number; delayMs: number; error: string }, retry: () => void) => void;
   distillTask?: typeof distillFromTask;
   runAcpAgent?: (input: RespondAsAgentInput) => Promise<{
@@ -48,6 +49,16 @@ export interface GraphRuntimeDeps {
     message: Message;
     status: AgentRunStatus;
   }>;
+}
+
+export type GraphSkillRuntimeScope = 'planner' | 'workflow';
+
+export interface BuildSkillContextInput {
+  runtimeScopes: GraphSkillRuntimeScope[];
+  projectId?: string | null;
+  roomId?: string | null;
+  agentId?: string | null;
+  message?: string;
 }
 
 interface WorkflowRuntimeContext {

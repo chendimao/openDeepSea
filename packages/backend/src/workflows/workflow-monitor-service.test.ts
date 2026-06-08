@@ -22,7 +22,10 @@ test('runWorkflowMonitorOnce scans, decides, executes, and records chat message'
   const fixture = createFixture('run once');
   workflowRepo.blockRun(fixture.workflow.id, 'No executor available for implementation');
 
-  const count = await runWorkflowMonitorOnce({ disableModel: true });
+  const count = await runWorkflowMonitorOnce({
+    disableModel: true,
+    retryWorkflowStep: retryWithoutStartingAgent,
+  });
 
   assert.equal(count, 1);
   assert.equal(workflowIncidentRepo.listByWorkflow(fixture.workflow.id)[0]?.incident_type, 'executor_unavailable');
@@ -161,6 +164,21 @@ function createFixture(name: string) {
     current_stage: 'implementation',
   });
   return { project, room, agent, task, childTask, workflow };
+}
+
+async function retryWithoutStartingAgent(workflowRunId: string) {
+  const run = workflowRepo.getRun(workflowRunId);
+  if (!run) throw new Error('workflow not found');
+  const retryableStep = [...workflowRepo.listSteps(workflowRunId)]
+    .reverse()
+    .find((step) => step.status === 'failed' || step.status === 'cancelled' || step.status === 'interrupted');
+  if (retryableStep) {
+    workflowRepo.updateStep(retryableStep.id, {
+      status: 'skipped',
+      error: retryableStep.error ?? 'Superseded by test retry',
+    });
+  }
+  return workflowRepo.updateRun(workflowRunId, { status: 'running', error: null }) ?? run;
 }
 
 function configureExecutor(agent: ReturnType<typeof roomAgentRepo.add>) {

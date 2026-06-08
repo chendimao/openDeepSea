@@ -79,6 +79,81 @@ export interface KnowledgeSource {
   parser_version?: string | null;
 }
 
+export interface KnowledgeOriginalFile {
+  id: string;
+  name: string;
+  url: string;
+  storage_path: string;
+  source_type: string;
+}
+
+export interface KnowledgeSourceCapabilities {
+  preview: boolean;
+  download: boolean;
+  reprocess: boolean;
+  disable: boolean;
+  delete: boolean;
+}
+
+export interface KnowledgeSourceDetail extends KnowledgeSource {
+  latest_extraction_id?: string | null;
+  latest_extraction_at?: number | null;
+  original_file?: KnowledgeOriginalFile | null;
+  capabilities?: KnowledgeSourceCapabilities;
+}
+
+export interface KnowledgeExtraction {
+  id: string;
+  source_id: string;
+  plain_text: string;
+  markdown: string | null;
+  metadata: KnowledgeMetadata;
+  created_at: number;
+  truncated: boolean;
+  returned_char_count: number;
+  original_char_count: number;
+}
+
+export interface KnowledgeChunk {
+  id: string;
+  source_id: string;
+  extraction_id: string | null;
+  chunk_index: number;
+  chunk_type: 'plain_text' | 'markdown' | 'code' | 'table' | 'summary' | 'body';
+  heading: string | null;
+  content: string;
+  token_estimate: number | null;
+  enabled: 0 | 1;
+  metadata: KnowledgeMetadata;
+  created_at: number;
+}
+
+export interface KnowledgeSearchResult {
+  chunk_id: string;
+  source_id: string;
+  project_id: string;
+  source_type: KnowledgeSourceType;
+  title: string;
+  tags: string[];
+  chunk_index: number;
+  chunk_type: KnowledgeChunk['chunk_type'];
+  heading: string | null;
+  content: string;
+  snippet: string;
+  score: number;
+  metadata: KnowledgeMetadata;
+  citation: {
+    source_id: string;
+    source_type: KnowledgeSourceType;
+    source_title: string;
+    external_source_id: string;
+    chunk_id: string;
+    chunk_index: number;
+    heading: string | null;
+    room_id: string | null;
+  };
+}
+
 export interface KnowledgeSourceFilters {
   keyword?: string;
   status?: KnowledgeSourceStatus | '';

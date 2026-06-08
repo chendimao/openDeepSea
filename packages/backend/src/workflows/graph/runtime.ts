@@ -235,13 +235,23 @@ async function resolveSupervisorAssignmentsForTask(
       generateWorkflowSupervisorDecision(input, undefined, options));
 
   try {
+    const skillContext = await deps.buildSkillContext?.({
+      runtimeScopes: ['workflow'],
+      projectId: project.id,
+      roomId: room.id,
+      message: [
+        task.title,
+        task.description ?? '',
+        `${definition.name}: ${definition.description ?? ''}`,
+      ].filter(Boolean).join('\n\n'),
+    }) ?? '';
     const decision = await supervisor({
       project,
       room,
       task,
       agents: roomAgentRepo.listByRoom(room.id),
       workflowDefinitions: [definition],
-    });
+    }, { skillContext });
     return decision.confidence >= SUPERVISOR_CONFIDENCE_THRESHOLD ? decision.assignments : [];
   } catch {
     return [];
@@ -756,8 +766,8 @@ async function resumeGraphWorkflowFromState(
     : null;
   const routeDefinition = runtimeGraph?.executableDefinition
     ?? snapshot?.definition
-    ?? workflowDefinitionRepo.ensureBuiltInDefinitions().definition;
-  const routePlan = compileRoutePlan(routeDefinition, Boolean(runtimeGraph));
+    ?? null;
+  const routePlan = routeDefinition ? compileRoutePlan(routeDefinition, Boolean(runtimeGraph)) : undefined;
   let nextState = state;
   let nodeToRun = nextNodeAfter(null, nextState, routePlan);
 

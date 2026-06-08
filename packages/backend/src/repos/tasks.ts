@@ -122,10 +122,16 @@ export const taskRepo = {
 
   delete(id: string): boolean {
     const timestamp = now();
-    return db.prepare(
-      `UPDATE tasks
-       SET deleted_at = ?, updated_at = ?
-       WHERE id = ? AND deleted_at IS NULL`,
-    ).run(timestamp, timestamp, id).changes > 0;
+    return db.transaction(() => {
+      const deleted = db.prepare(
+        `UPDATE tasks
+         SET deleted_at = ?, updated_at = ?
+         WHERE id = ? AND deleted_at IS NULL`,
+      ).run(timestamp, timestamp, id).changes > 0;
+      if (deleted) {
+        db.prepare('DELETE FROM memory_entries WHERE task_id = ?').run(id);
+      }
+      return deleted;
+    })();
   },
 };

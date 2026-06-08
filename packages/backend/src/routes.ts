@@ -49,7 +49,9 @@ import { taskRepo } from './repos/tasks.js';
 import { workflowContextRepo } from './repos/workflow-context.js';
 import { workflowDefinitionRepo } from './repos/workflow-definitions.js';
 import { searchProjectRooms } from './room-search.js';
+import { onlineSkillsRouter } from './online-skills/routes.js';
 import { platformSkillsRouter } from './platform-skills/routes.js';
+import { imageGenerationRouter } from './image-generation/routes.js';
 import { providerConfigRouter } from './provider-configs/routes.js';
 import { terminalRouter } from './terminal/routes.js';
 import { pickDirectory } from './system-dialogs.js';
@@ -77,6 +79,7 @@ import { extractCreateTaskTitle, routeMessage } from './task-router.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
 import { sessionRouter } from './session.routes.js';
+import { knowledgeService } from './knowledge-service.js';
 import {
   MAX_MESSAGE_FILES,
   buildAttachmentMetadata,
@@ -140,10 +143,12 @@ import {
 } from './types.js';
 
 export const router = Router();
+router.use('/online-skills', onlineSkillsRouter);
 router.use('/platform-skills', platformSkillsRouter);
 router.use('/terminals', terminalRouter);
 router.use(sessionRouter);
 router.use(providerConfigRouter);
+router.use(imageGenerationRouter);
 
 // ---------- System context ----------
 router.get('/context/system', (_req, res) => {
@@ -966,6 +971,34 @@ const knowledgeListQuerySchema = z.object({
   q: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().positive().max(500).optional(),
 });
+const knowledgeSourceIdParamsSchema = z.object({
+  sourceId: z.string().min(1),
+});
+const knowledgeChunksQuerySchema = z.object({
+  enabled: z.coerce.number().int().refine((value) => value === 0 || value === 1).optional(),
+  limit: z.coerce.number().int().positive().max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+const knowledgeSearchQuerySchema = z.object({
+  projectId: z.string().min(1),
+  roomId: z.string().optional(),
+  q: z.string().trim().min(1),
+  status: knowledgeStatusSchema.optional(),
+  sourceType: knowledgeSourceTypeSchema.optional(),
+  limit: z.coerce.number().int().positive().max(100).optional(),
+});
+const knowledgePatchSchema = z.object({
+  status: z.enum(['ready', 'disabled', 'stale']).optional(),
+  enabled: z.union([z.literal(0), z.literal(1), z.boolean()]).optional(),
+  tags: z.array(z.string()).optional(),
+  summary: z.string().nullable().optional(),
+}).refine(
+  (value) => value.status !== undefined ||
+    value.enabled !== undefined ||
+    value.tags !== undefined ||
+    value.summary !== undefined,
+  { message: 'at least one knowledge source field is required' },
+);
 
 router.get('/knowledge', (req, res) => {
   const parsed = knowledgeListQuerySchema.safeParse(req.query);
@@ -993,6 +1026,75 @@ router.get('/knowledge', (req, res) => {
     query: q,
     limit,
   }));
+});
+
+router.get('/knowledge/search', (req, res) => {
+  const parsed = knowledgeSearchQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { projectId, roomId, q, status, sourceType, limit } = parsed.data;
+  if (!projectRepo.get(projectId)) return res.status(404).json({ error: 'project not found' });
+  if (roomId) {
+    const room = roomRepo.get(roomId);
+    if (!room) return res.status(404).json({ error: 'room not found' });
+    if (room.project_id !== projectId) return res.status(400).json({ error: 'room does not belong to project' });
+  }
+  res.json(knowledgeService.search({ projectId, roomId, query: q, status, sourceType, limit }));
+});
+
+router.get('/knowledge/sources/:sourceId', (req, res) => {
+  const parsed = knowledgeSourceIdParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const detail = knowledgeService.getDetail(parsed.data.sourceId);
+  if (!detail) return res.status(404).json({ error: 'knowledge source not found' });
+  res.json(detail);
+});
+
+router.get('/knowledge/sources/:sourceId/extraction', (req, res) => {
+  const parsed = knowledgeSourceIdParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  if (!knowledgeRepo.getSource(parsed.data.sourceId)) return res.status(404).json({ error: 'knowledge source not found' });
+  const extraction = knowledgeService.getExtraction(parsed.data.sourceId);
+  if (!extraction) return res.status(404).json({ error: 'knowledge extraction not found' });
+  res.json(extraction);
+});
+
+router.get('/knowledge/sources/:sourceId/chunks', (req, res) => {
+  const parsedParams = knowledgeSourceIdParamsSchema.safeParse(req.params);
+  const parsedQuery = knowledgeChunksQuerySchema.safeParse(req.query);
+  if (!parsedParams.success) return res.status(400).json({ error: parsedParams.error.flatten() });
+  if (!parsedQuery.success) return res.status(400).json({ error: parsedQuery.error.flatten() });
+  if (!knowledgeRepo.getSource(parsedParams.data.sourceId)) return res.status(404).json({ error: 'knowledge source not found' });
+  const { enabled, limit = 100, offset = 0 } = parsedQuery.data;
+  const chunks = knowledgeRepo.listChunks(parsedParams.data.sourceId)
+    .filter((chunk) => enabled === undefined || chunk.enabled === enabled)
+    .slice(offset, offset + limit);
+  res.json(chunks);
+});
+
+router.post('/knowledge/sources/:sourceId/reprocess', async (req, res) => {
+  const parsed = knowledgeSourceIdParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const source = await knowledgeService.reprocess(parsed.data.sourceId);
+  if (!source) return res.status(404).json({ error: 'knowledge source not found' });
+  res.json(source);
+});
+
+router.patch('/knowledge/sources/:sourceId', (req, res) => {
+  const parsedParams = knowledgeSourceIdParamsSchema.safeParse(req.params);
+  const parsedBody = knowledgePatchSchema.safeParse(req.body);
+  if (!parsedParams.success) return res.status(400).json({ error: parsedParams.error.flatten() });
+  if (!parsedBody.success) return res.status(400).json({ error: parsedBody.error.flatten() });
+  const source = knowledgeService.updateStatus(parsedParams.data.sourceId, parsedBody.data);
+  if (!source) return res.status(404).json({ error: 'knowledge source not found' });
+  res.json(source);
+});
+
+router.delete('/knowledge/sources/:sourceId', (req, res) => {
+  const parsed = knowledgeSourceIdParamsSchema.safeParse(req.params);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const deleted = knowledgeService.deleteSource(parsed.data.sourceId);
+  if (!deleted) return res.status(404).json({ error: 'knowledge source not found' });
+  res.status(204).end();
 });
 
 router.get('/files', (req, res) => {

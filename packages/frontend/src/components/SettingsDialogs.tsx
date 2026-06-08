@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
@@ -50,8 +50,6 @@ import {
   type ProviderDiscoveredSnapshot,
   type ProviderRuntimeConfig,
   type Project,
-  type Room,
-  type RoomAgent,
   type SettingsResolution,
   type SuperpowersBootstrapOwner,
   type SystemSettings,
@@ -272,60 +270,6 @@ export function ProjectSettingsDialog({
           project={project}
           settings={settings}
           fallbackOptions={toGlobalFallbackOptions(agents)}
-          isSaving={save.isPending}
-          onSave={(patch) => save.mutate(patch)}
-        />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function RoomSettingsDialog({
-  project,
-  room,
-  agents,
-  children,
-}: {
-  project: Project;
-  room: Room;
-  agents: RoomAgent[];
-  children: ReactNode;
-}): JSX.Element {
-  const [open, setOpen] = useState(false);
-  const queryClient = useQueryClient();
-  const { t } = useI18n();
-  const { data: settings } = useQuery({
-    queryKey: ['settings', 'room', room.id],
-    queryFn: () => api.getRoomSettings(room.id),
-    enabled: open,
-  });
-  const save = useMutation({
-    mutationFn: (patch: SettingsPatch) => api.updateRoomSettings(room.id, patch),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
-      toast.success(t('settings.roomSaved'));
-      setOpen(false);
-    },
-    onError: (err) => toast.error((err as Error).message),
-  });
-  const fallbackOptions = useMemo(
-    () => toRoomFallbackOptions(agents),
-    [agents],
-  );
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent
-        title={t('settings.roomTitle')}
-        description={`${project.name} / ${room.name}`}
-        className="max-h-[88vh] w-[min(94vw,780px)] overflow-y-auto"
-      >
-        <RoomSettingsForm
-          key={`${room.id}:${settings?.room?.updated_at ?? 0}`}
-          room={room}
-          settings={settings}
-          fallbackOptions={fallbackOptions}
           isSaving={save.isPending}
           onSave={(patch) => save.mutate(patch)}
         />
@@ -2086,108 +2030,6 @@ function ProjectSettingsForm({
   );
 }
 
-function RoomSettingsForm({
-  room,
-  settings,
-  fallbackOptions,
-  isSaving,
-  onSave,
-}: {
-  room: Room;
-  settings?: SettingsResolution;
-  fallbackOptions: FallbackAgentOption[];
-  isSaving: boolean;
-  onSave: (patch: SettingsPatch) => void;
-}): JSX.Element {
-  const inherited = settings ? inheritedForRoom(settings) : DEFAULT_SYSTEM_SETTINGS;
-  const own = settings?.room;
-  const { interactionModeLabel, routingModeLabel, t } = useI18n();
-  const [superpowersBootstrapOwner, setSuperpowersBootstrapOwner] = useState<SuperpowersBootstrapOwner | 'inherit'>(
-    own?.superpowers_bootstrap_owner ?? 'inherit',
-  );
-  const [routingMode, setRoutingMode] = useState<MessageRoutingMode | 'inherit'>(
-    own?.message_routing_mode ?? 'inherit',
-  );
-  const [fallbackAgentId, setFallbackAgentId] = useState(own?.fallback_agent_id ?? '');
-  const [interactionMode, setInteractionMode] = useState<TaskInteractionMode | 'inherit'>(
-    own?.interaction_mode ?? 'inherit',
-  );
-  const [autoDistillEnabled, setAutoDistillEnabled] = useState<boolean | 'inherit'>(
-    own?.auto_distill_enabled === null || own?.auto_distill_enabled === undefined
-      ? 'inherit'
-      : Boolean(own.auto_distill_enabled),
-  );
-  const requiresFallback = routingMode !== 'inherit' && routingMode !== 'mentions_only';
-  const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId || inherited.fallback_agent_id || '', fallbackOptions);
-
-  return (
-    <SettingsDialogBody
-      footer={
-        <Button
-          type="button"
-          disabled={isSaving || (requiresFallback && !selectedFallbackAgentId)}
-          onClick={() =>
-            onSave({
-              message_routing_mode: routingMode === 'inherit' ? null : routingMode,
-              fallback_agent_id: routingMode === 'inherit' || routingMode === 'mentions_only' ? null : selectedFallbackAgentId,
-              interaction_mode: interactionMode === 'inherit' ? null : interactionMode,
-              auto_distill_enabled: autoDistillEnabled === 'inherit' ? null : autoDistillEnabled,
-              superpowers_bootstrap_owner: superpowersBootstrapOwner === 'inherit' ? null : superpowersBootstrapOwner,
-            })
-          }
-        >
-          <Save className="h-3.5 w-3.5" />
-          {t('settings.saveRoom')}
-        </Button>
-      }
-    >
-      <SettingGroup title={t('settings.roomInfo')} icon={<Settings2 className="h-4 w-4" strokeWidth={1.75} />}>
-        <ReadonlyField label={t('settings.roomName')} value={room.name} />
-        {room.description && <ReadonlyField label={t('settings.roomDescription')} value={room.description} />}
-      </SettingGroup>
-      <InheritanceSummary settings={settings} scope="room" />
-      <SettingGroup title={t('settings.roomRouting')} icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}>
-        <RoutingSection
-          mode={routingMode}
-          fallbackAgentId={fallbackAgentId || inherited.fallback_agent_id || ''}
-          fallbackOptions={fallbackOptions}
-          inheritedLabel={t('settings.inheritedParent', { value: routingModeLabel(inherited.message_routing_mode) })}
-          onModeChange={setRoutingMode}
-          onFallbackAgentChange={setFallbackAgentId}
-        />
-      </SettingGroup>
-      <SettingGroup title={t('settings.roomInteraction')} icon={<ShieldCheck className="h-4 w-4" strokeWidth={1.75} />}>
-        <InteractionSection
-          mode={interactionMode}
-          inheritedLabel={t('settings.inheritedParent', { value: interactionModeLabel(inherited.interaction_mode) })}
-          onModeChange={setInteractionMode}
-        />
-        <AutoDistillSection
-          mode={autoDistillEnabled}
-          inheritedLabel={t('settings.inheritedParent', { value: autoDistillLabel(inherited.auto_distill_enabled, t) })}
-          onModeChange={setAutoDistillEnabled}
-        />
-        <SuperpowersBootstrapSection
-          mode={superpowersBootstrapOwner}
-          inheritedLabel={t('settings.inheritedParent', { value: superpowersBootstrapOwnerLabel(inherited.superpowers_bootstrap_owner, t) })}
-          onModeChange={setSuperpowersBootstrapOwner}
-        />
-      </SettingGroup>
-      {(routingMode !== 'inherit' || interactionMode !== 'inherit' || autoDistillEnabled !== 'inherit' || superpowersBootstrapOwner !== 'inherit') && (
-        <ResetInheritanceButton
-          onClick={() => {
-            setRoutingMode('inherit');
-            setFallbackAgentId('');
-            setInteractionMode('inherit');
-            setAutoDistillEnabled('inherit');
-            setSuperpowersBootstrapOwner('inherit');
-          }}
-        />
-      )}
-    </SettingsDialogBody>
-  );
-}
-
 function SettingsDialogBody({
   children,
   footer,
@@ -2510,11 +2352,7 @@ function InheritanceSummary({
           source={settingsScopeLabel(settings.sources.session_planner_acp_backend)}
         />
       </div>
-      <p className="mt-2 leading-relaxed">
-        {scope === 'room'
-          ? t('settings.roomInheritanceDescription')
-          : t('settings.projectInheritanceDescription')}
-      </p>
+      <p className="mt-2 leading-relaxed">{t('settings.projectInheritanceDescription')}</p>
     </div>
   );
 }
@@ -2532,29 +2370,6 @@ function SummaryItem({ label, value, source }: { label: string; value: string; s
   );
 }
 
-function inheritedForRoom(settings: SettingsResolution): EffectiveSettings {
-  return {
-    message_routing_mode: settings.project?.message_routing_mode ?? settings.system.message_routing_mode,
-    fallback_agent_id: settings.project?.message_routing_mode
-      ? settings.project.message_routing_mode === 'mentions_only'
-        ? null
-        : settings.project.fallback_agent_id
-      : settings.system.fallback_agent_id,
-    interaction_mode: settings.project?.interaction_mode ?? settings.system.interaction_mode,
-    auto_distill_enabled:
-      settings.project?.auto_distill_enabled === null || settings.project?.auto_distill_enabled === undefined
-        ? settings.system.auto_distill_enabled
-        : Boolean(settings.project.auto_distill_enabled),
-    default_workflow_definition_id:
-      settings.project?.default_workflow_definition_id ?? settings.system.default_workflow_definition_id,
-    superpowers_bootstrap_owner:
-      settings.project?.superpowers_bootstrap_owner ?? settings.system.superpowers_bootstrap_owner,
-    workspace_excluded_dirs: settings.system.workspace_excluded_dirs,
-    session_planner_acp_backend:
-      settings.project?.session_planner_acp_backend ?? settings.system.session_planner_acp_backend,
-  };
-}
-
 type FallbackAgentOption = {
   agent_id: string;
   agent_name: string;
@@ -2563,13 +2378,6 @@ type FallbackAgentOption = {
 function toGlobalFallbackOptions(agents: Agent[]): FallbackAgentOption[] {
   return agents
     .map((agent) => ({ agent_id: agent.agent_id, agent_name: agent.name }))
-    .sort((a, b) => a.agent_name.localeCompare(b.agent_name))
-    .filter((agent, index, list) => list.findIndex((item) => item.agent_id === agent.agent_id) === index);
-}
-
-function toRoomFallbackOptions(agents: RoomAgent[]): FallbackAgentOption[] {
-  return agents
-    .map((agent) => ({ agent_id: agent.agent_id, agent_name: agent.agent_name }))
     .sort((a, b) => a.agent_name.localeCompare(b.agent_name))
     .filter((agent, index, list) => list.findIndex((item) => item.agent_id === agent.agent_id) === index);
 }

@@ -154,6 +154,42 @@ test('SessionShell renders uploaded attachments on transcript messages', () => {
   assert.match(html, /2\.0 KB/);
 });
 
+test('SessionShell renders generated image tool result evidence as transcript artifacts', () => {
+  const payload = createPayload();
+  payload.evidence.push({
+    id: 'evidence-image-tool',
+    session_id: 'session-1',
+    seq: 2,
+    event_type: 'tool_result',
+    severity: 'info',
+    source_run_id: 'run-1',
+    source_message_id: null,
+    title: '图片生成结果',
+    summary: '已生成 1 张图片。',
+    payload: {
+      tool_name: 'generate_image',
+      job_id: 'image-job-1',
+      status: 'completed',
+      error: null,
+      outputs: [{
+        file_id: 'file-image-output-1',
+        resource_id: 'file:file-image-output-1',
+        url: '/uploads/files/project-1/generated.png',
+        slot: 1,
+      }],
+    },
+    created_at: Date.now(),
+  });
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /deepsea-generated-artifacts/);
+  assert.match(html, /图片生成结果/);
+  assert.match(html, /href="\/uploads\/files\/project-1\/generated\.png"/);
+  assert.match(html, /src="\/uploads\/files\/project-1\/generated\.png"/);
+  assert.match(html, /aria-label="打开生成图片：file-image-output-1"/);
+});
+
 test('SessionShell renders active run as compact list row', () => {
   const html = renderSessionShell(createPayload());
 

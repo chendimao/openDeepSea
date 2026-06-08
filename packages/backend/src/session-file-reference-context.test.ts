@@ -8,6 +8,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-sess
 
 const { projectRepo } = await import('./repos/projects.js');
 const { fileRepo } = await import('./repos/files.js');
+const { knowledgeRepo } = await import('./repos/knowledge.js');
 const { buildSessionFileReferenceContext } = await import('./session-file-reference-context.js');
 
 test('buildSessionFileReferenceContext injects bounded source and agent document content', async () => {
@@ -35,7 +36,7 @@ test('buildSessionFileReferenceContext injects bounded source and agent document
   assert.match(context.promptAddition, /引用设计内容/);
 });
 
-test('buildSessionFileReferenceContext keeps uploaded text metadata-only', async () => {
+test('buildSessionFileReferenceContext injects uploaded text file content', async () => {
   const root = mkdtempSync(join(tmpdir(), 'session-file-context-upload-'));
   writeFileSync(join(root, 'stored.txt'), 'stored text body must not appear in prompt');
   const project = projectRepo.create({ name: 'upload metadata project', path: root });
@@ -58,7 +59,47 @@ test('buildSessionFileReferenceContext keeps uploaded text metadata-only', async
     libraryFileRefs: [upload.id],
   });
 
-  assert.match(context.promptAddition, /Library Metadata: handoff-notes\.txt/);
-  assert.match(context.promptAddition, /Content not auto-injected/);
-  assert.doesNotMatch(context.promptAddition, /stored text body/);
+  assert.match(context.promptAddition, /Library: handoff-notes\.txt/);
+  assert.match(context.promptAddition, /stored text body must not appear in prompt/);
+});
+
+test('buildSessionFileReferenceContext prefers knowledge chunks for library file refs', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'session-file-context-knowledge-'));
+  const project = projectRepo.create({ name: 'Knowledge Context', path: root });
+  const file = fileRepo.create({
+    project_id: project.id,
+    original_name: 'context.md',
+    stored_name: 'context.md',
+    mime_type: 'text/markdown',
+    size: 32,
+    url: '',
+    storage_path: '',
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'uploaded_file',
+    source_id: file.id,
+    title: file.original_name,
+    status: 'ready',
+  });
+  knowledgeRepo.saveExtraction({ source_id: source.id, plain_text: 'fallback extraction' });
+  knowledgeRepo.replaceChunks(source.id, [{
+    chunk_type: 'body',
+    content: 'A12 chunk from knowledge source.',
+    project_id: project.id,
+  }]);
+
+  const context = await buildSessionFileReferenceContext({
+    project,
+    workspacePath: project.path,
+    workspaceFileRefs: [],
+    libraryFileRefs: [file.id],
+  });
+
+  assert.match(context.promptAddition, /Knowledge: context\.md/);
+  assert.match(context.promptAddition, /A12 chunk from knowledge source/);
+  assert.match(context.promptAddition, /source_id:/);
+  assert.match(context.promptAddition, /chunk_id:/);
 });

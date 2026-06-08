@@ -1,12 +1,17 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
   Bot,
   Database,
+  FileText,
   History,
+  Image as ImageIcon,
+  Menu,
   MessageCircle,
+  Search,
   Settings,
   ShieldCheck,
 } from 'lucide-react';
@@ -44,6 +49,9 @@ export function AppShell({
   const isKnowledgeRoute = location.pathname === '/knowledge' ||
     /^\/projects\/[^/]+\/knowledge\/?$/.test(location.pathname);
   const isSkillsRoute = location.pathname === '/skills';
+  const activeProjectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1]
+    ?? sessionWorkspaceHref.match(/^\/projects\/([^/]+)/)?.[1]
+    ?? null;
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
     queryFn: api.listProjects,
@@ -54,6 +62,39 @@ export function AppShell({
     setSessionWorkspaceHref(getLastSessionWorkspaceHref());
     return subscribeLastSessionWorkspaceHref(setSessionWorkspaceHref);
   }, []);
+
+  const imageWorkbenchProjectId = activeProjectId ?? projects[0]?.id ?? null;
+  const imageWorkbenchHref = imageWorkbenchProjectId ? `/projects/${imageWorkbenchProjectId}/images` : sessionWorkspaceHref;
+  const headerNavItems: HeaderNavItem[] = [
+    {
+      to: sessionWorkspaceHref,
+      active: isSessionWorkspaceRoute,
+      exact: true,
+      icon: History,
+      label: '会话',
+    },
+    { to: '/chat', active: location.pathname === '/chat', icon: MessageCircle, label: '聊天' },
+    { to: '/agents', active: location.pathname === '/agents', icon: Bot, label: '智能体' },
+    { to: '/skills', active: location.pathname === '/skills', icon: ShieldCheck, label: '技能' },
+    {
+      to: activeProjectId ? `/projects/${activeProjectId}/knowledge` : '/knowledge',
+      active: isKnowledgeRoute,
+      icon: Database,
+      label: '知识库',
+    },
+    {
+      to: imageWorkbenchHref,
+      active: /^\/projects\/[^/]+\/images\/?$/.test(location.pathname),
+      icon: ImageIcon,
+      label: '图片',
+    },
+    {
+      to: '/files',
+      active: location.pathname === '/files' || /^\/projects\/[^/]+\/files\/?$/.test(location.pathname),
+      icon: FileText,
+      label: '资源',
+    },
+  ];
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -78,26 +119,19 @@ export function AppShell({
             <span>深海指挥中心</span>
           </NavLink>
           <nav className="deepsea-shell-nav" aria-label={t('shell.sidebar.aria')}>
-            <HeaderNavLink
-              to={sessionWorkspaceHref}
-              active={isSessionWorkspaceRoute}
-              exact
-              icon={History}
-              label="会话"
-            />
-            <HeaderNavLink to="/chat" icon={MessageCircle} label="聊天" />
-            <HeaderNavLink to="/agents" icon={Bot} label="智能体" />
-            <HeaderNavLink to="/skills" icon={ShieldCheck} label="技能" />
-            <HeaderNavLink
-              to="/knowledge"
-              active={location.pathname === '/knowledge' || /^\/projects\/[^/]+\/knowledge\/?$/.test(location.pathname)}
-              icon={Database}
-              label="知识库"
-            />
+            {headerNavItems.map((item) => (
+              <HeaderNavLink key={`${item.to}-${item.label}`} {...item} />
+            ))}
           </nav>
         </div>
         <div className="deepsea-topbar__actions">
           <div className="deepsea-action-icons">
+            <HeaderMenu
+              items={headerNavItems}
+              label={t('shell.headerMenu')}
+              commandLabel={t('shell.searchCommand')}
+              onOpenCommandMenu={() => setCommandOpen(true)}
+            />
             <SystemSettingsDialog theme={theme} onThemeChange={onThemeChange}>
               <button type="button" aria-label={t('shell.systemSettings')} className="deepsea-icon-button app-header-settings">
                 <Settings aria-hidden="true" />
@@ -130,6 +164,14 @@ export function AppShell({
   );
 }
 
+interface HeaderNavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  active?: boolean;
+  exact?: boolean;
+}
+
 function HeaderNavLink({
   to,
   label,
@@ -154,5 +196,53 @@ function HeaderNavLink({
       <Icon aria-hidden="true" />
       <span>{label}</span>
     </NavLink>
+  );
+}
+
+function HeaderMenu({
+  items,
+  label,
+  commandLabel,
+  onOpenCommandMenu,
+}: {
+  items: HeaderNavItem[];
+  label: string;
+  commandLabel: string;
+  onOpenCommandMenu: () => void;
+}): JSX.Element {
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button type="button" aria-label={label} className="deepsea-icon-button app-header-menu-button">
+          <Menu aria-hidden="true" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={8} className="deepsea-header-menu" aria-label={label}>
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <DropdownMenu.Item asChild key={`${item.to}-${item.label}`}>
+                <Link
+                  to={item.to}
+                  className={cn('deepsea-header-menu__item', item.active && 'is-active')}
+                >
+                  <Icon aria-hidden="true" />
+                  <span>{item.label}</span>
+                </Link>
+              </DropdownMenu.Item>
+            );
+          })}
+          <DropdownMenu.Separator className="deepsea-header-menu__separator" />
+          <DropdownMenu.Item
+            className="deepsea-header-menu__item"
+            onSelect={onOpenCommandMenu}
+          >
+            <Search aria-hidden="true" />
+            <span>{commandLabel}</span>
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }

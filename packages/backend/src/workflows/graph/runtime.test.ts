@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-runtime-')), 'test.db');
 
@@ -34,6 +35,15 @@ setVerificationCommandRunnerForTests(async (command) => ({
   stderr: '',
 }));
 test.after(() => setVerificationCommandRunnerForTests(null));
+
+const lowConfidenceSupervisor = async () => ({
+  mode: 'use_default_workflow' as const,
+  workflowDefinitionId: null,
+  confidence: 0.1,
+  reason: 'Use default Superpowers workflow in tests.',
+  assignments: [],
+  fallbackMode: 'default_workflow' as const,
+});
 
 test('enqueueGraphWorkflow defers graph node execution until after the current turn', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-enqueue-${Date.now()}`);
@@ -71,7 +81,7 @@ test('enqueueGraphWorkflow defers graph node execution until after the current t
 
   assert.equal(workflowRepo.listSteps(run.id).length, 0);
   await waitForGraphRuntime(() => workflowRepo.listSteps(run.id).length > 0);
-  assert.ok(workflowRepo.listSteps(run.id).length > 0);
+  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'planning'));
 });
 
 test('enqueueGraphWorkflow retries background errors with configured backoff delays', async () => {
@@ -192,6 +202,8 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   });
 
   const run = await startGraphWorkflow(task.id, {
+    supervisor: lowConfidenceSupervisor,
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
     planner: async () => ({
       goal: 'Plan with graph',
       summary: 'Graph shell planning',
@@ -279,6 +291,7 @@ test('Superpowers run records planning gate steps before dispatch', async () => 
   });
 
   const run = await startGraphWorkflow(task.id, {
+    supervisor: lowConfidenceSupervisor,
     planner: async () => ({
       ...createApprovalPlan(task.title),
       tasks: [{
@@ -953,6 +966,7 @@ test('startGraphWorkflow always records Superpowers definition and runtime profi
       };
     },
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as {
     builtinKey?: string | null;
@@ -996,6 +1010,49 @@ test('createGraphWorkflowRun ignores room default workflow and records Superpowe
 
   assert.notEqual(run.workflow_definition_id, definition.id);
   assertSuperpowersWorkflowRun(run);
+});
+
+test('startGraphWorkflow passes workflow skill context to supervisor model', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-supervisor-skills-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Supervisor Skills', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Supervisor Skills Room' });
+  const workflow = createPublishedRoomWorkflow(room.id, 'Supervisor Skills Workflow');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Choose workflow with skills',
+  });
+  let capturedSkillContext = '';
+
+  const run = await startGraphWorkflow(task.id, {
+    buildSkillContext: async (input) => {
+      if (input.runtimeScopes.length === 1 && input.runtimeScopes[0] === 'workflow') {
+        assert.equal(input.projectId, project.id);
+        assert.equal(input.roomId, room.id);
+        assert.match(input.message ?? '', /Choose workflow with skills/);
+        return 'OpenDeepSea active skills for this runtime:\nSkill: workflow-supervisor-skill';
+      }
+      return '';
+    },
+    supervisor: async (_input, options) => {
+      capturedSkillContext = options?.skillContext ?? '';
+      return {
+        mode: 'select_existing_workflow',
+        workflowDefinitionId: workflow.id,
+        confidence: 0.91,
+        reason: 'The workflow skill selected this workflow.',
+        assignments: [],
+        fallbackMode: 'default_workflow',
+      };
+    },
+    planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+
+  assert.notEqual(run.workflow_definition_id, workflow.id);
+  assertSuperpowersWorkflowRun(run);
+  assert.match(capturedSkillContext, /Skill: workflow-supervisor-skill/);
 });
 
 test('startGraphWorkflow keeps high-confidence assignments from default supervisor when deps.supervisor is omitted', async () => {
@@ -1071,6 +1128,7 @@ test('startGraphWorkflow ignores high-confidence supervisor workflow choice for 
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
@@ -1104,6 +1162,7 @@ test('startGraphWorkflow keeps Superpowers workflow on low confidence, invisible
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(lowConfidenceTask.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   assert.notEqual(lowConfidenceRun.workflow_definition_id, defaultDefinition.id);
   assertSuperpowersWorkflowRun(lowConfidenceRun);
@@ -1123,6 +1182,7 @@ test('startGraphWorkflow keeps Superpowers workflow on low confidence, invisible
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(invisibleTask.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   assert.notEqual(invisibleRun.workflow_definition_id, defaultDefinition.id);
   assertSuperpowersWorkflowRun(invisibleRun);
@@ -1137,6 +1197,7 @@ test('startGraphWorkflow keeps Superpowers workflow on low confidence, invisible
       throw new Error('supervisor unavailable');
     },
     planner: async () => createApprovalPlan(failedTask.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   assert.notEqual(failedRun.workflow_definition_id, defaultDefinition.id);
   assertSuperpowersWorkflowRun(failedRun);
@@ -1166,6 +1227,7 @@ test('startGraphWorkflow keeps Superpowers workflow for analysis-only tasks', as
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
@@ -1198,6 +1260,7 @@ test('startGraphWorkflow keeps Superpowers workflow even for analysis-only tasks
       fallbackMode: 'default_workflow',
     }),
     planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
   });
   const snapshot = JSON.parse(run.workflow_definition_snapshot ?? '{}') as { supervisorDecision?: unknown };
 
@@ -1367,7 +1430,9 @@ test('graph workflow invites required built-in agents when the room only has pla
     agents.find((agent) => agent.agent_id === 'backend-executor')?.id,
   );
   assert.deepEqual(
-    calls.map((call) => `${call.stage}:${call.agentId}`),
+    calls
+      .filter((call) => call.stage !== 'planning')
+      .map((call) => `${call.stage}:${call.agentId}`),
     [
       'implementation:frontend-executor',
       'implementation:backend-executor',
@@ -1396,7 +1461,7 @@ test('graph workflow pre-invites domain executors when planner gives broad proje
     title: '细化文件管理功能',
   });
   const calls: Array<{ agentId: string; stage: WorkflowStage | null | undefined }> = [];
-  const broadProjectScope = process.cwd();
+  const broadProjectScope = join(currentProjectRoot(), '.');
 
   await startGraphWorkflow(task.id, {
     planner: async () => ({
@@ -1954,6 +2019,8 @@ test('startGraphWorkflow blocks workflow and fails running graph step when plann
 
   await assert.rejects(
     () => startGraphWorkflow(task.id, {
+      supervisor: lowConfidenceSupervisor,
+      runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
       planner: async () => {
         throw new Error('planner unavailable');
       },
@@ -3213,6 +3280,21 @@ function outputForStage(
   stage: WorkflowStage | null | undefined,
   options: { includeTddEvidence?: boolean; codeReviewOutput?: string } = {},
 ): string {
+  if (stage === 'planning') {
+    return JSON.stringify({
+      superpowers: {
+        designDocPath: 'docs/superpowers/specs/runtime-test-design.md',
+        designReviewVerdict: 'approved',
+        implementationPlanPath: 'docs/superpowers/plans/runtime-test-plan.md',
+        planReviewVerdict: 'approved',
+        worktree: {
+          path: '/tmp/openclaw-room-graph-runtime',
+          branchName: 'runtime-test',
+          baseRef: 'test-fixture',
+        },
+      },
+    });
+  }
   if (stage === 'code_review') {
     if (options.codeReviewOutput) return options.codeReviewOutput;
     return JSON.stringify({
@@ -3242,4 +3324,8 @@ function outputForStage(
       { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
     ],
   });
+}
+
+function currentProjectRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), '../../../../../');
 }

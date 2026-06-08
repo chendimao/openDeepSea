@@ -9,6 +9,7 @@ import type {
   KnowledgeSourceListItem,
   KnowledgeSourceType,
   KnowledgeStatus,
+  KnowledgeUsageRefInput,
 } from '../knowledge-types.js';
 
 interface EnsureSourceInput {
@@ -251,6 +252,8 @@ export const knowledgeRepo = {
       clauses.push(
         `(knowledge_sources.title LIKE @query ESCAPE '\\'
           OR COALESCE(knowledge_sources.description, '') LIKE @query ESCAPE '\\'
+          OR COALESCE(knowledge_sources.summary, '') LIKE @query ESCAPE '\\'
+          OR knowledge_sources.tags_json LIKE @query ESCAPE '\\'
           OR knowledge_sources.source_id LIKE @query ESCAPE '\\')`,
       );
       params.query = `%${escapeLike(query)}%`;
@@ -437,6 +440,44 @@ export const knowledgeRepo = {
       id,
     );
     return this.getSource(id);
+  },
+
+  setChunksEnabled(sourceId: string, enabled: 0 | 1): KnowledgeChunk[] {
+    const source = this.getSource(sourceId);
+    if (!source) throw new Error('source_id is invalid');
+    const ts = now();
+    db.prepare('UPDATE knowledge_chunks SET enabled = ? WHERE source_id = ?').run(enabled, sourceId);
+    db.prepare('UPDATE knowledge_sources SET updated_at = ? WHERE id = ?').run(ts, sourceId);
+    return this.listChunks(sourceId);
+  },
+
+  deleteSource(sourceId: string): boolean {
+    const source = this.getSource(sourceId);
+    if (!source) return false;
+    db.prepare('DELETE FROM knowledge_sources WHERE id = ?').run(sourceId);
+    return true;
+  },
+
+  countUsageRefs(sourceId: string): number {
+    const row = db.prepare('SELECT COUNT(*) AS count FROM knowledge_usage_refs WHERE source_id = ?')
+      .get(sourceId) as { count: number } | undefined;
+    return row?.count ?? 0;
+  },
+
+  recordUsageRef(input: KnowledgeUsageRefInput): void {
+    db.prepare(
+      `INSERT INTO knowledge_usage_refs (id, project_id, source_id, chunk_id, ref_type, ref_id, metadata_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      nanoid(16),
+      input.project_id,
+      input.source_id,
+      input.chunk_id ?? null,
+      input.ref_type,
+      input.ref_id,
+      stringifyJson(input.metadata ?? {}),
+      now(),
+    );
   },
 
   search(filters: SearchFilters): KnowledgeSearchResult[] {

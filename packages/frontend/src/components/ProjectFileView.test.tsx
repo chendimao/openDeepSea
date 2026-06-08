@@ -188,7 +188,7 @@ test('resource detail content hides file actions for agent documents', () => {
   assert.match(html, /前端开发工程师/);
   assert.match(html, /heartbeat workflow 验收 1779231401898/);
   assert.match(html, /资源详情验收/);
-  assert.match(html, /来源会话/);
+  assert.match(html, /来源上下文/);
   assert.match(html, /来源任务/);
   assert.doesNotMatch(html, /download="执行总结\.md"/);
   assert.doesNotMatch(html, /打开原文件/);
@@ -258,7 +258,7 @@ test('resource detail content highlights agent document source metadata', () => 
 
   assert.match(html, /文档来源追踪/);
   assert.match(html, /来源智能体/);
-  assert.match(html, /来源会话/);
+  assert.match(html, /来源上下文/);
   assert.match(html, /来源任务/);
   assert.match(html, /生成时间/);
   assert.match(html, /前端开发工程师/);
@@ -379,14 +379,14 @@ function translateFileMessage(key: string, params?: Record<string, string | numb
     'files.origin.agentGenerated': '由智能体生成',
     'files.origin.unknown': '来源未记录',
     'files.sourceSummary.uploadedBy': '上传者：{user}',
-    'files.sourceSummary.uploadedByInRoom': '上传者：{user} · 来源群聊：{room}',
-    'files.sourceSummary.uploadedInRoom': '上传来源：{room}',
+    'files.sourceSummary.uploadedByInRoom': '上传者：{user} · 来源上下文：{room}',
+    'files.sourceSummary.uploadedInRoom': '上传来源上下文：{room}',
     'files.sourceSummary.uploadedUnknown': '上传来源：未记录',
     'files.sourceSummary.agent': '智能体：{agent}',
     'files.sourceSummary.agentWithTask': '智能体：{agent} · 任务：{task}',
-    'files.sourceSummary.agentWithRoom': '智能体：{agent} · 会话：{room}',
+    'files.sourceSummary.agentWithRoom': '智能体：{agent} · 来源上下文：{room}',
     'files.sourceSummary.task': '任务：{task}',
-    'files.sourceSummary.room': '会话：{room}',
+    'files.sourceSummary.room': '来源上下文：{room}',
     'files.sourceSummary.agentUnknown': '智能体来源：未记录',
     'files.sourceSummary.unknown': '来源信息：未记录',
     'files.documentDetailLoading': '正在读取智能体文档…',

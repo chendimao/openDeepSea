@@ -292,7 +292,7 @@ function GlobalChatBubble({ message }: { message: GlobalChatMessage }): JSX.Elem
   return (
     <SessionMessageBubble
       role={message.role}
-      roleLabel={isUser ? t('room.currentUser') : t('globalChat.title')}
+      roleLabel={isUser ? t('message.currentUser') : t('globalChat.title')}
       content={message.content}
       timeLabel={formatRelativeTime(message.created_at)}
       statusLabel={message.status === 'failed' ? '失败' : null}

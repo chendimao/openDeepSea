@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { api, resourceListItemToProjectFile } from './api';
 import type { ResourceListItem } from './types';
@@ -214,6 +215,77 @@ test('listKnowledgeSources builds global knowledge query URL', async () => {
   );
 });
 
+test('knowledge detail API requests encoded source id', async () => {
+  const requestedUrl = await captureApiRequest(
+    () => api.getKnowledgeSource('source/id 1'),
+    { id: 'source/id 1', project_id: 'p', source_type: 'uploaded_file', title: 'x', status: 'ready' },
+  );
+
+  assert.equal(requestedUrl, '/api/knowledge/sources/source%2Fid%201');
+});
+
+test('knowledge search API builds FTS query URL', async () => {
+  const requestedUrl = await captureApiRequest(
+    () => api.searchKnowledge({
+      projectId: 'project-1',
+      roomId: 'room-1',
+      query: 'A12 验收',
+      status: 'ready',
+      sourceType: 'uploaded_file',
+      limit: 10,
+    }),
+    [],
+  );
+
+  assert.equal(
+    requestedUrl,
+    '/api/knowledge/search?projectId=project-1&roomId=room-1&q=A12+%E9%AA%8C%E6%94%B6&status=ready&sourceType=uploaded_file&limit=10',
+  );
+});
+
+test('knowledge chunks API builds filters', async () => {
+  const requestedUrl = await captureApiRequest(
+    () => api.listKnowledgeChunks('source/id 1', { enabled: 1, limit: 25, offset: 50 }),
+    [],
+  );
+
+  assert.equal(
+    requestedUrl,
+    '/api/knowledge/sources/source%2Fid%201/chunks?enabled=1&limit=25&offset=50',
+  );
+});
+
+test('knowledge action APIs send method and payload', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; method: string; body: string | null }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      body: typeof init?.body === 'string' ? init.body : null,
+    });
+    return new Response(init?.method === 'DELETE' ? null : JSON.stringify({ id: 'source-1', status: 'ready' }), {
+      status: init?.method === 'DELETE' ? 204 : 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    await api.reprocessKnowledgeSource('source-1');
+    await api.updateKnowledgeSource('source-1', { status: 'disabled', enabled: 0 });
+    await api.deleteKnowledgeSource('source-1');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requests.map((request) => [request.url, request.method]), [
+    ['/api/knowledge/sources/source-1/reprocess', 'POST'],
+    ['/api/knowledge/sources/source-1', 'PATCH'],
+    ['/api/knowledge/sources/source-1', 'DELETE'],
+  ]);
+  assert.equal(requests[1]?.body, JSON.stringify({ status: 'disabled', enabled: 0 }));
+});
+
 test('updateSession sends pinned_at patch payload', async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl = '';
@@ -349,6 +421,27 @@ test('listTaskExecutors requests task-scoped executor sessions', async () => {
   }
 });
 
+test('api exposes online skills helpers through workspaceRequest', async () => {
+  const source = readFileSync(new URL('./api.ts', import.meta.url), 'utf8');
+
+  assert.match(source, /listOnlineSkills/);
+  assert.match(source, /searchOnlineSkills/);
+  assert.match(source, /getOnlineSkillAudit/);
+  assert.match(source, /workspaceRequest<OnlineSkillListResponse>\(`\/online-skills/);
+
+  const listUrl = await captureApiRequest(
+    () => api.listOnlineSkills({ view: 'trending', page: 2, limit: 20 }),
+    { skills: [], total: 0, page: 2, pages: 0, stale: false, updatedAt: 1 },
+  );
+  assert.equal(listUrl, '/api/online-skills?view=trending&page=2&limit=20');
+
+  const searchUrl = await captureApiRequest(
+    () => api.searchOnlineSkills({ q: 'browser', limit: 10 }),
+    { skills: [], total: 0, page: 0, pages: 0, limit: 10, stale: false, updatedAt: 1 },
+  );
+  assert.equal(searchUrl, '/api/online-skills/search?q=browser&page=0&limit=10');
+});
+
 function createResourceListItem(input: Partial<ResourceListItem>): ResourceListItem {
   return {
     id: 'resource-1',
@@ -395,4 +488,23 @@ function createResourceListItem(input: Partial<ResourceListItem>): ResourceListI
     deleted_at: null,
     ...input,
   };
+}
+
+async function captureApiRequest<T>(call: () => Promise<T>, responseBody: unknown): Promise<string> {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify(responseBody), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    await call();
+    return requestedUrl;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }

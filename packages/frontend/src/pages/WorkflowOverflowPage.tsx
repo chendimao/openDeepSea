@@ -92,7 +92,7 @@ export function WorkflowOverflowPage(): JSX.Element {
                   { value: 'all', label: '全部范围' },
                   { value: 'system', label: '系统' },
                   { value: 'project', label: '项目' },
-                  { value: 'room', label: '群聊' },
+                  { value: 'room', label: '历史上下文' },
                 ]}
                 onChange={(value) => setScopeFilter(value as 'all' | WorkflowDefinitionScope)}
               />
@@ -355,7 +355,7 @@ function statusLabel(status: WorkflowDefinitionStatus): string {
 }
 
 function scopeLabel(scope: WorkflowDefinitionScope): string {
-  return scope === 'system' ? '系统' : scope === 'project' ? '项目' : '群聊';
+  return scope === 'system' ? '系统' : scope === 'project' ? '项目' : '历史上下文';
 }
 
 function isWorkflowStage(stage: WorkflowStage | null | undefined): stage is WorkflowStage {

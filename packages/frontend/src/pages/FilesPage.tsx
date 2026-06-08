@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Crosshair, Download, Eye, FileSearch, Filter, Grid2X2, List, Search, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,23 +15,18 @@ import { ProjectFilePreviewDialog } from '../components/ProjectFilePreviewDialog
 
 export function FilesPage(): JSX.Element {
   const { projectId = '' } = useParams();
-  const [searchParams] = useSearchParams();
-  const roomIdFromUrl = searchParams.get('roomId') ?? '';
-  const initialRoomId = projectId ? roomIdFromUrl : '';
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { t, locale, formatRelativeTime } = useI18n();
   const [query, setQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState(projectId);
-  const [selectedRoomId, setSelectedRoomId] = useState(initialRoomId);
   const [selectedSourceType, setSelectedSourceType] = useState<ProjectFile['source_type'] | ''>('');
   const [preview, setPreview] = useState<ProjectFile | null>(null);
   const [viewMode, setViewMode] = useState<ProjectFileViewMode>('list');
 
   useEffect(() => {
     setSelectedProjectId(projectId);
-    setSelectedRoomId(initialRoomId);
-  }, [initialRoomId, projectId]);
+  }, [projectId]);
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -42,16 +37,6 @@ export function FilesPage(): JSX.Element {
     queryFn: () => api.getProject(projectId),
     enabled: !!projectId,
   });
-  const { data: rooms = [], isFetched: roomsFetched } = useQuery({
-    queryKey: ['rooms', selectedProjectId],
-    queryFn: () => api.listRooms(selectedProjectId),
-    enabled: !!selectedProjectId,
-  });
-  const activeRoomId = useMemo(() => {
-    if (!selectedProjectId || !selectedRoomId) return '';
-    return rooms.some((room) => room.id === selectedRoomId) ? selectedRoomId : '';
-  }, [rooms, selectedProjectId, selectedRoomId]);
-  const canLoadFiles = !selectedProjectId || !selectedRoomId || roomsFetched;
   const {
     data: files = [],
     error: filesError,
@@ -59,22 +44,16 @@ export function FilesPage(): JSX.Element {
     isLoading,
     refetch: refetchFiles,
   } = useQuery({
-    queryKey: ['files', selectedProjectId, activeRoomId, selectedSourceType],
+    queryKey: ['files', selectedProjectId, selectedSourceType],
     queryFn: () => listResourceLibraryFiles({
       projectId: selectedProjectId,
-      roomId: activeRoomId || undefined,
       sourceType: selectedSourceType || undefined,
     }),
-    enabled: canLoadFiles,
   });
 
   const selectedProject = useMemo(
     () => projects.find((item) => item.id === selectedProjectId) ?? project ?? null,
     [project, projects, selectedProjectId],
-  );
-  const selectedRoom = useMemo(
-    () => rooms.find((item) => item.id === selectedRoomId) ?? null,
-    [rooms, selectedRoomId],
   );
   const projectNameById = useMemo(
     () => new Map(projects.map((item) => [item.id, item.name])),
@@ -98,11 +77,6 @@ export function FilesPage(): JSX.Element {
     () => files.reduce((sum, file) => sum + file.size, 0),
     [files],
   );
-
-  useEffect(() => {
-    if (!selectedProjectId || !selectedRoomId || !roomsFetched) return;
-    if (!activeRoomId) setSelectedRoomId('');
-  }, [activeRoomId, roomsFetched, selectedProjectId, selectedRoomId]);
 
   const upload = useMutation({
     mutationFn: (selectedFiles: File[]) => {
@@ -142,7 +116,7 @@ export function FilesPage(): JSX.Element {
           <Link
             to={projectId ? `/projects/${projectId}` : '/'}
             className="toolbar-back"
-            aria-label={projectId ? t('room.backToProject') : t('shell.nav.development')}
+            aria-label={projectId ? t('project.backToProject') : t('shell.nav.development')}
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
@@ -152,7 +126,6 @@ export function FilesPage(): JSX.Element {
               {selectedProject
                 ? `${selectedProject.name} · ${selectedProject.path}`
                 : t('files.allProjects')}
-              {selectedRoom ? ` · ${selectedRoom.name}` : ''}
             </div>
           </div>
         </div>
@@ -176,29 +149,12 @@ export function FilesPage(): JSX.Element {
                 className="files-filter-select"
                 value={selectedProjectId}
                 aria-label={t('files.projectFilter')}
-                onChange={(event) => {
-                  setSelectedProjectId(event.target.value);
-                  setSelectedRoomId('');
-                }}
+                onChange={(event) => setSelectedProjectId(event.target.value)}
               >
                 <option value="">{t('files.allProjects')}</option>
                 {projects.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="files-filter-select"
-                value={selectedRoomId}
-                aria-label={t('files.roomFilter')}
-                disabled={!selectedProjectId}
-                onChange={(event) => setSelectedRoomId(event.target.value)}
-              >
-                <option value="">{t('files.allRooms')}</option>
-                {rooms.map((room) => (
-                  <option key={room.id} value={room.id}>
-                    {room.name}
                   </option>
                 ))}
               </select>
@@ -333,20 +289,16 @@ export function FilesPage(): JSX.Element {
 
 export function listResourceLibraryFiles(filters: {
   projectId?: string;
-  roomId?: string;
   sourceType?: ProjectFile['source_type'] | '';
 }): Promise<ProjectFile[]> {
   const projectId = filters.projectId?.trim();
-  const roomId = filters.roomId?.trim();
   const sourceType = filters.sourceType || undefined;
   if (projectId) {
     return api.listResourceFiles(projectId, {
-      roomId: roomId || undefined,
       sourceType,
     });
   }
   return api.listFiles({
-    roomId: roomId || undefined,
     sourceType,
   });
 }

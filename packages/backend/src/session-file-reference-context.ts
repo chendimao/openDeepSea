@@ -1,6 +1,7 @@
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { fileRepo } from './repos/files.js';
+import { knowledgeRepo } from './repos/knowledge.js';
 import type { Project, ProjectFile } from './types.js';
 import {
   isIgnoredWorkspacePath,
@@ -89,6 +90,12 @@ export async function buildSessionFileReferenceContext(input: {
   for (const ref of normalizeRefList(input.libraryFileRefs)) {
     const file = fileRepo.get(ref);
     if (!file || file.project_id !== input.project.id || file.deleted_at !== null) continue;
+    const knowledgeBlock = renderKnowledgeReferenceBlock(input.project.id, file, libraryBudget);
+    if (knowledgeBlock) {
+      libraryBudget -= knowledgeBlock.usedChars;
+      blocks.push(knowledgeBlock.block);
+      continue;
+    }
     if (file.source_type === 'agent_document' && file.content && libraryBudget > 0) {
       const limit = Math.min(MAX_AGENT_DOCUMENT_CHARS, libraryBudget);
       const content = file.content.slice(0, limit);
@@ -145,7 +152,7 @@ function isTextFile(file: ProjectFile): boolean {
     mimeType.includes('xml') ||
     mimeType.includes('yaml') ||
     TEXT_EXTENSIONS.has(extname(file.original_name).toLowerCase()) ||
-    TEXT_EXTENSIONS.has(extname(file.storage_path).toLowerCase());
+    TEXT_EXTENSIONS.has(extname(file.storage_path ?? '').toLowerCase());
 }
 
 async function resolveWorkspaceImagePath(projectPath: string, safePath: string): Promise<string | null> {
@@ -192,6 +199,71 @@ async function readUploadedTextFile(
 function renderContentBlock(title: string, content: string, truncated: boolean): string {
   const suffix = truncated ? '\n...(truncated)' : '';
   return [`### ${title}`, '```', `${content}${suffix}`, '```'].join('\n');
+}
+
+function renderKnowledgeReferenceBlock(
+  projectId: string,
+  file: ProjectFile,
+  budget: number,
+): { block: string; usedChars: number } | null {
+  if (budget <= 0) return null;
+  const sourceType = file.source_type === 'agent_document' ? 'agent_document' : 'uploaded_file';
+  const source = knowledgeRepo.listSources({
+    projectId,
+    sourceTypes: [sourceType],
+    query: file.id,
+    limit: 20,
+  }).find((item) => item.source_id === file.id);
+  if (!source || source.status !== 'ready') return null;
+
+  const chunks = knowledgeRepo.listChunks(source.id).filter((chunk) => chunk.enabled === 1);
+  if (chunks.length > 0) {
+    const renderedChunks: string[] = [];
+    let usedChars = 0;
+    for (const chunk of chunks.slice(0, 8)) {
+      if (usedChars >= budget) break;
+      const limit = Math.min(chunk.content.length, budget - usedChars);
+      const content = chunk.content.slice(0, limit);
+      usedChars += content.length;
+      renderedChunks.push([
+        `#### chunk_id: ${chunk.id}`,
+        `chunk_index: ${chunk.chunk_index}`,
+        `truncated: ${chunk.content.length > limit ? 'true' : 'false'}`,
+        '```',
+        content,
+        '```',
+      ].join('\n'));
+    }
+    if (renderedChunks.length === 0) return null;
+    return {
+      usedChars,
+      block: [
+        `### Knowledge: ${source.title}`,
+        `source_id: ${source.id}`,
+        `source_type: ${source.source_type}`,
+        `citation_key: knowledge:${source.id}`,
+        ...renderedChunks,
+      ].join('\n'),
+    };
+  }
+
+  const extraction = knowledgeRepo.getLatestExtraction(source.id);
+  if (!extraction?.plain_text) return null;
+  const content = extraction.plain_text.slice(0, budget);
+  return {
+    usedChars: content.length,
+    block: [
+      `### Knowledge: ${source.title}`,
+      `source_id: ${source.id}`,
+      `extraction_id: ${extraction.id}`,
+      `source_type: ${source.source_type}`,
+      `truncated: ${extraction.plain_text.length > content.length ? 'true' : 'false'}`,
+      `citation_key: knowledge:${source.id}`,
+      '```',
+      content,
+      '```',
+    ].join('\n'),
+  };
 }
 
 function renderMetadataBlock(title: string, lines: string[]): string {

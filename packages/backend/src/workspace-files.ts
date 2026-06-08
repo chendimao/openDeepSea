@@ -13,6 +13,7 @@ import type {
 export const WORKSPACE_DIRECTORY_LIMIT = 500;
 export const WORKSPACE_PREVIEW_TEXT_LIMIT = 512 * 1024;
 export const WORKSPACE_REFERENCE_SIZE_LIMIT = 2 * 1024 * 1024;
+export const WORKSPACE_IMAGE_BLOB_SIZE_LIMIT = 20 * 1024 * 1024;
 
 const WORKSPACE_SEARCH_LIMIT = 50;
 export const WORKSPACE_SEARCH_MAX_DEPTH = 12;
@@ -81,6 +82,12 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.less': 'text/plain',
   '.html': 'text/html',
   '.htm': 'text/html',
+  '.gif': 'image/gif',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
   '.xml': 'application/xml',
   '.sql': 'text/plain',
   '.sh': 'text/plain',
@@ -335,6 +342,37 @@ export async function readWorkspaceFileReference(projectPath: string, inputPath:
       content: isBinary ? null : contentBuffer.toString('utf-8'),
       truncated: false,
       bytes: contentBuffer,
+    };
+  } finally {
+    await fileHandle.close();
+  }
+}
+
+export async function readWorkspaceImageBlob(
+  projectPath: string,
+  inputPath: string,
+): Promise<{ path: string; size: number; mimeType: string; bytes: Buffer }> {
+  const resolved = await resolveWorkspacePath(projectPath, inputPath);
+  ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
+
+  const fileHandle = await openWorkspaceFileForRead(resolved.absolutePath);
+  try {
+    const fileStats = await fileHandle.stat();
+    if (!fileStats.isFile()) {
+      throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
+    }
+    if (fileStats.size > WORKSPACE_IMAGE_BLOB_SIZE_LIMIT) {
+      throw workspaceFileError('WORKSPACE_FILE_TOO_LARGE');
+    }
+    const mimeType = inferMimeType(resolved.relativePath);
+    if (!mimeType.startsWith('image/')) {
+      throw workspaceFileError('WORKSPACE_FILE_BINARY');
+    }
+    return {
+      path: resolved.relativePath,
+      size: fileStats.size,
+      mimeType,
+      bytes: await readHandleBytes(fileHandle, fileStats.size),
     };
   } finally {
     await fileHandle.close();

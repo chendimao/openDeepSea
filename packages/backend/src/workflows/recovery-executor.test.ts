@@ -43,6 +43,7 @@ test('executeRecoveryDecision retries same agent and records recovery message', 
   const result = await executeRecoveryDecision({
     incident,
     decision: decision('retry_same_agent'),
+    retryWorkflowStep: retryWithoutStartingAgent,
   });
 
   assert.equal(result.status, 'executed');
@@ -77,6 +78,7 @@ test('executeRecoveryDecision provisions global executor then retries workflow',
   const result = await executeRecoveryDecision({
     incident,
     decision: decision('retry_with_global_agent'),
+    retryWorkflowStep: retryWithoutStartingAgent,
   });
 
   assert.equal(result.status, 'executed');
@@ -105,6 +107,7 @@ test('executeRecoveryDecision reassigns child task before retrying', async () =>
       ...decision('reassign_agent'),
       targetRoomAgentId: other.id,
     },
+    retryWorkflowStep: retryWithoutStartingAgent,
   });
 
   assert.equal(result.status, 'executed');
@@ -218,6 +221,21 @@ function createFixture(name: string, options: { createAgent?: boolean } = {}) {
     current_stage: 'implementation',
   });
   return { project, room, agent, task, childTask, workflow };
+}
+
+async function retryWithoutStartingAgent(workflowRunId: string) {
+  const run = workflowRepo.getRun(workflowRunId);
+  if (!run) throw new Error('workflow not found');
+  const retryableStep = [...workflowRepo.listSteps(workflowRunId)]
+    .reverse()
+    .find((step) => step.status === 'failed' || step.status === 'cancelled' || step.status === 'interrupted');
+  if (retryableStep) {
+    workflowRepo.updateStep(retryableStep.id, {
+      status: 'skipped',
+      error: retryableStep.error ?? 'Superseded by test retry',
+    });
+  }
+  return workflowRepo.updateRun(workflowRunId, { status: 'running', error: null }) ?? run;
 }
 
 function createIncident(

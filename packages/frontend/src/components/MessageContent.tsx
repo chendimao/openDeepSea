@@ -94,7 +94,6 @@ export function MessageContent({
   suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
   suppressTraceEvents = false,
-  roomId,
 }: {
   content: string;
   streaming?: boolean;
@@ -106,7 +105,6 @@ export function MessageContent({
   suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
   suppressTraceEvents?: boolean;
-  roomId?: string;
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { t } = useI18n();
@@ -139,7 +137,6 @@ export function MessageContent({
           suppressTaskExecutionSummary={suppressTaskExecutionSummary}
           suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
           suppressTraceEvents={suppressTraceEvents}
-          roomId={roomId}
         />
       ) : activeMode === 'source' ? (
         <CodeBlock
@@ -192,7 +189,7 @@ export function MessageContent({
               </>
             )}
           </div>
-          {!suppressTraceEvents && <AgentTimeline trace={trace} roomId={roomId} />}
+          {!suppressTraceEvents && <AgentTimeline trace={trace} />}
         </>
       )}
     </div>
@@ -207,7 +204,6 @@ function AgentTranscriptView({
   suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
   suppressTraceEvents = false,
-  roomId,
 }: {
   transcript: AgentTranscriptModel;
   streaming: boolean;
@@ -216,7 +212,6 @@ function AgentTranscriptView({
   suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
   suppressTraceEvents?: boolean;
-  roomId?: string;
 }): JSX.Element {
   return (
     <div className="agent-transcript">
@@ -236,7 +231,7 @@ function AgentTranscriptView({
           </div>
         ) : (
           <div key={item.id} className="agent-transcript-event">
-            <AgentTimelineItem event={item.event} roomId={roomId} presentation="activity" />
+            <AgentTimelineItem event={item.event} presentation="activity" />
           </div>
         );
       })}

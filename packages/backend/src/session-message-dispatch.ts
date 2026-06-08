@@ -16,6 +16,9 @@ import { runSessionAgent } from './session-runtime.js';
 import { wsHub } from './ws-hub.js';
 import { getPlatformSkill } from './platform-skills/service.js';
 import { isIgnoredWorkspacePath, normalizeWorkspacePath, resolveWorkspacePath } from './workspace-files.js';
+import type { ImageGenerationJob, ImageGenerationOutput } from './image-generation/types.js';
+import type { GenerateImageToolOutput } from './image-generation/tool.js';
+import type { PlatformSkill } from './platform-skills/types.js';
 import type {
   MessageAttachmentMetadata,
   PlatformSkillRef,
@@ -24,7 +27,6 @@ import type {
   SessionMessage,
   SessionMode,
 } from './types.js';
-import type { PlatformSkill } from './platform-skills/types.js';
 
 const DEFAULT_SESSION_TITLE = 'New Session';
 const AUTO_SESSION_TITLE_LIMIT = 25;
@@ -129,6 +131,72 @@ export async function dispatchSessionUserMessage(input: {
   return message;
 }
 
+export function assertSessionCanReceiveImageGenerationJob(
+  projectId: string,
+  sessionId: string | null | undefined,
+): void {
+  if (!sessionId) return;
+  const session = sessionRepo.get(sessionId);
+  if (!session) throw new Error('session not found');
+  if (session.project_id !== projectId) throw new Error('session project mismatch');
+}
+
+export function recordSessionImageGenerationJobMessage(input: {
+  sessionId: string;
+  job: ImageGenerationJob;
+  outputs?: ImageGenerationOutput[];
+}): SessionMessage {
+  assertSessionCanReceiveImageGenerationJob(input.job.project_id, input.sessionId);
+  if (input.job.session_id !== input.sessionId) {
+    throw new Error('image generation job session mismatch');
+  }
+  const message = sessionMessageRepo.create({
+    session_id: input.sessionId,
+    role: 'system',
+    sender_id: 'image-generation',
+    sender_name: 'Image Generation',
+    content: `图片生成任务已创建：${truncateImageGenerationPrompt(input.job.prompt)}`,
+    message_type: 'system',
+    metadata: buildImageGenerationJobMessageMetadata(input.job, input.outputs ?? []),
+  });
+  wsHub.broadcastSession(input.sessionId, {
+    type: 'session_message:new',
+    sessionId: input.sessionId,
+    message,
+  });
+  broadcastActiveSessionUpsert(input.sessionId);
+  return message;
+}
+
+export function recordSessionImageGenerationToolResultEvidence(input: {
+  sessionId: string;
+  sourceRunId?: string | null;
+  result: GenerateImageToolOutput;
+}) {
+  const event = sessionEvidenceRepo.create({
+    session_id: input.sessionId,
+    event_type: 'tool_result',
+    severity: imageToolEvidenceSeverity(input.result),
+    source_run_id: input.sourceRunId ?? null,
+    title: '图片生成结果',
+    summary: imageToolEvidenceSummary(input.result),
+    payload: {
+      tool_name: 'generate_image',
+      job_id: input.result.job_id,
+      status: input.result.status,
+      error: input.result.error,
+      outputs: input.result.outputs,
+    },
+  });
+  wsHub.broadcastSession(input.sessionId, {
+    type: 'session_evidence:new',
+    sessionId: input.sessionId,
+    event,
+  });
+  broadcastActiveSessionUpsert(input.sessionId);
+  return event;
+}
+
 function buildUserMessageMetadata(input: {
   agentId: string;
   workspaceFileRefs: string[];
@@ -147,6 +215,46 @@ function buildUserMessageMetadata(input: {
       : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
   };
+}
+
+function buildImageGenerationJobMessageMetadata(
+  job: ImageGenerationJob,
+  outputs: ImageGenerationOutput[],
+): Record<string, unknown> {
+  const attachments = outputs.map((output) => ({
+    id: output.file_id,
+    fileId: output.file_id,
+    name: output.name,
+    mimeType: output.mime_type,
+    size: output.size,
+    url: output.url,
+    isImage: output.mime_type.startsWith('image/'),
+  }));
+  return {
+    image_generation_job_id: job.id,
+    image_generation_status: job.status,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  };
+}
+
+function truncateImageGenerationPrompt(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, ' ').trim();
+  const chars = Array.from(normalized);
+  if (chars.length <= 80) return normalized;
+  return `${chars.slice(0, 80).join('').trimEnd()}...`;
+}
+
+function imageToolEvidenceSeverity(result: GenerateImageToolOutput): 'info' | 'warning' | 'error' {
+  if (result.status === 'failed') return 'error';
+  if (result.status === 'canceled') return 'warning';
+  return 'info';
+}
+
+function imageToolEvidenceSummary(result: GenerateImageToolOutput): string {
+  if (result.outputs.length > 0) return `已生成 ${result.outputs.length} 张图片。`;
+  if (result.error) return result.error;
+  if (result.status === 'canceled') return '图片生成任务已取消。';
+  return '图片生成未返回图片。';
 }
 
 function buildLibraryAttachmentMetadata(libraryFileRefs: string[]): MessageAttachmentMetadata[] {

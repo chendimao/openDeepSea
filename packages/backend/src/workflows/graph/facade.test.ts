@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AgentRun, Message, Task, WorkflowRun } from '../../types.js';
 import type { ParsedPlan } from '../plan-parser.js';
+import type { RespondAsAgentInput } from '../../dispatcher.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-facade-')), 'test.db');
 
@@ -17,15 +18,47 @@ const { memoryRepo } = await import('../../repos/memory.js');
 const { runRegistry } = await import('../../run-registry.js');
 const { parseGraphState, serializeGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
+const { setVerificationCommandRunnerForTests } = await import('./verification.js');
+
+test.beforeEach(() => {
+  setVerificationCommandRunnerForTests(async (command) => ({
+    command,
+    status: 'passed',
+    exitCode: 0,
+    stdout: 'stubbed facade verification passed',
+    stderr: '',
+  }));
+});
 
 test.afterEach(() => {
   process.env.LANGGRAPH_WORKFLOW_ENABLED = '0';
+  setVerificationCommandRunnerForTests(null);
   setWorkflowOrchestratorGraphDeps({});
 });
 
 test('workflowOrchestrator.start delegates to graph runtime when enabled', async () => {
   process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
   setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      const output = outputForAgentInput(input);
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(task.room_id, output),
+        status: 'completed',
+      };
+    },
     planner: async () => ({
       goal: 'Facade graph workflow',
       summary: 'Graph runtime handles orchestrator start.',
@@ -53,7 +86,7 @@ test('workflowOrchestrator.start delegates to graph runtime when enabled', async
 
   assert.equal(run.graph_version, 'superpowers-v1');
   assert.equal(run.status, 'awaiting_approval');
-  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'planning'));
+  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'writing_plans'));
 });
 
 test('workflowOrchestrator.start uses legacy runtime when graph disabled', async () => {
@@ -70,6 +103,10 @@ test('workflowOrchestrator.start uses legacy runtime when graph disabled', async
   assert.equal(step?.node_name, null);
   assert.equal(workflowRepo.listSteps(run.id).some((item) => item.node_name), false);
   assert.ok(step);
+  for (const activeRun of agentRunRepo.listActiveByWorkflow(run.id)) {
+    runRegistry.cancel(activeRun.id);
+    agentRunRepo.updateStatus(activeRun.id, 'cancelled', { error: 'test cleanup' });
+  }
   workflowRepo.updateRun(run.id, { status: 'blocked' });
   workflowRepo.updateStep(step.id, { status: 'interrupted', error: 'test cleanup' });
 });
@@ -827,6 +864,60 @@ function addWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'accep
   });
   if (!withRuntimeBoundary) throw new Error(`failed to configure runtime boundary for ${role}`);
   return withRuntimeBoundary;
+}
+
+function outputForAgentInput(
+  input: RespondAsAgentInput,
+  implementationOutput = 'implementation completed',
+): string {
+  if (input.workflowStage === 'planning') {
+    return JSON.stringify({
+      superpowers: {
+        designDocPath: 'docs/superpowers/specs/facade-design.md',
+        designReviewVerdict: 'approved',
+        implementationPlanPath: 'docs/superpowers/plans/facade-plan.md',
+        planReviewVerdict: 'approved',
+        worktree: {
+          path: '/tmp/openclaw-room-graph-facade',
+          branchName: 'facade-test',
+          baseRef: 'test-fixture',
+        },
+      },
+    });
+  }
+  if (input.workflowStage === 'implementation' && input.prompt.includes('tddEvidence')) {
+    return [
+      implementationOutput,
+      '',
+      '```json',
+      JSON.stringify({
+        superpowers: {
+          tddEvidence: [
+            { stage: 'RED', command: 'node --test graph-facade', passed: false, summary: 'failed as expected' },
+            { stage: 'GREEN', command: 'node --test graph-facade', passed: true, summary: 'passed' },
+          ],
+        },
+      }),
+      '```',
+    ].join('\n');
+  }
+  if (input.workflowStage === 'code_review') {
+    return JSON.stringify({
+      verdict: 'pass',
+      findings: [],
+      requiredFixes: [],
+      riskLevel: 'low',
+    });
+  }
+  if (input.workflowStage === 'acceptance') {
+    return JSON.stringify({
+      verdict: 'pass',
+      acceptedCriteria: ['Graph runtime completed all steps'],
+      failedCriteria: [],
+      notes: 'All checks passed',
+    });
+  }
+  return implementationOutput;
 }
 
 function fakeMessage(roomId: string, content: string): Message {

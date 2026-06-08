@@ -135,6 +135,7 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
     const reply = sanitizeReplyMetadata(parsed);
     const choices = sanitizeChoiceMetadata(parsed);
     const brainstorming = sanitizeBrainstormingMetadata(parsed);
+    const imageGeneration = sanitizeImageGenerationMetadata(parsed);
     return {
       attachments,
       ...reply,
@@ -149,10 +150,28 @@ export function parseMessageMetadata(metadata: string | null): MessageMetadata {
       ...acp,
       ...brainstorming,
       ...choices,
+      ...imageGeneration,
     };
   } catch {
     return createEmptyMessageMetadata();
   }
+}
+
+function sanitizeImageGenerationMetadata(value: Record<string, unknown>) {
+  const jobId = typeof value.image_generation_job_id === 'string'
+    ? value.image_generation_job_id.trim()
+    : '';
+  const status = typeof value.image_generation_status === 'string' && isImageGenerationStatus(value.image_generation_status)
+    ? value.image_generation_status
+    : null;
+  return {
+    ...(jobId ? { image_generation_job_id: jobId } : {}),
+    ...(status ? { image_generation_status: status } : {}),
+  };
+}
+
+function isImageGenerationStatus(value: string): value is NonNullable<MessageMetadata['image_generation_status']> {
+  return ['queued', 'running', 'canceling', 'completed', 'failed', 'canceled'].includes(value);
 }
 
 function sanitizeChoiceMetadata(value: Record<string, unknown>) {

@@ -28,3 +28,14 @@ test('TerminalPanel handles terminal websocket events and refresh requests', () 
   assert.match(source, /platform_skills:refresh_requested/);
   assert.match(source, /onRefreshRequested/);
 });
+
+test('TerminalPanel can prefill an initial command without appending enter', () => {
+  const source = readFileSync(sourceUrl, 'utf8');
+
+  assert.match(source, /initialInput\?: string/);
+  assert.match(source, /initialInputSentRef/);
+  assert.match(source, /initialInput\?\.trim\(\)/);
+  assert.match(source, /sendTerminalInput\(nextSessionId, command\)/);
+  assert.doesNotMatch(source, /sendTerminalInput\(nextSessionId, `\$\{command\}\\r`/);
+  assert.doesNotMatch(source, /sendTerminalInput\(nextSessionId, `\$\{command\}\\n`/);
+});

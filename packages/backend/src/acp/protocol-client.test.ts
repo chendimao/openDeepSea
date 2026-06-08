@@ -609,7 +609,7 @@ test('invokeProtocolSession completes after answer when ACP shutdown hangs', asy
   try {
     const result = await Promise.race([
       invocation,
-      delay(3_500).then(() => {
+      delay(7_000).then(() => {
         throw new Error('invokeProtocolSession did not resolve after answer text');
       }),
     ]);

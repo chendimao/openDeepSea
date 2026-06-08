@@ -5,15 +5,11 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-workflow-routes-')), 'test.db');
-process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
 
 const { projectRepo } = await import('../repos/projects.js');
 const { roomRepo } = await import('../repos/rooms.js');
 const { taskRepo } = await import('../repos/tasks.js');
-const { workflowContextRepo } = await import('../repos/workflow-context.js');
 const { workflowRepo } = await import('../repos/workflows.js');
-const { setWorkflowConversationDeps } = await import('./conversation.js');
-const { emptyAgentWorkflowState, serializeGraphState } = await import('./graph/state.js');
 const { router } = await import('../routes.js');
 const express = (await import('express')).default;
 
@@ -21,151 +17,66 @@ const app = express();
 app.use(express.json());
 app.use('/api', router);
 
-test.afterEach(() => {
-  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
-  setWorkflowConversationDeps({});
-});
-
-test('legacy workflow start route uses conversation short request path when graph is enabled', async () => {
-  const { task } = createTask('Legacy Start Short Request');
-  const enqueued: string[] = [];
-  setWorkflowConversationDeps({
-    enqueueGraphWorkflow: (runId) => {
-      enqueued.push(runId);
-    },
-  });
-
-  const res = await request(`/api/tasks/${task.id}/workflows`, { method: 'POST' });
-
-  assert.equal(res.status, 202);
-  const workflow = await res.json() as { id: string; graph_version: string };
-  assert.equal(workflow.graph_version, 'superpowers-v1');
-  assert.equal(workflowRepo.listSteps(workflow.id).length, 0);
-  assert.deepEqual(enqueued, [workflow.id]);
-});
-
-test('legacy workflow approval route uses conversation short request path when graph is enabled', async () => {
-  const { project, room, task } = createTask('Legacy Approve Short Request');
-  const state = emptyAgentWorkflowState({
-    workflowRunId: 'pending',
-    projectId: project.id,
-    roomId: room.id,
-    taskId: task.id,
-    userGoal: task.title,
-    projectPath: project.path,
-  });
-  const plan = {
-    goal: task.title,
-    summary: 'Route approval plan.',
-    assumptions: [],
-    tasks: [],
-    reviewFocus: [],
-    verification: [],
-    verificationCommands: [],
-    risks: [],
-    needsApproval: true,
-  };
+test('pure ACP mode disables legacy workflow mutation and detail routes', async () => {
+  const { room, task } = createTask('Pure ACP Disabled Workflow Routes');
   const run = workflowRepo.createRun({
     room_id: room.id,
-    project_id: project.id,
+    project_id: task.project_id,
     task_id: task.id,
-    status: 'awaiting_approval',
-    current_stage: 'planning',
-    graph_version: 'phase-b-v1',
-    graph_state: serializeGraphState({
-      ...state,
-      workflowRunId: 'pending',
-      plan,
-      currentNode: 'approval',
-      status: 'awaiting_approval',
-      approval: 'pending',
-    }),
   });
-  workflowRepo.updateGraphState(run.id, serializeGraphState({
-    ...state,
-    workflowRunId: run.id,
-    plan,
-    currentNode: 'approval',
-    status: 'awaiting_approval',
-    approval: 'pending',
-  }));
-  const enqueued: string[] = [];
-  setWorkflowConversationDeps({
-    enqueueGraphWorkflow: (runId) => {
-      enqueued.push(runId);
+  const cases: Array<{ path: string; method?: string; feature: string }> = [
+    { path: `/api/tasks/${task.id}/workflows`, method: 'POST', feature: 'workflow start route' },
+    {
+      path: `/api/rooms/${room.id}/tasks/${task.id}/workflows/start-with-conversation`,
+      method: 'POST',
+      feature: 'workflow conversation start route',
     },
-  });
+    { path: `/api/workflows/${run.id}`, feature: 'workflow detail route' },
+    { path: `/api/workflows/${run.id}/context`, feature: 'workflow context route' },
+    { path: `/api/workflows/${run.id}/approve-plan`, method: 'POST', feature: 'workflow approve route' },
+    {
+      path: `/api/rooms/${room.id}/workflows/${run.id}/approve-plan-with-conversation`,
+      method: 'POST',
+      feature: 'workflow conversation approve route',
+    },
+    { path: `/api/workflows/${run.id}/decisions`, method: 'POST', feature: 'workflow decisions route' },
+    { path: `/api/workflows/${run.id}/retry-step`, method: 'POST', feature: 'workflow retry route' },
+    { path: `/api/workflows/${run.id}/cancel`, method: 'POST', feature: 'workflow cancel route' },
+  ];
 
-  const res = await request(`/api/workflows/${run.id}/approve-plan`, { method: 'POST' });
-
-  assert.equal(res.status, 202);
-  const workflow = await res.json() as { id: string; status: string; approved_by: string };
-  assert.equal(workflow.id, run.id);
-  assert.equal(workflow.status, 'running');
-  assert.equal(workflow.approved_by, 'user');
-  assert.equal(workflowRepo.listSteps(run.id).length, 0);
-  assert.deepEqual(enqueued, [run.id]);
+  for (const item of cases) {
+    const res = await request(item.path, { method: item.method ?? 'GET' });
+    assert.equal(res.status, 410, `${item.method ?? 'GET'} ${item.path}`);
+    assert.deepEqual(await res.json(), { error: `pure ACP mode enabled: ${item.feature} is disabled` });
+  }
 });
 
-test('workflow context route returns entries and aggregate stats', async () => {
-  const { project, room, task } = createTask('Context Route');
+test('workflow list routes remain available in pure ACP mode', async () => {
+  const { room, task } = createTask('Pure ACP Workflow Lists');
   const run = workflowRepo.createRun({
     room_id: room.id,
-    project_id: project.id,
+    project_id: task.project_id,
     task_id: task.id,
     status: 'running',
-    graph_version: 'phase-b-v1',
-  });
-  const step = workflowRepo.createStep({
-    workflow_run_id: run.id,
-    task_id: task.id,
-    stage: 'implementation',
-    node_name: 'execute',
-    status: 'completed',
-    prompt: 'prompt',
-    sort_order: 1,
-  });
-  const first = workflowContextRepo.create({
-    workflow_run_id: run.id,
-    workflow_step_id: step.id,
-    task_id: task.id,
-    source_type: 'workflow_step',
-    source_id: `${step.id}:summary`,
-    entry_type: 'summary',
-    title: '摘要',
-    content: '完成了上下文路由。',
-    token_estimate: 12,
-  });
-  const second = workflowContextRepo.create({
-    workflow_run_id: run.id,
-    workflow_step_id: step.id,
-    task_id: task.id,
-    source_type: 'workflow_step',
-    source_id: `${step.id}:handoff`,
-    entry_type: 'handoff',
-    title: '交接',
-    content: '后续审查读取上下文条目。',
-    token_estimate: 16,
   });
 
-  const res = await request(`/api/workflows/${run.id}/context`);
+  const taskRes = await request(`/api/tasks/${task.id}/workflows`);
+  assert.equal(taskRes.status, 200);
+  assert.deepEqual((await taskRes.json() as Array<{ id: string }>).map((item) => item.id), [run.id]);
 
-  assert.equal(res.status, 200);
-  const body = await res.json() as {
-    entries: Array<{ id: string; title: string; summary_char_count: number }>;
-    total_token_estimate: number;
-    total_summary_chars: number;
-  };
-  assert.deepEqual(body.entries.map((entry) => entry.id), [first.id, second.id]);
-  assert.equal(body.total_token_estimate, 28);
-  assert.equal(body.total_summary_chars, first.summary_char_count + second.summary_char_count);
+  const roomRes = await request(`/api/rooms/${room.id}/workflows`);
+  assert.equal(roomRes.status, 200);
+  assert.deepEqual((await roomRes.json() as Array<{ id: string }>).map((item) => item.id), [run.id]);
 });
 
-test('workflow context route returns 404 for missing workflow', async () => {
-  const res = await request('/api/workflows/missing-workflow/context');
+test('workflow list routes return 404 for missing owner', async () => {
+  const taskRes = await request('/api/tasks/missing-task/workflows');
+  assert.equal(taskRes.status, 404);
+  assert.deepEqual(await taskRes.json(), { error: 'task not found' });
 
-  assert.equal(res.status, 404);
-  assert.deepEqual(await res.json(), { error: 'not found' });
+  const roomRes = await request('/api/rooms/missing-room/workflows');
+  assert.equal(roomRes.status, 404);
+  assert.deepEqual(await roomRes.json(), { error: 'room not found' });
 });
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {

@@ -6,6 +6,8 @@ import {
 } from './timeline.js';
 import { compactTimelineEvent } from '../trace-compaction.js';
 
+const MAX_PROTOCOL_EVENT_PAYLOAD_BYTES = 12_000;
+
 export function isProtocolEvent(raw: Record<string, unknown>): boolean {
   if (raw['method'] === 'session/update') return true;
   const payload = getProtocolPayload(raw);
@@ -30,7 +32,7 @@ export function normalizeProtocolEvent(args: {
     const oldText = text(diffContent['oldText']) ?? '';
     const newText = text(diffContent['newText']) ?? '';
     const patch = createUnifiedDiffPatch(diffContent.path, oldText, newText);
-    return compactTimelineEvent(createTimelineEvent({
+    return finalizeProtocolEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -54,7 +56,7 @@ export function normalizeProtocolEvent(args: {
 
   if (sessionUpdate === 'agent_message_chunk') {
     const messageText = getContentText(payload);
-    return compactTimelineEvent(createTimelineEvent({
+    return finalizeProtocolEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -71,7 +73,7 @@ export function normalizeProtocolEvent(args: {
   }
 
   if (sessionUpdate === 'agent_thought_chunk' || kind === 'thinking' || /thinking|reasoning/i.test(type)) {
-    return compactTimelineEvent(createTimelineEvent({
+    return finalizeProtocolEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -105,7 +107,7 @@ export function normalizeProtocolEvent(args: {
         source: payload['input'] ?? payload['arguments'] ?? payload['rawInput'] ?? args.raw['input'],
       });
     }
-    return compactTimelineEvent(createTimelineEvent({
+    return finalizeProtocolEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -146,7 +148,7 @@ export function normalizeProtocolEvent(args: {
         source: output,
       });
     }
-    return compactTimelineEvent(createTimelineEvent({
+    return finalizeProtocolEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -187,7 +189,7 @@ export function normalizeProtocolEvent(args: {
         source: output,
       });
     }
-    return compactTimelineEvent(createTimelineEvent({
+    return finalizeProtocolEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -207,7 +209,7 @@ export function normalizeProtocolEvent(args: {
   if (/command_output|stdout|stderr/i.test(type)) {
     const stream = text(payload['stream']) ?? text(args.raw['stream']);
     const output = text(payload['delta']) ?? text(payload['text']) ?? text(payload['content']) ?? '';
-    return compactTimelineEvent(createTimelineEvent({
+    return finalizeProtocolEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -224,7 +226,7 @@ export function normalizeProtocolEvent(args: {
   }
 
   if (sessionUpdate === 'plan') {
-    return compactTimelineEvent(createTimelineEvent({
+    return finalizeProtocolEvent(createTimelineEvent({
       messageId: args.messageId,
       runId: args.runId,
       agentId: args.agentId,
@@ -249,13 +251,13 @@ export function normalizeProtocolEvent(args: {
       raw: toKnownProviderRaw(args.raw, payload, type),
     });
 
-    return compactTimelineEvent({
+    return finalizeProtocolEvent({
       ...event,
       raw: args.raw,
     });
   }
 
-  return compactTimelineEvent(normalizeRawTimelineEvent({
+  return finalizeProtocolEvent(normalizeRawTimelineEvent({
     messageId: args.messageId,
     runId: args.runId,
     agentId: args.agentId,
@@ -330,7 +332,7 @@ function buildSubagentTimelineEvent(input: {
   name: string;
   source: unknown;
 }): AgentTimelineEvent {
-  return compactTimelineEvent(createTimelineEvent({
+  return finalizeProtocolEvent(createTimelineEvent({
     messageId: input.messageId,
     runId: input.runId,
     agentId: input.agentId,
@@ -347,6 +349,12 @@ function buildSubagentTimelineEvent(input: {
     }),
     raw: input.raw,
   }));
+}
+
+function finalizeProtocolEvent(event: AgentTimelineEvent): AgentTimelineEvent {
+  return jsonByteLength(event.payload) > MAX_PROTOCOL_EVENT_PAYLOAD_BYTES
+    ? compactTimelineEvent(event)
+    : event;
 }
 
 function buildSubagentPayload(input: {
@@ -446,4 +454,8 @@ function createUnifiedDiffPatch(path: string, oldText: string, newText: string):
 function countTextLines(value: string): number {
   if (!value) return 0;
   return value.split('\n').filter((line) => line.length > 0).length;
+}
+
+function jsonByteLength(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value));
 }

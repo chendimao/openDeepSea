@@ -1,3 +1,4 @@
+import type { ImageGenerationWsEvent } from './image-generation/types.js';
 import type { TerminalClientEvent, TerminalServerEvent } from './terminal/types.js';
 
 export interface Project {
@@ -1372,6 +1373,7 @@ export interface CliSessionSummary {
 }
 
 export type WsServerEvent =
+  | ImageGenerationWsEvent
   | { type: 'message:new'; roomId: string; message: Message }
   | { type: 'task_event:new'; roomId: string; event: TaskEvent }
   | { type: 'task:activated'; roomId: string; taskId: string }
@@ -1459,6 +1461,8 @@ export type WsClientEvent =
   | { type: 'unsubscribe'; roomId: string }
   | { type: 'active_sessions:subscribe' }
   | { type: 'active_sessions:unsubscribe' }
+  | { type: 'project:subscribe'; projectId: string }
+  | { type: 'project:unsubscribe'; projectId: string }
   | { type: 'session:subscribe'; sessionId: string }
   | { type: 'session:unsubscribe'; sessionId: string }
   | { type: 'session.workspace.request'; projectId: string; sessionId?: string }

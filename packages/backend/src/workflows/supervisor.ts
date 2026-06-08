@@ -55,6 +55,7 @@ export interface WorkflowSupervisorInput {
 
 export interface WorkflowSupervisorOptions {
   maxAttempts?: number;
+  skillContext?: string;
 }
 
 export class WorkflowSupervisorError extends Error {

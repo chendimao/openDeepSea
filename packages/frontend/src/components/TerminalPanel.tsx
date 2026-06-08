@@ -13,6 +13,7 @@ export interface TerminalPanelProps {
   profile: TerminalProfile;
   projectId?: string;
   title: string;
+  initialInput?: string;
   className?: string;
   onClose?: () => void;
   onRefreshRequested?: () => void;
@@ -51,6 +52,7 @@ export function TerminalPanel({
   profile,
   projectId,
   title,
+  initialInput,
   className,
   onClose,
   onRefreshRequested,
@@ -60,6 +62,7 @@ export function TerminalPanel({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const onRefreshRequestedRef = useRef(onRefreshRequested);
+  const initialInputSentRef = useRef(false);
   const lastSentSizeRef = useRef<TerminalSize | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [status, setStatus] = useState<TerminalRuntimeStatus>('initializing');
@@ -103,6 +106,7 @@ export function TerminalPanel({
     setMessage(null);
     setSessionId(null);
     sessionIdRef.current = null;
+    initialInputSentRef.current = false;
     lastSentSizeRef.current = null;
 
     const terminal = new XTerm({
@@ -222,6 +226,11 @@ export function TerminalPanel({
       const currentSize = getTerminalSize(terminal);
       lastSentSizeRef.current = currentSize;
       roomSocket.resizeTerminal(nextSessionId, currentSize.cols, currentSize.rows);
+      const command = initialInput?.trim();
+      if (command && !initialInputSentRef.current) {
+        initialInputSentRef.current = true;
+        roomSocket.sendTerminalInput(nextSessionId, command);
+      }
       terminal.focus();
     }).catch((error: unknown) => {
       if (disposed) return;
@@ -246,9 +255,10 @@ export function TerminalPanel({
       xtermRef.current = null;
       fitAddonRef.current = null;
       sessionIdRef.current = null;
+      initialInputSentRef.current = false;
       lastSentSizeRef.current = null;
     };
-  }, [profile, projectId]);
+  }, [profile, projectId, initialInput]);
 
   return (
     <section

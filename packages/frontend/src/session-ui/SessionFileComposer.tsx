@@ -3,6 +3,7 @@ import {
   BookOpen,
   FileText,
   Image as ImageIcon,
+  ImagePlus,
   Paperclip,
   SendHorizontal,
   X,
@@ -13,6 +14,7 @@ import { api } from '../lib/api';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { FilePickerDialog } from '../components/FilePickerDialog';
 import { MarkdownPreview } from '../components/MessageContent';
+import { ImageGenerationDialog } from '../image-generation/ImageGenerationDialog';
 import type { PlatformSkill, PlatformSkillRef, ProjectFile } from '../lib/types';
 import { formatFileSize } from '../lib/composerModel';
 import {
@@ -46,9 +48,11 @@ type ActiveSkillTrigger = {
 
 export function SessionFileComposer({
   projectId,
+  sessionId,
   onSendMessage,
 }: {
   projectId: string;
+  sessionId?: string;
   onSendMessage: (message: SessionComposerSubmit) => void;
 }): JSX.Element {
   const [content, setContent] = useState('');
@@ -56,6 +60,7 @@ export function SessionFileComposer({
   const [selectedLibraryFiles, setSelectedLibraryFiles] = useState<ProjectFile[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<PlatformSkill[]>([]);
   const [preview, setPreview] = useState<PreviewState>(null);
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cursorPosition, setCursorPosition] = useState(0);
@@ -221,156 +226,192 @@ export function SessionFileComposer({
   };
 
   return (
-    <form
-      className="deepsea-composer"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <input
-        ref={fileInputRef}
-        className="deepsea-composer__file-input"
-        type="file"
-        multiple
-        aria-label="上传文件"
-        disabled={isUploading}
-        onChange={(event) => {
-          addFiles(Array.from(event.currentTarget.files ?? []));
-          event.currentTarget.value = '';
+    <>
+      <form
+        className="deepsea-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
         }}
-      />
-      <div className="deepsea-composer__field">
-        {showSkillPicker && (
-          <SkillPicker
-            provider={plannerSkillsQuery.data?.provider ?? null}
-            loading={plannerSkillsQuery.isLoading}
-            error={plannerSkillsQuery.isError ? '读取 planner skills 失败' : null}
-            skills={skillSuggestions}
-            selectedIndex={selectedSkillIndex}
-            onSelect={insertSkill}
-          />
-        )}
-        {selectedSkills.length > 0 && (
-          <SkillChipStrip
-            skills={selectedSkills}
-            disabled={isUploading}
-            onRemove={(skill) => setSelectedSkills((current) => current.filter((item) => platformSkillKey(item) !== platformSkillKey(skill)))}
-          />
-        )}
-        {attachments.length > 0 && (
-          <AttachmentStrip
-            attachments={attachments}
-            isUploading={isUploading}
-            onPreview={setPreview}
-            onRemove={removeAttachment}
-          />
-        )}
-        {selectedLibraryFiles.length > 0 && (
-          <LibraryFileStrip
-            files={selectedLibraryFiles}
-            isUploading={isUploading}
-            onRemove={removeLibraryFile}
-          />
-        )}
-        <textarea
-          ref={textareaRef}
-          className="deepsea-composer__textarea"
-          data-session-composer-textarea="true"
-          value={content}
-          rows={2}
-          aria-label="命令输入"
+      >
+        <input
+          ref={fileInputRef}
+          className="deepsea-composer__file-input"
+          type="file"
+          multiple
+          aria-label="上传文件"
           disabled={isUploading}
-          placeholder="输入消息，粘贴文件会上传到项目文件库"
           onChange={(event) => {
-            setContent(event.currentTarget.value);
-            setCursorPosition(event.currentTarget.selectionStart);
-          }}
-          onClick={updateCursorFromTextarea}
-          onSelect={updateCursorFromTextarea}
-          onKeyUp={updateCursorFromTextarea}
-          onPaste={(event) => {
-            const files = filesFromClipboard(event.clipboardData);
-            if (files.length === 0) return;
-            event.preventDefault();
-            addFiles(files);
-          }}
-          onKeyDown={(event) => {
-            if (showSkillPicker) {
-              if (event.key === 'ArrowDown') {
-                event.preventDefault();
-                if (skillSuggestions.length > 0) {
-                  setSelectedSkillIndex((index) => Math.min(skillSuggestions.length - 1, index + 1));
-                }
-                return;
-              }
-              if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                if (skillSuggestions.length > 0) {
-                  setSelectedSkillIndex((index) => Math.max(0, index - 1));
-                }
-                return;
-              }
-              if ((event.key === 'Enter' || event.key === 'Tab') && skillSuggestions[selectedSkillIndex]) {
-                event.preventDefault();
-                insertSkill(skillSuggestions[selectedSkillIndex]);
-                return;
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                if (rawActiveSkillTriggerKey) setDismissedSkillTriggerKey(rawActiveSkillTriggerKey);
-                return;
-              }
-            }
-            if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            void submit();
+            addFiles(Array.from(event.currentTarget.files ?? []));
+            event.currentTarget.value = '';
           }}
         />
-        <div className="deepsea-composer__tools">
-          <span className="deepsea-composer__dollar" aria-hidden="true">$</span>
-          <AlertTriangle aria-hidden="true" />
-          <span className="deepsea-composer__upload-hint">
-            {isUploading ? '上传中...' : '粘贴文件会上传到项目文件库'}
-          </span>
-          <div className="deepsea-composer__file-actions">
-            <button
-              type="button"
-              className="deepsea-composer__icon-button"
-              aria-label="上传文件"
-              title="上传文件"
-              disabled={isUploading || attachments.length >= MAX_SESSION_ATTACHMENTS}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Paperclip aria-hidden="true" />
-            </button>
-            <FilePickerDialog
-              projectId={projectId}
-              sourceType={null}
-              selectedFileIds={selectedLibraryFiles.map((file) => file.id)}
-              title="选择知识库文件"
-              description="从项目知识库选择上传文件或智能体文档附加到消息。"
-              onSelect={addLibraryFiles}
-            >
+        <div className="deepsea-composer__field">
+          {showSkillPicker && (
+            <SkillPicker
+              provider={plannerSkillsQuery.data?.provider ?? null}
+              loading={plannerSkillsQuery.isLoading}
+              error={plannerSkillsQuery.isError ? '读取 planner skills 失败' : null}
+              skills={skillSuggestions}
+              selectedIndex={selectedSkillIndex}
+              onSelect={insertSkill}
+            />
+          )}
+          {selectedSkills.length > 0 && (
+            <SkillChipStrip
+              skills={selectedSkills}
+              disabled={isUploading}
+              onRemove={(skill) => setSelectedSkills((current) => current.filter((item) => platformSkillKey(item) !== platformSkillKey(skill)))}
+            />
+          )}
+          {attachments.length > 0 && (
+            <AttachmentStrip
+              attachments={attachments}
+              isUploading={isUploading}
+              onPreview={setPreview}
+              onRemove={removeAttachment}
+            />
+          )}
+          {selectedLibraryFiles.length > 0 && (
+            <LibraryFileStrip
+              files={selectedLibraryFiles}
+              isUploading={isUploading}
+              onRemove={removeLibraryFile}
+            />
+          )}
+          <textarea
+            ref={textareaRef}
+            className="deepsea-composer__textarea"
+            data-session-composer-textarea="true"
+            value={content}
+            rows={2}
+            aria-label="命令输入"
+            disabled={isUploading}
+            placeholder="输入消息，粘贴文件会上传到项目文件库"
+            onChange={(event) => {
+              setContent(event.currentTarget.value);
+              setCursorPosition(event.currentTarget.selectionStart);
+            }}
+            onClick={updateCursorFromTextarea}
+            onSelect={updateCursorFromTextarea}
+            onKeyUp={updateCursorFromTextarea}
+            onPaste={(event) => {
+              const files = filesFromClipboard(event.clipboardData);
+              if (files.length === 0) return;
+              const pastedText = event.clipboardData.getData('text/plain');
+              event.preventDefault();
+              if (pastedText) {
+                const textarea = event.currentTarget;
+                const selectionStart = textarea.selectionStart ?? textarea.value.length;
+                const selectionEnd = textarea.selectionEnd ?? selectionStart;
+                const nextContent = insertTextAtSelection(textarea.value, pastedText, selectionStart, selectionEnd);
+                const nextCaret = selectionStart + pastedText.length;
+                setContent(nextContent);
+                setCursorPosition(nextCaret);
+                queueMicrotask(() => {
+                  textarea.selectionStart = nextCaret;
+                  textarea.selectionEnd = nextCaret;
+                });
+              }
+              addFiles(files);
+            }}
+            onKeyDown={(event) => {
+              if (showSkillPicker) {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  if (skillSuggestions.length > 0) {
+                    setSelectedSkillIndex((index) => Math.min(skillSuggestions.length - 1, index + 1));
+                  }
+                  return;
+                }
+                if (event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  if (skillSuggestions.length > 0) {
+                    setSelectedSkillIndex((index) => Math.max(0, index - 1));
+                  }
+                  return;
+                }
+                if ((event.key === 'Enter' || event.key === 'Tab') && skillSuggestions[selectedSkillIndex]) {
+                  event.preventDefault();
+                  insertSkill(skillSuggestions[selectedSkillIndex]);
+                  return;
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  if (rawActiveSkillTriggerKey) setDismissedSkillTriggerKey(rawActiveSkillTriggerKey);
+                  return;
+                }
+              }
+              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+              event.preventDefault();
+              void submit();
+            }}
+          />
+          <div className="deepsea-composer__tools">
+            <span className="deepsea-composer__dollar" aria-hidden="true">$</span>
+            <AlertTriangle aria-hidden="true" />
+            <span className="deepsea-composer__upload-hint">
+              {isUploading ? '上传中...' : '粘贴文件会上传到项目文件库'}
+            </span>
+            <div className="deepsea-composer__file-actions">
               <button
                 type="button"
                 className="deepsea-composer__icon-button"
-                aria-label="从知识库选择文件"
-                title="从知识库选择文件"
-                disabled={isUploading}
+                aria-label="上传文件"
+                title="上传文件"
+                disabled={isUploading || attachments.length >= MAX_SESSION_ATTACHMENTS}
+                onClick={() => fileInputRef.current?.click()}
               >
-                <BookOpen aria-hidden="true" />
+                <Paperclip aria-hidden="true" />
               </button>
-            </FilePickerDialog>
+              <FilePickerDialog
+                projectId={projectId}
+                sourceType={null}
+                selectedFileIds={selectedLibraryFiles.map((file) => file.id)}
+                title="选择知识库文件"
+                description="从项目知识库选择上传文件或智能体文档附加到消息。"
+                onSelect={addLibraryFiles}
+              >
+                <button
+                  type="button"
+                  className="deepsea-composer__icon-button"
+                  aria-label="从知识库选择文件"
+                  title="从知识库选择文件"
+                  disabled={isUploading}
+                >
+                  <BookOpen aria-hidden="true" />
+                </button>
+              </FilePickerDialog>
+              {sessionId && (
+                <button
+                  type="button"
+                  className="deepsea-composer-tool-button"
+                  aria-label="生成图片"
+                  title="生成图片"
+                  disabled={isUploading}
+                  onClick={() => setImageDialogOpen(true)}
+                >
+                  <ImagePlus aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <button type="submit" className="deepsea-send-button" aria-label="发送" disabled={!canSubmit}>
+              <SendHorizontal aria-hidden="true" />
+            </button>
           </div>
-          <button type="submit" className="deepsea-send-button" aria-label="发送" disabled={!canSubmit}>
-            <SendHorizontal aria-hidden="true" />
-          </button>
+          {error && <p className="deepsea-composer__error">{error}</p>}
         </div>
-        {error && <p className="deepsea-composer__error">{error}</p>}
-      </div>
-      <AttachmentPreviewDialog preview={preview} onPreviewChange={setPreview} />
-    </form>
+        <AttachmentPreviewDialog preview={preview} onPreviewChange={setPreview} />
+      </form>
+      {sessionId && (
+        <ImageGenerationDialog
+          projectId={projectId}
+          sessionId={sessionId}
+          open={imageDialogOpen}
+          onOpenChange={setImageDialogOpen}
+        />
+      )}
+    </>
   );
 }
 
@@ -718,4 +759,10 @@ function compareSkillSuggestion(left: PlatformSkill, right: PlatformSkill, needl
     if (leftStartsWith !== rightStartsWith) return leftStartsWith ? -1 : 1;
   }
   return left.name.localeCompare(right.name);
+}
+
+function insertTextAtSelection(value: string, text: string, selectionStart: number, selectionEnd: number): string {
+  const start = Math.max(0, Math.min(selectionStart, value.length));
+  const end = Math.max(start, Math.min(selectionEnd, value.length));
+  return `${value.slice(0, start)}${text}${value.slice(end)}`;
 }

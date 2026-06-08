@@ -10,11 +10,19 @@ const { projectRepo } = await import('./repos/projects.js');
 const { sessionRepo, sessionRunRepo, sessionAgentEventRepo } = await import('./repos/sessions.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const { sessionTokenUsageRepo } = await import('./repos/session-token-usage.js');
-const { runSessionAgent, setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
+const {
+  runSessionAgent,
+  setSessionRuntimeAdapterForTest,
+  setSessionRuntimeGenerateImageToolDepsForTest,
+} = await import('./session-runtime.js');
 const { wsHub } = await import('./ws-hub.js');
+const { imageGenerationJobRepo } = await import('./image-generation/jobs.js');
+const { imageProviderProfileRepo } = await import('./image-generation/provider-profiles.js');
+const { createImageGenerationService } = await import('./image-generation/service.js');
 
 afterEach(() => {
   setSessionRuntimeAdapterForTest(undefined);
+  setSessionRuntimeGenerateImageToolDepsForTest(undefined);
 });
 
 test('runSessionAgent writes run, stream output and evidence', async () => {
@@ -672,4 +680,268 @@ test('runSessionAgent forwards imagePaths to session adapter', async () => {
   });
 
   assert.deepEqual(seen, [['/tmp/screen.png']]);
+});
+
+test('runSessionAgent omits project tools in read-only mode', async () => {
+  const project = projectRepo.create({
+    name: 'runtime read only tool project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-readonly-tool-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Readonly Tool',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  let observedToolCount: number | null = null;
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async (args) => {
+      observedToolCount = args.tools?.length ?? 0;
+      return { exitCode: 0, sessionId: 'read-only-tool-acp', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({ sessionId: session.id, prompt: '只读分析', provider: 'codex' });
+
+  assert.equal(run.status, 'completed');
+  assert.equal(observedToolCount, 0);
+});
+
+test('runSessionAgent exposes generate_image tool bound to session project scope', async () => {
+  type RuntimeTool = {
+    name: string;
+    description: string;
+    input_schema: Record<string, unknown>;
+    execute: (input: Record<string, unknown>) => Promise<unknown>;
+  };
+
+  const project = projectRepo.create({
+    name: 'runtime image tool project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-image-tool-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Image Tool',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const profile = imageProviderProfileRepo.create(project.id, {
+    name: 'Runtime Images',
+    base_url: 'https://example.com/v1',
+    api_key: 'runtime-tool-secret',
+    model: 'gpt-image-2',
+  });
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async (request) => {
+      assert.equal(request.profileId, profile.id);
+      return {
+        images: [
+          {
+            data: Buffer.from(`png:${request.prompt}`),
+            mimeType: 'image/png',
+          },
+        ],
+      };
+    },
+  });
+  let capturedToolResult: unknown;
+
+  setSessionRuntimeGenerateImageToolDepsForTest({ service });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async (args) => {
+      const tools = ((args as { tools?: RuntimeTool[] }).tools ?? []);
+      const tool = tools.find((item) => item.name === 'generate_image');
+      assert.ok(tool);
+      const serializedSchema = JSON.stringify(tool.input_schema);
+      assert.match(tool.description, /Generate text-to-image/);
+      assert.equal(serializedSchema.includes('api_key'), false);
+      assert.equal(serializedSchema.includes('base_url'), false);
+
+      capturedToolResult = await tool.execute({
+        project_id: 'malicious-project',
+        session_id: 'malicious-session',
+        prompt: 'bound apple',
+        workflow: 'generate',
+        provider_profile_id: null,
+      });
+
+      return { exitCode: 0, sessionId: 'image-tool-acp', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    prompt: '生成图片',
+    provider: 'codex',
+    permissionMode: 'workspace-write',
+  });
+  const toolResult = capturedToolResult as { job_id: string; status: string; outputs: unknown[] } | undefined;
+  assert.ok(toolResult);
+  assert.equal(run.status, 'completed');
+  assert.equal(toolResult.status, 'completed');
+  assert.equal(toolResult.outputs.length, 1);
+  const job = imageGenerationJobRepo.get(toolResult.job_id);
+  assert.equal(job?.project_id, project.id);
+  assert.equal(job?.session_id, session.id);
+  assert.equal(JSON.stringify(toolResult).includes('runtime-tool-secret'), false);
+  const event = sessionEvidenceRepo.listBySession(session.id)
+    .find((item) => item.title === '图片生成结果');
+  assert.equal(event?.event_type, 'tool_result');
+  assert.equal(event?.source_run_id, run.id);
+  assert.deepEqual(event?.payload.outputs, toolResult.outputs);
+});
+
+test('runSessionAgent executes generate_image bridge markers from adapters that do not call tools', async () => {
+  const project = projectRepo.create({
+    name: 'runtime image bridge project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-image-bridge-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Image Bridge',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const profile = imageProviderProfileRepo.create(project.id, {
+    name: 'Runtime Bridge Images',
+    base_url: 'https://example.com/v1',
+    api_key: 'runtime-bridge-secret',
+    model: 'gpt-image-2',
+  });
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async (request) => {
+      assert.equal(request.profileId, profile.id);
+      assert.equal(request.prompt, 'bridge pear');
+      return {
+        images: [
+          {
+            data: Buffer.from(`png:${request.prompt}`),
+            mimeType: 'image/png',
+          },
+        ],
+      };
+    },
+  });
+
+  setSessionRuntimeGenerateImageToolDepsForTest({ service });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt, tools, onChunk }) => {
+      assert.equal(tools?.some((tool) => tool.name === 'generate_image'), true);
+      assert.match(prompt, /opendeepsea-tool-call/);
+      assert.doesNotMatch(prompt, /runtime-bridge-secret/);
+      onChunk({
+        stream: 'stdout',
+        channel: 'answer',
+        text: [
+          '准备生成图片。',
+          '<opendeepsea-tool-call name="generate_image">',
+          '{"prompt":"bridge pear","workflow":"generate","count":1,"provider_profile_id":null}',
+          '</opendeepsea-tool-call>',
+        ].join('\n'),
+      });
+      return { exitCode: 0, sessionId: 'image-bridge-acp', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    prompt: '生成一张梨子的图片',
+    provider: 'codex',
+    permissionMode: 'workspace-write',
+  });
+  const event = sessionEvidenceRepo.listBySession(session.id)
+    .find((item) => item.title === '图片生成结果');
+  const payload = event?.payload as { job_id?: string; outputs?: unknown[] } | undefined;
+  assert.equal(run.status, 'completed');
+  assert.doesNotMatch(sessionRunRepo.get(run.id)?.stdout ?? '', /opendeepsea-tool-call/);
+  assert.equal(event?.event_type, 'tool_result');
+  assert.equal(event?.source_run_id, run.id);
+  assert.ok(payload?.job_id);
+  assert.equal(payload.outputs?.length, 1);
+  const job = imageGenerationJobRepo.get(payload.job_id);
+  assert.equal(job?.project_id, project.id);
+  assert.equal(job?.session_id, session.id);
+  assert.equal(JSON.stringify(event).includes('runtime-bridge-secret'), false);
+});
+
+test('runSessionAgent hides and executes split generate_image bridge markers', async () => {
+  const project = projectRepo.create({
+    name: 'runtime split image bridge project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-image-bridge-split-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Split Image Bridge',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const profile = imageProviderProfileRepo.create(project.id, {
+    name: 'Runtime Split Bridge Images',
+    base_url: 'https://example.com/v1',
+    api_key: 'runtime-split-bridge-secret',
+    model: 'gpt-image-2',
+  });
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async (request) => {
+      assert.equal(request.profileId, profile.id);
+      assert.equal(request.prompt, 'split peach');
+      return {
+        images: [
+          {
+            data: Buffer.from(`png:${request.prompt}`),
+            mimeType: 'image/png',
+          },
+        ],
+      };
+    },
+  });
+
+  setSessionRuntimeGenerateImageToolDepsForTest({ service });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk }) => {
+      onChunk({ stream: 'stdout', channel: 'answer', text: '准备生成图片。\n<opend' });
+      onChunk({
+        stream: 'stdout',
+        channel: 'answer',
+        text: [
+          'eepsea-tool-call name="generate_image">',
+          '{"prompt":"split peach","workflow":"generate","count":1,"provider_profile_id":null}',
+        ].join('\n'),
+      });
+      onChunk({ stream: 'stdout', channel: 'answer', text: '\n</opendeepsea-tool-call>\n图片生成请求已提交。' });
+      return { exitCode: 0, sessionId: 'image-split-bridge-acp', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    prompt: '生成一张桃子的图片',
+    provider: 'codex',
+    permissionMode: 'workspace-write',
+  });
+  const event = sessionEvidenceRepo.listBySession(session.id)
+    .find((item) => item.title === '图片生成结果');
+  const runRecord = sessionRunRepo.get(run.id);
+
+  assert.equal(run.status, 'completed');
+  assert.ok(event);
+  assert.equal(event.source_run_id, run.id);
+  assert.doesNotMatch(runRecord?.stdout ?? '', /opend|opendeepsea-tool-call|generate_image/);
+  assert.match(runRecord?.stdout ?? '', /准备生成图片/);
+  assert.match(runRecord?.stdout ?? '', /图片生成请求已提交/);
 });

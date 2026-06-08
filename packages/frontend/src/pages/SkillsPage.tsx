@@ -32,6 +32,8 @@ import type { LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
 import { TerminalPanel } from '../components/TerminalPanel';
 import type {
+  OnlineSkill,
+  OnlineSkillView,
   PlatformSkill,
   PlatformSkillAggregate,
   PlatformSkillInstallMode,
@@ -70,12 +72,15 @@ type SkillVisual = {
 };
 
 type SkillRecord = {
+  online: OnlineSkill;
   aggregate: PlatformSkillAggregate;
   visual: SkillVisual;
   installed: boolean;
   primaryProvider: PlatformSkillProvider;
   primarySkill: PlatformSkill | null;
 };
+
+const ONLINE_PAGE_SIZE = 30;
 
 const FALLBACK_SKILLS: PlatformSkillAggregate[] = [
   createFallbackAggregate({
@@ -121,7 +126,7 @@ const FALLBACK_METRICS = {
   categories: { system: 12, data: 18, dev: 0, design: 0, automation: 0 } satisfies Record<Exclude<CategoryFilter, 'all'>, number>,
 };
 
-const SIDEBAR_PROVIDERS: PlatformSkillProvider[] = ['claudecode', 'codex'];
+const SIDEBAR_PROVIDERS: PlatformSkillProvider[] = PROVIDERS;
 
 const VISUAL_LIBRARY: Record<string, SkillVisual> = {
   'file-system': {
@@ -250,9 +255,12 @@ export function SkillsPage(): JSX.Element {
   const [statusFilter, setStatusFilter] = useState<MarketStatusFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
-  const [installedOnly, setInstalledOnly] = useState(true);
-  const [selectedSkillName, setSelectedSkillName] = useState<string | null>('file-system');
+  const [installedOnly, setInstalledOnly] = useState(false);
+  const [onlineView, setOnlineView] = useState<OnlineSkillView>('all-time');
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [initialInstallCommand, setInitialInstallCommand] = useState<string | undefined>(undefined);
   const [installerOpen, setInstallerOpen] = useState(false);
+  const trimmedSearchQuery = searchQuery.trim();
 
   const summariesQuery = useQuery({
     queryKey: ['platform-skills', 'platforms'],
@@ -262,15 +270,33 @@ export function SkillsPage(): JSX.Element {
     queryKey: ['platform-skills', 'aggregate'],
     queryFn: api.listPlatformSkillAggregates,
   });
+  const onlineSkillsQuery = useQuery({
+    queryKey: ['online-skills', trimmedSearchQuery ? 'search' : 'list', onlineView, trimmedSearchQuery, 0, ONLINE_PAGE_SIZE],
+    queryFn: () => trimmedSearchQuery
+      ? api.searchOnlineSkills({ q: trimmedSearchQuery, page: 0, limit: ONLINE_PAGE_SIZE })
+      : api.listOnlineSkills({ view: onlineView, page: 0, limit: ONLINE_PAGE_SIZE }),
+    retry: false,
+  });
   const refreshPlatformSkills = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['platform-skills', 'platforms'] });
     void queryClient.invalidateQueries({ queryKey: ['platform-skills', 'aggregate'] });
+    void queryClient.invalidateQueries({ queryKey: ['online-skills'] });
   }, [queryClient]);
 
   const summaries = summariesQuery.data ?? [];
-  const sourceAggregates = aggregatesQuery.data?.length ? aggregatesQuery.data : FALLBACK_SKILLS;
-  const usingFallbackData = !aggregatesQuery.data?.length;
-  const records = useMemo(() => sourceAggregates.map(toSkillRecord), [sourceAggregates]);
+  const aggregateByName = useMemo(() => {
+    const byName = new Map<string, PlatformSkillAggregate>();
+    for (const aggregate of aggregatesQuery.data ?? []) {
+      byName.set(aggregate.name, aggregate);
+      byName.set(aggregate.displayName, aggregate);
+    }
+    return byName;
+  }, [aggregatesQuery.data]);
+  const onlineSkills = onlineSkillsQuery.data?.skills ?? [];
+  const records = useMemo(
+    () => onlineSkills.map((skill) => toSkillRecord(skill, aggregateByName.get(skill.slug) ?? aggregateByName.get(skill.name))),
+    [aggregateByName, onlineSkills],
+  );
   const filteredRecords = useMemo(() => filterSkillRecords(records, {
     searchQuery,
     statusFilter,
@@ -279,17 +305,24 @@ export function SkillsPage(): JSX.Element {
     installedOnly,
   }), [categoryFilter, installedOnly, records, searchQuery, sourceFilter, statusFilter]);
   const selectedRecord = useMemo(
-    () => filteredRecords.find((item) => item.aggregate.name === selectedSkillName)
-      ?? records.find((item) => item.aggregate.name === selectedSkillName)
+    () => filteredRecords.find((item) => item.online.id === selectedSkillId)
+      ?? records.find((item) => item.online.id === selectedSkillId)
       ?? filteredRecords[0]
       ?? records[0]
       ?? null,
-    [filteredRecords, records, selectedSkillName],
+    [filteredRecords, records, selectedSkillId],
   );
   const liveMetrics = useMemo(() => getMetrics(records), [records]);
-  const metrics = usingFallbackData ? FALLBACK_METRICS : liveMetrics;
-  const loading = aggregatesQuery.isLoading && records.length === 0;
-  const error = aggregatesQuery.error as Error | null;
+  const metrics = useMemo(() => ({
+    ...liveMetrics,
+    total: onlineSkillsQuery.data?.total ?? liveMetrics.total,
+  }), [liveMetrics, onlineSkillsQuery.data?.total]);
+  const loading = onlineSkillsQuery.isLoading && records.length === 0;
+  const error = onlineSkillsQuery.error as Error | null;
+  const openInstallerForRecord = useCallback((record?: SkillRecord | null) => {
+    setInitialInstallCommand(record?.online.installCommand || undefined);
+    setInstallerOpen(true);
+  }, []);
 
   return (
     <div className="skills-command-center">
@@ -303,35 +336,39 @@ export function SkillsPage(): JSX.Element {
           onStatusChange={setStatusFilter}
           onSourceChange={setSourceFilter}
           onCategoryChange={setCategoryFilter}
-          onOpenInstaller={() => setInstallerOpen(true)}
+          onOpenInstaller={() => openInstallerForRecord(selectedRecord)}
         />
         <SkillsMarketPanel
           records={filteredRecords}
           totalCount={metrics.total}
           loading={loading}
           error={error}
-          selectedName={selectedRecord?.aggregate.name ?? null}
+          selectedId={selectedRecord?.online.id ?? null}
           searchQuery={searchQuery}
           sourceFilter={sourceFilter}
           categoryFilter={categoryFilter}
           statusFilter={statusFilter}
           installedOnly={installedOnly}
+          onlineView={onlineView}
           onSearchChange={setSearchQuery}
           onSourceChange={setSourceFilter}
           onCategoryChange={setCategoryFilter}
           onStatusChange={setStatusFilter}
           onInstalledOnlyChange={setInstalledOnly}
-          onSelect={setSelectedSkillName}
+          onOnlineViewChange={setOnlineView}
+          onSelect={setSelectedSkillId}
+          onInstall={openInstallerForRecord}
         />
         <SkillDetailsPanel
           record={selectedRecord}
           summaries={summaries}
-          onOpenInstaller={() => setInstallerOpen(true)}
+          onOpenInstaller={() => openInstallerForRecord(selectedRecord)}
         />
       </main>
       <SkillsStatusBar metrics={metrics} />
       {installerOpen ? (
         <SkillsInstallerDrawer
+          initialInstallCommand={initialInstallCommand}
           onClose={() => setInstallerOpen(false)}
           onRefreshRequested={refreshPlatformSkills}
         />
@@ -425,35 +462,41 @@ function SkillsMarketPanel({
   totalCount,
   loading,
   error,
-  selectedName,
+  selectedId,
   searchQuery,
   sourceFilter,
   categoryFilter,
   statusFilter,
   installedOnly,
+  onlineView,
   onSearchChange,
   onSourceChange,
   onCategoryChange,
   onStatusChange,
   onInstalledOnlyChange,
+  onOnlineViewChange,
   onSelect,
+  onInstall,
 }: {
   records: SkillRecord[];
   totalCount: number;
   loading: boolean;
   error: Error | null;
-  selectedName: string | null;
+  selectedId: string | null;
   searchQuery: string;
   sourceFilter: SourceFilter;
   categoryFilter: CategoryFilter;
   statusFilter: MarketStatusFilter;
   installedOnly: boolean;
+  onlineView: OnlineSkillView;
   onSearchChange: (value: string) => void;
   onSourceChange: (value: SourceFilter) => void;
   onCategoryChange: (value: CategoryFilter) => void;
   onStatusChange: (value: MarketStatusFilter) => void;
   onInstalledOnlyChange: (value: boolean) => void;
-  onSelect: (name: string) => void;
+  onOnlineViewChange: (value: OnlineSkillView) => void;
+  onSelect: (id: string) => void;
+  onInstall: (record: SkillRecord) => void;
 }): JSX.Element {
   return (
     <section className="skills-market-panel">
@@ -477,6 +520,11 @@ function SkillsMarketPanel({
           </DenseSelect>
           <DenseSelect label="所有状态" value={statusFilter} onChange={(value) => onStatusChange(value as MarketStatusFilter)}>
             {Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </DenseSelect>
+          <DenseSelect label="在线榜单" value={onlineView} onChange={(value) => onOnlineViewChange(value as OnlineSkillView)}>
+            <option value="all-time">总榜</option>
+            <option value="trending">趋势</option>
+            <option value="hot">热门</option>
           </DenseSelect>
         </div>
         <div className="skills-filterbar__right">
@@ -502,17 +550,18 @@ function SkillsMarketPanel({
         </div>
       </div>
       <div className="skills-list skills-scrollbar">
-        {loading ? <StateBox icon={Loader2} label="正在扫描本机 skills" spinning /> : null}
+        {loading ? <StateBox icon={Loader2} label="正在加载在线 skills" spinning /> : null}
         {error && records.length === 0 ? <StateBox icon={AlertTriangle} label={error.message} /> : null}
         {!loading && !error && records.length === 0 ? <StateBox icon={Search} label="没有找到匹配的 Skills" /> : null}
         {records.length > 0 ? (
           <div className="skills-list__inner">
             {records.map((record) => (
               <SkillListItem
-                key={record.aggregate.name}
+                key={record.online.id}
                 record={record}
-                selected={selectedName === record.aggregate.name}
-                onSelect={() => onSelect(record.aggregate.name)}
+                selected={selectedId === record.online.id}
+                onSelect={() => onSelect(record.online.id)}
+                onInstall={() => onInstall(record)}
               />
             ))}
           </div>
@@ -523,15 +572,36 @@ function SkillsMarketPanel({
   );
 }
 
-function SkillListItem({ record, selected, onSelect }: { record: SkillRecord; selected: boolean; onSelect: () => void }): JSX.Element {
+function SkillListItem({
+  record,
+  selected,
+  onSelect,
+  onInstall,
+}: {
+  record: SkillRecord;
+  selected: boolean;
+  onSelect: () => void;
+  onInstall: () => void;
+}): JSX.Element {
   const Icon = record.visual.icon;
   return (
-    <button type="button" className={cn('skills-list-item', selected && 'is-selected')} onClick={onSelect}>
+    <div
+      className={cn('skills-list-item', selected && 'is-selected')}
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+    >
       <span className="skills-list-item__icon" style={{ backgroundColor: record.visual.accent }}><Icon aria-hidden="true" /></span>
       <span className="skills-list-item__body">
         <span className="skills-list-item__titleline">
           <b>{record.aggregate.displayName}</b>
-          <span className="skills-mono">v{record.primarySkill?.version ?? pseudoVersion(record.aggregate.name)}</span>
+          <span className="skills-mono">{record.online.sourceType ?? 'online'}</span>
           {record.visual.official ? <span className="skills-official"><CheckCircle2 aria-hidden="true" />官方</span> : null}
         </span>
         <span className="skills-list-item__description">{record.aggregate.description ?? record.aggregate.name}</span>
@@ -550,11 +620,21 @@ function SkillListItem({ record, selected, onSelect }: { record: SkillRecord; se
         {record.visual.actionState === 'installed' ? (
           <span className="skills-installed-button"><Check aria-hidden="true" />已安装</span>
         ) : (
-          <span className="skills-primary-button">安装</span>
+          <button
+            type="button"
+            className="skills-primary-button"
+            disabled={!record.online.installCommand}
+            onClick={(event) => {
+              event.stopPropagation();
+              onInstall();
+            }}
+          >
+            终端安装
+          </button>
         )}
         <MoreVertical aria-hidden="true" />
       </span>
-    </button>
+    </div>
   );
 }
 
@@ -572,7 +652,7 @@ function SkillDetailsPanel({
   }
 
   const Icon = record.visual.icon;
-  const version = record.primarySkill?.version ?? pseudoVersion(record.aggregate.name);
+  const sourceLabel = record.online.upstreamSource ?? record.online.sourceType ?? 'skills.sh';
 
   return (
     <aside className="skills-detail-panel">
@@ -581,10 +661,10 @@ function SkillDetailsPanel({
         <div className="skills-detail-title">
           <span className="skills-detail-icon" style={{ backgroundColor: record.visual.accent }}><Icon aria-hidden="true" /></span>
           <span>
-            <span className="skills-detail-name"><b>{record.aggregate.displayName}</b><small>v{version}</small></span>
+            <span className="skills-detail-name"><b>{record.aggregate.displayName}</b><small>{record.online.slug}</small></span>
             <span className="skills-detail-provider">
               <ProviderGlyph provider={record.primaryProvider} />
-              <span>{providerLabel(record.primaryProvider)}</span>
+              <span>{sourceLabel}</span>
               <i>•</i>
               <span>{record.visual.author}</span>
             </span>
@@ -599,8 +679,8 @@ function SkillDetailsPanel({
         <p>{record.visual.detailDescription ?? record.aggregate.description ?? record.aggregate.name}</p>
         <div className="skills-detail-tags">
           <span>{record.visual.categoryLabel}</span>
-          <span>{CATEGORY_LABELS[record.visual.category]}</span>
-          <span>{record.aggregate.valid ? '有效' : '异常'}</span>
+          <span>{record.online.sourceType ?? 'online'}</span>
+          <span>{record.online.auditStatus === 'available' ? '已审计' : '待审计'}</span>
         </div>
       </div>
       <div className="skills-detail-tabs">
@@ -641,7 +721,7 @@ function SkillDetailsPanel({
       </div>
       <div className="skills-detail-footer">
         <div>
-          <button type="button" onClick={onOpenInstaller}>终端安装</button>
+          <button type="button" disabled={!record.online.installCommand} onClick={onOpenInstaller}>终端安装</button>
           <button type="button" aria-label="删除 Skill"><Trash2 aria-hidden="true" /></button>
         </div>
         <p><CircleHelp aria-hidden="true" />遇到问题？<a href="#">查看文档 <ExternalLink aria-hidden="true" /></a></p>
@@ -651,9 +731,11 @@ function SkillDetailsPanel({
 }
 
 function SkillsInstallerDrawer({
+  initialInstallCommand,
   onClose,
   onRefreshRequested,
 }: {
+  initialInstallCommand?: string;
   onClose: () => void;
   onRefreshRequested: () => void;
 }): JSX.Element {
@@ -663,6 +745,7 @@ function SkillsInstallerDrawer({
         <TerminalPanel
           profile="skills_install"
           title="Skills 安装终端"
+          initialInput={initialInstallCommand}
           className="skills-terminal-panel"
           onClose={onClose}
           onRefreshRequested={onRefreshRequested}
@@ -683,9 +766,10 @@ function SkillsStatusBar({ metrics }: { metrics: ReturnType<typeof getMetrics> }
         <span>错误率: <b>{metrics.issues > 0 ? '0.3%' : '0.0%'}</b></span>
       </div>
       <div>
-        <span>API TOKEN 使用:</span>
-        <span className="skills-token-meter"><i style={{ width: '34%' }} /></span>
-        <b>34.2k / 100k</b>
+        <span>在线源:</span>
+        <b>skills.sh</b>
+        <span className="skills-token-meter"><i style={{ width: `${Math.min(100, Math.max(6, metrics.installed))}%` }} /></span>
+        <b>{metrics.installed} 已安装</b>
         <button type="button"><Download aria-hidden="true" />导出</button>
       </div>
     </footer>
@@ -789,12 +873,12 @@ function SkillsPagination({ shown, total }: { shown: number; total: number }): J
       <span>共 <b className="skills-mono">{Math.max(total, shown)}</b> 个 Skills</span>
       <div>
         <button type="button" disabled aria-label="上一页"><ChevronLeft aria-hidden="true" /></button>
-        {[1, 2, 3, 4, 5].map((page) => <button type="button" key={page} className={page === 1 ? 'is-active' : ''}>{page}</button>)}
-        <span>...</span>
-        <button type="button">13</button>
-        <button type="button" aria-label="下一页"><ChevronRight aria-hidden="true" /></button>
+        <button type="button" className="is-active">1</button>
+        <button type="button" disabled aria-label="下一页"><ChevronRight aria-hidden="true" /></button>
       </div>
-      <select aria-label="每页数量" value="10" onChange={() => undefined}><option value="10">10 条/页</option></select>
+      <select aria-label="每页数量" value={String(ONLINE_PAGE_SIZE)} onChange={() => undefined}>
+        <option value={String(ONLINE_PAGE_SIZE)}>{ONLINE_PAGE_SIZE} 条/页</option>
+      </select>
     </div>
   );
 }
@@ -817,8 +901,10 @@ function filterSkillRecords(records: SkillRecord[], filters: {
         record.aggregate.name,
         record.aggregate.displayName,
         record.aggregate.description ?? '',
+        record.online.upstreamSource ?? '',
         record.visual.author,
         record.visual.categoryLabel,
+        ...record.online.tags,
         ...record.aggregate.providers.map(providerLabel),
       ].join('\n').toLowerCase();
       if (!haystack.includes(query)) return false;
@@ -834,42 +920,55 @@ function filterSkillRecords(records: SkillRecord[], filters: {
   });
 }
 
-function toSkillRecord(aggregate: PlatformSkillAggregate): SkillRecord {
+function toSkillRecord(online: OnlineSkill, localAggregate?: PlatformSkillAggregate): SkillRecord {
+  const aggregate = localAggregate ?? createAggregateFromOnlineSkill(online);
   const primaryProvider = pickPrimaryProvider(aggregate);
   const primarySkill = aggregate.installations[primaryProvider] ?? null;
-  const visual = getSkillVisual(aggregate, primaryProvider);
+  const visual = getSkillVisual(online, aggregate, primaryProvider);
   return {
+    online,
     aggregate,
     visual,
-    installed: aggregate.providers.length > 0,
+    installed: online.installedProviders.length > 0 || aggregate.providers.length > 0,
     primaryProvider,
     primarySkill,
   };
 }
 
-function getSkillVisual(aggregate: PlatformSkillAggregate, provider: PlatformSkillProvider): SkillVisual {
+function getSkillVisual(online: OnlineSkill, aggregate: PlatformSkillAggregate, provider: PlatformSkillProvider): SkillVisual {
   const direct = VISUAL_LIBRARY[aggregate.name] ?? VISUAL_LIBRARY[aggregate.displayName];
-  if (direct) return direct;
+  if (direct) {
+    return {
+      ...direct,
+      author: online.author ?? direct.author,
+      downloads: formatInstallCount(online.installs) ?? direct.downloads,
+      updatedAt: online.updatedAt ? formatDate(online.updatedAt) : direct.updatedAt,
+      actionState: online.installedProviders.length > 0 ? 'installed' : 'install',
+      tags: online.tags.length ? online.tags : direct.tags,
+      environments: online.installedProviders.map(providerLabel),
+    };
+  }
   const category = inferCategory(aggregate);
   return {
     category,
     categoryLabel: CATEGORY_LABELS[category],
-    tags: [CATEGORY_LABELS[category]],
+    tags: online.tags.length ? online.tags : [CATEGORY_LABELS[category]],
     accent: providerColor(provider),
     icon: inferIcon(category),
-    author: provider === 'codex' ? 'OpenAI' : provider === 'claudecode' ? 'Anthropic' : 'OpenCode Team',
-    downloads: `${Math.max(2, aggregate.displayName.length % 9)}.${aggregate.name.length % 10}k`,
-    rating: `4.${Math.min(9, 3 + aggregate.name.length % 6)}`,
-    updatedAt: aggregate.lastModifiedAt ? formatDate(aggregate.lastModifiedAt) : '2025-06-01',
-    official: aggregate.providers.length > 1 || aggregate.valid,
+    author: online.author ?? online.upstreamSource ?? 'skills.sh',
+    downloads: formatInstallCount(online.installs) ?? '0',
+    rating: online.stars === null ? '—' : String(online.stars),
+    updatedAt: online.updatedAt ? formatDate(online.updatedAt) : '未知',
+    official: online.sourceType === 'github' || online.upstreamSource?.includes('vercel') || aggregate.providers.length > 1,
     favorite: aggregate.name.length % 3 === 0,
-    owned: aggregate.name.includes('superpowers') || aggregate.name.includes('design'),
-    updateAvailable: !aggregate.valid || aggregate.name.length % 5 === 0,
-    actionState: aggregate.providers.length > 0 ? 'installed' : 'install',
+    owned: Boolean(online.upstreamSource?.includes('opendeepsea') || aggregate.name.includes('superpowers') || aggregate.name.includes('design')),
+    updateAvailable: false,
+    actionState: online.installedProviders.length > 0 ? 'installed' : 'install',
+    detailDescription: online.description ?? undefined,
     features: buildFeatureList(aggregate, category),
     permissions: buildPermissionList(category),
-    dependencies: aggregate.installModes[provider] === 'symlink' ? ['本地软链接', '原始 skill 目录'] : ['无外部依赖项'],
-    environments: aggregate.providers.map(providerLabel),
+    dependencies: aggregate.installModes[provider] === 'symlink' ? ['本地软链接', '原始 skill 目录'] : ['通过 skills CLI 安装'],
+    environments: online.installedProviders.map(providerLabel),
   };
 }
 
@@ -901,6 +1000,22 @@ function getSourceCounts(metrics: ReturnType<typeof getMetrics>, summaries: Plat
     acc[provider] = summaries.find((summary) => summary.provider === provider)?.installedCount ?? metrics.providers[provider];
     return acc;
   }, {} as Record<PlatformSkillProvider, number>);
+}
+
+function createAggregateFromOnlineSkill(skill: OnlineSkill): PlatformSkillAggregate {
+  const providers = skill.installedProviders;
+  return {
+    name: skill.slug || skill.name,
+    displayName: skill.displayName,
+    description: skill.description,
+    providers,
+    missingProviders: PROVIDERS.filter((provider) => !providers.includes(provider)),
+    installations: {},
+    installModes: {},
+    valid: true,
+    issues: [],
+    lastModifiedAt: skill.updatedAt,
+  };
 }
 
 function createFallbackAggregate(input: {
@@ -1008,6 +1123,13 @@ function buildPermissionList(category: Exclude<CategoryFilter, 'all'>): string[]
 
 function formatDate(value: number): string {
   return new Date(value).toISOString().slice(0, 10);
+}
+
+function formatInstallCount(value: number | null): string | null {
+  if (value === null) return null;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
 }
 
 function pseudoVersion(name: string): string {

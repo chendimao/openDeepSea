@@ -46,6 +46,26 @@ export interface KnowledgeSourceListItem extends KnowledgeSource {
   latest_extraction_at: number | null;
 }
 
+export interface KnowledgeSourceDetail extends KnowledgeSourceListItem {
+  project_name: string | null;
+  room_name: string | null;
+  reference_count: number;
+  original_file: {
+    id: string;
+    name: string;
+    url: string;
+    storage_path: string;
+    source_type: string;
+  } | null;
+  capabilities: {
+    preview: boolean;
+    download: boolean;
+    reprocess: boolean;
+    disable: boolean;
+    delete: boolean;
+  };
+}
+
 export interface KnowledgeExtraction {
   id: string;
   source_id: string;
@@ -53,6 +73,12 @@ export interface KnowledgeExtraction {
   markdown: string | null;
   metadata: Record<string, unknown>;
   created_at: number;
+}
+
+export interface KnowledgeExtractionResponse extends KnowledgeExtraction {
+  truncated: boolean;
+  returned_char_count: number;
+  original_char_count: number;
 }
 
 export interface KnowledgeChunk {
@@ -96,4 +122,13 @@ export interface KnowledgeSearchResult {
   score: number;
   metadata: Record<string, unknown>;
   citation: KnowledgeCitation;
+}
+
+export interface KnowledgeUsageRefInput {
+  project_id: string;
+  source_id: string;
+  chunk_id?: string | null;
+  ref_type: 'manual_reference' | 'session_message';
+  ref_id: string;
+  metadata?: Record<string, unknown>;
 }

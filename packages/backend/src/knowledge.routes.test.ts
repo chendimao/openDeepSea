@@ -1,0 +1,297 @@
+import assert from 'node:assert/strict';
+import { constants, mkdtempSync, writeFileSync } from 'node:fs';
+import { access } from 'node:fs/promises';
+import { IncomingMessage, ServerResponse, type OutgoingHttpHeaders } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Duplex } from 'node:stream';
+import test from 'node:test';
+
+process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-knowledge-routes-')), 'test.db');
+process.env.OPENCLAW_ACP_MESSAGE_INTENT_CLASSIFIER = '0';
+process.env.OPENCLAW_ACP_TASK_ANALYZER = '0';
+
+const { projectRepo } = await import('./repos/projects.js');
+const { roomRepo } = await import('./repos/rooms.js');
+const { fileRepo } = await import('./repos/files.js');
+const { knowledgeRepo } = await import('./repos/knowledge.js');
+const { router } = await import('./routes.js');
+const express = (await import('express')).default;
+
+const app = express();
+app.use(express.json());
+app.use('/api', router);
+
+class InMemorySocket extends Duplex {
+  _read(): void {}
+
+  _write(_chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    callback();
+  }
+}
+
+function toResponseHeaders(headers: OutgoingHttpHeaders): Headers {
+  const responseHeaders = new Headers();
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) responseHeaders.append(name, item);
+    } else {
+      responseHeaders.set(name, String(value));
+    }
+  }
+  return responseHeaders;
+}
+
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
+  const serializedRequest = new Request(`http://127.0.0.1${path}`, init);
+  const body = init.body === undefined || init.body === null
+    ? null
+    : Buffer.from(await serializedRequest.arrayBuffer());
+  const socket = new InMemorySocket();
+  const req = new IncomingMessage(socket as unknown as import('node:net').Socket);
+  req.method = init.method ?? 'GET';
+  req.url = path;
+  req.headers = Object.fromEntries(serializedRequest.headers);
+  req.httpVersion = '1.1';
+  req.httpVersionMajor = 1;
+  req.httpVersionMinor = 1;
+  if (body) {
+    req.headers['content-length'] = String(body.byteLength);
+  }
+
+  const res = new ServerResponse(req);
+  res.assignSocket(socket as unknown as import('node:net').Socket);
+
+  const chunks: Buffer[] = [];
+  res.write = ((chunk: unknown, encoding?: BufferEncoding | ((error?: Error | null) => void), callback?: (error?: Error | null) => void) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') encoding();
+    if (callback) callback();
+    return true;
+  }) as typeof res.write;
+  res.end = ((chunk?: unknown, encoding?: BufferEncoding | (() => void), callback?: () => void) => {
+    if (chunk) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), typeof encoding === 'string' ? encoding : undefined));
+    }
+    if (typeof encoding === 'function') encoding();
+    if (callback) callback();
+    res.emit('finish');
+    res.emit('close');
+    return res;
+  }) as typeof res.end;
+
+  const responsePromise = new Promise<Response>((resolve, reject) => {
+    res.once('finish', () => {
+      const responseBody = res.statusCode === 204 || res.statusCode === 304 ? null : Buffer.concat(chunks);
+      resolve(new Response(responseBody, {
+        status: res.statusCode,
+        headers: toResponseHeaders(res.getHeaders()),
+      }));
+    });
+    (app as unknown as { handle: (...args: unknown[]) => void }).handle(req, res, (error: unknown) => {
+      if (error) reject(error);
+    });
+  });
+
+  if (body) {
+    req.push(body);
+  }
+  req.push(null);
+  req.complete = true;
+
+  return responsePromise;
+}
+
+function createProject(name: string) {
+  return projectRepo.create({
+    name,
+    path: mkdtempSync(join(tmpdir(), `opendeepsea-knowledge-route-${name}-`)),
+  });
+}
+
+function createTextFile(projectId: string, content = '部署 A12 浮标需要验收。') {
+  const root = mkdtempSync(join(tmpdir(), 'opendeepsea-knowledge-route-file-'));
+  const storagePath = join(root, 'notes.md');
+  writeFileSync(storagePath, content);
+  return fileRepo.create({
+    project_id: projectId,
+    original_name: 'notes.md',
+    stored_name: 'notes.md',
+    mime_type: 'text/markdown',
+    size: Buffer.byteLength(content),
+    url: `/uploads/files/${projectId}/notes.md`,
+    storage_path: storagePath,
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+}
+
+test('knowledge source detail exposes latest extraction and original file capability', async () => {
+  const project = createProject('detail');
+  const file = createTextFile(project.id, '# 验收计划\n部署 A12 浮标。');
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'uploaded_file',
+    source_id: file.id,
+    title: file.original_name,
+    mime_type: file.mime_type,
+    size: file.size,
+    status: 'ready',
+    summary: '部署 A12 浮标。',
+    tags: ['验收'],
+    metadata: { file_id: file.id },
+  });
+  const extraction = knowledgeRepo.saveExtraction({
+    source_id: source.id,
+    plain_text: '# 验收计划\n部署 A12 浮标。',
+    markdown: '# 验收计划\n部署 A12 浮标。',
+  });
+  knowledgeRepo.replaceChunks(source.id, [{
+    chunk_type: 'body',
+    content: '部署 A12 浮标。',
+    project_id: project.id,
+  }]);
+
+  const detailRes = await request(`/api/knowledge/sources/${source.id}`);
+  assert.equal(detailRes.status, 200);
+  const detail = await detailRes.json() as {
+    id: string;
+    latest_extraction_id: string | null;
+    capabilities: { preview: boolean; download: boolean; reprocess: boolean };
+    original_file: { id: string; url: string } | null;
+  };
+  assert.equal(detail.id, source.id);
+  assert.equal(detail.latest_extraction_id, extraction.id);
+  assert.equal(detail.capabilities.preview, true);
+  assert.equal(detail.capabilities.download, true);
+  assert.equal(detail.capabilities.reprocess, true);
+  assert.equal(detail.original_file?.id, file.id);
+
+  const extractionRes = await request(`/api/knowledge/sources/${source.id}/extraction`);
+  assert.equal(extractionRes.status, 200);
+  const extractionBody = await extractionRes.json() as { plain_text: string; markdown: string | null; truncated: boolean };
+  assert.match(extractionBody.plain_text, /A12/);
+  assert.equal(extractionBody.markdown, '# 验收计划\n部署 A12 浮标。');
+  assert.equal(extractionBody.truncated, false);
+});
+
+test('knowledge chunks and search routes expose citations', async () => {
+  const project = createProject('search');
+  const room = roomRepo.create({ project_id: project.id, name: 'Search Room' });
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    room_id: room.id,
+    source_type: 'uploaded_file',
+    source_id: 'file-search-1',
+    title: 'search-notes.md',
+    status: 'ready',
+  });
+  const chunks = knowledgeRepo.replaceChunks(source.id, [
+    { chunk_type: 'body', content: 'A12 验收需要截图。', project_id: project.id, room_id: room.id, enabled: 1 },
+    { chunk_type: 'body', content: 'A12 隐藏内容。', project_id: project.id, room_id: room.id, enabled: 0 },
+  ]);
+
+  const chunksRes = await request(`/api/knowledge/sources/${source.id}/chunks?enabled=1`);
+  assert.equal(chunksRes.status, 200);
+  const chunkBody = await chunksRes.json() as Array<{ id: string; enabled: 0 | 1; content: string }>;
+  assert.deepEqual(chunkBody.map((chunk) => [chunk.id, chunk.enabled]), [[chunks[0]!.id, 1]]);
+
+  const searchRes = await request(`/api/knowledge/search?projectId=${project.id}&q=A12&roomId=${room.id}`);
+  assert.equal(searchRes.status, 200);
+  const results = await searchRes.json() as Array<{
+    chunk_id: string;
+    citation: { source_id: string; chunk_id: string; room_id: string | null };
+  }>;
+  assert.equal(results.length, 1);
+  assert.equal(results[0]?.chunk_id, chunks[0]?.id);
+  assert.equal(results[0]?.citation.source_id, source.id);
+  assert.equal(results[0]?.citation.room_id, room.id);
+});
+
+test('knowledge list query matches source summary and tags', async () => {
+  const project = createProject('list-query');
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'manual',
+    source_id: 'manual-list-query-1',
+    title: '治理记录',
+    status: 'ready',
+    summary: 'Phase 1 知识库验收说明。',
+    tags: ['验收', '资料管理'],
+  });
+
+  const summaryRes = await request(`/api/knowledge?projectId=${project.id}&q=${encodeURIComponent('知识库验收')}`);
+  assert.equal(summaryRes.status, 200);
+  const summaryMatches = await summaryRes.json() as Array<{ id: string }>;
+  assert.deepEqual(summaryMatches.map((item) => item.id), [source.id]);
+
+  const tagRes = await request(`/api/knowledge?projectId=${project.id}&q=${encodeURIComponent('资料管理')}`);
+  assert.equal(tagRes.status, 200);
+  const tagMatches = await tagRes.json() as Array<{ id: string }>;
+  assert.deepEqual(tagMatches.map((item) => item.id), [source.id]);
+});
+
+test('knowledge action routes reprocess, disable, restore, and delete source records', async () => {
+  const project = createProject('actions');
+  const file = createTextFile(project.id, '重处理前内容。');
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'uploaded_file',
+    source_id: file.id,
+    title: file.original_name,
+    status: 'failed',
+    error: 'previous failure',
+    metadata: { file_id: file.id },
+  });
+
+  const reprocessRes = await request(`/api/knowledge/sources/${source.id}/reprocess`, { method: 'POST' });
+  assert.equal(reprocessRes.status, 200);
+  const ready = await reprocessRes.json() as { id: string; status: string; error: string | null };
+  assert.equal(ready.id, source.id);
+  assert.equal(ready.status, 'ready');
+  assert.equal(ready.error, null);
+
+  const disableRes = await request(`/api/knowledge/sources/${source.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'disabled' }),
+  });
+  assert.equal(disableRes.status, 200);
+  assert.equal((await disableRes.json() as { status: string }).status, 'disabled');
+  assert.equal(knowledgeRepo.search({ projectId: project.id, query: '重处理前内容' }).length, 0);
+
+  const restoreRes = await request(`/api/knowledge/sources/${source.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'ready' }),
+  });
+  assert.equal(restoreRes.status, 200);
+  assert.equal((await restoreRes.json() as { status: string }).status, 'ready');
+  assert.equal(knowledgeRepo.search({ projectId: project.id, query: '重处理前内容' }).length, 1);
+
+  const disableChunksRes = await request(`/api/knowledge/sources/${source.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: 0 }),
+  });
+  assert.equal(disableChunksRes.status, 200);
+  assert.equal((await disableChunksRes.json() as { status: string }).status, 'disabled');
+  assert.equal(knowledgeRepo.search({ projectId: project.id, query: '重处理前内容' }).length, 0);
+
+  const restoreChunksRes = await request(`/api/knowledge/sources/${source.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: 1 }),
+  });
+  assert.equal(restoreChunksRes.status, 200);
+  assert.equal((await restoreChunksRes.json() as { status: string }).status, 'ready');
+  assert.equal(knowledgeRepo.search({ projectId: project.id, query: '重处理前内容' }).length, 1);
+
+  const deleteRes = await request(`/api/knowledge/sources/${source.id}`, { method: 'DELETE' });
+  assert.equal(deleteRes.status, 204);
+  assert.equal(knowledgeRepo.getSource(source.id), undefined);
+  await access(file.storage_path, constants.F_OK);
+});
