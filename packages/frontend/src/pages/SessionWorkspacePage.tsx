@@ -17,6 +17,7 @@ import type {
   PlatformSkillRef,
   Session,
   SessionCompaction,
+  SessionMessage,
   SessionMode,
   SessionWorkspacePayload,
 } from '../lib/types';
@@ -423,6 +424,23 @@ export function SessionWorkspacePage({
     },
   });
 
+  const saveKnowledgeMutation = useMutation({
+    mutationFn: (message: SessionMessage) => {
+      if (!workspacePayload) throw new Error('Session 未加载');
+      return api.createSessionKnowledgeNote(workspacePayload.activeSession.session.id, { messageId: message.id });
+    },
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['knowledge-sources'] });
+      void queryClient.invalidateQueries({ queryKey: ['knowledge-search'] });
+      toast.success(result.deduplicated ? '知识笔记已存在' : '已保存为知识笔记', {
+        description: result.source.title,
+      });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '保存知识笔记失败');
+    },
+  });
+
   if (!activeProjectId) {
     return (
       <div className="session-shell session-shell--empty">
@@ -516,6 +534,8 @@ export function SessionWorkspacePage({
       onRemoveProject={(project) => setRemoveProject(project)}
       onReorderProjects={(input) => reorderProjectsMutation.mutate(input)}
       onToggleSessionPin={(session) => toggleSessionPinMutation.mutate(session)}
+      onSaveKnowledge={(message) => saveKnowledgeMutation.mutate(message)}
+      savingKnowledgeMessageId={saveKnowledgeMutation.isPending ? saveKnowledgeMutation.variables?.id ?? null : null}
     />
     <Dialog
       open={renameProject !== null}

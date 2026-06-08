@@ -233,6 +233,20 @@ export const knowledgeRepo = {
     return row ? mapSource(row) : undefined;
   },
 
+  getSourceByExternalId(input: {
+    projectId: string;
+    sourceType: KnowledgeSourceType;
+    sourceId: string;
+  }): KnowledgeSource | undefined {
+    const row = db
+      .prepare(
+        `SELECT * FROM knowledge_sources
+         WHERE project_id = ? AND source_type = ? AND source_id = ?`,
+      )
+      .get(input.projectId, input.sourceType, input.sourceId) as KnowledgeSourceRow | undefined;
+    return row ? mapSource(row) : undefined;
+  },
+
   listSources(filters: SourceListFilters): KnowledgeSourceListItem[] {
     const clauses = ['knowledge_sources.project_id = @projectId'];
     const params: Record<string, string | number> = { projectId: filters.projectId };

@@ -1,3 +1,5 @@
+import type { KnowledgeSource } from './knowledgeDisplay';
+
 export type AcpBackend = 'claudecode' | 'opencode' | 'codex';
 export type AcpPermissionMode = 'bypass' | 'workspace-write' | 'read-only';
 export type AgentRuntimeBackend = 'acp' | 'model' | 'none';
@@ -572,6 +574,25 @@ export interface SessionMessage {
   status: SessionMessageStatus;
   metadata: string | null;
   created_at: number;
+}
+
+export interface CreateSessionKnowledgeNoteInput {
+  messageId?: string;
+  title?: string;
+  content?: string;
+}
+
+export interface SessionKnowledgeNoteMetadata {
+  decisions: string[];
+  constraints: string[];
+  risks: string[];
+  learnings: string[];
+}
+
+export interface SessionKnowledgeNoteResponse {
+  source: KnowledgeSource;
+  deduplicated: boolean;
+  metadata: SessionKnowledgeNoteMetadata;
 }
 
 export interface SessionRun {

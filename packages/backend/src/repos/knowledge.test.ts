@@ -148,6 +148,38 @@ test('knowledgeRepo ensureSource upserts by project_id, source_type, and source_
   assert.equal(knowledgeRepo.listSources({ projectId: project.id }).length, 1);
 });
 
+test('knowledgeRepo gets a source by project_id, source_type, and source_id', () => {
+  const project = createProject('external-source');
+  const otherProject = createProject('external-source-other');
+
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'session_note',
+    source_id: 'session_note:session-1:hash',
+    title: 'Session note',
+  });
+  knowledgeRepo.ensureSource({
+    project_id: otherProject.id,
+    source_type: 'session_note',
+    source_id: 'session_note:session-1:hash',
+    title: 'Other project note',
+  });
+
+  assert.equal(
+    knowledgeRepo.getSourceByExternalId({
+      projectId: project.id,
+      sourceType: 'session_note',
+      sourceId: 'session_note:session-1:hash',
+    })?.id,
+    source.id,
+  );
+  assert.equal(knowledgeRepo.getSourceByExternalId({
+    projectId: project.id,
+    sourceType: 'session_note',
+    sourceId: 'missing',
+  }), undefined);
+});
+
 test('knowledgeRepo search defaults to ready enabled chunks and supports filters', () => {
   const project = createProject('search-filters');
   const otherProject = createProject('search-filters-other');

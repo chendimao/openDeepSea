@@ -27,6 +27,7 @@ import {
   type SafeGlobalChatSettingsSummary,
 } from './global-chat.js';
 import { ingestProjectFileIntoKnowledge } from './knowledge-ingestion.js';
+import { createSessionKnowledgeNote } from './knowledge-notes.js';
 import { validateLocalAccess } from './local-access.js';
 import { agentRunLinkRepo } from './repos/agent-run-links.js';
 import { agentRunRepo } from './repos/agent-runs.js';
@@ -999,6 +1000,14 @@ const knowledgePatchSchema = z.object({
     value.summary !== undefined,
   { message: 'at least one knowledge source field is required' },
 );
+const sessionKnowledgeNoteSchema = z.object({
+  messageId: z.string().trim().min(1).optional(),
+  title: z.string().trim().min(1).optional(),
+  content: z.string().optional(),
+}).refine(
+  (value) => Boolean(value.messageId || value.content?.trim()),
+  { message: 'messageId or content is required' },
+);
 
 router.get('/knowledge', (req, res) => {
   const parsed = knowledgeListQuerySchema.safeParse(req.query);
@@ -1095,6 +1104,24 @@ router.delete('/knowledge/sources/:sourceId', (req, res) => {
   const deleted = knowledgeService.deleteSource(parsed.data.sourceId);
   if (!deleted) return res.status(404).json({ error: 'knowledge source not found' });
   res.status(204).end();
+});
+
+router.post('/sessions/:sessionId/knowledge-notes', (req, res) => {
+  const parsed = sessionKnowledgeNoteSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const result = createSessionKnowledgeNote({
+      sessionId: req.params.sessionId,
+      messageId: parsed.data.messageId,
+      title: parsed.data.title,
+      content: parsed.data.content,
+    });
+    res.status(result.deduplicated ? 200 : 201).json(result);
+  } catch (error) {
+    const message = (error as Error).message;
+    if (message === 'session not found') return res.status(404).json({ error: message });
+    res.status(400).json({ error: message });
+  }
 });
 
 router.get('/files', (req, res) => {

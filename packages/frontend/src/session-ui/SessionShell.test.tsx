@@ -156,6 +156,32 @@ test('SessionShell renders uploaded attachments on transcript messages', () => {
   assert.match(html, /2\.0 KB/);
 });
 
+test('SessionShell renders save knowledge action on transcript messages', () => {
+  const payload = createPayload();
+  const savedMessageIds: string[] = [];
+
+  const html = renderSessionShell(payload, {
+    onSaveKnowledge: (message) => savedMessageIds.push(message.id),
+  });
+
+  assert.match(html, /保存为知识/);
+  assert.match(html, /class="deepsea-message__action"/);
+  assert.doesNotMatch(html, /保存中/);
+  assert.deepEqual(savedMessageIds, []);
+});
+
+test('SessionShell disables the save knowledge action while saving a message', () => {
+  const payload = createPayload();
+
+  const html = renderSessionShell(payload, {
+    onSaveKnowledge: () => undefined,
+    savingKnowledgeMessageId: 'message-1',
+  });
+
+  assert.match(html, /保存中/);
+  assert.match(html, /disabled=""/);
+});
+
 test('SessionShell renders generated image tool result evidence as transcript artifacts', () => {
   const payload = createPayload();
   payload.evidence.push({
@@ -1647,7 +1673,11 @@ function createProjectUsedAgentsPayload(agent: { agent_id: string; name: string 
 
 function renderSessionShell(
   payload: SessionWorkspacePayload,
-  options: { projectAgents?: ProjectUsedAgentsPayload } = {},
+  options: {
+    projectAgents?: ProjectUsedAgentsPayload;
+    onSaveKnowledge?: (message: SessionWorkspacePayload['activeSession']['messages'][number]) => void;
+    savingKnowledgeMessageId?: string | null;
+  } = {},
 ): string {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (options.projectAgents) {
@@ -1656,7 +1686,13 @@ function renderSessionShell(
   return renderToStaticMarkup(
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
-        <SessionShellView payload={payload} onSendMessage={() => undefined} onCommand={() => undefined} />
+        <SessionShellView
+          payload={payload}
+          onSendMessage={() => undefined}
+          onCommand={() => undefined}
+          onSaveKnowledge={options.onSaveKnowledge}
+          savingKnowledgeMessageId={options.savingKnowledgeMessageId}
+        />
       </QueryClientProvider>
     </I18nProvider>,
   );

@@ -1,5 +1,6 @@
 import {
   Brain,
+  BookOpen,
   CheckCircle2,
   ChevronDown,
   Edit3,
@@ -74,6 +75,8 @@ export function SessionShellView({
   onRemoveProject,
   onReorderProjects,
   onToggleSessionPin,
+  onSaveKnowledge,
+  savingKnowledgeMessageId,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -87,6 +90,8 @@ export function SessionShellView({
   onRemoveProject?: (project: ProjectSwitcherProject) => void;
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
+  onSaveKnowledge?: (message: SessionMessage) => void;
+  savingKnowledgeMessageId?: string | null;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
   const forkTarget = payload.historyRecords[0]?.id;
@@ -116,6 +121,8 @@ export function SessionShellView({
               evidence={payload.evidence}
               projectId={payload.project.id}
               onSendMessage={onSendMessage}
+              onSaveKnowledge={onSaveKnowledge}
+              savingKnowledgeMessageId={savingKnowledgeMessageId}
             />
           )}
         />
@@ -743,11 +750,15 @@ function TranscriptCanvas({
   evidence,
   projectId,
   onSendMessage,
+  onSaveKnowledge,
+  savingKnowledgeMessageId,
 }: {
   detail: SessionDetail;
   evidence: SessionEvidenceEvent[];
   projectId: string;
   onSendMessage: (message: SessionComposerSubmit) => void;
+  onSaveKnowledge?: (message: SessionMessage) => void;
+  savingKnowledgeMessageId?: string | null;
 }): JSX.Element {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
@@ -841,6 +852,8 @@ function TranscriptCanvas({
                 message={item.message}
                 displayMode={displayMode}
                 onDisplayModeChange={(mode) => setDisplayModeFor(item.key, mode)}
+                onSaveKnowledge={onSaveKnowledge}
+                savingKnowledgeMessageId={savingKnowledgeMessageId}
               />
             );
           }
@@ -966,14 +979,20 @@ function TranscriptMessage({
   message,
   displayMode,
   onDisplayModeChange,
+  onSaveKnowledge,
+  savingKnowledgeMessageId,
 }: {
   projectId: string;
   message: SessionMessage;
   displayMode: SessionMessageDisplayMode;
   onDisplayModeChange: (mode: SessionMessageDisplayMode) => void;
+  onSaveKnowledge?: (message: SessionMessage) => void;
+  savingKnowledgeMessageId?: string | null;
 }): JSX.Element {
   const metadata = parseMessageMetadata(message.metadata);
   const imageJobId = metadata.image_generation_job_id;
+  const savingKnowledge = savingKnowledgeMessageId === message.id;
+  const canSaveKnowledge = Boolean(onSaveKnowledge && message.role !== 'system' && message.content.trim());
   return (
     <>
       <SessionMessageBubble
@@ -985,6 +1004,18 @@ function TranscriptMessage({
         attachments={metadata.attachments}
         displayMode={displayMode}
         onDisplayModeChange={onDisplayModeChange}
+        actions={canSaveKnowledge ? (
+          <button
+            type="button"
+            className="deepsea-message__action"
+            aria-label="保存消息为知识"
+            disabled={savingKnowledge}
+            onClick={() => onSaveKnowledge?.(message)}
+          >
+            <BookOpen aria-hidden="true" />
+            <span>{savingKnowledge ? '保存中' : '保存为知识'}</span>
+          </button>
+        ) : undefined}
       />
       {imageJobId && <ImageJobStatusCard projectId={projectId} jobId={imageJobId} />}
     </>

@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ActiveSessionSummary, SessionWorkspacePayload } from '../lib/types';
+import type { ActiveSessionSummary, SessionMessage, SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView } from './SessionShellView';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 
@@ -18,6 +18,8 @@ export function SessionShell({
   onRemoveProject,
   onReorderProjects,
   onToggleSessionPin,
+  onSaveKnowledge,
+  savingKnowledgeMessageId,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -31,6 +33,8 @@ export function SessionShell({
   onRemoveProject?: (project: SessionShellProject) => void;
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
+  onSaveKnowledge?: (message: SessionMessage) => void;
+  savingKnowledgeMessageId?: string | null;
 }): JSX.Element {
   return (
     <SessionShellView
@@ -46,6 +50,8 @@ export function SessionShell({
       onRemoveProject={onRemoveProject}
       onReorderProjects={onReorderProjects}
       onToggleSessionPin={onToggleSessionPin}
+      onSaveKnowledge={onSaveKnowledge}
+      savingKnowledgeMessageId={savingKnowledgeMessageId}
     />
   );
 }

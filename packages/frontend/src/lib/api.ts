@@ -18,6 +18,7 @@ import type {
   CollaborationDecision,
   CollaborationRunSummary,
   CreateTerminalSessionInput,
+  CreateSessionKnowledgeNoteInput,
   GlobalChatMessage,
   GlobalChatSendResponse,
   GlobalChatSession,
@@ -64,6 +65,7 @@ import type {
   ImageProviderProfileInput,
   Session,
   SessionDetail,
+  SessionKnowledgeNoteResponse,
   SessionMode,
   SessionPlannerPlatformSkillsResponse,
   SuperpowersBootstrapOwner,
@@ -642,6 +644,11 @@ export const api = {
       body: JSON.stringify(input),
     }),
   getSession: (sessionId: string) => request<SessionDetail>(`/sessions/${sessionId}`),
+  createSessionKnowledgeNote: (sessionId: string, input: CreateSessionKnowledgeNoteInput) =>
+    request<SessionKnowledgeNoteResponse>(`/sessions/${sessionId}/knowledge-notes`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   updateSession: (
     sessionId: string,
     input: Partial<Pick<

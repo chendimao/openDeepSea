@@ -243,6 +243,38 @@ test('knowledge search API builds FTS query URL', async () => {
   );
 });
 
+test('session knowledge note API sends message save payload', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; method: string; body: string | null }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      body: typeof init?.body === 'string' ? init.body : null,
+    });
+    return new Response(JSON.stringify({
+      source: { id: 'source-1', project_id: 'project-1', source_type: 'session_note', title: '知识笔记', status: 'ready' },
+      deduplicated: false,
+      metadata: { decisions: [], constraints: [], risks: [], learnings: [] },
+    }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    await api.createSessionKnowledgeNote('session-1', { messageId: 'message-1' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requests, [{
+    url: '/api/sessions/session-1/knowledge-notes',
+    method: 'POST',
+    body: JSON.stringify({ messageId: 'message-1' }),
+  }]);
+});
+
 test('knowledge chunks API builds filters', async () => {
   const requestedUrl = await captureApiRequest(
     () => api.listKnowledgeChunks('source/id 1', { enabled: 1, limit: 25, offset: 50 }),

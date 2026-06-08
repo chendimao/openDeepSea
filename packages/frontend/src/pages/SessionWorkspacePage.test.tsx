@@ -62,6 +62,15 @@ test('SessionWorkspacePage exposes override props for keep-alive host params', (
   assert.match(source, /if \(!navigationEnabled \|\| event\.key !== 'Escape'\) return/);
 });
 
+test('SessionWorkspacePage wires save knowledge note mutation to session messages', () => {
+  const source = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /api\.createSessionKnowledgeNote\(workspacePayload\.activeSession\.session\.id,\s*\{\s*messageId:\s*message\.id\s*\}\)/s);
+  assert.match(source, /queryClient\.invalidateQueries\(\{\s*queryKey:\s*\['knowledge-sources'\]\s*\}\)/s);
+  assert.match(source, /queryClient\.invalidateQueries\(\{\s*queryKey:\s*\['knowledge-search'\]\s*\}\)/s);
+  assert.match(source, /deduplicated\s*\?\s*'知识笔记已存在'\s*:\s*'已保存为知识笔记'/s);
+});
+
 test('root session route shows project onboarding when no projects exist', () => {
   const html = renderSessionWorkspace('/', '/', { projects: [] });
 

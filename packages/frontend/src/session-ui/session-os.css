@@ -1717,6 +1717,42 @@
   padding: 1px 6px;
   font-size: 8px;
 }
+.deepsea-message__action {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  border: 1px solid rgba(67, 70, 84, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  color: rgba(49, 55, 70, 0.82);
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+.deepsea-message__action:hover:not(:disabled) {
+  border-color: rgba(37, 99, 235, 0.26);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--deepsea-primary-bright);
+}
+.deepsea-message__action:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+.deepsea-message__action:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+.deepsea-message__action svg {
+  width: 12px;
+  height: 12px;
+}
+.deepsea-message__action + .deepsea-markdown-switch {
+  margin-left: 0;
+}
 .deepsea-markdown-switch {
   display: inline-flex;
   align-items: center;
