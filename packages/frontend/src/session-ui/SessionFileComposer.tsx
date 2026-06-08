@@ -11,7 +11,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { MarkdownPreview } from '../components/MessageContent';
-import type { PlatformSkill } from '../lib/types';
+import type { PlatformSkill, PlatformSkillRef } from '../lib/types';
 import {
   buildAttachmentPreviewKind,
   buildSessionComposerSubmitFromText,
@@ -50,6 +50,7 @@ export function SessionFileComposer({
 }): JSX.Element {
   const [content, setContent] = useState('');
   const [attachments, setAttachments] = useState<PendingSessionAttachment[]>([]);
+  const [selectedSkills, setSelectedSkills] = useState<PlatformSkill[]>([]);
   const [preview, setPreview] = useState<PreviewState>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +76,11 @@ export function SessionFileComposer({
     }
   }, []);
 
-  const canSubmit = !isUploading && (content.trim().length > 0 || attachments.length > 0);
+  useEffect(() => {
+    setSelectedSkills([]);
+  }, [projectId]);
+
+  const canSubmit = !isUploading && (content.trim().length > 0 || attachments.length > 0 || selectedSkills.length > 0);
   const platformSkills = plannerSkillsQuery.data?.skills ?? [];
   const rawActiveSkillTrigger = getActiveSkillTrigger(content, cursorPosition);
   const rawActiveSkillTriggerKey = rawActiveSkillTrigger ? formatSkillTriggerKey(rawActiveSkillTrigger) : null;
@@ -133,7 +138,12 @@ export function SessionFileComposer({
       const uploadedFiles = attachments.length > 0
         ? await api.uploadProjectFiles(projectId, attachments.map((attachment) => attachment.file))
         : [];
-      const message = buildSessionComposerSubmitFromText({ content, uploadedFiles, platformSkills });
+      const message = buildSessionComposerSubmitFromText({
+        content,
+        uploadedFiles,
+        platformSkills,
+        selectedPlatformSkillRefs: selectedSkills.map(toPlatformSkillRef),
+      });
       if (!message) return;
       onSendMessage(message);
       clearComposer();
@@ -149,6 +159,7 @@ export function SessionFileComposer({
       if (attachment.objectUrl) URL.revokeObjectURL(attachment.objectUrl);
     }
     setAttachments([]);
+    setSelectedSkills([]);
     setPreview(null);
     setContent('');
     textareaRef.current?.focus();
@@ -160,8 +171,13 @@ export function SessionFileComposer({
 
   const insertSkill = (skill: PlatformSkill) => {
     if (!activeSkillTrigger) return;
-    const nextContent = `${content.slice(0, activeSkillTrigger.start)}$${skill.name} ${content.slice(activeSkillTrigger.end)}`;
-    const nextCursor = activeSkillTrigger.start + skill.name.length + 2;
+    const nextContent = removeSkillTriggerText(content, activeSkillTrigger);
+    const nextCursor = Math.min(activeSkillTrigger.start, nextContent.length);
+    setSelectedSkills((current) => {
+      const key = platformSkillKey(skill);
+      if (current.some((item) => platformSkillKey(item) === key)) return current;
+      return [...current, skill];
+    });
     setContent(nextContent);
     setCursorPosition(nextCursor);
     setDismissedSkillTriggerKey(null);
@@ -188,6 +204,13 @@ export function SessionFileComposer({
             skills={skillSuggestions}
             selectedIndex={selectedSkillIndex}
             onSelect={insertSkill}
+          />
+        )}
+        {selectedSkills.length > 0 && (
+          <SkillChipStrip
+            skills={selectedSkills}
+            disabled={isUploading}
+            onRemove={(skill) => setSelectedSkills((current) => current.filter((item) => platformSkillKey(item) !== platformSkillKey(skill)))}
           />
         )}
         {attachments.length > 0 && (
@@ -285,6 +308,12 @@ function SkillPicker({
   selectedIndex: number;
   onSelect: (skill: PlatformSkill) => void;
 }): JSX.Element {
+  const selectedOptionRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    selectedOptionRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [selectedIndex, skills]);
+
   return (
     <div className="deepsea-skill-picker" role="listbox" aria-label="Planner backend skills">
       <div className="deepsea-skill-picker__header">
@@ -297,6 +326,7 @@ function SkillPicker({
       {!loading && !error && skills.map((skill, index) => (
         <button
           key={`${skill.provider}:${skill.name}`}
+          ref={index === selectedIndex ? selectedOptionRef : undefined}
           type="button"
           role="option"
           aria-selected={index === selectedIndex}
@@ -310,6 +340,41 @@ function SkillPicker({
           <span className="deepsea-skill-picker__name">${skill.name}</span>
           {skill.description && <span className="deepsea-skill-picker__description">{skill.description}</span>}
         </button>
+      ))}
+    </div>
+  );
+}
+
+function SkillChipStrip({
+  skills,
+  disabled,
+  onRemove,
+}: {
+  skills: PlatformSkill[];
+  disabled: boolean;
+  onRemove: (skill: PlatformSkill) => void;
+}): JSX.Element {
+  return (
+    <div className="deepsea-composer-skill-chips" role="list" aria-label="已选择 planner skills">
+      {skills.map((skill) => (
+        <span
+          key={platformSkillKey(skill)}
+          className="deepsea-composer-skill-chip"
+          role="listitem"
+          title={skill.description ?? skill.name}
+        >
+          <span className="deepsea-composer-skill-chip__sigil" aria-hidden="true">$</span>
+          <span className="deepsea-composer-skill-chip__name">{skill.name}</span>
+          <button
+            type="button"
+            aria-label={`移除 skill ${skill.name}`}
+            className="deepsea-composer-skill-chip__remove"
+            disabled={disabled}
+            onClick={() => onRemove(skill)}
+          >
+            <X aria-hidden="true" />
+          </button>
+        </span>
       ))}
     </div>
   );
@@ -475,6 +540,29 @@ function getActiveSkillTrigger(content: string, cursorPosition: number): ActiveS
 
 function formatSkillTriggerKey(trigger: ActiveSkillTrigger): string {
   return `${trigger.start}:${trigger.end}:${trigger.query}`;
+}
+
+function removeSkillTriggerText(content: string, trigger: ActiveSkillTrigger): string {
+  let before = content.slice(0, trigger.start);
+  let after = content.slice(trigger.end);
+  if (before.endsWith(' ') && after.startsWith(' ')) {
+    after = after.slice(1);
+  }
+  if (!before && after.startsWith(' ')) {
+    after = after.trimStart();
+  }
+  if (!after && before.endsWith(' ')) {
+    before = before.trimEnd();
+  }
+  return `${before}${after}`;
+}
+
+function platformSkillKey(skill: Pick<PlatformSkill, 'provider' | 'name'>): string {
+  return `${skill.provider}:${skill.name.toLowerCase()}`;
+}
+
+function toPlatformSkillRef(skill: PlatformSkill): PlatformSkillRef {
+  return { provider: skill.provider, name: skill.name };
 }
 
 function filterSkillSuggestions(skills: PlatformSkill[], query: string): PlatformSkill[] {

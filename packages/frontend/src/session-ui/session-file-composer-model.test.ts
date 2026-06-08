@@ -153,6 +153,44 @@ test('buildSessionComposerSubmitFromText preserves user formatting while removin
   });
 });
 
+test('buildSessionComposerSubmitFromText serializes selected platform skill chips', () => {
+  assert.deepEqual(buildSessionComposerSubmitFromText({
+    content: '   ',
+    selectedPlatformSkillRefs: [
+      { provider: 'codex', name: 'frontend-design' },
+      { provider: 'codex', name: 'FRONTEND-DESIGN' },
+      { provider: 'codex', name: 'playwright-cli' },
+    ],
+  }), {
+    content: '',
+    workspaceFileRefs: [],
+    libraryFileRefs: [],
+    platformSkillRefs: [
+      { provider: 'codex', name: 'frontend-design' },
+      { provider: 'codex', name: 'playwright-cli' },
+    ],
+  });
+});
+
+test('buildSessionComposerSubmitFromText merges selected platform skill chips with typed dollar tokens', () => {
+  assert.deepEqual(buildSessionComposerSubmitFromText({
+    content: '$frontend-design 调整输入框',
+    platformSkills: [
+      createPlatformSkill({ provider: 'codex', name: 'frontend-design', description: 'Frontend workflow.' }),
+      createPlatformSkill({ provider: 'codex', name: 'playwright-cli', description: 'Browser workflow.' }),
+    ],
+    selectedPlatformSkillRefs: [{ provider: 'codex', name: 'playwright-cli' }],
+  }), {
+    content: '调整输入框',
+    workspaceFileRefs: [],
+    libraryFileRefs: [],
+    platformSkillRefs: [
+      { provider: 'codex', name: 'playwright-cli' },
+      { provider: 'codex', name: 'frontend-design' },
+    ],
+  });
+});
+
 test('buildSessionComposerSubmitFromText allows attachment-only messages', () => {
   assert.deepEqual(buildSessionComposerSubmitFromText({
     content: '   ',

@@ -247,6 +247,13 @@ test('SessionShell keeps planner skill picker bounded with internal scrolling', 
   assert.match(sessionOsCss, /\.deepsea-skill-picker\s*\{[^}]*overscroll-behavior:\s*contain/s);
 });
 
+test('SessionShell styles selected planner skill chips separately from attachments', () => {
+  assert.match(sessionOsCss, /\.deepsea-composer-skill-chips\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(sessionOsCss, /\.deepsea-composer-skill-chip\s*\{[^}]*background:\s*rgba\(99,\s*102,\s*241,\s*0\.12\)/s);
+  assert.match(sessionOsCss, /\.deepsea-composer-skill-chip\s*\{[^}]*color:\s*rgb\(49,\s*46,\s*129\)/s);
+  assert.match(sessionOsCss, /\.deepsea-composer-skill-chip__name\s*\{[^}]*font-family:\s*var\(--deepsea-mono\)/s);
+});
+
 test('SessionShell includes project tree row pin and drag feedback styles', () => {
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*opacity:\s*0/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__actions\s*\{[^}]*position:\s*absolute/s);

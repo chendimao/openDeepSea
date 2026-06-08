@@ -139,6 +139,7 @@ export function buildSessionComposerSubmitFromText(input: {
   libraryFileRefs?: string[];
   uploadedFiles?: ProjectFile[];
   platformSkills?: PlatformSkill[];
+  selectedPlatformSkillRefs?: PlatformSkillRef[];
 }): SessionComposerSubmit | null {
   const platformSkillExtraction = extractPlatformSkillRefsFromText(input.content, input.platformSkills ?? []);
   const content = platformSkillExtraction.content.trim();
@@ -147,18 +148,22 @@ export function buildSessionComposerSubmitFromText(input: {
     ...(input.libraryFileRefs ?? []),
     ...collectProjectFileIds(input.uploadedFiles ?? []),
   ]);
+  const platformSkillRefs = dedupePlatformSkillRefs([
+    ...(input.selectedPlatformSkillRefs ?? []),
+    ...platformSkillExtraction.platformSkillRefs,
+  ]);
   if (
     !content &&
     workspaceFileRefs.length === 0 &&
     libraryFileRefs.length === 0 &&
-    platformSkillExtraction.platformSkillRefs.length === 0
+    platformSkillRefs.length === 0
   ) return null;
   return {
     content,
     workspaceFileRefs,
     libraryFileRefs,
-    ...(platformSkillExtraction.platformSkillRefs.length > 0
-      ? { platformSkillRefs: platformSkillExtraction.platformSkillRefs }
+    ...(platformSkillRefs.length > 0
+      ? { platformSkillRefs }
       : {}),
   };
 }
@@ -261,6 +266,21 @@ function dedupeStrings(values: string[]): string[] {
     if (!trimmed || seen.has(trimmed)) continue;
     seen.add(trimmed);
     result.push(trimmed);
+  }
+  return result;
+}
+
+function dedupePlatformSkillRefs(values: PlatformSkillRef[]): PlatformSkillRef[] {
+  const seen = new Set<string>();
+  const result: PlatformSkillRef[] = [];
+  for (const value of values) {
+    const provider = value.provider;
+    const name = value.name.trim();
+    if (!name) continue;
+    const key = `${provider}:${name.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ provider, name });
   }
   return result;
 }
