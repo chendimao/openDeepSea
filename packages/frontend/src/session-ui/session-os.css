@@ -738,10 +738,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  border-radius: 8px;
+  transition: background 160ms;
 }
 .deepsea-project-tree-heading {
   margin-bottom: 12px;
   padding: 0 12px;
+}
+.deepsea-project-tree-heading:hover,
+.deepsea-project-tree-heading:focus-within {
+  background: rgba(255, 255, 255, 0.2);
 }
 .deepsea-project-tree-heading > span {
   color: rgba(67, 70, 84, 0.5);
@@ -813,7 +819,7 @@
 .deepsea-project-tree-section[data-active="true"] .deepsea-project-node,
 .deepsea-project-node:hover,
 .deepsea-project-node:focus-within {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.2);
   color: rgba(67, 70, 84, 0.96);
 }
 .deepsea-project-node__button:focus-visible,
@@ -969,6 +975,7 @@
   min-width: 0;
   align-items: center;
   border-radius: 8px;
+  padding-left: 4px;
   transition: background 160ms;
 }
 .deepsea-project-session-pin {
@@ -1008,7 +1015,7 @@
   border-radius: 8px;
   background: transparent;
   color: inherit;
-  padding: 4px 8px;
+  padding: 4px 8px 4px 4px;
   text-align: left;
   transition: background 160ms, border-color 160ms;
   white-space: nowrap;

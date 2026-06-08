@@ -268,15 +268,18 @@ test('SessionShell includes project tree row pin and drag feedback styles', () =
 test('SessionShell project rail CSS keeps the reference-style compact hierarchy', () => {
   assert.match(sessionOsCss, /\.deepsea-main\s*\{[^}]*grid-template-columns:\s*292px minmax\(500px,\s*1fr\) 420px/s);
   assert.match(sessionOsCss, /\.deepsea-project-tree-heading\s*\{[^}]*margin-bottom:\s*12px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading:hover,[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.2\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*font-size:\s*16px/s);
   assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*22px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*30px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-node:hover,[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.2\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__button\s*\{[^}]*padding:\s*3px 10px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__button svg\s*\{[^}]*width:\s*14px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__label strong\s*\{[^}]*font-size:\s*13px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node__sessions\s*\{[^}]*margin:\s*4px 0 6px 12px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\s*\{[^}]*padding-left:\s*4px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*min-height:\s*28px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*4px 8px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row\s*\{[^}]*padding:\s*4px 8px 4px 4px/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap:hover,[\s\S]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.2\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\[data-current="true"\]\s*\{[^}]*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s);
   assert.match(sessionOsCss, /\.deepsea-project-session-row-wrap\[data-current="true"\]\s*\{[^}]*box-shadow:\s*none/s);
