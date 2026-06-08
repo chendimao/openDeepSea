@@ -135,6 +135,39 @@ test('dispatchSessionUserMessage prepends global session prompt before context a
   assert.ok(prompt.endsWith('## User Request\n\n分析当前状态'));
 });
 
+test('dispatchSessionUserMessage injects knowledge tool prompt into runtime prompt', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Knowledge Tool Prompt',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-knowledge-tool-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Knowledge Tool Prompt',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-knowledge-tool', stderr: '' };
+    },
+  });
+
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '查询项目知识库里的验收记录',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const prompt = prompts[0] ?? '';
+  assert.match(prompt, /OpenDeepSea 知识库工具/);
+  assert.ok(prompt.includes(`npm run openclaw:knowledge -- search --project ${project.id} --query`));
+  assert.match(prompt, /citation key/);
+});
+
 test('dispatchSessionUserMessage omits global session prompt block when setting is empty', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Empty Global Session Prompt',
@@ -380,7 +413,7 @@ test('dispatchSessionUserMessage injects referenced file context into runtime pr
   assert.match(prompts[0] ?? '', /export const app = true/);
 });
 
-test('dispatchSessionUserMessage injects uploaded text metadata and image project files into runtime context', async () => {
+test('dispatchSessionUserMessage injects uploaded text content and image project files into runtime context', async () => {
   const root = mkdtempSync(join(tmpdir(), 'session-dispatch-uploaded-context-'));
   const textPath = join(root, 'notes.md');
   const imagePath = join(root, 'screen.png');
@@ -433,9 +466,9 @@ test('dispatchSessionUserMessage injects uploaded text metadata and image projec
   });
   await new Promise((resolve) => setTimeout(resolve, 30));
 
-  assert.match(captured[0]?.prompt ?? '', /Library Metadata: notes\.md/);
-  assert.match(captured[0]?.prompt ?? '', /Content not auto-injected/);
-  assert.doesNotMatch(captured[0]?.prompt ?? '', /请读取这段内容/);
+  assert.match(captured[0]?.prompt ?? '', /Library: notes\.md/);
+  assert.match(captured[0]?.prompt ?? '', /请读取这段内容/);
+  assert.match(captured[0]?.prompt ?? '', /Library Metadata: screen\.png/);
   assert.deepEqual(captured[0]?.imagePaths, [realpathSync(imagePath)]);
 });
 

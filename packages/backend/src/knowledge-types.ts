@@ -128,7 +128,7 @@ export interface KnowledgeUsageRefInput {
   project_id: string;
   source_id: string;
   chunk_id?: string | null;
-  ref_type: 'manual_reference' | 'session_message';
+  ref_type: 'manual_reference' | 'session_message' | 'agent_run' | 'session_run' | 'retrieval_context';
   ref_id: string;
   metadata?: Record<string, unknown>;
 }

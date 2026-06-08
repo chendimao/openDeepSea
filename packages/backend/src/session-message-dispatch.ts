@@ -9,6 +9,7 @@ import {
   sessionRepo,
 } from './repos/sessions.js';
 import { createContextManifest } from './session.routes.js';
+import { buildKnowledgeAgentToolPrompt } from './knowledge-rag.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import { buildSessionFileReferenceContext } from './session-file-reference-context.js';
 import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
@@ -428,6 +429,7 @@ export function buildRuntimePrompt(
     sourceBlocks.length > 0 ? ['## Context Sources', ...sourceBlocks].join('\n\n') : null,
     referencedFilesBlock.trim() || null,
     platformSkillsBlock.trim() || null,
+    buildKnowledgeAgentToolPrompt({ projectId: session.project_id }),
     '## User Request',
     content,
   ].filter(Boolean).join('\n\n');

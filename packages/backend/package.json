@@ -9,6 +9,7 @@
     "dev:watch": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "openclaw:context": "node --import tsx src/system-context-cli.ts",
+    "openclaw:knowledge": "node --import tsx src/knowledge-cli.ts",
     "start": "node dist/server.js",
     "test": "node --import tsx --test \"src/**/*.test.ts\""
   },

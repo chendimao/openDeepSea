@@ -82,6 +82,13 @@ export async function runSessionAgent(input: {
     acp_session_id: reusableAcpSessionId,
     runtime_profile_snapshot: input.runtimeProfileSnapshot ?? null,
   });
+  const knowledgeEnvOverrides: Record<string, string> = {
+    OPENDEEPSEA_SESSION_RUN_ID: run.id,
+    OPENDEEPSEA_SESSION_ID: session.id,
+    OPENDEEPSEA_PROJECT_ID: session.project_id,
+    OPENDEEPSEA_AGENT_ID: agentId,
+    OPENDEEPSEA_KNOWLEDGE_REF_TYPE: 'session_run',
+  };
   sessionAgentRuntimeRepo.upsert({
     session_id: session.id,
     agent_id: agentId,
@@ -106,6 +113,7 @@ export async function runSessionAgent(input: {
       acpPermissionMode: permissionMode,
       imagePaths: input.imagePaths ?? [],
       providerRuntimeConfig,
+      envOverrides: knowledgeEnvOverrides,
       tools: runtimeTools,
       onSession: (acpSessionId) => {
         persistProviderSession({

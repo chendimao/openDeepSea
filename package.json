@@ -13,6 +13,7 @@
     "dev:frontend": "OPENDEEPSEA_LOCAL_TOKEN=${OPENDEEPSEA_LOCAL_TOKEN:-openclaw-room-dev-token} npm run dev -w @openclaw-room/frontend",
     "build": "npm run build -w @openclaw-room/backend && npm run build -w @openclaw-room/frontend",
     "openclaw:context": "npm run openclaw:context -w @openclaw-room/backend --",
+    "openclaw:knowledge": "npm run openclaw:knowledge -w @openclaw-room/backend --",
     "start": "npm run start -w @openclaw-room/backend"
   },
   "devDependencies": {

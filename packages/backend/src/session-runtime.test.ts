@@ -98,6 +98,43 @@ test('runSessionAgent reuses provider session for same business session agent an
   assert.deepEqual(observedSessionIds, [null, 'acp-provider-1']);
 });
 
+test('runSessionAgent passes knowledge usage env overrides to session adapter', async () => {
+  const project = projectRepo.create({
+    name: 'runtime knowledge env project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-knowledge-env-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Knowledge Env',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  let capturedEnvOverrides: Record<string, string> | undefined;
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ envOverrides }) => {
+      capturedEnvOverrides = envOverrides;
+      return { exitCode: 0, sessionId: 'knowledge-env-acp', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    agentId: 'planner',
+    prompt: '查询知识库',
+    provider: 'codex',
+  });
+
+  assert.equal(capturedEnvOverrides?.OPENDEEPSEA_SESSION_RUN_ID, run.id);
+  assert.equal(capturedEnvOverrides?.OPENDEEPSEA_SESSION_ID, session.id);
+  assert.equal(capturedEnvOverrides?.OPENDEEPSEA_PROJECT_ID, project.id);
+  assert.equal(capturedEnvOverrides?.OPENDEEPSEA_AGENT_ID, 'planner');
+  assert.equal(capturedEnvOverrides?.OPENDEEPSEA_KNOWLEDGE_REF_TYPE, 'session_run');
+});
+
 test('runSessionAgent isolates provider sessions by agent id', async () => {
   const project = projectRepo.create({
     name: 'runtime multi agent project',

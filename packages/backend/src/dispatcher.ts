@@ -10,6 +10,7 @@ import { buildAgentRuntimeContextPrompt, resolveAgentRuntimeProfile } from './ag
 import { generateModelChatReply, invokeConfiguredModelText, isModelChatConfigured, type ModelChatInvoker } from './chat-model.js';
 import { classifyAgentDocument } from './agent-document-classifier.js';
 import { ingestProjectFileIntoKnowledge } from './knowledge-ingestion.js';
+import { buildKnowledgeAgentToolPrompt } from './knowledge-rag.js';
 import { applyIntentToRouteResult } from './message-intent-router.js';
 import { appendMemoryContextForPromptSafely } from './memory/context.js';
 import { distillFromConversation, type MemoryDistillModelInvoker } from './memory/distill.js';
@@ -769,6 +770,10 @@ function shouldInjectOpenClawSystemContextToolPrompt(args: RespondAsAgentInput, 
   return true;
 }
 
+function shouldInjectKnowledgeAgentToolPrompt(args: RespondAsAgentInput, room: Room | undefined): room is Room {
+  return shouldInjectOpenClawSystemContextToolPrompt(args, room);
+}
+
 function buildOpenClawSystemContextToolPrompt(input: { projectId: string; roomId: string }): string {
   return [
     'OpenClaw 系统上下文工具：',
@@ -802,11 +807,16 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
   const contextToolPrompt = shouldInjectOpenClawSystemContextToolPrompt(args, room)
     ? buildOpenClawSystemContextToolPrompt({ projectId: room.project_id, roomId })
     : null;
+  const knowledgeToolPrompt = shouldInjectKnowledgeAgentToolPrompt(args, room)
+    ? buildKnowledgeAgentToolPrompt({ projectId: room.project_id, roomId })
+    : null;
   const promptWithRuntime = [
     promptWithIdentity,
     '',
     contextToolPrompt,
     contextToolPrompt ? '' : null,
+    knowledgeToolPrompt,
+    knowledgeToolPrompt ? '' : null,
     buildAgentRuntimeContextPrompt(runtimeProfile),
   ].filter((part): part is string => part !== null).join('\n');
   const promptWithMemory =
@@ -900,6 +910,15 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
     prompt,
   });
   const controller = runRegistry.create(run.id);
+  const knowledgeEnvOverrides: Record<string, string> = room && shouldInjectKnowledgeAgentToolPrompt(args, room)
+    ? {
+        OPENDEEPSEA_AGENT_RUN_ID: run.id,
+        OPENDEEPSEA_PROJECT_ID: room.project_id,
+        OPENDEEPSEA_ROOM_ID: roomId,
+        OPENDEEPSEA_AGENT_ID: agent.agent_id,
+        OPENDEEPSEA_KNOWLEDGE_REF_TYPE: 'agent_run',
+      }
+    : {};
   if (taskExecutor) {
     taskExecutorRepo.updateStatus(taskExecutor.id, 'running');
   }
@@ -1145,7 +1164,10 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
       acpPermissionMode: intentAnalysisSource ? 'read-only' : runtimeProfile.acpPermissionMode,
       acpWritableDirs: intentAnalysisSource ? [] : runtimeProfile.writableDirs,
       providerRuntimeConfig,
-      envOverrides: superpowersBootstrapEnvOverrides,
+      envOverrides: {
+        ...superpowersBootstrapEnvOverrides,
+        ...knowledgeEnvOverrides,
+      },
       onChunk: (chunk) => {
         if (chunk.rawType === 'protocol.retry') onRetry(chunk.text);
         else if (chunk.stream === 'stdout' && chunk.channel === 'activity') onActivity(chunk.text);

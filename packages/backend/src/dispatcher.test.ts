@@ -3038,6 +3038,9 @@ test('respondAsAgent passes resolved workspace writable dirs and runtime prompt 
     assert.match(capturedPrompt, /OpenClaw 系统上下文工具/);
     assert.match(capturedPrompt, new RegExp(`npm run openclaw:context -- room-overview ${escapeRegExp(room.id)}`));
     assert.match(capturedPrompt, /系统状态、项目、群聊、任务、文件、智能体数量或列表类问题，必须先调用/);
+    assert.match(capturedPrompt, /OpenDeepSea 知识库工具/);
+    assert.match(capturedPrompt, new RegExp(`npm run openclaw:knowledge -- search --project ${escapeRegExp(project.id)} --room ${escapeRegExp(room.id)}`));
+    assert.match(capturedPrompt, /citation key/);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });
@@ -3080,6 +3083,11 @@ test('respondAsAgent uses provider-owned Superpowers by default for ordinary ACP
     assert.equal(capturedEnvOverrides?.SUPERPOWERS_BOOTSTRAP_DISABLED, undefined);
 
     const run = agentRunRepo.listByRoom(room.id, 1)[0];
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_AGENT_RUN_ID, run?.id);
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_PROJECT_ID, project.id);
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_ROOM_ID, room.id);
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_AGENT_ID, planner.agent_id);
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_KNOWLEDGE_REF_TYPE, 'agent_run');
     assert.equal(run?.workflow_run_id, null);
     assert.equal(run?.superpowers_bootstrap_owner, 'provider');
     assert.equal(run?.superpowers_bootstrap_injected, 0);
