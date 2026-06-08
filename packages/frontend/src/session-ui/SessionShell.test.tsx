@@ -688,13 +688,15 @@ test('SessionShell resolves run labels from project agent names instead of ids',
   assert.doesNotMatch(html, /ASSISTANT/);
 });
 
-test('SessionShell renders a transcript end anchor for composer-safe auto scroll', () => {
+test('SessionShell keeps composer in layout flow below the transcript scroll area', () => {
   const html = renderSessionShell(createPayload());
 
   assert.match(html, /data-transcript-scroll="true"/);
   assert.match(html, /data-transcript-end="true"/);
   assert.match(sessionOsCss, /\.deepsea-transcript__scroll\s*\{[^}]*padding:\s*0/s);
-  assert.match(sessionOsCss, /\.deepsea-transcript__end\s*\{[^}]*min-height:\s*var\(--deepsea-composer-space\)/s);
+  assert.match(sessionOsCss, /\.deepsea-composer-anchor\s*\{[^}]*position:\s*static/s);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-composer-anchor\s*\{[^}]*position:\s*absolute/s);
+  assert.match(sessionOsCss, /\.deepsea-transcript__end\s*\{[^}]*min-height:\s*1px/s);
 });
 
 test('isTranscriptNearBottom respects the transcript follow threshold', () => {

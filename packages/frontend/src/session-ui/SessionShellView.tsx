@@ -743,7 +743,6 @@ function TranscriptCanvas({
 }): JSX.Element {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
-  const composerRef = useRef<HTMLDivElement | null>(null);
   const followTranscriptRef = useRef(true);
   const { data: projectAgents } = useQuery({
     queryKey: ['project-used-agents', projectId],
@@ -788,28 +787,6 @@ function TranscriptCanvas({
     updateFollowState();
     transcript.addEventListener('scroll', updateFollowState, { passive: true });
     return () => transcript.removeEventListener('scroll', updateFollowState);
-  }, []);
-
-  useEffect(() => {
-    const transcript = transcriptRef.current;
-    const composer = composerRef.current;
-    if (!transcript || !composer) return undefined;
-
-    const updateComposerSpace = () => {
-      const composerRect = composer.getBoundingClientRect();
-      const transcriptRect = transcript.getBoundingClientRect();
-      const overlap = Math.max(0, transcriptRect.bottom - composerRect.top);
-      const nextSpace = Math.ceil(Math.max(160, overlap + 24));
-      transcript.style.setProperty('--deepsea-composer-space', `${nextSpace}px`);
-    };
-
-    updateComposerSpace();
-    if (typeof ResizeObserver === 'undefined') return undefined;
-
-    const resizeObserver = new ResizeObserver(updateComposerSpace);
-    resizeObserver.observe(composer);
-    resizeObserver.observe(transcript);
-    return () => resizeObserver.disconnect();
   }, []);
 
   useEffect(() => {
@@ -897,7 +874,7 @@ function TranscriptCanvas({
         })}
         <div aria-hidden="true" className="deepsea-transcript__end" data-transcript-end="true" ref={transcriptEndRef} />
       </div>
-      <div className="deepsea-composer-anchor" ref={composerRef}>
+      <div className="deepsea-composer-anchor">
         <DeepseaComposer projectId={detail.session.project_id} onSendMessage={onSendMessage} />
       </div>
     </section>

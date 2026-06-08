@@ -38,8 +38,8 @@ test('session markdown preview constrains inline image previews', () => {
   assert.match(css, /\.deepsea-run-log-body \.markdown-preview img[\s\S]*?object-fit:\s*contain/s);
 });
 
-test('session transcript reserves composer-height aware scroll padding', () => {
-  assert.match(css, /--deepsea-composer-space:\s*160px/);
+test('session transcript scroll area leaves only a compact tail gap above the in-flow composer', () => {
+  assert.doesNotMatch(css, /--deepsea-composer-space/);
   assert.match(css, /\.deepsea-transcript__scroll[\s\S]*?padding:\s*0/s);
-  assert.match(css, /\.deepsea-transcript__scroll[\s\S]*?scroll-padding-bottom:\s*var\(--deepsea-composer-space\)/s);
+  assert.match(css, /\.deepsea-transcript__scroll[\s\S]*?scroll-padding-bottom:\s*var\(--deepsea-transcript-tail-space\)/s);
 });

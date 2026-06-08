@@ -1274,7 +1274,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  --deepsea-composer-space: 160px;
+  --deepsea-transcript-tail-space: 12px;
   background: transparent;
 }
 .deepsea-transcript__scroll {
@@ -1284,11 +1284,11 @@
   flex-direction: column;
   gap: 12px;
   padding: 0;
-  scroll-padding-bottom: var(--deepsea-composer-space);
+  scroll-padding-bottom: var(--deepsea-transcript-tail-space);
 }
 .deepsea-transcript__end {
-  flex: 0 0 var(--deepsea-composer-space);
-  min-height: var(--deepsea-composer-space);
+  flex: 0 0 var(--deepsea-transcript-tail-space);
+  min-height: 1px;
 }
 .deepsea-transcript__heading {
   display: flex;
@@ -2019,10 +2019,10 @@ button.deepsea-message-attachment {
   }
 }
 .deepsea-composer-anchor {
-  position: absolute;
-  right: 24px;
-  bottom: 6px;
-  left: 24px;
+  position: static;
+  flex: 0 0 auto;
+  margin: 12px 24px 6px;
+  min-width: 0;
   z-index: 40;
 }
 .deepsea-composer {
