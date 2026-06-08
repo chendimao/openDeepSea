@@ -16,6 +16,7 @@ import {
   getLatestUserMessageKey,
   getSessionRunThinkingDuration,
   isTranscriptNearBottom,
+  readSessionSidebarPrefs,
   shouldIgnoreProjectDragStart,
   sortSessionsForSidebar,
   syncExpandedProjectIds,
@@ -456,6 +457,34 @@ test('writeSessionSidebarPrefs ignores localStorage persistence failures', () =>
   }
 });
 
+test('session sidebar prefs ignore localStorage getter failures', () => {
+  const originalLocalStorage = globalThis.localStorage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    get: () => {
+      throw new Error('storage unavailable');
+    },
+    configurable: true,
+  });
+
+  try {
+    assert.deepEqual(readSessionSidebarPrefs(), {
+      groupMode: 'project',
+      sortMode: 'updated',
+      visibility: 'all',
+    });
+    assert.doesNotThrow(() => writeSessionSidebarPrefs({
+      groupMode: 'time',
+      sortMode: 'updated',
+      visibility: 'all',
+    }));
+  } finally {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: originalLocalStorage,
+      configurable: true,
+    });
+  }
+});
+
 test('SessionShell renders time ordered sidebar rows from stored preferences', () => {
   localStorageValues.clear();
   localStorageValues.set(SESSION_SIDEBAR_PREFS_STORAGE_KEY, JSON.stringify({
@@ -675,7 +704,7 @@ test('buildSessionSidebarModel filters pinned sessions and hides empty projects'
   assert.equal(model.emptyMessage, '暂无置顶会话。');
 });
 
-test('buildSessionSidebarModel keeps empty projects when the project itself matches search', () => {
+test('buildSessionSidebarModel hides empty projects even when the project itself matches search', () => {
   const now = Date.now();
   const model = buildSessionSidebarModel({
     projects: [{
@@ -703,8 +732,7 @@ test('buildSessionSidebarModel keeps empty projects when the project itself matc
     prefs: { groupMode: 'project', sortMode: 'updated', visibility: 'all' },
   });
 
-  assert.deepEqual(model.projects.map((project) => project.id), ['project-empty']);
-  assert.deepEqual(model.projects[0]?.sessions, []);
+  assert.deepEqual(model.projects, []);
 });
 
 test('buildSessionSidebarModel creates time ordered flat session rows', () => {

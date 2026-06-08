@@ -943,9 +943,10 @@ export function normalizeSessionSidebarPrefs(value: unknown): SessionSidebarPref
 }
 
 export function readSessionSidebarPrefs(): SessionSidebarPrefs {
-  if (typeof globalThis.localStorage === 'undefined') return DEFAULT_SESSION_SIDEBAR_PREFS;
+  const storage = getSessionSidebarStorage();
+  if (!storage) return DEFAULT_SESSION_SIDEBAR_PREFS;
   try {
-    const raw = globalThis.localStorage.getItem(SESSION_SIDEBAR_PREFS_STORAGE_KEY);
+    const raw = storage.getItem(SESSION_SIDEBAR_PREFS_STORAGE_KEY);
     return normalizeSessionSidebarPrefs(raw ? JSON.parse(raw) : null);
   } catch {
     return DEFAULT_SESSION_SIDEBAR_PREFS;
@@ -953,11 +954,20 @@ export function readSessionSidebarPrefs(): SessionSidebarPrefs {
 }
 
 export function writeSessionSidebarPrefs(prefs: SessionSidebarPrefs): void {
-  if (typeof globalThis.localStorage === 'undefined') return;
+  const storage = getSessionSidebarStorage();
+  if (!storage) return;
   try {
-    globalThis.localStorage.setItem(SESSION_SIDEBAR_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+    storage.setItem(SESSION_SIDEBAR_PREFS_STORAGE_KEY, JSON.stringify(prefs));
   } catch {
     // Ignore persistence failures so the current interaction can still update in memory.
+  }
+}
+
+function getSessionSidebarStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -1040,9 +1050,7 @@ export function buildSessionSidebarModel(input: {
       sessions: sortSessionsForSidebar(project.sessions, input.prefs.sortMode),
     }));
   const queryFilteredProjects = filterProjectSessionTree(tree, input.normalizedQuery);
-  const displayProjects = input.normalizedQuery
-    ? queryFilteredProjects
-    : queryFilteredProjects.filter((project) => project.sessions.length > 0);
+  const displayProjects = queryFilteredProjects.filter((project) => project.sessions.length > 0);
   const projects = sortProjectsForSidebar(
     displayProjects,
     input.prefs.sortMode,
