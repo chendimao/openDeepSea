@@ -71,6 +71,8 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /AnotherProject/);
   assert.doesNotMatch(html, /会话历史/);
   assert.match(html, /3. 对话记录/);
+  assert.match(html, /会话中间工作区/);
+  assert.match(html, /文件浏览器/);
   assert.doesNotMatch(html, /prompt-area-container/);
   assert.match(html, /data-session-composer-textarea="true"/);
   assert.match(html, /粘贴文件会上传到项目文件库/);

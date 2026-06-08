@@ -286,6 +286,47 @@ test('knowledge action APIs send method and payload', async () => {
   assert.equal(requests[1]?.body, JSON.stringify({ status: 'disabled', enabled: 0 }));
 });
 
+test('workspace directory API requests encoded tree path', async () => {
+  const requestedUrl = await captureApiRequest(
+    () => api.listWorkspaceDirectory('project-1', 'src/app'),
+    { path: 'src/app', entries: [] },
+  );
+
+  assert.equal(requestedUrl, '/api/projects/project-1/workspace/tree?path=src%2Fapp');
+});
+
+test('workspace file preview API requests encoded file path', async () => {
+  const requestedUrl = await captureApiRequest(
+    () => api.getWorkspaceFilePreview('project-1', 'src/App.tsx'),
+    {
+      path: 'src/App.tsx',
+      size: 12,
+      mimeType: 'text/plain',
+      language: 'typescript',
+      content: 'export {};\n',
+      truncated: false,
+    },
+  );
+
+  assert.equal(requestedUrl, '/api/projects/project-1/workspace/file?path=src%2FApp.tsx');
+});
+
+test('workspace blob API returns encoded local API URL', () => {
+  assert.equal(
+    api.getWorkspaceBlobUrl('project-1', 'public/logo.svg'),
+    '/api/projects/project-1/workspace/blob?path=public%2Flogo.svg',
+  );
+});
+
+test('workspace image blob API requests encoded file path', async () => {
+  const requestedUrl = await captureApiRequest(
+    () => api.getWorkspaceImageBlob('project-1', 'assets/photo.png'),
+    'image bytes',
+  );
+
+  assert.equal(requestedUrl, '/api/projects/project-1/workspace/blob?path=assets%2Fphoto.png');
+});
+
 test('updateSession sends pinned_at patch payload', async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl = '';

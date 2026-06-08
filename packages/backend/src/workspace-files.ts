@@ -105,6 +105,10 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.rb': 'text/plain',
   '.php': 'text/plain',
   '.vue': 'text/plain',
+  '.apng': 'image/apng',
+  '.bmp': 'image/bmp',
+  '.ico': 'image/x-icon',
+  '.avif': 'image/avif',
 };
 
 export type WorkspaceFileErrorCode =
@@ -361,12 +365,12 @@ export async function readWorkspaceImageBlob(
     if (!fileStats.isFile()) {
       throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
     }
-    if (fileStats.size > WORKSPACE_IMAGE_BLOB_SIZE_LIMIT) {
-      throw workspaceFileError('WORKSPACE_FILE_TOO_LARGE');
-    }
     const mimeType = inferMimeType(resolved.relativePath);
     if (!mimeType.startsWith('image/')) {
       throw workspaceFileError('WORKSPACE_FILE_BINARY');
+    }
+    if (fileStats.size > WORKSPACE_IMAGE_BLOB_SIZE_LIMIT) {
+      throw workspaceFileError('WORKSPACE_FILE_TOO_LARGE');
     }
     return {
       path: resolved.relativePath,

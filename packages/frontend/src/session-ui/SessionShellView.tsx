@@ -57,6 +57,7 @@ import {
 } from './SessionMessageBubble';
 import { ProjectAgentStrip } from './ProjectAgentStrip';
 import { SessionFileComposer } from './SessionFileComposer';
+import { SessionCenterWorkspace } from './SessionCenterWorkspace';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 import { GeneratedImageEvidencePanel } from './GeneratedImageEvidencePanel';
 
@@ -107,11 +108,16 @@ export function SessionShellView({
           onReorderProjects={onReorderProjects}
           onToggleSessionPin={onToggleSessionPin}
         />
-        <TranscriptCanvas
-          detail={payload.activeSession}
-          evidence={payload.evidence}
+        <SessionCenterWorkspace
           projectId={payload.project.id}
-          onSendMessage={onSendMessage}
+          transcript={(
+            <TranscriptCanvas
+              detail={payload.activeSession}
+              evidence={payload.evidence}
+              projectId={payload.project.id}
+              onSendMessage={onSendMessage}
+            />
+          )}
         />
         <IntegratedInspector
           payload={payload}

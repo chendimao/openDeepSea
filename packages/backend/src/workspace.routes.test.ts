@@ -22,6 +22,8 @@ app.use((err: unknown, _req: Request, res: ExpressResponse, _next: NextFunction)
 const TRUSTED_ORIGIN = 'http://localhost:5173';
 const WRONG_ORIGIN = 'https://evil.example';
 const LOCAL_TOKEN = process.env.OPENDEEPSEA_LOCAL_TOKEN as string;
+const IMAGE_PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+const DOCUMENT_PDF_BYTES = Buffer.from('%PDF-1.4\n');
 
 type HeaderMap = Record<string, string>;
 
@@ -53,6 +55,8 @@ function createWorkspaceProject(name: string): { id: string; path: string } {
   mkdirSync(join(projectPath, 'src'), { recursive: true });
   writeFileSync(join(projectPath, 'src', 'main.ts'), 'export const main = 1;\n');
   writeFileSync(join(projectPath, 'binary.bin'), Buffer.from([0, 255, 1, 2, 3]));
+  writeFileSync(join(projectPath, 'image.png'), IMAGE_PNG_BYTES);
+  writeFileSync(join(projectPath, 'document.pdf'), DOCUMENT_PDF_BYTES);
   writeFileSync(join(projectPath, '.env'), 'SECRET=1\n');
   writeFileSync(join(projectPath, 'too-large.txt'), 'a'.repeat(2 * 1024 * 1024 + 1));
   mkdirSync(join(projectPath, 'search'), { recursive: true });
@@ -131,6 +135,55 @@ test('workspace file rejects binary and ignored paths, and truncates large text 
     headers,
   );
   assert.equal(ignoredRes.status, 400);
+});
+
+test('workspace blob with local token returns image/png and bytes', async () => {
+  const project = createWorkspaceProject('blob-success');
+  const res = await request(
+    `/api/projects/${project.id}/workspace/blob?path=image.png`,
+    {},
+    localHeaders(),
+  );
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'image/png');
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.deepEqual(Buffer.from(await res.arrayBuffer()), IMAGE_PNG_BYTES);
+});
+
+test('workspace blob rejects non-image file', async () => {
+  const project = createWorkspaceProject('blob-non-image');
+  const res = await request(
+    `/api/projects/${project.id}/workspace/blob?path=document.pdf`,
+    {},
+    localHeaders(),
+  );
+  assert.equal(res.status, 400);
+  const payload = await res.json() as { error: string };
+  assert.equal(payload.error, 'WORKSPACE_FILE_BINARY');
+});
+
+test('workspace blob rejects ignored path .env', async () => {
+  const project = createWorkspaceProject('blob-ignored-path');
+  const res = await request(
+    `/api/projects/${project.id}/workspace/blob?path=.env`,
+    {},
+    localHeaders(),
+  );
+  assert.equal(res.status, 400);
+  const payload = await res.json() as { error: string };
+  assert.equal(payload.error, 'WORKSPACE_PATH_IGNORED');
+});
+
+test('workspace blob rejects traversal ../image.png', async () => {
+  const project = createWorkspaceProject('blob-traversal');
+  const res = await request(
+    `/api/projects/${project.id}/workspace/blob?path=${encodeURIComponent('../image.png')}`,
+    {},
+    localHeaders(),
+  );
+  assert.equal(res.status, 400);
+  const payload = await res.json() as { error: string };
+  assert.equal(payload.error, 'WORKSPACE_PATH_TRAVERSAL');
 });
 
 test('workspace search returns matching files and truncation metadata', async () => {

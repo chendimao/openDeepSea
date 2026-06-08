@@ -83,6 +83,8 @@ import type {
   WorkflowDefinitionStatus,
   WorkflowRole,
   WorkflowRun,
+  WorkspaceDirectoryResponse,
+  WorkspaceFilePreview,
   WorkspaceSearchResponse,
 } from './types';
 import type {
@@ -168,6 +170,19 @@ export async function workspaceRequest<T>(path: string, init: RequestInit = {}):
     ...init,
     headers: buildWorkspaceHeaders(init.headers),
   });
+}
+
+async function workspaceBlobRequest(path: string, init: RequestInit = {}): Promise<Blob> {
+  const workspacePath = path.startsWith('/') ? path : `/${path}`;
+  const res = await fetch(`${BASE}${workspacePath}`, {
+    ...init,
+    headers: buildWorkspaceHeaders(init.headers),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(formatApiError(res.status, text));
+  }
+  return res.blob();
 }
 
 function isQueryFunctionContextLike(value: WorkflowDefinitionListFilters | QueryFunctionContextLike): value is QueryFunctionContextLike {
@@ -734,6 +749,28 @@ export const api = {
     return workspaceRequest<WorkspaceSearchResponse>(
       `/projects/${projectId}/workspace/search?${params.toString()}`,
     );
+  },
+  listWorkspaceDirectory: (projectId: string, path = '') => {
+    const params = new URLSearchParams();
+    if (path) params.set('path', path);
+    const query = params.toString();
+    return workspaceRequest<WorkspaceDirectoryResponse>(
+      `/projects/${projectId}/workspace/tree${query ? `?${query}` : ''}`,
+    );
+  },
+  getWorkspaceFilePreview: (projectId: string, path: string) => {
+    const params = new URLSearchParams({ path });
+    return workspaceRequest<WorkspaceFilePreview>(
+      `/projects/${projectId}/workspace/file?${params.toString()}`,
+    );
+  },
+  getWorkspaceBlobUrl: (projectId: string, path: string) => {
+    const params = new URLSearchParams({ path });
+    return `/api/projects/${projectId}/workspace/blob?${params.toString()}`;
+  },
+  getWorkspaceImageBlob: (projectId: string, path: string) => {
+    const params = new URLSearchParams({ path });
+    return workspaceBlobRequest(`/projects/${projectId}/workspace/blob?${params.toString()}`);
   },
   getResourceDetail: (assetId: string, filters: { projectId?: string } = {}) => {
     const params = new URLSearchParams();

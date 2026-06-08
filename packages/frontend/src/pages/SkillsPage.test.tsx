@@ -25,3 +25,12 @@ test('SkillsPage defaults to online skills APIs and refreshes local status after
   assert.match(source, /queryKey: \['online-skills'\]/);
   assert.match(source, /onRefreshRequested=\{refreshPlatformSkills\}/);
 });
+
+test('TerminalPanel supports prefilled command input without auto-executing it', () => {
+  const terminalSource = readFileSync(new URL('../components/TerminalPanel.tsx', import.meta.url), 'utf8');
+
+  assert.match(terminalSource, /initialInput\?: string/);
+  assert.match(terminalSource, /roomSocket\.sendTerminalInput\(nextSessionId, command\)/);
+  assert.doesNotMatch(terminalSource, /command\s*\+\s*['"]\\n['"]/);
+  assert.doesNotMatch(terminalSource, /command\s*\+\s*['"]\\r['"]/);
+});

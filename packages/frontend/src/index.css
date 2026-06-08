@@ -10690,6 +10690,41 @@
     background: #ffffff;
   }
 
+  .knowledge-mobile-list {
+    display: none;
+  }
+
+  .knowledge-mobile-card {
+    display: flex;
+    min-width: 0;
+    width: 100%;
+    flex-direction: column;
+    gap: 4px;
+    border-bottom: 1px solid #f1f5f9;
+    background: #ffffff;
+    padding: 12px;
+    text-align: left;
+  }
+
+  .knowledge-mobile-card.is-selected {
+    background: rgba(239, 246, 255, 0.68);
+  }
+
+  .knowledge-mobile-card__title {
+    overflow-wrap: anywhere;
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .knowledge-mobile-card__meta {
+    overflow-wrap: anywhere;
+    color: #475569;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
   .knowledge-table-wrap thead {
     border-bottom: 1px solid #f3f4f6;
     background: #f9fafb;
@@ -10829,6 +10864,21 @@
     font-weight: 600;
   }
 
+  .knowledge-detail-pre {
+    max-height: 420px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #f8fafc;
+    padding: 10px;
+    color: #334155;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+    line-height: 1.55;
+  }
+
   .knowledge-detail-primary,
   .knowledge-detail-secondary,
   .knowledge-detail-more {
@@ -10866,12 +10916,26 @@
     background: #f9fafb;
   }
 
+  .knowledge-detail-primary:disabled,
+  .knowledge-detail-secondary:disabled,
+  .knowledge-detail-more:disabled,
+  .knowledge-detail-secondary[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
   .knowledge-detail-more {
     flex: 0 0 auto;
     border: 1px solid #e5e7eb;
     color: #4b5563;
     padding-left: 8px;
     padding-right: 8px;
+  }
+
+  .knowledge-detail-more.is-danger {
+    border-color: #fecaca;
+    color: #dc2626;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -10931,14 +10995,6 @@
 
     .knowledge-details {
       display: none;
-    }
-
-    .knowledge-table-wrap {
-      overflow-x: auto;
-    }
-
-    .knowledge-table-wrap table {
-      min-width: 820px;
     }
 
     .app-grid {
@@ -11035,6 +11091,27 @@
 
     .knowledge-main .grid.grid-cols-5 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .knowledge-table-wrap table {
+      display: none;
+    }
+
+    .knowledge-mobile-list {
+      display: block;
+    }
+
+    .knowledge-action-group {
+      flex-wrap: wrap;
+    }
+
+    .knowledge-action-group button {
+      min-width: 0;
+    }
+
+    .knowledge-filter-button,
+    .knowledge-sort-button {
+      max-width: 100%;
     }
 
     .knowledge-pagination {

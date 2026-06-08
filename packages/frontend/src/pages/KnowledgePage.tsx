@@ -5,7 +5,6 @@ import {
   AlertCircle,
   Check,
   ChevronDown,
-  Clock3,
   CloudUpload,
   Code2,
   Database,
@@ -20,21 +19,19 @@ import {
   Image as ImageIcon,
   Link2,
   List,
-  MoreHorizontal,
   MoreVertical,
   Plus,
-  Presentation,
   RefreshCcw,
   Search,
   SlidersHorizontal,
   Sparkles,
-  Star,
   Trash2,
   X,
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { ProjectFilePreviewDialog } from '../components/ProjectFilePreviewDialog';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import {
@@ -43,13 +40,19 @@ import {
   getKnowledgeSourceTypeDisplay,
   sortKnowledgeSourcesByStatus,
   summarizeKnowledgeStats,
+  type KnowledgeChunk,
+  type KnowledgeExtraction,
+  type KnowledgeSearchResult,
   type KnowledgeSource,
+  type KnowledgeSourceDetail,
   type KnowledgeSourceFilters,
-  type KnowledgeSourceType,
   type KnowledgeSourceStatus,
+  type KnowledgeSourceType,
 } from '../lib/knowledgeDisplay';
+import type { ProjectFile, ResourceType } from '../lib/types';
 
 type IconComponent = LucideIcon;
+type DetailTab = 'overview' | 'preview' | 'extraction' | 'summary' | 'chunks' | 'refs';
 
 interface KnowledgeDashboardStats {
   total: number;
@@ -78,87 +81,19 @@ interface KnowledgeResourceRow {
   typePillClassName: string;
   statusPillClassName: string;
   progress?: number;
-  favorite?: boolean;
   pagesLabel: string;
-  source?: KnowledgeSource;
+  source: KnowledgeSource;
 }
-
-const FALLBACK_STATS: KnowledgeDashboardStats = {
-  total: 1248,
-  ready: 1028,
-  processing: 128,
-  pending: 64,
-  failed: 28,
-  chunks: 8742,
-  totalSize: 128_600_000_000,
-};
-
-const FALLBACK_ROWS: KnowledgeResourceRow[] = [
-  {
-    id: 'stitch-prd-v23',
-    title: 'Ocean Platform 产品需求文档 v2.3',
-    subtitle: '项目：Ocean Platform | 房间：产品组',
-    fileName: 'PRD_v2.3.pdf',
-    typeLabel: 'PDF',
-    status: 'ready',
-    statusLabel: '已完成',
-    sizeLabel: '4.2 MB',
-    updatedAt: '2025-06-07 14:30',
-    compactUpdatedAt: '06-07 14:30',
-    tags: ['产品', 'PRD'],
-    icon: FileText,
-    iconClassName: 'bg-red-50 border-red-100 text-red-500',
-    typePillClassName: 'bg-red-50 text-red-500 border-red-100',
-    statusPillClassName: 'bg-green-50 text-green-600 border-green-100',
-    favorite: true,
-    pagesLabel: '45 页',
-  },
-  {
-    id: 'stitch-growth-report',
-    title: '用户增长策略分析报告',
-    subtitle: '项目：Ocean Platform | 房间：增长组',
-    fileName: 'growth_strategy_report.docx',
-    typeLabel: '文档',
-    status: 'ready',
-    statusLabel: '已完成',
-    sizeLabel: '2.8 MB',
-    updatedAt: '2025-06-07 11:20',
-    compactUpdatedAt: '06-07 11:20',
-    tags: ['分析', '增长'],
-    icon: FileText,
-    iconClassName: 'bg-blue-50 border-blue-100 text-blue-500',
-    typePillClassName: 'bg-blue-50 text-blue-500 border-blue-100',
-    statusPillClassName: 'bg-green-50 text-green-600 border-green-100',
-    pagesLabel: '28 页',
-  },
-  {
-    id: 'stitch-competitor-sheet',
-    title: '竞品功能对比表.xlsx',
-    subtitle: '项目：Ocean Platform | 房间：产品组',
-    fileName: 'competitor_matrix.xlsx',
-    typeLabel: '表格',
-    status: 'processing',
-    statusLabel: '处理中',
-    sizeLabel: '856 KB',
-    updatedAt: '2025-06-06 15:30',
-    compactUpdatedAt: '06-06 15:30',
-    tags: ['对比'],
-    icon: FileSpreadsheet,
-    iconClassName: 'bg-green-50 border-green-100 text-green-500',
-    typePillClassName: 'bg-green-50 text-green-500 border-green-100',
-    statusPillClassName: 'bg-blue-50 text-blue-500 border-blue-100',
-    progress: 60,
-    pagesLabel: '12 Sheet',
-  },
-];
 
 const SOURCE_TYPE_FILTERS: Array<{ value: KnowledgeSourceType | ''; label: string }> = [
   { value: '', label: '全部' },
-  { value: 'agent_document', label: '文档' },
-  { value: 'uploaded_file', label: 'PDF' },
-  { value: 'workspace_file', label: '表格' },
-  { value: 'resource_asset', label: '图片' },
-  { value: 'workspace_doc', label: '代码' },
+  { value: 'agent_document', label: '智能体文档' },
+  { value: 'uploaded_file', label: '上传文件' },
+  { value: 'resource_asset', label: '资源资产' },
+  { value: 'workspace_file', label: '工作区文件' },
+  { value: 'workspace_doc', label: '工作区文档' },
+  { value: 'web_page', label: '网页导入' },
+  { value: 'manual', label: '手动条目' },
 ];
 
 const STATUS_FILTERS: Array<{ value: KnowledgeSourceStatus | ''; label: string }> = [
@@ -171,6 +106,15 @@ const STATUS_FILTERS: Array<{ value: KnowledgeSourceStatus | ''; label: string }
   { value: 'disabled', label: '已禁用' },
 ];
 
+const DETAIL_TABS: Array<{ value: DetailTab; label: string }> = [
+  { value: 'overview', label: '概览' },
+  { value: 'preview', label: '预览' },
+  { value: 'extraction', label: '解析' },
+  { value: 'summary', label: '摘要' },
+  { value: 'chunks', label: 'Chunks' },
+  { value: 'refs', label: '引用' },
+];
+
 export function KnowledgePage(): JSX.Element {
   const { projectId = '' } = useParams();
   const queryClient = useQueryClient();
@@ -179,6 +123,8 @@ export function KnowledgePage(): JSX.Element {
   const [filters, setFilters] = useState<KnowledgeSourceFilters>(() => ({ projectId }));
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('overview');
+  const [previewFile, setPreviewFile] = useState<ProjectFile | null>(null);
 
   useEffect(() => {
     setFilters((current) => ({
@@ -195,6 +141,7 @@ export function KnowledgePage(): JSX.Element {
 
   const selectedProjectId = filters.projectId ?? '';
   const selectedRoomId = filters.roomId ?? '';
+  const keyword = (filters.keyword ?? '').trim();
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects'],
@@ -234,13 +181,7 @@ export function KnowledgePage(): JSX.Element {
     isLoading: sourcesLoading,
     refetch: refetchSources,
   } = useQuery({
-    queryKey: [
-      'knowledge-sources',
-      selectedProjectId,
-      activeRoomId,
-      filters.status ?? '',
-      filters.sourceType ?? '',
-    ],
+    queryKey: ['knowledge-sources', selectedProjectId, activeRoomId, filters.status ?? '', filters.sourceType ?? ''],
     queryFn: () => api.listKnowledgeSources({
       projectId: selectedProjectId || undefined,
       roomId: activeRoomId || undefined,
@@ -251,16 +192,37 @@ export function KnowledgePage(): JSX.Element {
     enabled: canLoadSources,
   });
 
-  const activeFilters = useMemo<KnowledgeSourceFilters>(() => ({
-    ...filters,
-    roomId: activeRoomId,
-  }), [activeRoomId, filters]);
+  const shouldSearchKnowledge = Boolean(selectedProjectId && keyword);
+  const { data: searchResults = [], isLoading: searchLoading } = useQuery({
+    queryKey: ['knowledge-search', selectedProjectId, activeRoomId, filters.status ?? '', filters.sourceType ?? '', keyword],
+    queryFn: () => api.searchKnowledge({
+      projectId: selectedProjectId,
+      roomId: activeRoomId || undefined,
+      status: filters.status || undefined,
+      sourceType: filters.sourceType || undefined,
+      query: keyword,
+      limit: 50,
+    }),
+    enabled: shouldSearchKnowledge,
+  });
+
+  const searchSourceIds = useMemo(
+    () => new Set(searchResults.map((result) => result.source_id)),
+    [searchResults],
+  );
+  const activeFilters = useMemo<KnowledgeSourceFilters>(() => ({ ...filters, roomId: activeRoomId }), [activeRoomId, filters]);
 
   const visibleSources = useMemo(() => {
-    return sortKnowledgeSourcesByStatus(
-      filterKnowledgeSources(sources, activeFilters, locale),
-    );
-  }, [activeFilters, locale, sources]);
+    const withoutKeyword = { ...activeFilters, keyword: '' };
+    const base = filterKnowledgeSources(sources, withoutKeyword, locale);
+    const filtered = keyword
+      ? base.filter((source) => {
+        const localMatch = filterKnowledgeSources([source], { keyword }, locale).length > 0;
+        return localMatch || searchSourceIds.has(source.id);
+      })
+      : base;
+    return sortKnowledgeSourcesByStatus(filtered);
+  }, [activeFilters, keyword, locale, searchSourceIds, sources]);
 
   const liveStats = useMemo(() => summarizeKnowledgeStats(
     filterKnowledgeSources(summarySources, {
@@ -270,7 +232,6 @@ export function KnowledgePage(): JSX.Element {
   ), [activeRoomId, locale, selectedProjectId, summarySources]);
 
   const dashboardStats = useMemo<KnowledgeDashboardStats>(() => {
-    if (summarySources.length === 0) return FALLBACK_STATS;
     const pending = Math.max(0, liveStats.total - liveStats.ready - liveStats.processing - liveStats.failed);
     return {
       total: liveStats.total,
@@ -281,42 +242,51 @@ export function KnowledgePage(): JSX.Element {
       chunks: liveStats.chunks,
       totalSize: liveStats.totalSize,
     };
-  }, [liveStats, summarySources.length]);
+  }, [liveStats]);
 
   const selectedProject = useMemo(
     () => projects.find((item) => item.id === selectedProjectId) ?? project ?? null,
     [project, projects, selectedProjectId],
   );
-  const selectedRoom = useMemo(
-    () => rooms.find((item) => item.id === activeRoomId) ?? null,
-    [activeRoomId, rooms],
-  );
+  const selectedRoom = useMemo(() => rooms.find((item) => item.id === activeRoomId) ?? null, [activeRoomId, rooms]);
 
-  const rows = useMemo(() => {
-    const liveRows = visibleSources.map(createKnowledgeRow);
-    const hasActiveSearchFilter = Boolean(
-      (filters.keyword ?? '').trim() ||
-      filters.sourceType ||
-      filters.status,
-    );
-    const shouldShowFallback = !hasActiveSearchFilter && !sourcesLoading && !sourcesIsError && sources.length === 0;
-    const baseRows = shouldShowFallback ? FALLBACK_ROWS : liveRows;
-    const keyword = (filters.keyword ?? '').trim().toLowerCase();
-    if (!keyword) return baseRows;
-    return baseRows.filter((row) => [
-      row.title,
-      row.subtitle,
-      row.fileName,
-      row.typeLabel,
-      row.statusLabel,
-      ...row.tags,
-    ].some((value) => value.toLowerCase().includes(keyword)));
-  }, [filters.keyword, sources.length, sourcesIsError, sourcesLoading, visibleSources]);
+  const sourceTypeCounts = useMemo(() => {
+    const counts = new Map<KnowledgeSourceType, number>();
+    for (const source of filterKnowledgeSources(summarySources, {
+      projectId: selectedProjectId,
+      roomId: activeRoomId,
+    }, locale)) {
+      counts.set(source.source_type, (counts.get(source.source_type) ?? 0) + 1);
+    }
+    return counts;
+  }, [activeRoomId, locale, selectedProjectId, summarySources]);
 
-  const selectedRow = rows.find((row) => row.id === selectedSourceId) ?? rows[0] ?? null;
-  const pathLabel = selectedProject
-    ? `${selectedProject.name} · ${selectedProject.path}`
-    : '所有项目 · Ocean Platform';
+  const rows = useMemo(() => visibleSources.map(createKnowledgeRow), [visibleSources]);
+  const selectedRow = rows.find((row) => row.id === selectedSourceId) ?? null;
+  const selectedSourceIdForQuery = selectedRow?.source.id ?? null;
+  const pathLabel = selectedProject ? `${selectedProject.name} · ${selectedProject.path}` : '所有项目';
+
+  useEffect(() => {
+    if (!selectedSourceId) return;
+    if (!rows.some((row) => row.id === selectedSourceId)) setSelectedSourceId(null);
+  }, [rows, selectedSourceId]);
+
+  const { data: selectedDetail } = useQuery({
+    queryKey: ['knowledge-source', selectedSourceIdForQuery],
+    queryFn: () => api.getKnowledgeSource(selectedSourceIdForQuery!),
+    enabled: !!selectedSourceIdForQuery,
+  });
+  const { data: selectedExtraction } = useQuery({
+    queryKey: ['knowledge-extraction', selectedSourceIdForQuery],
+    queryFn: () => api.getKnowledgeExtraction(selectedSourceIdForQuery!),
+    enabled: !!selectedSourceIdForQuery && activeDetailTab === 'extraction',
+    retry: false,
+  });
+  const { data: selectedChunks = [] } = useQuery({
+    queryKey: ['knowledge-chunks', selectedSourceIdForQuery],
+    queryFn: () => api.listKnowledgeChunks(selectedSourceIdForQuery!, { limit: 200 }),
+    enabled: !!selectedSourceIdForQuery && activeDetailTab === 'chunks',
+  });
 
   const upload = useMutation({
     mutationFn: (selectedFiles: File[]) => {
@@ -324,14 +294,40 @@ export function KnowledgePage(): JSX.Element {
       return api.uploadProjectFiles(selectedProjectId, selectedFiles);
     },
     onSuccess: async (uploaded) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['knowledge-sources'] }),
-        queryClient.invalidateQueries({ queryKey: ['files'] }),
-        queryClient.invalidateQueries({ queryKey: ['project-files', selectedProjectId] }),
-      ]);
+      await invalidateKnowledgeQueries(queryClient, selectedProjectId);
       toast.success('文件已上传', {
         description: `已上传 ${uploaded.length} 个文件，知识库索引会自动更新。`,
       });
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const reprocess = useMutation({
+    mutationFn: (sourceId: string) => api.reprocessKnowledgeSource(sourceId),
+    onSuccess: async () => {
+      await invalidateKnowledgeQueries(queryClient, selectedProjectId);
+      toast.success('已重新处理知识资源');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const updateStatus = useMutation({
+    mutationFn: (source: KnowledgeSource) => api.updateKnowledgeSource(source.id, {
+      status: source.status === 'disabled' ? 'ready' : 'disabled',
+    }),
+    onSuccess: async (source) => {
+      await invalidateKnowledgeQueries(queryClient, selectedProjectId);
+      toast.success(source.status === 'disabled' ? '已禁用检索' : '已恢复检索');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const removeSource = useMutation({
+    mutationFn: (sourceId: string) => api.deleteKnowledgeSource(sourceId),
+    onSuccess: async () => {
+      setSelectedSourceId(null);
+      await invalidateKnowledgeQueries(queryClient, selectedProjectId);
+      toast.success('已删除知识库记录');
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -353,6 +349,15 @@ export function KnowledgePage(): JSX.Element {
     setSelectedSourceId(null);
   };
 
+  const openPreview = (detail?: KnowledgeSourceDetail) => {
+    const file = detail ? knowledgeDetailToPreviewFile(detail) : null;
+    if (!file) {
+      toast.error('该资源没有可预览的原始文件');
+      return;
+    }
+    setPreviewFile(file);
+  };
+
   return (
     <div className="knowledge-command-page">
       <input
@@ -372,6 +377,7 @@ export function KnowledgePage(): JSX.Element {
         <KnowledgeSidebar
           stats={dashboardStats}
           filters={activeFilters}
+          sourceTypeCounts={sourceTypeCounts}
           selectedProjectLabel={pathLabel}
           selectedRoomLabel={selectedRoom?.name ?? ''}
           uploadPending={upload.isPending}
@@ -385,20 +391,16 @@ export function KnowledgePage(): JSX.Element {
             <div className="mb-4 flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <h1 className="m-0 text-[18px] font-bold leading-tight text-slate-950">全部资源</h1>
-                <p className="mt-0.5 text-[11px] text-slate-400">管理和检索项目中的所有知识资源</p>
+                <p className="mt-0.5 text-[11px] text-slate-500">管理和检索项目中的所有知识资源</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <div className="knowledge-action-group">
-                  <button type="button">
-                    批量操作
-                    <ChevronDown className="h-2 w-2 text-slate-400" strokeWidth={2.4} />
-                  </button>
                   <button type="button" onClick={() => void refetchSources()}>
-                    <RefreshCcw className="h-3 w-3 text-slate-400" strokeWidth={2} />
-                    重处理
+                    <RefreshCcw className="h-3 w-3 text-slate-500" strokeWidth={2} />
+                    刷新
                   </button>
-                  <button type="button">
-                    <FileOutput className="h-3 w-3 text-slate-400" strokeWidth={2} />
+                  <button type="button" disabled={rows.length === 0} onClick={() => exportKnowledgeRows(rows)}>
+                    <FileOutput className="h-3 w-3 text-slate-500" strokeWidth={2} />
                     导出清单
                   </button>
                 </div>
@@ -429,33 +431,27 @@ export function KnowledgePage(): JSX.Element {
 
             <div className="mb-3 space-y-2">
               <label className="knowledge-resource-search">
-                <Search className="h-3 w-3 text-slate-400" strokeWidth={2.1} />
+                <Search className="h-3 w-3 text-slate-500" strokeWidth={2.1} />
                 <input
                   value={filters.keyword ?? ''}
                   onChange={(event) => setFilters((current) => ({ ...current, keyword: event.target.value }))}
                   placeholder="搜索文件名、内容、标签、摘要..."
                   aria-label="搜索知识资源"
                 />
-                <SlidersHorizontal className="h-3 w-3 cursor-pointer text-slate-400" strokeWidth={2.1} />
+                <SlidersHorizontal className="h-3 w-3 text-slate-500" strokeWidth={2.1} />
               </label>
               <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2 text-[11px]">
+                <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
                   <FilterSelect
                     label="项目"
                     value={selectedProjectId}
-                    options={[
-                      { value: '', label: '全部' },
-                      ...projects.map((item) => ({ value: item.id, label: item.name })),
-                    ]}
+                    options={[{ value: '', label: '全部' }, ...projects.map((item) => ({ value: item.id, label: item.name }))]}
                     onChange={(value) => replaceFilters({ ...activeFilters, projectId: value, roomId: '' })}
                   />
                   <FilterSelect
                     label="房间"
                     value={activeRoomId}
-                    options={[
-                      { value: '', label: '全部' },
-                      ...rooms.map((room) => ({ value: room.id, label: room.name })),
-                    ]}
+                    options={[{ value: '', label: '全部' }, ...rooms.map((room) => ({ value: room.id, label: room.name }))]}
                     disabled={!selectedProjectId || rooms.length === 0}
                     onChange={(value) => patchFilters({ roomId: value })}
                   />
@@ -472,27 +468,57 @@ export function KnowledgePage(): JSX.Element {
                     onChange={(value) => patchFilters({ status: value as KnowledgeSourceStatus | '' })}
                   />
                 </div>
-                <button type="button" className="knowledge-sort-button">
-                  最新上传
-                  <ChevronDown className="h-2 w-2 text-slate-400" strokeWidth={2.4} />
-                </button>
+                <span className="knowledge-sort-button">
+                  状态优先
+                  <ChevronDown className="h-2 w-2 text-slate-500" strokeWidth={2.4} />
+                </span>
               </div>
             </div>
+
+            {shouldSearchKnowledge ? <SearchResultSummary loading={searchLoading} results={searchResults} /> : null}
 
             <KnowledgeResourceTable
               rows={rows}
               selectedRowId={selectedRow?.id ?? ''}
               loading={sourcesLoading && rows.length === 0}
               error={sourcesIsError ? sourcesError : null}
-              onSelect={(row) => setSelectedSourceId(row.id)}
+              viewMode={viewMode}
+              onSelect={(row) => {
+                setSelectedSourceId(row.id);
+                setActiveDetailTab('overview');
+              }}
             />
           </div>
 
-          <KnowledgePagination total={dashboardStats.total} />
+          <KnowledgePagination total={rows.length} />
         </main>
 
-        <KnowledgeDetailsPanel row={selectedRow} />
+        <KnowledgeDetailsPanel
+          row={selectedRow}
+          detail={selectedDetail}
+          extraction={selectedExtraction}
+          chunks={selectedChunks}
+          activeTab={activeDetailTab}
+          actionPending={reprocess.isPending || updateStatus.isPending || removeSource.isPending}
+          onTabChange={setActiveDetailTab}
+          onClose={() => setSelectedSourceId(null)}
+          onPreview={() => openPreview(selectedDetail)}
+          onCopyReference={(source) => void copyKnowledgeReference(source)}
+          onToggleDisabled={(source) => updateStatus.mutate(source)}
+          onReprocess={(sourceId) => reprocess.mutate(sourceId)}
+          onDelete={(sourceId) => {
+            if (window.confirm('删除该知识库记录？原始文件会保留。')) removeSource.mutate(sourceId);
+          }}
+        />
       </div>
+
+      <ProjectFilePreviewDialog
+        file={previewFile}
+        projectId={previewFile?.project_id}
+        onOpenChange={(open) => {
+          if (!open) setPreviewFile(null);
+        }}
+      />
     </div>
   );
 }
@@ -500,6 +526,7 @@ export function KnowledgePage(): JSX.Element {
 function KnowledgeSidebar({
   stats,
   filters,
+  sourceTypeCounts,
   selectedProjectLabel,
   selectedRoomLabel,
   uploadPending,
@@ -509,6 +536,7 @@ function KnowledgeSidebar({
 }: {
   stats: KnowledgeDashboardStats;
   filters: KnowledgeSourceFilters;
+  sourceTypeCounts: Map<KnowledgeSourceType, number>;
   selectedProjectLabel: string;
   selectedRoomLabel: string;
   uploadPending: boolean;
@@ -516,16 +544,12 @@ function KnowledgeSidebar({
   onFiltersChange: (filters: KnowledgeSourceFilters) => void;
   onPatchFilters: (filters: KnowledgeSourceFilters) => void;
 }): JSX.Element {
+  const storagePercent = stats.totalSize > 0 ? 100 : 0;
   return (
     <aside className="knowledge-sidebar knowledge-scrollbar">
       <div className="p-3">
         <h2 className="mb-3 text-[16px] font-bold text-slate-950">知识库</h2>
-        <button
-          type="button"
-          className="knowledge-upload-button"
-          disabled={uploadPending}
-          onClick={onUpload}
-        >
+        <button type="button" className="knowledge-upload-button" disabled={uploadPending} onClick={onUpload}>
           <Plus className="h-3 w-3" strokeWidth={2.5} />
           {uploadPending ? '上传中' : '上传资源'}
         </button>
@@ -533,39 +557,47 @@ function KnowledgeSidebar({
 
       <div className="space-y-0.5 px-2">
         <SidebarPrimaryItem icon={FolderOpen} label="全部资源" count={formatCount(stats.total)} active onClick={() => onFiltersChange({ projectId: filters.projectId ?? '' })} />
-        <SidebarPrimaryItem icon={Star} label="我的收藏" count="56" />
-        <SidebarPrimaryItem icon={Clock3} label="最近使用" count={formatCount(Math.max(stats.processing, 128))} />
-        <SidebarPrimaryItem icon={Trash2} label="回收站" count="8" />
       </div>
 
       <SidebarSection title="资源类型">
-        <SidebarPrimaryItem icon={FileText} label="文档" count="528" compact onClick={() => onPatchFilters({ sourceType: 'agent_document' })} />
-        <SidebarPrimaryItem icon={ImageIcon} label="图片" count="312" compact onClick={() => onPatchFilters({ sourceType: 'resource_asset' })} />
-        <SidebarPrimaryItem icon={FileText} label="PDF" count="186" compact onClick={() => onPatchFilters({ sourceType: 'uploaded_file' })} />
-        <SidebarPrimaryItem icon={FileSpreadsheet} label="表格" count="94" compact onClick={() => onPatchFilters({ sourceType: 'workspace_file' })} />
-        <SidebarPrimaryItem icon={Presentation} label="演示" count="64" compact />
-        <SidebarPrimaryItem icon={Code2} label="代码" count="34" compact onClick={() => onPatchFilters({ sourceType: 'workspace_doc' })} />
+        {SOURCE_TYPE_FILTERS.filter((item) => item.value).map((item) => {
+          const type = item.value as KnowledgeSourceType;
+          const count = sourceTypeCounts.get(type) ?? 0;
+          if (count === 0) return null;
+          const Icon = getSidebarTypeIcon(type);
+          return (
+            <SidebarPrimaryItem
+              key={type}
+              icon={Icon}
+              label={item.label}
+              count={formatCount(count)}
+              compact
+              onClick={() => onPatchFilters({ sourceType: type })}
+            />
+          );
+        })}
       </SidebarSection>
 
       <SidebarSection title="处理状态">
         <StatusSidebarItem colorClassName="bg-slate-300" label="全部" count={formatCount(stats.total)} onClick={() => onPatchFilters({ status: '' })} />
         <StatusSidebarItem colorClassName="bg-green-500" label="已完成" count={formatCount(stats.ready)} onClick={() => onPatchFilters({ status: 'ready' })} />
         <StatusSidebarItem colorClassName="bg-blue-500" label="处理中" count={formatCount(stats.processing)} onClick={() => onPatchFilters({ status: 'processing' })} />
+        <StatusSidebarItem colorClassName="bg-red-500" label="失败" count={formatCount(stats.failed)} onClick={() => onPatchFilters({ status: 'failed' })} />
       </SidebarSection>
 
       <div className="mt-auto border-t border-slate-200 bg-slate-50 p-4">
-        <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase text-slate-500">
-          <span>存储空间</span>
-          <Database className="h-3 w-3 text-slate-300" strokeWidth={2.2} />
+        <div className="mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase text-slate-600">
+          <span>资料体积</span>
+          <Database className="h-3 w-3 text-slate-400" strokeWidth={2.2} />
         </div>
         <div className="mb-1.5 flex justify-between text-[11px]">
-          <span className="font-medium text-slate-700">128.6 GB <span className="text-slate-400">/ 500 GB</span></span>
+          <span className="font-medium text-slate-700">{formatKnowledgeSize(stats.totalSize)}</span>
         </div>
         <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200">
-          <div className="h-full bg-[#004AC6]" style={{ width: '25%' }} />
+          <div className="h-full bg-[#004AC6]" style={{ width: `${storagePercent}%` }} />
         </div>
-        <div className="mt-1 text-right text-[9px] text-slate-400">已使用 25%</div>
-        <div className="mt-3 truncate text-[9px] leading-4 text-slate-400">{selectedProjectLabel}{selectedRoomLabel ? ` · ${selectedRoomLabel}` : ''}</div>
+        <div className="mt-1 text-right text-[9px] text-slate-500">{formatCount(stats.chunks)} chunks</div>
+        <div className="mt-3 truncate text-[9px] leading-4 text-slate-500">{selectedProjectLabel}{selectedRoomLabel ? ` · ${selectedRoomLabel}` : ''}</div>
       </div>
     </aside>
   );
@@ -574,7 +606,7 @@ function KnowledgeSidebar({
 function SidebarSection({ title, children }: { title: string; children: ReactNode }): JSX.Element {
   return (
     <div className="mt-4">
-      <div className="flex cursor-pointer items-center justify-between px-5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+      <div className="flex cursor-pointer items-center justify-between px-5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
         {title}
         <ChevronDown className="h-2.5 w-2.5 rotate-180" strokeWidth={2.4} />
       </div>
@@ -601,11 +633,7 @@ function SidebarPrimaryItem({
   return (
     <button
       type="button"
-      className={[
-        'knowledge-sidebar-item',
-        active ? 'is-active' : '',
-        compact ? 'is-compact' : '',
-      ].filter(Boolean).join(' ')}
+      className={['knowledge-sidebar-item', active ? 'is-active' : '', compact ? 'is-compact' : ''].filter(Boolean).join(' ')}
       onClick={onClick}
     >
       <span>
@@ -642,47 +670,11 @@ function StatusSidebarItem({
 function KnowledgeStatsCards({ stats }: { stats: KnowledgeDashboardStats }): JSX.Element {
   const total = Math.max(stats.total, 1);
   const metrics = [
-    {
-      label: '资源总数',
-      value: formatCount(stats.total),
-      sub: stats.total === FALLBACK_STATS.total ? '较上周 +128' : `${formatCount(stats.chunks)} chunks`,
-      tone: 'text-green-500',
-      icon: FileText,
-      iconNodeClassName: 'bg-blue-50 text-[#004AC6]',
-    },
-    {
-      label: '已完成处理',
-      value: formatCount(stats.ready),
-      sub: `${formatPercent(stats.ready, total)}%`,
-      tone: 'text-green-500',
-      progress: 88,
-      icon: Check,
-      iconNodeClassName: 'text-green-500',
-    },
-    {
-      label: '处理中',
-      value: formatCount(stats.processing),
-      sub: `${formatPercent(stats.processing, total)}%`,
-      tone: 'text-blue-500',
-      progress: 25,
-      spin: true,
-    },
-    {
-      label: '待处理',
-      value: formatCount(stats.pending),
-      sub: `${formatPercent(stats.pending, total)}%`,
-      tone: 'text-orange-500',
-      icon: Hourglass,
-      iconNodeClassName: 'border-2 border-orange-200 bg-orange-50 text-orange-400',
-    },
-    {
-      label: '处理失败',
-      value: formatCount(stats.failed),
-      sub: `${formatPercent(stats.failed, total)}%`,
-      tone: 'text-red-500',
-      icon: AlertCircle,
-      iconNodeClassName: 'rounded-full border-2 border-red-100 bg-red-50 text-red-500',
-    },
+    { label: '资源总数', value: formatCount(stats.total), sub: `${formatCount(stats.chunks)} chunks`, tone: 'text-slate-600', icon: FileText, iconNodeClassName: 'bg-blue-50 text-[#004AC6]' },
+    { label: '已完成处理', value: formatCount(stats.ready), sub: `${formatPercent(stats.ready, total)}%`, tone: 'text-green-600', progress: formatPercentNumber(stats.ready, total), icon: Check },
+    { label: '处理中', value: formatCount(stats.processing), sub: `${formatPercent(stats.processing, total)}%`, tone: 'text-blue-600', progress: formatPercentNumber(stats.processing, total), spin: stats.processing > 0 },
+    { label: '待处理', value: formatCount(stats.pending), sub: `${formatPercent(stats.pending, total)}%`, tone: 'text-orange-600', icon: Hourglass, iconNodeClassName: 'border-2 border-orange-200 bg-orange-50 text-orange-500' },
+    { label: '处理失败', value: formatCount(stats.failed), sub: `${formatPercent(stats.failed, total)}%`, tone: 'text-red-600', icon: AlertCircle, iconNodeClassName: 'rounded-full border-2 border-red-100 bg-red-50 text-red-500' },
   ];
 
   return (
@@ -690,11 +682,11 @@ function KnowledgeStatsCards({ stats }: { stats: KnowledgeDashboardStats }): JSX
       {metrics.map((metric) => (
         <div key={metric.label} className="knowledge-stat-card">
           <div>
-            <div className="mb-0.5 text-[10px] font-bold text-slate-500">{metric.label}</div>
+            <div className="mb-0.5 text-[10px] font-bold text-slate-600">{metric.label}</div>
             <div className="text-[20px] font-black leading-none text-slate-800">{metric.value}</div>
             <div className={`mt-1 text-[9px] font-bold ${metric.tone}`}>{metric.sub}</div>
           </div>
-          {metric.progress ? (
+          {metric.progress !== undefined ? (
             <div className="relative flex h-8 w-8 items-center justify-center">
               <svg className={`absolute inset-0 h-full w-full ${metric.spin ? 'animate-spin' : '-rotate-90'}`} viewBox="0 0 32 32" aria-hidden="true">
                 <circle cx="16" cy="16" r="14" fill="none" stroke={metric.spin ? '#eff6ff' : '#f0fdf4'} strokeWidth="3" />
@@ -728,22 +720,22 @@ function FilterSelect({
 }): JSX.Element {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <span className="shrink-0 text-slate-400">{label}:</span>
+      <span className="shrink-0 text-slate-500">{label}:</span>
       <label className="knowledge-filter-button">
-        <select
-          value={value}
-          disabled={disabled}
-          aria-label={`${label}筛选`}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          {options.map((option) => (
-            <option key={`${label}-${option.value}`} value={option.value}>
-              {option.label}
-            </option>
-          ))}
+        <select value={value} disabled={disabled} aria-label={`${label}筛选`} onChange={(event) => onChange(event.target.value)}>
+          {options.map((option) => <option key={`${label}-${option.value}`} value={option.value}>{option.label}</option>)}
         </select>
-        <ChevronDown className="h-2 w-2 shrink-0 text-slate-400" strokeWidth={2.4} />
+        <ChevronDown className="h-2 w-2 shrink-0 text-slate-500" strokeWidth={2.4} />
       </label>
+    </div>
+  );
+}
+
+function SearchResultSummary({ loading, results }: { loading: boolean; results: KnowledgeSearchResult[] }): JSX.Element {
+  return (
+    <div className="mb-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+      {loading ? '全文检索中...' : `全文检索命中 ${results.length} 个 chunk`}
+      {results.length > 0 ? <div className="mt-1 line-clamp-2 text-[10px] text-slate-500">{sanitizeSnippet(results[0]?.snippet ?? results[0]?.content ?? '')}</div> : null}
     </div>
   );
 }
@@ -753,14 +745,33 @@ function KnowledgeResourceTable({
   selectedRowId,
   loading,
   error,
+  viewMode,
   onSelect,
 }: {
   rows: KnowledgeResourceRow[];
   selectedRowId: string;
   loading: boolean;
   error: unknown;
+  viewMode: 'list' | 'grid';
   onSelect: (row: KnowledgeResourceRow) => void;
 }): JSX.Element {
+  if (viewMode === 'grid') {
+    return (
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <KnowledgeResourceStates rows={rows} loading={loading} error={error} mobile />
+        {rows.map((row) => (
+          <button key={row.id} type="button" className={['min-w-0 rounded border bg-white p-3 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/20', row.id === selectedRowId ? 'border-blue-200 bg-blue-50/50' : 'border-slate-200'].join(' ')} onClick={() => onSelect(row)}>
+            <ResourceCell row={row} />
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className={`knowledge-table-pill ${row.statusPillClassName}`}>{row.statusLabel}</span>
+              <span className="font-mono text-[11px] text-slate-500">{row.pagesLabel}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="knowledge-table-wrap">
       <table className="w-full table-fixed text-left text-[12px]">
@@ -770,7 +781,7 @@ function KnowledgeResourceTable({
               <input className="h-3.5 w-3.5 rounded border-slate-300 text-[#004AC6]" type="checkbox" aria-label="选择全部资源" />
             </th>
             <th className="py-2.5">资源信息</th>
-            <th className="w-16 px-3 py-2.5">类型</th>
+            <th className="w-20 px-3 py-2.5">类型</th>
             <th className="w-20 px-3 py-2.5">状态</th>
             <th className="w-20 px-3 py-2.5">大小</th>
             <th className="w-32 px-3 py-2.5">更新时间</th>
@@ -779,86 +790,72 @@ function KnowledgeResourceTable({
           </tr>
         </thead>
         <tbody>
-          {error && rows.length === 0 ? (
-            <tr>
-              <td colSpan={8} className="px-4 py-6 text-center text-[12px] text-rose-500">
-                知识库加载失败：{error instanceof Error ? error.message : '未知错误'}
-              </td>
-            </tr>
-          ) : null}
-          {!error && loading ? (
-            <tr>
-              <td colSpan={8} className="px-4 py-6 text-center text-[12px] text-slate-400">加载知识资源中...</td>
-            </tr>
-          ) : null}
-          {!error && !loading && rows.length === 0 ? (
-            <tr>
-              <td colSpan={8} className="px-4 py-6 text-center text-[12px] text-slate-400">没有匹配的知识资源</td>
-            </tr>
-          ) : null}
+          <KnowledgeResourceStates rows={rows} loading={loading} error={error} />
           {rows.map((row) => {
             const selected = row.id === selectedRowId;
             return (
-              <tr
-                key={row.id}
-                className={selected ? 'is-selected' : ''}
-                onClick={() => onSelect(row)}
-              >
+              <tr key={row.id} className={selected ? 'is-selected' : ''} onClick={() => onSelect(row)}>
                 <td className="px-4 py-2.5">
-                  <input
-                    checked={selected}
-                    readOnly
-                    className="h-3.5 w-3.5 rounded border-slate-300 text-[#004AC6]"
-                    type="checkbox"
-                    aria-label={`选择 ${row.title}`}
-                  />
+                  <input checked={selected} readOnly className="h-3.5 w-3.5 rounded border-slate-300 text-[#004AC6]" type="checkbox" aria-label={`选择 ${row.title}`} />
                 </td>
-                <td className="py-2.5">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded border text-[16px] shadow-sm ${row.iconClassName}`}>
-                      <row.icon className="h-4 w-4" strokeWidth={2} />
-                    </span>
-                    <span className="min-w-0">
-                      <button type="button" className="block max-w-full truncate text-left font-bold text-slate-800">{row.title}</button>
-                      <span className="block truncate text-[10px] text-slate-400">{row.subtitle}</span>
-                    </span>
-                  </div>
-                </td>
-                <td className="px-3 py-2.5">
-                  <span className={`knowledge-table-pill ${row.typePillClassName}`}>{row.typeLabel}</span>
-                </td>
-                <td className="px-3 py-2.5">
-                  {row.progress ? (
-                    <span className="flex w-16 flex-col gap-1">
-                      <span className={`knowledge-table-pill text-center ${row.statusPillClassName}`}>{row.statusLabel}</span>
-                      <span className="h-0.5 w-full overflow-hidden rounded-full bg-slate-100">
-                        <i className="block h-full bg-blue-500" style={{ width: `${row.progress}%` }} />
-                      </span>
-                    </span>
-                  ) : (
-                    <span className={`knowledge-table-pill ${row.statusPillClassName}`}>{row.statusLabel}</span>
-                  )}
-                </td>
-                <td className="px-3 py-2.5 text-slate-500">{row.sizeLabel}</td>
-                <td className="px-3 py-2.5 text-slate-500">{row.updatedAt}</td>
+                <td className="py-2.5"><ResourceCell row={row} /></td>
+                <td className="px-3 py-2.5"><span className={`knowledge-table-pill ${row.typePillClassName}`}>{row.typeLabel}</span></td>
+                <td className="px-3 py-2.5"><span className={`knowledge-table-pill ${row.statusPillClassName}`}>{row.statusLabel}</span></td>
+                <td className="px-3 py-2.5 text-slate-600">{row.sizeLabel}</td>
+                <td className="px-3 py-2.5 text-slate-600">{row.updatedAt}</td>
                 <td className="px-3 py-2.5">
                   <div className="flex min-w-0 gap-1">
-                    {row.tags.slice(0, 2).map((tag) => (
-                      <span key={tag} className="truncate rounded bg-slate-100 px-1 py-0.5 text-[9px] text-slate-500">{tag}</span>
-                    ))}
+                    {row.tags.slice(0, 2).map((tag) => <span key={tag} className="truncate rounded bg-slate-100 px-1 py-0.5 text-[9px] text-slate-600">{tag}</span>)}
                   </div>
                 </td>
-                <td className="px-4 py-2.5 text-slate-400">
-                  <div className="flex items-center gap-2">
-                    {row.favorite ? <Star className="h-3 w-3 fill-orange-400 text-orange-400" strokeWidth={1.8} /> : null}
-                    <MoreVertical className="h-3 w-3" strokeWidth={2.2} />
-                  </div>
-                </td>
+                <td className="px-4 py-2.5 text-slate-500"><MoreVertical className="h-3 w-3" strokeWidth={2.2} /></td>
               </tr>
             );
           })}
         </tbody>
       </table>
+
+      <div className="knowledge-mobile-list">
+        <KnowledgeResourceStates rows={rows} loading={loading} error={error} mobile />
+        {rows.map((row) => (
+          <button key={row.id} type="button" className={['knowledge-mobile-card', row.id === selectedRowId ? 'is-selected' : ''].join(' ')} onClick={() => onSelect(row)}>
+            <span className="knowledge-mobile-card__title">{row.title}</span>
+            <span className="knowledge-mobile-card__meta">{row.typeLabel} · {row.statusLabel} · {row.sizeLabel}</span>
+            <span className="knowledge-mobile-card__meta">{row.tags.slice(0, 3).join(' · ') || '暂无标签'}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KnowledgeResourceStates({ rows, loading, error, mobile = false }: { rows: KnowledgeResourceRow[]; loading: boolean; error: unknown; mobile?: boolean }): JSX.Element | null {
+  const className = mobile ? 'block px-4 py-6 text-center text-[12px]' : 'px-4 py-6 text-center text-[12px]';
+  if (error && rows.length === 0) {
+    const content = <span className="text-rose-600">知识库加载失败：{error instanceof Error ? error.message : '未知错误'}</span>;
+    return mobile ? <div className={className}>{content}</div> : <tr><td colSpan={8} className={className}>{content}</td></tr>;
+  }
+  if (!error && loading) {
+    const content = <span className="text-slate-500">加载知识资源中...</span>;
+    return mobile ? <div className={className}>{content}</div> : <tr><td colSpan={8} className={className}>{content}</td></tr>;
+  }
+  if (!error && !loading && rows.length === 0) {
+    const content = <span className="text-slate-500">没有匹配的知识资源</span>;
+    return mobile ? <div className={className}>{content}</div> : <tr><td colSpan={8} className={className}>{content}</td></tr>;
+  }
+  return null;
+}
+
+function ResourceCell({ row }: { row: KnowledgeResourceRow }): JSX.Element {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded border text-[16px] shadow-sm ${row.iconClassName}`}>
+        <row.icon className="h-4 w-4" strokeWidth={2} />
+      </span>
+      <span className="min-w-0">
+        <span className="block max-w-full truncate text-left font-bold text-slate-800">{row.title}</span>
+        <span className="block truncate text-[10px] text-slate-500">{row.subtitle}</span>
+      </span>
     </div>
   );
 }
@@ -866,150 +863,252 @@ function KnowledgeResourceTable({
 function KnowledgePagination({ total }: { total: number }): JSX.Element {
   return (
     <div className="knowledge-pagination">
-      <div className="text-[11px] font-medium text-slate-400">共 {formatCount(total)} 项</div>
-      <div className="flex items-center gap-3">
-        <div className="knowledge-page-buttons">
-          <button type="button" disabled>‹</button>
-          <button type="button" className="is-active">1</button>
-          <button type="button">2</button>
-          <button type="button">3</button>
-          <button type="button">4</button>
-          <span>...</span>
-          <button type="button">125</button>
-          <button type="button">›</button>
-        </div>
-        <select className="rounded border-slate-200 py-0.5 pl-2 pr-6 text-[11px] focus:ring-blue-500" aria-label="分页条数">
-          <option>10 条/页</option>
-          <option>20 条/页</option>
-        </select>
-      </div>
+      <div className="text-[11px] font-medium text-slate-500">共 {formatCount(total)} 项</div>
+      <div className="text-[11px] text-slate-500">当前最多显示 500 项</div>
     </div>
   );
 }
 
-function KnowledgeDetailsPanel({ row }: { row: KnowledgeResourceRow | null }): JSX.Element {
-  const displayRow = row ?? FALLBACK_ROWS[0];
-  const details = [
-    ['文件名', displayRow.fileName],
-    ['大小', displayRow.sizeLabel],
-    ['页数', displayRow.pagesLabel],
-    ['更新时间', displayRow.compactUpdatedAt],
-  ];
+function KnowledgeDetailsPanel({
+  row,
+  detail,
+  extraction,
+  chunks,
+  activeTab,
+  actionPending,
+  onTabChange,
+  onClose,
+  onPreview,
+  onCopyReference,
+  onToggleDisabled,
+  onReprocess,
+  onDelete,
+}: {
+  row: KnowledgeResourceRow | null;
+  detail?: KnowledgeSourceDetail;
+  extraction?: KnowledgeExtraction;
+  chunks: KnowledgeChunk[];
+  activeTab: DetailTab;
+  actionPending: boolean;
+  onTabChange: (tab: DetailTab) => void;
+  onClose: () => void;
+  onPreview: () => void;
+  onCopyReference: (source: KnowledgeSource) => void;
+  onToggleDisabled: (source: KnowledgeSource) => void;
+  onReprocess: (sourceId: string) => void;
+  onDelete: (sourceId: string) => void;
+}): JSX.Element {
+  const source = detail ?? row?.source ?? null;
+  const previewFile = detail ? knowledgeDetailToPreviewFile(detail) : null;
 
   return (
     <aside className="knowledge-details">
       <div className="flex h-11 shrink-0 items-center justify-between border-b border-slate-200 p-3">
         <h2 className="text-[14px] font-bold text-slate-800">资源详情</h2>
-        <button type="button" className="text-slate-400 hover:text-slate-600" aria-label="关闭资源详情">
+        <button type="button" className="text-slate-500 hover:text-slate-700" aria-label="关闭资源详情" onClick={onClose}>
           <X className="h-3.5 w-3.5" strokeWidth={2.2} />
         </button>
       </div>
 
-      <div className="knowledge-details__body knowledge-scrollbar">
-        <div className="flex items-start gap-3">
-          <span className={`flex h-14 w-10 shrink-0 items-center justify-center rounded border text-[20px] shadow-sm ${displayRow.iconClassName}`}>
-            <displayRow.icon className="h-5 w-5" strokeWidth={2} />
-          </span>
-          <div className="min-w-0">
-            <div className="mb-0.5 flex items-center gap-1.5">
-              <h3 className="truncate text-[13px] font-bold leading-tight text-slate-950">{displayRow.title}</h3>
-              {displayRow.favorite ? <Star className="h-2.5 w-2.5 shrink-0 fill-orange-400 text-orange-400" strokeWidth={1.8} /> : null}
-            </div>
-            <div className="space-y-0.5 text-[10px] leading-relaxed text-slate-400">
-              <div>{displayRow.typeLabel} · {displayRow.sizeLabel} · 2025-06-07</div>
-              <div className="truncate">{displayRow.subtitle}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="knowledge-detail-tabs">
-          {['概览', '预览', '解析', '摘要', '引用'].map((tab, index) => (
-            <button key={tab} type="button" className={index === 0 ? 'is-active' : ''}>{tab}</button>
-          ))}
-        </div>
-
-        <div className="rounded-lg bg-slate-50 p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-tighter text-slate-700">处理状态</span>
-            <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${displayRow.status === 'ready' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-              {displayRow.statusLabel}
-            </span>
-          </div>
-          <div className="relative flex items-center justify-between px-2">
-            <div className="absolute left-4 right-4 top-1/2 z-0 h-0.5 -translate-y-1/2 bg-green-200" />
-            {[
-              [CloudUpload, '上传'],
-              [Zap, '解析'],
-              [Sparkles, '摘要'],
-              [Check, '索引'],
-            ].map(([Icon, label]) => (
-              <div key={label as string} className="relative z-10 flex flex-col items-center gap-1">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-white">
-                  <Icon className="h-2.5 w-2.5" strokeWidth={2.2} />
-                </span>
-                <span className="text-[8px] font-bold text-slate-500">{label as string}</span>
+      {row && source ? (
+        <>
+          <div className="knowledge-details__body knowledge-scrollbar">
+            <div className="flex items-start gap-3">
+              <span className={`flex h-14 w-10 shrink-0 items-center justify-center rounded border text-[20px] shadow-sm ${row.iconClassName}`}>
+                <row.icon className="h-5 w-5" strokeWidth={2} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="truncate text-[13px] font-bold leading-tight text-slate-950">{row.title}</h3>
+                <div className="mt-1 space-y-0.5 text-[10px] leading-relaxed text-slate-500">
+                  <div>{row.typeLabel} · {row.sizeLabel} · {row.compactUpdatedAt}</div>
+                  <div className="truncate">{row.subtitle}</div>
+                </div>
               </div>
-            ))}
+            </div>
+
+            <div className="knowledge-detail-tabs">
+              {DETAIL_TABS.map((tab) => (
+                <button key={tab.value} type="button" className={activeTab === tab.value ? 'is-active' : ''} onClick={() => onTabChange(tab.value)}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <KnowledgeDetailTabContent tab={activeTab} row={row} source={source} detail={detail} extraction={extraction} chunks={chunks} previewFile={previewFile} />
+          </div>
+
+          <div className="mt-auto flex shrink-0 flex-wrap gap-2 border-t border-slate-200 bg-white p-2.5">
+            <button type="button" className="knowledge-detail-primary" disabled={!previewFile || !detail?.capabilities?.preview} onClick={onPreview}>
+              <Eye className="h-2.5 w-2.5" strokeWidth={2.2} />
+              预览
+            </button>
+            <a className="knowledge-detail-secondary" href={detail?.original_file?.url || undefined} download={detail?.original_file?.name} aria-disabled={!detail?.capabilities?.download} tabIndex={detail?.capabilities?.download ? undefined : -1} onClick={(event) => { if (!detail?.capabilities?.download) event.preventDefault(); }}>
+              <Download className="h-2.5 w-2.5" strokeWidth={2.2} />
+              下载
+            </a>
+            <button type="button" className="knowledge-detail-secondary" disabled={actionPending} onClick={() => onCopyReference(source)}>
+              <Link2 className="h-2.5 w-2.5" strokeWidth={2.2} />
+              引用
+            </button>
+            <button type="button" className="knowledge-detail-secondary" disabled={actionPending} onClick={() => onToggleDisabled(source)}>
+              <Link2 className="h-2.5 w-2.5" strokeWidth={2.2} />
+              {source.status === 'disabled' ? '恢复检索' : '禁用检索'}
+            </button>
+            <button type="button" className="knowledge-detail-secondary" disabled={actionPending || !detail?.capabilities?.reprocess} onClick={() => onReprocess(source.id)}>
+              <RefreshCcw className="h-2.5 w-2.5" strokeWidth={2.2} />
+              重新处理
+            </button>
+            <button type="button" className="knowledge-detail-more is-danger" disabled={actionPending} aria-label="删除知识资源" onClick={() => onDelete(source.id)}>
+              <Trash2 className="h-2.5 w-2.5" strokeWidth={2.2} />
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="knowledge-details__body knowledge-scrollbar">
+          <div className="rounded border border-dashed border-slate-200 bg-slate-50 p-4 text-[12px] leading-5 text-slate-500">
+            选择一条知识资源查看解析、chunks 和引用信息。
           </div>
         </div>
-
-        <div className="space-y-2">
-          <h4 className="text-[11px] font-bold uppercase tracking-tight text-slate-700">资源信息</h4>
-          <div className="space-y-1.5 text-[11px]">
-            {details.map(([label, value]) => (
-              <div key={label} className="flex">
-                <span className="w-16 shrink-0 text-slate-400">{label}</span>
-                <span className={`min-w-0 flex-1 truncate text-slate-800 ${label === '更新时间' ? 'font-mono' : ''}`}>{value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <h4 className="mb-2 text-[11px] font-bold uppercase tracking-tight text-slate-700">标签</h4>
-          <div className="flex flex-wrap gap-1">
-            {Array.from(new Set([...displayRow.tags, '需求', 'PRD', '+3'])).slice(0, 4).map((tag) => (
-              <span key={tag} className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">{tag}</span>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-4 gap-1 border-t border-slate-200 pt-2 text-center">
-          <DetailCounter label="引用" value={displayRow.source?.reference_count ?? 23} />
-          <DetailCounter label="会话" value={12} />
-          <DetailCounter label="任务" value={8} />
-          <DetailCounter label="智体" value={5} />
-        </div>
-      </div>
-
-      <div className="mt-auto flex shrink-0 flex-wrap gap-2 border-t border-slate-200 bg-white p-2.5">
-        <button type="button" className="knowledge-detail-primary">
-          <Eye className="h-2.5 w-2.5" strokeWidth={2.2} />
-          预览
-        </button>
-        <button type="button" className="knowledge-detail-secondary">
-          <Download className="h-2.5 w-2.5" strokeWidth={2.2} />
-          下载
-        </button>
-        <div className="flex w-full gap-2">
-          <button type="button" className="knowledge-detail-secondary">
-            <Link2 className="h-2.5 w-2.5" strokeWidth={2.2} />
-            引用
-          </button>
-          <button type="button" className="knowledge-detail-more" aria-label="更多资源操作">
-            <MoreHorizontal className="h-2.5 w-2.5" strokeWidth={2.2} />
-          </button>
-        </div>
-      </div>
+      )}
     </aside>
   );
+}
+
+function KnowledgeDetailTabContent({ tab, row, source, detail, extraction, chunks, previewFile }: { tab: DetailTab; row: KnowledgeResourceRow; source: KnowledgeSource; detail?: KnowledgeSourceDetail; extraction?: KnowledgeExtraction; chunks: KnowledgeChunk[]; previewFile: ProjectFile | null }): JSX.Element {
+  if (tab === 'extraction') {
+    return (
+      <DetailSection title="解析文本">
+        {extraction ? (
+          <>
+            <div className="mb-2 flex items-center justify-between text-[10px] text-slate-500">
+              <span>{formatCount(extraction.returned_char_count)} / {formatCount(extraction.original_char_count)} chars</span>
+              <span>{extraction.truncated ? '已截断' : '完整返回'}</span>
+            </div>
+            <pre className="knowledge-detail-pre">{extraction.markdown || extraction.plain_text}</pre>
+          </>
+        ) : <EmptyDetailText text="暂无 extraction 记录。" />}
+      </DetailSection>
+    );
+  }
+
+  if (tab === 'chunks') {
+    return (
+      <DetailSection title="Chunks">
+        {chunks.length > 0 ? (
+          <div className="space-y-2">
+            {chunks.map((chunk) => (
+              <div key={chunk.id} className="rounded border border-slate-200 bg-white p-2">
+                <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-slate-500">
+                  <span className="font-mono">#{chunk.chunk_index} · {chunk.chunk_type}</span>
+                  <span>{chunk.enabled ? 'enabled' : 'disabled'}</span>
+                </div>
+                {chunk.heading ? <div className="mb-1 text-[11px] font-bold text-slate-700">{chunk.heading}</div> : null}
+                <p className="line-clamp-5 whitespace-pre-wrap text-[11px] leading-5 text-slate-600">{chunk.content}</p>
+              </div>
+            ))}
+          </div>
+        ) : <EmptyDetailText text="暂无 chunk 记录。" />}
+      </DetailSection>
+    );
+  }
+
+  if (tab === 'summary') {
+    return <DetailSection title="摘要"><p className="whitespace-pre-wrap text-[12px] leading-5 text-slate-600">{source.summary || '暂无摘要。'}</p></DetailSection>;
+  }
+
+  if (tab === 'preview') {
+    return (
+      <DetailSection title="原始资源">
+        {previewFile ? (
+          <div className="space-y-1.5 text-[11px]">
+            <DetailRow label="文件名" value={previewFile.original_name} />
+            <DetailRow label="类型" value={previewFile.source_type} />
+            <DetailRow label="URL" value={previewFile.url || '(none)'} />
+          </div>
+        ) : <EmptyDetailText text="该资源没有可预览的原始文件。" />}
+      </DetailSection>
+    );
+  }
+
+  if (tab === 'refs') {
+    return (
+      <DetailSection title="引用">
+        <div className="grid grid-cols-3 gap-1 text-center">
+          <DetailCounter label="引用" value={source.reference_count ?? 0} />
+          <DetailCounter label="Chunks" value={source.chunk_count ?? 0} />
+          <DetailCounter label="Extraction" value={detail?.latest_extraction_id ? 1 : 0} />
+        </div>
+        <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-2 font-mono text-[11px] text-slate-600">knowledge:{source.id}</div>
+      </DetailSection>
+    );
+  }
+
+  return (
+    <>
+      <div className="rounded-lg bg-slate-50 p-3">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-tighter text-slate-700">处理状态</span>
+          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${source.status === 'ready' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{row.statusLabel}</span>
+        </div>
+        <div className="relative flex items-center justify-between px-2">
+          <div className="absolute left-4 right-4 top-1/2 z-0 h-0.5 -translate-y-1/2 bg-green-200" />
+          {[[CloudUpload, '上传'], [Zap, '解析'], [Sparkles, '摘要'], [Check, '索引']].map(([Icon, label]) => (
+            <div key={label as string} className="relative z-10 flex flex-col items-center gap-1">
+              <span className={`flex h-5 w-5 items-center justify-center rounded-full ${source.status === 'failed' ? 'bg-slate-300' : 'bg-green-500'} text-white`}>
+                <Icon className="h-2.5 w-2.5" strokeWidth={2.2} />
+              </span>
+              <span className="text-[8px] font-bold text-slate-600">{label as string}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <DetailSection title="资源信息">
+        <div className="space-y-1.5 text-[11px]">
+          <DetailRow label="文件名" value={row.fileName} />
+          <DetailRow label="大小" value={row.sizeLabel} />
+          <DetailRow label="Chunks" value={row.pagesLabel} />
+          <DetailRow label="更新时间" value={row.compactUpdatedAt} mono />
+          <DetailRow label="Parser" value={source.parser ?? '(none)'} mono />
+        </div>
+      </DetailSection>
+
+      <DetailSection title="标签">
+        <div className="flex flex-wrap gap-1">
+          {row.tags.length > 0 ? row.tags.map((tag) => <span key={tag} className="rounded border border-slate-200 bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-600">{tag}</span>) : <EmptyDetailText text="暂无标签。" />}
+        </div>
+      </DetailSection>
+    </>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }): JSX.Element {
+  return (
+    <div className="space-y-2">
+      <h4 className="text-[11px] font-bold uppercase tracking-tight text-slate-700">{title}</h4>
+      {children}
+    </div>
+  );
+}
+
+function DetailRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }): JSX.Element {
+  return (
+    <div className="flex">
+      <span className="w-16 shrink-0 text-slate-500">{label}</span>
+      <span className={`min-w-0 flex-1 truncate text-slate-800 ${mono ? 'font-mono' : ''}`} title={value}>{value}</span>
+    </div>
+  );
+}
+
+function EmptyDetailText({ text }: { text: string }): JSX.Element {
+  return <p className="text-[12px] leading-5 text-slate-500">{text}</p>;
 }
 
 function DetailCounter({ label, value }: { label: string; value: number }): JSX.Element {
   return (
     <div>
-      <div className="text-[8px] font-bold uppercase text-slate-400">{label}</div>
-      <div className="text-[14px] font-black text-slate-800">{value}</div>
+      <div className="text-[8px] font-bold uppercase text-slate-500">{label}</div>
+      <div className="text-[14px] font-black text-slate-800">{formatCount(value)}</div>
     </div>
   );
 }
@@ -1019,7 +1118,7 @@ function createKnowledgeRow(source: KnowledgeSource): KnowledgeResourceRow {
   const statusProfile = getStatusProfile(source.status);
   const updatedAt = formatKnowledgeDateTime(source.updated_at);
   const compactUpdatedAt = formatKnowledgeCompactDateTime(source.updated_at);
-  const tags = source.tags && source.tags.length > 0 ? source.tags : [typeProfile.label];
+  const tags = source.tags && source.tags.length > 0 ? source.tags : [];
 
   return {
     id: source.id,
@@ -1037,85 +1136,60 @@ function createKnowledgeRow(source: KnowledgeSource): KnowledgeResourceRow {
     iconClassName: typeProfile.iconClassName,
     typePillClassName: typeProfile.typePillClassName,
     statusPillClassName: statusProfile.statusPillClassName,
-    progress: source.status === 'processing' ? 60 : undefined,
-    favorite: (source.reference_count ?? 0) > 10,
-    pagesLabel: source.chunk_count ? `${source.chunk_count} chunks` : '45 页',
+    progress: getProcessingProgress(source.status),
+    pagesLabel: `${source.chunk_count ?? 0} chunks`,
     source,
   };
 }
 
-function getTypeProfile(source: KnowledgeSource): {
-  label: string;
-  icon: IconComponent;
-  iconClassName: string;
-  typePillClassName: string;
-} {
+function getTypeProfile(source: KnowledgeSource): { label: string; icon: IconComponent; iconClassName: string; typePillClassName: string } {
   const title = source.title.toLowerCase();
   const mime = source.mime_type?.toLowerCase() ?? '';
-  if (mime.includes('pdf') || title.endsWith('.pdf')) {
-    return {
-      label: 'PDF',
-      icon: FileText,
-      iconClassName: 'bg-red-50 border-red-100 text-red-500',
-      typePillClassName: 'bg-red-50 text-red-500 border-red-100',
-    };
-  }
-  if (mime.includes('spreadsheet') || title.endsWith('.xlsx') || title.endsWith('.csv')) {
-    return {
-      label: '表格',
-      icon: FileSpreadsheet,
-      iconClassName: 'bg-green-50 border-green-100 text-green-500',
-      typePillClassName: 'bg-green-50 text-green-500 border-green-100',
-    };
-  }
-  if (mime.includes('image')) {
-    return {
-      label: '图片',
-      icon: ImageIcon,
-      iconClassName: 'bg-purple-50 border-purple-100 text-purple-500',
-      typePillClassName: 'bg-purple-50 text-purple-500 border-purple-100',
-    };
-  }
-  if (source.source_type === 'workspace_doc' || title.endsWith('.ts') || title.endsWith('.tsx')) {
-    return {
-      label: '代码',
-      icon: Code2,
-      iconClassName: 'bg-slate-50 border-slate-200 text-slate-600',
-      typePillClassName: 'bg-slate-50 text-slate-600 border-slate-200',
-    };
-  }
-  return {
-    label: getKnowledgeSourceTypeDisplay(source.source_type, 'zh').label.replace('上传文件', '文档'),
-    icon: FileText,
-    iconClassName: 'bg-blue-50 border-blue-100 text-blue-500',
-    typePillClassName: 'bg-blue-50 text-blue-500 border-blue-100',
-  };
+  if (mime.includes('pdf') || title.endsWith('.pdf')) return { label: 'PDF', icon: FileText, iconClassName: 'bg-red-50 border-red-100 text-red-500', typePillClassName: 'bg-red-50 text-red-500 border-red-100' };
+  if (mime.includes('spreadsheet') || title.endsWith('.xlsx') || title.endsWith('.csv')) return { label: '表格', icon: FileSpreadsheet, iconClassName: 'bg-green-50 border-green-100 text-green-500', typePillClassName: 'bg-green-50 text-green-500 border-green-100' };
+  if (mime.includes('image')) return { label: '图片', icon: ImageIcon, iconClassName: 'bg-purple-50 border-purple-100 text-purple-500', typePillClassName: 'bg-purple-50 text-purple-500 border-purple-100' };
+  if (source.source_type === 'workspace_doc' || title.endsWith('.ts') || title.endsWith('.tsx')) return { label: '代码', icon: Code2, iconClassName: 'bg-slate-50 border-slate-200 text-slate-600', typePillClassName: 'bg-slate-50 text-slate-600 border-slate-200' };
+  return { label: getKnowledgeSourceTypeDisplay(source.source_type, 'zh').label, icon: FileText, iconClassName: 'bg-blue-50 border-blue-100 text-blue-500', typePillClassName: 'bg-blue-50 text-blue-500 border-blue-100' };
 }
 
-function getStatusProfile(status: KnowledgeSourceStatus): {
-  label: string;
-  statusPillClassName: string;
-} {
+function getStatusProfile(status: KnowledgeSourceStatus): { label: string; statusPillClassName: string } {
   switch (status) {
     case 'ready':
-      return { label: '已完成', statusPillClassName: 'bg-green-50 text-green-600 border-green-100' };
+      return { label: '已完成', statusPillClassName: 'bg-green-50 text-green-700 border-green-100' };
     case 'processing':
-      return { label: '处理中', statusPillClassName: 'bg-blue-50 text-blue-500 border-blue-100' };
+      return { label: '处理中', statusPillClassName: 'bg-blue-50 text-blue-600 border-blue-100' };
     case 'pending':
-      return { label: '待处理', statusPillClassName: 'bg-orange-50 text-orange-500 border-orange-100' };
+      return { label: '待处理', statusPillClassName: 'bg-orange-50 text-orange-600 border-orange-100' };
     case 'failed':
-      return { label: '失败', statusPillClassName: 'bg-red-50 text-red-500 border-red-100' };
+      return { label: '失败', statusPillClassName: 'bg-red-50 text-red-600 border-red-100' };
     case 'stale':
-      return { label: '已过期', statusPillClassName: 'bg-amber-50 text-amber-600 border-amber-100' };
+      return { label: '已过期', statusPillClassName: 'bg-amber-50 text-amber-700 border-amber-100' };
     case 'disabled':
-      return { label: '已禁用', statusPillClassName: 'bg-slate-100 text-slate-500 border-slate-200' };
+      return { label: '已禁用', statusPillClassName: 'bg-slate-100 text-slate-600 border-slate-200' };
     default:
-      return { label: '未知', statusPillClassName: 'bg-slate-100 text-slate-500 border-slate-200' };
+      return { label: '未知', statusPillClassName: 'bg-slate-100 text-slate-600 border-slate-200' };
   }
 }
 
-function getStatusLabel(status: KnowledgeSourceStatus): string {
-  return getStatusProfile(status).label;
+function getSidebarTypeIcon(sourceType: KnowledgeSourceType): IconComponent {
+  switch (sourceType) {
+    case 'uploaded_file':
+      return FileText;
+    case 'resource_asset':
+      return ImageIcon;
+    case 'workspace_file':
+      return FileSpreadsheet;
+    case 'workspace_doc':
+      return Code2;
+    default:
+      return FileText;
+  }
+}
+
+function getProcessingProgress(status: KnowledgeSourceStatus): number | undefined {
+  if (status === 'processing') return 60;
+  if (status === 'pending') return 20;
+  return undefined;
 }
 
 function getKnowledgeFileName(source: KnowledgeSource): string {
@@ -1127,13 +1201,13 @@ function getKnowledgeFileName(source: KnowledgeSource): string {
 
 function formatKnowledgeDateTime(value: number | null | undefined): string {
   const date = coerceDate(value);
-  if (!date) return '2025-06-07 14:30';
+  if (!date) return '未记录';
   return `${date.getFullYear()}-${padDate(date.getMonth() + 1)}-${padDate(date.getDate())} ${padDate(date.getHours())}:${padDate(date.getMinutes())}`;
 }
 
 function formatKnowledgeCompactDateTime(value: number | null | undefined): string {
   const date = coerceDate(value);
-  if (!date) return '06-07 14:30';
+  if (!date) return '未记录';
   return `${padDate(date.getMonth() + 1)}-${padDate(date.getDate())} ${padDate(date.getHours())}:${padDate(date.getMinutes())}`;
 }
 
@@ -1154,4 +1228,89 @@ function formatCount(value: number): string {
 
 function formatPercent(value: number, total: number): string {
   return ((value / total) * 100).toFixed(1);
+}
+
+function formatPercentNumber(value: number, total: number): number {
+  return Math.max(0, Math.min(100, Number(formatPercent(value, total))));
+}
+
+function sanitizeSnippet(value: string): string {
+  return value.replace(/<\/?mark>/g, '').trim();
+}
+
+async function copyKnowledgeReference(source: KnowledgeSource): Promise<void> {
+  await navigator.clipboard.writeText(`knowledge:${source.id}`);
+  toast.success('已复制知识引用 ID', { description: `knowledge:${source.id}` });
+}
+
+function knowledgeDetailToPreviewFile(detail: KnowledgeSourceDetail): ProjectFile | null {
+  const file = detail.original_file;
+  if (!file) return null;
+  const sourceType: ResourceType = file.source_type === 'agent_document'
+    ? 'agent_document'
+    : file.source_type === 'uploaded_file'
+      ? 'uploaded_file'
+      : 'unknown';
+  return {
+    id: file.id,
+    project_id: detail.project_id,
+    source_type: sourceType,
+    original_name: file.name,
+    stored_name: file.name,
+    mime_type: detail.mime_type ?? 'application/octet-stream',
+    size: detail.size ?? 0,
+    url: file.url,
+    storage_path: file.storage_path,
+    uploaded_by_id: null,
+    uploaded_by_name: null,
+    source_message_id: null,
+    source_room_id: detail.room_id ?? null,
+    source_agent_id: null,
+    source_task_id: null,
+    content: null,
+    created_at: detail.created_at ?? Date.now(),
+    deleted_at: null,
+    reference_count: detail.reference_count ?? 0,
+    last_referenced_at: null,
+    last_referenced_message_id: null,
+    last_referenced_room_id: detail.room_id ?? null,
+    last_referenced_room_name: detail.room_name ?? null,
+  };
+}
+
+async function invalidateKnowledgeQueries(queryClient: ReturnType<typeof useQueryClient>, projectId: string): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['knowledge-sources'] }),
+    queryClient.invalidateQueries({ queryKey: ['knowledge-source'] }),
+    queryClient.invalidateQueries({ queryKey: ['knowledge-extraction'] }),
+    queryClient.invalidateQueries({ queryKey: ['knowledge-chunks'] }),
+    queryClient.invalidateQueries({ queryKey: ['knowledge-search'] }),
+    queryClient.invalidateQueries({ queryKey: ['files'] }),
+    queryClient.invalidateQueries({ queryKey: ['project-files', projectId] }),
+  ]);
+}
+
+function exportKnowledgeRows(rows: KnowledgeResourceRow[]): void {
+  const header = ['title', 'type', 'status', 'size', 'updated_at', 'tags', 'source_id'];
+  const body = rows.map((row) => [
+    row.title,
+    row.typeLabel,
+    row.statusLabel,
+    row.sizeLabel,
+    row.updatedAt,
+    row.tags.join('|'),
+    row.source.id,
+  ]);
+  const csv = [header, ...body]
+    .map((line) => line.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `knowledge-sources-${Date.now()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }

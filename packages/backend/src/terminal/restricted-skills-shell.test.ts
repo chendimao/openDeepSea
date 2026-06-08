@@ -18,6 +18,11 @@ test('restricted skills shell accepts npx skills commands', () => {
     file: 'npx',
     args: ['skills', 'add', 'https://github.com/vercel-labs/skills', '--skill', 'find-skills'],
   });
+  assert.deepEqual(parseRestrictedSkillsCommand('npx skills add https://skills.sh/anthropics/skills/docx --skill docx'), {
+    kind: 'spawn',
+    file: 'npx',
+    args: ['skills', 'add', 'https://skills.sh/anthropics/skills/docx', '--skill', 'docx'],
+  });
 });
 
 test('restricted skills shell accepts direct skills commands and local commands', () => {
