@@ -549,13 +549,13 @@ test('Codex agent message snapshots are treated as full-answer snapshots', () =>
   assert.deepEqual(normalize(`${duplicate}\n`), []);
 });
 
-test('Codex legacy process agent messages are routed to thinking before final answer', () => {
+test('Codex agent_message items are answers regardless of text wording', () => {
   const normalize = createStdoutNormalizer();
-  const processPrelude = JSON.stringify({
+  const processLookingAnswer = JSON.stringify({
     type: 'item.completed',
     item: {
       type: 'agent_message',
-      text: '我会按“全局安装”先核对 `~/.codex/skills`，再单独标出 Superpowers 插件缓存里暴露的技能，避免把项目级 `.agents/skills` 混进去。',
+      text: '本次使用技能：`using-superpowers`。\n\n结论：这是最终回复正文。',
     },
   });
   const finalAnswer = JSON.stringify({
@@ -566,15 +566,11 @@ test('Codex legacy process agent messages are routed to thinking before final an
     },
   });
 
-  assert.deepEqual(normalize(`${processPrelude}\n`), [
+  assert.deepEqual(normalize(`${processLookingAnswer}\n`), [
     {
-      channel: 'thinking',
-      text: '我会按“全局安装”先核对 `~/.codex/skills`，再单独标出 Superpowers 插件缓存里暴露的技能，避免把项目级 `.agents/skills` 混进去。',
+      channel: 'answer',
+      text: '本次使用技能：`using-superpowers`。\n\n结论：这是最终回复正文。',
       rawType: 'item.completed',
-      trace: {
-        kind: 'thinking',
-        text: '我会按“全局安装”先核对 `~/.codex/skills`，再单独标出 Superpowers 插件缓存里暴露的技能，避免把项目级 `.agents/skills` 混进去。',
-      },
     },
   ]);
   assert.deepEqual(normalize(`${finalAnswer}\n`), [
@@ -582,6 +578,35 @@ test('Codex legacy process agent messages are routed to thinking before final an
       channel: 'answer',
       text: '当前全局安装/暴露的 skills，按唯一名称去重后共 **28 个**。',
       rawType: 'item.completed',
+    },
+  ]);
+});
+
+test('Claude Code assistant content separates reasoning and text by part type', () => {
+  const events = normalizeStdoutChunk(JSON.stringify({
+    type: 'assistant',
+    message: {
+      content: [
+        { type: 'reasoning', text: '结构化 reasoning 摘要' },
+        { type: 'text', text: '结构化正文回复' },
+      ],
+    },
+  }));
+
+  assert.deepEqual(events, [
+    {
+      channel: 'thinking',
+      text: '结构化 reasoning 摘要',
+      rawType: 'assistant',
+      trace: {
+        kind: 'thinking',
+        text: '结构化 reasoning 摘要',
+      },
+    },
+    {
+      channel: 'answer',
+      text: '结构化正文回复',
+      rawType: 'assistant',
     },
   ]);
 });
