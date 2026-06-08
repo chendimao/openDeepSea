@@ -6,6 +6,7 @@ import test from 'node:test';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-active-sessions-')), 'test.db');
 
+const { db } = await import('./db.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
@@ -108,4 +109,28 @@ test('buildActiveSessionSummaries orders pinned sessions before recent unpinned 
   assert.equal(summaries[0]?.id, pinned.id);
   assert.ok(summaries.some((summary) => summary.id === normal.id));
   assert.equal(summaries[0]?.pinned_at !== null, true);
+});
+
+test('buildActiveSessionSummaries exposes created and last viewed timestamps for sidebar sorting', () => {
+  const project = projectRepo.create({
+    name: 'Sidebar Sort Project',
+    path: mkdtempSync(join(tmpdir(), 'active-summary-sidebar-sort-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: '侧栏排序会话',
+    workspace_path: project.path,
+  });
+
+  db.prepare('UPDATE sessions SET created_at = ?, updated_at = ?, last_viewed_at = ? WHERE id = ?')
+    .run(1_000, 2_000, 3_000, session.id);
+  const viewed = sessionRepo.get(session.id);
+
+  const summaries = buildActiveSessionSummaries();
+  const summary = summaries.find((item) => item.id === session.id);
+
+  assert.ok(summary);
+  assert.equal(summary.created_at, viewed?.created_at);
+  assert.equal(summary.last_viewed_at, viewed?.last_viewed_at);
+  assert.equal(summary.updated_at, viewed?.updated_at);
 });
