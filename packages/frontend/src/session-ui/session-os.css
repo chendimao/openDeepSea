@@ -747,7 +747,7 @@
 }
 .deepsea-project-tree-heading:hover,
 .deepsea-project-tree-heading:focus-within {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(67, 70, 84, 0.1);
 }
 .deepsea-project-tree-heading > span {
   color: rgba(67, 70, 84, 0.5);
@@ -819,7 +819,7 @@
 .deepsea-project-tree-section[data-active="true"] .deepsea-project-node,
 .deepsea-project-node:hover,
 .deepsea-project-node:focus-within {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(67, 70, 84, 0.1);
   color: rgba(67, 70, 84, 0.96);
 }
 .deepsea-project-node__button:focus-visible,
@@ -1022,7 +1022,7 @@
 }
 .deepsea-project-session-row-wrap:hover,
 .deepsea-project-session-row-wrap:focus-within {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(67, 70, 84, 0.1);
 }
 .deepsea-project-session-row-wrap[data-current="true"] {
   border-color: transparent;
