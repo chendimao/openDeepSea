@@ -103,6 +103,44 @@ test('runtime rejects provider image URLs that target local or private hosts', a
   assert.equal(requestCount, 1);
 });
 
+test('runtime rejects provider image URLs that redirect to local or private hosts', async () => {
+  const requests: Array<{ url: string; redirect?: RequestRedirect }> = [];
+
+  await assert.rejects(
+    requestOpenAICompatibleImageGeneration({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+      model: 'gpt-image-2',
+      prompt: 'apple',
+      count: 1,
+      quality: 'standard',
+      size: 'auto',
+      fetchImpl: async (input, init) => {
+        requests.push({ url: String(input), redirect: init?.redirect });
+        if (String(input).includes('/images/generations')) {
+          return new Response(JSON.stringify({
+            data: [{ url: 'https://cdn.example.com/redirect.png' }],
+          }));
+        }
+        if (String(input) === 'https://cdn.example.com/redirect.png') {
+          return new Response(null, {
+            status: 302,
+            headers: { location: 'http://127.0.0.1/internal.png' },
+          });
+        }
+        return new Response(Buffer.from('private-png'), {
+          headers: { 'content-type': 'image/png' },
+        });
+      },
+    }),
+    /图片资源下载地址不允许访问本机或私网地址/,
+  );
+  assert.deepEqual(requests, [
+    { url: 'https://example.com/v1/images/generations', redirect: undefined },
+    { url: 'https://cdn.example.com/redirect.png', redirect: 'manual' },
+  ]);
+});
+
 test('runtime rejects downloaded image URLs with non image content type', async () => {
   await assert.rejects(
     requestOpenAICompatibleImageGeneration({
@@ -153,6 +191,26 @@ test('runtime rejects downloaded image URLs that exceed the response size limit'
       },
     }),
     /图片资源下载失败：响应超过大小限制/,
+  );
+});
+
+test('runtime rejects inline base64 image results that exceed the image size limit', async () => {
+  const oversizedBase64 = 'A'.repeat(Math.ceil(((50 * 1024 * 1024) + 1) / 3) * 4);
+
+  await assert.rejects(
+    requestOpenAICompatibleImageGeneration({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+      model: 'gpt-image-2',
+      prompt: 'apple',
+      count: 1,
+      quality: 'standard',
+      size: 'auto',
+      fetchImpl: async () => new Response(JSON.stringify({
+        data: [{ b64_json: oversizedBase64 }],
+      })),
+    }),
+    /图片生成响应包含超过大小限制的图片/,
   );
 });
 

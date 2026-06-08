@@ -52,6 +52,9 @@ interface ChatCompletionsPayload {
 }
 
 const MAX_DOWNLOADED_IMAGE_BYTES = 50 * 1024 * 1024;
+const MAX_IMAGE_DOWNLOAD_REDIRECTS = 5;
+const MAX_RUNTIME_RESPONSE_OVERHEAD_BYTES = 4 * 1024 * 1024;
+const MAX_RUNTIME_IMAGE_COUNT = 6;
 
 export async function requestOpenAICompatibleImageGeneration(
   input: ImageGenerationRuntimeRequest,
@@ -68,7 +71,7 @@ export async function requestOpenAICompatibleImageGeneration(
     signal: input.signal,
   }, fetcher, input.apiKey);
 
-  return parseImageRuntimeResponse(response, fetcher, input.signal, input.apiKey);
+  return parseImageRuntimeResponse(response, fetcher, input.signal, input.apiKey, input.count);
 }
 
 export async function requestOpenAICompatibleImageEdit(
@@ -94,7 +97,7 @@ export async function requestOpenAICompatibleImageEdit(
     signal: input.signal,
   }, fetcher, input.apiKey);
 
-  return parseImageRuntimeResponse(response, fetcher, input.signal, input.apiKey);
+  return parseImageRuntimeResponse(response, fetcher, input.signal, input.apiKey, input.count);
 }
 
 export async function requestChatCompletionsImageGeneration(
@@ -116,7 +119,7 @@ export async function requestChatCompletionsImageGeneration(
     signal: input.signal,
   }, fetcher, input.apiKey);
 
-  return parseChatCompletionImageResponse(response, fetcher, input.signal, input.apiKey);
+  return parseChatCompletionImageResponse(response, fetcher, input.signal, input.apiKey, input.count);
 }
 
 function buildImageGenerationPayload(input: ImageGenerationRuntimeRequest): Record<string, string | number> {
@@ -148,8 +151,9 @@ async function parseImageRuntimeResponse(
   fetchImpl: FetchLike,
   signal: AbortSignal | undefined,
   apiKey: string,
+  maxImages: number,
 ): Promise<ImageGenerationRuntimeResponse> {
-  const responseText = await response.text();
+  const responseText = await readRuntimeResponseText(response, apiKey, maxImages);
 
   if (!response.ok) {
     throw new Error(normalizeImageGenerationError(responseText, response.status, apiKey));
@@ -157,24 +161,41 @@ async function parseImageRuntimeResponse(
 
   const payload = parseImageRuntimePayload(responseText, apiKey);
   const images: ImageGenerationRuntimeImage[] = [];
+  let totalImageBytes = 0;
   const items = Array.isArray(payload.data) ? payload.data : [];
 
   for (const rawItem of items) {
+    if (images.length >= clampRuntimeImageCount(maxImages)) break;
     if (!isImageRuntimePayloadItem(rawItem)) continue;
 
     if (typeof rawItem.b64_json === 'string' && rawItem.b64_json) {
-      images.push({ data: Buffer.from(rawItem.b64_json, 'base64'), mimeType: 'image/png' });
+      totalImageBytes = appendRuntimeImage(
+        images,
+        { data: decodeBase64ImageData(rawItem.b64_json, apiKey), mimeType: 'image/png' },
+        totalImageBytes,
+        maxImages,
+      );
       continue;
     }
 
     if (typeof rawItem.url !== 'string' || !rawItem.url) continue;
 
     if (rawItem.url.startsWith('data:')) {
-      images.push(decodeDataUrlImage(rawItem.url, apiKey));
+      totalImageBytes = appendRuntimeImage(
+        images,
+        decodeDataUrlImage(rawItem.url, apiKey),
+        totalImageBytes,
+        maxImages,
+      );
       continue;
     }
 
-    images.push(await downloadImageUrl(rawItem.url, fetchImpl, signal, apiKey));
+    totalImageBytes = appendRuntimeImage(
+      images,
+      await downloadImageUrl(rawItem.url, fetchImpl, signal, apiKey),
+      totalImageBytes,
+      maxImages,
+    );
   }
 
   return { images };
@@ -194,8 +215,9 @@ async function parseChatCompletionImageResponse(
   fetchImpl: FetchLike,
   signal: AbortSignal | undefined,
   apiKey: string,
+  maxImages: number,
 ): Promise<ImageGenerationRuntimeResponse> {
-  const responseText = await response.text();
+  const responseText = await readRuntimeResponseText(response, apiKey, maxImages);
 
   if (!response.ok) {
     throw new Error(normalizeImageGenerationError(responseText, response.status, apiKey));
@@ -203,12 +225,24 @@ async function parseChatCompletionImageResponse(
 
   const payload = parseChatCompletionsPayload(responseText, apiKey);
   const images: ImageGenerationRuntimeImage[] = [];
+  let totalImageBytes = 0;
   for (const url of extractChatCompletionImageUrls(payload)) {
+    if (images.length >= clampRuntimeImageCount(maxImages)) break;
     if (url.startsWith('data:')) {
-      images.push(decodeDataUrlImage(url, apiKey));
+      totalImageBytes = appendRuntimeImage(
+        images,
+        decodeDataUrlImage(url, apiKey),
+        totalImageBytes,
+        maxImages,
+      );
       continue;
     }
-    images.push(await downloadImageUrl(url, fetchImpl, signal, apiKey));
+    totalImageBytes = appendRuntimeImage(
+      images,
+      await downloadImageUrl(url, fetchImpl, signal, apiKey),
+      totalImageBytes,
+      maxImages,
+    );
   }
   return { images };
 }
@@ -251,26 +285,39 @@ async function downloadImageUrl(
   signal: AbortSignal | undefined,
   apiKey: string,
 ): Promise<ImageGenerationRuntimeImage> {
-  await assertSafeImageDownloadUrl(url, fetchImpl);
-  let response: Response;
-  try {
-    response = await fetchImpl(url, { signal });
-  } catch (err) {
-    throw new Error(`图片资源下载失败：${sanitizeRuntimeError(err, apiKey)}`);
+  let currentUrl = url;
+  for (let redirectCount = 0; redirectCount <= MAX_IMAGE_DOWNLOAD_REDIRECTS; redirectCount += 1) {
+    await assertSafeImageDownloadUrl(currentUrl, fetchImpl);
+    let response: Response;
+    try {
+      response = await fetchImpl(currentUrl, { signal, redirect: 'manual' });
+    } catch (err) {
+      throw new Error(`图片资源下载失败：${sanitizeRuntimeError(err, apiKey)}`);
+    }
+
+    if (isRedirectStatus(response.status)) {
+      if (redirectCount >= MAX_IMAGE_DOWNLOAD_REDIRECTS) {
+        throw new Error('图片资源下载失败：重定向次数过多');
+      }
+      currentUrl = resolveImageRedirectUrl(currentUrl, response.headers.get('location'));
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new Error(`图片资源下载失败：HTTP ${response.status}`);
+    }
+    const mimeType = normalizeContentType(response.headers.get('content-type'));
+    if (!mimeType.startsWith('image/')) {
+      throw new Error('图片资源下载失败：响应不是图片');
+    }
+
+    return {
+      data: await readImageResponseBuffer(response, apiKey),
+      mimeType,
+    };
   }
 
-  if (!response.ok) {
-    throw new Error(`图片资源下载失败：HTTP ${response.status}`);
-  }
-  const mimeType = normalizeContentType(response.headers.get('content-type'));
-  if (!mimeType.startsWith('image/')) {
-    throw new Error('图片资源下载失败：响应不是图片');
-  }
-
-  return {
-    data: await readImageResponseBuffer(response, apiKey),
-    mimeType,
-  };
+  throw new Error('图片资源下载失败：重定向次数过多');
 }
 
 async function assertSafeImageDownloadUrl(rawUrl: string, fetchImpl: FetchLike): Promise<void> {
@@ -390,11 +437,120 @@ function decodeDataUrlImage(url: string, apiKey: string): ImageGenerationRuntime
 
   try {
     return {
-      data: Buffer.from(match[2], 'base64'),
+      data: decodeBase64ImageData(match[2], apiKey),
       mimeType: match[1].toLowerCase(),
     };
   } catch (err) {
+    if (err instanceof Error && err.message.includes('超过大小限制')) throw err;
     throw new Error(`图片生成响应包含无效 base64：${sanitizeRuntimeError(err, apiKey)}`);
+  }
+}
+
+async function readRuntimeResponseText(response: Response, apiKey: string, maxImages: number): Promise<string> {
+  const maxBytes = maxRuntimeResponseTextBytes(maxImages);
+  const contentLength = parseContentLength(response.headers.get('content-length'));
+  if (contentLength !== null && contentLength > maxBytes) {
+    throw new Error('图片生成响应超过大小限制');
+  }
+
+  if (!response.body) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+      throw new Error('图片生成响应超过大小限制');
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      const chunk = Buffer.from(value);
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        throw new Error('图片生成响应超过大小限制');
+      }
+      chunks.push(chunk);
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('超过大小限制')) throw err;
+    throw new Error(`图片生成响应读取失败：${sanitizeRuntimeError(err, apiKey)}`);
+  }
+  return Buffer.concat(chunks, total).toString('utf8');
+}
+
+function maxRuntimeResponseTextBytes(maxImages: number): number {
+  const imageCount = clampRuntimeImageCount(maxImages);
+  const maxBase64BytesPerImage = Math.ceil(MAX_DOWNLOADED_IMAGE_BYTES / 3) * 4;
+  return (maxBase64BytesPerImage * imageCount) + MAX_RUNTIME_RESPONSE_OVERHEAD_BYTES;
+}
+
+function appendRuntimeImage(
+  images: ImageGenerationRuntimeImage[],
+  image: ImageGenerationRuntimeImage,
+  currentTotalBytes: number,
+  maxImages: number,
+): number {
+  assertInlineImageSize(image.data.byteLength);
+  const nextTotalBytes = currentTotalBytes + image.data.byteLength;
+  if (nextTotalBytes > MAX_DOWNLOADED_IMAGE_BYTES * clampRuntimeImageCount(maxImages)) {
+    throw new Error('图片生成响应包含超过大小限制的图片');
+  }
+  images.push(image);
+  return nextTotalBytes;
+}
+
+function decodeBase64ImageData(value: string, apiKey: string): Buffer {
+  assertInlineImageSize(estimateBase64DecodedBytes(value));
+  try {
+    const data = Buffer.from(value, 'base64');
+    assertInlineImageSize(data.byteLength);
+    return data;
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('超过大小限制')) throw err;
+    throw new Error(`图片生成响应包含无效 base64：${sanitizeRuntimeError(err, apiKey)}`);
+  }
+}
+
+function estimateBase64DecodedBytes(value: string): number {
+  let meaningfulLength = 0;
+  let padding = 0;
+  for (const char of value) {
+    if (/\s/.test(char)) continue;
+    meaningfulLength += 1;
+    if (char === '=') padding += 1;
+  }
+  if (meaningfulLength === 0) return 0;
+  return Math.max(0, Math.floor((meaningfulLength * 3) / 4) - Math.min(padding, 2));
+}
+
+function assertInlineImageSize(size: number): void {
+  if (size > MAX_DOWNLOADED_IMAGE_BYTES) {
+    throw new Error('图片生成响应包含超过大小限制的图片');
+  }
+}
+
+function clampRuntimeImageCount(maxImages: number): number {
+  if (!Number.isFinite(maxImages)) return 1;
+  return Math.min(Math.max(Math.floor(maxImages), 1), MAX_RUNTIME_IMAGE_COUNT);
+}
+
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+function resolveImageRedirectUrl(currentUrl: string, location: string | null): string {
+  if (!location?.trim()) {
+    throw new Error('图片资源下载失败：重定向缺少 Location');
+  }
+  try {
+    return new URL(location, currentUrl).toString();
+  } catch {
+    throw new Error('图片资源下载失败：重定向地址不是有效 URL');
   }
 }
 
