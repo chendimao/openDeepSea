@@ -767,6 +767,7 @@ test('SessionShell hides ACP tool records from chat transcript', () => {
 
   const html = renderSessionShell(payload);
   const runLogIndex = html.indexOf('class="deepsea-run-log"');
+  const runLogBodyIndex = html.indexOf('class="deepsea-run-log-body"');
   const thoughtTextIndex = html.indexOf('判断需要读取 package.json。');
 
   assert.match(html, /思考 18s/);
@@ -777,7 +778,8 @@ test('SessionShell hides ACP tool records from chat transcript', () => {
   assert.doesNotMatch(html, /Read File/);
   assert.doesNotMatch(html, /Run Command/);
   assert.ok(thoughtTextIndex >= 0);
-  assert.ok(thoughtTextIndex < runLogIndex);
+  assert.ok(thoughtTextIndex > runLogIndex);
+  assert.ok(thoughtTextIndex < runLogBodyIndex);
   assert.ok(runLogIndex < html.indexOf('找到入口和脚本。'));
   assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('已完成。'));
 });
@@ -1035,10 +1037,12 @@ test('SessionShell renders run thought inside assistant message area', () => {
   const assistantIndex = html.indexOf('class="deepsea-message deepsea-message--agent-run" data-role="assistant"');
   const thoughtIndex = html.indexOf('class="deepsea-agent-thought"');
   const runLogIndex = html.indexOf('class="deepsea-run-log"');
+  const runLogBodyIndex = html.indexOf('class="deepsea-run-log-body"');
 
   assert.ok(assistantIndex >= 0);
   assert.ok(thoughtIndex > assistantIndex);
-  assert.ok(runLogIndex > thoughtIndex);
+  assert.ok(thoughtIndex > runLogIndex);
+  assert.ok(thoughtIndex < runLogBodyIndex);
 });
 
 test('SessionShell renders stderr literally when stdout is empty', () => {

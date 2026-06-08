@@ -856,7 +856,6 @@ function TranscriptCanvas({
           const runLabel = agentNamesById.get(item.run.agent_id) ?? item.run.agent_id;
           return (
             <article key={item.key} className="deepsea-message deepsea-message--agent-run" data-role="assistant">
-              <AgentThoughtPanel run={item.run} evidence={runEvidence} agentEvents={runAgentEvents} />
               <section className="deepsea-run-log" aria-label={`${runLabel} 回复`}>
                 <div>
                   <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>
@@ -871,6 +870,7 @@ function TranscriptCanvas({
                     onModeChange={(mode) => setDisplayModeFor(item.key, mode)}
                   />
                 </div>
+                <AgentThoughtPanel run={item.run} evidence={runEvidence} agentEvents={runAgentEvents} />
                 <div className="deepsea-run-log-body">
                   {displayMode === 'source' ? (
                     <MessageContent content={output} mode={displayMode} suppressTraceEvents />
