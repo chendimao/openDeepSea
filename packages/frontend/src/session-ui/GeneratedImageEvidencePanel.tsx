@@ -6,6 +6,8 @@ type GeneratedImageArtifact = {
   fileId: string;
   url: string;
   slot: number;
+  width: number | null;
+  height: number | null;
 };
 
 export function GeneratedImageEvidencePanel({
@@ -31,7 +33,14 @@ export function GeneratedImageEvidencePanel({
             rel="noreferrer"
             aria-label={`打开生成图片：${artifact.fileId}`}
           >
-            <img src={artifact.url} alt={`生成图片 ${artifact.slot}`} />
+            <img
+              src={artifact.url}
+              alt={`生成图片 ${artifact.slot}`}
+              width={artifact.width ?? undefined}
+              height={artifact.height ?? undefined}
+              loading="lazy"
+              decoding="async"
+            />
             <span>
               <ExternalLink aria-hidden="true" />
               #{artifact.slot}
@@ -57,11 +66,15 @@ function generatedImageArtifacts(evidence: SessionEvidenceEvent[]): GeneratedIma
       if (!fileId || !url) return;
       const slotValue = output['slot'];
       const slot = typeof slotValue === 'number' && Number.isFinite(slotValue) ? slotValue : index + 1;
+      const width = readFiniteNumber(output, 'width');
+      const height = readFiniteNumber(output, 'height');
       artifacts.push({
         key: `${event.id}:${fileId}:${slot}`,
         fileId,
         url,
         slot,
+        width,
+        height,
       });
     });
   }
@@ -75,4 +88,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function readString(record: Record<string, unknown>, key: string): string | null {
   const value = record[key];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readFiniteNumber(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }

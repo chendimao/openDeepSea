@@ -74,6 +74,88 @@ test('runtime downloads ordinary URL image generation results', async () => {
   assert.equal(response.images[0]?.mimeType, 'image/webp');
 });
 
+test('runtime rejects provider image URLs that target local or private hosts', async () => {
+  let requestCount = 0;
+
+  await assert.rejects(
+    requestOpenAICompatibleImageGeneration({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+      model: 'gpt-image-2',
+      prompt: 'apple',
+      count: 1,
+      quality: 'standard',
+      size: 'auto',
+      fetchImpl: async () => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return new Response(JSON.stringify({
+            data: [{ url: 'http://127.0.0.1/internal.png' }],
+          }));
+        }
+        return new Response(Buffer.from('private-png'), {
+          headers: { 'content-type': 'image/png' },
+        });
+      },
+    }),
+    /图片资源下载地址不允许访问本机或私网地址/,
+  );
+  assert.equal(requestCount, 1);
+});
+
+test('runtime rejects downloaded image URLs with non image content type', async () => {
+  await assert.rejects(
+    requestOpenAICompatibleImageGeneration({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+      model: 'gpt-image-2',
+      prompt: 'apple',
+      count: 1,
+      quality: 'standard',
+      size: 'auto',
+      fetchImpl: async (input) => {
+        if (String(input).includes('/images/generations')) {
+          return new Response(JSON.stringify({
+            data: [{ url: 'https://cdn.example.com/generated.html' }],
+          }));
+        }
+        return new Response('<html>not an image</html>', {
+          headers: { 'content-type': 'text/html' },
+        });
+      },
+    }),
+    /图片资源下载失败：响应不是图片/,
+  );
+});
+
+test('runtime rejects downloaded image URLs that exceed the response size limit', async () => {
+  await assert.rejects(
+    requestOpenAICompatibleImageGeneration({
+      baseUrl: 'https://example.com/v1',
+      apiKey: 'secret',
+      model: 'gpt-image-2',
+      prompt: 'apple',
+      count: 1,
+      quality: 'standard',
+      size: 'auto',
+      fetchImpl: async (input) => {
+        if (String(input).includes('/images/generations')) {
+          return new Response(JSON.stringify({
+            data: [{ url: 'https://cdn.example.com/oversized.png' }],
+          }));
+        }
+        return new Response(Buffer.from('small-body'), {
+          headers: {
+            'content-type': 'image/png',
+            'content-length': String(51 * 1024 * 1024),
+          },
+        });
+      },
+    }),
+    /图片资源下载失败：响应超过大小限制/,
+  );
+});
+
 test('runtime normalizes URL download failures without leaking API keys', async () => {
   let requestCount = 0;
 

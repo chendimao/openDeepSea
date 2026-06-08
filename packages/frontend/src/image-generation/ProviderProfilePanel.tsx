@@ -205,7 +205,11 @@ export function ProviderProfilePanel({ projectId }: { projectId: string }): JSX.
       }}
       onSave={saveProfile}
       onActivate={() => selectedProfile && activateProfile.mutate(selectedProfile.id)}
-      onDelete={() => selectedProfile && deleteProfile.mutate(selectedProfile.id)}
+      onDelete={() => {
+        if (!selectedProfile) return;
+        if (!window.confirm(`删除图片提供方“${selectedProfile.name}”？已保存的 API Key 也会失效。`)) return;
+        deleteProfile.mutate(selectedProfile.id);
+      }}
       onFetchModels={() => selectedProfile && fetchModels.mutate(selectedProfile.id)}
     />
   );
@@ -254,7 +258,7 @@ export function ProviderProfilePanelView({
               key={profile.id}
               type="button"
               className={cn(
-                'flex w-full items-center justify-between gap-2 border-l-2 px-2 py-2 text-left transition-colors ease-ocean',
+                'flex w-full items-center justify-between gap-2 border-l-2 px-2 py-2 text-left transition-colors ease-ocean focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-surface)]',
                 selectedProfile?.id === profile.id
                   ? 'border-[var(--color-accent)] bg-[var(--color-bg-soft)] text-[var(--color-fg)]'
                   : 'border-transparent text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-soft)] hover:text-[var(--color-fg)]',
@@ -332,7 +336,7 @@ export function ProviderProfilePanelView({
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
           <Field label="兼容模式">
             <select
-              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)]"
+              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-surface)]"
               value={form.compatProfileId}
               onChange={(event) =>
                 onFormChange({ compatProfileId: event.currentTarget.value as ImageProviderCompatProfileId })
@@ -346,7 +350,7 @@ export function ProviderProfilePanelView({
           <label className="flex items-end gap-2 pb-2 text-[12px] text-[var(--color-fg-muted)]">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-[var(--color-accent)]"
+              className="h-4 w-4 accent-[var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1"
               checked={form.supportsCountParameter}
               onChange={(event) => onFormChange({ supportsCountParameter: event.currentTarget.checked })}
             />

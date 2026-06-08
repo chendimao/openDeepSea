@@ -150,7 +150,15 @@ export function ImageJobStatusCardView({
               rel="noreferrer"
               className="block aspect-square overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)]"
             >
-              <img src={output.url} alt={output.name} className="h-full w-full object-cover" />
+              <img
+                src={output.url}
+                alt={output.name}
+                width={output.width ?? undefined}
+                height={output.height ?? undefined}
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover"
+              />
             </a>
           ))}
         </div>

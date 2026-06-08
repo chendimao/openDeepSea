@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import express from 'express';
 import { mkdtempSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { access, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -17,6 +17,7 @@ const { roomRepo } = await import('../repos/rooms.js');
 const { sessionMessageRepo, sessionRepo } = await import('../repos/sessions.js');
 const { taskRepo } = await import('../repos/tasks.js');
 const { router } = await import('../routes.js');
+const { buildProjectFileUploadDir } = await import('../uploads.js');
 const { imageGenerationJobRepo } = await import('./jobs.js');
 const { imageProviderProfileRepo } = await import('./provider-profiles.js');
 const { createImageGenerationService } = await import('./service.js');
@@ -578,6 +579,7 @@ test('image output batch routes create manifests and delete selected outputs', a
   assert.deepEqual(deleted.deleted_output_ids, [output.id]);
   assert.notEqual(fileRepo.get(outputFile.id)?.deleted_at, null);
   assert.deepEqual(imageGenerationJobRepo.listOutputs(job.id), []);
+  await assert.rejects(access(outputFile.storage_path), /ENOENT/);
 });
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
@@ -637,15 +639,17 @@ async function createProjectFileForTest(
   mimeType: string,
   data: Buffer,
 ) {
-  const storagePath = join(mkdtempSync(join(tmpdir(), 'opendeepsea-image-source-')), name);
+  const uploadDir = buildProjectFileUploadDir(projectId);
+  await mkdir(uploadDir, { recursive: true });
+  const storagePath = join(uploadDir, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${name}`);
   await writeFile(storagePath, data);
   return fileRepo.create({
     project_id: projectId,
     original_name: name,
-    stored_name: name,
+    stored_name: storagePath.split('/').pop() ?? name,
     mime_type: mimeType,
     size: data.byteLength,
-    url: `/uploads/projects/${projectId}/${name}`,
+    url: `/uploads/files/${projectId}/${storagePath.split('/').pop() ?? name}`,
     storage_path: storagePath,
     uploaded_by_id: 'test',
     uploaded_by_name: 'Test',

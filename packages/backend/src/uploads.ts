@@ -208,3 +208,14 @@ export async function cleanupUploadedFiles(files: Express.Multer.File[] | undefi
 export async function cleanupProjectUploadedFiles(files: Express.Multer.File[] | undefined): Promise<void> {
   await cleanupUploadedFilesInDir(files, projectFileUploadRoot);
 }
+
+export async function unlinkProjectUploadedFileSafely(file: Pick<ProjectFile, 'storage_path'>): Promise<void> {
+  const uploadRoot = resolve(projectFileUploadRoot);
+  const targetPath = resolve(file.storage_path);
+  if (targetPath !== uploadRoot && !targetPath.startsWith(`${uploadRoot}${sep}`)) return;
+  try {
+    await unlink(targetPath);
+  } catch {
+    // Ignore missing files and cleanup races; the database soft delete is authoritative.
+  }
+}

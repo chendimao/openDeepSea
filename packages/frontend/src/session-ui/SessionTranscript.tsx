@@ -84,7 +84,7 @@ function GeneratedImageEvidenceInline({
             rel="noreferrer"
             aria-label={`打开生成图片：${image.fileId}`}
           >
-            <img src={image.url} alt={`生成图片 ${image.slot}`} />
+            <img src={image.url} alt={`生成图片 ${image.slot}`} loading="lazy" decoding="async" />
           </a>
         ))}
       </div>

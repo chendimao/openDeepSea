@@ -468,6 +468,44 @@ test('image-to-image job records origin output when source file comes from gener
   assert.equal(sourceImage?.origin_output_id, parentOutput.id);
 });
 
+test('batch output deletion preserves source image origin lineage', () => {
+  const { project, profile } = createJobFixture('batch-delete-lineage');
+  const parentJob = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, { prompt: 'parent image' }));
+  const parentFile = createProjectFileForTest(project.id, 'batch-parent-output.png', 'image/png', 7);
+  writeFileSync(parentFile.storage_path, Buffer.from('parent-output'));
+  const parentOutput = imageGenerationJobRepo.appendOutput({
+    job_id: parentJob.id,
+    file_id: parentFile.id,
+    slot: 1,
+    name: parentFile.original_name,
+    url: parentFile.url,
+    mime_type: parentFile.mime_type,
+    size: parentFile.size,
+  });
+  const childJob = imageGenerationJobRepo.create(createJobInput(project.id, profile.id, {
+    workflow: 'image-to-image',
+    prompt: 'child variant',
+  }));
+  imageGenerationJobRepo.addSourceImage({
+    job_id: childJob.id,
+    file_id: parentFile.id,
+    slot: 1,
+    url: parentFile.url,
+    origin_job_id: parentJob.id,
+    origin_output_id: parentOutput.id,
+  });
+
+  const deleted = imageGenerationJobRepo.deleteOutputsByProject(project.id, [parentOutput.id]);
+  const [sourceAfterDelete] = imageGenerationJobRepo.listSourceImages(childJob.id);
+
+  assert.deepEqual(deleted.map((output) => output.id), [parentOutput.id]);
+  assert.equal(imageGenerationJobRepo.findOutputByFileId(parentFile.id)?.id, parentOutput.id);
+  assert.deepEqual(imageGenerationJobRepo.listOutputs(parentJob.id), []);
+  assert.notEqual(fileRepo.get(parentFile.id)?.deleted_at, null);
+  assert.equal(sourceAfterDelete?.origin_job_id, parentJob.id);
+  assert.equal(sourceAfterDelete?.origin_output_id, parentOutput.id);
+});
+
 test('image job repo recovers interrupted jobs as canceled', () => {
   imageGenerationJobRepo.recoverInterruptedJobs();
   const { project, profile } = createJobFixture('recover');

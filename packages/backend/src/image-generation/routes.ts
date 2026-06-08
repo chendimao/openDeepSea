@@ -10,10 +10,12 @@ import {
 } from './service.js';
 import type { ImageGenerationJob, ImageGenerationStatus } from './types.js';
 import { messageRepo } from '../repos/messages.js';
+import { fileRepo } from '../repos/files.js';
 import { projectRepo } from '../repos/projects.js';
 import { roomRepo } from '../repos/rooms.js';
 import { sessionRepo } from '../repos/sessions.js';
 import { taskRepo } from '../repos/tasks.js';
+import { unlinkProjectUploadedFileSafely } from '../uploads.js';
 
 type ModelFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -303,7 +305,7 @@ imageGenerationRouter.post('/projects/:projectId/image-outputs/batch/download-ma
   });
 });
 
-imageGenerationRouter.post('/projects/:projectId/image-outputs/batch/delete', (req, res) => {
+imageGenerationRouter.post('/projects/:projectId/image-outputs/batch/delete', async (req, res) => {
   const projectId = requireProject(req.params.projectId, res);
   if (!projectId) return;
   const parsed = imageOutputBatchSchema.safeParse(req.body);
@@ -315,6 +317,12 @@ imageGenerationRouter.post('/projects/:projectId/image-outputs/batch/delete', (r
     return;
   }
   const deleted = imageGenerationJobRepo.deleteOutputsByProject(projectId, outputIds);
+  await Promise.all(deleted.map(async (output) => {
+    const file = fileRepo.get(output.file_id);
+    if (file?.source_type === 'uploaded_file') {
+      await unlinkProjectUploadedFileSafely(file);
+    }
+  }));
   res.json({ deleted_output_ids: deleted.map((output) => output.id) });
 });
 

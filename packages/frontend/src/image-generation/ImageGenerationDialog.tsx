@@ -168,7 +168,7 @@ export function ImageGenerationDialogView({
               Quality
             </span>
             <select
-              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[12px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)]"
+              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[12px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-surface)]"
               value={state.quality}
               onChange={(event) => onStateChange({ quality: event.currentTarget.value })}
             >
@@ -180,7 +180,7 @@ export function ImageGenerationDialogView({
               Size
             </span>
             <select
-              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[12px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)]"
+              className="h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[12px] text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-surface)]"
               value={state.size}
               onChange={(event) => onStateChange({ size: event.currentTarget.value })}
             >
@@ -226,7 +226,7 @@ function clampImageCount(value: number): number {
 
 function modeButtonClass(active: boolean): string {
   return cn(
-    'inline-flex h-8 items-center justify-center gap-1.5 border px-2 text-[12px] font-medium transition-colors ease-ocean',
+    'inline-flex h-8 items-center justify-center gap-1.5 border px-2 text-[12px] font-medium transition-colors ease-ocean focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-surface)]',
     active
       ? 'border-[var(--color-accent)] bg-[var(--color-bg-soft)] text-[var(--color-fg)]'
       : 'border-[var(--color-border)] text-[var(--color-fg-muted)] hover:bg-[var(--color-bg-soft)] hover:text-[var(--color-fg)]',

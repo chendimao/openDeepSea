@@ -13,6 +13,8 @@ export type GalleryItem = {
   url: string;
   href: string;
   label: string;
+  width?: number | null;
+  height?: number | null;
   outputId: string | null;
 };
 
@@ -84,7 +86,10 @@ export function ImageGalleryPanel({ projectId }: { projectId: string }): JSX.Ele
       <ImageBatchToolbar
         selectedCount={selectedOutputIds.length}
         busy={deleteOutputs.isPending || downloadManifest.isPending}
-        onDelete={() => deleteOutputs.mutate()}
+        onDelete={() => {
+          if (!window.confirm(`删除所选 ${selectedOutputIds.length} 张图片？此操作会从项目文件库移除这些图片。`)) return;
+          deleteOutputs.mutate();
+        }}
         onDownload={() => downloadManifest.mutate()}
         onClear={() => setSelectedOutputIds([])}
       />
@@ -147,7 +152,7 @@ function GalleryTile(input: {
       {item.outputId && (
         <button
           type="button"
-          className="absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center border border-[var(--color-border)] bg-[var(--color-panel)] text-[var(--color-fg-muted)] shadow-sm transition-colors hover:text-[var(--color-fg)]"
+          className="absolute left-2 top-2 z-10 flex h-7 w-7 items-center justify-center border border-[var(--color-border)] bg-[var(--color-panel)] text-[var(--color-fg-muted)] shadow-sm transition-colors hover:text-[var(--color-fg)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-panel)]"
           aria-label={selected ? `取消选择 ${item.title}` : `选择 ${item.title}`}
           aria-pressed={selected}
           onClick={onToggle}
@@ -158,7 +163,15 @@ function GalleryTile(input: {
       <a href={item.href} className="block">
         <span className="block aspect-square overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-soft)]">
           {item.url ? (
-            <img src={item.url} alt={item.title} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
+            <img
+              src={item.url}
+              alt={item.title}
+              width={item.width ?? undefined}
+              height={item.height ?? undefined}
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+            />
           ) : (
             <span className="flex h-full items-center justify-center text-[var(--color-fg-subtle)]">
               <ImageIcon className="h-6 w-6" aria-hidden="true" />
@@ -221,6 +234,8 @@ function outputToGalleryItem(projectId: string, output: ImageGenerationOutput): 
     url: output.url,
     href: `/projects/${projectId}/files`,
     label: output.name,
+    width: output.width,
+    height: output.height,
     outputId: output.id,
   };
 }
@@ -232,6 +247,8 @@ function resourceToGalleryItem(projectId: string, file: ProjectFile): GalleryIte
     url: file.url,
     href: `/projects/${projectId}/files`,
     label: file.original_name,
+    width: null,
+    height: null,
     outputId: null,
   };
 }

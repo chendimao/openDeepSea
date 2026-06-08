@@ -149,7 +149,20 @@ export function SessionFileComposer({
             onPaste={(event) => {
               const files = filesFromClipboard(event.clipboardData);
               if (files.length === 0) return;
+              const pastedText = event.clipboardData.getData('text/plain');
               event.preventDefault();
+              if (pastedText) {
+                const textarea = event.currentTarget;
+                const selectionStart = textarea.selectionStart ?? textarea.value.length;
+                const selectionEnd = textarea.selectionEnd ?? selectionStart;
+                const nextContent = insertTextAtSelection(textarea.value, pastedText, selectionStart, selectionEnd);
+                const nextCaret = selectionStart + pastedText.length;
+                setContent(nextContent);
+                queueMicrotask(() => {
+                  textarea.selectionStart = nextCaret;
+                  textarea.selectionEnd = nextCaret;
+                });
+              }
               addFiles(files);
             }}
             onKeyDown={(event) => {
@@ -339,4 +352,10 @@ function filesFromClipboard(data: DataTransfer): File[] {
     .filter((item) => item.kind === 'file')
     .map((item) => item.getAsFile())
     .filter((file): file is File => file !== null);
+}
+
+function insertTextAtSelection(value: string, text: string, selectionStart: number, selectionEnd: number): string {
+  const start = Math.max(0, Math.min(selectionStart, value.length));
+  const end = Math.max(start, Math.min(selectionEnd, value.length));
+  return `${value.slice(0, start)}${text}${value.slice(end)}`;
 }

@@ -1,4 +1,7 @@
 import { Buffer } from 'node:buffer';
+import type { LookupAddress } from 'node:dns';
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 
 export interface ImageGenerationRuntimeRequest {
   baseUrl: string;
@@ -47,6 +50,8 @@ interface ImageRuntimePayloadItem {
 interface ChatCompletionsPayload {
   choices?: unknown;
 }
+
+const MAX_DOWNLOADED_IMAGE_BYTES = 50 * 1024 * 1024;
 
 export async function requestOpenAICompatibleImageGeneration(
   input: ImageGenerationRuntimeRequest,
@@ -246,6 +251,7 @@ async function downloadImageUrl(
   signal: AbortSignal | undefined,
   apiKey: string,
 ): Promise<ImageGenerationRuntimeImage> {
+  await assertSafeImageDownloadUrl(url, fetchImpl);
   let response: Response;
   try {
     response = await fetchImpl(url, { signal });
@@ -256,11 +262,124 @@ async function downloadImageUrl(
   if (!response.ok) {
     throw new Error(`图片资源下载失败：HTTP ${response.status}`);
   }
+  const mimeType = normalizeContentType(response.headers.get('content-type'));
+  if (!mimeType.startsWith('image/')) {
+    throw new Error('图片资源下载失败：响应不是图片');
+  }
 
   return {
-    data: Buffer.from(await response.arrayBuffer()),
-    mimeType: normalizeContentType(response.headers.get('content-type')),
+    data: await readImageResponseBuffer(response, apiKey),
+    mimeType,
   };
+}
+
+async function assertSafeImageDownloadUrl(rawUrl: string, fetchImpl: FetchLike): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('图片资源下载地址不是有效 URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('图片资源下载地址只允许 http(s) 协议');
+  }
+  assertPublicHostname(parsed.hostname);
+
+  if (fetchImpl !== fetch || isIP(normalizeHostname(parsed.hostname)) !== 0) return;
+  let addresses: LookupAddress[];
+  try {
+    addresses = await lookup(parsed.hostname, { all: true });
+  } catch {
+    throw new Error('图片资源下载地址无法解析');
+  }
+  for (const address of addresses) {
+    assertPublicHostname(address.address);
+  }
+}
+
+function assertPublicHostname(hostname: string): void {
+  const normalized = normalizeHostname(hostname);
+  if (!normalized || normalized === 'localhost' || normalized.endsWith('.localhost')) {
+    throw new Error('图片资源下载地址不允许访问本机或私网地址');
+  }
+  const version = isIP(normalized);
+  if (version === 0) return;
+  if (isPrivateOrLocalIp(normalized, version === 4 ? 4 : 6)) {
+    throw new Error('图片资源下载地址不允许访问本机或私网地址');
+  }
+}
+
+function normalizeHostname(hostname: string): string {
+  return hostname.trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
+}
+
+function isPrivateOrLocalIp(ip: string, version: 0 | 4 | 6): boolean {
+  if (version === 4) return isPrivateOrLocalIpv4(ip);
+  if (version === 6) return isPrivateOrLocalIpv6(ip);
+  return false;
+}
+
+function isPrivateOrLocalIpv4(ip: string): boolean {
+  const parts = ip.split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+  const [a, b] = parts as [number, number, number, number];
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  return a >= 224;
+}
+
+function isPrivateOrLocalIpv6(ip: string): boolean {
+  const normalized = ip.toLowerCase();
+  if (normalized === '::' || normalized === '::1') return true;
+  if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+  if (normalized.startsWith('fe8') || normalized.startsWith('fe9') || normalized.startsWith('fea') || normalized.startsWith('feb')) return true;
+  const mappedIpv4 = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  return mappedIpv4 ? isPrivateOrLocalIpv4(mappedIpv4) : false;
+}
+
+async function readImageResponseBuffer(response: Response, apiKey: string): Promise<Buffer> {
+  const contentLength = parseContentLength(response.headers.get('content-length'));
+  if (contentLength !== null && contentLength > MAX_DOWNLOADED_IMAGE_BYTES) {
+    throw new Error('图片资源下载失败：响应超过大小限制');
+  }
+
+  if (!response.body) {
+    const data = Buffer.from(await response.arrayBuffer());
+    if (data.byteLength > MAX_DOWNLOADED_IMAGE_BYTES) {
+      throw new Error('图片资源下载失败：响应超过大小限制');
+    }
+    return data;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = Buffer.from(value);
+      total += chunk.byteLength;
+      if (total > MAX_DOWNLOADED_IMAGE_BYTES) {
+        throw new Error('图片资源下载失败：响应超过大小限制');
+      }
+      chunks.push(chunk);
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes('响应超过大小限制')) throw err;
+    throw new Error(`图片资源下载失败：${sanitizeRuntimeError(err, apiKey)}`);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+function parseContentLength(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function decodeDataUrlImage(url: string, apiKey: string): ImageGenerationRuntimeImage {
@@ -317,8 +436,7 @@ function isAbortError(err: unknown): boolean {
 }
 
 function normalizeContentType(value: string | null): string {
-  const mimeType = value?.split(';', 1)[0]?.trim();
-  return mimeType || 'image/png';
+  return value?.split(';', 1)[0]?.trim().toLowerCase() ?? '';
 }
 
 function normalizeImageBaseUrl(value: string): string {

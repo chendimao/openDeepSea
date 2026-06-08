@@ -335,11 +335,9 @@ function listOutputsByProject(projectId: string, outputIds: string[]): ImageGene
 function deleteOutputsByProject(projectId: string, outputIds: string[]): ImageGenerationOutput[] {
   const outputs = listOutputsByProject(projectId, outputIds);
   if (outputs.length === 0) return [];
-  const deleteOutput = db.prepare('DELETE FROM image_generation_outputs WHERE id = ?');
   const deleteMany = db.transaction((rows: ImageGenerationOutput[]) => {
     for (const output of rows) {
       fileRepo.softDelete(output.file_id);
-      deleteOutput.run(output.id);
     }
   });
   deleteMany(outputs);

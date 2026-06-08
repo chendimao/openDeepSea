@@ -88,7 +88,7 @@ export function PromptBankPanel({ projectId, currentPrompt, onInsertPrompt }: Pr
         </div>
       </div>
       <textarea
-        className="min-h-[64px] w-full resize-y border border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-2 text-[12px] leading-relaxed text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)]"
+        className="min-h-[64px] w-full resize-y border border-[var(--color-border)] bg-[var(--color-panel)] px-2 py-2 text-[12px] leading-relaxed text-[var(--color-fg)] outline-none focus:border-[var(--color-primary)] focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--color-panel)]"
         value={draft.prompt || currentPrompt}
         onChange={(event) => setDraft((current) => ({ ...current, prompt: event.currentTarget.value }))}
         placeholder="保存当前 prompt，或编辑后保存为模板"
@@ -117,7 +117,10 @@ export function PromptBankPanel({ projectId, currentPrompt, onInsertPrompt }: Pr
               variant="ghost"
               disabled={deletePreset.isPending}
               aria-label={`删除提示词 ${preset.title}`}
-              onClick={() => deletePreset.mutate(preset.id)}
+              onClick={() => {
+                if (!window.confirm(`删除提示词“${preset.title}”？`)) return;
+                deletePreset.mutate(preset.id);
+              }}
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
             </Button>

@@ -565,3 +565,80 @@ test('runSessionAgent exposes generate_image tool bound to session project scope
   assert.equal(event?.source_run_id, run.id);
   assert.deepEqual(event?.payload.outputs, toolResult.outputs);
 });
+
+test('runSessionAgent executes generate_image bridge markers from adapters that do not call tools', async () => {
+  const project = projectRepo.create({
+    name: 'runtime image bridge project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-image-bridge-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Image Bridge',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const profile = imageProviderProfileRepo.create(project.id, {
+    name: 'Runtime Bridge Images',
+    base_url: 'https://example.com/v1',
+    api_key: 'runtime-bridge-secret',
+    model: 'gpt-image-2',
+  });
+  const service = createImageGenerationService({
+    pollIntervalMs: 5,
+    waitTimeoutMs: 1000,
+    runtime: async (request) => {
+      assert.equal(request.profileId, profile.id);
+      assert.equal(request.prompt, 'bridge pear');
+      return {
+        images: [
+          {
+            data: Buffer.from(`png:${request.prompt}`),
+            mimeType: 'image/png',
+          },
+        ],
+      };
+    },
+  });
+
+  setSessionRuntimeGenerateImageToolDepsForTest({ service });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt, tools, onChunk }) => {
+      assert.equal(tools?.some((tool) => tool.name === 'generate_image'), true);
+      assert.match(prompt, /opendeepsea-tool-call/);
+      assert.doesNotMatch(prompt, /runtime-bridge-secret/);
+      onChunk({
+        stream: 'stdout',
+        channel: 'answer',
+        text: [
+          '准备生成图片。',
+          '<opendeepsea-tool-call name="generate_image">',
+          '{"prompt":"bridge pear","workflow":"generate","count":1,"provider_profile_id":null}',
+          '</opendeepsea-tool-call>',
+        ].join('\n'),
+      });
+      return { exitCode: 0, sessionId: 'image-bridge-acp', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    prompt: '生成一张梨子的图片',
+    provider: 'codex',
+    permissionMode: 'workspace-write',
+  });
+  const event = sessionEvidenceRepo.listBySession(session.id)
+    .find((item) => item.title === '图片生成结果');
+  const payload = event?.payload as { job_id?: string; outputs?: unknown[] } | undefined;
+  assert.equal(run.status, 'completed');
+  assert.doesNotMatch(sessionRunRepo.get(run.id)?.stdout ?? '', /opendeepsea-tool-call/);
+  assert.equal(event?.event_type, 'tool_result');
+  assert.equal(event?.source_run_id, run.id);
+  assert.ok(payload?.job_id);
+  assert.equal(payload.outputs?.length, 1);
+  const job = imageGenerationJobRepo.get(payload.job_id);
+  assert.equal(job?.project_id, project.id);
+  assert.equal(job?.session_id, session.id);
+  assert.equal(JSON.stringify(event).includes('runtime-bridge-secret'), false);
+});
