@@ -58,7 +58,7 @@
 - Test: `packages/backend/src/online-skills/cache.test.ts`
 - Test: `packages/backend/src/online-skills/client.test.ts`
 
-- [ ] **Step 1: 写缓存失败测试**
+- [x] **Step 1: 写缓存失败测试**
 
 Create `packages/backend/src/online-skills/cache.test.ts`:
 
@@ -103,7 +103,7 @@ test('TtlCache delete removes cached values', () => {
 });
 ```
 
-- [ ] **Step 2: 写 client 失败测试**
+- [x] **Step 2: 写 client 失败测试**
 
 Create `packages/backend/src/online-skills/client.test.ts`:
 
@@ -207,7 +207,7 @@ test('SkillsShClient maps audit 404 to audit_not_found', async () => {
 });
 ```
 
-- [ ] **Step 3: 运行失败测试**
+- [x] **Step 3: 运行失败测试**
 
 Run:
 
@@ -217,7 +217,7 @@ npm run test -w @openclaw-room/backend -- src/online-skills/cache.test.ts src/on
 
 Expected: FAIL because `cache.ts` and `client.ts` do not exist.
 
-- [ ] **Step 4: 实现类型、缓存和 client**
+- [x] **Step 4: 实现类型、缓存和 client**
 
 Create `packages/backend/src/online-skills/types.ts`:
 
@@ -442,7 +442,7 @@ export function getSkillsShBearerTokenFromEnv(env: NodeJS.ProcessEnv): string | 
 }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [x] **Step 5: 运行测试确认通过**
 
 Run:
 
@@ -452,7 +452,7 @@ npm run test -w @openclaw-room/backend -- src/online-skills/cache.test.ts src/on
 
 Expected: PASS.
 
-- [ ] **Step 6: 提交 Task 1**
+- [x] **Step 6: 提交 Task 1**
 
 Run:
 
@@ -473,7 +473,7 @@ git commit -m "feat(skills): 添加官方 API 客户端"
 - Create: `packages/backend/src/online-skills/service.ts`
 - Test: `packages/backend/src/online-skills/service.test.ts`
 
-- [ ] **Step 1: 写 service 失败测试**
+- [x] **Step 1: 写 service 失败测试**
 
 Create `packages/backend/src/online-skills/service.test.ts`:
 
@@ -594,7 +594,7 @@ function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name
 }
 ```
 
-- [ ] **Step 2: 运行失败测试**
+- [x] **Step 2: 运行失败测试**
 
 Run:
 
@@ -604,7 +604,7 @@ npm run test -w @openclaw-room/backend -- src/online-skills/service.test.ts
 
 Expected: FAIL because `service.ts` does not exist.
 
-- [ ] **Step 3: 实现 service**
+- [x] **Step 3: 实现 service**
 
 Create `packages/backend/src/online-skills/service.ts`:
 
@@ -836,7 +836,7 @@ function lastPathPart(value: string): string {
 }
 ```
 
-- [ ] **Step 4: 运行 service 测试**
+- [x] **Step 4: 运行 service 测试**
 
 Run:
 
@@ -846,7 +846,7 @@ npm run test -w @openclaw-room/backend -- src/online-skills/service.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: 提交 Task 2**
+- [x] **Step 5: 提交 Task 2**
 
 Run:
 
@@ -865,7 +865,7 @@ git commit -m "feat(skills): 规范化官方在线 skills"
 - Test: `packages/backend/src/online-skills/routes.test.ts`
 - Modify: `packages/backend/src/routes.ts`
 
-- [ ] **Step 1: 写 routes 失败测试**
+- [x] **Step 1: 写 routes 失败测试**
 
 Create `packages/backend/src/online-skills/routes.test.ts`:
 
@@ -997,7 +997,7 @@ test('online skills audit returns no audit state', async () => {
 });
 ```
 
-- [ ] **Step 2: 运行失败测试**
+- [x] **Step 2: 运行失败测试**
 
 Run:
 
@@ -1007,7 +1007,7 @@ npm run test -w @openclaw-room/backend -- src/online-skills/routes.test.ts
 
 Expected: FAIL because `routes.ts` does not exist.
 
-- [ ] **Step 3: 实现 routes**
+- [x] **Step 3: 实现 routes**
 
 Create `packages/backend/src/online-skills/routes.ts`:
 
@@ -1100,7 +1100,7 @@ function requireLocalAccess(req: Request, res: Response): boolean {
 }
 ```
 
-- [ ] **Step 4: 挂载全局路由**
+- [x] **Step 4: 挂载全局路由**
 
 Modify `packages/backend/src/routes.ts` near the existing platform skills imports:
 
@@ -1118,7 +1118,7 @@ router.use('/platform-skills', platformSkillsRouter);
 router.use('/terminals', terminalRouter);
 ```
 
-- [ ] **Step 5: 运行 routes 测试**
+- [x] **Step 5: 运行 routes 测试**
 
 Run:
 
@@ -1128,7 +1128,7 @@ npm run test -w @openclaw-room/backend -- src/online-skills/routes.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: 提交 Task 3**
+- [x] **Step 6: 提交 Task 3**
 
 Run:
 
@@ -1148,7 +1148,7 @@ git commit -m "feat(skills): 暴露官方在线 skills 路由"
 - Modify: `packages/frontend/src/components/TerminalPanel.tsx`
 - Test: `packages/frontend/src/pages/SkillsPage.test.tsx`
 
-- [ ] **Step 1: 补受限终端安装命令测试**
+- [x] **Step 1: 补受限终端安装命令测试**
 
 Modify `packages/backend/src/terminal/restricted-skills-shell.test.ts` inside `restricted skills shell accepts npx skills commands`:
 
@@ -1160,7 +1160,7 @@ Modify `packages/backend/src/terminal/restricted-skills-shell.test.ts` inside `r
   });
 ```
 
-- [ ] **Step 2: 运行受限终端测试**
+- [x] **Step 2: 运行受限终端测试**
 
 Run:
 
@@ -1170,7 +1170,7 @@ npm run test -w @openclaw-room/backend -- src/terminal/restricted-skills-shell.t
 
 Expected: PASS. Current parser already allows `add` arguments, this test locks the official install command shape.
 
-- [ ] **Step 3: 给 TerminalPanel 增加 initialInput**
+- [x] **Step 3: 给 TerminalPanel 增加 initialInput**
 
 Modify `packages/frontend/src/components/TerminalPanel.tsx` props:
 
@@ -1228,7 +1228,7 @@ Update the effect dependency:
   }, [profile, projectId, initialInput]);
 ```
 
-- [ ] **Step 4: 补前端源代码测试断言**
+- [x] **Step 4: 补前端源代码测试断言**
 
 Modify `packages/frontend/src/pages/SkillsPage.test.tsx` by adding:
 
@@ -1242,7 +1242,7 @@ test('TerminalPanel supports prefilled command input without exposing project sh
 });
 ```
 
-- [ ] **Step 5: 运行前端源代码测试**
+- [x] **Step 5: 运行前端源代码测试**
 
 Run:
 
@@ -1252,7 +1252,7 @@ node --import tsx --test packages/frontend/src/pages/SkillsPage.test.tsx
 
 Expected: PASS.
 
-- [ ] **Step 6: 提交 Task 4**
+- [x] **Step 6: 提交 Task 4**
 
 Run:
 
@@ -1272,7 +1272,7 @@ git commit -m "feat(skills): 支持安装终端预填命令"
 - Modify: `packages/frontend/src/lib/api.ts`
 - Modify: `packages/frontend/src/lib/api.test.ts`
 
-- [ ] **Step 1: 写 API helper 源代码测试**
+- [x] **Step 1: 写 API helper 源代码测试**
 
 Modify `packages/frontend/src/lib/api.test.ts` by adding source-level checks:
 
@@ -1294,7 +1294,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 ```
 
-- [ ] **Step 2: 运行失败测试**
+- [x] **Step 2: 运行失败测试**
 
 Run:
 
@@ -1304,7 +1304,7 @@ node --import tsx --test packages/frontend/src/lib/api.test.ts
 
 Expected: FAIL because online skills helpers are not present.
 
-- [ ] **Step 3: 增加前端类型**
+- [x] **Step 3: 增加前端类型**
 
 Modify `packages/frontend/src/lib/types.ts` after platform skill types:
 
@@ -1354,7 +1354,7 @@ export interface OnlineSkillAuditResponse {
 }
 ```
 
-- [ ] **Step 4: 增加 API helper**
+- [x] **Step 4: 增加 API helper**
 
 Modify `packages/frontend/src/lib/api.ts` type imports:
 
@@ -1400,7 +1400,7 @@ Add API methods near platform skills methods:
     workspaceRequest<OnlineSkillAuditResponse>(`/online-skills/${encodeURIComponent(id)}/audit`),
 ```
 
-- [ ] **Step 5: 运行 API helper 测试**
+- [x] **Step 5: 运行 API helper 测试**
 
 Run:
 
@@ -1410,7 +1410,7 @@ node --import tsx --test packages/frontend/src/lib/api.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: 提交 Task 5**
+- [x] **Step 6: 提交 Task 5**
 
 Run:
 
@@ -1430,7 +1430,7 @@ git commit -m "feat(skills): 添加在线 skills 前端 API"
 - Modify: `packages/frontend/src/pages/SkillsPage.css`
 - Modify: `packages/frontend/src/pages/SkillsPage.test.tsx`
 
-- [ ] **Step 1: 写 SkillsPage 行为源代码测试**
+- [x] **Step 1: 写 SkillsPage 行为源代码测试**
 
 Modify `packages/frontend/src/pages/SkillsPage.test.tsx` by adding:
 
@@ -1446,7 +1446,7 @@ test('SkillsPage defaults to official online skills list', () => {
 });
 ```
 
-- [ ] **Step 2: 运行失败测试**
+- [x] **Step 2: 运行失败测试**
 
 Run:
 
@@ -1456,7 +1456,7 @@ node --import tsx --test packages/frontend/src/pages/SkillsPage.test.tsx
 
 Expected: FAIL because SkillsPage still defaults to platform aggregate records.
 
-- [ ] **Step 3: 引入在线类型并新增状态**
+- [x] **Step 3: 引入在线类型并新增状态**
 
 Modify imports in `packages/frontend/src/pages/SkillsPage.tsx`:
 
@@ -1472,7 +1472,7 @@ Add state next to existing filters:
   const [initialInstallCommand, setInitialInstallCommand] = useState('');
 ```
 
-- [ ] **Step 4: 增加在线 skills query**
+- [x] **Step 4: 增加在线 skills query**
 
 Add after platform queries:
 
@@ -1496,7 +1496,7 @@ Change refresh to include online list:
   }, [queryClient]);
 ```
 
-- [ ] **Step 5: 新增在线 record 转换**
+- [x] **Step 5: 新增在线 record 转换**
 
 Add near `toSkillRecord` helpers:
 
@@ -1530,7 +1530,7 @@ function filterOnlineSkills(
 }
 ```
 
-- [ ] **Step 6: 用在线数据驱动主面板**
+- [x] **Step 6: 用在线数据驱动主面板**
 
 In `SkillsPage`, add:
 
@@ -1586,7 +1586,7 @@ Update `SkillsInstallerDrawer` call:
         />
 ```
 
-- [ ] **Step 7: 扩展 SkillsMarketPanel props 和渲染**
+- [x] **Step 7: 扩展 SkillsMarketPanel props 和渲染**
 
 Modify `SkillsMarketPanel` props to include:
 
@@ -1648,7 +1648,7 @@ Render online cards before the local fallback list:
 
 Keep the existing local list as fallback when `onlineRecords.length === 0`.
 
-- [ ] **Step 8: 给安装抽屉传 initialInput**
+- [x] **Step 8: 给安装抽屉传 initialInput**
 
 Modify `SkillsInstallerDrawer` props:
 
@@ -1677,7 +1677,7 @@ Pass to `TerminalPanel`:
         />
 ```
 
-- [ ] **Step 9: 增加最小 CSS**
+- [x] **Step 9: 增加最小 CSS**
 
 Modify `packages/frontend/src/pages/SkillsPage.css`:
 
@@ -1728,7 +1728,7 @@ Modify `packages/frontend/src/pages/SkillsPage.css`:
 }
 ```
 
-- [ ] **Step 10: 运行 SkillsPage 测试**
+- [x] **Step 10: 运行 SkillsPage 测试**
 
 Run:
 
@@ -1738,7 +1738,7 @@ node --import tsx --test packages/frontend/src/pages/SkillsPage.test.tsx
 
 Expected: PASS.
 
-- [ ] **Step 11: 提交 Task 6**
+- [x] **Step 11: 提交 Task 6**
 
 Run:
 
@@ -1756,7 +1756,7 @@ git commit -m "feat(skills): 默认展示官方在线列表"
 **Files:**
 - Create: `docs/superpowers/verification/2026-06-08-Skills官方API在线列表与终端安装验收.md`
 
-- [ ] **Step 1: 运行后端测试**
+- [x] **Step 1: 运行后端测试**
 
 Run:
 
@@ -1771,7 +1771,7 @@ npm run test -w @openclaw-room/backend -- \
 
 Expected: PASS.
 
-- [ ] **Step 2: 运行前端源代码测试**
+- [x] **Step 2: 运行前端源代码测试**
 
 Run:
 
@@ -1783,7 +1783,7 @@ node --import tsx --test \
 
 Expected: PASS.
 
-- [ ] **Step 3: 运行整体构建**
+- [x] **Step 3: 运行整体构建**
 
 Run:
 
@@ -1793,7 +1793,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 4: 创建验收文档**
+- [x] **Step 4: 创建验收文档**
 
 Create `docs/superpowers/verification/2026-06-08-Skills官方API在线列表与终端安装验收.md`:
 
@@ -1826,7 +1826,7 @@ Create `docs/superpowers/verification/2026-06-08-Skills官方API在线列表与�
 真实官方 API 请求依赖后端环境变量 `SKILLS_SH_API_TOKEN` 或 `VERCEL_OIDC_TOKEN`。未配置 token 时，页面显示配置错误。
 ```
 
-- [ ] **Step 5: 提交最终验收文档**
+- [x] **Step 5: 提交最终验收文档**
 
 Run:
 
