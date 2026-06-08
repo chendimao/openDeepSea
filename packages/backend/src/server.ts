@@ -19,6 +19,7 @@ import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { startProviderSuperpowersStartupInstall } from './provider-superpowers.js';
 import { providerConfigService } from './provider-configs/service.js';
 import { handleSessionSocketEvent } from './session-socket-controller.js';
+import { handleTerminalSocketEvent, removeTerminalSocket } from './terminal/socket-controller.js';
 import { buildActiveSessionSummaries } from './session-active-view-model.js';
 import { validateWebSocketAccess } from './websocket-access.js';
 import { wsHub } from './ws-hub.js';
@@ -91,8 +92,12 @@ wss.on('connection', (socket) => {
     else if (event.type === 'session:subscribe') wsHub.subscribeSession(event.sessionId, socket);
     else if (event.type === 'session:unsubscribe') wsHub.unsubscribeSession(event.sessionId, socket);
     else if (handleSessionSocketEvent(socket, event)) return;
+    else if (handleTerminalSocketEvent(socket, event)) return;
   });
-  socket.on('close', () => wsHub.removeSocket(socket));
+  socket.on('close', () => {
+    removeTerminalSocket(socket);
+    wsHub.removeSocket(socket);
+  });
 });
 
 httpServer.listen(PORT, () => {

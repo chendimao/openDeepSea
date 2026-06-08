@@ -4,6 +4,7 @@ import type { WsServerEvent } from './types.js';
 class WsHub {
   private subscriptions = new Map<string, Set<WebSocket>>();
   private sessionSubscriptions = new Map<string, Set<WebSocket>>();
+  private terminalSubscriptions = new Map<string, Set<WebSocket>>();
   private activeSessionSubscriptions = new Set<WebSocket>();
 
   subscribe(roomId: string, socket: WebSocket): void {
@@ -22,6 +23,18 @@ class WsHub {
     this.sessionSubscriptions.get(sessionId)?.delete(socket);
   }
 
+  subscribeTerminal(sessionId: string, socket: WebSocket): void {
+    this.add(this.terminalSubscriptions, sessionId, socket);
+  }
+
+  unsubscribeTerminal(sessionId: string, socket: WebSocket): void {
+    this.terminalSubscriptions.get(sessionId)?.delete(socket);
+  }
+
+  removeTerminalSocket(socket: WebSocket): void {
+    for (const set of this.terminalSubscriptions.values()) set.delete(socket);
+  }
+
   subscribeActiveSessions(socket: WebSocket): void {
     this.activeSessionSubscriptions.add(socket);
   }
@@ -33,6 +46,7 @@ class WsHub {
   removeSocket(socket: WebSocket): void {
     for (const set of this.subscriptions.values()) set.delete(socket);
     for (const set of this.sessionSubscriptions.values()) set.delete(socket);
+    for (const set of this.terminalSubscriptions.values()) set.delete(socket);
     this.activeSessionSubscriptions.delete(socket);
   }
 
@@ -44,13 +58,17 @@ class WsHub {
     this.broadcastTo(this.sessionSubscriptions, sessionId, event);
   }
 
+  broadcastTerminal(sessionId: string, event: WsServerEvent): void {
+    this.broadcastTo(this.terminalSubscriptions, sessionId, event);
+  }
+
   broadcastActiveSessions(event: WsServerEvent): void {
     this.sendToSet(this.activeSessionSubscriptions, JSON.stringify(event));
   }
 
   broadcastAll(event: WsServerEvent): void {
     const payload = JSON.stringify(event);
-    for (const set of [...this.subscriptions.values(), ...this.sessionSubscriptions.values()]) {
+    for (const set of [...this.subscriptions.values(), ...this.sessionSubscriptions.values(), ...this.terminalSubscriptions.values()]) {
       this.sendToSet(set, payload);
     }
     this.sendToSet(this.activeSessionSubscriptions, payload);

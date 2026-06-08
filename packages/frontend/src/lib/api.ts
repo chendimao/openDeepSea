@@ -17,6 +17,7 @@ import type {
   CliSession,
   CollaborationDecision,
   CollaborationRunSummary,
+  CreateTerminalSessionInput,
   GlobalChatMessage,
   GlobalChatSendResponse,
   GlobalChatSession,
@@ -57,6 +58,7 @@ import type {
   TaskEventListResponse,
   TaskExecutorListItem,
   TaskInteractionMode,
+  TerminalSessionInfo,
   WorkflowDetail,
   WorkflowDefinition,
   WorkflowDefinitionGraph,
@@ -463,6 +465,15 @@ export const api = {
     workspaceRequest<PlatformSkill[]>(`/platform-skills/${provider}`),
   getPlatformSkill: (provider: PlatformSkillProvider, skillName: string) =>
     workspaceRequest<PlatformSkill>(`/platform-skills/${provider}/${encodeURIComponent(skillName)}`),
+  createTerminalSession: (input: CreateTerminalSessionInput) =>
+    workspaceRequest<TerminalSessionInfo>('/terminals', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  getTerminalSession: (id: string) =>
+    workspaceRequest<TerminalSessionInfo>(`/terminals/${id}`),
+  killTerminalSession: (id: string) =>
+    workspaceRequest<void>(`/terminals/${id}/kill`, { method: 'POST' }),
 
   listProjects: () => request<Project[]>('/projects'),
   pickDirectory: () =>

@@ -1186,6 +1186,33 @@
     height: 12px;
   }
 
+  .skills-terminal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    justify-content: flex-end;
+    background: rgba(15, 23, 42, 0.24);
+    backdrop-filter: blur(4px);
+  }
+
+  .skills-terminal-drawer {
+    width: min(760px, calc(100vw - 48px));
+    min-width: 520px;
+    height: 100vh;
+    border-left: 1px solid rgba(15, 23, 42, 0.14);
+    background: #071018;
+    box-shadow: -28px 0 80px rgba(15, 23, 42, 0.28);
+    padding: 12px;
+  }
+
+  .skills-terminal-panel {
+    height: 100%;
+    min-height: 0;
+    border-color: rgba(148, 163, 184, 0.24);
+    background: #071018;
+  }
+
   .skills-state-box {
     display: flex;
     min-height: 120px;
@@ -1210,7 +1237,6 @@
     .skills-workspace {
       grid-template-columns: 220px minmax(0, 1fr) 300px;
     }
-
 
     .skills-list-item {
       grid-template-columns: 44px minmax(160px, 1fr) 120px 78px;
@@ -1256,5 +1282,10 @@
 
     .skills-workspace {
       min-width: 980px;
+    }
+
+    .skills-terminal-drawer {
+      width: 100vw;
+      min-width: 0;
     }
   }

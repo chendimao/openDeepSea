@@ -1,5 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Bot,
@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
+import { TerminalPanel } from '../components/TerminalPanel';
 import type {
   PlatformSkill,
   PlatformSkillAggregate,
@@ -244,24 +245,27 @@ const STATUS_LABELS: Record<MarketStatusFilter, string> = {
 };
 
 export function SkillsPage(): JSX.Element {
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<MarketStatusFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [installedOnly, setInstalledOnly] = useState(true);
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>('file-system');
+  const [installerOpen, setInstallerOpen] = useState(false);
 
-  // Stitch 还原首屏使用固定设计稿数据，保留 query 形状便于后续接回真实扫描结果。
   const summariesQuery = useQuery({
     queryKey: ['platform-skills', 'platforms'],
     queryFn: api.listPlatformSkillSummaries,
-    enabled: false,
   });
   const aggregatesQuery = useQuery({
     queryKey: ['platform-skills', 'aggregate'],
     queryFn: api.listPlatformSkillAggregates,
-    enabled: false,
   });
+  const refreshPlatformSkills = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['platform-skills', 'platforms'] });
+    void queryClient.invalidateQueries({ queryKey: ['platform-skills', 'aggregate'] });
+  }, [queryClient]);
 
   const summaries = summariesQuery.data ?? [];
   const sourceAggregates = aggregatesQuery.data?.length ? aggregatesQuery.data : FALLBACK_SKILLS;
@@ -299,6 +303,7 @@ export function SkillsPage(): JSX.Element {
           onStatusChange={setStatusFilter}
           onSourceChange={setSourceFilter}
           onCategoryChange={setCategoryFilter}
+          onOpenInstaller={() => setInstallerOpen(true)}
         />
         <SkillsMarketPanel
           records={filteredRecords}
@@ -318,9 +323,19 @@ export function SkillsPage(): JSX.Element {
           onInstalledOnlyChange={setInstalledOnly}
           onSelect={setSelectedSkillName}
         />
-        <SkillDetailsPanel record={selectedRecord} summaries={summaries} />
+        <SkillDetailsPanel
+          record={selectedRecord}
+          summaries={summaries}
+          onOpenInstaller={() => setInstallerOpen(true)}
+        />
       </main>
       <SkillsStatusBar metrics={metrics} />
+      {installerOpen ? (
+        <SkillsInstallerDrawer
+          onClose={() => setInstallerOpen(false)}
+          onRefreshRequested={refreshPlatformSkills}
+        />
+      ) : null}
     </div>
   );
 }
@@ -334,6 +349,7 @@ function SkillsSidebar({
   onStatusChange,
   onSourceChange,
   onCategoryChange,
+  onOpenInstaller,
 }: {
   activeStatus: MarketStatusFilter;
   metrics: ReturnType<typeof getMetrics>;
@@ -343,6 +359,7 @@ function SkillsSidebar({
   onStatusChange: (status: MarketStatusFilter) => void;
   onSourceChange: (source: SourceFilter) => void;
   onCategoryChange: (category: CategoryFilter) => void;
+  onOpenInstaller: () => void;
 }): JSX.Element {
   const sourceCounts = getSourceCounts(metrics, summaries);
   const categoryRows: Array<{ key: CategoryFilter; icon: LucideIcon; count: number }> = [
@@ -357,10 +374,10 @@ function SkillsSidebar({
           <h2>Skills 管理</h2>
           <button type="button" aria-label="Skills 设置"><Settings aria-hidden="true" /></button>
         </div>
-        <button type="button" className="skills-install-button">
+        <button type="button" className="skills-install-button" onClick={onOpenInstaller}>
           <PackagePlus aria-hidden="true" />
-          <span>安装 Skill</span>
-          <ChevronDown aria-hidden="true" />
+          <span>安装终端</span>
+          <TerminalSquare aria-hidden="true" />
         </button>
         <nav className="skills-sidebar-nav" aria-label="Skills 状态">
           <SidebarButton icon={Layers3} label="全部 Skills" count={metrics.total} active={activeStatus === 'all'} onClick={() => onStatusChange('all')} />
@@ -544,9 +561,11 @@ function SkillListItem({ record, selected, onSelect }: { record: SkillRecord; se
 function SkillDetailsPanel({
   record,
   summaries,
+  onOpenInstaller,
 }: {
   record: SkillRecord | null;
   summaries: PlatformSkillSummary[];
+  onOpenInstaller: () => void;
 }): JSX.Element {
   if (!record) {
     return <aside className="skills-detail-panel"><StateBox icon={Search} label="请选择一个 Skill" /></aside>;
@@ -622,12 +641,34 @@ function SkillDetailsPanel({
       </div>
       <div className="skills-detail-footer">
         <div>
-          <button type="button">重新安装</button>
+          <button type="button" onClick={onOpenInstaller}>终端安装</button>
           <button type="button" aria-label="删除 Skill"><Trash2 aria-hidden="true" /></button>
         </div>
         <p><CircleHelp aria-hidden="true" />遇到问题？<a href="#">查看文档 <ExternalLink aria-hidden="true" /></a></p>
       </div>
     </aside>
+  );
+}
+
+function SkillsInstallerDrawer({
+  onClose,
+  onRefreshRequested,
+}: {
+  onClose: () => void;
+  onRefreshRequested: () => void;
+}): JSX.Element {
+  return (
+    <div className="skills-terminal-backdrop" role="presentation">
+      <aside className="skills-terminal-drawer" role="dialog" aria-modal="true" aria-label="Skills 安装终端">
+        <TerminalPanel
+          profile="skills_install"
+          title="Skills 安装终端"
+          className="skills-terminal-panel"
+          onClose={onClose}
+          onRefreshRequested={onRefreshRequested}
+        />
+      </aside>
+    </div>
   );
 }
 

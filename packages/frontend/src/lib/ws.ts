@@ -23,6 +23,8 @@ import type {
   Task,
   TaskArtifact,
   TaskEvent,
+  TerminalProfile,
+  TerminalStatus,
   WorkflowRun,
   WorkflowStep,
 } from './types';
@@ -88,6 +90,11 @@ export type WsServerEvent =
       diffRows: SessionDiffRow[];
     }
   | { type: 'history_record:new'; projectId: string; record: HistoryRecord }
+  | { type: 'terminal:ready'; sessionId: string; cwd: string; profile: TerminalProfile }
+  | { type: 'terminal:output'; sessionId: string; data: string }
+  | { type: 'terminal:status'; sessionId: string; status: TerminalStatus }
+  | { type: 'terminal:exit'; sessionId: string; exitCode: number | null; signal: string | null }
+  | { type: 'platform_skills:refresh_requested' }
   | { type: 'task:created'; task: Task }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:deleted'; taskId: string };
@@ -124,7 +131,12 @@ export type WsClientEvent =
       risks?: string[];
       acceptanceCriteria?: string[];
     }
-  | { type: 'history_records.filter'; projectId: string; q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' };
+  | { type: 'history_records.filter'; projectId: string; q?: string; status?: HistoryRecordStatus | 'all'; mode?: SessionMode | 'all' }
+  | { type: 'terminal:subscribe'; sessionId: string }
+  | { type: 'terminal:unsubscribe'; sessionId: string }
+  | { type: 'terminal:input'; sessionId: string; data: string }
+  | { type: 'terminal:resize'; sessionId: string; cols: number; rows: number }
+  | { type: 'terminal:kill'; sessionId: string };
 
 type Listener = (event: WsServerEvent) => void;
 
@@ -133,6 +145,7 @@ class RoomSocket {
   private listeners = new Set<Listener>();
   private subscribed = new Set<string>();
   private subscribedSessions = new Set<string>();
+  private subscribedTerminals = new Set<string>();
   private subscribedActiveSessions = false;
   private pendingClientEvents: WsClientEvent[] = [];
   private retry = 0;
@@ -156,6 +169,7 @@ class RoomSocket {
         this.closeWhenOpen &&
         this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
+        this.subscribedTerminals.size === 0 &&
         !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) {
@@ -165,6 +179,7 @@ class RoomSocket {
             this.ws !== ws ||
             this.subscribed.size > 0 ||
             this.subscribedSessions.size > 0 ||
+            this.subscribedTerminals.size > 0 ||
             this.subscribedActiveSessions ||
             this.pendingClientEvents.length > 0
           ) return;
@@ -177,6 +192,7 @@ class RoomSocket {
       if (this.subscribedActiveSessions) ws.send(JSON.stringify({ type: 'active_sessions:subscribe' }));
       for (const id of this.subscribed) ws.send(JSON.stringify({ type: 'subscribe', roomId: id }));
       for (const id of this.subscribedSessions) ws.send(JSON.stringify({ type: 'session:subscribe', sessionId: id }));
+      for (const id of this.subscribedTerminals) ws.send(JSON.stringify({ type: 'terminal:subscribe', sessionId: id }));
       const pending = this.pendingClientEvents.splice(0);
       for (const event of pending) ws.send(JSON.stringify(event));
     });
@@ -194,6 +210,7 @@ class RoomSocket {
       if (
         this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
+        this.subscribedTerminals.size === 0 &&
         !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) return;
@@ -217,6 +234,7 @@ class RoomSocket {
       if (
         this.subscribed.size === 0 &&
         this.subscribedSessions.size === 0 &&
+        this.subscribedTerminals.size === 0 &&
         !this.subscribedActiveSessions &&
         this.pendingClientEvents.length === 0
       ) return;
@@ -362,6 +380,36 @@ class RoomSocket {
     this.sendOrQueue({ type: 'history_records.filter', ...input });
   }
 
+  subscribeTerminal(sessionId: string): void {
+    this.closeWhenOpen = false;
+    this.subscribedTerminals.add(sessionId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'terminal:subscribe', sessionId }));
+    } else {
+      this.connectSoon();
+    }
+  }
+
+  unsubscribeTerminal(sessionId: string): void {
+    this.subscribedTerminals.delete(sessionId);
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type: 'terminal:unsubscribe', sessionId }));
+    }
+    this.closeIfIdle();
+  }
+
+  sendTerminalInput(sessionId: string, data: string): void {
+    this.sendOrQueue({ type: 'terminal:input', sessionId, data });
+  }
+
+  resizeTerminal(sessionId: string, cols: number, rows: number): void {
+    this.sendOrQueue({ type: 'terminal:resize', sessionId, cols, rows });
+  }
+
+  killTerminal(sessionId: string): void {
+    this.sendOrQueue({ type: 'terminal:kill', sessionId });
+  }
+
   destroy(): void {
     if (this.connectTimer) clearTimeout(this.connectTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
@@ -384,6 +432,7 @@ class RoomSocket {
     if (
       this.subscribed.size > 0 ||
       this.subscribedSessions.size > 0 ||
+      this.subscribedTerminals.size > 0 ||
       this.subscribedActiveSessions ||
       this.pendingClientEvents.length > 0
     ) return;

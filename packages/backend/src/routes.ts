@@ -51,6 +51,7 @@ import { workflowDefinitionRepo } from './repos/workflow-definitions.js';
 import { searchProjectRooms } from './room-search.js';
 import { platformSkillsRouter } from './platform-skills/routes.js';
 import { providerConfigRouter } from './provider-configs/routes.js';
+import { terminalRouter } from './terminal/routes.js';
 import { pickDirectory } from './system-dialogs.js';
 import {
   getProjectOverview,
@@ -94,6 +95,7 @@ import {
   listWorkspaceDirectory,
   normalizeWorkspacePath,
   readWorkspaceFilePreview,
+  readWorkspaceImageBlob,
   searchWorkspaceFiles,
 } from './workspace-files.js';
 import {
@@ -139,6 +141,7 @@ import {
 
 export const router = Router();
 router.use('/platform-skills', platformSkillsRouter);
+router.use('/terminals', terminalRouter);
 router.use(sessionRouter);
 router.use(providerConfigRouter);
 
@@ -1201,6 +1204,26 @@ router.get('/projects/:projectId/workspace/file', async (req, res, next) => {
   try {
     const preview = await readWorkspaceFilePreview(project.path, parsed.data.path);
     return res.json(preview);
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    next(error);
+  }
+});
+
+router.get('/projects/:projectId/workspace/blob', async (req, res, next) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({ path: z.string().min(1) }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  try {
+    const blob = await readWorkspaceImageBlob(project.path, parsed.data.path);
+    res.setHeader('Content-Type', blob.mimeType);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(blob.bytes);
   } catch (error) {
     if (error instanceof WorkspaceFileError) {
       return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });

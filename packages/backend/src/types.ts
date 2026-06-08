@@ -1,3 +1,5 @@
+import type { TerminalClientEvent, TerminalServerEvent } from './terminal/types.js';
+
 export interface Project {
   id: string;
   name: string;
@@ -1449,7 +1451,8 @@ export type WsServerEvent =
   | { type: 'history_record:new'; projectId: string; record: import('./session-types.js').HistoryRecord }
   | { type: 'task:updated'; task: Task }
   | { type: 'task:created'; task: Task }
-  | { type: 'task:deleted'; taskId: string };
+  | { type: 'task:deleted'; taskId: string }
+  | TerminalServerEvent;
 
 export type WsClientEvent =
   | { type: 'subscribe'; roomId: string }
@@ -1490,7 +1493,8 @@ export type WsClientEvent =
       status?: import('./session-types.js').HistoryRecordStatus | 'all';
       mode?: import('./session-types.js').SessionMode | 'all';
     }
-  | { type: 'message:send'; roomId: string; content: string; mentions?: string[] };
+  | { type: 'message:send'; roomId: string; content: string; mentions?: string[] }
+  | TerminalClientEvent;
 
 export type {
   KnowledgeCitation,

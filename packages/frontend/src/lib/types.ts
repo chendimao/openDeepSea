@@ -242,6 +242,27 @@ export interface PlatformSkillRef {
   name: string;
 }
 
+export type TerminalProfile = 'project_shell' | 'skills_install';
+export type TerminalStatus = 'running' | 'exited' | 'failed' | 'killed' | 'idle-timeout';
+
+export interface TerminalSessionInfo {
+  id: string;
+  profile: TerminalProfile;
+  cwd: string;
+  status: TerminalStatus;
+  startedAt: number;
+  endedAt: number | null;
+  exitCode: number | null;
+  signal: string | null;
+}
+
+export interface CreateTerminalSessionInput {
+  profile: TerminalProfile;
+  projectId?: string | null;
+  cols: number;
+  rows: number;
+}
+
 export interface PlatformSkillSummary {
   provider: PlatformSkillProvider;
   label: string;
@@ -852,6 +873,31 @@ export interface WorkspaceSearchResponse {
   entries: WorkspaceSearchResult[];
   truncated: boolean;
 }
+
+export interface WorkspaceDirectoryEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  size: number | null;
+  mimeType: string | null;
+  language: string | null;
+}
+
+export interface WorkspaceDirectoryResponse {
+  path: string;
+  entries: WorkspaceDirectoryEntry[];
+}
+
+export interface WorkspaceFilePreview {
+  path: string;
+  size: number;
+  mimeType: string;
+  language: string | null;
+  content: string;
+  truncated: boolean;
+}
+
+export type WorkspaceFileViewerKind = 'text' | 'image' | 'unsupported';
 
 export interface SystemSettings extends EffectiveSettings {
   active_ai_config_id: string | null;
