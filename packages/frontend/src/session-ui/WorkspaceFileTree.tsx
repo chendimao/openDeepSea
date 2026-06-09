@@ -13,7 +13,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ControlledTreeEnvironment,
   InteractionMode,
@@ -37,6 +38,24 @@ type InlineEntryAction =
   | { type: 'create-file'; parentPath: string; error?: string }
   | { type: 'create-directory'; parentPath: string; error?: string }
   | { type: 'rename'; entry: WorkspaceDirectoryEntry; error?: string };
+
+type ContextMenuBoundary = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+type ContextMenuState = {
+  anchorX: number;
+  anchorY: number;
+  x: number;
+  y: number;
+  boundary: ContextMenuBoundary;
+  entry: WorkspaceDirectoryEntry;
+};
+
+const CONTEXT_MENU_MARGIN = 6;
 
 export function WorkspaceFileTree({
   projectId,
@@ -72,13 +91,10 @@ export function WorkspaceFileTree({
   const [searchText, setSearchText] = useState('');
   const [inlineAction, setInlineAction] = useState<InlineEntryAction | null>(null);
   const [inlineName, setInlineName] = useState('');
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    entry: WorkspaceDirectoryEntry;
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const hasAutoOpenedRef = useRef(false);
   const treeRef = useRef<HTMLDivElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const rootQuery = useQuery({
     queryKey: ['workspace-tree', projectId, ''],
     queryFn: () => api.listWorkspaceDirectory(projectId, ''),
@@ -211,6 +227,29 @@ export function WorkspaceFileTree({
     };
   }, [contextMenu]);
 
+  useLayoutEffect(() => {
+    if (!contextMenu) return;
+    const menuElement = contextMenuRef.current;
+    if (!menuElement) return;
+
+    const menuRect = menuElement.getBoundingClientRect();
+    const nextPosition = clampContextMenuPosition(
+      contextMenu.anchorX,
+      contextMenu.anchorY,
+      menuRect.width,
+      menuRect.height,
+      contextMenu.boundary,
+    );
+    if (Math.abs(nextPosition.x - contextMenu.x) < 0.5 && Math.abs(nextPosition.y - contextMenu.y) < 0.5) {
+      return;
+    }
+    setContextMenu((current) => (
+      current
+        ? { ...current, x: nextPosition.x, y: nextPosition.y }
+        : current
+    ));
+  }, [contextMenu]);
+
   const startCreate = useCallback((type: 'file' | 'directory', entry: WorkspaceDirectoryEntry | null) => {
     const parentPath = parentPathForCreate(entry);
     setInlineAction({ type: type === 'file' ? 'create-file' : 'create-directory', parentPath });
@@ -228,7 +267,15 @@ export function WorkspaceFileTree({
     event.preventDefault();
     event.stopPropagation();
     onSelectEntry(entry);
-    setContextMenu({ x: event.clientX, y: event.clientY, entry });
+    const boundary = getContextMenuBoundary(treeRef.current);
+    setContextMenu({
+      anchorX: event.clientX,
+      anchorY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      boundary,
+      entry,
+    });
   }, [onSelectEntry]);
 
   const handleTreeContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
@@ -423,68 +470,103 @@ export function WorkspaceFileTree({
       >
         <Tree treeId={WORKSPACE_TREE_ID} rootItem={ROOT_ITEM_ID} treeLabel="当前项目目录" />
       </ControlledTreeEnvironment>
-      {contextMenu ? (
-        <div
-          className="deepsea-workspace-context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          role="menu"
-          onClick={(event) => event.stopPropagation()}
-        >
-          {contextMenu.entry.type === 'file' ? (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onOpenFile(contextMenu.entry);
-                setContextMenu(null);
-              }}
-            >
-              <File aria-hidden="true" />
-              打开
-            </button>
-          ) : null}
-          <button type="button" role="menuitem" onClick={() => startCreate('file', contextMenu.entry)}>
-            <FilePlus aria-hidden="true" />
-            新建文件
-          </button>
-          <button type="button" role="menuitem" onClick={() => startCreate('directory', contextMenu.entry)}>
-            <FolderPlus aria-hidden="true" />
-            新建文件夹
-          </button>
-          {contextMenu.entry.path ? (
-            <>
-              <button type="button" role="menuitem" onClick={() => startRename(contextMenu.entry)}>
-                <Pencil aria-hidden="true" />
-                重命名
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                data-danger="true"
-                onClick={() => {
-                  setContextMenu(null);
-                  void onDeleteEntry(contextMenu.entry);
-                }}
-              >
-                <Trash2 aria-hidden="true" />
-                删除
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  void navigator.clipboard?.writeText(contextMenu.entry.path);
-                  setContextMenu(null);
-                }}
-              >
-                <Clipboard aria-hidden="true" />
-                复制相对路径
-              </button>
-            </>
-          ) : null}
-        </div>
-      ) : null}
+      <WorkspaceTreeContextMenu
+        contextMenu={contextMenu}
+        menuRef={contextMenuRef}
+        onOpenFile={onOpenFile}
+        onCreateFile={(entry) => startCreate('file', entry)}
+        onCreateDirectory={(entry) => startCreate('directory', entry)}
+        onRename={startRename}
+        onDelete={(entry) => {
+          setContextMenu(null);
+          void onDeleteEntry(entry);
+        }}
+        onClose={() => setContextMenu(null)}
+      />
     </div>
+  );
+}
+
+function WorkspaceTreeContextMenu({
+  contextMenu,
+  menuRef,
+  onOpenFile,
+  onCreateFile,
+  onCreateDirectory,
+  onRename,
+  onDelete,
+  onClose,
+}: {
+  contextMenu: ContextMenuState | null;
+  menuRef: React.RefObject<HTMLDivElement>;
+  onOpenFile: (file: WorkspaceDirectoryEntry) => void;
+  onCreateFile: (entry: WorkspaceDirectoryEntry) => void;
+  onCreateDirectory: (entry: WorkspaceDirectoryEntry) => void;
+  onRename: (entry: WorkspaceDirectoryEntry) => void;
+  onDelete: (entry: WorkspaceDirectoryEntry) => void;
+  onClose: () => void;
+}): JSX.Element | null {
+  if (!contextMenu || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="deepsea-workspace-context-menu"
+      style={{ left: contextMenu.x, top: contextMenu.y }}
+      role="menu"
+      onClick={(event) => event.stopPropagation()}
+    >
+      {contextMenu.entry.type === 'file' ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onOpenFile(contextMenu.entry);
+            onClose();
+          }}
+        >
+          <File aria-hidden="true" />
+          打开
+        </button>
+      ) : null}
+      <button type="button" role="menuitem" onClick={() => onCreateFile(contextMenu.entry)}>
+        <FilePlus aria-hidden="true" />
+        新建文件
+      </button>
+      <button type="button" role="menuitem" onClick={() => onCreateDirectory(contextMenu.entry)}>
+        <FolderPlus aria-hidden="true" />
+        新建文件夹
+      </button>
+      {contextMenu.entry.path ? (
+        <>
+          <button type="button" role="menuitem" onClick={() => onRename(contextMenu.entry)}>
+            <Pencil aria-hidden="true" />
+            重命名
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-danger="true"
+            onClick={() => onDelete(contextMenu.entry)}
+          >
+            <Trash2 aria-hidden="true" />
+            删除
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              void navigator.clipboard?.writeText(contextMenu.entry.path);
+              onClose();
+            }}
+          >
+            <Clipboard aria-hidden="true" />
+            复制相对路径
+          </button>
+        </>
+      ) : null}
+    </div>,
+    document.body,
   );
 }
 
@@ -526,6 +608,46 @@ function WorkspaceTreeTitle({
 
 function FileTreeState({ children }: { children: React.ReactNode }): JSX.Element {
   return <div className="deepsea-file-tree-state">{children}</div>;
+}
+
+function getContextMenuBoundary(treeElement: HTMLDivElement | null): ContextMenuBoundary {
+  const viewportBoundary = {
+    left: 0,
+    top: 0,
+    right: window.innerWidth,
+    bottom: window.innerHeight,
+  };
+  const scroller = treeElement?.closest<HTMLElement>('.deepsea-file-browser__tree');
+  if (!scroller) return viewportBoundary;
+
+  const rect = scroller.getBoundingClientRect();
+  return {
+    left: Math.max(rect.left, viewportBoundary.left),
+    top: Math.max(rect.top, viewportBoundary.top),
+    right: Math.min(rect.right, viewportBoundary.right),
+    bottom: Math.min(rect.bottom, viewportBoundary.bottom),
+  };
+}
+
+function clampContextMenuPosition(
+  anchorX: number,
+  anchorY: number,
+  menuWidth: number,
+  menuHeight: number,
+  boundary: ContextMenuBoundary,
+): { x: number; y: number } {
+  const minX = boundary.left + CONTEXT_MENU_MARGIN;
+  const minY = boundary.top + CONTEXT_MENU_MARGIN;
+  const maxX = Math.max(minX, boundary.right - menuWidth - CONTEXT_MENU_MARGIN);
+  const maxY = Math.max(minY, boundary.bottom - menuHeight - CONTEXT_MENU_MARGIN);
+  return {
+    x: clampNumber(anchorX, minX, maxX),
+    y: clampNumber(anchorY, minY, maxY),
+  };
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function buildTreeItems(
