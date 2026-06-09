@@ -21,7 +21,6 @@ import { useI18n } from '../lib/i18n';
 import { cn } from '../lib/utils';
 import { CreateProjectDialog } from './CreateProjectDialog';
 import { CommandMenu } from './CommandMenu';
-import { SystemSettingsDialog } from './SettingsDialogs';
 import { getThemeStyle, type ThemeMode } from '../lib/theme';
 import {
   getLastSessionWorkspaceHref,
@@ -50,6 +49,7 @@ export function AppShell({
     /^\/projects\/[^/]+\/knowledge\/?$/.test(location.pathname);
   const isSkillsRoute = location.pathname === '/skills';
   const isImageWorkbenchRoute = /^\/projects\/[^/]+\/images\/?$/.test(location.pathname);
+  const isSettingsRoute = location.pathname === '/settings';
   const activeProjectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1]
     ?? sessionWorkspaceHref.match(/^\/projects\/([^/]+)/)?.[1]
     ?? null;
@@ -109,7 +109,7 @@ export function AppShell({
   }, []);
 
   return (
-    <div className={cn('flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]', isSessionWorkspaceRoute && 'app-shell--session', isKnowledgeRoute && 'app-shell--knowledge', isSkillsRoute && 'app-shell--skills', isImageWorkbenchRoute && 'app-shell--image-workbench')}>
+    <div className={cn('flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]', isSessionWorkspaceRoute && 'app-shell--session', isKnowledgeRoute && 'app-shell--knowledge', isSkillsRoute && 'app-shell--skills', isImageWorkbenchRoute && 'app-shell--image-workbench', isSettingsRoute && 'app-shell--settings')}>
       {themeStyle === 'apple' && <div className="liquid-backdrop" aria-hidden="true" />}
       <header className="deepsea-topbar app-header" aria-label={t('shell.sidebar.aria')}>
         <div className="deepsea-topbar__identity">
@@ -133,11 +133,9 @@ export function AppShell({
               commandLabel={t('shell.searchCommand')}
               onOpenCommandMenu={() => setCommandOpen(true)}
             />
-            <SystemSettingsDialog theme={theme} onThemeChange={onThemeChange}>
-              <button type="button" aria-label={t('shell.systemSettings')} className="deepsea-icon-button app-header-settings">
-                <Settings aria-hidden="true" />
-              </button>
-            </SystemSettingsDialog>
+            <Link to="/settings" aria-label={t('shell.systemSettings')} className="deepsea-icon-button app-header-settings">
+              <Settings aria-hidden="true" />
+            </Link>
             <button type="button" className="deepsea-icon-button deepsea-icon-button--alert" aria-label="通知">
               <Bell aria-hidden="true" />
               <span />

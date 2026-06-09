@@ -13,6 +13,7 @@ import { ImageWorkbenchPage } from './pages/ImageWorkbenchPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { SessionWorkspaceKeepAliveHost } from './pages/SessionWorkspaceKeepAliveHost';
 import { SkillsPage } from './pages/SkillsPage';
+import { SystemSettingsPage } from './pages/SystemSettingsPage';
 import { TestPage } from './pages/TestPage';
 import { getThemeTone, parseThemeMode, type ThemeMode } from './lib/theme';
 import './index.css';
@@ -55,6 +56,7 @@ function RootApp(): JSX.Element {
               <Route path="/files" element={<FilesPage />} />
               <Route path="/knowledge" element={<KnowledgePage />} />
               <Route path="/skills" element={<SkillsPage />} />
+              <Route path="/settings" element={<SystemSettingsPage theme={theme} onThemeChange={setTheme} />} />
               <Route path="/test" element={<TestPage />} />
               <Route path="/projects/:projectId" element={null} />
               <Route path="/projects/:projectId/sessions/:sessionId" element={null} />
