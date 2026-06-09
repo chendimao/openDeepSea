@@ -692,6 +692,17 @@ export function recoverGraphWorkflow(error: string): number {
     const run = tools.getRun(step.workflow_run_id);
     if (!step.node_name && !run?.graph_version) continue;
     if (!run || run.status === 'cancelled' || run.status === 'completed') continue;
+    let parsedState: AgentWorkflowState | null = null;
+    try {
+      parsedState = tools.parseGraphState(run.graph_state);
+    } catch (err) {
+      console.warn(`[graph-recovery] invalid graph_state for run ${run.id}: ${(err as Error).message}`);
+    }
+    const childTaskIdSet = new Set(parsedState?.childTaskIds ?? []);
+    const interruptedChildTaskIds = new Set<string>();
+    if (step.task_id && childTaskIdSet.has(step.task_id)) {
+      interruptedChildTaskIds.add(step.task_id);
+    }
 
     for (const activeRun of tools.listActiveAgentRunsByWorkflow(run.id)) {
       const interruptedRun = tools.interruptAgentRun(activeRun.id, error);
@@ -700,22 +711,24 @@ export function recoverGraphWorkflow(error: string): number {
 
     const interruptedStep = tools.updateGraphStep(step.id, { status: 'interrupted', error });
     if (interruptedStep) tools.broadcastStepUpdated(run.room_id, interruptedStep);
+    for (const childTaskId of interruptedChildTaskIds) {
+      const child = taskRepo.get(childTaskId);
+      if (child?.status !== 'in_progress') continue;
+      const failedChild = taskRepo.updateStatus(child.id, 'failed');
+      if (failedChild) tools.broadcastTaskUpdated(failedChild);
+    }
 
     const blockedRun = tools.updateRun(run.id, { status: 'blocked', error });
-    try {
-      const parsedState = tools.parseGraphState(run.graph_state);
-      if (parsedState) {
-        const nextState = {
-          ...parsedState,
-          currentNode: step.node_name ?? parsedState.currentNode,
-          currentStepId: step.id,
-          status: 'blocked' as const,
-          error,
-        };
-        tools.updateGraphState(run.id, serializeGraphState(nextState));
-      }
-    } catch (err) {
-      console.warn(`[graph-recovery] invalid graph_state for run ${run.id}: ${(err as Error).message}`);
+    if (parsedState) {
+      const nextState = {
+        ...parsedState,
+        workflowPlan: markWorkflowPlanTasksBlockedByChildIds(parsedState, interruptedChildTaskIds),
+        currentNode: step.node_name ?? parsedState.currentNode,
+        currentStepId: step.id,
+        status: 'blocked' as const,
+        error,
+      };
+      tools.updateGraphState(run.id, serializeGraphState(nextState));
     }
 
     if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);

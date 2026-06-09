@@ -403,6 +403,120 @@ test('recoverGraphWorkflow marks graph running steps interrupted, blocks runs, a
   assert.equal(nextGraphState?.error, 'Backend restarted before graph node completed');
 });
 
+test('recoverGraphWorkflow marks running child task failed and workflowPlan task blocked', () => {
+  const projectPath = join(tmpdir(), `graph-recover-child-plan-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Recovery Child Plan', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Recovery Child Plan Room' });
+  const agent = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'executor-graph-recover-child-plan',
+    agent_name: 'Executor Graph Recover Child Plan',
+  });
+  roomAgentRepo.setWorkflowRole(agent.id, 'executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Recover graph child plan workflow',
+    description: 'Ensure graph recovery stops running child task.',
+  });
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: 'Running child implementation',
+    description: 'Recovery should fail this interrupted child task.',
+    assigned_agent_id: agent.id,
+  });
+  taskRepo.updateStatus(child.id, 'in_progress');
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+    graph_state: JSON.stringify({
+      workflowRunId: runIdPlaceholder(),
+      projectId: project.id,
+      roomId: room.id,
+      taskId: task.id,
+      userGoal: task.title,
+      projectPath: project.path,
+      plan: null,
+      workflowPlan: {
+        workflow_name: task.title,
+        source_message_id: task.id,
+        goal: task.title,
+        summary: 'Recover running child task status.',
+        tasks: [{
+          id: 'task-1-running-child-implementation',
+          title: child.title,
+          description: child.description ?? '',
+          role: 'executor',
+          agent_id: agent.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'running',
+          progress: 35,
+          result_refs: [],
+        }],
+      },
+      currentNode: 'execute',
+      currentStepId: null,
+      activeAgentRunId: null,
+      childTaskIds: [child.id],
+      childTaskPlanIndexes: { [child.id]: 0 },
+      reviewFindings: [],
+      reviewVerdict: null,
+      verificationResults: [],
+      repairAttempts: 0,
+      approval: 'not_required',
+      status: 'running',
+      error: null,
+    }),
+  });
+  const patchedRunState = parseGraphState(run.graph_state);
+  if (!patchedRunState) throw new Error('graph state missing');
+  patchedRunState.workflowRunId = run.id;
+  workflowRepo.updateGraphState(run.id, JSON.stringify(patchedRunState));
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: child.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    room_agent_id: agent.id,
+    assigned_room_agent_id: agent.id,
+    prompt: 'implement child recovery sync',
+    sort_order: 1,
+  });
+  const agentRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: agent.id,
+    agent_id: agent.agent_id,
+    backend: 'codex',
+    acp_session_id: 'recover-child-plan-session-1',
+    task_id: child.id,
+    workflow_run_id: run.id,
+    workflow_step_id: step.id,
+    workflow_stage: 'implementation',
+    prompt: 'implement child recovery sync',
+  });
+
+  const count = recoverGraphWorkflow('Backend restarted before graph node completed');
+  const updatedRun = workflowRepo.getRun(run.id);
+  const nextGraphState = parseGraphState(updatedRun?.graph_state ?? null);
+
+  assert.equal(count, 1);
+  assert.equal(workflowRepo.getStep(step.id)?.status, 'interrupted');
+  assert.equal(agentRunRepo.get(agentRun.id)?.status, 'interrupted');
+  assert.equal(taskRepo.get(child.id)?.status, 'failed');
+  assert.equal(updatedRun?.status, 'blocked');
+  assert.equal(nextGraphState?.status, 'blocked');
+  assert.equal(nextGraphState?.workflowPlan?.tasks[0]?.status, 'blocked');
+});
+
 test('recoverGraphWorkflow blocks awaiting approval graph runs that have no plan', () => {
   const projectPath = join(tmpdir(), `graph-recover-missing-plan-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
