@@ -569,37 +569,6 @@ export const settingsRepo = {
     return normalizeSystem(getSystemRow());
   },
 
-  getSkillsShApiToken(): string | null {
-    normalizeLegacyRouting();
-    const row = db
-      .prepare(
-        `SELECT skills_sh_api_token
-         FROM settings
-         WHERE scope = 'system' AND scope_id = ?`,
-      )
-      .get(SYSTEM_SCOPE_ID) as { skills_sh_api_token: string | null } | undefined;
-    return normalizedOptionalString(row?.skills_sh_api_token);
-  },
-
-  updateSkillsShApiToken(token: string | null): string | null {
-    normalizeLegacyRouting();
-    const normalized = normalizedOptionalString(token);
-    const updatedAt = now();
-    db.prepare(
-      `INSERT INTO settings (
-        scope,
-        scope_id,
-        skills_sh_api_token,
-        updated_at
-      )
-       VALUES ('system', ?, ?, ?)
-       ON CONFLICT(scope, scope_id) DO UPDATE SET
-         skills_sh_api_token = excluded.skills_sh_api_token,
-         updated_at = excluded.updated_at`,
-    ).run(SYSTEM_SCOPE_ID, normalized, updatedAt);
-    return normalized;
-  },
-
   getLangChainPlannerSettings(): LangChainPlannerSettings {
     normalizeLegacyRouting();
     const settings = getSystemRow();

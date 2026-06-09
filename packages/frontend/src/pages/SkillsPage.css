@@ -183,7 +183,7 @@
     width: 20px;
   }
 
-  .skills-token-summary {
+  .skills-source-summary {
     display: flex;
     width: 100%;
     min-height: 42px;
@@ -192,34 +192,26 @@
     margin-top: 10px;
     border: 1px solid var(--skills-border);
     border-radius: 4px;
-    background: #fff;
+    background: var(--skills-surface-low);
     color: var(--skills-text);
     padding: 8px 10px;
     text-align: left;
   }
 
-  .skills-token-summary:hover {
-    border-color: var(--skills-outline);
-    background: var(--skills-surface-low);
-  }
-
-  .skills-token-summary svg,
-  .skills-token-card svg,
+  .skills-source-summary svg,
   .skills-online-error svg {
     width: 14px;
     height: 14px;
   }
 
-  .skills-token-summary > span,
-  .skills-token-card__head > span,
+  .skills-source-summary > span,
   .skills-online-error > span {
     display: grid;
     min-width: 0;
     gap: 2px;
   }
 
-  .skills-token-summary b,
-  .skills-token-card__head b,
+  .skills-source-summary b,
   .skills-online-error b {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -228,94 +220,13 @@
     white-space: nowrap;
   }
 
-  .skills-token-summary small,
-  .skills-token-card__head small,
+  .skills-source-summary small,
   .skills-online-error small {
     overflow: hidden;
     color: var(--skills-muted);
     font-size: 10px;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .skills-token-card {
-    display: grid;
-    gap: 8px;
-    margin-top: 8px;
-    border: 1px solid var(--skills-border);
-    border-radius: 4px;
-    background: var(--skills-surface-low);
-    padding: 10px;
-  }
-
-  .skills-token-card__head {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 8px;
-    color: var(--skills-primary);
-  }
-
-  .skills-token-input input {
-    width: 100%;
-    height: 30px;
-    min-width: 0;
-    border: 1px solid var(--skills-border);
-    border-radius: 3px;
-    background: #fff;
-    color: var(--skills-text);
-    padding: 0 9px;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    font-size: 11px;
-    outline: none;
-  }
-
-  .skills-token-input input:focus {
-    border-color: var(--skills-primary);
-    box-shadow: 0 0 0 1px var(--skills-primary);
-  }
-
-  .skills-token-card__actions {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto 30px;
-    gap: 6px;
-  }
-
-  .skills-token-card__actions button {
-    display: inline-flex;
-    height: 30px;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    border: 1px solid var(--skills-border);
-    border-radius: 3px;
-    background: #fff;
-    color: var(--skills-text);
-    padding: 0 8px;
-    font-size: 11px;
-    font-weight: 800;
-  }
-
-  .skills-token-card__actions button:first-child {
-    border-color: var(--skills-primary);
-    background: var(--skills-primary);
-    color: #fff;
-  }
-
-  .skills-token-card__actions button:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  .skills-token-card p {
-    margin: 0;
-    color: var(--skills-muted);
-    font-size: 10px;
-    line-height: 1.45;
-  }
-
-  .skills-token-card p.is-error {
-    color: var(--skills-error);
   }
 
   .skills-sidebar-nav {
@@ -1337,7 +1248,7 @@
     animation: skills-pulse 1.8s ease-in-out infinite;
   }
 
-  .skills-token-meter {
+  .skills-source-meter {
     position: relative;
     width: 96px;
     height: 6px;
@@ -1346,31 +1257,25 @@
     background: var(--skills-surface-high);
   }
 
-  .skills-token-meter i {
+  .skills-source-meter i {
     display: block;
     height: 100%;
     background: var(--skills-primary);
   }
 
-  .skills-token-chip {
+  .skills-source-chip {
     display: inline-flex;
     max-width: 180px;
     min-height: 18px;
     align-items: center;
-    border: 1px solid rgba(186, 26, 26, 0.26);
+    border: 1px solid rgba(0, 108, 73, 0.22);
     border-radius: 3px;
-    background: rgba(186, 26, 26, 0.08);
-    color: var(--skills-error);
+    background: rgba(0, 108, 73, 0.08);
+    color: var(--skills-secondary);
     padding: 0 7px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .skills-token-chip.is-ready {
-    border-color: rgba(0, 108, 73, 0.22);
-    background: rgba(0, 108, 73, 0.08);
-    color: var(--skills-secondary);
   }
 
   .skills-statusbar button {

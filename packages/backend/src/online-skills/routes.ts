@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { validateLocalAccess } from '../local-access.js';
-import { getOnlineSkillsTokenConfig, updateOnlineSkillsTokenConfig } from './config.js';
 import { onlineSkillsService } from './service.js';
 import type { OnlineSkillsService } from './types.js';
 
@@ -13,16 +12,6 @@ export function createOnlineSkillsRouter(service: OnlineSkillsService): Router {
   router.use((req, res, next) => {
     if (!requireLocalAccess(req, res)) return;
     next();
-  });
-
-  router.get('/config', async (_req, res) => {
-    res.json(await getOnlineSkillsTokenConfig());
-  });
-
-  router.patch('/config', async (req, res) => {
-    const parsed = tokenConfigPatchSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    res.json(await updateOnlineSkillsTokenConfig(parsed.data.token));
   });
 
   router.get('/', async (req, res) => {
@@ -43,6 +32,10 @@ export function createOnlineSkillsRouter(service: OnlineSkillsService): Router {
     } catch (err) {
       respondOnlineSkillsError(res, err);
     }
+  });
+
+  router.all('/config', (_req, res) => {
+    res.status(404).json({ error: 'online skills source configuration is no longer supported' });
   });
 
   router.get('/:id/audit', async (req, res) => {
@@ -67,26 +60,16 @@ export function createOnlineSkillsRouter(service: OnlineSkillsService): Router {
 const listQuerySchema = z.object({
   view: z.enum(['all-time', 'trending', 'hot']).default('all-time'),
   page: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(500).default(30),
+  limit: z.coerce.number().int().min(1).max(50).default(30),
   forceRefresh: z.coerce.boolean().optional(),
 });
 
 const searchQuerySchema = z.object({
   q: z.string().trim().min(1),
   page: z.coerce.number().int().min(0).default(0),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  limit: z.coerce.number().int().min(1).max(50).default(30),
   forceRefresh: z.coerce.boolean().optional(),
 });
-
-const tokenConfigPatchSchema = z
-  .object({
-    token: z.union([z.string(), z.null()]).transform((value) => {
-      if (value === null) return null;
-      const trimmed = value.trim();
-      return trimmed || null;
-    }),
-  })
-  .strict();
 
 function requireLocalAccess(req: Request, res: Response): boolean {
   const auth = validateLocalAccess(req);
@@ -97,12 +80,8 @@ function requireLocalAccess(req: Request, res: Response): boolean {
 
 function respondOnlineSkillsError(res: Response, err: unknown): void {
   const message = (err as Error).message;
-  if (message === 'token_missing' || message === 'upstream_unauthorized') {
-    res.status(503).json({ error: 'skills.sh API token is not configured or has expired' });
-    return;
-  }
   if (message === 'upstream_rate_limited') {
-    res.status(429).json({ error: 'skills.sh API rate limit exceeded' });
+    res.status(429).json({ error: 'SkillsMP API rate limit exceeded' });
     return;
   }
   if (message === 'skill_not_found') {
@@ -113,5 +92,9 @@ function respondOnlineSkillsError(res: Response, err: unknown): void {
     res.status(404).json({ error: 'skill audit not found' });
     return;
   }
-  res.status(502).json({ error: message || 'skills.sh API request failed' });
+  if (message === 'upstream_unavailable') {
+    res.status(502).json({ error: 'SkillsMP API request failed' });
+    return;
+  }
+  res.status(502).json({ error: message || 'SkillsMP API request failed' });
 }

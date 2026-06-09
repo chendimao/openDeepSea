@@ -314,7 +314,6 @@ export interface PlatformSkillAggregate {
 
 export type OnlineSkillView = 'all-time' | 'trending' | 'hot';
 export type OnlineSkillAuditStatus = 'unknown' | 'none' | 'available';
-export type OnlineSkillsTokenSource = 'settings' | 'environment' | 'vercel_oidc' | 'none';
 
 export interface OnlineSkill {
   id: string;
@@ -322,7 +321,7 @@ export interface OnlineSkill {
   name: string;
   displayName: string;
   description: string | null;
-  source: 'skills_sh';
+  source: 'skillsmp';
   upstreamSource: string | null;
   sourceType: string | null;
   sourceUrl: string;
@@ -360,18 +359,6 @@ export interface OnlineSkillAuditResponse {
   audit: unknown | null;
   stale: boolean;
   updatedAt: number;
-}
-
-export interface OnlineSkillsTokenConfig {
-  tokenConfigured: boolean;
-  tokenPreview: string | null;
-  source: OnlineSkillsTokenSource;
-  storedTokenConfigured: boolean;
-  storedTokenPreview: string | null;
-  environmentTokenConfigured: boolean;
-  environmentTokenPreview: string | null;
-  vercelOidcTokenConfigured: boolean;
-  vercelOidcTokenPreview: string | null;
 }
 
 export interface AgentReference {
