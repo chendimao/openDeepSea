@@ -1,9 +1,13 @@
 import { Actions, Layout, Model, type TabNode } from 'flexlayout-react';
-import React, { useMemo, useRef } from 'react';
+import React, { Suspense, useMemo, useRef } from 'react';
 import { FileBrowserWorkspace } from './FileBrowserWorkspace';
 import { useHideFlexLayoutArtifacts } from './flexlayout-accessibility';
 
-export type SessionCenterWorkspacePane = 'transcript' | 'file-browser';
+const LazyTerminalPanel = React.lazy(() => import('../components/TerminalPanel').then((module) => ({
+  default: module.TerminalPanel,
+})));
+
+export type SessionCenterWorkspacePane = 'transcript' | 'file-browser' | 'project-terminal';
 
 export function SessionCenterWorkspace({
   projectId,
@@ -27,6 +31,7 @@ export function SessionCenterWorkspace({
         <div className="deepsea-center-workspace__ssr-tabs" aria-hidden="true">
           <span>对话记录</span>
           <span>文件浏览器</span>
+          <span>项目终端</span>
         </div>
         {transcript}
       </section>
@@ -42,6 +47,9 @@ export function SessionCenterWorkspace({
           if (component === 'transcript') return <>{transcript}</>;
           if (component === 'file-browser') {
             return <FileBrowserWorkspace projectId={projectId} workspaceRootPath={workspaceRootPath} />;
+          }
+          if (component === 'project-terminal') {
+            return <ProjectTerminalWorkspace projectId={projectId} />;
           }
           return <div className="deepsea-file-viewer-state">未知面板</div>;
         }}
@@ -59,6 +67,21 @@ export function SessionCenterWorkspace({
         }}
       />
     </section>
+  );
+}
+
+function ProjectTerminalWorkspace({ projectId }: { projectId: string }): JSX.Element {
+  return (
+    <div className="deepsea-project-terminal" aria-label="项目终端工作区">
+      <Suspense fallback={<div className="deepsea-project-terminal-loading">正在准备项目终端...</div>}>
+        <LazyTerminalPanel
+          profile="project_shell"
+          projectId={projectId}
+          title="项目终端"
+          className="deepsea-project-terminal-panel"
+        />
+      </Suspense>
+    </div>
   );
 }
 
@@ -106,6 +129,15 @@ function createSessionCenterModel(): Model {
             enableClose: false,
             enableDrag: false,
           },
+          {
+            type: 'tab',
+            id: 'session-project-terminal-tab',
+            name: '项目终端',
+            component: 'project-terminal',
+            enableClose: false,
+            enableDrag: false,
+            enableRenderOnDemand: true,
+          },
         ],
       }],
     },
@@ -115,5 +147,6 @@ function createSessionCenterModel(): Model {
 export function getSessionCenterWorkspacePaneForTabId(tabId: string): SessionCenterWorkspacePane | null {
   if (tabId === 'session-transcript-tab') return 'transcript';
   if (tabId === 'session-file-browser-tab') return 'file-browser';
+  if (tabId === 'session-project-terminal-tab') return 'project-terminal';
   return null;
 }

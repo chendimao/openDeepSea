@@ -1559,6 +1559,7 @@
 }
 .deepsea-center-workspace,
 .deepsea-file-browser,
+.deepsea-project-terminal,
 .deepsea-file-browser__tree,
 .deepsea-file-browser__tabs,
 .deepsea-file-tabs,
@@ -1566,6 +1567,34 @@
 .deepsea-image-viewer {
   min-width: 0;
   min-height: 0;
+}
+.deepsea-project-terminal {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  background: #071018;
+}
+.deepsea-project-terminal-panel {
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.deepsea-project-terminal-panel > div:last-child {
+  min-height: 0;
+}
+.deepsea-project-terminal-loading {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  background: #071018;
+  color: #d7e5ee;
+  font-size: 12px;
+  font-weight: 700;
 }
 .deepsea-center-workspace {
   position: relative;
