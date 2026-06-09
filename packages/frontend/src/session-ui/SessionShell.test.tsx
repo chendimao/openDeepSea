@@ -427,6 +427,63 @@ test('SessionShell renders active run danger state without success semantics', (
   assert.doesNotMatch(html, /aria-label="运行状态：完成"/);
 });
 
+test('SessionShell renders failed run reason and a visible retry action', () => {
+  const payload = createPayload();
+  payload.activeSession.runs[0] = {
+    ...payload.activeSession.runs[0]!,
+    status: 'failed',
+    stdout: '准备启动可视化辅助。',
+    stderr: '',
+    error: 'Error: listen EPERM: operation not permitted 127.0.0.1:55063',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /listen EPERM/);
+  assert.match(html, /重新执行/);
+  assert.match(html, /aria-label="重新执行失败运行"/);
+});
+
+test('SessionShell backfills failed run reason from raw ACP tool events', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  payload.activeSession.runs[0] = {
+    ...run,
+    status: 'failed',
+    stdout: '准备启动可视化辅助。',
+    stderr: '',
+    error: null,
+  };
+  payload.activeSession.agentEvents = [{
+    id: 'event-tool-failed',
+    session_id: run.session_id,
+    agent_id: run.agent_id,
+    run_id: run.id,
+    seq: 1,
+    channel: 'event',
+    event_type: 'tool_call_update',
+    content: '',
+    payload_json: JSON.stringify({
+      rawType: 'tool_call_update',
+      rawEvent: {
+        method: 'session/update',
+        params: {
+          update: {
+            content: [{ content: { text: 'Error: listen EPERM: operation not permitted 127.0.0.1:55063' } }],
+            rawOutput: { exit_code: 1 },
+          },
+        },
+      },
+    }),
+    created_at: Date.now(),
+  }];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /listen EPERM/);
+  assert.doesNotMatch(html, /运行失败，暂无错误详情。/);
+});
+
 test('SessionShell renders tool row duration from the individual tool event', () => {
   const payload = createPayload();
   payload.toolRows[0] = {
@@ -1051,6 +1108,23 @@ test('SessionShell renders run status beside thinking duration in transcript', (
   assert.match(cancelledHtml, /运行已取消。/);
   assert.doesNotMatch(cancelledHtml, /<mark>RUNNING<\/mark>/);
   assert.doesNotMatch(cancelledHtml, /等待智能体输出/);
+});
+
+test('SessionShell renders a retry icon next to the failed transcript status chip', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'failed';
+  run.error = '执行失败';
+
+  const html = renderSessionShell(payload, { onRetryRun: () => undefined });
+
+  assert.match(html, /class="deepsea-run-status-group"/);
+  assert.match(html, /class="deepsea-run-status" data-tone="danger">失败<\/span><button[^>]+aria-label="重新执行失败运行"/);
+  assert.match(html, /lucide-repeat2/);
+});
+
+test('SessionShell keeps run status chip spacing aligned with the thinking chip', () => {
+  assert.match(sessionOsCss, /\.deepsea-thinking-duration,\s*\.deepsea-run-status\s*\{[^}]*padding:\s*1px 6px;[^}]*font-size:\s*8px;[^}]*line-height:\s*1\.25;/s);
 });
 
 test('SessionShell hides ACP tool records from chat transcript', () => {
@@ -1889,6 +1963,7 @@ function renderSessionShell(
   options: {
     projectAgents?: ProjectUsedAgentsPayload;
     onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+    onRetryRun?: (runId: string) => void;
     savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   } = {},
 ): string {
@@ -1903,6 +1978,7 @@ function renderSessionShell(
           payload={payload}
           onSendMessage={() => undefined}
           onCommand={() => undefined}
+          onRetryRun={options.onRetryRun}
           onSaveKnowledge={options.onSaveKnowledge}
           savingKnowledgeKey={options.savingKnowledgeKey}
         />

@@ -32,6 +32,7 @@ import type {
 const STREAM_PAYLOAD_LIMIT = 8000;
 const MAX_EVIDENCE_LINES = 200;
 const MAX_SESSION_TOOL_BRIDGE_CALLS = 3;
+const MAX_SESSION_RUNTIME_AUTO_RETRIES = 1;
 const SESSION_TOOL_BRIDGE_OPEN_TAG = '<opendeepsea-tool-call';
 const SESSION_TOOL_BRIDGE_OPEN_PATTERN = /<opendeepsea-tool-call\b/i;
 const SESSION_TOOL_BRIDGE_PATTERN = /<opendeepsea-tool-call\s+name=(["'])([^"']+)\1\s*>\s*([\s\S]*?)\s*<\/opendeepsea-tool-call>/gi;
@@ -102,47 +103,52 @@ export async function runSessionAgent(input: {
   wsHub.broadcastSession(session.id, { type: 'session_run:created', sessionId: session.id, run });
   broadcastActiveSessionUpsert(session.id);
   const runtimeTools = buildSessionRuntimeTools(session, permissionMode, run.id);
-  const streamedText: string[] = [];
-  const bridgeSanitizer = createSessionToolBridgeSanitizer();
 
   try {
-    const result = await resolveAdapter(input.provider).invoke({
-      projectPath: session.worktree_path ?? session.workspace_path ?? project.path,
-      sessionId: run.acp_session_id,
-      prompt: withSessionToolBridgeInstructions(input.prompt, runtimeTools),
-      acpPermissionMode: permissionMode,
-      imagePaths: input.imagePaths ?? [],
-      providerRuntimeConfig,
-      envOverrides: knowledgeEnvOverrides,
-      tools: runtimeTools,
-      onSession: (acpSessionId) => {
+    let fallbackFailureDiagnostic: string | null = null;
+    for (let attempt = 0; ; attempt += 1) {
+      const streamedText: string[] = [];
+      const bridgeSanitizer = createSessionToolBridgeSanitizer();
+      let latestFailureDiagnostic: string | null = null;
+      const result = await resolveAdapter(input.provider).invoke({
+        projectPath: session.worktree_path ?? session.workspace_path ?? project.path,
+        sessionId: sessionRunRepo.get(run.id)?.acp_session_id ?? run.acp_session_id,
+        prompt: withSessionToolBridgeInstructions(input.prompt, runtimeTools),
+        acpPermissionMode: permissionMode,
+        imagePaths: input.imagePaths ?? [],
+        providerRuntimeConfig,
+        envOverrides: knowledgeEnvOverrides,
+        tools: runtimeTools,
+        onSession: (acpSessionId) => {
+          persistProviderSession({
+            runId: run.id,
+            sessionId: session.id,
+            agentId,
+            provider: input.provider,
+            model: input.model ?? null,
+            providerSessionId: acpSessionId,
+            status: 'running',
+          });
+        },
+        onChunk: (chunk) => {
+          const diagnostic = extractFailureDiagnosticFromChunk(chunk);
+          if (diagnostic) latestFailureDiagnostic = diagnostic;
+          if (chunk.stream === 'stdout' && chunk.text) streamedText.push(chunk.text);
+          const visibleChunk = sanitizeSessionToolBridgeChunk(chunk, bridgeSanitizer);
+          if (visibleChunk.text.length > 0 || visibleChunk.channel !== 'answer') {
+            recordSessionChunk({ sessionId: session.id, agentId, runId: run.id, chunk: visibleChunk });
+          }
+        },
+        signal: controller.signal,
+      });
+      if (result.sessionId) {
         persistProviderSession({
           runId: run.id,
           sessionId: session.id,
           agentId,
           provider: input.provider,
           model: input.model ?? null,
-          providerSessionId: acpSessionId,
-          status: 'running',
-        });
-      },
-      onChunk: (chunk) => {
-        if (chunk.stream === 'stdout' && chunk.text) streamedText.push(chunk.text);
-        const visibleChunk = sanitizeSessionToolBridgeChunk(chunk, bridgeSanitizer);
-        if (visibleChunk.text.length > 0 || visibleChunk.channel !== 'answer') {
-          recordSessionChunk({ sessionId: session.id, agentId, runId: run.id, chunk: visibleChunk });
-        }
-      },
-      signal: controller.signal,
-    });
-    if (result.sessionId) {
-      persistProviderSession({
-        runId: run.id,
-        sessionId: session.id,
-        agentId,
-        provider: input.provider,
-        model: input.model ?? null,
-        providerSessionId: result.sessionId,
+          providerSessionId: result.sessionId,
           status: 'running',
         });
       }
@@ -159,18 +165,28 @@ export async function runSessionAgent(input: {
           text: streamedText.join(''),
         });
       }
-    return finishSessionRun({
-      runId: run.id,
-      agentId,
-      provider: input.provider,
-      model: input.model ?? null,
-      status: controller.signal.aborted
-        ? resolveAbortedRunStatus(run.id)
-        : result.exitCode === 0
-          ? 'completed'
-          : 'failed',
-      error: result.stderr || null,
-    });
+      if (latestFailureDiagnostic) fallbackFailureDiagnostic = latestFailureDiagnostic;
+      const failureError = result.stderr || latestFailureDiagnostic || fallbackFailureDiagnostic;
+      if (
+        !controller.signal.aborted &&
+        shouldAutoRetrySessionRun({ attempt, exitCode: result.exitCode, stderr: result.stderr, diagnostic: latestFailureDiagnostic })
+      ) {
+        recordSessionAutoRetry({ sessionId: session.id, runId: run.id, agentId, attempt, diagnostic: latestFailureDiagnostic });
+        continue;
+      }
+      return finishSessionRun({
+        runId: run.id,
+        agentId,
+        provider: input.provider,
+        model: input.model ?? null,
+        status: controller.signal.aborted
+          ? resolveAbortedRunStatus(run.id)
+          : result.exitCode === 0
+            ? 'completed'
+            : 'failed',
+        error: failureError || null,
+      });
+    }
   } catch (err) {
     return finishSessionRun({
       runId: run.id,
@@ -393,6 +409,130 @@ export function retrySessionAgentRun(runId: string): void {
     wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
     broadcastActiveSessionUpsert(run.session_id);
   });
+}
+
+function shouldAutoRetrySessionRun(input: {
+  attempt: number;
+  exitCode: number;
+  stderr: string;
+  diagnostic: string | null;
+}): boolean {
+  return input.attempt < MAX_SESSION_RUNTIME_AUTO_RETRIES &&
+    input.exitCode !== 0 &&
+    !input.stderr.trim() &&
+    Boolean(input.diagnostic?.trim());
+}
+
+function recordSessionAutoRetry(input: {
+  sessionId: string;
+  runId: string;
+  agentId: string;
+  attempt: number;
+  diagnostic: string | null;
+}): void {
+  const updated = sessionRunRepo.updateStatus(input.runId, 'retrying');
+  if (updated) {
+    wsHub.broadcastSession(input.sessionId, {
+      type: 'session_run:updated',
+      sessionId: input.sessionId,
+      run: updated,
+    });
+  }
+  const event = sessionEvidenceRepo.create({
+    session_id: input.sessionId,
+    event_type: 'status',
+    severity: 'warning',
+    source_run_id: input.runId,
+    title: 'Session run auto retry',
+    summary: input.diagnostic,
+    payload: {
+      run_id: input.runId,
+      agent_id: input.agentId,
+      attempt: input.attempt + 1,
+      next_attempt: input.attempt + 2,
+    },
+  });
+  wsHub.broadcastSession(input.sessionId, { type: 'session_evidence:new', sessionId: input.sessionId, event });
+  broadcastActiveSessionUpsert(input.sessionId);
+}
+
+function extractFailureDiagnosticFromChunk(chunk: AcpStreamChunk): string | null {
+  const rawDiagnostic = extractFailureDiagnosticFromRawEvent(chunk.rawEvent);
+  if (rawDiagnostic) return rawDiagnostic;
+  if (chunk.trace?.kind === 'tool' || chunk.trace?.kind === 'command') {
+    const output = 'output' in chunk.trace ? chunk.trace.output : null;
+    return normalizeFailureDiagnostic(typeof output === 'string' ? output : null, false);
+  }
+  return normalizeFailureDiagnostic(chunk.stream === 'stderr' ? chunk.text : null, false);
+}
+
+function extractFailureDiagnosticFromRawEvent(rawEvent: unknown): string | null {
+  const raw = record(rawEvent);
+  const params = record(raw?.params);
+  const update = record(params?.update);
+  const rawOutput = record(update?.rawOutput) ?? record(update?.output);
+  const exitCode = firstFiniteNumber(rawOutput?.exit_code, rawOutput?.exitCode);
+  const status = firstNonEmptyString(update?.status, rawOutput?.status);
+  const text = firstNonEmptyString(
+    rawOutput?.stderr,
+    rawOutput?.error,
+    rawOutput?.output,
+    rawOutput?.aggregated_output,
+    rawOutput?.formatted_output,
+    extractAcpContentText(update?.content),
+  );
+  const failed = (exitCode !== null && exitCode !== 0) ||
+    status === 'failed' ||
+    status === 'error' ||
+    looksLikeFailureDiagnostic(text);
+  return normalizeFailureDiagnostic(text, failed);
+}
+
+function extractAcpContentText(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => extractAcpContentText(item))
+      .filter((part): part is string => Boolean(part?.trim()));
+    return parts.join('\n').trim() || null;
+  }
+  const item = record(value);
+  if (!item) return null;
+  return firstNonEmptyString(
+    item.text,
+    record(item.content)?.text,
+    extractAcpContentText(item.content),
+    extractAcpContentText(item.output),
+  );
+}
+
+function normalizeFailureDiagnostic(text: string | null | undefined, failed: boolean): string | null {
+  if (!text?.trim()) return null;
+  if (!failed && !looksLikeFailureDiagnostic(text)) return null;
+  const stripped = text
+    .trim()
+    .replace(/^```[A-Za-z0-9_-]*\s*\n?/, '')
+    .replace(/\n?```\s*$/, '')
+    .trim();
+  return trimEvidenceText(stripped);
+}
+
+function looksLikeFailureDiagnostic(text: string | null | undefined): boolean {
+  return Boolean(text && /(Error:|Unhandled|Exception|failed|failure|EPERM|EACCES|ENOENT|operation not permitted|exit code [1-9])/i.test(text));
+}
+
+function firstNonEmptyString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return null;
+}
+
+function firstFiniteNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
 }
 
 export function recordSessionChunk(input: {

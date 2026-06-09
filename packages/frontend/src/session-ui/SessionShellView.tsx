@@ -191,6 +191,7 @@ export function SessionShellView({
               evidence={payload.evidence}
               projectId={payload.project.id}
               onSendMessage={onSendMessage}
+              onRetryRun={onRetryRun}
               onSaveKnowledge={onSaveKnowledge}
               savingKnowledgeKey={savingKnowledgeKey}
             />
@@ -826,6 +827,7 @@ function TranscriptCanvas({
   evidence,
   projectId,
   onSendMessage,
+  onRetryRun,
   onSaveKnowledge,
   savingKnowledgeKey,
 }: {
@@ -833,6 +835,7 @@ function TranscriptCanvas({
   evidence: SessionEvidenceEvent[];
   projectId: string;
   onSendMessage: (message: SessionComposerSubmit) => void;
+  onRetryRun?: (runId: string) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
 }): JSX.Element {
@@ -984,7 +987,7 @@ function TranscriptCanvas({
                   </span>
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
                   <ThinkingDurationBadge run={item.run} agentEvents={runAgentEvents} now={nowTick} />
-                  <RunStatusBadge status={item.run.status} />
+                  <RunStatusBadge run={item.run} onRetryRun={onRetryRun} />
                   <div className="deepsea-message-tools deepsea-message-tools--run">
                     <button
                       type="button"
@@ -1450,11 +1453,30 @@ function ThinkingDurationBadge({
   );
 }
 
-function RunStatusBadge({ status }: { status: SessionRun['status'] }): JSX.Element {
-  const view = runStatusView(status);
+function RunStatusBadge({
+  run,
+  onRetryRun,
+}: {
+  run: SessionRun;
+  onRetryRun?: (runId: string) => void;
+}): JSX.Element {
+  const view = runStatusView(run.status);
+  const retryable = run.status === 'failed' && Boolean(onRetryRun);
   return (
-    <span className="deepsea-run-status" data-tone={view.tone}>
-      {view.label}
+    <span className="deepsea-run-status-group">
+      <span className="deepsea-run-status" data-tone={view.tone}>
+        {view.label}
+      </span>
+      {retryable && (
+        <button
+          type="button"
+          className="deepsea-run-status-retry"
+          aria-label="重新执行失败运行"
+          onClick={() => onRetryRun?.(run.id)}
+        >
+          <Repeat2 aria-hidden="true" />
+        </button>
+      )}
     </span>
   );
 }
@@ -1573,6 +1595,7 @@ function IntegratedInspector({
         <PlanModule items={payload.activeSession.planItems} />
         <RunModule
           run={activeRun}
+          agentEvents={activeRun ? payload.activeSession.agentEvents.filter((event) => event.run_id === activeRun.id) : []}
           onCancelRun={onCancelRun}
           onRetryRun={onRetryRun}
         />
@@ -1656,10 +1679,12 @@ function ContractModule({
 
 function RunModule({
   run,
+  agentEvents,
   onCancelRun,
   onRetryRun,
 }: {
   run: SessionRun | null;
+  agentEvents?: SessionAgentEvent[];
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
 }): JSX.Element {
@@ -1679,6 +1704,7 @@ function RunModule({
   const model = run.model;
   const status = runStatusView(run.status);
   const cancellable = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
+  const failureText = runFailureText(run, agentEvents);
   return (
     <section className="deepsea-inspector-section deepsea-run-section">
       <div className="deepsea-module-title">
@@ -1703,10 +1729,17 @@ function RunModule({
             >
               <StopCircle aria-hidden="true" />
             </button>
-            <button type="button" aria-label="重新执行" onClick={() => onRetryRun?.(run.id)}>
+            <button
+              type="button"
+              className={run.status === 'failed' ? 'deepsea-run-row-retry-action' : undefined}
+              aria-label={run.status === 'failed' ? '重新执行失败运行' : '重新执行'}
+              onClick={() => onRetryRun?.(run.id)}
+            >
               <Repeat2 aria-hidden="true" />
+              {run.status === 'failed' && <span>重新执行</span>}
             </button>
           </div>
+          {failureText && <p className="deepsea-run-row-error" title={failureText}>{failureText}</p>}
         </div>
       </div>
     </section>
@@ -1717,15 +1750,124 @@ function isRunLive(status: SessionRun['status']): boolean {
   return status === 'queued' || status === 'running' || status === 'retrying';
 }
 
-function runOutputText(run: SessionRun, _events: SessionAgentEvent[] = []): string {
+function runOutputText(run: SessionRun, events: SessionAgentEvent[] = []): string {
+  if (run.status === 'failed') {
+    const failureText = runFailureText(run, events);
+    if (failureText) return failureText;
+    return '运行失败，暂无错误详情。';
+  }
   const output = run.stdout.trim() || run.stderr.trim();
   if (output) return output;
   if (run.status === 'completed') return '未返回可展示回复。';
-  if (run.status === 'failed') return run.error ?? '运行失败，暂无错误详情。';
   if (run.status === 'cancelled') return '运行已取消。';
   if (run.status === 'paused') return '运行已暂停。';
   if (run.status === 'interrupted') return '运行已中断。';
   return '等待智能体输出...';
+}
+
+function runFailureText(run: SessionRun, events: SessionAgentEvent[] = []): string | null {
+  if (run.status !== 'failed') return null;
+  const reason = run.error?.trim() || run.stderr.trim();
+  if (reason) return reason;
+  return failureDiagnosticFromAgentEvents(events);
+}
+
+function failureDiagnosticFromAgentEvents(events: SessionAgentEvent[]): string | null {
+  for (const event of [...events].reverse()) {
+    const diagnostic = failureDiagnosticFromPayload(parseAgentEventPayload(event.payload_json)) ??
+      normalizeFailureDiagnostic(event.content, false);
+    if (diagnostic) return diagnostic;
+  }
+  return null;
+}
+
+function failureDiagnosticFromPayload(payload: unknown): string | null {
+  const rawOutput = asRecord(readNestedValue(payload, ['rawEvent', 'params', 'update', 'rawOutput'])) ??
+    asRecord(readNestedValue(payload, ['rawEvent', 'params', 'update', 'output'])) ??
+    asRecord(readNestedValue(payload, ['rawOutput'])) ??
+    asRecord(readNestedValue(payload, ['output']));
+  const exitCode = firstNumber(rawOutput?.exit_code, rawOutput?.exitCode);
+  const status = firstString(
+    readNestedValue(payload, ['rawEvent', 'params', 'update', 'status']),
+    rawOutput?.status,
+  );
+  const text = firstString(
+    rawOutput?.stderr,
+    rawOutput?.error,
+    rawOutput?.output,
+    rawOutput?.aggregated_output,
+    rawOutput?.formatted_output,
+    extractContentText(readNestedValue(payload, ['rawEvent', 'params', 'update', 'content'])),
+    extractContentText(readNestedValue(payload, ['content'])),
+  );
+  const failed = (exitCode !== null && exitCode !== 0) ||
+    status === 'failed' ||
+    status === 'error' ||
+    looksLikeFailureDiagnostic(text);
+  return normalizeFailureDiagnostic(text, failed);
+}
+
+function extractContentText(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => extractContentText(item))
+      .filter((part): part is string => Boolean(part?.trim()));
+    return parts.join('\n').trim() || null;
+  }
+  const item = asRecord(value);
+  if (!item) return null;
+  return firstString(
+    item.text,
+    asRecord(item.content)?.text,
+    extractContentText(item.content),
+    extractContentText(item.output),
+  );
+}
+
+function normalizeFailureDiagnostic(text: string | null | undefined, failed: boolean): string | null {
+  if (!text?.trim()) return null;
+  if (!failed && !looksLikeFailureDiagnostic(text)) return null;
+  const stripped = text
+    .trim()
+    .replace(/^```[A-Za-z0-9_-]*\s*\n?/, '')
+    .replace(/\n?```\s*$/, '')
+    .trim();
+  return stripped.length > 4000 ? `${stripped.slice(0, 4000).trimEnd()}\n\n[已截断]` : stripped;
+}
+
+function looksLikeFailureDiagnostic(text: string | null | undefined): boolean {
+  return Boolean(text && /(Error:|Unhandled|Exception|failed|failure|EPERM|EACCES|ENOENT|operation not permitted|exit code [1-9])/i.test(text));
+}
+
+function readNestedValue(value: unknown, path: string[]): unknown {
+  let cursor = value;
+  for (const key of path) {
+    const current = asRecord(cursor);
+    if (!current) return null;
+    cursor = current[key];
+  }
+  return cursor;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
 }
 
 function runThoughtStatusLabel(status: SessionRun['status']): string {

@@ -265,6 +265,170 @@ test('runSessionAgent records failed adapter as blocker evidence', async () => {
   assert.ok(sessionEvidenceRepo.listBySession(session.id).some((event) => event.event_type === 'blocker'));
 });
 
+test('runSessionAgent promotes failed ACP tool output into run error', async () => {
+  const project = projectRepo.create({
+    name: 'runtime tool failure project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-tool-failure-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Tool Failure',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk }) => {
+      onChunk({ stream: 'stdout', channel: 'answer', text: '准备启动可视化辅助。' });
+      onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawType: 'tool_call_update',
+        rawEvent: {
+          method: 'session/update',
+          params: {
+            sessionId: 'acp-tool-failure',
+            update: {
+              sessionUpdate: 'tool_call_update',
+              content: [{
+                type: 'content',
+                content: {
+                  type: 'text',
+                  text: [
+                    '```sh',
+                    'Error: listen EPERM: operation not permitted 127.0.0.1:55063',
+                    '    at Server.setupListenHandle [as _listen2] (node:net:1918:21)',
+                    '```',
+                  ].join('\n'),
+                },
+              }],
+              rawOutput: {
+                exit_code: 1,
+                stderr: '',
+              },
+            },
+          },
+        },
+      });
+      return { exitCode: 1, sessionId: 'acp-tool-failure', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({ sessionId: session.id, prompt: '继续', provider: 'codex' });
+  const stored = sessionRunRepo.get(run.id)!;
+  const blocker = sessionEvidenceRepo.listBySession(session.id).find((event) => event.event_type === 'blocker');
+
+  assert.equal(stored.status, 'failed');
+  assert.match(stored.error ?? '', /listen EPERM/);
+  assert.match(stored.stderr, /listen EPERM/);
+  assert.match(blocker?.summary ?? '', /listen EPERM/);
+});
+
+test('runSessionAgent retries once when ACP tool output is the only failure reason', async () => {
+  const project = projectRepo.create({
+    name: 'runtime auto retry project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-auto-retry-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Auto Retry',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  let attempts = 0;
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk }) => {
+      attempts += 1;
+      if (attempts === 1) {
+        onChunk({
+          stream: 'stdout',
+          channel: 'event',
+          text: '',
+          rawType: 'tool_call_update',
+          rawEvent: {
+            method: 'session/update',
+            params: {
+              sessionId: 'acp-auto-retry',
+              update: {
+                sessionUpdate: 'tool_call_update',
+                content: [{ content: { text: 'Error: listen EPERM: operation not permitted 127.0.0.1:55063' } }],
+                rawOutput: { exit_code: 1 },
+              },
+            },
+          },
+        });
+        return { exitCode: 1, sessionId: 'acp-auto-retry', stderr: '' };
+      }
+      onChunk({ stream: 'stdout', channel: 'answer', text: '重试后完成\n' });
+      return { exitCode: 0, sessionId: 'acp-auto-retry', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({ sessionId: session.id, prompt: '继续', provider: 'codex' });
+
+  assert.equal(attempts, 2);
+  assert.equal(run.status, 'completed');
+  assert.match(sessionRunRepo.get(run.id)?.stdout ?? '', /重试后完成/);
+  assert.ok(sessionEvidenceRepo.listBySession(session.id).some((event) => event.title === 'Session run auto retry'));
+});
+
+test('runSessionAgent keeps the retry-triggering ACP diagnostic when retry also fails silently', async () => {
+  const project = projectRepo.create({
+    name: 'runtime auto retry fallback project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-auto-retry-fallback-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Auto Retry Fallback',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  let attempts = 0;
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk }) => {
+      attempts += 1;
+      if (attempts === 1) {
+        onChunk({
+          stream: 'stdout',
+          channel: 'event',
+          text: '',
+          rawType: 'tool_call_update',
+          rawEvent: {
+            method: 'session/update',
+            params: {
+              sessionId: 'acp-auto-retry-fallback',
+              update: {
+                sessionUpdate: 'tool_call_update',
+                content: [{ content: { text: 'Error: listen EPERM: operation not permitted 127.0.0.1:55063' } }],
+                rawOutput: { exit_code: 1, stderr: '' },
+              },
+            },
+          },
+        });
+        return { exitCode: 1, sessionId: 'acp-auto-retry-fallback', stderr: '' };
+      }
+      return { exitCode: 1, sessionId: 'acp-auto-retry-fallback', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({ sessionId: session.id, prompt: '继续', provider: 'codex' });
+  const stored = sessionRunRepo.get(run.id)!;
+
+  assert.equal(attempts, 2);
+  assert.equal(stored.status, 'failed');
+  assert.match(stored.error ?? '', /listen EPERM/);
+  assert.match(stored.stderr, /listen EPERM/);
+});
+
 test('runSessionAgent stores runtime profile snapshot on session run', async () => {
   const project = projectRepo.create({
     name: 'runtime profile snapshot project',

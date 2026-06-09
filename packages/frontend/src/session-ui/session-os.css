@@ -2644,20 +2644,24 @@
   width: 12px;
   height: 12px;
 }
-.deepsea-thinking-duration {
+.deepsea-thinking-duration,
+.deepsea-run-status {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border: 1px solid rgba(245, 158, 11, 0.22);
+  border: 1px solid transparent;
   border-radius: 4px;
-  background: var(--deepsea-warn-soft);
-  color: var(--deepsea-warn);
   padding: 1px 6px;
   font-family: var(--deepsea-mono);
   font-size: 8px;
   font-weight: 900;
   line-height: 1.25;
   white-space: nowrap;
+}
+.deepsea-thinking-duration {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: var(--deepsea-warn-soft);
+  color: var(--deepsea-warn);
 }
 .deepsea-thinking-duration svg {
   width: 11px;
@@ -2666,32 +2670,55 @@
 .deepsea-thinking-duration[data-active="true"] svg {
   animation: deepsea-spin 1.6s linear infinite;
 }
-.deepsea-run-status {
+.deepsea-run-status-group {
   display: inline-flex;
   align-items: center;
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-family: var(--deepsea-sans);
-  font-size: 8px;
-  font-weight: 900;
-  line-height: 1.25;
+  gap: 3px;
   white-space: nowrap;
 }
 .deepsea-run-status[data-tone="ok"] {
+  border-color: rgba(0, 108, 73, 0.16);
   background: var(--deepsea-ok-soft);
   color: var(--deepsea-ok);
 }
 .deepsea-run-status[data-tone="warn"] {
+  border-color: rgba(245, 158, 11, 0.22);
   background: var(--deepsea-warn-soft);
   color: var(--deepsea-warn);
 }
 .deepsea-run-status[data-tone="danger"] {
+  border-color: rgba(225, 29, 72, 0.18);
   background: var(--deepsea-danger-soft);
   color: var(--deepsea-danger);
 }
 .deepsea-run-status[data-tone="muted"] {
+  border-color: rgba(100, 116, 139, 0.16);
   background: rgba(100, 116, 139, 0.12);
   color: rgba(71, 85, 105, 0.82);
+}
+.deepsea-run-status-retry {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(225, 29, 72, 0.18);
+  border-radius: 4px;
+  background: var(--deepsea-danger-soft);
+  color: var(--deepsea-danger);
+  padding: 0;
+  cursor: pointer;
+}
+.deepsea-run-status-retry:hover,
+.deepsea-run-status-retry:focus-visible {
+  background: rgba(225, 29, 72, 0.18);
+}
+.deepsea-run-status-retry:focus-visible {
+  outline: 2px solid rgba(225, 29, 72, 0.28);
+  outline-offset: 1px;
+}
+.deepsea-run-status-retry svg {
+  width: 11px;
+  height: 11px;
 }
 .deepsea-message p,
 .deepsea-message-body,
@@ -4065,6 +4092,28 @@ button.deepsea-message-attachment {
 .deepsea-run-row-actions svg {
   width: 13px;
   height: 13px;
+}
+.deepsea-run-row-actions button.deepsea-run-row-retry-action {
+  display: inline-flex;
+  width: auto;
+  min-width: 72px;
+  padding: 0 7px;
+  gap: 4px;
+  background: var(--deepsea-danger-soft);
+  color: var(--deepsea-danger);
+  font-family: var(--deepsea-sans);
+  font-size: 10px;
+  font-weight: 800;
+}
+.deepsea-run-row-error {
+  grid-column: 1 / -1;
+  border-top: 1px solid rgba(225, 29, 72, 0.1);
+  padding: 7px 0 1px;
+  color: var(--deepsea-danger);
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.4;
+  white-space: normal;
 }
 .deepsea-tool-table {
   max-height: min(320px, 36dvh);
