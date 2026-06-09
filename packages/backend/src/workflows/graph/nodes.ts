@@ -2629,6 +2629,21 @@ function scopePathRequiresSerial(scope: string): boolean {
     'pnpm-lock.yaml',
     'yarn.lock',
     'tsconfig.json',
+    'turbo.json',
+    'nx.json',
+    'lerna.json',
+    'rush.json',
+    'pnpm-workspace.yaml',
+    'pnpm-workspace.yml',
+    'workspace.json',
+    '.gitlab-ci.yml',
+    '.gitlab-ci.yaml',
+    'azure-pipelines.yml',
+    'Jenkinsfile',
+    'Dockerfile',
+    'docker-compose.yml',
+    'compose.yml',
+    'compose.yaml',
   ].includes(basename)) {
     return true;
   }
