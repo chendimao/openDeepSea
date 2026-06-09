@@ -7,10 +7,12 @@ export type SessionCenterWorkspacePane = 'transcript' | 'file-browser';
 
 export function SessionCenterWorkspace({
   projectId,
+  workspaceRootPath,
   transcript,
   onActivePaneChange,
 }: {
   projectId: string;
+  workspaceRootPath: string;
   transcript: React.ReactNode;
   onActivePaneChange?: (pane: SessionCenterWorkspacePane) => void;
 }): JSX.Element {
@@ -38,7 +40,9 @@ export function SessionCenterWorkspace({
         factory={(node) => {
           const component = node.getComponent();
           if (component === 'transcript') return <>{transcript}</>;
-          if (component === 'file-browser') return <FileBrowserWorkspace projectId={projectId} />;
+          if (component === 'file-browser') {
+            return <FileBrowserWorkspace projectId={projectId} workspaceRootPath={workspaceRootPath} />;
+          }
           return <div className="deepsea-file-viewer-state">未知面板</div>;
         }}
         onAction={(action) => {

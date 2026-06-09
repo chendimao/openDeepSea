@@ -32,7 +32,13 @@ type DirtyConfirmState = {
   action: PendingWorkspaceAction;
 };
 
-export function FileBrowserWorkspace({ projectId }: { projectId: string }): JSX.Element {
+export function FileBrowserWorkspace({
+  projectId,
+  workspaceRootPath,
+}: {
+  projectId: string;
+  workspaceRootPath: string;
+}): JSX.Element {
   const queryClient = useQueryClient();
   const [tabs, setTabs] = useState<WorkspaceFileTab[]>([]);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -294,6 +300,7 @@ export function FileBrowserWorkspace({ projectId }: { projectId: string }): JSX.
       <aside className="deepsea-file-browser__tree" aria-label="项目文件目录">
         <WorkspaceFileTree
           projectId={projectId}
+          workspaceRootPath={workspaceRootPath}
           activePath={activePath}
           selectedPath={selectedEntry?.path ?? null}
           dirtyPaths={dirtyPaths}

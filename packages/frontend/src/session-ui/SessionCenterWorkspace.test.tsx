@@ -11,6 +11,7 @@ test('SessionCenterWorkspace renders fixed transcript and file browser tabs', ()
     <QueryClientProvider client={queryClient}>
       <SessionCenterWorkspace
         projectId="project-1"
+        workspaceRootPath="/workspace/project-1"
         transcript={<div data-test-transcript="true">Transcript</div>}
       />
     </QueryClientProvider>,

@@ -59,6 +59,7 @@ const CONTEXT_MENU_MARGIN = 6;
 
 export function WorkspaceFileTree({
   projectId,
+  workspaceRootPath,
   activePath,
   selectedPath,
   dirtyPaths,
@@ -72,6 +73,7 @@ export function WorkspaceFileTree({
   onDeleteEntry,
 }: {
   projectId: string;
+  workspaceRootPath: string;
   activePath?: string | null;
   selectedPath?: string | null;
   dirtyPaths?: Set<string>;
@@ -473,6 +475,7 @@ export function WorkspaceFileTree({
       <WorkspaceTreeContextMenu
         contextMenu={contextMenu}
         menuRef={contextMenuRef}
+        workspaceRootPath={workspaceRootPath}
         onOpenFile={onOpenFile}
         onCreateFile={(entry) => startCreate('file', entry)}
         onCreateDirectory={(entry) => startCreate('directory', entry)}
@@ -490,6 +493,7 @@ export function WorkspaceFileTree({
 function WorkspaceTreeContextMenu({
   contextMenu,
   menuRef,
+  workspaceRootPath,
   onOpenFile,
   onCreateFile,
   onCreateDirectory,
@@ -499,6 +503,7 @@ function WorkspaceTreeContextMenu({
 }: {
   contextMenu: ContextMenuState | null;
   menuRef: React.RefObject<HTMLDivElement>;
+  workspaceRootPath: string;
   onOpenFile: (file: WorkspaceDirectoryEntry) => void;
   onCreateFile: (entry: WorkspaceDirectoryEntry) => void;
   onCreateDirectory: (entry: WorkspaceDirectoryEntry) => void;
@@ -556,18 +561,31 @@ function WorkspaceTreeContextMenu({
             type="button"
             role="menuitem"
             onClick={() => {
-              void navigator.clipboard?.writeText(contextMenu.entry.path);
+              void navigator.clipboard?.writeText(
+                buildWorkspaceAbsolutePath(workspaceRootPath, contextMenu.entry.path),
+              );
               onClose();
             }}
           >
             <Clipboard aria-hidden="true" />
-            复制相对路径
+            复制绝对路径
           </button>
         </>
       ) : null}
     </div>,
     document.body,
   );
+}
+
+export function buildWorkspaceAbsolutePath(workspaceRootPath: string | null | undefined, entryPath: string): string {
+  const normalizedEntryPath = entryPath.replace(/^[/\\]+/u, '');
+  const rootPath = workspaceRootPath?.trim();
+  if (!rootPath) return normalizedEntryPath;
+  if (!normalizedEntryPath) return rootPath;
+
+  const separator = rootPath.includes('\\') ? '\\' : '/';
+  const entryPathForRoot = normalizedEntryPath.replace(/[\\/]+/gu, separator);
+  return `${rootPath}${/[\\/]$/u.test(rootPath) ? '' : separator}${entryPathForRoot}`;
 }
 
 function WorkspaceTreeTitle({

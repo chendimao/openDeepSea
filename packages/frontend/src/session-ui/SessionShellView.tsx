@@ -186,6 +186,7 @@ export function SessionShellView({
         />
         <SessionCenterWorkspace
           projectId={payload.project.id}
+          workspaceRootPath={payload.project.path}
           onActivePaneChange={setActiveWorkspacePane}
           transcript={(
             <TranscriptCanvas
