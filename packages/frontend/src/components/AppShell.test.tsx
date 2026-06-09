@@ -142,6 +142,15 @@ test('AppShell header menu reuses primary navigation and opens command search', 
   assert.match(source, /commandLabel={t\('shell\.searchCommand'\)}/);
 });
 
+test('desktop window controls CSS defines drag and no-drag regions', () => {
+  const css = readFileSync(new URL('../session-ui/session-os.css', import.meta.url), 'utf8');
+
+  assert.match(css, /\.deepsea-topbar[\s\S]*-webkit-app-region: drag/);
+  assert.match(css, /\.deepsea-topbar :where\([\s\S]*-webkit-app-region: no-drag/);
+  assert.match(css, /\.desktop-window-controls[\s\S]*-webkit-app-region: no-drag/);
+  assert.match(css, /\.desktop-window-control--close:hover/);
+});
+
 function installDesktopApi({
   platform,
   isMaximized,

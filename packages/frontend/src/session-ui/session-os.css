@@ -236,6 +236,7 @@
   border-width: 1px 0;
   background: rgba(255, 255, 255, 0.7);
   box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+  -webkit-app-region: drag;
 }
 .deepsea-topbar__identity,
 .deepsea-topbar__actions,
@@ -250,6 +251,9 @@
 .deepsea-topbar__identity {
   gap: 24px;
   overflow: hidden;
+}
+.deepsea-topbar :where(a, button, input, textarea, select, [role="button"], [role="menu"], [role="menuitem"]) {
+  -webkit-app-region: no-drag;
 }
 .deepsea-brand {
   gap: 8px;
@@ -414,6 +418,44 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.desktop-window-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
+}
+.desktop-window-controls--mac {
+  margin-right: 6px;
+}
+.desktop-window-controls--system {
+  margin-left: 6px;
+}
+.desktop-window-control {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--deepsea-muted);
+  transition: background 160ms, color 160ms;
+}
+.desktop-window-control:hover,
+.desktop-window-control:focus-visible {
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--deepsea-primary);
+}
+.desktop-window-control--close:hover,
+.desktop-window-control--close:focus-visible {
+  background: color-mix(in srgb, var(--deepsea-danger) 14%, transparent);
+  color: var(--deepsea-danger);
+}
+.desktop-window-control svg {
+  width: 15px;
+  height: 15px;
 }
 .deepsea-strip-actions {
   justify-content: flex-end;
