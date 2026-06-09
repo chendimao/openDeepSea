@@ -230,6 +230,65 @@ test('retrySessionAgentRun keeps tail context when a failed partial answer is lo
   assert.doesNotMatch(capturedPrompt, new RegExp(`开头-${'x'.repeat(1000)}`, 'u'));
 });
 
+test('retrySessionAgentRun asks the provider to redo wrap-up for completed runs interrupted by provider errors', async () => {
+  const project = projectRepo.create({
+    name: 'runtime wrapup retry project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-wrapup-retry-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Wrapup Retry',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onSession, onChunk }) => {
+      onSession?.('acp-wrapup-retry');
+      onChunk({ stream: 'stdout', channel: 'answer', text: '我会新增一份独立 spec。\n' });
+      onChunk({
+        stream: 'stderr',
+        channel: 'activity',
+        text: '\u001b[31mERROR\u001b[0m Unhandled error during turn: exceeded retry limit, last status: 429 Too Many Requests\n',
+        rawType: 'protocol.stderr',
+      });
+      return { exitCode: 0, sessionId: 'acp-wrapup-retry', stderr: '' };
+    },
+  });
+
+  const completed = await runSessionAgent({ sessionId: session.id, prompt: '写设计 spec', provider: 'codex' });
+  assert.equal(completed.status, 'completed');
+
+  let capturedPrompt = '';
+  let capturedSessionId: string | null | undefined;
+  const retryInvoked = new Promise<void>((resolve) => {
+    setSessionRuntimeAdapterForTest({
+      backend: 'codex',
+      listSessions: async () => [],
+      invoke: async ({ prompt, sessionId }) => {
+        capturedPrompt = prompt;
+        capturedSessionId = sessionId;
+        resolve();
+        return { exitCode: 0, sessionId: sessionId ?? 'acp-wrapup-retry', stderr: '' };
+      },
+    });
+  });
+
+  retrySessionAgentRun(completed.id);
+  await retryInvoked;
+
+  assert.equal(capturedSessionId, 'acp-wrapup-retry');
+  assert.notEqual(capturedPrompt, '写设计 spec');
+  assert.match(capturedPrompt, /收尾阶段/u);
+  assert.match(capturedPrompt, /不要重新回答原始用户请求/u);
+  assert.match(capturedPrompt, /不要改写已输出内容/u);
+  assert.match(capturedPrompt, /我会新增一份独立 spec/u);
+  assert.match(capturedPrompt, /429 Too Many Requests/u);
+});
+
 test('runSessionAgent passes knowledge usage env overrides to session adapter', async () => {
   const project = projectRepo.create({
     name: 'runtime knowledge env project',

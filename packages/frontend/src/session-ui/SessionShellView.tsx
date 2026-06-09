@@ -1627,17 +1627,17 @@ function RunStatusBadge({
   onRetryRun?: (runId: string) => void;
 }): JSX.Element {
   const view = sessionRunStatusView(run, agentEvents);
-  const retryable = run.status === 'failed' && Boolean(onRetryRun);
+  const retryLabel = runStatusRetryLabel(run, view);
   return (
     <span className="deepsea-run-status-group">
       <span className="deepsea-run-status" data-tone={view.tone} title={view.title}>
         {view.label}
       </span>
-      {retryable && (
+      {retryLabel && onRetryRun && (
         <button
           type="button"
           className="deepsea-run-status-retry"
-          aria-label={failedRunRetryLabel(run)}
+          aria-label={retryLabel}
           onClick={() => onRetryRun?.(run.id)}
         >
           <Repeat2 aria-hidden="true" />
@@ -1648,11 +1648,11 @@ function RunStatusBadge({
 }
 
 type RunStatusTone = 'ok' | 'warn' | 'danger' | 'muted';
-type RunStatusViewModel = { label: string; tone: RunStatusTone; title?: string };
+type RunStatusViewModel = { label: string; tone: RunStatusTone; title?: string; retryLabel?: string };
 
 function sessionRunStatusView(run: SessionRun, agentEvents: SessionAgentEvent[] = []): RunStatusViewModel {
   const interruptDiagnostic = runCompletionInterruptDiagnostic(run, agentEvents);
-  if (interruptDiagnostic) return { label: '收尾中断', tone: 'warn', title: interruptDiagnostic };
+  if (interruptDiagnostic) return { label: '收尾中断', tone: 'warn', title: interruptDiagnostic, retryLabel: '重新收尾' };
   return runStatusView(run.status);
 }
 
@@ -1666,6 +1666,12 @@ function runStatusView(status: SessionRun['status']): RunStatusViewModel {
 
 function failedRunRetryLabel(run: SessionRun): string {
   return run.stdout.trim() ? '继续失败回复' : '重试失败运行';
+}
+
+function runStatusRetryLabel(run: SessionRun, view: RunStatusViewModel): string | null {
+  if (view.retryLabel) return view.retryLabel;
+  if (run.status === 'failed') return failedRunRetryLabel(run);
+  return null;
 }
 
 function RunStatusIcon({ tone }: { tone: RunStatusTone }): JSX.Element {
@@ -1884,6 +1890,7 @@ function RunModule({
   const status = sessionRunStatusView(run, agentEvents ?? []);
   const cancellable = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
   const failureText = runFailureText(run, agentEvents);
+  const retryLabel = runStatusRetryLabel(run, status) ?? '重新执行';
   return (
     <section className="deepsea-inspector-section deepsea-run-section">
       <div className="deepsea-module-title">
@@ -1910,12 +1917,12 @@ function RunModule({
             </button>
             <button
               type="button"
-              className={run.status === 'failed' ? 'deepsea-run-row-retry-action' : undefined}
-              aria-label={run.status === 'failed' ? failedRunRetryLabel(run) : '重新执行'}
+              className={retryLabel !== '重新执行' ? 'deepsea-run-row-retry-action' : undefined}
+              aria-label={retryLabel}
               onClick={() => onRetryRun?.(run.id)}
             >
               <Repeat2 aria-hidden="true" />
-              {run.status === 'failed' && <span>{failedRunRetryLabel(run)}</span>}
+              {retryLabel !== '重新执行' && <span>{retryLabel}</span>}
             </button>
           </div>
           {failureText && <p className="deepsea-run-row-error" title={failureText}>{failureText}</p>}

@@ -415,6 +415,24 @@ export function retrySessionAgentRun(runId: string): void {
 
 function buildSessionRunRetryPrompt(run: SessionRun): string {
   const partialAnswer = run.stdout.trim();
+  const wrapupFailure = completedRunWrapupFailureDiagnostic(run);
+  if (partialAnswer && wrapupFailure) {
+    return [
+      '上一轮运行的正文回复已经完成并发送，但后续收尾阶段因服务商或限流错误中断。请不要重新回答原始用户请求，也不要改写已输出内容。',
+      '请只重新执行尚未完成的收尾工作，例如自审、必要验证、文档/计划状态同步、提交或最终说明；如果收尾已完成，请简短说明无需重复。',
+      '',
+      '## 原始用户请求',
+      trimRetryContinuationContext(run.prompt),
+      '',
+      '## 已输出内容',
+      trimRetryContinuationContext(partialAnswer),
+      '',
+      '## 收尾中断信息',
+      trimEvidenceText(wrapupFailure),
+      '',
+      '请从收尾阶段继续。',
+    ].join('\n');
+  }
   if (run.status !== 'failed' || !partialAnswer) return run.prompt;
 
   const failure = (run.error || run.stderr).trim();
@@ -434,6 +452,22 @@ function buildSessionRunRetryPrompt(run: SessionRun): string {
     '',
     '请从中断点继续。',
   ].join('\n');
+}
+
+function completedRunWrapupFailureDiagnostic(run: SessionRun): string | null {
+  if (run.status !== 'completed') return null;
+  for (const text of [run.error, run.stderr, run.activity_log]) {
+    if (looksLikeProviderInterruptDiagnostic(text)) return cleanRunDiagnostic(text);
+  }
+  return null;
+}
+
+function looksLikeProviderInterruptDiagnostic(text: string | null | undefined): text is string {
+  return Boolean(text && /(Unhandled error during turn|exceeded retry limit|Too Many Requests|429\b|rate limit|quota exceeded|ResponseTooManyFailedAttempts)/i.test(text));
+}
+
+function cleanRunDiagnostic(text: string): string {
+  return text.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').trim();
 }
 
 function trimRetryContinuationContext(text: string): string {

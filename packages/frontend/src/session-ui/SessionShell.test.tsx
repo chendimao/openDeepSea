@@ -1123,7 +1123,7 @@ test('SessionShell renders a retry icon next to the failed transcript status chi
   assert.match(html, /lucide-repeat2/);
 });
 
-test('SessionShell marks completed runs with provider wrap-up errors as interrupted', () => {
+test('SessionShell marks completed runs with provider wrap-up errors as interrupted and retryable', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.status = 'completed';
@@ -1151,11 +1151,12 @@ test('SessionShell marks completed runs with provider wrap-up errors as interrup
     }),
   ];
 
-  const html = renderSessionShell(payload);
+  const html = renderSessionShell(payload, { onRetryRun: () => undefined });
 
-  assert.match(html, /class="deepsea-run-status" data-tone="warn" title="ERROR 429 Too Many Requests">收尾中断<\/span>/);
+  assert.match(html, /class="deepsea-run-status" data-tone="warn" title="ERROR 429 Too Many Requests">收尾中断<\/span><button[^>]+aria-label="重新收尾"/);
   assert.doesNotMatch(html, /class="deepsea-run-status" data-tone="ok">完成<\/span>/);
   assert.match(html, /aria-label="运行状态：收尾中断"/);
+  assert.equal((html.match(/aria-label="重新收尾"/g) ?? []).length, 2);
 });
 
 test('SessionShell keeps run status chips aligned with the thinking chip', () => {
