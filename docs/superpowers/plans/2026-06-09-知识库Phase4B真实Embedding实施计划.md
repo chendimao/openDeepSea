@@ -1228,7 +1228,7 @@ git commit -m "feat(knowledge): 展示embedding索引状态"
 - Create: `docs/superpowers/verification/2026-06-09-知识库Phase4B真实Embedding验收.md`
 - Modify: `docs/superpowers/plans/2026-06-09-知识库Phase4B真实Embedding实施计划.md`
 
-- [ ] **Step 1: Add failing SettingsDialogs wiring test**
+- [x] **Step 1: Add failing SettingsDialogs wiring test**
 
 Add to `packages/frontend/src/components/SettingsDialogs.test.tsx`:
 
@@ -1242,7 +1242,7 @@ test('SettingsDialogs exposes knowledge embedding settings fields', () => {
 });
 ```
 
-- [ ] **Step 2: Run failing settings UI test**
+- [x] **Step 2: Run failing settings UI test**
 
 Run:
 
@@ -1253,7 +1253,7 @@ cd packages/frontend
 
 Expected: FAIL because UI wiring is missing.
 
-- [ ] **Step 3: Add settings UI fields**
+- [x] **Step 3: Add settings UI fields**
 
 In `packages/frontend/src/components/SettingsDialogs.tsx`, add a compact section in system settings:
 
@@ -1286,7 +1286,7 @@ In `packages/frontend/src/components/SettingsDialogs.tsx`, add a compact section
 
 Persist through `api.updateKnowledgeEmbeddingSettings()`.
 
-- [ ] **Step 4: Run full focused verification**
+- [x] **Step 4: Run full focused verification**
 
 Backend:
 
@@ -1314,7 +1314,7 @@ npm run build
 
 Expected: backend TypeScript and frontend build pass. Existing Vite chunk-size warning is acceptable.
 
-- [ ] **Step 5: Browser smoke**
+- [x] **Step 5: Browser smoke**
 
 Run dev services:
 
@@ -1331,7 +1331,7 @@ Smoke at `http://127.0.0.1:5174/knowledge`:
 4. System settings displays knowledge embedding fields.
 5. Console has no new errors.
 
-- [ ] **Step 6: Write verification doc**
+- [x] **Step 6: Write verification doc**
 
 Create `docs/superpowers/verification/2026-06-09-知识库Phase4B真实Embedding验收.md`:
 
@@ -1366,7 +1366,7 @@ Create `docs/superpowers/verification/2026-06-09-知识库Phase4B真实Embedding
 说明 Phase 4B.1 是否通过验收。
 ```
 
-- [ ] **Step 7: Final code review**
+- [x] **Step 7: Final code review**
 
 Review against:
 
@@ -1375,7 +1375,7 @@ Review against:
 
 Focus on credential safety, provider fallback semantics, async search call sites, rebuild scope, UI feedback, and tests.
 
-- [ ] **Step 8: Commit verification and plan updates**
+- [x] **Step 8: Commit verification and plan updates**
 
 ```bash
 git add packages/frontend/src/components/SettingsDialogs.tsx packages/frontend/src/components/SettingsDialogs.test.tsx docs/superpowers/verification/2026-06-09-知识库Phase4B真实Embedding验收.md docs/superpowers/plans/2026-06-09-知识库Phase4B真实Embedding实施计划.md

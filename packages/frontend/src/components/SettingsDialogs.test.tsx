@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -54,6 +55,14 @@ test('system chat settings hide routing fallback and project takeover controls',
   assert.doesNotMatch(html, /兜底回复/);
   assert.doesNotMatch(html, /兜底智能体/);
   assert.doesNotMatch(html, /项目接管/);
+});
+
+test('SettingsDialogs exposes knowledge embedding settings fields', () => {
+  const source = readFileSync(new URL('./SettingsDialogs.tsx', import.meta.url), 'utf8');
+  assert.match(source, /knowledge_embedding_provider/);
+  assert.match(source, /knowledge_embedding_model/);
+  assert.match(source, /api\.updateKnowledgeEmbeddingSettings/);
+  assert.match(source, /OpenAI-compatible/);
 });
 
 test('desktop data section is only visible when Electron desktop API exists', () => {

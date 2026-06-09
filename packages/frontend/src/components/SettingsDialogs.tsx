@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Circle,
+  Database,
   Download,
   FolderOpen,
   KeyRound,
@@ -43,6 +44,7 @@ import {
   type AcpBackend,
   type AiConfig,
   type EffectiveSettings,
+  type KnowledgeEmbeddingProviderId,
   type ManagedProviderProfile,
   type MessageRoutingMode,
   type ProviderConfigList,
@@ -136,6 +138,11 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   openai_base_url: null,
   openai_api_key_set: false,
   openai_api_key_preview: null,
+  knowledge_embedding_provider: 'local-hash',
+  knowledge_embedding_model: null,
+  knowledge_embedding_dimensions: null,
+  knowledge_embedding_base_url: null,
+  knowledge_embedding_api_key_env_var: null,
   global_session_prompt: null,
 };
 
@@ -160,7 +167,19 @@ type ProviderProfileDraft = {
   runOverridesEnabled: boolean;
 };
 
+type KnowledgeEmbeddingDraft = {
+  provider: KnowledgeEmbeddingProviderId;
+  model: string;
+  dimensions: string;
+  baseUrl: string;
+  apiKeyEnvVar: string;
+};
+
 const PROVIDER_CONFIG_ORDER: AcpBackend[] = ['codex', 'claudecode', 'opencode'];
+const KNOWLEDGE_EMBEDDING_PROVIDER_OPTIONS: Array<{ value: KnowledgeEmbeddingProviderId; label: string }> = [
+  { value: 'local-hash', label: 'Local hash' },
+  { value: 'openai-compatible', label: 'OpenAI-compatible' },
+];
 
 export function SystemSettingsDialog({
   children,
@@ -326,6 +345,10 @@ export function SystemSettingsForm({
     createEmptyProviderProfileDraft('codex', 0),
   );
   const [providerProfileError, setProviderProfileError] = useState<string | null>(null);
+  const [knowledgeEmbeddingDraft, setKnowledgeEmbeddingDraft] = useState<KnowledgeEmbeddingDraft>(() =>
+    createKnowledgeEmbeddingDraft(value),
+  );
+  const [knowledgeEmbeddingError, setKnowledgeEmbeddingError] = useState<string | null>(null);
   const [internalActiveCategory, setInternalActiveCategory] = useState<SystemSettingsCategory>('general');
   const queryClient = useQueryClient();
   const { t } = useI18n();
@@ -543,6 +566,19 @@ export function SystemSettingsForm({
     updateProviderProfileMutation.isPending ||
     activateProviderProfileMutation.isPending ||
     deleteProviderProfileMutation.isPending;
+  const saveKnowledgeEmbeddingMutation = useMutation({
+    mutationFn: api.updateKnowledgeEmbeddingSettings,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['settings', 'system'] }),
+        queryClient.invalidateQueries({ queryKey: ['settings'] }),
+        queryClient.invalidateQueries({ queryKey: ['knowledge-embedding-status'] }),
+      ]);
+      setKnowledgeEmbeddingError(null);
+      toast.success(t('settings.knowledgeEmbeddingSaved'));
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
   const saveAiConfig = (activate: boolean) => {
     const validationError = validateAiConfigDraft(aiConfigDraft, t);
     if (validationError) {
@@ -592,6 +628,21 @@ export function SystemSettingsForm({
       createProviderProfileMutation.mutate({ provider: providerProfileDraft.provider, ...input });
     }
   };
+  const saveKnowledgeEmbeddingSettings = () => {
+    const dimensions = parseKnowledgeEmbeddingDimensions(knowledgeEmbeddingDraft.dimensions);
+    if (dimensions === undefined) {
+      setKnowledgeEmbeddingError(t('settings.knowledgeEmbeddingDimensionsInvalid'));
+      return;
+    }
+    const isOpenAICompatible = knowledgeEmbeddingDraft.provider === 'openai-compatible';
+    saveKnowledgeEmbeddingMutation.mutate({
+      provider: knowledgeEmbeddingDraft.provider,
+      dimensions,
+      model: isOpenAICompatible ? nullableTrimmedText(knowledgeEmbeddingDraft.model) : null,
+      baseUrl: isOpenAICompatible ? nullableTrimmedText(knowledgeEmbeddingDraft.baseUrl) : null,
+      apiKeyEnvVar: isOpenAICompatible ? nullableTrimmedText(knowledgeEmbeddingDraft.apiKeyEnvVar) : null,
+    });
+  };
 
   useEffect(() => {
     const nextSelectedId = aiConfigs.active_ai_config_id ?? aiConfigs.items[0]?.id ?? null;
@@ -618,6 +669,16 @@ export function SystemSettingsForm({
     setProviderProfileDraft(createDraftFromProviderProfile(nextProfile));
     setProviderProfileError(null);
   }, [providerConfigs, providerProfileMode, selectedProviderProfileId]);
+  useEffect(() => {
+    setKnowledgeEmbeddingDraft(createKnowledgeEmbeddingDraft(value));
+    setKnowledgeEmbeddingError(null);
+  }, [
+    value.knowledge_embedding_provider,
+    value.knowledge_embedding_model,
+    value.knowledge_embedding_dimensions,
+    value.knowledge_embedding_base_url,
+    value.knowledge_embedding_api_key_env_var,
+  ]);
   const categories: Array<{
     value: SystemSettingsCategory;
     title: string;
@@ -838,6 +899,22 @@ export function SystemSettingsForm({
                 onActivateProfile={(profileId) => activateProviderProfileMutation.mutate(profileId)}
                 onDeleteProfile={(profileId) => deleteProviderProfileMutation.mutate(profileId)}
               />
+              <SubSettingSection
+                title={t('settings.knowledgeEmbedding')}
+                description={t('settings.knowledgeEmbeddingDescription')}
+                icon={<Database className="h-4 w-4" strokeWidth={1.75} />}
+              >
+                <KnowledgeEmbeddingSettingsSection
+                  draft={knowledgeEmbeddingDraft}
+                  error={knowledgeEmbeddingError}
+                  isSaving={saveKnowledgeEmbeddingMutation.isPending}
+                  onDraftChange={(patch) => {
+                    setKnowledgeEmbeddingDraft((current) => ({ ...current, ...patch }));
+                    setKnowledgeEmbeddingError(null);
+                  }}
+                  onSave={saveKnowledgeEmbeddingSettings}
+                />
+              </SubSettingSection>
               <SubSettingSection
                 title={t('settings.plannerModelProvider')}
                 description={t('settings.plannerModelProviderDescription')}
@@ -1778,6 +1855,100 @@ function DesktopDataPathRow({ label, value }: { label: string; value: string }):
   );
 }
 
+function KnowledgeEmbeddingSettingsSection({
+  draft,
+  error,
+  isSaving,
+  onDraftChange,
+  onSave,
+}: {
+  draft: KnowledgeEmbeddingDraft;
+  error: string | null;
+  isSaving: boolean;
+  onDraftChange: (patch: Partial<KnowledgeEmbeddingDraft>) => void;
+  onSave: () => void;
+}): JSX.Element {
+  const { t } = useI18n();
+  const usesOpenAICompatible = draft.provider === 'openai-compatible';
+  return (
+    <div className="grid gap-3">
+      <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+        <div>
+          <Label>{t('settings.knowledgeEmbeddingProvider')}</Label>
+          <select
+            value={draft.provider}
+            onChange={(event) => onDraftChange({ provider: event.currentTarget.value as KnowledgeEmbeddingProviderId })}
+            className="mt-1.5 h-10 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[13px] text-[var(--color-fg)] outline-none transition-all focus:border-[var(--color-primary)] focus:glow-primary"
+          >
+            {KNOWLEDGE_EMBEDDING_PROVIDER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <Label>{t('settings.knowledgeEmbeddingModel')}</Label>
+          <Input
+            value={draft.model}
+            onChange={(event) => onDraftChange({ model: event.currentTarget.value })}
+            placeholder="text-embedding-3-small"
+            disabled={!usesOpenAICompatible}
+            className="font-mono"
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[160px_minmax(0,1fr)]">
+        <div>
+          <Label>{t('settings.knowledgeEmbeddingDimensions')}</Label>
+          <Input
+            inputMode="numeric"
+            value={draft.dimensions}
+            onChange={(event) => onDraftChange({ dimensions: event.currentTarget.value })}
+            placeholder="1536"
+            className="font-mono"
+          />
+        </div>
+        <div>
+          <Label>{t('settings.knowledgeEmbeddingBaseUrl')}</Label>
+          <Input
+            value={draft.baseUrl}
+            onChange={(event) => onDraftChange({ baseUrl: event.currentTarget.value })}
+            placeholder={t('settings.knowledgeEmbeddingBaseUrlPlaceholder')}
+            disabled={!usesOpenAICompatible}
+            className="font-mono"
+          />
+        </div>
+      </div>
+
+      <div>
+        <Label>{t('settings.knowledgeEmbeddingApiKeyEnvVar')}</Label>
+        <Input
+          value={draft.apiKeyEnvVar}
+          onChange={(event) => onDraftChange({ apiKeyEnvVar: event.currentTarget.value })}
+          placeholder="OPENDEEPSEA_EMBEDDING_API_KEY"
+          disabled={!usesOpenAICompatible}
+          className="font-mono"
+        />
+        <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+          {usesOpenAICompatible
+            ? t('settings.knowledgeEmbeddingOpenAINote')
+            : t('settings.knowledgeEmbeddingLocalHashNote')}
+        </p>
+      </div>
+
+      {error && <p className="text-[12px] leading-relaxed text-[var(--color-danger)]">{error}</p>}
+      <div className="flex justify-end">
+        <Button type="button" size="sm" variant="secondary" disabled={isSaving} onClick={onSave}>
+          <Save className="h-3.5 w-3.5" />
+          {t('settings.knowledgeEmbeddingSave')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ModelSettingsSection({
   configs,
   activeConfigId,
@@ -2647,6 +2818,29 @@ function createDraftFromConfig(config: AiConfig | null): AiConfigDraft {
     openaiApiKey: '',
     clearOpenaiApiKey: false,
   };
+}
+
+function createKnowledgeEmbeddingDraft(settings: SystemSettings): KnowledgeEmbeddingDraft {
+  return {
+    provider: settings.knowledge_embedding_provider ?? 'local-hash',
+    model: settings.knowledge_embedding_model ?? '',
+    dimensions: settings.knowledge_embedding_dimensions ? String(settings.knowledge_embedding_dimensions) : '',
+    baseUrl: settings.knowledge_embedding_base_url ?? '',
+    apiKeyEnvVar: settings.knowledge_embedding_api_key_env_var ?? '',
+  };
+}
+
+function nullableTrimmedText(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function parseKnowledgeEmbeddingDimensions(value: string): number | null | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  return parsed > 0 && parsed <= 8192 ? parsed : undefined;
 }
 
 function validateAiConfigDraft(
