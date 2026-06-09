@@ -3,6 +3,7 @@ import type { PlatformSkillProvider } from '../platform-skills/types.js';
 export type OnlineSkillProvider = PlatformSkillProvider;
 export type OnlineSkillView = 'all-time' | 'trending' | 'hot';
 export type OnlineSkillAuditStatus = 'unknown' | 'none' | 'available';
+export type OnlineSkillsTokenSource = 'settings' | 'environment' | 'none';
 
 export interface OnlineSkill {
   id: string;
@@ -62,6 +63,16 @@ export interface OnlineSkillAuditResponse {
   audit: unknown | null;
   stale: boolean;
   updatedAt: number;
+}
+
+export interface OnlineSkillsTokenConfig {
+  tokenConfigured: boolean;
+  tokenPreview: string | null;
+  source: OnlineSkillsTokenSource;
+  storedTokenConfigured: boolean;
+  storedTokenPreview: string | null;
+  environmentTokenConfigured: boolean;
+  environmentTokenPreview: string | null;
 }
 
 export interface SkillsShSkill {

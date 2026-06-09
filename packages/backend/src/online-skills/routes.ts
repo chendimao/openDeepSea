@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { validateLocalAccess } from '../local-access.js';
+import { getOnlineSkillsTokenConfig, updateOnlineSkillsTokenConfig } from './config.js';
 import { onlineSkillsService } from './service.js';
 import type { OnlineSkillsService } from './types.js';
 
@@ -12,6 +13,16 @@ export function createOnlineSkillsRouter(service: OnlineSkillsService): Router {
   router.use((req, res, next) => {
     if (!requireLocalAccess(req, res)) return;
     next();
+  });
+
+  router.get('/config', (_req, res) => {
+    res.json(getOnlineSkillsTokenConfig());
+  });
+
+  router.patch('/config', (req, res) => {
+    const parsed = tokenConfigPatchSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    res.json(updateOnlineSkillsTokenConfig(parsed.data.token));
   });
 
   router.get('/', async (req, res) => {
@@ -66,6 +77,16 @@ const searchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   forceRefresh: z.coerce.boolean().optional(),
 });
+
+const tokenConfigPatchSchema = z
+  .object({
+    token: z.union([z.string(), z.null()]).transform((value) => {
+      if (value === null) return null;
+      const trimmed = value.trim();
+      return trimmed || null;
+    }),
+  })
+  .strict();
 
 function requireLocalAccess(req: Request, res: Response): boolean {
   const auth = validateLocalAccess(req);

@@ -8,6 +8,8 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'opendeepsea-online-skills-routes-
 process.env.CODEX_HOME = join(process.env.HOME, '.codex');
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-online-skills-routes-db-')), 'test.db');
 process.env.OPENDEEPSEA_LOCAL_TOKEN = 'online-skills-routes-token';
+delete process.env.SKILLS_SH_API_TOKEN;
+delete process.env.VERCEL_OIDC_TOKEN;
 
 const { createOnlineSkillsRouter } = await import('./routes.js');
 const express = (await import('express')).default;
@@ -109,6 +111,40 @@ async function request(path: string, init: RequestInit = {}, options: { localTok
 test('online skills routes require local access token', async () => {
   const res = await request('/api/online-skills', {}, { localToken: false });
   assert.equal(res.status, 403);
+});
+
+test('online skills routes expose local token configuration without leaking the secret', async () => {
+  const initialRes = await request('/api/online-skills/config');
+  assert.equal(initialRes.status, 200);
+  const initial = await initialRes.json() as { tokenConfigured: boolean; source: string };
+  assert.equal(initial.tokenConfigured, false);
+  assert.equal(initial.source, 'none');
+
+  const saveRes = await request('/api/online-skills/config', {
+    method: 'PATCH',
+    body: JSON.stringify({ token: '  skills-token-secret-1234  ' }),
+  });
+  assert.equal(saveRes.status, 200);
+  const saved = await saveRes.json() as {
+    tokenConfigured: boolean;
+    tokenPreview: string | null;
+    source: string;
+    storedTokenConfigured: boolean;
+  };
+  assert.equal(saved.tokenConfigured, true);
+  assert.equal(saved.source, 'settings');
+  assert.equal(saved.storedTokenConfigured, true);
+  assert.equal(saved.tokenPreview, 'skil...1234');
+  assert.notEqual(JSON.stringify(saved).includes('skills-token-secret-1234'), true);
+
+  const clearRes = await request('/api/online-skills/config', {
+    method: 'PATCH',
+    body: JSON.stringify({ token: null }),
+  });
+  assert.equal(clearRes.status, 200);
+  const cleared = await clearRes.json() as { tokenConfigured: boolean; source: string };
+  assert.equal(cleared.tokenConfigured, false);
+  assert.equal(cleared.source, 'none');
 });
 
 test('online skills routes list online skills with validated defaults', async () => {

@@ -566,7 +566,10 @@ test('api exposes online skills helpers through workspaceRequest', async () => {
   assert.match(source, /listOnlineSkills/);
   assert.match(source, /searchOnlineSkills/);
   assert.match(source, /getOnlineSkillAudit/);
+  assert.match(source, /getOnlineSkillsTokenConfig/);
+  assert.match(source, /updateOnlineSkillsTokenConfig/);
   assert.match(source, /workspaceRequest<OnlineSkillListResponse>\(`\/online-skills/);
+  assert.match(source, /workspaceRequest<OnlineSkillsTokenConfig>\('\/online-skills\/config'/);
 
   const listUrl = await captureApiRequest(
     () => api.listOnlineSkills({ view: 'trending', page: 2, limit: 20 }),
@@ -579,6 +582,20 @@ test('api exposes online skills helpers through workspaceRequest', async () => {
     { skills: [], total: 0, page: 0, pages: 0, limit: 10, stale: false, updatedAt: 1 },
   );
   assert.equal(searchUrl, '/api/online-skills/search?q=browser&page=0&limit=10');
+
+  const configUrl = await captureApiRequest(
+    () => api.getOnlineSkillsTokenConfig(),
+    {
+      tokenConfigured: false,
+      tokenPreview: null,
+      source: 'none',
+      storedTokenConfigured: false,
+      storedTokenPreview: null,
+      environmentTokenConfigured: false,
+      environmentTokenPreview: null,
+    },
+  );
+  assert.equal(configUrl, '/api/online-skills/config');
 });
 
 function createResourceListItem(input: Partial<ResourceListItem>): ResourceListItem {

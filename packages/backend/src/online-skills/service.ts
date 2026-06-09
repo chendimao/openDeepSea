@@ -2,6 +2,7 @@ import { listPlatformSkillAggregates } from '../platform-skills/service.js';
 import type { PlatformSkillProvider } from '../platform-skills/types.js';
 import { parseRestrictedSkillsCommand } from '../terminal/restricted-skills-shell.js';
 import { TtlCache } from './cache.js';
+import { resolveSkillsShBearerToken } from './config.js';
 import { SkillsShClient } from './client.js';
 import type {
   OnlineSkill,
@@ -34,7 +35,7 @@ const DEFAULT_CACHE_TTL_MS = 60_000;
 const DEFAULT_SOURCE_URL = 'https://skills.sh';
 
 export function createOnlineSkillsService(options: OnlineSkillsServiceOptions = {}): OnlineSkillsService {
-  const client = options.client ?? new SkillsShClient();
+  const client = options.client ?? new SkillsShClient({ tokenProvider: resolveSkillsShBearerToken });
   const now = options.now ?? Date.now;
   const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const listCache = new TtlCache<string, CachedList>({ now });
