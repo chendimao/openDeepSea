@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, File, FilePlus, Folder, FolderOpen, FolderPlus, RefreshCcw } from 'lucide-react';
+import { ChevronRight, File, FilePlus, Folder, FolderOpen, FolderPlus, RefreshCcw, Search, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  StaticTreeDataProvider,
+  ControlledTreeEnvironment,
+  InteractionMode,
   Tree,
-  UncontrolledTreeEnvironment,
   type TreeItem,
   type TreeItemIndex,
 } from 'react-complex-tree';
@@ -32,6 +32,9 @@ export function WorkspaceFileTree({
 }): JSX.Element {
   const [loadedDirs, setLoadedDirs] = useState<Record<string, WorkspaceDirectoryEntry[]>>({});
   const [failedDirs, setFailedDirs] = useState<Record<string, string>>({});
+  const [expandedItems, setExpandedItems] = useState<TreeItemIndex[]>([PROJECT_ROOT_ITEM_ID]);
+  const [focusedItem, setFocusedItem] = useState<TreeItemIndex>(PROJECT_ROOT_ITEM_ID);
+  const [searchText, setSearchText] = useState('');
   const hasAutoOpenedRef = useRef(false);
   const treeRef = useRef<HTMLDivElement | null>(null);
   const rootQuery = useQuery({
@@ -41,26 +44,37 @@ export function WorkspaceFileTree({
 
   const rootEntries = rootQuery.data?.entries ?? [];
   const treeItems = useMemo(() => buildTreeItems(rootEntries, loadedDirs), [rootEntries, loadedDirs]);
-  const dataProvider = useMemo(
-    () => new StaticTreeDataProvider<TreeItemData>(treeItems, (item, title) => ({
-      ...item,
-      data: { ...item.data, title },
-    })),
-    [treeItems],
+  const normalizedSearch = normalizeSearch(searchText);
+  const visibleTreeResult = useMemo(
+    () => filterTreeItemsForSearch(treeItems, normalizedSearch),
+    [normalizedSearch, treeItems],
   );
+  const visibleTreeItems = visibleTreeResult.items;
+  const matchedItemIds = visibleTreeResult.matchedItemIds;
+  const searchExpandedItems = useMemo(
+    () => collectExpandedDirectoryIds(visibleTreeItems),
+    [visibleTreeItems],
+  );
+  const currentExpandedItems = normalizedSearch ? searchExpandedItems : expandedItems;
+  const selectedItems = activePath && visibleTreeItems[activePath] ? [activePath] : [];
+  const currentFocusedItem = visibleTreeItems[focusedItem] ? focusedItem : PROJECT_ROOT_ITEM_ID;
   const viewState = useMemo(
     () => ({
       [WORKSPACE_TREE_ID]: {
-        expandedItems: [PROJECT_ROOT_ITEM_ID],
-        selectedItems: activePath ? [activePath] : [],
+        expandedItems: currentExpandedItems,
+        selectedItems,
+        focusedItem: currentFocusedItem,
       },
     }),
-    [activePath],
+    [currentExpandedItems, currentFocusedItem, selectedItems],
   );
 
   useEffect(() => {
     setLoadedDirs({});
     setFailedDirs({});
+    setExpandedItems([PROJECT_ROOT_ITEM_ID]);
+    setFocusedItem(PROJECT_ROOT_ITEM_ID);
+    setSearchText('');
     hasAutoOpenedRef.current = false;
   }, [projectId]);
 
@@ -127,25 +141,51 @@ export function WorkspaceFileTree({
           <FilePlus />
         </div>
       </div>
+      <label className="deepsea-workspace-tree__search">
+        <Search aria-hidden="true" />
+        <input
+          type="search"
+          value={searchText}
+          onChange={(event) => setSearchText(event.currentTarget.value)}
+          placeholder="搜索文件或目录"
+          aria-label="搜索文件或目录"
+        />
+        {searchText ? (
+          <button type="button" onClick={() => setSearchText('')} aria-label="清空文件搜索">
+            <X aria-hidden="true" />
+          </button>
+        ) : null}
+      </label>
       {Object.keys(failedDirs).length > 0 ? (
         <div className="deepsea-workspace-tree__notice">部分目录读取失败</div>
       ) : null}
-      <UncontrolledTreeEnvironment<TreeItemData>
-        dataProvider={dataProvider}
+      {normalizedSearch && matchedItemIds.size === 0 ? (
+        <div className="deepsea-workspace-tree__notice" data-variant="empty">
+          没有匹配“{searchText.trim()}”的文件
+        </div>
+      ) : null}
+      <ControlledTreeEnvironment<TreeItemData>
+        items={visibleTreeItems}
         getItemTitle={(item) => item.data.title}
         viewState={viewState}
-        disableMultiselect
+        defaultInteractionMode={InteractionMode.ClickItemToExpand}
         canDragAndDrop={false}
         canDropOnFolder={false}
         canDropOnNonFolder={false}
         canReorderItems={false}
         canRename={false}
         canSearch={false}
-        onSelectItems={(items) => {
-          const entry = findEntry(treeItems, items[0]);
-          if (entry?.type === 'file') onOpenFile(entry);
+        onPrimaryAction={(item) => {
+          if (item.data.type === 'file') onOpenFile(item.data);
+        }}
+        onFocusItem={(item) => setFocusedItem(item.index)}
+        onCollapseItem={(item) => {
+          setExpandedItems((current) => current.filter((itemId) => itemId !== item.index));
         }}
         onExpandItem={(item) => {
+          setExpandedItems((current) => (
+            current.includes(item.index) ? current : [...current, item.index]
+          ));
           if (item.index === PROJECT_ROOT_ITEM_ID) return;
           if (item.data.type !== 'directory' || loadedDirs[item.data.path]) return;
           void api.listWorkspaceDirectory(projectId, item.data.path)
@@ -169,19 +209,26 @@ export function WorkspaceFileTree({
             item={item}
             failedMessage={failedDirs[item.data.path]}
             isActive={item.data.path === activePath}
+            isSearchMatch={matchedItemIds.has(item.index)}
           />
         )}
         renderItemArrow={({ item, context }) => (
-          item.isFolder ? (
-            <ChevronRight
-              aria-hidden="true"
-              className={context.isExpanded ? 'is-expanded' : undefined}
-            />
-          ) : null
+          <span
+            {...(item.isFolder ? context.arrowProps : {})}
+            className="deepsea-workspace-tree__arrow"
+            aria-hidden="true"
+          >
+            {item.isFolder ? (
+              <ChevronRight
+                aria-hidden="true"
+                className={context.isExpanded ? 'is-expanded' : undefined}
+              />
+            ) : null}
+          </span>
         )}
       >
         <Tree treeId={WORKSPACE_TREE_ID} rootItem={ROOT_ITEM_ID} treeLabel="当前项目目录" />
-      </UncontrolledTreeEnvironment>
+      </ControlledTreeEnvironment>
     </div>
   );
 }
@@ -190,10 +237,12 @@ function WorkspaceTreeTitle({
   item,
   failedMessage,
   isActive,
+  isSearchMatch,
 }: {
   item: WorkspaceTreeItem;
   failedMessage?: string;
   isActive: boolean;
+  isSearchMatch: boolean;
 }): JSX.Element {
   const Icon = item.data.type === 'directory' ? (item.children?.length ? FolderOpen : Folder) : File;
   const extension = item.data.type === 'file' ? getFileExtension(item.data.name || item.data.path) : '';
@@ -204,6 +253,7 @@ function WorkspaceTreeTitle({
       data-entry-type={item.data.type}
       data-extension={extension || undefined}
       data-root={item.index === PROJECT_ROOT_ITEM_ID ? 'true' : undefined}
+      data-search-match={isSearchMatch ? 'true' : undefined}
       title={failedMessage ?? item.data.path}
     >
       <Icon aria-hidden="true" />
@@ -269,13 +319,69 @@ function buildTreeItems(
   return items;
 }
 
-function findEntry(
+function normalizeSearch(searchText: string): string {
+  return searchText.trim().toLocaleLowerCase();
+}
+
+function filterTreeItemsForSearch(
   treeItems: Record<TreeItemIndex, WorkspaceTreeItem>,
-  itemId: TreeItemIndex | undefined,
-): WorkspaceDirectoryEntry | null {
-  if (itemId === undefined) return null;
-  const item = treeItems[itemId];
-  return item?.data ?? null;
+  searchTerm: string,
+): {
+  items: Record<TreeItemIndex, WorkspaceTreeItem>;
+  matchedItemIds: Set<TreeItemIndex>;
+} {
+  if (!searchTerm) return { items: treeItems, matchedItemIds: new Set() };
+
+  const parentByChild = new Map<TreeItemIndex, TreeItemIndex>();
+  Object.values(treeItems).forEach((item) => {
+    item.children?.forEach((childId) => parentByChild.set(childId, item.index));
+  });
+
+  const visibleItemIds = new Set<TreeItemIndex>([ROOT_ITEM_ID, PROJECT_ROOT_ITEM_ID]);
+  const matchedItemIds = new Set<TreeItemIndex>();
+
+  Object.values(treeItems).forEach((item) => {
+    if (item.index === ROOT_ITEM_ID || item.index === PROJECT_ROOT_ITEM_ID) return;
+    if (!matchesTreeItemSearch(item, searchTerm)) return;
+    matchedItemIds.add(item.index);
+
+    let currentItemId: TreeItemIndex | undefined = item.index;
+    while (currentItemId !== undefined) {
+      visibleItemIds.add(currentItemId);
+      currentItemId = parentByChild.get(currentItemId);
+    }
+  });
+
+  const filteredItems: Record<TreeItemIndex, WorkspaceTreeItem> = {};
+  Object.entries(treeItems).forEach(([itemId, item]) => {
+    if (!visibleItemIds.has(item.index)) return;
+    filteredItems[itemId] = {
+      ...item,
+      children: item.children?.filter((childId) => visibleItemIds.has(childId)),
+    };
+  });
+
+  return { items: filteredItems, matchedItemIds };
+}
+
+function matchesTreeItemSearch(item: WorkspaceTreeItem, searchTerm: string): boolean {
+  return [
+    item.data.title,
+    item.data.name,
+    item.data.path,
+    item.data.language ?? '',
+  ]
+    .join(' ')
+    .toLocaleLowerCase()
+    .includes(searchTerm);
+}
+
+function collectExpandedDirectoryIds(
+  treeItems: Record<TreeItemIndex, WorkspaceTreeItem>,
+): TreeItemIndex[] {
+  return Object.values(treeItems)
+    .filter((item) => item.isFolder && item.children && item.children.length > 0)
+    .map((item) => item.index);
 }
 
 function getFileExtension(name: string): string {

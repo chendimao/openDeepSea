@@ -1,7 +1,7 @@
 import Editor, { type Monaco } from '@monaco-editor/react';
 import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, RefreshCcw, Search, X } from 'lucide-react';
+import { RefreshCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import type { WorkspaceFilePreview } from '../lib/types';
 import type { WorkspaceFileTab } from './workspace-file-model';
@@ -62,23 +62,6 @@ function MonacoTextViewer({ projectId, tab }: { projectId: string; tab: Workspac
           padding: { top: 14, bottom: 14 },
         }}
       />
-      <div className="deepsea-file-find-widget" aria-hidden="true">
-        <div className="deepsea-file-find-widget__field">
-          <Search />
-          <span>watch</span>
-          <small>Aa</small>
-          <small>ab</small>
-          <small>*</small>
-        </div>
-        <div className="deepsea-file-find-widget__meta">
-          <span>1 of 1</span>
-          <div>
-            <ChevronUp />
-            <ChevronDown />
-            <X />
-          </div>
-        </div>
-      </div>
       {data.truncated ? (
         <div className="deepsea-file-viewer-badge" title="文件内容已按预览上限截断">
           truncated
