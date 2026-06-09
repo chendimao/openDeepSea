@@ -3088,6 +3088,7 @@ test('respondAsAgent uses provider-owned Superpowers by default for ordinary ACP
     assert.equal(capturedEnvOverrides?.OPENDEEPSEA_ROOM_ID, room.id);
     assert.equal(capturedEnvOverrides?.OPENDEEPSEA_AGENT_ID, planner.agent_id);
     assert.equal(capturedEnvOverrides?.OPENDEEPSEA_KNOWLEDGE_REF_TYPE, 'agent_run');
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_KNOWLEDGE_SEARCH_MODE, 'hybrid');
     assert.equal(run?.workflow_run_id, null);
     assert.equal(run?.superpowers_bootstrap_owner, 'provider');
     assert.equal(run?.superpowers_bootstrap_injected, 0);
@@ -3225,6 +3226,96 @@ test('respondAsAgent disables provider superpowers bootstrap during workflow run
     assert.equal(run?.superpowers_bootstrap_owner, 'provider');
     assert.equal(run?.superpowers_bootstrap_injected, 0);
     assert.equal(run?.superpowers_bootstrap_skip_reason, 'workflow_run');
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent injects knowledge tool prompt for task and workflow runs without system context prompt', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-knowledge-task-workflow-'));
+  const project = projectRepo.create({ name: `knowledge-task-workflow-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Knowledge task' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+
+  const originalAdapter = adapters.codex;
+  const capturedPrompts: string[] = [];
+  const capturedEnvOverrides: Array<Record<string, string> | undefined> = [];
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedPrompts.push(args.prompt);
+      capturedEnvOverrides.push(args.envOverrides);
+      args.onChunk({ stream: 'stdout', text: 'done' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: planner,
+      projectPath,
+      roomId: room.id,
+      taskId: task.id,
+      prompt: '执行任务时查询项目知识',
+    });
+    await respondAsAgent({
+      agent: planner,
+      projectPath,
+      roomId: room.id,
+      workflowRunId: 'workflow-knowledge-1',
+      prompt: '执行 workflow 时查询项目知识',
+    });
+
+    for (const prompt of capturedPrompts) {
+      assert.match(prompt, /OpenDeepSea 知识库工具/);
+      assert.match(prompt, new RegExp(`npm run openclaw:knowledge -- search --project ${escapeRegExp(project.id)} --room ${escapeRegExp(room.id)}`));
+      assert.doesNotMatch(prompt, /OpenClaw 系统上下文工具/);
+    }
+    for (const env of capturedEnvOverrides) {
+      assert.equal(env?.OPENDEEPSEA_KNOWLEDGE_REF_TYPE, 'agent_run');
+      assert.equal(env?.OPENDEEPSEA_KNOWLEDGE_SEARCH_MODE, 'hybrid');
+    }
+  } finally {
+    adapters.codex = originalAdapter;
+    await rm(projectPath, { recursive: true, force: true });
+  }
+});
+
+test('respondAsAgent skips knowledge tool prompt for internal messages', async () => {
+  const projectPath = await mkdtemp(join(tmpdir(), 'openclaw-room-knowledge-internal-'));
+  const project = projectRepo.create({ name: `knowledge-internal-${Date.now()}`, path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner');
+  assert.ok(planner);
+
+  const originalAdapter = adapters.codex;
+  let capturedPrompt = '';
+  let capturedEnvOverrides: Record<string, string> | undefined;
+  adapters.codex = {
+    ...originalAdapter,
+    async invoke(args) {
+      capturedPrompt = args.prompt;
+      capturedEnvOverrides = args.envOverrides;
+      args.onChunk({ stream: 'stdout', text: 'done' });
+      return { exitCode: 0, sessionId: null, stderr: '' };
+    },
+  } satisfies SessionAdapter;
+
+  try {
+    await respondAsAgent({
+      agent: planner,
+      projectPath,
+      roomId: room.id,
+      internalMessage: true,
+      prompt: '内部消息不注入知识库工具',
+    });
+
+    assert.doesNotMatch(capturedPrompt, /OpenDeepSea 知识库工具/);
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_KNOWLEDGE_REF_TYPE, undefined);
+    assert.equal(capturedEnvOverrides?.OPENDEEPSEA_KNOWLEDGE_SEARCH_MODE, undefined);
   } finally {
     adapters.codex = originalAdapter;
     await rm(projectPath, { recursive: true, force: true });

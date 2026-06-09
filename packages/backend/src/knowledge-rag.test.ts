@@ -63,7 +63,7 @@ function createReadySource(input: {
   return { source, extraction, chunks };
 }
 
-test('searchKnowledgeForAgent returns focused citations and records agent usage refs', () => {
+test('searchKnowledgeForAgent returns hybrid citations and records agent usage refs', () => {
   const project = createProject('search');
   const room = roomRepo.create({ project_id: project.id, name: 'RAG Room' });
   const { source, chunks } = createReadySource({
@@ -92,7 +92,7 @@ test('searchKnowledgeForAgent returns focused citations and records agent usage 
   assert.equal(response.source, 'openclaw.knowledge.search');
   assert.equal(response.scope.project_id, project.id);
   assert.equal(response.scope.room_id, room.id);
-  assert.equal(response.retrieval_mode, 'focused');
+  assert.equal(response.retrieval_mode, 'hybrid');
   assert.equal(response.results.length, 1);
   assert.equal(response.results[0]?.source_id, source.id);
   assert.equal(response.results[0]?.chunk_id, chunks[0]?.id);
@@ -106,6 +106,26 @@ test('searchKnowledgeForAgent returns focused citations and records agent usage 
   assert.equal(usageRow?.ref_type, 'agent_run');
   assert.equal(usageRow?.ref_id, 'agent-run-1');
   assert.match(usageRow?.metadata_json ?? '', /planner/);
+  assert.match(usageRow?.metadata_json ?? '', /hybrid/);
+  assert.match(usageRow?.metadata_json ?? '', /A12 deployment/);
+});
+
+test('searchKnowledgeForAgent supports explicit keyword search mode', () => {
+  const project = createProject('search-mode');
+  createReadySource({
+    projectId: project.id,
+    title: 'A12 mode runbook',
+    chunks: ['A12 mode search content.'],
+  });
+
+  const response = searchKnowledgeForAgent({
+    projectId: project.id,
+    query: 'A12 mode',
+    mode: 'keyword',
+  });
+
+  assert.equal(response.retrieval_mode, 'keyword');
+  assert.equal(response.results.length, 1);
 });
 
 test('readKnowledgeChunkForAgent rejects chunks outside the project scope', () => {

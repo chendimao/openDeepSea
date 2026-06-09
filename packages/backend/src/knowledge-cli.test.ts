@@ -68,6 +68,28 @@ test('runKnowledgeCli searches knowledge and records usage from env', () => {
   assert.match(row?.metadata_json ?? '', /room-env-1/);
 });
 
+test('runKnowledgeCli supports search mode from flag and env default', () => {
+  const project = createProject('search-mode');
+  createReadySource(project.id);
+
+  const explicit = runKnowledgeCli(
+    ['search', '--project', project.id, '--query', 'A12 CLI', '--mode', 'hybrid'],
+    { OPENDEEPSEA_AGENT_RUN_ID: 'agent-run-mode-1' },
+  ) as { retrieval_mode: string };
+  assert.equal(explicit.retrieval_mode, 'hybrid');
+
+  const fromEnv = runKnowledgeCli(
+    ['search', '--project', project.id, '--query', 'A12 CLI'],
+    { OPENDEEPSEA_KNOWLEDGE_SEARCH_MODE: 'vector_preview' },
+  ) as { retrieval_mode: string };
+  assert.equal(fromEnv.retrieval_mode, 'vector_preview');
+
+  assert.throws(
+    () => runKnowledgeCli(['search', '--project', project.id, '--query', 'A12 CLI', '--mode', 'semantic'], {}),
+    /--mode must be keyword, vector_preview, or hybrid/,
+  );
+});
+
 test('runKnowledgeCli reads chunk and source summary', () => {
   const project = createProject('read');
   const { source, chunk } = createReadySource(project.id);

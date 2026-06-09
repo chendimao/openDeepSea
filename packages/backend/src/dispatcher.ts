@@ -771,7 +771,9 @@ function shouldInjectOpenClawSystemContextToolPrompt(args: RespondAsAgentInput, 
 }
 
 function shouldInjectKnowledgeAgentToolPrompt(args: RespondAsAgentInput, room: Room | undefined): room is Room {
-  return shouldInjectOpenClawSystemContextToolPrompt(args, room);
+  if (!room) return false;
+  if (args.internalMessage) return false;
+  return true;
 }
 
 function buildOpenClawSystemContextToolPrompt(input: { projectId: string; roomId: string }): string {
@@ -917,6 +919,7 @@ export async function respondAsAgent(args: RespondAsAgentInput): Promise<void> {
         OPENDEEPSEA_ROOM_ID: roomId,
         OPENDEEPSEA_AGENT_ID: agent.agent_id,
         OPENDEEPSEA_KNOWLEDGE_REF_TYPE: 'agent_run',
+        OPENDEEPSEA_KNOWLEDGE_SEARCH_MODE: 'hybrid',
       }
     : {};
   if (taskExecutor) {

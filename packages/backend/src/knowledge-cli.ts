@@ -5,6 +5,7 @@ import {
   searchKnowledgeForAgent,
   type KnowledgeAgentUsage,
 } from './knowledge-rag.js';
+import type { KnowledgeRetrievalMode } from './knowledge-types.js';
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -13,7 +14,7 @@ export function runKnowledgeCli(argv: string[], env: EnvLike = process.env): unk
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     return {
       commands: [
-        'search --project <projectId> --query <query> [--room <roomId>] [--limit 5]',
+        'search --project <projectId> --query <query> [--room <roomId>] [--mode keyword|vector_preview|hybrid] [--limit 5]',
         'read-chunk --project <projectId> --chunk <chunkId>',
         'source-summary --project <projectId> --source <sourceId> [--mode auto|full|summary]',
         'list-sources --project <projectId> [--room <roomId>] [--limit 20]',
@@ -26,6 +27,7 @@ export function runKnowledgeCli(argv: string[], env: EnvLike = process.env): unk
       projectId: readRequiredOption(args, '--project'),
       roomId: readOption(args, '--room'),
       query: readRequiredOption(args, '--query'),
+      mode: readSearchMode(readOption(args, '--mode') ?? env.OPENDEEPSEA_KNOWLEDGE_SEARCH_MODE ?? null),
       limit: readNumberOption(args, '--limit'),
       usage: readUsageFromEnv(env),
     });
@@ -92,6 +94,12 @@ function readSummaryMode(value: string | null): 'auto' | 'full' | 'summary' | un
   if (value === null) return undefined;
   if (value === 'auto' || value === 'full' || value === 'summary') return value;
   throw new Error('--mode must be auto, full, or summary');
+}
+
+function readSearchMode(value: string | null): KnowledgeRetrievalMode | undefined {
+  if (value === null) return undefined;
+  if (value === 'keyword' || value === 'vector_preview' || value === 'hybrid') return value;
+  throw new Error('--mode must be keyword, vector_preview, or hybrid');
 }
 
 function readRequiredOption(args: string[], name: string): string {

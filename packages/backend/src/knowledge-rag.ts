@@ -1,9 +1,12 @@
 import { db } from './db.js';
+import { searchKnowledge } from './knowledge-search.js';
 import { knowledgeRepo } from './repos/knowledge.js';
 import { projectRepo } from './repos/projects.js';
 import { roomRepo } from './repos/rooms.js';
 import type {
   KnowledgeChunk,
+  KnowledgeRankingSignals,
+  KnowledgeRetrievalMode as KnowledgeSearchMode,
   KnowledgeSearchResult,
   KnowledgeSource,
   KnowledgeUsageRefInput,
@@ -14,7 +17,7 @@ const CHUNK_CONTENT_CHARS = 8_000;
 const FULL_CONTEXT_CHARS = 40_000;
 const SUMMARY_CONTENT_CHARS = 2_000;
 
-export type KnowledgeRetrievalMode = 'focused' | 'full_context' | 'summary';
+export type KnowledgeRetrievalMode = KnowledgeSearchMode | 'focused' | 'full_context' | 'summary';
 
 export interface KnowledgeAgentUsage {
   refType: KnowledgeUsageRefInput['ref_type'];
@@ -55,6 +58,7 @@ export interface KnowledgeAgentSearchResult {
   content: string;
   truncated: boolean;
   score: number;
+  ranking?: KnowledgeRankingSignals;
   citation_key: string;
 }
 
@@ -101,23 +105,29 @@ export function searchKnowledgeForAgent(input: {
   projectId: string;
   roomId?: string | null;
   query: string;
+  mode?: KnowledgeSearchMode;
   limit?: number;
   usage?: KnowledgeAgentUsage | null;
 }): KnowledgeAgentToolResponse<KnowledgeAgentSearchResult[]> {
   const scope = resolveScope(input.projectId, input.roomId);
-  const results = knowledgeRepo.search({
+  const mode = input.mode ?? 'hybrid';
+  const results = searchKnowledge({
     projectId: scope.project_id,
     roomId: scope.room_id,
     query: input.query,
+    mode,
     limit: normalizeLimit(input.limit, 5, 10),
   });
   const mapped = results.map(toSearchResult);
-  recordResultUsage(scope.project_id, results, input.usage, 'search');
+  recordResultUsage(scope.project_id, results, input.usage, 'search', {
+    retrieval_mode: mode,
+    query: input.query,
+  });
   return {
     source: 'openclaw.knowledge.search',
     scope,
     generated_at: Date.now(),
-    retrieval_mode: 'focused',
+    retrieval_mode: mode,
     results: mapped,
     citations: results.map((result) => citationFromSearchResult(result)),
   };
@@ -255,7 +265,7 @@ export function buildKnowledgeAgentToolPrompt(input: {
     `- 当前 projectId: ${input.projectId}`,
     input.roomId ? `- 当前 roomId: ${input.roomId}` : null,
     '- 常用命令：',
-    `  - npm run openclaw:knowledge -- search --project ${input.projectId}${roomOption} --query "<关键词>" --limit 5`,
+    `  - npm run openclaw:knowledge -- search --project ${input.projectId}${roomOption} --query "<关键词>" --mode hybrid --limit 5`,
     `  - npm run openclaw:knowledge -- read-chunk --project ${input.projectId} --chunk <chunkId>`,
     `  - npm run openclaw:knowledge -- source-summary --project ${input.projectId} --source <sourceId> --mode auto`,
     `  - npm run openclaw:knowledge -- list-sources --project ${input.projectId}${roomOption} --limit 20`,
@@ -292,6 +302,7 @@ function toSearchResult(result: KnowledgeSearchResult): KnowledgeAgentSearchResu
     content: content.text,
     truncated: content.truncated,
     score: result.score,
+    ...(result.ranking ? { ranking: result.ranking } : {}),
     citation_key: chunkCitationKey(result.source_id, result.chunk_id),
   };
 }
@@ -333,9 +344,13 @@ function recordResultUsage(
   results: KnowledgeSearchResult[],
   usage: KnowledgeAgentUsage | null | undefined,
   action: string,
+  metadata: Record<string, unknown> = {},
 ): void {
   for (const result of results) {
-    recordUsage(projectId, result.source_id, result.chunk_id, usage, action);
+    recordUsage(projectId, result.source_id, result.chunk_id, usage, action, {
+      ...metadata,
+      ...(result.ranking ? { ranking: result.ranking } : {}),
+    });
   }
 }
 
@@ -345,6 +360,7 @@ function recordUsage(
   chunkId: string | null,
   usage: KnowledgeAgentUsage | null | undefined,
   action: string,
+  metadata: Record<string, unknown> = {},
 ): void {
   if (!usage?.refId) return;
   knowledgeRepo.recordUsageRef({
@@ -356,6 +372,7 @@ function recordUsage(
     metadata: {
       ...(usage.metadata ?? {}),
       action,
+      ...metadata,
     },
   });
 }
