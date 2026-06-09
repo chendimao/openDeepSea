@@ -626,6 +626,7 @@ function tokenSourceLabel(config: OnlineSkillsTokenConfig | null, loading = fals
   if (!config) return '点击配置在线列表';
   if (config.source === 'settings') return config.tokenPreview ? `本地配置 ${config.tokenPreview}` : '本地配置';
   if (config.source === 'environment') return config.tokenPreview ? `环境变量 ${config.tokenPreview}` : '环境变量';
+  if (config.source === 'vercel_oidc') return config.tokenPreview ? `Vercel OIDC ${config.tokenPreview}` : 'Vercel OIDC';
   return '在线列表需要 token';
 }
 
@@ -633,6 +634,7 @@ function tokenSourceDescription(config: OnlineSkillsTokenConfig | null): string 
   if (!config) return '保存后会立即刷新在线 skills 列表。';
   if (config.source === 'settings') return '当前使用页面保存的本地 token，完整值不会回显。';
   if (config.source === 'environment') return '当前使用后端环境变量；保存本地 token 后会优先生效。';
+  if (config.source === 'vercel_oidc') return '当前使用 Vercel 运行时动态签发的 OIDC token，无需复制固定 token。';
   return '未配置 token 时无法获取官方在线 skills 列表。';
 }
 

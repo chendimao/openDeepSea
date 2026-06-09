@@ -314,7 +314,7 @@ export interface PlatformSkillAggregate {
 
 export type OnlineSkillView = 'all-time' | 'trending' | 'hot';
 export type OnlineSkillAuditStatus = 'unknown' | 'none' | 'available';
-export type OnlineSkillsTokenSource = 'settings' | 'environment' | 'none';
+export type OnlineSkillsTokenSource = 'settings' | 'environment' | 'vercel_oidc' | 'none';
 
 export interface OnlineSkill {
   id: string;
@@ -370,6 +370,8 @@ export interface OnlineSkillsTokenConfig {
   storedTokenPreview: string | null;
   environmentTokenConfigured: boolean;
   environmentTokenPreview: string | null;
+  vercelOidcTokenConfigured: boolean;
+  vercelOidcTokenPreview: string | null;
 }
 
 export interface AgentReference {

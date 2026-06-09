@@ -74,8 +74,7 @@ export class SkillsShClient implements SkillsShClientLike {
 export function getSkillsShBearerTokenFromEnv(env: NodeJS.ProcessEnv): string | null {
   const explicit = env.SKILLS_SH_API_TOKEN?.trim();
   if (explicit) return explicit;
-  const oidc = env.VERCEL_OIDC_TOKEN?.trim();
-  return oidc || null;
+  return null;
 }
 
 function encodeSkillIdPath(id: string): string {

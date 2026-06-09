@@ -12,6 +12,8 @@ delete process.env.SKILLS_SH_API_TOKEN;
 delete process.env.VERCEL_OIDC_TOKEN;
 
 const { createOnlineSkillsRouter } = await import('./routes.js');
+const { resolveSkillsShBearerToken, getOnlineSkillsTokenConfig } = await import('./config.js');
+const { settingsRepo } = await import('../repos/settings.js');
 const express = (await import('express')).default;
 
 const app = express();
@@ -145,6 +147,19 @@ test('online skills routes expose local token configuration without leaking the 
   const cleared = await clearRes.json() as { tokenConfigured: boolean; source: string };
   assert.equal(cleared.tokenConfigured, false);
   assert.equal(cleared.source, 'none');
+});
+
+test('online skills token resolver falls back to dynamic Vercel OIDC provider', async () => {
+  settingsRepo.updateSkillsShApiToken(null);
+  const env = {} as NodeJS.ProcessEnv;
+  const token = await resolveSkillsShBearerToken(env, async () => 'oidc-runtime-token');
+  const config = await getOnlineSkillsTokenConfig(env, async () => 'oidc-runtime-token');
+
+  assert.equal(token, 'oidc-runtime-token');
+  assert.equal(config.tokenConfigured, true);
+  assert.equal(config.source, 'vercel_oidc');
+  assert.equal(config.vercelOidcTokenConfigured, true);
+  assert.equal(config.tokenPreview, 'oidc...oken');
 });
 
 test('online skills routes list online skills with validated defaults', async () => {

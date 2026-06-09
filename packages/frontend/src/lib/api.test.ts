@@ -593,6 +593,8 @@ test('api exposes online skills helpers through workspaceRequest', async () => {
       storedTokenPreview: null,
       environmentTokenConfigured: false,
       environmentTokenPreview: null,
+      vercelOidcTokenConfigured: false,
+      vercelOidcTokenPreview: null,
     },
   );
   assert.equal(configUrl, '/api/online-skills/config');

@@ -36,6 +36,7 @@ test('SkillsPage exposes skills.sh token configuration and keeps terminal below 
   assert.match(source, /SkillsTokenSettingsPanel/);
   assert.match(source, /配置 skills\.sh API Token/);
   assert.match(source, /配置 Token/);
+  assert.match(source, /Vercel OIDC/);
   assert.match(source, /onOpenTokenSettings/);
   assert.match(css, /--skills-shell-top-offset: 48px/);
   assert.match(css, /inset: var\(--skills-shell-top-offset\) 0 0/);

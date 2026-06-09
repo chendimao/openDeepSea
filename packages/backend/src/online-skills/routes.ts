@@ -15,14 +15,14 @@ export function createOnlineSkillsRouter(service: OnlineSkillsService): Router {
     next();
   });
 
-  router.get('/config', (_req, res) => {
-    res.json(getOnlineSkillsTokenConfig());
+  router.get('/config', async (_req, res) => {
+    res.json(await getOnlineSkillsTokenConfig());
   });
 
-  router.patch('/config', (req, res) => {
+  router.patch('/config', async (req, res) => {
     const parsed = tokenConfigPatchSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    res.json(updateOnlineSkillsTokenConfig(parsed.data.token));
+    res.json(await updateOnlineSkillsTokenConfig(parsed.data.token));
   });
 
   router.get('/', async (req, res) => {

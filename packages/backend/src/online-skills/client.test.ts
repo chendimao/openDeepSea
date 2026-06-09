@@ -15,12 +15,12 @@ test('getSkillsShBearerTokenFromEnv prefers explicit skills token and trims valu
   assert.equal(getSkillsShBearerTokenFromEnv(env), 'explicit-token');
 });
 
-test('getSkillsShBearerTokenFromEnv falls back to VERCEL_OIDC_TOKEN', () => {
+test('getSkillsShBearerTokenFromEnv ignores VERCEL_OIDC_TOKEN because OIDC is runtime scoped', () => {
   const env = {
     VERCEL_OIDC_TOKEN: '  oidc-token  ',
   };
 
-  assert.equal(getSkillsShBearerTokenFromEnv(env), 'oidc-token');
+  assert.equal(getSkillsShBearerTokenFromEnv(env), null);
 });
 
 test('SkillsShClient sends bearer token and uses official leaderboard parameters', async () => {
