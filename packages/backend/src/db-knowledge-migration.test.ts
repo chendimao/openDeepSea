@@ -65,12 +65,18 @@ test('db startup resets incompatible legacy knowledge schema before creating cur
   const { db } = await import(`./db.js?knowledge-migration-${Date.now()}`);
   const columns = db.prepare('PRAGMA table_info(knowledge_sources)').all() as { name: string }[];
   const indexes = db.prepare('PRAGMA index_list(knowledge_sources)').all() as { name: string }[];
+  const embeddingColumns = db.prepare('PRAGMA table_info(knowledge_chunk_embeddings)').all() as { name: string }[];
+  const embeddingIndexes = db.prepare('PRAGMA index_list(knowledge_chunk_embeddings)').all() as { name: string }[];
   const legacyCount = db.prepare('SELECT COUNT(*) AS count FROM knowledge_sources WHERE id = ?')
     .get('legacy-source') as { count: number };
 
   assert.ok(columns.some((column) => column.name === 'room_id'));
   assert.ok(columns.some((column) => column.name === 'last_processed_at'));
   assert.ok(indexes.some((index) => index.name === 'idx_knowledge_sources_room'));
+  assert.ok(embeddingColumns.some((column) => column.name === 'chunk_id'));
+  assert.ok(embeddingColumns.some((column) => column.name === 'vector_json'));
+  assert.ok(embeddingColumns.some((column) => column.name === 'content_hash'));
+  assert.ok(embeddingIndexes.some((index) => index.name === 'idx_knowledge_chunk_embeddings_project'));
   assert.equal(legacyCount.count, 0);
 
   db.prepare(

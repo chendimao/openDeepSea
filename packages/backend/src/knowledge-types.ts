@@ -15,6 +15,8 @@ export type KnowledgeStatus = 'pending' | 'processing' | 'ready' | 'failed' | 's
 
 export type KnowledgeChunkType = 'plain_text' | 'markdown' | 'code' | 'table' | 'summary' | 'body';
 
+export type KnowledgeRetrievalMode = 'keyword' | 'vector_preview' | 'hybrid';
+
 export interface KnowledgeSource {
   id: string;
   project_id: string;
@@ -93,6 +95,31 @@ export interface KnowledgeChunk {
   enabled: 0 | 1;
   metadata: Record<string, unknown>;
   created_at: number;
+}
+
+export interface KnowledgeChunkEmbedding {
+  id: string;
+  chunk_id: string;
+  source_id: string;
+  project_id: string;
+  provider: string;
+  model: string;
+  dimensions: number;
+  vector: number[];
+  content_hash: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface KnowledgeChunkEmbeddingInput {
+  chunk_id: string;
+  source_id: string;
+  project_id: string;
+  provider: string;
+  model: string;
+  dimensions: number;
+  vector: number[];
+  content_hash: string;
 }
 
 export interface KnowledgeCitation {

@@ -402,6 +402,38 @@ BEGIN
   DELETE FROM knowledge_chunk_fts WHERE source_id = OLD.id;
 END;
 
+CREATE TABLE IF NOT EXISTS knowledge_chunk_embeddings (
+  id TEXT PRIMARY KEY,
+  chunk_id TEXT NOT NULL UNIQUE,
+  source_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  vector_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (chunk_id) REFERENCES knowledge_chunks(id) ON DELETE CASCADE,
+  FOREIGN KEY (source_id) REFERENCES knowledge_sources(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_embeddings_project
+  ON knowledge_chunk_embeddings(project_id, provider, model);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_embeddings_source
+  ON knowledge_chunk_embeddings(source_id);
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_chunks_delete_embeddings
+AFTER DELETE ON knowledge_chunks
+BEGIN
+  DELETE FROM knowledge_chunk_embeddings WHERE chunk_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_knowledge_sources_delete_embeddings
+AFTER DELETE ON knowledge_sources
+BEGIN
+  DELETE FROM knowledge_chunk_embeddings WHERE source_id = OLD.id;
+END;
+
 CREATE TABLE IF NOT EXISTS knowledge_usage_refs (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
@@ -1290,6 +1322,35 @@ db.exec(`
     ON knowledge_sources(room_id, updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_knowledge_sources_source
     ON knowledge_sources(source_type, source_id);
+  CREATE TABLE IF NOT EXISTS knowledge_chunk_embeddings (
+    id TEXT PRIMARY KEY,
+    chunk_id TEXT NOT NULL UNIQUE,
+    source_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    dimensions INTEGER NOT NULL,
+    vector_json TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY (chunk_id) REFERENCES knowledge_chunks(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_id) REFERENCES knowledge_sources(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_embeddings_project
+    ON knowledge_chunk_embeddings(project_id, provider, model);
+  CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_embeddings_source
+    ON knowledge_chunk_embeddings(source_id);
+  CREATE TRIGGER IF NOT EXISTS trg_knowledge_chunks_delete_embeddings
+  AFTER DELETE ON knowledge_chunks
+  BEGIN
+    DELETE FROM knowledge_chunk_embeddings WHERE chunk_id = OLD.id;
+  END;
+  CREATE TRIGGER IF NOT EXISTS trg_knowledge_sources_delete_embeddings
+  AFTER DELETE ON knowledge_sources
+  BEGIN
+    DELETE FROM knowledge_chunk_embeddings WHERE source_id = OLD.id;
+  END;
 `);
 
 const projectColumns = db.prepare('PRAGMA table_info(projects)').all() as { name: string }[];

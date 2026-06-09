@@ -2,6 +2,8 @@ import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
 import type {
   KnowledgeChunk,
+  KnowledgeChunkEmbedding,
+  KnowledgeChunkEmbeddingInput,
   KnowledgeChunkType,
   KnowledgeExtraction,
   KnowledgeSearchResult,
@@ -93,6 +95,13 @@ interface SearchFilters {
   limit?: number;
 }
 
+interface ChunkEmbeddingFilters {
+  projectId: string;
+  sourceId?: string;
+  provider?: string;
+  model?: string;
+}
+
 interface KnowledgeSourceRow extends Omit<KnowledgeSource, 'tags' | 'metadata'> {
   tags_json: string;
   metadata_json: string;
@@ -110,6 +119,10 @@ interface KnowledgeExtractionRow extends Omit<KnowledgeExtraction, 'metadata'> {
 
 interface KnowledgeChunkRow extends Omit<KnowledgeChunk, 'metadata'> {
   metadata_json: string;
+}
+
+interface KnowledgeChunkEmbeddingRow extends Omit<KnowledgeChunkEmbedding, 'vector'> {
+  vector_json: string;
 }
 
 interface KnowledgeSearchRow {
@@ -494,6 +507,107 @@ export const knowledgeRepo = {
     );
   },
 
+  upsertChunkEmbedding(input: KnowledgeChunkEmbeddingInput): KnowledgeChunkEmbedding {
+    const chunk = db
+      .prepare(
+        `SELECT knowledge_chunks.id
+         FROM knowledge_chunks
+         JOIN knowledge_sources ON knowledge_sources.id = knowledge_chunks.source_id
+         WHERE knowledge_chunks.id = ?
+           AND knowledge_chunks.source_id = ?
+           AND knowledge_sources.project_id = ?`,
+      )
+      .get(input.chunk_id, input.source_id, input.project_id) as { id: string } | undefined;
+    if (!chunk) throw new Error('chunk embedding scope is invalid');
+    if (input.vector.length !== input.dimensions) throw new Error('embedding dimensions do not match vector length');
+
+    const existing = db
+      .prepare('SELECT * FROM knowledge_chunk_embeddings WHERE chunk_id = ?')
+      .get(input.chunk_id) as KnowledgeChunkEmbeddingRow | undefined;
+    const ts = now();
+    if (existing) {
+      db.prepare(
+        `UPDATE knowledge_chunk_embeddings
+         SET source_id = ?,
+             project_id = ?,
+             provider = ?,
+             model = ?,
+             dimensions = ?,
+             vector_json = ?,
+             content_hash = ?,
+             updated_at = ?
+         WHERE chunk_id = ?`,
+      ).run(
+        input.source_id,
+        input.project_id,
+        input.provider,
+        input.model,
+        input.dimensions,
+        stringifyJson(input.vector),
+        input.content_hash,
+        ts,
+        input.chunk_id,
+      );
+    } else {
+      db.prepare(
+        `INSERT INTO knowledge_chunk_embeddings (
+          id, chunk_id, source_id, project_id, provider, model, dimensions,
+          vector_json, content_hash, created_at, updated_at
+        )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        nanoid(16),
+        input.chunk_id,
+        input.source_id,
+        input.project_id,
+        input.provider,
+        input.model,
+        input.dimensions,
+        stringifyJson(input.vector),
+        input.content_hash,
+        ts,
+        ts,
+      );
+    }
+    return this.getChunkEmbedding(input.chunk_id)!;
+  },
+
+  getChunkEmbedding(chunkId: string): KnowledgeChunkEmbedding | undefined {
+    const row = db
+      .prepare('SELECT * FROM knowledge_chunk_embeddings WHERE chunk_id = ?')
+      .get(chunkId) as KnowledgeChunkEmbeddingRow | undefined;
+    return row ? mapChunkEmbedding(row) : undefined;
+  },
+
+  listChunkEmbeddings(filters: ChunkEmbeddingFilters): KnowledgeChunkEmbedding[] {
+    const clauses = ['project_id = @projectId'];
+    const params: Record<string, string> = { projectId: filters.projectId };
+    if (filters.sourceId) {
+      clauses.push('source_id = @sourceId');
+      params.sourceId = filters.sourceId;
+    }
+    if (filters.provider) {
+      clauses.push('provider = @provider');
+      params.provider = filters.provider;
+    }
+    if (filters.model) {
+      clauses.push('model = @model');
+      params.model = filters.model;
+    }
+    const rows = db
+      .prepare(
+        `SELECT * FROM knowledge_chunk_embeddings
+         WHERE ${clauses.join(' AND ')}
+         ORDER BY updated_at DESC, chunk_id ASC`,
+      )
+      .all(params) as KnowledgeChunkEmbeddingRow[];
+    return rows.map(mapChunkEmbedding);
+  },
+
+  deleteChunkEmbeddingsForSource(sourceId: string): void {
+    db.prepare('DELETE FROM knowledge_chunk_embeddings WHERE source_id = ?').run(sourceId);
+  },
+
   search(filters: SearchFilters): KnowledgeSearchResult[] {
     const matchQuery = buildFtsQuery(filters.query);
     if (!matchQuery) return [];
@@ -614,6 +728,22 @@ function mapChunk(row: KnowledgeChunkRow): KnowledgeChunk {
   };
 }
 
+function mapChunkEmbedding(row: KnowledgeChunkEmbeddingRow): KnowledgeChunkEmbedding {
+  return {
+    id: row.id,
+    chunk_id: row.chunk_id,
+    source_id: row.source_id,
+    project_id: row.project_id,
+    provider: row.provider,
+    model: row.model,
+    dimensions: row.dimensions,
+    vector: parseVector(row.vector_json),
+    content_hash: row.content_hash,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 function mapSearchResult(row: KnowledgeSearchRow): KnowledgeSearchResult {
   return {
     chunk_id: row.chunk_id,
@@ -689,6 +819,13 @@ function parseMetadata(value: string | null): Record<string, unknown> {
   const parsed = parseJson(value, {});
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
   return parsed as Record<string, unknown>;
+}
+
+function parseVector(value: string | null): number[] {
+  const parsed = parseJson(value, []);
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is number => typeof item === 'number' && Number.isFinite(item))
+    : [];
 }
 
 function parseJson(value: string | null, fallback: unknown): unknown {

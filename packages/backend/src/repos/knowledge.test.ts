@@ -500,6 +500,86 @@ test('knowledgeRepo cleans FTS rows when chunk is deleted directly', () => {
   assert.equal(after.count, 0);
 });
 
+test('knowledgeRepo stores and replaces chunk embeddings', () => {
+  const project = createProject('embedding-repo');
+  const source = createIndexedSource({
+    project_id: project.id,
+    source_type: 'uploaded_file',
+    source_id: 'embedding-source',
+    title: 'Embedding Note',
+    status: 'ready',
+    chunks: [{ content: 'A12 hybrid search content' }],
+  });
+  const [chunk] = knowledgeRepo.listChunks(source.id);
+  assert.ok(chunk);
+
+  knowledgeRepo.upsertChunkEmbedding({
+    chunk_id: chunk.id,
+    source_id: source.id,
+    project_id: project.id,
+    provider: 'local-hash',
+    model: 'local-hash-v1',
+    dimensions: 4,
+    vector: [1, 0, 0, 0],
+    content_hash: 'hash-a',
+  });
+  knowledgeRepo.upsertChunkEmbedding({
+    chunk_id: chunk.id,
+    source_id: source.id,
+    project_id: project.id,
+    provider: 'local-hash',
+    model: 'local-hash-v1',
+    dimensions: 4,
+    vector: [0, 1, 0, 0],
+    content_hash: 'hash-b',
+  });
+
+  const rows = knowledgeRepo.listChunkEmbeddings({ projectId: project.id });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.chunk_id, chunk.id);
+  assert.deepEqual(rows[0]?.vector, [0, 1, 0, 0]);
+  assert.equal(rows[0]?.content_hash, 'hash-b');
+});
+
+test('knowledge embedding rows are removed when chunks and sources are deleted', () => {
+  const project = createProject('embedding-cleanup');
+  const source = createIndexedSource({
+    project_id: project.id,
+    source_type: 'uploaded_file',
+    source_id: 'embedding-cleanup-source',
+    title: 'Embedding Cleanup',
+    status: 'ready',
+    chunks: [
+      { content: 'A12 chunk embedding cleanup.' },
+      { content: 'A12 source embedding cleanup.' },
+    ],
+  });
+  const chunks = knowledgeRepo.listChunks(source.id);
+  assert.equal(chunks.length, 2);
+
+  for (const [index, chunk] of chunks.entries()) {
+    knowledgeRepo.upsertChunkEmbedding({
+      chunk_id: chunk.id,
+      source_id: source.id,
+      project_id: project.id,
+      provider: 'local-hash',
+      model: 'local-hash-v1',
+      dimensions: 4,
+      vector: index === 0 ? [1, 0, 0, 0] : [0, 1, 0, 0],
+      content_hash: `cleanup-hash-${index}`,
+    });
+  }
+
+  db.prepare('DELETE FROM knowledge_chunks WHERE id = ?').run(chunks[0]!.id);
+  assert.deepEqual(
+    knowledgeRepo.listChunkEmbeddings({ projectId: project.id }).map((row) => row.chunk_id),
+    [chunks[1]!.id],
+  );
+
+  db.prepare('DELETE FROM knowledge_sources WHERE id = ?').run(source.id);
+  assert.equal(knowledgeRepo.listChunkEmbeddings({ projectId: project.id }).length, 0);
+});
+
 function createIndexedSource(input: {
   project_id: string;
   room_id?: string | null;
