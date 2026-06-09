@@ -1108,6 +1108,7 @@ export type TaskStatus = 'todo' | 'in_progress' | 'review' | 'done' | 'failed';
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type TaskInteractionMode = 'ask_user' | 'auto_recommended';
 export type SuperpowersBootstrapOwner = 'project' | 'provider' | 'disabled';
+export type KnowledgeEmbeddingProviderId = 'local-hash' | 'openai-compatible';
 
 export interface ScopedSettings {
   scope: SettingsScope;
@@ -1141,6 +1142,11 @@ export interface SystemSettings extends EffectiveSettings {
   openai_base_url: string | null;
   openai_api_key_set: boolean;
   openai_api_key_preview: string | null;
+  knowledge_embedding_provider: KnowledgeEmbeddingProviderId | null;
+  knowledge_embedding_model: string | null;
+  knowledge_embedding_dimensions: number | null;
+  knowledge_embedding_base_url: string | null;
+  knowledge_embedding_api_key_env_var: string | null;
   global_session_prompt: string | null;
 }
 
@@ -1159,6 +1165,15 @@ export interface LangChainPlannerSettings {
   langchain_planner_model: string | null;
   openai_api_key: string | null;
   openai_base_url: string | null;
+}
+
+export interface KnowledgeEmbeddingSettings {
+  provider: KnowledgeEmbeddingProviderId;
+  model: string | null;
+  dimensions: number | null;
+  base_url: string | null;
+  api_key: string | null;
+  api_key_env_var: string | null;
 }
 
 export type ProviderSyncStatus = 'idle' | 'success' | 'failed';

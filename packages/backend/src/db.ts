@@ -87,6 +87,11 @@ CREATE TABLE IF NOT EXISTS settings (
   openai_api_key TEXT,
   openai_base_url TEXT,
   active_ai_config_id TEXT,
+  knowledge_embedding_provider TEXT CHECK (knowledge_embedding_provider IN ('local-hash', 'openai-compatible')),
+  knowledge_embedding_model TEXT,
+  knowledge_embedding_dimensions INTEGER,
+  knowledge_embedding_api_key_env_var TEXT,
+  knowledge_embedding_base_url TEXT,
   global_session_prompt TEXT,
   skillsmp_api_token TEXT,
   updated_at INTEGER NOT NULL,
@@ -1827,6 +1832,24 @@ if (!settingsColumnNames.has('openai_base_url')) {
 }
 if (!settingsColumnNames.has('active_ai_config_id')) {
   db.exec('ALTER TABLE settings ADD COLUMN active_ai_config_id TEXT');
+}
+if (!settingsColumnNames.has('knowledge_embedding_provider')) {
+  db.exec(`
+    ALTER TABLE settings ADD COLUMN knowledge_embedding_provider TEXT
+      CHECK (knowledge_embedding_provider IN ('local-hash', 'openai-compatible'))
+  `);
+}
+if (!settingsColumnNames.has('knowledge_embedding_model')) {
+  db.exec('ALTER TABLE settings ADD COLUMN knowledge_embedding_model TEXT');
+}
+if (!settingsColumnNames.has('knowledge_embedding_dimensions')) {
+  db.exec('ALTER TABLE settings ADD COLUMN knowledge_embedding_dimensions INTEGER');
+}
+if (!settingsColumnNames.has('knowledge_embedding_api_key_env_var')) {
+  db.exec('ALTER TABLE settings ADD COLUMN knowledge_embedding_api_key_env_var TEXT');
+}
+if (!settingsColumnNames.has('knowledge_embedding_base_url')) {
+  db.exec('ALTER TABLE settings ADD COLUMN knowledge_embedding_base_url TEXT');
 }
 if (!settingsColumnNames.has('superpowers_bootstrap_owner')) {
   db.exec(`

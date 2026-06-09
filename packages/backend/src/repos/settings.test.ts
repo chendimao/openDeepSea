@@ -292,6 +292,143 @@ test('settingsRepo stores system planner settings while redacting api key respon
   assert.equal(settingsRepo.getLangChainPlannerSettings().openai_api_key, null);
 });
 
+test('settingsRepo stores knowledge embedding config while resolving runtime credentials safely', () => {
+  clearAiConfigs();
+  settingsRepo.updateSystem({
+    openai_api_key: null,
+    openai_base_url: null,
+  });
+
+  const updated = settingsRepo.updateSystem({
+    knowledge_embedding_provider: 'openai-compatible',
+    knowledge_embedding_model: 'text-embedding-3-small',
+    knowledge_embedding_dimensions: 1536,
+    knowledge_embedding_base_url: 'https://embeddings.example/v1',
+    knowledge_embedding_api_key_env_var: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+  });
+
+  assert.equal(updated.knowledge_embedding_provider, 'openai-compatible');
+  assert.equal(updated.knowledge_embedding_model, 'text-embedding-3-small');
+  assert.equal(updated.knowledge_embedding_dimensions, 1536);
+  assert.equal(updated.knowledge_embedding_base_url, 'https://embeddings.example/v1');
+  assert.equal(updated.knowledge_embedding_api_key_env_var, 'OPENDEEPSEA_EMBEDDING_API_KEY');
+  assert.equal('knowledge_embedding_api_key' in updated, false);
+
+  assert.deepEqual(settingsRepo.getKnowledgeEmbeddingSettings(), {
+    provider: 'openai-compatible',
+    model: 'text-embedding-3-small',
+    dimensions: 1536,
+    base_url: 'https://embeddings.example/v1',
+    api_key: null,
+    api_key_env_var: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+  });
+});
+
+test('settingsRepo resolves knowledge embedding credentials from active AI config', () => {
+  clearAiConfigs();
+  const active = settingsRepo.createAiConfig({
+    name: 'Embedding Runtime',
+    langchain_planner_model: 'planner-model',
+    openai_base_url: ' https://active-runtime.example/v1 ',
+    openai_api_key: ' sk-active-runtime1234 ',
+    activate: true,
+  });
+
+  settingsRepo.updateSystem({
+    knowledge_embedding_provider: 'openai-compatible',
+    knowledge_embedding_model: 'text-embedding-3-large',
+    knowledge_embedding_dimensions: 3072,
+    knowledge_embedding_base_url: '',
+    knowledge_embedding_api_key_env_var: '',
+  });
+
+  assert.equal(settingsRepo.getSystem().active_ai_config_id, active.id);
+  assert.deepEqual(settingsRepo.getKnowledgeEmbeddingSettings(), {
+    provider: 'openai-compatible',
+    model: 'text-embedding-3-large',
+    dimensions: 3072,
+    base_url: 'https://active-runtime.example/v1',
+    api_key: 'sk-active-runtime1234',
+    api_key_env_var: null,
+  });
+});
+
+test('settingsRepo lets knowledge embedding env var override active AI config key', () => {
+  clearAiConfigs();
+  settingsRepo.createAiConfig({
+    name: 'Embedding Env Override',
+    langchain_planner_model: 'planner-model',
+    openai_base_url: 'https://active-env-override.example/v1',
+    openai_api_key: 'sk-active-should-not-return',
+    activate: true,
+  });
+
+  settingsRepo.updateSystem({
+    knowledge_embedding_provider: 'openai-compatible',
+    knowledge_embedding_model: 'text-embedding-3-small',
+    knowledge_embedding_dimensions: 1536,
+    knowledge_embedding_base_url: '',
+    knowledge_embedding_api_key_env_var: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+  });
+
+  const system = settingsRepo.getSystem();
+  assert.equal('knowledge_embedding_api_key' in system, false);
+  assert.equal(JSON.stringify(system).includes('sk-active-should-not-return'), false);
+  assert.deepEqual(settingsRepo.getKnowledgeEmbeddingSettings(), {
+    provider: 'openai-compatible',
+    model: 'text-embedding-3-small',
+    dimensions: 1536,
+    base_url: 'https://active-env-override.example/v1',
+    api_key: null,
+    api_key_env_var: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+  });
+});
+
+test('settingsRepo normalizes knowledge embedding dimensions boundaries', () => {
+  settingsRepo.updateSystem({
+    knowledge_embedding_provider: 'openai-compatible',
+    knowledge_embedding_model: 'text-embedding-3-small',
+    knowledge_embedding_base_url: 'https://embedding-dimensions.example/v1',
+    knowledge_embedding_api_key_env_var: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+  });
+
+  for (const dimensions of [1, 8192]) {
+    const updated = settingsRepo.updateSystem({ knowledge_embedding_dimensions: dimensions });
+
+    assert.equal(updated.knowledge_embedding_dimensions, dimensions);
+    assert.equal(settingsRepo.getKnowledgeEmbeddingSettings().dimensions, dimensions);
+  }
+
+  for (const dimensions of [0, 8193, 1.5]) {
+    const updated = settingsRepo.updateSystem({ knowledge_embedding_dimensions: dimensions });
+
+    assert.equal(updated.knowledge_embedding_dimensions, null);
+    assert.equal(settingsRepo.getKnowledgeEmbeddingSettings().dimensions, null);
+  }
+});
+
+test('settingsRepo defaults knowledge embedding settings to local hash', () => {
+  clearAiConfigs();
+  settingsRepo.updateSystem({
+    openai_api_key: null,
+    openai_base_url: null,
+    knowledge_embedding_provider: null,
+    knowledge_embedding_model: null,
+    knowledge_embedding_dimensions: null,
+    knowledge_embedding_base_url: null,
+    knowledge_embedding_api_key_env_var: null,
+  });
+
+  assert.deepEqual(settingsRepo.getKnowledgeEmbeddingSettings(), {
+    provider: 'local-hash',
+    model: 'local-hash-v1',
+    dimensions: 256,
+    base_url: null,
+    api_key: null,
+    api_key_env_var: null,
+  });
+});
+
 test('settingsRepo stores trims and clears global session prompt', () => {
   const defaultSystem = settingsRepo.getSystem();
   assert.equal(defaultSystem.global_session_prompt, null);

@@ -3,6 +3,8 @@ import type {
   AcpBackend,
   AiConfig,
   EffectiveSettings,
+  KnowledgeEmbeddingProviderId,
+  KnowledgeEmbeddingSettings,
   LangChainPlannerSettings,
   MessageRoutingMode,
   ScopedSettings,
@@ -19,6 +21,9 @@ import { workflowDefinitionRepo } from './workflow-definitions.js';
 const SYSTEM_SCOPE_ID = 'default';
 const DEFAULT_FALLBACK_AGENT_ID = 'planner';
 const GLOBAL_SESSION_PROMPT_MAX_LENGTH = 12000;
+const LOCAL_HASH_EMBEDDING_MODEL = 'local-hash-v1';
+const LOCAL_HASH_EMBEDDING_DIMENSIONS = 256;
+const MAX_KNOWLEDGE_EMBEDDING_DIMENSIONS = 8192;
 
 const DEFAULT_SETTINGS: EffectiveSettings = {
   message_routing_mode: 'fallback_reply',
@@ -52,6 +57,11 @@ interface SystemSettingsRow extends ScopedSettings {
   openai_api_key: string | null;
   openai_base_url: string | null;
   active_ai_config_id: string | null;
+  knowledge_embedding_provider: string | null;
+  knowledge_embedding_model: string | null;
+  knowledge_embedding_dimensions: number | null;
+  knowledge_embedding_api_key_env_var: string | null;
+  knowledge_embedding_base_url: string | null;
   global_session_prompt: string | null;
 }
 
@@ -120,6 +130,11 @@ function getSystemRow(): SystemSettingsRow | null {
         openai_api_key,
         openai_base_url,
         active_ai_config_id,
+        knowledge_embedding_provider,
+        knowledge_embedding_model,
+        knowledge_embedding_dimensions,
+        knowledge_embedding_api_key_env_var,
+        knowledge_embedding_base_url,
         global_session_prompt,
         updated_at
       FROM settings
@@ -332,6 +347,19 @@ function normalizeAcpBackend(value: AcpBackend | string | null | undefined): Acp
   return null;
 }
 
+function normalizeKnowledgeEmbeddingProvider(
+  value: KnowledgeEmbeddingProviderId | string | null | undefined,
+): KnowledgeEmbeddingProviderId | null {
+  if (value === 'local-hash' || value === 'openai-compatible') return value;
+  return null;
+}
+
+function normalizeKnowledgeEmbeddingDimensions(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+  if (value < 1 || value > MAX_KNOWLEDGE_EMBEDDING_DIMENSIONS) return null;
+  return value;
+}
+
 function normalizeSuperpowersBootstrapOwner(
   value: SuperpowersBootstrapOwner | string | null | undefined,
 ): SuperpowersBootstrapOwner | null {
@@ -410,6 +438,11 @@ function normalizeSystem(settings: SystemSettingsRow | null): SystemSettings {
     openai_base_url: normalizedOptionalString(activeAiConfig?.openai_base_url ?? settings?.openai_base_url),
     openai_api_key_set: Boolean(openaiApiKey),
     openai_api_key_preview: openaiApiKeyPreview,
+    knowledge_embedding_provider: normalizeKnowledgeEmbeddingProvider(settings?.knowledge_embedding_provider),
+    knowledge_embedding_model: normalizedOptionalString(settings?.knowledge_embedding_model),
+    knowledge_embedding_dimensions: normalizeKnowledgeEmbeddingDimensions(settings?.knowledge_embedding_dimensions),
+    knowledge_embedding_base_url: normalizedOptionalString(settings?.knowledge_embedding_base_url),
+    knowledge_embedding_api_key_env_var: normalizedOptionalString(settings?.knowledge_embedding_api_key_env_var),
     global_session_prompt: normalizeGlobalSessionPrompt(settings?.global_session_prompt),
   };
 }
@@ -461,6 +494,11 @@ export const settingsRepo = {
     langchain_planner_model?: string | null;
     openai_api_key?: string | null;
     openai_base_url?: string | null;
+    knowledge_embedding_provider?: KnowledgeEmbeddingProviderId | null;
+    knowledge_embedding_model?: string | null;
+    knowledge_embedding_dimensions?: number | null;
+    knowledge_embedding_base_url?: string | null;
+    knowledge_embedding_api_key_env_var?: string | null;
     superpowers_bootstrap_owner?: SuperpowersBootstrapOwner;
     workspace_excluded_dirs?: string[] | null;
     global_session_prompt?: string | null;
@@ -496,6 +534,26 @@ export const settingsRepo = {
       patch.openai_base_url === undefined
         ? normalizedOptionalString(existing?.openai_base_url)
         : normalizedOptionalString(patch.openai_base_url);
+    const knowledgeEmbeddingProvider =
+      patch.knowledge_embedding_provider === undefined
+        ? normalizeKnowledgeEmbeddingProvider(existing?.knowledge_embedding_provider)
+        : normalizeKnowledgeEmbeddingProvider(patch.knowledge_embedding_provider);
+    const knowledgeEmbeddingModel =
+      patch.knowledge_embedding_model === undefined
+        ? normalizedOptionalString(existing?.knowledge_embedding_model)
+        : normalizedOptionalString(patch.knowledge_embedding_model);
+    const knowledgeEmbeddingDimensions =
+      patch.knowledge_embedding_dimensions === undefined
+        ? normalizeKnowledgeEmbeddingDimensions(existing?.knowledge_embedding_dimensions)
+        : normalizeKnowledgeEmbeddingDimensions(patch.knowledge_embedding_dimensions);
+    const knowledgeEmbeddingBaseUrl =
+      patch.knowledge_embedding_base_url === undefined
+        ? normalizedOptionalString(existing?.knowledge_embedding_base_url)
+        : normalizedOptionalString(patch.knowledge_embedding_base_url);
+    const knowledgeEmbeddingApiKeyEnvVar =
+      patch.knowledge_embedding_api_key_env_var === undefined
+        ? normalizedOptionalString(existing?.knowledge_embedding_api_key_env_var)
+        : normalizedOptionalString(patch.knowledge_embedding_api_key_env_var);
     const superpowersBootstrapOwner =
       patch.superpowers_bootstrap_owner === undefined
         ? normalizeSuperpowersBootstrapOwner(existing?.superpowers_bootstrap_owner)
@@ -529,12 +587,17 @@ export const settingsRepo = {
         openai_api_key,
         openai_base_url,
         active_ai_config_id,
+        knowledge_embedding_provider,
+        knowledge_embedding_model,
+        knowledge_embedding_dimensions,
+        knowledge_embedding_api_key_env_var,
+        knowledge_embedding_base_url,
         superpowers_bootstrap_owner,
         workspace_excluded_dirs,
         global_session_prompt,
         updated_at
       )
-       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES ('system', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(scope, scope_id) DO UPDATE SET
          message_routing_mode = excluded.message_routing_mode,
          fallback_agent_id = excluded.fallback_agent_id,
@@ -545,6 +608,11 @@ export const settingsRepo = {
          openai_api_key = excluded.openai_api_key,
          openai_base_url = excluded.openai_base_url,
          active_ai_config_id = excluded.active_ai_config_id,
+         knowledge_embedding_provider = excluded.knowledge_embedding_provider,
+         knowledge_embedding_model = excluded.knowledge_embedding_model,
+         knowledge_embedding_dimensions = excluded.knowledge_embedding_dimensions,
+         knowledge_embedding_api_key_env_var = excluded.knowledge_embedding_api_key_env_var,
+         knowledge_embedding_base_url = excluded.knowledge_embedding_base_url,
          superpowers_bootstrap_owner = excluded.superpowers_bootstrap_owner,
          workspace_excluded_dirs = excluded.workspace_excluded_dirs,
          global_session_prompt = excluded.global_session_prompt,
@@ -560,6 +628,11 @@ export const settingsRepo = {
       openaiApiKey,
       openaiBaseUrl,
       shouldClearActiveAiConfig ? null : existing?.active_ai_config_id ?? null,
+      knowledgeEmbeddingProvider,
+      knowledgeEmbeddingModel,
+      knowledgeEmbeddingDimensions,
+      knowledgeEmbeddingApiKeyEnvVar,
+      knowledgeEmbeddingBaseUrl,
       superpowersBootstrapOwner ?? DEFAULT_SETTINGS.superpowers_bootstrap_owner,
       workspaceExcludedDirs,
       globalSessionPrompt,
@@ -584,6 +657,37 @@ export const settingsRepo = {
       langchain_planner_model: normalizedOptionalString(settings?.langchain_planner_model),
       openai_api_key: normalizedOptionalString(settings?.openai_api_key),
       openai_base_url: normalizedOptionalString(settings?.openai_base_url),
+    };
+  },
+
+  getKnowledgeEmbeddingSettings(): KnowledgeEmbeddingSettings {
+    normalizeLegacyRouting();
+    const settings = getSystemRow();
+    const provider = normalizeKnowledgeEmbeddingProvider(settings?.knowledge_embedding_provider) ?? 'local-hash';
+
+    if (provider === 'local-hash') {
+      return {
+        provider,
+        model: LOCAL_HASH_EMBEDDING_MODEL,
+        dimensions: LOCAL_HASH_EMBEDDING_DIMENSIONS,
+        base_url: null,
+        api_key: null,
+        api_key_env_var: null,
+      };
+    }
+
+    const activeAiConfig = resolveActiveAiConfig(settings);
+    const apiKeyEnvVar = normalizedOptionalString(settings?.knowledge_embedding_api_key_env_var);
+    return {
+      provider,
+      model: normalizedOptionalString(settings?.knowledge_embedding_model),
+      dimensions: normalizeKnowledgeEmbeddingDimensions(settings?.knowledge_embedding_dimensions),
+      base_url: normalizedOptionalString(settings?.knowledge_embedding_base_url)
+        ?? normalizedOptionalString(activeAiConfig?.openai_base_url ?? settings?.openai_base_url),
+      api_key: apiKeyEnvVar
+        ? null
+        : normalizedOptionalString(activeAiConfig?.openai_api_key ?? settings?.openai_api_key),
+      api_key_env_var: apiKeyEnvVar,
     };
   },
 

@@ -7,10 +7,14 @@ export interface KnowledgeEmbeddingProvider {
   id: string;
   model: string;
   dimensions: number;
-  embed(text: string): number[];
+  embed(text: string, options?: { signal?: AbortSignal }): number[] | Promise<number[]>;
 }
 
-export function createLocalHashEmbeddingProvider(input: { dimensions?: number } = {}): KnowledgeEmbeddingProvider {
+export interface SyncKnowledgeEmbeddingProvider extends KnowledgeEmbeddingProvider {
+  embed(text: string, options?: { signal?: AbortSignal }): number[];
+}
+
+export function createLocalHashEmbeddingProvider(input: { dimensions?: number } = {}): SyncKnowledgeEmbeddingProvider {
   const dimensions = Math.max(8, Math.trunc(input.dimensions ?? 256));
   return {
     id: 'local-hash',
@@ -46,12 +50,16 @@ export function cosineSimilarity(left: number[], right: number[]): number {
 
 export function rebuildSourceEmbeddings(
   sourceId: string,
-  provider: KnowledgeEmbeddingProvider = createLocalHashEmbeddingProvider(),
+  provider: SyncKnowledgeEmbeddingProvider = createLocalHashEmbeddingProvider(),
 ): number {
   const source = knowledgeRepo.getSource(sourceId);
   if (!source) throw new Error('knowledge source not found');
   const chunks = knowledgeRepo.listChunks(source.id).filter((chunk) => chunk.enabled === 1);
   for (const chunk of chunks) {
+    const vector = provider.embed(buildEmbeddingText(source.title, chunk));
+    if (isPromiseLike(vector)) {
+      throw new Error('async embedding providers are not supported by rebuildSourceEmbeddings yet');
+    }
     knowledgeRepo.upsertChunkEmbedding({
       chunk_id: chunk.id,
       source_id: source.id,
@@ -59,7 +67,7 @@ export function rebuildSourceEmbeddings(
       provider: provider.id,
       model: provider.model,
       dimensions: provider.dimensions,
-      vector: provider.embed(buildEmbeddingText(source.title, chunk)),
+      vector,
       content_hash: hashText(chunk.content),
     });
   }
@@ -83,4 +91,8 @@ function normalizeVector(vector: number[]): number[] {
   const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
   if (norm === 0) return vector;
   return vector.map((value) => Number((value / norm).toFixed(8)));
+}
+
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+  return typeof value === 'object' && value !== null && 'then' in value && typeof value.then === 'function';
 }

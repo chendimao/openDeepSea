@@ -51,7 +51,7 @@
 - Modify: `packages/backend/src/repos/settings.ts`
 - Test: `packages/backend/src/repos/settings.test.ts`
 
-- [ ] **Step 1: Write failing settings repository test**
+- [x] **Step 1: Write failing settings repository test**
 
 Add to `packages/backend/src/repos/settings.test.ts`:
 
@@ -83,7 +83,7 @@ test('settingsRepo stores knowledge embedding config while redacting credential 
 });
 ```
 
-- [ ] **Step 2: Run failing test**
+- [x] **Step 2: Run failing test**
 
 Run:
 
@@ -94,7 +94,7 @@ cd packages/backend
 
 Expected: FAIL with TypeScript/runtime errors for missing `knowledge_embedding_*` fields and `getKnowledgeEmbeddingSettings()`.
 
-- [ ] **Step 3: Add backend types**
+- [x] **Step 3: Add backend types**
 
 In `packages/backend/src/types.ts`, add:
 
@@ -121,7 +121,7 @@ knowledge_embedding_base_url: string | null;
 knowledge_embedding_api_key_env_var: string | null;
 ```
 
-- [ ] **Step 4: Add database columns and migrations**
+- [x] **Step 4: Add database columns and migrations**
 
 In `packages/backend/src/db.ts`, add columns to `CREATE TABLE IF NOT EXISTS settings`:
 
@@ -156,7 +156,7 @@ if (!settingsColumnNames.has('knowledge_embedding_base_url')) {
 }
 ```
 
-- [ ] **Step 5: Implement settings repository support**
+- [x] **Step 5: Implement settings repository support**
 
 In `packages/backend/src/repos/settings.ts`, extend `SystemSettingsRow`:
 
@@ -212,7 +212,7 @@ getKnowledgeEmbeddingSettings(): KnowledgeEmbeddingSettings {
 }
 ```
 
-- [ ] **Step 6: Run settings test**
+- [x] **Step 6: Run settings test**
 
 Run:
 
@@ -223,7 +223,7 @@ cd packages/backend
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 1**
+- [x] **Step 7: Commit Task 1**
 
 ```bash
 git add packages/backend/src/db.ts packages/backend/src/types.ts packages/backend/src/repos/settings.ts packages/backend/src/repos/settings.test.ts
@@ -239,7 +239,7 @@ git commit -m "feat(knowledge): 增加embedding配置存储"
 - Create: `packages/backend/src/knowledge-embedding-provider.ts`
 - Test: `packages/backend/src/knowledge-embedding-provider.test.ts`
 
-- [ ] **Step 1: Write failing provider tests**
+- [x] **Step 1: Write failing provider tests**
 
 Create `packages/backend/src/knowledge-embedding-provider.test.ts`:
 
@@ -313,7 +313,7 @@ test('provider test uses active AI config and redacts upstream errors', async ()
 });
 ```
 
-- [ ] **Step 2: Run failing provider tests**
+- [x] **Step 2: Run failing provider tests**
 
 Run:
 
@@ -324,7 +324,7 @@ cd packages/backend
 
 Expected: FAIL because `knowledge-embedding-provider.ts` does not exist.
 
-- [ ] **Step 3: Make provider interface async-compatible**
+- [x] **Step 3: Make provider interface async-compatible**
 
 In `packages/backend/src/knowledge-embedding.ts`, change:
 
@@ -340,7 +340,7 @@ embed(text: string, options?: { signal?: AbortSignal }): number[] | Promise<numb
 
 Keep `createLocalHashEmbeddingProvider()` returning a synchronous vector.
 
-- [ ] **Step 4: Create provider registry**
+- [x] **Step 4: Create provider registry**
 
 Create `packages/backend/src/knowledge-embedding-provider.ts` with:
 
@@ -449,7 +449,7 @@ export function createOpenAICompatibleEmbeddingProvider(input: {
 }
 ```
 
-- [ ] **Step 5: Implement provider test helper**
+- [x] **Step 5: Implement provider test helper**
 
 Add:
 
@@ -469,7 +469,7 @@ export async function testKnowledgeEmbeddingProvider(input: {
 }
 ```
 
-- [ ] **Step 6: Run provider tests**
+- [x] **Step 6: Run provider tests**
 
 Run:
 
@@ -480,7 +480,7 @@ cd packages/backend
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 ```bash
 git add packages/backend/src/knowledge-embedding.ts packages/backend/src/knowledge-embedding-provider.ts packages/backend/src/knowledge-embedding-provider.test.ts
