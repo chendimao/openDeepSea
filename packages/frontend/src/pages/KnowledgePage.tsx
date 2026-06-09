@@ -44,6 +44,8 @@ import {
   summarizeKnowledgeStats,
   type KnowledgeChunk,
   type KnowledgeExtraction,
+  buildKnowledgeImportFeedback,
+  type KnowledgeImportFeedback,
   type KnowledgeImportResult,
   type KnowledgeInsightsSummary,
   type KnowledgeLocale,
@@ -417,10 +419,11 @@ export function KnowledgePage(): JSX.Element {
         roomId,
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       await invalidateKnowledgeQueries(queryClient, selectedProjectId);
-      setImportDialog(null);
-      toast.success('已导入知识资源');
+      const feedback = buildKnowledgeImportFeedback(result);
+      if (feedback.tone !== 'error') setImportDialog(null);
+      showKnowledgeImportFeedback(feedback);
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -1741,6 +1744,19 @@ function formatRankingValue(value: number | undefined): string {
 async function copyKnowledgeReference(source: KnowledgeSource): Promise<void> {
   await navigator.clipboard.writeText(`knowledge:${source.id}`);
   toast.success('已复制知识引用 ID', { description: `knowledge:${source.id}` });
+}
+
+function showKnowledgeImportFeedback(feedback: KnowledgeImportFeedback): void {
+  const options = feedback.description ? { description: feedback.description } : undefined;
+  if (feedback.tone === 'warning') {
+    toast.warning(feedback.title, options);
+    return;
+  }
+  if (feedback.tone === 'error') {
+    toast.error(feedback.title, options);
+    return;
+  }
+  toast.success(feedback.title, options);
 }
 
 function knowledgeDetailToPreviewFile(detail: KnowledgeSourceDetail): ProjectFile | null {

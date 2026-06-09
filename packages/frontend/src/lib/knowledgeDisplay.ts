@@ -249,6 +249,14 @@ export interface WorkspaceKnowledgeImportResult {
   failed: Array<{ path: string; error: string }>;
 }
 
+export type KnowledgeImportFeedbackTone = 'success' | 'warning' | 'error';
+
+export interface KnowledgeImportFeedback {
+  tone: KnowledgeImportFeedbackTone;
+  title: string;
+  description?: string;
+}
+
 export interface KnowledgeSourceFilters {
   keyword?: string;
   status?: KnowledgeSourceStatus | '';
@@ -267,6 +275,52 @@ export interface KnowledgeStats {
   failed: number;
   chunks: number;
   totalSize: number;
+}
+
+export function buildKnowledgeImportFeedback(
+  result: KnowledgeImportResult | WorkspaceKnowledgeImportResult,
+): KnowledgeImportFeedback {
+  if (!isWorkspaceKnowledgeImportResult(result)) {
+    return { tone: 'success', title: '已导入知识资源' };
+  }
+
+  const createdCount = result.created.length;
+  const failedCount = result.failed.length;
+  if (failedCount === 0) {
+    return {
+      tone: 'success',
+      title: '已导入知识资源',
+      description: createdCount > 0 ? `已导入 ${createdCount} 个工作区文档。` : undefined,
+    };
+  }
+
+  const description = [
+    createdCount > 0
+      ? `已导入 ${createdCount} 个，${failedCount} 个失败。`
+      : `没有导入任何工作区文档，${failedCount} 个路径失败。`,
+    formatWorkspaceImportFailures(result.failed),
+  ].filter(Boolean).join('\n');
+
+  return {
+    tone: createdCount > 0 ? 'warning' : 'error',
+    title: createdCount > 0 ? '工作区文档部分导入' : '工作区文档导入失败',
+    description,
+  };
+}
+
+function isWorkspaceKnowledgeImportResult(
+  result: KnowledgeImportResult | WorkspaceKnowledgeImportResult,
+): result is WorkspaceKnowledgeImportResult {
+  return Array.isArray((result as WorkspaceKnowledgeImportResult).created)
+    && Array.isArray((result as WorkspaceKnowledgeImportResult).failed);
+}
+
+function formatWorkspaceImportFailures(failures: WorkspaceKnowledgeImportResult['failed']): string {
+  const visibleFailures = failures.slice(0, 3).map((item) => `${item.path}: ${item.error}`);
+  if (failures.length > visibleFailures.length) {
+    visibleFailures.push(`另有 ${failures.length - visibleFailures.length} 个路径失败。`);
+  }
+  return visibleFailures.join('\n');
 }
 
 const KNOWLEDGE_STATUS_DISPLAY: Record<KnowledgeSourceStatus, Record<KnowledgeLocale, string> & {

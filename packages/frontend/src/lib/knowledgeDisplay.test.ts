@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildKnowledgeImportFeedback,
   filterKnowledgeSources,
   getKnowledgeRetrievalModeDisplay,
   getKnowledgeStatusFilterOptions,
@@ -99,6 +100,31 @@ test('knowledge retrieval mode display maps labels and sort order', () => {
     ),
     ['keyword', 'vector_preview', 'hybrid'],
   );
+});
+
+test('knowledge import feedback surfaces workspace partial and full failures', () => {
+  const partial = buildKnowledgeImportFeedback({
+    created: [createSource({ id: 'workspace-doc-1', source_type: 'workspace_doc' })],
+    failed: [
+      { path: 'huge.md', error: 'WORKSPACE_FILE_TOO_LARGE' },
+      { path: 'binary.bin', error: 'WORKSPACE_FILE_BINARY' },
+    ],
+  });
+
+  assert.equal(partial.tone, 'warning');
+  assert.equal(partial.title, '工作区文档部分导入');
+  assert.match(partial.description ?? '', /已导入 1 个/);
+  assert.match(partial.description ?? '', /2 个失败/);
+  assert.match(partial.description ?? '', /huge\.md: WORKSPACE_FILE_TOO_LARGE/);
+
+  const failed = buildKnowledgeImportFeedback({
+    created: [],
+    failed: [{ path: '.env.local', error: 'WORKSPACE_PATH_IGNORED' }],
+  });
+
+  assert.equal(failed.tone, 'error');
+  assert.equal(failed.title, '工作区文档导入失败');
+  assert.match(failed.description ?? '', /\.env\.local: WORKSPACE_PATH_IGNORED/);
 });
 
 test('knowledge insights summarize actionable counts', () => {
