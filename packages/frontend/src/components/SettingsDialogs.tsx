@@ -71,11 +71,8 @@ type SettingsPatch = {
 };
 
 type SystemSettingsSavePatch = {
-  message_routing_mode: MessageRoutingMode;
-  fallback_agent_id: string | null;
   interaction_mode: TaskInteractionMode;
   auto_distill_enabled: boolean;
-  superpowers_bootstrap_owner: SuperpowersBootstrapOwner;
   workspace_excluded_dirs?: string[];
   global_session_prompt?: string | null;
   langchain_planner_model?: string | null;
@@ -196,11 +193,6 @@ export function SystemSettingsDialog({
     queryFn: api.getProviderConfigs,
     enabled: open,
   });
-  const { data: agents = [] } = useQuery({
-    queryKey: ['agents'],
-    queryFn: api.listAgents,
-    enabled: open,
-  });
   const save = useMutation({
     mutationFn: api.updateSystemSettings,
     onSuccess: () => {
@@ -221,14 +213,13 @@ export function SystemSettingsDialog({
         className="max-h-[88vh] w-[min(94vw,900px)] overflow-y-auto"
       >
         <SystemSettingsForm
-          key={`${settings.message_routing_mode}:${settings.fallback_agent_id ?? ''}:${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.active_ai_config_id ?? ''}:${settings.global_session_prompt ?? ''}:${aiConfigs?.items.length ?? 0}`}
+          key={`${settings.interaction_mode}:${settings.auto_distill_enabled}:${settings.active_ai_config_id ?? ''}:${settings.global_session_prompt ?? ''}:${aiConfigs?.items.length ?? 0}`}
           theme={theme}
           value={settings}
           aiConfigs={aiConfigs ?? { active_ai_config_id: settings.active_ai_config_id, items: settings.ai_configs ?? [] }}
           providerConfigs={providerConfigs ?? null}
           isProviderConfigsLoading={isProviderConfigsLoading}
           providerConfigsError={providerConfigsError instanceof Error ? providerConfigsError.message : null}
-          fallbackOptions={toGlobalFallbackOptions(agents)}
           isSaving={save.isPending}
           onThemeChange={onThemeChange}
           onSave={(patch) => save.mutate(patch)}
@@ -297,7 +288,6 @@ export function SystemSettingsForm({
   providerConfigs,
   isProviderConfigsLoading,
   providerConfigsError,
-  fallbackOptions,
   isSaving,
   activeCategory: controlledActiveCategory,
   onActiveCategoryChange,
@@ -311,7 +301,6 @@ export function SystemSettingsForm({
   providerConfigs: ProviderConfigList | null;
   isProviderConfigsLoading: boolean;
   providerConfigsError: string | null;
-  fallbackOptions: FallbackAgentOption[];
   isSaving: boolean;
   activeCategory?: SystemSettingsCategory;
   onActiveCategoryChange?: (category: SystemSettingsCategory) => void;
@@ -319,13 +308,8 @@ export function SystemSettingsForm({
   onThemeChange: (theme: ThemeMode) => void;
   onSave: (patch: SystemSettingsSavePatch) => void;
 }): JSX.Element {
-  const [routingMode, setRoutingMode] = useState<MessageRoutingMode>(value.message_routing_mode);
-  const [fallbackAgentId, setFallbackAgentId] = useState(value.fallback_agent_id ?? 'planner');
   const [interactionMode, setInteractionMode] = useState<TaskInteractionMode>(value.interaction_mode);
   const [autoDistillEnabled, setAutoDistillEnabled] = useState(value.auto_distill_enabled);
-  const [superpowersBootstrapOwner, setSuperpowersBootstrapOwner] = useState<SuperpowersBootstrapOwner>(
-    value.superpowers_bootstrap_owner,
-  );
   const [workspaceExcludedDirs, setWorkspaceExcludedDirs] = useState<string[]>(value.workspace_excluded_dirs ?? []);
   const [globalSessionPrompt, setGlobalSessionPrompt] = useState(value.global_session_prompt ?? '');
   const [selectedAiConfigId, setSelectedAiConfigId] = useState<string | null>(
@@ -347,9 +331,7 @@ export function SystemSettingsForm({
   const { t } = useI18n();
   const activeCategory = controlledActiveCategory ?? internalActiveCategory;
   const setActiveCategory = onActiveCategoryChange ?? setInternalActiveCategory;
-  const requiresFallback = routingMode !== 'mentions_only';
   const isGlobalSessionPromptOverLimit = globalSessionPrompt.length > GLOBAL_SESSION_PROMPT_LIMIT;
-  const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
   const selectedAiConfig = aiConfigs.items.find((item) => item.id === selectedAiConfigId) ?? null;
   const activeAiConfig = aiConfigs.items.find((item) => item.id === aiConfigs.active_ai_config_id) ?? null;
   const refreshAiConfigQueries = async () => {
@@ -676,14 +658,11 @@ export function SystemSettingsForm({
       footer={
         <Button
           type="button"
-          disabled={isSaving || isGlobalSessionPromptOverLimit || (requiresFallback && !selectedFallbackAgentId)}
+          disabled={isSaving || isGlobalSessionPromptOverLimit}
           onClick={() => {
             const patch: SystemSettingsSavePatch = {
-              message_routing_mode: routingMode,
-              fallback_agent_id: requiresFallback ? selectedFallbackAgentId : null,
               interaction_mode: interactionMode,
               auto_distill_enabled: autoDistillEnabled,
-              superpowers_bootstrap_owner: superpowersBootstrapOwner,
               workspace_excluded_dirs: workspaceExcludedDirs,
               global_session_prompt: buildGlobalSessionPromptSaveValue(globalSessionPrompt),
             };
@@ -789,16 +768,6 @@ export function SystemSettingsForm({
                 description={t('settings.collaborationDefaultsDescription')}
                 icon={<Bot className="h-4 w-4" strokeWidth={1.75} />}
               >
-                <RoutingSection
-                  mode={routingMode}
-                  fallbackAgentId={fallbackAgentId}
-                  fallbackOptions={fallbackOptions}
-                  inheritedLabel={null}
-                  onModeChange={(mode) => {
-                    if (mode !== 'inherit') setRoutingMode(mode);
-                  }}
-                  onFallbackAgentChange={setFallbackAgentId}
-                />
                 <InteractionSection
                   mode={interactionMode}
                   inheritedLabel={null}
@@ -811,13 +780,6 @@ export function SystemSettingsForm({
                   inheritedLabel={null}
                   onModeChange={(mode) => {
                     if (mode !== 'inherit') setAutoDistillEnabled(mode);
-                  }}
-                />
-                <SuperpowersBootstrapSection
-                  mode={superpowersBootstrapOwner}
-                  inheritedLabel={null}
-                  onModeChange={(mode) => {
-                    if (mode !== 'inherit') setSuperpowersBootstrapOwner(mode);
                   }}
                 />
               </SubSettingSection>

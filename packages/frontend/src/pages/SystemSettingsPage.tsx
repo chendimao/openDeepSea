@@ -15,10 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
-import type {
-  Agent,
-  SystemSettings,
-} from '../lib/types';
+import type { SystemSettings } from '../lib/types';
 import type { ThemeMode } from '../lib/theme';
 import { cn } from '../lib/utils';
 import {
@@ -33,11 +30,6 @@ type SettingsCategory =
   | 'security'
   | 'notifications'
   | 'experiments';
-
-type FallbackAgentOption = {
-  agent_id: string;
-  agent_name: string;
-};
 
 const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   message_routing_mode: 'fallback_reply',
@@ -67,7 +59,7 @@ const sidebarItems: Array<{
 }> = [
   { value: 'general', label: '通用设置', description: '主题、明暗模式与语言', icon: Settings },
   { value: 'sessionPrompt', label: '会话提示词', description: '全局系统提示注入', icon: FileText },
-  { value: 'chat', label: '聊天设置', description: '消息回复、排除目录与协作默认行为', icon: MessageSquare },
+  { value: 'chat', label: '聊天设置', description: '交互策略、记忆沉淀与排除目录', icon: MessageSquare },
   { value: 'model', label: '模型 / AI', description: 'Provider、模型、Base URL 与 API Key', icon: Sparkles },
   { value: 'tools', label: '工具与集成', description: '预留扩展', icon: Blocks },
   { value: 'security', label: '安全与权限', description: '预留扩展', icon: LockKeyhole },
@@ -102,11 +94,6 @@ export function SystemSettingsPage({
     queryKey: ['settings', 'provider-configs'],
     queryFn: api.getProviderConfigs,
   });
-  const { data: agents = [] } = useQuery({
-    queryKey: ['agents'],
-    queryFn: api.listAgents,
-  });
-  const fallbackOptions = useMemo(() => toGlobalFallbackOptions(agents), [agents]);
   const visibleSidebarItems = useMemo(
     () => sidebarItems.filter((item) => matchesSidebarItem(item, searchText)),
     [searchText],
@@ -157,7 +144,6 @@ export function SystemSettingsPage({
                 providerConfigs={providerConfigs ?? null}
                 isProviderConfigsLoading={isProviderConfigsLoading}
                 providerConfigsError={providerConfigsError instanceof Error ? providerConfigsError.message : null}
-                fallbackOptions={fallbackOptions}
                 isSaving={save.isPending}
                 activeCategory={activeSystemCategory}
                 hideCategoryNavigation
@@ -299,24 +285,11 @@ function matchesSidebarItem(item: (typeof sidebarItems)[number], searchText: str
 
 function buildSettingsFormKey(settings: SystemSettings, aiConfigCount: number): string {
   return [
-    settings.message_routing_mode,
-    settings.fallback_agent_id ?? '',
     settings.interaction_mode,
     String(settings.auto_distill_enabled),
-    settings.superpowers_bootstrap_owner,
     settings.active_ai_config_id ?? '',
     settings.global_session_prompt ?? '',
     settings.workspace_excluded_dirs.join(','),
     String(aiConfigCount),
   ].join(':');
-}
-
-function toGlobalFallbackOptions(agents: Agent[]): FallbackAgentOption[] {
-  const options = agents
-    .map((agent) => ({ agent_id: agent.agent_id, agent_name: agent.name }))
-    .sort((a, b) => a.agent_name.localeCompare(b.agent_name))
-    .filter((agent, index, list) => list.findIndex((item) => item.agent_id === agent.agent_id) === index);
-
-  if (options.some((option) => option.agent_id === 'planner')) return options;
-  return [{ agent_id: 'planner', agent_name: '规划师' }, ...options];
 }
