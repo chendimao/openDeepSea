@@ -9,6 +9,7 @@ import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
   buildVisualCompanionAcceptanceSubmit,
+  recordVisualCompanionOfferAccepted,
   shouldShowVisualCompanionAction,
   buildProjectReorderInput,
   buildSessionKnowledgeActionKey,
@@ -255,6 +256,15 @@ test('shouldShowVisualCompanionAction hides accepted visual companion offers', (
     content: offer,
     accepted: false,
   }), false);
+});
+
+test('recordVisualCompanionOfferAccepted rejects repeated clicks for the same offer', () => {
+  const acceptedKeys = new Set<string>();
+
+  assert.equal(recordVisualCompanionOfferAccepted(acceptedKeys, 'message:offer-1'), true);
+  assert.equal(recordVisualCompanionOfferAccepted(acceptedKeys, 'message:offer-1'), false);
+  assert.equal(recordVisualCompanionOfferAccepted(acceptedKeys, 'run:offer-1'), true);
+  assert.deepEqual([...acceptedKeys], ['message:offer-1', 'run:offer-1']);
 });
 
 test('SessionShell renders a visual companion accept button for run output offers', () => {

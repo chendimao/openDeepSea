@@ -86,6 +86,12 @@ export function buildVisualCompanionAcceptanceSubmit(): SessionComposerSubmit {
   return { content: VISUAL_COMPANION_ACCEPTANCE_MESSAGE };
 }
 
+export function recordVisualCompanionOfferAccepted(acceptedKeys: Set<string>, offerKey: string): boolean {
+  if (acceptedKeys.has(offerKey)) return false;
+  acceptedKeys.add(offerKey);
+  return true;
+}
+
 export function shouldShowVisualCompanionAction(input: {
   role: SessionMessage['role'];
   displayMode: SessionMessageDisplayMode;
@@ -860,8 +866,7 @@ function TranscriptCanvas({
     setDisplayModes((current) => ({ ...current, [key]: mode }));
   };
   const acceptVisualCompanionOffer = (offerKey: string): void => {
-    if (acceptedVisualCompanionOfferKeysRef.current.has(offerKey)) return;
-    acceptedVisualCompanionOfferKeysRef.current.add(offerKey);
+    if (!recordVisualCompanionOfferAccepted(acceptedVisualCompanionOfferKeysRef.current, offerKey)) return;
     setAcceptedVisualCompanionOfferKeys(new Set(acceptedVisualCompanionOfferKeysRef.current));
     onSendMessage(buildVisualCompanionAcceptanceSubmit());
   };
