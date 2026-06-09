@@ -45,10 +45,10 @@ test('AppShell renders the shared Deepsea header with system settings entry', ()
   assert.doesNotMatch(html, /projects\/project-1\/rooms/);
 });
 
-test('AppShell keeps profile avatar on non-session routes', () => {
+test('AppShell omits profile avatar on non-session routes', () => {
   const html = renderAppShell('/agents');
 
-  assert.match(html, /alt="Profile"/);
+  assert.doesNotMatch(html, /alt="Profile"/);
 });
 
 test('AppShell renders the shared header on knowledge routes', () => {
