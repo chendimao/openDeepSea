@@ -9,6 +9,7 @@ import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
   buildProjectReorderInput,
+  buildSessionKnowledgeActionKey,
   buildTranscriptFollowKey,
   buildSessionRunTranscriptItems,
   getLatestUserMessageKey,
@@ -162,30 +163,123 @@ test('SessionShell renders uploaded attachments on transcript messages', () => {
   assert.match(html, /2\.0 KB/);
 });
 
-test('SessionShell renders save knowledge action on transcript messages', () => {
+test('SessionShell renders save knowledge action only on assistant transcript messages', () => {
   const payload = createPayload();
-  const savedMessageIds: string[] = [];
+  const userMessage = payload.activeSession.messages[0]!;
+  payload.activeSession.messages = [
+    {
+      ...userMessage,
+      id: 'message-user',
+      role: 'user',
+      sender_id: 'user',
+      sender_name: '大哥',
+      content: '请整理这段上下文。',
+    },
+    {
+      ...userMessage,
+      id: 'message-system',
+      role: 'system',
+      sender_id: 'system',
+      sender_name: '系统',
+      content: '系统提示内容。',
+      created_at: userMessage.created_at + 1,
+    },
+    {
+      ...userMessage,
+      id: 'message-assistant',
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: '## 结论\n\n可以沉淀为长期上下文。',
+      created_at: userMessage.created_at + 2,
+    },
+  ];
+  payload.activeSession.runs = [];
+  const savedKeys: string[] = [];
 
   const html = renderSessionShell(payload, {
-    onSaveKnowledge: (message) => savedMessageIds.push(message.id),
+    onSaveKnowledge: (input) => savedKeys.push(input.key),
   });
 
+  assert.match(html, /aria-label="保存消息为知识"/);
   assert.match(html, /保存为知识/);
+  assert.equal((html.match(/保存为知识/g) ?? []).length, 1);
   assert.match(html, /class="deepsea-message__action"/);
   assert.doesNotMatch(html, /保存中/);
-  assert.deepEqual(savedMessageIds, []);
+  assert.deepEqual(savedKeys, []);
 });
 
-test('SessionShell disables the save knowledge action while saving a message', () => {
+test('SessionShell renders copy action on user system and assistant messages', () => {
+  const payload = createPayload();
+  const baseMessage = payload.activeSession.messages[0]!;
+  payload.activeSession.messages = [
+    {
+      ...baseMessage,
+      id: 'message-user',
+      role: 'user',
+      sender_id: 'user',
+      sender_name: '大哥',
+      content: '用户消息',
+    },
+    {
+      ...baseMessage,
+      id: 'message-system',
+      role: 'system',
+      sender_id: 'system',
+      sender_name: '系统',
+      content: '系统消息',
+      created_at: baseMessage.created_at + 1,
+    },
+    {
+      ...baseMessage,
+      id: 'message-assistant',
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: '智能体回复',
+      created_at: baseMessage.created_at + 2,
+    },
+  ];
+  payload.activeSession.runs = [];
+
+  const html = renderSessionShell(payload);
+
+  assert.equal((html.match(/aria-label="复制消息内容"/g) ?? []).length, 3);
+  assert.equal((html.match(/>复制</g) ?? []).length, 3);
+});
+
+test('SessionShell disables the save knowledge action while saving a message action key', () => {
   const payload = createPayload();
 
   const html = renderSessionShell(payload, {
     onSaveKnowledge: () => undefined,
-    savingKnowledgeMessageId: 'message-1',
+    savingKnowledgeKey: 'message:message-1',
   });
 
   assert.match(html, /保存中/);
   assert.match(html, /disabled=""/);
+});
+
+test('SessionShell renders copy and save knowledge actions on agent run output', () => {
+  const payload = createPayload();
+  payload.activeSession.messages = [];
+  payload.activeSession.runs = [{
+    ...payload.activeSession.runs[0]!,
+    id: 'run-copy-save',
+    agent_id: 'planner',
+    stdout: '## Run 输出\n\n这是一段智能体运行输出。',
+    activity_log: '',
+    stderr: '',
+  }];
+
+  const html = renderSessionShell(payload, {
+    onSaveKnowledge: () => undefined,
+  });
+
+  assert.match(html, /aria-label="复制智能体输出"/);
+  assert.match(html, /aria-label="保存智能体输出为知识"/);
+  assert.match(html, /保存为知识/);
+  assert.match(html, /复制/);
 });
 
 test('SessionShell renders generated image tool result evidence as transcript artifacts', () => {
@@ -505,6 +599,11 @@ test('buildProjectReorderInput returns same-layer reorder ids', () => {
     ids: ['project-3', 'project-1', 'project-2'],
     pinned: false,
   });
+});
+
+test('buildSessionKnowledgeActionKey distinguishes messages and runs', () => {
+  assert.equal(buildSessionKnowledgeActionKey('message', 'message-1'), 'message:message-1');
+  assert.equal(buildSessionKnowledgeActionKey('run', 'run-1'), 'run:run-1');
 });
 
 test('buildProjectReorderInput ignores same item and cross-layer reorders', () => {
