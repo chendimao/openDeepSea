@@ -1123,8 +1123,9 @@ test('SessionShell renders a retry icon next to the failed transcript status chi
   assert.match(html, /lucide-repeat2/);
 });
 
-test('SessionShell keeps run status chip spacing aligned with the thinking chip', () => {
-  assert.match(sessionOsCss, /\.deepsea-thinking-duration,\s*\.deepsea-run-status\s*\{[^}]*padding:\s*1px 6px;[^}]*font-size:\s*8px;[^}]*line-height:\s*1\.25;/s);
+test('SessionShell keeps run status chips aligned with the thinking chip', () => {
+  assert.match(sessionOsCss, /\.deepsea-thinking-duration,\s*\.deepsea-run-status,\s*\.deepsea-run-status-retry\s*\{[^}]*--deepsea-run-chip-height:\s*18px;[^}]*height:\s*var\(--deepsea-run-chip-height\);[^}]*min-height:\s*var\(--deepsea-run-chip-height\);/s);
+  assert.match(sessionOsCss, /\.deepsea-thinking-duration,\s*\.deepsea-run-status\s*\{[^}]*padding:\s*0 6px;[^}]*font-size:\s*8px;[^}]*line-height:\s*1;/s);
 });
 
 test('SessionShell hides ACP tool records from chat transcript', () => {

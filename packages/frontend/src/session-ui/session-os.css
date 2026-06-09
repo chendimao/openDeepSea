@@ -2645,17 +2645,25 @@
   height: 12px;
 }
 .deepsea-thinking-duration,
+.deepsea-run-status,
+.deepsea-run-status-retry {
+  --deepsea-run-chip-height: 18px;
+  box-sizing: border-box;
+  height: var(--deepsea-run-chip-height);
+  min-height: var(--deepsea-run-chip-height);
+}
+.deepsea-thinking-duration,
 .deepsea-run-status {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   border: 1px solid transparent;
   border-radius: 4px;
-  padding: 1px 6px;
+  padding: 0 6px;
   font-family: var(--deepsea-mono);
   font-size: 8px;
   font-weight: 900;
-  line-height: 1.25;
+  line-height: 1;
   white-space: nowrap;
 }
 .deepsea-thinking-duration {
@@ -2700,7 +2708,6 @@
   display: inline-grid;
   place-items: center;
   width: 18px;
-  height: 18px;
   border: 1px solid rgba(225, 29, 72, 0.18);
   border-radius: 4px;
   background: var(--deepsea-danger-soft);
